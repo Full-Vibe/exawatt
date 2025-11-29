@@ -10,7 +10,7 @@ export default async function Home() {
   } = await supabase.auth.getUser();
 
   if (user) {
-    redirect('/projects');
+    redirect('/dashboard');
   }
 
   return (
@@ -20,7 +20,7 @@ export default async function Home() {
           Exawatt
         </h1>
         <p className="max-w-md text-lg text-muted-foreground">
-          Power your AI agents
+          Mission control for your AI agents. Monitor, manage, and unblock your fleet of autonomous workers.
         </p>
         <div className="flex gap-4">
           <Button asChild>
