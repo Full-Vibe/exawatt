@@ -20,7 +20,7 @@ export default async function Home() {
           Exawatt
         </h1>
         <p className="max-w-md text-lg text-muted-foreground">
-          Manage your projects with ease
+          Power your AI agents
         </p>
         <div className="flex gap-4">
           <Button asChild>

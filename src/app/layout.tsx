@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'Exawatt',
-  description: 'Manage your projects with Exawatt',
+  description: 'Power your AI agents',
 };
 
 export default function RootLayout({
