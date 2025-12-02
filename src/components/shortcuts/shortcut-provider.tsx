@@ -1,0 +1,216 @@
+'use client';
+
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
+import { useRouter, usePathname } from 'next/navigation';
+import {
+  shortcutRegistry,
+  chordEngine,
+  defaultShortcuts,
+} from '@/lib/shortcuts';
+import { getKeyboardShortcuts, updateKeyboardShortcuts } from '@/app/actions/preferences';
+import { CommandPalette } from './command-palette';
+import { ShortcutHelpModal } from './shortcut-help-modal';
+import { ChordIndicator } from './chord-indicator';
+import type { KeyBinding, ShortcutContext as ShortcutCtx, Shortcut, ShortcutOverride } from '@/types/shortcuts';
+
+interface ShortcutContextValue {
+  openCommandPalette: () => void;
+  openHelpModal: () => void;
+  pendingChord: KeyBinding | null;
+  setContext: (context: ShortcutCtx, active: boolean) => void;
+  saveOverrides: () => Promise<void>;
+}
+
+const ShortcutContext = createContext<ShortcutContextValue | null>(null);
+
+export function useShortcuts() {
+  const ctx = useContext(ShortcutContext);
+  if (!ctx) {
+    throw new Error('useShortcuts must be used within ShortcutProvider');
+  }
+  return ctx;
+}
+
+interface ShortcutProviderProps {
+  children: React.ReactNode;
+}
+
+export function ShortcutProvider({ children }: ShortcutProviderProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
+  const [pendingChord, setPendingChord] = useState<KeyBinding | null>(null);
+  const [initialized, setInitialized] = useState(false);
+
+  // Track when modals close to prevent Enter key from double-triggering
+  const modalClosedAtRef = useRef<number>(0);
+
+  // Load user preferences on mount
+  useEffect(() => {
+    async function loadPreferences() {
+      try {
+        const overrides = await getKeyboardShortcuts();
+        shortcutRegistry.loadOverrides(overrides);
+      } catch (error) {
+        console.error('Failed to load keyboard shortcuts:', error);
+      }
+      setInitialized(true);
+    }
+    loadPreferences();
+  }, []);
+
+  // Create and register default shortcuts with actions
+  useEffect(() => {
+    const shortcuts: Shortcut[] = defaultShortcuts.map((def) => ({
+      ...def,
+      action: () => {
+        switch (def.id) {
+          case 'go-dashboard':
+            router.push('/dashboard');
+            break;
+          case 'go-board':
+            router.push('/board');
+            break;
+          case 'go-projects':
+            router.push('/projects');
+            break;
+          case 'go-settings':
+            router.push('/settings');
+            break;
+          case 'command-palette':
+            setCommandPaletteOpen(true);
+            break;
+          case 'help-modal':
+            setHelpModalOpen(true);
+            break;
+          case 'view-status':
+            window.dispatchEvent(
+              new CustomEvent('shortcut:view-change', { detail: 'status' })
+            );
+            break;
+          case 'view-project':
+            window.dispatchEvent(
+              new CustomEvent('shortcut:view-change', { detail: 'project' })
+            );
+            break;
+          case 'view-swimlane':
+            window.dispatchEvent(
+              new CustomEvent('shortcut:view-change', { detail: 'swimlane' })
+            );
+            break;
+        }
+      },
+    }));
+
+    shortcutRegistry.registerAll(shortcuts);
+
+    return () => {
+      shortcuts.forEach((s) => shortcutRegistry.unregister(s.id));
+    };
+  }, [router]);
+
+  // Determine current contexts based on route
+  useEffect(() => {
+    const contexts: ShortcutCtx[] = [];
+
+    if (pathname?.startsWith('/board')) contexts.push('board');
+    if (pathname?.startsWith('/dashboard')) contexts.push('dashboard');
+    if (commandPaletteOpen) contexts.push('command-palette');
+    if (commandPaletteOpen || helpModalOpen) contexts.push('modal-open');
+
+    shortcutRegistry.setContexts(contexts);
+  }, [pathname, commandPaletteOpen, helpModalOpen]);
+
+  // Global keyboard listener
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Let command palette handle its own input
+      if (commandPaletteOpen) return;
+
+      // Prevent double-triggering when a modal just closed (e.g., Enter in command palette)
+      if (Date.now() - modalClosedAtRef.current < 100) return;
+
+      chordEngine.processKeyEvent(event);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [commandPaletteOpen]);
+
+  // Wrapper to track when command palette closes
+  const handleCommandPaletteChange = useCallback((open: boolean) => {
+    setCommandPaletteOpen(open);
+    if (!open) {
+      modalClosedAtRef.current = Date.now();
+    }
+  }, []);
+
+  // Wrapper to track when help modal closes
+  const handleHelpModalChange = useCallback((open: boolean) => {
+    setHelpModalOpen(open);
+    if (!open) {
+      modalClosedAtRef.current = Date.now();
+    }
+  }, []);
+
+  // Subscribe to chord state
+  useEffect(() => {
+    return chordEngine.subscribe(setPendingChord);
+  }, []);
+
+  const setContext = useCallback((context: ShortcutCtx, active: boolean) => {
+    if (active) {
+      shortcutRegistry.addContext(context);
+    } else {
+      shortcutRegistry.removeContext(context);
+    }
+  }, []);
+
+  const saveOverrides = useCallback(async () => {
+    const overrides = shortcutRegistry.getOverrides();
+    await updateKeyboardShortcuts(overrides);
+  }, []);
+
+  const handleOpenHelpModal = useCallback(() => {
+    setHelpModalOpen(true);
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      openCommandPalette: () => setCommandPaletteOpen(true),
+      openHelpModal: handleOpenHelpModal,
+      pendingChord,
+      setContext,
+      saveOverrides,
+    }),
+    [pendingChord, setContext, saveOverrides, handleOpenHelpModal]
+  );
+
+  // Don't render shortcuts UI until initialized
+  if (!initialized) {
+    return <>{children}</>;
+  }
+
+  return (
+    <ShortcutContext.Provider value={value}>
+      {children}
+      <CommandPalette
+        open={commandPaletteOpen}
+        onOpenChange={handleCommandPaletteChange}
+        onOpenHelpModal={handleOpenHelpModal}
+      />
+      <ShortcutHelpModal open={helpModalOpen} onOpenChange={handleHelpModalChange} />
+      <ChordIndicator pending={pendingChord} />
+    </ShortcutContext.Provider>
+  );
+}
