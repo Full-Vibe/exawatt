@@ -111,9 +111,11 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
 
           // Task navigation (Phase 2)
           case 'task-next':
+          case 'task-next-arrow':
             window.dispatchEvent(new CustomEvent('shortcut:task-next'));
             break;
           case 'task-prev':
+          case 'task-prev-arrow':
             window.dispatchEvent(new CustomEvent('shortcut:task-prev'));
             break;
           case 'task-open':

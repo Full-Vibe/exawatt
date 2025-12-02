@@ -94,7 +94,15 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     label: 'Next Task',
     description: 'Move focus to next task',
     category: 'selection',
-    contexts: ['board', 'dashboard'],
+    contexts: ['board'],
+  },
+  {
+    id: 'task-next-arrow',
+    keys: { key: 'ArrowDown' },
+    label: 'Next Task',
+    description: 'Move focus to next task',
+    category: 'selection',
+    contexts: ['board'],
   },
   {
     id: 'task-prev',
@@ -102,7 +110,15 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     label: 'Previous Task',
     description: 'Move focus to previous task',
     category: 'selection',
-    contexts: ['board', 'dashboard'],
+    contexts: ['board'],
+  },
+  {
+    id: 'task-prev-arrow',
+    keys: { key: 'ArrowUp' },
+    label: 'Previous Task',
+    description: 'Move focus to previous task',
+    category: 'selection',
+    contexts: ['board'],
   },
   {
     id: 'task-open',
@@ -110,7 +126,7 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     label: 'Open Task',
     description: 'Open the focused task detail',
     category: 'selection',
-    contexts: ['board', 'dashboard'],
+    contexts: ['board'],
   },
   {
     id: 'task-close',
@@ -118,7 +134,7 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     label: 'Close / Deselect',
     description: 'Close task detail or clear selection',
     category: 'selection',
-    contexts: ['board', 'dashboard', 'task-detail'],
+    contexts: ['board', 'task-detail'],
   },
   {
     id: 'task-select-extend-down',
