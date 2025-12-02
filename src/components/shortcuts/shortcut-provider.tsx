@@ -108,6 +108,32 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
               new CustomEvent('shortcut:view-change', { detail: 'swimlane' })
             );
             break;
+
+          // Task navigation (Phase 2)
+          case 'task-next':
+            window.dispatchEvent(new CustomEvent('shortcut:task-next'));
+            break;
+          case 'task-prev':
+            window.dispatchEvent(new CustomEvent('shortcut:task-prev'));
+            break;
+          case 'task-open':
+            window.dispatchEvent(new CustomEvent('shortcut:task-open'));
+            break;
+          case 'task-close':
+            window.dispatchEvent(new CustomEvent('shortcut:task-close'));
+            break;
+          case 'task-select-extend-down':
+            window.dispatchEvent(new CustomEvent('shortcut:task-extend-down'));
+            break;
+          case 'task-select-extend-up':
+            window.dispatchEvent(new CustomEvent('shortcut:task-extend-up'));
+            break;
+          case 'task-toggle-select':
+            window.dispatchEvent(new CustomEvent('shortcut:task-toggle'));
+            break;
+          case 'task-select-all':
+            window.dispatchEvent(new CustomEvent('shortcut:task-select-all'));
+            break;
         }
       },
     }));

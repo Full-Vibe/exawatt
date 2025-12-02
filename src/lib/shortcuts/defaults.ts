@@ -86,6 +86,72 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     category: 'view',
     contexts: ['board'],
   },
+
+  // Task navigation (Phase 2)
+  {
+    id: 'task-next',
+    keys: { key: 'j' },
+    label: 'Next Task',
+    description: 'Move focus to next task',
+    category: 'selection',
+    contexts: ['board', 'dashboard'],
+  },
+  {
+    id: 'task-prev',
+    keys: { key: 'k' },
+    label: 'Previous Task',
+    description: 'Move focus to previous task',
+    category: 'selection',
+    contexts: ['board', 'dashboard'],
+  },
+  {
+    id: 'task-open',
+    keys: { key: 'Enter' },
+    label: 'Open Task',
+    description: 'Open the focused task detail',
+    category: 'selection',
+    contexts: ['board', 'dashboard'],
+  },
+  {
+    id: 'task-close',
+    keys: { key: 'Escape' },
+    label: 'Close / Deselect',
+    description: 'Close task detail or clear selection',
+    category: 'selection',
+    contexts: ['board', 'dashboard', 'task-detail'],
+  },
+  {
+    id: 'task-select-extend-down',
+    keys: { key: 'j', modifiers: ['shift'] },
+    label: 'Extend Selection Down',
+    description: 'Add next task to selection',
+    category: 'selection',
+    contexts: ['board'],
+  },
+  {
+    id: 'task-select-extend-up',
+    keys: { key: 'k', modifiers: ['shift'] },
+    label: 'Extend Selection Up',
+    description: 'Add previous task to selection',
+    category: 'selection',
+    contexts: ['board'],
+  },
+  {
+    id: 'task-toggle-select',
+    keys: { key: 'x' },
+    label: 'Toggle Selection',
+    description: 'Toggle selection on focused task',
+    category: 'selection',
+    contexts: ['board'],
+  },
+  {
+    id: 'task-select-all',
+    keys: { key: 'a', modifiers: ['meta'] },
+    label: 'Select All',
+    description: 'Select all visible tasks',
+    category: 'selection',
+    contexts: ['board'],
+  },
 ];
 
 /**
