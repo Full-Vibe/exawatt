@@ -224,21 +224,21 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     [pendingChord, setContext, saveOverrides, handleOpenHelpModal]
   );
 
-  // Don't render shortcuts UI until initialized
-  if (!initialized) {
-    return <>{children}</>;
-  }
-
   return (
     <ShortcutContext.Provider value={value}>
       {children}
-      <CommandPalette
-        open={commandPaletteOpen}
-        onOpenChange={handleCommandPaletteChange}
-        onOpenHelpModal={handleOpenHelpModal}
-      />
-      <ShortcutHelpModal open={helpModalOpen} onOpenChange={handleHelpModalChange} />
-      <ChordIndicator pending={pendingChord} />
+      {/* Only render shortcuts UI after initialized */}
+      {initialized && (
+        <>
+          <CommandPalette
+            open={commandPaletteOpen}
+            onOpenChange={handleCommandPaletteChange}
+            onOpenHelpModal={handleOpenHelpModal}
+          />
+          <ShortcutHelpModal open={helpModalOpen} onOpenChange={handleHelpModalChange} />
+          <ChordIndicator pending={pendingChord} />
+        </>
+      )}
     </ShortcutContext.Provider>
   );
 }
