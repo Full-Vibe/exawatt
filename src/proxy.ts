@@ -38,6 +38,8 @@ export async function proxy(request: NextRequest) {
     !request.nextUrl.pathname.startsWith('/sign-in') &&
     !request.nextUrl.pathname.startsWith('/sign-up') &&
     !request.nextUrl.pathname.startsWith('/auth') &&
+    !request.nextUrl.pathname.startsWith('/privacy') &&
+    !request.nextUrl.pathname.startsWith('/terms') &&
     request.nextUrl.pathname !== '/'
   ) {
     const url = request.nextUrl.clone();

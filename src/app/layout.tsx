@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Link from "next/link";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ShortcutProvider } from "@/components/shortcuts";
@@ -34,6 +35,16 @@ export default function RootLayout({
             {children}
           </ShortcutProvider>
         </TooltipProvider>
+        <footer className="border-t py-6 text-center text-xs text-muted-foreground">
+          <div className="flex items-center justify-center gap-4">
+            <Link href="/privacy" className="hover:text-foreground transition-colors">
+              Privacy Policy
+            </Link>
+            <Link href="/terms" className="hover:text-foreground transition-colors">
+              Terms of Service
+            </Link>
+          </div>
+        </footer>
       </body>
     </html>
   );
