@@ -208,7 +208,7 @@ export function SettingsClient() {
                           )}
                           <button
                             onClick={() => startEditing(shortcut.id)}
-                            className="focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
+                            className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
                           >
                             <ShortcutBadge keys={effectiveKeys} size="md" />
                           </button>

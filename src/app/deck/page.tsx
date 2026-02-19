@@ -220,7 +220,7 @@ export default function DeckPage() {
             key={slide.id}
             onClick={() => scrollToSlide(index)}
             className={cn(
-              'w-3 h-3 rounded-full transition-all duration-200',
+              'w-3 h-3 rounded-full transition-all duration-200 cursor-pointer',
               activeSlide === index
                 ? 'bg-foreground scale-125'
                 : 'bg-muted-foreground/30 hover:bg-muted-foreground/50'
