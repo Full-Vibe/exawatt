@@ -4,6 +4,7 @@ import Link from "next/link";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ShortcutProvider } from "@/components/shortcuts";
+import { SiteHeader } from "@/components/nav/site-header";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,6 +33,7 @@ export default function RootLayout({
       >
         <TooltipProvider>
           <ShortcutProvider>
+            <SiteHeader />
             {children}
           </ShortcutProvider>
         </TooltipProvider>
