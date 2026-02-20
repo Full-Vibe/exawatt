@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Exo_2, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ShortcutProvider } from "@/components/shortcuts";
 import { SiteHeader } from "@/components/nav/site-header";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const exo2 = Exo_2({
+  variable: "--font-exo2",
   subsets: ["latin"],
 });
 
@@ -29,7 +29,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${exo2.variable} ${geistMono.variable} antialiased`}
       >
         <TooltipProvider>
           <ShortcutProvider>
