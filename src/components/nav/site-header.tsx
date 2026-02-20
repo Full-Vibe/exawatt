@@ -7,5 +7,11 @@ export async function SiteHeader() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  return <SiteHeaderNav isAuthenticated={!!user} />;
+  return (
+    <SiteHeaderNav
+      isAuthenticated={!!user}
+      userName={user?.user_metadata?.full_name ?? undefined}
+      userEmail={user?.email ?? undefined}
+    />
+  );
 }

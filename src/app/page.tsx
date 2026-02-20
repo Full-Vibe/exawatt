@@ -23,6 +23,9 @@ export default async function Home() {
         #site-header a {
           color: white !important;
         }
+        #site-header .bg-muted {
+          background: rgba(255, 255, 255, 0.15) !important;
+        }
         #site-footer {
           background: rgb(10, 10, 12);
           border-color: rgba(255, 255, 255, 0.1);
@@ -55,7 +58,7 @@ export default async function Home() {
               <Button asChild>
                 <Link href="/sign-in">Sign In</Link>
               </Button>
-              <Button asChild variant="outline" className="border-white/30 text-white hover:bg-white/10">
+              <Button asChild variant="outline" className="bg-transparent border-white/30 text-white hover:bg-white/10">
                 <Link href="/sign-up">Sign Up</Link>
               </Button>
             </>
