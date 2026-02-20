@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { createClient } from '@/lib/supabase/client';
+import { useElectronAuth } from '@/hooks/use-electron-auth';
 
 export default function SignInPage() {
   const [email, setEmail] = useState('');
@@ -23,6 +24,10 @@ export default function SignInPage() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const supabase = createClient();
+  const { signInWithGoogle } = useElectronAuth(supabase, {
+    onError: setError,
+    onLoadingChange: setLoading,
+  });
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,15 +52,10 @@ export default function SignInPage() {
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-
-    if (error) {
-      setError(error.message);
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Google sign-in failed');
       setLoading(false);
     }
   };
