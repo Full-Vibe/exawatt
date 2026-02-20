@@ -37,7 +37,7 @@ export default function RootLayout({
             {children}
           </ShortcutProvider>
         </TooltipProvider>
-        <footer className="border-t py-6 text-center text-xs text-muted-foreground">
+        <footer id="site-footer" className="border-t py-6 text-center text-xs text-muted-foreground">
           <div className="flex items-center justify-center gap-4">
             <Link href="/privacy" className="hover:text-foreground transition-colors">
               Privacy Policy
