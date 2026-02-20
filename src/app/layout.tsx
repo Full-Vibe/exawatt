@@ -29,7 +29,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${exo2.variable} ${geistMono.variable} antialiased`}
+        className={`${exo2.variable} ${geistMono.variable} font-sans antialiased`}
       >
         <TooltipProvider>
           <ShortcutProvider>
