@@ -1,7 +1,7 @@
-import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/server';
+import { HeroBg } from './_hero-bg';
 
 export default async function Home() {
   const supabase = await createClient();
@@ -35,14 +35,8 @@ export default async function Home() {
           color: white;
         }
       `}</style>
-      <div className="relative -mt-12 flex min-h-screen items-center justify-center">
-      <Image
-        src="/images/hero-bg.png"
-        alt=""
-        fill
-        className="object-cover"
-        priority
-      />
+      <div className="relative -mt-12 flex min-h-screen items-center justify-center bg-black">
+      <HeroBg />
       <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/50 to-black/80" />
       <main className="relative z-10 flex flex-col items-center gap-8 text-center px-4">
         <h1 className="text-4xl font-bold tracking-tight text-white sm:text-6xl drop-shadow-lg">
