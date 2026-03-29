@@ -2,7 +2,7 @@
   "name": "@exawatt/core",
   "version": "0.0.1",
   "private": true,
-  "type": "commonjs",
+  "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

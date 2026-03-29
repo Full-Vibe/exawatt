@@ -1,19 +1,20 @@
-import type { Metadata } from "next";
-import { Exo_2, Geist_Mono } from "next/font/google";
-import Link from "next/link";
-import "./globals.css";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { ShortcutProvider } from "@/components/shortcuts";
-import { SiteHeader } from "@/components/nav/site-header";
+import type { Metadata } from 'next';
+import { Exo_2, Geist_Mono } from 'next/font/google';
+import Link from 'next/link';
+import './globals.css';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { ShortcutProvider } from '@/components/shortcuts';
+import { SiteHeader } from '@/components/nav/site-header';
+import { FleetProvider } from '@/lib/fleet/fleet-provider';
 
 const exo2 = Exo_2({
-  variable: "--font-exo2",
-  subsets: ["latin"],
+  variable: '--font-exo2',
+  subsets: ['latin'],
 });
 
 const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  variable: '--font-geist-mono',
+  subsets: ['latin'],
 });
 
 export const metadata: Metadata = {
@@ -33,16 +34,27 @@ export default function RootLayout({
       >
         <TooltipProvider>
           <ShortcutProvider>
-            <SiteHeader />
-            {children}
+            <FleetProvider>
+              <SiteHeader />
+              {children}
+            </FleetProvider>
           </ShortcutProvider>
         </TooltipProvider>
-        <footer id="site-footer" className="border-t py-6 text-center text-xs text-muted-foreground">
+        <footer
+          id="site-footer"
+          className="border-t py-6 text-center text-xs text-muted-foreground"
+        >
           <div className="flex items-center justify-center gap-4">
-            <Link href="/privacy" className="hover:text-foreground transition-colors">
+            <Link
+              href="/privacy"
+              className="hover:text-foreground transition-colors"
+            >
               Privacy Policy
             </Link>
-            <Link href="/terms" className="hover:text-foreground transition-colors">
+            <Link
+              href="/terms"
+              className="hover:text-foreground transition-colors"
+            >
               Terms of Service
             </Link>
           </div>
