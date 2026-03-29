@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useCallback,
   useMemo,
   useState,
   useRef,
@@ -137,6 +138,16 @@ function useFleetContext(): FleetContextValue {
   return ctx;
 }
 
+function mergeActivities(
+  base: AgentActivity[],
+  incoming: AgentActivity[]
+): AgentActivity[] {
+  const byId = new Map<string, AgentActivity>();
+  for (const activity of base) byId.set(activity.id, activity);
+  for (const activity of incoming) byId.set(activity.id, activity);
+  return Array.from(byId.values()).sort((a, b) => a.timestamp - b.timestamp);
+}
+
 export function useFleetConnection(): {
   status: OCConnectionStatus | 'initializing';
   isDemo: boolean;
@@ -185,18 +196,29 @@ export function useAgent(agentId: string): {
   agent: ExawattAgent | undefined;
   activities: AgentActivity[];
   sendMessage: (text: string) => Promise<void>;
+  loadHistory: () => Promise<void>;
+  abortChat: () => Promise<void>;
+  isLoadingHistory: boolean;
 } {
   const { manager } = useFleetContext();
   const [agent, setAgent] = useState<ExawattAgent | undefined>(() =>
     manager.getAgent(agentId)
   );
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   useEffect(() => {
     const onAgentUpdated = (updated: ExawattAgent) => {
-      if (updated.id === agentId) setAgent(updated);
+      if (updated.id !== agentId) return;
+      setAgent(current => ({
+        ...updated,
+        activities: mergeActivities(
+          current?.activities ?? [],
+          updated.activities ?? []
+        ),
+      }));
     };
     const onAgentCreated = (created: ExawattAgent) => {
-      if (created.id === agentId) setAgent(created);
+      if (created.id === agentId) setAgent({ ...created });
     };
 
     manager.on('agent:updated', onAgentUpdated);
@@ -211,15 +233,57 @@ export function useAgent(agentId: string): {
     };
   }, [manager, agentId]);
 
-  const sendMessage = async (text: string) => {
-    // Placeholder — will be wired to real chat in T17
-    console.log('sendMessage not yet wired:', text);
-  };
+  const sendMessage = useCallback(
+    async (text: string) => {
+      const targetAgent = manager.getAgent(agentId);
+      if (!targetAgent) return;
+      const chatAdapter = manager.getChatAdapter();
+      if (!chatAdapter) return;
+
+      await chatAdapter.sendMessage(agentId, text, targetAgent.sessionKey);
+    },
+    [manager, agentId]
+  );
+
+  const loadHistory = useCallback(async () => {
+    const targetAgent = manager.getAgent(agentId);
+    if (!targetAgent) return;
+    const chatAdapter = manager.getChatAdapter();
+    if (!chatAdapter) return;
+
+    setIsLoadingHistory(true);
+    try {
+      const history = await chatAdapter.getHistory(
+        agentId,
+        targetAgent.sessionKey
+      );
+      setAgent(current =>
+        current
+          ? {
+              ...current,
+              activities: mergeActivities(history, current.activities ?? []),
+            }
+          : current
+      );
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }, [manager, agentId]);
+
+  const abortChat = useCallback(async () => {
+    const targetAgent = manager.getAgent(agentId);
+    const chatAdapter = manager.getChatAdapter();
+    if (!chatAdapter) return;
+    await chatAdapter.abort(targetAgent?.sessionKey);
+  }, [manager, agentId]);
 
   return {
     agent,
     activities: agent?.activities ?? [],
     sendMessage,
+    loadHistory,
+    abortChat,
+    isLoadingHistory,
   };
 }
 

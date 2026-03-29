@@ -47,6 +47,10 @@ export class FleetManager extends TypedEmitter<CoreEventMap> {
     this.methods = null;
   }
 
+  getChatAdapter(): ChatAdapter | null {
+    return this.chatAdapter;
+  }
+
   getAgent(id: string): ExawattAgent | undefined {
     return this.agents.get(id);
   }
@@ -175,10 +179,21 @@ export class FleetManager extends TypedEmitter<CoreEventMap> {
     const agent = this.agents.get(agentId);
     if (!agent) return;
 
+    const existingActivities = agent.activities ?? [];
+    const existingIndex = existingActivities.findIndex(
+      a => a.id === activity.id
+    );
+    const nextActivities =
+      existingIndex >= 0
+        ? existingActivities.map((a, idx) =>
+            idx === existingIndex ? activity : a
+          )
+        : [...existingActivities, activity];
+
     const updatedAgent: ExawattAgent = {
       ...agent,
       lastActivityAt: activity.timestamp,
-      activities: [...(agent.activities ?? []), activity].slice(-100),
+      activities: nextActivities.slice(-100),
     };
 
     if (activity.type === 'chat_message' && agent.status === 'idle') {
