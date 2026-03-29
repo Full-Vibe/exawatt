@@ -34,6 +34,11 @@ interface FleetContextValue {
   connectionStatus: OCConnectionStatus | 'initializing';
 }
 
+interface ConnectionToast {
+  id: number;
+  message: string;
+}
+
 const FleetContext = createContext<FleetContextValue | null>(null);
 
 // --- Provider ---
@@ -42,8 +47,27 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   const [connectionStatus, setConnectionStatus] = useState<
     OCConnectionStatus | 'initializing'
   >('initializing');
+  const [connectionToasts, setConnectionToasts] = useState<ConnectionToast[]>(
+    []
+  );
   const [isDemo, setIsDemo] = useState(false);
   const mockTransportRef = useRef<MockFleetTransport | null>(null);
+  const prevConnectionStatusRef = useRef<OCConnectionStatus | 'initializing'>(
+    'initializing'
+  );
+  const toastIdRef = useRef(0);
+  const toastTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+
+  const pushConnectionToast = useCallback((message: string) => {
+    const id = ++toastIdRef.current;
+    setConnectionToasts(prev => [...prev, { id, message }]);
+
+    const timer = setTimeout(() => {
+      setConnectionToasts(prev => prev.filter(toast => toast.id !== id));
+    }, 3000);
+
+    toastTimersRef.current.push(timer);
+  }, []);
 
   // Stable FleetManager instance
   const manager = useMemo(() => new FleetManager(), []);
@@ -76,7 +100,20 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           manager.connect(client, methods);
 
           client.on('connection:status', status => {
-            if (mounted) setConnectionStatus(status);
+            if (!mounted) return;
+
+            const prevStatus = prevConnectionStatusRef.current;
+            setConnectionStatus(status);
+
+            if (status === 'disconnected') {
+              pushConnectionToast('Connection lost. Reconnecting...');
+            }
+
+            if (status === 'connected' && prevStatus === 'disconnected') {
+              pushConnectionToast('Reconnected. State refreshed.');
+            }
+
+            prevConnectionStatusRef.current = status;
           });
 
           await client.connect();
@@ -86,6 +123,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           if (!mounted) return;
           setIsDemo(true);
           setConnectionStatus('connected');
+          prevConnectionStatusRef.current = 'connected';
 
           const mockTransport = new MockFleetTransport();
           mockTransportRef.current = mockTransport;
@@ -97,6 +135,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         if (!mounted) return;
         setIsDemo(true);
         setConnectionStatus('connected');
+        prevConnectionStatusRef.current = 'connected';
 
         const mockTransport = new MockFleetTransport();
         mockTransportRef.current = mockTransport;
@@ -109,6 +148,8 @@ export function FleetProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false;
+      for (const timer of toastTimersRef.current) clearTimeout(timer);
+      toastTimersRef.current = [];
       manager.disconnect();
       mockTransportRef.current?.stop();
     };
@@ -125,7 +166,19 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <FleetContext.Provider value={value}>{children}</FleetContext.Provider>
+    <FleetContext.Provider value={value}>
+      {children}
+      <div className="pointer-events-none fixed right-4 top-4 z-50 flex flex-col gap-2">
+        {connectionToasts.map(toast => (
+          <div
+            key={toast.id}
+            className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 shadow-lg"
+          >
+            {toast.message}
+          </div>
+        ))}
+      </div>
+    </FleetContext.Provider>
   );
 }
 

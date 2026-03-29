@@ -1,8 +1,10 @@
 'use client';
-import { useFleet } from '@/lib/fleet/fleet-provider';
+import { useFleet, useFleetConnection } from '@/lib/fleet/fleet-provider';
 
 export function FleetMetricsBar() {
   const { metrics } = useFleet();
+  const { status } = useFleetConnection();
+  const isStale = status === 'disconnected' || status === 'error';
 
   const formatCost = (v: number) => `$${v.toFixed(2)}`;
   const formatRate = (v: number) => `$${v.toFixed(2)}/hr`;
@@ -21,6 +23,7 @@ export function FleetMetricsBar() {
           {formatRate(metrics.totalCostRate)}
         </span>
       )}
+      {isStale && <span className="text-yellow-500 text-xs">(stale)</span>}
     </div>
   );
 }
