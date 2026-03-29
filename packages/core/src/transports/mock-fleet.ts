@@ -15,7 +15,11 @@ import {
   type AgentBlocker,
 } from '../types/agent';
 import type { FleetState, FleetMetrics } from '../types/fleet';
-import type { OCCronJob, OCCronRun, CronAddParams } from '../oc/protocol-types';
+import type {
+  ExawattCronJob,
+  ExawattCronRun,
+  ExawattCronJobCreate,
+} from '../types/cron';
 
 // Speed configs matching SIMULATION_SPEED_CONFIG in V1
 export type SimulationSpeed = 'realistic' | 'fast' | 'rapid';
@@ -126,7 +130,7 @@ const MOCK_BLOCKERS: Array<
 ];
 
 // Mock cron jobs
-const MOCK_CRON_JOBS: OCCronJob[] = [
+const MOCK_CRON_JOBS: ExawattCronJob[] = [
   {
     id: 'cron-1',
     name: 'Daily Pulse check-in',
@@ -187,10 +191,10 @@ export class MockFleetTransport {
   private speed: SimulationSpeed = 'realistic';
   private running = false;
   private agents = new Map<string, ExawattAgent>();
-  private cronJobs = new Map<string, OCCronJob>(
+  private cronJobs = new Map<string, ExawattCronJob>(
     MOCK_CRON_JOBS.map(j => [j.id, j])
   );
-  private cronRuns = new Map<string, OCCronRun[]>();
+  private cronRuns = new Map<string, ExawattCronRun[]>();
 
   /**
    * Wire this transport to a FleetManager and seed mock data.
@@ -271,12 +275,12 @@ export class MockFleetTransport {
 
   // ---- Cron interface (matches FleetManager cron passthroughs) ----
 
-  listCronJobs(): Promise<OCCronJob[]> {
+  listCronJobs(): Promise<ExawattCronJob[]> {
     return Promise.resolve(Array.from(this.cronJobs.values()));
   }
 
-  addCronJob(job: CronAddParams): Promise<OCCronJob> {
-    const newJob: OCCronJob = {
+  addCronJob(job: ExawattCronJobCreate): Promise<ExawattCronJob> {
+    const newJob: ExawattCronJob = {
       id: `cron-${Date.now()}`,
       name: job.name,
       schedule: job.schedule,
@@ -292,13 +296,13 @@ export class MockFleetTransport {
   runCronJob(jobId: string): Promise<void> {
     const job = this.cronJobs.get(jobId);
     if (job) {
-      const updated: OCCronJob = {
+      const updated: ExawattCronJob = {
         ...job,
         lastRun: Date.now(),
         status: 'idle' as const,
       };
       this.cronJobs.set(jobId, updated);
-      const run: OCCronRun = {
+      const run: ExawattCronRun = {
         id: `run-${Date.now()}`,
         jobId,
         startedAt: Date.now(),
@@ -313,11 +317,11 @@ export class MockFleetTransport {
 
   updateCronJob(
     jobId: string,
-    patch: Partial<CronAddParams>
-  ): Promise<OCCronJob> {
+    patch: Partial<ExawattCronJobCreate>
+  ): Promise<ExawattCronJob> {
     const job = this.cronJobs.get(jobId);
     if (!job) return Promise.reject(new Error(`Cron job ${jobId} not found`));
-    const updated: OCCronJob = { ...job, ...patch };
+    const updated: ExawattCronJob = { ...job, ...patch };
     this.cronJobs.set(jobId, updated);
     return Promise.resolve(updated);
   }
@@ -327,7 +331,7 @@ export class MockFleetTransport {
     return Promise.resolve();
   }
 
-  getCronRuns(jobId: string): Promise<{ runs: OCCronRun[] }> {
+  getCronRuns(jobId: string): Promise<{ runs: ExawattCronRun[] }> {
     return Promise.resolve({ runs: this.cronRuns.get(jobId) ?? [] });
   }
 

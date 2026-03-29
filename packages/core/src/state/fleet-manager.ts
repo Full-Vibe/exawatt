@@ -5,7 +5,12 @@ import type { OCClient } from '../oc/client';
 import type { OCMethods } from '../oc/methods';
 import { ChatAdapter } from '../adapters/chat-adapter';
 import { FleetAdapter } from '../adapters/fleet-adapter';
-import type { OCCronJob } from '../oc/protocol-types';
+import type { OCCronJob, OCCronRun, CronAddParams } from '../oc/protocol-types';
+import type {
+  ExawattCronJob,
+  ExawattCronRun,
+  ExawattCronJobCreate,
+} from '../types/cron';
 
 const COST_WINDOW_MS = 10 * 60 * 1000;
 
@@ -116,17 +121,23 @@ export class FleetManager extends TypedEmitter<CoreEventMap> {
     return { totalCost, costRate: totalCostRate, costByAgent, costByProject };
   }
 
-  async listCronJobs(): Promise<OCCronJob[]> {
+  async listCronJobs(): Promise<ExawattCronJob[]> {
     if (!this.methods) throw new Error('FleetManager not connected');
     const result = await this.methods.cronList();
-    return result.jobs;
+    return result.jobs.map(j => this._toExawattCronJob(j));
   }
 
-  async addCronJob(
-    job: Parameters<OCMethods['cronAdd']>[0]
-  ): Promise<OCCronJob> {
+  async addCronJob(job: ExawattCronJobCreate): Promise<ExawattCronJob> {
     if (!this.methods) throw new Error('FleetManager not connected');
-    return this.methods.cronAdd(job);
+    const params: CronAddParams = {
+      name: job.name,
+      schedule: job.schedule,
+      prompt: job.prompt,
+      sessionKey: job.sessionKey,
+      enabled: job.enabled,
+    };
+    const result = await this.methods.cronAdd(params);
+    return this._toExawattCronJob(result);
   }
 
   async runCronJob(jobId: string): Promise<void> {
@@ -136,10 +147,11 @@ export class FleetManager extends TypedEmitter<CoreEventMap> {
 
   async updateCronJob(
     jobId: string,
-    patch: Parameters<OCMethods['cronUpdate']>[1]
-  ): Promise<OCCronJob> {
+    patch: Partial<ExawattCronJobCreate>
+  ): Promise<ExawattCronJob> {
     if (!this.methods) throw new Error('FleetManager not connected');
-    return this.methods.cronUpdate(jobId, patch);
+    const result = await this.methods.cronUpdate(jobId, patch);
+    return this._toExawattCronJob(result);
   }
 
   async removeCronJob(jobId: string): Promise<void> {
@@ -147,9 +159,35 @@ export class FleetManager extends TypedEmitter<CoreEventMap> {
     return this.methods.cronRemove(jobId);
   }
 
-  async getCronRuns(jobId: string) {
+  async getCronRuns(jobId: string): Promise<{ runs: ExawattCronRun[] }> {
     if (!this.methods) throw new Error('FleetManager not connected');
-    return this.methods.cronRuns(jobId);
+    const result = await this.methods.cronRuns(jobId);
+    return { runs: result.runs.map(r => this._toExawattCronRun(r)) };
+  }
+
+  private _toExawattCronJob(job: OCCronJob): ExawattCronJob {
+    return {
+      id: job.id,
+      name: job.name,
+      schedule: job.schedule,
+      prompt: job.prompt,
+      sessionKey: job.sessionKey,
+      enabled: job.enabled,
+      lastRun: job.lastRun,
+      nextRun: job.nextRun,
+      status: job.status,
+    };
+  }
+
+  private _toExawattCronRun(run: OCCronRun): ExawattCronRun {
+    return {
+      id: run.id,
+      jobId: run.jobId,
+      startedAt: run.startedAt,
+      completedAt: run.completedAt,
+      status: run.status,
+      error: run.error,
+    };
   }
 
   async refresh(): Promise<void> {

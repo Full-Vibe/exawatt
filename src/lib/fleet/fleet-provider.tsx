@@ -20,9 +20,9 @@ import {
   type FleetState,
   type FleetMetrics,
   type OCConnectionStatus,
-  type OCCronJob,
-  type OCCronRun,
-  type CronAddParams,
+  type ExawattCronJob,
+  type ExawattCronRun,
+  type ExawattCronJobCreate,
 } from '@exawatt/core';
 
 // --- Context ---
@@ -346,7 +346,7 @@ export function useMockTransport(): MockFleetTransport | null {
 
 export function useCron() {
   const { manager, mockTransport, isDemo } = useFleetContext();
-  const [jobs, setJobs] = useState<OCCronJob[]>([]);
+  const [jobs, setJobs] = useState<ExawattCronJob[]>([]);
   const [loading, setLoading] = useState(true);
 
   const cronSource = isDemo ? mockTransport : manager;
@@ -376,7 +376,7 @@ export function useCron() {
     };
   }, [cronSource]);
 
-  const addJob = async (job: CronAddParams) => {
+  const addJob = async (job: ExawattCronJobCreate) => {
     if (!cronSource) return;
     const newJob = await cronSource.addCronJob(job);
     setJobs(prev => [...prev, newJob]);
@@ -390,7 +390,10 @@ export function useCron() {
     setJobs(updatedJobs);
   };
 
-  const updateJob = async (jobId: string, patch: Partial<CronAddParams>) => {
+  const updateJob = async (
+    jobId: string,
+    patch: Partial<ExawattCronJobCreate>
+  ) => {
     if (!cronSource) return;
     const updatedJob = await cronSource.updateCronJob(jobId, patch);
     setJobs(prev => prev.map(j => (j.id === jobId ? updatedJob : j)));
@@ -403,7 +406,7 @@ export function useCron() {
     setJobs(prev => prev.filter(j => j.id !== jobId));
   };
 
-  const getJobRuns = async (jobId: string): Promise<OCCronRun[]> => {
+  const getJobRuns = async (jobId: string): Promise<ExawattCronRun[]> => {
     if (!cronSource) return [];
     const result = await cronSource.getCronRuns(jobId);
     return result.runs;
