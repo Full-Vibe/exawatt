@@ -19,6 +19,7 @@ import {
   FolderKanban,
   Settings,
   HelpCircle,
+  Server,
 } from 'lucide-react';
 import type { ShortcutKeys } from '@/types/shortcuts';
 
@@ -87,6 +88,14 @@ export function CommandPalette({
         keywords: ['folders', 'organize'],
       },
       {
+        id: 'nav-fleet',
+        label: 'Go to Fleet',
+        icon: Server,
+        shortcut: shortcutRegistry.getEffectiveKeys('go-fleet'),
+        onSelect: () => handleSelect(() => router.push('/fleet')),
+        keywords: ['agents', 'bots', 'ai'],
+      },
+      {
         id: 'nav-settings',
         label: 'Go to Settings',
         icon: Settings,
@@ -106,8 +115,8 @@ export function CommandPalette({
   }, [router, handleSelect, onOpenHelpModal]);
 
   // Group items
-  const navigationItems = items.filter((i) => i.id.startsWith('nav-'));
-  const actionItems = items.filter((i) => i.id.startsWith('action-'));
+  const navigationItems = items.filter(i => i.id.startsWith('nav-'));
+  const actionItems = items.filter(i => i.id.startsWith('action-'));
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
@@ -120,12 +129,14 @@ export function CommandPalette({
         <CommandEmpty>No results found.</CommandEmpty>
 
         <CommandGroup heading="Navigation">
-          {navigationItems.map((item) => (
+          {navigationItems.map(item => (
             <CommandItem key={item.id} onSelect={item.onSelect}>
               <item.icon className="mr-2 h-4 w-4" />
               <span>{item.label}</span>
               {item.shortcut && (
-                <CommandShortcut>{formatShortcutKeys(item.shortcut)}</CommandShortcut>
+                <CommandShortcut>
+                  {formatShortcutKeys(item.shortcut)}
+                </CommandShortcut>
               )}
             </CommandItem>
           ))}
@@ -134,12 +145,14 @@ export function CommandPalette({
         <CommandSeparator />
 
         <CommandGroup heading="Actions">
-          {actionItems.map((item) => (
+          {actionItems.map(item => (
             <CommandItem key={item.id} onSelect={item.onSelect}>
               <item.icon className="mr-2 h-4 w-4" />
               <span>{item.label}</span>
               {item.shortcut && (
-                <CommandShortcut>{formatShortcutKeys(item.shortcut)}</CommandShortcut>
+                <CommandShortcut>
+                  {formatShortcutKeys(item.shortcut)}
+                </CommandShortcut>
               )}
             </CommandItem>
           ))}

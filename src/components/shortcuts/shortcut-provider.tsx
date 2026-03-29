@@ -15,11 +15,19 @@ import {
   chordEngine,
   defaultShortcuts,
 } from '@/lib/shortcuts';
-import { getKeyboardShortcuts, updateKeyboardShortcuts } from '@/app/actions/preferences';
+import {
+  getKeyboardShortcuts,
+  updateKeyboardShortcuts,
+} from '@/app/actions/preferences';
 import { CommandPalette } from './command-palette';
 import { ShortcutHelpModal } from './shortcut-help-modal';
 import { ChordIndicator } from './chord-indicator';
-import type { KeyBinding, ShortcutContext as ShortcutCtx, Shortcut, ShortcutOverride } from '@/types/shortcuts';
+import type {
+  KeyBinding,
+  ShortcutContext as ShortcutCtx,
+  Shortcut,
+  ShortcutOverride,
+} from '@/types/shortcuts';
 
 interface ShortcutContextValue {
   openCommandPalette: () => void;
@@ -71,7 +79,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
 
   // Create and register default shortcuts with actions
   useEffect(() => {
-    const shortcuts: Shortcut[] = defaultShortcuts.map((def) => ({
+    const shortcuts: Shortcut[] = defaultShortcuts.map(def => ({
       ...def,
       action: () => {
         switch (def.id) {
@@ -83,6 +91,9 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             break;
           case 'go-projects':
             router.push('/projects');
+            break;
+          case 'go-fleet':
+            router.push('/fleet');
             break;
           case 'go-settings':
             router.push('/settings');
@@ -143,7 +154,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     shortcutRegistry.registerAll(shortcuts);
 
     return () => {
-      shortcuts.forEach((s) => shortcutRegistry.unregister(s.id));
+      shortcuts.forEach(s => shortcutRegistry.unregister(s.id));
     };
   }, [router]);
 
@@ -235,7 +246,10 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             onOpenChange={handleCommandPaletteChange}
             onOpenHelpModal={handleOpenHelpModal}
           />
-          <ShortcutHelpModal open={helpModalOpen} onOpenChange={handleHelpModalChange} />
+          <ShortcutHelpModal
+            open={helpModalOpen}
+            onOpenChange={handleHelpModalChange}
+          />
           <ChordIndicator pending={pendingChord} />
         </>
       )}

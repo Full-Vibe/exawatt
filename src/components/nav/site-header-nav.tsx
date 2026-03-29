@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { LayoutDashboard, User, LogOut, Settings } from 'lucide-react';
+import { LayoutDashboard, User, LogOut, Settings, Server } from 'lucide-react';
 import { signOut } from '@/app/actions/projects';
 
 interface SiteHeaderNavProps {
@@ -21,10 +21,15 @@ interface SiteHeaderNavProps {
   userEmail?: string;
 }
 
-export function SiteHeaderNav({ isAuthenticated, userName, userEmail }: SiteHeaderNavProps) {
+export function SiteHeaderNav({
+  isAuthenticated,
+  userName,
+  userEmail,
+}: SiteHeaderNavProps) {
   const pathname = usePathname();
   const isHome = pathname === '/';
   const isDashboard = pathname === '/dashboard';
+  const isFleet = pathname?.startsWith('/fleet');
 
   return (
     <header
@@ -34,13 +39,25 @@ export function SiteHeaderNav({ isAuthenticated, userName, userEmail }: SiteHead
       {/* Left: Logo → Home */}
       {isHome ? (
         <span className="inline-flex items-center gap-2 rounded-md px-3 text-xs font-semibold h-8">
-          <Image src="/icon.png" alt="" width={16} height={16} className="h-4 w-4" />
+          <Image
+            src="/icon.png"
+            alt=""
+            width={16}
+            height={16}
+            className="h-4 w-4"
+          />
           Exawatt
         </span>
       ) : (
         <Button variant="ghost" size="sm" asChild>
           <Link href="/" className="gap-2 font-semibold">
-            <Image src="/icon.png" alt="" width={16} height={16} className="h-4 w-4" />
+            <Image
+              src="/icon.png"
+              alt=""
+              width={16}
+              height={16}
+              className="h-4 w-4"
+            />
             Exawatt
           </Link>
         </Button>
@@ -48,13 +65,25 @@ export function SiteHeaderNav({ isAuthenticated, userName, userEmail }: SiteHead
 
       {/* Right: Auth-dependent links */}
       <div className="flex items-center gap-1">
-        {isAuthenticated && !isHome && !isDashboard && (
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/dashboard">
-              <LayoutDashboard className="h-3.5 w-3.5" />
-              Lattice
-            </Link>
-          </Button>
+        {isAuthenticated && !isHome && (
+          <>
+            {!isDashboard && (
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/dashboard">
+                  <LayoutDashboard className="h-3.5 w-3.5" />
+                  Lattice
+                </Link>
+              </Button>
+            )}
+            {!isFleet && (
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/fleet">
+                  <Server className="h-3.5 w-3.5" />
+                  Fleet
+                </Link>
+              </Button>
+            )}
+          </>
         )}
         {!isAuthenticated && !isHome && (
           <Button variant="ghost" size="sm" asChild>
@@ -64,7 +93,11 @@ export function SiteHeaderNav({ isAuthenticated, userName, userEmail }: SiteHead
         {isAuthenticated && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full"
+              >
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
                   <User className="h-4 w-4" />
                 </div>

@@ -33,6 +33,14 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     contexts: ['global'],
   },
   {
+    id: 'go-fleet',
+    keys: [{ key: 'g' }, { key: 'f' }],
+    label: 'Go to Fleet',
+    description: 'Navigate to fleet dashboard',
+    category: 'navigation',
+    contexts: ['global'],
+  },
+  {
     id: 'go-settings',
     keys: [{ key: 'g' }, { key: 's' }],
     label: 'Go to Settings',
@@ -174,5 +182,5 @@ export const defaultShortcuts: ShortcutDefinition[] = [
  * Get a shortcut definition by ID
  */
 export function getDefaultShortcut(id: string): ShortcutDefinition | undefined {
-  return defaultShortcuts.find((s) => s.id === id);
+  return defaultShortcuts.find(s => s.id === id);
 }
