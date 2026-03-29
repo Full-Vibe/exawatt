@@ -47,6 +47,18 @@ const flush = async (): Promise<void> => {
   await Promise.resolve();
 };
 
+const beginConnect = async (
+  client: OCClient
+): Promise<{ connectPromise: Promise<void>; socket: MockWebSocket }> => {
+  const connectPromise = client.connect();
+  await flush();
+
+  const socket = MockWebSocket.instances[0];
+  expect(socket).toBeDefined();
+
+  return { connectPromise, socket };
+};
+
 const completeHandshake = async (socket: MockWebSocket): Promise<void> => {
   socket.serverSend({
     type: 'event',
@@ -96,11 +108,9 @@ describe('OCClient', () => {
   it('completes challenge handshake and becomes connected', async () => {
     const client = new OCClient({ url: 'ws://127.0.0.1:18789' });
 
-    await client.connect();
-    const socket = MockWebSocket.instances[0];
-    socket.onopen?.();
-
+    const { connectPromise, socket } = await beginConnect(client);
     await completeHandshake(socket);
+    await connectPromise;
 
     expect(auth.signChallenge).toHaveBeenCalledWith(
       'a'.repeat(64),
@@ -112,10 +122,9 @@ describe('OCClient', () => {
 
   it('matches request and response by id', async () => {
     const client = new OCClient({ url: 'ws://127.0.0.1:18789' });
-    await client.connect();
-
-    const socket = MockWebSocket.instances[0];
+    const { connectPromise, socket } = await beginConnect(client);
     await completeHandshake(socket);
+    await connectPromise;
 
     const requestPromise = client.call<{ uptime: number }>('health', {});
     const outgoing = JSON.parse(socket.sentMessages[1]) as {
@@ -142,9 +151,9 @@ describe('OCClient', () => {
       requestTimeoutMs: 50,
     });
 
-    await client.connect();
-    const socket = MockWebSocket.instances[0];
+    const { connectPromise, socket } = await beginConnect(client);
     await completeHandshake(socket);
+    await connectPromise;
 
     const requestPromise = client.call('status', {});
     const timeoutExpectation = expect(requestPromise).rejects.toThrow(
@@ -161,9 +170,9 @@ describe('OCClient', () => {
     const handler = vi.fn();
     client.onOCEvent('presence', handler);
 
-    await client.connect();
-    const socket = MockWebSocket.instances[0];
+    const { connectPromise, socket } = await beginConnect(client);
     await completeHandshake(socket);
+    await connectPromise;
 
     const payload = { agentId: 'agent-1', online: true, sessionCount: 2 };
     socket.serverSend({ type: 'event', event: 'presence', payload });
@@ -181,9 +190,9 @@ describe('OCClient', () => {
       maxReconnectDelay: 100,
     });
 
-    await client.connect();
-    const firstSocket = MockWebSocket.instances[0];
+    const { connectPromise, socket: firstSocket } = await beginConnect(client);
     await completeHandshake(firstSocket);
+    await connectPromise;
 
     firstSocket.close();
     await vi.advanceTimersByTimeAsync(20);
@@ -199,9 +208,9 @@ describe('OCClient', () => {
       statuses.push(status);
     });
 
-    await client.connect();
-    const socket = MockWebSocket.instances[0];
+    const { connectPromise, socket } = await beginConnect(client);
     await completeHandshake(socket);
+    await connectPromise;
     client.disconnect();
 
     expect(statuses).toContain('connecting');

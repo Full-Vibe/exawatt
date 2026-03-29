@@ -89,7 +89,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
 
           // Connect to real OC Gateway
           const client = new OCClient({
-            url: `ws://${host}:${port}`,
+            url: `ws://${host}:${port}?token=${encodeURIComponent(token)}`,
             token,
             clientId: 'exawatt-web',
             clientVersion: '0.0.1',

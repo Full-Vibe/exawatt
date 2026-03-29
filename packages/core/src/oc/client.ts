@@ -44,6 +44,8 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
   private devicePublicKey: string | null = null;
   private deviceToken: string | null = null;
   private _ocEventHandlers = new Map<string, Set<(payload: unknown) => void>>();
+  private connectResolve: (() => void) | null = null;
+  private connectReject: ((err: Error) => void) | null = null;
 
   constructor(private config: OCClientConfig) {
     super();
@@ -52,7 +54,27 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
   async connect(): Promise<void> {
     this.shouldReconnect = true;
     await this._initKeypair();
-    this._openConnection();
+
+    return new Promise<void>((resolve, reject) => {
+      const timeoutMs = this.config.requestTimeoutMs ?? 10000;
+      const timer = setTimeout(() => {
+        this.connectResolve = null;
+        this.connectReject = null;
+        reject(new Error(`OC gateway connection timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      this.connectResolve = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+
+      this.connectReject = (err: Error) => {
+        clearTimeout(timer);
+        reject(err);
+      };
+
+      this._openConnection();
+    });
   }
 
   disconnect(): void {
@@ -286,6 +308,21 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
   private _setStatus(status: OCConnectionStatus): void {
     this.status = status;
     this.emit('connection:status', status);
+
+    if (status === 'connected' && this.connectResolve) {
+      const resolve = this.connectResolve;
+      this.connectResolve = null;
+      this.connectReject = null;
+      resolve();
+    } else if (
+      (status === 'error' || status === 'disconnected') &&
+      this.connectReject
+    ) {
+      const reject = this.connectReject;
+      this.connectResolve = null;
+      this.connectReject = null;
+      reject(new Error(`OC gateway connection failed with status: ${status}`));
+    }
   }
 
   private _emitOCEvent(eventName: string, payload: unknown): void {
