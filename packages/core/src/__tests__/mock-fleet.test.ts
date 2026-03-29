@@ -2,19 +2,45 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MockFleetTransport } from '../transports/mock-fleet';
 import type { SimulationSpeed } from '../transports/mock-fleet';
 import type { FleetManager } from '../state/fleet-manager';
+import type { ExawattAgent } from '../types/agent';
 import type { FleetMetrics } from '../types/fleet';
 
 // ---- Mock FleetManager ----
 
 function makeMockFleetManager() {
-  return {
+  const agentsMap = new Map<string, ExawattAgent>();
+
+  const mgr = {
     emit: vi.fn(),
     getFleetState: vi.fn().mockReturnValue({
       agents: {},
       metrics: {} as FleetMetrics,
       lastUpdated: Date.now(),
     }),
-  } as unknown as FleetManager;
+    seedAgents: vi.fn().mockImplementation((agents: ExawattAgent[]) => {
+      for (const agent of agents) agentsMap.set(agent.id, agent);
+      const agentsRecord: Record<string, ExawattAgent> = {};
+      for (const [id, a] of agentsMap) agentsRecord[id] = a;
+      mgr.emit('fleet:updated', {
+        agents: agentsRecord,
+        metrics: {} as FleetMetrics,
+        lastUpdated: Date.now(),
+      });
+    }),
+    upsertAgent: vi.fn().mockImplementation((agent: ExawattAgent) => {
+      agentsMap.set(agent.id, agent);
+      const agentsRecord: Record<string, ExawattAgent> = {};
+      for (const [id, a] of agentsMap) agentsRecord[id] = a;
+      mgr.emit('agent:updated', agent);
+      mgr.emit('fleet:updated', {
+        agents: agentsRecord,
+        metrics: {} as FleetMetrics,
+        lastUpdated: Date.now(),
+      });
+    }),
+  };
+
+  return mgr as unknown as FleetManager;
 }
 
 // ---- Helpers ----
@@ -40,14 +66,12 @@ describe('MockFleetTransport', () => {
   // ---- 1. initialize() ----
 
   describe('initialize()', () => {
-    it('creates 8 mock agents and emits agent:created for each', () => {
+    it('seeds 8 mock agents via seedAgents()', () => {
       transport.initialize(mockFleetManager);
 
-      const emitMock = vi.mocked(mockFleetManager.emit);
-      const agentCreatedCalls = emitMock.mock.calls.filter(
-        ([event]) => event === 'agent:created'
-      );
-      expect(agentCreatedCalls).toHaveLength(EXPECTED_AGENT_COUNT);
+      const seedMock = vi.mocked(mockFleetManager.seedAgents);
+      expect(seedMock).toHaveBeenCalledTimes(1);
+      expect(seedMock.mock.calls[0]![0]).toHaveLength(EXPECTED_AGENT_COUNT);
     });
 
     it('emits fleet:updated after seeding', () => {
@@ -357,16 +381,15 @@ describe('MockFleetTransport', () => {
       expect(transport.getAllAgents()).toHaveLength(EXPECTED_AGENT_COUNT);
     });
 
-    it('re-emits agent:created for all agents after reset', () => {
+    it('re-seeds all agents via seedAgents() after reset', () => {
       transport.initialize(mockFleetManager);
-      vi.mocked(mockFleetManager.emit).mockClear();
+      vi.mocked(mockFleetManager.seedAgents).mockClear();
 
       transport.reset();
 
-      const createdCalls = vi
-        .mocked(mockFleetManager.emit)
-        .mock.calls.filter(([event]) => event === 'agent:created');
-      expect(createdCalls).toHaveLength(EXPECTED_AGENT_COUNT);
+      const seedMock = vi.mocked(mockFleetManager.seedAgents);
+      expect(seedMock).toHaveBeenCalledTimes(1);
+      expect(seedMock.mock.calls[0]![0]).toHaveLength(EXPECTED_AGENT_COUNT);
     });
 
     it('stops any running simulation on reset', () => {

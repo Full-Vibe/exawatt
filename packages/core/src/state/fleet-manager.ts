@@ -190,6 +190,19 @@ export class FleetManager extends TypedEmitter<CoreEventMap> {
     };
   }
 
+  seedAgents(agents: ExawattAgent[]): void {
+    for (const agent of agents) {
+      this.agents.set(agent.id, agent);
+    }
+    this.emit('fleet:updated', this.getFleetState());
+  }
+
+  upsertAgent(agent: ExawattAgent): void {
+    this.agents.set(agent.id, agent);
+    this.emit('agent:updated', agent);
+    this.emit('fleet:updated', this.getFleetState());
+  }
+
   async refresh(): Promise<void> {
     if (!this.fleetAdapter) return;
     console.log('[FleetManager] refresh() called — fetching agents from OC');

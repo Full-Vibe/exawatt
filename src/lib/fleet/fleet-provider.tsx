@@ -32,6 +32,8 @@ interface FleetContextValue {
   mockTransport: MockFleetTransport | null;
   isDemo: boolean;
   connectionStatus: OCConnectionStatus | 'initializing';
+  ocAvailable: boolean;
+  connectToRealOC: () => void;
 }
 
 interface ConnectionToast {
@@ -51,6 +53,8 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     []
   );
   const [isDemo, setIsDemo] = useState(false);
+  const [ocAvailable, setOcAvailable] = useState(false);
+  const [isConnectingToOC, setIsConnectingToOC] = useState(false);
   const mockTransportRef = useRef<MockFleetTransport | null>(null);
   const ocClientRef = useRef<OCClient | null>(null);
   const prevConnectionStatusRef = useRef<OCConnectionStatus | 'initializing'>(
@@ -84,6 +88,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         console.log('[Exawatt] /api/oc/token response:', res.status);
 
         if (res.ok && mounted) {
+          setOcAvailable(true);
           const { token, host, port } = (await res.json()) as {
             token: string;
             host: string;
@@ -182,14 +187,100 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     };
   }, [manager]);
 
+  const connectToRealOC = useCallback(() => {
+    if (isConnectingToOC || !isDemo) return;
+    setIsConnectingToOC(true);
+
+    mockTransportRef.current?.stop();
+    mockTransportRef.current = null;
+    ocClientRef.current?.disconnect();
+    manager.disconnect();
+
+    let mounted = true;
+
+    async function retryConnection() {
+      try {
+        const res = await fetch('/api/oc/token');
+        if (!res.ok) throw new Error(`Token API returned ${res.status}`);
+
+        const { token, host, port } = (await res.json()) as {
+          token: string;
+          host: string;
+          port: number;
+        };
+
+        const client = new OCClient({
+          url: `ws://${host}:${port}?token=${encodeURIComponent(token)}`,
+          token,
+          clientId: 'exawatt-web',
+          clientVersion: '0.0.1',
+          clientPlatform: 'browser',
+          requestTimeoutMs: 15000,
+        });
+        ocClientRef.current = client;
+
+        const methods = new OCMethods(client);
+        manager.connect(client, methods);
+
+        client.on('connection:status', status => {
+          if (!mounted) return;
+          setConnectionStatus(status);
+          const prev = prevConnectionStatusRef.current;
+          if (status === 'disconnected')
+            pushConnectionToast('Connection lost. Reconnecting...');
+          if (status === 'connected' && prev === 'disconnected')
+            pushConnectionToast('Reconnected. State refreshed.');
+          prevConnectionStatusRef.current = status;
+        });
+
+        await client.connect();
+
+        if (mounted) {
+          setIsDemo(false);
+          setIsConnectingToOC(false);
+        }
+      } catch (err) {
+        console.warn(
+          '[Exawatt] OC reconnection failed, staying in demo mode:',
+          err instanceof Error ? err.message : err
+        );
+        if (!mounted) return;
+
+        ocClientRef.current?.disconnect();
+        setIsConnectingToOC(false);
+
+        const mockTransport = new MockFleetTransport();
+        mockTransportRef.current = mockTransport;
+        mockTransport.initialize(manager);
+        mockTransport.start();
+      }
+    }
+
+    void retryConnection();
+    return () => {
+      mounted = false;
+    };
+  }, [isDemo, isConnectingToOC, manager, pushConnectionToast]);
+
   const value = useMemo(
     () => ({
       manager,
       mockTransport: mockTransportRef.current,
       isDemo,
-      connectionStatus,
+      connectionStatus: isConnectingToOC
+        ? ('connecting' as const)
+        : connectionStatus,
+      ocAvailable,
+      connectToRealOC,
     }),
-    [manager, isDemo, connectionStatus]
+    [
+      manager,
+      isDemo,
+      connectionStatus,
+      ocAvailable,
+      connectToRealOC,
+      isConnectingToOC,
+    ]
   );
 
   return (
@@ -369,6 +460,15 @@ export function useAgent(agentId: string): {
 
 export function useMockTransport(): MockFleetTransport | null {
   return useFleetContext().mockTransport;
+}
+
+export function useConnectToOC(): {
+  connectToRealOC: () => void;
+  ocAvailable: boolean;
+  canConnect: boolean;
+} {
+  const { connectToRealOC, ocAvailable, isDemo } = useFleetContext();
+  return { connectToRealOC, ocAvailable, canConnect: isDemo && ocAvailable };
 }
 
 export function useCron() {

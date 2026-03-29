@@ -369,10 +369,7 @@ export class MockFleetTransport {
 
   private _pushAllAgentsToManager(): void {
     if (!this.fleetManager) return;
-    for (const agent of this.agents.values()) {
-      this.fleetManager.emit('agent:created', agent);
-    }
-    this.fleetManager.emit('fleet:updated', this.getMockFleetState());
+    this.fleetManager.seedAgents(Array.from(this.agents.values()));
   }
 
   private _scheduleTick(): void {
@@ -507,8 +504,7 @@ export class MockFleetTransport {
     this.agents.set(agent.id, updated);
 
     this.fleetManager.emit('chat:message', { agentId: agent.id, activity });
-    this.fleetManager.emit('agent:updated', updated);
-    this.fleetManager.emit('fleet:updated', this.getMockFleetState());
+    this.fleetManager.upsertAgent(updated);
   }
 
   private _updateMetrics(agent: ExawattAgent): void {
@@ -539,13 +535,12 @@ export class MockFleetTransport {
     };
     this.agents.set(agent.id, updated);
 
-    this.fleetManager.emit('agent:updated', updated);
+    this.fleetManager.upsertAgent(updated);
   }
 
   private _emitAgentUpdate(agent: ExawattAgent): void {
     if (!this.fleetManager) return;
-    this.fleetManager.emit('agent:updated', agent);
-    this.fleetManager.emit('fleet:updated', this.getMockFleetState());
+    this.fleetManager.upsertAgent(agent);
   }
 
   private _computeMockMetrics(): FleetMetrics {
