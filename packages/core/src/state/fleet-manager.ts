@@ -192,8 +192,13 @@ export class FleetManager extends TypedEmitter<CoreEventMap> {
 
   async refresh(): Promise<void> {
     if (!this.fleetAdapter) return;
+    console.log('[FleetManager] refresh() called — fetching agents from OC');
 
     const freshAgents = await this.fleetAdapter.fetchAgents();
+    console.log(
+      `[FleetManager] refresh() fetched ${freshAgents.length} agents:`,
+      freshAgents.map(a => a.id)
+    );
 
     for (const agent of freshAgents) {
       const existing = this.agents.get(agent.id);

@@ -146,10 +146,17 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
   }
 
   private _openConnection(): void {
+    console.log(
+      `[OCClient] Opening WebSocket: ${this.config.url.replace(/token=[^&]*/u, 'token=***')}`
+    );
     this._setStatus('connecting');
     this.ws = new WebSocket(this.config.url);
 
-    this.ws.onopen = () => {};
+    this.ws.onopen = () => {
+      console.log(
+        '[OCClient] WebSocket opened, waiting for connect.challenge...'
+      );
+    };
 
     this.ws.onmessage = event => {
       if (typeof event.data !== 'string') {
@@ -159,10 +166,14 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
     };
 
     this.ws.onerror = () => {
+      console.warn('[OCClient] WebSocket error event fired');
       this.emit('connection:error', new Error('WebSocket error'));
     };
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (event?: CloseEvent) => {
+      console.log(
+        `[OCClient] WebSocket closed: code=${event?.code ?? 'N/A'} reason="${event?.reason ?? ''}" wasClean=${event?.wasClean ?? false}`
+      );
       this._setStatus('disconnected');
 
       for (const [, pending] of this.pendingRequests) {
@@ -193,7 +204,13 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
 
     const msg = frame as {
       type?: string;
+      event?: string;
+      method?: string;
     };
+
+    if (msg.type !== 'event' || msg.event !== 'tick') {
+      console.log('[OCClient] RX:', JSON.stringify(frame).slice(0, 200));
+    }
 
     if (msg.type === 'event') {
       await this._handleEvent(frame as OCEvent);
@@ -229,6 +246,7 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
   }
 
   private async _handleChallenge(challenge: OCConnectChallenge): Promise<void> {
+    console.log('[OCClient] Received connect.challenge, signing...');
     if (!this.devicePrivateKey || !this.devicePublicKey) {
       this.emit('connection:error', new Error('No device keypair available'));
       return;
@@ -271,13 +289,16 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
     };
 
     try {
+      console.log('[OCClient] Sending connect request...');
       const helloOk = await this.call<OCHelloOk>('connect', connectParams);
+      console.log('[OCClient] Received hello-ok:', JSON.stringify(helloOk));
       if (helloOk.auth?.deviceToken) {
         this.deviceToken = helloOk.auth.deviceToken;
       }
       this.reconnectAttempts = 0;
       this._setStatus('connected');
     } catch (err) {
+      console.warn('[OCClient] connect request rejected:', err);
       this._setStatus('error');
       this.emit(
         'connection:error',

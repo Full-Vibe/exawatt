@@ -52,6 +52,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   );
   const [isDemo, setIsDemo] = useState(false);
   const mockTransportRef = useRef<MockFleetTransport | null>(null);
+  const ocClientRef = useRef<OCClient | null>(null);
   const prevConnectionStatusRef = useRef<OCConnectionStatus | 'initializing'>(
     'initializing'
   );
@@ -76,9 +77,11 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     let mounted = true;
 
     async function initializeFleet() {
+      console.log('[Exawatt] initializeFleet: starting');
       try {
         // Try to get OC token from server-side API
         const res = await fetch('/api/oc/token');
+        console.log('[Exawatt] /api/oc/token response:', res.status);
 
         if (res.ok && mounted) {
           const { token, host, port } = (await res.json()) as {
@@ -86,6 +89,10 @@ export function FleetProvider({ children }: { children: ReactNode }) {
             host: string;
             port: number;
           };
+
+          console.log(
+            `[Exawatt] Connecting to OC gateway: ws://${host}:${port}?token=***`
+          );
 
           // Connect to real OC Gateway
           const client = new OCClient({
@@ -95,11 +102,15 @@ export function FleetProvider({ children }: { children: ReactNode }) {
             clientVersion: '0.0.1',
             clientPlatform: 'browser',
           });
+          ocClientRef.current = client;
 
           const methods = new OCMethods(client);
           manager.connect(client, methods);
 
           client.on('connection:status', status => {
+            console.log(
+              `[Exawatt] OCClient status: ${status} (isDemo=${isDemo})`
+            );
             if (!mounted) return;
 
             const prevStatus = prevConnectionStatusRef.current;
@@ -116,11 +127,21 @@ export function FleetProvider({ children }: { children: ReactNode }) {
             prevConnectionStatusRef.current = status;
           });
 
+          client.on('connection:error', (err: Error) => {
+            console.warn('[Exawatt] OCClient error:', err.message);
+          });
+
+          console.log('[Exawatt] Awaiting connect() (waiting for hello-ok)...');
           await client.connect();
+          console.log('[Exawatt] connect() resolved — real OC mode active');
           setIsDemo(false);
         } else {
+          console.log(
+            `[Exawatt] Token API returned ${res.status} — activating demo mode`
+          );
           // Fall back to demo/mock mode
           if (!mounted) return;
+          ocClientRef.current?.disconnect();
           setIsDemo(true);
           setConnectionStatus('connected');
           prevConnectionStatusRef.current = 'connected';
@@ -130,9 +151,14 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           mockTransport.initialize(manager);
           mockTransport.start();
         }
-      } catch {
+      } catch (err) {
+        console.warn(
+          '[Exawatt] Connection failed, activating demo mode:',
+          err instanceof Error ? err.message : err
+        );
         // On any error, fall back to demo mode
         if (!mounted) return;
+        ocClientRef.current?.disconnect();
         setIsDemo(true);
         setConnectionStatus('connected');
         prevConnectionStatusRef.current = 'connected';
@@ -148,6 +174,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false;
+      ocClientRef.current?.disconnect();
       for (const timer of toastTimersRef.current) clearTimeout(timer);
       toastTimersRef.current = [];
       manager.disconnect();

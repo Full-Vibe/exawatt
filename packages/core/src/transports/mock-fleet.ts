@@ -33,7 +33,6 @@ const SPEED_MULTIPLIERS: Record<SimulationSpeed, number> = {
 // Base interval between simulation ticks (ms, before speed multiplier)
 const BASE_TICK_INTERVAL_MS = 5000;
 
-// Mock agent definitions — realistic names from Exawatt brand
 const MOCK_AGENTS_DATA: Array<{
   id: string;
   name: string;
@@ -42,59 +41,59 @@ const MOCK_AGENTS_DATA: Array<{
   status: AgentStatus;
 }> = [
   {
-    id: 'claw-main',
-    name: 'Claw',
-    project: 'OutfitGen.ai',
-    goal: 'OutfitGen website improvement sprint: favicon, live counter, testimonials, comparison pages',
+    id: 'demo-alpha',
+    name: 'Alpha',
+    project: 'Demo Project A',
+    goal: 'Improve onboarding flow and add analytics tracking to key conversion steps',
     status: 'working',
   },
   {
-    id: 'reddit-marc',
-    name: 'Marcus',
-    project: 'Growth / Reddit',
-    goal: 'Reddit growth strategy: identify subreddits, create content calendar, schedule 3 posts/day',
+    id: 'demo-beta',
+    name: 'Beta',
+    project: 'Demo Project B',
+    goal: 'Audit and fix all TypeScript errors in the legacy module, add missing tests',
     status: 'idle',
   },
   {
-    id: 'product-exec',
-    name: 'Product Engine',
-    project: 'FullVibeAI',
-    goal: 'Phase 8: Marketing launch — Clawback, Runbooks, UCPList',
+    id: 'demo-gamma',
+    name: 'Gamma',
+    project: 'Demo Project C',
+    goal: 'Research competitor pricing, compile report with recommendations',
     status: 'blocked',
   },
   {
-    id: 'email-triage',
-    name: 'Daily Pulse',
-    project: 'Operations',
-    goal: 'Email triage, PostHog analytics, GitHub activity, portco updates',
+    id: 'demo-delta',
+    name: 'Delta',
+    project: 'Demo Project D',
+    goal: 'Migrate database schema to support multi-tenancy',
     status: 'complete',
   },
   {
-    id: 'cmo-cycle',
-    name: 'CMO',
-    project: 'Marketing',
-    goal: 'Q2 marketing strategy: brand positioning, launch sequence, influencer outreach',
+    id: 'demo-epsilon',
+    name: 'Epsilon',
+    project: 'Demo Project E',
+    goal: 'Build marketing landing page with A/B test variants',
     status: 'idle',
   },
   {
-    id: 'vantagemap-build',
-    name: 'VantageMap Builder',
-    project: 'VantageMap.ai',
-    goal: 'Search-first dashboard with inline map, lists, business detail views',
+    id: 'demo-zeta',
+    name: 'Zeta',
+    project: 'Demo Project F',
+    goal: 'Performance optimization sprint: reduce bundle size by 40%',
     status: 'working',
   },
   {
-    id: 'compliance-discourse',
-    name: 'Compliance Intel',
-    project: 'Compliance-Intel.ai',
-    goal: 'Discourse/sentiment data collection for 8 remaining regulations',
+    id: 'demo-eta',
+    name: 'Eta',
+    project: 'Demo Project G',
+    goal: 'Review and merge 12 open PRs, resolve conflicts',
     status: 'reviewing',
   },
   {
-    id: 'upgrade-check',
-    name: 'Self-Upgrade',
-    project: 'Infrastructure',
-    goal: 'Self-upgrade check: OC update, memory hygiene, cron audit',
+    id: 'demo-theta',
+    name: 'Theta',
+    project: 'Demo Project H',
+    goal: 'Set up CI/CD pipeline for the new microservice',
     status: 'blocked',
   },
 ];
