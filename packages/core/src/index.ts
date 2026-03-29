@@ -14,3 +14,4 @@ export { FleetAdapter } from './adapters/fleet-adapter';
 export { FleetManager } from './state/fleet-manager';
 export { MockFleetTransport } from './transports/mock-fleet';
 export type { SimulationSpeed } from './transports/mock-fleet';
+export type { OCCronJob, OCCronRun, CronAddParams } from './oc/protocol-types';

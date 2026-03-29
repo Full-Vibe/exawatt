@@ -19,6 +19,9 @@ import {
   type FleetState,
   type FleetMetrics,
   type OCConnectionStatus,
+  type OCCronJob,
+  type OCCronRun,
+  type CronAddParams,
 } from '@exawatt/core';
 
 // --- Context ---
@@ -222,4 +225,72 @@ export function useAgent(agentId: string): {
 
 export function useMockTransport(): MockFleetTransport | null {
   return useFleetContext().mockTransport;
+}
+
+export function useCron() {
+  const { manager, mockTransport, isDemo } = useFleetContext();
+  const [jobs, setJobs] = useState<OCCronJob[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const cronSource = isDemo ? mockTransport : manager;
+
+  useEffect(() => {
+    if (!cronSource) return;
+
+    let mounted = true;
+
+    const fetchJobs = async () => {
+      try {
+        const fetchedJobs = await cronSource.listCronJobs();
+        if (mounted) {
+          setJobs(fetchedJobs);
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error('Failed to fetch cron jobs:', error);
+        if (mounted) setLoading(false);
+      }
+    };
+
+    void fetchJobs();
+
+    return () => {
+      mounted = false;
+    };
+  }, [cronSource]);
+
+  const addJob = async (job: CronAddParams) => {
+    if (!cronSource) return;
+    const newJob = await cronSource.addCronJob(job);
+    setJobs(prev => [...prev, newJob]);
+    return newJob;
+  };
+
+  const runJob = async (jobId: string) => {
+    if (!cronSource) return;
+    await cronSource.runCronJob(jobId);
+    const updatedJobs = await cronSource.listCronJobs();
+    setJobs(updatedJobs);
+  };
+
+  const updateJob = async (jobId: string, patch: Partial<CronAddParams>) => {
+    if (!cronSource) return;
+    const updatedJob = await cronSource.updateCronJob(jobId, patch);
+    setJobs(prev => prev.map(j => (j.id === jobId ? updatedJob : j)));
+    return updatedJob;
+  };
+
+  const removeJob = async (jobId: string) => {
+    if (!cronSource) return;
+    await cronSource.removeCronJob(jobId);
+    setJobs(prev => prev.filter(j => j.id !== jobId));
+  };
+
+  const getJobRuns = async (jobId: string): Promise<OCCronRun[]> => {
+    if (!cronSource) return [];
+    const result = await cronSource.getCronRuns(jobId);
+    return result.runs;
+  };
+
+  return { jobs, loading, addJob, runJob, updateJob, removeJob, getJobRuns };
 }
