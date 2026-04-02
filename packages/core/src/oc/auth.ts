@@ -25,7 +25,40 @@ export async function signChallenge(
   nonce: string,
   timestamp: number
 ): Promise<string> {
-  const message = new TextEncoder().encode(`${nonce}:${timestamp}`);
+  const payload = `${nonce}:${timestamp}`;
+  return signDevicePayload(privateKeyHex, payload);
+}
+
+export function buildDeviceAuthPayload(params: {
+  deviceId: string;
+  clientId: string;
+  clientMode: string;
+  role: string;
+  scopes: string[];
+  signedAtMs: number;
+  token: string | null;
+  nonce: string;
+}): string {
+  const scopes = params.scopes.join(',');
+  const token = params.token ?? '';
+  return [
+    'v2',
+    params.deviceId,
+    params.clientId,
+    params.clientMode,
+    params.role,
+    scopes,
+    String(params.signedAtMs),
+    token,
+    params.nonce,
+  ].join('|');
+}
+
+export async function signDevicePayload(
+  privateKeyHex: string,
+  payload: string
+): Promise<string> {
+  const message = new TextEncoder().encode(payload);
   const privateKeyBytes = hexToBytes(privateKeyHex);
   const signature = await ed.signAsync(message, privateKeyBytes);
   return bytesToHex(signature);

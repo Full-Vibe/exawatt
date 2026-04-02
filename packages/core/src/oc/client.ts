@@ -1,5 +1,10 @@
 import { TypedEmitter, type CoreEventMap } from '../events/emitter';
-import { generateDeviceKeypair, signChallenge, deriveDeviceId } from './auth';
+import {
+  generateDeviceKeypair,
+  deriveDeviceId,
+  buildDeviceAuthPayload,
+  signDevicePayload,
+} from './auth';
 import type {
   OCRequest,
   OCResponse,
@@ -25,6 +30,7 @@ export interface OCClientConfig {
   clientId?: string;
   clientVersion?: string;
   clientPlatform?: string;
+  clientMode?: string;
 }
 
 export type OCConnectionStatus =
@@ -252,46 +258,76 @@ export class OCClient extends TypedEmitter<CoreEventMap> {
       return;
     }
 
-    const signature = await signChallenge(
-      this.devicePrivateKey,
-      challenge.nonce,
-      challenge.ts
-    );
     const deviceId = deriveDeviceId(this.devicePublicKey);
+    const signedAtMs = Date.now();
+    const clientId = this.config.clientId ?? 'webchat';
+    const clientMode = this.config.clientMode ?? 'webchat';
+    const role = 'operator';
+    const scopes = [
+      'operator.admin',
+      'operator.read',
+      'operator.write',
+      'operator.approvals',
+      'operator.pairing',
+    ];
+
+    const payload = buildDeviceAuthPayload({
+      deviceId,
+      clientId,
+      clientMode,
+      role,
+      scopes,
+      signedAtMs,
+      token: this.deviceToken ?? this.config.token ?? null,
+      nonce: challenge.nonce,
+    });
+    const signature = await signDevicePayload(this.devicePrivateKey, payload);
 
     const auth: OCConnectParams['auth'] = {};
     if (this.config.password) {
       auth.password = this.config.password;
     }
     if (this.deviceToken) {
-      auth.token = this.deviceToken;
-    } else if (this.config.token) {
+      auth.deviceToken = this.deviceToken;
+    }
+    if (this.config.token) {
       auth.token = this.config.token;
     }
 
     const connectParams: OCConnectParams = {
       minProtocol: 3,
       maxProtocol: 3,
-      role: 'operator',
-      scopes: ['operator.read', 'operator.write'],
-      auth,
+      role,
+      scopes,
+      auth: Object.keys(auth).length > 0 ? auth : undefined,
       device: {
         id: deviceId,
         publicKey: this.devicePublicKey,
         signature,
+        signedAt: signedAtMs,
         nonce: challenge.nonce,
       },
       client: {
-        id: this.config.clientId ?? 'exawatt',
+        id: clientId,
         version: this.config.clientVersion ?? '0.0.1',
         platform: this.config.clientPlatform ?? 'web',
+        mode: clientMode,
       },
+      caps: ['tool-events'],
+      userAgent:
+        typeof navigator !== 'undefined'
+          ? navigator.userAgent
+          : 'exawatt-server/0.1',
+      locale: typeof navigator !== 'undefined' ? navigator.language : 'en-US',
     };
 
     try {
       console.log('[OCClient] Sending connect request...');
       const helloOk = await this.call<OCHelloOk>('connect', connectParams);
-      console.log('[OCClient] Received hello-ok:', JSON.stringify(helloOk));
+      console.log(
+        '[OCClient] Received hello-ok:',
+        JSON.stringify(helloOk).slice(0, 200)
+      );
       if (helloOk.auth?.deviceToken) {
         this.deviceToken = helloOk.auth.deviceToken;
       }

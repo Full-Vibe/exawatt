@@ -11,7 +11,9 @@ vi.mock('../oc/auth', async () => {
       privateKey: 'a'.repeat(64),
       publicKey: 'b'.repeat(64),
     })),
-    signChallenge: vi.fn(async () => 'c'.repeat(128)),
+    buildDeviceAuthPayload: vi.fn(() => 'signed-payload'),
+    signDevicePayload: vi.fn(async () => 'c'.repeat(128)),
+    signChallenge: vi.fn(async () => 'legacy-signature'),
     deriveDeviceId: vi.fn(() => 'd'.repeat(32)),
   };
 });
@@ -59,13 +61,18 @@ const beginConnect = async (
   return { connectPromise, socket };
 };
 
-const completeHandshake = async (socket: MockWebSocket): Promise<void> => {
-  socket.serverSend({
-    type: 'event',
-    event: 'connect.challenge',
-    payload: { nonce: 'nonce-1', ts: 1111 },
-  });
-  await flush();
+const completeHandshake = async (
+  socket: MockWebSocket,
+  options: { sendChallenge?: boolean } = {}
+): Promise<void> => {
+  if (options.sendChallenge ?? true) {
+    socket.serverSend({
+      type: 'event',
+      event: 'connect.challenge',
+      payload: { nonce: 'nonce-1', ts: 1111 },
+    });
+    await flush();
+  }
   expect(socket.sentMessages.length).toBeGreaterThan(0);
 
   const connectRequest = JSON.parse(socket.sentMessages[0]) as {
@@ -109,13 +116,69 @@ describe('OCClient', () => {
     const client = new OCClient({ url: 'ws://127.0.0.1:18789' });
 
     const { connectPromise, socket } = await beginConnect(client);
-    await completeHandshake(socket);
+    socket.serverSend({
+      type: 'event',
+      event: 'connect.challenge',
+      payload: { nonce: 'nonce-1', ts: 1111 },
+    });
+    await flush();
+
+    const connectRequest = JSON.parse(socket.sentMessages[0]) as {
+      method: string;
+      params: {
+        minProtocol: 3;
+        maxProtocol: 3;
+        role: string;
+        scopes: string[];
+        device: { signedAt: number; nonce: string };
+        client: { id: string; mode: string };
+        caps: string[];
+        userAgent: string;
+        locale: string;
+      };
+    };
+
+    expect(connectRequest.method).toBe('connect');
+    expect(connectRequest.params.minProtocol).toBe(3);
+    expect(connectRequest.params.maxProtocol).toBe(3);
+    expect(connectRequest.params.role).toBe('operator');
+    expect(connectRequest.params.scopes).toEqual([
+      'operator.admin',
+      'operator.read',
+      'operator.write',
+      'operator.approvals',
+      'operator.pairing',
+    ]);
+    expect(connectRequest.params.device.nonce).toBe('nonce-1');
+    expect(connectRequest.params.device.signedAt).toEqual(expect.any(Number));
+    expect(connectRequest.params.client.id).toBe('webchat');
+    expect(connectRequest.params.client.mode).toBe('webchat');
+    expect(connectRequest.params.caps).toEqual(['tool-events']);
+    expect(connectRequest.params.userAgent).toBeTypeOf('string');
+    expect(connectRequest.params.locale).toBeTypeOf('string');
+
+    await completeHandshake(socket, { sendChallenge: false });
     await connectPromise;
 
-    expect(auth.signChallenge).toHaveBeenCalledWith(
+    expect(auth.buildDeviceAuthPayload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deviceId: 'd'.repeat(32),
+        clientId: 'webchat',
+        clientMode: 'webchat',
+        role: 'operator',
+        scopes: [
+          'operator.admin',
+          'operator.read',
+          'operator.write',
+          'operator.approvals',
+          'operator.pairing',
+        ],
+        nonce: 'nonce-1',
+      })
+    );
+    expect(auth.signDevicePayload).toHaveBeenCalledWith(
       'a'.repeat(64),
-      'nonce-1',
-      1111
+      'signed-payload'
     );
     expect(client.getStatus()).toBe('connected');
   });

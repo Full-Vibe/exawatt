@@ -4,6 +4,8 @@ export type { CoreEventMap, CoreEmitter } from './events/emitter';
 export {
   generateDeviceKeypair,
   signChallenge,
+  buildDeviceAuthPayload,
+  signDevicePayload,
   deriveDeviceId,
 } from './oc/auth';
 export { OCClient } from './oc/client';

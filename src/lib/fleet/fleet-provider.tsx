@@ -103,9 +103,11 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           const client = new OCClient({
             url: `ws://${host}:${port}?token=${encodeURIComponent(token)}`,
             token,
-            clientId: 'exawatt-web',
+            clientId: 'webchat',
             clientVersion: '0.0.1',
-            clientPlatform: 'browser',
+            clientPlatform:
+              typeof navigator !== 'undefined' ? navigator.platform : 'web',
+            clientMode: 'webchat',
           });
           ocClientRef.current = client;
 
@@ -212,9 +214,11 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         const client = new OCClient({
           url: `ws://${host}:${port}?token=${encodeURIComponent(token)}`,
           token,
-          clientId: 'exawatt-web',
+          clientId: 'webchat',
           clientVersion: '0.0.1',
-          clientPlatform: 'browser',
+          clientPlatform:
+            typeof navigator !== 'undefined' ? navigator.platform : 'web',
+          clientMode: 'webchat',
           requestTimeoutMs: 15000,
         });
         ocClientRef.current = client;

@@ -40,19 +40,29 @@ export interface OCConnectChallenge {
 export interface OCDeviceIdentity {
   id: string; // device fingerprint
   publicKey: string; // hex-encoded Ed25519 public key
-  signature: string; // hex-encoded signature of (nonce + ts)
+  signature: string; // hex-encoded signature of the auth payload
+  signedAt: number; // unix ms timestamp
   nonce: string; // echo back the server's nonce
 }
 
 // Connect request params
 export interface OCConnectParams {
-  minProtocol: number;
-  maxProtocol: number;
-  role: 'operator' | 'node';
+  minProtocol: 3;
+  maxProtocol: 3;
+  role: string;
   scopes: string[];
-  auth: { token?: string; password?: string };
-  device: OCDeviceIdentity;
-  client: { id: string; version: string; platform: string };
+  auth?: { token?: string; deviceToken?: string; password?: string };
+  device?: OCDeviceIdentity;
+  client: {
+    id: string;
+    version: string;
+    platform: string;
+    mode: string;
+    instanceId?: string;
+  };
+  caps: string[];
+  userAgent: string;
+  locale: string;
 }
 
 // Hello OK payload
