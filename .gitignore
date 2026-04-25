@@ -48,3 +48,6 @@ dist-electron/
 release/
 *.dmg
 
+
+# sisyphus task runner artifacts
+.sisyphus/
