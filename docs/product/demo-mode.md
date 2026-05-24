@@ -1,0 +1,40 @@
+# Demo Mode
+
+Demo Mode is a first-class Exawatt product mode. It is not a temporary hack.
+
+Demo Mode lets investors, collaborators, and users experience Exawatt without live agents, while exercising the same UI and command concepts as Live Mode.
+
+## Principles
+
+- Demo Mode should use the same UI layers as Live Mode.
+- Demo Mode should sit behind a lower-level data/source abstraction.
+- Demo scenarios should demonstrate real product concepts: Workspace, Initiative, Agent, Session, Decision, Context Signal, Consumption, and Approval.
+- Demo data must be clearly separated from real user-controlled agent data.
+- Demo scenarios should be easy to reset, replay, and evolve.
+
+## Current Implementation
+
+The current demo implementation is the legacy Supabase demo task flow. It powers `/dashboard` and `/board` with Supabase-backed projects, tasks, blockers, and activity events.
+
+Seeded tasks are marked with:
+
+```json
+{
+  "demoFlow": "legacy-supabase-task-demo",
+  "seededBy": "seedDemoData"
+}
+```
+
+`resetDemo()` is scoped to the known legacy demo project set and must not delete arbitrary user tasks.
+
+## Future Architecture
+
+Demo Mode should evolve into a pluggable scenario source:
+
+- legacy Supabase demo flow
+- local JSON scenarios
+- recorded live traces
+- generated simulations
+- curated investor demos
+
+All sources should normalize into the same UI-facing concepts as Live Mode.
