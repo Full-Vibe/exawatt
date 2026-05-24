@@ -115,9 +115,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           manager.connect(client, methods);
 
           client.on('connection:status', status => {
-            console.log(
-              `[Exawatt] OCClient status: ${status} (isDemo=${isDemo})`
-            );
+            console.log(`[Exawatt] OCClient status: ${status}`);
             if (!mounted) return;
 
             const prevStatus = prevConnectionStatusRef.current;
@@ -187,7 +185,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       manager.disconnect();
       mockTransportRef.current?.stop();
     };
-  }, [manager]);
+  }, [manager, pushConnectionToast]);
 
   const connectToRealOC = useCallback(() => {
     if (isConnectingToOC || !isDemo) return;
