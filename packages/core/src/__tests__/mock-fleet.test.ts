@@ -337,6 +337,41 @@ describe('MockFleetTransport', () => {
       expect((calls[0]![1] as { id: string }).id).toBe(blocked!.id);
     });
 
+    it('records the operator response and resolution activity', () => {
+      transport.initialize(mockFleetManager);
+
+      const blocked = transport
+        .getAllAgents()
+        .find(a => a.status === 'blocked');
+
+      transport.resolveBlocker(blocked!.id, 'Approve all');
+
+      const updated = transport.getAllAgents().find(a => a.id === blocked!.id);
+      expect(updated?.activities?.some(a => a.content === 'Approve all')).toBe(
+        true
+      );
+      expect(
+        updated?.activities?.some(a => a.type === 'blocker_resolved')
+      ).toBe(true);
+    });
+
+    it('sendMessage resolves a blocked agent through the same command path', async () => {
+      transport.initialize(mockFleetManager);
+
+      const blocked = transport
+        .getAllAgents()
+        .find(a => a.status === 'blocked');
+
+      await transport.sendMessage(blocked!.id, 'Use test mode');
+
+      const updated = transport.getAllAgents().find(a => a.id === blocked!.id);
+      expect(updated?.status).toBe('working');
+      expect(updated?.blockerInfo).toBeUndefined();
+      expect(
+        updated?.activities?.some(a => a.type === 'blocker_resolved')
+      ).toBe(true);
+    });
+
     it('does nothing for a non-blocked agent', () => {
       transport.initialize(mockFleetManager);
 
@@ -506,6 +541,21 @@ describe('MockFleetTransport', () => {
       expect(runs).toHaveLength(1);
       expect(runs[0]!.jobId).toBe('cron-1');
       expect(runs[0]!.status).toBe('success');
+    });
+
+    it('emits heartbeat tool activity to the fleet', async () => {
+      transport.initialize(mockFleetManager);
+      vi.mocked(mockFleetManager.emit).mockClear();
+
+      await transport.runCronJob('cron-1');
+
+      const toolCalls = vi
+        .mocked(mockFleetManager.emit)
+        .mock.calls.filter(([event]) => event === 'chat:tool');
+      expect(toolCalls).toHaveLength(1);
+      expect(
+        (toolCalls[0]![1] as { activity: { content: string } }).activity.content
+      ).toContain('Heartbeat ran');
     });
 
     it('getCronRuns returns empty for jobs with no runs', async () => {

@@ -369,11 +369,12 @@ export function useAgent(agentId: string): {
   agent: ExawattAgent | undefined;
   activities: AgentActivity[];
   sendMessage: (text: string) => Promise<void>;
+  resolveBlocker: (response: string) => Promise<void>;
   loadHistory: () => Promise<void>;
   abortChat: () => Promise<void>;
   isLoadingHistory: boolean;
 } {
-  const { manager } = useFleetContext();
+  const { manager, mockTransport, isDemo } = useFleetContext();
   const [agent, setAgent] = useState<ExawattAgent | undefined>(() =>
     manager.getAgent(agentId)
   );
@@ -408,6 +409,11 @@ export function useAgent(agentId: string): {
 
   const sendMessage = useCallback(
     async (text: string) => {
+      if (isDemo && mockTransport) {
+        await mockTransport.sendMessage(agentId, text);
+        return;
+      }
+
       const targetAgent = manager.getAgent(agentId);
       if (!targetAgent) return;
       const chatAdapter = manager.getChatAdapter();
@@ -415,10 +421,24 @@ export function useAgent(agentId: string): {
 
       await chatAdapter.sendMessage(agentId, text, targetAgent.sessionKey);
     },
-    [manager, agentId]
+    [agentId, isDemo, manager, mockTransport]
+  );
+
+  const resolveBlocker = useCallback(
+    async (response: string) => {
+      if (isDemo && mockTransport) {
+        mockTransport.resolveBlocker(agentId, response);
+        return;
+      }
+
+      await sendMessage(response);
+    },
+    [agentId, isDemo, mockTransport, sendMessage]
   );
 
   const loadHistory = useCallback(async () => {
+    if (isDemo) return;
+
     const targetAgent = manager.getAgent(agentId);
     if (!targetAgent) return;
     const chatAdapter = manager.getChatAdapter();
@@ -441,19 +461,25 @@ export function useAgent(agentId: string): {
     } finally {
       setIsLoadingHistory(false);
     }
-  }, [manager, agentId]);
+  }, [agentId, isDemo, manager]);
 
   const abortChat = useCallback(async () => {
+    if (isDemo && mockTransport) {
+      await mockTransport.abortAgent(agentId);
+      return;
+    }
+
     const targetAgent = manager.getAgent(agentId);
     const chatAdapter = manager.getChatAdapter();
     if (!chatAdapter) return;
     await chatAdapter.abort(targetAgent?.sessionKey);
-  }, [manager, agentId]);
+  }, [agentId, isDemo, manager, mockTransport]);
 
   return {
     agent,
     activities: agent?.activities ?? [],
     sendMessage,
+    resolveBlocker,
     loadHistory,
     abortChat,
     isLoadingHistory,
@@ -505,41 +531,53 @@ export function useCron() {
     };
   }, [cronSource]);
 
-  const addJob = async (job: ExawattCronJobCreate) => {
-    if (!cronSource) return;
-    const newJob = await cronSource.addCronJob(job);
-    setJobs(prev => [...prev, newJob]);
-    return newJob;
-  };
+  const addJob = useCallback(
+    async (job: ExawattCronJobCreate) => {
+      if (!cronSource) return;
+      const newJob = await cronSource.addCronJob(job);
+      setJobs(prev => [...prev, newJob]);
+      return newJob;
+    },
+    [cronSource]
+  );
 
-  const runJob = async (jobId: string) => {
-    if (!cronSource) return;
-    await cronSource.runCronJob(jobId);
-    const updatedJobs = await cronSource.listCronJobs();
-    setJobs(updatedJobs);
-  };
+  const runJob = useCallback(
+    async (jobId: string) => {
+      if (!cronSource) return;
+      await cronSource.runCronJob(jobId);
+      const updatedJobs = await cronSource.listCronJobs();
+      setJobs(updatedJobs);
+    },
+    [cronSource]
+  );
 
-  const updateJob = async (
-    jobId: string,
-    patch: Partial<ExawattCronJobCreate>
-  ) => {
-    if (!cronSource) return;
-    const updatedJob = await cronSource.updateCronJob(jobId, patch);
-    setJobs(prev => prev.map(j => (j.id === jobId ? updatedJob : j)));
-    return updatedJob;
-  };
+  const updateJob = useCallback(
+    async (jobId: string, patch: Partial<ExawattCronJobCreate>) => {
+      if (!cronSource) return;
+      const updatedJob = await cronSource.updateCronJob(jobId, patch);
+      setJobs(prev => prev.map(j => (j.id === jobId ? updatedJob : j)));
+      return updatedJob;
+    },
+    [cronSource]
+  );
 
-  const removeJob = async (jobId: string) => {
-    if (!cronSource) return;
-    await cronSource.removeCronJob(jobId);
-    setJobs(prev => prev.filter(j => j.id !== jobId));
-  };
+  const removeJob = useCallback(
+    async (jobId: string) => {
+      if (!cronSource) return;
+      await cronSource.removeCronJob(jobId);
+      setJobs(prev => prev.filter(j => j.id !== jobId));
+    },
+    [cronSource]
+  );
 
-  const getJobRuns = async (jobId: string): Promise<ExawattCronRun[]> => {
-    if (!cronSource) return [];
-    const result = await cronSource.getCronRuns(jobId);
-    return result.runs;
-  };
+  const getJobRuns = useCallback(
+    async (jobId: string): Promise<ExawattCronRun[]> => {
+      if (!cronSource) return [];
+      const result = await cronSource.getCronRuns(jobId);
+      return result.runs;
+    },
+    [cronSource]
+  );
 
   return { jobs, loading, addJob, runJob, updateJob, removeJob, getJobRuns };
 }

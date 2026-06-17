@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme inline {
   --color-background: var(--background);
@@ -52,7 +52,7 @@
 }
 
 .dark,
-[data-theme="dark"] {
+[data-theme='dark'] {
   --background: #0a0a0a;
   --foreground: #fafafa;
   --card: #0a0a0a;
@@ -75,7 +75,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not(.light):not([data-theme="light"]) {
+  :root:not(.light):not([data-theme='light']) {
     --background: #0a0a0a;
     --foreground: #fafafa;
     --card: #0a0a0a;
@@ -101,4 +101,113 @@
 body {
   background: var(--background);
   color: var(--foreground);
+}
+
+.fleet-shell {
+  background: linear-gradient(
+    180deg,
+    oklch(0.17 0.012 225) 0%,
+    oklch(0.12 0.014 225) 46%,
+    oklch(0.095 0.012 225) 100%
+  );
+}
+
+.fleet-shell::before {
+  content: '';
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image:
+    linear-gradient(oklch(0.9 0.02 210 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.9 0.02 210 / 0.028) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, black, transparent 72%);
+}
+
+.fleet-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.fleet-panel {
+  border: 1px solid oklch(0.38 0.018 225 / 0.76);
+  border-radius: 8px;
+  background: color-mix(in oklch, oklch(0.18 0.014 225) 84%, transparent);
+  box-shadow: 0 20px 60px oklch(0.05 0.01 225 / 0.24);
+}
+
+.fleet-action-button {
+  border: 1px solid oklch(0.72 0.08 190 / 0.38);
+  background: oklch(0.73 0.11 185);
+  color: oklch(0.13 0.014 225);
+  box-shadow: 0 10px 30px oklch(0.65 0.11 185 / 0.12);
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.fleet-action-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 38px oklch(0.65 0.11 185 / 0.18);
+}
+
+.fleet-action-button:active {
+  transform: translateY(0);
+}
+
+.fleet-scanline {
+  background: linear-gradient(
+    180deg,
+    transparent,
+    oklch(0.82 0.08 185 / 0.12),
+    transparent
+  );
+  transform: translateY(-100%);
+  animation: fleet-scan 4.5s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@keyframes fleet-scan {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  56% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+@keyframes fleet-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-fleet-rise {
+  animation: fleet-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fleet-scanline,
+  .animate-fleet-rise {
+    animation: none;
+  }
+
+  .fleet-action-button:hover {
+    transform: none;
+  }
 }

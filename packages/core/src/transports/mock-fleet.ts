@@ -173,15 +173,22 @@ const MOCK_CRON_JOBS: ExawattCronJob[] = [
 ];
 
 const MOCK_CHAT_MESSAGES = [
-  'Analyzing the codebase structure and identifying key files...',
-  'Found 12 components that need updates for the new design system.',
-  'Implementing the responsive grid layout with 4 columns on desktop...',
-  'Running tests to verify the authentication flow works correctly.',
-  'Applying the favicon fix — creating SVG version and ICO fallback.',
-  'Setting up the live visitor counter with WebSocket connection.',
-  'Generating testimonials section with 3 customer quotes and avatars.',
-  'Building comparison page with feature matrix and pricing table.',
-  'All changes committed. Opening PR for review.',
+  'Mapped the next dependency boundary and queued the adapter change.',
+  'Found a stale assumption in the implementation notes. Recording the decision before changing code.',
+  'Running the focused test suite before widening the change.',
+  'Comparing the demo source output with the live gateway contract.',
+  'Generated a candidate patch and waiting on verification output.',
+  'Summarizing artifacts from the current session for handoff.',
+  'Watching for a policy threshold before continuing autonomous work.',
+  'Checking the heartbeat schedule against the active initiative.',
+  'Prepared the next action. No human input required right now.',
+];
+
+const USER_REPLY_ACKS = [
+  'Acknowledged. I have the missing context and am continuing the session.',
+  'Received. I cleared the blocker and resumed the current objective.',
+  'Thanks. I am applying that decision and updating the activity trail.',
+  'Understood. I will proceed under that constraint.',
 ];
 
 export class MockFleetTransport {
@@ -190,9 +197,7 @@ export class MockFleetTransport {
   private speed: SimulationSpeed = 'realistic';
   private running = false;
   private agents = new Map<string, ExawattAgent>();
-  private cronJobs = new Map<string, ExawattCronJob>(
-    MOCK_CRON_JOBS.map(j => [j.id, j])
-  );
+  private cronJobs = new Map<string, ExawattCronJob>();
   private cronRuns = new Map<string, ExawattCronRun[]>();
 
   /**
@@ -230,24 +235,122 @@ export class MockFleetTransport {
   reset(): void {
     this.stop();
     this.agents.clear();
+    this.cronJobs = this._cloneCronJobs();
+    this.cronRuns.clear();
     this._seedAgents();
     if (this.fleetManager) {
       this._pushAllAgentsToManager();
     }
   }
 
-  resolveBlocker(agentId: string): void {
+  sendMessage(agentId: string, text: string): Promise<void> {
+    const agent = this.agents.get(agentId);
+    if (!agent) return Promise.resolve();
+
+    if (agent.status === 'blocked') {
+      this.resolveBlocker(agentId, text);
+      return Promise.resolve();
+    }
+
+    this._appendActivity(agentId, {
+      id: this._activityId('user'),
+      timestamp: Date.now(),
+      type: 'chat_message',
+      content: text,
+      metadata: { role: 'user', demo: true },
+    });
+
+    const reply =
+      USER_REPLY_ACKS[Math.floor(Math.random() * USER_REPLY_ACKS.length)]!;
+    const updated = this._mergeAgent(agentId, {
+      status: 'working',
+      lastActivityAt: Date.now(),
+    });
+
+    if (updated) {
+      this._appendActivity(agentId, {
+        id: this._activityId('reply'),
+        timestamp: Date.now(),
+        type: 'chat_message',
+        content: reply,
+        metadata: { role: 'agent', demo: true },
+      });
+    }
+
+    return Promise.resolve();
+  }
+
+  resolveBlocker(agentId: string, response?: string): void {
     const agent = this.agents.get(agentId);
     if (!agent || agent.status !== 'blocked') return;
+
+    const activities = [...(agent.activities ?? [])];
+    if (response?.trim()) {
+      activities.push({
+        id: this._activityId('user'),
+        timestamp: Date.now(),
+        type: 'chat_message',
+        content: response.trim(),
+        metadata: { role: 'user', demo: true, resolvesBlocker: true },
+      });
+    }
+
+    const resolvedActivities: AgentActivity[] = [
+      ...activities,
+      {
+        id: this._activityId('resolved'),
+        timestamp: Date.now(),
+        type: 'blocker_resolved',
+        content: response?.trim()
+          ? `Blocker resolved: ${response.trim()}`
+          : 'Blocker resolved. Agent resumed work.',
+        metadata: { demo: true, response },
+      },
+      {
+        id: this._activityId('reply'),
+        timestamp: Date.now() + 1,
+        type: 'chat_message',
+        content: 'Blocker cleared. I am back on the objective now.',
+        metadata: { role: 'agent', demo: true },
+      },
+    ];
 
     const updated: ExawattAgent = {
       ...agent,
       status: 'working',
       blockerInfo: undefined,
       lastActivityAt: Date.now(),
+      activities: resolvedActivities.slice(-80),
     };
     this.agents.set(agentId, updated);
     this._emitAgentUpdate(updated);
+  }
+
+  abortAgent(agentId: string): Promise<void> {
+    const agent = this.agents.get(agentId);
+    if (!agent) return Promise.resolve();
+
+    const abortActivities: AgentActivity[] = [
+      ...(agent.activities ?? []),
+      {
+        id: this._activityId('abort'),
+        timestamp: Date.now(),
+        type: 'status_change',
+        content: 'Run aborted by operator. Agent is idle.',
+        metadata: { demo: true, from: agent.status, to: 'idle' },
+      },
+    ];
+
+    const updated: ExawattAgent = {
+      ...agent,
+      status: 'idle',
+      lastActivityAt: Date.now(),
+      activities: abortActivities.slice(-80),
+    };
+
+    this.agents.set(agentId, updated);
+    this._emitAgentUpdate(updated);
+    return Promise.resolve();
   }
 
   /**
@@ -310,6 +413,24 @@ export class MockFleetTransport {
       };
       const runs = this.cronRuns.get(jobId) ?? [];
       this.cronRuns.set(jobId, [run, ...runs].slice(0, 20));
+      const targetAgent =
+        (job.sessionKey && this.agents.get(job.sessionKey)) ||
+        this._pickAgentForHeartbeat();
+
+      if (targetAgent) {
+        this._appendActivity(targetAgent.id, {
+          id: this._activityId('heartbeat'),
+          timestamp: Date.now(),
+          type: 'tool_use',
+          content: `Heartbeat ran: ${job.name}`,
+          metadata: {
+            demo: true,
+            toolName: 'heartbeat.run',
+            jobId,
+            schedule: job.schedule,
+          },
+        });
+      }
     }
     return Promise.resolve();
   }
@@ -338,6 +459,7 @@ export class MockFleetTransport {
 
   private _seedAgents(): void {
     const now = Date.now();
+    this.cronJobs = this.cronJobs.size ? this.cronJobs : this._cloneCronJobs();
     for (const data of MOCK_AGENTS_DATA) {
       const agent = createAgent({
         ...data,
@@ -351,6 +473,15 @@ export class MockFleetTransport {
           estimatedCost: Math.random() * 2,
           startedAt: now - Math.floor(Math.random() * 3600000),
         },
+        activities: [
+          {
+            id: this._activityId('seed'),
+            timestamp: now - Math.floor(Math.random() * 5400000),
+            type: 'status_change',
+            content: `Session entered ${data.status} state.`,
+            metadata: { demo: true, status: data.status },
+          },
+        ],
       });
 
       // Add blocker info for blocked agents
@@ -361,6 +492,16 @@ export class MockFleetTransport {
           ...blocker,
           createdAt: now - Math.floor(Math.random() * 1800000),
         };
+        agent.activities = [
+          ...(agent.activities ?? []),
+          {
+            id: this._activityId('blocked'),
+            timestamp: agent.blockerInfo.createdAt,
+            type: 'blocker_created',
+            content: agent.blockerInfo.title,
+            metadata: { demo: true, blocker: agent.blockerInfo },
+          },
+        ];
       }
 
       this.agents.set(agent.id, agent);
@@ -541,6 +682,59 @@ export class MockFleetTransport {
   private _emitAgentUpdate(agent: ExawattAgent): void {
     if (!this.fleetManager) return;
     this.fleetManager.upsertAgent(agent);
+  }
+
+  private _appendActivity(agentId: string, activity: AgentActivity): void {
+    const agent = this.agents.get(agentId);
+    if (!agent) return;
+
+    const updated: ExawattAgent = {
+      ...agent,
+      lastActivityAt: activity.timestamp,
+      activities: [...(agent.activities ?? []), activity].slice(-80),
+    };
+
+    this.agents.set(agentId, updated);
+    this.fleetManager?.emit(
+      activity.type === 'tool_use' ? 'chat:tool' : 'chat:message',
+      { agentId, activity }
+    );
+    this.fleetManager?.upsertAgent(updated);
+  }
+
+  private _mergeAgent(
+    agentId: string,
+    patch: Partial<ExawattAgent>
+  ): ExawattAgent | null {
+    const agent = this.agents.get(agentId);
+    if (!agent) return null;
+    const updated = { ...agent, ...patch };
+    this.agents.set(agentId, updated);
+    this._emitAgentUpdate(updated);
+    return updated;
+  }
+
+  private _pickAgentForHeartbeat(): ExawattAgent | undefined {
+    return Array.from(this.agents.values()).find(
+      agent => agent.status !== 'blocked' && agent.status !== 'error'
+    );
+  }
+
+  private _cloneCronJobs(): Map<string, ExawattCronJob> {
+    return new Map(
+      MOCK_CRON_JOBS.map(job => [
+        job.id,
+        {
+          ...job,
+          lastRun: job.lastRun,
+          nextRun: job.nextRun,
+        },
+      ])
+    );
+  }
+
+  private _activityId(prefix: string): string {
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   }
 
   private _computeMockMetrics(): FleetMetrics {
