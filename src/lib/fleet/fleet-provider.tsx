@@ -263,7 +263,11 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         if (!mounted) return;
 
         ocClientRef.current?.disconnect();
+        setIsDemo(true);
+        setConnectionStatus('connected');
+        prevConnectionStatusRef.current = 'connected';
         setIsConnectingToOC(false);
+        pushConnectionToast('OpenClaw unavailable. Staying in Demo Mode.');
 
         const mockTransport = new MockFleetTransport();
         mockTransportRef.current = mockTransport;
