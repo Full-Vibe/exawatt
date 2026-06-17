@@ -129,8 +129,8 @@ function ConnectionLine({
           x={(from.x + to.x) / 2}
           y={(from.y + to.y) / 2 - 8}
           textAnchor="middle"
-          className="fill-neutral-500"
-          style={{ fontSize: 10, fontFamily: 'var(--font-geist-mono)' }}
+          className="fill-neutral-400"
+          style={{ fontSize: 12, fontFamily: 'var(--font-geist-mono)' }}
         >
           {connection.label}
         </text>
@@ -189,27 +189,27 @@ function MapNode({
         strokeOpacity={selected ? 0.95 : 0.45}
         strokeWidth={selected ? 1.7 : 1}
       />
+      {status && (
+        <circle
+          cx={node.x + node.width - 14}
+          cy={node.y + 14}
+          fill={status.border}
+          r={4}
+        />
+      )}
       <foreignObject
-        x={node.x + 16}
-        y={node.y + 13}
-        width={node.width - 32}
-        height={node.height - 22}
+        x={node.x + 14}
+        y={node.y + 10}
+        width={node.width - 28}
+        height={node.height - 20}
       >
-        <div className="flex h-full flex-col justify-center">
-          <div className="text-[15px] font-semibold leading-tight text-neutral-100">
+        <div className="flex h-full flex-col justify-start overflow-hidden pt-1">
+          <div className="text-[14px] font-semibold leading-tight text-neutral-100">
             {node.label}
           </div>
-          <div className="mt-1.5 line-clamp-2 text-[12px] leading-snug text-neutral-400">
+          <div className="mt-1.5 line-clamp-1 text-[12px] leading-snug text-neutral-400">
             {node.summary}
           </div>
-          {status && (
-            <div
-              className="mt-2 w-fit rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide"
-              style={{ backgroundColor: status.bg, color: status.text }}
-            >
-              {status.label}
-            </div>
-          )}
         </div>
       </foreignObject>
     </g>
@@ -327,11 +327,11 @@ function DetailPanel({
 }) {
   if (!selectedNode) {
     return (
-      <aside className="min-h-[260px] border-t border-neutral-800 bg-neutral-950/70 p-5 lg:w-80 lg:border-l lg:border-t-0">
+      <aside className="min-h-[220px] border-t border-neutral-800 bg-neutral-950/70 p-5">
         <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">
           Map Detail
         </div>
-        <p className="mt-4 text-base leading-relaxed text-neutral-500 lg:text-sm">
+        <p className="mt-4 max-w-3xl text-base leading-relaxed text-neutral-500">
           Select a node to inspect its role in the{' '}
           {currentLevel.label.toLowerCase()} view.
         </p>
@@ -343,12 +343,12 @@ function DetailPanel({
   const status = selectedNode.status ? statusStyle[selectedNode.status] : null;
 
   return (
-    <aside className="min-h-[260px] border-t border-neutral-800 bg-neutral-950/70 p-5 lg:w-80 lg:border-l lg:border-t-0">
+    <aside className="min-h-[220px] border-t border-neutral-800 bg-neutral-950/70 p-5">
       <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">
         Map Detail
       </div>
-      <div className="mt-4 flex items-start justify-between gap-3">
-        <h2 className="text-xl font-semibold leading-tight text-neutral-100 lg:text-lg">
+      <div className="mt-4 flex max-w-5xl flex-wrap items-start justify-between gap-3">
+        <h2 className="text-xl font-semibold leading-tight text-neutral-100">
           {selectedNode.label}
         </h2>
         {status && (
@@ -368,7 +368,7 @@ function DetailPanel({
           {layer.label}
         </div>
       )}
-      <p className="mt-4 text-base leading-relaxed text-neutral-300 lg:text-sm">
+      <p className="mt-4 max-w-4xl text-base leading-relaxed text-neutral-300">
         {selectedNode.summary}
       </p>
       {selectedNode.parentId && (
@@ -440,11 +440,11 @@ export default function ArchitecturePage() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-1 rounded-md border border-neutral-800 bg-neutral-950 p-1">
+            <div className="grid grid-cols-2 gap-1 rounded-md border border-neutral-800 bg-neutral-950 p-1 sm:flex sm:flex-wrap">
               {architectureManifest.zoomLevels.map(level => (
                 <button
                   aria-pressed={level.key === zoomKey}
-                  className={`min-h-11 rounded px-3 text-sm font-medium transition-colors ${
+                  className={`min-h-11 rounded px-3 text-sm font-medium transition-colors sm:min-w-24 ${
                     level.key === zoomKey
                       ? 'bg-neutral-100 text-neutral-950'
                       : 'text-neutral-500 hover:bg-neutral-900 hover:text-neutral-200'
@@ -459,13 +459,12 @@ export default function ArchitecturePage() {
             </div>
           </div>
 
-          <div className="grid lg:grid-cols-[minmax(0,1fr)_auto]">
+          <div>
             <div className="hidden overflow-x-auto lg:block">
               <svg
                 aria-label={`${currentLevel.title} diagram`}
-                className="min-w-[980px]"
+                className="h-auto w-full min-w-[1080px]"
                 role="img"
-                style={{ minHeight: 620 }}
                 viewBox={`0 0 ${currentLevel.canvas.width} ${currentLevel.canvas.height}`}
               >
                 <defs>
@@ -519,7 +518,7 @@ export default function ArchitecturePage() {
                         className="fill-neutral-500"
                         style={{
                           fontFamily: 'var(--font-geist-mono)',
-                          fontSize: 12,
+                          fontSize: 13,
                           fontWeight: 700,
                           letterSpacing: '0.16em',
                           textTransform: 'uppercase',
