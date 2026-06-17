@@ -11,6 +11,9 @@ importers:
       '@exawatt/core':
         specifier: workspace:*
         version: link:packages/core
+      '@exawatt/ui-model':
+        specifier: workspace:*
+        version: link:packages/ui-model
       '@hookform/resolvers':
         specifier: ^5.2.2
         version: 5.2.2(react-hook-form@7.67.0(react@19.2.0))
@@ -165,6 +168,19 @@ importers:
       '@noble/ed25519':
         specifier: ^3.0.1
         version: 3.0.1
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.14
+        version: 4.0.14(@types/node@24.10.1)(jiti@2.6.1)(jsdom@27.2.0)(lightningcss@1.30.2)
+
+  packages/ui-model:
+    dependencies:
+      '@exawatt/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       typescript:
         specifier: ^5.9.3
