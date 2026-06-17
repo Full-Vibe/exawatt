@@ -13,9 +13,18 @@ User-facing surfaces:
 - Electron desktop app
 - Next.js web app
 - `/fleet`
+- `/fleet/spatial`
 - `/dashboard` and `/board` legacy demo surfaces
 - `/architecture` public architecture map
 - future public `/docs` guides
+
+The UI layer supports multiple modular regimes over the same command model:
+
+- DOM operations UI for dense text, forms, chat, and accessibility-critical controls
+- immersive Three.js / React Three Fiber UI for spatial fleet command, zooming, selection, and state animation
+- future packaged or Electron-hosted UI variants
+
+UI regimes may render and compose controls, but they should not translate harness payloads, own provider-specific state, or bypass typed command boundaries.
 
 ### Coordination and Intelligence Layer
 
@@ -39,6 +48,8 @@ Canonical product objects:
 This layer should hide source-specific plumbing from the UI.
 
 This layer also owns translation, durable decisions, context signals, policies, budgets, approvals, and consumption records.
+
+This layer also owns UI-facing view models and command contracts that are shared by multiple UI regimes. These presentation models must be source-agnostic, deterministic, pure TypeScript, and testable without React, DOM, Electron, or Three.js.
 
 ### Agent Infrastructure Layer
 
@@ -86,14 +97,17 @@ Built:
 - Supabase auth/data
 - legacy Supabase demo task flow
 - `@exawatt/core` OpenClaw JSON-RPC client, adapters, FleetManager, and MockFleetTransport
+- `@exawatt/ui-model` typed UI-facing fleet selectors and command contracts
 - `/fleet` live/mock fleet UI
 - `/fleet/cron`
+- `/fleet/spatial` immersive fleet command lens
 
 Partial:
 
 - Electron local runtime integration
 - source/harness abstraction beyond OpenClaw/mock
 - architecture overview as a living map
+- immersive UI extraction into a standalone package
 
 Planned:
 
