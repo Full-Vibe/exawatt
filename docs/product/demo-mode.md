@@ -14,7 +14,20 @@ Demo Mode lets investors, collaborators, and users experience Exawatt without li
 
 ## Current Implementation
 
-The current demo implementation is the legacy Supabase demo task flow. It powers `/dashboard` and `/board` with Supabase-backed projects, tasks, blockers, and activity events.
+The current primary demo implementation is the mock fleet source behind `/fleet`, `/fleet/[agentId]`, and `/fleet/cron`.
+
+It demonstrates:
+
+- fleet health and source mode
+- agent status changes
+- focus/chat view
+- blocker creation and resolution
+- recurring heartbeats
+- token, cost, and activity signals
+
+The fleet demo is intentionally available without a live OpenClaw gateway. It should remain clearly labeled when using simulated data and should keep using the same UI-facing command hooks as Live Mode.
+
+The legacy Supabase demo task flow is still retained. It powers `/dashboard` and `/board` with Supabase-backed projects, tasks, blockers, and activity events.
 
 Seeded tasks are marked with:
 

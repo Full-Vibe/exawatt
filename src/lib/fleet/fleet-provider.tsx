@@ -394,9 +394,22 @@ export function useAgent(agentId: string): {
     const onAgentCreated = (created: ExawattAgent) => {
       if (created.id === agentId) setAgent({ ...created });
     };
+    const onFleetUpdated = (state: FleetState) => {
+      const updated = state.agents[agentId];
+      if (updated) {
+        setAgent(current => ({
+          ...updated,
+          activities: mergeActivities(
+            current?.activities ?? [],
+            updated.activities ?? []
+          ),
+        }));
+      }
+    };
 
     manager.on('agent:updated', onAgentUpdated);
     manager.on('agent:created', onAgentCreated);
+    manager.on('fleet:updated', onFleetUpdated);
 
     // Get initial state
     setAgent(manager.getAgent(agentId));
@@ -404,6 +417,7 @@ export function useAgent(agentId: string): {
     return () => {
       manager.off('agent:updated', onAgentUpdated);
       manager.off('agent:created', onAgentCreated);
+      manager.off('fleet:updated', onFleetUpdated);
     };
   }, [manager, agentId]);
 
