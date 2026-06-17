@@ -27,6 +27,8 @@ It demonstrates:
 
 The fleet demo is intentionally available without a live OpenClaw gateway. It should remain clearly labeled when using simulated data and should keep using the same UI-facing command hooks as Live Mode.
 
+Fleet surfaces start in Demo Mode by default so public demos do not emit live-source token probes, auth redirects, or connection errors on page load. Live OpenClaw auto-connect is opt-in via `NEXT_PUBLIC_EXAWATT_AUTO_CONNECT_OC=true`; otherwise, users enter Live Mode through the explicit Connect control.
+
 The legacy Supabase demo task flow is still retained. It powers `/dashboard` and `/board` with Supabase-backed projects, tasks, blockers, and activity events.
 
 Seeded tasks are marked with:

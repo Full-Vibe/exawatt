@@ -35,6 +35,7 @@ export async function proxy(request: NextRequest) {
 
   if (
     !user &&
+    !request.nextUrl.pathname.startsWith('/api/oc') &&
     !request.nextUrl.pathname.startsWith('/sign-in') &&
     !request.nextUrl.pathname.startsWith('/sign-up') &&
     !request.nextUrl.pathname.startsWith('/auth') &&

@@ -83,6 +83,20 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     async function initializeFleet() {
       console.log('[Exawatt] initializeFleet: starting');
       try {
+        if (process.env.NEXT_PUBLIC_EXAWATT_AUTO_CONNECT_OC !== 'true') {
+          console.log('[Exawatt] Demo mode active by default');
+          if (!mounted) return;
+          setIsDemo(true);
+          setConnectionStatus('connected');
+          prevConnectionStatusRef.current = 'connected';
+
+          const mockTransport = new MockFleetTransport();
+          mockTransportRef.current = mockTransport;
+          mockTransport.initialize(manager);
+          mockTransport.start();
+          return;
+        }
+
         // Try to get OC token from server-side API
         const res = await fetch('/api/oc/token');
         console.log('[Exawatt] /api/oc/token response:', res.status);
@@ -510,20 +524,29 @@ export function useConnectToOC(): {
   canConnect: boolean;
 } {
   const { connectToRealOC, ocAvailable, isDemo } = useFleetContext();
-  return { connectToRealOC, ocAvailable, canConnect: isDemo && ocAvailable };
+  return { connectToRealOC, ocAvailable, canConnect: isDemo };
 }
 
 export function useCron() {
-  const { manager, mockTransport, isDemo } = useFleetContext();
+  const { manager, mockTransport, isDemo, connectionStatus } =
+    useFleetContext();
   const [jobs, setJobs] = useState<ExawattCronJob[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const cronSource = isDemo ? mockTransport : manager;
+  const cronSource = isDemo
+    ? mockTransport
+    : connectionStatus === 'connected'
+      ? manager
+      : null;
 
   useEffect(() => {
-    if (!cronSource) return;
+    if (!cronSource) {
+      setLoading(connectionStatus === 'initializing');
+      return;
+    }
 
     let mounted = true;
+    setLoading(true);
 
     const fetchJobs = async () => {
       try {
@@ -543,7 +566,7 @@ export function useCron() {
     return () => {
       mounted = false;
     };
-  }, [cronSource]);
+  }, [cronSource, connectionStatus]);
 
   const addJob = useCallback(
     async (job: ExawattCronJobCreate) => {
