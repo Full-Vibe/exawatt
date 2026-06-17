@@ -196,15 +196,15 @@ function MapNode({
         height={node.height - 22}
       >
         <div className="flex h-full flex-col justify-center">
-          <div className="text-[13px] font-semibold leading-tight text-neutral-100">
+          <div className="text-[15px] font-semibold leading-tight text-neutral-100">
             {node.label}
           </div>
-          <div className="mt-1 line-clamp-2 text-[10px] leading-snug text-neutral-500">
+          <div className="mt-1.5 line-clamp-2 text-[12px] leading-snug text-neutral-400">
             {node.summary}
           </div>
           {status && (
             <div
-              className="mt-2 w-fit rounded px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide"
+              className="mt-2 w-fit rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide"
               style={{ backgroundColor: status.bg, color: status.text }}
             >
               {status.label}
@@ -213,6 +213,108 @@ function MapNode({
         </div>
       </foreignObject>
     </g>
+  );
+}
+
+function MobileMap({
+  currentLevel,
+  selectedId,
+  onSelect,
+}: {
+  currentLevel: ArchitectureZoomLevel;
+  selectedId: string | null;
+  onSelect: (nodeId: string) => void;
+}) {
+  const unlayeredNodes = currentLevel.nodes.filter(node => !node.layer);
+  const layeredGroups = architectureManifest.layers
+    .map(layer => ({
+      layer,
+      nodes: currentLevel.nodes.filter(node => node.layer === layer.key),
+    }))
+    .filter(group => group.nodes.length > 0);
+
+  return (
+    <div className="grid gap-4 p-3 sm:p-4 lg:hidden">
+      {unlayeredNodes.length > 0 && (
+        <div className="grid gap-3">
+          {unlayeredNodes.map(node => (
+            <MobileNode
+              key={node.id}
+              node={node}
+              onSelect={onSelect}
+              selected={selectedId === node.id}
+            />
+          ))}
+        </div>
+      )}
+
+      {layeredGroups.map(group => (
+        <section
+          className="rounded-lg border border-neutral-800 bg-neutral-950/50 p-3"
+          key={group.layer.key}
+        >
+          <div
+            className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em]"
+            style={{ color: group.layer.accent }}
+          >
+            {group.layer.label}
+          </div>
+          <p className="mt-1 text-sm leading-relaxed text-neutral-500">
+            {group.layer.summary}
+          </p>
+          <div className="mt-3 grid gap-3">
+            {group.nodes.map(node => (
+              <MobileNode
+                key={node.id}
+                node={node}
+                onSelect={onSelect}
+                selected={selectedId === node.id}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function MobileNode({
+  node,
+  selected,
+  onSelect,
+}: {
+  node: ArchitectureNode;
+  selected: boolean;
+  onSelect: (nodeId: string) => void;
+}) {
+  const layer = getLayer(node.layer);
+  const status = node.status ? statusStyle[node.status] : null;
+  const accent = status?.border ?? layer?.accent ?? '#d4d4d8';
+
+  return (
+    <button
+      className={`min-h-24 rounded-md border bg-[#0c0d0f] p-4 text-left transition-colors active:bg-neutral-900 ${
+        selected ? 'border-neutral-300' : 'border-neutral-800'
+      }`}
+      onClick={() => onSelect(node.id)}
+      style={{ borderColor: selected ? accent : undefined }}
+      type="button"
+    >
+      <div className="text-base font-semibold leading-tight text-neutral-100">
+        {node.label}
+      </div>
+      <div className="mt-2 text-sm leading-relaxed text-neutral-400">
+        {node.summary}
+      </div>
+      {status && (
+        <div
+          className="mt-3 w-fit rounded px-2 py-1 font-mono text-[10px] uppercase tracking-wide"
+          style={{ backgroundColor: status.bg, color: status.text }}
+        >
+          {status.label}
+        </div>
+      )}
+    </button>
   );
 }
 
@@ -226,10 +328,10 @@ function DetailPanel({
   if (!selectedNode) {
     return (
       <aside className="min-h-[260px] border-t border-neutral-800 bg-neutral-950/70 p-5 lg:w-80 lg:border-l lg:border-t-0">
-        <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-neutral-500">
+        <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">
           Map Detail
         </div>
-        <p className="mt-4 text-sm leading-relaxed text-neutral-500">
+        <p className="mt-4 text-base leading-relaxed text-neutral-500 lg:text-sm">
           Select a node to inspect its role in the{' '}
           {currentLevel.label.toLowerCase()} view.
         </p>
@@ -242,11 +344,11 @@ function DetailPanel({
 
   return (
     <aside className="min-h-[260px] border-t border-neutral-800 bg-neutral-950/70 p-5 lg:w-80 lg:border-l lg:border-t-0">
-      <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-neutral-500">
+      <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">
         Map Detail
       </div>
       <div className="mt-4 flex items-start justify-between gap-3">
-        <h2 className="text-lg font-semibold leading-tight text-neutral-100">
+        <h2 className="text-xl font-semibold leading-tight text-neutral-100 lg:text-lg">
           {selectedNode.label}
         </h2>
         {status && (
@@ -260,13 +362,13 @@ function DetailPanel({
       </div>
       {layer && (
         <div
-          className="mt-3 font-mono text-[10px] uppercase tracking-[0.18em]"
+          className="mt-3 font-mono text-[11px] uppercase tracking-[0.18em]"
           style={{ color: layer.accent }}
         >
           {layer.label}
         </div>
       )}
-      <p className="mt-4 text-sm leading-relaxed text-neutral-300">
+      <p className="mt-4 text-base leading-relaxed text-neutral-300 lg:text-sm">
         {selectedNode.summary}
       </p>
       {selectedNode.parentId && (
@@ -308,18 +410,18 @@ export default function ArchitecturePage() {
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <header className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div>
-            <div className="font-mono text-[10px] uppercase tracking-[0.24em] text-neutral-500">
+            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-neutral-500">
               Public Architecture Map
             </div>
-            <h1 className="mt-3 max-w-4xl text-3xl font-semibold tracking-tight text-neutral-50 md:text-5xl">
+            <h1 className="mt-3 max-w-4xl text-4xl font-semibold tracking-tight text-neutral-50 md:text-5xl">
               {architectureManifest.title}
             </h1>
-            <p className="mt-4 max-w-3xl text-base leading-relaxed text-neutral-400 md:text-lg">
+            <p className="mt-4 max-w-3xl text-lg leading-relaxed text-neutral-400">
               {architectureManifest.summary}
             </p>
           </div>
 
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-neutral-600">
+          <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-neutral-600">
             Reviewed {architectureManifest.lastReviewed}
           </div>
         </header>
@@ -327,13 +429,13 @@ export default function ArchitecturePage() {
         <section className="overflow-hidden rounded-lg border border-neutral-800 bg-[#0b0c0d]">
           <div className="grid gap-4 border-b border-neutral-800 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
             <div>
-              <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-neutral-500">
+              <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">
                 {currentLevel.label}
               </div>
-              <h2 className="mt-1 text-xl font-semibold text-neutral-100">
+              <h2 className="mt-1 text-2xl font-semibold text-neutral-100">
                 {currentLevel.title}
               </h2>
-              <p className="mt-1 max-w-4xl text-sm leading-relaxed text-neutral-500">
+              <p className="mt-2 max-w-4xl text-base leading-relaxed text-neutral-400">
                 {currentLevel.summary}
               </p>
             </div>
@@ -341,7 +443,8 @@ export default function ArchitecturePage() {
             <div className="flex flex-wrap gap-1 rounded-md border border-neutral-800 bg-neutral-950 p-1">
               {architectureManifest.zoomLevels.map(level => (
                 <button
-                  className={`h-8 rounded px-3 text-xs font-medium transition-colors ${
+                  aria-pressed={level.key === zoomKey}
+                  className={`min-h-11 rounded px-3 text-sm font-medium transition-colors ${
                     level.key === zoomKey
                       ? 'bg-neutral-100 text-neutral-950'
                       : 'text-neutral-500 hover:bg-neutral-900 hover:text-neutral-200'
@@ -357,12 +460,12 @@ export default function ArchitecturePage() {
           </div>
 
           <div className="grid lg:grid-cols-[minmax(0,1fr)_auto]">
-            <div className="overflow-x-auto">
+            <div className="hidden overflow-x-auto lg:block">
               <svg
                 aria-label={`${currentLevel.title} diagram`}
-                className="min-w-[920px]"
+                className="min-w-[980px]"
                 role="img"
-                style={{ minHeight: 560 }}
+                style={{ minHeight: 620 }}
                 viewBox={`0 0 ${currentLevel.canvas.width} ${currentLevel.canvas.height}`}
               >
                 <defs>
@@ -416,7 +519,7 @@ export default function ArchitecturePage() {
                         className="fill-neutral-500"
                         style={{
                           fontFamily: 'var(--font-geist-mono)',
-                          fontSize: 11,
+                          fontSize: 12,
                           fontWeight: 700,
                           letterSpacing: '0.16em',
                           textTransform: 'uppercase',
@@ -450,6 +553,14 @@ export default function ArchitecturePage() {
                 ))}
               </svg>
             </div>
+
+            <MobileMap
+              currentLevel={currentLevel}
+              onSelect={nodeId =>
+                setSelectedId(selectedId === nodeId ? null : nodeId)
+              }
+              selectedId={selectedId}
+            />
 
             <DetailPanel
               currentLevel={currentLevel}

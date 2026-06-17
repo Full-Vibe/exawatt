@@ -109,8 +109,6 @@ Planned:
 
 `/architecture` is rendered from `src/lib/architecture/manifest.ts`. Keep that manifest in sync with this document and the roadmap.
 
-`/overview` redirects to `/architecture` for compatibility with old links.
-
 ## Documentation Contract
 
 See `AGENTS.md`. Product, architecture, roadmap, and decision docs are live system state and must be updated with relevant changes.
