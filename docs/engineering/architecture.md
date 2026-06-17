@@ -21,7 +21,7 @@ User-facing surfaces:
 The UI layer supports multiple modular regimes over the same command model:
 
 - DOM operations UI for dense text, forms, chat, and accessibility-critical controls
-- immersive Three.js / React Three Fiber UI for spatial fleet command, zooming, selection, and state animation
+- 3D Fleet Command Surface for project-grouped fleet observability, zooming, selection, attention scheduling, and state animation
 - future packaged or Electron-hosted UI variants
 
 UI regimes may render and compose controls, but they should not translate harness payloads, own provider-specific state, or bypass typed command boundaries.
@@ -100,14 +100,14 @@ Built:
 - `@exawatt/ui-model` typed UI-facing fleet selectors and command contracts
 - `/fleet` live/mock fleet UI
 - `/fleet/cron`
-- `/fleet/spatial` immersive fleet command lens
+- `/fleet/spatial` first 3D Fleet Command Surface
 
 Partial:
 
 - Electron local runtime integration
 - source/harness abstraction beyond OpenClaw/mock
 - architecture overview as a living map
-- immersive UI extraction into a standalone package
+- 3D Fleet Command Surface extraction into a standalone package
 
 Planned:
 

@@ -495,10 +495,10 @@ export const architectureManifest = {
           height: 74,
         },
         {
-          id: 'immersive-ui',
-          label: 'Immersive UI',
+          id: '3d-fleet-command',
+          label: '3D Fleet Command',
           summary:
-            'Three.js spatial command lens for fleet selection, topology, status, and motion.',
+            'React Three Fiber command surface for project-grouped fleet observability, zooming, attention scheduling, and state motion.',
           layer: 'ui',
           status: 'active-build',
           x: 455,
@@ -675,7 +675,7 @@ export const architectureManifest = {
       connections: [
         { from: 'next-app-shell', to: 'fleet-provider' },
         { from: 'fleet-ui', to: 'ui-model' },
-        { from: 'immersive-ui', to: 'ui-model' },
+        { from: '3d-fleet-command', to: 'ui-model' },
         { from: 'ui-model', to: 'fleet-provider' },
         { from: 'architecture-map', to: 'architecture-manifest' },
         { from: 'review-ui', to: 'decision-context-layer', style: 'dashed' },
@@ -700,7 +700,7 @@ export const architectureManifest = {
   ] satisfies ArchitectureZoomLevel[],
   principles: [
     'UI surfaces speak Exawatt nouns, not provider-specific vocabulary.',
-    'DOM and immersive UI regimes share typed view models and command contracts.',
+    'DOM and 3D Fleet Command regimes share typed view models and command contracts.',
     'Agent sources are replaceable harnesses behind explicit adapters.',
     'Demo behavior is a swappable harness path, not a separate product architecture.',
     'Governance, memory, and resource context live above individual providers.',
