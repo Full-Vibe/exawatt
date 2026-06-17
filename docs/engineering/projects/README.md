@@ -4,4 +4,6 @@ This folder holds durable execution detail for roadmap items.
 
 `docs/engineering/roadmap.md` remains the singular engineering roadmap. Project docs in this folder may describe milestones, acceptance criteria, design constraints, implementation notes, and future agent work packets, but they must not become independent roadmaps.
 
+Each project doc should name its owning roadmap item ID, such as `ENG-004`. Shape the rest of the doc to the work instead of forcing a rigid template.
+
 When a project doc changes roadmap scope, sequence, or status, update `docs/engineering/roadmap.md` in the same change.
