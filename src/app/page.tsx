@@ -39,32 +39,53 @@ export default async function Home() {
         }
       `}</style>
       <div className="relative -mt-12 flex min-h-screen items-center justify-center bg-black">
-      <HeroBg />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/50 to-black/80" />
-      <main className="relative z-10 flex flex-col items-center gap-8 text-center px-4">
-        <h1 className="text-4xl font-bold tracking-tight text-white sm:text-6xl drop-shadow-lg">
-          Exawatt
-        </h1>
-        <p className="max-w-md text-lg text-white/80 drop-shadow-md">
-          Mission control for your AI agents. Monitor, manage, and unblock your fleet of autonomous workers.
-        </p>
-        <div className="flex gap-4">
-          {user ? (
-            <Button asChild>
-              <Link href="/dashboard">Go to Lattice</Link>
-            </Button>
-          ) : (
-            <>
-              <Button asChild>
-                <Link href="/sign-in">Sign In</Link>
-              </Button>
-              <Button asChild variant="outline" className="bg-transparent border-white/30 text-white hover:bg-white/10">
-                <Link href="/sign-up">Sign Up</Link>
-              </Button>
-            </>
-          )}
-        </div>
-      </main>
+        <HeroBg />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/50 to-black/80" />
+        <main className="relative z-10 flex flex-col items-center gap-8 text-center px-4">
+          <h1 className="text-4xl font-bold tracking-tight text-white sm:text-6xl drop-shadow-lg">
+            Exawatt
+          </h1>
+          <p className="max-w-md text-lg text-white/80 drop-shadow-md">
+            Mission control for your AI agents. Monitor, manage, and unblock
+            your fleet of autonomous workers.
+          </p>
+          <div className="flex gap-4">
+            {user ? (
+              <>
+                <Button asChild>
+                  <Link href="/dashboard">Go to Lattice</Link>
+                </Button>
+                <Button
+                  asChild
+                  variant="outline"
+                  className="bg-transparent border-white/30 text-white hover:bg-white/10"
+                >
+                  <Link href="/architecture">Architecture</Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button asChild>
+                  <Link href="/sign-in">Sign In</Link>
+                </Button>
+                <Button
+                  asChild
+                  variant="outline"
+                  className="bg-transparent border-white/30 text-white hover:bg-white/10"
+                >
+                  <Link href="/sign-up">Sign Up</Link>
+                </Button>
+                <Button
+                  asChild
+                  variant="ghost"
+                  className="text-white hover:bg-white/10 hover:text-white"
+                >
+                  <Link href="/architecture">Architecture</Link>
+                </Button>
+              </>
+            )}
+          </div>
+        </main>
       </div>
     </>
   );

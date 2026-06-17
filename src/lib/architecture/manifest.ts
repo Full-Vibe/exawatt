@@ -1,17 +1,17 @@
-export type ArchitectureStatus = 'built' | 'partial' | 'planned';
+export type ArchitectureZoomKey =
+  | 'system'
+  | 'layers'
+  | 'object-model'
+  | 'modules';
 
-export type ArchitectureLayerKey =
-  | 'experience'
-  | 'command'
-  | 'source'
-  | 'signals'
-  | 'infrastructure';
+export type ArchitectureLayerKey = 'ui' | 'coordination' | 'infrastructure';
+
+export type ArchitectureStatus = 'implemented' | 'active-build' | 'designed';
 
 export interface ArchitectureLayer {
   key: ArchitectureLayerKey;
   label: string;
-  y0: number;
-  y1: number;
+  summary: string;
   color: string;
   accent: string;
 }
@@ -19,10 +19,10 @@ export interface ArchitectureLayer {
 export interface ArchitectureNode {
   id: string;
   label: string;
-  sublabel?: string;
-  layer: ArchitectureLayerKey;
-  status: ArchitectureStatus;
-  description: string;
+  summary: string;
+  layer?: ArchitectureLayerKey;
+  parentId?: string;
+  status?: ArchitectureStatus;
   x: number;
   y: number;
   width: number;
@@ -36,453 +36,658 @@ export interface ArchitectureConnection {
   style?: 'solid' | 'dashed';
 }
 
-export interface WorkstreamItem {
-  text: string;
-  done: boolean;
-  priority: 'now' | 'next' | 'later' | 'done';
+export interface ArchitectureBand {
+  layer: ArchitectureLayerKey;
+  y: number;
+  height: number;
 }
 
-export interface Workstream {
-  lane: string;
+export interface ArchitectureZoomLevel {
+  key: ArchitectureZoomKey;
+  label: string;
   title: string;
-  accent: string;
-  owner: string;
-  deps: string;
-  items: WorkstreamItem[];
-}
-
-export interface OpenQuestion {
-  question: string;
-  context: string;
-  tag: string;
-  tagColor: string;
+  summary: string;
+  canvas: {
+    width: number;
+    height: number;
+  };
+  bands?: ArchitectureBand[];
+  nodes: ArchitectureNode[];
+  connections: ArchitectureConnection[];
 }
 
 export const architectureManifest = {
   title: 'Exawatt Architecture',
   summary:
-    'Electron desktop app and future hosted interface layer for commanding agents from any compatible source. Local OpenClaw is the first target; Demo Mode is first-class and uses the same UI layers.',
-  lastReviewed: '2026-05-24',
-  canvas: {
-    width: 1120,
-    height: 1080,
-  },
+    'Exawatt is a command interface for managing agent fleets across local, hosted, and third-party harnesses.',
+  lastReviewed: '2026-06-17',
   layers: [
     {
-      key: 'experience',
-      label: 'Experience Layer — App Surfaces',
-      y0: 40,
-      y1: 205,
-      color: 'rgba(14,165,150,0.05)',
+      key: 'ui',
+      label: 'UI Layer',
+      summary:
+        'Surfaces for fleet overview, initiative allocation, agent focus, artifact review, and approvals.',
+      color: 'rgba(14,165,150,0.08)',
       accent: '#0ea596',
     },
     {
-      key: 'command',
-      label: 'Command Layer — Canonical Product Model',
-      y0: 225,
-      y1: 430,
-      color: 'rgba(99,102,241,0.05)',
-      accent: '#6366f1',
-    },
-    {
-      key: 'source',
-      label: 'Source Layer — Harnesses & Adapters',
-      y0: 450,
-      y1: 650,
-      color: 'rgba(234,179,8,0.04)',
-      accent: '#d4a017',
-    },
-    {
-      key: 'signals',
-      label: 'Signal & Governance Layer',
-      y0: 670,
-      y1: 845,
-      color: 'rgba(168,85,247,0.04)',
-      accent: '#a855f7',
+      key: 'coordination',
+      label: 'Coordination & Intelligence Layer',
+      summary:
+        'Canonical Exawatt objects, memory, translation, governance, and resource context.',
+      color: 'rgba(126,87,194,0.08)',
+      accent: '#8b5cf6',
     },
     {
       key: 'infrastructure',
-      label: 'Infrastructure Layer — Runtime & Persistence',
-      y0: 865,
-      y1: 1040,
-      color: 'rgba(239,68,68,0.04)',
-      accent: '#ef4444',
+      label: 'Agent Infrastructure Layer',
+      summary:
+        'Agent sources, gateways, harnesses, credentials, local runtimes, and hosted control planes.',
+      color: 'rgba(214,158,46,0.08)',
+      accent: '#d69e2e',
     },
   ] satisfies ArchitectureLayer[],
-  nodes: [
+  zoomLevels: [
     {
-      id: 'electron',
-      label: 'Electron Desktop',
-      sublabel: 'Primary app shell',
-      layer: 'experience',
-      status: 'partial',
-      description:
-        'Native desktop shell wrapping the Exawatt UI. The initial target is local OpenClaw control with future support for hosted and multi-source fleets.',
-      x: 75,
-      y: 82,
-      width: 210,
-      height: 64,
-    },
-    {
-      id: 'web-ui',
-      label: 'Next.js UI',
-      sublabel: 'Fleet · Focus · Cron · Docs',
-      layer: 'experience',
-      status: 'built',
-      description:
-        'React/Next.js interface layer used by desktop and web surfaces. It should remain source-agnostic and render normalized Exawatt concepts.',
-      x: 335,
-      y: 82,
-      width: 220,
-      height: 64,
-    },
-    {
-      id: 'demo-mode',
-      label: 'Demo Mode',
-      sublabel: 'First-class scenario source',
-      layer: 'experience',
-      status: 'partial',
-      description:
-        'Investor/user demo mode that exercises the same UI through a lower-level data-source layer. Current implementation includes the legacy Supabase demo flow.',
-      x: 610,
-      y: 82,
-      width: 220,
-      height: 64,
-    },
-    {
-      id: 'public-docs',
-      label: 'Public Guides',
-      sublabel: 'Concepts · Initiatives · Sources',
-      layer: 'experience',
-      status: 'planned',
-      description:
-        'Public-facing product education generated from docs/product. Future app routes should expose these guides directly.',
-      x: 880,
-      y: 82,
-      width: 190,
-      height: 64,
-    },
-    {
-      id: 'workspace',
-      label: 'Workspace',
-      sublabel: 'Users · agents · policy boundary',
-      layer: 'command',
-      status: 'planned',
-      description:
-        'Boundary for people, agents, initiatives, context, secrets, spend, policies, and governance.',
-      x: 85,
-      y: 270,
-      width: 185,
-      height: 60,
-    },
-    {
-      id: 'initiative',
-      label: 'Initiative',
-      sublabel: 'Durable high-level goal',
-      layer: 'command',
-      status: 'planned',
-      description:
-        'Strategic container for ongoing agent work, such as maintaining a codebase or growing an investor pipeline.',
-      x: 315,
-      y: 270,
-      width: 185,
-      height: 60,
-    },
-    {
-      id: 'agent',
-      label: 'Agent',
-      sublabel: 'Durable worker identity',
-      layer: 'command',
-      status: 'partial',
-      description:
-        'Source-agnostic worker identity backed by OpenClaw, Codex, Claude Code, a custom harness, or Demo Mode.',
-      x: 545,
-      y: 270,
-      width: 185,
-      height: 60,
-    },
-    {
-      id: 'session',
-      label: 'Session',
-      sublabel: 'Execution episode',
-      layer: 'command',
-      status: 'built',
-      description:
-        'Canonical term for one execution episode. Provider terms such as run, thread, or process should normalize to Session.',
-      x: 775,
-      y: 270,
-      width: 185,
-      height: 60,
-    },
-    {
-      id: 'decisions',
-      label: 'Scoped Decisions',
-      sublabel: 'Workspace · Initiative · Agent',
-      layer: 'command',
-      status: 'planned',
-      description:
-        'Durable decisions attach to many scopes, not just agents. They improve future work and support trust/auditability.',
-      x: 210,
-      y: 350,
-      width: 225,
-      height: 58,
-    },
-    {
-      id: 'artifacts',
-      label: 'Events & Artifacts',
-      sublabel: 'Messages · tools · outputs',
-      layer: 'command',
-      status: 'partial',
-      description:
-        'Events record what happened. Artifacts are outputs such as diffs, screenshots, reports, documents, and deployments.',
-      x: 525,
-      y: 350,
-      width: 225,
-      height: 58,
-    },
-    {
-      id: 'source-adapters',
-      label: 'Agent Source Adapters',
-      sublabel: 'Normalize provider APIs',
-      layer: 'source',
-      status: 'partial',
-      description:
-        'Adapter boundary for local OpenClaw, remote OpenClaw, Codex, Claude Code, Demo Scenario Source, and custom harnesses.',
-      x: 105,
-      y: 500,
-      width: 235,
-      height: 62,
-    },
-    {
-      id: 'local-oc',
-      label: 'Local OpenClaw',
-      sublabel: 'First live target',
-      layer: 'source',
-      status: 'partial',
-      description:
-        'Local OpenClaw gateway is the first pseudo-parity target for Exawatt desktop.',
-      x: 390,
-      y: 500,
-      width: 190,
-      height: 62,
-    },
-    {
-      id: 'remote-harnesses',
-      label: 'Remote Harnesses',
-      sublabel: 'Hosted OC · Codex · Claude Code',
-      layer: 'source',
-      status: 'planned',
-      description:
-        'Future source targets including hosted OpenClaw, Codex, Claude Code, and custom agent harnesses.',
-      x: 630,
-      y: 500,
-      width: 230,
-      height: 62,
-    },
-    {
-      id: 'demo-source',
-      label: 'Demo Scenario Source',
-      sublabel: 'Supabase · traces · generated',
-      layer: 'source',
-      status: 'partial',
-      description:
-        'Pluggable demo data source. Current implementation preserves the legacy Supabase task simulation.',
-      x: 905,
-      y: 500,
-      width: 190,
-      height: 62,
-    },
-    {
-      id: 'context-signals',
-      label: 'Context Signals',
-      sublabel: 'PostHog · Slack · email · GitHub',
-      layer: 'signals',
-      status: 'planned',
-      description:
-        'External/internal input streams that inform agent behavior and can be many-to-many across Initiatives and Agents.',
-      x: 100,
-      y: 720,
-      width: 220,
-      height: 62,
-    },
-    {
-      id: 'secrets',
-      label: 'Secrets & Config',
-      sublabel: 'Buy-vs-build research',
-      layer: 'signals',
-      status: 'planned',
-      description:
-        'Managed credentials and configuration. Roadmap includes explicit research before choosing vendor or in-house approach.',
-      x: 365,
-      y: 720,
-      width: 210,
-      height: 62,
-    },
-    {
-      id: 'consumption',
-      label: 'Consumption',
-      sublabel: 'Cost · tokens · energy · time',
-      layer: 'signals',
-      status: 'planned',
-      description:
-        'Normalized resource tracking for cost, tokens, energy, time, tool calls, and compute.',
-      x: 620,
-      y: 720,
-      width: 210,
-      height: 62,
-    },
-    {
-      id: 'policies',
-      label: 'Policies & Approvals',
-      sublabel: 'Budgets · controls · gates',
-      layer: 'signals',
-      status: 'planned',
-      description:
-        'Human and system controls for budgets, approvals, allowed tools, dangerous actions, and governance.',
-      x: 875,
-      y: 720,
-      width: 210,
-      height: 62,
-    },
-    {
-      id: 'supabase',
-      label: 'Supabase',
-      sublabel: 'Auth · Postgres · RLS',
-      layer: 'infrastructure',
-      status: 'built',
-      description:
-        'Auth and app data store. Also powers the current legacy Supabase demo task flow.',
-      x: 140,
-      y: 920,
-      width: 190,
-      height: 62,
-    },
-    {
-      id: 'local-machine',
-      label: 'Local Machine',
-      sublabel: 'Electron · gateway · agents',
-      layer: 'infrastructure',
-      status: 'partial',
-      description:
-        'Desktop runtime where Exawatt, local OpenClaw, and local agent processes run today.',
-      x: 400,
-      y: 920,
-      width: 210,
-      height: 62,
-    },
-    {
-      id: 'hetzner',
-      label: 'Hosted VPS',
-      sublabel: 'Hetzner first',
-      layer: 'infrastructure',
-      status: 'planned',
-      description:
-        'First planned remote infrastructure target for hosted OpenClaw and remote harness control.',
-      x: 680,
-      y: 920,
-      width: 190,
-      height: 62,
-    },
-  ] satisfies ArchitectureNode[],
-  connections: [
-    { from: 'electron', to: 'web-ui', label: 'wraps' },
-    { from: 'web-ui', to: 'workspace' },
-    { from: 'web-ui', to: 'agent' },
-    { from: 'demo-mode', to: 'demo-source' },
-    { from: 'workspace', to: 'initiative' },
-    { from: 'initiative', to: 'agent' },
-    { from: 'agent', to: 'session' },
-    { from: 'session', to: 'artifacts' },
-    { from: 'decisions', to: 'initiative', style: 'dashed', label: 'scoped' },
-    { from: 'decisions', to: 'agent', style: 'dashed', label: 'scoped' },
-    { from: 'agent', to: 'source-adapters' },
-    { from: 'source-adapters', to: 'local-oc' },
-    { from: 'source-adapters', to: 'remote-harnesses', style: 'dashed' },
-    { from: 'source-adapters', to: 'demo-source' },
-    { from: 'context-signals', to: 'initiative', style: 'dashed' },
-    { from: 'secrets', to: 'policies', style: 'dashed' },
-    { from: 'consumption', to: 'policies', style: 'dashed' },
-    { from: 'policies', to: 'agent', style: 'dashed' },
-    { from: 'local-oc', to: 'local-machine' },
-    { from: 'demo-source', to: 'supabase' },
-    { from: 'remote-harnesses', to: 'hetzner', style: 'dashed' },
-  ] satisfies ArchitectureConnection[],
-  workstreams: [
-    {
-      lane: 'A',
-      title: 'Local OpenClaw Pseudo-Parity',
-      accent: '#0ea596',
-      owner: 'Desktop / frontend',
-      deps: 'Electron shell, @exawatt/core',
-      items: [
-        { text: 'Agent/session list', done: false, priority: 'now' },
-        { text: 'Focus/chat view with send/abort controls', done: false, priority: 'now' },
-        { text: 'Cron/heartbeat visibility', done: false, priority: 'now' },
-        { text: 'Tool/activity history', done: false, priority: 'next' },
-        { text: 'Health/config visibility', done: false, priority: 'next' },
+      key: 'system',
+      label: 'System',
+      title: 'System Boundary',
+      summary:
+        'Exawatt sits between people directing work and the agent sources that execute it.',
+      canvas: { width: 1120, height: 620 },
+      nodes: [
+        {
+          id: 'people',
+          label: 'Developers, founders, operators',
+          summary:
+            'People who need to direct, inspect, and trust work across agent fleets.',
+          x: 60,
+          y: 250,
+          width: 245,
+          height: 86,
+        },
+        {
+          id: 'exawatt',
+          label: 'Exawatt',
+          summary:
+            'A source-agnostic command interface and coordination layer for agent fleets.',
+          x: 420,
+          y: 220,
+          width: 280,
+          height: 120,
+        },
+        {
+          id: 'local-sources',
+          label: 'Local harnesses',
+          summary:
+            'OpenClaw and other agent runtimes reachable from the local machine.',
+          layer: 'infrastructure',
+          x: 830,
+          y: 110,
+          width: 230,
+          height: 78,
+        },
+        {
+          id: 'hosted-sources',
+          label: 'Hosted harnesses',
+          summary:
+            'Remote OpenClaw, hosted VPS agents, and managed execution environments.',
+          layer: 'infrastructure',
+          x: 830,
+          y: 245,
+          width: 230,
+          height: 78,
+        },
+        {
+          id: 'third-party-sources',
+          label: 'Third-party harnesses',
+          summary:
+            'Codex, Claude Code, custom harnesses, and partner agent sources.',
+          layer: 'infrastructure',
+          x: 830,
+          y: 380,
+          width: 230,
+          height: 78,
+        },
+      ],
+      connections: [
+        { from: 'people', to: 'exawatt' },
+        { from: 'exawatt', to: 'local-sources' },
+        { from: 'exawatt', to: 'hosted-sources' },
+        { from: 'exawatt', to: 'third-party-sources' },
       ],
     },
     {
-      lane: 'B',
-      title: 'Unified Source Architecture',
-      accent: '#6366f1',
-      owner: 'Core / systems',
-      deps: 'OpenClaw adapter, Demo Source',
-      items: [
-        { text: 'Normalize OpenClaw and Demo Mode into canonical concepts', done: false, priority: 'now' },
-        { text: 'Model Agent Source / Harness registry', done: false, priority: 'next' },
-        { text: 'Prepare remote OpenClaw and custom harness adapters', done: false, priority: 'next' },
-        { text: 'Multi-source fleet aggregation', done: false, priority: 'later' },
+      key: 'layers',
+      label: 'Layers',
+      title: 'Three-Layer Architecture',
+      summary:
+        'The UI layer sits above source-agnostic coordination, which sits above replaceable agent infrastructure.',
+      canvas: { width: 1120, height: 720 },
+      bands: [
+        { layer: 'ui', y: 60, height: 160 },
+        { layer: 'coordination', y: 275, height: 190 },
+        { layer: 'infrastructure', y: 520, height: 150 },
+      ],
+      nodes: [
+        {
+          id: 'ui-layer',
+          label: 'UI Layer',
+          summary:
+            'Modular surfaces for fleet state, initiative allocation, focused control, artifact review, and approvals.',
+          layer: 'ui',
+          x: 115,
+          y: 94,
+          width: 890,
+          height: 92,
+        },
+        {
+          id: 'coordination-layer',
+          label: 'Coordination & Intelligence Layer',
+          summary:
+            'Canonical objects, translation, decisions, context signals, policy, budgets, consumption, and approvals.',
+          layer: 'coordination',
+          x: 115,
+          y: 318,
+          width: 890,
+          height: 104,
+        },
+        {
+          id: 'agent-infrastructure-layer',
+          label: 'Agent Infrastructure Layer',
+          summary:
+            'Local OpenClaw, hosted OpenClaw, Codex, Claude Code, custom harnesses, gateways, and credentials.',
+          layer: 'infrastructure',
+          x: 115,
+          y: 555,
+          width: 890,
+          height: 82,
+        },
+      ],
+      connections: [
+        {
+          from: 'ui-layer',
+          to: 'coordination-layer',
+          label: 'canonical model',
+        },
+        {
+          from: 'coordination-layer',
+          to: 'agent-infrastructure-layer',
+          label: 'source adapters',
+        },
       ],
     },
     {
-      lane: 'C',
-      title: 'Product Primitives',
-      accent: '#eab308',
-      owner: 'Product / app',
-      deps: 'Canonical concepts',
-      items: [
-        { text: 'Initiative model and UI', done: false, priority: 'next' },
-        { text: 'Scoped Decision model', done: false, priority: 'next' },
-        { text: 'Context Signal model', done: false, priority: 'later' },
-        { text: 'Consumption and budget controls', done: false, priority: 'later' },
+      key: 'object-model',
+      label: 'Object Model',
+      title: 'Canonical Nouns',
+      summary:
+        'The public architecture is organized around durable Exawatt objects, not provider-specific terms.',
+      canvas: { width: 1120, height: 900 },
+      bands: [
+        { layer: 'ui', y: 40, height: 170 },
+        { layer: 'coordination', y: 240, height: 390 },
+        { layer: 'infrastructure', y: 660, height: 190 },
+      ],
+      nodes: [
+        {
+          id: 'fleet-overview',
+          label: 'Fleet Overview',
+          summary:
+            'A broad view of agent allocation, health, outcomes, risk, and resource use.',
+          layer: 'ui',
+          x: 80,
+          y: 92,
+          width: 215,
+          height: 72,
+        },
+        {
+          id: 'initiative-view',
+          label: 'Initiative View',
+          summary:
+            'A durable goal frame for seeing where agents and sessions are allocated.',
+          layer: 'ui',
+          x: 325,
+          y: 92,
+          width: 215,
+          height: 72,
+        },
+        {
+          id: 'agent-focus',
+          label: 'Agent Focus',
+          summary:
+            'A close-range surface for one agent, one session, and the work in progress.',
+          layer: 'ui',
+          x: 570,
+          y: 92,
+          width: 215,
+          height: 72,
+        },
+        {
+          id: 'review-surfaces',
+          label: 'Review Surfaces',
+          summary:
+            'Places where people inspect artifacts, decisions, approvals, and outcomes.',
+          layer: 'ui',
+          x: 815,
+          y: 92,
+          width: 225,
+          height: 72,
+        },
+        {
+          id: 'workspace',
+          label: 'Workspace',
+          summary:
+            'The boundary for people, initiatives, agents, context, secrets, spend, policies, and governance.',
+          layer: 'coordination',
+          x: 70,
+          y: 300,
+          width: 170,
+          height: 68,
+        },
+        {
+          id: 'initiative',
+          label: 'Initiative',
+          summary: 'A durable high-level goal or area of responsibility.',
+          layer: 'coordination',
+          x: 285,
+          y: 300,
+          width: 170,
+          height: 68,
+        },
+        {
+          id: 'agent',
+          label: 'Agent',
+          summary:
+            'A durable worker identity or capability from any compatible source.',
+          layer: 'coordination',
+          x: 500,
+          y: 300,
+          width: 170,
+          height: 68,
+        },
+        {
+          id: 'session',
+          label: 'Session',
+          summary: 'One execution episode for an agent.',
+          layer: 'coordination',
+          x: 715,
+          y: 300,
+          width: 170,
+          height: 68,
+        },
+        {
+          id: 'event',
+          label: 'Event',
+          summary:
+            'A timestamped observation: message, tool call, state change, blocker, or request.',
+          layer: 'coordination',
+          x: 625,
+          y: 430,
+          width: 165,
+          height: 68,
+        },
+        {
+          id: 'artifact',
+          label: 'Artifact',
+          summary:
+            'A produced or modified output: diff, screenshot, report, document, or deployment.',
+          layer: 'coordination',
+          x: 820,
+          y: 430,
+          width: 165,
+          height: 68,
+        },
+        {
+          id: 'decision',
+          label: 'Decision',
+          summary:
+            'A durable choice or tradeoff scoped to the object it affects.',
+          layer: 'coordination',
+          x: 80,
+          y: 535,
+          width: 165,
+          height: 68,
+        },
+        {
+          id: 'context-signal',
+          label: 'Context Signal',
+          summary:
+            'An internal or external input stream that can inform agent behavior.',
+          layer: 'coordination',
+          x: 285,
+          y: 535,
+          width: 165,
+          height: 68,
+        },
+        {
+          id: 'policy-budget',
+          label: 'Policy / Budget',
+          summary:
+            'Rules and limits governing tools, spend, approvals, and allowed actions.',
+          layer: 'coordination',
+          x: 490,
+          y: 535,
+          width: 165,
+          height: 68,
+        },
+        {
+          id: 'consumption',
+          label: 'Consumption',
+          summary:
+            'Normalized usage across cost, tokens, time, energy, tool calls, and compute.',
+          layer: 'coordination',
+          x: 695,
+          y: 535,
+          width: 165,
+          height: 68,
+        },
+        {
+          id: 'approval',
+          label: 'Approval',
+          summary: 'A human authorization checkpoint for high-impact work.',
+          layer: 'coordination',
+          x: 900,
+          y: 535,
+          width: 150,
+          height: 68,
+        },
+        {
+          id: 'agent-source',
+          label: 'Agent Source / Harness',
+          summary:
+            'A provider or runtime boundary that can create, observe, and control agents.',
+          layer: 'infrastructure',
+          x: 95,
+          y: 705,
+          width: 210,
+          height: 70,
+        },
+        {
+          id: 'gateway',
+          label: 'Gateway',
+          summary: 'A local or remote connection to a harness.',
+          layer: 'infrastructure',
+          x: 350,
+          y: 705,
+          width: 170,
+          height: 70,
+        },
+        {
+          id: 'secret-credential',
+          label: 'Secret / Credential',
+          summary:
+            'Managed access material that agents can request or use under policy.',
+          layer: 'infrastructure',
+          x: 565,
+          y: 705,
+          width: 190,
+          height: 70,
+        },
+        {
+          id: 'harness-fleet',
+          label: 'OpenClaw / Codex / Claude Code / Custom',
+          summary:
+            'The set of local, hosted, third-party, and custom execution backends.',
+          layer: 'infrastructure',
+          x: 800,
+          y: 705,
+          width: 245,
+          height: 70,
+        },
+      ],
+      connections: [
+        { from: 'fleet-overview', to: 'workspace' },
+        { from: 'initiative-view', to: 'initiative' },
+        { from: 'agent-focus', to: 'agent' },
+        { from: 'review-surfaces', to: 'artifact' },
+        { from: 'workspace', to: 'initiative' },
+        { from: 'initiative', to: 'agent' },
+        { from: 'agent', to: 'session' },
+        { from: 'session', to: 'event' },
+        { from: 'session', to: 'artifact' },
+        { from: 'decision', to: 'initiative', style: 'dashed' },
+        { from: 'context-signal', to: 'initiative', style: 'dashed' },
+        { from: 'policy-budget', to: 'agent', style: 'dashed' },
+        { from: 'consumption', to: 'policy-budget', style: 'dashed' },
+        { from: 'approval', to: 'session', style: 'dashed' },
+        { from: 'agent', to: 'agent-source' },
+        { from: 'agent-source', to: 'gateway' },
+        { from: 'gateway', to: 'harness-fleet' },
+        { from: 'secret-credential', to: 'gateway', style: 'dashed' },
       ],
     },
     {
-      lane: 'D',
-      title: 'Remote Harnesses',
-      accent: '#ef4444',
-      owner: 'Infra / backend',
-      deps: 'Source architecture',
-      items: [
-        { text: 'Secrets/config buy-vs-build research', done: false, priority: 'next' },
-        { text: 'Hetzner VPS OpenClaw control', done: false, priority: 'later' },
-        { text: 'Hosted gateway registration and health', done: false, priority: 'later' },
-        { text: 'Hosted Exawatt control plane', done: false, priority: 'later' },
+      key: 'modules',
+      label: 'Modules',
+      title: 'Public-Safe Implementation Map',
+      summary:
+        'This zoom shows repo-level architecture without exposing private environment, deployment, or credential details.',
+      canvas: { width: 1120, height: 920 },
+      bands: [
+        { layer: 'ui', y: 40, height: 210 },
+        { layer: 'coordination', y: 280, height: 320 },
+        { layer: 'infrastructure', y: 630, height: 220 },
+      ],
+      nodes: [
+        {
+          id: 'next-app-shell',
+          label: 'Next.js App Shell',
+          summary:
+            'Shared web surface used by desktop and hosted app contexts.',
+          layer: 'ui',
+          status: 'implemented',
+          x: 80,
+          y: 95,
+          width: 210,
+          height: 74,
+        },
+        {
+          id: 'fleet-ui',
+          label: 'Fleet UI',
+          summary:
+            'Agent fleet list, detail, chat, activity, cron, and operational surfaces.',
+          layer: 'ui',
+          status: 'active-build',
+          x: 330,
+          y: 95,
+          width: 210,
+          height: 74,
+        },
+        {
+          id: 'architecture-map',
+          label: 'Architecture Map',
+          summary:
+            'The living public architecture map rendered from the architecture manifest.',
+          layer: 'ui',
+          status: 'active-build',
+          x: 580,
+          y: 95,
+          width: 210,
+          height: 74,
+        },
+        {
+          id: 'review-ui',
+          label: 'Review UI',
+          summary:
+            'Public-safe label for artifact, approval, and outcome review surfaces.',
+          layer: 'ui',
+          status: 'designed',
+          x: 830,
+          y: 95,
+          width: 210,
+          height: 74,
+        },
+        {
+          id: 'architecture-manifest',
+          label: 'Architecture Manifest',
+          summary:
+            'Typed data source for /architecture and its canonical map levels.',
+          layer: 'coordination',
+          status: 'implemented',
+          x: 80,
+          y: 335,
+          width: 220,
+          height: 76,
+        },
+        {
+          id: 'fleet-provider',
+          label: 'Fleet Provider',
+          summary: 'React provider and hooks for UI-facing fleet state.',
+          layer: 'coordination',
+          status: 'implemented',
+          x: 342,
+          y: 335,
+          width: 190,
+          height: 76,
+        },
+        {
+          id: 'source-adapters',
+          label: 'Agent Source Adapters',
+          summary:
+            'Provider boundaries that normalize harness-specific concepts into Exawatt objects.',
+          layer: 'coordination',
+          status: 'active-build',
+          x: 572,
+          y: 335,
+          width: 220,
+          height: 76,
+        },
+        {
+          id: 'canonical-docs',
+          label: 'Canonical Docs',
+          summary:
+            'Product concepts, engineering architecture, roadmap, and decisions.',
+          layer: 'coordination',
+          status: 'implemented',
+          x: 832,
+          y: 335,
+          width: 210,
+          height: 76,
+        },
+        {
+          id: 'decision-context-layer',
+          label: 'Decision / Context Layer',
+          summary:
+            'Scoped decisions, context signals, budgets, and consumption controls.',
+          layer: 'coordination',
+          status: 'designed',
+          x: 225,
+          y: 475,
+          width: 245,
+          height: 76,
+        },
+        {
+          id: 'initiative-model',
+          label: 'Initiative Model',
+          summary:
+            'High-level product frame for durable goals and agent allocation.',
+          layer: 'coordination',
+          status: 'designed',
+          x: 645,
+          y: 475,
+          width: 210,
+          height: 76,
+        },
+        {
+          id: 'electron-shell',
+          label: 'Electron Shell',
+          summary: 'Desktop wrapper and local runtime boundary.',
+          layer: 'infrastructure',
+          status: 'implemented',
+          x: 75,
+          y: 685,
+          width: 180,
+          height: 74,
+        },
+        {
+          id: 'openclaw-client',
+          label: 'OpenClaw Client',
+          summary:
+            'Core OpenClaw JSON-RPC client, adapters, and fleet manager primitives.',
+          layer: 'infrastructure',
+          status: 'implemented',
+          x: 295,
+          y: 685,
+          width: 200,
+          height: 74,
+        },
+        {
+          id: 'demo-harness',
+          label: 'Demo Harness',
+          summary:
+            'A swappable harness that exercises the same UI and coordination layers without live agents.',
+          layer: 'infrastructure',
+          status: 'active-build',
+          x: 535,
+          y: 685,
+          width: 185,
+          height: 74,
+        },
+        {
+          id: 'supabase-data',
+          label: 'Supabase App Data',
+          summary: 'Auth and app data store for the current hosted surface.',
+          layer: 'infrastructure',
+          status: 'implemented',
+          x: 760,
+          y: 685,
+          width: 185,
+          height: 74,
+        },
+        {
+          id: 'hosted-runtime',
+          label: 'Hosted Runtime',
+          summary:
+            'VPS and hosted control-plane infrastructure for remote harnesses.',
+          layer: 'infrastructure',
+          status: 'designed',
+          x: 430,
+          y: 785,
+          width: 220,
+          height: 74,
+        },
+      ],
+      connections: [
+        { from: 'next-app-shell', to: 'fleet-provider' },
+        { from: 'fleet-ui', to: 'fleet-provider' },
+        { from: 'architecture-map', to: 'architecture-manifest' },
+        { from: 'review-ui', to: 'decision-context-layer', style: 'dashed' },
+        { from: 'fleet-provider', to: 'source-adapters' },
+        {
+          from: 'canonical-docs',
+          to: 'architecture-manifest',
+          style: 'dashed',
+        },
+        {
+          from: 'decision-context-layer',
+          to: 'initiative-model',
+          style: 'dashed',
+        },
+        { from: 'source-adapters', to: 'openclaw-client' },
+        { from: 'source-adapters', to: 'demo-harness' },
+        { from: 'source-adapters', to: 'hosted-runtime', style: 'dashed' },
+        { from: 'electron-shell', to: 'openclaw-client' },
+        { from: 'demo-harness', to: 'supabase-data', style: 'dashed' },
       ],
     },
-  ] satisfies Workstream[],
-  openQuestions: [
+  ] satisfies ArchitectureZoomLevel[],
+  principles: [
+    'UI surfaces speak Exawatt nouns, not provider-specific vocabulary.',
+    'Agent sources are replaceable harnesses behind explicit adapters.',
+    'Demo behavior is a swappable harness path, not a separate product architecture.',
+    'Governance, memory, and resource context live above individual providers.',
+  ],
+  dynamicRange: [
     {
-      question: 'How should Exawatt expose public guides in-app?',
-      context:
-        'The source of truth lives in docs/product, but public users should eventually read guides through app routes such as /docs and /docs/concepts.',
-      tag: 'Docs',
-      tagColor: '#0ea596',
+      label: 'Microscope',
+      summary:
+        'Inspect one agent, one session, tool history, blockers, diffs, and approvals.',
     },
     {
-      question: 'What is the first secrets/configuration provider?',
-      context:
-        'The roadmap requires explicit buy-vs-build research before selecting a vendor or implementing secrets management in-house.',
-      tag: 'Security',
-      tagColor: '#ef4444',
+      label: 'Mission Control',
+      summary:
+        'See fleet allocation, initiatives, outcomes, risk, policy, and consumption.',
     },
-    {
-      question: 'How much OpenClaw configurability should pseudo-parity expose?',
-      context:
-        'The UI should be simpler than OpenClaw without becoming lossy for power users who need detailed control.',
-      tag: 'Product',
-      tagColor: '#6366f1',
-    },
-  ] satisfies OpenQuestion[],
+  ],
 };

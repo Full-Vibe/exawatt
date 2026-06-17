@@ -1,12 +1,12 @@
 # Exawatt Architecture
 
-Exawatt is an Electron desktop app and future hosted interface layer for commanding agents from any compatible source.
+Exawatt is a command interface for managing agent fleets across local, hosted, and third-party harnesses.
 
-The first execution target is local OpenClaw. The architecture must remain source-agnostic so future Agent Sources can include hosted OpenClaw, Codex, Claude Code, custom harnesses, and Demo Mode.
+The architecture is source-agnostic: local OpenClaw, hosted OpenClaw, Codex, Claude Code, custom harnesses, and Demo Harnesses all sit behind explicit Agent Source / Harness boundaries.
 
 ## Layers
 
-### Experience Layer
+### UI Layer
 
 User-facing surfaces:
 
@@ -14,10 +14,10 @@ User-facing surfaces:
 - Next.js web app
 - `/fleet`
 - `/dashboard` and `/board` legacy demo surfaces
-- `/overview` architecture map
+- `/architecture` public architecture map
 - future public `/docs` guides
 
-### Command Layer
+### Coordination and Intelligence Layer
 
 Canonical product objects:
 
@@ -30,10 +30,17 @@ Canonical product objects:
 - Event
 - Artifact
 - Consumption
+- Context Signal
+- Secret / Credential
+- Agent Source / Harness
+- Gateway
+- Policy / Budget
 
 This layer should hide source-specific plumbing from the UI.
 
-### Source Layer
+This layer also owns translation, durable decisions, context signals, policies, budgets, approvals, and consumption records.
+
+### Agent Infrastructure Layer
 
 Provider/runtime boundaries:
 
@@ -41,31 +48,34 @@ Provider/runtime boundaries:
 - local OpenClaw gateway
 - remote OpenClaw gateway
 - Codex / Claude Code adapters
-- Demo Scenario Source
+- Demo Harness / Demo Scenario Source
 - custom harnesses
-
-The UI should depend on normalized Exawatt concepts, not raw provider-specific payloads.
-
-### Signal and Governance Layer
-
-Context and controls:
-
-- Context Signals
-- Secrets / Credentials
-- Policies / Budgets
-- Consumption
-- Decisions
-- Approvals
-
-### Infrastructure Layer
-
-Runtime and persistence:
-
 - local machine
 - Supabase
 - Electron main/preload process
-- future hosted VPS instances, starting with Hetzner
-- future hosted Exawatt control plane
+- hosted VPS instances, starting with Hetzner
+- hosted Exawatt control plane
+
+The UI should depend on normalized Exawatt concepts, not raw provider-specific payloads.
+
+## Object Model
+
+`/architecture` uses the canonical nouns from `docs/product/concepts.md`:
+
+- Workspace
+- Initiative
+- Agent
+- Session
+- Event
+- Artifact
+- Consumption
+- Decision
+- Context Signal
+- Secret / Credential
+- Agent Source / Harness
+- Gateway
+- Policy / Budget
+- Approval
 
 ## Current Implementation
 
@@ -97,7 +107,9 @@ Planned:
 
 ## Architecture Map
 
-`/overview` is rendered from `src/lib/architecture/manifest.ts`. Keep that manifest in sync with this document and the roadmap.
+`/architecture` is rendered from `src/lib/architecture/manifest.ts`. Keep that manifest in sync with this document and the roadmap.
+
+`/overview` redirects to `/architecture` for compatibility with old links.
 
 ## Documentation Contract
 

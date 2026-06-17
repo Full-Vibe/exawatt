@@ -12,7 +12,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { LayoutDashboard, User, LogOut, Settings, Server } from 'lucide-react';
+import {
+  LayoutDashboard,
+  User,
+  LogOut,
+  Network,
+  Settings,
+  Server,
+} from 'lucide-react';
 import { signOut } from '@/app/actions/projects';
 
 interface SiteHeaderNavProps {
@@ -28,6 +35,7 @@ export function SiteHeaderNav({
 }: SiteHeaderNavProps) {
   const pathname = usePathname();
   const isHome = pathname === '/';
+  const isArchitecture = pathname?.startsWith('/architecture');
   const isDashboard = pathname === '/dashboard';
   const isFleet = pathname?.startsWith('/fleet');
 
@@ -65,6 +73,14 @@ export function SiteHeaderNav({
 
       {/* Right: Auth-dependent links */}
       <div className="flex items-center gap-1">
+        {!isArchitecture && (
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/architecture">
+              <Network className="h-3.5 w-3.5" />
+              Architecture
+            </Link>
+          </Button>
+        )}
         {isAuthenticated && !isHome && (
           <>
             {!isDashboard && (
