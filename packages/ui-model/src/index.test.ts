@@ -495,4 +495,55 @@ describe('@exawatt/ui-model', () => {
     expect(scene.attention.secondary).toHaveLength(1);
     expect(scene.attention.overflowCount).toBe(2);
   });
+
+  // ---- V0.2 motion targets (emitted by pure selectors) ----
+
+  it('emits tile motion targets (rest/lift/scale/emphasis) for selected + hero', () => {
+    const opts = { selectedAgentId: 'alpha-working' };
+    const zones = selectSpatialProjectZones(multiState(), opts);
+    const tiles = selectSpatialAgentTiles(zones, multiState(), opts);
+
+    const selected = tiles.find(t => t.agentId === 'alpha-working')!;
+    expect(selected.restY).toBe(0);
+    expect(selected.targetScale).toBe(1.05); // selectionScale
+    expect(selected.liftTarget).toBeGreaterThanOrEqual(0.35); // selectionLift
+    expect(selected.liftTarget).toBe(selected.y); // back-compat: y === liftTarget
+    expect(selected.emphasisTarget).toBe(selected.emphasis);
+
+    const hero = tiles.find(t => t.agentId === 'beta-blocked-old')!;
+    expect(hero.targetScale).toBe(1); // hero is not the selected agent
+    expect(hero.liftTarget).toBeGreaterThanOrEqual(0.5); // heroLift
+
+    const calm = tiles.find(t => t.agentId === 'alpha-idle')!;
+    expect(calm.restY).toBe(0);
+    expect(calm.liftTarget).toBe(0);
+    expect(calm.targetScale).toBe(1);
+  });
+
+  it('emits zone motion targets (lift, crystal edge, metal frame) with passive recede', () => {
+    const none = selectSpatialProjectZones(multiState());
+    const betaNone = none.find(z => z.label === 'Beta')!; // hero tier
+    const alphaNone = none.find(z => z.label === 'Alpha')!; // calm tier
+    expect(betaNone.liftTarget).toBe(0);
+    expect(betaNone.edgeEmphasisTarget).toBe(0.8); // hero, not selected
+    expect(alphaNone.edgeEmphasisTarget).toBe(0.15); // calm
+    expect(betaNone.frameEmissiveTarget).toBeGreaterThan(
+      alphaNone.frameEmissiveTarget
+    );
+
+    const sel = selectSpatialProjectZones(multiState(), {
+      selectedAgentId: 'alpha-working',
+    });
+    const alphaSel = sel.find(z => z.label === 'Alpha')!;
+    const betaSel = sel.find(z => z.label === 'Beta')!;
+    expect(alphaSel.selected).toBe(true);
+    expect(alphaSel.liftTarget).toBeGreaterThan(0); // zoneLift when selected
+    expect(alphaSel.edgeEmphasisTarget).toBe(0.4); // calm + selected
+    expect(alphaSel.frameEmissiveTarget).toBeGreaterThan(
+      alphaNone.frameEmissiveTarget
+    ); // selected zone brightens
+    expect(betaSel.frameEmissiveTarget).toBeLessThan(
+      betaNone.frameEmissiveTarget
+    ); // others passively recede
+  });
 });

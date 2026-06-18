@@ -145,7 +145,7 @@ export function SpatialFleetClient() {
 
       <main className="relative grid min-h-0 flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_360px]">
         <section
-          className="relative min-h-[62vh] overflow-hidden"
+          className="relative h-[52vh] min-h-[360px] overflow-hidden xl:h-auto xl:min-h-[62vh]"
           aria-label="Spatial fleet map"
         >
           <CommandTableCanvas
@@ -154,7 +154,7 @@ export function SpatialFleetClient() {
             onSelectProject={handleSelectProject}
           />
 
-          <div className="pointer-events-none absolute left-4 top-4 grid gap-2 sm:grid-cols-4">
+          <div className="pointer-events-none absolute left-3 top-3 grid max-w-[64%] grid-cols-2 gap-2 sm:left-4 sm:top-4 sm:max-w-none sm:grid-cols-4">
             <SpatialMetric
               label="Active"
               value={String(commandView.metrics.activeCount)}

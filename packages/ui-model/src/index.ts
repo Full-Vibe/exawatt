@@ -130,6 +130,13 @@ export interface SpatialProjectZone {
   depth: number; // footprint along Z
   tint: string; // frosted body tint
   rimColor: string; // beveled rail emissive (teal/amber/red)
+  // ---- V0.2 motion targets (R3F damps toward these; magnitudes stay pure here) ----
+  /** resting Y target for the whole zone (0, or zoneLift when selected) */
+  liftTarget: number;
+  /** 0..1 target for the crystal-edge emphasis (opacity/width on the rim) */
+  edgeEmphasisTarget: number;
+  /** emissive-intensity target for the metal frame trim (recedes when another zone is selected) */
+  frameEmissiveTarget: number;
 }
 
 /** A single agent tile, placed in ABSOLUTE world coords inside its zone. */
@@ -147,11 +154,20 @@ export interface SpatialAgentTile {
   /** 0..1 quiet emphasis for emissive; loud only when isHero/selected */
   emphasis: number;
   x: number;
-  y: number; // 0 at rest; selectionLift/heroLift applied here
+  y: number; // = liftTarget (kept for back-compat / instant + SSR render path)
   z: number;
   width: number;
   height: number; // uniform thickness; NOT a status encoding
   depth: number;
+  // ---- V0.2 motion targets (R3F damps restY -> liftTarget; magnitudes stay pure) ----
+  /** resting Y (normally 0) the tile damps up from */
+  restY: number;
+  /** Y target: restY + selectionLift (if selected) + heroLift (if hero) */
+  liftTarget: number;
+  /** scale target: selectionScale when selected, else 1 */
+  targetScale: number;
+  /** emissive-emphasis target (= emphasis), named as the damp target */
+  emphasisTarget: number;
 }
 
 export interface SpatialAttentionItem {
@@ -212,6 +228,8 @@ export interface FleetSpatialSceneOptions {
   maxTilesPerRow?: number;
   selectionLift?: number;
   heroLift?: number;
+  zoneLift?: number;
+  selectionScale?: number;
 }
 
 export interface FleetCommandViewOptions {
@@ -401,6 +419,8 @@ const SPATIAL_DEFAULTS = {
   maxTilesPerRow: 3,
   selectionLift: 0.35,
   heroLift: 0.5,
+  zoneLift: 0.12,
+  selectionScale: 1.05,
 } as const;
 
 const TILE_THICKNESS = 0.14;
@@ -489,6 +509,29 @@ function zoneTier(
   return 'calm';
 }
 
+// 0..1 emphasis the crystal Project boundary reads at (drives rim opacity/width).
+function edgeEmphasisFor(
+  tier: ProjectAttentionTier,
+  selected: boolean
+): number {
+  if (tier === 'hero') return selected ? 1.0 : 0.8;
+  if (tier === 'secondary') return selected ? 0.7 : 0.45;
+  return selected ? 0.4 : 0.15; // calm
+}
+
+// Emissive intensity for the metal frame trim. Selecting a zone brightens it;
+// while another zone is selected, the rest passively recede.
+function frameEmissiveFor(
+  tier: ProjectAttentionTier,
+  selected: boolean,
+  anySelected: boolean
+): number {
+  const base = tier === 'hero' ? 0.3 : tier === 'secondary' ? 0.16 : 0.07;
+  if (selected) return round4(base + 0.25);
+  if (anySelected) return round4(Math.max(0, base - 0.04));
+  return round4(base);
+}
+
 export function selectSpatialProjectZones(
   state: FleetState,
   options: FleetSpatialSceneOptions = {}
@@ -499,10 +542,14 @@ export function selectSpatialProjectZones(
   const zoneGap = options.zoneGap ?? SPATIAL_DEFAULTS.zoneGap;
   const maxTilesPerRow =
     options.maxTilesPerRow ?? SPATIAL_DEFAULTS.maxTilesPerRow;
+  const zoneLift = options.zoneLift ?? SPATIAL_DEFAULTS.zoneLift;
   const selectedAgentId = options.selectedAgentId ?? null;
   const heroId = heroAgentId(state);
 
   const groups: ContextGroup[] = resolveContextGroups(state);
+  const anyZoneSelected =
+    selectedAgentId != null &&
+    groups.some(group => group.agentIds.includes(selectedAgentId));
 
   // Highest attention pressure first; label asc tiebreak (stable, deterministic).
   const sorted = [...groups].sort((a, b) => {
@@ -553,6 +600,8 @@ export function selectSpatialProjectZones(
       const s = group.summary;
       const ownsHero = heroId != null && group.agentIds.includes(heroId);
       const tier = zoneTier(ownsHero, s.blockedCount, s.dominantStatus);
+      const selected =
+        selectedAgentId != null && group.agentIds.includes(selectedAgentId);
       const agentWord = s.agentCount === 1 ? 'agent' : 'agents';
       placed.push({
         clusterId: group.clusterId,
@@ -569,14 +618,16 @@ export function selectSpatialProjectZones(
         statLine: `${s.agentCount} ${agentWord} · ${s.blockedCount} blocked · $${s.costRate.toFixed(2)}/hr`,
         tier,
         ownsHeroBlocker: ownsHero,
-        selected:
-          selectedAgentId != null && group.agentIds.includes(selectedAgentId),
+        selected,
         x: round4(x),
         z: round4(rowCenterZ),
         width: round4(grid.width),
         depth: round4(grid.depth),
         tint: ZONE_TINT[tier],
         rimColor: TIER_RIM_COLOR[tier],
+        liftTarget: selected ? round4(zoneLift) : 0,
+        edgeEmphasisTarget: round4(edgeEmphasisFor(tier, selected)),
+        frameEmissiveTarget: frameEmissiveFor(tier, selected, anyZoneSelected),
       });
       xCursor += grid.width + zoneGap;
     }
@@ -598,6 +649,8 @@ export function selectSpatialAgentTiles(
     options.maxTilesPerRow ?? SPATIAL_DEFAULTS.maxTilesPerRow;
   const selectionLift = options.selectionLift ?? SPATIAL_DEFAULTS.selectionLift;
   const heroLift = options.heroLift ?? SPATIAL_DEFAULTS.heroLift;
+  const selectionScale =
+    options.selectionScale ?? SPATIAL_DEFAULTS.selectionScale;
   const selectedAgentId = options.selectedAgentId ?? null;
   const heroId = heroAgentId(state);
 
@@ -623,7 +676,9 @@ export function selectSpatialAgentTiles(
       const active = agent.status === 'working' || agent.status === 'reviewing';
       const emphasis =
         isHero || selected ? 1 : needsOperator ? 0.5 : active ? 0.35 : 0.15;
-      const y = (selected ? selectionLift : 0) + (isHero ? heroLift : 0);
+      const restY = 0;
+      const liftTarget =
+        restY + (selected ? selectionLift : 0) + (isHero ? heroLift : 0);
       tiles.push({
         id: `tile:${agentId}`,
         agentId,
@@ -637,11 +692,15 @@ export function selectSpatialAgentTiles(
         isHero,
         emphasis,
         x: round4(leftX + col * (tileSize + tileGap)),
-        y: round4(y),
+        y: round4(liftTarget), // = liftTarget (back-compat / instant + SSR path)
         z: round4(frontZ + row * (tileSize + tileGap)),
         width: tileSize,
         height: TILE_THICKNESS,
         depth: tileSize,
+        restY,
+        liftTarget: round4(liftTarget),
+        targetScale: selected ? selectionScale : 1,
+        emphasisTarget: emphasis,
       });
     });
   }
@@ -797,6 +856,10 @@ export function selectFleetCommandView(
 // never glass on both for one agent). On a low-power/degraded device everything
 // falls back to frosted (0 transmissive). Pure TS so it is unit-tested without
 // React/Three.
+//
+// V0.2 note: the metal frames/rails and the crystal Project boundaries are
+// NON-transmissive fakes (metalness/clearcoat/emissive + Edges), so they add
+// zero render passes and the <=2 / 1-at-rest cap above remains the only budget.
 
 export interface TransmissionPlan {
   heroCardGlass: boolean;
