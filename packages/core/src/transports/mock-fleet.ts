@@ -33,6 +33,57 @@ const SPEED_MULTIPLIERS: Record<SimulationSpeed, number> = {
 // Base interval between simulation ticks (ms, before speed multiplier)
 const BASE_TICK_INTERVAL_MS = 5000;
 
+// Demo fleet size, for exercising fleet-scale readiness (V0.5). 'small' is the
+// default and keeps the 8 hand-authored agents unchanged; larger sizes add
+// synthetic agents across more Projects so the surface can be tested at scale.
+export type FleetScale = 'small' | 'medium' | 'large';
+
+const SCALE_COUNTS: Record<FleetScale, number> = {
+  small: 8,
+  medium: 40,
+  large: 150,
+};
+
+// Projects synthetic agents are distributed across (the 3 canonical demo
+// Projects plus more, so high-altitude clustering has many zones to summarize).
+const SYNTHETIC_PROJECTS = [
+  'Exawatt Demo Polish',
+  'OpenClaw Local Parity',
+  'Investor Pipeline Research',
+  'Mobile App',
+  'Infra Hardening',
+  'Growth Experiments',
+  'Support Triage',
+  'Docs & DX',
+  'Billing & Metering',
+  'Security Review',
+];
+
+// Weighted status pool for synthetic agents (mostly quiet work, a slice blocked).
+const SYNTHETIC_STATUSES: AgentStatus[] = [
+  'working',
+  'working',
+  'working',
+  'idle',
+  'idle',
+  'idle',
+  'reviewing',
+  'complete',
+  'blocked',
+  'error',
+];
+
+const SYNTHETIC_GOALS = [
+  'Triage incoming issues and label by severity',
+  'Refactor the data layer for the new schema',
+  'Draft release notes from the merged PRs',
+  'Investigate elevated error rate in checkout',
+  'Add end-to-end tests for the auth flow',
+  'Summarize this week customer feedback',
+  'Optimize the slowest three API endpoints',
+  'Prepare the migration runbook',
+];
+
 const MOCK_AGENTS_DATA: Array<{
   id: string;
   name: string;
@@ -195,6 +246,7 @@ export class MockFleetTransport {
   private fleetManager: FleetManager | null = null;
   private tickTimer: ReturnType<typeof setTimeout> | null = null;
   private speed: SimulationSpeed = 'realistic';
+  private scale: FleetScale = 'small';
   private running = false;
   private agents = new Map<string, ExawattAgent>();
   private cronJobs = new Map<string, ExawattCronJob>();
@@ -230,6 +282,22 @@ export class MockFleetTransport {
       if (this.tickTimer) clearTimeout(this.tickTimer);
       this._scheduleTick();
     }
+  }
+
+  getScale(): FleetScale {
+    return this.scale;
+  }
+
+  /** Resize the demo fleet (small/medium/large), reseed, and re-emit live. */
+  setScale(scale: FleetScale): void {
+    if (this.scale === scale) return;
+    this.scale = scale;
+    const wasRunning = this.running;
+    this.stop();
+    this.agents.clear();
+    this._seedAgents();
+    if (this.fleetManager) this._pushAllAgentsToManager();
+    if (wasRunning) this.start();
   }
 
   reset(): void {
@@ -513,6 +581,76 @@ export class MockFleetTransport {
 
       this.agents.set(agent.id, agent);
     }
+
+    // Fleet-scale (V0.5): top up with synthetic agents for medium/large demos.
+    // The 8 hand-authored agents (incl. Gamma, the deterministic credentials
+    // hero) are always present, so a stable hero exists at every scale.
+    const target = SCALE_COUNTS[this.scale];
+    for (let i = this.agents.size; i < target; i++) {
+      const synthetic = this._makeSyntheticAgent(i, now);
+      this.agents.set(synthetic.id, synthetic);
+    }
+  }
+
+  private _makeSyntheticAgent(index: number, now: number): ExawattAgent {
+    const status =
+      SYNTHETIC_STATUSES[
+        Math.floor(Math.random() * SYNTHETIC_STATUSES.length)
+      ]!;
+    const id = `demo-syn-${index}`;
+    const agent = createAgent({
+      id,
+      name: `Agent ${index}`,
+      // Concentrate ~1/3 into the lead Project so a large fleet has one big
+      // Project (>~48 agents) that exercises the instanced tile path on drill-in,
+      // while the rest spread across the others for a realistic cluster mix.
+      project:
+        index % 3 === 0
+          ? SYNTHETIC_PROJECTS[0]!
+          : SYNTHETIC_PROJECTS[1 + (index % (SYNTHETIC_PROJECTS.length - 1))]!,
+      goal: SYNTHETIC_GOALS[index % SYNTHETIC_GOALS.length]!,
+      status,
+      sessionKey: id,
+      lastActivityAt: now - Math.floor(Math.random() * 7200000),
+      createdAt: now - Math.floor(Math.random() * 86400000),
+      metrics: {
+        ...INITIAL_AGENT_METRICS,
+        tokensIn: Math.floor(Math.random() * 50000),
+        tokensOut: Math.floor(Math.random() * 20000),
+        estimatedCost: Math.random() * 2,
+        costRate: Math.random() * 1.5,
+        startedAt: now - Math.floor(Math.random() * 3600000),
+      },
+      activities: [
+        {
+          id: this._activityId('seed'),
+          timestamp: now - Math.floor(Math.random() * 5400000),
+          type: 'status_change',
+          content: `Session entered ${status} state.`,
+          metadata: { demo: true, status, synthetic: true },
+        },
+      ],
+    });
+    if (status === 'blocked') {
+      const blocker =
+        MOCK_BLOCKERS[Math.floor(Math.random() * MOCK_BLOCKERS.length)]!;
+      agent.blockerInfo = {
+        ...blocker,
+        // Newer than Gamma's seeded blocker so the default-load hero is stable.
+        createdAt: now - Math.floor(Math.random() * 1_500_000),
+      };
+      agent.activities = [
+        ...(agent.activities ?? []),
+        {
+          id: this._activityId('blocked'),
+          timestamp: agent.blockerInfo.createdAt,
+          type: 'blocker_created',
+          content: agent.blockerInfo.title,
+          metadata: { demo: true, blocker: agent.blockerInfo },
+        },
+      ];
+    }
+    return agent;
   }
 
   private _pushAllAgentsToManager(): void {

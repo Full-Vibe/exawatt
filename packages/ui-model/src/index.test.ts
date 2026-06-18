@@ -6,6 +6,7 @@ import type {
   FleetState,
 } from '@exawatt/core';
 import {
+  filterFleetState,
   resolveTransmission,
   selectActivityFeed,
   selectAttentionSchedule,
@@ -800,5 +801,100 @@ describe('@exawatt/ui-model', () => {
     expect(tile.liftTarget).toBeGreaterThanOrEqual(0.5); // heroLift, agrees with the rail
     // the fleet hero's tile is not even in this scene
     expect(scene.tiles.some(t => t.agentId === 'p1-cred')).toBe(false);
+  });
+});
+
+// ---- V0.5 fleet-scale readiness ----
+
+describe('@exawatt/ui-model fleet-scale (V0.5)', () => {
+  function manyProjectState(projectCount: number): FleetState {
+    const agents: ExawattAgent[] = [];
+    for (let p = 0; p < projectCount; p++) {
+      agents.push(
+        agent({
+          id: `p${p}-a`,
+          name: `A${p}`,
+          project: `Proj ${String(p).padStart(2, '0')}`,
+          status: p % 2 === 0 ? 'idle' : 'working',
+          lastActivityAt: p,
+        })
+      );
+    }
+    return {
+      agents: Object.fromEntries(agents.map(a => [a.id, a])),
+      metrics,
+      lastUpdated: 1,
+    };
+  }
+
+  it('aggregates Projects beyond maxZones into one "+N quieter projects" cluster', () => {
+    const zones = selectSpatialProjectZones(manyProjectState(4), {
+      aggregateOverflow: true,
+      maxZones: 2,
+    });
+    expect(zones).toHaveLength(3); // 2 full + 1 aggregate
+    const agg = zones[zones.length - 1]!;
+    expect(agg.isAggregate).toBe(true);
+    expect(agg.label).toBe('+2 quieter projects');
+    expect(agg.agentCount).toBe(2); // summed
+    expect(agg.activeCount + agg.idleCount).toBe(2);
+    expect(zones.slice(0, 2).every(z => !z.isAggregate)).toBe(true);
+  });
+
+  it('does not aggregate when Projects fit within maxZones', () => {
+    const zones = selectSpatialProjectZones(manyProjectState(4), {
+      aggregateOverflow: true,
+      maxZones: 10,
+    });
+    expect(zones).toHaveLength(4);
+    expect(zones.some(z => z.isAggregate)).toBe(false);
+  });
+
+  it('fleet altitude folds overflow Projects (density stays readable at scale)', () => {
+    const scene = selectFleetSpatialScene(manyProjectState(30), {
+      altitude: 'fleet',
+      maxZones: 24,
+    });
+    expect(scene.groups).toHaveLength(25); // 24 + aggregate
+    const agg = scene.groups.find(z => z.isAggregate)!;
+    expect(agg).toBeDefined();
+    expect(agg.label).toBe('+6 quieter projects');
+    expect(scene.tiles).toHaveLength(0);
+  });
+
+  it('filterFleetState narrows by query and status; empty is identity', () => {
+    const state: FleetState = {
+      agents: Object.fromEntries(
+        [
+          agent({ id: 'a', name: 'Alpha', project: 'Polish', status: 'working' }),
+          agent({ id: 'b', name: 'Beta', project: 'Parity', status: 'blocked' }),
+          agent({ id: 'c', name: 'Gamma', project: 'Polish', status: 'idle' }),
+        ].map(a => [a.id, a])
+      ),
+      metrics,
+      lastUpdated: 1,
+    };
+    // identity when no filter (same reference, no behavior change)
+    expect(filterFleetState(state, {})).toBe(state);
+    // query matches name / project (case-insensitive)
+    expect(Object.keys(filterFleetState(state, { query: 'polish' }).agents).sort()).toEqual(['a', 'c']);
+    expect(Object.keys(filterFleetState(state, { query: 'beta' }).agents)).toEqual(['b']);
+    // status narrows
+    expect(Object.keys(filterFleetState(state, { statuses: ['blocked'] }).agents)).toEqual(['b']);
+    // query + status combine (AND)
+    expect(
+      Object.keys(filterFleetState(state, { query: 'polish', statuses: ['idle'] }).agents)
+    ).toEqual(['c']);
+    // deterministic
+    expect(filterFleetState(state, { query: 'a' })).toEqual(
+      filterFleetState(state, { query: 'a' })
+    );
+  });
+
+  it('produces a deterministic scene for a large many-Project fleet', () => {
+    const big = manyProjectState(40);
+    expect(selectFleetSpatialScene(big, { altitude: 'fleet' })).toEqual(
+      selectFleetSpatialScene(big, { altitude: 'fleet' })
+    );
   });
 });

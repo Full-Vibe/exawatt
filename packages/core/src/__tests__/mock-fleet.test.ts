@@ -659,6 +659,49 @@ describe('MockFleetTransport', () => {
       expect(state.lastUpdated).toBeGreaterThan(0);
     });
   });
+
+  // ---- 11. setScale() — fleet-scale readiness (V0.5) ----
+
+  describe('setScale()', () => {
+    it('defaults to a small fleet of 8 hand-authored agents', () => {
+      transport.initialize(mockFleetManager);
+      expect(transport.getScale()).toBe('small');
+      expect(transport.getAllAgents()).toHaveLength(EXPECTED_AGENT_COUNT);
+    });
+
+    it('large seeds 150 agents across many Projects, with a hero blocker', () => {
+      transport.initialize(mockFleetManager);
+      transport.setScale('large');
+
+      const agents = transport.getAllAgents();
+      expect(agents).toHaveLength(150);
+      // a stable hero always exists (the 8 base agents include 2 blocked)
+      expect(agents.filter(a => a.status === 'blocked').length).toBeGreaterThan(0);
+      // spread across more than the 3 demo Projects
+      const projects = new Set(agents.map(a => a.project));
+      expect(projects.size).toBeGreaterThan(3);
+      // the lead Project is large enough to exercise the instanced tile path
+      const byProject = new Map<string, number>();
+      for (const a of agents)
+        byProject.set(a.project, (byProject.get(a.project) ?? 0) + 1);
+      expect(Math.max(...byProject.values())).toBeGreaterThanOrEqual(48);
+    });
+
+    it('medium seeds 40 agents and re-emits through the manager', () => {
+      transport.initialize(mockFleetManager);
+      vi.mocked(mockFleetManager.seedAgents).mockClear();
+      transport.setScale('medium');
+      expect(transport.getAllAgents()).toHaveLength(40);
+      expect(vi.mocked(mockFleetManager.seedAgents)).toHaveBeenCalled();
+    });
+
+    it('returning to small restores the original 8', () => {
+      transport.initialize(mockFleetManager);
+      transport.setScale('large');
+      transport.setScale('small');
+      expect(transport.getAllAgents()).toHaveLength(EXPECTED_AGENT_COUNT);
+    });
+  });
 });
 
 // Constant to avoid magic numbers in tests

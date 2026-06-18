@@ -158,6 +158,13 @@ export interface SpatialProjectZone {
   // ---- V0.3 zoom-resolution ----
   /** at fleet altitude this zone renders as a compact summary cluster (no agent tiles) */
   summaryMode: boolean;
+  // ---- V0.5 fleet-scale ----
+  /**
+   * true for the synthetic "+N quieter projects" cluster that aggregates the
+   * overflow beyond `maxZones` at fleet altitude. Has no agentIds, is not
+   * drillable, and renders distinctly. `agentCount`/counts are the summed totals.
+   */
+  isAggregate: boolean;
 }
 
 /** A single agent tile, placed in ABSOLUTE world coords inside its zone. */
@@ -279,6 +286,11 @@ export interface FleetSpatialSceneOptions {
    * lifted tile and the rail/glow-line always agree.
    */
   heroAgentId?: string | null;
+  // ---- V0.5 fleet-scale ----
+  /** max full Project clusters at fleet altitude before overflow aggregates (default 24) */
+  maxZones?: number;
+  /** when true, collapse Projects beyond maxZones into one "+N quieter projects" cluster */
+  aggregateOverflow?: boolean;
 }
 
 export interface FleetCommandViewOptions {
@@ -367,6 +379,46 @@ function toAgentView(agent: ExawattAgent): FleetAgentView {
     active,
     statusRank: STATUS_PRIORITY[agent.status],
   };
+}
+
+export interface FleetFilter {
+  /** case-insensitive substring matched against agent name / goal / project */
+  query?: string;
+  /** if non-empty, only agents whose status is in this set are kept */
+  statuses?: AgentStatus[];
+}
+
+/**
+ * Pure, deterministic narrowing of a FleetState to the agents matching a search
+ * query and/or status set. Empty filter returns the original state (identity, so
+ * no behavior change when unused). Fleet-wide `metrics` are preserved unchanged —
+ * callers that want fleet totals read them from the unfiltered state.
+ */
+export function filterFleetState(
+  state: FleetState,
+  filter: FleetFilter = {}
+): FleetState {
+  const query = filter.query?.trim().toLowerCase() ?? '';
+  const statuses =
+    filter.statuses && filter.statuses.length
+      ? new Set<AgentStatus>(filter.statuses)
+      : null;
+  if (!query && !statuses) return state;
+
+  const agents: Record<string, ExawattAgent> = {};
+  for (const agent of Object.values(state.agents)) {
+    if (statuses && !statuses.has(agent.status)) continue;
+    if (
+      query &&
+      !`${agent.name} ${agent.goal} ${agent.project}`
+        .toLowerCase()
+        .includes(query)
+    ) {
+      continue;
+    }
+    agents[agent.id] = agent;
+  }
+  return { ...state, agents };
 }
 
 export function selectSortedAgents(state: FleetState): FleetAgentView[] {
@@ -594,6 +646,7 @@ const SPATIAL_DEFAULTS = {
   heroLift: 0.5,
   zoneLift: 0.12,
   selectionScale: 1.05,
+  maxZones: 24,
 } as const;
 
 const TILE_THICKNESS = 0.14;
@@ -705,6 +758,44 @@ function frameEmissiveFor(
   return round4(base);
 }
 
+// The synthetic overflow cluster shown at fleet altitude when there are more
+// Projects than `maxZones`. Not drillable; counts are summed totals.
+const AGGREGATE_CLUSTER_ID = 'aggregate:quieter';
+
+/** Fold the overflow Projects into one summary ContextGroup (summed counts). */
+function aggregateGroup(hidden: ContextGroup[]): ContextGroup {
+  let agentCount = 0;
+  let activeCount = 0;
+  let blockedCount = 0;
+  let idleCount = 0;
+  let costRate = 0;
+  let totalCost = 0;
+  for (const g of hidden) {
+    agentCount += g.summary.agentCount;
+    activeCount += g.summary.activeCount;
+    blockedCount += g.summary.blockedCount;
+    idleCount += g.summary.idleCount;
+    costRate += g.summary.costRate;
+    totalCost += g.summary.totalCost;
+  }
+  return {
+    clusterId: AGGREGATE_CLUSTER_ID,
+    kind: 'project',
+    label: `+${hidden.length} quieter projects`,
+    agentIds: [],
+    summary: {
+      agentCount,
+      activeCount,
+      blockedCount,
+      idleCount,
+      costRate: round4(costRate),
+      totalCost: round4(totalCost),
+      attentionPressure: 0,
+      dominantStatus: 'idle',
+    },
+  };
+}
+
 export function selectSpatialProjectZones(
   state: FleetState,
   options: FleetSpatialSceneOptions = {}
@@ -724,14 +815,24 @@ export function selectSpatialProjectZones(
     selectedAgentId != null &&
     groups.some(group => group.agentIds.includes(selectedAgentId));
 
-  // Highest attention pressure first; label asc tiebreak (stable, deterministic).
+  // Highest attention pressure first; then agent count; label asc tiebreak.
+  const maxZones = options.maxZones ?? SPATIAL_DEFAULTS.maxZones;
   const sorted = [...groups].sort((a, b) => {
     const delta = b.summary.attentionPressure - a.summary.attentionPressure;
     if (Math.abs(delta) > 1e-9) return delta;
+    if (b.summary.agentCount !== a.summary.agentCount)
+      return b.summary.agentCount - a.summary.agentCount;
     return a.label.localeCompare(b.label);
   });
 
-  const withGrid = sorted.map(group => ({
+  // Fleet-scale: keep the top-N Projects as full clusters and fold the rest into
+  // a single "+N quieter projects" summary so the Fleet Map stays readable.
+  const effectiveGroups =
+    options.aggregateOverflow && sorted.length > maxZones
+      ? [...sorted.slice(0, maxZones), aggregateGroup(sorted.slice(maxZones))]
+      : sorted;
+
+  const withGrid = effectiveGroups.map(group => ({
     group,
     grid: computeZoneGrid(
       group.agentIds.length,
@@ -771,8 +872,12 @@ export function selectSpatialProjectZones(
     for (const { group, grid } of row) {
       const x = xCursor + grid.width / 2;
       const s = group.summary;
-      const ownsHero = heroId != null && group.agentIds.includes(heroId);
-      const tier = zoneTier(ownsHero, s.blockedCount, s.dominantStatus);
+      const isAggregate = group.clusterId === AGGREGATE_CLUSTER_ID;
+      const ownsHero =
+        !isAggregate && heroId != null && group.agentIds.includes(heroId);
+      const tier = isAggregate
+        ? 'calm'
+        : zoneTier(ownsHero, s.blockedCount, s.dominantStatus);
       const selected =
         selectedAgentId != null && group.agentIds.includes(selectedAgentId);
       const agentWord = s.agentCount === 1 ? 'agent' : 'agents';
@@ -802,6 +907,7 @@ export function selectSpatialProjectZones(
         edgeEmphasisTarget: round4(edgeEmphasisFor(tier, selected)),
         frameEmissiveTarget: frameEmissiveFor(tier, selected, anyZoneSelected),
         summaryMode: false,
+        isAggregate,
       });
       xCursor += grid.width + zoneGap;
     }
@@ -1036,7 +1142,12 @@ export function selectFleetSpatialScene(
 
   // ---- Fleet altitude: summary clusters, no agent tiles (the density drop) ----
   if (altitude === 'fleet') {
-    const groups = allZones.map(zone => ({ ...zone, summaryMode: true }));
+    // Fold Projects beyond maxZones into one "+N quieter projects" cluster so the
+    // Fleet Map stays legible at scale; the top-N keep their full summary cards.
+    const groups = selectSpatialProjectZones(state, {
+      ...options,
+      aggregateOverflow: true,
+    }).map(zone => ({ ...zone, summaryMode: true }));
     const bounds = boundsOf(groups);
     return {
       groups,

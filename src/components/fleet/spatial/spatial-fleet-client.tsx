@@ -3,13 +3,14 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
   Clock3,
   Crosshair,
   RadioTower,
+  Search,
   Sparkles,
 } from 'lucide-react';
 import {
@@ -22,11 +23,20 @@ import { DemoControls } from '@/components/fleet/demo-controls';
 import { FleetMetricsBar } from '@/components/fleet/fleet-metrics-bar';
 import { Button } from '@/components/ui/button';
 import {
+  filterFleetState,
   selectFleetCommandView,
   selectFleetSpatialScene,
   type Altitude,
   type SpatialProjectZone,
 } from '@exawatt/ui-model';
+import type { AgentStatus } from '@exawatt/core';
+
+const FILTERABLE_STATUSES: AgentStatus[] = [
+  'working',
+  'blocked',
+  'reviewing',
+  'idle',
+];
 
 const CommandTableCanvas = dynamic(
   () => import('./command-table-canvas').then(mod => mod.CommandTableCanvas),
@@ -53,6 +63,16 @@ export function SpatialFleetClient() {
   const { connectToRealOC, canConnect } = useConnectToOC();
   const { jobs } = useCron();
 
+  // Fleet-scale search / status filter. Empty = full fleet (no behavior change).
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<AgentStatus[]>([]);
+  const filtered = query.trim() !== '' || statusFilter.length > 0;
+  const filteredState = useMemo(
+    () => filterFleetState(fleetState, { query, statuses: statusFilter }),
+    [fleetState, query, statusFilter]
+  );
+
+  // Metrics stay fleet-wide (unfiltered); zones/tiles reflect the filter.
   const commandView = useMemo(
     () =>
       selectFleetCommandView(fleetState, {
@@ -60,21 +80,29 @@ export function SpatialFleetClient() {
         selectedAgentId,
         activityLimit: 5,
         blockerLimit: 4,
+        now: Date.now(),
       }),
     [fleetState, jobs, selectedAgentId]
   );
 
   const scene = useMemo(
     () =>
-      selectFleetSpatialScene(fleetState, {
+      selectFleetSpatialScene(filteredState, {
         altitude,
         focusedProjectId,
         selectedAgentId,
         blockerLimit: 3,
         now: Date.now(), // Attention Scheduling age; recomputed as fleet state ticks
       }),
-    [fleetState, altitude, focusedProjectId, selectedAgentId]
+    [filteredState, altitude, focusedProjectId, selectedAgentId]
   );
+
+  const toggleStatus = (status: AgentStatus) =>
+    setStatusFilter(prev =>
+      prev.includes(status)
+        ? prev.filter(s => s !== status)
+        : [...prev, status]
+    );
 
   // Drive zoom-resolution + selection through the URL so altitude / Project /
   // Agent are deep-linkable. The selector resolves the EFFECTIVE altitude (and
@@ -241,10 +269,51 @@ export function SpatialFleetClient() {
           </>
         )}
         {scene.altitude !== 'fleet' && (
-          <span className="ml-auto hidden text-[11px] text-zinc-600 sm:inline">
+          <span className="hidden text-[11px] text-zinc-600 sm:inline">
             Esc to zoom out
           </span>
         )}
+
+        <div className="ml-auto flex items-center gap-1.5">
+          <div className="flex items-center gap-1 rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">
+            <Search className="h-3 w-3 text-zinc-500" />
+            <input
+              value={query}
+              onChange={event => setQuery(event.target.value)}
+              placeholder="Search agents…"
+              aria-label="Search agents"
+              className="w-24 bg-transparent text-[11px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none sm:w-40"
+            />
+          </div>
+          <div className="hidden items-center gap-1 md:flex">
+            {FILTERABLE_STATUSES.map(status => (
+              <button
+                key={status}
+                onClick={() => toggleStatus(status)}
+                aria-pressed={statusFilter.includes(status)}
+                className={`rounded px-1.5 py-1 text-[10px] capitalize transition ${
+                  statusFilter.includes(status)
+                    ? 'bg-teal-600 text-white'
+                    : 'text-zinc-400 hover:text-zinc-100'
+                }`}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
+          {filtered && (
+            <button
+              onClick={() => {
+                setQuery('');
+                setStatusFilter([]);
+              }}
+              className="rounded px-1.5 py-1 text-[10px] text-zinc-500 hover:text-zinc-200"
+              title="Clear search and filters"
+            >
+              clear
+            </button>
+          )}
+        </div>
       </nav>
 
       <main className="relative grid min-h-0 flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_360px]">
