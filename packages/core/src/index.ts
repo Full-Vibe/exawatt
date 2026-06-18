@@ -14,5 +14,6 @@ export type { OCClientConfig, OCConnectionStatus } from './oc/client';
 export { ChatAdapter } from './adapters/chat-adapter';
 export { FleetAdapter } from './adapters/fleet-adapter';
 export { FleetManager } from './state/fleet-manager';
+export { resolveContextGroups } from './state/context-groups';
 export { MockFleetTransport } from './transports/mock-fleet';
 export type { SimulationSpeed } from './transports/mock-fleet';

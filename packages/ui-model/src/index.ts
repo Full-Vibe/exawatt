@@ -1,10 +1,13 @@
-import type {
-  AgentActivity,
-  AgentStatus,
-  ExawattAgent,
-  ExawattCronJob,
-  FleetMetrics,
-  FleetState,
+import {
+  resolveContextGroups,
+  type AgentActivity,
+  type AgentStatus,
+  type ContextGroup,
+  type ContextGroupKind,
+  type ExawattAgent,
+  type ExawattCronJob,
+  type FleetMetrics,
+  type FleetState,
 } from '@exawatt/core';
 
 export type FleetSurfaceMode = 'dom' | 'spatial';
@@ -95,32 +98,123 @@ export interface HeartbeatSummary {
   nextRun?: number;
 }
 
-export interface SpatialAgentNode {
-  id: string;
+export type ProjectAttentionTier = 'hero' | 'secondary' | 'calm';
+
+/**
+ * A Project / Context Group zone placed on the dimetric war table.
+ * Coplanar — every zone rests at y=0; only selected tiles and the hero rail
+ * rise in Y. All coordinates are absolute world space (XZ plane, Y up).
+ */
+export interface SpatialProjectZone {
+  clusterId: string;
+  kind: ContextGroupKind;
+  label: string;
+  agentIds: string[]; // status-sorted (from the core resolver)
+  agentCount: number;
+  activeCount: number;
+  blockedCount: number;
+  idleCount: number;
+  costRate: number;
+  totalCost: number;
+  attentionPressure: number; // 0..1
+  /** precomputed front-lip stat string, e.g. "3 agents · 1 blocked · $1.42/hr" */
+  statLine: string;
+  /** attention tier the whole zone reads at (drives the rim color) */
+  tier: ProjectAttentionTier;
+  /** true iff this zone owns the single hero blocker (only zone allowed a red rim) */
+  ownsHeroBlocker: boolean;
+  selected: boolean;
+  x: number; // zone center X
+  z: number; // zone center Z
+  width: number; // footprint along X
+  depth: number; // footprint along Z
+  tint: string; // frosted body tint
+  rimColor: string; // beveled rail emissive (teal/amber/red)
+}
+
+/** A single agent tile, placed in ABSOLUTE world coords inside its zone. */
+export interface SpatialAgentTile {
+  id: string; // `tile:${agentId}`
   agentId: string;
+  clusterId: string;
   label: string;
   status: AgentStatus;
-  x: number;
-  y: number;
-  z: number;
-  radius: number;
-  emphasis: number;
-  color: string;
-  ring: number;
-  orbitIndex: number;
-  selected: boolean;
+  statusColor: string;
   needsOperator: boolean;
   active: boolean;
-  costRate: number;
+  selected: boolean;
+  isHero: boolean; // the hero blocker's tile (lifted + glow-line target)
+  /** 0..1 quiet emphasis for emissive; loud only when isHero/selected */
+  emphasis: number;
+  x: number;
+  y: number; // 0 at rest; selectionLift/heroLift applied here
+  z: number;
+  width: number;
+  height: number; // uniform thickness; NOT a status encoding
+  depth: number;
 }
 
-export interface SpatialLayoutOptions {
+export interface SpatialAttentionItem {
+  agentId: string;
+  agentName: string;
+  clusterId: string;
+  title: string;
+  description: string;
+  type: string;
+  createdAt: number;
+  suggestedResponses: string[];
+  /** world coords of the owning agent's tile, for the connecting glow line */
+  tileX: number;
+  tileY: number;
+  tileZ: number;
+  /** world coords of this item's slot on the attention rail (hero card / chip) */
+  railX: number;
+  railY: number;
+  railZ: number;
+}
+
+export interface SpatialAttention {
+  hero: SpatialAttentionItem | null;
+  secondary: SpatialAttentionItem[]; // grouped, quiet
+  overflowCount: number; // blockers beyond hero + secondary, for "+N more"
+  ambientActiveCount: number; // working + reviewing, for "N working — no action needed"
+  /** world position of the "+N more" overflow label on the rail */
+  overflowLabelPos: { x: number; y: number; z: number };
+  /** world position of the ambient "N working" label on the rail */
+  ambientLabelPos: { x: number; y: number; z: number };
+}
+
+/** The single layout the canvas consumes. Replaces SpatialAgentNode[]. */
+export interface FleetSpatialScene {
+  groups: SpatialProjectZone[];
+  tiles: SpatialAgentTile[];
+  attention: SpatialAttention;
+  /** hero connecting-line endpoints (hero rail card -> hero tile), or null */
+  heroLink: {
+    fromX: number;
+    fromY: number;
+    fromZ: number;
+    toX: number;
+    toY: number;
+    toZ: number;
+  } | null;
+  bounds: { width: number; depth: number }; // for camera framing
+  selectedAgentId: string | null;
+}
+
+export interface FleetSpatialSceneOptions {
   selectedAgentId?: string | null;
-  radiusStep?: number;
-  verticalStep?: number;
+  blockerLimit?: number; // default 3 (hero + up to 2 secondary)
+  tileSize?: number;
+  tileGap?: number;
+  zonePadding?: number;
+  zoneGap?: number;
+  maxTilesPerRow?: number;
+  selectionLift?: number;
+  heroLift?: number;
 }
 
-export interface FleetCommandViewOptions extends SpatialLayoutOptions {
+export interface FleetCommandViewOptions {
   activityLimit?: number;
   blockerLimit?: number;
   heartbeatJobs?: ExawattCronJob[];
@@ -133,7 +227,6 @@ export interface FleetCommandViewModel {
   operatorQueue: OperatorQueueItem[];
   activityFeed: ActivityFeedItem[];
   heartbeats: HeartbeatSummary[];
-  spatialNodes: SpatialAgentNode[];
   selectedAgentId: string | null;
   nextBlockedAgentId: string | null;
   activeAgentCount: number;
@@ -221,7 +314,9 @@ export function selectOperatorQueue(
       const createdDelta =
         (a.blockerInfo?.createdAt ?? 0) - (b.blockerInfo?.createdAt ?? 0);
       if (createdDelta !== 0) return createdDelta;
-      return b.lastActivityAt - a.lastActivityAt;
+      const lastDelta = b.lastActivityAt - a.lastActivityAt;
+      if (lastDelta !== 0) return lastDelta;
+      return a.id.localeCompare(b.id);
     })
     .slice(0, limit)
     .map((agent, index) => ({
@@ -291,44 +386,385 @@ export function selectHeartbeatSummaries(
     }));
 }
 
-export function selectSpatialAgentLayout(
+// ---- Spatial command surface (dimetric war table) ----
+//
+// All layout math lives here in pure TypeScript. The R3F components consume
+// plain numbers and do zero geometry. Projects are resolved as Context Group
+// lenses via @exawatt/core's resolveContextGroups, never stored on FleetState.
+
+const SPATIAL_DEFAULTS = {
+  blockerLimit: 3,
+  tileSize: 0.6,
+  tileGap: 0.18,
+  zonePadding: 0.45,
+  zoneGap: 0.9,
+  maxTilesPerRow: 3,
+  selectionLift: 0.35,
+  heroLift: 0.5,
+} as const;
+
+const TILE_THICKNESS = 0.14;
+
+// Attention-rail placement, derived from scene bounds. Lives here (not in R3F)
+// so the rail card, secondary chips, labels, and the hero glow line all share
+// one source of truth and can never drift apart.
+const RAIL = {
+  frontGap: 0.9,
+  heroX: 0,
+  heroY: 0.6,
+  secondaryGap: 1.6,
+  secondaryY: 0.18,
+  secondaryZOffset: 0.8,
+  overflowY: 0.05,
+  overflowZOffset: 1.35,
+  ambientY: 0.02,
+  ambientZOffset: 1.7,
+} as const;
+
+const TIER_RIM_COLOR: Record<ProjectAttentionTier, string> = {
+  hero: '#f87171',
+  secondary: '#fbbf24',
+  calm: '#2dd4bf',
+};
+
+const ZONE_TINT: Record<ProjectAttentionTier, string> = {
+  hero: '#1b1012',
+  secondary: '#1a1710',
+  calm: '#0e1a1c',
+};
+
+function round4(value: number): number {
+  return Number(value.toFixed(4));
+}
+
+interface ZoneGrid {
+  cols: number;
+  rows: number;
+  innerW: number;
+  innerD: number;
+  width: number;
+  depth: number;
+}
+
+function computeZoneGrid(
+  agentCount: number,
+  tileSize: number,
+  tileGap: number,
+  zonePadding: number,
+  maxTilesPerRow: number
+): ZoneGrid {
+  const count = Math.max(1, agentCount);
+  const cols = Math.min(
+    Math.max(Math.ceil(Math.sqrt(count)), 2),
+    maxTilesPerRow
+  );
+  const rows = Math.max(1, Math.ceil(count / cols));
+  const innerW = cols * tileSize + (cols - 1) * tileGap;
+  const innerD = rows * tileSize + (rows - 1) * tileGap;
+  return {
+    cols,
+    rows,
+    innerW,
+    innerD,
+    width: innerW + 2 * zonePadding,
+    depth: innerD + 2 * zonePadding,
+  };
+}
+
+/** The single highest-leverage blocker's agent id (oldest blocker), or null. */
+function heroAgentId(state: FleetState): string | null {
+  return selectOperatorQueue(state, 1)[0]?.agentId ?? null;
+}
+
+function zoneTier(
+  ownsHero: boolean,
+  blockedCount: number,
+  dominantStatus: AgentStatus
+): ProjectAttentionTier {
+  if (ownsHero) return 'hero';
+  if (blockedCount > 0) return 'secondary';
+  if (dominantStatus === 'reviewing' || dominantStatus === 'error') {
+    return 'secondary';
+  }
+  return 'calm';
+}
+
+export function selectSpatialProjectZones(
   state: FleetState,
-  options: SpatialLayoutOptions = {}
-): SpatialAgentNode[] {
-  const radiusStep = options.radiusStep ?? 2.65;
-  const verticalStep = options.verticalStep ?? 0.42;
-  const sorted = getAgents(state).sort(sortAgents);
+  options: FleetSpatialSceneOptions = {}
+): SpatialProjectZone[] {
+  const tileSize = options.tileSize ?? SPATIAL_DEFAULTS.tileSize;
+  const tileGap = options.tileGap ?? SPATIAL_DEFAULTS.tileGap;
+  const zonePadding = options.zonePadding ?? SPATIAL_DEFAULTS.zonePadding;
+  const zoneGap = options.zoneGap ?? SPATIAL_DEFAULTS.zoneGap;
+  const maxTilesPerRow =
+    options.maxTilesPerRow ?? SPATIAL_DEFAULTS.maxTilesPerRow;
+  const selectedAgentId = options.selectedAgentId ?? null;
+  const heroId = heroAgentId(state);
 
-  return sorted.map((agent, index) => {
-    const ring = Math.floor(index / 8);
-    const itemsInRing = Math.min(8 + ring * 4, Math.max(1, sorted.length));
-    const indexInRing = index % itemsInRing;
-    const angle = (indexInRing / itemsInRing) * Math.PI * 2 + ring * 0.31;
-    const radius = 1.75 + ring * radiusStep;
-    const selected = options.selectedAgentId === agent.id;
-    const needsOperator = agent.status === 'blocked';
-    const active = agent.status === 'working' || agent.status === 'reviewing';
-    const emphasis = selected ? 1 : needsOperator ? 0.82 : active ? 0.68 : 0.42;
+  const groups: ContextGroup[] = resolveContextGroups(state);
 
-    return {
-      id: `spatial:${agent.id}`,
-      agentId: agent.id,
-      label: agent.name,
-      status: agent.status,
-      x: Number((Math.cos(angle) * radius).toFixed(4)),
-      y: Number(((STATUS_PRIORITY[agent.status] - 2) * verticalStep).toFixed(4)),
-      z: Number((Math.sin(angle) * radius).toFixed(4)),
-      radius: Number((0.28 + emphasis * 0.18).toFixed(4)),
-      emphasis,
-      color: STATUS_COLORS[agent.status],
-      ring,
-      orbitIndex: indexInRing,
-      selected,
-      needsOperator,
-      active,
-      costRate: agent.metrics.costRate,
-    };
+  // Highest attention pressure first; label asc tiebreak (stable, deterministic).
+  const sorted = [...groups].sort((a, b) => {
+    const delta = b.summary.attentionPressure - a.summary.attentionPressure;
+    if (Math.abs(delta) > 1e-9) return delta;
+    return a.label.localeCompare(b.label);
   });
+
+  const withGrid = sorted.map(group => ({
+    group,
+    grid: computeZoneGrid(
+      group.agentIds.length,
+      tileSize,
+      tileGap,
+      zonePadding,
+      maxTilesPerRow
+    ),
+  }));
+
+  const n = withGrid.length;
+  if (n === 0) return [];
+
+  // Single row for a few zones; wrap into a grid beyond 4 (survives 5-8+).
+  const cols = n <= 4 ? n : Math.ceil(Math.sqrt(n));
+  const rows: Array<typeof withGrid> = [];
+  for (let i = 0; i < n; i += cols) rows.push(withGrid.slice(i, i + cols));
+
+  const rowDims = rows.map(row => ({
+    row,
+    rowWidth:
+      row.reduce((sum, z) => sum + z.grid.width, 0) +
+      zoneGap * (row.length - 1),
+    rowDepth: Math.max(...row.map(z => z.grid.depth)),
+  }));
+
+  const totalDepth =
+    rowDims.reduce((sum, r) => sum + r.rowDepth, 0) +
+    zoneGap * (rowDims.length - 1);
+
+  const placed: SpatialProjectZone[] = [];
+  // Front (+Z, nearest camera) holds the highest-pressure row; rows recede.
+  let zStart = totalDepth / 2;
+  for (const { row, rowWidth, rowDepth } of rowDims) {
+    const rowCenterZ = zStart - rowDepth / 2;
+    let xCursor = -rowWidth / 2;
+    for (const { group, grid } of row) {
+      const x = xCursor + grid.width / 2;
+      const s = group.summary;
+      const ownsHero = heroId != null && group.agentIds.includes(heroId);
+      const tier = zoneTier(ownsHero, s.blockedCount, s.dominantStatus);
+      const agentWord = s.agentCount === 1 ? 'agent' : 'agents';
+      placed.push({
+        clusterId: group.clusterId,
+        kind: group.kind,
+        label: group.label,
+        agentIds: group.agentIds,
+        agentCount: s.agentCount,
+        activeCount: s.activeCount,
+        blockedCount: s.blockedCount,
+        idleCount: s.idleCount,
+        costRate: s.costRate,
+        totalCost: s.totalCost,
+        attentionPressure: s.attentionPressure,
+        statLine: `${s.agentCount} ${agentWord} · ${s.blockedCount} blocked · $${s.costRate.toFixed(2)}/hr`,
+        tier,
+        ownsHeroBlocker: ownsHero,
+        selected:
+          selectedAgentId != null && group.agentIds.includes(selectedAgentId),
+        x: round4(x),
+        z: round4(rowCenterZ),
+        width: round4(grid.width),
+        depth: round4(grid.depth),
+        tint: ZONE_TINT[tier],
+        rimColor: TIER_RIM_COLOR[tier],
+      });
+      xCursor += grid.width + zoneGap;
+    }
+    zStart -= rowDepth + zoneGap;
+  }
+
+  return placed;
+}
+
+export function selectSpatialAgentTiles(
+  zones: SpatialProjectZone[],
+  state: FleetState,
+  options: FleetSpatialSceneOptions = {}
+): SpatialAgentTile[] {
+  const tileSize = options.tileSize ?? SPATIAL_DEFAULTS.tileSize;
+  const tileGap = options.tileGap ?? SPATIAL_DEFAULTS.tileGap;
+  const zonePadding = options.zonePadding ?? SPATIAL_DEFAULTS.zonePadding;
+  const maxTilesPerRow =
+    options.maxTilesPerRow ?? SPATIAL_DEFAULTS.maxTilesPerRow;
+  const selectionLift = options.selectionLift ?? SPATIAL_DEFAULTS.selectionLift;
+  const heroLift = options.heroLift ?? SPATIAL_DEFAULTS.heroLift;
+  const selectedAgentId = options.selectedAgentId ?? null;
+  const heroId = heroAgentId(state);
+
+  const tiles: SpatialAgentTile[] = [];
+  for (const zone of zones) {
+    const grid = computeZoneGrid(
+      zone.agentIds.length,
+      tileSize,
+      tileGap,
+      zonePadding,
+      maxTilesPerRow
+    );
+    const leftX = zone.x - grid.innerW / 2 + tileSize / 2;
+    const frontZ = zone.z - grid.innerD / 2 + tileSize / 2;
+    zone.agentIds.forEach((agentId, index) => {
+      const agent = state.agents[agentId];
+      if (!agent) return;
+      const col = index % grid.cols;
+      const row = Math.floor(index / grid.cols);
+      const selected = agentId === selectedAgentId;
+      const isHero = agentId === heroId;
+      const needsOperator = agent.status === 'blocked';
+      const active = agent.status === 'working' || agent.status === 'reviewing';
+      const emphasis =
+        isHero || selected ? 1 : needsOperator ? 0.5 : active ? 0.35 : 0.15;
+      const y = (selected ? selectionLift : 0) + (isHero ? heroLift : 0);
+      tiles.push({
+        id: `tile:${agentId}`,
+        agentId,
+        clusterId: zone.clusterId,
+        label: agent.name,
+        status: agent.status,
+        statusColor: STATUS_COLORS[agent.status],
+        needsOperator,
+        active,
+        selected,
+        isHero,
+        emphasis,
+        x: round4(leftX + col * (tileSize + tileGap)),
+        y: round4(y),
+        z: round4(frontZ + row * (tileSize + tileGap)),
+        width: tileSize,
+        height: TILE_THICKNESS,
+        depth: tileSize,
+      });
+    });
+  }
+  return tiles;
+}
+
+export function selectSpatialAttention(
+  state: FleetState,
+  tiles: SpatialAgentTile[],
+  options: FleetSpatialSceneOptions = {},
+  bounds: { width: number; depth: number } = { width: 0, depth: 0 }
+): SpatialAttention {
+  const blockerLimit = options.blockerLimit ?? SPATIAL_DEFAULTS.blockerLimit;
+  const fullQueue = selectOperatorQueue(state, Number.MAX_SAFE_INTEGER);
+  const tileByAgent = new Map(tiles.map(tile => [tile.agentId, tile]));
+  const frontZ = bounds.depth / 2 + RAIL.frontGap;
+
+  const toItem = (
+    q: OperatorQueueItem,
+    rail: { x: number; y: number; z: number }
+  ): SpatialAttentionItem => {
+    const tile = tileByAgent.get(q.agentId);
+    return {
+      agentId: q.agentId,
+      agentName: q.agentName,
+      clusterId: tile?.clusterId ?? '',
+      title: q.title,
+      description: q.description,
+      type: q.type,
+      createdAt: q.createdAt,
+      suggestedResponses: q.suggestedResponses,
+      tileX: tile?.x ?? 0,
+      tileY: tile?.y ?? 0,
+      tileZ: tile?.z ?? 0,
+      railX: round4(rail.x),
+      railY: round4(rail.y),
+      railZ: round4(rail.z),
+    };
+  };
+
+  const hero = fullQueue.length
+    ? toItem(fullQueue[0]!, { x: RAIL.heroX, y: RAIL.heroY, z: frontZ })
+    : null;
+  const secondaryLimit = Math.max(0, blockerLimit - 1);
+  const secondaryQueue = fullQueue.slice(1, 1 + secondaryLimit);
+  const secondary = secondaryQueue.map((q, index) =>
+    toItem(q, {
+      x: (index - (secondaryQueue.length - 1) / 2) * RAIL.secondaryGap,
+      y: RAIL.secondaryY,
+      z: frontZ + RAIL.secondaryZOffset,
+    })
+  );
+  const overflowCount = Math.max(
+    0,
+    fullQueue.length - (1 + secondary.length)
+  );
+
+  let ambientActiveCount = 0;
+  for (const agent of getAgents(state)) {
+    if (agent.status === 'working' || agent.status === 'reviewing') {
+      ambientActiveCount++;
+    }
+  }
+
+  return {
+    hero,
+    secondary,
+    overflowCount,
+    ambientActiveCount,
+    overflowLabelPos: {
+      x: 0,
+      y: RAIL.overflowY,
+      z: round4(frontZ + RAIL.overflowZOffset),
+    },
+    ambientLabelPos: {
+      x: 0,
+      y: RAIL.ambientY,
+      z: round4(frontZ + RAIL.ambientZOffset),
+    },
+  };
+}
+
+/** Master spatial selector — REPLACES selectSpatialAgentLayout. */
+export function selectFleetSpatialScene(
+  state: FleetState,
+  options: FleetSpatialSceneOptions = {}
+): FleetSpatialScene {
+  const zones = selectSpatialProjectZones(state, options);
+  const tiles = selectSpatialAgentTiles(zones, state, options);
+
+  let halfWidth = 0;
+  let halfDepth = 0;
+  for (const zone of zones) {
+    halfWidth = Math.max(halfWidth, Math.abs(zone.x) + zone.width / 2);
+    halfDepth = Math.max(halfDepth, Math.abs(zone.z) + zone.depth / 2);
+  }
+  const bounds = {
+    width: round4(halfWidth * 2),
+    depth: round4(halfDepth * 2),
+  };
+
+  const attention = selectSpatialAttention(state, tiles, options, bounds);
+
+  let heroLink: FleetSpatialScene['heroLink'] = null;
+  if (attention.hero) {
+    heroLink = {
+      fromX: attention.hero.railX,
+      fromY: attention.hero.railY,
+      fromZ: attention.hero.railZ,
+      toX: attention.hero.tileX,
+      toY: round4(attention.hero.tileY + 0.2),
+      toZ: attention.hero.tileZ,
+    };
+  }
+
+  return {
+    groups: zones,
+    tiles,
+    attention,
+    heroLink,
+    bounds,
+    selectedAgentId: options.selectedAgentId ?? null,
+  };
 }
 
 export function selectFleetCommandView(
@@ -344,11 +780,39 @@ export function selectFleetCommandView(
     operatorQueue,
     activityFeed: selectActivityFeed(state, options.activityLimit),
     heartbeats: selectHeartbeatSummaries(options.heartbeatJobs, state),
-    spatialNodes: selectSpatialAgentLayout(state, options),
     selectedAgentId: options.selectedAgentId ?? null,
     nextBlockedAgentId: operatorQueue[0]?.agentId ?? null,
     activeAgentCount: agents.filter(agent => agent.active).length,
     blockedAgentCount: operatorQueue.length,
     lastUpdated: state.lastUpdated,
   };
+}
+
+// ---- Transmission budget (rule 5) ----
+//
+// Pure presentation policy for the dimetric surface's "liquid glass" cap: at
+// most 2 live MeshTransmissionMaterial surfaces, exactly 1 at rest (the hero
+// card). The selected agent's tile takes the 2nd slot only when an agent is
+// selected AND it is not the hero (the hero is already glass on the rail card —
+// never glass on both for one agent). On a low-power/degraded device everything
+// falls back to frosted (0 transmissive). Pure TS so it is unit-tested without
+// React/Three.
+
+export interface TransmissionPlan {
+  heroCardGlass: boolean;
+  selectedTileGlassAgentId: string | null;
+}
+
+export function resolveTransmission(
+  scene: FleetSpatialScene,
+  degraded: boolean
+): TransmissionPlan {
+  const heroId = scene.attention.hero?.agentId ?? null;
+  const selectedId = scene.selectedAgentId;
+  const heroCardGlass = !degraded && heroId != null;
+  const selectedTileGlassAgentId =
+    !degraded && selectedId != null && selectedId !== heroId
+      ? selectedId
+      : null;
+  return { heroCardGlass, selectedTileGlassAgentId };
 }

@@ -6,11 +6,15 @@ import type {
   FleetState,
 } from '@exawatt/core';
 import {
+  resolveTransmission,
   selectActivityFeed,
   selectFleetCommandView,
+  selectFleetSpatialScene,
   selectOperatorQueue,
   selectSortedAgents,
-  selectSpatialAgentLayout,
+  selectSpatialAgentTiles,
+  selectSpatialAttention,
+  selectSpatialProjectZones,
 } from './index';
 
 const metrics: FleetMetrics = {
@@ -102,6 +106,69 @@ function state(): FleetState {
   };
 }
 
+// Multi-project fixture for the spatial war-table selectors.
+// Alpha: working + idle (calm). Beta: 2 blocked + 1 reviewing (high pressure);
+// 'beta-blocked-old' has the oldest blocker -> deterministic hero.
+function multiState(): FleetState {
+  const agents = [
+    agent({
+      id: 'alpha-working',
+      name: 'AW',
+      project: 'Alpha',
+      status: 'working',
+      lastActivityAt: 40,
+    }),
+    agent({
+      id: 'alpha-idle',
+      name: 'AI',
+      project: 'Alpha',
+      status: 'idle',
+      lastActivityAt: 10,
+    }),
+    agent({
+      id: 'beta-blocked-old',
+      name: 'BBO',
+      project: 'Beta',
+      status: 'blocked',
+      lastActivityAt: 30,
+      blockerInfo: {
+        type: 'credentials_needed',
+        title: 'API keys required',
+        description: 'Need live keys to proceed.',
+        suggestedResponses: ['Provide keys'],
+        createdAt: 10,
+      },
+    }),
+    agent({
+      id: 'beta-blocked-new',
+      name: 'BBN',
+      project: 'Beta',
+      status: 'blocked',
+      lastActivityAt: 35,
+      blockerInfo: {
+        type: 'input_needed',
+        title: 'Which provider?',
+        description: 'Pick a provider.',
+        suggestedResponses: ['A'],
+        createdAt: 50,
+      },
+    }),
+    agent({
+      id: 'beta-reviewing',
+      name: 'BR',
+      project: 'Beta',
+      status: 'reviewing',
+      lastActivityAt: 20,
+    }),
+  ];
+
+  return {
+    agents: Object.fromEntries(agents.map(item => [item.id, item])),
+    metrics,
+    lastUpdated: 200,
+  };
+}
+
 describe('@exawatt/ui-model', () => {
   it('sorts blocked and risky agents first, then by recency', () => {
     expect(selectSortedAgents(state()).map(item => item.id)).toEqual([
@@ -135,21 +202,91 @@ describe('@exawatt/ui-model', () => {
     ]);
   });
 
-  it('creates deterministic spatial layout without Three.js types', () => {
-    const first = selectSpatialAgentLayout(state(), {
-      selectedAgentId: 'working-1',
-    });
-    const second = selectSpatialAgentLayout(state(), {
-      selectedAgentId: 'working-1',
-    });
+  it('places project zones by attention pressure, marking the hero zone', () => {
+    const zones = selectSpatialProjectZones(multiState());
+    expect(zones.map(z => z.label)).toEqual(['Beta', 'Alpha']); // pressure desc
 
-    expect(first).toEqual(second);
-    expect(first.find(item => item.agentId === 'working-1')).toEqual(
-      expect.objectContaining({
-        selected: true,
-        active: true,
-      })
+    const beta = zones.find(z => z.label === 'Beta')!;
+    const alpha = zones.find(z => z.label === 'Alpha')!;
+    expect(beta.ownsHeroBlocker).toBe(true);
+    expect(beta.tier).toBe('hero');
+    expect(beta.rimColor).toBe('#f87171'); // only the hero zone is red
+    expect(alpha.ownsHeroBlocker).toBe(false);
+    expect(alpha.rimColor).not.toBe('#f87171');
+    expect(beta.statLine).toMatch(/^3 agents · 2 blocked · \$/);
+    expect(beta.width).toBeGreaterThan(0);
+    expect(beta.depth).toBeGreaterThan(0);
+  });
+
+  it('lays out agent tiles inside their zone bounds, lifting hero/selected', () => {
+    const zones = selectSpatialProjectZones(multiState(), {
+      selectedAgentId: 'alpha-working',
+    });
+    const tiles = selectSpatialAgentTiles(zones, multiState(), {
+      selectedAgentId: 'alpha-working',
+    });
+    const zoneById = new Map(zones.map(z => [z.clusterId, z]));
+
+    for (const tile of tiles) {
+      const zone = zoneById.get(tile.clusterId)!;
+      // assert the tile FOOTPRINT EDGE stays inside the zone, not just its center
+      expect(Math.abs(tile.x - zone.x) + tile.width / 2).toBeLessThanOrEqual(
+        zone.width / 2 + 1e-6
+      );
+      expect(Math.abs(tile.z - zone.z) + tile.depth / 2).toBeLessThanOrEqual(
+        zone.depth / 2 + 1e-6
+      );
+    }
+
+    const hero = tiles.find(t => t.agentId === 'beta-blocked-old')!;
+    expect(hero.isHero).toBe(true);
+    expect(hero.y).toBeGreaterThanOrEqual(0.5); // heroLift
+
+    const selected = tiles.find(t => t.agentId === 'alpha-working')!;
+    expect(selected.selected).toBe(true);
+    expect(selected.y).toBeGreaterThanOrEqual(0.35); // selectionLift
+  });
+
+  it('elects a single hero blocker (oldest) with grouped secondary attention', () => {
+    const scene = selectFleetSpatialScene(multiState());
+    const attention = selectSpatialAttention(
+      multiState(),
+      scene.tiles
     );
+    expect(attention.hero?.agentId).toBe('beta-blocked-old');
+    expect(attention.secondary.map(s => s.agentId)).toContain('beta-blocked-new');
+    expect(attention.overflowCount).toBe(0);
+    expect(attention.ambientActiveCount).toBe(2); // working + reviewing
+  });
+
+  it('falls back to the next-oldest blocker when the hero is removed', () => {
+    const base = multiState();
+    delete base.agents['beta-blocked-old'];
+    const scene = selectFleetSpatialScene(base);
+    expect(scene.attention.hero?.agentId).toBe('beta-blocked-new');
+  });
+
+  it('reports no hero when there are no blockers', () => {
+    const calm = state();
+    delete calm.agents['blocked-1'];
+    const scene = selectFleetSpatialScene(calm);
+    expect(scene.attention.hero).toBeNull();
+    expect(scene.heroLink).toBeNull();
+  });
+
+  it('produces a deterministic scene with a hero link to the hero tile', () => {
+    const first = selectFleetSpatialScene(multiState(), {
+      selectedAgentId: 'beta-blocked-old',
+    });
+    const second = selectFleetSpatialScene(multiState(), {
+      selectedAgentId: 'beta-blocked-old',
+    });
+    expect(first).toEqual(second);
+
+    const heroTile = first.tiles.find(t => t.agentId === 'beta-blocked-old')!;
+    expect(first.heroLink).not.toBeNull();
+    expect(first.heroLink!.toX).toBe(heroTile.x);
+    expect(first.heroLink!.toZ).toBe(heroTile.z);
   });
 
   it('combines fleet model, spatial model, and heartbeat summaries', () => {
@@ -177,5 +314,185 @@ describe('@exawatt/ui-model', () => {
         heartbeats: [expect.objectContaining({ id: 'cron-1' })],
       })
     );
+  });
+
+  it('elects a stable hero on createdAt + lastActivityAt ties (insertion-order independent)', () => {
+    const mk = (): ExawattAgent[] => [
+      agent({
+        id: 'b-zzz',
+        name: 'Z',
+        project: 'Tie',
+        status: 'blocked',
+        lastActivityAt: 99,
+        blockerInfo: {
+          type: 'input_needed',
+          title: 'T',
+          description: 'd',
+          suggestedResponses: ['x'],
+          createdAt: 99,
+        },
+      }),
+      agent({
+        id: 'b-aaa',
+        name: 'A',
+        project: 'Tie',
+        status: 'blocked',
+        lastActivityAt: 99,
+        blockerInfo: {
+          type: 'input_needed',
+          title: 'T',
+          description: 'd',
+          suggestedResponses: ['x'],
+          createdAt: 99,
+        },
+      }),
+    ];
+    const stateOf = (list: ExawattAgent[]): FleetState => ({
+      agents: Object.fromEntries(list.map(a => [a.id, a])),
+      metrics,
+      lastUpdated: 0,
+    });
+    const heroOf = (list: ExawattAgent[]) =>
+      selectOperatorQueue(stateOf(list))[0]!.agentId;
+    // lower id wins regardless of insertion order
+    expect(heroOf(mk())).toBe('b-aaa');
+    expect(heroOf([...mk()].reverse())).toBe('b-aaa');
+  });
+
+  it('emits rail placements so the hero glow line cannot drift from the card', () => {
+    const scene = selectFleetSpatialScene(multiState());
+    expect(scene.attention.hero).not.toBeNull();
+    expect(scene.heroLink).not.toBeNull();
+    expect(scene.heroLink!.fromX).toBe(scene.attention.hero!.railX);
+    expect(scene.heroLink!.fromY).toBe(scene.attention.hero!.railY);
+    expect(scene.heroLink!.fromZ).toBe(scene.attention.hero!.railZ);
+    for (const item of scene.attention.secondary) {
+      expect(typeof item.railX).toBe('number');
+      expect(typeof item.railZ).toBe('number');
+    }
+    expect(scene.attention.overflowLabelPos).toEqual(
+      expect.objectContaining({ x: expect.any(Number), z: expect.any(Number) })
+    );
+    expect(scene.attention.ambientLabelPos).toEqual(
+      expect.objectContaining({ x: expect.any(Number), z: expect.any(Number) })
+    );
+  });
+
+  it('enforces the transmission cap (<=2 surfaces, 1 at rest, never both for the hero)', () => {
+    const base = selectFleetSpatialScene(multiState());
+    const heroId = base.attention.hero!.agentId; // 'beta-blocked-old'
+    const sceneWith = (selectedAgentId: string | null) => ({
+      ...base,
+      selectedAgentId,
+    });
+    const count = (p: {
+      heroCardGlass: boolean;
+      selectedTileGlassAgentId: string | null;
+    }) => Number(p.heroCardGlass) + (p.selectedTileGlassAgentId ? 1 : 0);
+
+    const rest = resolveTransmission(sceneWith(null), false);
+    expect(rest.heroCardGlass).toBe(true);
+    expect(rest.selectedTileGlassAgentId).toBeNull();
+    expect(count(rest)).toBe(1); // 1 at rest
+
+    const two = resolveTransmission(sceneWith('alpha-working'), false);
+    expect(two.selectedTileGlassAgentId).toBe('alpha-working');
+    expect(count(two)).toBe(2); // hero card + distinct selected tile
+
+    const heroSelected = resolveTransmission(sceneWith(heroId), false);
+    expect(heroSelected.selectedTileGlassAgentId).toBeNull(); // carve-out
+    expect(count(heroSelected)).toBe(1); // never glass on both for the hero
+
+    expect(count(resolveTransmission(sceneWith('alpha-working'), true))).toBe(0);
+
+    const calm = state();
+    delete calm.agents['blocked-1'];
+    expect(
+      count(resolveTransmission(selectFleetSpatialScene(calm), false))
+    ).toBe(0);
+  });
+
+  it('keeps every tile footprint inside its zone for a large multi-row project', () => {
+    const agents = Array.from({ length: 8 }, (_, i) =>
+      agent({
+        id: `grid-${i}`,
+        name: `G${i}`,
+        project: 'Grid',
+        status: i % 2 ? 'idle' : 'working',
+        lastActivityAt: i,
+      })
+    );
+    const big: FleetState = {
+      agents: Object.fromEntries(agents.map(a => [a.id, a])),
+      metrics,
+      lastUpdated: 0,
+    };
+    const zones = selectSpatialProjectZones(big);
+    const tiles = selectSpatialAgentTiles(zones, big);
+    const zone = zones.find(z => z.label === 'Grid')!;
+    for (const tile of tiles) {
+      expect(Math.abs(tile.x - zone.x) + tile.width / 2).toBeLessThanOrEqual(
+        zone.width / 2 + 1e-6
+      );
+      expect(Math.abs(tile.z - zone.z) + tile.depth / 2).toBeLessThanOrEqual(
+        zone.depth / 2 + 1e-6
+      );
+    }
+  });
+
+  it('never overlaps tiles within a zone', () => {
+    const scene = selectFleetSpatialScene(multiState());
+    const byCluster = new Map<string, typeof scene.tiles>();
+    for (const t of scene.tiles) {
+      const arr = byCluster.get(t.clusterId) ?? [];
+      arr.push(t);
+      byCluster.set(t.clusterId, arr);
+    }
+    for (const group of byCluster.values()) {
+      for (let i = 0; i < group.length; i++) {
+        for (let j = i + 1; j < group.length; j++) {
+          const dx = Math.abs(group[i]!.x - group[j]!.x);
+          const dz = Math.abs(group[i]!.z - group[j]!.z);
+          expect(dx > 1e-6 || dz > 1e-6).toBe(true); // distinct
+          expect(Math.max(dx, dz)).toBeGreaterThanOrEqual(group[i]!.width - 1e-6);
+        }
+      }
+    }
+  });
+
+  it('reports overflow beyond hero + secondary', () => {
+    const s = multiState();
+    s.agents['beta-blocked-3'] = agent({
+      id: 'beta-blocked-3',
+      name: 'BB3',
+      project: 'Beta',
+      status: 'blocked',
+      lastActivityAt: 60,
+      blockerInfo: {
+        type: 'input_needed',
+        title: 'Q3',
+        description: 'd',
+        suggestedResponses: ['x'],
+        createdAt: 70,
+      },
+    });
+    s.agents['beta-blocked-4'] = agent({
+      id: 'beta-blocked-4',
+      name: 'BB4',
+      project: 'Beta',
+      status: 'blocked',
+      lastActivityAt: 65,
+      blockerInfo: {
+        type: 'input_needed',
+        title: 'Q4',
+        description: 'd',
+        suggestedResponses: ['x'],
+        createdAt: 80,
+      },
+    });
+    // 4 blockers, blockerLimit 2 => hero + 1 secondary + 2 overflow
+    const scene = selectFleetSpatialScene(s, { blockerLimit: 2 });
+    expect(scene.attention.secondary).toHaveLength(1);
+    expect(scene.attention.overflowCount).toBe(2);
   });
 });

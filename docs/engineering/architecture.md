@@ -32,6 +32,7 @@ Canonical product objects:
 
 - Workspace
 - Initiative
+- Project / Context Group (a resolvable grouping lens keyed off agents, not a stored parent)
 - Agent
 - Session
 - Decision
@@ -75,6 +76,7 @@ The UI should depend on normalized Exawatt concepts, not raw provider-specific p
 
 - Workspace
 - Initiative
+- Project / Context Group (a resolvable grouping lens keyed off agents, not a stored parent)
 - Agent
 - Session
 - Event

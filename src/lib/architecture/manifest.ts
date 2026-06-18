@@ -393,6 +393,17 @@ export const architectureManifest = {
           height: 68,
         },
         {
+          id: 'context-group',
+          label: 'Project / Context Group',
+          summary:
+            'A resolvable grouping lens over agents (by project, initiative, repository, signal, or similarity). Derived on demand, not a stored parent of Agent.',
+          layer: 'coordination',
+          x: 360,
+          y: 410,
+          width: 230,
+          height: 66,
+        },
+        {
           id: 'agent-source',
           label: 'Agent Source / Harness',
           summary:
@@ -443,6 +454,7 @@ export const architectureManifest = {
         { from: 'review-surfaces', to: 'artifact' },
         { from: 'workspace', to: 'initiative' },
         { from: 'initiative', to: 'agent' },
+        { from: 'context-group', to: 'agent', style: 'dashed' },
         { from: 'agent', to: 'session' },
         { from: 'session', to: 'event' },
         { from: 'session', to: 'artifact' },
@@ -676,7 +688,6 @@ export const architectureManifest = {
         { from: 'next-app-shell', to: 'fleet-provider' },
         { from: 'fleet-ui', to: 'ui-model' },
         { from: '3d-fleet-command', to: 'ui-model' },
-        { from: 'ui-model', to: 'fleet-provider' },
         { from: 'architecture-map', to: 'architecture-manifest' },
         { from: 'review-ui', to: 'decision-context-layer', style: 'dashed' },
         { from: 'fleet-provider', to: 'source-adapters' },

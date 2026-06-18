@@ -21,15 +21,19 @@ import {
 import { DemoControls } from '@/components/fleet/demo-controls';
 import { FleetMetricsBar } from '@/components/fleet/fleet-metrics-bar';
 import { Button } from '@/components/ui/button';
-import { selectFleetCommandView } from '@exawatt/ui-model';
+import {
+  selectFleetCommandView,
+  selectFleetSpatialScene,
+  type SpatialProjectZone,
+} from '@exawatt/ui-model';
 
-const SpatialFleetCanvas = dynamic(
-  () => import('./spatial-fleet-canvas').then(mod => mod.SpatialFleetCanvas),
+const CommandTableCanvas = dynamic(
+  () => import('./command-table-canvas').then(mod => mod.CommandTableCanvas),
   {
     ssr: false,
     loading: () => (
       <div className="flex h-full min-h-[520px] items-center justify-center bg-zinc-950 text-sm text-zinc-500">
-        Initializing spatial field...
+        Initializing command table...
       </div>
     ),
   }
@@ -55,6 +59,15 @@ export function SpatialFleetClient() {
     [fleetState, jobs, selectedAgentId]
   );
 
+  const scene = useMemo(
+    () =>
+      selectFleetSpatialScene(fleetState, {
+        selectedAgentId,
+        blockerLimit: 3,
+      }),
+    [fleetState, selectedAgentId]
+  );
+
   const selectedAgent =
     commandView.agents.find(agent => agent.id === selectedAgentId) ??
     commandView.agents[0];
@@ -70,6 +83,10 @@ export function SpatialFleetClient() {
     router.replace(`/fleet/spatial${query ? `?${query}` : ''}`, {
       scroll: false,
     });
+  };
+
+  const handleSelectProject = (zone: SpatialProjectZone) => {
+    setSelectedAgent(zone.agentIds[0] ?? null);
   };
 
   const formatCurrency = (value: number) =>
@@ -131,10 +148,10 @@ export function SpatialFleetClient() {
           className="relative min-h-[62vh] overflow-hidden"
           aria-label="Spatial fleet map"
         >
-          <SpatialFleetCanvas
-            nodes={commandView.spatialNodes}
-            selectedAgentId={selectedAgent?.id ?? null}
+          <CommandTableCanvas
+            scene={scene}
             onSelectAgent={setSelectedAgent}
+            onSelectProject={handleSelectProject}
           />
 
           <div className="pointer-events-none absolute left-4 top-4 grid gap-2 sm:grid-cols-4">
@@ -243,27 +260,49 @@ export function SpatialFleetClient() {
               Signals
             </div>
             <div className="space-y-3 overflow-y-auto pr-1">
-              {commandView.operatorQueue.length === 0 &&
+              {!scene.attention.hero &&
+              scene.attention.secondary.length === 0 &&
               commandView.activityFeed.length === 0 ? (
                 <p className="rounded-md border border-zinc-800 bg-zinc-950/50 p-3 text-sm text-zinc-500">
                   Waiting for events.
                 </p>
               ) : (
                 <>
-                  {commandView.operatorQueue.map(item => (
+                  {scene.attention.hero && (
                     <Link
-                      key={item.id}
-                      href={`/fleet/${encodeURIComponent(item.agentId)}`}
-                      className="block rounded-md border border-red-300/20 bg-red-300/10 p-3 transition hover:border-red-200/40 hover:bg-red-300/15"
+                      href={`/fleet/${encodeURIComponent(scene.attention.hero.agentId)}`}
+                      className="block rounded-md border border-red-300/30 bg-red-300/15 p-3 transition hover:border-red-200/50 hover:bg-red-300/20"
                     >
-                      <p className="truncate text-sm font-semibold text-red-100">
-                        {item.agentName}
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-red-200/80">
+                        Hero blocker
+                      </p>
+                      <p className="mt-1 truncate text-sm font-semibold text-red-100">
+                        {scene.attention.hero.agentName}
                       </p>
                       <p className="mt-1 line-clamp-2 text-sm text-red-100/75">
+                        {scene.attention.hero.title}
+                      </p>
+                    </Link>
+                  )}
+                  {scene.attention.secondary.map(item => (
+                    <Link
+                      key={item.agentId}
+                      href={`/fleet/${encodeURIComponent(item.agentId)}`}
+                      className="block rounded-md border border-amber-300/20 bg-amber-300/10 p-3 transition hover:border-amber-200/40 hover:bg-amber-300/15"
+                    >
+                      <p className="truncate text-sm font-semibold text-amber-100">
+                        {item.agentName}
+                      </p>
+                      <p className="mt-1 line-clamp-2 text-sm text-amber-100/75">
                         {item.title}
                       </p>
                     </Link>
                   ))}
+                  {scene.attention.overflowCount > 0 && (
+                    <p className="rounded-md border border-amber-300/20 bg-amber-300/5 px-3 py-2 text-xs font-medium text-amber-200/80">
+                      +{scene.attention.overflowCount} more need you
+                    </p>
+                  )}
                   {commandView.activityFeed.map(item => (
                     <div
                       key={item.id}

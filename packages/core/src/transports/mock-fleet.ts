@@ -43,56 +43,56 @@ const MOCK_AGENTS_DATA: Array<{
   {
     id: 'demo-alpha',
     name: 'Alpha',
-    project: 'Demo Project A',
+    project: 'Exawatt Demo Polish',
     goal: 'Improve onboarding flow and add analytics tracking to key conversion steps',
     status: 'working',
   },
   {
     id: 'demo-beta',
     name: 'Beta',
-    project: 'Demo Project B',
+    project: 'Exawatt Demo Polish',
     goal: 'Audit and fix all TypeScript errors in the legacy module, add missing tests',
     status: 'idle',
   },
   {
     id: 'demo-gamma',
     name: 'Gamma',
-    project: 'Demo Project C',
+    project: 'OpenClaw Local Parity',
     goal: 'Research competitor pricing, compile report with recommendations',
     status: 'blocked',
   },
   {
     id: 'demo-delta',
     name: 'Delta',
-    project: 'Demo Project D',
+    project: 'Investor Pipeline Research',
     goal: 'Migrate database schema to support multi-tenancy',
     status: 'complete',
   },
   {
     id: 'demo-epsilon',
     name: 'Epsilon',
-    project: 'Demo Project E',
+    project: 'Investor Pipeline Research',
     goal: 'Build marketing landing page with A/B test variants',
     status: 'idle',
   },
   {
     id: 'demo-zeta',
     name: 'Zeta',
-    project: 'Demo Project F',
+    project: 'Exawatt Demo Polish',
     goal: 'Performance optimization sprint: reduce bundle size by 40%',
     status: 'working',
   },
   {
     id: 'demo-eta',
     name: 'Eta',
-    project: 'Demo Project G',
+    project: 'OpenClaw Local Parity',
     goal: 'Review and merge 12 open PRs, resolve conflicts',
     status: 'reviewing',
   },
   {
     id: 'demo-theta',
     name: 'Theta',
-    project: 'Demo Project H',
+    project: 'OpenClaw Local Parity',
     goal: 'Set up CI/CD pipeline for the new microservice',
     status: 'blocked',
   },
@@ -486,11 +486,18 @@ export class MockFleetTransport {
 
       // Add blocker info for blocked agents
       if (data.status === 'blocked') {
-        const blocker =
-          MOCK_BLOCKERS[Math.floor(Math.random() * MOCK_BLOCKERS.length)]!;
+        // Gamma is seeded as the deterministic hero blocker: a stable
+        // credentials_needed blocker created oldest, so selectOperatorQueue
+        // (oldest-first) always lifts it into the attention lane on load.
+        const isPrimaryHero = data.id === 'demo-gamma';
+        const blocker = isPrimaryHero
+          ? MOCK_BLOCKERS[3]! // credentials_needed: 'Stripe API keys required'
+          : MOCK_BLOCKERS[Math.floor(Math.random() * MOCK_BLOCKERS.length)]!;
         agent.blockerInfo = {
           ...blocker,
-          createdAt: now - Math.floor(Math.random() * 1800000),
+          createdAt: isPrimaryHero
+            ? now - 3_000_000
+            : now - Math.floor(Math.random() * 1_500_000),
         };
         agent.activities = [
           ...(agent.activities ?? []),
