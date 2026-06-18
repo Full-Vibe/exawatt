@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import {
   selectFleetCommandView,
   selectFleetSpatialScene,
+  type Altitude,
   type SpatialProjectZone,
 } from '@exawatt/ui-model';
 
@@ -42,6 +43,10 @@ const CommandTableCanvas = dynamic(
 export function SpatialFleetClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const rawAltitude = searchParams.get('altitude');
+  const altitude: Altitude =
+    rawAltitude === 'project' || rawAltitude === 'agent' ? rawAltitude : 'fleet';
+  const focusedProjectId = searchParams.get('project');
   const selectedAgentId = searchParams.get('agent');
   const { fleetState } = useFleet();
   const { isDemo } = useFleetConnection();
@@ -62,32 +67,80 @@ export function SpatialFleetClient() {
   const scene = useMemo(
     () =>
       selectFleetSpatialScene(fleetState, {
+        altitude,
+        focusedProjectId,
         selectedAgentId,
         blockerLimit: 3,
       }),
-    [fleetState, selectedAgentId]
+    [fleetState, altitude, focusedProjectId, selectedAgentId]
   );
 
-  const selectedAgent =
-    commandView.agents.find(agent => agent.id === selectedAgentId) ??
-    commandView.agents[0];
+  // Drive zoom-resolution + selection through the URL so altitude / Project /
+  // Agent are deep-linkable. The selector resolves the EFFECTIVE altitude (and
+  // ascends if a focus target is stale), so the UI reads scene.* back.
+  const navigate = useCallback(
+    (next: {
+      altitude?: Altitude;
+      project?: string | null;
+      agent?: string | null;
+    }) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if ('altitude' in next) {
+        if (next.altitude && next.altitude !== 'fleet')
+          params.set('altitude', next.altitude);
+        else params.delete('altitude');
+      }
+      if ('project' in next) {
+        if (next.project) params.set('project', next.project);
+        else params.delete('project');
+      }
+      if ('agent' in next) {
+        if (next.agent) params.set('agent', next.agent);
+        else params.delete('agent');
+      }
+      const query = params.toString();
+      router.replace(`/fleet/spatial${query ? `?${query}` : ''}`, {
+        scroll: false,
+      });
+    },
+    [router, searchParams]
+  );
 
-  const setSelectedAgent = (agentId: string | null) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (agentId) {
-      params.set('agent', agentId);
-    } else {
-      params.delete('agent');
+  const ascend = useCallback(() => {
+    if (scene.altitude === 'agent') {
+      navigate({
+        altitude: 'project',
+        project: scene.focusedProjectId,
+        agent: null,
+      });
+    } else if (scene.altitude === 'project') {
+      navigate({ altitude: 'fleet', project: null, agent: null });
     }
-    const query = params.toString();
-    router.replace(`/fleet/spatial${query ? `?${query}` : ''}`, {
-      scroll: false,
-    });
+  }, [scene.altitude, scene.focusedProjectId, navigate]);
+
+  const drillToProject = (zone: SpatialProjectZone) =>
+    navigate({ altitude: 'project', project: zone.clusterId, agent: null });
+
+  // Clicking a tile / hero card drills to the agent; clicking empty space ascends.
+  const handleSelectAgent = (agentId: string | null) => {
+    if (agentId) navigate({ altitude: 'agent', agent: agentId });
+    else ascend();
   };
 
-  const handleSelectProject = (zone: SpatialProjectZone) => {
-    setSelectedAgent(zone.agentIds[0] ?? null);
-  };
+  // Escape ascends one altitude level.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') ascend();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [ascend]);
+
+  const focusedZoneLabel = scene.groups[0]?.label ?? null;
+  const inspectedAgent =
+    scene.altitude === 'agent'
+      ? (commandView.agents.find(agent => agent.id === selectedAgentId) ?? null)
+      : null;
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('en-US', {
@@ -143,6 +196,56 @@ export function SpatialFleetClient() {
         </div>
       </header>
 
+      <nav
+        aria-label="Zoom altitude"
+        className="relative z-20 flex shrink-0 items-center gap-1 border-b border-zinc-800/60 bg-zinc-950/70 px-4 py-1.5 text-xs"
+      >
+        <button
+          onClick={() => navigate({ altitude: 'fleet', project: null, agent: null })}
+          className={`rounded px-2 py-1 transition ${
+            scene.altitude === 'fleet'
+              ? 'text-teal-200'
+              : 'text-zinc-400 hover:text-zinc-100'
+          }`}
+        >
+          Fleet
+        </button>
+        {scene.altitude !== 'fleet' && focusedZoneLabel && (
+          <>
+            <span className="text-zinc-600">›</span>
+            <button
+              onClick={() =>
+                navigate({
+                  altitude: 'project',
+                  project: scene.focusedProjectId,
+                  agent: null,
+                })
+              }
+              className={`max-w-[40vw] truncate rounded px-2 py-1 transition ${
+                scene.altitude === 'project'
+                  ? 'text-teal-200'
+                  : 'text-zinc-400 hover:text-zinc-100'
+              }`}
+            >
+              {focusedZoneLabel}
+            </button>
+          </>
+        )}
+        {scene.altitude === 'agent' && inspectedAgent && (
+          <>
+            <span className="text-zinc-600">›</span>
+            <span className="max-w-[40vw] truncate rounded px-2 py-1 text-teal-200">
+              {inspectedAgent.name}
+            </span>
+          </>
+        )}
+        {scene.altitude !== 'fleet' && (
+          <span className="ml-auto hidden text-[11px] text-zinc-600 sm:inline">
+            Esc to zoom out
+          </span>
+        )}
+      </nav>
+
       <main className="relative grid min-h-0 flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_360px]">
         <section
           className="relative h-[52vh] min-h-[360px] overflow-hidden xl:h-auto xl:min-h-[62vh]"
@@ -150,8 +253,8 @@ export function SpatialFleetClient() {
         >
           <CommandTableCanvas
             scene={scene}
-            onSelectAgent={setSelectedAgent}
-            onSelectProject={handleSelectProject}
+            onSelectAgent={handleSelectAgent}
+            onSelectProject={drillToProject}
           />
 
           <div className="pointer-events-none absolute left-3 top-3 grid max-w-[64%] grid-cols-2 gap-2 sm:left-4 sm:top-4 sm:max-w-none sm:grid-cols-4">
@@ -179,7 +282,7 @@ export function SpatialFleetClient() {
         </section>
 
         <aside className="relative z-10 flex min-h-0 flex-col gap-4 border-t border-zinc-800 bg-zinc-950/92 p-4 backdrop-blur xl:border-l xl:border-t-0">
-          {selectedAgent ? (
+          {inspectedAgent ? (
             <section className="fleet-panel p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -187,42 +290,42 @@ export function SpatialFleetClient() {
                     Selected Agent
                   </p>
                   <h2 className="mt-1 truncate text-xl font-semibold text-zinc-50">
-                    {selectedAgent.name}
+                    {inspectedAgent.name}
                   </h2>
                 </div>
                 <span className="rounded-full border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs capitalize text-zinc-300">
-                  {selectedAgent.status}
+                  {inspectedAgent.status}
                 </span>
               </div>
 
               <p className="mt-4 line-clamp-3 text-sm leading-6 text-zinc-300">
-                {selectedAgent.goal || 'No goal set'}
+                {inspectedAgent.goal || 'No goal set'}
               </p>
 
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-md border border-zinc-800 bg-zinc-950/65 p-3">
                   <p className="text-xs text-zinc-500">Cost</p>
                   <p className="mt-1 font-mono text-zinc-100">
-                    {formatCurrency(selectedAgent.cost)}
+                    {formatCurrency(inspectedAgent.cost)}
                   </p>
                 </div>
                 <div className="rounded-md border border-zinc-800 bg-zinc-950/65 p-3">
                   <p className="text-xs text-zinc-500">Turns</p>
                   <p className="mt-1 font-mono text-zinc-100">
-                    {selectedAgent.turnCount}
+                    {inspectedAgent.turnCount}
                   </p>
                 </div>
               </div>
 
-              {selectedAgent.needsOperator && (
+              {inspectedAgent.needsOperator && (
                 <div className="mt-4 rounded-md border border-red-300/20 bg-red-300/10 p-3 text-sm text-red-100">
                   <div className="flex items-center gap-2 font-semibold">
                     <AlertTriangle className="h-4 w-4" />
-                    {selectedAgent.blockerTitle ?? 'Needs operator'}
+                    {inspectedAgent.blockerTitle ?? 'Needs operator'}
                   </div>
-                  {selectedAgent.blockerDescription && (
+                  {inspectedAgent.blockerDescription && (
                     <p className="mt-2 line-clamp-3 text-red-100/75">
-                      {selectedAgent.blockerDescription}
+                      {inspectedAgent.blockerDescription}
                     </p>
                   )}
                 </div>
@@ -230,17 +333,17 @@ export function SpatialFleetClient() {
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button asChild className="fleet-action-button">
-                  <Link href={`/fleet/${encodeURIComponent(selectedAgent.id)}`}>
+                  <Link href={`/fleet/${encodeURIComponent(inspectedAgent.id)}`}>
                     Focus
                   </Link>
                 </Button>
-                {selectedAgent.needsOperator && (
+                {inspectedAgent.needsOperator && (
                   <Button
                     asChild
                     className="fleet-action-button bg-red-200 text-zinc-950 hover:bg-red-100"
                   >
                     <Link
-                      href={`/fleet/${encodeURIComponent(selectedAgent.id)}`}
+                      href={`/fleet/${encodeURIComponent(inspectedAgent.id)}`}
                     >
                       Clear
                     </Link>
@@ -250,7 +353,9 @@ export function SpatialFleetClient() {
             </section>
           ) : (
             <section className="fleet-panel p-4 text-sm text-zinc-500">
-              Select an agent.
+              {scene.altitude === 'fleet'
+                ? 'Select a Project to zoom in, then an Agent to inspect.'
+                : 'Select an Agent to inspect.'}
             </section>
           )}
 

@@ -276,9 +276,13 @@ describe('@exawatt/ui-model', () => {
 
   it('produces a deterministic scene with a hero link to the hero tile', () => {
     const first = selectFleetSpatialScene(multiState(), {
+      altitude: 'project',
+      focusedProjectId: 'project:Beta',
       selectedAgentId: 'beta-blocked-old',
     });
     const second = selectFleetSpatialScene(multiState(), {
+      altitude: 'project',
+      focusedProjectId: 'project:Beta',
       selectedAgentId: 'beta-blocked-old',
     });
     expect(first).toEqual(second);
@@ -360,7 +364,10 @@ describe('@exawatt/ui-model', () => {
   });
 
   it('emits rail placements so the hero glow line cannot drift from the card', () => {
-    const scene = selectFleetSpatialScene(multiState());
+    const scene = selectFleetSpatialScene(multiState(), {
+      altitude: 'project',
+      focusedProjectId: 'project:Beta',
+    });
     expect(scene.attention.hero).not.toBeNull();
     expect(scene.heroLink).not.toBeNull();
     expect(scene.heroLink!.fromX).toBe(scene.attention.hero!.railX);
@@ -441,7 +448,10 @@ describe('@exawatt/ui-model', () => {
   });
 
   it('never overlaps tiles within a zone', () => {
-    const scene = selectFleetSpatialScene(multiState());
+    const scene = selectFleetSpatialScene(multiState(), {
+      altitude: 'project',
+      focusedProjectId: 'project:Beta',
+    });
     const byCluster = new Map<string, typeof scene.tiles>();
     for (const t of scene.tiles) {
       const arr = byCluster.get(t.clusterId) ?? [];
@@ -545,5 +555,83 @@ describe('@exawatt/ui-model', () => {
     expect(betaSel.frameEmissiveTarget).toBeLessThan(
       betaNone.frameEmissiveTarget
     ); // others passively recede
+  });
+
+  // ---- V0.3 zoom-resolution altitudes ----
+
+  it('fleet altitude shows summary clusters and no agent tiles (density, not scale)', () => {
+    const scene = selectFleetSpatialScene(multiState(), { altitude: 'fleet' });
+    expect(scene.altitude).toBe('fleet');
+    expect(scene.tiles).toHaveLength(0);
+    expect(scene.groups).toHaveLength(2); // Alpha + Beta both present
+    expect(scene.groups.every(z => z.summaryMode)).toBe(true);
+    expect(scene.showRail).toBe(true);
+    expect(scene.focusedProjectId).toBeNull();
+  });
+
+  it('defaults to fleet altitude when none is given (back-compat)', () => {
+    expect(selectFleetSpatialScene(multiState())).toEqual(
+      selectFleetSpatialScene(multiState(), { altitude: 'fleet' })
+    );
+  });
+
+  it('project altitude shows only the focused, re-centered zone with its tiles', () => {
+    const scene = selectFleetSpatialScene(multiState(), {
+      altitude: 'project',
+      focusedProjectId: 'project:Beta',
+    });
+    expect(scene.altitude).toBe('project');
+    expect(scene.groups).toHaveLength(1);
+    const zone = scene.groups[0]!;
+    expect(zone.clusterId).toBe('project:Beta');
+    expect(zone.summaryMode).toBe(false);
+    expect(zone.x).toBe(0); // re-centered to fill the view
+    expect(zone.z).toBe(0);
+    expect(scene.tiles).toHaveLength(3); // Beta's 3 agents
+    expect(scene.tiles.every(t => t.clusterId === 'project:Beta')).toBe(true);
+    expect(scene.showRail).toBe(true);
+    expect(scene.bounds.width).toBeCloseTo(zone.width, 4);
+    expect(scene.bounds.depth).toBeCloseTo(zone.depth, 4);
+  });
+
+  it('agent altitude focuses the agent zone, lifts the agent, hides the rail', () => {
+    const scene = selectFleetSpatialScene(multiState(), {
+      altitude: 'agent',
+      selectedAgentId: 'beta-reviewing',
+    });
+    expect(scene.altitude).toBe('agent');
+    expect(scene.focusedProjectId).toBe('project:Beta'); // resolved from the agent
+    expect(scene.groups).toHaveLength(1);
+    expect(scene.showRail).toBe(false);
+    expect(scene.heroLink).toBeNull();
+    const sel = scene.tiles.find(t => t.agentId === 'beta-reviewing')!;
+    expect(sel.selected).toBe(true);
+    expect(sel.liftTarget).toBeGreaterThan(0);
+  });
+
+  it('ascends to fleet when the altitude focus target is missing', () => {
+    const unknownProject = selectFleetSpatialScene(multiState(), {
+      altitude: 'project',
+      focusedProjectId: 'project:Nope',
+    });
+    expect(unknownProject.altitude).toBe('fleet');
+    expect(unknownProject.focusedProjectId).toBeNull();
+
+    const unknownAgent = selectFleetSpatialScene(multiState(), {
+      altitude: 'agent',
+      selectedAgentId: 'ghost',
+    });
+    expect(unknownAgent.altitude).toBe('fleet');
+    expect(unknownAgent.tiles).toHaveLength(0);
+  });
+
+  it('produces a deterministic scene at project altitude', () => {
+    const opts = {
+      altitude: 'project' as const,
+      focusedProjectId: 'project:Beta',
+    };
+    expect(selectFleetSpatialScene(multiState(), opts)).toEqual(
+      selectFleetSpatialScene(multiState(), opts)
+    );
   });
 });

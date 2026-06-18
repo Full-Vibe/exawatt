@@ -137,6 +137,9 @@ export interface SpatialProjectZone {
   edgeEmphasisTarget: number;
   /** emissive-intensity target for the metal frame trim (recedes when another zone is selected) */
   frameEmissiveTarget: number;
+  // ---- V0.3 zoom-resolution ----
+  /** at fleet altitude this zone renders as a compact summary cluster (no agent tiles) */
+  summaryMode: boolean;
 }
 
 /** A single agent tile, placed in ABSOLUTE world coords inside its zone. */
@@ -200,6 +203,13 @@ export interface SpatialAttention {
   ambientLabelPos: { x: number; y: number; z: number };
 }
 
+/**
+ * Zoom-resolution altitude. Each level changes information DENSITY, not just
+ * scale: 'fleet' = all Projects as summary clusters (no agent tiles); 'project'
+ * = one Project's full agent tiles; 'agent' = one agent focused for inspection.
+ */
+export type Altitude = 'fleet' | 'project' | 'agent';
+
 /** The single layout the canvas consumes. Replaces SpatialAgentNode[]. */
 export interface FleetSpatialScene {
   groups: SpatialProjectZone[];
@@ -216,6 +226,13 @@ export interface FleetSpatialScene {
   } | null;
   bounds: { width: number; depth: number }; // for camera framing
   selectedAgentId: string | null;
+  // ---- V0.3 zoom-resolution ----
+  /** resolved altitude (may differ from the requested one if the focus was missing) */
+  altitude: Altitude;
+  /** focused Project clusterId at project/agent altitude, else null */
+  focusedProjectId: string | null;
+  /** whether the 3D attention rail should render (hidden at agent altitude) */
+  showRail: boolean;
 }
 
 export interface FleetSpatialSceneOptions {
@@ -230,6 +247,10 @@ export interface FleetSpatialSceneOptions {
   heroLift?: number;
   zoneLift?: number;
   selectionScale?: number;
+  /** zoom-resolution altitude (default 'fleet') */
+  altitude?: Altitude;
+  /** focused Project clusterId for 'project' altitude */
+  focusedProjectId?: string | null;
 }
 
 export interface FleetCommandViewOptions {
@@ -628,6 +649,7 @@ export function selectSpatialProjectZones(
         liftTarget: selected ? round4(zoneLift) : 0,
         edgeEmphasisTarget: round4(edgeEmphasisFor(tier, selected)),
         frameEmissiveTarget: frameEmissiveFor(tier, selected, anyZoneSelected),
+        summaryMode: false,
       });
       xCursor += grid.width + zoneGap;
     }
@@ -783,46 +805,123 @@ export function selectSpatialAttention(
   };
 }
 
-/** Master spatial selector — REPLACES selectSpatialAgentLayout. */
-export function selectFleetSpatialScene(
-  state: FleetState,
-  options: FleetSpatialSceneOptions = {}
-): FleetSpatialScene {
-  const zones = selectSpatialProjectZones(state, options);
-  const tiles = selectSpatialAgentTiles(zones, state, options);
-
+function boundsOf(zones: SpatialProjectZone[]): { width: number; depth: number } {
   let halfWidth = 0;
   let halfDepth = 0;
   for (const zone of zones) {
     halfWidth = Math.max(halfWidth, Math.abs(zone.x) + zone.width / 2);
     halfDepth = Math.max(halfDepth, Math.abs(zone.z) + zone.depth / 2);
   }
-  const bounds = {
-    width: round4(halfWidth * 2),
-    depth: round4(halfDepth * 2),
+  return { width: round4(halfWidth * 2), depth: round4(halfDepth * 2) };
+}
+
+/** A FleetState narrowed to a set of agent ids (for project-scoped attention). */
+function subState(state: FleetState, agentIds: string[]): FleetState {
+  const agents: Record<string, ExawattAgent> = {};
+  for (const id of agentIds) {
+    const a = state.agents[id];
+    if (a) agents[id] = a;
+  }
+  return { agents, metrics: state.metrics, lastUpdated: state.lastUpdated };
+}
+
+function heroLinkFor(attention: SpatialAttention): FleetSpatialScene['heroLink'] {
+  if (!attention.hero) return null;
+  return {
+    fromX: attention.hero.railX,
+    fromY: attention.hero.railY,
+    fromZ: attention.hero.railZ,
+    toX: attention.hero.tileX,
+    toY: round4(attention.hero.tileY + 0.2),
+    toZ: attention.hero.tileZ,
   };
+}
 
-  const attention = selectSpatialAttention(state, tiles, options, bounds);
+/**
+ * Master spatial selector — REPLACES selectSpatialAgentLayout.
+ *
+ * Branches by zoom-resolution altitude so each level changes information
+ * DENSITY, not just scale:
+ *  - fleet:   every Project as a summary cluster, NO agent tiles.
+ *  - project: only the focused Project, re-centered, with its full agent tiles.
+ *  - agent:   the focused agent's Project centered with the agent lifted; the
+ *             3D rail is hidden (the DOM inspector takes over).
+ * If the requested altitude's focus target is missing (stale URL, agent gone),
+ * it gracefully ascends to fleet.
+ */
+export function selectFleetSpatialScene(
+  state: FleetState,
+  options: FleetSpatialSceneOptions = {}
+): FleetSpatialScene {
+  const selectedAgentId = options.selectedAgentId ?? null;
+  const allZones = selectSpatialProjectZones(state, options);
 
-  let heroLink: FleetSpatialScene['heroLink'] = null;
-  if (attention.hero) {
-    heroLink = {
-      fromX: attention.hero.railX,
-      fromY: attention.hero.railY,
-      fromZ: attention.hero.railZ,
-      toX: attention.hero.tileX,
-      toY: round4(attention.hero.tileY + 0.2),
-      toZ: attention.hero.tileZ,
+  let altitude: Altitude = options.altitude ?? 'fleet';
+  let focusedProjectId = options.focusedProjectId ?? null;
+
+  if (altitude === 'agent') {
+    const owner = selectedAgentId
+      ? allZones.find(zone => zone.agentIds.includes(selectedAgentId))
+      : undefined;
+    if (owner) focusedProjectId = owner.clusterId;
+    else altitude = 'fleet';
+  } else if (altitude === 'project') {
+    if (
+      !focusedProjectId ||
+      !allZones.some(zone => zone.clusterId === focusedProjectId)
+    ) {
+      altitude = 'fleet';
+      focusedProjectId = null;
+    }
+  }
+
+  // ---- Fleet altitude: summary clusters, no agent tiles (the density drop) ----
+  if (altitude === 'fleet') {
+    const groups = allZones.map(zone => ({ ...zone, summaryMode: true }));
+    const bounds = boundsOf(groups);
+    return {
+      groups,
+      tiles: [],
+      attention: selectSpatialAttention(state, [], options, bounds),
+      heroLink: null, // no agent tiles to connect to at fleet altitude
+      bounds,
+      selectedAgentId,
+      altitude: 'fleet',
+      focusedProjectId: null,
+      showRail: true,
     };
   }
 
+  // ---- Project / Agent altitude: one focused zone, re-centered, full tiles ----
+  const focused = allZones.find(zone => zone.clusterId === focusedProjectId)!;
+  const centered: SpatialProjectZone = {
+    ...focused,
+    x: 0,
+    z: 0,
+    summaryMode: false,
+  };
+  const groups = [centered];
+  const tiles = selectSpatialAgentTiles(groups, state, options);
+  const bounds = boundsOf(groups);
+  const showRail = altitude === 'project';
+  // Attention is scoped to the focused Project (its own blockers / active count).
+  const attention = selectSpatialAttention(
+    subState(state, centered.agentIds),
+    tiles,
+    options,
+    bounds
+  );
+
   return {
-    groups: zones,
+    groups,
     tiles,
     attention,
-    heroLink,
+    heroLink: showRail ? heroLinkFor(attention) : null,
     bounds,
-    selectedAgentId: options.selectedAgentId ?? null,
+    selectedAgentId,
+    altitude,
+    focusedProjectId,
+    showRail,
   };
 }
 
