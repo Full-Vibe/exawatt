@@ -8,6 +8,7 @@ import type {
 import {
   resolveTransmission,
   selectActivityFeed,
+  selectAttentionSchedule,
   selectFleetCommandView,
   selectFleetSpatialScene,
   selectOperatorQueue,
@@ -633,5 +634,171 @@ describe('@exawatt/ui-model', () => {
     expect(selectFleetSpatialScene(multiState(), opts)).toEqual(
       selectFleetSpatialScene(multiState(), opts)
     );
+  });
+
+  // ---- V0.4 Attention Scheduling (leverage-aware prioritization) ----
+
+  // A NEWER credentials blocker must outrank an OLDER input_needed blocker —
+  // leverage (blocker type) dominates age.
+  function leverageState(): FleetState {
+    const agents = [
+      agent({
+        id: 'old-input',
+        project: 'P',
+        status: 'blocked',
+        lastActivityAt: 5,
+        blockerInfo: {
+          type: 'input_needed',
+          title: 'Which provider?',
+          description: 'Pick one.',
+          suggestedResponses: ['x'],
+          createdAt: 0,
+        },
+      }),
+      agent({
+        id: 'new-cred',
+        project: 'P',
+        status: 'blocked',
+        lastActivityAt: 9,
+        blockerInfo: {
+          type: 'credentials_needed',
+          title: 'API keys required',
+          description: 'Need keys.',
+          suggestedResponses: ['x'],
+          createdAt: 1_000_000,
+        },
+      }),
+    ];
+    return {
+      agents: Object.fromEntries(agents.map(a => [a.id, a])),
+      metrics,
+      lastUpdated: 0,
+    };
+  }
+
+  it('ranks by leverage: a newer credentials blocker outranks an older input one', () => {
+    const schedule = selectAttentionSchedule(leverageState());
+    expect(schedule.map(i => i.agentId)).toEqual(['new-cred', 'old-input']);
+    expect(schedule[0]!.score).toBeGreaterThan(schedule[1]!.score);
+    expect(schedule[0]!.blockerType).toBe('credentials_needed');
+    expect(schedule[0]!.priority).toBe(0);
+  });
+
+  it('scores age (clamped) and in-project fan-out into the reason string', () => {
+    const now = 30 * 60000; // old-input created at 0 -> 30m; new-cred far future -> 0m
+    const schedule = selectAttentionSchedule(leverageState(), { now });
+    const input = schedule.find(i => i.agentId === 'old-input')!;
+    expect(input.ageMinutes).toBe(30);
+    expect(input.stalledInProject).toBe(2); // both P agents are blocked
+    expect(input.reason).toBe('Needs input · 30m waiting · 2 stalled in P');
+
+    const cred = schedule.find(i => i.agentId === 'new-cred')!;
+    expect(cred.reason).toMatch(/^Credentials needed · \d+m waiting · 2 stalled in P$/);
+
+    // age clamps at 240m
+    const farFuture = selectAttentionSchedule(leverageState(), {
+      now: 999 * 60000,
+    });
+    expect(farFuture.find(i => i.agentId === 'old-input')!.ageMinutes).toBe(240);
+  });
+
+  it('is deterministic and age-free when now is omitted', () => {
+    const a = selectAttentionSchedule(leverageState());
+    const b = selectAttentionSchedule(leverageState());
+    expect(a).toEqual(b);
+    expect(a.every(i => i.ageMinutes === 0)).toBe(true);
+  });
+
+  it('limits the schedule and omits the fan-out clause for a lone blocker', () => {
+    expect(selectAttentionSchedule(leverageState(), { limit: 1 })).toHaveLength(1);
+    // multi-blocker project keeps the clause
+    const beta = selectAttentionSchedule(multiState()).find(
+      i => i.agentId === 'beta-blocked-old'
+    )!;
+    expect(beta.reason).toMatch(/stalled in Beta/);
+    // a single stalled agent in its Project drops the clause
+    const lone: FleetState = {
+      agents: {
+        solo: agent({
+          id: 'solo',
+          project: 'Solo',
+          status: 'blocked',
+          blockerInfo: {
+            type: 'approval_required',
+            title: 'Approve',
+            description: 'd',
+            suggestedResponses: ['x'],
+            createdAt: 5,
+          },
+        }),
+      },
+      metrics,
+      lastUpdated: 0,
+    };
+    const item = selectAttentionSchedule(lone)[0]!;
+    expect(item.stalledInProject).toBe(1);
+    expect(item.reason).toBe('Approval required · 0m waiting');
+  });
+
+  it('makes the spatial hero the top of the Attention Schedule (leverage, not age)', () => {
+    const scene = selectFleetSpatialScene(leverageState());
+    expect(scene.attention.hero?.agentId).toBe('new-cred');
+    expect(scene.attention.hero?.reason).toContain('Credentials needed');
+  });
+
+  // Altitude-scoped hero: the fleet hero lives in P1, but drilling into P2 must
+  // lift P2's own hero, and the rail/tile must agree.
+  function twoProjectHeroes(): FleetState {
+    const agents = [
+      agent({
+        id: 'p1-cred',
+        project: 'P1',
+        status: 'blocked',
+        lastActivityAt: 5,
+        blockerInfo: {
+          type: 'credentials_needed',
+          title: 'Keys',
+          description: 'd',
+          suggestedResponses: ['x'],
+          createdAt: 0,
+        },
+      }),
+      agent({ id: 'p1-work', project: 'P1', status: 'working', lastActivityAt: 6 }),
+      agent({
+        id: 'p2-input',
+        project: 'P2',
+        status: 'blocked',
+        lastActivityAt: 7,
+        blockerInfo: {
+          type: 'input_needed',
+          title: 'Which?',
+          description: 'd',
+          suggestedResponses: ['x'],
+          createdAt: 0,
+        },
+      }),
+      agent({ id: 'p2-work', project: 'P2', status: 'working', lastActivityAt: 8 }),
+    ];
+    return {
+      agents: Object.fromEntries(agents.map(a => [a.id, a])),
+      metrics,
+      lastUpdated: 0,
+    };
+  }
+
+  it('scopes the hero lift to the focused Project at project altitude', () => {
+    const fleet = selectFleetSpatialScene(twoProjectHeroes());
+    expect(fleet.attention.hero?.agentId).toBe('p1-cred'); // fleet hero
+
+    const scene = selectFleetSpatialScene(twoProjectHeroes(), {
+      altitude: 'project',
+      focusedProjectId: 'project:P2',
+    });
+    expect(scene.attention.hero?.agentId).toBe('p2-input'); // project-scoped hero
+    const tile = scene.tiles.find(t => t.agentId === 'p2-input')!;
+    expect(tile.isHero).toBe(true);
+    expect(tile.liftTarget).toBeGreaterThanOrEqual(0.5); // heroLift, agrees with the rail
+    // the fleet hero's tile is not even in this scene
+    expect(scene.tiles.some(t => t.agentId === 'p1-cred')).toBe(false);
   });
 });

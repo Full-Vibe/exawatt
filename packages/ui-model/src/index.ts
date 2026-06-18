@@ -2,6 +2,7 @@ import {
   resolveContextGroups,
   type AgentActivity,
   type AgentStatus,
+  type BlockerType,
   type ContextGroup,
   type ContextGroupKind,
   type ExawattAgent,
@@ -74,6 +75,23 @@ export interface OperatorQueueItem {
   lastActivityAt: number;
   suggestedResponses: string[];
   priority: number;
+}
+
+/**
+ * An Attention Scheduling item: an operator-queue entry scored by leverage so
+ * the surface can route scarce human attention to the highest-leverage moment
+ * (not merely the oldest blocker) and explain WHY via `reason`.
+ */
+export interface AttentionItem extends OperatorQueueItem {
+  blockerType: BlockerType;
+  /** leverage score: type weight dominates, then age, then in-project fan-out */
+  score: number;
+  /** blocker age in minutes (0 when `now` is not supplied — keeps it pure) */
+  ageMinutes: number;
+  /** agents in the same Project that are blocked/error/idle (work stalled around it) */
+  stalledInProject: number;
+  /** human-readable "why this matters", e.g. "Credentials needed · 50m waiting" */
+  reason: string;
 }
 
 export interface ActivityFeedItem {
@@ -190,6 +208,8 @@ export interface SpatialAttentionItem {
   railX: number;
   railY: number;
   railZ: number;
+  /** Attention Scheduling "why": leverage reason for this blocker */
+  reason: string;
 }
 
 export interface SpatialAttention {
@@ -251,6 +271,14 @@ export interface FleetSpatialSceneOptions {
   altitude?: Altitude;
   /** focused Project clusterId for 'project' altitude */
   focusedProjectId?: string | null;
+  /** current time (unix ms) for Attention Scheduling age scoring; pure when omitted */
+  now?: number;
+  /**
+   * Override the hero agent id used for tile lift. Lets selectFleetSpatialScene
+   * scope the hero to the focused Project at project/agent altitude so the
+   * lifted tile and the rail/glow-line always agree.
+   */
+  heroAgentId?: string | null;
 }
 
 export interface FleetCommandViewOptions {
@@ -258,6 +286,8 @@ export interface FleetCommandViewOptions {
   blockerLimit?: number;
   heartbeatJobs?: ExawattCronJob[];
   selectedAgentId?: string | null;
+  /** Reference time (unix ms) for leverage-aware attention ordering; pure. */
+  now?: number;
 }
 
 export interface FleetCommandViewModel {
@@ -370,6 +400,128 @@ export function selectOperatorQueue(
       suggestedResponses: agent.blockerInfo?.suggestedResponses ?? [],
       priority: index,
     }));
+}
+
+// ---- Attention Scheduling (leverage-aware prioritization) ----
+//
+// Routes scarce human attention to the highest-leverage blocker, not merely the
+// oldest one. Pure + deterministic: pass `now` for age scoring (omitted => age 0
+// so selectors stay testable). Blocker type dominates the score (credentials /
+// approvals gate the most downstream work), then age, then in-Project fan-out.
+
+const ATTENTION_TYPE_WEIGHT: Record<BlockerType, number> = {
+  credentials_needed: 5,
+  approval_required: 4,
+  error: 4,
+  input_needed: 2,
+  awaiting_agent: 1,
+};
+
+const BLOCKER_LABEL: Record<BlockerType, string> = {
+  credentials_needed: 'Credentials needed',
+  approval_required: 'Approval required',
+  error: 'Error',
+  input_needed: 'Needs input',
+  awaiting_agent: 'Waiting on another agent',
+};
+
+const MAX_ATTENTION_AGE_MIN = 240;
+
+function buildAttentionReason(
+  type: BlockerType,
+  ageMinutes: number,
+  stalledInProject: number,
+  project: string
+): string {
+  const label = BLOCKER_LABEL[type] ?? 'Needs operator';
+  let reason = `${label} · ${ageMinutes}m waiting`;
+  if (stalledInProject > 1) {
+    reason += ` · ${stalledInProject} stalled in ${project}`;
+  }
+  return reason;
+}
+
+export interface AttentionScheduleOptions {
+  /** current time (unix ms); omitted keeps the selector pure (age = 0) */
+  now?: number;
+  /** cap the returned schedule length (default: all blocked agents) */
+  limit?: number;
+}
+
+/**
+ * The leverage-ranked attention queue. Deterministic: sorts by score desc, then
+ * oldest blocker, then agent id. Each item carries its score and a human reason.
+ */
+export function selectAttentionSchedule(
+  state: FleetState,
+  options: AttentionScheduleOptions = {}
+): AttentionItem[] {
+  const now = options.now;
+  const agents = getAgents(state);
+
+  const stalledByProject = new Map<string, number>();
+  for (const agent of agents) {
+    if (
+      agent.status === 'blocked' ||
+      agent.status === 'error' ||
+      agent.status === 'idle'
+    ) {
+      stalledByProject.set(
+        agent.project,
+        (stalledByProject.get(agent.project) ?? 0) + 1
+      );
+    }
+  }
+
+  const scored = agents
+    .filter(agent => agent.status === 'blocked' && agent.blockerInfo)
+    .map(agent => {
+      const blocker = agent.blockerInfo!;
+      const blockerType = blocker.type;
+      const typeWeight = ATTENTION_TYPE_WEIGHT[blockerType] ?? 2;
+      const ageMinutes =
+        now != null
+          ? Math.min(
+              MAX_ATTENTION_AGE_MIN,
+              Math.max(0, Math.round((now - blocker.createdAt) / 60000))
+            )
+          : 0;
+      const stalledInProject = stalledByProject.get(agent.project) ?? 0;
+      const score = typeWeight * 1000 + ageMinutes + stalledInProject * 10;
+      return { agent, blocker, blockerType, ageMinutes, stalledInProject, score };
+    })
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const createdDelta = a.blocker.createdAt - b.blocker.createdAt;
+      if (createdDelta !== 0) return createdDelta;
+      return a.agent.id.localeCompare(b.agent.id);
+    });
+
+  const limited =
+    options.limit != null ? scored.slice(0, options.limit) : scored;
+
+  return limited.map((s, index) => ({
+    id: `${s.agent.id}:blocker`,
+    agentId: s.agent.id,
+    agentName: s.agent.name,
+    title: s.blocker.title,
+    description: s.blocker.description || s.agent.goal,
+    type: s.blockerType,
+    blockerType: s.blockerType,
+    createdAt: s.blocker.createdAt,
+    lastActivityAt: s.agent.lastActivityAt,
+    suggestedResponses: s.blocker.suggestedResponses ?? [],
+    priority: index,
+    score: s.score,
+    ageMinutes: s.ageMinutes,
+    stalledInProject: s.stalledInProject,
+    reason: buildAttentionReason(
+      s.blockerType,
+      s.ageMinutes,
+      s.stalledInProject,
+      s.agent.project
+    ),
+  }));
 }
 
 export function selectActivityFeed(
@@ -512,9 +664,9 @@ function computeZoneGrid(
   };
 }
 
-/** The single highest-leverage blocker's agent id (oldest blocker), or null. */
-function heroAgentId(state: FleetState): string | null {
-  return selectOperatorQueue(state, 1)[0]?.agentId ?? null;
+/** The single highest-leverage blocker's agent id (top of the Attention Schedule). */
+function heroAgentId(state: FleetState, now?: number): string | null {
+  return selectAttentionSchedule(state, { now, limit: 1 })[0]?.agentId ?? null;
 }
 
 function zoneTier(
@@ -565,7 +717,7 @@ export function selectSpatialProjectZones(
     options.maxTilesPerRow ?? SPATIAL_DEFAULTS.maxTilesPerRow;
   const zoneLift = options.zoneLift ?? SPATIAL_DEFAULTS.zoneLift;
   const selectedAgentId = options.selectedAgentId ?? null;
-  const heroId = heroAgentId(state);
+  const heroId = heroAgentId(state, options.now);
 
   const groups: ContextGroup[] = resolveContextGroups(state);
   const anyZoneSelected =
@@ -674,7 +826,12 @@ export function selectSpatialAgentTiles(
   const selectionScale =
     options.selectionScale ?? SPATIAL_DEFAULTS.selectionScale;
   const selectedAgentId = options.selectedAgentId ?? null;
-  const heroId = heroAgentId(state);
+  // Altitude-scoped hero: selectFleetSpatialScene passes the focused Project's
+  // hero at project/agent altitude so the lifted tile matches the rail hero.
+  const heroId =
+    options.heroAgentId !== undefined
+      ? options.heroAgentId
+      : heroAgentId(state, options.now);
 
   const tiles: SpatialAgentTile[] = [];
   for (const zone of zones) {
@@ -736,12 +893,13 @@ export function selectSpatialAttention(
   bounds: { width: number; depth: number } = { width: 0, depth: 0 }
 ): SpatialAttention {
   const blockerLimit = options.blockerLimit ?? SPATIAL_DEFAULTS.blockerLimit;
-  const fullQueue = selectOperatorQueue(state, Number.MAX_SAFE_INTEGER);
+  // Hero/secondary follow the leverage-aware Attention Schedule, not raw age.
+  const fullQueue = selectAttentionSchedule(state, { now: options.now });
   const tileByAgent = new Map(tiles.map(tile => [tile.agentId, tile]));
   const frontZ = bounds.depth / 2 + RAIL.frontGap;
 
   const toItem = (
-    q: OperatorQueueItem,
+    q: AttentionItem,
     rail: { x: number; y: number; z: number }
   ): SpatialAttentionItem => {
     const tile = tileByAgent.get(q.agentId);
@@ -760,6 +918,7 @@ export function selectSpatialAttention(
       railX: round4(rail.x),
       railY: round4(rail.y),
       railZ: round4(rail.z),
+      reason: q.reason,
     };
   };
 
@@ -901,16 +1060,18 @@ export function selectFleetSpatialScene(
     summaryMode: false,
   };
   const groups = [centered];
-  const tiles = selectSpatialAgentTiles(groups, state, options);
+  // Scope the hero to the focused Project so the lifted tile, the rail hero, and
+  // the glow line all reference the same agent (not the fleet-wide hero).
+  const projectState = subState(state, centered.agentIds);
+  const projectHeroId = heroAgentId(projectState, options.now);
+  const tiles = selectSpatialAgentTiles(groups, state, {
+    ...options,
+    heroAgentId: projectHeroId,
+  });
   const bounds = boundsOf(groups);
   const showRail = altitude === 'project';
   // Attention is scoped to the focused Project (its own blockers / active count).
-  const attention = selectSpatialAttention(
-    subState(state, centered.agentIds),
-    tiles,
-    options,
-    bounds
-  );
+  const attention = selectSpatialAttention(projectState, tiles, options, bounds);
 
   return {
     groups,
@@ -939,7 +1100,11 @@ export function selectFleetCommandView(
     activityFeed: selectActivityFeed(state, options.activityLimit),
     heartbeats: selectHeartbeatSummaries(options.heartbeatJobs, state),
     selectedAgentId: options.selectedAgentId ?? null,
-    nextBlockedAgentId: operatorQueue[0]?.agentId ?? null,
+    // The DOM /fleet and the spatial surface agree on "the most important
+    // blocker" by sharing the leverage-aware attention schedule (not raw age).
+    nextBlockedAgentId:
+      selectAttentionSchedule(state, { now: options.now, limit: 1 })[0]
+        ?.agentId ?? null,
     activeAgentCount: agents.filter(agent => agent.active).length,
     blockedAgentCount: operatorQueue.length,
     lastUpdated: state.lastUpdated,

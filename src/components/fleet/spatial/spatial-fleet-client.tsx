@@ -71,6 +71,7 @@ export function SpatialFleetClient() {
         focusedProjectId,
         selectedAgentId,
         blockerLimit: 3,
+        now: Date.now(), // Attention Scheduling age; recomputed as fleet state ticks
       }),
     [fleetState, altitude, focusedProjectId, selectedAgentId]
   );
@@ -387,6 +388,9 @@ export function SpatialFleetClient() {
                       <p className="mt-1 line-clamp-2 text-sm text-red-100/75">
                         {scene.attention.hero.title}
                       </p>
+                      <p className="mt-1.5 text-[11px] font-medium text-red-200/70">
+                        {scene.attention.hero.reason}
+                      </p>
                     </Link>
                   )}
                   {scene.attention.secondary.map(item => (
@@ -400,6 +404,9 @@ export function SpatialFleetClient() {
                       </p>
                       <p className="mt-1 line-clamp-2 text-sm text-amber-100/75">
                         {item.title}
+                      </p>
+                      <p className="mt-1.5 text-[11px] font-medium text-amber-200/70">
+                        {item.reason}
                       </p>
                     </Link>
                   ))}
