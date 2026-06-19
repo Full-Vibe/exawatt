@@ -15,6 +15,7 @@ import {
   selectOperatorQueue,
   selectSortedAgents,
   selectSpatialAgentTiles,
+  selectShortGoalLabel,
   selectSpatialAttention,
   selectSpatialProjectZones,
 } from './index';
@@ -1004,5 +1005,56 @@ describe('@exawatt/ui-model fleet-scale (V0.5)', () => {
     const restPlan = resolveTransmission(restScene, false);
     expect(restPlan.heroCardGlass).toBe(true); // 1 at rest
     expect(restPlan.selectedTileGlassAgentId).toBeNull();
+  });
+});
+
+describe('selectShortGoalLabel', () => {
+  it('summarizes demo goals into clean 2-4 word labels', () => {
+    expect(
+      selectShortGoalLabel(
+        'Research competitor pricing, compile report with recommendations'
+      )
+    ).toBe('Research competitor pricing');
+    expect(
+      selectShortGoalLabel(
+        'Improve onboarding flow and add analytics tracking to key conversion steps'
+      )
+    ).toBe('Improve onboarding flow');
+    expect(
+      selectShortGoalLabel('Set up CI/CD pipeline for the new microservice')
+    ).toBe('Set CI/CD pipeline');
+    expect(
+      selectShortGoalLabel('Migrate database schema to support multi-tenancy')
+    ).toBe('Migrate database schema');
+    expect(
+      selectShortGoalLabel(
+        'Performance optimization sprint: reduce bundle size by 40%'
+      )
+    ).toBe('Performance optimization sprint');
+  });
+
+  it('is pure/deterministic, caps word count, title-cases, handles empty', () => {
+    const goal = 'build marketing landing page with A/B test variants';
+    expect(selectShortGoalLabel(goal)).toBe(selectShortGoalLabel(goal));
+    expect(selectShortGoalLabel(goal)).toBe('Build marketing landing page');
+    expect(selectShortGoalLabel(goal).split(' ').length).toBeLessThanOrEqual(4);
+    expect(selectShortGoalLabel('audit module', 2)).toBe('Audit module');
+    expect(selectShortGoalLabel('')).toBe('');
+    expect(selectShortGoalLabel('   ')).toBe('');
+  });
+
+  it('labels agent tiles by goal summary, not the (possibly codename) name', () => {
+    const a = agent({
+      id: 'x',
+      name: 'Gamma',
+      project: 'P',
+      goal: 'Research competitor pricing, compile report',
+      status: 'working',
+    });
+    const s: FleetState = { agents: { x: a }, metrics, lastUpdated: 1 };
+    const zones = selectSpatialProjectZones(s);
+    const tiles = selectSpatialAgentTiles(zones, s);
+    expect(tiles[0]!.label).toBe('Research competitor pricing');
+    expect(tiles[0]!.label).not.toBe('Gamma');
   });
 });

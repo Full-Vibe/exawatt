@@ -423,6 +423,44 @@ export function filterFleetState(
   return { ...state, agents };
 }
 
+const GOAL_STOP_WORDS = new Set([
+  'a', 'an', 'the', 'of', 'on', 'in', 'up', 'by', 'all', 'its', 'their', 'new',
+]);
+// Conjunctions/prepositions that end the useful summary once a couple of words
+// are in hand (so "Improve onboarding flow and add ..." -> "Improve onboarding flow").
+const GOAL_BREAK_WORDS = new Set([
+  'and', '&', 'then', 'to', 'for', 'with', 'plus', 'so', 'that',
+]);
+
+/**
+ * Derive a 2-4 word micro-summary label from an agent goal. Pure + deterministic
+ * (no time, no randomness) so it is safe in selectors and unit-testable. Takes
+ * the first clause, then keeps up to `maxWords` significant words — breaking at a
+ * conjunction once 2+ words are in hand and skipping small stop words — strips
+ * trailing punctuation, and title-cases the first word. Falls back to the trimmed
+ * goal. Labels agents by what they are DOING, not by a codename.
+ */
+export function selectShortGoalLabel(goal: string, maxWords = 4): string {
+  const cleaned = (goal ?? '').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return '';
+  const firstClause = cleaned.split(/[,.;:]/)[0]!.trim() || cleaned;
+  const words = firstClause.split(' ').filter(Boolean);
+  const kept: string[] = [];
+  for (const word of words) {
+    if (kept.length >= maxWords) break;
+    const lw = word.toLowerCase().replace(/[^a-z&/]/g, '');
+    if (GOAL_BREAK_WORDS.has(lw)) {
+      if (kept.length >= 2) break;
+      continue;
+    }
+    if (kept.length > 0 && GOAL_STOP_WORDS.has(lw)) continue;
+    kept.push(word);
+  }
+  if (kept.length === 0) kept.push(...words.slice(0, maxWords));
+  const label = kept.join(' ').replace(/[\s,.;:—-]+$/, '');
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 export function selectSortedAgents(state: FleetState): FleetAgentView[] {
   return getAgents(state).sort(sortAgents).map(toAgentView);
 }
@@ -974,7 +1012,7 @@ export function selectSpatialAgentTiles(
         id: `tile:${agentId}`,
         agentId,
         clusterId: zone.clusterId,
-        label: agent.name,
+        label: selectShortGoalLabel(agent.goal) || agent.name,
         status: agent.status,
         statusColor: STATUS_COLORS[agent.status],
         needsOperator,

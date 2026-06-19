@@ -93,56 +93,56 @@ const MOCK_AGENTS_DATA: Array<{
 }> = [
   {
     id: 'demo-alpha',
-    name: 'Alpha',
+    name: 'Onboarding Analytics',
     project: 'Exawatt Demo Polish',
     goal: 'Improve onboarding flow and add analytics tracking to key conversion steps',
     status: 'working',
   },
   {
     id: 'demo-beta',
-    name: 'Beta',
+    name: 'Legacy TS Cleanup',
     project: 'Exawatt Demo Polish',
     goal: 'Audit and fix all TypeScript errors in the legacy module, add missing tests',
     status: 'idle',
   },
   {
     id: 'demo-gamma',
-    name: 'Gamma',
+    name: 'Competitor Pricing',
     project: 'OpenClaw Local Parity',
     goal: 'Research competitor pricing, compile report with recommendations',
     status: 'blocked',
   },
   {
     id: 'demo-delta',
-    name: 'Delta',
+    name: 'Multi-tenant Schema',
     project: 'Investor Pipeline Research',
     goal: 'Migrate database schema to support multi-tenancy',
     status: 'complete',
   },
   {
     id: 'demo-epsilon',
-    name: 'Epsilon',
+    name: 'Marketing Landing Page',
     project: 'Investor Pipeline Research',
     goal: 'Build marketing landing page with A/B test variants',
     status: 'idle',
   },
   {
     id: 'demo-zeta',
-    name: 'Zeta',
+    name: 'Bundle Size Sprint',
     project: 'Exawatt Demo Polish',
     goal: 'Performance optimization sprint: reduce bundle size by 40%',
     status: 'working',
   },
   {
     id: 'demo-eta',
-    name: 'Eta',
+    name: 'PR Merge Backlog',
     project: 'OpenClaw Local Parity',
     goal: 'Review and merge 12 open PRs, resolve conflicts',
     status: 'reviewing',
   },
   {
     id: 'demo-theta',
-    name: 'Theta',
+    name: 'CI/CD Pipeline',
     project: 'OpenClaw Local Parity',
     goal: 'Set up CI/CD pipeline for the new microservice',
     status: 'blocked',
@@ -554,7 +554,7 @@ export class MockFleetTransport {
 
       // Add blocker info for blocked agents
       if (data.status === 'blocked') {
-        // Gamma is seeded as the deterministic hero blocker: a stable
+        // demo-gamma (Competitor Pricing) is seeded as the deterministic hero blocker: a stable
         // credentials_needed blocker created oldest, so selectOperatorQueue
         // (oldest-first) always lifts it into the attention lane on load.
         const isPrimaryHero = data.id === 'demo-gamma';
@@ -583,7 +583,7 @@ export class MockFleetTransport {
     }
 
     // Fleet-scale (V0.5): top up with synthetic agents for medium/large demos.
-    // The 8 hand-authored agents (incl. Gamma, the deterministic credentials
+    // The 8 hand-authored agents (incl. demo-gamma, the deterministic credentials
     // hero) are always present, so a stable hero exists at every scale.
     const target = SCALE_COUNTS[this.scale];
     for (let i = this.agents.size; i < target; i++) {
@@ -600,7 +600,7 @@ export class MockFleetTransport {
     const id = `demo-syn-${index}`;
     const agent = createAgent({
       id,
-      name: `Agent ${index}`,
+      name: SYNTHETIC_GOALS[index % SYNTHETIC_GOALS.length]!.split(' ').slice(0, 3).join(' '),
       // Concentrate ~1/3 into the lead Project so a large fleet has one big
       // Project (>~48 agents) that exercises the instanced tile path on drill-in,
       // while the rest spread across the others for a realistic cluster mix.
@@ -636,7 +636,7 @@ export class MockFleetTransport {
         MOCK_BLOCKERS[Math.floor(Math.random() * MOCK_BLOCKERS.length)]!;
       agent.blockerInfo = {
         ...blocker,
-        // Newer than Gamma's seeded blocker so the default-load hero is stable.
+        // Newer than demo-gamma's seeded blocker so the default-load hero is stable.
         createdAt: now - Math.floor(Math.random() * 1_500_000),
       };
       agent.activities = [

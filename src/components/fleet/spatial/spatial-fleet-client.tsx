@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -30,6 +30,20 @@ import {
   type SpatialProjectZone,
 } from '@exawatt/ui-model';
 import type { AgentStatus } from '@exawatt/core';
+import {
+  createLabelRegistry,
+  LabelLayer,
+} from './command-table/label-layer';
+import {
+  DEFAULT_SURFACE_STYLE,
+  STYLE_THEMES,
+  SURFACE_STYLES,
+  SURFACE_STYLE_LABELS,
+  isSurfaceStyle,
+  type SurfaceStyle,
+} from './command-table/style-themes';
+
+const STYLE_STORAGE_KEY = 'exawatt:spatial-style';
 
 const FILTERABLE_STATUSES: AgentStatus[] = [
   'working',
@@ -58,6 +72,11 @@ export function SpatialFleetClient() {
     rawAltitude === 'project' || rawAltitude === 'agent' ? rawAltitude : 'fleet';
   const focusedProjectId = searchParams.get('project');
   const selectedAgentId = searchParams.get('agent');
+  const rawStyle = searchParams.get('style');
+  const style: SurfaceStyle = isSurfaceStyle(rawStyle)
+    ? rawStyle
+    : DEFAULT_SURFACE_STYLE;
+  const labelRegistry = useRef(createLabelRegistry()).current;
   const { fleetState } = useFleet();
   const { isDemo } = useFleetConnection();
   const { connectToRealOC, canConnect } = useConnectToOC();
@@ -112,12 +131,17 @@ export function SpatialFleetClient() {
       altitude?: Altitude;
       project?: string | null;
       agent?: string | null;
+      style?: SurfaceStyle;
     }) => {
       const params = new URLSearchParams(searchParams.toString());
       if ('altitude' in next) {
         if (next.altitude && next.altitude !== 'fleet')
           params.set('altitude', next.altitude);
         else params.delete('altitude');
+      }
+      if ('style' in next && next.style) {
+        if (next.style !== DEFAULT_SURFACE_STYLE) params.set('style', next.style);
+        else params.delete('style');
       }
       if ('project' in next) {
         if (next.project) params.set('project', next.project);
@@ -146,6 +170,35 @@ export function SpatialFleetClient() {
       navigate({ altitude: 'fleet', project: null, agent: null });
     }
   }, [scene.altitude, scene.focusedProjectId, navigate]);
+
+  const setStyle = useCallback(
+    (next: SurfaceStyle) => {
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(STYLE_STORAGE_KEY, next);
+        } catch {
+          /* ignore */
+        }
+      }
+      navigate({ style: next });
+    },
+    [navigate]
+  );
+
+  // Seed the style from the last choice when the URL doesn't specify one.
+  useEffect(() => {
+    if (rawStyle || typeof window === 'undefined') return;
+    let saved: string | null = null;
+    try {
+      saved = window.localStorage.getItem(STYLE_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+    if (saved && isSurfaceStyle(saved) && saved !== DEFAULT_SURFACE_STYLE) {
+      navigate({ style: saved });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const drillToProject = (zone: SpatialProjectZone) =>
     navigate({ altitude: 'project', project: zone.clusterId, agent: null });
@@ -283,7 +336,27 @@ export function SpatialFleetClient() {
           </span>
         )}
 
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          <div
+            className="flex items-center gap-0.5 rounded border border-zinc-800 bg-zinc-950/80 p-0.5"
+            role="group"
+            aria-label="Surface style"
+          >
+            {SURFACE_STYLES.map(s => (
+              <button
+                key={s}
+                onClick={() => setStyle(s)}
+                aria-pressed={style === s}
+                className={`rounded px-1.5 py-0.5 text-[10px] transition ${
+                  style === s
+                    ? 'bg-teal-600 text-white'
+                    : 'text-zinc-400 hover:text-zinc-100'
+                }`}
+              >
+                {SURFACE_STYLE_LABELS[s]}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center gap-1 rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">
             <Search className="h-3 w-3 text-zinc-500" />
             <input
@@ -338,8 +411,18 @@ export function SpatialFleetClient() {
         >
           <CommandTableCanvas
             scene={scene}
+            style={style}
+            labelRegistry={labelRegistry}
             onSelectAgent={handleSelectAgent}
             onSelectProject={drillToProject}
+          />
+
+          {/* Projected DOM labels: crisp HTML cards positioned over each Project
+              zone by the in-canvas projector. Sibling of the canvas, same box. */}
+          <LabelLayer
+            scene={scene}
+            theme={STYLE_THEMES[style]}
+            registry={labelRegistry}
           />
 
           {/* Keyboard / screen-reader equivalent for the pointer-only 3D drill:
