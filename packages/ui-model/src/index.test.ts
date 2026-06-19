@@ -677,6 +677,35 @@ describe('@exawatt/ui-model', () => {
     };
   }
 
+  it('rounds every emitted coordinate to 4 decimals (determinism invariant)', () => {
+    const zones = selectSpatialProjectZones(multiState());
+    const alpha = zones.find(z => z.label === 'Alpha')!;
+    // Raw center carries float error (1.5899999999999999); round4 pins it, so
+    // this assertion fails the moment rounding is removed.
+    expect(alpha.x).toBe(1.59);
+    const tiles = selectSpatialAgentTiles(zones, multiState());
+    for (const z of zones) {
+      for (const v of [z.x, z.z, z.width, z.depth, z.frameEmissiveTarget]) {
+        expect(v).toBe(Number(v.toFixed(4)));
+      }
+    }
+    for (const t of tiles) {
+      for (const v of [t.x, t.z, t.y, t.liftTarget]) {
+        expect(v).toBe(Number(v.toFixed(4)));
+      }
+    }
+  });
+
+  it('DOM next-blocker, operator queue, and spatial hero all pick the leverage winner', () => {
+    const cmd = selectFleetCommandView(leverageState());
+    const scene = selectFleetSpatialScene(leverageState());
+    // Not the oldest (old-input createdAt 0); the highest-leverage credentials one.
+    expect(cmd.nextBlockedAgentId).toBe('new-cred');
+    expect(cmd.operatorQueue[0]!.agentId).toBe('new-cred');
+    expect(scene.attention.hero!.agentId).toBe('new-cred');
+    expect(cmd.nextBlockedAgentId).toBe(scene.attention.hero!.agentId);
+  });
+
   it('ranks by leverage: a newer credentials blocker outranks an older input one', () => {
     const schedule = selectAttentionSchedule(leverageState());
     expect(schedule.map(i => i.agentId)).toEqual(['new-cred', 'old-input']);
@@ -896,5 +925,84 @@ describe('@exawatt/ui-model fleet-scale (V0.5)', () => {
     expect(selectFleetSpatialScene(big, { altitude: 'fleet' })).toEqual(
       selectFleetSpatialScene(big, { altitude: 'fleet' })
     );
+  });
+
+  it('keeps a single overflow Project drillable at exactly maxZones+1 (no wasteful fold)', () => {
+    const justOver = selectSpatialProjectZones(manyProjectState(3), {
+      aggregateOverflow: true,
+      maxZones: 2,
+    });
+    expect(justOver).toHaveLength(3);
+    expect(justOver.some(z => z.isAggregate)).toBe(false);
+
+    const twoOver = selectSpatialProjectZones(manyProjectState(4), {
+      aggregateOverflow: true,
+      maxZones: 2,
+    });
+    expect(twoOver).toHaveLength(3);
+    expect(twoOver[twoOver.length - 1]!.isAggregate).toBe(true);
+    expect(twoOver[twoOver.length - 1]!.label).toBe('+2 quieter projects');
+  });
+
+  it('ascends to fleet when a stale URL deep-links the synthetic aggregate cluster', () => {
+    const scene = selectFleetSpatialScene(manyProjectState(30), {
+      altitude: 'project',
+      focusedProjectId: 'aggregate:quieter',
+      maxZones: 24,
+    });
+    expect(scene.altitude).toBe('fleet');
+    expect(scene.focusedProjectId).toBeNull();
+    expect(scene.tiles).toHaveLength(0);
+  });
+
+  it('holds the transmission cap (<=2, 1 at rest) at instanced project scale', () => {
+    const agents: ExawattAgent[] = [];
+    for (let i = 0; i < 50; i++) {
+      agents.push(
+        agent({
+          id: `big-${i}`,
+          name: `B${i}`,
+          project: 'Big',
+          status: i === 0 ? 'blocked' : 'working',
+          lastActivityAt: i,
+          blockerInfo:
+            i === 0
+              ? {
+                  type: 'credentials_needed',
+                  title: 'Keys',
+                  description: 'Need keys.',
+                  suggestedResponses: ['x'],
+                  createdAt: 1,
+                }
+              : undefined,
+        })
+      );
+    }
+    const big: FleetState = {
+      agents: Object.fromEntries(agents.map(a => [a.id, a])),
+      metrics,
+      lastUpdated: 1,
+    };
+    const scene = selectFleetSpatialScene(big, {
+      altitude: 'project',
+      focusedProjectId: 'project:Big',
+      selectedAgentId: 'big-1',
+    });
+    expect(scene.tiles.length).toBeGreaterThanOrEqual(48); // instanced path
+    expect(scene.attention.hero!.agentId).toBe('big-0');
+    const plan = resolveTransmission(scene, false);
+    expect(plan.heroCardGlass).toBe(true);
+    expect(plan.selectedTileGlassAgentId).toBe('big-1'); // distinct from hero
+    const surfaces =
+      Number(plan.heroCardGlass) + (plan.selectedTileGlassAgentId ? 1 : 0);
+    expect(surfaces).toBe(2);
+
+    const restScene = selectFleetSpatialScene(big, {
+      altitude: 'project',
+      focusedProjectId: 'project:Big',
+    });
+    const restPlan = resolveTransmission(restScene, false);
+    expect(restPlan.heroCardGlass).toBe(true); // 1 at rest
+    expect(restPlan.selectedTileGlassAgentId).toBeNull();
   });
 });

@@ -203,7 +203,9 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .fleet-scanline,
-  .animate-fleet-rise {
+  .animate-fleet-rise,
+  .animate-ping,
+  .animate-pulse {
     animation: none;
   }
 

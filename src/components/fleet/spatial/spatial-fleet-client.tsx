@@ -156,9 +156,18 @@ export function SpatialFleetClient() {
     else ascend();
   };
 
-  // Escape ascends one altitude level.
+  // Escape ascends one altitude level — but not while typing in a field (there
+  // Escape clears the search; see the input's onKeyDown).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
       if (event.key === 'Escape') ascend();
     };
     window.addEventListener('keydown', onKey);
@@ -280,12 +289,18 @@ export function SpatialFleetClient() {
             <input
               value={query}
               onChange={event => setQuery(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Escape') {
+                  event.stopPropagation();
+                  setQuery('');
+                }
+              }}
               placeholder="Search agents…"
               aria-label="Search agents"
-              className="w-24 bg-transparent text-[11px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none sm:w-40"
+              className="w-24 rounded-sm bg-transparent text-[11px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus-visible:ring-1 focus-visible:ring-teal-400/70 sm:w-40"
             />
           </div>
-          <div className="hidden items-center gap-1 md:flex">
+          <div className="flex flex-wrap items-center gap-1">
             {FILTERABLE_STATUSES.map(status => (
               <button
                 key={status}
@@ -326,6 +341,33 @@ export function SpatialFleetClient() {
             onSelectAgent={handleSelectAgent}
             onSelectProject={drillToProject}
           />
+
+          {/* Keyboard / screen-reader equivalent for the pointer-only 3D drill:
+              the WebGL canvas isn't focusable, so mirror its actions as buttons. */}
+          {scene.altitude === 'fleet' && (
+            <ul aria-label="Projects" className="sr-only">
+              {scene.groups
+                .filter(zone => !zone.isAggregate)
+                .map(zone => (
+                  <li key={zone.clusterId}>
+                    <button onClick={() => drillToProject(zone)}>
+                      {zone.label}
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          )}
+          {scene.altitude === 'project' && (
+            <ul aria-label="Agents" className="sr-only">
+              {scene.tiles.map(tile => (
+                <li key={tile.id}>
+                  <button onClick={() => handleSelectAgent(tile.agentId)}>
+                    {tile.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
 
           <div className="pointer-events-none absolute left-3 top-3 grid max-w-[64%] grid-cols-2 gap-2 sm:left-4 sm:top-4 sm:max-w-none sm:grid-cols-4">
             <SpatialMetric

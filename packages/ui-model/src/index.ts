@@ -132,6 +132,8 @@ export interface SpatialProjectZone {
   activeCount: number;
   blockedCount: number;
   idleCount: number;
+  /** worst status in the cluster; lets the focused zone re-derive its rim/tier */
+  dominantStatus: AgentStatus;
   costRate: number;
   totalCost: number;
   attentionPressure: number; // 0..1
@@ -827,8 +829,11 @@ export function selectSpatialProjectZones(
 
   // Fleet-scale: keep the top-N Projects as full clusters and fold the rest into
   // a single "+N quieter projects" summary so the Fleet Map stays readable.
+  // Only fold when it collapses 2+ Projects — at exactly maxZones+1 a single
+  // overflow Project keeps its own drillable card (folding it would save no
+  // space yet make a real Project unreachable).
   const effectiveGroups =
-    options.aggregateOverflow && sorted.length > maxZones
+    options.aggregateOverflow && sorted.length > maxZones + 1
       ? [...sorted.slice(0, maxZones), aggregateGroup(sorted.slice(maxZones))]
       : sorted;
 
@@ -890,6 +895,7 @@ export function selectSpatialProjectZones(
         activeCount: s.activeCount,
         blockedCount: s.blockedCount,
         idleCount: s.idleCount,
+        dominantStatus: s.dominantStatus,
         costRate: s.costRate,
         totalCost: s.totalCost,
         attentionPressure: s.attentionPressure,
@@ -1164,17 +1170,31 @@ export function selectFleetSpatialScene(
 
   // ---- Project / Agent altitude: one focused zone, re-centered, full tiles ----
   const focused = allZones.find(zone => zone.clusterId === focusedProjectId)!;
+  // Scope the hero to the focused Project so the lifted tile, the rail hero, the
+  // glow line, AND the zone rim/tier all reference the same (project-scoped)
+  // agent — not the fleet-wide hero that selectSpatialProjectZones baked in.
+  const projectState = subState(state, focused.agentIds);
+  const projectHeroId = heroAgentId(projectState, options.now);
+  const ownsHero =
+    projectHeroId != null && focused.agentIds.includes(projectHeroId);
+  const tier = zoneTier(ownsHero, focused.blockedCount, focused.dominantStatus);
   const centered: SpatialProjectZone = {
     ...focused,
     x: 0,
     z: 0,
     summaryMode: false,
+    tier,
+    ownsHeroBlocker: ownsHero,
+    tint: ZONE_TINT[tier],
+    rimColor: TIER_RIM_COLOR[tier],
+    edgeEmphasisTarget: round4(edgeEmphasisFor(tier, focused.selected)),
+    frameEmissiveTarget: frameEmissiveFor(
+      tier,
+      focused.selected,
+      focused.selected
+    ),
   };
   const groups = [centered];
-  // Scope the hero to the focused Project so the lifted tile, the rail hero, and
-  // the glow line all reference the same agent (not the fleet-wide hero).
-  const projectState = subState(state, centered.agentIds);
-  const projectHeroId = heroAgentId(projectState, options.now);
   const tiles = selectSpatialAgentTiles(groups, state, {
     ...options,
     heroAgentId: projectHeroId,
@@ -1202,7 +1222,12 @@ export function selectFleetCommandView(
   options: FleetCommandViewOptions = {}
 ): FleetCommandViewModel {
   const agents = selectSortedAgents(state);
-  const operatorQueue = selectOperatorQueue(state, options.blockerLimit);
+  // Order the operator queue by the leverage-aware attention schedule so the DOM
+  // /fleet panel agrees with the spatial hero and the Clear-Blocker CTA (one model).
+  const operatorQueue = selectAttentionSchedule(state, {
+    now: options.now,
+    limit: options.blockerLimit ?? 3,
+  });
 
   return {
     agents,
