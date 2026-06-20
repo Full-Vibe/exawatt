@@ -42,6 +42,7 @@ import {
   isSurfaceStyle,
   type SurfaceStyle,
 } from './command-table/style-themes';
+import { MenuSurface } from './menu/menu-surface';
 
 const STYLE_STORAGE_KEY = 'exawatt:spatial-style';
 
@@ -406,9 +407,24 @@ export function SpatialFleetClient() {
 
       <main className="relative grid min-h-0 flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_360px]">
         <section
-          className="relative h-[52vh] min-h-[360px] overflow-hidden xl:h-auto xl:min-h-[62vh]"
-          aria-label="Spatial fleet map"
+          className={
+            style === 'menu'
+              ? 'relative min-h-0 overflow-y-auto'
+              : 'relative h-[52vh] min-h-[360px] overflow-hidden xl:h-auto xl:min-h-[62vh]'
+          }
+          aria-label="Fleet command surface"
         >
+          {style === 'menu' ? (
+            <MenuSurface
+              scene={scene}
+              agents={commandView.agents}
+              metrics={commandView.metrics}
+              selectedAgentId={selectedAgentId}
+              onDrillProject={drillToProject}
+              onSelectAgent={handleSelectAgent}
+            />
+          ) : (
+            <>
           <CommandTableCanvas
             scene={scene}
             style={style}
@@ -474,6 +490,8 @@ export function SpatialFleetClient() {
               tone="zinc"
             />
           </div>
+            </>
+          )}
         </section>
 
         <aside className="relative z-10 flex min-h-0 flex-col gap-4 border-t border-zinc-800 bg-zinc-950/92 p-4 backdrop-blur xl:border-l xl:border-t-0">
