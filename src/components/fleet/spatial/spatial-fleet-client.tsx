@@ -43,7 +43,6 @@ import {
   type SurfaceStyle,
 } from './command-table/style-themes';
 import { MenuSurface } from './menu/menu-surface';
-import { CommandSurface } from './command/command-surface';
 
 const STYLE_STORAGE_KEY = 'exawatt:spatial-style';
 
@@ -73,6 +72,18 @@ const Console3dSurface = dynamic(
     loading: () => (
       <div className="flex h-full min-h-[360px] items-center justify-center bg-[#070b10] text-sm text-zinc-500">
         Initializing console…
+      </div>
+    ),
+  }
+);
+
+const CommandR3FCanvas = dynamic(
+  () => import('./command/command-r3f-canvas').then(mod => mod.CommandR3FCanvas),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full min-h-[520px] items-center justify-center bg-zinc-950 text-sm text-zinc-500">
+        Initializing command surface...
       </div>
     ),
   }
@@ -421,19 +432,19 @@ export function SpatialFleetClient() {
       <main className="relative grid min-h-0 flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_360px]">
         <section
           className={
-            style === 'menu' || style === 'command'
+            style === 'menu'
               ? 'relative min-h-0 overflow-y-auto'
               : 'relative h-[52vh] min-h-[360px] overflow-hidden xl:h-auto xl:min-h-[62vh]'
           }
           aria-label="Fleet command surface"
         >
           {style === 'command' ? (
-            <CommandSurface
+            <CommandR3FCanvas
               scene={scene}
               agents={commandView.agents}
               metrics={commandView.metrics}
               selectedAgentId={selectedAgentId}
-              onDrillProject={drillToProject}
+              onSelectProject={drillToProject}
               onSelectAgent={handleSelectAgent}
             />
           ) : style === 'menu' ? (
