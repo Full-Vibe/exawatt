@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
 import { Exo_2, Geist, Geist_Mono } from 'next/font/google';
-import Link from 'next/link';
 import './globals.css';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ShortcutProvider } from '@/components/shortcuts';
 import { SiteHeader } from '@/components/nav/site-header';
+import { SiteFooter } from '@/components/nav/site-footer';
 import { FleetProvider } from '@/lib/fleet/fleet-provider';
 
 const exo2 = Exo_2({
@@ -47,25 +47,7 @@ export default function RootLayout({
             </FleetProvider>
           </ShortcutProvider>
         </TooltipProvider>
-        <footer
-          id="site-footer"
-          className="border-t py-6 text-center text-xs text-muted-foreground"
-        >
-          <div className="flex items-center justify-center gap-4">
-            <Link
-              href="/privacy"
-              className="hover:text-foreground transition-colors"
-            >
-              Privacy Policy
-            </Link>
-            <Link
-              href="/terms"
-              className="hover:text-foreground transition-colors"
-            >
-              Terms of Service
-            </Link>
-          </div>
-        </footer>
+        <SiteFooter />
       </body>
     </html>
   );

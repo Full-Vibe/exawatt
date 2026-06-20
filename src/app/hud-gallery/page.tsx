@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { AgentStatus } from '@exawatt/core';
@@ -16,6 +15,15 @@ import {
   type HudTone,
 } from '@/components/hud';
 import {
+  WebglFramesScene,
+  WebglBracketsScene,
+  WebglLabelsScene,
+  WebglStatBarsScene,
+  WebglGaugesScene,
+  WebglPillsScene,
+  WebglComposedScene,
+} from '@/components/hud/webgl/scenes';
+import {
   FIXTURE_AGENTS,
   FIXTURE_METRICS,
 } from '@/components/hud/gallery-fixtures';
@@ -30,11 +38,14 @@ const STATUSES: AgentStatus[] = [
   'idle',
 ];
 
+const agent = FIXTURE_AGENTS[0];
+
 interface Section {
   id: string;
   title: string;
   meta: string;
-  render: () => ReactNode;
+  dom: ReactNode;
+  webgl: ReactNode;
 }
 
 const SECTIONS: Section[] = [
@@ -42,194 +53,164 @@ const SECTIONS: Section[] = [
     id: 'frames',
     title: 'Frames',
     meta: 'HudFrame — chamfered glass + neon edge',
-    render: () => (
-      <Row>
-        <Cell label="chamfer tr+bl · cyan">
-          <HudFrame className="h-40 w-72" tone="cyan">
-            <div className="p-4">
-              <Label tone="cyan">Project</Label>
-              <p className="mt-2 font-display text-lg">OpenClaw Local Parity</p>
-            </div>
-          </HudFrame>
-        </Cell>
-        <Cell label="all corners · amber">
-          <HudFrame
-            className="h-40 w-72"
-            tone="amber"
-            chamfer={['tl', 'tr', 'br', 'bl']}
-          >
-            <div className="p-4">
-              <Label tone="amber">Reviewing</Label>
-              <p className="mt-2 font-display text-lg">Merge open PRs</p>
-            </div>
-          </HudFrame>
-        </Cell>
-        <Cell label="selected · magenta + brackets">
-          <HudFrame className="h-40 w-72" tone="magenta" intensity={1.2}>
-            <CornerBrackets tone="magenta" active />
-            <div className="p-4">
-              <Label tone="magenta">Selected</Label>
-              <p className="mt-2 font-display text-lg">Competitor pricing</p>
-            </div>
-          </HudFrame>
-        </Cell>
-      </Row>
+    dom: (
+      <div className="flex flex-wrap gap-5">
+        <HudFrame className="h-[150px] w-56" tone="cyan">
+          <div className="p-4">
+            <Label tone="cyan">Project</Label>
+            <p className="mt-2 font-display text-lg">OpenClaw Local Parity</p>
+          </div>
+        </HudFrame>
+        <HudFrame
+          className="h-[150px] w-56"
+          tone="amber"
+          chamfer={['tl', 'tr', 'br', 'bl']}
+        >
+          <div className="p-4">
+            <Label tone="amber">Reviewing</Label>
+            <p className="mt-2 font-display text-lg">Merge open PRs</p>
+          </div>
+        </HudFrame>
+        <HudFrame className="h-[150px] w-56" tone="magenta" intensity={1.2}>
+          <CornerBrackets tone="magenta" active />
+          <div className="p-4">
+            <Label tone="magenta">Selected</Label>
+            <p className="mt-2 font-display text-lg">Competitor pricing</p>
+          </div>
+        </HudFrame>
+      </div>
     ),
+    webgl: <WebglFramesScene />,
   },
   {
     id: 'brackets',
     title: 'Corner brackets',
     meta: 'CornerBrackets — focus L-marks',
-    render: () => (
-      <Row>
-        <Cell label="active">
-          <div
-            className="relative h-32 w-56 border"
-            style={{ borderColor: 'rgba(80,230,255,0.15)' }}
-          >
-            <CornerBrackets tone="cyan" active />
-          </div>
-        </Cell>
-      </Row>
+    dom: (
+      <div
+        className="relative h-[120px] w-[200px] border"
+        style={{ borderColor: 'rgba(80,230,255,0.15)' }}
+      >
+        <CornerBrackets tone="cyan" active />
+      </div>
     ),
+    webgl: <WebglBracketsScene />,
   },
   {
     id: 'labels',
     title: 'Labels & readouts',
     meta: 'type atoms',
-    render: () => (
-      <Row>
-        <Cell label="labels">
-          <div className="flex flex-col gap-2">
-            {TONES.map((t) => (
-              <Label key={t} tone={t}>
-                {t} label
-              </Label>
-            ))}
-          </div>
-        </Cell>
-        <Cell label="readouts">
-          <div className="flex gap-6">
-            <Readout label="Burn" value="$2.40" unit="/hr" tone="amber" />
-            <Readout label="Spend" value="$8.71" />
-            <Readout label="Active" value="3" tone="cyan" />
-          </div>
-        </Cell>
-      </Row>
+    dom: (
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-2">
+          {TONES.map((t) => (
+            <Label key={t} tone={t}>
+              {t} label
+            </Label>
+          ))}
+        </div>
+        <div className="flex gap-6">
+          <Readout label="Burn" value="$2.40" unit="/hr" tone="amber" />
+          <Readout label="Spend" value="$8.71" />
+          <Readout label="Active" value="3" tone="cyan" />
+        </div>
+      </div>
     ),
+    webgl: <WebglLabelsScene />,
   },
   {
     id: 'statbars',
     title: 'Stat bars',
     meta: 'segmented metric bar · 0 / 25 / 50 / 100',
-    render: () => (
-      <Row>
-        <Cell label="tones by fill">
-          <div className="flex w-72 flex-col gap-3">
-            {[0, 0.25, 0.5, 1].map((v, i) => (
-              <StatBar
-                key={v}
-                label={`Metric ${i}`}
-                value={v}
-                tone={TONES[i % TONES.length]}
-              />
-            ))}
-          </div>
-        </Cell>
-      </Row>
+    dom: (
+      <div className="flex w-[300px] flex-col gap-3">
+        {[0, 0.25, 0.5, 1].map((v, i) => (
+          <StatBar
+            key={v}
+            label={`Metric ${i}`}
+            value={v}
+            tone={TONES[i % TONES.length]}
+          />
+        ))}
+      </div>
     ),
+    webgl: <WebglStatBarsScene />,
   },
   {
     id: 'gauges',
     title: 'Ring gauges',
     meta: 'radial arc gauge',
-    render: () => (
-      <Row>
-        <Cell label="goal / burn / blocked">
-          <div className="flex gap-6">
-            <RingGauge value={0.72} label="Goal" tone="cyan" ambient />
-            <RingGauge value={0.4} label="Burn" tone="amber" />
-            <RingGauge value={0.18} label="Blocked" tone="red" />
-          </div>
-        </Cell>
-      </Row>
+    dom: (
+      <div className="flex gap-6">
+        <RingGauge value={0.72} label="Goal" tone="cyan" ambient />
+        <RingGauge value={0.4} label="Burn" tone="amber" />
+        <RingGauge value={0.18} label="Blocked" tone="red" />
+      </div>
     ),
+    webgl: <WebglGaugesScene />,
   },
   {
     id: 'pills',
     title: 'Status pills',
     meta: 'agent status chip · all six',
-    render: () => (
-      <Row>
-        <Cell label="statuses">
-          <div className="flex flex-wrap gap-2">
-            {STATUSES.map((s) => (
-              <StatusPill key={s} status={s} />
-            ))}
-          </div>
-        </Cell>
-      </Row>
+    dom: (
+      <div className="flex max-w-[320px] flex-wrap gap-2">
+        {STATUSES.map((s) => (
+          <StatusPill key={s} status={s} />
+        ))}
+      </div>
     ),
+    webgl: <WebglPillsScene />,
   },
   {
     id: 'composed',
     title: 'Composed agent panel',
     meta: 'blocks assembled',
-    render: () => (
-      <Row>
-        <Cell label="blocked agent">
-          <HudFrame className="w-80" tone="red" intensity={1.1}>
-            <CornerBrackets tone="red" active />
-            <div className="flex flex-col gap-3 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <p className="font-display text-base">
-                  {FIXTURE_AGENTS[0].name}
-                </p>
-                <StatusPill status={FIXTURE_AGENTS[0].status} />
-              </div>
-              <p className="text-sm" style={{ color: HUD.textDim }}>
-                {FIXTURE_AGENTS[0].blockerTitle}
-              </p>
-              <StatBar
-                label="Cost rate"
-                value={FIXTURE_AGENTS[0].costRate}
-                max={2}
-                tone="amber"
-              />
-              <div className="flex gap-6">
-                <Readout
-                  label="Cost"
-                  value={`$${FIXTURE_AGENTS[0].cost.toFixed(2)}`}
-                />
-                <Readout label="Turns" value={FIXTURE_AGENTS[0].turnCount} />
-                <Readout
-                  label="Fleet spend"
-                  value={`$${FIXTURE_METRICS.totalCost.toFixed(2)}`}
-                />
-              </div>
-            </div>
-          </HudFrame>
-        </Cell>
-      </Row>
+    dom: (
+      <HudFrame className="w-80" tone="red" intensity={1.1}>
+        <CornerBrackets tone="red" active />
+        <div className="flex flex-col gap-3 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <p className="font-display text-base">{agent.name}</p>
+            <StatusPill status={agent.status} />
+          </div>
+          <p className="text-sm" style={{ color: HUD.textDim }}>
+            {agent.blockerTitle}
+          </p>
+          <StatBar label="Cost rate" value={agent.costRate} max={2} tone="amber" />
+          <div className="flex gap-6">
+            <Readout label="Cost" value={`$${agent.cost.toFixed(2)}`} />
+            <Readout label="Turns" value={agent.turnCount} />
+            <Readout
+              label="Fleet spend"
+              value={`$${FIXTURE_METRICS.totalCost.toFixed(2)}`}
+            />
+          </div>
+        </div>
+      </HudFrame>
+    ),
+    webgl: (
+      <WebglComposedScene
+        name={agent.name}
+        blocker={agent.blockerTitle ?? ''}
+        status={agent.status}
+        costRate={agent.costRate}
+        cost={agent.cost}
+        turns={agent.turnCount}
+        fleetSpend={FIXTURE_METRICS.totalCost}
+      />
     ),
   },
 ];
 
-function Row({ children }: { children: ReactNode }) {
-  return <div className="flex flex-wrap gap-10">{children}</div>;
-}
-
-function Cell({ label, children }: { label: string; children: ReactNode }) {
+function ColumnLabel({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-3">
-      <span
-        className="font-mono text-[10px] tracking-wide"
-        style={{ color: HUD.textDim }}
-      >
-        {label}
-      </span>
-      <div>{children}</div>
-    </div>
+    <span
+      className="font-mono text-[10px] uppercase tracking-[0.2em]"
+      style={{ color: HUD.textDim }}
+    >
+      {children}
+    </span>
   );
 }
 
@@ -237,7 +218,6 @@ export default function HudGallery() {
   const [active, setActive] = useState(SECTIONS[0].id);
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
-  // Track which section is in view to highlight the nav.
   useEffect(() => {
     const io = new IntersectionObserver(
       (entries) => {
@@ -266,7 +246,6 @@ export default function HudGallery() {
     setActive(id);
   }, []);
 
-  // Keyboard: j/↓ next section, k/↑ prev, Home/End first/last.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const t = e.target as HTMLElement | null;
@@ -309,11 +288,10 @@ export default function HudGallery() {
         Skip to content
       </a>
 
-      <div className="mx-auto flex max-w-6xl gap-10 px-8 py-10">
-        {/* Sticky section nav — Tab to focus, Enter to jump, j/k to step */}
+      <div className="mx-auto flex max-w-[1600px] gap-10 px-8 py-10">
         <nav
           aria-label="Gallery sections"
-          className="sticky top-10 hidden h-fit w-48 shrink-0 md:block"
+          className="sticky top-10 hidden h-fit w-44 shrink-0 lg:block"
         >
           <p
             className="font-mono text-[10px] uppercase tracking-[0.18em]"
@@ -356,23 +334,29 @@ export default function HudGallery() {
 
         <main id="gallery-main" className="min-w-0 flex-1">
           <header className="mb-10">
-            <h1 className="font-display text-2xl font-semibold tracking-tight">
-              HUD component library
-            </h1>
-            <p className="mt-1 text-sm" style={{ color: HUD.textDim }}>
-              Isolation harness — each block on the HUD backdrop, for screenshot
-              review.{' '}
-              <Link
-                href="/hud-gallery/webgl-panel"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
+            <div className="flex items-center gap-3">
+              <h1 className="font-display text-2xl font-semibold tracking-tight">
+                HUD component library
+              </h1>
+              <span
+                className="rounded border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em]"
+                style={{
+                  color: HUD.amber,
+                  borderColor: 'rgba(255,176,46,0.4)',
+                  background: 'rgba(255,176,46,0.08)',
+                }}
               >
-                WebGL A/B probe →
-              </Link>
+                Dev
+              </span>
+            </div>
+            <p className="mt-1 text-sm" style={{ color: HUD.textDim }}>
+              Each block beside its WebGL sibling — DOM (left) vs Three.js
+              (right). DOM wins for crisp, keyboard-accessible chrome; WebGL is
+              reserved for the scalable agent world.
             </p>
           </header>
 
-          <div className="flex flex-col gap-16">
+          <div className="flex flex-col gap-14">
             {SECTIONS.map((s) => (
               <section
                 key={s.id}
@@ -398,7 +382,16 @@ export default function HudGallery() {
                     {s.meta}
                   </span>
                 </div>
-                {s.render()}
+                <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
+                  <div className="flex flex-col gap-3">
+                    <ColumnLabel>DOM / SVG</ColumnLabel>
+                    <div>{s.dom}</div>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    <ColumnLabel>WebGL · Three.js</ColumnLabel>
+                    <div>{s.webgl}</div>
+                  </div>
+                </div>
               </section>
             ))}
           </div>

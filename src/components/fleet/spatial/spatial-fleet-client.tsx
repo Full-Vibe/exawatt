@@ -10,6 +10,7 @@ import {
   Activity,
   Clock3,
   Crosshair,
+  FlaskConical,
   RadioTower,
   Search,
 } from 'lucide-react';
@@ -189,7 +190,7 @@ export function SpatialFleetClient() {
     }).format(value);
 
   return (
-    <div className="fleet-shell flex min-h-screen flex-col overflow-hidden text-zinc-100">
+    <div className="fleet-shell flex h-[calc(100svh-3rem)] flex-col overflow-hidden text-zinc-100">
       <FleetMetricsBar />
 
       <header className="relative z-20 flex shrink-0 flex-wrap items-center gap-3 border-b border-zinc-800/80 bg-zinc-950/90 px-4 py-3 backdrop-blur">
@@ -216,6 +217,14 @@ export function SpatialFleetClient() {
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Link
+            href="/hud-gallery"
+            title="Internal HUD component library (in development)"
+            className="flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-400/20"
+          >
+            <FlaskConical className="h-3.5 w-3.5" />
+            Dev · HUD Library
+          </Link>
           <Button asChild className="fleet-action-button h-8">
             <Link href="/fleet/cron">
               <Clock3 className="h-4 w-4" />
