@@ -22,6 +22,21 @@
   --color-ring: var(--ring);
   --font-sans: var(--font-exo2);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-orbitron);
+  --font-ui: var(--font-rajdhani);
+  /* HUD palette utilities: text-hud-cyan, bg-hud-void, border-hud-stroke, ... */
+  --color-hud-void: #04060b;
+  --color-hud-deep: #070b14;
+  --color-hud-panel: #0b1220;
+  --color-hud-cyan: #19e6ff;
+  --color-hud-cyan-2: #55ead4;
+  --color-hud-magenta: #ff3b8b;
+  --color-hud-amber: #ffb02e;
+  --color-hud-red: #ff1f4b;
+  --color-hud-green: #6fe39f;
+  --color-hud-idle: #6a7585;
+  --color-hud-text: #dcebff;
+  --color-hud-text-dim: #8aa0be;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -566,5 +581,30 @@ body {
   .hud-panel--interactive:hover,
   .hud-resolve:hover {
     transform: none;
+  }
+}
+
+/* ---- HUD component library motion (gated by reduced-motion below) ---- */
+@keyframes hud-bracket-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes hud-ring-sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.hud-ring-sweep {
+  animation: hud-ring-sweep 6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-ring-sweep {
+    animation: none;
+  }
+  [style*='hud-bracket-draw'] {
+    animation: none !important;
+    stroke-dashoffset: 0 !important;
   }
 }

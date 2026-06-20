@@ -327,12 +327,12 @@ export const STATUS_PRIORITY: Record<AgentStatus, number> = {
 };
 
 export const STATUS_COLORS: Record<AgentStatus, string> = {
-  blocked: '#f87171',
-  error: '#fb7185',
-  reviewing: '#fbbf24',
-  working: '#2dd4bf',
-  complete: '#86efac',
-  idle: '#71717a',
+  blocked: '#ff1f4b',
+  error: '#ff5c7a',
+  reviewing: '#fcec0c',
+  working: '#55ead4',
+  complete: '#6fe39f',
+  idle: '#6a7585',
 };
 
 const ACTIVITY_TONES: Record<AgentActivity['type'], ActivityFeedItem['tone']> = {

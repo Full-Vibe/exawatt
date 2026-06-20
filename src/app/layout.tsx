@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Exo_2, Geist_Mono } from 'next/font/google';
+import { Exo_2, Geist_Mono, Orbitron, Rajdhani } from 'next/font/google';
 import Link from 'next/link';
 import './globals.css';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -17,6 +17,18 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 });
 
+const orbitron = Orbitron({
+  variable: '--font-orbitron',
+  subsets: ['latin'],
+  weight: ['600', '700', '800'],
+});
+
+const rajdhani = Rajdhani({
+  variable: '--font-rajdhani',
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+});
+
 export const metadata: Metadata = {
   title: 'Exawatt',
   description: 'Power your AI agents',
@@ -30,7 +42,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${exo2.variable} ${geistMono.variable} font-sans antialiased`}
+        className={`${exo2.variable} ${geistMono.variable} ${orbitron.variable} ${rajdhani.variable} font-sans antialiased`}
       >
         <TooltipProvider>
           <ShortcutProvider>

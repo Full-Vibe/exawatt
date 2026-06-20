@@ -41,6 +41,7 @@ export async function proxy(request: NextRequest) {
     !request.nextUrl.pathname.startsWith('/auth') &&
     !request.nextUrl.pathname.startsWith('/architecture') &&
     !request.nextUrl.pathname.startsWith('/fleet') &&
+    !request.nextUrl.pathname.startsWith('/hud-gallery') &&
     !request.nextUrl.pathname.startsWith('/overview') &&
     !request.nextUrl.pathname.startsWith('/privacy') &&
     !request.nextUrl.pathname.startsWith('/terms') &&
