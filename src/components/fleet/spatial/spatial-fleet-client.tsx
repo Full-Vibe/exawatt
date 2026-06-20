@@ -66,6 +66,18 @@ const CommandTableCanvas = dynamic(
   }
 );
 
+const Console3dSurface = dynamic(
+  () => import('./console3d/console3d-surface').then(mod => mod.Console3dSurface),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full min-h-[360px] items-center justify-center bg-[#070b10] text-sm text-zinc-500">
+        Initializing console…
+      </div>
+    ),
+  }
+);
+
 export function SpatialFleetClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -426,6 +438,15 @@ export function SpatialFleetClient() {
             />
           ) : style === 'menu' ? (
             <MenuSurface
+              scene={scene}
+              agents={commandView.agents}
+              metrics={commandView.metrics}
+              selectedAgentId={selectedAgentId}
+              onDrillProject={drillToProject}
+              onSelectAgent={handleSelectAgent}
+            />
+          ) : style === 'console-3d' ? (
+            <Console3dSurface
               scene={scene}
               agents={commandView.agents}
               metrics={commandView.metrics}
