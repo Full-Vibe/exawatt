@@ -3,15 +3,15 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
+  Activity,
   Clock3,
   Crosshair,
   RadioTower,
   Search,
-  Sparkles,
 } from 'lucide-react';
 import {
   useConnectToOC,
@@ -30,21 +30,6 @@ import {
   type SpatialProjectZone,
 } from '@exawatt/ui-model';
 import type { AgentStatus } from '@exawatt/core';
-import {
-  createLabelRegistry,
-  LabelLayer,
-} from './command-table/label-layer';
-import {
-  DEFAULT_SURFACE_STYLE,
-  STYLE_THEMES,
-  SURFACE_STYLES,
-  SURFACE_STYLE_LABELS,
-  isSurfaceStyle,
-  type SurfaceStyle,
-} from './command-table/style-themes';
-import { MenuSurface } from './menu/menu-surface';
-
-const STYLE_STORAGE_KEY = 'exawatt:spatial-style';
 
 const FILTERABLE_STATUSES: AgentStatus[] = [
   'working',
@@ -53,37 +38,17 @@ const FILTERABLE_STATUSES: AgentStatus[] = [
   'idle',
 ];
 
-const CommandTableCanvas = dynamic(
-  () => import('./command-table-canvas').then(mod => mod.CommandTableCanvas),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full min-h-[520px] items-center justify-center bg-zinc-950 text-sm text-zinc-500">
-        Initializing command table...
-      </div>
-    ),
-  }
-);
-
+// The single Fleet spatial surface: a WebGL 2.5D console (orthographic, no
+// occlusion) rendered behind crisp DOM text. ssr:false so three.js loads only
+// on this route.
 const Console3dSurface = dynamic(
-  () => import('./console3d/console3d-surface').then(mod => mod.Console3dSurface),
+  () =>
+    import('./console3d/console3d-surface').then(mod => mod.Console3dSurface),
   {
     ssr: false,
     loading: () => (
       <div className="flex h-full min-h-[360px] items-center justify-center bg-[#070b10] text-sm text-zinc-500">
         Initializing console…
-      </div>
-    ),
-  }
-);
-
-const CommandR3FCanvas = dynamic(
-  () => import('./command/command-r3f-canvas').then(mod => mod.CommandR3FCanvas),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full min-h-[520px] items-center justify-center bg-zinc-950 text-sm text-zinc-500">
-        Initializing command surface...
       </div>
     ),
   }
@@ -97,11 +62,6 @@ export function SpatialFleetClient() {
     rawAltitude === 'project' || rawAltitude === 'agent' ? rawAltitude : 'fleet';
   const focusedProjectId = searchParams.get('project');
   const selectedAgentId = searchParams.get('agent');
-  const rawStyle = searchParams.get('style');
-  const style: SurfaceStyle = isSurfaceStyle(rawStyle)
-    ? rawStyle
-    : DEFAULT_SURFACE_STYLE;
-  const labelRegistry = useRef(createLabelRegistry()).current;
   const { fleetState } = useFleet();
   const { isDemo } = useFleetConnection();
   const { connectToRealOC, canConnect } = useConnectToOC();
@@ -122,7 +82,7 @@ export function SpatialFleetClient() {
       selectFleetCommandView(fleetState, {
         heartbeatJobs: jobs,
         selectedAgentId,
-        activityLimit: 5,
+        activityLimit: 8,
         blockerLimit: 4,
         now: Date.now(),
       }),
@@ -136,7 +96,7 @@ export function SpatialFleetClient() {
         focusedProjectId,
         selectedAgentId,
         blockerLimit: 3,
-        now: Date.now(), // Attention Scheduling age; recomputed as fleet state ticks
+        now: Date.now(), // Attention Scheduling age; recomputed as fleet ticks
       }),
     [filteredState, altitude, focusedProjectId, selectedAgentId]
   );
@@ -148,25 +108,19 @@ export function SpatialFleetClient() {
         : [...prev, status]
     );
 
-  // Drive zoom-resolution + selection through the URL so altitude / Project /
-  // Agent are deep-linkable. The selector resolves the EFFECTIVE altitude (and
-  // ascends if a focus target is stale), so the UI reads scene.* back.
+  // Drive zoom-resolution + selection through the URL (deep-linkable). The
+  // selector resolves the effective altitude (ascends if a focus is stale).
   const navigate = useCallback(
     (next: {
       altitude?: Altitude;
       project?: string | null;
       agent?: string | null;
-      style?: SurfaceStyle;
     }) => {
       const params = new URLSearchParams(searchParams.toString());
       if ('altitude' in next) {
         if (next.altitude && next.altitude !== 'fleet')
           params.set('altitude', next.altitude);
         else params.delete('altitude');
-      }
-      if ('style' in next && next.style) {
-        if (next.style !== DEFAULT_SURFACE_STYLE) params.set('style', next.style);
-        else params.delete('style');
       }
       if ('project' in next) {
         if (next.project) params.set('project', next.project);
@@ -176,10 +130,8 @@ export function SpatialFleetClient() {
         if (next.agent) params.set('agent', next.agent);
         else params.delete('agent');
       }
-      const query = params.toString();
-      router.replace(`/fleet/spatial${query ? `?${query}` : ''}`, {
-        scroll: false,
-      });
+      const q = params.toString();
+      router.replace(`/fleet/spatial${q ? `?${q}` : ''}`, { scroll: false });
     },
     [router, searchParams]
   );
@@ -196,46 +148,16 @@ export function SpatialFleetClient() {
     }
   }, [scene.altitude, scene.focusedProjectId, navigate]);
 
-  const setStyle = useCallback(
-    (next: SurfaceStyle) => {
-      if (typeof window !== 'undefined') {
-        try {
-          window.localStorage.setItem(STYLE_STORAGE_KEY, next);
-        } catch {
-          /* ignore */
-        }
-      }
-      navigate({ style: next });
-    },
-    [navigate]
-  );
-
-  // Seed the style from the last choice when the URL doesn't specify one.
-  useEffect(() => {
-    if (rawStyle || typeof window === 'undefined') return;
-    let saved: string | null = null;
-    try {
-      saved = window.localStorage.getItem(STYLE_STORAGE_KEY);
-    } catch {
-      /* ignore */
-    }
-    if (saved && isSurfaceStyle(saved) && saved !== DEFAULT_SURFACE_STYLE) {
-      navigate({ style: saved });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const drillToProject = (zone: SpatialProjectZone) =>
     navigate({ altitude: 'project', project: zone.clusterId, agent: null });
 
-  // Clicking a tile / hero card drills to the agent; clicking empty space ascends.
+  // Clicking an agent drills to the agent; clicking empty space ascends.
   const handleSelectAgent = (agentId: string | null) => {
     if (agentId) navigate({ altitude: 'agent', agent: agentId });
     else ascend();
   };
 
-  // Escape ascends one altitude level — but not while typing in a field (there
-  // Escape clears the search; see the input's onKeyDown).
+  // Escape ascends one altitude — but not while typing (there it clears search).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -317,7 +239,9 @@ export function SpatialFleetClient() {
         className="relative z-20 flex shrink-0 items-center gap-1 border-b border-zinc-800/60 bg-zinc-950/70 px-4 py-1.5 text-xs"
       >
         <button
-          onClick={() => navigate({ altitude: 'fleet', project: null, agent: null })}
+          onClick={() =>
+            navigate({ altitude: 'fleet', project: null, agent: null })
+          }
           className={`rounded px-2 py-1 transition ${
             scene.altitude === 'fleet'
               ? 'text-teal-200'
@@ -362,26 +286,6 @@ export function SpatialFleetClient() {
         )}
 
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          <div
-            className="flex items-center gap-0.5 rounded border border-zinc-800 bg-zinc-950/80 p-0.5"
-            role="group"
-            aria-label="Surface style"
-          >
-            {SURFACE_STYLES.map(s => (
-              <button
-                key={s}
-                onClick={() => setStyle(s)}
-                aria-pressed={style === s}
-                className={`rounded px-1.5 py-0.5 text-[10px] transition ${
-                  style === s
-                    ? 'bg-teal-600 text-white'
-                    : 'text-zinc-400 hover:text-zinc-100'
-                }`}
-              >
-                {SURFACE_STYLE_LABELS[s]}
-              </button>
-            ))}
-          </div>
           <div className="flex items-center gap-1 rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">
             <Search className="h-3 w-3 text-zinc-500" />
             <input
@@ -431,109 +335,17 @@ export function SpatialFleetClient() {
 
       <main className="relative grid min-h-0 flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_360px]">
         <section
-          className={
-            style === 'menu'
-              ? 'relative min-h-0 overflow-y-auto'
-              : 'relative h-[52vh] min-h-[360px] overflow-hidden xl:h-auto xl:min-h-[62vh]'
-          }
+          className="relative h-[56vh] min-h-[420px] overflow-hidden xl:h-auto"
           aria-label="Fleet command surface"
         >
-          {style === 'command' ? (
-            <CommandR3FCanvas
-              scene={scene}
-              agents={commandView.agents}
-              metrics={commandView.metrics}
-              selectedAgentId={selectedAgentId}
-              onSelectProject={drillToProject}
-              onSelectAgent={handleSelectAgent}
-            />
-          ) : style === 'menu' ? (
-            <MenuSurface
-              scene={scene}
-              agents={commandView.agents}
-              metrics={commandView.metrics}
-              selectedAgentId={selectedAgentId}
-              onDrillProject={drillToProject}
-              onSelectAgent={handleSelectAgent}
-            />
-          ) : style === 'console-3d' ? (
-            <Console3dSurface
-              scene={scene}
-              agents={commandView.agents}
-              metrics={commandView.metrics}
-              selectedAgentId={selectedAgentId}
-              onDrillProject={drillToProject}
-              onSelectAgent={handleSelectAgent}
-            />
-          ) : (
-            <>
-          <CommandTableCanvas
+          <Console3dSurface
             scene={scene}
-            style={style}
-            labelRegistry={labelRegistry}
+            agents={commandView.agents}
+            metrics={commandView.metrics}
+            selectedAgentId={selectedAgentId}
+            onDrillProject={drillToProject}
             onSelectAgent={handleSelectAgent}
-            onSelectProject={drillToProject}
           />
-
-          {/* Projected DOM labels: crisp HTML cards positioned over each Project
-              zone by the in-canvas projector. Sibling of the canvas, same box. */}
-          <LabelLayer
-            scene={scene}
-            theme={STYLE_THEMES[style]}
-            registry={labelRegistry}
-          />
-
-          {/* Keyboard / screen-reader equivalent for the pointer-only 3D drill:
-              the WebGL canvas isn't focusable, so mirror its actions as buttons. */}
-          {scene.altitude === 'fleet' && (
-            <ul aria-label="Projects" className="sr-only">
-              {scene.groups
-                .filter(zone => !zone.isAggregate)
-                .map(zone => (
-                  <li key={zone.clusterId}>
-                    <button onClick={() => drillToProject(zone)}>
-                      {zone.label}
-                    </button>
-                  </li>
-                ))}
-            </ul>
-          )}
-          {scene.altitude === 'project' && (
-            <ul aria-label="Agents" className="sr-only">
-              {scene.tiles.map(tile => (
-                <li key={tile.id}>
-                  <button onClick={() => handleSelectAgent(tile.agentId)}>
-                    {tile.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <div className="pointer-events-none absolute left-3 top-3 grid max-w-[64%] grid-cols-2 gap-2 sm:left-4 sm:top-4 sm:max-w-none sm:grid-cols-4">
-            <SpatialMetric
-              label="Active"
-              value={String(commandView.metrics.activeCount)}
-              tone="teal"
-            />
-            <SpatialMetric
-              label="Blocked"
-              value={String(commandView.metrics.blockedCount)}
-              tone="red"
-            />
-            <SpatialMetric
-              label="Burn/hr"
-              value={`${formatCurrency(commandView.metrics.totalCostRate)}/hr`}
-              tone="amber"
-            />
-            <SpatialMetric
-              label="Spend"
-              value={formatCurrency(commandView.metrics.totalCost)}
-              tone="zinc"
-            />
-          </div>
-            </>
-          )}
         </section>
 
         <aside className="relative z-10 flex min-h-0 flex-col gap-4 border-t border-zinc-800 bg-zinc-950/92 p-4 backdrop-blur xl:border-l xl:border-t-0">
@@ -597,9 +409,7 @@ export function SpatialFleetClient() {
                     asChild
                     className="fleet-action-button bg-red-200 text-zinc-950 hover:bg-red-100"
                   >
-                    <Link
-                      href={`/fleet/${encodeURIComponent(inspectedAgent.id)}`}
-                    >
+                    <Link href={`/fleet/${encodeURIComponent(inspectedAgent.id)}`}>
                       Clear
                     </Link>
                   </Button>
@@ -614,75 +424,32 @@ export function SpatialFleetClient() {
             </section>
           )}
 
+          {/* Activity feed — a live event stream, distinct from the hero/blocker
+              attention shown on the surface itself (no duplicate blocker list). */}
           <section className="fleet-panel min-h-0 flex-1 overflow-hidden p-4">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-100">
-              <Sparkles className="h-4 w-4 text-amber-200" />
-              Signals
+              <Activity className="h-4 w-4 text-teal-200" />
+              Activity
             </div>
-            <div className="space-y-3 overflow-y-auto pr-1">
-              {!scene.attention.hero &&
-              scene.attention.secondary.length === 0 &&
-              commandView.activityFeed.length === 0 ? (
+            <div className="space-y-2 overflow-y-auto pr-1">
+              {commandView.activityFeed.length === 0 ? (
                 <p className="rounded-md border border-zinc-800 bg-zinc-950/50 p-3 text-sm text-zinc-500">
                   Waiting for events.
                 </p>
               ) : (
-                <>
-                  {scene.attention.hero && (
-                    <Link
-                      href={`/fleet/${encodeURIComponent(scene.attention.hero.agentId)}`}
-                      className="block rounded-md border border-red-300/30 bg-red-300/15 p-3 transition hover:border-red-200/50 hover:bg-red-300/20"
-                    >
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-red-200/80">
-                        Hero blocker
-                      </p>
-                      <p className="mt-1 truncate text-sm font-semibold text-red-100">
-                        {scene.attention.hero.agentName}
-                      </p>
-                      <p className="mt-1 line-clamp-2 text-sm text-red-100/75">
-                        {scene.attention.hero.title}
-                      </p>
-                      <p className="mt-1.5 text-[11px] font-medium text-red-200/70">
-                        {scene.attention.hero.reason}
-                      </p>
-                    </Link>
-                  )}
-                  {scene.attention.secondary.map(item => (
-                    <Link
-                      key={item.agentId}
-                      href={`/fleet/${encodeURIComponent(item.agentId)}`}
-                      className="block rounded-md border border-amber-300/20 bg-amber-300/10 p-3 transition hover:border-amber-200/40 hover:bg-amber-300/15"
-                    >
-                      <p className="truncate text-sm font-semibold text-amber-100">
-                        {item.agentName}
-                      </p>
-                      <p className="mt-1 line-clamp-2 text-sm text-amber-100/75">
-                        {item.title}
-                      </p>
-                      <p className="mt-1.5 text-[11px] font-medium text-amber-200/70">
-                        {item.reason}
-                      </p>
-                    </Link>
-                  ))}
-                  {scene.attention.overflowCount > 0 && (
-                    <p className="rounded-md border border-amber-300/20 bg-amber-300/5 px-3 py-2 text-xs font-medium text-amber-200/80">
-                      +{scene.attention.overflowCount} more need you
+                commandView.activityFeed.map(item => (
+                  <div
+                    key={item.id}
+                    className="rounded-md border border-zinc-800/70 bg-zinc-950/50 p-2.5"
+                  >
+                    <p className="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                      {item.agentName}
                     </p>
-                  )}
-                  {commandView.activityFeed.map(item => (
-                    <div
-                      key={item.id}
-                      className="rounded-md border border-zinc-800 bg-zinc-950/50 p-3"
-                    >
-                      <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                        {item.agentName}
-                      </p>
-                      <p className="mt-1 line-clamp-2 text-sm text-zinc-300">
-                        {item.content}
-                      </p>
-                    </div>
-                  ))}
-                </>
+                    <p className="mt-0.5 line-clamp-2 text-sm text-zinc-300">
+                      {item.content}
+                    </p>
+                  </div>
+                ))
               )}
             </div>
           </section>
@@ -690,32 +457,6 @@ export function SpatialFleetClient() {
       </main>
 
       <DemoControls />
-    </div>
-  );
-}
-
-function SpatialMetric({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: 'teal' | 'red' | 'amber' | 'zinc';
-}) {
-  const tones = {
-    teal: 'border-teal-200/20 bg-teal-300/10 text-teal-100',
-    red: 'border-red-200/20 bg-red-300/10 text-red-100',
-    amber: 'border-amber-200/20 bg-amber-300/10 text-amber-100',
-    zinc: 'border-zinc-700/70 bg-zinc-950/70 text-zinc-100',
-  };
-
-  return (
-    <div className={`rounded-md border px-3 py-2 backdrop-blur ${tones[tone]}`}>
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-        {label}
-      </p>
-      <p className="mt-1 font-mono text-sm font-semibold">{value}</p>
     </div>
   );
 }
