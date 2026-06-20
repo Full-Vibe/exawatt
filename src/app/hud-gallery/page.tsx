@@ -55,14 +55,14 @@ const SECTIONS: Section[] = [
     meta: 'HudFrame — chamfered glass + neon edge',
     dom: (
       <div className="flex flex-wrap gap-5">
-        <HudFrame className="h-[150px] w-56" tone="cyan">
+        <HudFrame className="hud-lift h-[150px] w-48" tone="cyan">
           <div className="p-4">
             <Label tone="cyan">Project</Label>
             <p className="mt-2 font-display text-lg">OpenClaw Local Parity</p>
           </div>
         </HudFrame>
         <HudFrame
-          className="h-[150px] w-56"
+          className="hud-lift h-[150px] w-48"
           tone="amber"
           chamfer={['tl', 'tr', 'br', 'bl']}
         >
@@ -71,8 +71,8 @@ const SECTIONS: Section[] = [
             <p className="mt-2 font-display text-lg">Merge open PRs</p>
           </div>
         </HudFrame>
-        <HudFrame className="h-[150px] w-56" tone="magenta" intensity={1.2}>
-          <CornerBrackets tone="magenta" active />
+        <HudFrame className="hud-lift h-[150px] w-48" tone="magenta" intensity={1.2}>
+          <CornerBrackets tone="magenta" active corners={['tl', 'br']} />
           <div className="p-4">
             <Label tone="magenta">Selected</Label>
             <p className="mt-2 font-display text-lg">Competitor pricing</p>
@@ -167,8 +167,8 @@ const SECTIONS: Section[] = [
     title: 'Composed agent panel',
     meta: 'blocks assembled',
     dom: (
-      <HudFrame className="w-80" tone="red" intensity={1.1}>
-        <CornerBrackets tone="red" active />
+      <HudFrame className="hud-lift w-80" tone="red" intensity={1.1}>
+        <CornerBrackets tone="red" active corners={['tl', 'br']} />
         <div className="flex flex-col gap-3 p-4">
           <div className="flex items-start justify-between gap-3">
             <p className="font-display text-base">{agent.name}</p>
@@ -216,8 +216,10 @@ function ColumnLabel({ children }: { children: ReactNode }) {
 
 export default function HudGallery() {
   const [active, setActive] = useState(SECTIONS[0].id);
+  const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
+  // Highlight the nav for the section nearest the top of the viewport.
   useEffect(() => {
     const io = new IntersectionObserver(
       (entries) => {
@@ -227,6 +229,30 @@ export default function HudGallery() {
         if (visible) setActive(visible.target.id);
       },
       { rootMargin: '-20% 0px -65% 0px', threshold: [0, 0.25, 0.5, 1] }
+    );
+    for (const s of SECTIONS) {
+      const el = sectionRefs.current[s.id];
+      if (el) io.observe(el);
+    }
+    return () => io.disconnect();
+  }, []);
+
+  // Reveal each section once as it scrolls into view (fade + rise).
+  useEffect(() => {
+    const io = new IntersectionObserver(
+      (entries) => {
+        setRevealed((prev) => {
+          let next = prev;
+          for (const e of entries) {
+            if (e.isIntersecting && !prev.has(e.target.id)) {
+              if (next === prev) next = new Set(prev);
+              next.add(e.target.id);
+            }
+          }
+          return next;
+        });
+      },
+      { rootMargin: '0px', threshold: 0.01 }
     );
     for (const s of SECTIONS) {
       const el = sectionRefs.current[s.id];
@@ -311,7 +337,7 @@ export default function HudGallery() {
                       focusSection(s.id);
                     }}
                     aria-current={on ? 'true' : undefined}
-                    className="block rounded-sm border-l-2 px-3 py-1.5 font-ui text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-hud-cyan"
+                    className="block rounded-sm border-l-2 px-3 py-1.5 font-ui text-sm outline-none transition-all duration-200 hover:translate-x-0.5 focus-visible:ring-2 focus-visible:ring-hud-cyan"
                     style={{
                       borderColor: on ? HUD.cyan : 'transparent',
                       color: on ? HUD.cyan : HUD.textDim,
@@ -366,7 +392,9 @@ export default function HudGallery() {
                 ref={(el) => {
                   sectionRefs.current[s.id] = el;
                 }}
-                className="scroll-mt-10 outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan/40"
+                className={`hud-reveal scroll-mt-10 outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan/40 ${
+                  revealed.has(s.id) ? 'is-in' : ''
+                }`}
               >
                 <div className="mb-5 flex items-baseline gap-3">
                   <h2
@@ -382,12 +410,12 @@ export default function HudGallery() {
                     {s.meta}
                   </span>
                 </div>
-                <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
-                  <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-1 gap-8 2xl:grid-cols-2">
+                  <div className="flex min-w-0 flex-col gap-3">
                     <ColumnLabel>DOM / SVG</ColumnLabel>
                     <div>{s.dom}</div>
                   </div>
-                  <div className="flex flex-col gap-3">
+                  <div className="flex min-w-0 flex-col gap-3">
                     <ColumnLabel>WebGL · Three.js</ColumnLabel>
                     <div>{s.webgl}</div>
                   </div>

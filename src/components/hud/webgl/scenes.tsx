@@ -11,7 +11,7 @@
  */
 import { Suspense, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { Line, Text } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
@@ -27,6 +27,15 @@ import {
 const FONT = '/fonts/Exo2-Medium.ttf';
 type V3 = [number, number, number];
 
+/** Scales scene content down to fit the canvas width (1 world unit = 1px at
+ *  zoom 1), so a column narrower than the natural content shrinks instead of
+ *  clipping. */
+function FitToWidth({ width, children }: { width: number; children: ReactNode }) {
+  const vw = useThree((s) => s.viewport.width);
+  const scale = Math.min(1, vw / width);
+  return <group scale={scale}>{children}</group>;
+}
+
 function WebglStage({
   w,
   h,
@@ -39,7 +48,7 @@ function WebglStage({
   children: ReactNode;
 }) {
   return (
-    <div style={{ width: w, height: h }}>
+    <div style={{ width: '100%', maxWidth: w, height: h }}>
       <Canvas
         orthographic
         dpr={[1, 2]}
@@ -47,7 +56,9 @@ function WebglStage({
         gl={{ antialias: true }}
       >
         <color attach="background" args={[HUD.bg.deep]} />
-        <Suspense fallback={null}>{children}</Suspense>
+        <Suspense fallback={null}>
+          <FitToWidth width={w}>{children}</FitToWidth>
+        </Suspense>
         {bloom && (
           <EffectComposer>
             <Bloom
@@ -140,7 +151,7 @@ function Frame({
 }
 
 export function WebglFramesScene() {
-  const W = 224;
+  const W = 188;
   const H = 150;
   // three frames laid out in a row, matching the DOM trio
   const specs: Array<{ tone: HudTone; label: string; title: string; bracket?: boolean }> = [

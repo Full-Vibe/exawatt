@@ -65,7 +65,9 @@ export function HudFrame({
           backdropFilter: 'blur(6px)',
         }}
       />
-      <div className="relative">{children}</div>
+      {/* content fills the frame so absolute children (e.g. CornerBrackets,
+          which are inset-0) anchor to the real corners — not the content box */}
+      <div className="relative h-full">{children}</div>
     </div>
   );
 }
