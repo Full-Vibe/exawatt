@@ -43,6 +43,7 @@ import {
   type SurfaceStyle,
 } from './command-table/style-themes';
 import { MenuSurface } from './menu/menu-surface';
+import { CommandSurface } from './command/command-surface';
 
 const STYLE_STORAGE_KEY = 'exawatt:spatial-style';
 
@@ -408,13 +409,22 @@ export function SpatialFleetClient() {
       <main className="relative grid min-h-0 flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_360px]">
         <section
           className={
-            style === 'menu'
+            style === 'menu' || style === 'command'
               ? 'relative min-h-0 overflow-y-auto'
               : 'relative h-[52vh] min-h-[360px] overflow-hidden xl:h-auto xl:min-h-[62vh]'
           }
           aria-label="Fleet command surface"
         >
-          {style === 'menu' ? (
+          {style === 'command' ? (
+            <CommandSurface
+              scene={scene}
+              agents={commandView.agents}
+              metrics={commandView.metrics}
+              selectedAgentId={selectedAgentId}
+              onDrillProject={drillToProject}
+              onSelectAgent={handleSelectAgent}
+            />
+          ) : style === 'menu' ? (
             <MenuSurface
               scene={scene}
               agents={commandView.agents}
