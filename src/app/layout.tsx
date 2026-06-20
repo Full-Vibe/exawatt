@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Exo_2, Geist_Mono, Orbitron, Rajdhani } from 'next/font/google';
+import { Exo_2, Geist, Geist_Mono } from 'next/font/google';
 import Link from 'next/link';
 import './globals.css';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -17,16 +17,11 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 });
 
-const orbitron = Orbitron({
-  variable: '--font-orbitron',
+// Clean technical grotesk for the HUD display + UI type — replaces the
+// "space-font" Orbitron/Rajdhani for a professional, utilitarian read.
+const geistSans = Geist({
+  variable: '--font-geist-sans',
   subsets: ['latin'],
-  weight: ['600', '700', '800'],
-});
-
-const rajdhani = Rajdhani({
-  variable: '--font-rajdhani',
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
 });
 
 export const metadata: Metadata = {
@@ -42,7 +37,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${exo2.variable} ${geistMono.variable} ${orbitron.variable} ${rajdhani.variable} font-sans antialiased`}
+        className={`${exo2.variable} ${geistMono.variable} ${geistSans.variable} font-sans antialiased`}
       >
         <TooltipProvider>
           <ShortcutProvider>

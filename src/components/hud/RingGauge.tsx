@@ -81,18 +81,20 @@ export function RingGauge({
             />
           )}
         </g>
-        {/* ticks */}
+        {/* ticks — coords rounded so SSR (Node) and client (browser) trig
+            serialize identically; raw Math.cos/sin differ in the last ULP. */}
         {Array.from({ length: ticks }).map((_, i) => {
           const a = ((rot + (sweepDeg * i) / (ticks - 1)) * Math.PI) / 180;
           const r1 = r + 5;
           const r2 = r + 9;
+          const round = (n: number) => Math.round(n * 1000) / 1000;
           return (
             <line
               key={i}
-              x1={cx + r1 * Math.cos(a)}
-              y1={cy + r1 * Math.sin(a)}
-              x2={cx + r2 * Math.cos(a)}
-              y2={cy + r2 * Math.sin(a)}
+              x1={round(cx + r1 * Math.cos(a))}
+              y1={round(cy + r1 * Math.sin(a))}
+              x2={round(cx + r2 * Math.cos(a))}
+              y2={round(cy + r2 * Math.sin(a))}
               stroke={withAlpha(color, 0.35)}
               strokeWidth={1}
             />

@@ -22,8 +22,8 @@
   --color-ring: var(--ring);
   --font-sans: var(--font-exo2);
   --font-mono: var(--font-geist-mono);
-  --font-display: var(--font-orbitron);
-  --font-ui: var(--font-rajdhani);
+  --font-display: var(--font-geist-sans);
+  --font-ui: var(--font-geist-sans);
   /* HUD palette utilities: text-hud-cyan, bg-hud-void, border-hud-stroke, ... */
   --color-hud-void: #04060b;
   --color-hud-deep: #070b14;
