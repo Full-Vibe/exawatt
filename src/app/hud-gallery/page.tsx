@@ -378,7 +378,14 @@ export default function HudGallery() {
             <p className="mt-1 text-sm" style={{ color: HUD.textDim }}>
               Each block beside its WebGL sibling — DOM (left) vs Three.js
               (right). DOM wins for crisp, keyboard-accessible chrome; WebGL is
-              reserved for the scalable agent world.
+              reserved for the scalable agent world.{' '}
+              <a
+                href="/hud-gallery/agent-field"
+                className="underline underline-offset-2"
+                style={{ color: HUD.cyan }}
+              >
+                Open the AgentField world →
+              </a>
             </p>
           </header>
 
