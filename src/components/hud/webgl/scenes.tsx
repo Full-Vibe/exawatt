@@ -9,10 +9,10 @@
  * lines up with the DOM column. Text uses the vendored Exo2 (the only ttf we
  * ship) — note WebGL needs a vendored font at all, unlike the DOM column.
  */
-import { Suspense, useMemo } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
-import { Line, Text } from '@react-three/drei';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Line, Text, useCursor } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import type { AgentStatus } from '@exawatt/core';
@@ -34,6 +34,64 @@ function FitToWidth({ width, children }: { width: number; children: ReactNode })
   const vw = useThree((s) => s.viewport.width);
   const scale = Math.min(1, vw / width);
   return <group scale={scale}>{children}</group>;
+}
+
+function useReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReduced(mq.matches);
+    const on = () => setReduced(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return reduced;
+}
+
+/**
+ * Hover-lift wrapper mirroring the DOM `.hud-lift`: damps the whole card's scale
+ * on pointer hover, sets a pointer cursor, and adds an invisible front hit-plane
+ * so the decorative line/bracket meshes can opt out of raycasting. Frame-rate
+ * independent (delta + damp); snaps under reduced motion.
+ */
+function InteractiveCard({
+  w,
+  h,
+  children,
+}: {
+  w: number;
+  h: number;
+  children: ReactNode;
+}) {
+  const group = useRef<THREE.Group>(null);
+  const [hovered, setHovered] = useState(false);
+  const reduced = useReducedMotion();
+  useCursor(hovered);
+  useFrame((_, delta) => {
+    if (!group.current) return;
+    const want = hovered && !reduced ? 1.05 : 1;
+    group.current.scale.setScalar(
+      reduced
+        ? want
+        : THREE.MathUtils.damp(group.current.scale.x, want, 10, Math.min(delta, 0.05))
+    );
+  });
+  return (
+    <group ref={group}>
+      {children}
+      <mesh
+        position={[0, 0, 3]}
+        onPointerOver={(e) => {
+          e.stopPropagation();
+          setHovered(true);
+        }}
+        onPointerOut={() => setHovered(false)}
+      >
+        <planeGeometry args={[w, h]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+    </group>
+  );
 }
 
 function WebglStage({
@@ -121,7 +179,7 @@ function Frame({
         <shapeGeometry args={[shape]} />
         <meshBasicMaterial color="#0a131a" transparent opacity={0.92} toneMapped={false} />
       </mesh>
-      <Line points={outline} color={color} lineWidth={2} toneMapped={false} />
+      <Line points={outline} color={color} lineWidth={2} toneMapped={false} raycast={() => null} />
       {bracket && (
         <>
           <Line
@@ -169,7 +227,8 @@ export function WebglFramesScene() {
         const color = TONE_COLOR[s.tone];
         return (
           <group key={s.tone} position={[cx, 0, 0]}>
-            <Frame w={W} h={H} tone={s.tone} bracket={s.bracket} />
+            <InteractiveCard w={W} h={H}>
+              <Frame w={W} h={H} tone={s.tone} bracket={s.bracket} />
             <Text
               font={FONT}
               position={[-W / 2 + 16, H / 2 - 22, 2]}
@@ -192,6 +251,7 @@ export function WebglFramesScene() {
             >
               {s.title}
             </Text>
+            </InteractiveCard>
           </group>
         );
       })}
@@ -511,6 +571,7 @@ export function WebglComposedScene({
   const x0 = -W / 2 + 18;
   return (
     <WebglStage w={W + 8} h={H + 8}>
+      <InteractiveCard w={W} h={H}>
       <Frame w={W} h={H} tone={tone} bracket />
       <Text font={FONT} position={[x0, H / 2 - 26, 2]} fontSize={16} color="#EAF2FB" anchorX="left" anchorY="middle" maxWidth={W - 90}>
         {name}
@@ -544,6 +605,7 @@ export function WebglComposedScene({
           </group>
         );
       })}
+      </InteractiveCard>
     </WebglStage>
   );
 }

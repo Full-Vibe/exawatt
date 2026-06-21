@@ -143,9 +143,11 @@ useFrame((state, delta) => {
   objects). An opaque card must `stopPropagation()` in `onPointerOver` to occlude
   its own glow/shadow planes.
 - `useCursor(hovered)` (drei) sets `document.body.style.cursor`; runs under `<Canvas>`.
-- **Cheap raycasting:** `raycast={null}` on every decorative glow/shadow/`<Line>`
-  mesh so only real targets are tested. Under `demand`, raycasting only runs on
-  pointer events (a mesh moving under a still cursor won't fire hover).
+- **Cheap raycasting:** disable hits on decorative glow/shadow meshes and drei
+  `<Line>`s so only real targets are tested. Use `raycast={() => null}` (a no-op
+  fn) — NOT `raycast={null}`: drei `<Line>` (and the strict R3F types) type
+  `raycast` as a function, so `null` fails type-check. Under `demand`, raycasting
+  only runs on pointer events (a mesh moving under a still cursor won't fire hover).
 - Postprocessing does **not** break picking (raycaster runs on scene geometry).
 - Under `demand`, call `invalidate()` in the enter/leave handlers or the damp
   tween won't start until the next repaint.
