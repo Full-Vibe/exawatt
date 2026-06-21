@@ -15,7 +15,7 @@ export async function proxy(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
+          cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
           supabaseResponse = NextResponse.next({
@@ -42,6 +42,7 @@ export async function proxy(request: NextRequest) {
     !request.nextUrl.pathname.startsWith('/architecture') &&
     !request.nextUrl.pathname.startsWith('/fleet') &&
     !request.nextUrl.pathname.startsWith('/hud-gallery') &&
+    !request.nextUrl.pathname.startsWith('/eval') &&
     !request.nextUrl.pathname.startsWith('/overview') &&
     !request.nextUrl.pathname.startsWith('/privacy') &&
     !request.nextUrl.pathname.startsWith('/terms') &&
