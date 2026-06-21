@@ -27,12 +27,21 @@ import {
 const FONT = '/fonts/Exo2-Medium.ttf';
 type V3 = [number, number, number];
 
-/** Scales scene content down to fit the canvas width (1 world unit = 1px at
- *  zoom 1), so a column narrower than the natural content shrinks instead of
- *  clipping. */
+// Interactive cards can grow to HOVER_MAX on hover; STAGE_PAD reserves px around
+// the content for line width / bloom / corner brackets. Both are baked into the
+// canvas size and the fit scale so the expanded card never clips at the edge.
+const HOVER_MAX = 1.05;
+const STAGE_PAD = 14;
+
+/** Scales scene content to fit the canvas, leaving headroom for the hover-
+ *  expanded state + glow so nothing clips. `width` is the natural content
+ *  extent (px); a narrow column shrinks the content instead of clipping. */
 function FitToWidth({ width, children }: { width: number; children: ReactNode }) {
   const vw = useThree((s) => s.viewport.width);
-  const scale = Math.min(1, vw / width);
+  const scale = Math.max(
+    0.1,
+    Math.min(1, (vw - STAGE_PAD * 2) / (width * HOVER_MAX))
+  );
   return <group scale={scale}>{children}</group>;
 }
 
@@ -65,15 +74,17 @@ function InteractiveCard({
 }) {
   const group = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
   const reduced = useReducedMotion();
   useCursor(hovered);
   useFrame((_, delta) => {
     if (!group.current) return;
-    const want = hovered && !reduced ? 1.05 : 1;
+    // press dips below rest; hover lifts above it (press wins while held)
+    const want = pressed ? 0.97 : hovered && !reduced ? HOVER_MAX : 1;
     group.current.scale.setScalar(
       reduced
         ? want
-        : THREE.MathUtils.damp(group.current.scale.x, want, 10, Math.min(delta, 0.05))
+        : THREE.MathUtils.damp(group.current.scale.x, want, 14, Math.min(delta, 0.05))
     );
   });
   return (
@@ -85,7 +96,15 @@ function InteractiveCard({
           e.stopPropagation();
           setHovered(true);
         }}
-        onPointerOut={() => setHovered(false)}
+        onPointerOut={() => {
+          setHovered(false);
+          setPressed(false);
+        }}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          setPressed(true);
+        }}
+        onPointerUp={() => setPressed(false)}
       >
         <planeGeometry args={[w, h]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
@@ -106,7 +125,13 @@ function WebglStage({
   children: ReactNode;
 }) {
   return (
-    <div style={{ width: '100%', maxWidth: w, height: h }}>
+    <div
+      style={{
+        width: '100%',
+        maxWidth: w * HOVER_MAX + STAGE_PAD * 2,
+        height: h * HOVER_MAX + STAGE_PAD * 2,
+      }}
+    >
       <Canvas
         orthographic
         dpr={[1, 2]}

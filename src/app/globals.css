@@ -605,6 +605,11 @@ body {
   transform: translateY(-3px);
   filter: brightness(1.08) saturate(1.05);
 }
+.hud-lift:active {
+  transform: translateY(-1px) scale(0.985);
+  filter: brightness(1.03);
+  transition-duration: 90ms;
+}
 @media (prefers-reduced-motion: reduce) {
   .hud-reveal {
     opacity: 1;
@@ -614,7 +619,8 @@ body {
   .hud-lift {
     transition: none;
   }
-  .hud-lift:hover {
+  .hud-lift:hover,
+  .hud-lift:active {
     transform: none;
   }
 }
