@@ -27,8 +27,8 @@ import {
   filterFleetState,
   selectFleetCommandView,
   selectFleetSpatialScene,
+  selectSpatialProjectZones,
   type Altitude,
-  type SpatialProjectZone,
 } from '@exawatt/ui-model';
 import type { AgentStatus } from '@exawatt/core';
 
@@ -39,17 +39,19 @@ const FILTERABLE_STATUSES: AgentStatus[] = [
   'idle',
 ];
 
-// The single Fleet spatial surface: a WebGL 2.5D console (orthographic, no
-// occlusion) rendered behind crisp DOM text. ssr:false so three.js loads only
-// on this route.
-const Console3dSurface = dynamic(
+// The single Fleet spatial surface: the AgentField WebGL world (instanced
+// tactical cluster map) under DOM chrome. ssr:false so three.js loads only on
+// this route.
+const AgentFieldSurface = dynamic(
   () =>
-    import('./console3d/console3d-surface').then(mod => mod.Console3dSurface),
+    import('./agent-field/agent-field-surface').then(
+      mod => mod.AgentFieldSurface
+    ),
   {
     ssr: false,
     loading: () => (
       <div className="flex h-full min-h-[360px] items-center justify-center bg-[#070b10] text-sm text-zinc-500">
-        Initializing console…
+        Initializing field…
       </div>
     ),
   }
@@ -102,6 +104,13 @@ export function SpatialFleetClient() {
     [filteredState, altitude, focusedProjectId, selectedAgentId]
   );
 
+  // The world always shows the WHOLE (filtered) fleet regardless of altitude —
+  // altitude only moves the camera. Fleet-level zones feed the field layout.
+  const fieldZones = useMemo(
+    () => selectSpatialProjectZones(filteredState, { now: Date.now() }),
+    [filteredState]
+  );
+
   const toggleStatus = (status: AgentStatus) =>
     setStatusFilter(prev =>
       prev.includes(status)
@@ -149,14 +158,31 @@ export function SpatialFleetClient() {
     }
   }, [scene.altitude, scene.focusedProjectId, navigate]);
 
-  const drillToProject = (zone: SpatialProjectZone) =>
-    navigate({ altitude: 'project', project: zone.clusterId, agent: null });
+  const drillToProject = useCallback(
+    (clusterId: string) =>
+      navigate({ altitude: 'project', project: clusterId, agent: null }),
+    [navigate]
+  );
 
-  // Clicking an agent drills to the agent; clicking empty space ascends.
-  const handleSelectAgent = (agentId: string | null) => {
-    if (agentId) navigate({ altitude: 'agent', agent: agentId });
-    else ascend();
-  };
+  const overview = useCallback(
+    () => navigate({ altitude: 'fleet', project: null, agent: null }),
+    [navigate]
+  );
+
+  // Clicking an agent drills to the agent (with its owning Project as the
+  // focused context); clicking empty space ascends.
+  const handleSelectAgent = useCallback(
+    (agentId: string | null) => {
+      if (agentId) {
+        const owner =
+          fieldZones.find(z => z.agentIds.includes(agentId))?.clusterId ?? null;
+        navigate({ altitude: 'agent', project: owner, agent: agentId });
+      } else {
+        ascend();
+      }
+    },
+    [fieldZones, navigate, ascend]
+  );
 
   // Escape ascends one altitude — but not while typing (there it clears search).
   useEffect(() => {
@@ -347,13 +373,15 @@ export function SpatialFleetClient() {
           className="relative h-[56vh] min-h-[420px] overflow-hidden xl:h-auto"
           aria-label="Fleet command surface"
         >
-          <Console3dSurface
-            scene={scene}
-            agents={commandView.agents}
-            metrics={commandView.metrics}
+          <AgentFieldSurface
+            zones={fieldZones}
+            agents={filteredState.agents}
+            altitude={scene.altitude}
+            focusedProjectId={scene.focusedProjectId}
             selectedAgentId={selectedAgentId}
             onDrillProject={drillToProject}
             onSelectAgent={handleSelectAgent}
+            onOverview={overview}
           />
         </section>
 

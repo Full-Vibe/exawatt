@@ -55,6 +55,8 @@ export interface FieldAgent {
 
 export interface ClusterInfo {
   index: number;
+  /** stable id of the underlying group (project clusterId; synthetic = label) */
+  id: string;
   label: string;
   cx: number;
   cy: number;
@@ -65,6 +67,29 @@ export interface ClusterInfo {
   dominant: AgentStatus;
   /** number of blocked/error agents in this cluster */
   attention: number;
+  /** red-hull "a commander goes here NOW" flag (real data: the hero zone) */
+  critical: boolean;
+}
+
+/** One agent inside a FieldGroupSpec (the minimal shape the world needs). */
+export interface FieldGroupAgent {
+  id: string;
+  name: string;
+  status: AgentStatus;
+}
+
+/** A project/context group to lay out as one cluster on the field. */
+export interface FieldGroupSpec {
+  id: string;
+  label: string;
+  /** agents in display order; empty for summary/aggregate groups */
+  agents: FieldGroupAgent[];
+  /** hull goes red when true; defaults to the attention-ratio heuristic */
+  critical?: boolean;
+  /** population for empty groups rendered as hull + label only (aggregates) */
+  countOverride?: number;
+  /** blocked/error population override (aggregates) */
+  attentionOverride?: number;
 }
 
 /** Imperative camera verbs the DOM chrome (keyboard layer) drives. */
@@ -142,10 +167,93 @@ const CLUSTER_GAP = 1.7; // spacing multiplier between cluster centers
 const NODE_PITCH = 4.0;
 
 /**
- * Deterministically partition n agents into project clusters laid out on a
- * ring, each agent placed by phyllotaxis inside its cluster disc. With 6+
- * clusters, the first sits at the CENTER (fills the map; no donut hole).
+ * Lay out arbitrary project groups as clusters on the tactical field: clusters
+ * on a ring (with 6+ groups the FIRST sits at the CENTER — fills the map, no
+ * donut hole), each group's agents placed by phyllotaxis inside its disc.
+ * Pure geometry — real fleet state or synthetic demo data both feed this.
  * Returns a single flat agent array (→ single InstancedMesh) plus metadata.
+ */
+export function layoutClusteredField(groups: FieldGroupSpec[]): {
+  agents: FieldAgent[];
+  clusters: ClusterInfo[];
+} {
+  const numClusters = groups.length;
+  if (numClusters === 0) return { agents: [], clusters: [] };
+
+  const counts = groups.map((g) => g.countOverride ?? g.agents.length);
+
+  const localRadius = (count: number) =>
+    Math.max(NODE_PITCH * 2, Math.sqrt(Math.max(count, 1)) * NODE_PITCH);
+
+  const maxLocal = Math.max(...counts.map(localRadius));
+  const hasCenter = numClusters >= 6;
+  const ringCount = hasCenter ? numClusters - 1 : numClusters;
+  // MIN_RING keeps tiny real fleets (2-4 agents/project) spread far enough
+  // apart that their (long, wrapped) labels can never collide.
+  const MIN_RING = 36;
+  const ringRadius =
+    ringCount <= 1
+      ? 0
+      : Math.max(
+          (maxLocal * CLUSTER_GAP) / Math.sin(Math.PI / ringCount),
+          MIN_RING
+        );
+
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const clusters: ClusterInfo[] = [];
+  const agents: FieldAgent[] = [];
+
+  for (let c = 0; c < numClusters; c++) {
+    const g = groups[c];
+    const onRing = !(hasCenter && c === 0) && numClusters > 1;
+    const ringIdx = hasCenter ? c - 1 : c;
+    const ang = (ringIdx / Math.max(ringCount, 1)) * Math.PI * 2 - Math.PI / 2;
+    const cx = onRing ? Math.cos(ang) * ringRadius : 0;
+    const cy = onRing ? Math.sin(ang) * ringRadius : 0;
+    const r = localRadius(counts[c]);
+
+    let dominant: AgentStatus = 'idle';
+    let attention = 0;
+    const denom = Math.max(g.agents.length, 1);
+    for (let li = 0; li < g.agents.length; li++) {
+      const a = g.agents[li];
+      const rr = Math.sqrt((li + 0.5) / denom) * (r - NODE_PITCH * 0.6);
+      const aa = li * golden;
+      if (STATUS_RANK[a.status] > STATUS_RANK[dominant]) dominant = a.status;
+      if (a.status === 'blocked' || a.status === 'error') attention++;
+      agents.push({
+        id: a.id,
+        name: a.name,
+        status: a.status,
+        cluster: c,
+        x: cx + Math.cos(aa) * rr,
+        y: cy + Math.sin(aa) * rr,
+      });
+    }
+    if (g.attentionOverride !== undefined) attention = g.attentionOverride;
+
+    const count = counts[c];
+    clusters.push({
+      index: c,
+      id: g.id,
+      label: g.label,
+      cx,
+      cy,
+      radius: r,
+      count,
+      dominant,
+      attention,
+      critical:
+        g.critical ?? (count > 0 && attention / count >= CRITICAL_ATTENTION),
+    });
+  }
+
+  return { agents, clusters };
+}
+
+/**
+ * Synthetic demo fleet: deterministically partition n agents into project
+ * clusters (round-robin) with a tuned status mix, then run the shared layout.
  */
 export function generateClusteredAgents(n: number): {
   agents: FieldAgent[];
@@ -155,68 +263,22 @@ export function generateClusteredAgents(n: number): {
     PROJECT_NAMES.length,
     Math.max(3, Math.round(Math.sqrt(n) / 3))
   );
-  const counts: number[] = new Array(numClusters).fill(0);
-  for (let i = 0; i < n; i++) {
-    counts[i % numClusters] += 1;
-  }
-
-  const localRadius = (count: number) =>
-    Math.max(NODE_PITCH * 2, Math.sqrt(Math.max(count, 1)) * NODE_PITCH);
-
-  const maxLocal = Math.max(...counts.map(localRadius));
-  const hasCenter = numClusters >= 6;
-  const ringCount = hasCenter ? numClusters - 1 : numClusters;
-  const ringRadius =
-    ringCount <= 1 ? 0 : (maxLocal * CLUSTER_GAP) / Math.sin(Math.PI / ringCount);
-
-  const clusters: ClusterInfo[] = [];
-  const centers: Array<{ cx: number; cy: number; r: number }> = [];
-  for (let c = 0; c < numClusters; c++) {
-    const onRing = !(hasCenter && c === 0) && numClusters > 1;
-    const ringIdx = hasCenter ? c - 1 : c;
-    const ang = (ringIdx / Math.max(ringCount, 1)) * Math.PI * 2 - Math.PI / 2;
-    const cx = onRing ? Math.cos(ang) * ringRadius : 0;
-    const cy = onRing ? Math.sin(ang) * ringRadius : 0;
-    const r = localRadius(counts[c]);
-    centers.push({ cx, cy, r });
-    clusters.push({
-      index: c,
-      label: PROJECT_NAMES[c],
-      cx,
-      cy,
-      radius: r,
-      count: counts[c],
-      dominant: 'idle',
-      attention: 0,
-    });
-  }
-
-  const golden = Math.PI * (3 - Math.sqrt(5));
+  const groups: FieldGroupSpec[] = Array.from({ length: numClusters }, (_, c) => ({
+    id: PROJECT_NAMES[c],
+    label: PROJECT_NAMES[c],
+    agents: [],
+  }));
   const localCounter = new Array(numClusters).fill(0);
-  const agents: FieldAgent[] = [];
   for (let i = 0; i < n; i++) {
     const c = i % numClusters;
     const li = localCounter[c]++;
-    const center = centers[c];
-    const denom = Math.max(counts[c], 1);
-    const rr = Math.sqrt((li + 0.5) / denom) * (center.r - NODE_PITCH * 0.6);
-    const a = li * golden;
-    const status = statusForAgent(c, li);
-    if (STATUS_RANK[status] > STATUS_RANK[clusters[c].dominant]) {
-      clusters[c].dominant = status;
-    }
-    if (status === 'blocked' || status === 'error') clusters[c].attention++;
-    agents.push({
+    groups[c].agents.push({
       id: `agent-${i}`,
       name: `${PROJECT_NAMES[c]}-${String(li).padStart(3, '0')}`,
-      status,
-      cluster: c,
-      x: center.cx + Math.cos(a) * rr,
-      y: center.cy + Math.sin(a) * rr,
+      status: statusForAgent(c, li),
     });
   }
-
-  return { agents, clusters };
+  return layoutClusteredField(groups);
 }
 
 /** Overall scene radius (for camera framing). */
@@ -412,19 +474,24 @@ function Constellation({
     return st === 'blocked' || st === 'error' ? 0.05 : 0;
   };
 
-  // seed matrices + colors whenever the data changes. Nodes start at epsilon
-  // scale (positions still span the field, so the bounding sphere is correct)
-  // and the entrance loop grows them in; reduced-motion seeds at full scale.
+  // seed matrices + colors whenever the data changes. On MOUNT nodes start at
+  // epsilon scale (positions still span the field, so the bounding sphere is
+  // correct) and the entrance loop grows them in. On a live DATA TICK (same
+  // mount — statuses/positions changed) nodes seed at their current animated
+  // scale: the entrance must never replay just because the fleet updated.
   useEffect(() => {
     const m = mesh.current;
     const h = halo.current;
     if (!m || !h) return;
-    entrance.current = { t: 0, done: reduced };
-    settling.current.clear();
+    if (reduced) entrance.current.done = true;
     _dummy.rotation.set(0, 0, Math.PI / 4); // diamond
     for (let i = 0; i < count; i++) {
       const a = agents[i];
-      writeInstance(i, reduced ? 1 : 0, zFor(i));
+      writeInstance(
+        i,
+        entrance.current.done ? boost.current[i] : reduced ? 1 : 0,
+        zFor(i)
+      );
 
       const base = HUD_STATUS_COLOR[a.status];
       const attention = a.status === 'blocked' || a.status === 'error';
@@ -608,7 +675,8 @@ function Constellation({
         }}
         onClick={(e: ThreeEvent<MouseEvent>) => {
           e.stopPropagation();
-          if (e.instanceId != null) {
+          // e.delta = px between pointerdown/up — a camera drag is not a click
+          if (e.instanceId != null && e.delta < 6) {
             onSelect(e.instanceId);
             invalidate();
           }
@@ -663,15 +731,16 @@ function ClusterRing({
     () => ringPoints(cluster.cx, cluster.cy, cluster.radius * 1.02, -0.25),
     [cluster.cx, cluster.cy, cluster.radius]
   );
-  const ratio = cluster.count > 0 ? cluster.attention / cluster.count : 0;
-  const critical = ratio >= CRITICAL_ATTENTION;
+  const critical = cluster.critical;
   // Hulls are NEUTRAL sector chrome (dim cyan) — only critical sectors go red,
   // so the hull color channel carries exactly one unambiguous message.
   const hullColor = critical ? HUD.red : HUD.cyanDim;
 
   // entrance: fade the ring chrome in (staggered per cluster) by ramping every
   // child material's opacity toward its authored value. Authored opacities are
-  // cached on material.userData the first time we see each material.
+  // cached on material.userData the first time we see each material. Keyed on
+  // cluster.index (not the cluster object) so live data ticks — which produce
+  // fresh cluster objects — never replay the fade.
   const fade = useRef({ t: 0, done: false });
   useEffect(() => {
     fade.current = { t: 0, done: reduced };
@@ -683,7 +752,7 @@ function ClusterRing({
         mat.opacity = 0;
       }
     });
-  }, [reduced, cluster]);
+  }, [reduced, cluster.index]);
   useFrame((state, delta) => {
     if (fade.current.done || !group.current) return;
     fade.current.t += Math.min(delta, 0.05);
@@ -742,38 +811,92 @@ function ClusterRing({
 // guaranteed same-origin load; labels are wrapped in <Suspense> regardless.
 const LABEL_FONT = '/fonts/Exo2-Medium.ttf';
 
-function ClusterLabel({ cluster }: { cluster: ClusterInfo }) {
-  const ratio = cluster.count > 0 ? cluster.attention / cluster.count : 0;
-  const hot = ratio >= CRITICAL_ATTENTION;
-  const size = THREE.MathUtils.clamp(cluster.radius * 0.26, 6, 28);
-  const y = cluster.cy + cluster.radius * 1.22 + size * 0.9;
+/** minimal shape we mutate on troika Text objects (material opacity) */
+type TextLike = THREE.Object3D & { material: { opacity: number } };
+
+function ClusterLabel({
+  cluster,
+  sceneR,
+  reduced,
+}: {
+  cluster: ClusterInfo;
+  /** whole-field radius — drives the deep-zoom label fade */
+  sceneR: number;
+  reduced: boolean;
+}) {
+  const hot = cluster.critical;
+  const size = THREE.MathUtils.clamp(cluster.radius * 0.26, 3.2, 28);
+  const titleRef = useRef<TextLike>(null);
+  const subRef = useRef<TextLike>(null);
+  const group = useRef<THREE.Group>(null);
+  const fade = useRef(1);
+
+  // Camera-aware fade: sector names are OVERVIEW chrome. They dissolve when
+  // the camera dives into this sector (near fade) or deep into the field at
+  // large scales (zoom fade) so labels never wall over a zoomed view.
+  useFrame((state, delta) => {
+    const g = group.current;
+    if (!g) return;
+    const cam = state.camera.position;
+    const dNear = Math.hypot(cam.x - cluster.cx, cam.y - cluster.cy, cam.z);
+    const nearFade = THREE.MathUtils.clamp(
+      (dNear - cluster.radius * 1.7) / (cluster.radius * 1.3),
+      0,
+      1
+    );
+    const zoomFade = THREE.MathUtils.clamp(
+      (cam.length() / sceneR - 0.4) / 0.3,
+      0,
+      1
+    );
+    const target = Math.min(nearFade, zoomFade);
+    const next = reduced
+      ? target
+      : THREE.MathUtils.damp(fade.current, target, 8, Math.min(delta, 0.05));
+    if (Math.abs(next - fade.current) > 0.002) {
+      fade.current = next;
+      if (titleRef.current) titleRef.current.material.opacity = next;
+      if (subRef.current) subRef.current.material.opacity = next * 0.9;
+      g.visible = next > 0.02;
+      state.invalidate();
+    }
+  });
+
   return (
-    <group position={[cluster.cx, y, 0.1]}>
+    <group ref={group} position={[cluster.cx, cluster.cy, 0.1]}>
       <Text
+        ref={titleRef as never}
         font={LABEL_FONT}
+        position={[0, cluster.radius * 1.2 + size * 0.75, 0]}
         fontSize={size}
+        maxWidth={Math.max(cluster.radius * 3, 30)}
+        textAlign="center"
         color={hot ? HUD.red : HUD.cyan}
         anchorX="center"
-        anchorY="middle"
+        anchorY="bottom"
         letterSpacing={0.16}
+        lineHeight={1.1}
         outlineWidth={size * 0.04}
         outlineColor={HUD.bg.void}
         material-toneMapped={false}
+        material-transparent
         raycast={() => null}
       >
-        {cluster.label}
+        {cluster.label.toUpperCase()}
       </Text>
       <Text
+        ref={subRef as never}
         font={LABEL_FONT}
-        position={[0, -size * 0.95, 0]}
+        position={[0, cluster.radius * 1.16, 0]}
         fontSize={size * 0.5}
         color={hot ? HUD.amber : HUD.textDim}
         anchorX="center"
-        anchorY="middle"
+        anchorY="bottom"
         letterSpacing={0.18}
         outlineWidth={size * 0.03}
         outlineColor={HUD.bg.void}
         material-toneMapped={false}
+        material-transparent
         raycast={() => null}
       >
         {`${cluster.count} UNITS${cluster.attention > 0 ? ` · ${cluster.attention} BLOCKED` : ''}`}
@@ -832,8 +955,10 @@ function FocusRing({
   const spin = useRef(0);
   const pop = useRef(1.6); // pop-in: scale settles 1.6 → 1
   useEffect(() => {
+    // keyed on the agent's ID: a live data tick (fresh agent object, same
+    // agent) must not replay the pop
     pop.current = reduced ? 1 : 1.6;
-  }, [agent, reduced]);
+  }, [agent.id, reduced]);
   useFrame((state, delta) => {
     if (!ref.current) return;
     if (reduced) {
@@ -1019,11 +1144,13 @@ export function AgentField({
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const radius = useMemo(() => sceneRadius(clusters), [clusters]);
 
-  // a hover index from the previous fleet is meaningless (and out of range)
-  // for the next one — drop it whenever the agent set is swapped
+  // a hover index from a differently-SIZED fleet is meaningless (and possibly
+  // out of range) — drop it. Same-size live ticks keep the hover (the range
+  // guards in Constellation cover the rare membership swap until the next
+  // pointer move).
   useEffect(() => {
     setHoveredIdx(null);
-  }, [agents]);
+  }, [agents.length]);
 
   // programmatic camera moves invalidate what's under the (stationary) pointer;
   // drop the hover so no stale ring/tooltip floats mid-screen after a fly-to
@@ -1048,6 +1175,27 @@ export function AgentField({
     []
   );
 
+  // Track pointer drag distance so onPointerMissed can tell a background
+  // CLICK (deselect/ascend) from the release of a camera DRAG. Mesh clicks
+  // get this for free via ThreeEvent.delta; the missed path does not.
+  const dragDist = useRef(0);
+  useEffect(() => {
+    let down: { x: number; y: number } | null = null;
+    const onDown = (e: PointerEvent) => {
+      down = { x: e.clientX, y: e.clientY };
+    };
+    const onUp = (e: PointerEvent) => {
+      dragDist.current = down ? Math.hypot(e.clientX - down.x, e.clientY - down.y) : 0;
+      down = null;
+    };
+    window.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, []);
+
   return (
     <Canvas
       frameloop="demand"
@@ -1059,7 +1207,9 @@ export function AgentField({
         far: radius * 14,
       }}
       gl={{ antialias: true }}
-      onPointerMissed={() => onSelect(null)}
+      onPointerMissed={() => {
+        if (dragDist.current < 6) onSelect(null);
+      }}
       onCreated={({ gl }) => {
         if (process.env.NODE_ENV !== 'production') {
           (window as unknown as { __EVAL_GL__?: THREE.WebGLRenderer }).__EVAL_GL__ = gl;
@@ -1132,7 +1282,7 @@ export function AgentField({
           gate the nodes/rings — labels pop in when the SDF is ready. */}
       <Suspense fallback={null}>
         {clusters.map((c) => (
-          <ClusterLabel key={c.index} cluster={c} />
+          <ClusterLabel key={c.index} cluster={c} sceneR={radius} reduced={reduced} />
         ))}
       </Suspense>
 
