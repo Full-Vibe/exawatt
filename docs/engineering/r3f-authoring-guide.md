@@ -46,11 +46,16 @@ a v8/drei-9 tutorial (e.g. `EnzeD/r3f-skills`) reinjects wrong-version patterns.
 
 ## Where R3F lives in this repo
 
-Two surfaces (this worktree):
+Three surfaces (this worktree):
 - **Gallery** `src/components/hud/webgl/scenes.tsx` — the DOM-vs-WebGL A/B blocks
   under `/hud-gallery`. Ortho px-space (`zoom 1` ⇒ 1 world unit = 1 CSS px,
   centered), `frameloop` **default (always)**, `<FitToWidth>` scales content to
   the canvas.
+- **AgentField world** `src/components/hud/webgl/agent-field.tsx` — the canonical
+  scalable world (Tactical Clusters): one InstancedMesh of nodes + one of halos,
+  per-instance picking, staggered entrance + attention pulse, CameraControls
+  fly-to via an imperative `AgentFieldHandle` driven by the DOM keyboard layer.
+  Demo chrome at `/hud-gallery/agent-field`. `frameloop="demand"`.
 - **Spatial** `src/components/fleet/spatial/console3d/console3d-surface.tsx` +
   `command-table/holo-bloom.tsx` (Bloom, `React.lazy`). `frameloop="demand"`.
 
