@@ -113,6 +113,9 @@ Partial:
 
 Planned:
 
+- agent terminal workspace: interactive PTY session hosting (node-pty +
+  xterm.js in the Electron shell) for Claude Code / Codex / shells, behind a
+  session-manager boundary (ENG-002, decision `0005`)
 - Initiative model
 - scoped Decision model
 - Context Signals
