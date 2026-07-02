@@ -103,6 +103,12 @@ export interface AgentFieldHandle {
   truck(dx: number, dy: number): void;
   /** orbit azimuth by delta radians (clamped by the rig) */
   orbit(deltaAzimuth: number): void;
+  /**
+   * Small instant increments for per-frame held-key GLIDE (pan/zoom/orbit).
+   * No transition — camera-controls' own smoothTime damping makes the glide
+   * feel fluid while frames stream in.
+   */
+  nudge(dx: number, dy: number, dollySteps: number, dAzimuth: number): void;
 }
 
 const PROJECT_NAMES = [
@@ -716,13 +722,26 @@ function ClusterRing({
   cluster,
   emphasized,
   reduced,
+  interactive = false,
+  onSelect,
+  onHoverChange,
 }: {
   cluster: ClusterInfo;
   emphasized: boolean;
   reduced: boolean;
+  /** when true the sector has a click/hover pick disc (drill affordance) */
+  interactive?: boolean;
+  onSelect?: () => void;
+  onHoverChange?: (hovered: boolean) => void;
 }) {
   const group = useRef<THREE.Group>(null);
+  const invalidate = useThree((s) => s.invalidate);
   const hullR = cluster.radius * 1.14;
+  // pick disc must clear MAX node reach, not just the layout disc: nodes are
+  // 45°-rotated diamonds (corner = half-extent·√2) that pulse (1.16×) and
+  // hover-grow (1.5×) — at small clusters that reach exceeds radius*1.45 and
+  // the nodes swallow the whole "sector space" (found the hard way)
+  const pickR = Math.max(cluster.radius * 1.45, cluster.radius + 9);
   const hull = useMemo(
     () => hullPoints(cluster.cx, cluster.cy, hullR, -0.2),
     [cluster.cx, cluster.cy, hullR]
@@ -732,6 +751,7 @@ function ClusterRing({
     [cluster.cx, cluster.cy, cluster.radius]
   );
   const critical = cluster.critical;
+  const emph = emphasized;
   // Hulls are NEUTRAL sector chrome (dim cyan) — only critical sectors go red,
   // so the hull color channel carries exactly one unambiguous message.
   const hullColor = critical ? HUD.red : HUD.cyanDim;
@@ -775,17 +795,45 @@ function ClusterRing({
         <meshBasicMaterial
           color={critical ? HUD.red : HUD.cyan}
           transparent
-          opacity={critical ? 0.06 : 0.022}
+          opacity={critical ? 0.06 : emph && interactive ? 0.05 : 0.022}
           depthWrite={false}
           toneMapped={false}
         />
       </mesh>
+      {/* invisible generous pick disc: clicking a sector (its nodes excluded —
+          they sit nearer and stopPropagation) drills into the project */}
+      {interactive && (
+        <mesh
+          position={[cluster.cx, cluster.cy, -0.7]}
+          onPointerOver={(e: ThreeEvent<PointerEvent>) => {
+            e.stopPropagation();
+            onHoverChange?.(true);
+            document.body.style.cursor = 'pointer';
+            invalidate();
+          }}
+          onPointerOut={() => {
+            onHoverChange?.(false);
+            document.body.style.cursor = 'auto';
+            invalidate();
+          }}
+          onClick={(e: ThreeEvent<MouseEvent>) => {
+            e.stopPropagation();
+            if (e.delta < 6 && onSelect) {
+              onSelect();
+              invalidate();
+            }
+          }}
+        >
+          <circleGeometry args={[pickR, 32]} />
+          <meshBasicMaterial colorWrite={false} depthWrite={false} />
+        </mesh>
+      )}
       <Line
         points={hull}
-        color={emphasized ? HUD.cyan : hullColor}
-        lineWidth={emphasized ? 2.6 : critical ? 2.0 : 1.3}
+        color={emph ? HUD.cyan : hullColor}
+        lineWidth={emph ? 2.6 : critical ? 2.0 : 1.3}
         transparent
-        opacity={emphasized ? 0.95 : critical ? 0.85 : 0.6}
+        opacity={emph ? 0.95 : critical ? 0.85 : 0.6}
         toneMapped={false}
         raycast={() => null}
       />
@@ -818,11 +866,18 @@ function ClusterLabel({
   cluster,
   sceneR,
   reduced,
+  interactive = false,
+  onSelect,
+  onHoverChange,
 }: {
   cluster: ClusterInfo;
   /** whole-field radius — drives the deep-zoom label fade */
   sceneR: number;
   reduced: boolean;
+  /** when true the label block is a click/hover target (drill affordance) */
+  interactive?: boolean;
+  onSelect?: () => void;
+  onHoverChange?: (hovered: boolean) => void;
 }) {
   const hot = cluster.critical;
   const size = THREE.MathUtils.clamp(cluster.radius * 0.26, 3.2, 28);
@@ -830,6 +885,12 @@ function ClusterLabel({
   const subRef = useRef<TextLike>(null);
   const group = useRef<THREE.Group>(null);
   const fade = useRef(1);
+  const invalidate = useThree((s) => s.invalidate);
+  // approximate title+counts block for the invisible hit plane (troika sync
+  // is async; a rough box is plenty for a hit target)
+  const hitW = Math.min(Math.max(cluster.radius * 3, 30), cluster.label.length * size * 0.66 + size);
+  const hitH = size * 3.2;
+  const hitY = cluster.radius * 1.18 + size * 1.55;
 
   // Camera-aware fade: sector names are OVERVIEW chrome. They dissolve when
   // the camera dives into this sector (near fade) or deep into the field at
@@ -864,6 +925,35 @@ function ClusterLabel({
 
   return (
     <group ref={group} position={[cluster.cx, cluster.cy, 0.1]}>
+      {/* invisible hit plane: the sector NAME is the natural drill target */}
+      {interactive && (
+        <mesh
+          position={[0, hitY, 0]}
+          onPointerOver={(e: ThreeEvent<PointerEvent>) => {
+            if (fade.current < 0.3) return; // faded labels aren't targets
+            e.stopPropagation();
+            onHoverChange?.(true);
+            document.body.style.cursor = 'pointer';
+            invalidate();
+          }}
+          onPointerOut={() => {
+            onHoverChange?.(false);
+            document.body.style.cursor = 'auto';
+            invalidate();
+          }}
+          onClick={(e: ThreeEvent<MouseEvent>) => {
+            if (fade.current < 0.3) return;
+            e.stopPropagation();
+            if (e.delta < 6 && onSelect) {
+              onSelect();
+              invalidate();
+            }
+          }}
+        >
+          <planeGeometry args={[hitW, hitH]} />
+          <meshBasicMaterial colorWrite={false} depthWrite={false} />
+        </mesh>
+      )}
       <Text
         ref={titleRef as never}
         font={LABEL_FONT}
@@ -1061,7 +1151,9 @@ function Rig({
         const cl = clusters[index];
         const c = controls.current;
         if (!cl || !c) return;
-        _sphere.set(_v3.set(cl.cx, cl.cy, 0), Math.max(cl.radius * 1.5, 30));
+        // generous framing minimums: tiny sectors land with margin (labels +
+        // neighbors stay in peripheral view) instead of filling the screen
+        _sphere.set(_v3.set(cl.cx, cl.cy, 0), Math.max(cl.radius * 1.6, 44));
         c.fitToSphere(_sphere, t);
         nav();
       },
@@ -1070,7 +1162,7 @@ function Rig({
         const c = controls.current;
         if (!a || !c) return;
         const cl = clusters[a.cluster];
-        _sphere.set(_v3.set(a.x, a.y, 0), Math.max(26, (cl?.radius ?? 60) * 0.5));
+        _sphere.set(_v3.set(a.x, a.y, 0), Math.max(34, (cl?.radius ?? 60) * 0.55));
         c.fitToSphere(_sphere, t);
         nav();
       },
@@ -1094,6 +1186,15 @@ function Rig({
         controls.current?.rotate(dAz, 0, t);
         nav();
       },
+      nudge(dx, dy, dollySteps, dAz) {
+        const c = controls.current;
+        if (!c) return;
+        if (dx || dy) c.truck(dx * radius, dy * radius, false);
+        if (dollySteps) c.dolly(dollySteps * radius * 0.5, false);
+        if (dAz) c.rotate(dAz, 0, false);
+        onNavigate?.();
+        invalidate();
+      },
     };
     return () => {
       controllerRef.current = null;
@@ -1104,7 +1205,7 @@ function Rig({
     <CameraControls
       ref={controls}
       makeDefault
-      smoothTime={0.35}
+      smoothTime={0.45}
       draggingSmoothTime={0.08}
       minDistance={22}
       maxDistance={radius * 5}
@@ -1128,6 +1229,8 @@ export function AgentField({
   selectedId,
   focusedCluster = null,
   onSelect,
+  onSelectCluster,
+  selectableClusters,
   onHoverAgent,
   controllerRef,
 }: {
@@ -1137,11 +1240,16 @@ export function AgentField({
   /** keyboard-focused sector — its hull is emphasized */
   focusedCluster?: number | null;
   onSelect: (id: string | null) => void;
+  /** clicking empty sector space (the hull disc) drills — by cluster index */
+  onSelectCluster?: (index: number) => void;
+  /** limit which clusters are clickable (by cluster id); default: all */
+  selectableClusters?: ReadonlySet<string>;
   onHoverAgent?: (agent: FieldAgent | null) => void;
   controllerRef?: { current: AgentFieldHandle | null };
 }) {
   const reduced = useReducedMotion();
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [hoverCluster, setHoverCluster] = useState<number | null>(null);
   const radius = useMemo(() => sceneRadius(clusters), [clusters]);
 
   // a hover index from a differently-SIZED fleet is meaningless (and possibly
@@ -1150,6 +1258,7 @@ export function AgentField({
   // pointer move).
   useEffect(() => {
     setHoveredIdx(null);
+    setHoverCluster(null);
   }, [agents.length]);
 
   // programmatic camera moves invalidate what's under the (stationary) pointer;
@@ -1210,9 +1319,18 @@ export function AgentField({
       onPointerMissed={() => {
         if (dragDist.current < 6) onSelect(null);
       }}
-      onCreated={({ gl }) => {
+      onCreated={({ gl, scene, camera, raycaster }) => {
         if (process.env.NODE_ENV !== 'production') {
-          (window as unknown as { __EVAL_GL__?: THREE.WebGLRenderer }).__EVAL_GL__ = gl;
+          const w = window as unknown as {
+            __EVAL_GL__?: THREE.WebGLRenderer;
+            __EVAL_SCENE__?: THREE.Scene;
+            __EVAL_CAM__?: THREE.Camera;
+            __EVAL_RAY__?: THREE.Raycaster;
+          };
+          w.__EVAL_GL__ = gl;
+          w.__EVAL_SCENE__ = scene;
+          w.__EVAL_CAM__ = camera;
+          w.__EVAL_RAY__ = raycaster;
         }
       }}
       aria-hidden="true"
@@ -1261,9 +1379,16 @@ export function AgentField({
           emphasized={
             hovered?.cluster === c.index ||
             selected?.cluster === c.index ||
-            focusedCluster === c.index
+            focusedCluster === c.index ||
+            hoverCluster === c.index
           }
           reduced={reduced}
+          interactive={
+            !!onSelectCluster &&
+            (selectableClusters ? selectableClusters.has(c.id) : true)
+          }
+          onSelect={onSelectCluster ? () => onSelectCluster(c.index) : undefined}
+          onHoverChange={(h) => setHoverCluster(h ? c.index : null)}
         />
       ))}
 
@@ -1282,7 +1407,18 @@ export function AgentField({
           gate the nodes/rings — labels pop in when the SDF is ready. */}
       <Suspense fallback={null}>
         {clusters.map((c) => (
-          <ClusterLabel key={c.index} cluster={c} sceneR={radius} reduced={reduced} />
+          <ClusterLabel
+            key={c.index}
+            cluster={c}
+            sceneR={radius}
+            reduced={reduced}
+            interactive={
+              !!onSelectCluster &&
+              (selectableClusters ? selectableClusters.has(c.id) : true)
+            }
+            onSelect={onSelectCluster ? () => onSelectCluster(c.index) : undefined}
+            onHoverChange={(h) => setHoverCluster(h ? c.index : null)}
+          />
         ))}
       </Suspense>
 
