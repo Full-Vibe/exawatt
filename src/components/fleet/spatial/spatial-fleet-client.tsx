@@ -379,6 +379,15 @@ export function SpatialFleetClient() {
             altitude={scene.altitude}
             focusedProjectId={scene.focusedProjectId}
             selectedAgentId={selectedAgentId}
+            hero={
+              scene.attention.hero
+                ? {
+                    agentId: scene.attention.hero.agentId,
+                    title: scene.attention.hero.title,
+                    reason: scene.attention.hero.reason,
+                  }
+                : null
+            }
             onDrillProject={drillToProject}
             onSelectAgent={handleSelectAgent}
             onOverview={overview}

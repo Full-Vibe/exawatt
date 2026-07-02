@@ -32,7 +32,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
-import { CameraControls, Grid, Line, Text } from '@react-three/drei';
+import { CameraControls, Grid, Html, Line, Text } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import type { AgentStatus } from '@exawatt/core';
@@ -51,6 +51,8 @@ export interface FieldAgent {
   /** absolute world position (cluster offset + local sunflower position) */
   x: number;
   y: number;
+  /** last activity timestamp (unix ms) — a change triggers a node blip */
+  activityAt?: number;
 }
 
 export interface ClusterInfo {
@@ -69,6 +71,9 @@ export interface ClusterInfo {
   attention: number;
   /** red-hull "a commander goes here NOW" flag (real data: the hero zone) */
   critical: boolean;
+  /** optional pre-built stat readout (e.g. "3 agents · 1 blocked · $1.42/hr");
+   *  the label falls back to a generated units/blocked line without it */
+  statLine?: string;
 }
 
 /** One agent inside a FieldGroupSpec (the minimal shape the world needs). */
@@ -76,6 +81,8 @@ export interface FieldGroupAgent {
   id: string;
   name: string;
   status: AgentStatus;
+  /** last activity timestamp (unix ms) — a change triggers a node blip */
+  activityAt?: number;
 }
 
 /** A project/context group to lay out as one cluster on the field. */
@@ -90,6 +97,16 @@ export interface FieldGroupSpec {
   countOverride?: number;
   /** blocked/error population override (aggregates) */
   attentionOverride?: number;
+  /** optional stat readout under the sector name (cost/pressure encoding) */
+  statLine?: string;
+}
+
+/** The single highest-leverage blocker (Attention Scheduling's hero), shown
+ *  as an in-world callout with its "why". */
+export interface FieldHero {
+  agentId: string;
+  title: string;
+  reason: string;
 }
 
 /** Imperative camera verbs the DOM chrome (keyboard layer) drives. */
@@ -234,6 +251,7 @@ export function layoutClusteredField(groups: FieldGroupSpec[]): {
         cluster: c,
         x: cx + Math.cos(aa) * rr,
         y: cy + Math.sin(aa) * rr,
+        activityAt: a.activityAt,
       });
     }
     if (g.attentionOverride !== undefined) attention = g.attentionOverride;
@@ -251,6 +269,7 @@ export function layoutClusteredField(groups: FieldGroupSpec[]): {
       attention,
       critical:
         g.critical ?? (count > 0 && attention / count >= CRITICAL_ATTENTION),
+      statLine: g.statLine,
     });
   }
 
@@ -378,6 +397,8 @@ const HOVER_BOOST = 1.5;
 const SELECT_BOOST = 1.3;
 const PULSE_AMP = 0.16;
 const PULSE_SPEED = 2.6; // rad/s
+const BLIP_DUR = 0.7; // activity blip length (s)
+const BLIP_AMP = 0.45; // activity blip peak growth
 
 function Constellation({
   agents,
@@ -463,6 +484,9 @@ function Constellation({
   const prevHover = useRef<number>(-1);
   const prevSelect = useRef<number>(-1);
   const pulsePhase = useRef(0);
+  // activity blips: node pops briefly when its agent's activityAt advances
+  const prevActivity = useRef(new Map<string, number>());
+  const blips = useRef(new Map<number, number>()); // index -> seconds remaining
 
   /** write node + halo matrix for instance i at scale multiplier m */
   const writeInstance = (i: number, m: number, z: number) => {
@@ -491,8 +515,24 @@ function Constellation({
     if (!m || !h) return;
     if (reduced) entrance.current.done = true;
     _dummy.rotation.set(0, 0, Math.PI / 4); // diamond
+    // detect fresh activity (a live event landed on an agent) → queue a blip.
+    // The first seed only records the baseline — no blip storm on mount.
+    const firstSeed = prevActivity.current.size === 0;
     for (let i = 0; i < count; i++) {
       const a = agents[i];
+      if (a.activityAt !== undefined) {
+        const prev = prevActivity.current.get(a.id);
+        if (
+          !firstSeed &&
+          prev !== undefined &&
+          a.activityAt > prev &&
+          entrance.current.done &&
+          !reduced
+        ) {
+          blips.current.set(i, BLIP_DUR);
+        }
+        prevActivity.current.set(a.id, a.activityAt);
+      }
       writeInstance(
         i,
         entrance.current.done ? boost.current[i] : reduced ? 1 : 0,
@@ -570,7 +610,8 @@ function Constellation({
     }
 
     if (reduced) {
-      // reduced motion: no entrance, no pulse — snap any hover/select growth
+      // reduced motion: no entrance, no pulse, no blips — snap hover/select
+      blips.current.clear();
       if (settling.current.size === 0) return;
       for (const i of settling.current) {
         if (i >= count) {
@@ -629,6 +670,26 @@ function Constellation({
           writeInstance(i, boost.current[i] * pulseFor(i), zFor(i));
           // attention nodes stay animated via the pulse loop above
           if (done && i !== hov && i !== selectedIdx) settling.current.delete(i);
+          wrote = true;
+        }
+      }
+      // activity blips: brief pop when a live event lands on an agent
+      if (blips.current.size > 0) {
+        for (const [i, rem] of blips.current) {
+          if (i >= count) {
+            blips.current.delete(i);
+            continue;
+          }
+          const next = rem - dt;
+          if (next <= 0) {
+            blips.current.delete(i);
+            writeInstance(i, boost.current[i] * pulseFor(i), zFor(i));
+          } else {
+            blips.current.set(i, next);
+            const u = 1 - next / BLIP_DUR;
+            const factor = 1 + Math.sin(Math.PI * u) * BLIP_AMP;
+            writeInstance(i, boost.current[i] * pulseFor(i) * factor, zFor(i));
+          }
           wrote = true;
         }
       }
@@ -989,7 +1050,10 @@ function ClusterLabel({
         material-transparent
         raycast={() => null}
       >
-        {`${cluster.count} UNITS${cluster.attention > 0 ? ` · ${cluster.attention} BLOCKED` : ''}`}
+        {(
+          cluster.statLine ??
+          `${cluster.count} units${cluster.attention > 0 ? ` · ${cluster.attention} blocked` : ''}`
+        ).toUpperCase()}
       </Text>
     </group>
   );
@@ -1024,6 +1088,54 @@ function TrunkNetwork({ clusters }: { clusters: ClusterInfo[] }) {
       toneMapped={false}
       raycast={() => null}
     />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Hero callout — the single highest-leverage blocker, with its "why"
+// ---------------------------------------------------------------------------
+
+/** DOM chip (crisp at every zoom) anchored above the hero agent's node.
+ *  Clicking it selects the agent — the panel's clear/respond flows open
+ *  without hunting the map. */
+function HeroCallout({
+  agent,
+  hero,
+  onSelect,
+}: {
+  agent: FieldAgent;
+  hero: FieldHero;
+  onSelect: (id: string | null) => void;
+}) {
+  return (
+    // anchored BELOW the node: sector labels always sit above their hulls, so
+    // below is the one direction that never collides with them
+    <Html
+      position={[agent.x, agent.y - STATUS_SIZE[agent.status] * 3.4, 2]}
+      center
+      zIndexRange={[40, 0]}
+    >
+      <button
+        onClick={() => onSelect(hero.agentId)}
+        className="hud-lift pointer-events-auto flex translate-y-1/2 flex-col items-start gap-0.5 whitespace-nowrap rounded border px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-hud-red"
+        style={{
+          borderColor: 'rgba(255,31,75,0.55)',
+          background: 'rgba(12,6,10,0.9)',
+          boxShadow: '0 0 16px rgba(255,31,75,0.25)',
+        }}
+        title="Fly to the hero blocker"
+      >
+        <span
+          className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em]"
+          style={{ color: HUD.red }}
+        >
+          ⚠ {hero.title}
+        </span>
+        <span className="max-w-72 truncate font-mono text-[10px]" style={{ color: HUD.textDim }}>
+          {hero.reason}
+        </span>
+      </button>
+    </Html>
   );
 }
 
@@ -1228,6 +1340,7 @@ export function AgentField({
   clusters,
   selectedId,
   focusedCluster = null,
+  hero = null,
   onSelect,
   onSelectCluster,
   selectableClusters,
@@ -1239,6 +1352,8 @@ export function AgentField({
   selectedId: string | null;
   /** keyboard-focused sector — its hull is emphasized */
   focusedCluster?: number | null;
+  /** the highest-leverage blocker — rendered as an in-world callout */
+  hero?: FieldHero | null;
   onSelect: (id: string | null) => void;
   /** clicking empty sector space (the hull disc) drills — by cluster index */
   onSelectCluster?: (index: number) => void;
@@ -1271,6 +1386,11 @@ export function AgentField({
     [agents, selectedId]
   );
   const selected = selectedIdx >= 0 ? agents[selectedIdx] : null;
+  // the hero callout anchors to its agent's node (absent if filtered out)
+  const heroAgent = useMemo(
+    () => (hero ? agents.find((a) => a.id === hero.agentId) ?? null : null),
+    [agents, hero]
+  );
 
   useEffect(() => {
     onHoverAgent?.(hovered);
@@ -1424,6 +1544,10 @@ export function AgentField({
 
       {hovered && <FocusRing agent={hovered} color={HUD.cyan} reduced={reduced} />}
       {selected && <FocusRing agent={selected} color={HUD.magenta} reduced={reduced} />}
+
+      {hero && heroAgent && (
+        <HeroCallout agent={heroAgent} hero={hero} onSelect={onSelect} />
+      )}
 
       <EffectComposer>
         <Bloom
