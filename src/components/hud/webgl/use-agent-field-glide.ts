@@ -28,10 +28,12 @@ function keyVec(key: string): Vec | null {
       return { dx: -1, dy: 0, dolly: 0, az: 0 };
     case 'arrowright':
       return { dx: 1, dy: 0, dolly: 0, az: 0 };
+    // vertical is inverted vs the raw truck axis — operator-confirmed feel:
+    // ArrowUp brings the upper part of the map INTO view
     case 'arrowup':
-      return { dx: 0, dy: 1, dolly: 0, az: 0 };
-    case 'arrowdown':
       return { dx: 0, dy: -1, dolly: 0, az: 0 };
+    case 'arrowdown':
+      return { dx: 0, dy: 1, dolly: 0, az: 0 };
     case '+':
     case '=':
       return { dx: 0, dy: 0, dolly: 1, az: 0 };
