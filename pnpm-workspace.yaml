@@ -1,4 +1,7 @@
 packages:
   - 'packages/*'
 
-onlyBuiltDependencies: electron
+onlyBuiltDependencies:
+  - electron
+  - node-pty
+  - '@electron/rebuild'

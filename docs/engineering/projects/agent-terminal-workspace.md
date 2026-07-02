@@ -24,7 +24,7 @@ come later).
 
 ### W0.1 PTY foundation
 
-Status: active-build
+Status: landed
 
 Scope:
 
@@ -44,9 +44,39 @@ Acceptance criteria:
   resize, scrollback); same for vim and htop
 - killing the tab kills the PTY process tree; no orphans
 
+Progress log (landed 2026-07-02):
+
+- `electron/main/pty/session-manager.ts`: PTY-per-session owner (spawn /
+  write / resize / kill / list / buffer / serialize) with a ~200 KB
+  scrollback ring buffer per session so late-attaching panes and renderer
+  reloads replay output. Harness CLIs run through the user's login shell so
+  PATH resolves like a real terminal. `pty-ipc.ts` bridges to the renderer;
+  app `before-quit` kills all sessions (no orphans).
+- `/workspace` route + `WorkspaceClient`: ignite buttons (Claude Code /
+  Codex / Shell) with a working-dir input, tab strip with harness-colored
+  diamonds, cmd+T / cmd+W / cmd+1-9. Panes stay MOUNTED when inactive
+  (CSS-hidden) so no output is lost on tab switch; on web it renders a
+  "desktop app required" notice (no hydration branch — electron detection
+  runs post-mount).
+- Verified via Playwright's Electron driver: shell echo round-trip
+  (keystrokes → PTY → xterm buffer), real Claude Code TUI boots and renders
+  in a tab, tab switch preserves buffers, zero page errors.
+- Build note: `pnpm electron:rebuild` (@electron/rebuild) needs network for
+  Electron headers; offline fallback is `node-gyp rebuild --nodedir=<extracted
+  headers>` inside the node-pty package (headers fetchable via curl from
+  electronjs.org/headers). node-pty resolves `build/Release` BEFORE
+  `prebuilds/`, so the Electron-ABI build wins; a fresh install wipes
+  `build/` and the rebuild must be re-run.
+- Known W0.2 targets from this pass: initiative windows, worktree
+  create/pick in the ignite flow, layout persistence, richer tab titles.
+
+Day-1 bar (operator question pending; proceeding on assumption): all four
+candidates are treated as must-haves — full TUI fidelity, restart
+persistence of layout, one-gesture worktrees, Spaces-speed switching.
+
 ### W0.2 Workspace parity
 
-Status: planned
+Status: active-build
 
 Scope:
 

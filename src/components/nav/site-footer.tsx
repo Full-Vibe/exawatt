@@ -8,6 +8,7 @@ import { usePathname } from 'next/navigation';
  * full-viewport surfaces (no page scroll, so no footer at the bottom).
  */
 const APP_PREFIXES = [
+  '/workspace',
   '/fleet',
   '/dashboard',
   '/board',

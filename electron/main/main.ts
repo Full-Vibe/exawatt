@@ -1,9 +1,11 @@
 import { app, BrowserWindow, shell, Menu, ipcMain } from 'electron';
 import path from 'path';
 import { registerAgentIPC } from './agent-ipc';
+import { registerPtyIPC, disposePty } from './pty-ipc';
 
 const isDev = process.env.NODE_ENV === 'development';
-const DEV_URL = 'http://localhost:7000';
+// EXAWATT_DEV_URL lets harnesses point the shell at a different dev server
+const DEV_URL = process.env.EXAWATT_DEV_URL || 'http://localhost:7000';
 const PROTOCOL = 'exawatt';
 
 let mainWindow: BrowserWindow | null = null;
@@ -91,7 +93,7 @@ function createWindow(): void {
     return { action: 'deny' };
   });
 
-  if (isDev) {
+  if (isDev && !process.env.EXAWATT_TEST) {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
@@ -171,6 +173,7 @@ function registerAuthIPC(): void {
 
 app.whenReady().then(() => {
   registerAgentIPC();
+  registerPtyIPC();
   registerAuthIPC();
   createMenu();
   createWindow();
@@ -187,4 +190,9 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// never leave orphan PTY shells/agents behind
+app.on('before-quit', () => {
+  disposePty();
 });
