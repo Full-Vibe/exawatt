@@ -70,6 +70,36 @@ Progress log (landed 2026-07-02):
 - Known W0.2 targets from this pass: initiative windows, worktree
   create/pick in the ignite flow, layout persistence, richer tab titles.
 
+Dogfood feedback round 1 (2026-07-02, all fixed + smoke-tested):
+
+- default shell is now the USER'S login shell resolved via directory
+  services first (`dscl … UserShell`) — the SHELL env var lies when the app
+  is launched from a different shell or a harness; the resolved shell is
+  also exported as SHELL inside sessions
+- `~` / `~/path` working dirs expand in the main process; invalid dirs fail
+  BEFORE spawn with a structured error surfaced as a dismissible banner
+  (previously: node-pty spawned into a bad cwd and died instantly with no
+  output — this is what made Codex look broken)
+- session exit markers are appended to the main-process buffer (not just
+  live-streamed) so a pane attaching after a fast death shows what happened
+- ⌘⇧[ / ⌘⇧] cycle tabs (wraps); shortcuts extracted to
+  `use-workspace-shortcuts.ts`, harness registry to `harnesses.ts`
+- header nav gained a Workspace link (always in Electron; for authed web
+  users too) — you can leave to /fleet/spatial and come back; sessions are
+  re-adopted from the main process with buffers intact
+
+Quality/robustness review round (2026-07-02): a high-effort multi-agent
+code review of the PTY/workspace code surfaced 10 confirmed defects, all
+fixed and re-verified: terminal-pane unmount race (incremental cleanup +
+post-await disposed checks), default-shell validation with executability
+fallback chain (async, off the main loop), async cwd stat (network mounts
+can no longer freeze the app), scrollback trim resync at line boundaries +
+exit markers through the trimmed path, onExit-after-kill no longer
+resurrects buffers or re-broadcasts, ⌘⇧T/⌘⇧W restored, preventDefault only
+when a chord actually applies (and the hook detaches on the web fallback),
+HARNESS_ORDER derived from the registry, shortcuts doc-comment made
+truthful.
+
 Day-1 bar (operator question pending; proceeding on assumption): all four
 candidates are treated as must-haves — full TUI fidelity, restart
 persistence of layout, one-gesture worktrees, Spaces-speed switching.

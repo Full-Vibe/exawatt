@@ -67,7 +67,13 @@ export function TerminalPane({
     const api = window.electron?.pty;
     if (!el || !api) return;
     let disposed = false;
-    let cleanup: Array<() => void> = [];
+    // resources register the moment they exist (NOT in a batch at the end):
+    // the destructor can run between any two awaits, and anything created
+    // before it must still be released — splice makes disposal idempotent
+    const cleanup: Array<() => void> = [];
+    const dispose = () => {
+      for (const fn of cleanup.splice(0)) fn();
+    };
 
     (async () => {
       const [{ Terminal }, { FitAddon }] = await Promise.all([
@@ -84,6 +90,7 @@ export function TerminalPane({
         scrollback: 8000,
         theme: HUD_TERM_THEME,
       });
+      cleanup.push(() => term.dispose());
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.open(el);
@@ -95,24 +102,32 @@ export function TerminalPane({
           void api.resize(sessionId, term.cols, term.rows);
         },
       };
+      cleanup.push(() => {
+        termRef.current = null;
+      });
 
       // replay main-process scrollback (renderer reloads, late attach)
       const backlog = await api.buffer(sessionId);
+      if (disposed) {
+        // unmounted while the buffer fetch was in flight — the destructor
+        // already ran; release what was created since
+        dispose();
+        return;
+      }
       if (backlog) term.write(backlog);
       void api.resize(sessionId, term.cols, term.rows);
       if (activeRef.current) term.focus();
 
+      // the exit marker arrives through the data stream (the session manager
+      // appends it to the buffer too, so replays after a fast death show it)
       const offData = api.onData(({ id, data }) => {
         if (id === sessionId) term.write(data);
       });
-      const offExit = api.onExit(({ id, exitCode }) => {
-        if (id === sessionId) {
-          term.write(`\r\n\x1b[38;5;244m[session exited ${exitCode}]\x1b[0m\r\n`);
-        }
-      });
+      cleanup.push(offData);
       const input = term.onData((data) => {
         void api.write(sessionId, data);
       });
+      cleanup.push(() => input.dispose());
       const ro = new ResizeObserver(() => {
         // hidden panes have zero size — fitting there corrupts cols/rows
         if (el.offsetWidth > 0 && el.offsetHeight > 0) {
@@ -121,6 +136,7 @@ export function TerminalPane({
         }
       });
       ro.observe(el);
+      cleanup.push(() => ro.disconnect());
 
       // harness introspection (Playwright asserts on buffer contents)
       if (process.env.NODE_ENV !== 'production') {
@@ -129,20 +145,11 @@ export function TerminalPane({
         };
         w.__XTERMS__ = { ...w.__XTERMS__, [sessionId]: term };
       }
-
-      cleanup = [
-        offData,
-        offExit,
-        () => input.dispose(),
-        () => ro.disconnect(),
-        () => term.dispose(),
-      ];
     })();
 
     return () => {
       disposed = true;
-      for (const fn of cleanup) fn();
-      termRef.current = null;
+      dispose();
     };
   }, [sessionId]);
 

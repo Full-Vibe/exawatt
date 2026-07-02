@@ -21,9 +21,18 @@ export function registerPtyIPC(): void {
     broadcast('pty:exit', { id, exitCode });
   });
 
-  ipcMain.handle('pty:create', (_event, options: PtyCreateOptions) =>
-    ptySessions.create(options)
-  );
+  // structured result instead of a thrown error: IPC rejections arrive as
+  // opaque "Error invoking remote method" strings — useless for UX
+  ipcMain.handle('pty:create', async (_event, options: PtyCreateOptions) => {
+    try {
+      return { ok: true as const, session: await ptySessions.create(options) };
+    } catch (err) {
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  });
   ipcMain.handle('pty:write', (_event, id: string, data: string) => {
     ptySessions.write(id, data);
   });

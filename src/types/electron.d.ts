@@ -24,8 +24,12 @@ export interface PtySessionInfo {
   exitCode: number | null;
 }
 
+export type PtyCreateResult =
+  | { ok: true; session: PtySessionInfo }
+  | { ok: false; error: string };
+
 export interface ElectronPtyApi {
-  create: (options: PtyCreateOptions) => Promise<PtySessionInfo>;
+  create: (options: PtyCreateOptions) => Promise<PtyCreateResult>;
   write: (id: string, data: string) => Promise<void>;
   resize: (id: string, cols: number, rows: number) => Promise<void>;
   kill: (id: string) => Promise<void>;

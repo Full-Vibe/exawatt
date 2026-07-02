@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -19,6 +20,7 @@ import {
   Network,
   Settings,
   Server,
+  SquareTerminal,
 } from 'lucide-react';
 import { signOut } from '@/app/actions/projects';
 
@@ -38,6 +40,11 @@ export function SiteHeaderNav({
   const isArchitecture = pathname?.startsWith('/architecture');
   const isDashboard = pathname === '/dashboard';
   const isFleet = pathname?.startsWith('/fleet');
+  const isWorkspace = pathname?.startsWith('/workspace');
+  // in the desktop app the Workspace (terminal) link is always relevant,
+  // signed in or not; detected post-mount for hydration safety
+  const [inElectron, setInElectron] = useState(false);
+  useEffect(() => setInElectron(!!window.electron?.isElectron), []);
 
   return (
     <header
@@ -78,6 +85,14 @@ export function SiteHeaderNav({
             <Link href="/architecture">
               <Network className="h-3.5 w-3.5" />
               Architecture
+            </Link>
+          </Button>
+        )}
+        {(inElectron || (isAuthenticated && !isHome)) && !isWorkspace && (
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/workspace">
+              <SquareTerminal className="h-3.5 w-3.5" />
+              Workspace
             </Link>
           </Button>
         )}

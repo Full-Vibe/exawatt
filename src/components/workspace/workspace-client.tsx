@@ -9,27 +9,22 @@
  * Initiative windows, the worktree picker, and persistence land in W0.2.
  *
  * Sessions live in the Electron main process; this surface adopts whatever
- * exists on mount (pty.list), so renderer reloads don't lose sessions.
+ * exists on mount (pty.list), so renderer reloads AND route round-trips
+ * (e.g. /fleet/spatial and back) never lose sessions.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TerminalPane } from './terminal-pane';
+import { HARNESS_META, HARNESS_ORDER } from './harnesses';
+import { useWorkspaceShortcuts } from './use-workspace-shortcuts';
 import { HUD } from '@/components/hud';
 import type { PtyHarness, PtySessionInfo } from '@/types/electron';
-
-const HARNESS_META: Record<
-  PtyHarness,
-  { label: string; color: string; ignite: string }
-> = {
-  claude: { label: 'Claude Code', color: HUD.cyan2, ignite: '⚡ Claude Code' },
-  codex: { label: 'Codex', color: HUD.amber, ignite: '⚡ Codex' },
-  shell: { label: 'Shell', color: HUD.idle, ignite: '+ Shell' },
-};
 
 export function WorkspaceClient() {
   const [sessions, setSessions] = useState<PtySessionInfo[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [cwd, setCwd] = useState('');
   const [exited, setExited] = useState<Record<string, number>>({});
+  const [error, setError] = useState<string | null>(null);
   // SSR renders neither branch; the electron check runs after mount so the
   // server and client HTML always match (hydration safety)
   const [mounted, setMounted] = useState(false);
@@ -38,7 +33,8 @@ export function WorkspaceClient() {
   const cwdRef = useRef(cwd);
   cwdRef.current = cwd;
 
-  // adopt sessions that already exist in the main process (renderer reload)
+  // adopt sessions that already exist in the main process (renderer reload,
+  // navigating away and back)
   useEffect(() => {
     const api = window.electron?.pty;
     if (!api) return;
@@ -59,56 +55,68 @@ export function WorkspaceClient() {
   const ignite = useCallback(async (harness: PtyHarness) => {
     const api = window.electron?.pty;
     if (!api) return;
-    const info = await api.create({
+    const result = await api.create({
       harness,
       cwd: cwdRef.current.trim() || undefined,
       title: HARNESS_META[harness].label,
     });
-    setSessions((prev) => [...prev, info]);
-    setActiveId(info.id);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setError(null);
+    setSessions((prev) => [...prev, result.session]);
+    setActiveId(result.session.id);
   }, []);
 
-  const close = useCallback(
-    async (id: string) => {
-      const api = window.electron?.pty;
-      if (!api) return;
-      await api.kill(id);
-      setSessions((prev) => {
-        const next = prev.filter((s) => s.id !== id);
-        setActiveId((cur) =>
-          cur === id ? (next[next.length - 1]?.id ?? null) : cur
-        );
-        return next;
-      });
-      setExited((prev) => {
-        const { [id]: _drop, ...rest } = prev;
-        return rest;
-      });
-    },
-    []
-  );
+  const close = useCallback(async (id: string) => {
+    const api = window.electron?.pty;
+    if (!api) return;
+    await api.kill(id);
+    setSessions((prev) => {
+      const next = prev.filter((s) => s.id !== id);
+      setActiveId((cur) =>
+        cur === id ? (next[next.length - 1]?.id ?? null) : cur
+      );
+      return next;
+    });
+    setExited((prev) => {
+      const { [id]: _drop, ...rest } = prev;
+      return rest;
+    });
+  }, []);
 
-  // keyboard: cmd+T new shell · cmd+W close tab · cmd+1..9 jump tab
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === 't' || e.key === 'T') {
-        e.preventDefault();
+  // each action reports whether it applied — the hook prevents the browser
+  // default only for chords that actually did something
+  const shortcutActions = useMemo(
+    () => ({
+      igniteShell: () => {
         void ignite('shell');
-      } else if ((e.key === 'w' || e.key === 'W') && activeId) {
-        e.preventDefault();
+        return true;
+      },
+      closeActive: () => {
+        if (!activeId) return false;
         void close(activeId);
-      } else if (e.key >= '1' && e.key <= '9') {
-        const target = sessions[Number(e.key) - 1];
-        if (target) {
-          e.preventDefault();
-          setActiveId(target.id);
-        }
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [ignite, close, activeId, sessions]);
+        return true;
+      },
+      selectIndex: (index: number) => {
+        const target = sessions[index];
+        if (!target) return false;
+        setActiveId(target.id);
+        return true;
+      },
+      cycle: (delta: 1 | -1) => {
+        if (sessions.length === 0) return false;
+        const cur = sessions.findIndex((s) => s.id === activeId);
+        const next =
+          (cur === -1 ? 0 : cur + delta + sessions.length) % sessions.length;
+        setActiveId(sessions[next].id);
+        return true;
+      },
+    }),
+    [ignite, close, activeId, sessions]
+  );
+  useWorkspaceShortcuts(shortcutActions, inElectron);
 
   if (!mounted) return null;
 
@@ -117,9 +125,15 @@ export function WorkspaceClient() {
       <div className="flex h-full items-center justify-center p-8">
         <div
           className="max-w-md rounded border p-6 text-center"
-          style={{ borderColor: 'rgba(80,230,255,0.25)', background: 'rgba(7,12,20,0.9)' }}
+          style={{
+            borderColor: 'rgba(80,230,255,0.25)',
+            background: 'rgba(7,12,20,0.9)',
+          }}
         >
-          <p className="font-display text-lg font-semibold" style={{ color: HUD.text }}>
+          <p
+            className="font-display text-lg font-semibold"
+            style={{ color: HUD.text }}
+          >
             Terminal Workspace
           </p>
           <p className="mt-2 font-mono text-sm" style={{ color: HUD.textDim }}>
@@ -145,9 +159,12 @@ export function WorkspaceClient() {
           return (
             <div
               key={s.id}
+              data-active={on || undefined}
               className="flex items-center overflow-hidden rounded border"
               style={{
-                borderColor: on ? 'rgba(25,230,255,0.5)' : 'rgba(80,230,255,0.15)',
+                borderColor: on
+                  ? 'rgba(25,230,255,0.5)'
+                  : 'rgba(80,230,255,0.15)',
                 background: on ? 'rgba(25,230,255,0.08)' : 'transparent',
                 opacity: dead ? 0.5 : 1,
               }}
@@ -160,7 +177,10 @@ export function WorkspaceClient() {
               >
                 <span
                   className="inline-block h-2 w-2 rotate-45"
-                  style={{ background: meta.color, boxShadow: `0 0 4px ${meta.color}` }}
+                  style={{
+                    background: meta.color,
+                    boxShadow: `0 0 4px ${meta.color}`,
+                  }}
                 />
                 {i + 1} · {s.title}
                 {dead && <span style={{ color: HUD.red }}>✕</span>}
@@ -186,7 +206,7 @@ export function WorkspaceClient() {
             className="w-56 rounded border bg-transparent px-2 py-1 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
             style={{ color: HUD.textMono, borderColor: 'rgba(80,230,255,0.2)' }}
           />
-          {(Object.keys(HARNESS_META) as PtyHarness[]).map((h) => (
+          {HARNESS_ORDER.map((h) => (
             <button
               key={h}
               onClick={() => void ignite(h)}
@@ -204,6 +224,28 @@ export function WorkspaceClient() {
         </div>
       </div>
 
+      {/* ignite errors (bad working dir, spawn failures) — dismissible */}
+      {error && (
+        <div
+          role="alert"
+          className="flex shrink-0 items-center justify-between gap-3 border-b px-3 py-1.5 font-mono text-xs"
+          style={{
+            color: HUD.red,
+            borderColor: 'rgba(255,31,75,0.35)',
+            background: 'rgba(255,31,75,0.08)',
+          }}
+        >
+          <span>{error}</span>
+          <button
+            onClick={() => setError(null)}
+            aria-label="Dismiss error"
+            className="px-1 outline-none focus-visible:ring-1 focus-visible:ring-hud-red"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* panes: all mounted, one visible — no output lost on tab switch */}
       <div className="relative min-h-0 flex-1">
         {sessions.length === 0 ? (
@@ -214,7 +256,11 @@ export function WorkspaceClient() {
           </div>
         ) : (
           sessions.map((s) => (
-            <TerminalPane key={s.id} sessionId={s.id} active={s.id === activeId} />
+            <TerminalPane
+              key={s.id}
+              sessionId={s.id}
+              active={s.id === activeId}
+            />
           ))
         )}
       </div>
