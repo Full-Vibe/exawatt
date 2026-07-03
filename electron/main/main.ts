@@ -93,7 +93,11 @@ function createWindow(): void {
     return { action: 'deny' };
   });
 
-  if (isDev && !process.env.EXAWATT_TEST) {
+  if (
+    isDev &&
+    !process.env.EXAWATT_TEST &&
+    process.env.EXAWATT_DEVTOOLS !== '0'
+  ) {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
