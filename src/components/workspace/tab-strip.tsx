@@ -6,12 +6,12 @@
  * tabs, all sharing the project color. W0.4: double-click a group or tab
  * name to rename it (persists with the layout), and agent tabs carry an
  * auto-summarized micro-context subtitle ("what was I working on here?").
- * Transitional UI on the way to the W0.5 world map (sessions as entities
- * on the ENG-004 spatial surface).
+ * One of two first-class regimes (the other: sessions as entities on the
+ * ENG-004 world map) — parallel skins over the same session system.
  */
 import { useRef, useState } from 'react';
 import { HUD } from '@/components/hud';
-import { projectColor } from './project-colors';
+import { PROJECT_PALETTE } from './project-colors';
 import { HarnessGlyph } from './harness-icons';
 import { REVIVE_FAILED } from './use-workspace-state';
 import type { Initiative } from './use-workspace-state';
@@ -65,6 +65,37 @@ function RenameInput({
   );
 }
 
+/** elegant inline palette: appears with the rename editor; mousedown (not
+ *  click) so choosing a color never blurs/commits the text edit */
+function ColorSwatches({
+  current,
+  onPick,
+}: {
+  current: string;
+  onPick: (color: string) => void;
+}) {
+  return (
+    <span className="ml-1.5 inline-flex items-center gap-1">
+      {PROJECT_PALETTE.map((c) => (
+        <button
+          key={c}
+          aria-label={`Set project color ${c}`}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onPick(c);
+          }}
+          className="h-3 w-3 rounded-full transition-transform hover:scale-125"
+          style={{
+            background: c,
+            boxShadow: c === current ? `0 0 0 1.5px #fff, 0 0 6px ${c}` : 'none',
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
 export function TabStrip({
   initiatives,
   activeDir,
@@ -74,6 +105,7 @@ export function TabStrip({
   onCloseTab,
   onRenameTab,
   onRenameInitiative,
+  onSetInitiativeColor,
 }: {
   initiatives: Initiative[];
   activeDir: string | null;
@@ -84,6 +116,7 @@ export function TabStrip({
   onCloseTab: (tabId: string) => void;
   onRenameTab: (tabId: string, title: string) => void;
   onRenameInitiative: (dir: string, name: string) => void;
+  onSetInitiativeColor: (dir: string, color: string) => void;
 }) {
   const [editing, setEditing] = useState<Editing | null>(null);
 
@@ -97,9 +130,7 @@ export function TabStrip({
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
       {initiatives.map((g, gi) => {
-        // color keyed on the DIRECTORY (the stable identity), so renaming
-        // an initiative keeps its hue
-        const color = projectColor(g.dir);
+        const color = g.color;
         const groupActive = g.dir === activeDir;
         return (
           <div
@@ -118,7 +149,7 @@ export function TabStrip({
                 setEditing({ kind: 'group', id: g.dir, value: g.name })
               }
               title={`${g.dir} · double-click to rename`}
-              className="flex items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+              className="flex items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
               style={{ color: groupActive ? color : HUD.textDim }}
             >
               <span
@@ -127,13 +158,19 @@ export function TabStrip({
               />
               {gi + 1}{' '}
               {editing?.kind === 'group' && editing.id === g.dir ? (
-                <RenameInput
-                  value={editing.value}
-                  color={color}
-                  onChange={(v) => setEditing({ ...editing, value: v })}
-                  onCommit={commit}
-                  onCancel={() => setEditing(null)}
-                />
+                <>
+                  <RenameInput
+                    value={editing.value}
+                    color={color}
+                    onChange={(v) => setEditing({ ...editing, value: v })}
+                    onCommit={commit}
+                    onCancel={() => setEditing(null)}
+                  />
+                  <ColorSwatches
+                    current={color}
+                    onPick={(c) => onSetInitiativeColor(g.dir, c)}
+                  />
+                </>
               ) : (
                 g.name
               )}
@@ -174,13 +211,19 @@ export function TabStrip({
                       </span>
                     )}
                     {editing?.kind === 'tab' && editing.id === t.id ? (
-                      <RenameInput
-                        value={editing.value}
-                        color={color}
-                        onChange={(v) => setEditing({ ...editing, value: v })}
-                        onCommit={commit}
-                        onCancel={() => setEditing(null)}
-                      />
+                      <>
+                        <RenameInput
+                          value={editing.value}
+                          color={color}
+                          onChange={(v) => setEditing({ ...editing, value: v })}
+                          onCommit={commit}
+                          onCancel={() => setEditing(null)}
+                        />
+                        <ColorSwatches
+                          current={color}
+                          onPick={(c) => onSetInitiativeColor(g.dir, c)}
+                        />
+                      </>
                     ) : (
                       <span className="flex flex-col items-start">
                         <span className="leading-tight">{t.title}</span>

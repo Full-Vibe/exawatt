@@ -1033,7 +1033,7 @@ function ClusterLabel({
         material-transparent
         raycast={() => null}
       >
-        {cluster.label.toUpperCase()}
+        {cluster.label}
       </Text>
       <Text
         ref={subRef as never}
@@ -1053,7 +1053,7 @@ function ClusterLabel({
         {(
           cluster.statLine ??
           `${cluster.count} units${cluster.attention > 0 ? ` · ${cluster.attention} blocked` : ''}`
-        ).toUpperCase()}
+        )}
       </Text>
     </group>
   );

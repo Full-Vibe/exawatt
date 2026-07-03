@@ -63,11 +63,14 @@ absence of Exawatt, this workflow IS "Exawatt v0."
 4. **The grander plan:** 10 agents → tens → hundreds → tens of thousands.
    The 3D Fleet Command / spatial surface (ENG-004) is built for that scale
    and this arc grows into it — the terminal workspace is the near-term
-   rung on the same ladder, not a fork. The tmux-style tab strip is
-   explicitly TRANSITIONAL: the operator's stated end state is to stop
-   operating terminal tabs and instead command sessions as **visual
-   entities on the world map**, with the terminal pane as the focus
-   surface you drop into.
+   rung on the same ladder, not a fork. AMENDED 2026-07-03 (operator): the
+   terminal workspace is a FIRST-CLASS UI REGIME, not a transitional one —
+   "a dressed-up, augmented, way-better TMUX interface that's AI-native,"
+   developed IN PARALLEL with the spatial regime. Per the modular-UI-regimes
+   architecture, both are independent skins over the same session/fleet
+   system: the operator commands sessions as **visual entities on the world
+   map** OR as terminal tabs, choosing per moment; the terminal pane is the
+   shared focus surface both drop into.
 
 ## Why this matters
 

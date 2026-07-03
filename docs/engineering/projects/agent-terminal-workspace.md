@@ -72,6 +72,13 @@ Progress log (landed 2026-07-02):
 
 W0.4 progress log (landed 2026-07-03):
 
+Known limitation (dogfood round 3): auto-revive uses `claude --continue` /
+`codex resume --last`, which resume the MOST RECENT conversation in that
+directory — including conversations started outside Exawatt (e.g. iTerm).
+Revived tabs now announce this with a dim marker line. Follow-up: capture
+the harness session id at ignite time and revive with `claude --resume
+<id>` so Exawatt only ever resumes its own threads.
+
 - Micro-context subtitles: `electron/main/pty/context-summarizer.ts`
   periodically summarizes each session's recent scrollback into a ≤8-word
   subtitle. Engine = the operator's authenticated `claude` CLI (`-p`,
@@ -104,6 +111,29 @@ W0.4 progress log (landed 2026-07-03):
 - Verified: 6/6 smoke (subtitle renders, summary lands as fleet goal via
   a fake summarizer, both renames + reload persistence), real `claude -p
   --model haiku` one-shot validated on-machine, 191 tests, full battery.
+
+Dogfood feedback round 3 (2026-07-03, all fixed + verified):
+
+- devtools no longer auto-open (opt-in: EXAWATT_DEVTOOLS=1; ⌥⌘I anytime)
+- revived tabs announce themselves with a dim marker line (the "picked up
+  an existing thread" surprise — see Known limitation above)
+- no all-caps text anywhere (tab strip, spatial sector labels) — standing
+  operator style rule
+- DISTINCT per-project colors: least-used-first palette assignment at
+  group creation (hash collisions produced two pink projects), persisted
+  with the layout; inline 10-swatch color picker appears with the
+  double-click rename editor (mousedown so picking never commits the edit)
+- Claude Code / Codex ignite buttons wear their brand colors (Anthropic
+  terracotta #D97757 / OpenAI neutral)
+- terminal font is a NATIVE-FIRST stack ("SF Mono", Menlo, Monaco,
+  Consolas, ...) instead of the site's display mono — generic for every
+  user, per the operator's genericize directive; a font setting is the
+  future home for personal taste
+- macOS traffic lights no longer occlude the logo (84px header inset in
+  Electron; the header doubles as the window drag strip)
+- PARALLEL-REGIMES reframe folded into roadmap + operator-workflow: the
+  terminal workspace is a first-class AI-native tmux++ regime developed in
+  parallel with the spatial regime — independent skins over one system
 
 Dogfood feedback round 2 (2026-07-03, all fixed + smoke-tested + reviewed):
 

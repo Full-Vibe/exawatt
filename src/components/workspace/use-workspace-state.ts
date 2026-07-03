@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HARNESS_META } from './harnesses';
+import { pickDistinctColor, projectColor } from './project-colors';
 import type { PtyHarness, PtySessionInfo } from '@/types/electron';
 
 export interface WorkspaceTab {
@@ -34,6 +35,8 @@ export interface Initiative {
   /** projectDir — the identity/grouping key */
   dir: string;
   name: string;
+  /** distinct per-project hue (least-used at creation; operator can pick) */
+  color: string;
   tabs: WorkspaceTab[];
   activeTabId: string | null;
 }
@@ -45,6 +48,7 @@ interface PersistedV1 {
   initiatives: Array<{
     dir: string;
     name: string;
+    color?: string;
     activeTabId: string | null;
     tabs: Array<{
       id: string;
@@ -117,7 +121,13 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (i === -1) {
         return [
           ...prev,
-          { dir: s.projectDir, name: s.projectName, tabs: [tab], activeTabId: tab.id },
+          {
+            dir: s.projectDir,
+            name: s.projectName,
+            color: pickDistinctColor(prev.map((g) => g.color)),
+            tabs: [tab],
+            activeTabId: tab.id,
+          },
         ];
       }
       const next = [...prev];
@@ -167,9 +177,16 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const toRevive: Array<{ tabId: string; harness: PtyHarness; cwd: string; title: string }> = [];
 
       if (persisted) {
-        const restored: Initiative[] = persisted.initiatives.map((g) => ({
+        const assigned: Array<string | undefined> = persisted.initiatives.map(
+          (g) => g.color
+        );
+        const restored: Initiative[] = persisted.initiatives.map((g, gi) => ({
           dir: g.dir,
           name: g.name,
+          color:
+            g.color ??
+            (assigned[gi] = pickDistinctColor(assigned)) ??
+            projectColor(g.dir),
           // belt-and-suspenders vs older/hand-edited files: an activeTabId
           // that matches no tab would blank the pane area
           activeTabId: g.tabs.some((t) => t.id === g.activeTabId)
@@ -270,6 +287,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             return {
               dir: g.dir,
               name: g.name,
+              color: g.color,
               // the active tab may have been pruned (it exited) — never
               // persist a dangling id, or the restore renders no pane
               activeTabId: tabs.some((t) => t.id === g.activeTabId)
@@ -409,6 +427,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     [updateTab]
   );
 
+  const setInitiativeColor = useCallback((dir: string, color: string) => {
+    setInitiatives((prev) =>
+      prev.map((g) => (g.dir === dir ? { ...g, color } : g))
+    );
+  }, []);
+
   const renameInitiative = useCallback((dir: string, name: string) => {
     const next = name.trim();
     if (!next) return;
@@ -437,5 +461,6 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     cycleTab,
     renameTab,
     renameInitiative,
+    setInitiativeColor,
   };
 }

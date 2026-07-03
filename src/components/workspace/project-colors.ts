@@ -1,12 +1,14 @@
 /**
- * Stable per-project colors (ENG-002 W0.2): tabs of the same project share a
- * color; different projects get distinct colors. Deterministic hash of the
- * project name — stable across restarts with nothing to persist. Collisions
- * are acceptable (adjacent grouping carries most of the signal).
+ * Per-project colors (ENG-002 W0.2–W0.4): tabs of the same project share a
+ * color; different projects get DISTINCT colors. Assignment is least-used-
+ * first at group creation (hashing collided — two projects could land on
+ * the same hue, operator report 2026-07-03) and persists with the layout;
+ * the operator can override via the swatch picker on rename. The hash
+ * remains only as a fallback for groups with no assigned color yet.
  */
 import { HUD } from '@/components/hud';
 
-const PALETTE = [
+export const PROJECT_PALETTE = [
   HUD.cyan,
   HUD.magenta,
   HUD.amber,
@@ -19,10 +21,30 @@ const PALETTE = [
   '#FF9BD2', // pink
 ] as const;
 
-export function projectColor(projectName: string): string {
-  let h = 0;
-  for (let i = 0; i < projectName.length; i++) {
-    h = (h * 31 + projectName.charCodeAt(i)) >>> 0;
+/** the least-used palette color (first wins ties) — guarantees distinct
+ *  hues until the palette is exhausted */
+export function pickDistinctColor(used: Array<string | undefined>): string {
+  const counts = new Map<string, number>(PROJECT_PALETTE.map((c) => [c, 0]));
+  for (const c of used) {
+    if (c && counts.has(c)) counts.set(c, (counts.get(c) ?? 0) + 1);
   }
-  return PALETTE[h % PALETTE.length];
+  let best: string = PROJECT_PALETTE[0];
+  let bestCount = Infinity;
+  for (const c of PROJECT_PALETTE) {
+    const n = counts.get(c) ?? 0;
+    if (n < bestCount) {
+      best = c;
+      bestCount = n;
+    }
+  }
+  return best;
+}
+
+/** fallback for groups without an assigned color (pre-W0.4 layouts) */
+export function projectColor(key: string): string {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) {
+    h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  }
+  return PROJECT_PALETTE[h % PROJECT_PALETTE.length];
 }

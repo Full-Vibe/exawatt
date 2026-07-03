@@ -100,11 +100,9 @@ function createWindow(): void {
     return { action: 'deny' };
   });
 
-  if (
-    isDev &&
-    !process.env.EXAWATT_TEST &&
-    process.env.EXAWATT_DEVTOOLS !== '0'
-  ) {
+  // opt-in only (EXAWATT_DEVTOOLS=1): auto-opened devtools occlude the
+  // workspace; toggle manually anytime with Opt+Cmd+I
+  if (isDev && process.env.EXAWATT_DEVTOOLS === '1') {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 

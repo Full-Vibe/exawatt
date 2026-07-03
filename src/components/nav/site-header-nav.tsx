@@ -50,6 +50,16 @@ export function SiteHeaderNav({
     <header
       id="site-header"
       className="sticky top-0 z-40 flex h-12 items-center justify-between border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 md:px-6"
+      // desktop app: hiddenInset title bar — clear the macOS traffic lights
+      // and let the header double as the window drag strip
+      style={
+        inElectron
+          ? ({
+              paddingLeft: 84,
+              WebkitAppRegion: 'drag',
+            } as React.CSSProperties)
+          : undefined
+      }
     >
       {/* Left: Logo → Home */}
       {isHome ? (
@@ -64,7 +74,16 @@ export function SiteHeaderNav({
           Exawatt
         </span>
       ) : (
-        <Button variant="ghost" size="sm" asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          asChild
+          style={
+            inElectron
+              ? ({ WebkitAppRegion: 'no-drag' } as React.CSSProperties)
+              : undefined
+          }
+        >
           <Link href="/" className="gap-2 font-semibold">
             <Image
               src="/icon.png"
@@ -79,7 +98,14 @@ export function SiteHeaderNav({
       )}
 
       {/* Right: Auth-dependent links */}
-      <div className="flex items-center gap-1">
+      <div
+        className="flex items-center gap-1"
+        style={
+          inElectron
+            ? ({ WebkitAppRegion: 'no-drag' } as React.CSSProperties)
+            : undefined
+        }
+      >
         {!isArchitecture && (
           <Button variant="ghost" size="sm" asChild>
             <Link href="/architecture">

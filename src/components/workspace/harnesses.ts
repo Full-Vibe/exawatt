@@ -19,8 +19,9 @@ export interface HarnessMeta {
 }
 
 export const HARNESS_META: Record<PtyHarness, HarnessMeta> = {
-  claude: { label: 'Claude Code', color: HUD.cyan2, ignite: 'Claude Code' },
-  codex: { label: 'Codex', color: HUD.amber, ignite: 'Codex' },
+  // brand colors: Anthropic terracotta / OpenAI neutral-on-dark
+  claude: { label: 'Claude Code', color: '#D97757', ignite: 'Claude Code' },
+  codex: { label: 'Codex', color: '#ECECEC', ignite: 'Codex' },
   shell: { label: 'Shell', color: HUD.idle, ignite: '+ Shell' },
 };
 

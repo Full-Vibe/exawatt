@@ -187,6 +187,17 @@ export class PtySessionManager extends EventEmitter {
       exitCode: null,
     };
 
+    // revived tabs announce themselves: `--continue`/`resume --last` picks
+    // the most recent conversation IN THIS DIRECTORY — which may have been
+    // started outside Exawatt. Say so instead of looking like a haunting.
+    if (options.resume && options.harness !== 'shell') {
+      this.appendBuffer(
+        id,
+        `\x1b[38;5;244m[exawatt] tab revived — resuming the most recent ` +
+          `conversation in this directory\x1b[0m\r\n\r\n`
+      );
+    }
+
     proc.onData((data) => {
       this.appendBuffer(id, data);
       this.emit('data', id, data);

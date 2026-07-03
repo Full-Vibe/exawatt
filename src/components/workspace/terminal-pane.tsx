@@ -12,11 +12,17 @@ import { useEffect, useRef } from 'react';
 import '@xterm/xterm/css/xterm.css';
 
 /** single home for the terminal font config; the workspace client derives
- *  its spawn-size estimate from these same numbers */
+ *  its spawn-size estimate from these same numbers.
+ *  Family is a NATIVE-FIRST stack (not the site's display mono): terminals
+ *  should look like the platform's terminals for every user — SF Mono when
+ *  installed, Menlo on macOS, Consolas on Windows. A user-facing font
+ *  setting is the eventual home for personal taste. */
 export const TERMINAL_FONT = {
+  family:
+    '"SF Mono", Menlo, Monaco, Consolas, "DejaVu Sans Mono", monospace',
   size: 13,
   lineHeight: 1.25,
-  /** measured Geist Mono advance at size 13 (estimate; fit refines) */
+  /** Menlo/SF Mono advance ≈ 0.6em at 13px (estimate; fit refines) */
   cellWidthEstimate: 7.8,
 } as const;
 
@@ -44,17 +50,6 @@ const HUD_TERM_THEME = {
   brightWhite: '#FFFFFF',
 };
 
-/** next/font families only exist as CSS vars — resolve to a concrete list
- *  because xterm measures glyphs via canvas and cannot use var() */
-function resolveMonoFont(): string {
-  if (typeof document !== 'undefined') {
-    const v = getComputedStyle(document.body)
-      .getPropertyValue('--font-geist-mono')
-      .trim();
-    if (v) return `${v}, Menlo, monospace`;
-  }
-  return 'Menlo, Monaco, monospace';
-}
 
 export function TerminalPane({
   sessionId,
@@ -92,7 +87,7 @@ export function TerminalPane({
       if (disposed) return;
 
       const term = new Terminal({
-        fontFamily: resolveMonoFont(),
+        fontFamily: TERMINAL_FONT.family,
         fontSize: TERMINAL_FONT.size,
         lineHeight: TERMINAL_FONT.lineHeight,
         cursorBlink: true,

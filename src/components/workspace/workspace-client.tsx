@@ -9,8 +9,9 @@
  * dead agent tabs auto-revive (claude --continue / codex resume --last).
  * State/verbs live in use-workspace-state; this file is composition only.
  *
- * The tab strip is TRANSITIONAL — the end state is sessions as visual
- * entities on the ENG-004 world map (see docs/product/operator-workflow.md).
+ * This terminal regime is FIRST-CLASS: an AI-native tmux++ developed in
+ * parallel with the ENG-004 spatial regime — independent skins over the
+ * same session system (see docs/product/operator-workflow.md).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TerminalPane, TERMINAL_FONT } from './terminal-pane';
@@ -58,6 +59,7 @@ export function WorkspaceClient() {
     cycleTab,
     renameTab,
     renameInitiative,
+    setInitiativeColor,
   } = useWorkspaceState({ getInitialSize });
 
   const shortcutActions = useMemo(
@@ -127,6 +129,7 @@ export function WorkspaceClient() {
           onCloseTab={(id) => void closeTab(id)}
           onRenameTab={renameTab}
           onRenameInitiative={renameInitiative}
+          onSetInitiativeColor={setInitiativeColor}
         />
         <IgniteControls
           prefillDir={activeInitiative?.dir ?? lastUsedDir}
