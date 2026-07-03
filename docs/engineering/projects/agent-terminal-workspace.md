@@ -110,6 +110,16 @@ Status: active-build
 
 Scope:
 
+- directory-required ignite: a project directory is mandatory (NO silent
+  home-dir fallback — home is meaningless as an initiative and harness
+  trust never sticks there, see the 2026-07-02 re-prompting diagnosis);
+  the last-used directory is remembered and prefilled
+- directory = project: the working directory (repo root / worktree) is the
+  grouping key mapping sessions to a Project/Initiative — a resolvable
+  Project / Context Group lens per `docs/product/concepts.md`
+- tab clustering + color: same-project tabs share a stable color and sit
+  adjacent; different projects get distinct colors (transitional UI on the
+  way to the W0.5 world map)
 - initiative-labeled windows containing session tabs (thin ENG-005 slice)
 - the ignite flow: harness picker + worktree create/pick in one gesture
 - restart persistence: layout, names, worktrees, working dirs restored
@@ -120,6 +130,10 @@ Acceptance criteria:
 
 - the operator can reconstruct their current macOS setup (2+ initiatives,
   several tabs each, 1–6 agents) inside Exawatt in under five minutes
+- igniting without a project directory is impossible; the last-used
+  directory prefills; tabs visibly cluster by project with stable colors
+- no harness re-prompts for trust across app restarts when working in a
+  real project directory
 - day-1 must-have list confirmed with the operator (open question below)
 
 ### W0.3 Fleet truth
@@ -153,9 +167,13 @@ Status: planned
 
 Scope:
 
-- the ENG-004 surface as the daily overview/switcher over live terminal
-  agents: sectors = initiatives, nodes = sessions; click/keys jump to the
-  terminal tab
+- the ENG-004 surface becomes the PRIMARY navigation over live sessions:
+  sessions are visual entities on the world map (directory-keyed projects
+  = sectors, nodes = sessions); click/keys drop into the terminal focus
+  surface
+- the tmux-style tab strip demotes to a secondary affordance — the
+  operator's stated end state is commanding sessions on the map, not
+  operating terminal tabs (see `docs/product/operator-workflow.md`)
 
 ## Open questions
 

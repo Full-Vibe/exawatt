@@ -53,10 +53,21 @@ absence of Exawatt, this workflow IS "Exawatt v0."
    - extremely good keyboard shortcuts for very fast navigation
    - automatic context augmentation
    - all scoped to the 1–6 coding-agent use case first
-3. **The grander plan:** 10 agents → tens → hundreds → tens of thousands.
+3. **Directory = project (operator, 2026-07-02):** igniting a session
+   always requires a project directory (never a silent home-dir default;
+   home is meaningless as an initiative and harnesses won't durably trust
+   it) with the last-used directory remembered. The working directory is
+   the grouping key that maps sessions to a Project/Initiative: tabs of the
+   same project share a color and cluster adjacently; different projects
+   get distinct colors.
+4. **The grander plan:** 10 agents → tens → hundreds → tens of thousands.
    The 3D Fleet Command / spatial surface (ENG-004) is built for that scale
    and this arc grows into it — the terminal workspace is the near-term
-   rung on the same ladder, not a fork.
+   rung on the same ladder, not a fork. The tmux-style tab strip is
+   explicitly TRANSITIONAL: the operator's stated end state is to stop
+   operating terminal tabs and instead command sessions as **visual
+   entities on the world map**, with the terminal pane as the focus
+   surface you drop into.
 
 ## Why this matters
 
