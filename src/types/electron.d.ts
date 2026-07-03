@@ -8,21 +8,28 @@ export interface PtyCreateOptions {
   cols?: number;
   rows?: number;
   title?: string;
-  initiative?: string;
+  /** revive: harness resumes its last conversation in this directory */
+  resume?: boolean;
 }
 
 export interface PtySessionInfo {
   id: string;
   harness: PtyHarness;
   title: string;
-  initiative: string | null;
   cwd: string;
+  /** directory-keyed Project/Initiative grouping (worktree-aware git root) */
+  projectDir: string;
+  projectName: string;
   cols: number;
   rows: number;
   startedAt: number;
   exited: boolean;
   exitCode: number | null;
 }
+
+export type WorktreeResult =
+  | { ok: true; path: string }
+  | { ok: false; error: string };
 
 export type PtyCreateResult =
   | { ok: true; session: PtySessionInfo }
@@ -35,8 +42,14 @@ export interface ElectronPtyApi {
   kill: (id: string) => Promise<void>;
   list: () => Promise<PtySessionInfo[]>;
   buffer: (id: string) => Promise<string>;
+  createWorktree: (repoDir: string, branch: string) => Promise<WorktreeResult>;
   onData: (handler: (payload: { id: string; data: string }) => void) => () => void;
   onExit: (handler: (payload: { id: string; exitCode: number }) => void) => () => void;
+}
+
+export interface ElectronWorkspaceApi {
+  load: () => Promise<unknown | null>;
+  save: (state: unknown) => Promise<void>;
 }
 
 declare global {
@@ -50,6 +63,7 @@ declare global {
         off: (channel: string, handler: (...args: unknown[]) => void) => void;
       };
       pty?: ElectronPtyApi;
+      workspace?: ElectronWorkspaceApi;
       auth?: {
         openExternal: (url: string) => Promise<void>;
         onDeepLinkCode: (handler: (code: string) => void) => () => void;

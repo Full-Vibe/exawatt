@@ -1,6 +1,8 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { ptySessions } from './pty/session-manager';
 import type { PtyCreateOptions } from './pty/session-manager';
+import { createWorktree } from './pty/project-resolve';
+import { loadWorkspace, saveWorkspace } from './workspace-store';
 
 /**
  * IPC surface for PTY sessions (decision 0005). Invocations are namespaced
@@ -44,6 +46,27 @@ export function registerPtyIPC(): void {
   });
   ipcMain.handle('pty:list', () => ptySessions.list());
   ipcMain.handle('pty:buffer', (_event, id: string) => ptySessions.buffer(id));
+
+  // one-gesture worktrees: <repo>-wt/<branch> sibling container
+  ipcMain.handle(
+    'pty:worktree',
+    async (_event, repoDir: string, branch: string) => {
+      try {
+        return { ok: true as const, path: await createWorktree(repoDir, branch) };
+      } catch (err) {
+        return {
+          ok: false as const,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+  );
+
+  // workspace layout persistence (renderer-owned shape)
+  ipcMain.handle('workspace:load', () => loadWorkspace());
+  ipcMain.handle('workspace:save', (_event, state: unknown) =>
+    saveWorkspace(state)
+  );
 }
 
 /** app-quit cleanup: never leave orphan shells behind */

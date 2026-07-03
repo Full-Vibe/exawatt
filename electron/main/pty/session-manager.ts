@@ -3,8 +3,8 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as os from 'os';
-import * as path from 'path';
 import * as pty from 'node-pty';
+import { expandTilde, resolveProject } from './project-resolve';
 
 const execFileAsync = promisify(execFile);
 
@@ -32,16 +32,19 @@ export interface PtyCreateOptions {
   rows?: number;
   /** display title; defaults to the harness name */
   title?: string;
-  /** initiative label this session belongs to (workspace grouping) */
-  initiative?: string;
+  /** revive a previous session: harness resumes its last conversation in
+   *  this directory (claude --continue / codex resume --last) */
+  resume?: boolean;
 }
 
 export interface PtySessionInfo {
   id: string;
   harness: PtyHarness;
   title: string;
-  initiative: string | null;
   cwd: string;
+  /** directory-keyed Project/Initiative grouping (worktree-aware git root) */
+  projectDir: string;
+  projectName: string;
   cols: number;
   rows: number;
   startedAt: number;
@@ -53,6 +56,12 @@ export interface PtySessionInfo {
 const HARNESS_COMMAND: Record<Exclude<PtyHarness, 'shell'>, string> = {
   claude: 'claude',
   codex: 'codex',
+};
+
+/** harness -> resume command (auto-revive after app restart) */
+const HARNESS_RESUME_COMMAND: Record<Exclude<PtyHarness, 'shell'>, string> = {
+  claude: 'claude --continue',
+  codex: 'codex resume --last',
 };
 
 /**
@@ -99,12 +108,6 @@ export async function defaultShell(): Promise<string> {
   return cachedShell;
 }
 
-/** `~` and `~/x` are how operators type paths — expand before spawning */
-function expandTilde(p: string): string {
-  if (p === '~') return os.homedir();
-  if (p.startsWith('~/')) return path.join(os.homedir(), p.slice(2));
-  return p;
-}
 
 interface Session {
   proc: pty.IPty;
@@ -138,15 +141,23 @@ export class PtySessionManager extends EventEmitter {
     const cols = options.cols ?? 80;
     const rows = options.rows ?? 24;
     const shell = await defaultShell();
+    const project = await resolveProject(cwd);
     const id = `pty-${this.nextId++}`;
 
     // plain shell: interactive login shell. Harness: run its CLI through the
     // login shell so PATH (homebrew, nvm, ...) resolves like the user's
-    // terminal; when the CLI exits the session ends.
+    // terminal; when the CLI exits the session ends. Revived harness tabs
+    // resume their previous conversation in this directory.
     const args =
       options.harness === 'shell'
         ? ['-l']
-        : ['-l', '-c', HARNESS_COMMAND[options.harness]];
+        : [
+            '-l',
+            '-c',
+            options.resume
+              ? HARNESS_RESUME_COMMAND[options.harness]
+              : HARNESS_COMMAND[options.harness],
+          ];
 
     const proc = pty.spawn(shell, args, {
       name: 'xterm-256color',
@@ -166,7 +177,8 @@ export class PtySessionManager extends EventEmitter {
       id,
       harness: options.harness,
       title: options.title || options.harness,
-      initiative: options.initiative ?? null,
+      projectDir: project.projectDir,
+      projectName: project.projectName,
       cwd,
       cols,
       rows,

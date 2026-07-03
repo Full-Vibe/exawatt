@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('electron', {
     kill: (id: string) => ipcRenderer.invoke('pty:kill', id),
     list: () => ipcRenderer.invoke('pty:list'),
     buffer: (id: string) => ipcRenderer.invoke('pty:buffer', id),
+    createWorktree: (repoDir: string, branch: string) =>
+      ipcRenderer.invoke('pty:worktree', repoDir, branch),
     onData: (handler: (payload: { id: string; data: string }) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
@@ -42,6 +44,10 @@ contextBridge.exposeInMainWorld('electron', {
         ipcRenderer.removeListener('pty:exit', listener);
       };
     },
+  },
+  workspace: {
+    load: () => ipcRenderer.invoke('workspace:load'),
+    save: (state: unknown) => ipcRenderer.invoke('workspace:save', state),
   },
   auth: {
     openExternal: (url: string) => ipcRenderer.invoke('auth:open-external', url),

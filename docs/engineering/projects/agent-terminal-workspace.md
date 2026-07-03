@@ -106,7 +106,7 @@ persistence of layout, one-gesture worktrees, Spaces-speed switching.
 
 ### W0.2 Workspace parity
 
-Status: active-build
+Status: landed
 
 Scope:
 
@@ -136,9 +136,42 @@ Acceptance criteria:
   real project directory
 - day-1 must-have list confirmed with the operator (open question below)
 
+Decisions (operator, 2026-07-02):
+
+- ONE app window; initiatives are groups inside it (⌘1..9 switches
+  initiative, ⌘⇧[/] cycles tabs within one). Real-OS-windows-per-initiative
+  rejected; optional pop-out may come later.
+- Auto-revive on app restart: agent tabs respawn automatically, resuming
+  their previous conversation in that directory (`claude --continue`,
+  `codex resume --last`); shells respawn plain.
+- Worktree convention: sibling container `<repo>-wt/<branch-dirname>/`,
+  branch auto-named `agent/<MMDD>-<HHmm>` and editable in the ignite flow.
+
+Progress log (landed 2026-07-02):
+
+- main: `pty/project-resolve.ts` — directory → Project resolution via
+  `git rev-parse --git-common-dir` (WORKTREES map to their main repo's
+  group) with non-git dirs as their own project; one-gesture
+  `createWorktree` (sibling container convention); `workspace-store.ts` —
+  renderer-owned versioned layout JSON in userData (atomic tmp+rename).
+  `PtySessionInfo` gained projectDir/projectName; `create` gained `resume`.
+- renderer: `use-workspace-state.ts` owns the model — initiative groups
+  keyed by projectDir, tabs with stable ids across revives, debounced
+  persistence (exited tabs pruned), mount flow that ADOPTS live sessions
+  (renderer reload) and AUTO-REVIVES dead ones sequentially (app restart).
+  `tab-strip.tsx` renders numbered, project-colored group clusters
+  (deterministic palette hash in `project-colors.ts`); `ignite-controls.tsx`
+  is the ignite gesture (required dir following the active initiative,
+  worktree toggle + branch field). Shortcuts rewired: ⌘1..9 = initiative,
+  ⌘⇧[/] = tabs within, ⌘T = shell in the active initiative.
+- Verified via a Playwright Electron RESTART cycle: forced-dir error,
+  two-project grouping, worktree lands in the main repo's group,
+  initiative keys, layout restore after full app relaunch, all sessions
+  auto-revived and interactive — 7/7, zero page errors.
+
 ### W0.3 Fleet truth
 
-Status: planned
+Status: next
 
 Scope:
 

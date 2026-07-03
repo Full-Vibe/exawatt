@@ -1,120 +1,66 @@
 'use client';
 
 /**
- * Agent Terminal Workspace — W0.1 foundation surface (ENG-002).
+ * Agent Terminal Workspace (ENG-002) — orchestration surface.
  *
- * The product gesture is IGNITE AN AGENT (pick a harness, go), not "open a
- * terminal". W0.1 scope: spawn shell / Claude Code / Codex sessions in a
- * chosen working directory, talk to their TUIs directly, switch tabs fast.
- * Initiative windows, the worktree picker, and persistence land in W0.2.
+ * W0.2 model: ONE window; initiatives are directory-keyed groups inside it
+ * (⌘1..9 switches initiative, ⌘⇧[/] cycles tabs within one, ⌘T ignites a
+ * shell in the active initiative). Layout persists across app restarts and
+ * dead agent tabs auto-revive (claude --continue / codex resume --last).
+ * State/verbs live in use-workspace-state; this file is composition only.
  *
- * Sessions live in the Electron main process; this surface adopts whatever
- * exists on mount (pty.list), so renderer reloads AND route round-trips
- * (e.g. /fleet/spatial and back) never lose sessions.
+ * The tab strip is TRANSITIONAL — the end state is sessions as visual
+ * entities on the ENG-004 world map (see docs/product/operator-workflow.md).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { TerminalPane } from './terminal-pane';
-import { HARNESS_META, HARNESS_ORDER } from './harnesses';
+import { TabStrip } from './tab-strip';
+import { IgniteControls } from './ignite-controls';
+import { useWorkspaceState, REVIVE_FAILED } from './use-workspace-state';
 import { useWorkspaceShortcuts } from './use-workspace-shortcuts';
 import { HUD } from '@/components/hud';
-import type { PtyHarness, PtySessionInfo } from '@/types/electron';
 
 export function WorkspaceClient() {
-  const [sessions, setSessions] = useState<PtySessionInfo[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [cwd, setCwd] = useState('');
-  const [exited, setExited] = useState<Record<string, number>>({});
-  const [error, setError] = useState<string | null>(null);
   // SSR renders neither branch; the electron check runs after mount so the
   // server and client HTML always match (hydration safety)
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const inElectron = mounted && !!window.electron?.pty;
-  const cwdRef = useRef(cwd);
-  cwdRef.current = cwd;
 
-  // adopt sessions that already exist in the main process (renderer reload,
-  // navigating away and back)
-  useEffect(() => {
-    const api = window.electron?.pty;
-    if (!api) return;
-    void api.list().then((list) => {
-      setSessions(list);
-      setActiveId((cur) => cur ?? list[0]?.id ?? null);
-      setExited(
-        Object.fromEntries(
-          list.filter((s) => s.exited).map((s) => [s.id, s.exitCode ?? 0])
-        )
-      );
-    });
-    return api.onExit(({ id, exitCode }) => {
-      setExited((prev) => ({ ...prev, [id]: exitCode }));
-    });
-  }, []);
+  const {
+    initiatives,
+    activeInitiative,
+    activeTab,
+    lastUsedDir,
+    error,
+    setError,
+    ignite,
+    closeTab,
+    selectInitiative,
+    selectTab,
+    cycleTab,
+  } = useWorkspaceState();
 
-  const ignite = useCallback(async (harness: PtyHarness) => {
-    const api = window.electron?.pty;
-    if (!api) return;
-    const result = await api.create({
-      harness,
-      cwd: cwdRef.current.trim() || undefined,
-      title: HARNESS_META[harness].label,
-    });
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    setError(null);
-    setSessions((prev) => [...prev, result.session]);
-    setActiveId(result.session.id);
-  }, []);
-
-  const close = useCallback(async (id: string) => {
-    const api = window.electron?.pty;
-    if (!api) return;
-    await api.kill(id);
-    setSessions((prev) => {
-      const next = prev.filter((s) => s.id !== id);
-      setActiveId((cur) =>
-        cur === id ? (next[next.length - 1]?.id ?? null) : cur
-      );
-      return next;
-    });
-    setExited((prev) => {
-      const { [id]: _drop, ...rest } = prev;
-      return rest;
-    });
-  }, []);
-
-  // each action reports whether it applied — the hook prevents the browser
-  // default only for chords that actually did something
   const shortcutActions = useMemo(
     () => ({
       igniteShell: () => {
-        void ignite('shell');
+        const dir = activeInitiative?.dir ?? lastUsedDir;
+        if (!dir) {
+          setError('Project directory is required — pick where this session lives.');
+          return false;
+        }
+        void ignite({ harness: 'shell', dir });
         return true;
       },
       closeActive: () => {
-        if (!activeId) return false;
-        void close(activeId);
+        if (!activeTab) return false;
+        void closeTab(activeTab.id);
         return true;
       },
-      selectIndex: (index: number) => {
-        const target = sessions[index];
-        if (!target) return false;
-        setActiveId(target.id);
-        return true;
-      },
-      cycle: (delta: 1 | -1) => {
-        if (sessions.length === 0) return false;
-        const cur = sessions.findIndex((s) => s.id === activeId);
-        const next =
-          (cur === -1 ? 0 : cur + delta + sessions.length) % sessions.length;
-        setActiveId(sessions[next].id);
-        return true;
-      },
+      selectIndex: selectInitiative,
+      cycle: cycleTab,
     }),
-    [ignite, close, activeId, sessions]
+    [activeInitiative, activeTab, lastUsedDir, ignite, closeTab, selectInitiative, cycleTab, setError]
   );
   useWorkspaceShortcuts(shortcutActions, inElectron);
 
@@ -130,10 +76,7 @@ export function WorkspaceClient() {
             background: 'rgba(7,12,20,0.9)',
           }}
         >
-          <p
-            className="font-display text-lg font-semibold"
-            style={{ color: HUD.text }}
-          >
+          <p className="font-display text-lg font-semibold" style={{ color: HUD.text }}>
             Terminal Workspace
           </p>
           <p className="mt-2 font-mono text-sm" style={{ color: HUD.textDim }}>
@@ -145,86 +88,31 @@ export function WorkspaceClient() {
     );
   }
 
+  const allTabs = initiatives.flatMap((g) =>
+    g.tabs.map((t) => ({ tab: t, dir: g.dir }))
+  );
+
   return (
     <div className="flex h-full flex-col" style={{ background: HUD.bg.void }}>
-      {/* tab strip + ignite controls */}
+      {/* initiative groups + tabs + ignite controls */}
       <div
-        className="flex shrink-0 flex-wrap items-center gap-1.5 border-b px-3 py-2"
+        className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2"
         style={{ borderColor: 'rgba(80,230,255,0.15)', background: HUD.bg.deep }}
       >
-        {sessions.map((s, i) => {
-          const on = s.id === activeId;
-          const dead = s.id in exited;
-          const meta = HARNESS_META[s.harness];
-          return (
-            <div
-              key={s.id}
-              data-active={on || undefined}
-              className="flex items-center overflow-hidden rounded border"
-              style={{
-                borderColor: on
-                  ? 'rgba(25,230,255,0.5)'
-                  : 'rgba(80,230,255,0.15)',
-                background: on ? 'rgba(25,230,255,0.08)' : 'transparent',
-                opacity: dead ? 0.5 : 1,
-              }}
-            >
-              <button
-                onClick={() => setActiveId(s.id)}
-                className="flex items-center gap-2 px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                style={{ color: on ? HUD.text : HUD.textDim }}
-                title={`${s.cwd}${dead ? ` · exited ${exited[s.id]}` : ''}`}
-              >
-                <span
-                  className="inline-block h-2 w-2 rotate-45"
-                  style={{
-                    background: meta.color,
-                    boxShadow: `0 0 4px ${meta.color}`,
-                  }}
-                />
-                {i + 1} · {s.title}
-                {dead && <span style={{ color: HUD.red }}>✕</span>}
-              </button>
-              <button
-                onClick={() => void close(s.id)}
-                aria-label={`Close ${s.title}`}
-                className="px-1.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                style={{ color: HUD.textDim }}
-              >
-                ×
-              </button>
-            </div>
-          );
-        })}
-
-        <div className="ml-auto flex items-center gap-1.5">
-          <input
-            value={cwd}
-            onChange={(e) => setCwd(e.target.value)}
-            placeholder="~ (working dir / worktree)"
-            aria-label="Working directory for new sessions"
-            className="w-56 rounded border bg-transparent px-2 py-1 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-            style={{ color: HUD.textMono, borderColor: 'rgba(80,230,255,0.2)' }}
-          />
-          {HARNESS_ORDER.map((h) => (
-            <button
-              key={h}
-              onClick={() => void ignite(h)}
-              className="hud-lift rounded border px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-hud-cyan"
-              style={{
-                color: HARNESS_META[h].color,
-                borderColor: 'rgba(80,230,255,0.25)',
-                background: 'rgba(10,20,32,0.6)',
-              }}
-              title={`Ignite ${HARNESS_META[h].label}${cwd ? ` in ${cwd}` : ''}`}
-            >
-              {HARNESS_META[h].ignite}
-            </button>
-          ))}
-        </div>
+        <TabStrip
+          initiatives={initiatives}
+          activeDir={activeInitiative?.dir ?? null}
+          onSelectInitiative={selectInitiative}
+          onSelectTab={selectTab}
+          onCloseTab={(id) => void closeTab(id)}
+        />
+        <IgniteControls
+          prefillDir={activeInitiative?.dir ?? lastUsedDir}
+          onIgnite={ignite}
+        />
       </div>
 
-      {/* ignite errors (bad working dir, spawn failures) — dismissible */}
+      {/* ignite errors (missing/bad dir, worktree or spawn failures) */}
       {error && (
         <div
           role="alert"
@@ -246,22 +134,38 @@ export function WorkspaceClient() {
         </div>
       )}
 
-      {/* panes: all mounted, one visible — no output lost on tab switch */}
+      {/* panes: ALL tabs stay mounted (sessions keep streaming across
+          initiative switches); exactly one is visible */}
       <div className="relative min-h-0 flex-1">
-        {sessions.length === 0 ? (
+        {allTabs.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <p className="font-mono text-sm" style={{ color: HUD.textDim }}>
-              Ignite an agent to begin — ⌘T for a shell.
+              Pick a project directory and ignite an agent — ⌘T for a shell.
             </p>
           </div>
         ) : (
-          sessions.map((s) => (
-            <TerminalPane
-              key={s.id}
-              sessionId={s.id}
-              active={s.id === activeId}
-            />
-          ))
+          allTabs.map(({ tab }) =>
+            tab.sessionId ? (
+              <TerminalPane
+                key={tab.sessionId}
+                sessionId={tab.sessionId}
+                active={tab.id === activeTab?.id}
+              />
+            ) : (
+              <div
+                key={tab.id}
+                className={`absolute inset-0 flex items-center justify-center ${
+                  tab.id === activeTab?.id ? '' : 'invisible'
+                }`}
+              >
+                <p className="font-mono text-sm" style={{ color: HUD.textDim }}>
+                  {tab.exitCode === REVIVE_FAILED
+                    ? 'Revive failed — close this tab and ignite again.'
+                    : 'Reviving session…'}
+                </p>
+              </div>
+            )
+          )
         )}
       </div>
     </div>
