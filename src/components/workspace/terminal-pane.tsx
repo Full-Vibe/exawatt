@@ -11,6 +11,15 @@
 import { useEffect, useRef } from 'react';
 import '@xterm/xterm/css/xterm.css';
 
+/** single home for the terminal font config; the workspace client derives
+ *  its spawn-size estimate from these same numbers */
+export const TERMINAL_FONT = {
+  size: 13,
+  lineHeight: 1.25,
+  /** measured Geist Mono advance at size 13 (estimate; fit refines) */
+  cellWidthEstimate: 7.8,
+} as const;
+
 const HUD_TERM_THEME = {
   background: '#04060B',
   foreground: '#DCEBFF',
@@ -84,8 +93,8 @@ export function TerminalPane({
 
       const term = new Terminal({
         fontFamily: resolveMonoFont(),
-        fontSize: 13,
-        lineHeight: 1.25,
+        fontSize: TERMINAL_FONT.size,
+        lineHeight: TERMINAL_FONT.lineHeight,
         cursorBlink: true,
         scrollback: 8000,
         theme: HUD_TERM_THEME,
@@ -95,13 +104,13 @@ export function TerminalPane({
       term.loadAddon(fit);
       term.open(el);
       fit.fit();
-      termRef.current = {
-        focus: () => term.focus(),
-        fit: () => {
-          fit.fit();
-          void api.resize(sessionId, term.cols, term.rows);
-        },
+      // the ONE fit-then-propagate path (pane resize, activation, resync)
+      const syncSize = () => {
+        if (el.offsetWidth === 0 || el.offsetHeight === 0) return; // hidden
+        fit.fit();
+        void api.resize(sessionId, term.cols, term.rows);
       };
+      termRef.current = { focus: () => term.focus(), fit: syncSize };
       cleanup.push(() => {
         termRef.current = null;
       });
@@ -117,6 +126,19 @@ export function TerminalPane({
       if (backlog) term.write(backlog);
       void api.resize(sessionId, term.cols, term.rows);
       if (activeRef.current) term.focus();
+      // Late re-sync for TUIs that were mid-init when a resize landed
+      // (before their WINCH handler existed). A same-size TIOCSWINSZ emits
+      // NO SIGWINCH, so a plain re-resize is a kernel-level no-op — wiggle
+      // one row and back to force two real signals, ending at the true size.
+      const resync = setTimeout(() => {
+        if (el.offsetWidth === 0 || el.offsetHeight === 0) return;
+        fit.fit();
+        const { cols, rows } = term;
+        void api
+          .resize(sessionId, cols, rows > 1 ? rows - 1 : rows + 1)
+          .then(() => api.resize(sessionId, cols, rows));
+      }, 1500);
+      cleanup.push(() => clearTimeout(resync));
 
       // the exit marker arrives through the data stream (the session manager
       // appends it to the buffer too, so replays after a fast death show it)
@@ -128,13 +150,7 @@ export function TerminalPane({
         void api.write(sessionId, data);
       });
       cleanup.push(() => input.dispose());
-      const ro = new ResizeObserver(() => {
-        // hidden panes have zero size — fitting there corrupts cols/rows
-        if (el.offsetWidth > 0 && el.offsetHeight > 0) {
-          fit.fit();
-          void api.resize(sessionId, term.cols, term.rows);
-        }
-      });
+      const ro = new ResizeObserver(syncSize);
       ro.observe(el);
       cleanup.push(() => ro.disconnect());
 

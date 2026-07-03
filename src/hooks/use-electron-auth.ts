@@ -27,7 +27,7 @@ export function useElectronAuth(
         callbacksRef.current.onError('Authentication failed. Please try again.');
         callbacksRef.current.onLoadingChange(false);
       } else {
-        router.push('/projects');
+        router.push('/workspace');
         router.refresh();
       }
     });

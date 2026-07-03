@@ -4,7 +4,7 @@
  * Agent Terminal Workspace (ENG-002) — orchestration surface.
  *
  * W0.2 model: ONE window; initiatives are directory-keyed groups inside it
- * (⌘1..9 switches initiative, ⌘⇧[/] cycles tabs within one, ⌘T ignites a
+ * (⌘1..9 switches initiative, ⌘⇧[/] rotates the global tab ring across projects, ⌘T ignites a
  * shell in the active initiative). Layout persists across app restarts and
  * dead agent tabs auto-revive (claude --continue / codex resume --last).
  * State/verbs live in use-workspace-state; this file is composition only.
@@ -12,13 +12,19 @@
  * The tab strip is TRANSITIONAL — the end state is sessions as visual
  * entities on the ENG-004 world map (see docs/product/operator-workflow.md).
  */
-import { useEffect, useMemo, useState } from 'react';
-import { TerminalPane } from './terminal-pane';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { TerminalPane, TERMINAL_FONT } from './terminal-pane';
 import { TabStrip } from './tab-strip';
 import { IgniteControls } from './ignite-controls';
 import { useWorkspaceState, REVIVE_FAILED } from './use-workspace-state';
 import { useWorkspaceShortcuts } from './use-workspace-shortcuts';
 import { HUD } from '@/components/hud';
+
+// derive the spawn-size estimate from the terminal's own font config —
+// new sessions spawn at (approximately) their final size so TUIs never
+// init at 80 cols; the pane's post-attach wiggle-resync covers any drift
+const CELL_W = TERMINAL_FONT.cellWidthEstimate;
+const CELL_H = TERMINAL_FONT.size * TERMINAL_FONT.lineHeight;
 
 export function WorkspaceClient() {
   // SSR renders neither branch; the electron check runs after mount so the
@@ -26,6 +32,16 @@ export function WorkspaceClient() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const inElectron = mounted && !!window.electron?.pty;
+
+  const panesRef = useRef<HTMLDivElement>(null);
+  const getInitialSize = useCallback(() => {
+    const el = panesRef.current;
+    if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return null;
+    return {
+      cols: Math.min(500, Math.max(20, Math.floor(el.offsetWidth / CELL_W))),
+      rows: Math.min(200, Math.max(10, Math.floor(el.offsetHeight / CELL_H))),
+    };
+  }, []);
 
   const {
     initiatives,
@@ -39,7 +55,7 @@ export function WorkspaceClient() {
     selectInitiative,
     selectTab,
     cycleTab,
-  } = useWorkspaceState();
+  } = useWorkspaceState({ getInitialSize });
 
   const shortcutActions = useMemo(
     () => ({
@@ -136,7 +152,7 @@ export function WorkspaceClient() {
 
       {/* panes: ALL tabs stay mounted (sessions keep streaming across
           initiative switches); exactly one is visible */}
-      <div className="relative min-h-0 flex-1">
+      <div ref={panesRef} className="relative min-h-0 flex-1">
         {allTabs.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <p className="font-mono text-sm" style={{ color: HUD.textDim }}>

@@ -8,6 +8,7 @@
  */
 import { HUD } from '@/components/hud';
 import { projectColor } from './project-colors';
+import { HarnessGlyph } from './harness-icons';
 import { REVIVE_FAILED } from './use-workspace-state';
 import type { Initiative } from './use-workspace-state';
 
@@ -79,7 +80,9 @@ export function TabStrip({
                     }`}
                   >
                     {t.harness !== 'shell' && (
-                      <span style={{ color }}>⚡</span>
+                      <span style={{ color }}>
+                        <HarnessGlyph harness={t.harness} size={11} />
+                      </span>
                     )}
                     {t.title}
                     {dead && <span style={{ color: HUD.red }}>✕</span>}

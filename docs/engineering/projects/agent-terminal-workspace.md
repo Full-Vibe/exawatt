@@ -70,6 +70,31 @@ Progress log (landed 2026-07-02):
 - Known W0.2 targets from this pass: initiative windows, worktree
   create/pick in the ignite flow, layout persistence, richer tab titles.
 
+Dogfood feedback round 2 (2026-07-03, all fixed + smoke-tested + reviewed):
+
+- Claude/agent TUIs no longer render at partial width: sessions SPAWN at the
+  pane's estimated size (cols/rows passed to create — TUIs read terminal
+  size during init and can miss a resize sent before their WINCH handler
+  exists), and a 1.5s wiggle-resync (rows−1 → rows) forces REAL SIGWINCHes
+  (a same-size TIOCSWINSZ emits none — found by review) to correct any
+  estimate drift.
+- ⌘⇧[/] now rotates the GLOBAL tab ring, crossing project boundaries
+  (operator-amended from within-initiative); stale-active fallback recovers
+  in place instead of yanking to another project.
+- Canonical brand marks (Claude starburst, OpenAI knot; Simple Icons/Tabler,
+  permissive licenses) replace the generic lightning glyphs, typed as the
+  icon column of the harness registry.
+- Deprecated /projects route deleted (+ orphaned project CRUD components);
+  ⌘K palette and g-w chord now navigate to /workspace; post-auth lands on
+  /workspace in the desktop app and /fleet on web (unified). Known
+  consequence, accepted: legacy /board & /dashboard demo surfaces lost
+  their project-creation entry point (they are retirement candidates).
+- Review round (high, 10 distinct findings, all addressed): dangling
+  persisted activeTabId blanking the pane area on restore (fixed at save +
+  restore), the inert resync (wiggle), cell-metric duplication (derived
+  from the terminal font config), palette dialog a11y title, fit/resize
+  dedup into one syncSize path, stale model comments corrected.
+
 Dogfood feedback round 1 (2026-07-02, all fixed + smoke-tested):
 
 - default shell is now the USER'S login shell resolved via directory
@@ -139,7 +164,7 @@ Acceptance criteria:
 Decisions (operator, 2026-07-02):
 
 - ONE app window; initiatives are groups inside it (⌘1..9 switches
-  initiative, ⌘⇧[/] cycles tabs within one). Real-OS-windows-per-initiative
+  initiative, ⌘⇧[/] rotates the global tab ring across projects — amended per operator 2026-07-03). Real-OS-windows-per-initiative
   rejected; optional pop-out may come later.
 - Auto-revive on app restart: agent tabs respawn automatically, resuming
   their previous conversation in that directory (`claude --continue`,

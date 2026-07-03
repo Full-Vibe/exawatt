@@ -89,8 +89,8 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           case 'go-board':
             router.push('/board');
             break;
-          case 'go-projects':
-            router.push('/projects');
+          case 'go-workspace':
+            router.push('/workspace');
             break;
           case 'go-fleet':
             router.push('/fleet');

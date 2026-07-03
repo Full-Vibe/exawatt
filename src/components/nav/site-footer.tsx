@@ -12,7 +12,6 @@ const APP_PREFIXES = [
   '/fleet',
   '/dashboard',
   '/board',
-  '/projects',
   '/settings',
   '/deck',
   '/thrml',

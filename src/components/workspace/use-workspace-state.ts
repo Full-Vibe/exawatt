@@ -6,7 +6,7 @@
  *
  * Model decisions (operator, 2026-07-02):
  * - one app window; initiatives are groups inside it (⌘1..9 switches
- *   initiative, ⌘⇧[/] cycles tabs within one)
+ *   initiative, ⌘⇧[/] rotates the GLOBAL tab ring, crossing projects)
  * - igniting REQUIRES a project directory (never a silent home default);
  *   the last-used directory is remembered
  * - directory → project resolution happens in the main process (worktrees
@@ -77,7 +77,20 @@ export interface IgniteOptions {
   worktreeBranch?: string;
 }
 
-export function useWorkspaceState() {
+export interface WorkspaceStateOptions {
+  /**
+   * Estimated terminal size for NEW sessions (from the pane container).
+   * Passing real dimensions at spawn kills the width race: TUIs read the
+   * terminal size during init, and a resize sent milliseconds later can
+   * land before their WINCH handler exists — leaving them drawn at the
+   * 80-col default forever.
+   */
+  getInitialSize?: () => { cols: number; rows: number } | null;
+}
+
+export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
+  const sizeRef = useRef(options.getInitialSize);
+  sizeRef.current = options.getInitialSize;
   const [initiatives, setInitiatives] = useState<Initiative[]>([]);
   const [activeDir, setActiveDir] = useState<string | null>(null);
   const [lastUsedDir, setLastUsedDir] = useState('');
@@ -146,7 +159,11 @@ export function useWorkspaceState() {
         const restored: Initiative[] = persisted.initiatives.map((g) => ({
           dir: g.dir,
           name: g.name,
-          activeTabId: g.activeTabId,
+          // belt-and-suspenders vs older/hand-edited files: an activeTabId
+          // that matches no tab would blank the pane area
+          activeTabId: g.tabs.some((t) => t.id === g.activeTabId)
+            ? g.activeTabId
+            : (g.tabs[0]?.id ?? null),
           tabs: g.tabs.map((t) => {
             const s = t.sessionId ? liveById.get(t.sessionId) : undefined;
             if (s) {
@@ -175,11 +192,13 @@ export function useWorkspaceState() {
       // their previous conversation in that directory
       for (const r of toRevive) {
         if (cancelled) return;
+        const size = sizeRef.current?.() ?? null;
         const res = await api.create({
           harness: r.harness,
           cwd: r.cwd,
           title: r.title,
           resume: r.harness !== 'shell',
+          ...(size ?? {}),
         });
         if (cancelled) return;
         if (res.ok) {
@@ -223,11 +242,8 @@ export function useWorkspaceState() {
         lastUsedDir: lu,
         activeDir: ad,
         initiatives: gs
-          .map((g) => ({
-            dir: g.dir,
-            name: g.name,
-            activeTabId: g.activeTabId,
-            tabs: g.tabs
+          .map((g) => {
+            const tabs = g.tabs
               .filter((t) => t.exitCode === null)
               .map(({ id, harness, title, cwd, sessionId }) => ({
                 id,
@@ -235,8 +251,18 @@ export function useWorkspaceState() {
                 title,
                 cwd,
                 sessionId,
-              })),
-          }))
+              }));
+            return {
+              dir: g.dir,
+              name: g.name,
+              // the active tab may have been pruned (it exited) — never
+              // persist a dangling id, or the restore renders no pane
+              activeTabId: tabs.some((t) => t.id === g.activeTabId)
+                ? g.activeTabId
+                : (tabs[0]?.id ?? null),
+              tabs,
+            };
+          })
           .filter((g) => g.tabs.length > 0),
       };
       void ws.save(state);
@@ -263,10 +289,12 @@ export function useWorkspaceState() {
         }
         cwd = wt.path;
       }
+      const size = sizeRef.current?.() ?? null;
       const res = await api.create({
         harness: opts.harness,
         cwd,
         title: HARNESS_META[opts.harness].label,
+        ...(size ?? {}),
       });
       if (!res.ok) {
         setError(res.error);
@@ -320,15 +348,29 @@ export function useWorkspaceState() {
     );
   }, []);
 
+  /** ⌘⇧[/]: rotate through ALL tabs in display order, crossing project
+   *  boundaries (operator, 2026-07-03) — the strip is one global ring */
   const cycleTab = useCallback((delta: 1 | -1): boolean => {
     const { initiatives: gs, activeDir: ad } = stateRef.current;
+    const flat = gs.flatMap((g) => g.tabs.map((t) => ({ dir: g.dir, tab: t })));
+    if (flat.length === 0) return false;
     const g = gs.find((x) => x.dir === ad);
-    if (!g || g.tabs.length === 0) return false;
-    const cur = g.tabs.findIndex((t) => t.id === g.activeTabId);
-    const next = (cur === -1 ? 0 : cur + delta + g.tabs.length) % g.tabs.length;
+    const cur = flat.findIndex(
+      (e) => e.dir === ad && e.tab.id === g?.activeTabId
+    );
+    let next: (typeof flat)[number];
+    if (cur === -1) {
+      // stale/no active tab: RECOVER in place on the current initiative's
+      // first tab (never yank the user to another project)
+      const anchor = flat.findIndex((e) => e.dir === ad);
+      next = flat[anchor === -1 ? 0 : anchor];
+    } else {
+      next = flat[(cur + delta + flat.length) % flat.length];
+    }
+    setActiveDir(next.dir);
     setInitiatives((prev) =>
       prev.map((x) =>
-        x.dir === g.dir ? { ...x, activeTabId: g.tabs[next].id } : x
+        x.dir === next.dir ? { ...x, activeTabId: next.tab.id } : x
       )
     );
     return true;

@@ -16,7 +16,7 @@ import { shortcutRegistry, formatShortcutKeys } from '@/lib/shortcuts';
 import {
   LayoutDashboard,
   LayoutGrid,
-  FolderKanban,
+  SquareTerminal,
   Settings,
   HelpCircle,
   Server,
@@ -80,12 +80,12 @@ export function CommandPalette({
         keywords: ['kanban', 'tasks', 'swimlane'],
       },
       {
-        id: 'nav-projects',
-        label: 'Go to Projects',
-        icon: FolderKanban,
-        shortcut: shortcutRegistry.getEffectiveKeys('go-projects'),
-        onSelect: () => handleSelect(() => router.push('/projects')),
-        keywords: ['folders', 'organize'],
+        id: 'nav-workspace',
+        label: 'Go to Workspace',
+        icon: SquareTerminal,
+        shortcut: shortcutRegistry.getEffectiveKeys('go-workspace'),
+        onSelect: () => handleSelect(() => router.push('/workspace')),
+        keywords: ['terminal', 'agents', 'sessions', 'ignite'],
       },
       {
         id: 'nav-fleet',
