@@ -215,6 +215,14 @@ export class PtySessionManager extends EventEmitter {
     if (s && !s.info.exited) s.proc.write(data);
   }
 
+  /** operator rename (W0.4): keeps fleet/spatial names in step with the
+   *  workspace tab — sessions are ONE identity across surfaces */
+  rename(id: string, title: string): void {
+    const s = this.sessions.get(id);
+    const next = title.trim();
+    if (s && next) s.info.title = next;
+  }
+
   resize(id: string, cols: number, rows: number): void {
     const s = this.sessions.get(id);
     if (!s || s.info.exited) return;

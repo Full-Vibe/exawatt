@@ -96,6 +96,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const [lastUsedDir, setLastUsedDir] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  /** micro-context subtitles keyed by sessionId (ephemeral — main process
+   *  regenerates them; never persisted) */
+  const [summaries, setSummaries] = useState<Record<string, string>>({});
   const stateRef = useRef({ initiatives, activeDir, lastUsedDir });
   stateRef.current = { initiatives, activeDir, lastUsedDir };
 
@@ -153,6 +156,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (cancelled) return;
       const persisted = parsePersisted(persistedRaw);
       const liveById = new Map(live.map((s) => [s.id, s]));
+      // adopt existing summaries (renderer reload)
+      const seeded: Record<string, string> = {};
+      for (const s of live) {
+        if (s.contextSummary) seeded[s.id] = s.contextSummary;
+      }
+      if (Object.keys(seeded).length > 0) {
+        setSummaries((prev) => ({ ...seeded, ...prev }));
+      }
       const toRevive: Array<{ tabId: string; harness: PtyHarness; cwd: string; title: string }> = [];
 
       if (persisted) {
@@ -223,9 +234,13 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         }))
       );
     });
+    const offContext = api.onContext?.(({ id, summary }) => {
+      setSummaries((prev) => ({ ...prev, [id]: summary }));
+    });
     return () => {
       cancelled = true;
       offExit();
+      offContext?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -377,6 +392,31 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   }, []);
 
   const activeInitiative = initiatives.find((g) => g.dir === activeDir) ?? null;
+  /** operator naming (W0.4): titles/names persist via the layout save; the
+   *  PTY session is renamed too so fleet/spatial show the same identity */
+  const renameTab = useCallback(
+    (tabId: string, title: string) => {
+      const next = title.trim();
+      if (!next) return;
+      updateTab(tabId, { title: next });
+      const tab = stateRef.current.initiatives
+        .flatMap((g) => g.tabs)
+        .find((t) => t.id === tabId);
+      if (tab?.sessionId) {
+        void window.electron?.pty?.rename(tab.sessionId, next);
+      }
+    },
+    [updateTab]
+  );
+
+  const renameInitiative = useCallback((dir: string, name: string) => {
+    const next = name.trim();
+    if (!next) return;
+    setInitiatives((prev) =>
+      prev.map((g) => (g.dir === dir ? { ...g, name: next } : g))
+    );
+  }, []);
+
   const activeTab =
     activeInitiative?.tabs.find((t) => t.id === activeInitiative.activeTabId) ??
     null;
@@ -386,6 +426,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     activeInitiative,
     activeTab,
     lastUsedDir,
+    summaries,
     error,
     setError,
     ready,
@@ -394,5 +435,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     selectInitiative,
     selectTab,
     cycleTab,
+    renameTab,
+    renameInitiative,
   };
 }

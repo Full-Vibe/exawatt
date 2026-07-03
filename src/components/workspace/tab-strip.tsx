@@ -1,34 +1,105 @@
 // No 'use client' directive: only imported by the client workspace surface.
 
 /**
- * Grouped tab strip (ENG-002 W0.2): initiatives are visual clusters —
+ * Grouped tab strip (ENG-002 W0.2–W0.4): initiatives are visual clusters —
  * a numbered, project-colored group chip (⌘1..9 target) followed by its
- * tabs, all sharing the project color. Transitional UI on the way to the
- * W0.5 world map (sessions as entities on the ENG-004 spatial surface).
+ * tabs, all sharing the project color. W0.4: double-click a group or tab
+ * name to rename it (persists with the layout), and agent tabs carry an
+ * auto-summarized micro-context subtitle ("what was I working on here?").
+ * Transitional UI on the way to the W0.5 world map (sessions as entities
+ * on the ENG-004 spatial surface).
  */
+import { useRef, useState } from 'react';
 import { HUD } from '@/components/hud';
 import { projectColor } from './project-colors';
 import { HarnessGlyph } from './harness-icons';
 import { REVIVE_FAILED } from './use-workspace-state';
 import type { Initiative } from './use-workspace-state';
 
+interface Editing {
+  kind: 'group' | 'tab';
+  id: string;
+  value: string;
+}
+
+function RenameInput({
+  value,
+  color,
+  onChange,
+  onCommit,
+  onCancel,
+}: {
+  value: string;
+  color: string;
+  onChange: (v: string) => void;
+  onCommit: () => void;
+  onCancel: () => void;
+}) {
+  // Escape unmounts the focused input, and the browser fires blur on
+  // removal — without this flag that blur would COMMIT the abandoned edit
+  const settled = useRef(false);
+  return (
+    <input
+      value={value}
+      autoFocus
+      aria-label="Rename"
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={() => {
+        if (!settled.current) onCommit();
+      }}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          settled.current = true;
+          onCommit();
+        }
+        if (e.key === 'Escape') {
+          settled.current = true;
+          onCancel();
+        }
+      }}
+      onClick={(e) => e.stopPropagation()}
+      className="w-28 bg-transparent font-mono text-xs outline-none"
+      style={{ color, borderBottom: `1px solid ${color}99` }}
+    />
+  );
+}
+
 export function TabStrip({
   initiatives,
   activeDir,
+  summaries,
   onSelectInitiative,
   onSelectTab,
   onCloseTab,
+  onRenameTab,
+  onRenameInitiative,
 }: {
   initiatives: Initiative[];
   activeDir: string | null;
+  /** micro-context subtitles keyed by sessionId */
+  summaries: Record<string, string>;
   onSelectInitiative: (index: number) => void;
   onSelectTab: (dir: string, tabId: string) => void;
   onCloseTab: (tabId: string) => void;
+  onRenameTab: (tabId: string, title: string) => void;
+  onRenameInitiative: (dir: string, name: string) => void;
 }) {
+  const [editing, setEditing] = useState<Editing | null>(null);
+
+  const commit = () => {
+    if (!editing) return;
+    if (editing.kind === 'group') onRenameInitiative(editing.id, editing.value);
+    else onRenameTab(editing.id, editing.value);
+    setEditing(null);
+  };
+
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
       {initiatives.map((g, gi) => {
-        const color = projectColor(g.name);
+        // color keyed on the DIRECTORY (the stable identity), so renaming
+        // an initiative keeps its hue
+        const color = projectColor(g.dir);
         const groupActive = g.dir === activeDir;
         return (
           <div
@@ -43,7 +114,10 @@ export function TabStrip({
           >
             <button
               onClick={() => onSelectInitiative(gi)}
-              title={g.dir}
+              onDoubleClick={() =>
+                setEditing({ kind: 'group', id: g.dir, value: g.name })
+              }
+              title={`${g.dir} · double-click to rename`}
               className="flex items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
               style={{ color: groupActive ? color : HUD.textDim }}
             >
@@ -51,11 +125,23 @@ export function TabStrip({
                 className="inline-block h-2 w-2 rotate-45"
                 style={{ background: color, boxShadow: `0 0 5px ${color}` }}
               />
-              {gi + 1} {g.name}
+              {gi + 1}{' '}
+              {editing?.kind === 'group' && editing.id === g.dir ? (
+                <RenameInput
+                  value={editing.value}
+                  color={color}
+                  onChange={(v) => setEditing({ ...editing, value: v })}
+                  onCommit={commit}
+                  onCancel={() => setEditing(null)}
+                />
+              ) : (
+                g.name
+              )}
             </button>
             {g.tabs.map((t) => {
               const on = groupActive && t.id === g.activeTabId;
               const dead = t.exitCode !== null;
+              const summary = t.sessionId ? summaries[t.sessionId] : undefined;
               return (
                 <div
                   key={t.id}
@@ -69,22 +155,46 @@ export function TabStrip({
                 >
                   <button
                     onClick={() => onSelectTab(g.dir, t.id)}
+                    onDoubleClick={() =>
+                      setEditing({ kind: 'tab', id: t.id, value: t.title })
+                    }
                     className="flex items-center gap-1.5 px-2 py-0.5 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{ color: on ? HUD.text : HUD.textDim }}
-                    title={`${t.cwd}${
+                    title={`${t.cwd}${summary ? `\n${summary}` : ''}${
                       dead
                         ? t.exitCode === REVIVE_FAILED
-                          ? ' · revive failed'
-                          : ` · exited ${t.exitCode}`
+                          ? '\nrevive failed'
+                          : `\nexited ${t.exitCode}`
                         : ''
-                    }`}
+                    }\ndouble-click to rename`}
                   >
                     {t.harness !== 'shell' && (
                       <span style={{ color }}>
                         <HarnessGlyph harness={t.harness} size={11} />
                       </span>
                     )}
-                    {t.title}
+                    {editing?.kind === 'tab' && editing.id === t.id ? (
+                      <RenameInput
+                        value={editing.value}
+                        color={color}
+                        onChange={(v) => setEditing({ ...editing, value: v })}
+                        onCommit={commit}
+                        onCancel={() => setEditing(null)}
+                      />
+                    ) : (
+                      <span className="flex flex-col items-start">
+                        <span className="leading-tight">{t.title}</span>
+                        {summary && !dead && (
+                          <span
+                            data-subtitle
+                            className="max-w-44 truncate text-left text-[9px] leading-tight"
+                            style={{ color: `${color}B0` }}
+                          >
+                            {summary}
+                          </span>
+                        )}
+                      </span>
+                    )}
                     {dead && <span style={{ color: HUD.red }}>✕</span>}
                   </button>
                   <button

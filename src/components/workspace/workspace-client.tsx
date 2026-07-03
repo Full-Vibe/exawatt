@@ -48,6 +48,7 @@ export function WorkspaceClient() {
     activeInitiative,
     activeTab,
     lastUsedDir,
+    summaries,
     error,
     setError,
     ignite,
@@ -55,6 +56,8 @@ export function WorkspaceClient() {
     selectInitiative,
     selectTab,
     cycleTab,
+    renameTab,
+    renameInitiative,
   } = useWorkspaceState({ getInitialSize });
 
   const shortcutActions = useMemo(
@@ -118,9 +121,12 @@ export function WorkspaceClient() {
         <TabStrip
           initiatives={initiatives}
           activeDir={activeInitiative?.dir ?? null}
+          summaries={summaries}
           onSelectInitiative={selectInitiative}
           onSelectTab={selectTab}
           onCloseTab={(id) => void closeTab(id)}
+          onRenameTab={renameTab}
+          onRenameInitiative={renameInitiative}
         />
         <IgniteControls
           prefillDir={activeInitiative?.dir ?? lastUsedDir}

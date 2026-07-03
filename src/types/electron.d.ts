@@ -25,6 +25,8 @@ export interface PtySessionInfo {
   startedAt: number;
   exited: boolean;
   exitCode: number | null;
+  /** auto-summarized micro-context (W0.4); null until first summary */
+  contextSummary?: string | null;
 }
 
 export type WorktreeResult =
@@ -40,11 +42,13 @@ export interface ElectronPtyApi {
   write: (id: string, data: string) => Promise<void>;
   resize: (id: string, cols: number, rows: number) => Promise<void>;
   kill: (id: string) => Promise<void>;
+  rename: (id: string, title: string) => Promise<void>;
   list: () => Promise<PtySessionInfo[]>;
   buffer: (id: string) => Promise<string>;
   createWorktree: (repoDir: string, branch: string) => Promise<WorktreeResult>;
   onData: (handler: (payload: { id: string; data: string }) => void) => () => void;
   onExit: (handler: (payload: { id: string; exitCode: number }) => void) => () => void;
+  onContext: (handler: (payload: { id: string; summary: string }) => void) => () => void;
 }
 
 export interface ElectronWorkspaceApi {

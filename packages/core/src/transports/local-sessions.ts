@@ -29,6 +29,8 @@ export interface LocalSessionSnapshot {
   startedAt: number;
   exited: boolean;
   exitCode: number | null;
+  /** auto-summarized micro-context (W0.4) — becomes the agent's goal */
+  contextSummary?: string | null;
 }
 
 export interface LocalSessionsSource {
@@ -80,7 +82,9 @@ export function sessionToAgent(
     id: session.id,
     name: `${basename(session.cwd)} · ${session.title}`,
     status: sessionStatus(session, lastActivityAt, now, workingWindowMs),
-    goal: `Interactive ${session.title} session in ${session.cwd}`,
+    goal:
+      session.contextSummary?.trim() ||
+      `Interactive ${session.title} session in ${session.cwd}`,
     project: session.projectName,
     sessionKey: session.id,
     metrics: { ...INITIAL_AGENT_METRICS },
@@ -191,7 +195,7 @@ export class LocalSessionsTransport {
       this.now(),
       this.opts.workingWindowMs
     );
-    const key = `${agent.status}:${agent.lastActivityAt}:${agent.name}`;
+    const key = `${agent.status}:${agent.lastActivityAt}:${agent.name}:${agent.goal}`;
     if (this.emitted.get(session.id) === key) return; // nothing changed
     this.emitted.set(session.id, key);
     this.manager.upsertAgent(agent);

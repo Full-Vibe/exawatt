@@ -46,6 +46,19 @@ describe('sessionToAgent', () => {
     expect(a.createdAt).toBe(1_000);
     expect(a.goal).toContain('/Users/x/Code/exawatt-wt/agent-a');
   });
+
+  it('uses the micro-context summary as the goal when present', () => {
+    const a = sessionToAgent(
+      snap({ contextSummary: 'Fixing token refresh expiry tests' }),
+      2_000,
+      3_000,
+      15_000
+    );
+    expect(a.goal).toBe('Fixing token refresh expiry tests');
+    // blank summaries fall back to the descriptive default
+    const b = sessionToAgent(snap({ contextSummary: '  ' }), 2_000, 3_000, 15_000);
+    expect(b.goal).toContain('Interactive');
+  });
 });
 
 describe('LocalSessionsTransport', () => {

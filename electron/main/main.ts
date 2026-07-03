@@ -4,6 +4,13 @@ import { registerAgentIPC } from './agent-ipc';
 import { registerPtyIPC, disposePty } from './pty-ipc';
 
 const isDev = process.env.NODE_ENV === 'development';
+
+// hermetic test runs: isolated userData so smoke tests never touch the
+// operator's real workspace layout. Gated on EXAWATT_TEST so a stray env
+// var in a normal launch can never silently redirect real layout data.
+if (process.env.EXAWATT_TEST && process.env.EXAWATT_USER_DATA) {
+  app.setPath('userData', process.env.EXAWATT_USER_DATA);
+}
 // EXAWATT_DEV_URL lets harnesses point the shell at a different dev server
 const DEV_URL = process.env.EXAWATT_DEV_URL || 'http://localhost:7000';
 const PROTOCOL = 'exawatt';

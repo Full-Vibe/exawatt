@@ -70,6 +70,41 @@ Progress log (landed 2026-07-02):
 - Known W0.2 targets from this pass: initiative windows, worktree
   create/pick in the ignite flow, layout persistence, richer tab titles.
 
+W0.4 progress log (landed 2026-07-03):
+
+- Micro-context subtitles: `electron/main/pty/context-summarizer.ts`
+  periodically summarizes each session's recent scrollback into a ≤8-word
+  subtitle. Engine = the operator's authenticated `claude` CLI (`-p`,
+  haiku) through the login shell — zero key management. Cost discipline:
+  one in-flight call globally, one session per sweep (most fresh output
+  wins, counter consumed either way so escape-heavy TUIs can't starve
+  others), ≥400 new bytes to qualify, 3 consecutive failures disable it
+  for the run. Scrollback is ANSI-stripped and FENCED as untrusted in the
+  prompt; output is sanitized (first line, control chars stripped, 64-char
+  cap). Timeout kills the whole process group (detached spawn) so no
+  orphaned CLI burns quota. Env: EXAWATT_SUMMARIES=0,
+  EXAWATT_SUMMARIZER_CMD (tests inject a fake), EXAWATT_SUMMARY_SWEEP_MS.
+- Summaries flow BOTH ways: `pty:context` events + `contextSummary` on
+  `pty:list` → tab subtitles in the strip, and through
+  LocalSessionsTransport into FleetState as the agent's goal — the spatial
+  map's hover already answers "what was I working on here?". This module
+  is the context-augmentation seam for later W-milestones.
+- Naming: double-click renames tabs and initiative labels inline
+  (Enter/blur commit, Escape cancels — blur-on-unmount commit bug fixed);
+  tab renames propagate to the PTY session (`pty:rename`) so fleet and
+  workspace agree on identity; initiative renames persist; project color
+  now keys on the DIRECTORY so renames keep the hue.
+- Hermetic smokes: EXAWATT_USER_DATA (gated on EXAWATT_TEST) isolates
+  test userData from the operator's real layout.
+- Review round (high, 10 findings): starvation + lost-counter +
+  orphaned-process + prune-leak in the summarizer, Escape-commit,
+  ungated userData override, rename-not-propagated — all fixed; 2
+  accepted with rationale (goal IS the micro-context by design; one-time
+  hue shift from color rekeying).
+- Verified: 6/6 smoke (subtitle renders, summary lands as fleet goal via
+  a fake summarizer, both renames + reload persistence), real `claude -p
+  --model haiku` one-shot validated on-machine, 191 tests, full battery.
+
 Dogfood feedback round 2 (2026-07-03, all fixed + smoke-tested + reviewed):
 
 - Claude/agent TUIs no longer render at partial width: sessions SPAWN at the
@@ -233,7 +268,7 @@ Progress log (landed 2026-07-03):
 
 ### W0.4 Context layer
 
-Status: next
+Status: landed
 
 Scope:
 
@@ -243,7 +278,7 @@ Scope:
 
 ### W0.5 Spatial cockpit
 
-Status: planned
+Status: next
 
 Scope:
 

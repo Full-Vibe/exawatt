@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { ptySessions } from './pty/session-manager';
 import type { PtyCreateOptions } from './pty/session-manager';
+import { contextSummarizer } from './pty/context-summarizer';
 import { createWorktree } from './pty/project-resolve';
 import { loadWorkspace, saveWorkspace } from './workspace-store';
 
@@ -21,6 +22,14 @@ export function registerPtyIPC(): void {
   });
   ptySessions.on('exit', (id: string, exitCode: number) => {
     broadcast('pty:exit', { id, exitCode });
+  });
+
+  // micro-context subtitles (W0.4): summaries stream as they refresh, and
+  // ride along on pty:list so late attaches/pollers see the latest
+  contextSummarizer.attach(ptySessions);
+  contextSummarizer.start();
+  contextSummarizer.on('context', (id: string, summary: string) => {
+    broadcast('pty:context', { id, summary });
   });
 
   // structured result instead of a thrown error: IPC rejections arrive as
@@ -44,7 +53,15 @@ export function registerPtyIPC(): void {
   ipcMain.handle('pty:kill', (_event, id: string) => {
     ptySessions.kill(id);
   });
-  ipcMain.handle('pty:list', () => ptySessions.list());
+  ipcMain.handle('pty:rename', (_event, id: string, title: string) => {
+    ptySessions.rename(id, title);
+  });
+  ipcMain.handle('pty:list', () =>
+    ptySessions.list().map((s) => ({
+      ...s,
+      contextSummary: contextSummarizer.getSummary(s.id),
+    }))
+  );
   ipcMain.handle('pty:buffer', (_event, id: string) => ptySessions.buffer(id));
 
   // one-gesture worktrees: <repo>-wt/<branch> sibling container
@@ -71,5 +88,6 @@ export function registerPtyIPC(): void {
 
 /** app-quit cleanup: never leave orphan shells behind */
 export function disposePty(): void {
+  contextSummarizer.stop();
   ptySessions.killAll();
 }

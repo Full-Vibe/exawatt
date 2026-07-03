@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('electron', {
     resize: (id: string, cols: number, rows: number) =>
       ipcRenderer.invoke('pty:resize', id, cols, rows),
     kill: (id: string) => ipcRenderer.invoke('pty:kill', id),
+    rename: (id: string, title: string) =>
+      ipcRenderer.invoke('pty:rename', id, title),
     list: () => ipcRenderer.invoke('pty:list'),
     buffer: (id: string) => ipcRenderer.invoke('pty:buffer', id),
     createWorktree: (repoDir: string, branch: string) =>
@@ -42,6 +44,16 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('pty:exit', listener);
       return () => {
         ipcRenderer.removeListener('pty:exit', listener);
+      };
+    },
+    onContext: (handler: (payload: { id: string; summary: string }) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: { id: string; summary: string }
+      ) => handler(payload);
+      ipcRenderer.on('pty:context', listener);
+      return () => {
+        ipcRenderer.removeListener('pty:context', listener);
       };
     },
   },
