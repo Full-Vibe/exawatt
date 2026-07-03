@@ -203,6 +203,14 @@ export class FleetManager extends TypedEmitter<CoreEventMap> {
     this.emit('fleet:updated', this.getFleetState());
   }
 
+  /** drop an agent whose backing session is gone (e.g. a closed terminal
+   *  tab) — transports own the lifecycle, the manager just reflects it */
+  removeAgent(agentId: string): void {
+    if (this.agents.delete(agentId)) {
+      this.emit('fleet:updated', this.getFleetState());
+    }
+  }
+
   async refresh(): Promise<void> {
     if (!this.fleetAdapter) return;
     console.log('[FleetManager] refresh() called — fetching agents from OC');

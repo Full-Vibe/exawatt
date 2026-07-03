@@ -171,7 +171,7 @@ Progress log (landed 2026-07-02):
 
 ### W0.3 Fleet truth
 
-Status: next
+Status: landed
 
 Scope:
 
@@ -184,9 +184,31 @@ Acceptance criteria:
 
 - unblocks ENG-004 V1.3 (live data on the spatial surface)
 
+Progress log (landed 2026-07-03):
+
+- `@exawatt/core` gained `LocalSessionsTransport`: written against a minimal
+  injected `LocalSessionsSource` (structurally satisfied by the Electron
+  preload PTY API — core never imports Electron types, per the ENG-003
+  boundary). Pure `sessionStatus`/`sessionToAgent` mapping: exited →
+  complete (code 0) / error; alive → working when output landed within 15s,
+  else idle. Activity events are coalesced (≤1 upsert/s/session), a 5s poll
+  reconciles new sessions, closed tabs (`FleetManager.removeAgent`, new),
+  and working→idle decay; no-op upserts are skipped.
+- Fleet provider: in the desktop app, local sessions ARE the fleet (isLocal
+  mode — no mock noise, badge reads Live, DemoControls hidden, cron guarded
+  off until OC/ENG-003); the web app keeps Demo Mode / OC untouched.
+- Honesty note: waiting-on-input/blocked detection from TUI output patterns
+  is deliberately NOT guessed in v1 — quiet interactive sessions read
+  'idle'. Blocker detection is a W0.4+/attention-layer follow-up.
+- Verified end-to-end in the app: two sessions in two projects → /fleet
+  board lists them (no demo agents), /fleet/spatial renders real sectors
+  (FLEETREPO/TMP, 2 instanced nodes, Live badge), working→idle decay after
+  silence, closed tab leaves the fleet within one poll — 7/7, zero page
+  errors. 190 tests (7 new transport tests).
+
 ### W0.4 Context layer
 
-Status: planned
+Status: next
 
 Scope:
 

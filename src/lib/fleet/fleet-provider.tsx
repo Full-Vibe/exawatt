@@ -15,6 +15,7 @@ import {
   OCClient,
   OCMethods,
   MockFleetTransport,
+  LocalSessionsTransport,
   type ExawattAgent,
   type AgentActivity,
   type FleetState,
@@ -31,6 +32,8 @@ interface FleetContextValue {
   manager: FleetManager;
   mockTransport: MockFleetTransport | null;
   isDemo: boolean;
+  /** desktop local-sessions mode: the terminal workspace IS the fleet */
+  isLocal: boolean;
   connectionStatus: OCConnectionStatus | 'initializing';
   ocAvailable: boolean;
   connectToRealOC: () => void;
@@ -53,9 +56,11 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     []
   );
   const [isDemo, setIsDemo] = useState(false);
+  const [isLocal, setIsLocal] = useState(false);
   const [ocAvailable, setOcAvailable] = useState(false);
   const [isConnectingToOC, setIsConnectingToOC] = useState(false);
   const mockTransportRef = useRef<MockFleetTransport | null>(null);
+  const localTransportRef = useRef<LocalSessionsTransport | null>(null);
   const ocClientRef = useRef<OCClient | null>(null);
   const prevConnectionStatusRef = useRef<OCConnectionStatus | 'initializing'>(
     'initializing'
@@ -83,6 +88,30 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     async function initializeFleet() {
       console.log('[Exawatt] initializeFleet: starting');
       try {
+        // Desktop app: LIVE LOCAL TRUTH (ENG-002 W0.3). The Agent Terminal
+        // Workspace's real PTY sessions ARE the fleet — no mock noise. The
+        // web app keeps Demo Mode / OC below, unchanged.
+        const pty =
+          typeof window !== 'undefined' ? window.electron?.pty : undefined;
+        if (pty) {
+          console.log('[Exawatt] Local sessions mode (desktop) active');
+          if (!mounted) return;
+          setIsDemo(false);
+          setIsLocal(true);
+          setConnectionStatus('connected');
+          prevConnectionStatusRef.current = 'connected';
+
+          const localTransport = new LocalSessionsTransport({
+            list: () => pty.list(),
+            onData: pty.onData,
+            onExit: pty.onExit,
+          });
+          localTransportRef.current = localTransport;
+          localTransport.initialize(manager);
+          localTransport.start();
+          return;
+        }
+
         if (process.env.NEXT_PUBLIC_EXAWATT_AUTO_CONNECT_OC !== 'true') {
           console.log('[Exawatt] Demo mode active by default');
           if (!mounted) return;
@@ -198,6 +227,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       toastTimersRef.current = [];
       manager.disconnect();
       mockTransportRef.current?.stop();
+      localTransportRef.current?.stop();
     };
   }, [manager, pushConnectionToast]);
 
@@ -287,6 +317,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       manager,
       mockTransport: mockTransportRef.current,
       isDemo,
+      isLocal,
       connectionStatus: isConnectingToOC
         ? ('connecting' as const)
         : connectionStatus,
@@ -296,6 +327,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     [
       manager,
       isDemo,
+      isLocal,
       connectionStatus,
       ocAvailable,
       connectToRealOC,
@@ -532,16 +564,19 @@ export function useConnectToOC(): {
 }
 
 export function useCron() {
-  const { manager, mockTransport, isDemo, connectionStatus } =
+  const { manager, mockTransport, isDemo, isLocal, connectionStatus } =
     useFleetContext();
   const [jobs, setJobs] = useState<ExawattCronJob[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const cronSource = isDemo
-    ? mockTransport
-    : connectionStatus === 'connected'
-      ? manager
-      : null;
+  // local-sessions mode has no cron backend (heartbeats come with OC/ENG-003)
+  const cronSource = isLocal
+    ? null
+    : isDemo
+      ? mockTransport
+      : connectionStatus === 'connected'
+        ? manager
+        : null;
 
   useEffect(() => {
     if (!cronSource) {

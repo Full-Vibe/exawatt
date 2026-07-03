@@ -17,3 +17,13 @@ export { FleetManager } from './state/fleet-manager';
 export { resolveContextGroups } from './state/context-groups';
 export { MockFleetTransport } from './transports/mock-fleet';
 export type { SimulationSpeed, FleetScale } from './transports/mock-fleet';
+export {
+  LocalSessionsTransport,
+  sessionToAgent,
+  sessionStatus,
+} from './transports/local-sessions';
+export type {
+  LocalSessionSnapshot,
+  LocalSessionsSource,
+  LocalSessionsOptions,
+} from './transports/local-sessions';
