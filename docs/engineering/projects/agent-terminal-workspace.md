@@ -16,9 +16,12 @@ come later).
 - The view is **tmux-like**: the operator talks to harness TUIs directly.
 - The structure is the operator's mental model: one window per initiative,
   many tabs per window.
-- The spatial surface (ENG-004) is this workspace's GPU overview/switcher —
-  game-level graphics for managing terminal agents. Terminal text stays DOM
-  (decision `0003` hybrid rule).
+- Terminal text and controls stay DOM (decision `0003` hybrid rule).
+  AMENDED 2026-07-06 (operator): the spatial surface is NOT this
+  workspace's overview/switcher — the regimes deliberately diverge. This
+  regime's excellence arc (attention, speed, exposé/motion, context
+  paging) is ENG-015 (`stellar-small-fleet.md`); the map evolves
+  separately (ENG-004) toward an RTS-style at-scale command surface.
 
 ## Milestones
 
@@ -308,17 +311,17 @@ Scope:
 
 ### W0.5 Spatial cockpit
 
-Status: next
+Status: stale — RESCOPED 2026-07-06 (operator) and retired as an ENG-002
+milestone. The regimes deliberately diverge: the terminal regime's
+excellence phases are ENG-015 (`stellar-small-fleet.md`); the map's
+evolution toward an RTS-style at-scale unit-selection surface is ENG-004.
+The earlier "tab strip demotes to a secondary affordance" framing is
+superseded — both regimes are long-lived, user-selectable. Live sessions
+already render on the map (W0.3); driving sessions FROM the map returns as
+ENG-004 work when that regime's identity firms up.
 
-Scope:
-
-- the ENG-004 surface becomes the PRIMARY navigation over live sessions:
-  sessions are visual entities on the world map (directory-keyed projects
-  = sectors, nodes = sessions); click/keys drop into the terminal focus
-  surface
-- the tmux-style tab strip demotes to a secondary affordance — the
-  operator's stated end state is commanding sessions on the map, not
-  operating terminal tabs (see `docs/product/operator-workflow.md`)
+ENG-002's remaining exit: the dogfood week (the operator runs their real
+daily work inside Exawatt without falling back to iTerm).
 
 ## Open questions
 

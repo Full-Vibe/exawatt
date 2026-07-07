@@ -68,9 +68,19 @@ absence of Exawatt, this workflow IS "Exawatt v0."
    "a dressed-up, augmented, way-better TMUX interface that's AI-native,"
    developed IN PARALLEL with the spatial regime. Per the modular-UI-regimes
    architecture, both are independent skins over the same session/fleet
-   system: the operator commands sessions as **visual entities on the world
-   map** OR as terminal tabs, choosing per moment; the terminal pane is the
-   shared focus surface both drop into.
+   system. AMENDED 2026-07-06 (operator, tentative): the regimes
+   deliberately DIVERGE rather than converge — the terminal regime is the
+   solid, approachable daily driver for 1–10 agents (its excellence arc is
+   ENG-015: attention, keyboard velocity, exposé/motion, context paging);
+   the map's identity heads toward an RTS-style unit-selection command
+   surface for hundreds-to-thousands of agents. Both stay long-lived
+   runtime options the operator picks per moment.
+5. **Stellar before scale (operator, 2026-07-06):** before the long-arc
+   items, the 1–10 agent experience must be stellar — attention &
+   notifications, speed of control, visual juice & game feel, context at a
+   glance, and research-backed context-switching support (helping the human
+   page dramatically different contexts in and out). This is roadmap item
+   ENG-015.
 
 ## Why this matters
 
