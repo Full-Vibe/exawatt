@@ -12,6 +12,14 @@ export interface PtyCreateOptions {
   resume?: boolean;
 }
 
+export type PtyAttentionKind = 'bell' | 'turn-end';
+
+/** "this session needs the operator" (ENG-015 S1) */
+export interface PtyAttention {
+  kind: PtyAttentionKind;
+  since: number;
+}
+
 export interface PtySessionInfo {
   id: string;
   harness: PtyHarness;
@@ -27,6 +35,8 @@ export interface PtySessionInfo {
   exitCode: number | null;
   /** auto-summarized micro-context (W0.4); null until first summary */
   contextSummary?: string | null;
+  /** needs-operator flag (ENG-015 S1); null when clear */
+  attention?: PtyAttention | null;
 }
 
 export type WorktreeResult =
@@ -43,12 +53,17 @@ export interface ElectronPtyApi {
   resize: (id: string, cols: number, rows: number) => Promise<void>;
   kill: (id: string) => Promise<void>;
   rename: (id: string, title: string) => Promise<void>;
+  /** the operator is looking at this session (null = none focused) */
+  focus: (id: string | null) => Promise<void>;
   list: () => Promise<PtySessionInfo[]>;
   buffer: (id: string) => Promise<string>;
   createWorktree: (repoDir: string, branch: string) => Promise<WorktreeResult>;
   onData: (handler: (payload: { id: string; data: string }) => void) => () => void;
   onExit: (handler: (payload: { id: string; exitCode: number }) => void) => () => void;
   onContext: (handler: (payload: { id: string; summary: string }) => void) => () => void;
+  onAttention: (
+    handler: (payload: { id: string; attention: PtyAttention | null }) => void
+  ) => () => void;
 }
 
 export interface ElectronWorkspaceApi {

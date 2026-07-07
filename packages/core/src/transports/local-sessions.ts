@@ -8,16 +8,24 @@
  * a minimal injected LocalSessionsSource (structurally satisfied by the
  * Electron preload PTY API) — core never touches Electron types.
  *
- * Status model (v1, honest by construction):
+ * Status model:
  *   exited        -> 'complete' (code 0) or 'error'
+ *   alive, needs-operator flag (ENG-015 S1 attention) -> 'blocked'
  *   alive, output within workingWindowMs -> 'working'
- *   alive, quiet  -> 'idle' (an interactive session waiting on the operator)
- * Waiting-on-input/blocked detection from TUI output is a documented
- * follow-up (agent-terminal-workspace.md) — no guessing in v1.
+ *   alive, quiet  -> 'idle'
+ * The attention flag comes from the source (main-process bell/turn-boundary
+ * detection) — the fleet surfaces show the SAME "needs you" truth the tab
+ * strip does. This closes the W0.3 honesty note (no more guessing: quiet-
+ * but-waiting sessions read 'blocked' only when the detector says so).
  */
-import type { ExawattAgent, AgentStatus } from '../types/index';
+import type { ExawattAgent, AgentStatus, AgentBlocker } from '../types/index';
 import { INITIAL_AGENT_METRICS } from '../types/index';
 import type { FleetManager } from '../state/fleet-manager';
+
+export interface LocalSessionAttention {
+  kind: string;
+  since: number;
+}
 
 export interface LocalSessionSnapshot {
   id: string;
@@ -31,6 +39,8 @@ export interface LocalSessionSnapshot {
   exitCode: number | null;
   /** auto-summarized micro-context (W0.4) — becomes the agent's goal */
   contextSummary?: string | null;
+  /** needs-operator flag (ENG-015 S1) — becomes 'blocked' + blockerInfo */
+  attention?: LocalSessionAttention | null;
 }
 
 export interface LocalSessionsSource {
@@ -63,13 +73,29 @@ function basename(p: string): string {
 }
 
 export function sessionStatus(
-  session: Pick<LocalSessionSnapshot, 'exited' | 'exitCode'>,
+  session: Pick<LocalSessionSnapshot, 'exited' | 'exitCode' | 'attention'>,
   lastActivityAt: number,
   now: number,
   workingWindowMs: number
 ): AgentStatus {
   if (session.exited) return session.exitCode === 0 ? 'complete' : 'error';
+  if (session.attention) return 'blocked';
   return now - lastActivityAt <= workingWindowMs ? 'working' : 'idle';
+}
+
+function sessionBlocker(
+  session: LocalSessionSnapshot
+): AgentBlocker | undefined {
+  if (session.exited || !session.attention) return undefined;
+  return {
+    type: 'input_needed',
+    title:
+      session.attention.kind === 'bell'
+        ? 'Session rang the bell'
+        : 'Turn ended — waiting on you',
+    description: `${session.title} in ${basename(session.cwd)} needs the operator.`,
+    createdAt: session.attention.since,
+  };
 }
 
 export function sessionToAgent(
@@ -89,6 +115,7 @@ export function sessionToAgent(
     sessionKey: session.id,
     metrics: { ...INITIAL_AGENT_METRICS },
     lastActivityAt,
+    blockerInfo: sessionBlocker(session),
     createdAt: session.startedAt,
   };
 }
@@ -195,7 +222,7 @@ export class LocalSessionsTransport {
       this.now(),
       this.opts.workingWindowMs
     );
-    const key = `${agent.status}:${agent.lastActivityAt}:${agent.name}:${agent.goal}`;
+    const key = `${agent.status}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${session.attention?.since ?? ''}`;
     if (this.emitted.get(session.id) === key) return; // nothing changed
     this.emitted.set(session.id, key);
     this.manager.upsertAgent(agent);

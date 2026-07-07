@@ -15,6 +15,23 @@ import { PROJECT_PALETTE } from './project-colors';
 import { HarnessGlyph } from './harness-icons';
 import { REVIVE_FAILED } from './use-workspace-state';
 import type { Initiative } from './use-workspace-state';
+import type { PtyAttention } from '@/types/electron';
+
+/** needs-operator pulse (S1) — amber, small, impossible to miss peripherally */
+function AttentionDot() {
+  return (
+    <span data-attention className="relative inline-flex h-1.5 w-1.5 shrink-0">
+      <span
+        className="absolute inline-flex h-full w-full animate-ping rounded-full"
+        style={{ background: HUD.amber, opacity: 0.6 }}
+      />
+      <span
+        className="relative inline-flex h-1.5 w-1.5 rounded-full"
+        style={{ background: HUD.amber, boxShadow: `0 0 5px ${HUD.amber}` }}
+      />
+    </span>
+  );
+}
 
 interface Editing {
   kind: 'group' | 'tab';
@@ -100,6 +117,7 @@ export function TabStrip({
   initiatives,
   activeDir,
   summaries,
+  attention,
   onSelectInitiative,
   onSelectTab,
   onCloseTab,
@@ -111,6 +129,8 @@ export function TabStrip({
   activeDir: string | null;
   /** micro-context subtitles keyed by sessionId */
   summaries: Record<string, string>;
+  /** needs-operator flags keyed by sessionId (S1) */
+  attention: Record<string, PtyAttention>;
   onSelectInitiative: (index: number) => void;
   onSelectTab: (dir: string, tabId: string) => void;
   onCloseTab: (tabId: string) => void;
@@ -132,6 +152,9 @@ export function TabStrip({
       {initiatives.map((g, gi) => {
         const color = g.color;
         const groupActive = g.dir === activeDir;
+        const flaggedCount = g.tabs.filter(
+          (t) => t.sessionId && attention[t.sessionId] && t.exitCode === null
+        ).length;
         return (
           <div
             key={g.dir}
@@ -174,11 +197,22 @@ export function TabStrip({
               ) : (
                 g.name
               )}
+              {flaggedCount > 0 && (
+                <span
+                  data-attention-count={flaggedCount}
+                  className="font-mono text-[10px] leading-none"
+                  style={{ color: HUD.amber }}
+                >
+                  {flaggedCount}
+                </span>
+              )}
             </button>
             {g.tabs.map((t) => {
               const on = groupActive && t.id === g.activeTabId;
               const dead = t.exitCode !== null;
               const summary = t.sessionId ? summaries[t.sessionId] : undefined;
+              const needsYou =
+                !dead && !!(t.sessionId && attention[t.sessionId]);
               return (
                 <div
                   key={t.id}
@@ -198,6 +232,8 @@ export function TabStrip({
                     className="flex items-center gap-1.5 px-2 py-0.5 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{ color: on ? HUD.text : HUD.textDim }}
                     title={`${t.cwd}${summary ? `\n${summary}` : ''}${
+                      needsYou ? '\nneeds your attention (⌘J jumps here)' : ''
+                    }${
                       dead
                         ? t.exitCode === REVIVE_FAILED
                           ? '\nrevive failed'
@@ -205,6 +241,7 @@ export function TabStrip({
                         : ''
                     }\ndouble-click to rename`}
                   >
+                    {needsYou && <AttentionDot />}
                     {t.harness !== 'shell' && (
                       <span style={{ color }}>
                         <HarnessGlyph harness={t.harness} size={11} />

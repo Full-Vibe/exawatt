@@ -33,6 +33,17 @@ describe('sessionStatus', () => {
     expect(sessionStatus({ exited: false, exitCode: null }, 9_000, 10_000, 15_000)).toBe('working');
     expect(sessionStatus({ exited: false, exitCode: null }, 1_000, 50_000, 15_000)).toBe('idle');
   });
+
+  it('attention flags an alive session blocked (needs the operator)', () => {
+    const attention = { kind: 'bell', since: 9_500 };
+    expect(
+      sessionStatus({ exited: false, exitCode: null, attention }, 9_000, 10_000, 15_000)
+    ).toBe('blocked'); // even while output is recent
+    // exit always wins — a dead session is not waiting on anyone
+    expect(
+      sessionStatus({ exited: true, exitCode: 0, attention }, 9_000, 10_000, 15_000)
+    ).toBe('complete');
+  });
 });
 
 describe('sessionToAgent', () => {
@@ -58,6 +69,24 @@ describe('sessionToAgent', () => {
     // blank summaries fall back to the descriptive default
     const b = sessionToAgent(snap({ contextSummary: '  ' }), 2_000, 3_000, 15_000);
     expect(b.goal).toContain('Interactive');
+  });
+
+  it('attention produces blockerInfo (fleet surfaces show the same truth)', () => {
+    const a = sessionToAgent(
+      snap({ attention: { kind: 'turn-end', since: 2_500 } }),
+      2_000,
+      3_000,
+      15_000
+    );
+    expect(a.status).toBe('blocked');
+    expect(a.blockerInfo).toMatchObject({
+      type: 'input_needed',
+      createdAt: 2_500,
+    });
+    // clear flag = no blocker
+    const b = sessionToAgent(snap({ attention: null }), 2_000, 3_000, 15_000);
+    expect(b.status).toBe('working');
+    expect(b.blockerInfo).toBeUndefined();
   });
 });
 
@@ -156,5 +185,23 @@ describe('LocalSessionsTransport', () => {
     dataHandler?.({ id: 'pty-2' });
     await flush();
     expect(manager.getFleetState().agents['pty-2']).toBeDefined();
+  });
+
+  it('attention arriving on a poll flips the agent to blocked, clearing flips back', async () => {
+    transport.start();
+    await flush();
+    expect(manager.getFleetState().agents['pty-1'].status).toBe('working');
+
+    sessions[0] = { ...sessions[0], attention: { kind: 'bell', since: now } };
+    now += 5_000;
+    await vi.advanceTimersByTimeAsync(5_000);
+    const blocked = manager.getFleetState().agents['pty-1'];
+    expect(blocked.status).toBe('blocked');
+    expect(blocked.blockerInfo?.type).toBe('input_needed');
+
+    sessions[0] = { ...sessions[0], attention: null };
+    now += 20_000; // long past the working window
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(manager.getFleetState().agents['pty-1'].status).toBe('idle');
   });
 });

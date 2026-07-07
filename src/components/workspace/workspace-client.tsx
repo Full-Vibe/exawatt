@@ -14,6 +14,7 @@
  * same session system (see docs/product/operator-workflow.md).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { TerminalPane, TERMINAL_FONT } from './terminal-pane';
 import { TabStrip } from './tab-strip';
 import { IgniteControls } from './ignite-controls';
@@ -44,12 +45,14 @@ export function WorkspaceClient() {
     };
   }, []);
 
+  const router = useRouter();
   const {
     initiatives,
     activeInitiative,
     activeTab,
     lastUsedDir,
     summaries,
+    attention,
     error,
     setError,
     ignite,
@@ -57,6 +60,7 @@ export function WorkspaceClient() {
     selectInitiative,
     selectTab,
     cycleTab,
+    jumpAttention,
     renameTab,
     renameInitiative,
     setInitiativeColor,
@@ -80,8 +84,15 @@ export function WorkspaceClient() {
       },
       selectIndex: selectInitiative,
       cycle: cycleTab,
+      jumpAttention,
+      // regime switching is a two-way street: ⌘⇧M here goes to the map, the
+      // same chord anywhere else comes back (global shortcut, defaults.ts)
+      toggleRegime: () => {
+        router.push('/fleet/spatial');
+        return true;
+      },
     }),
-    [activeInitiative, activeTab, lastUsedDir, ignite, closeTab, selectInitiative, cycleTab, setError]
+    [activeInitiative, activeTab, lastUsedDir, ignite, closeTab, selectInitiative, cycleTab, jumpAttention, router, setError]
   );
   useWorkspaceShortcuts(shortcutActions, inElectron);
 
@@ -124,6 +135,7 @@ export function WorkspaceClient() {
           initiatives={initiatives}
           activeDir={activeInitiative?.dir ?? null}
           summaries={summaries}
+          attention={attention}
           onSelectInitiative={selectInitiative}
           onSelectTab={selectTab}
           onCloseTab={(id) => void closeTab(id)}

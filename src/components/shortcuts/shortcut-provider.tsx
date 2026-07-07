@@ -98,6 +98,15 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           case 'go-settings':
             router.push('/settings');
             break;
+          case 'toggle-regime':
+            // window.location (not the pathname closure) keeps this correct
+            // without re-registering shortcuts on every navigation
+            router.push(
+              window.location.pathname.startsWith('/workspace')
+                ? '/fleet/spatial'
+                : '/workspace'
+            );
+            break;
           case 'command-palette':
             setCommandPaletteOpen(true);
             break;

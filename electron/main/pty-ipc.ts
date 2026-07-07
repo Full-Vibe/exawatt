@@ -1,7 +1,8 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, app } from 'electron';
 import { ptySessions } from './pty/session-manager';
 import type { PtyCreateOptions } from './pty/session-manager';
 import { contextSummarizer } from './pty/context-summarizer';
+import { attentionMonitor } from './pty/attention-monitor';
 import { createWorktree } from './pty/project-resolve';
 import { loadWorkspace, saveWorkspace } from './workspace-store';
 
@@ -32,6 +33,25 @@ export function registerPtyIPC(): void {
     broadcast('pty:context', { id, summary });
   });
 
+  // attention (ENG-015 S1): "needs you" state streams to the UI, and the
+  // macOS dock carries the count so nothing goes unnoticed while unfocused
+  attentionMonitor.attach(ptySessions);
+  attentionMonitor.start();
+  // "looked at" requires OS window focus too — the active tab behind
+  // another app is exactly the single-tab case attention exists for
+  app.on('browser-window-focus', () => attentionMonitor.setWindowFocused(true));
+  app.on('browser-window-blur', () => attentionMonitor.setWindowFocused(false));
+  attentionMonitor.on('attention', (id: string, attention: unknown) => {
+    broadcast('pty:attention', { id, attention });
+    const count = attentionMonitor.count();
+    if (app.dock) {
+      app.dock.setBadge(count > 0 ? String(count) : '');
+      if (attention && BrowserWindow.getFocusedWindow() === null) {
+        app.dock.bounce('informational');
+      }
+    }
+  });
+
   // structured result instead of a thrown error: IPC rejections arrive as
   // opaque "Error invoking remote method" strings — useless for UX
   ipcMain.handle('pty:create', async (_event, options: PtyCreateOptions) => {
@@ -46,6 +66,13 @@ export function registerPtyIPC(): void {
   });
   ipcMain.handle('pty:write', (_event, id: string, data: string) => {
     ptySessions.write(id, data);
+    // engagement clears the flag — but only when the session is actually
+    // being watched: writes ALSO carry xterm auto-replies from hidden panes
+    // (cursor/device queries, backlog replay), which the monitor ignores
+    attentionMonitor.noteInput(id);
+  });
+  ipcMain.handle('pty:focus', (_event, id: string | null) => {
+    attentionMonitor.setFocus(id);
   });
   ipcMain.handle('pty:resize', (_event, id: string, cols: number, rows: number) => {
     ptySessions.resize(id, cols, rows);
@@ -60,6 +87,7 @@ export function registerPtyIPC(): void {
     ptySessions.list().map((s) => ({
       ...s,
       contextSummary: contextSummarizer.getSummary(s.id),
+      attention: attentionMonitor.get(s.id),
     }))
   );
   ipcMain.handle('pty:buffer', (_event, id: string) => ptySessions.buffer(id));
@@ -89,5 +117,6 @@ export function registerPtyIPC(): void {
 /** app-quit cleanup: never leave orphan shells behind */
 export function disposePty(): void {
   contextSummarizer.stop();
+  attentionMonitor.stop();
   ptySessions.killAll();
 }

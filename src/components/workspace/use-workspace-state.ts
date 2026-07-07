@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HARNESS_META } from './harnesses';
 import { pickDistinctColor, projectColor } from './project-colors';
-import type { PtyHarness, PtySessionInfo } from '@/types/electron';
+import type { PtyAttention, PtyHarness, PtySessionInfo } from '@/types/electron';
 
 export interface WorkspaceTab {
   /** stable across revives (sessionId changes when a tab is re-ignited) */
@@ -103,8 +103,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   /** micro-context subtitles keyed by sessionId (ephemeral — main process
    *  regenerates them; never persisted) */
   const [summaries, setSummaries] = useState<Record<string, string>>({});
+  /** needs-operator flags keyed by sessionId (ENG-015 S1; main is truth) */
+  const [attention, setAttention] = useState<Record<string, PtyAttention>>({});
   const stateRef = useRef({ initiatives, activeDir, lastUsedDir });
   stateRef.current = { initiatives, activeDir, lastUsedDir };
+  const attentionRef = useRef(attention);
+  attentionRef.current = attention;
 
   /** append a live session as a tab in its (possibly new) initiative */
   const addSession = useCallback((s: PtySessionInfo, tabId?: string) => {
@@ -157,6 +161,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const ws = window.electron?.workspace;
     if (!api) return;
     let cancelled = false;
+    // flags cleared by events BETWEEN the pty:list snapshot resolving and
+    // the seed merge must stay cleared — main won't re-broadcast for them
+    const clearedBeforeSeed = new Set<string>();
 
     void (async () => {
       const [live, persistedRaw] = await Promise.all([
@@ -166,13 +173,20 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (cancelled) return;
       const persisted = parsePersisted(persistedRaw);
       const liveById = new Map(live.map((s) => [s.id, s]));
-      // adopt existing summaries (renderer reload)
+      // adopt existing summaries + attention flags (renderer reload)
       const seeded: Record<string, string> = {};
+      const seededAttention: Record<string, PtyAttention> = {};
       for (const s of live) {
         if (s.contextSummary) seeded[s.id] = s.contextSummary;
+        if (s.attention && !clearedBeforeSeed.has(s.id)) {
+          seededAttention[s.id] = s.attention;
+        }
       }
       if (Object.keys(seeded).length > 0) {
         setSummaries((prev) => ({ ...seeded, ...prev }));
+      }
+      if (Object.keys(seededAttention).length > 0) {
+        setAttention((prev) => ({ ...seededAttention, ...prev }));
       }
       const toRevive: Array<{ tabId: string; harness: PtyHarness; cwd: string; title: string }> = [];
 
@@ -254,10 +268,22 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const offContext = api.onContext?.(({ id, summary }) => {
       setSummaries((prev) => ({ ...prev, [id]: summary }));
     });
+    const offAttention = api.onAttention?.(({ id, attention: att }) => {
+      if (att) clearedBeforeSeed.delete(id);
+      else clearedBeforeSeed.add(id);
+      setAttention((prev) => {
+        if (att) return { ...prev, [id]: att };
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    });
     return () => {
       cancelled = true;
       offExit();
       offContext?.();
+      offAttention?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -445,12 +471,62 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     activeInitiative?.tabs.find((t) => t.id === activeInitiative.activeTabId) ??
     null;
 
+  // ---- attention focus contract (S1): tell main which session the operator
+  // is looking at — the focused session never flags, and focusing clears.
+  // The local record clears optimistically; main confirms via pty:attention.
+  const activeSessionId = activeTab?.sessionId ?? null;
+  useEffect(() => {
+    const api = window.electron?.pty;
+    if (!api?.focus) return;
+    void api.focus(activeSessionId);
+    // optimistic clear ONLY when the operator is really looking (app window
+    // focused) — main keeps flags alive for a backgrounded window and is
+    // the source of truth; it clears + broadcasts on window refocus
+    if (activeSessionId && document.hasFocus()) {
+      setAttention((prev) => {
+        if (!(activeSessionId in prev)) return prev;
+        const next = { ...prev };
+        delete next[activeSessionId];
+        return next;
+      });
+    }
+    // leaving the workspace (unmount) unfocuses — flags accumulate again
+    return () => void api.focus(null);
+  }, [activeSessionId]);
+
+  /** ⌘J: jump to the OLDEST session needing the operator (repeat = walk the
+   *  queue — focusing each one clears it, surfacing the next-oldest) */
+  const jumpAttention = useCallback((): boolean => {
+    const { initiatives: gs } = stateRef.current;
+    const flagged = Object.entries(attentionRef.current).sort(
+      (a, b) => a[1].since - b[1].since
+    );
+    for (const [sessionId] of flagged) {
+      for (const g of gs) {
+        const tab = g.tabs.find(
+          (t) => t.sessionId === sessionId && t.exitCode === null
+        );
+        if (tab) {
+          setActiveDir(g.dir);
+          setInitiatives((prev) =>
+            prev.map((x) =>
+              x.dir === g.dir ? { ...x, activeTabId: tab.id } : x
+            )
+          );
+          return true;
+        }
+      }
+    }
+    return false;
+  }, []);
+
   return {
     initiatives,
     activeInitiative,
     activeTab,
     lastUsedDir,
     summaries,
+    attention,
     error,
     setError,
     ready,
@@ -459,6 +535,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     selectInitiative,
     selectTab,
     cycleTab,
+    jumpAttention,
     renameTab,
     renameInitiative,
     setInitiativeColor,

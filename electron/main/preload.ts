@@ -1,5 +1,19 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+/** one subscribe-shape for every main→renderer event channel: wraps the
+ *  handler, registers it, returns a disposer that removes ONLY it (never
+ *  removeAllListeners — that clobbers sibling subscribers) */
+const subscribe =
+  <T>(channel: string) =>
+  (handler: (payload: T) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: T) =>
+      handler(payload);
+    ipcRenderer.on(channel, listener);
+    return () => {
+      ipcRenderer.removeListener(channel, listener);
+    };
+  };
+
 contextBridge.exposeInMainWorld('electron', {
   isElectron: true,
   platform: process.platform,
@@ -22,40 +36,15 @@ contextBridge.exposeInMainWorld('electron', {
     kill: (id: string) => ipcRenderer.invoke('pty:kill', id),
     rename: (id: string, title: string) =>
       ipcRenderer.invoke('pty:rename', id, title),
+    focus: (id: string | null) => ipcRenderer.invoke('pty:focus', id),
     list: () => ipcRenderer.invoke('pty:list'),
     buffer: (id: string) => ipcRenderer.invoke('pty:buffer', id),
     createWorktree: (repoDir: string, branch: string) =>
       ipcRenderer.invoke('pty:worktree', repoDir, branch),
-    onData: (handler: (payload: { id: string; data: string }) => void) => {
-      const listener = (
-        _event: Electron.IpcRendererEvent,
-        payload: { id: string; data: string }
-      ) => handler(payload);
-      ipcRenderer.on('pty:data', listener);
-      return () => {
-        ipcRenderer.removeListener('pty:data', listener);
-      };
-    },
-    onExit: (handler: (payload: { id: string; exitCode: number }) => void) => {
-      const listener = (
-        _event: Electron.IpcRendererEvent,
-        payload: { id: string; exitCode: number }
-      ) => handler(payload);
-      ipcRenderer.on('pty:exit', listener);
-      return () => {
-        ipcRenderer.removeListener('pty:exit', listener);
-      };
-    },
-    onContext: (handler: (payload: { id: string; summary: string }) => void) => {
-      const listener = (
-        _event: Electron.IpcRendererEvent,
-        payload: { id: string; summary: string }
-      ) => handler(payload);
-      ipcRenderer.on('pty:context', listener);
-      return () => {
-        ipcRenderer.removeListener('pty:context', listener);
-      };
-    },
+    onData: subscribe<{ id: string; data: string }>('pty:data'),
+    onExit: subscribe<{ id: string; exitCode: number }>('pty:exit'),
+    onContext: subscribe<{ id: string; summary: string }>('pty:context'),
+    onAttention: subscribe<{ id: string; attention: unknown }>('pty:attention'),
   },
   workspace: {
     load: () => ipcRenderer.invoke('workspace:load'),
@@ -63,14 +52,6 @@ contextBridge.exposeInMainWorld('electron', {
   },
   auth: {
     openExternal: (url: string) => ipcRenderer.invoke('auth:open-external', url),
-    onDeepLinkCode: (handler: (code: string) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, code: string) => {
-        handler(code);
-      };
-      ipcRenderer.on('auth:deeplink-code', listener);
-      return () => {
-        ipcRenderer.removeListener('auth:deeplink-code', listener);
-      };
-    },
+    onDeepLinkCode: subscribe<string>('auth:deeplink-code'),
   },
 });

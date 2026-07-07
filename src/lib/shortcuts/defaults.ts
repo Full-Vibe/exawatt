@@ -49,6 +49,19 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     contexts: ['global'],
   },
 
+  // Regime switching (ENG-015): terminal workspace ↔ spatial map — two
+  // first-class UI regimes over the same sessions, one gesture apart. The
+  // workspace binds the same chord itself (its terminals swallow window
+  // keydowns from the chord engine); both paths compute the same target.
+  {
+    id: 'toggle-regime',
+    keys: { key: 'm', modifiers: ['meta', 'shift'] },
+    label: 'Switch Regime (Workspace ↔ Map)',
+    description: 'Flip between the terminal workspace and the spatial map',
+    category: 'navigation',
+    contexts: ['global'],
+  },
+
   // Command palette
   {
     id: 'command-palette',
