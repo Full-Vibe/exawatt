@@ -1,0 +1,709 @@
+import {
+  resolveContextGroups,
+  type AgentStatus,
+  type ContextGroup,
+  type ExawattAgent,
+  type FleetState,
+} from '@exawatt/core';
+
+export type SpatialBoardAltitude = 'fleet' | 'project' | 'agent';
+export type SpatialBoardProjection = 'top-down' | 'fixed-angle';
+export type SpatialBoardPieceKind = 'agent' | 'aggregate';
+export type SpatialBoardLabelVisibility = 'always' | 'selected' | 'hidden';
+
+export interface SpatialBoardRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface SpatialBoardStatusCounts {
+  working: number;
+  blocked: number;
+  reviewing: number;
+  idle: number;
+  complete: number;
+  error: number;
+}
+
+export interface SpatialBoardProjectZone {
+  id: string;
+  slotIndex: number;
+  label: string;
+  agentIds: string[];
+  rect: SpatialBoardRect;
+  visible: boolean;
+  selected: boolean;
+  isAggregate: boolean;
+  aggregatedProjectCount: number;
+  agentCount: number;
+  visibleAgentCount: number;
+  activeCount: number;
+  blockedCount: number;
+  attentionPressure: number;
+  costRate: number;
+  dominantStatus: AgentStatus;
+  statusCounts: SpatialBoardStatusCounts;
+}
+
+export interface SpatialBoardPiece {
+  id: string;
+  slotIndex: number;
+  kind: SpatialBoardPieceKind;
+  projectId: string;
+  agentId: string | null;
+  label: string;
+  summary: string;
+  status: AgentStatus;
+  count: number;
+  x: number;
+  y: number;
+  size: number;
+  visible: boolean;
+  selected: boolean;
+  needsAttention: boolean;
+  labelVisibility: SpatialBoardLabelVisibility;
+}
+
+export interface SpatialBoardLayout {
+  version: 1;
+  altitude: SpatialBoardAltitude;
+  focusedProjectId: string | null;
+  selectedAgentId: string | null;
+  zones: SpatialBoardProjectZone[];
+  pieces: SpatialBoardPiece[];
+  /** Bounds of every emitted zone. Stable while filters only change visibility. */
+  bounds: SpatialBoardRect;
+  /** Bounds used for fit/recenter after filtering or semantic descent. */
+  cameraBounds: SpatialBoardRect;
+  minimap: {
+    bounds: SpatialBoardRect;
+    visibleZoneIds: string[];
+  };
+  stats: {
+    sourceProjectCount: number;
+    emittedProjectCount: number;
+    sourceAgentCount: number;
+    emittedPieceCount: number;
+    visiblePieceCount: number;
+    aggregatedAgentCount: number;
+    visibleLabelCount: number;
+  };
+}
+
+export interface SpatialBoardLayoutOptions {
+  altitude?: SpatialBoardAltitude;
+  focusedProjectId?: string | null;
+  selectedAgentId?: string | null;
+  /** Presentation-only; coordinates never branch on projection. */
+  projection?: SpatialBoardProjection;
+  /** Compute from full FleetState, then hide without changing stable addresses. */
+  visibleAgentIds?: ReadonlySet<string>;
+  previousLayout?: SpatialBoardLayout | null;
+  maxProjectZones?: number;
+  maxFleetPieces?: number;
+  maxFleetPiecesPerZone?: number;
+  maxProjectPieces?: number;
+  fleetAgentLabelLimit?: number;
+  projectAgentLabelLimit?: number;
+}
+
+const BOARD = {
+  columns: 4,
+  fleetZoneWidth: 24,
+  fleetZoneHeight: 16,
+  zoneGapX: 5,
+  zoneGapY: 5,
+  zoneHeaderHeight: 4,
+  zonePadding: 2,
+  fleetPieceSize: 2.2,
+  fleetPieceGap: 1.25,
+  projectPieceWidth: 5.2,
+  projectPieceHeight: 3.8,
+  projectPieceGap: 1.6,
+  projectColumns: 6,
+} as const;
+
+const DEFAULTS = {
+  maxProjectZones: 24,
+  maxFleetPieces: 96,
+  maxFleetPiecesPerZone: 12,
+  maxProjectPieces: 120,
+  fleetAgentLabelLimit: 8,
+  projectAgentLabelLimit: 32,
+} as const;
+
+const STATUS_ORDER: AgentStatus[] = [
+  'blocked',
+  'error',
+  'reviewing',
+  'working',
+  'idle',
+  'complete',
+];
+
+const STATUS_RANK: Record<AgentStatus, number> = {
+  blocked: 0,
+  error: 1,
+  reviewing: 2,
+  working: 3,
+  idle: 4,
+  complete: 5,
+};
+
+function round4(value: number): number {
+  return Math.round(value * 10_000) / 10_000;
+}
+
+function emptyCounts(): SpatialBoardStatusCounts {
+  return {
+    working: 0,
+    blocked: 0,
+    reviewing: 0,
+    idle: 0,
+    complete: 0,
+    error: 0,
+  };
+}
+
+function statusCounts(agents: ExawattAgent[]): SpatialBoardStatusCounts {
+  const counts = emptyCounts();
+  for (const agent of agents) counts[agent.status]++;
+  return counts;
+}
+
+function dominantStatus(counts: SpatialBoardStatusCounts): AgentStatus {
+  for (const status of STATUS_ORDER) {
+    if (counts[status] > 0) return status;
+  }
+  return 'idle';
+}
+
+function boundsOf(rects: SpatialBoardRect[]): SpatialBoardRect {
+  if (rects.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const rect of rects) {
+    minX = Math.min(minX, rect.x);
+    minY = Math.min(minY, rect.y);
+    maxX = Math.max(maxX, rect.x + rect.width);
+    maxY = Math.max(maxY, rect.y + rect.height);
+  }
+  return {
+    x: round4(minX),
+    y: round4(minY),
+    width: round4(maxX - minX),
+    height: round4(maxY - minY),
+  };
+}
+
+function groupAgents(group: ContextGroup, state: FleetState): ExawattAgent[] {
+  return group.agentIds
+    .map(id => state.agents[id])
+    .filter((agent): agent is ExawattAgent => Boolean(agent))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function visibleAgent(
+  agentId: string,
+  visibleAgentIds: ReadonlySet<string> | undefined
+): boolean {
+  return visibleAgentIds ? visibleAgentIds.has(agentId) : true;
+}
+
+function nextFreeSlot(used: Set<number>): number {
+  let slot = 0;
+  while (used.has(slot)) slot++;
+  used.add(slot);
+  return slot;
+}
+
+function stableSlots(
+  ids: string[],
+  previous: Map<string, number>
+): Map<string, number> {
+  const result = new Map<string, number>();
+  const used = new Set<number>();
+  for (const id of ids) {
+    const old = previous.get(id);
+    if (old == null || old < 0 || used.has(old)) continue;
+    result.set(id, old);
+    used.add(old);
+  }
+  for (const id of ids) {
+    if (!result.has(id)) result.set(id, nextFreeSlot(used));
+  }
+  return result;
+}
+
+function fleetZoneRect(slotIndex: number): SpatialBoardRect {
+  const pitchX = BOARD.fleetZoneWidth + BOARD.zoneGapX;
+  const pitchY = BOARD.fleetZoneHeight + BOARD.zoneGapY;
+  return {
+    x: (slotIndex % BOARD.columns) * pitchX,
+    y: Math.floor(slotIndex / BOARD.columns) * pitchY,
+    width: BOARD.fleetZoneWidth,
+    height: BOARD.fleetZoneHeight,
+  };
+}
+
+function projectZoneRect(agentCount: number): SpatialBoardRect {
+  const columns = Math.max(1, Math.min(BOARD.projectColumns, agentCount));
+  const rows = Math.max(1, Math.ceil(agentCount / BOARD.projectColumns));
+  const width =
+    columns * BOARD.projectPieceWidth +
+    Math.max(0, columns - 1) * BOARD.projectPieceGap +
+    BOARD.zonePadding * 2;
+  const height =
+    BOARD.zoneHeaderHeight +
+    rows * BOARD.projectPieceHeight +
+    Math.max(0, rows - 1) * BOARD.projectPieceGap +
+    BOARD.zonePadding * 2;
+  return {
+    x: 0,
+    y: 0,
+    width: round4(Math.max(BOARD.fleetZoneWidth, width)),
+    height: round4(Math.max(BOARD.fleetZoneHeight, height)),
+  };
+}
+
+function aggregateGroups(
+  groups: ContextGroup[],
+  state: FleetState
+): ContextGroup {
+  const agents = groups.flatMap(group => groupAgents(group, state));
+  const counts = statusCounts(agents);
+  const blocked = counts.blocked + counts.error;
+  const active = counts.working + counts.reviewing;
+  const idle = agents.length - blocked - active;
+  const costRate = agents.reduce(
+    (sum, agent) => sum + agent.metrics.costRate,
+    0
+  );
+  const totalCost = agents.reduce(
+    (sum, agent) => sum + agent.metrics.estimatedCost,
+    0
+  );
+  return {
+    clusterId: 'aggregate:remaining-projects',
+    kind: 'project',
+    label: `+${groups.length} more Projects`,
+    agentIds: agents.map(agent => agent.id).sort(),
+    summary: {
+      agentCount: agents.length,
+      activeCount: active,
+      blockedCount: blocked,
+      idleCount: idle,
+      costRate: round4(costRate),
+      totalCost: round4(totalCost),
+      attentionPressure: round4(
+        agents.length > 0
+          ? (blocked * 3 + counts.reviewing) / (agents.length * 3)
+          : 0
+      ),
+      dominantStatus: dominantStatus(counts),
+    },
+  };
+}
+
+function projectZone(
+  group: ContextGroup,
+  state: FleetState,
+  slotIndex: number,
+  rect: SpatialBoardRect,
+  selectedAgentId: string | null,
+  visibleAgentIds: ReadonlySet<string> | undefined,
+  isAggregate: boolean,
+  aggregatedProjectCount: number
+): SpatialBoardProjectZone {
+  const agents = groupAgents(group, state);
+  const visible = agents.filter(agent =>
+    visibleAgent(agent.id, visibleAgentIds)
+  );
+  const counts = statusCounts(agents);
+  const visibleIds = new Set(visible.map(agent => agent.id));
+  const selected = selectedAgentId
+    ? group.agentIds.includes(selectedAgentId)
+    : false;
+  return {
+    id: group.clusterId,
+    slotIndex,
+    label: group.label,
+    agentIds: agents.map(agent => agent.id),
+    rect,
+    visible: isAggregate || visible.length > 0,
+    selected,
+    isAggregate,
+    aggregatedProjectCount,
+    agentCount: agents.length,
+    visibleAgentCount: isAggregate
+      ? agents.length
+      : agents.reduce(
+          (count, agent) => count + Number(visibleIds.has(agent.id)),
+          0
+        ),
+    activeCount: counts.working + counts.reviewing,
+    blockedCount: counts.blocked + counts.error,
+    attentionPressure: group.summary.attentionPressure,
+    costRate: group.summary.costRate,
+    dominantStatus: dominantStatus(counts),
+    statusCounts: counts,
+  };
+}
+
+function fleetSlotPosition(
+  zone: SpatialBoardProjectZone,
+  slotIndex: number
+): { x: number; y: number } {
+  const columns = 4;
+  const row = Math.floor(slotIndex / columns);
+  const column = slotIndex % columns;
+  const contentWidth =
+    columns * BOARD.fleetPieceSize + (columns - 1) * BOARD.fleetPieceGap;
+  const startX = zone.rect.x + (zone.rect.width - contentWidth) / 2;
+  const startY =
+    zone.rect.y +
+    BOARD.zoneHeaderHeight +
+    BOARD.zonePadding +
+    BOARD.fleetPieceSize / 2;
+  return {
+    x: round4(
+      startX +
+        column * (BOARD.fleetPieceSize + BOARD.fleetPieceGap) +
+        BOARD.fleetPieceSize / 2
+    ),
+    y: round4(startY + row * (BOARD.fleetPieceSize + BOARD.fleetPieceGap)),
+  };
+}
+
+function projectSlotPosition(
+  zone: SpatialBoardProjectZone,
+  slotIndex: number
+): { x: number; y: number } {
+  const columns = Math.max(1, Math.min(BOARD.projectColumns, zone.agentCount));
+  const row = Math.floor(slotIndex / columns);
+  const column = slotIndex % columns;
+  const contentWidth =
+    columns * BOARD.projectPieceWidth +
+    Math.max(0, columns - 1) * BOARD.projectPieceGap;
+  const startX = zone.rect.x + (zone.rect.width - contentWidth) / 2;
+  const startY =
+    zone.rect.y +
+    BOARD.zoneHeaderHeight +
+    BOARD.zonePadding +
+    BOARD.projectPieceHeight / 2;
+  return {
+    x: round4(
+      startX +
+        column * (BOARD.projectPieceWidth + BOARD.projectPieceGap) +
+        BOARD.projectPieceWidth / 2
+    ),
+    y: round4(
+      startY + row * (BOARD.projectPieceHeight + BOARD.projectPieceGap)
+    ),
+  };
+}
+
+function individualPieces(
+  zone: SpatialBoardProjectZone,
+  state: FleetState,
+  altitude: SpatialBoardAltitude,
+  selectedAgentId: string | null,
+  visibleAgentIds: ReadonlySet<string> | undefined,
+  labelLimit: number,
+  previousLayout: SpatialBoardLayout | null | undefined
+): SpatialBoardPiece[] {
+  const previousSlots = new Map<string, number>();
+  if (previousLayout?.altitude === altitude) {
+    for (const piece of previousLayout.pieces) {
+      if (piece.kind === 'agent' && piece.projectId === zone.id) {
+        previousSlots.set(piece.id, piece.slotIndex);
+      }
+    }
+  }
+  const ids = zone.agentIds.map(agentId => `agent:${agentId}`);
+  const slots = stableSlots(ids, previousSlots);
+  return ids.map((id, index) => {
+    const agentId = id.slice('agent:'.length);
+    const agent = state.agents[agentId]!;
+    const selected = agentId === selectedAgentId;
+    const slotIndex = slots.get(id)!;
+    const position =
+      altitude === 'fleet'
+        ? fleetSlotPosition(zone, slotIndex)
+        : projectSlotPosition(zone, slotIndex);
+    const showByBudget = index < labelLimit;
+    return {
+      id,
+      slotIndex,
+      kind: 'agent' as const,
+      projectId: zone.id,
+      agentId,
+      label: agent.name,
+      summary: agent.goal,
+      status: agent.status,
+      count: 1,
+      x: position.x,
+      y: position.y,
+      size:
+        altitude === 'fleet' ? BOARD.fleetPieceSize : BOARD.projectPieceHeight,
+      visible: zone.visible && visibleAgent(agentId, visibleAgentIds),
+      selected,
+      needsAttention: agent.status === 'blocked' || agent.status === 'error',
+      labelVisibility: selected
+        ? ('always' as const)
+        : showByBudget
+          ? ('always' as const)
+          : ('selected' as const),
+    };
+  });
+}
+
+function aggregatePieces(
+  zone: SpatialBoardProjectZone,
+  altitude: SpatialBoardAltitude
+): SpatialBoardPiece[] {
+  const pieces: SpatialBoardPiece[] = [];
+  for (const status of STATUS_ORDER) {
+    const count = zone.statusCounts[status];
+    if (count === 0) continue;
+    const slotIndex = pieces.length;
+    const position =
+      altitude === 'fleet'
+        ? fleetSlotPosition(zone, slotIndex)
+        : projectSlotPosition(zone, slotIndex);
+    pieces.push({
+      id: `aggregate:${zone.id}:${status}`,
+      slotIndex,
+      kind: 'aggregate',
+      projectId: zone.id,
+      agentId: null,
+      label: status,
+      summary: `${count} ${status}`,
+      status,
+      count,
+      x: position.x,
+      y: position.y,
+      size:
+        altitude === 'fleet' ? BOARD.fleetPieceSize : BOARD.projectPieceHeight,
+      visible: zone.visible,
+      selected: false,
+      needsAttention: status === 'blocked' || status === 'error',
+      labelVisibility: 'always',
+    });
+  }
+  return pieces;
+}
+
+function cameraBoundsFor(
+  altitude: SpatialBoardAltitude,
+  zones: SpatialBoardProjectZone[],
+  pieces: SpatialBoardPiece[],
+  selectedAgentId: string | null,
+  fallback: SpatialBoardRect
+): SpatialBoardRect {
+  if (altitude === 'agent' && selectedAgentId) {
+    const selected = pieces.find(piece => piece.agentId === selectedAgentId);
+    if (selected) {
+      const padding = 6;
+      return {
+        x: round4(selected.x - padding),
+        y: round4(selected.y - padding),
+        width: padding * 2,
+        height: padding * 2,
+      };
+    }
+  }
+  const visibleRects = zones
+    .filter(zone => zone.visible)
+    .map(zone => zone.rect);
+  return visibleRects.length > 0 ? boundsOf(visibleRects) : fallback;
+}
+
+/**
+ * Projection-independent, source-agnostic board layout. It consumes the full
+ * FleetState and applies visibility after placement so filters do not scramble
+ * spatial addresses. Supply `previousLayout` to preserve existing slots when
+ * Projects or Agents arrive.
+ */
+export function selectSpatialBoardLayout(
+  state: FleetState,
+  options: SpatialBoardLayoutOptions = {}
+): SpatialBoardLayout {
+  const selectedAgentId = options.selectedAgentId ?? null;
+  let altitude = options.altitude ?? 'fleet';
+  let focusedProjectId = options.focusedProjectId ?? null;
+  const allGroups = resolveContextGroups(state).sort((a, b) =>
+    a.clusterId.localeCompare(b.clusterId)
+  );
+  const sourceProjectCount = allGroups.length;
+  const sourceAgentCount = Object.keys(state.agents).length;
+
+  if (altitude === 'agent') {
+    const owner = selectedAgentId
+      ? allGroups.find(group => group.agentIds.includes(selectedAgentId))
+      : undefined;
+    if (owner) focusedProjectId = owner.clusterId;
+    else {
+      altitude = 'fleet';
+      focusedProjectId = null;
+    }
+  }
+  if (altitude === 'project') {
+    if (!allGroups.some(group => group.clusterId === focusedProjectId)) {
+      altitude = 'fleet';
+      focusedProjectId = null;
+    }
+  }
+
+  const maxProjectZones = Math.max(
+    1,
+    options.maxProjectZones ?? DEFAULTS.maxProjectZones
+  );
+  let groups = allGroups;
+  let aggregateProjectCount = 0;
+  if (altitude === 'fleet' && allGroups.length > maxProjectZones + 1) {
+    const hidden = allGroups.slice(maxProjectZones);
+    aggregateProjectCount = hidden.length;
+    groups = [
+      ...allGroups.slice(0, maxProjectZones),
+      aggregateGroups(hidden, state),
+    ];
+  } else if (altitude !== 'fleet') {
+    groups = allGroups.filter(group => group.clusterId === focusedProjectId);
+  }
+
+  const previousZoneSlots = new Map<string, number>();
+  if (options.previousLayout?.altitude === altitude) {
+    for (const zone of options.previousLayout.zones) {
+      previousZoneSlots.set(zone.id, zone.slotIndex);
+    }
+  }
+  const zoneSlots = stableSlots(
+    groups.map(group => group.clusterId),
+    previousZoneSlots
+  );
+  const zones = groups.map(group => {
+    const slotIndex =
+      altitude === 'fleet' ? zoneSlots.get(group.clusterId)! : 0;
+    const isAggregate = group.clusterId === 'aggregate:remaining-projects';
+    const rect =
+      altitude === 'fleet'
+        ? fleetZoneRect(slotIndex)
+        : projectZoneRect(group.agentIds.length);
+    return projectZone(
+      group,
+      state,
+      slotIndex,
+      rect,
+      selectedAgentId,
+      options.visibleAgentIds,
+      isAggregate,
+      isAggregate ? aggregateProjectCount : 0
+    );
+  });
+
+  const maxFleetPieces = options.maxFleetPieces ?? DEFAULTS.maxFleetPieces;
+  const maxFleetPiecesPerZone =
+    options.maxFleetPiecesPerZone ?? DEFAULTS.maxFleetPiecesPerZone;
+  const maxProjectPieces =
+    options.maxProjectPieces ?? DEFAULTS.maxProjectPieces;
+  const showFleetIndividuals = sourceAgentCount <= maxFleetPieces;
+  const pieces: SpatialBoardPiece[] = [];
+  for (const zone of zones) {
+    const individualLimit =
+      altitude === 'fleet' ? maxFleetPiecesPerZone : maxProjectPieces;
+    const showIndividuals =
+      !zone.isAggregate &&
+      zone.agentCount <= individualLimit &&
+      (altitude !== 'fleet' || showFleetIndividuals);
+    if (showIndividuals) {
+      pieces.push(
+        ...individualPieces(
+          zone,
+          state,
+          altitude,
+          selectedAgentId,
+          options.visibleAgentIds,
+          altitude === 'fleet'
+            ? (options.fleetAgentLabelLimit ?? DEFAULTS.fleetAgentLabelLimit)
+            : (options.projectAgentLabelLimit ??
+                DEFAULTS.projectAgentLabelLimit),
+          options.previousLayout
+        )
+      );
+    } else {
+      pieces.push(...aggregatePieces(zone, altitude));
+    }
+  }
+
+  const bounds = boundsOf(zones.map(zone => zone.rect));
+  const cameraBounds = cameraBoundsFor(
+    altitude,
+    zones,
+    pieces,
+    selectedAgentId,
+    bounds
+  );
+  const emittedIndividualAgents = pieces.reduce(
+    (count, piece) => count + (piece.kind === 'agent' ? 1 : 0),
+    0
+  );
+  const visiblePieces = pieces.filter(piece => piece.visible);
+  const visibleLabelCount = visiblePieces.filter(
+    piece => piece.labelVisibility === 'always'
+  ).length;
+
+  return {
+    version: 1,
+    altitude,
+    focusedProjectId: altitude === 'fleet' ? null : focusedProjectId,
+    selectedAgentId,
+    zones,
+    pieces,
+    bounds,
+    cameraBounds,
+    minimap: {
+      bounds,
+      visibleZoneIds: zones.filter(zone => zone.visible).map(zone => zone.id),
+    },
+    stats: {
+      sourceProjectCount,
+      emittedProjectCount: zones.length,
+      sourceAgentCount,
+      emittedPieceCount: pieces.length,
+      visiblePieceCount: visiblePieces.length,
+      aggregatedAgentCount: Math.max(
+        0,
+        sourceAgentCount - emittedIndividualAgents
+      ),
+      visibleLabelCount,
+    },
+  };
+}
+
+export function spatialBoardPieceForAgent(
+  layout: SpatialBoardLayout,
+  agentId: string
+): SpatialBoardPiece | null {
+  return layout.pieces.find(piece => piece.agentId === agentId) ?? null;
+}
+
+export function spatialBoardZoneForAgent(
+  layout: SpatialBoardLayout,
+  agentId: string
+): SpatialBoardProjectZone | null {
+  return layout.zones.find(zone => zone.agentIds.includes(agentId)) ?? null;
+}
+
+export function compareSpatialBoardAttention(
+  a: SpatialBoardPiece,
+  b: SpatialBoardPiece
+): number {
+  const statusDelta = STATUS_RANK[a.status] - STATUS_RANK[b.status];
+  if (statusDelta !== 0) return statusDelta;
+  return a.id.localeCompare(b.id);
+}

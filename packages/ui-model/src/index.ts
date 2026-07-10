@@ -11,6 +11,8 @@ import {
   type FleetState,
 } from '@exawatt/core';
 
+export * from './spatial-board';
+
 export type FleetSurfaceMode = 'dom' | 'spatial';
 
 export type FleetCommandErrorCode =

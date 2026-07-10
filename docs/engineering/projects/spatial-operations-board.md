@@ -873,7 +873,7 @@ constellation:
 
 ### V2.0 Spatial Operations Board
 
-Status: active-build — B0 landed; B1 board model next
+Status: active-build — B0–B1 landed; B2 top-down board next
 
 Scope, phase gates, budgets, and non-goals are defined in the V2.0 design brief
 above. Record each pushed B0–B5 checkpoint here with verification evidence. A
@@ -893,6 +893,18 @@ Progress log:
   motion, and low power with three Project controls/three Agent controls, zero
   settled idle frames, and DPR 1.25 in simulated low-power mode. These are the
   pre-V2 renderer baselines, not acceptance of the superseded visual motif.
+- **B1 landed (2026-07-10):** added the pure, projection-independent
+  `selectSpatialBoardLayout` boundary in `@exawatt/ui-model`. It emits stable
+  Project slots, anchored Agent/aggregate pieces, visibility applied after
+  placement, previous-layout slot preservation for arrivals, altitude-specific
+  camera bounds, minimap bounds, semantic aggregation, and explicit label
+  budgets. Top-down and fixed-angle options produce identical coordinates.
+- B1 verification: 14 focused board-model tests cover empty and 1/2/3/6-Project
+  composition, insertion-order/projection invariance, status-change stability,
+  filter stability, Project/Agent arrivals, Project overflow, selected-label
+  priority, stale deep links, Agent camera focus, and a 10,000-Agent/50-Project
+  fixture whose emitted pieces remain bounded to status aggregates. Full type-
+  check and lint pass; 281/281 repository tests pass.
 
 ### V2.1 Scale & Truth
 
