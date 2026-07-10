@@ -149,6 +149,14 @@ Operator decisions (2026-07-10):
 - Rename to canon: the code/UI concept becomes **Project / Context Group**;
   `Initiative` is reserved for the durable-goal primitive (ENG-005,
   `docs/product/concepts.md`).
+- Table name (operator, 2026-07-10): the canonical Project takes the `projects`
+  table — "I would have expected this to be the projects table." The legacy
+  demo kanban currently on `public.projects` is renamed `demo_projects` (a
+  surface ENG-016 buries anyway). The schema is shaped for the GENERAL
+  Project/Context Group (a `kind` discriminator, nullable path) so a future
+  soft/inferred/semantic/meta Project is a new `kind`, not a new table — but v1
+  builds only the concrete repository kind. Deliberate: general name + shape,
+  one-mile build.
 
 Architecture — split identity from layout:
 
@@ -160,12 +168,18 @@ Architecture — split identity from layout:
 - Load reconciles the two: fetch the Project registry (the known list) + load
   the local layout (live/revivable sessions) and join by id.
 
-Data model (new table; UI/code term "Project"; named to avoid the legacy demo
-`public.projects` kanban table, which stays untouched):
+Data model — the canonical Project claims the `projects` table (the legacy demo
+kanban on `public.projects` is renamed `demo_projects` and its query sites +
+demo `Project` type repointed). The table is NAMED and SHAPED for the general
+Project/Context Group, but v1 builds only the repository kind:
 
-- `context_groups`: id · user_id · name · color · root_path · git_remote
-  (nullable) · last_opened_at · archived_at (nullable) · sort_order ·
-  timestamps. RLS user-scoped, mirroring the existing table pattern.
+- `projects`: id · user_id · name · color · `kind` (text not null, default
+  `'repository'`) · root_path (nullable) · git_remote (nullable) ·
+  last_opened_at · archived_at (nullable) · sort_order · timestamps. RLS
+  user-scoped, mirroring the existing table pattern. v1 writes only
+  `kind='repository'` with a real root_path; a `resolution_rule jsonb` (for
+  inferred/semantic/customer/goal kinds) is deferred until a second kind exists
+  — a trivial additive migration then.
 - Resolution bridge on ignite: resolve `projectDir` as today, match a row by
   `root_path` then `git_remote`, upsert if new. A row whose `root_path` does
   not exist on the current machine renders a graceful "locate on this machine"
@@ -189,7 +203,9 @@ Phasing:
   manifest + concept references. Mechanical and isolated; lands first so every
   later phase speaks "Project". Canon `Initiative` (goal) is untouched — it is
   not yet built, so there is no collision.
-- P2 Registry data layer: Supabase migration + RLS + typed accessors; the
+- P2 Registry data layer: reclaim the `projects` name (rename legacy demo →
+  `demo_projects`, repoint its query sites + demo `Project` type); Supabase
+  migration for the canonical `projects` table + RLS + typed accessors; the
   renderer reads/writes via the browser client. Checkpoint: confirm the
   `/workspace` renderer holds an authed Supabase session (OAuth deep-link
   session available to the browser client); if not, add a thin main-process
