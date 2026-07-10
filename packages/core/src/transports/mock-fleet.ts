@@ -600,7 +600,9 @@ export class MockFleetTransport {
     const id = `demo-syn-${index}`;
     const agent = createAgent({
       id,
-      name: SYNTHETIC_GOALS[index % SYNTHETIC_GOALS.length]!.split(' ').slice(0, 3).join(' '),
+      name: SYNTHETIC_GOALS[index % SYNTHETIC_GOALS.length]!.split(' ')
+        .slice(0, 3)
+        .join(' '),
       // Concentrate ~1/3 into the lead Project so a large fleet has one big
       // Project (>~48 agents) that exercises the instanced tile path on drill-in,
       // while the rest spread across the others for a realistic cluster mix.
@@ -655,7 +657,7 @@ export class MockFleetTransport {
 
   private _pushAllAgentsToManager(): void {
     if (!this.fleetManager) return;
-    this.fleetManager.seedAgents(Array.from(this.agents.values()));
+    this.fleetManager.replaceAgents(Array.from(this.agents.values()));
   }
 
   private _scheduleTick(): void {

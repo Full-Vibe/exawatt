@@ -10,7 +10,6 @@ import {
   Activity,
   Clock3,
   Crosshair,
-  FlaskConical,
   RadioTower,
   Search,
 } from 'lucide-react';
@@ -39,9 +38,9 @@ const FILTERABLE_STATUSES: AgentStatus[] = [
   'idle',
 ];
 
-// The single Fleet spatial surface: the AgentField WebGL world (instanced
-// tactical cluster map) under DOM chrome. ssr:false so three.js loads only on
-// this route.
+// The Fleet spatial surface: one AgentField runtime with distinct Fleet,
+// Project, and Agent render regimes under shared DOM chrome. ssr:false keeps
+// three.js scoped to this route.
 const AgentFieldSurface = dynamic(
   () =>
     import('./agent-field/agent-field-surface').then(
@@ -62,7 +61,9 @@ export function SpatialFleetClient() {
   const searchParams = useSearchParams();
   const rawAltitude = searchParams.get('altitude');
   const altitude: Altitude =
-    rawAltitude === 'project' || rawAltitude === 'agent' ? rawAltitude : 'fleet';
+    rawAltitude === 'project' || rawAltitude === 'agent'
+      ? rawAltitude
+      : 'fleet';
   const focusedProjectId = searchParams.get('project');
   const selectedAgentId = searchParams.get('agent');
   const { fleetState } = useFleet();
@@ -113,9 +114,7 @@ export function SpatialFleetClient() {
 
   const toggleStatus = (status: AgentStatus) =>
     setStatusFilter(prev =>
-      prev.includes(status)
-        ? prev.filter(s => s !== status)
-        : [...prev, status]
+      prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]
     );
 
   // Drive zoom-resolution + selection through the URL (deep-linkable). The
@@ -206,6 +205,29 @@ export function SpatialFleetClient() {
     scene.altitude === 'agent'
       ? (commandView.agents.find(agent => agent.id === selectedAgentId) ?? null)
       : null;
+  const visibleActivity = useMemo(() => {
+    if (scene.altitude === 'agent' && selectedAgentId) {
+      return commandView.activityFeed.filter(
+        item => item.agentId === selectedAgentId
+      );
+    }
+    if (scene.altitude === 'project' && scene.focusedProjectId) {
+      const memberIds = new Set(
+        fieldZones.find(zone => zone.clusterId === scene.focusedProjectId)
+          ?.agentIds ?? []
+      );
+      return commandView.activityFeed.filter(item =>
+        memberIds.has(item.agentId)
+      );
+    }
+    return commandView.activityFeed;
+  }, [
+    commandView.activityFeed,
+    fieldZones,
+    scene.altitude,
+    scene.focusedProjectId,
+    selectedAgentId,
+  ]);
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('en-US', {
@@ -216,7 +238,12 @@ export function SpatialFleetClient() {
     }).format(value);
 
   return (
-    <div className="fleet-shell flex h-[calc(100svh-3rem)] flex-col overflow-hidden text-zinc-100">
+    <div
+      data-spatial-command
+      data-spatial-altitude={scene.altitude}
+      data-agent-count={commandView.agents.length}
+      className="fleet-shell flex min-h-[calc(100svh-3rem)] flex-col overflow-x-hidden text-zinc-100 xl:h-[calc(100svh-3rem)] xl:overflow-hidden"
+    >
       <FleetMetricsBar />
 
       <header className="relative z-20 flex shrink-0 flex-wrap items-center gap-3 border-b border-zinc-800/80 bg-zinc-950/90 px-4 py-3 backdrop-blur">
@@ -243,14 +270,6 @@ export function SpatialFleetClient() {
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Link
-            href="/hud-gallery"
-            title="Internal HUD component library (in development)"
-            className="flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-400/20"
-          >
-            <FlaskConical className="h-3.5 w-3.5" />
-            Dev · HUD Library
-          </Link>
           <Button asChild className="fleet-action-button h-8">
             <Link href="/fleet/cron">
               <Clock3 className="h-4 w-4" />
@@ -368,9 +387,9 @@ export function SpatialFleetClient() {
         </div>
       </nav>
 
-      <main className="relative grid min-h-0 flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_360px]">
+      <main className="relative grid min-h-0 flex-1 xl:grid-cols-[minmax(0,1fr)_360px] xl:overflow-hidden">
         <section
-          className="relative h-[56vh] min-h-[420px] overflow-hidden xl:h-auto"
+          className="relative h-[52svh] min-h-[360px] overflow-hidden sm:min-h-[420px] xl:h-auto"
           aria-label="Fleet command surface"
         >
           <AgentFieldSurface
@@ -394,7 +413,7 @@ export function SpatialFleetClient() {
           />
         </section>
 
-        <aside className="relative z-10 flex min-h-0 flex-col gap-4 border-t border-zinc-800 bg-zinc-950/92 p-4 backdrop-blur xl:border-l xl:border-t-0">
+        <aside className="relative z-10 flex flex-col gap-4 border-t border-zinc-800 bg-zinc-950/92 p-4 pb-24 backdrop-blur xl:min-h-0 xl:border-l xl:border-t-0 xl:pb-4">
           {inspectedAgent ? (
             <section className="fleet-panel p-4">
               <div className="flex items-start justify-between gap-3">
@@ -446,7 +465,9 @@ export function SpatialFleetClient() {
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button asChild className="fleet-action-button">
-                  <Link href={`/fleet/${encodeURIComponent(inspectedAgent.id)}`}>
+                  <Link
+                    href={`/fleet/${encodeURIComponent(inspectedAgent.id)}`}
+                  >
                     Focus
                   </Link>
                 </Button>
@@ -455,7 +476,9 @@ export function SpatialFleetClient() {
                     asChild
                     className="fleet-action-button bg-red-200 text-zinc-950 hover:bg-red-100"
                   >
-                    <Link href={`/fleet/${encodeURIComponent(inspectedAgent.id)}`}>
+                    <Link
+                      href={`/fleet/${encodeURIComponent(inspectedAgent.id)}`}
+                    >
                       Clear
                     </Link>
                   </Button>
@@ -478,12 +501,14 @@ export function SpatialFleetClient() {
               Activity
             </div>
             <div className="space-y-2 overflow-y-auto pr-1">
-              {commandView.activityFeed.length === 0 ? (
+              {visibleActivity.length === 0 ? (
                 <p className="rounded-md border border-zinc-800 bg-zinc-950/50 p-3 text-sm text-zinc-500">
-                  Waiting for events.
+                  {scene.altitude === 'fleet'
+                    ? 'Waiting for events.'
+                    : `No recent activity for this ${scene.altitude === 'agent' ? 'Agent' : 'Project'}.`}
                 </p>
               ) : (
-                commandView.activityFeed.map(item => (
+                visibleActivity.map(item => (
                   <div
                     key={item.id}
                     className="rounded-md border border-zinc-800/70 bg-zinc-950/50 p-2.5"

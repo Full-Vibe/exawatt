@@ -27,6 +27,17 @@ function makeMockFleetManager() {
         lastUpdated: Date.now(),
       });
     }),
+    replaceAgents: vi.fn().mockImplementation((agents: ExawattAgent[]) => {
+      agentsMap.clear();
+      for (const agent of agents) agentsMap.set(agent.id, agent);
+      const agentsRecord: Record<string, ExawattAgent> = {};
+      for (const [id, a] of agentsMap) agentsRecord[id] = a;
+      mgr.emit('fleet:updated', {
+        agents: agentsRecord,
+        metrics: {} as FleetMetrics,
+        lastUpdated: Date.now(),
+      });
+    }),
     upsertAgent: vi.fn().mockImplementation((agent: ExawattAgent) => {
       agentsMap.set(agent.id, agent);
       const agentsRecord: Record<string, ExawattAgent> = {};
@@ -66,12 +77,12 @@ describe('MockFleetTransport', () => {
   // ---- 1. initialize() ----
 
   describe('initialize()', () => {
-    it('seeds 8 mock agents via seedAgents()', () => {
+    it('publishes 8 mock agents as an authoritative snapshot', () => {
       transport.initialize(mockFleetManager);
 
-      const seedMock = vi.mocked(mockFleetManager.seedAgents);
-      expect(seedMock).toHaveBeenCalledTimes(1);
-      expect(seedMock.mock.calls[0]![0]).toHaveLength(EXPECTED_AGENT_COUNT);
+      const replaceMock = vi.mocked(mockFleetManager.replaceAgents);
+      expect(replaceMock).toHaveBeenCalledTimes(1);
+      expect(replaceMock.mock.calls[0]![0]).toHaveLength(EXPECTED_AGENT_COUNT);
     });
 
     it('emits fleet:updated after seeding', () => {
@@ -416,15 +427,15 @@ describe('MockFleetTransport', () => {
       expect(transport.getAllAgents()).toHaveLength(EXPECTED_AGENT_COUNT);
     });
 
-    it('re-seeds all agents via seedAgents() after reset', () => {
+    it('replaces the authoritative snapshot after reset', () => {
       transport.initialize(mockFleetManager);
-      vi.mocked(mockFleetManager.seedAgents).mockClear();
+      vi.mocked(mockFleetManager.replaceAgents).mockClear();
 
       transport.reset();
 
-      const seedMock = vi.mocked(mockFleetManager.seedAgents);
-      expect(seedMock).toHaveBeenCalledTimes(1);
-      expect(seedMock.mock.calls[0]![0]).toHaveLength(EXPECTED_AGENT_COUNT);
+      const replaceMock = vi.mocked(mockFleetManager.replaceAgents);
+      expect(replaceMock).toHaveBeenCalledTimes(1);
+      expect(replaceMock.mock.calls[0]![0]).toHaveLength(EXPECTED_AGENT_COUNT);
     });
 
     it('stops any running simulation on reset', () => {
@@ -676,7 +687,9 @@ describe('MockFleetTransport', () => {
       const agents = transport.getAllAgents();
       expect(agents).toHaveLength(150);
       // a stable hero always exists (the 8 base agents include 2 blocked)
-      expect(agents.filter(a => a.status === 'blocked').length).toBeGreaterThan(0);
+      expect(agents.filter(a => a.status === 'blocked').length).toBeGreaterThan(
+        0
+      );
       // spread across more than the 3 demo Projects
       const projects = new Set(agents.map(a => a.project));
       expect(projects.size).toBeGreaterThan(3);
@@ -689,10 +702,10 @@ describe('MockFleetTransport', () => {
 
     it('medium seeds 40 agents and re-emits through the manager', () => {
       transport.initialize(mockFleetManager);
-      vi.mocked(mockFleetManager.seedAgents).mockClear();
+      vi.mocked(mockFleetManager.replaceAgents).mockClear();
       transport.setScale('medium');
       expect(transport.getAllAgents()).toHaveLength(40);
-      expect(vi.mocked(mockFleetManager.seedAgents)).toHaveBeenCalled();
+      expect(vi.mocked(mockFleetManager.replaceAgents)).toHaveBeenCalled();
     });
 
     it('returning to small restores the original 8', () => {

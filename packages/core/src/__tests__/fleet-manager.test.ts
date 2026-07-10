@@ -119,6 +119,24 @@ describe('FleetManager', () => {
     expect(manager.getAllAgents()).toEqual([]);
   });
 
+  it('replaceAgents atomically removes agents absent from a source snapshot', () => {
+    const manager = new FleetManager();
+    const update = vi.fn();
+    manager.on('fleet:updated', update);
+    manager.seedAgents([
+      makeAgent({ id: 'keep' }),
+      makeAgent({ id: 'remove' }),
+    ]);
+    update.mockClear();
+
+    manager.replaceAgents([makeAgent({ id: 'keep', status: 'working' })]);
+
+    expect(manager.getAllAgents().map(agent => agent.id)).toEqual(['keep']);
+    expect(manager.getAgent('keep')?.status).toBe('working');
+    expect(manager.getAgent('remove')).toBeUndefined();
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
   it('refresh() populates agents from FleetAdapter', async () => {
     const { manager } = makeConnectedManager();
     const agent = makeAgent({ id: 'agent-1', status: 'working' });

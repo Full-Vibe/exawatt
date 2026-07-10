@@ -41,88 +41,35 @@ import {
 } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
-import { CameraControls, Grid, Html, Line, Text } from '@react-three/drei';
+import { CameraControls, Grid, Html, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import type { AgentStatus } from '@exawatt/core';
 import { HUD, HUD_STATUS_COLOR } from '../tokens';
 import { isLowPowerSpatialDevice } from './agent-field-capabilities';
+import { layoutProjectDeck } from './agent-field-regime-layout';
+import { AgentRegime, ProjectRegime } from './agent-field-regimes';
+import type {
+  AgentFieldRegime,
+  ClusterInfo,
+  FieldAgent,
+  FieldGroupSpec,
+  FieldHero,
+} from './agent-field-types';
+
+export type {
+  AgentFieldRegime,
+  ClusterInfo,
+  FieldAgent,
+  FieldGroupAgent,
+  FieldGroupSpec,
+  FieldHero,
+} from './agent-field-types';
 
 const AgentFieldEffects = lazy(() =>
   import('./agent-field-effects').then(mod => ({
     default: mod.AgentFieldEffects,
   }))
 );
-
-// ---------------------------------------------------------------------------
-// Data model
-// ---------------------------------------------------------------------------
-
-export interface FieldAgent {
-  id: string;
-  name: string;
-  status: AgentStatus;
-  /** index of the owning project cluster */
-  cluster: number;
-  /** absolute world position (cluster offset + local sunflower position) */
-  x: number;
-  y: number;
-  /** last activity timestamp (unix ms) — a change triggers a node blip */
-  activityAt?: number;
-}
-
-export interface ClusterInfo {
-  index: number;
-  /** stable id of the underlying group (project clusterId; synthetic = label) */
-  id: string;
-  label: string;
-  cx: number;
-  cy: number;
-  /** bounding radius of the agent disc (world units) */
-  radius: number;
-  count: number;
-  /** worst (highest-attention) status present — drives the hull tint */
-  dominant: AgentStatus;
-  /** number of blocked/error agents in this cluster */
-  attention: number;
-  /** red-hull "a commander goes here NOW" flag (real data: the hero zone) */
-  critical: boolean;
-  /** optional pre-built stat readout (e.g. "3 agents · 1 blocked · $1.42/hr");
-   *  the label falls back to a generated units/blocked line without it */
-  statLine?: string;
-}
-
-/** One agent inside a FieldGroupSpec (the minimal shape the world needs). */
-export interface FieldGroupAgent {
-  id: string;
-  name: string;
-  status: AgentStatus;
-  /** last activity timestamp (unix ms) — a change triggers a node blip */
-  activityAt?: number;
-}
-
-/** A project/context group to lay out as one cluster on the field. */
-export interface FieldGroupSpec {
-  id: string;
-  label: string;
-  /** agents in display order; empty for summary/aggregate groups */
-  agents: FieldGroupAgent[];
-  /** hull goes red when true; defaults to the attention-ratio heuristic */
-  critical?: boolean;
-  /** population for empty groups rendered as hull + label only (aggregates) */
-  countOverride?: number;
-  /** blocked/error population override (aggregates) */
-  attentionOverride?: number;
-  /** optional stat readout under the sector name (cost/pressure encoding) */
-  statLine?: string;
-}
-
-/** The single highest-leverage blocker (Attention Scheduling's hero), shown
- *  as an in-world callout with its "why". */
-export interface FieldHero {
-  agentId: string;
-  title: string;
-  reason: string;
-}
 
 /** Imperative camera verbs the DOM chrome (keyboard layer) drives. */
 export interface AgentFieldHandle {
@@ -266,6 +213,7 @@ export function layoutClusteredField(groups: FieldGroupSpec[]): {
         cluster: c,
         x: cx + Math.cos(aa) * rr,
         y: cy + Math.sin(aa) * rr,
+        detail: a.detail,
         activityAt: a.activityAt,
       });
     }
@@ -975,181 +923,55 @@ function ClusterRing({
   );
 }
 
-// Same-origin bundled font. troika's DEFAULT font is fetched from a CDN; in a
-// sandboxed/offline runtime that fetch can hang forever, which (because <Text>
-// suspends) blanks the ENTIRE Canvas tree. A local /public asset is a
-// guaranteed same-origin load; labels are wrapped in <Suspense> regardless.
-const LABEL_FONT = '/fonts/Exo2-Medium.ttf';
-
-/** minimal shape we mutate on troika Text objects (material opacity) */
-type TextLike = THREE.Object3D & { material: { opacity: number } };
-
 function ClusterLabel({
   cluster,
-  sceneR,
-  reduced,
   interactive = false,
   onSelect,
   onHoverChange,
 }: {
   cluster: ClusterInfo;
-  /** whole-field radius — drives the deep-zoom label fade */
-  sceneR: number;
-  reduced: boolean;
-  /** when true the label block is a click/hover target (drill affordance) */
   interactive?: boolean;
   onSelect?: () => void;
   onHoverChange?: (hovered: boolean) => void;
 }) {
   const hot = cluster.critical;
-  const size = THREE.MathUtils.clamp(cluster.radius * 0.26, 3.2, 28);
-  const titleRef = useRef<TextLike>(null);
-  const subRef = useRef<TextLike>(null);
-  const group = useRef<THREE.Group>(null);
-  const fade = useRef(1);
-  const invalidate = useThree(s => s.invalidate);
-  // approximate title+counts block for the invisible hit plane (troika sync
-  // is async; a rough box is plenty for a hit target)
-  const hitW = Math.min(
-    Math.max(cluster.radius * 3, 30),
-    cluster.label.length * size * 0.66 + size
-  );
-  const hitH = size * 3.2;
-  const hitY = cluster.radius * 1.18 + size * 1.55;
-
-  // Camera-aware fade: sector names are OVERVIEW chrome. They dissolve when
-  // the camera dives into this sector (near fade) or deep into the field at
-  // large scales (zoom fade) so labels never wall over a zoomed view.
-  useFrame((state, delta) => {
-    const g = group.current;
-    if (!g) return;
-    const cam = state.camera.position;
-    const dNear = Math.hypot(cam.x - cluster.cx, cam.y - cluster.cy, cam.z);
-    const nearFade = THREE.MathUtils.clamp(
-      (dNear - cluster.radius * 1.7) / (cluster.radius * 1.3),
-      0,
-      1
-    );
-    const zoomFade = THREE.MathUtils.clamp(
-      (cam.length() / sceneR - 0.4) / 0.3,
-      0,
-      1
-    );
-    const target = Math.min(nearFade, zoomFade);
-    const next = reduced
-      ? target
-      : THREE.MathUtils.damp(fade.current, target, 8, Math.min(delta, 0.05));
-    if (Math.abs(next - fade.current) > 0.002) {
-      fade.current = next;
-      if (titleRef.current) titleRef.current.material.opacity = next;
-      if (subRef.current) subRef.current.material.opacity = next * 0.9;
-      g.visible = next > 0.02;
-      state.invalidate();
-    }
-  });
-
   return (
-    <group ref={group} position={[cluster.cx, cluster.cy, 0.1]}>
-      {/* invisible hit plane: the sector NAME is the natural drill target */}
-      {interactive && (
-        <mesh
-          position={[0, hitY, 0]}
-          onPointerOver={(e: ThreeEvent<PointerEvent>) => {
-            if (fade.current < 0.3) return; // faded labels aren't targets
-            e.stopPropagation();
-            onHoverChange?.(true);
-            document.body.style.cursor = 'pointer';
-            invalidate();
-          }}
-          onPointerOut={() => {
-            onHoverChange?.(false);
-            document.body.style.cursor = 'auto';
-            invalidate();
-          }}
-          onClick={(e: ThreeEvent<MouseEvent>) => {
-            if (fade.current < 0.3) return;
-            e.stopPropagation();
-            if (e.delta < 6 && onSelect) {
-              onSelect();
-              invalidate();
-            }
-          }}
+    <Html
+      position={[cluster.cx, cluster.cy + cluster.radius * 1.34, 0.8]}
+      center
+      zIndexRange={[24, 0]}
+    >
+      <button
+        type="button"
+        disabled={!interactive}
+        onPointerDown={event => event.stopPropagation()}
+        onClick={event => {
+          event.stopPropagation();
+          event.nativeEvent.stopImmediatePropagation();
+          onSelect?.();
+        }}
+        onMouseEnter={() => onHoverChange?.(true)}
+        onMouseLeave={() => onHoverChange?.(false)}
+        onFocus={() => onHoverChange?.(true)}
+        onBlur={() => onHoverChange?.(false)}
+        aria-label={`Open Project ${cluster.label}`}
+        className="pointer-events-auto w-52 rounded-md border border-transparent bg-slate-950/80 px-3 py-2 text-center outline-none backdrop-blur-sm transition-[border-color,background-color] disabled:pointer-events-none focus-visible:border-hud-cyan focus-visible:ring-2 focus-visible:ring-hud-cyan"
+      >
+        <span
+          className="block text-sm font-semibold leading-tight tracking-tight"
+          style={{ color: hot ? HUD.red : HUD.text }}
         >
-          <planeGeometry args={[hitW, hitH]} />
-          <meshBasicMaterial colorWrite={false} depthWrite={false} />
-        </mesh>
-      )}
-      <Text
-        ref={titleRef as never}
-        font={LABEL_FONT}
-        position={[0, cluster.radius * 1.2 + size * 0.75, 0]}
-        fontSize={size}
-        maxWidth={Math.max(cluster.radius * 3, 30)}
-        textAlign="center"
-        color={hot ? HUD.red : HUD.cyan}
-        anchorX="center"
-        anchorY="bottom"
-        letterSpacing={0.16}
-        lineHeight={1.1}
-        outlineWidth={size * 0.04}
-        outlineColor={HUD.bg.void}
-        material-toneMapped={false}
-        material-transparent
-        raycast={() => null}
-      >
-        {cluster.label}
-      </Text>
-      <Text
-        ref={subRef as never}
-        font={LABEL_FONT}
-        position={[0, cluster.radius * 1.16, 0]}
-        fontSize={size * 0.5}
-        color={hot ? HUD.amber : HUD.textDim}
-        anchorX="center"
-        anchorY="bottom"
-        letterSpacing={0.18}
-        outlineWidth={size * 0.03}
-        outlineColor={HUD.bg.void}
-        material-toneMapped={false}
-        material-transparent
-        raycast={() => null}
-      >
-        {cluster.statLine ??
-          `${cluster.count} units${cluster.attention > 0 ? ` · ${cluster.attention} blocked` : ''}`}
-      </Text>
-    </group>
-  );
-}
-
-/** Hub trunk network (grafted from Direction B): a faint command spine linking
- *  adjacent cluster centers, so the fleet reads as one connected operation. */
-function TrunkNetwork({ clusters }: { clusters: ClusterInfo[] }) {
-  const points = useMemo(() => {
-    if (clusters.length < 2) return null;
-    const pts: [number, number, number][] = [];
-    for (let i = 0; i < clusters.length; i++) {
-      const a = clusters[i];
-      const b = clusters[(i + 1) % clusters.length];
-      pts.push([a.cx, a.cy, -0.5], [b.cx, b.cy, -0.5]);
-    }
-    return pts;
-  }, [clusters]);
-  if (!points) return null;
-  return (
-    <Line
-      points={points}
-      segments
-      color={HUD.cyan2}
-      lineWidth={1}
-      transparent
-      opacity={0.13}
-      dashed
-      dashSize={6}
-      gapSize={5}
-      depthWrite={false}
-      toneMapped={false}
-      raycast={() => null}
-    />
+          {cluster.label}
+        </span>
+        <span
+          className="mt-1 block font-mono text-[9px] uppercase tracking-[0.14em]"
+          style={{ color: hot ? HUD.amber : HUD.textDim }}
+        >
+          {cluster.statLine ??
+            `${cluster.count} agents${cluster.attention > 0 ? ` · ${cluster.attention} attention` : ''}`}
+        </span>
+      </button>
+    </Html>
   );
 }
 
@@ -1170,7 +992,7 @@ function HeroCallout({
   onSelect: (id: string | null) => void;
 }) {
   return (
-    // anchored BELOW the node: sector labels always sit above their hulls, so
+    // anchored BELOW the node: Project labels always sit above their hulls, so
     // below is the one direction that never collides with them
     <Html
       position={[agent.x, agent.y - STATUS_SIZE[agent.status] * 3.4, 2]}
@@ -1178,7 +1000,12 @@ function HeroCallout({
       zIndexRange={[40, 0]}
     >
       <button
-        onClick={() => onSelect(hero.agentId)}
+        onPointerDown={event => event.stopPropagation()}
+        onClick={event => {
+          event.stopPropagation();
+          event.nativeEvent.stopImmediatePropagation();
+          onSelect(hero.agentId);
+        }}
         className="hud-lift pointer-events-auto flex translate-y-1/2 flex-col items-start gap-0.5 whitespace-nowrap rounded border px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-hud-red"
         style={{
           borderColor: 'rgba(255,31,75,0.55)',
@@ -1320,6 +1147,7 @@ function Rig({
   reduced,
   controllerRef,
   onNavigate,
+  focusPositions,
 }: {
   radius: number;
   agents: FieldAgent[];
@@ -1328,6 +1156,11 @@ function Rig({
   controllerRef?: { current: AgentFieldHandle | null };
   /** fired on every programmatic camera move (used to drop stale hover) */
   onNavigate?: () => void;
+  /** semantic-regime camera targets keyed by Agent id */
+  focusPositions?: ReadonlyMap<
+    string,
+    { x: number; y: number; radius: number }
+  >;
 }) {
   const controls = useRef<CameraControls>(null);
   const invalidate = useThree(s => s.invalidate);
@@ -1366,6 +1199,16 @@ function Rig({
         const a = agents.find(x => x.id === id);
         const c = controls.current;
         if (!a || !c) return;
+        const semantic = focusPositions?.get(id);
+        if (semantic) {
+          _sphere.set(
+            _v3.set(semantic.x, semantic.y, 0),
+            Math.max(semantic.radius, 18)
+          );
+          c.fitToSphere(_sphere, t);
+          nav();
+          return;
+        }
         const cl = clusters[a.cluster];
         _sphere.set(
           _v3.set(a.x, a.y, 0),
@@ -1415,6 +1258,7 @@ function Rig({
     reduced,
     invalidate,
     onNavigate,
+    focusPositions,
   ]);
 
   return (
@@ -1450,6 +1294,7 @@ export function AgentField({
   selectableClusters,
   onHoverAgent,
   controllerRef,
+  regime = 'fleet',
 }: {
   agents: FieldAgent[];
   clusters: ClusterInfo[];
@@ -1465,6 +1310,7 @@ export function AgentField({
   selectableClusters?: ReadonlySet<string>;
   onHoverAgent?: (agent: FieldAgent | null) => void;
   controllerRef?: { current: AgentFieldHandle | null };
+  regime?: AgentFieldRegime;
 }) {
   const reduced = useReducedMotion();
   const lowPower = useLowPowerMode();
@@ -1492,6 +1338,39 @@ export function AgentField({
     () => (hero ? (agents.find(a => a.id === hero.agentId) ?? null) : null),
     [agents, hero]
   );
+  const focusedProject =
+    focusedCluster != null ? (clusters[focusedCluster] ?? null) : null;
+  const projectLayout = useMemo(
+    () => (focusedProject ? layoutProjectDeck(agents, focusedProject) : null),
+    [agents, focusedProject]
+  );
+  const semanticFocusPositions = useMemo(() => {
+    const positions = new Map<
+      string,
+      { x: number; y: number; radius: number }
+    >();
+    if (!projectLayout) return positions;
+    for (const unit of projectLayout.units) {
+      positions.set(unit.agent.id, {
+        x: unit.x,
+        y: unit.y,
+        radius:
+          regime === 'agent' ? 34 : Math.max(unit.width, unit.height) * 1.1,
+      });
+    }
+    return positions;
+  }, [projectLayout, regime]);
+  const selectedSemanticUnit =
+    selected && projectLayout
+      ? (projectLayout.units.find(unit => unit.agent.id === selected.id) ??
+        null)
+      : null;
+  const resolvedRegime: AgentFieldRegime =
+    regime === 'fleet' || !projectLayout
+      ? 'fleet'
+      : regime === 'agent' && selectedSemanticUnit
+        ? 'agent'
+        : 'project';
 
   useEffect(() => {
     onHoverAgent?.(hovered);
@@ -1568,6 +1447,7 @@ export function AgentField({
         reduced={reduced}
         controllerRef={controllerRef}
         onNavigate={clearHover}
+        focusPositions={semanticFocusPositions}
       />
 
       <VoidBackdrop radius={radius} />
@@ -1593,72 +1473,94 @@ export function AgentField({
         raycast={() => null}
       />
 
-      <TrunkNetwork clusters={clusters} />
+      {resolvedRegime === 'fleet' && (
+        <>
+          {clusters.map(c => (
+            <ClusterRing
+              key={c.id}
+              cluster={c}
+              emphasized={
+                hovered?.cluster === c.index ||
+                selected?.cluster === c.index ||
+                focusedCluster === c.index ||
+                hoverClusterId === c.id
+              }
+              reduced={reduced}
+              interactive={
+                !!onSelectCluster &&
+                (selectableClusters ? selectableClusters.has(c.id) : true)
+              }
+              onSelect={
+                onSelectCluster ? () => onSelectCluster(c.index) : undefined
+              }
+              onHoverChange={h => setHoverClusterId(h ? c.id : null)}
+            />
+          ))}
 
-      {clusters.map(c => (
-        <ClusterRing
-          key={c.id}
-          cluster={c}
-          emphasized={
-            hovered?.cluster === c.index ||
-            selected?.cluster === c.index ||
-            focusedCluster === c.index ||
-            hoverClusterId === c.id
-          }
-          reduced={reduced}
-          interactive={
-            !!onSelectCluster &&
-            (selectableClusters ? selectableClusters.has(c.id) : true)
-          }
-          onSelect={
-            onSelectCluster ? () => onSelectCluster(c.index) : undefined
-          }
-          onHoverChange={h => setHoverClusterId(h ? c.id : null)}
-        />
-      ))}
-
-      <Constellation
-        agents={agents}
-        clusters={clusters}
-        hoveredIdx={hoveredIdx >= 0 ? hoveredIdx : null}
-        selectedIdx={selectedIdx}
-        reduced={reduced}
-        onHover={index =>
-          setHoveredId(index == null ? null : (agents[index]?.id ?? null))
-        }
-        onSelect={i => onSelect(agents[i].id)}
-      />
-
-      {/* Labels in their own Suspense boundary: a slow font load can never
-          gate the nodes/rings — labels pop in when the SDF is ready. */}
-      <Suspense fallback={null}>
-        {clusters.map(c => (
-          <ClusterLabel
-            key={c.id}
-            cluster={c}
-            sceneR={radius}
+          <Constellation
+            agents={agents}
+            clusters={clusters}
+            hoveredIdx={hoveredIdx >= 0 ? hoveredIdx : null}
+            selectedIdx={selectedIdx}
             reduced={reduced}
-            interactive={
-              !!onSelectCluster &&
-              (selectableClusters ? selectableClusters.has(c.id) : true)
+            onHover={index =>
+              setHoveredId(index == null ? null : (agents[index]?.id ?? null))
             }
-            onSelect={
-              onSelectCluster ? () => onSelectCluster(c.index) : undefined
-            }
-            onHoverChange={h => setHoverClusterId(h ? c.id : null)}
+            onSelect={i => onSelect(agents[i].id)}
           />
-        ))}
-      </Suspense>
 
-      {hovered && (
-        <FocusRing agent={hovered} color={HUD.cyan} reduced={reduced} />
-      )}
-      {selected && (
-        <FocusRing agent={selected} color={HUD.magenta} reduced={reduced} />
+          <Suspense fallback={null}>
+            {clusters.map(c => (
+              <ClusterLabel
+                key={c.id}
+                cluster={c}
+                interactive={
+                  !!onSelectCluster &&
+                  (selectableClusters ? selectableClusters.has(c.id) : true)
+                }
+                onSelect={
+                  onSelectCluster ? () => onSelectCluster(c.index) : undefined
+                }
+                onHoverChange={h => setHoverClusterId(h ? c.id : null)}
+              />
+            ))}
+          </Suspense>
+
+          {hovered && (
+            <FocusRing agent={hovered} color={HUD.cyan} reduced={reduced} />
+          )}
+          {selected && (
+            <FocusRing agent={selected} color={HUD.magenta} reduced={reduced} />
+          )}
+
+          {hero && heroAgent && (
+            <HeroCallout agent={heroAgent} hero={hero} onSelect={onSelect} />
+          )}
+        </>
       )}
 
-      {hero && heroAgent && (
-        <HeroCallout agent={heroAgent} hero={hero} onSelect={onSelect} />
+      {resolvedRegime === 'project' && projectLayout && (
+        <ProjectRegime
+          layout={projectLayout}
+          selectedId={selectedId}
+          hoveredId={hoveredId}
+          hero={hero}
+          reduced={reduced}
+          onSelect={onSelect}
+          onHover={setHoveredId}
+        />
+      )}
+
+      {resolvedRegime === 'agent' && selectedSemanticUnit && (
+        <AgentRegime
+          unit={selectedSemanticUnit}
+          selectedId={selectedId}
+          hoveredId={hoveredId}
+          hero={hero}
+          reduced={reduced}
+          onSelect={onSelect}
+          onHover={setHoveredId}
+        />
       )}
 
       {!lowPower && (

@@ -62,4 +62,7 @@ Project, and Agent altitudes. That implementation was useful evidence for
 scalable picking and layout, but it contradicted this decision's information-
 resolution model and produced anonymous enlarged marks in the flagship small-
 fleet case. ENG-004 V1.3 supersedes that representation choice while preserving
-the AgentField as the Fleet-altitude implementation.
+the AgentField as the Fleet-altitude implementation. V1.3 landed on 2026-07-10
+with separate Fleet, Project, and Agent render regimes behind the same route and
+command model; selectable Projects and Agents now have screen-aligned DOM
+equivalents, and the demand-rendered scene parks after finite transitions.

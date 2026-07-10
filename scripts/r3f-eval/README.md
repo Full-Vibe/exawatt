@@ -37,6 +37,24 @@ EXA_BASE=http://localhost:7090 pnpm eval:r3f
 Needs a Chromium once: `npx playwright install chromium` (the runner resolves it
 from the default `ms-playwright` cache, with fallbacks).
 
+## Spatial Command full-route battery
+
+`eval:spatial` exercises the real `/fleet/spatial` route rather than an isolated
+fixture. It checks Fleet → Project → Agent descent, Escape ascent, DOM Project
+and Agent controls, S/M/L Demo snapshots, mobile inspector reachability,
+reduced-motion parity, low-power DPR gating, console/WebGL errors, and zero idle
+frames after finite motion settles.
+
+```bash
+EXA_BASE=http://localhost:7000 pnpm eval:spatial
+
+# Optional real cadence sample. Headless Chromium throttles rAF, so p50/p95 is
+# recorded only when a headed browser is explicitly requested.
+SPATIAL_HEADED=1 EXA_BASE=http://localhost:7000 pnpm eval:spatial
+```
+
+Reports and screenshots are written to ignored `spatial-report/`.
+
 ## TODO (deferred layers)
 
 - **Layer A — RTTR fast gate:** `@react-three/test-renderer@^9` in vitest for a

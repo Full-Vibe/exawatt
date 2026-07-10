@@ -197,6 +197,16 @@ export class FleetManager extends TypedEmitter<CoreEventMap> {
     this.emit('fleet:updated', this.getFleetState());
   }
 
+  /**
+   * Replace the current fleet with an authoritative source snapshot.
+   * Unlike seedAgents, this removes agents absent from the incoming snapshot
+   * and emits one coherent update. Use only when a source owns the full fleet.
+   */
+  replaceAgents(agents: ExawattAgent[]): void {
+    this.agents = new Map(agents.map(agent => [agent.id, agent]));
+    this.emit('fleet:updated', this.getFleetState());
+  }
+
   upsertAgent(agent: ExawattAgent): void {
     this.agents.set(agent.id, agent);
     this.emit('agent:updated', agent);
