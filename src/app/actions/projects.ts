@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
-import type { ProjectInsert, ProjectUpdate } from '@/types/database';
+import type { DemoProjectInsert, DemoProjectUpdate } from '@/types/database';
 
 export async function getProjects() {
   const supabase = await createClient();
@@ -15,7 +15,7 @@ export async function getProjects() {
   }
 
   const { data, error } = await supabase
-    .from('projects')
+    .from('demo_projects')
     .select('*')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
@@ -27,7 +27,7 @@ export async function getProjects() {
   return data;
 }
 
-export async function createProject(projectData: Omit<ProjectInsert, 'user_id'>) {
+export async function createProject(projectData: Omit<DemoProjectInsert, 'user_id'>) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -38,7 +38,7 @@ export async function createProject(projectData: Omit<ProjectInsert, 'user_id'>)
   }
 
   const { data, error } = await supabase
-    .from('projects')
+    .from('demo_projects')
     .insert({
       ...projectData,
       user_id: user.id,
@@ -56,7 +56,7 @@ export async function createProject(projectData: Omit<ProjectInsert, 'user_id'>)
 
 export async function updateProject(
   id: string,
-  updates: Omit<ProjectUpdate, 'user_id' | 'id'>
+  updates: Omit<DemoProjectUpdate, 'user_id' | 'id'>
 ) {
   const supabase = await createClient();
   const {
@@ -68,7 +68,7 @@ export async function updateProject(
   }
 
   const { data, error } = await supabase
-    .from('projects')
+    .from('demo_projects')
     .update(updates)
     .eq('id', id)
     .eq('user_id', user.id)
@@ -94,7 +94,7 @@ export async function deleteProject(id: string) {
   }
 
   const { error } = await supabase
-    .from('projects')
+    .from('demo_projects')
     .delete()
     .eq('id', id)
     .eq('user_id', user.id);

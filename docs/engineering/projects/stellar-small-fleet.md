@@ -149,14 +149,15 @@ Operator decisions (2026-07-10):
 - Rename to canon: the code/UI concept becomes **Project / Context Group**;
   `Initiative` is reserved for the durable-goal primitive (ENG-005,
   `docs/product/concepts.md`).
-- Table name (operator, 2026-07-10): the canonical Project takes the `projects`
-  table — "I would have expected this to be the projects table." The legacy
-  demo kanban currently on `public.projects` is renamed `demo_projects` (a
-  surface ENG-016 buries anyway). The schema is shaped for the GENERAL
-  Project/Context Group (a `kind` discriminator, nullable path) so a future
-  soft/inferred/semantic/meta Project is a new `kind`, not a new table — but v1
-  builds only the concrete repository kind. Deliberate: general name + shape,
-  one-mile build.
+- Table name (operator, 2026-07-10, final): the canonical Project takes the
+  `projects` table — "I prefer projects vs context groups — more idiomatic and
+  future-proof; we can always have a kind/type column." The legacy demo kanban
+  is renamed `demo_projects` and its queries repointed via a PostgREST embed
+  ALIAS (`projects:demo_projects(...)`), so the demo keeps working with minimal
+  churn (only `.from()`/embed strings + the demo TS type → `DemoProject`);
+  preserve the demo's functionality, but do not bend over backwards. The `kind`
+  discriminator keeps the table general (soft/inferred/semantic Projects are
+  future kinds); v1 builds only the repository kind.
 
 Architecture — split identity from layout:
 
@@ -168,18 +169,24 @@ Architecture — split identity from layout:
 - Load reconciles the two: fetch the Project registry (the known list) + load
   the local layout (live/revivable sessions) and join by id.
 
-Data model — the canonical Project claims the `projects` table (the legacy demo
-kanban on `public.projects` is renamed `demo_projects` and its query sites +
-demo `Project` type repointed). The table is NAMED and SHAPED for the general
-Project/Context Group, but v1 builds only the repository kind:
+Data model — the canonical Project claims the `projects` table. The legacy demo
+kanban is renamed `demo_projects`; its `agent_tasks` FK, RLS policies, trigger,
+and indexes follow the table rename automatically. Demo queries repoint via a
+PostgREST embed alias (`projects:demo_projects(...)`) so the demo's
+`task.projects` result key and components stay unchanged — only `.from()`/embed
+strings and the demo TS type (→ `DemoProject`) move. The `projects` table is
+SHAPED for the general grouping via `kind`; v1 builds only the repository kind:
 
-- `projects`: id · user_id · name · color · `kind` (text not null, default
-  `'repository'`) · root_path (nullable) · git_remote (nullable) ·
-  last_opened_at · archived_at (nullable) · sort_order · timestamps. RLS
-  user-scoped, mirroring the existing table pattern. v1 writes only
-  `kind='repository'` with a real root_path; a `resolution_rule jsonb` (for
-  inferred/semantic/customer/goal kinds) is deferred until a second kind exists
-  — a trivial additive migration then.
+- `projects` (canonical registry): id · user_id · name · color · `kind` (text
+  not null, default `'repository'`) · root_path (nullable) · git_remote
+  (nullable) · last_opened_at · archived_at (nullable) · sort_order ·
+  timestamps. RLS user-scoped, mirroring the existing table pattern. v1 writes
+  only `kind='repository'` with a real root_path; a `resolution_rule jsonb`
+  (for inferred/semantic/customer/goal kinds) is deferred until a second kind
+  exists — a trivial additive migration then.
+- Legacy demo table → `demo_projects` (unchanged columns: id, user_id, name,
+  description, timestamps). Preserve its functionality without bending over
+  backwards; ENG-016 buries it from primary nav regardless.
 - Resolution bridge on ignite: resolve `projectDir` as today, match a row by
   `root_path` then `git_remote`, upsert if new. A row whose `root_path` does
   not exist on the current machine renders a graceful "locate on this machine"
@@ -203,13 +210,13 @@ Phasing:
   manifest + concept references. Mechanical and isolated; lands first so every
   later phase speaks "Project". Canon `Initiative` (goal) is untouched — it is
   not yet built, so there is no collision.
-- P2 Registry data layer: reclaim the `projects` name (rename legacy demo →
-  `demo_projects`, repoint its query sites + demo `Project` type); Supabase
-  migration for the canonical `projects` table + RLS + typed accessors; the
-  renderer reads/writes via the browser client. Checkpoint: confirm the
-  `/workspace` renderer holds an authed Supabase session (OAuth deep-link
-  session available to the browser client); if not, add a thin main-process
-  proxy over the server client.
+- P2 Registry data layer: reclaim `projects` — migration renames the legacy
+  demo table to `demo_projects` and creates the canonical `projects` registry
+  (+ RLS, kind discriminator, unique index on user_id+root_path); repoint demo
+  queries via an embed alias and rename the demo TS type to `DemoProject`; add
+  typed registry accessors on the browser client. Checkpoint (met): the
+  `/workspace` renderer holds an authed Supabase browser session (PKCE via the
+  OAuth deep-link), so RLS reads/writes work without a main-process proxy.
 - P3 Identity/layout split + resolution bridge + reconcile-on-load.
 - P4 Open/browse UX: picker IPC, Browse control, ⌘K Projects group,
   rename/recolor/archive.
