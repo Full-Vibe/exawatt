@@ -33,6 +33,9 @@ export function registerPtyIPC(): void {
   contextSummarizer.on('context', (id: string, summary: string) => {
     broadcast('pty:context', { id, summary });
   });
+  contextSummarizer.on('recap', (recap: unknown) => {
+    broadcast('pty:recap', recap);
+  });
 
   // attention (ENG-015 S1): "needs you" state streams to the UI, and the
   // macOS dock carries the count so nothing goes unnoticed while unfocused
@@ -40,8 +43,14 @@ export function registerPtyIPC(): void {
   attentionMonitor.start();
   // "looked at" requires OS window focus too — the active tab behind
   // another app is exactly the single-tab case attention exists for
-  app.on('browser-window-focus', () => attentionMonitor.setWindowFocused(true));
-  app.on('browser-window-blur', () => attentionMonitor.setWindowFocused(false));
+  app.on('browser-window-focus', () => {
+    attentionMonitor.setWindowFocused(true);
+    contextSummarizer.setWindowFocused(true);
+  });
+  app.on('browser-window-blur', () => {
+    attentionMonitor.setWindowFocused(false);
+    contextSummarizer.setWindowFocused(false);
+  });
   attentionMonitor.on('attention', (id: string, attention: unknown) => {
     broadcast('pty:attention', { id, attention });
     const count = attentionMonitor.count();
@@ -71,9 +80,11 @@ export function registerPtyIPC(): void {
     // being watched: writes ALSO carry xterm auto-replies from hidden panes
     // (cursor/device queries, backlog replay), which the monitor ignores
     attentionMonitor.noteInput(id);
+    contextSummarizer.noteInput(id);
   });
   ipcMain.handle('pty:focus', (_event, id: string | null) => {
     attentionMonitor.setFocus(id);
+    contextSummarizer.setFocus(id);
   });
   ipcMain.handle('pty:resize', (_event, id: string, cols: number, rows: number) => {
     ptySessions.resize(id, cols, rows);

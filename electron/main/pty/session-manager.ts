@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as pty from 'node-pty';
 import { expandTilde, resolveProject } from './project-resolve';
+import { ScrollbackStore } from './scrollback-store';
 
 const execFileAsync = promisify(execFile);
 
@@ -116,13 +117,10 @@ interface Session {
   info: PtySessionInfo;
 }
 
-/** per-session scrollback kept in main so late-attaching panes (tab switch,
- *  renderer reload) can replay output; ~200 KB ≈ a few thousand lines */
-const BUFFER_LIMIT = 200_000;
-
 export class PtySessionManager extends EventEmitter {
   private sessions = new Map<string, Session>();
-  private buffers = new Map<string, string>();
+  /** ~200 KB per session; late panes replay text and S4 reads visit deltas. */
+  private scrollback = new ScrollbackStore();
   private nextId = 1;
 
   // async: cwd validation and shell resolution do I/O — a stat on a dead
@@ -253,25 +251,29 @@ export class PtySessionManager extends EventEmitter {
     if (!s) return;
     if (!s.info.exited) s.proc.kill();
     this.sessions.delete(id);
-    this.buffers.delete(id);
+    this.scrollback.delete(id);
   }
 
   /** replayable scrollback for a session (empty string if unknown) */
   buffer(id: string): string {
-    return this.buffers.get(id) ?? '';
+    return this.scrollback.text(id);
+  }
+
+  /** Absolute scrollback position used as a last-visited checkpoint. */
+  bufferCursor(id: string): number {
+    return this.scrollback.cursor(id);
+  }
+
+  /** Output produced after a last-visited checkpoint. */
+  bufferSince(id: string, cursor: number): { text: string; truncated: boolean } {
+    return this.scrollback.since(id, cursor);
   }
 
   /** single append path: trims to BUFFER_LIMIT, then resyncs at a line
    *  boundary — a raw slice can land mid-escape-sequence or mid-surrogate,
    *  which garbles the top of every replay */
   private appendBuffer(id: string, data: string): void {
-    let buf = (this.buffers.get(id) ?? '') + data;
-    if (buf.length > BUFFER_LIMIT) {
-      buf = buf.slice(-BUFFER_LIMIT);
-      const nl = buf.indexOf('\n');
-      if (nl !== -1 && nl < 4096) buf = buf.slice(nl + 1);
-    }
-    this.buffers.set(id, buf);
+    this.scrollback.append(id, data);
   }
 
   list(): PtySessionInfo[] {

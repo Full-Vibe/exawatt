@@ -20,6 +20,14 @@ export interface PtyAttention {
   since: number;
 }
 
+/** Quiet S4 catch-up generated only when returning after meaningful change. */
+export interface PtyReentryRecap {
+  id: string;
+  text: string;
+  awayMs: number;
+  generatedAt: number;
+}
+
 export interface PtySessionInfo {
   id: string;
   harness: PtyHarness;
@@ -63,6 +71,7 @@ export interface ElectronPtyApi {
   onData: (handler: (payload: { id: string; data: string }) => void) => () => void;
   onExit: (handler: (payload: { id: string; exitCode: number }) => void) => () => void;
   onContext: (handler: (payload: { id: string; summary: string }) => void) => () => void;
+  onRecap: (handler: (payload: PtyReentryRecap) => void) => () => void;
   onAttention: (
     handler: (payload: { id: string; attention: PtyAttention | null }) => void
   ) => () => void;

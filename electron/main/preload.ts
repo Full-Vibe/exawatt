@@ -44,6 +44,12 @@ contextBridge.exposeInMainWorld('electron', {
     onData: subscribe<{ id: string; data: string }>('pty:data'),
     onExit: subscribe<{ id: string; exitCode: number }>('pty:exit'),
     onContext: subscribe<{ id: string; summary: string }>('pty:context'),
+    onRecap: subscribe<{
+      id: string;
+      text: string;
+      awayMs: number;
+      generatedAt: number;
+    }>('pty:recap'),
     onAttention: subscribe<{ id: string; attention: unknown }>('pty:attention'),
   },
   workspace: {
