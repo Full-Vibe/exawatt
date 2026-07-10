@@ -103,19 +103,23 @@ Built:
 - `/fleet` live/mock fleet UI
 - `/fleet/cron`
 - `/fleet/spatial` first 3D Fleet Command Surface
+- Electron agent terminal workspace with real `node-pty` sessions rendered by
+  xterm.js for Claude Code, Codex, and shells, behind a session-manager boundary
+- persisted project-grouped terminal sessions, attention state, keyboard-first
+  command flows, split panes, and the exposé session overview
+- `LocalSessionsTransport` normalization of local PTY sessions into the shared
+  `FleetState` consumed by the DOM and spatial fleet surfaces
 
 Partial:
 
-- Electron local runtime integration
+- detachable Electron session/process backend; terminal layouts revive after an
+  app restart, but the underlying processes do not yet survive it
 - source/harness abstraction beyond OpenClaw/mock
 - architecture overview as a living map
 - 3D Fleet Command Surface extraction into a standalone package
 
 Planned:
 
-- agent terminal workspace: interactive PTY session hosting (node-pty +
-  xterm.js in the Electron shell) for Claude Code / Codex / shells, behind a
-  session-manager boundary (ENG-002, decision `0005`)
 - Initiative model
 - scoped Decision model
 - Context Signals

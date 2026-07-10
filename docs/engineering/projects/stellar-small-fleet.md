@@ -98,6 +98,19 @@ software, it's human working memory — paging a mental context back in
 after minutes away. Design for recognition over recall, changes over
 restatements, and delivery at boundaries.
 
+Starting hypothesis (operator, 2026-07-10; explicitly reversible): begin
+with the least noisy behavior. Ordinary progress and successful completion
+remain visible in status surfaces but do not interrupt. Non-critical updates
+wait for a natural pause, agent switch, or exposé visit. Work that has stopped
+for input or an error may enter the attention queue immediately, but must not
+steal focus. Tune or replace this policy from dogfood evidence rather than
+treating it as a permanent notification contract.
+
+The first S4 implementation slice should prioritize the re-entry recap and
+change-since-last-visit digest. Emblems, spatial anchors, batching, and the
+cross-surface status grammar remain candidates to evaluate after that loop is
+useful.
+
 ## Context-paging idea bank (research-grounded)
 
 Ranked roughly by conviction × cost. These are candidates, not commitments;
@@ -154,6 +167,18 @@ S4 planning picks from here.
 8. **Switch-cost telemetry (exploratory).** Local-only counts of context
    switches and dwell times to tune defaults (badge thresholds, recap
    trigger time). Only if it stays invisible and local.
+
+## Open design question: exposé and AgentField
+
+The terminal workspace and AgentField keep their deliberately distinct jobs
+and visual identities for now. The operator is considering whether exposé
+could become a middle zoom level in a broader continuum: terminal focus near,
+live session tiles in the middle, and AgentField far away. This could make the
+surfaces feel connected without turning them into one visual regime.
+
+This is an exploration, not an implementation decision. Preserve the current
+regime switch and route boundaries until dogfooding clarifies whether a literal
+zoom transition improves navigation or only adds motion and coupling.
 
 ## Progress log
 
