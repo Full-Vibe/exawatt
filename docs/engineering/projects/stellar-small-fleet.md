@@ -126,11 +126,13 @@ First-slice acceptance criteria:
 
 ### S5 Durable Projects
 
-Status: active-build — scoped 2026-07-10 (operator); P1 (rename) + P2 (registry
-data layer + `projects` reclaim migration, applied to prod and verified) landed
-2026-07-10; P3 (workspace wiring), P4 (open/browse UX), P5 (dogfood + docs)
-next. Fixes the gap surfaced in dogfood: you cannot open or browse a Project
-unless a session is already running in it. Today a Project (mislabeled `Initiative` in code) is DERIVED —
+Status: active-build — scoped 2026-07-10 (operator). Landed 2026-07-10: P1
+rename, P2 registry + `projects` reclaim migration (applied to prod & verified),
+P3 resolution bridge (igniting registers the Project), P4 native directory
+picker + Browse control. Remaining: P4 ⌘K Projects browse group, P3 identity/
+color sync + reconcile-on-load, P5 dogfood + docs + decision record. Fixes the
+gap surfaced in dogfood: you cannot open or browse a Project unless a session is
+already running in it. Today a Project (mislabeled `Initiative` in code) is DERIVED —
 resolved from a session's cwd (`project-resolve.ts`, git-common-dir; worktrees
 fold to the main repo) and persisted in local `workspace.json` only while it
 has a surviving tab (`use-workspace-state.ts` prunes exited tabs and drops
@@ -220,9 +222,15 @@ Phasing:
   typed registry accessors on the browser client. Checkpoint (met): the
   `/workspace` renderer holds an authed Supabase browser session (PKCE via the
   OAuth deep-link), so RLS reads/writes work without a main-process proxy.
-- P3 Identity/layout split + resolution bridge + reconcile-on-load.
+- P3 Identity/layout split + resolution bridge + reconcile-on-load. Resolution
+  bridge landed 2026-07-10 (igniting best-effort registers the Project;
+  registry logic verified against the real DB). Identity/color sync from the
+  registry + reconcile-on-load remain.
 - P4 Open/browse UX: picker IPC, Browse control, ⌘K Projects group,
-  rename/recolor/archive.
+  rename/recolor/archive. Native directory picker + 📁 Browse control landed
+  2026-07-10 (verified rendering + compile; native dialog exercises in the real
+  Electron app). The ⌘K Projects group (browse/open known Projects with no live
+  session) remains.
 - P5 Reconcile, dogfood, docs: missing-dir handling, roadmap status + this
   doc, and a decision record for the Supabase-synced storage + identity/layout
   split.
