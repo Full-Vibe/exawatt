@@ -30,6 +30,7 @@ import {
   selectSpatialProjectZones,
   type Altitude,
   type SpatialBoardLayout,
+  type SpatialBoardProjection,
 } from '@exawatt/ui-model';
 import type { AgentStatus } from '@exawatt/core';
 import { agentGoalDisplay } from './spatial-agent-copy';
@@ -68,6 +69,10 @@ export function SpatialFleetClient() {
       : 'fleet';
   const focusedProjectId = searchParams.get('project');
   const selectedAgentId = searchParams.get('agent');
+  const projection: SpatialBoardProjection =
+    searchParams.get('projection') === 'fixed-angle'
+      ? 'fixed-angle'
+      : 'top-down';
   const { fleetState } = useFleet();
   const { isDemo } = useFleetConnection();
   const { connectToRealOC, canConnect } = useConnectToOC();
@@ -121,10 +126,18 @@ export function SpatialFleetClient() {
         altitude,
         focusedProjectId,
         selectedAgentId,
+        projection,
         visibleAgentIds,
         previousLayout: previousBoardLayout.current,
       }),
-    [altitude, fleetState, focusedProjectId, selectedAgentId, visibleAgentIds]
+    [
+      altitude,
+      fleetState,
+      focusedProjectId,
+      projection,
+      selectedAgentId,
+      visibleAgentIds,
+    ]
   );
   useEffect(() => {
     previousBoardLayout.current = boardLayout;
@@ -191,6 +204,19 @@ export function SpatialFleetClient() {
   const overview = useCallback(
     () => navigate({ altitude: 'fleet', project: null, agent: null }),
     [navigate]
+  );
+
+  const changeProjection = useCallback(
+    (next: SpatialBoardProjection) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next === 'fixed-angle') params.set('projection', next);
+      else params.delete('projection');
+      const queryString = params.toString();
+      router.replace(`/fleet/spatial${queryString ? `?${queryString}` : ''}`, {
+        scroll: false,
+      });
+    },
+    [router, searchParams]
   );
 
   // Clicking an agent drills to the agent (with its owning Project as the
@@ -439,6 +465,7 @@ export function SpatialFleetClient() {
         >
           <OperationsBoardSurface
             layout={boardLayout}
+            projection={projection}
             hero={
               scene.attention.hero
                 ? {
@@ -451,6 +478,7 @@ export function SpatialFleetClient() {
             onDrillProject={drillToProject}
             onSelectAgent={handleSelectAgent}
             onOverview={overview}
+            onProjectionChange={changeProjection}
           />
         </section>
 

@@ -873,7 +873,7 @@ constellation:
 
 ### V2.0 Spatial Operations Board
 
-Status: active-build — B0–B2 landed; B3 projection and board tools next
+Status: active-build — B0–B3 landed; B4 Session continuum next
 
 Scope, phase gates, budgets, and non-goals are defined in the V2.0 design brief
 above. Record each pushed B0–B5 checkpoint here with verification evidence. A
@@ -925,6 +925,25 @@ Progress log:
   held-key camera glide, and zero settled idle frames pass. New isolated fixture
   `t5-operations-board` renders two Projects/five Agents in 7 draw calls with no
   WebGL warnings and raises the five-fixture R3F evaluator to 100/100.
+- **B3 landed (2026-07-10):** added a URL-backed Top/Angle projection switcher
+  over the same board coordinates and renderer. Angle uses a fixed shallow
+  dimetric orthographic pose with visible zone/piece depth and screen-aligned
+  DOM labels; there is still no free orbit. Projection changes use the same
+  finite damped camera owner and preserve semantic altitude, Agent selection,
+  filter state, pan/zoom intent, and command contracts.
+- Board tools now include a live SVG minimap viewport, click-to-recenter,
+  explicit zoom/recenter controls, `V` projection shortcut, and a DOM WebGL
+  recovery state linking to `/fleet`. Desktop uses the full vertical tool stack;
+  phone layouts retain 44px targets in one compact bottom row with a live mini
+  overview, preventing controls from obscuring Agent pieces.
+- B3 verification: full type-check, focused lint, 281/281 tests, and production
+  build pass. Full-route evaluation proves minimap viewport contraction after
+  zoom, a real camera-quaternion change for Angle, projection URL persistence,
+  Agent/inspector preservation while switching at Agent altitude, top-down
+  restoration, desktop/mobile/reduced/low-power parity, zero idle frames, and
+  no WebGL/console errors. Screenshot review passed both projections and the
+  responsive board-tool layouts; isolated R3F remains 100/100 at 7 board draw
+  calls.
 
 ### V2.1 Scale & Truth
 

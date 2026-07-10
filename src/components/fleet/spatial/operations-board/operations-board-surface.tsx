@@ -1,12 +1,59 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { SpatialBoardLayout } from '@exawatt/ui-model';
+import {
+  Component,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from 'react';
+import Link from 'next/link';
+import type {
+  SpatialBoardLayout,
+  SpatialBoardProjection,
+} from '@exawatt/ui-model';
 import { useAgentFieldGlide } from '@/components/hud/webgl/use-agent-field-glide';
 import {
   OperationsBoardCanvas,
   type OperationsBoardHandle,
+  type OperationsBoardViewport,
 } from './operations-board-canvas';
+
+class BoardErrorBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <div className="grid h-full place-items-center bg-[oklch(0.135_0.009_220)] p-8">
+          <div className="max-w-sm border border-[oklch(0.34_0.018_215)] bg-[oklch(0.16_0.01_220)] p-5 text-left">
+            <p className="text-sm font-semibold text-[oklch(0.88_0.01_210)]">
+              The spatial renderer is unavailable
+            </p>
+            <p className="mt-2 text-xs leading-5 text-[oklch(0.62_0.012_210)]">
+              Your fleet is still available in the text operations view.
+            </p>
+            <Link
+              href="/fleet"
+              className="mt-4 inline-flex min-h-11 items-center border border-[oklch(0.55_0.07_185)] bg-[oklch(0.24_0.045_185)] px-3 text-xs font-semibold text-[oklch(0.9_0.025_185)] outline-none hover:bg-[oklch(0.28_0.055_185)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.45)]"
+            >
+              Open Fleet view
+            </Link>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function KeyHint({ keyName, label }: { keyName: string; label: string }) {
   return (
@@ -19,6 +66,64 @@ function KeyHint({ keyName, label }: { keyName: string; label: string }) {
   );
 }
 
+function BoardMiniMap({
+  layout,
+  viewportRef,
+  onRecenter,
+}: {
+  layout: SpatialBoardLayout;
+  viewportRef: { current: SVGRectElement | null };
+  onRecenter: () => void;
+}) {
+  const bounds = layout.minimap.bounds;
+  const width = Math.max(bounds.width, 1);
+  const height = Math.max(bounds.height, 1);
+  return (
+    <button
+      type="button"
+      aria-label="Recenter board from minimap"
+      onClick={onRecenter}
+      className="block h-11 w-16 border border-[oklch(0.34_0.014_210)] bg-[oklch(0.15_0.009_220/0.96)] p-1.5 outline-none transition-colors hover:border-[oklch(0.52_0.055_185)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:h-24 sm:w-40 sm:p-2"
+    >
+      <svg
+        viewBox={`${bounds.x} ${bounds.y} ${width} ${height}`}
+        preserveAspectRatio="none"
+        className="h-full w-full"
+        aria-hidden="true"
+      >
+        {layout.zones.map(zone => (
+          <rect
+            key={zone.id}
+            x={zone.rect.x}
+            y={zone.rect.y}
+            width={zone.rect.width}
+            height={zone.rect.height}
+            fill={
+              zone.visible ? 'oklch(0.35 0.025 200)' : 'oklch(0.2 0.01 215)'
+            }
+            stroke={
+              zone.selected ? 'oklch(0.75 0.09 185)' : 'oklch(0.48 0.025 210)'
+            }
+            strokeWidth={0.45}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+        <rect
+          ref={viewportRef}
+          x={layout.cameraBounds.x}
+          y={layout.cameraBounds.y}
+          width={layout.cameraBounds.width}
+          height={layout.cameraBounds.height}
+          fill="none"
+          stroke="oklch(0.82 0.11 185)"
+          strokeWidth={1.2}
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+    </button>
+  );
+}
+
 export interface SpatialBoardHero {
   agentId: string;
   title: string;
@@ -27,20 +132,25 @@ export interface SpatialBoardHero {
 
 export function OperationsBoardSurface({
   layout,
+  projection,
   hero = null,
   onDrillProject,
   onSelectAgent,
   onOverview,
+  onProjectionChange,
   preserveDrawingBuffer = false,
 }: {
   layout: SpatialBoardLayout;
+  projection: SpatialBoardProjection;
   hero?: SpatialBoardHero | null;
   onDrillProject: (projectId: string) => void;
   onSelectAgent: (agentId: string | null) => void;
   onOverview: () => void;
+  onProjectionChange: (projection: SpatialBoardProjection) => void;
   preserveDrawingBuffer?: boolean;
 }) {
   const controller = useRef<OperationsBoardHandle | null>(null);
+  const viewportRect = useRef<SVGRectElement | null>(null);
   const visibleZones = useMemo(
     () => layout.zones.filter(zone => zone.visible),
     [layout.zones]
@@ -59,6 +169,24 @@ export function OperationsBoardSurface({
   );
 
   useAgentFieldGlide(controller);
+
+  const updateViewport = useCallback((viewport: OperationsBoardViewport) => {
+    const rect = viewportRect.current;
+    if (!rect) return;
+    rect.setAttribute('x', String(viewport.centerX - viewport.width / 2));
+    rect.setAttribute('y', String(viewport.centerY - viewport.height / 2));
+    rect.setAttribute('width', String(viewport.width));
+    rect.setAttribute('height', String(viewport.height));
+  }, []);
+
+  useEffect(() => {
+    const rect = viewportRect.current;
+    if (!rect) return;
+    rect.setAttribute('x', String(layout.cameraBounds.x));
+    rect.setAttribute('y', String(layout.cameraBounds.y));
+    rect.setAttribute('width', String(layout.cameraBounds.width));
+    rect.setAttribute('height', String(layout.cameraBounds.height));
+  }, [layout.cameraBounds]);
 
   const triage = useCallback(
     (direction: 1 | -1) => {
@@ -105,29 +233,46 @@ export function OperationsBoardSurface({
       } else if (event.key.toLowerCase() === 'p') {
         triage(-1);
         event.preventDefault();
+      } else if (event.key.toLowerCase() === 'v') {
+        onProjectionChange(
+          projection === 'top-down' ? 'fixed-angle' : 'top-down'
+        );
+        event.preventDefault();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [layout.altitude, onDrillProject, onOverview, triage, visibleZones]);
+  }, [
+    layout.altitude,
+    onDrillProject,
+    onOverview,
+    onProjectionChange,
+    projection,
+    triage,
+    visibleZones,
+  ]);
 
   return (
     <div
       data-spatial-board
-      data-board-projection="top-down"
+      data-board-projection={projection}
       data-board-projects={visibleZones.length}
       data-board-pieces={layout.stats.visiblePieceCount}
       className="relative h-full w-full overflow-hidden bg-[oklch(0.135_0.009_220)]"
     >
       <div className="absolute inset-0">
-        <OperationsBoardCanvas
-          layout={layout}
-          controllerRef={controller}
-          onDrillProject={onDrillProject}
-          onSelectAgent={agentId => onSelectAgent(agentId)}
-          onBackground={() => onSelectAgent(null)}
-          preserveDrawingBuffer={preserveDrawingBuffer}
-        />
+        <BoardErrorBoundary>
+          <OperationsBoardCanvas
+            layout={layout}
+            projection={projection}
+            controllerRef={controller}
+            onViewportChange={updateViewport}
+            onDrillProject={onDrillProject}
+            onSelectAgent={agentId => onSelectAgent(agentId)}
+            onBackground={() => onSelectAgent(null)}
+            preserveDrawingBuffer={preserveDrawingBuffer}
+          />
+        </BoardErrorBoundary>
       </div>
 
       {visibleZones.length === 0 && (
@@ -158,29 +303,83 @@ export function OperationsBoardSurface({
         </button>
       )}
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-end justify-between gap-3 p-3">
-        <div className="pointer-events-auto">
-          {attentionIds.length > 0 && (
+      {attentionIds.length > 0 && (
+        <button
+          type="button"
+          onClick={() => triage(1)}
+          className="absolute bottom-16 left-3 z-10 min-h-11 border border-[oklch(0.52_0.1_28)] bg-[oklch(0.18_0.035_28/0.94)] px-2.5 py-1.5 font-mono text-[10px] text-[oklch(0.78_0.09_28)] outline-none transition-colors hover:bg-[oklch(0.22_0.045_28/0.98)] focus-visible:ring-2 focus-visible:ring-[oklch(0.68_0.12_28/0.4)] sm:bottom-3"
+        >
+          {attentionIds.length} need attention
+        </button>
+      )}
+
+      <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 hidden -translate-x-1/2 flex-wrap items-center justify-center gap-x-3 gap-y-1.5 border border-[oklch(0.29_0.01_215)] bg-[oklch(0.13_0.008_220/0.9)] px-2.5 py-2 xl:flex">
+        {layout.altitude === 'fleet' && (
+          <KeyHint keyName="1–9" label="Project" />
+        )}
+        <KeyHint keyName="←↑↓→" label="pan" />
+        <KeyHint keyName="+ −" label="zoom" />
+        <KeyHint keyName="V" label="view" />
+        {attentionIds.length > 0 && <KeyHint keyName="N" label="attention" />}
+        <KeyHint
+          keyName={layout.altitude === 'fleet' ? '0' : 'Esc'}
+          label={layout.altitude === 'fleet' ? 'recenter' : 'zoom out'}
+        />
+      </div>
+
+      <div className="absolute bottom-3 right-3 z-10 flex flex-row items-end gap-1.5 sm:flex-col">
+        <div
+          className="flex border border-[oklch(0.34_0.014_210)] bg-[oklch(0.15_0.009_220/0.96)] p-1"
+          aria-label="Board projection"
+        >
+          {(['top-down', 'fixed-angle'] as const).map(option => (
             <button
+              key={option}
               type="button"
-              onClick={() => triage(1)}
-              className="border border-[oklch(0.52_0.1_28)] bg-[oklch(0.18_0.035_28/0.94)] px-2.5 py-1.5 font-mono text-[10px] text-[oklch(0.78_0.09_28)] outline-none transition-colors hover:bg-[oklch(0.22_0.045_28/0.98)] focus-visible:ring-2 focus-visible:ring-[oklch(0.68_0.12_28/0.4)]"
+              aria-pressed={projection === option}
+              onClick={() => onProjectionChange(option)}
+              className={`min-h-11 px-2 text-[9px] font-semibold uppercase tracking-[0.08em] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:px-3 sm:text-[10px] sm:tracking-[0.1em] ${
+                projection === option
+                  ? 'bg-[oklch(0.32_0.055_185)] text-[oklch(0.92_0.025_185)]'
+                  : 'text-[oklch(0.62_0.012_210)] hover:bg-[oklch(0.2_0.015_210)] hover:text-[oklch(0.82_0.015_210)]'
+              }`}
             >
-              {attentionIds.length} need attention
+              {option === 'top-down' ? 'Top' : 'Angle'}
             </button>
-          )}
+          ))}
         </div>
-        <div className="hidden flex-wrap items-center justify-end gap-x-3 gap-y-1.5 border border-[oklch(0.29_0.01_215)] bg-[oklch(0.13_0.008_220/0.9)] px-2.5 py-2 md:flex">
-          {layout.altitude === 'fleet' && (
-            <KeyHint keyName="1–9" label="Project" />
-          )}
-          <KeyHint keyName="←↑↓→" label="pan" />
-          <KeyHint keyName="+ −" label="zoom" />
-          {attentionIds.length > 0 && <KeyHint keyName="N" label="attention" />}
-          <KeyHint
-            keyName={layout.altitude === 'fleet' ? '0' : 'Esc'}
-            label={layout.altitude === 'fleet' ? 'recenter' : 'zoom out'}
-          />
+
+        <BoardMiniMap
+          layout={layout}
+          viewportRef={viewportRect}
+          onRecenter={() => controller.current?.recenter()}
+        />
+
+        <div className="flex border border-[oklch(0.34_0.014_210)] bg-[oklch(0.15_0.009_220/0.96)] p-1">
+          <button
+            type="button"
+            aria-label="Zoom out"
+            onClick={() => controller.current?.zoom(-1)}
+            className="grid h-11 w-11 place-items-center font-mono text-sm text-[oklch(0.72_0.02_210)] outline-none hover:bg-[oklch(0.21_0.015_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)]"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            aria-label="Recenter board"
+            onClick={() => controller.current?.recenter()}
+            className="grid h-11 min-w-11 place-items-center border-x border-[oklch(0.3_0.012_210)] px-1 font-mono text-[8px] uppercase tracking-[0.06em] text-[oklch(0.68_0.025_190)] outline-none hover:bg-[oklch(0.21_0.015_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:px-2 sm:text-[9px] sm:tracking-[0.08em]"
+          >
+            Center
+          </button>
+          <button
+            type="button"
+            aria-label="Zoom in"
+            onClick={() => controller.current?.zoom(1)}
+            className="grid h-11 w-11 place-items-center font-mono text-sm text-[oklch(0.72_0.02_210)] outline-none hover:bg-[oklch(0.21_0.015_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)]"
+          >
+            +
+          </button>
         </div>
       </div>
     </div>

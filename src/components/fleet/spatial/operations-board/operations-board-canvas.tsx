@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import type {
   SpatialBoardLayout,
   SpatialBoardPiece,
+  SpatialBoardProjection,
   SpatialBoardProjectZone,
   SpatialBoardRect,
 } from '@exawatt/ui-model';
@@ -93,6 +94,14 @@ interface CameraTarget {
   x: number;
   y: number;
   zoom: number;
+  tilt: number;
+}
+
+export interface OperationsBoardViewport {
+  centerX: number;
+  centerY: number;
+  width: number;
+  height: number;
 }
 
 function rectCenter(rect: SpatialBoardRect): { x: number; y: number } {
@@ -101,28 +110,78 @@ function rectCenter(rect: SpatialBoardRect): { x: number; y: number } {
 
 function BoardCameraRig({
   layout,
+  projection,
   reduced,
   controllerRef,
+  onViewportChange,
 }: {
   layout: SpatialBoardLayout;
+  projection: SpatialBoardProjection;
   reduced: boolean;
   controllerRef: { current: OperationsBoardHandle | null };
+  onViewportChange?: (viewport: OperationsBoardViewport) => void;
 }) {
   const { size, invalidate } = useThree();
   const get = useThree(state => state.get);
   const cameraRef = useRef<THREE.OrthographicCamera | null>(null);
-  const target = useRef<CameraTarget>({ x: 0, y: 0, zoom: 1 });
+  const initialTilt = projection === 'fixed-angle' ? 1 : 0;
+  const target = useRef<CameraTarget>({
+    x: 0,
+    y: 0,
+    zoom: 1,
+    tilt: initialTilt,
+  });
+  const current = useRef<CameraTarget>({
+    x: 0,
+    y: 0,
+    zoom: 1,
+    tilt: initialTilt,
+  });
   const fitZoom = useRef(1);
   const initialized = useRef(false);
 
-  const applyTarget = useCallback(() => {
-    const ortho =
-      cameraRef.current ?? (get().camera as THREE.OrthographicCamera);
-    cameraRef.current = ortho;
-    ortho.position.set(target.current.x, target.current.y, 100);
-    ortho.zoom = target.current.zoom;
-    ortho.updateProjectionMatrix();
-  }, [get]);
+  const notifyViewport = useCallback(
+    (value: CameraTarget) => {
+      onViewportChange?.({
+        centerX: value.x,
+        centerY: -value.y,
+        width: size.width / Math.max(value.zoom, 0.001),
+        height: size.height / Math.max(value.zoom, 0.001),
+      });
+    },
+    [onViewportChange, size.height, size.width]
+  );
+
+  const applyCamera = useCallback(
+    (value: CameraTarget) => {
+      const ortho =
+        cameraRef.current ?? (get().camera as THREE.OrthographicCamera);
+      cameraRef.current = ortho;
+      ortho.position.set(
+        value.x + value.tilt * 18,
+        value.y - value.tilt * 22,
+        100 - value.tilt * 24
+      );
+      ortho.up.set(0, 1, 0);
+      ortho.lookAt(value.x, value.y, 0);
+      ortho.zoom = value.zoom * (1 - value.tilt * 0.08);
+      ortho.updateProjectionMatrix();
+    },
+    [get]
+  );
+
+  const snapToTarget = useCallback(() => {
+    current.current.x = target.current.x;
+    current.current.y = target.current.y;
+    current.current.zoom = target.current.zoom;
+    current.current.tilt = target.current.tilt;
+    applyCamera(current.current);
+    notifyViewport(current.current);
+  }, [applyCamera, notifyViewport]);
+
+  const announceTargetViewport = useCallback(() => {
+    notifyViewport(target.current);
+  }, [notifyViewport]);
 
   const targetForRect = useCallback(
     (rect: SpatialBoardRect) => {
@@ -137,24 +196,37 @@ function BoardCameraRig({
       target.current.x = center.x;
       target.current.y = center.y;
       target.current.zoom = zoom;
+      announceTargetViewport();
     },
-    [size.height, size.width]
+    [announceTargetViewport, size.height, size.width]
   );
 
   useLayoutEffect(() => {
     targetForRect(layout.cameraBounds);
     if (!initialized.current || reduced) {
-      applyTarget();
+      snapToTarget();
       initialized.current = true;
     }
     invalidate();
-  }, [applyTarget, invalidate, layout.cameraBounds, reduced, targetForRect]);
+  }, [invalidate, layout.cameraBounds, reduced, snapToTarget, targetForRect]);
+
+  useEffect(() => {
+    target.current.tilt = projection === 'fixed-angle' ? 1 : 0;
+    announceTargetViewport();
+    if (reduced) snapToTarget();
+    invalidate();
+  }, [announceTargetViewport, invalidate, projection, reduced, snapToTarget]);
 
   useEffect(() => {
     const span = () => Math.max(layout.bounds.width, layout.bounds.height, 24);
     const focusRect = (rect: SpatialBoardRect) => {
       targetForRect(rect);
-      if (reduced) applyTarget();
+      if (reduced) snapToTarget();
+      invalidate();
+    };
+    const cameraChanged = () => {
+      announceTargetViewport();
+      if (reduced) snapToTarget();
       invalidate();
     };
     controllerRef.current = {
@@ -183,14 +255,12 @@ function BoardCameraRig({
           min,
           max
         );
-        if (reduced) applyTarget();
-        invalidate();
+        cameraChanged();
       },
       pan(dx, dy) {
         target.current.x += dx * span();
         target.current.y -= dy * span();
-        if (reduced) applyTarget();
-        invalidate();
+        cameraChanged();
       },
       nudge(dx, dy, dollySteps) {
         target.current.x += dx * span();
@@ -204,15 +274,14 @@ function BoardCameraRig({
             max
           );
         }
-        if (reduced) applyTarget();
-        invalidate();
+        cameraChanged();
       },
     };
     return () => {
       controllerRef.current = null;
     };
   }, [
-    applyTarget,
+    announceTargetViewport,
     controllerRef,
     invalidate,
     layout.bounds.height,
@@ -221,39 +290,50 @@ function BoardCameraRig({
     layout.pieces,
     layout.zones,
     reduced,
+    snapToTarget,
     targetForRect,
   ]);
 
   useFrame((state, delta) => {
     if (reduced) return;
-    const ortho = state.camera as THREE.OrthographicCamera;
+    const ortho =
+      cameraRef.current ?? (state.camera as THREE.OrthographicCamera);
     cameraRef.current = ortho;
     const nextX = THREE.MathUtils.damp(
-      ortho.position.x,
+      current.current.x,
       target.current.x,
       11,
       delta
     );
     const nextY = THREE.MathUtils.damp(
-      ortho.position.y,
+      current.current.y,
       target.current.y,
       11,
       delta
     );
     const nextZoom = THREE.MathUtils.damp(
-      ortho.zoom,
+      current.current.zoom,
       target.current.zoom,
+      11,
+      delta
+    );
+    const nextTilt = THREE.MathUtils.damp(
+      current.current.tilt,
+      target.current.tilt,
       11,
       delta
     );
     const moving =
       Math.abs(nextX - target.current.x) > 0.001 ||
       Math.abs(nextY - target.current.y) > 0.001 ||
-      Math.abs(nextZoom - target.current.zoom) > 0.001;
-    ortho.position.x = moving ? nextX : target.current.x;
-    ortho.position.y = moving ? nextY : target.current.y;
-    ortho.zoom = moving ? nextZoom : target.current.zoom;
-    ortho.updateProjectionMatrix();
+      Math.abs(nextZoom - target.current.zoom) > 0.001 ||
+      Math.abs(nextTilt - target.current.tilt) > 0.001;
+    current.current.x = moving ? nextX : target.current.x;
+    current.current.y = moving ? nextY : target.current.y;
+    current.current.zoom = moving ? nextZoom : target.current.zoom;
+    current.current.tilt = moving ? nextTilt : target.current.tilt;
+    applyCamera(current.current);
+    notifyViewport(current.current);
     if (moving) state.invalidate();
   });
 
@@ -495,12 +575,17 @@ function AgentPieceLayer({
 }) {
   const visible = pieces.filter(piece => piece.visible);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const pieceGeometry = useMemo(() => {
+    const geometry = new THREE.CylinderGeometry(0.5, 0.5, 0.28, 8);
+    geometry.rotateX(Math.PI / 2);
+    return geometry;
+  }, []);
+  useEffect(() => () => pieceGeometry.dispose(), [pieceGeometry]);
   useCursor(hoveredId != null);
   const selected = visible.find(piece => piece.selected);
   return (
     <>
-      <Instances limit={256} range={visible.length}>
-        <circleGeometry args={[0.5, 8]} />
+      <Instances geometry={pieceGeometry} limit={256} range={visible.length}>
         <meshBasicMaterial />
         {visible.map(piece => {
           const interactive = piece.kind === 'agent' && altitude !== 'fleet';
@@ -591,14 +676,18 @@ function AgentControls({
 
 export function OperationsBoardCanvas({
   layout,
+  projection,
   controllerRef,
+  onViewportChange,
   onDrillProject,
   onSelectAgent,
   onBackground,
   preserveDrawingBuffer = false,
 }: {
   layout: SpatialBoardLayout;
+  projection: SpatialBoardProjection;
   controllerRef: { current: OperationsBoardHandle | null };
+  onViewportChange?: (viewport: OperationsBoardViewport) => void;
   onDrillProject: (projectId: string) => void;
   onSelectAgent: (agentId: string) => void;
   onBackground: () => void;
@@ -635,8 +724,10 @@ export function OperationsBoardCanvas({
       <color attach="background" args={[BOARD_COLOR.background]} />
       <BoardCameraRig
         layout={layout}
+        projection={projection}
         reduced={reduced}
         controllerRef={controllerRef}
+        onViewportChange={onViewportChange}
       />
       <BoardGrid bounds={layout.bounds} />
       <ZoneLayer zones={visibleZones} onDrillProject={onDrillProject} />

@@ -208,6 +208,106 @@ async function checkFleetScales(page) {
   return { counts, motion };
 }
 
+async function checkBoardTools(page) {
+  const minimap = page.getByRole('button', {
+    name: 'Recenter board from minimap',
+  });
+  await minimap.waitFor({ state: 'visible' });
+  const viewport = minimap.locator('svg rect').last();
+  const widthBefore = Number(await viewport.getAttribute('width'));
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await page.waitForFunction(previous => {
+    const map = document.querySelector(
+      'button[aria-label="Recenter board from minimap"]'
+    );
+    const rects = map?.querySelectorAll('svg rect');
+    const viewportRect = rects?.[rects.length - 1];
+    return Number(viewportRect?.getAttribute('width')) < previous;
+  }, widthBefore);
+  const widthAfter = Number(await viewport.getAttribute('width'));
+
+  const quaternionBefore = await page.evaluate(() =>
+    Array.from(window.__EVAL_CAM__.quaternion)
+  );
+  await page.getByRole('button', { name: 'Angle' }).click();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-spatial-board]')
+        ?.getAttribute('data-board-projection') === 'fixed-angle'
+  );
+  await page.waitForTimeout(700);
+  const quaternionAfter = await page.evaluate(() =>
+    Array.from(window.__EVAL_CAM__.quaternion)
+  );
+  const quaternionDelta = quaternionAfter.reduce(
+    (sum, value, index) => sum + Math.abs(value - quaternionBefore[index]),
+    0
+  );
+  check(quaternionDelta > 0.05, 'Fixed-angle camera pose did not change');
+  check(
+    new URL(page.url()).searchParams.get('projection') === 'fixed-angle',
+    'Projection preference was not reflected in the URL'
+  );
+  await page
+    .locator('button[aria-label^="Open Project "]')
+    .first()
+    .waitFor({ state: 'visible' });
+  await page.evaluate(
+    () =>
+      new Promise(resolve =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
+      )
+  );
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: join(REPORT_DIR, 'desktop-fleet-fixed-angle.png'),
+  });
+
+  await page.getByRole('button', { name: 'Top' }).click();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-spatial-board]')
+        ?.getAttribute('data-board-projection') === 'top-down'
+  );
+  await page
+    .getByRole('button', { name: 'Recenter board', exact: true })
+    .click();
+  return { widthBefore, widthAfter, quaternionDelta };
+}
+
+async function checkAgentProjectionPersistence(page) {
+  const before = new URL(page.url()).searchParams.get('agent');
+  await page.getByRole('button', { name: 'Angle' }).click();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-spatial-board]')
+        ?.getAttribute('data-board-projection') === 'fixed-angle'
+  );
+  const url = new URL(page.url());
+  check(
+    url.searchParams.get('agent') === before,
+    'Projection lost Agent state'
+  );
+  check(
+    url.searchParams.get('altitude') === 'agent',
+    'Projection lost Agent altitude'
+  );
+  check(
+    await page.getByText('Selected Agent', { exact: true }).isVisible(),
+    'Projection hid the selected Agent inspector'
+  );
+  await page.getByRole('button', { name: 'Top' }).click();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-spatial-board]')
+        ?.getAttribute('data-board-projection') === 'top-down'
+  );
+}
+
 async function openAgent(page, units) {
   const unitCount = await units.count();
   check(unitCount > 0, 'Project regime has no accessible Agent units');
@@ -295,6 +395,7 @@ async function runScenario(browser, scenario) {
       result.scaleProjects = scaleResult.counts;
       result.motion = scaleResult.motion;
     }
+    if (scenario.tools) result.boardTools = await checkBoardTools(page);
 
     const { projectCount, units } = await openProject(page);
     result.projectCount = projectCount;
@@ -305,6 +406,7 @@ async function runScenario(browser, scenario) {
       fullPage: scenario.mobile,
     });
     result.unitCount = await openAgent(page, units);
+    if (scenario.tools) await checkAgentProjectionPersistence(page);
     result.idleFrames = await measureIdleFrames(page);
 
     if (scenario.mobile) {
@@ -368,6 +470,7 @@ const scenarios = [
     mobile: false,
     reduced: false,
     scales: true,
+    tools: true,
   },
   {
     name: 'mobile',

@@ -65,6 +65,7 @@ export default function OperationsBoardEvalPage() {
       <div className="h-full overflow-hidden border border-[#354149]">
         <OperationsBoardSurface
           layout={layout}
+          projection="top-down"
           hero={{
             agentId: 'relay-auth',
             title: 'Authentication needs operator input',
@@ -73,6 +74,7 @@ export default function OperationsBoardEvalPage() {
           onDrillProject={() => undefined}
           onSelectAgent={() => undefined}
           onOverview={() => undefined}
+          onProjectionChange={() => undefined}
           preserveDrawingBuffer
         />
       </div>
