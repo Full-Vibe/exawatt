@@ -7,6 +7,7 @@ import { attentionMonitor } from './pty/attention-monitor';
 import { createWorktree } from './pty/project-resolve';
 import { loadWorkspace, saveWorkspace } from './workspace-store';
 import { loadSettings } from './settings-store';
+import { listResumeCandidates } from './pty/resume-candidates';
 
 /**
  * IPC surface for PTY sessions (decision 0005). Invocations are namespaced
@@ -112,6 +113,11 @@ export function registerPtyIPC(): void {
     }))
   );
   handleTrusted('pty:buffer', (_event, id: string) => ptySessions.buffer(id));
+  handleTrusted(
+    'pty:list-resume-candidates',
+    (_event, harness: PtyCreateOptions['harness'], cwd: string) =>
+      listResumeCandidates(harness, cwd)
+  );
 
   // one-gesture worktrees: <repo>-wt/<branch> sibling container
   handleTrusted(

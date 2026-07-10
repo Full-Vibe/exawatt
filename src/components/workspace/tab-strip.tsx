@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import { HUD } from '@/components/hud';
 import { PROJECT_PALETTE } from './project-colors';
 import { HarnessGlyph } from './harness-icons';
-import { REVIVE_FAILED } from './use-workspace-state';
+import { tabIsLive } from './use-workspace-state';
 import {
   RENAME_ACTIVE_EVENT,
   FOCUS_ACTIVE_TERMINAL_EVENT,
@@ -183,7 +183,7 @@ export function TabStrip({
         const color = g.color;
         const groupActive = g.dir === activeDir;
         const flaggedCount = g.tabs.filter(
-          (t) => t.sessionId && attention[t.sessionId] && t.exitCode === null
+          (t) => t.sessionId && attention[t.sessionId] && tabIsLive(t)
         ).length;
         return (
           <div
@@ -239,7 +239,7 @@ export function TabStrip({
             </button>
             {g.tabs.map((t) => {
               const on = groupActive && t.id === g.activeTabId;
-              const dead = t.exitCode !== null;
+              const dead = !tabIsLive(t);
               const summary = t.sessionId ? summaries[t.sessionId] : undefined;
               const needsYou =
                 !dead && !!(t.sessionId && attention[t.sessionId]);
@@ -264,11 +264,7 @@ export function TabStrip({
                     title={`${t.cwd}${summary ? `\n${summary}` : ''}${
                       needsYou ? '\nneeds your attention (⌘J jumps here)' : ''
                     }${
-                      dead
-                        ? t.exitCode === REVIVE_FAILED
-                          ? '\nrevive failed'
-                          : `\nexited ${t.exitCode}`
-                        : ''
+                      dead ? `\n${t.resumeState.replace('-', ' ')}` : ''
                     }\ndouble-click to rename`}
                   >
                     {needsYou && <AttentionDot />}

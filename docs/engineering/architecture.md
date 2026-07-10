@@ -129,6 +129,9 @@ Built:
   PTY Agent handoff, and exact semantic board-address return
 - `LocalSessionsTransport` normalization of local PTY sessions into the shared
   `FleetState` consumed by the DOM and spatial fleet surfaces
+- exact harness conversation identity for Electron tabs: assigned Claude IDs,
+  explicit Codex selection fallback, and no-spawn relaunch with exact
+  tab/Project/all resume actions
 
 Partial:
 

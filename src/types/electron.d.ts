@@ -8,8 +8,8 @@ export interface PtyCreateOptions {
   cols?: number;
   rows?: number;
   title?: string;
-  /** revive: harness resumes its last conversation in this directory */
-  resume?: boolean;
+  /** Resume one exact provider conversation. */
+  resumeSessionId?: string;
 }
 
 export type PtyAttentionKind = 'bell' | 'turn-end';
@@ -43,6 +43,8 @@ export interface PtySessionInfo {
   exitCode: number | null;
   /** last output timestamp (ENG-015 S2: live status in the switcher) */
   lastDataAt: number;
+  /** Durable provider conversation identity; null until explicitly captured. */
+  harnessSessionId: string | null;
   /** auto-summarized micro-context (W0.4); null until first summary */
   contextSummary?: string | null;
   /** needs-operator flag (ENG-015 S1); null when clear */
@@ -70,6 +72,10 @@ export interface ElectronPtyApi {
   list: () => Promise<PtySessionInfo[]>;
   buffer: (id: string) => Promise<string>;
   createWorktree: (repoDir: string, branch: string) => Promise<WorktreeResult>;
+  listResumeCandidates: (
+    harness: PtyHarness,
+    cwd: string
+  ) => Promise<HarnessResumeCandidate[]>;
   onData: (handler: (payload: { id: string; data: string }) => void) => () => void;
   onExit: (handler: (payload: { id: string; exitCode: number }) => void) => () => void;
   onContext: (handler: (payload: { id: string; summary: string }) => void) => () => void;
@@ -77,6 +83,13 @@ export interface ElectronPtyApi {
   onAttention: (
     handler: (payload: { id: string; attention: PtyAttention | null }) => void
   ) => () => void;
+}
+
+export interface HarnessResumeCandidate {
+  id: string;
+  cwd: string;
+  updatedAt: number;
+  label: string;
 }
 
 export interface ElectronWorkspaceApi {

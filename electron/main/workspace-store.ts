@@ -6,8 +6,8 @@ import * as path from 'path';
  * Workspace layout persistence (ENG-002 W0.2): initiative groups, tabs,
  * working dirs, last-used dir. The RENDERER owns the shape (versioned JSON);
  * main just stores it durably in userData so it survives app restarts.
- * Live processes are not persisted — tabs auto-revive on launch (decision:
- * operator 2026-07-02, claude --continue / codex resume --last).
+ * Live processes are not persisted. The renderer restores ended tabs and exact
+ * provider conversation IDs; it never starts a process until explicit resume.
  */
 const FILE = 'workspace.json';
 

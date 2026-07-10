@@ -2,7 +2,7 @@
 
 /**
  * Workspace state (ENG-002 W0.2): project groups keyed by PROJECT
- * DIRECTORY, tabs within them, persistence, and auto-revive.
+ * DIRECTORY, tabs within them, persistence, and exact-ID resume.
  *
  * Model decisions (operator, 2026-07-02):
  * - one app window; projects are groups inside it (⌘1..9 switches
@@ -11,9 +11,9 @@
  *   the last-used directory is remembered
  * - directory → project resolution happens in the main process (worktrees
  *   map to their main repo), so grouping is consistent everywhere
- * - on app restart, layout is restored and dead agent tabs AUTO-REVIVE
- *   (claude --continue / codex resume --last); a mere renderer reload
- *   re-adopts still-live sessions instead
+ * - on app restart, layout restores without spawning. Each agent resumes only
+ *   an exact saved provider ID after an explicit operator action; a renderer
+ *   reload re-adopts still-live PTYs.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HARNESS_META } from './harnesses';
@@ -42,8 +42,22 @@ export interface WorkspaceTab {
   title: string;
   cwd: string;
   sessionId: string | null;
+  harnessSessionId: string | null;
+  resumeState: ResumeState;
   /** null = running; number = exit code; REVIVE_FAILED = revive error */
   exitCode: number | null;
+}
+
+export type ResumeState =
+  | 'live'
+  | 'ended-resumable'
+  | 'identity-missing'
+  | 'resuming'
+  | 'resumed'
+  | 'failed';
+
+export function tabIsLive(tab: WorkspaceTab): boolean {
+  return tab.resumeState === 'live' || tab.resumeState === 'resumed';
 }
 
 export interface Project {
@@ -56,11 +70,9 @@ export interface Project {
   activeTabId: string | null;
 }
 
-/** Current persisted layout (v2). Directory-keyed groups live under `projects`.
- *  v1 stored the same groups under `initiatives`; the canon rename (ENG-015 S5)
- *  renamed the key, and parsePersisted upgrades old files so no layout is lost. */
-interface PersistedV2 {
-  v: 2;
+/** Current persisted layout (v3). v3 adds exact provider conversation IDs. */
+interface PersistedV3 {
+  v: 3;
   lastUsedDir: string;
   activeDir: string | null;
   /** split view (S2): tab pinned beside the active one; optional (pre-S2
@@ -77,11 +89,23 @@ interface PersistedV2 {
       title: string;
       cwd: string;
       sessionId: string | null;
+      harnessSessionId: string | null;
     }>;
   }>;
 }
 
-/** v1 layout on disk: identical shape, but the groups lived under `initiatives`. */
+type PersistedV2 = Omit<PersistedV3, 'v' | 'projects'> & {
+  v: 2;
+  projects: Array<
+    Omit<PersistedV3['projects'][number], 'tabs'> & {
+      tabs: Array<
+        Omit<PersistedV3['projects'][number]['tabs'][number], 'harnessSessionId'>
+      >;
+    }
+  >;
+};
+
+/** v1 layout on disk: identical v2 shape under the old `initiatives` key. */
 type PersistedV1 = Omit<PersistedV2, 'v' | 'projects'> & {
   v: 1;
   initiatives: PersistedV2['projects'];
@@ -96,13 +120,25 @@ function newTabId(): string {
 
 /** Read the persisted layout, upgrading a v1 file (key `initiatives`) to the v2
  *  shape (key `projects`) so the ENG-015 S5 rename never drops a saved layout. */
-function parsePersisted(raw: unknown): PersistedV2 | null {
+export function parsePersisted(raw: unknown): PersistedV3 | null {
   if (!raw || typeof raw !== 'object') return null;
   const d = raw as { v?: number; projects?: unknown; initiatives?: unknown };
-  if (d.v === 2 && Array.isArray(d.projects)) return raw as PersistedV2;
+  if (d.v === 3 && Array.isArray(d.projects)) return raw as PersistedV3;
+  const upgrade = (projects: PersistedV2['projects'], rest: Omit<PersistedV2, 'v' | 'projects'>) => ({
+    ...rest,
+    v: 3 as const,
+    projects: projects.map(project => ({
+      ...project,
+      tabs: project.tabs.map(tab => ({ ...tab, harnessSessionId: null })),
+    })),
+  });
+  if (d.v === 2 && Array.isArray(d.projects)) {
+    const { projects, v: _v, ...rest } = raw as PersistedV2;
+    return upgrade(projects, rest);
+  }
   if (d.v === 1 && Array.isArray(d.initiatives)) {
-    const { initiatives, ...rest } = raw as PersistedV1;
-    return { ...rest, v: 2, projects: initiatives };
+    const { initiatives, v: _v, ...rest } = raw as PersistedV1;
+    return upgrade(initiatives, rest);
   }
   return null;
 }
@@ -159,6 +195,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       title: s.title,
       cwd: s.cwd,
       sessionId: s.id,
+      harnessSessionId: s.harnessSessionId,
+      resumeState: 'live',
       exitCode: s.exited ? (s.exitCode ?? 0) : null,
     };
     setProjects((prev) => {
@@ -196,7 +234,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     []
   );
 
-  // ---- mount: adopt live sessions, restore layout, auto-revive ----
+  // ---- mount: adopt live sessions, restore ended layout without spawning ----
   useEffect(() => {
     const api = window.electron?.pty;
     const ws = window.electron?.workspace;
@@ -234,8 +272,6 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (Object.keys(seededAttention).length > 0) {
         setAttention((prev) => ({ ...seededAttention, ...prev }));
       }
-      const toRevive: Array<{ tabId: string; harness: PtyHarness; cwd: string; title: string }> = [];
-
       if (persisted) {
         const assigned: Array<string | undefined> = persisted.projects.map(
           (g) => g.color
@@ -259,12 +295,21 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
               return {
                 ...t,
                 sessionId: s.id,
+                harnessSessionId: s.harnessSessionId ?? t.harnessSessionId,
+                resumeState: 'live' as const,
                 exitCode: s.exited ? (s.exitCode ?? 0) : null,
               };
             }
-            // app restart: process is gone — revive it below
-            toRevive.push({ tabId: t.id, harness: t.harness, cwd: t.cwd, title: t.title });
-            return { ...t, sessionId: null, exitCode: null };
+            // App restart: process is gone. Restore history and identity, but
+            // never spawn until the operator explicitly resumes.
+            return {
+              ...t,
+              sessionId: null,
+              exitCode: 0,
+              resumeState: t.harnessSessionId
+                ? ('ended-resumable' as const)
+                : ('identity-missing' as const),
+            };
           }),
         }));
         setProjects(restored);
@@ -283,30 +328,6 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       // the last save) — or the whole fresh-start case
       for (const s of liveById.values()) addSession(s);
       setReady(true);
-
-      // auto-revive sequentially (no spawn stampede); harness tabs resume
-      // their previous conversation in that directory
-      for (const r of toRevive) {
-        if (cancelled) return;
-        const size = sizeRef.current?.() ?? null;
-        const res = await api.create({
-          harness: r.harness,
-          cwd: r.cwd,
-          title: r.title,
-          resume: r.harness !== 'shell',
-          ...(size ?? {}),
-        });
-        if (cancelled) return;
-        if (res.ok) {
-          updateTab(r.tabId, {
-            sessionId: res.session.id,
-            cwd: res.session.cwd,
-            exitCode: null,
-          });
-        } else {
-          updateTab(r.tabId, { exitCode: REVIVE_FAILED });
-        }
-      }
     })();
 
     const offExit = api.onExit(({ id, exitCode }) => {
@@ -314,7 +335,15 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         prev.map((g) => ({
           ...g,
           tabs: g.tabs.map((t) =>
-            t.sessionId === id ? { ...t, exitCode } : t
+            t.sessionId === id
+              ? {
+                  ...t,
+                  exitCode,
+                  resumeState: t.harnessSessionId
+                    ? 'ended-resumable'
+                    : 'identity-missing',
+                }
+              : t
           ),
         }))
       );
@@ -351,7 +380,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- persistence: debounced, exited tabs pruned (no restoring corpses) ----
+  // ---- persistence: debounced; ended tabs remain as explicit resume targets ----
   useEffect(() => {
     if (!ready) return;
     const ws = window.electron?.workspace;
@@ -368,23 +397,23 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const pinSurvives =
         pin !== null &&
         gs.some((g) =>
-          g.tabs.some((t) => t.id === pin && t.exitCode === null)
+          g.tabs.some((t) => t.id === pin && tabIsLive(t))
         );
-      const state: PersistedV2 = {
-        v: 2,
+      const state: PersistedV3 = {
+        v: 3,
         lastUsedDir: lu,
         activeDir: ad,
         pinnedTabId: pinSurvives ? pin : null,
         projects: gs
           .map((g) => {
             const tabs = g.tabs
-              .filter((t) => t.exitCode === null)
-              .map(({ id, harness, title, cwd, sessionId }) => ({
+              .map(({ id, harness, title, cwd, sessionId, harnessSessionId }) => ({
                 id,
                 harness,
                 title,
                 cwd,
                 sessionId,
+                harnessSessionId,
               }));
             return {
               dir: g.dir,
@@ -478,6 +507,69 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     });
   }, []);
 
+  const resumeTab = useCallback(
+    async (tabId: string, selectedHarnessId?: string): Promise<boolean> => {
+      const api = window.electron?.pty;
+      if (!api) return false;
+      const tab = stateRef.current.projects
+        .flatMap(project => project.tabs)
+        .find(candidate => candidate.id === tabId);
+      if (!tab || tabIsLive(tab) || tab.resumeState === 'resuming') return false;
+      const exactId = selectedHarnessId ?? tab.harnessSessionId;
+      if (tab.harness !== 'shell' && !exactId) {
+        setError(`Choose the exact ${HARNESS_META[tab.harness].label} conversation.`);
+        return false;
+      }
+      updateTab(tabId, { resumeState: 'resuming', exitCode: null });
+      const size = sizeRef.current?.() ?? null;
+      const result = await api.create({
+        harness: tab.harness,
+        cwd: tab.cwd,
+        title: tab.title,
+        ...(exactId ? { resumeSessionId: exactId } : {}),
+        ...(size ?? {}),
+      });
+      if (!result.ok) {
+        updateTab(tabId, { resumeState: 'failed', exitCode: REVIVE_FAILED });
+        setError(result.error);
+        return false;
+      }
+      updateTab(tabId, {
+        sessionId: result.session.id,
+        harnessSessionId: result.session.harnessSessionId ?? exactId ?? null,
+        cwd: result.session.cwd,
+        resumeState: exactId ? 'resumed' : 'live',
+        exitCode: null,
+      });
+      setError(null);
+      return true;
+    },
+    [updateTab]
+  );
+
+  const resumeTabs = useCallback(
+    async (tabs: WorkspaceTab[]) => {
+      for (const tab of tabs) {
+        if (tab.harness === 'shell' || tab.harnessSessionId) {
+          await resumeTab(tab.id);
+        }
+      }
+    },
+    [resumeTab]
+  );
+
+  const resumeProject = useCallback(
+    (dir: string) => {
+      const project = stateRef.current.projects.find(group => group.dir === dir);
+      if (project) void resumeTabs(project.tabs);
+    },
+    [resumeTabs]
+  );
+
+  const resumeAll = useCallback(() => {
+    void resumeTabs(stateRef.current.projects.flatMap(project => project.tabs));
+  }, [resumeTabs]);
+
   /** ignite in the active project's directory (fallback: last used) —
    *  the one dir-resolution path for ⌘T, palette commands, and buttons */
   const igniteHere = useCallback(
@@ -528,7 +620,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const pinAlive =
       pin !== null &&
       gs.some((g) =>
-        g.tabs.some((t) => t.id === pin && t.exitCode === null)
+        g.tabs.some((t) => t.id === pin && tabIsLive(t))
       );
     if (pinAlive) {
       setPinnedTabId(null);
@@ -728,6 +820,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     ignite,
     igniteHere,
     closeTab,
+    resumeTab,
+    resumeProject,
+    resumeAll,
     selectProject,
     selectTab,
     activateSession,

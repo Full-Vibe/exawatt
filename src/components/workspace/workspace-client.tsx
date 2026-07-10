@@ -6,7 +6,7 @@
  * W0.2 model: ONE window; projects are directory-keyed groups inside it
  * (⌘1..9 switches project, ⌘⇧[/] rotates the global tab ring across projects, ⌘T ignites a
  * shell in the active project). Layout persists across app restarts and
- * dead agent tabs auto-revive (claude --continue / codex resume --last).
+ * ended tabs restore without spawning and resume only an exact provider ID.
  * State/verbs live in use-workspace-state; this file is composition only.
  *
  * This terminal regime is FIRST-CLASS: an AI-native tmux++ developed in
@@ -29,7 +29,8 @@ import { TabStrip } from './tab-strip';
 import { IgniteControls } from './ignite-controls';
 import { ExposeOverlay } from './expose-overlay';
 import { ReentryRecapCard } from './reentry-recap';
-import { useWorkspaceState, REVIVE_FAILED } from './use-workspace-state';
+import { useWorkspaceState, tabIsLive } from './use-workspace-state';
+import { SessionRestorePanel } from './session-restore-panel';
 import { useWorkspaceShortcuts } from './use-workspace-shortcuts';
 import {
   RENAME_ACTIVE_EVENT,
@@ -127,6 +128,9 @@ export function WorkspaceClient() {
     ignite,
     igniteHere,
     closeTab,
+    resumeTab,
+    resumeProject,
+    resumeAll,
     selectProject,
     selectTab,
     cycleTab,
@@ -272,7 +276,7 @@ export function WorkspaceClient() {
           e =>
             e.tab.id === pinnedTabId &&
             e.tab.sessionId &&
-            e.tab.exitCode === null
+            tabIsLive(e.tab)
         ) ?? null)
       : null;
   if (activeTab && activeTab.sessionId && activeTab.id !== pinnedTabId) {
@@ -283,7 +287,7 @@ export function WorkspaceClient() {
         e =>
           e.tab.id === companionRef.current &&
           e.tab.sessionId &&
-          e.tab.exitCode === null
+          tabIsLive(e.tab)
       ) ?? null)
     : null;
   const split =
@@ -408,20 +412,32 @@ export function WorkspaceClient() {
                 font={font}
                 onActivate={() => selectTab(dir, tab.id)}
               />
-            ) : (
+            ) : tab.id === activeTab?.id && activeProject ? (
               <div
                 key={tab.id}
-                className={`absolute inset-0 flex items-center justify-center ${
-                  tab.id === activeTab?.id ? '' : 'invisible'
-                }`}
+                className="absolute inset-0 flex items-center justify-center p-6"
               >
-                <p className="font-mono text-sm" style={{ color: HUD.textDim }}>
-                  {tab.exitCode === REVIVE_FAILED
-                    ? 'Revive failed — close this tab and launch again.'
-                    : 'Reviving session…'}
-                </p>
+                {tab.resumeState === 'resuming' ? (
+                  <p className="text-sm" style={{ color: HUD.textDim }}>
+                    Starting a new process for the saved conversation...
+                  </p>
+                ) : (
+                  <SessionRestorePanel
+                    tab={tab}
+                    project={activeProject}
+                    resumableCount={allTabs.filter(
+                      entry =>
+                        !tabIsLive(entry.tab) &&
+                        (entry.tab.harness === 'shell' ||
+                          !!entry.tab.harnessSessionId)
+                    ).length}
+                    onResumeTab={resumeTab}
+                    onResumeProject={resumeProject}
+                    onResumeAll={resumeAll}
+                  />
+                )}
               </div>
-            )
+            ) : null
           )
         )}
       </div>

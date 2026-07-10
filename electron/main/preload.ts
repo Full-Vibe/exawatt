@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('electron', {
     buffer: (id: string) => ipcRenderer.invoke('pty:buffer', id),
     createWorktree: (repoDir: string, branch: string) =>
       ipcRenderer.invoke('pty:worktree', repoDir, branch),
+    listResumeCandidates: (harness: string, cwd: string) =>
+      ipcRenderer.invoke('pty:list-resume-candidates', harness, cwd),
     onData: subscribe<{ id: string; data: string }>('pty:data'),
     onExit: subscribe<{ id: string; exitCode: number }>('pty:exit'),
     onContext: subscribe<{ id: string; summary: string }>('pty:context'),

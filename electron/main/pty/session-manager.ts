@@ -6,6 +6,8 @@ import * as os from 'os';
 import * as pty from 'node-pty';
 import { expandTilde, resolveProject } from './project-resolve';
 import { ScrollbackStore } from './scrollback-store';
+import { randomUUID } from 'crypto';
+import { buildHarnessCommand } from './harness-command';
 
 const execFileAsync = promisify(execFile);
 
@@ -33,9 +35,8 @@ export interface PtyCreateOptions {
   rows?: number;
   /** display title; defaults to the harness name */
   title?: string;
-  /** revive a previous session: harness resumes its last conversation in
-   *  this directory (claude --continue / codex resume --last) */
-  resume?: boolean;
+  /** Exact provider conversation ID. Presence means resume that ID. */
+  resumeSessionId?: string;
 }
 
 export interface PtySessionInfo {
@@ -53,19 +54,9 @@ export interface PtySessionInfo {
   exitCode: number | null;
   /** last output timestamp (ENG-015 S2: live status in the switcher) */
   lastDataAt: number;
+  /** Durable provider identity; unlike `id`, survives a new PTY process. */
+  harnessSessionId: string | null;
 }
-
-/** harness -> command line run inside the user's login shell */
-const HARNESS_COMMAND: Record<Exclude<PtyHarness, 'shell'>, string> = {
-  claude: 'claude',
-  codex: 'codex',
-};
-
-/** harness -> resume command (auto-revive after app restart) */
-const HARNESS_RESUME_COMMAND: Record<Exclude<PtyHarness, 'shell'>, string> = {
-  claude: 'claude --continue',
-  codex: 'codex resume --last',
-};
 
 /**
  * The USER'S default (login) shell — fish/zsh/bash/... — not a hardcoded one.
@@ -143,20 +134,26 @@ export class PtySessionManager extends EventEmitter {
     const shell = await defaultShell();
     const project = await resolveProject(cwd);
     const id = `pty-${this.nextId++}`;
+    const harnessSessionId =
+      options.harness === 'claude'
+        ? (options.resumeSessionId ?? randomUUID())
+        : (options.resumeSessionId ?? null);
 
     // plain shell: interactive login shell. Harness: run its CLI through the
     // login shell so PATH (homebrew, nvm, ...) resolves like the user's
-    // terminal; when the CLI exits the session ends. Revived harness tabs
-    // resume their previous conversation in this directory.
+    // terminal; when the CLI exits the session ends. A resume command always
+    // names one exact provider conversation; recency is never identity.
     const args =
       options.harness === 'shell'
         ? ['-l']
         : [
             '-l',
             '-c',
-            options.resume
-              ? HARNESS_RESUME_COMMAND[options.harness]
-              : HARNESS_COMMAND[options.harness],
+            buildHarnessCommand(
+              options.harness,
+              harnessSessionId,
+              !!options.resumeSessionId
+            ),
           ];
 
     const proc = pty.spawn(shell, args, {
@@ -186,16 +183,14 @@ export class PtySessionManager extends EventEmitter {
       exited: false,
       exitCode: null,
       lastDataAt: Date.now(),
+      harnessSessionId,
     };
 
-    // revived tabs announce themselves: `--continue`/`resume --last` picks
-    // the most recent conversation IN THIS DIRECTORY — which may have been
-    // started outside Exawatt. Say so instead of looking like a haunting.
-    if (options.resume && options.harness !== 'shell') {
+    if (options.resumeSessionId && options.harness !== 'shell') {
       this.appendBuffer(
         id,
-        `\x1b[38;5;244m[exawatt] tab revived — resuming the most recent ` +
-          `conversation in this directory\x1b[0m\r\n\r\n`
+        `\x1b[38;5;244m[exawatt] resuming exact ${options.harness} ` +
+          `conversation ${options.resumeSessionId}\x1b[0m\r\n\r\n`
       );
     }
 
