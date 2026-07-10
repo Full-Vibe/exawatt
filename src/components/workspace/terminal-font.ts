@@ -19,6 +19,7 @@ export const TERMINAL_FONT = {
     '"SF Mono", Menlo, Monaco, Consolas, "DejaVu Sans Mono", monospace',
   size: 13,
   lineHeight: 1.25,
+  letterSpacing: 0,
   /** mono advance ≈ 0.6em (estimate; fit refines) */
   cellWidthEstimate: 7.8,
 } as const;
@@ -27,20 +28,37 @@ export interface EffectiveTerminalFont {
   family: string;
   size: number;
   lineHeight: number;
+  letterSpacing: number;
   cellWidthEstimate: number;
 }
 
-export function resolveTerminalFont(settings: {
-  fontFamily?: string;
-  fontSize?: number;
-  lineHeight?: number;
-} | null | undefined): EffectiveTerminalFont {
+function cellWidthEstimate(size: number, letterSpacing: number): number {
+  const dpr =
+    typeof window === 'undefined' ? 1 : Math.max(1, window.devicePixelRatio);
+  // xterm's DOM renderer rounds this option to a device pixel before adding
+  // it to the measured glyph advance.
+  return Math.max(1, size * 0.6 + Math.round(letterSpacing) / dpr);
+}
+
+export function resolveTerminalFont(
+  settings:
+    | {
+        fontFamily?: string;
+        fontSize?: number;
+        lineHeight?: number;
+        letterSpacing?: number;
+      }
+    | null
+    | undefined
+): EffectiveTerminalFont {
   const size = settings?.fontSize ?? TERMINAL_FONT.size;
+  const letterSpacing = settings?.letterSpacing ?? TERMINAL_FONT.letterSpacing;
   return {
     family: settings?.fontFamily ?? TERMINAL_FONT.family,
     size,
     lineHeight: settings?.lineHeight ?? TERMINAL_FONT.lineHeight,
-    cellWidthEstimate: size * 0.6,
+    letterSpacing,
+    cellWidthEstimate: cellWidthEstimate(size, letterSpacing),
   };
 }
 
@@ -60,7 +78,8 @@ export function terminalFontsEqual(
   return (
     a?.family === b.family &&
     a.size === b.size &&
-    a.lineHeight === b.lineHeight
+    a.lineHeight === b.lineHeight &&
+    a.letterSpacing === b.letterSpacing
   );
 }
 

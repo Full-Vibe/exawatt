@@ -119,6 +119,7 @@ export function TerminalPane({
         fontFamily: f?.family ?? TERMINAL_FONT.family,
         fontSize: f?.size ?? TERMINAL_FONT.size,
         lineHeight: f?.lineHeight ?? TERMINAL_FONT.lineHeight,
+        letterSpacing: f?.letterSpacing ?? TERMINAL_FONT.letterSpacing,
         cursorBlink: true,
         scrollback: 8000,
         theme: HUD_TERM_THEME,
@@ -142,6 +143,7 @@ export function TerminalPane({
           term.options.fontFamily = next.family;
           term.options.fontSize = next.size;
           term.options.lineHeight = next.lineHeight;
+          term.options.letterSpacing = next.letterSpacing;
           syncSize();
         },
       };
@@ -235,7 +237,7 @@ export function TerminalPane({
     <div
       ref={container}
       data-pane={layout}
-      className={LAYOUT_CLASS[layout]}
+      className={`terminal-pane ${LAYOUT_CLASS[layout]}`}
       style={
         layout === 'right'
           ? { borderLeft: '1px solid rgba(80,230,255,0.2)' }

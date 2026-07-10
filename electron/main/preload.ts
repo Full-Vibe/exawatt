@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld('electron', {
         fontFamily?: string;
         fontSize?: number;
         lineHeight?: number;
+        letterSpacing?: number;
       };
     }>('settings:changed'),
   },

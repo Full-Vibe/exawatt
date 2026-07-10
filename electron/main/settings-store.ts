@@ -10,7 +10,8 @@ import * as path from 'path';
  *
  *   <userData>/settings.json
  *   { "terminal": { "fontFamily": "\"MesloLGS For Powerline\", Menlo, monospace",
- *                   "fontSize": 14, "lineHeight": 1.0 } }
+ *                   "fontSize": 14, "lineHeight": 1.0,
+ *                   "letterSpacing": -1 } }
  *
  * Renderers fetch via settings:get on mount and after window refocus;
  * tolerant of a missing/invalid file.
@@ -22,6 +23,9 @@ export interface TerminalFontSettings {
   /** xterm line-height multiplier; 1.0 = the font's own metrics (what
    *  Terminal.app uses — Meslo LG variants tune their gap internally) */
   lineHeight?: number;
+  /** xterm cell-spacing adjustment. Native terminals often quantize a
+   *  font's fractional advance differently from Chromium. */
+  letterSpacing?: number;
 }
 
 export interface ExawattSettings {
@@ -35,10 +39,11 @@ export function loadSettings(): ExawattSettings {
     if (!raw || typeof raw !== 'object') return {};
     const t = (raw as { terminal?: unknown }).terminal;
     if (!t || typeof t !== 'object') return {};
-    const { fontFamily, fontSize, lineHeight } = t as {
+    const { fontFamily, fontSize, lineHeight, letterSpacing } = t as {
       fontFamily?: unknown;
       fontSize?: unknown;
       lineHeight?: unknown;
+      letterSpacing?: unknown;
     };
     const terminal: TerminalFontSettings = {};
     if (typeof fontFamily === 'string' && fontFamily.trim()) {
@@ -59,6 +64,14 @@ export function loadSettings(): ExawattSettings {
       lineHeight <= 2
     ) {
       terminal.lineHeight = lineHeight;
+    }
+    if (
+      typeof letterSpacing === 'number' &&
+      Number.isFinite(letterSpacing) &&
+      letterSpacing >= -5 &&
+      letterSpacing <= 20
+    ) {
+      terminal.letterSpacing = letterSpacing;
     }
     return Object.keys(terminal).length > 0 ? { terminal } : {};
   } catch {

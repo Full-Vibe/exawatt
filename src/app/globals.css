@@ -121,6 +121,14 @@ body {
   color: var(--foreground);
 }
 
+/* The app chrome deliberately uses grayscale antialiasing, but inheriting
+   that choice made xterm thinner than native macOS terminals even when both
+   selected the same installed face. Let the platform rasterize terminal text
+   with its default smoothing. */
+.terminal-pane .xterm {
+  -webkit-font-smoothing: auto;
+}
+
 .fleet-shell {
   background: linear-gradient(
     180deg,

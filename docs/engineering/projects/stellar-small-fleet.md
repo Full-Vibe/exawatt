@@ -255,7 +255,7 @@ S3 Exposé, motion & discoverability (landed 2026-07-10, dogfood round 4):
   palette rows — ignite stays internal vocabulary); tab hover/pressed
   feedback (brightness lift, press scale, close-× reveals on hover).
 - Terminal font setting: `<userData>/settings.json` →
-  `{ terminal: { fontFamily, fontSize, lineHeight } }` (main: settings-store.ts,
+  `{ terminal: { fontFamily, fontSize, lineHeight, letterSpacing } }` (main: settings-store.ts,
   `settings:get` IPC); panes are born with the effective font, refresh it
   after app refocus, and use it for spawn estimates. Root cause of the
   operator's mismatch:
@@ -271,9 +271,17 @@ S3 Exposé, motion & discoverability (landed 2026-07-10, dogfood round 4):
   nothing. The second mismatch was lifecycle: settings were cached for the
   renderer lifetime and existing xterms never updated, so an override written
   during dogfood appeared broken until a full app restart. Existing panes now
-  update on app refocus. Verified live: `MesloLGSForPowerline-Regular` at 14
-  measures the same 8.4287px advance and 18px line box in xterm and
-  Terminal.app.
+  update on app refocus. Dogfood round 6 corrected the earlier metric-only
+  verification: although both surfaces select
+  `MesloLGSForPowerline-Regular` at 14 with an 18px line box, Terminal.app
+  quantizes its cell advance to 8 points while xterm retained the font's
+  8.427px fractional advance. The inherited app-wide grayscale smoothing
+  also made xterm visibly thinner. Terminal panes now restore platform text
+  smoothing, and `letterSpacing` lets the operator align Chromium's cell
+  grid with the native terminal (`-1` on this Retina Mac).
+- Dogfood round 6 verification: an identical native Terminal.app/xterm glyph
+  sample at 2x scale, live computed-style and xterm-dimension inspection, 255
+  tests, lint, type-check, Electron compile, and the production Next build.
 - Executed in an own git worktree per the new operator workflow rule
   (parallel agents share this repo).
 - Verified: 226 unit tests (5 new preview tests incl. the private-byte

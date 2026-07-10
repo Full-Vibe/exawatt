@@ -91,6 +91,8 @@ export interface ExawattSettings {
     fontSize?: number;
     /** 1.0 = the font's own metrics (Terminal.app behavior) */
     lineHeight?: number;
+    /** xterm cell-spacing adjustment */
+    letterSpacing?: number;
   };
 }
 
