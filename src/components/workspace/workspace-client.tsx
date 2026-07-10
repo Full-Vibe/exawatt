@@ -16,10 +16,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TerminalPane, TERMINAL_FONT } from './terminal-pane';
+import type { PaneLayout } from './terminal-pane';
 import { TabStrip } from './tab-strip';
 import { IgniteControls } from './ignite-controls';
 import { useWorkspaceState, REVIVE_FAILED } from './use-workspace-state';
 import { useWorkspaceShortcuts } from './use-workspace-shortcuts';
+import { RENAME_ACTIVE_EVENT } from './session-jump';
+import { useShortcuts } from '@/components/shortcuts';
 import { HUD } from '@/components/hud';
 
 // derive the spawn-size estimate from the terminal's own font config —
@@ -36,6 +39,10 @@ export function WorkspaceClient() {
   const inElectron = mounted && !!window.electron?.pty;
 
   const panesRef = useRef<HTMLDivElement>(null);
+  // split view (S2): the last active NON-pinned tab — the driven/left side.
+  // Lives up here unconditionally (rules of hooks); assigned below once the
+  // active tab is known.
+  const companionRef = useRef<string | null>(null);
   const getInitialSize = useCallback(() => {
     const el = panesRef.current;
     if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return null;
@@ -46,21 +53,25 @@ export function WorkspaceClient() {
   }, []);
 
   const router = useRouter();
+  const { openCommandPalette, openHelpModal } = useShortcuts();
   const {
     initiatives,
     activeInitiative,
     activeTab,
+    pinnedTabId,
     lastUsedDir,
     summaries,
     attention,
     error,
     setError,
     ignite,
+    igniteHere,
     closeTab,
     selectInitiative,
     selectTab,
     cycleTab,
     jumpAttention,
+    togglePin,
     renameTab,
     renameInitiative,
     setInitiativeColor,
@@ -68,15 +79,7 @@ export function WorkspaceClient() {
 
   const shortcutActions = useMemo(
     () => ({
-      igniteShell: () => {
-        const dir = activeInitiative?.dir ?? lastUsedDir;
-        if (!dir) {
-          setError('Project directory is required — pick where this session lives.');
-          return false;
-        }
-        void ignite({ harness: 'shell', dir });
-        return true;
-      },
+      igniteShell: () => igniteHere('shell'),
       closeActive: () => {
         if (!activeTab) return false;
         void closeTab(activeTab.id);
@@ -91,8 +94,24 @@ export function WorkspaceClient() {
         router.push('/fleet/spatial');
         return true;
       },
+      // ⌘K/⌘/ re-bound here because the global chord engine never sees
+      // keystrokes from inside xterm's hidden textarea
+      openPalette: () => {
+        openCommandPalette();
+        return true;
+      },
+      openHelp: () => {
+        openHelpModal();
+        return true;
+      },
+      togglePin,
+      renameActive: () => {
+        if (!activeTab) return false;
+        window.dispatchEvent(new CustomEvent(RENAME_ACTIVE_EVENT));
+        return true;
+      },
     }),
-    [activeInitiative, activeTab, lastUsedDir, ignite, closeTab, selectInitiative, cycleTab, jumpAttention, router, setError]
+    [activeTab, igniteHere, closeTab, selectInitiative, cycleTab, jumpAttention, togglePin, router, openCommandPalette, openHelpModal]
   );
   useWorkspaceShortcuts(shortcutActions, inElectron);
 
@@ -124,6 +143,44 @@ export function WorkspaceClient() {
     g.tabs.map((t) => ({ tab: t, dir: g.dir }))
   );
 
+  // split view (S2): the pinned tab renders RIGHT beside a companion tab
+  // LEFT. The companion is the last active non-pinned tab — so clicking
+  // into the pinned pane (active = pinned) moves the KEYBOARD there but
+  // keeps both panes up; a click must never collapse the split (you could
+  // not even copy text out of the watched pane otherwise).
+  const pinnedEntry =
+    pinnedTabId !== null
+      ? allTabs.find(
+          (e) =>
+            e.tab.id === pinnedTabId &&
+            e.tab.sessionId &&
+            e.tab.exitCode === null
+        ) ?? null
+      : null;
+  if (activeTab && activeTab.sessionId && activeTab.id !== pinnedTabId) {
+    companionRef.current = activeTab.id;
+  }
+  const companionEntry = pinnedEntry
+    ? allTabs.find(
+        (e) =>
+          e.tab.id === companionRef.current &&
+          e.tab.sessionId &&
+          e.tab.exitCode === null
+      ) ?? null
+    : null;
+  const split =
+    !!pinnedEntry &&
+    !!companionEntry &&
+    companionEntry.tab.id !== pinnedEntry.tab.id;
+  const layoutFor = (tabId: string): PaneLayout => {
+    if (split) {
+      if (tabId === companionEntry.tab.id) return 'left';
+      if (tabId === pinnedEntry.tab.id) return 'right';
+      return 'hidden';
+    }
+    return tabId === activeTab?.id ? 'full' : 'hidden';
+  };
+
   return (
     <div className="flex h-full flex-col" style={{ background: HUD.bg.void }}>
       {/* initiative groups + tabs + ignite controls */}
@@ -134,6 +191,7 @@ export function WorkspaceClient() {
         <TabStrip
           initiatives={initiatives}
           activeDir={activeInitiative?.dir ?? null}
+          pinnedTabId={pinnedTabId}
           summaries={summaries}
           attention={attention}
           onSelectInitiative={selectInitiative}
@@ -181,12 +239,14 @@ export function WorkspaceClient() {
             </p>
           </div>
         ) : (
-          allTabs.map(({ tab }) =>
+          allTabs.map(({ tab, dir }) =>
             tab.sessionId ? (
               <TerminalPane
                 key={tab.sessionId}
                 sessionId={tab.sessionId}
                 active={tab.id === activeTab?.id}
+                layout={layoutFor(tab.id)}
+                onActivate={() => selectTab(dir, tab.id)}
               />
             ) : (
               <div

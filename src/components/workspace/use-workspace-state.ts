@@ -18,6 +18,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HARNESS_META } from './harnesses';
 import { pickDistinctColor, projectColor } from './project-colors';
+import {
+  SESSION_JUMP_EVENT,
+  IGNITE_EVENT,
+  consumePendingSessionJump,
+  consumePendingIgnite,
+} from './session-jump';
 import type { PtyAttention, PtyHarness, PtySessionInfo } from '@/types/electron';
 
 export interface WorkspaceTab {
@@ -45,6 +51,9 @@ interface PersistedV1 {
   v: 1;
   lastUsedDir: string;
   activeDir: string | null;
+  /** split view (S2): tab pinned beside the active one; optional (pre-S2
+   *  layouts lack it) */
+  pinnedTabId?: string | null;
   initiatives: Array<{
     dir: string;
     name: string;
@@ -98,6 +107,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const [initiatives, setInitiatives] = useState<Initiative[]>([]);
   const [activeDir, setActiveDir] = useState<string | null>(null);
   const [lastUsedDir, setLastUsedDir] = useState('');
+  /** split view (S2): this tab renders beside the active one ("watch one,
+   *  drive one"); null = no split */
+  const [pinnedTabId, setPinnedTabId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   /** micro-context subtitles keyed by sessionId (ephemeral — main process
@@ -105,8 +117,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const [summaries, setSummaries] = useState<Record<string, string>>({});
   /** needs-operator flags keyed by sessionId (ENG-015 S1; main is truth) */
   const [attention, setAttention] = useState<Record<string, PtyAttention>>({});
-  const stateRef = useRef({ initiatives, activeDir, lastUsedDir });
-  stateRef.current = { initiatives, activeDir, lastUsedDir };
+  const stateRef = useRef({ initiatives, activeDir, lastUsedDir, pinnedTabId });
+  stateRef.current = { initiatives, activeDir, lastUsedDir, pinnedTabId };
+  const readyRef = useRef(ready);
+  readyRef.current = ready;
   const attentionRef = useRef(attention);
   attentionRef.current = attention;
 
@@ -224,6 +238,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         setInitiatives(restored);
         setActiveDir(persisted.activeDir ?? restored[0]?.dir ?? null);
         setLastUsedDir(persisted.lastUsedDir ?? '');
+        // restore the split only if the pinned tab still exists
+        const pinned = persisted.pinnedTabId ?? null;
+        if (
+          pinned &&
+          restored.some((g) => g.tabs.some((t) => t.id === pinned))
+        ) {
+          setPinnedTabId(pinned);
+        }
       }
       // live sessions unknown to the persisted layout (e.g. created since
       // the last save) — or the whole fresh-start case
@@ -294,11 +316,24 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const ws = window.electron?.workspace;
     if (!ws) return;
     const handle = setTimeout(() => {
-      const { initiatives: gs, activeDir: ad, lastUsedDir: lu } = stateRef.current;
+      const {
+        initiatives: gs,
+        activeDir: ad,
+        lastUsedDir: lu,
+        pinnedTabId: pin,
+      } = stateRef.current;
+      // the pinned tab may be pruned below (exited) — never persist a
+      // dangling pin
+      const pinSurvives =
+        pin !== null &&
+        gs.some((g) =>
+          g.tabs.some((t) => t.id === pin && t.exitCode === null)
+        );
       const state: PersistedV1 = {
         v: 1,
         lastUsedDir: lu,
         activeDir: ad,
+        pinnedTabId: pinSurvives ? pin : null,
         initiatives: gs
           .map((g) => {
             const tabs = g.tabs
@@ -327,7 +362,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       void ws.save(state);
     }, 400);
     return () => clearTimeout(handle);
-  }, [initiatives, activeDir, lastUsedDir, ready]);
+  }, [initiatives, activeDir, lastUsedDir, pinnedTabId, ready]);
 
   // ---- verbs ----
   const ignite = useCallback(
@@ -373,6 +408,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const { initiatives: gs } = stateRef.current;
     const g = gs.find((x) => x.tabs.some((t) => t.id === tabId));
     const tab = g?.tabs.find((t) => t.id === tabId);
+    setPinnedTabId((cur) => (cur === tabId ? null : cur));
     if (tab?.sessionId) await api.kill(tab.sessionId);
     setInitiatives((prev) => {
       const next = prev
@@ -393,10 +429,69 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     });
   }, []);
 
+  /** ignite in the active initiative's directory (fallback: last used) —
+   *  the one dir-resolution path for ⌘T, palette commands, and buttons */
+  const igniteHere = useCallback(
+    (harness: PtyHarness): boolean => {
+      const { initiatives: gs, activeDir: ad, lastUsedDir: lu } = stateRef.current;
+      const dir = gs.find((g) => g.dir === ad)?.dir ?? (lu || null);
+      if (!dir) {
+        setError('Project directory is required — pick where this session lives.');
+        return false;
+      }
+      void ignite({ harness, dir });
+      return true;
+    },
+    [ignite]
+  );
+
   const selectInitiative = useCallback((index: number): boolean => {
     const g = stateRef.current.initiatives[index];
     if (!g) return false;
     setActiveDir(g.dir);
+    return true;
+  }, []);
+
+  /** activate the tab hosting this session, wherever it lives (⌘K switcher) */
+  const activateSession = useCallback((sessionId: string): boolean => {
+    const { initiatives: gs } = stateRef.current;
+    for (const g of gs) {
+      const tab = g.tabs.find((t) => t.sessionId === sessionId);
+      if (tab) {
+        setActiveDir(g.dir);
+        setInitiatives((prev) =>
+          prev.map((x) =>
+            x.dir === g.dir ? { ...x, activeTabId: tab.id } : x
+          )
+        );
+        return true;
+      }
+    }
+    return false;
+  }, []);
+
+  /** ⌘D: pin the active tab for a split ("watch one, drive one") — the
+   *  pinned tab stays visible beside whatever becomes active; ⌘D unpins.
+   *  A pin whose session died is stale, not a real pin — ⌘D then pins the
+   *  active tab directly instead of "unpinning" nothing visible. */
+  const togglePin = useCallback((): boolean => {
+    const { initiatives: gs, activeDir: ad, pinnedTabId: pin } = stateRef.current;
+    const pinAlive =
+      pin !== null &&
+      gs.some((g) =>
+        g.tabs.some((t) => t.id === pin && t.exitCode === null)
+      );
+    if (pinAlive) {
+      setPinnedTabId(null);
+      return true;
+    }
+    const active = gs.find((g) => g.dir === ad);
+    const tab = active?.tabs.find((t) => t.id === active.activeTabId);
+    if (!tab) {
+      setPinnedTabId(null); // still drop a stale pin
+      return pin !== null;
+    }
+    setPinnedTabId(tab.id === pin ? null : tab.id);
     return true;
   }, []);
 
@@ -471,6 +566,38 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     activeInitiative?.tabs.find((t) => t.id === activeInitiative.activeTabId) ??
     null;
 
+  // ---- palette requests (S2): the ⌘K switcher lives at the app root and
+  // asks the workspace to activate a session / ignite a harness. Live events
+  // handle the mounted-and-ready case; before ready the pending slot is left
+  // alone so the ready-effect below applies it against the LOADED layout
+  // (acting early would fail against empty state and lose the request).
+  useEffect(() => {
+    const onJump = (e: Event) => {
+      if (!readyRef.current) return;
+      consumePendingSessionJump();
+      activateSession((e as CustomEvent<string>).detail);
+    };
+    const onIgnite = (e: Event) => {
+      if (!readyRef.current) return;
+      consumePendingIgnite();
+      igniteHere((e as CustomEvent<PtyHarness>).detail);
+    };
+    window.addEventListener(SESSION_JUMP_EVENT, onJump);
+    window.addEventListener(IGNITE_EVENT, onIgnite);
+    return () => {
+      window.removeEventListener(SESSION_JUMP_EVENT, onJump);
+      window.removeEventListener(IGNITE_EVENT, onIgnite);
+    };
+  }, [activateSession, igniteHere]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const jump = consumePendingSessionJump();
+    if (jump) activateSession(jump);
+    const harness = consumePendingIgnite();
+    if (harness) igniteHere(harness);
+  }, [ready, activateSession, igniteHere]);
+
   // ---- attention focus contract (S1): tell main which session the operator
   // is looking at — the focused session never flags, and focusing clears.
   // The local record clears optimistically; main confirms via pty:attention.
@@ -524,6 +651,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     initiatives,
     activeInitiative,
     activeTab,
+    pinnedTabId,
     lastUsedDir,
     summaries,
     attention,
@@ -531,11 +659,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     setError,
     ready,
     ignite,
+    igniteHere,
     closeTab,
     selectInitiative,
     selectTab,
+    activateSession,
     cycleTab,
     jumpAttention,
+    togglePin,
     renameTab,
     renameInitiative,
     setInitiativeColor,

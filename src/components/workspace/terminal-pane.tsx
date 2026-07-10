@@ -10,6 +10,7 @@
  */
 import { useEffect, useRef } from 'react';
 import '@xterm/xterm/css/xterm.css';
+import { FOCUS_ACTIVE_TERMINAL_EVENT } from './session-jump';
 
 /** single home for the terminal font config; the workspace client derives
  *  its spawn-size estimate from these same numbers.
@@ -51,12 +52,30 @@ const HUD_TERM_THEME = {
 };
 
 
+/** where this pane sits (S2 split view): full when alone, left/right when
+ *  the active tab shares the surface with the pinned tab, hidden otherwise.
+ *  Panes stay absolutely positioned so hidden ones never affect layout; the
+ *  ResizeObserver + syncSize path absorbs the width change on (un)split. */
+export type PaneLayout = 'full' | 'left' | 'right' | 'hidden';
+
+const LAYOUT_CLASS: Record<PaneLayout, string> = {
+  full: 'absolute inset-0',
+  left: 'absolute inset-y-0 left-0 w-1/2',
+  right: 'absolute inset-y-0 right-0 w-1/2',
+  hidden: 'absolute inset-0 invisible',
+};
+
 export function TerminalPane({
   sessionId,
   active,
+  layout = 'full',
+  onActivate,
 }: {
   sessionId: string;
   active: boolean;
+  layout?: PaneLayout;
+  /** clicking into a visible-but-inactive pane makes its tab active */
+  onActivate?: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   // latest xterm handle for the activation effect below
@@ -65,6 +84,13 @@ export function TerminalPane({
   // active state when it finally exists, or the first focus is lost
   const activeRef = useRef(active);
   activeRef.current = active;
+  // hidden panes must NOT resize their PTY: an invisible element keeps
+  // full-container geometry, so during a split every hidden session would
+  // get SIGWINCHed to the WRONG width on each layout change (TUIs then
+  // redraw scrollback at that width). Freeze while hidden; the layout
+  // effect refits on reveal.
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
 
   useEffect(() => {
     const el = container.current;
@@ -101,7 +127,8 @@ export function TerminalPane({
       fit.fit();
       // the ONE fit-then-propagate path (pane resize, activation, resync)
       const syncSize = () => {
-        if (el.offsetWidth === 0 || el.offsetHeight === 0) return; // hidden
+        if (layoutRef.current === 'hidden') return; // frozen while hidden
+        if (el.offsetWidth === 0 || el.offsetHeight === 0) return;
         fit.fit();
         void api.resize(sessionId, term.cols, term.rows);
       };
@@ -164,19 +191,39 @@ export function TerminalPane({
     };
   }, [sessionId]);
 
-  // refit + focus when this pane becomes the active tab (it may have been
-  // hidden during a container resize)
+  // refit when the pane's geometry changes (activation, split/unsplit —
+  // it may have been hidden during a container resize); focus follows the
+  // ACTIVE tab only, so in a split the driven pane keeps the keyboard
   useEffect(() => {
-    if (active && termRef.current) {
-      termRef.current.fit();
-      termRef.current.focus();
-    }
-  }, [active]);
+    if (!termRef.current) return;
+    if (layout !== 'hidden') termRef.current.fit();
+    if (active) termRef.current.focus();
+  }, [active, layout]);
+
+  // rename editors (⌘E, double-click) steal DOM focus; on commit/cancel the
+  // keyboard must land back in the active terminal, not on <body>
+  useEffect(() => {
+    const refocus = () => {
+      if (activeRef.current) termRef.current?.focus();
+    };
+    window.addEventListener(FOCUS_ACTIVE_TERMINAL_EVENT, refocus);
+    return () =>
+      window.removeEventListener(FOCUS_ACTIVE_TERMINAL_EVENT, refocus);
+  }, []);
 
   return (
     <div
       ref={container}
-      className={`absolute inset-0 ${active ? '' : 'invisible'}`}
+      data-pane={layout}
+      className={LAYOUT_CLASS[layout]}
+      style={
+        layout === 'right'
+          ? { borderLeft: '1px solid rgba(80,230,255,0.2)' }
+          : undefined
+      }
+      onMouseDown={
+        onActivate && !active && layout !== 'hidden' ? onActivate : undefined
+      }
     />
   );
 }

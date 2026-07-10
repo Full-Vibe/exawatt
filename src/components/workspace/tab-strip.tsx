@@ -9,11 +9,15 @@
  * One of two first-class regimes (the other: sessions as entities on the
  * ENG-004 world map) — parallel skins over the same session system.
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { HUD } from '@/components/hud';
 import { PROJECT_PALETTE } from './project-colors';
 import { HarnessGlyph } from './harness-icons';
 import { REVIVE_FAILED } from './use-workspace-state';
+import {
+  RENAME_ACTIVE_EVENT,
+  FOCUS_ACTIVE_TERMINAL_EVENT,
+} from './session-jump';
 import type { Initiative } from './use-workspace-state';
 import type { PtyAttention } from '@/types/electron';
 
@@ -116,6 +120,7 @@ function ColorSwatches({
 export function TabStrip({
   initiatives,
   activeDir,
+  pinnedTabId,
   summaries,
   attention,
   onSelectInitiative,
@@ -127,6 +132,8 @@ export function TabStrip({
 }: {
   initiatives: Initiative[];
   activeDir: string | null;
+  /** tab pinned in the split view (S2); null = no split */
+  pinnedTabId: string | null;
   /** micro-context subtitles keyed by sessionId */
   summaries: Record<string, string>;
   /** needs-operator flags keyed by sessionId (S1) */
@@ -140,11 +147,34 @@ export function TabStrip({
 }) {
   const [editing, setEditing] = useState<Editing | null>(null);
 
+  // ⌘E (S2): open the inline rename editor for the ACTIVE tab — the event
+  // comes from the workspace key layer; a ref carries the latest props into
+  // the stable listener
+  const activeRef = useRef({ initiatives, activeDir });
+  activeRef.current = { initiatives, activeDir };
+  useEffect(() => {
+    const onRenameActive = () => {
+      const { initiatives: gs, activeDir: ad } = activeRef.current;
+      const g = gs.find((x) => x.dir === ad);
+      const tab = g?.tabs.find((t) => t.id === g.activeTabId);
+      if (tab) setEditing({ kind: 'tab', id: tab.id, value: tab.title });
+    };
+    window.addEventListener(RENAME_ACTIVE_EVENT, onRenameActive);
+    return () => window.removeEventListener(RENAME_ACTIVE_EVENT, onRenameActive);
+  }, []);
+
+  /** editor closed (commit or cancel) — hand the keyboard back to the
+   *  active terminal so the all-keyboard flow keeps flowing */
+  const settle = () => {
+    setEditing(null);
+    window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
+  };
+
   const commit = () => {
     if (!editing) return;
     if (editing.kind === 'group') onRenameInitiative(editing.id, editing.value);
     else onRenameTab(editing.id, editing.value);
-    setEditing(null);
+    settle();
   };
 
   return (
@@ -187,7 +217,7 @@ export function TabStrip({
                     color={color}
                     onChange={(v) => setEditing({ ...editing, value: v })}
                     onCommit={commit}
-                    onCancel={() => setEditing(null)}
+                    onCancel={settle}
                   />
                   <ColorSwatches
                     current={color}
@@ -242,6 +272,16 @@ export function TabStrip({
                     }\ndouble-click to rename`}
                   >
                     {needsYou && <AttentionDot />}
+                    {t.id === pinnedTabId && (
+                      <span
+                        data-pinned
+                        title="Pinned in split view (⌘D unpins)"
+                        className="text-[10px] leading-none"
+                        style={{ color }}
+                      >
+                        ◧
+                      </span>
+                    )}
                     {t.harness !== 'shell' && (
                       <span style={{ color }}>
                         <HarnessGlyph harness={t.harness} size={11} />
@@ -254,7 +294,7 @@ export function TabStrip({
                           color={color}
                           onChange={(v) => setEditing({ ...editing, value: v })}
                           onCommit={commit}
-                          onCancel={() => setEditing(null)}
+                          onCancel={settle}
                         />
                         <ColorSwatches
                           current={color}

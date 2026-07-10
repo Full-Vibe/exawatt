@@ -81,6 +81,14 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     category: 'help',
     contexts: ['global'],
   },
+  {
+    id: 'help-modal-slash',
+    keys: { key: '/', modifiers: ['meta'] },
+    label: 'Keyboard Cheat-Sheet',
+    description: 'Open the keyboard shortcuts overlay (works everywhere)',
+    category: 'help',
+    contexts: ['global'],
+  },
 
   // Board view shortcuts
   {

@@ -21,7 +21,25 @@ import {
   HelpCircle,
   Server,
 } from 'lucide-react';
+import {
+  requestSessionJump,
+  requestIgnite,
+} from '@/components/workspace/session-jump';
+import { buildSessionRows } from '@/components/workspace/switcher-rows';
+import type { SessionRow, SessionRowStatus } from '@/components/workspace/switcher-rows';
+import { HarnessGlyph } from '@/components/workspace/harness-icons';
+import { HARNESS_META, HARNESS_ORDER } from '@/components/workspace/harnesses';
+import { HUD } from '@/components/hud';
 import type { ShortcutKeys } from '@/types/shortcuts';
+import type { PtyHarness } from '@/types/electron';
+
+/** live status shown on switcher rows — one word, normal case (no all-caps) */
+const STATUS_META: Record<SessionRowStatus, { label: string; color: string }> = {
+  'needs-you': { label: 'needs you', color: HUD.amber },
+  working: { label: 'working', color: HUD.green },
+  idle: { label: 'idle', color: HUD.textDim },
+  exited: { label: 'exited', color: HUD.red },
+};
 
 interface CommandPaletteProps {
   open: boolean;
@@ -45,10 +63,37 @@ export function CommandPalette({
 }: CommandPaletteProps) {
   const router = useRouter();
   const [search, setSearch] = useState('');
+  // live sessions for the switcher (S2) — desktop app only, fetched fresh
+  // each time the palette opens
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const inElectron =
+    typeof window !== 'undefined' && !!window.electron?.pty;
 
-  // Reset search when closing
+  // Reset search AND session rows when closing — stale rows on reopen can
+  // list dead sessions or wrong statuses until the refetch lands, and Enter
+  // on one would silently do nothing
   useEffect(() => {
-    if (!open) setSearch('');
+    if (!open) {
+      setSearch('');
+      setSessions([]);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const pty = window.electron?.pty;
+    if (!pty) return;
+    let cancelled = false;
+    void (async () => {
+      const [list, layout] = await Promise.all([
+        pty.list(),
+        window.electron?.workspace?.load() ?? Promise.resolve(null),
+      ]);
+      if (!cancelled) setSessions(buildSessionRows(list, layout, Date.now()));
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   const handleSelect = useCallback(
@@ -58,6 +103,27 @@ export function CommandPalette({
       setTimeout(callback, 50);
     },
     [onOpenChange]
+  );
+
+  /** switcher/ignite requests land in the workspace: instantly when it is
+   *  mounted (live event), or on mount after navigation (pending slot) */
+  const inWorkspace = () =>
+    window.location.pathname.startsWith('/workspace');
+  const openSession = useCallback(
+    (id: string) =>
+      handleSelect(() => {
+        requestSessionJump(id);
+        if (!inWorkspace()) router.push('/workspace');
+      }),
+    [handleSelect, router]
+  );
+  const igniteHarness = useCallback(
+    (harness: PtyHarness) =>
+      handleSelect(() => {
+        requestIgnite(harness);
+        if (!inWorkspace()) router.push('/workspace');
+      }),
+    [handleSelect, router]
   );
 
   // Build command items
@@ -127,6 +193,75 @@ export function CommandPalette({
       />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
+
+        {inElectron && sessions.length > 0 && (
+          <>
+            <CommandGroup heading="Sessions">
+              {sessions.map((s) => {
+                const status = STATUS_META[s.status];
+                return (
+                  <CommandItem
+                    key={s.id}
+                    value={`${s.searchValue} ${s.id}`}
+                    onSelect={() => openSession(s.id)}
+                  >
+                    <span
+                      className="mr-2 inline-block h-2 w-2 shrink-0 rotate-45"
+                      style={{ background: s.color, boxShadow: `0 0 5px ${s.color}` }}
+                    />
+                    {s.harness !== 'shell' && (
+                      <span className="mr-1.5 shrink-0" style={{ color: s.color }}>
+                        <HarnessGlyph harness={s.harness} size={12} />
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1 truncate">
+                      {s.title}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {s.projectName}
+                        {s.subtitle ? ` · ${s.subtitle}` : ''}
+                      </span>
+                    </span>
+                    <span
+                      className="ml-3 shrink-0 font-mono text-xs"
+                      data-session-status={s.status}
+                      style={{ color: status.color }}
+                    >
+                      {status.label}
+                    </span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
+
+        {inElectron && (
+          <>
+            <CommandGroup heading="Ignite">
+              {HARNESS_ORDER.map((h) => (
+                <CommandItem
+                  key={`ignite-${h}`}
+                  value={`ignite ${HARNESS_META[h].label} new session agent`}
+                  onSelect={() => igniteHarness(h)}
+                >
+                  {h === 'shell' ? (
+                    <SquareTerminal className="mr-2 h-3.5 w-3.5 shrink-0" />
+                  ) : (
+                    <span
+                      className="mr-2 shrink-0"
+                      style={{ color: HARNESS_META[h].color }}
+                    >
+                      <HarnessGlyph harness={h} size={13} />
+                    </span>
+                  )}
+                  <span>Ignite {HARNESS_META[h].label} here</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
 
         <CommandGroup heading="Navigation">
           {navigationItems.map(item => (

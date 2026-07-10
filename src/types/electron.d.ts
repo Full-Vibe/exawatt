@@ -33,6 +33,8 @@ export interface PtySessionInfo {
   startedAt: number;
   exited: boolean;
   exitCode: number | null;
+  /** last output timestamp (ENG-015 S2: live status in the switcher) */
+  lastDataAt: number;
   /** auto-summarized micro-context (W0.4); null until first summary */
   contextSummary?: string | null;
   /** needs-operator flag (ENG-015 S1); null when clear */

@@ -111,6 +111,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             setCommandPaletteOpen(true);
             break;
           case 'help-modal':
+          case 'help-modal-slash':
             setHelpModalOpen(true);
             break;
           case 'view-status':

@@ -50,6 +50,8 @@ export interface PtySessionInfo {
   startedAt: number;
   exited: boolean;
   exitCode: number | null;
+  /** last output timestamp (ENG-015 S2: live status in the switcher) */
+  lastDataAt: number;
 }
 
 /** harness -> command line run inside the user's login shell */
@@ -185,6 +187,7 @@ export class PtySessionManager extends EventEmitter {
       startedAt: Date.now(),
       exited: false,
       exitCode: null,
+      lastDataAt: Date.now(),
     };
 
     // revived tabs announce themselves: `--continue`/`resume --last` picks
@@ -199,6 +202,7 @@ export class PtySessionManager extends EventEmitter {
     }
 
     proc.onData((data) => {
+      info.lastDataAt = Date.now();
       this.appendBuffer(id, data);
       this.emit('data', id, data);
     });

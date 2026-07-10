@@ -61,7 +61,7 @@ Acceptance criteria:
 
 ### S2 Command velocity
 
-Status: next
+Status: landed 2026-07-09
 
 Scope:
 
@@ -155,6 +155,76 @@ S4 planning picks from here.
    trigger time). Only if it stays invisible and local.
 
 ## Progress log
+
+S2 Command velocity (landed 2026-07-09):
+
+- ⌘K session switcher: the palette gains a Sessions group — every live
+  session with its project-colored diamond, harness mark, title, project,
+  micro-context subtitle, and a live one-word status (needs you / working
+  / idle / exited; needs-you rows first, oldest flag first, then by output
+  recency). Fuzzy-matches on title + project + micro-context. Pure row
+  logic in `switcher-rows.ts` (unit-tested); `lastDataAt` added to
+  PtySessionInfo for the working/idle read.
+- Palette ↔ workspace plumbing (`session-jump.ts`): requests travel as a
+  window event (workspace mounted) AND a pending slot consumed on mount
+  (palette → navigate → mount), so switching works from any route.
+- Palette ignite commands: "Ignite Claude Code / Codex / Shell here" land
+  in the active initiative via the same channel; `igniteHere()` is now the
+  one dir-resolution path (⌘T, palette, events).
+- ⌘K/⌘/ are RE-BOUND in the workspace key layer: the global chord engine
+  ignores keystrokes from inside xterm's hidden textarea, so palette and
+  cheat-sheet must be reachable from where the operator lives. Workspace
+  verbs now also skip keystrokes owned by an open dialog (⌘W in the
+  palette must not close a terminal tab).
+- ⌘D split panes: pins the active tab; whatever you switch to renders LEFT
+  (driven, keyboard) beside the pinned tab RIGHT (watched) — cross-project
+  splits included; ⌘D unpins; pin survives restarts (persisted with the
+  layout, pruned when the tab closes); ◧ marker in the strip; panes stay
+  absolutely positioned so the existing ResizeObserver/fit path absorbs
+  the geometry change; clicking the watched pane activates it.
+- ⌘E renames the active tab inline (same editor + swatches as
+  double-click).
+- ⌘/ cheat-sheet: help modal gains a static Terminal Workspace section
+  (the workspace chords are handled outside the registry — registering
+  them would double-fire); ⌘/ also bound globally.
+- Ignite-controls fix (found by the smoke): an ignite resolving no longer
+  clobbers a directory typed while the spawn was in flight (edit-sequence
+  guard).
+- Verified: 220 unit tests (6 new switcher-row tests), type-check, lint,
+  electron compile, 12/12 live Playwright smoke (switcher from inside a
+  terminal, filter → cross-project jump, palette ignite, split geometry
+  50/50, unsplit, ⌘E rename, ⌘/ sheet), screenshots reviewed.
+- Known follow-up: the palette dialog still wears the light shadcn theme —
+  jarring over the dark HUD; restyle in S3 (exposé & motion / chrome
+  pass).
+
+S2 review round (high, workflow, 10 findings — all fixed 2026-07-10):
+
+- Split structural fixes: clicking the watched pane no longer collapses
+  the split — the split pair is now (companion = last active non-pinned
+  tab) LEFT + pinned RIGHT, so activating the pinned pane just moves the
+  keyboard (you can finally copy out of it); hidden panes FREEZE their PTY
+  size (an invisible element keeps full-container geometry, so every tab
+  switch was SIGWINCHing background sessions to the wrong width and
+  garbling TUI scrollback — reveal refits).
+- Palette↔workspace protocol: requests now defer until the workspace is
+  `ready` (an ignite selected during initial load errored spuriously and
+  was lost); consumed-when-ready even on failure; pending slots carry a
+  15s TTL so a slot surviving an unmount can't yank the workspace to an
+  old session minutes later.
+- Palette: session rows reset on close (stale rows listed dead sessions on
+  reopen and Enter on one did nothing).
+- ⌘D on a dead pin now pins the current tab (was: silently consumed the
+  press clearing an invisible stale pin).
+- Branch field gained the same in-flight edit guard as the dir field.
+- Rename commit/cancel hands focus back to the active terminal (⌘E flow
+  left the keyboard on <body>).
+- ⌘K/⌘/ in the workspace layer resolve from the shortcut registry (user
+  rebinds now work inside terminals too).
+- Switcher sort: an exited session with a stale attention flag sorts by
+  recency among exited rows (was: epoch-vs-negated-ms key mixing).
+- Re-verified: 221 unit tests, type-check, lint, electron compile, 13/13
+  live smoke (new check: clicking the watched pane keeps the split).
 
 S1 Attention system (landed 2026-07-06):
 
