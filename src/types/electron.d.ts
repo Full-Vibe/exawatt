@@ -93,6 +93,8 @@ export interface ExawattSettings {
     lineHeight?: number;
     /** xterm cell-spacing adjustment */
     letterSpacing?: number;
+    /** Subpixel emboldening used to match native text rasterization. */
+    fontStrokeWidth?: number;
   };
 }
 

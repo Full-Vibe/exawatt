@@ -15,12 +15,14 @@ describe('terminal font resolution', () => {
         fontSize: 14,
         lineHeight: 1,
         letterSpacing: -1,
+        fontStrokeWidth: 0.15,
       })
     ).toEqual({
       family: 'Meslo LG S for Powerline',
       size: 14,
       lineHeight: 1,
       letterSpacing: -1,
+      fontStrokeWidth: 0.15,
       cellWidthEstimate: 7.4,
     });
   });
@@ -37,6 +39,12 @@ describe('terminal font resolution', () => {
         letterSpacing: defaults.letterSpacing - 1,
       })
     ).toBe(false);
+    expect(
+      terminalFontsEqual(defaults, {
+        ...defaults,
+        fontStrokeWidth: 0.15,
+      })
+    ).toBe(false);
     expect(defaults.family).toBe(TERMINAL_FONT.family);
   });
 
@@ -47,6 +55,7 @@ describe('terminal font resolution', () => {
         fontSize: 14,
         lineHeight: 1,
         letterSpacing: -1,
+        fontStrokeWidth: 0.15,
       },
     });
     expect(loadedTerminalFont()).toBe(refreshed);
@@ -55,6 +64,7 @@ describe('terminal font resolution', () => {
       size: 14,
       lineHeight: 1,
       letterSpacing: -1,
+      fontStrokeWidth: 0.15,
     });
   });
 });

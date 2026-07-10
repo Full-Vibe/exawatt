@@ -8,7 +8,7 @@
  * lost between tab switches. On (re)mount the main-process scrollback buffer
  * is replayed first, so renderer reloads restore what you saw.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import '@xterm/xterm/css/xterm.css';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from './session-jump';
 import { TERMINAL_FONT } from './terminal-font';
@@ -239,9 +239,12 @@ export function TerminalPane({
       data-pane={layout}
       className={`terminal-pane ${LAYOUT_CLASS[layout]}`}
       style={
-        layout === 'right'
-          ? { borderLeft: '1px solid rgba(80,230,255,0.2)' }
-          : undefined
+        {
+          '--terminal-font-stroke': `${font?.fontStrokeWidth ?? TERMINAL_FONT.fontStrokeWidth}px`,
+          ...(layout === 'right'
+            ? { borderLeft: '1px solid rgba(80,230,255,0.2)' }
+            : {}),
+        } as CSSProperties
       }
       onMouseDown={
         onActivate && !active && layout !== 'hidden' ? onActivate : undefined

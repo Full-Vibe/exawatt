@@ -255,7 +255,7 @@ S3 Exposé, motion & discoverability (landed 2026-07-10, dogfood round 4):
   palette rows — ignite stays internal vocabulary); tab hover/pressed
   feedback (brightness lift, press scale, close-× reveals on hover).
 - Terminal font setting: `<userData>/settings.json` →
-  `{ terminal: { fontFamily, fontSize, lineHeight, letterSpacing } }` (main: settings-store.ts,
+  `{ terminal: { fontFamily, fontSize, lineHeight, letterSpacing, fontStrokeWidth } }` (main: settings-store.ts,
   `settings:get` IPC); panes are born with the effective font, refresh it
   after app refocus, and use it for spawn estimates. Root cause of the
   operator's mismatch:
@@ -282,6 +282,15 @@ S3 Exposé, motion & discoverability (landed 2026-07-10, dogfood round 4):
 - Dogfood round 6 verification: an identical native Terminal.app/xterm glyph
   sample at 2x scale, live computed-style and xterm-dimension inspection, 255
   tests, lint, type-check, Electron compile, and the production Next build.
+- Dogfood round 7 corrected the remaining perceived-weight mismatch. CoreText
+  puts more ink into Meslo Regular than Chromium/Skia; CSS weights through 550
+  still select the unchanged Regular file and 600 jumps to the much heavier
+  Bold file. A personal `fontStrokeWidth` setting provides controlled subpixel
+  emboldening without changing the face. Direct Retina screenshot calibration
+  selected `0.15px` for this Mac (within 0.5% of Terminal.app's measured glyph
+  coverage); the cross-platform default remains zero. Verified through the
+  real settings → main IPC → React → computed CSS path, plus 263 tests, lint,
+  type-check, Electron compile, and the production Next build.
 - Executed in an own git worktree per the new operator workflow rule
   (parallel agents share this repo).
 - Verified: 226 unit tests (5 new preview tests incl. the private-byte

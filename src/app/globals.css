@@ -127,6 +127,7 @@ body {
    with its default smoothing. */
 .terminal-pane .xterm {
   -webkit-font-smoothing: auto;
+  -webkit-text-stroke: var(--terminal-font-stroke, 0px) currentColor;
 }
 
 .fleet-shell {

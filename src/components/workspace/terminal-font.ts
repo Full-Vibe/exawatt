@@ -20,6 +20,7 @@ export const TERMINAL_FONT = {
   size: 13,
   lineHeight: 1.25,
   letterSpacing: 0,
+  fontStrokeWidth: 0,
   /** mono advance ≈ 0.6em (estimate; fit refines) */
   cellWidthEstimate: 7.8,
 } as const;
@@ -29,6 +30,7 @@ export interface EffectiveTerminalFont {
   size: number;
   lineHeight: number;
   letterSpacing: number;
+  fontStrokeWidth: number;
   cellWidthEstimate: number;
 }
 
@@ -47,6 +49,7 @@ export function resolveTerminalFont(
         fontSize?: number;
         lineHeight?: number;
         letterSpacing?: number;
+        fontStrokeWidth?: number;
       }
     | null
     | undefined
@@ -58,6 +61,8 @@ export function resolveTerminalFont(
     size,
     lineHeight: settings?.lineHeight ?? TERMINAL_FONT.lineHeight,
     letterSpacing,
+    fontStrokeWidth:
+      settings?.fontStrokeWidth ?? TERMINAL_FONT.fontStrokeWidth,
     cellWidthEstimate: cellWidthEstimate(size, letterSpacing),
   };
 }
@@ -79,7 +84,8 @@ export function terminalFontsEqual(
     a?.family === b.family &&
     a.size === b.size &&
     a.lineHeight === b.lineHeight &&
-    a.letterSpacing === b.letterSpacing
+    a.letterSpacing === b.letterSpacing &&
+    a.fontStrokeWidth === b.fontStrokeWidth
   );
 }
 
