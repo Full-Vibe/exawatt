@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, Menu, ipcMain } from 'electron';
+import { app, BrowserWindow, shell, Menu, ipcMain, dialog } from 'electron';
 import path from 'path';
 import { registerAgentIPC } from './agent-ipc';
 import { registerPtyIPC, disposePty } from './pty-ipc';
@@ -180,10 +180,28 @@ function registerAuthIPC(): void {
   });
 }
 
+/** Native "Open project directory" picker (ENG-015 S5 P4) — lets the operator
+ *  browse to a project instead of typing a path. Returns the chosen absolute
+ *  path, or null if cancelled. */
+function registerDialogIPC(): void {
+  ipcMain.handle('dialog:openDirectory', async () => {
+    const options: Electron.OpenDialogOptions = {
+      title: 'Open project directory',
+      properties: ['openDirectory', 'createDirectory'],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
+  });
+}
+
 app.whenReady().then(() => {
   registerAgentIPC();
   registerPtyIPC();
   registerAuthIPC();
+  registerDialogIPC();
   createMenu();
   createWindow();
 

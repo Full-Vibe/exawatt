@@ -120,6 +120,10 @@ declare global {
         openExternal: (url: string) => Promise<void>;
         onDeepLinkCode: (handler: (code: string) => void) => () => void;
       };
+      dialog?: {
+        /** native folder picker; resolves to the chosen path or null if cancelled */
+        openDirectory: () => Promise<string | null>;
+      };
     };
   }
 }

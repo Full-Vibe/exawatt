@@ -73,4 +73,8 @@ contextBridge.exposeInMainWorld('electron', {
     openExternal: (url: string) => ipcRenderer.invoke('auth:open-external', url),
     onDeepLinkCode: subscribe<string>('auth:deeplink-code'),
   },
+  dialog: {
+    openDirectory: (): Promise<string | null> =>
+      ipcRenderer.invoke('dialog:openDirectory'),
+  },
 });
