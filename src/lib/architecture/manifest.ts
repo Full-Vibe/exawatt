@@ -60,7 +60,7 @@ export const architectureManifest = {
   title: 'Exawatt Architecture',
   summary:
     'Exawatt is a command interface for managing agent fleets across local, hosted, and third-party harnesses.',
-  lastReviewed: '2026-06-17',
+  lastReviewed: '2026-07-10',
   layers: [
     {
       key: 'ui',
@@ -519,10 +519,10 @@ export const architectureManifest = {
           height: 74,
         },
         {
-          id: '3d-fleet-command',
-          label: '3D Fleet Command',
+          id: 'spatial-operations-board',
+          label: 'Spatial Operations Board',
           summary:
-            'React Three Fiber command surface for project-grouped fleet observability, zooming, attention scheduling, and state motion.',
+            'R3F tactical board with stable Project zones, semantic zoom, anchored Agents, attention, and Session handoff.',
           layer: 'ui',
           status: 'active-build',
           x: 455,
@@ -699,11 +699,11 @@ export const architectureManifest = {
       connections: [
         { from: 'next-app-shell', to: 'fleet-provider' },
         { from: 'next-app-shell', to: 'terminal-workspace' },
-        { from: 'next-app-shell', to: '3d-fleet-command' },
+        { from: 'next-app-shell', to: 'spatial-operations-board' },
         { from: 'fleet-ui', to: 'ui-model' },
         { from: 'terminal-workspace', to: 'fleet-provider' },
         { from: 'terminal-workspace', to: 'electron-shell' },
-        { from: '3d-fleet-command', to: 'ui-model' },
+        { from: 'spatial-operations-board', to: 'ui-model' },
         { from: 'architecture-map', to: 'architecture-manifest' },
         { from: 'review-ui', to: 'decision-context-layer', style: 'dashed' },
         { from: 'fleet-provider', to: 'source-adapters' },
@@ -727,7 +727,7 @@ export const architectureManifest = {
   ] satisfies ArchitectureZoomLevel[],
   principles: [
     'UI surfaces speak Exawatt nouns, not provider-specific vocabulary.',
-    'DOM and 3D Fleet Command regimes share typed view models and command contracts.',
+    'DOM and Spatial Operations Board regimes share typed view models and command contracts.',
     'Terminal Focus, Session Overview, and Spatial Command form one navigation continuum while keeping separate renderer boundaries.',
     'Agent sources are replaceable harnesses behind explicit adapters.',
     'Demo behavior is a swappable harness path, not a separate product architecture.',

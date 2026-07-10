@@ -6,6 +6,11 @@ Date: 2026-06-17
 
 Updated: 2026-07-10
 
+Representation update: decision `0007` supersedes this record's immersive/3D
+motif with a 2D/2.5D Spatial Operations Board. This decision remains accepted
+for the R3F technology choice, source-agnostic UI-model boundary, lazy route,
+demand-rendering discipline, and DOM/WebGL ownership split.
+
 ## Context
 
 Exawatt needs a spatial, game-like command interface for managing agent fleets, while preserving the source-agnostic three-layer architecture.

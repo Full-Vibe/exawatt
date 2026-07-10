@@ -23,7 +23,10 @@ The UI layer supports multiple modular regimes over the same command model:
 - DOM operations UI for dense text, forms, chat, and accessibility-critical controls
 - Electron Terminal Focus and DOM Session Overview for direct xterm control and
   multi-session orientation
-- 3D Fleet Command Surface for project-grouped fleet observability, zooming, selection, attention scheduling, and state animation
+- Spatial Operations Board for stable Project-grouped fleet observability,
+  semantic zoom, anchored Agent selection, attention scheduling, and visible
+  Session handoff; R3F renders top-down and shallow fixed-angle projections over
+  one source-agnostic board model
 - future packaged or Electron-hosted UI variants
 
 The Electron shell presents Terminal Focus → Session Overview → Spatial Command
@@ -109,7 +112,8 @@ Built:
 - `@exawatt/ui-model` typed UI-facing fleet selectors and command contracts
 - `/fleet` live/mock fleet UI
 - `/fleet/cron`
-- `/fleet/spatial` first 3D Fleet Command Surface
+- `/fleet/spatial` Spatial Operations Board (V2.0 active replacement of the
+  superseded immersive 3D composition)
 - Electron agent terminal workspace with real `node-pty` sessions rendered by
   xterm.js for Claude Code, Codex, and shells, behind a session-manager boundary
 - persisted project-grouped terminal sessions, attention state, keyboard-first
@@ -125,7 +129,7 @@ Partial:
   app restart, but the underlying processes do not yet survive it
 - source/harness abstraction beyond OpenClaw/mock
 - architecture overview as a living map
-- 3D Fleet Command Surface extraction into a standalone package
+- Spatial Operations Board extraction into a standalone package
 
 Planned:
 
