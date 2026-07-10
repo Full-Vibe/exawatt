@@ -171,6 +171,37 @@ try {
     fullPage: true,
   });
 
+  await page.getByRole('button', { name: 'Angle' }).click();
+  await page.waitForURL(
+    url => url.searchParams.get('projection') === 'fixed-angle'
+  );
+  await page.locator('[data-board-zone]').first().click();
+  await page.waitForURL(url => url.searchParams.get('altitude') === 'project');
+  await page.locator('[data-board-agent="nav-eval-session"]').click();
+  await page.waitForURL(url => url.searchParams.get('altitude') === 'agent');
+  const returnAddress =
+    new URL(page.url()).pathname + new URL(page.url()).search;
+  requireState(
+    returnAddress.includes('altitude=agent') &&
+      returnAddress.includes('projection=fixed-angle'),
+    'Agent board address did not preserve altitude and projection'
+  );
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.locator('[data-open-agent-session="nav-eval-session"]').click();
+  await page.waitForURL('**/workspace');
+  await page.locator('[data-active="true"]').waitFor();
+  requireState(
+    (await page.locator('[data-active="true"]').textContent())?.includes(
+      'Navigation evaluation'
+    ),
+    'Session handoff did not activate the selected PTY'
+  );
+  await page.locator('[data-command-altitude-level="spatial"]').click();
+  await page.waitForURL(
+    url => `${url.pathname}${url.search}` === returnAddress
+  );
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+
   await page.keyboard.press('Meta+Shift+M');
   await page.waitForURL('**/workspace');
   await page
@@ -178,7 +209,9 @@ try {
     .waitFor();
 
   await page.keyboard.press('Meta+Shift+M');
-  await page.waitForURL('**/fleet/spatial');
+  await page.waitForURL(
+    url => `${url.pathname}${url.search}` === returnAddress
+  );
   await page
     .locator('[data-command-altitude-level="spatial"][aria-current="page"]')
     .waitFor();

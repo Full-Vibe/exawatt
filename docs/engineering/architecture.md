@@ -119,7 +119,8 @@ Built:
 - persisted project-grouped terminal sessions, attention state, keyboard-first
   command flows, split panes, and the exposé session overview
 - persistent command-altitude navigation between terminal focus, session
-  overview, and Spatial Command, with direct routes and shared shortcuts
+  overview, and Spatial Command, with direct routes, shared shortcuts, existing-
+  PTY Agent handoff, and exact semantic board-address return
 - `LocalSessionsTransport` normalization of local PTY sessions into the shared
   `FleetState` consumed by the DOM and spatial fleet surfaces
 

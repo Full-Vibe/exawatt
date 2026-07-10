@@ -47,6 +47,7 @@ import { HARNESS_META, HARNESS_ORDER } from '@/components/workspace/harnesses';
 import { HUD } from '@/components/hud';
 import type { ShortcutKeys } from '@/types/shortcuts';
 import type { PtyHarness } from '@/types/electron';
+import { spatialReturnHref } from '@/components/nav/spatial-return';
 
 /** live status shown on switcher rows — one word, normal case (no all-caps) */
 const STATUS_META: Record<SessionRowStatus, { label: string; color: string }> =
@@ -207,7 +208,7 @@ export function CommandPalette({
         value: 'map spatial altitude fleet world zoom out switch',
         keys: '⌘⇧M',
         icon: MapIcon,
-        onSelect: () => handleSelect(() => router.push('/fleet/spatial')),
+        onSelect: () => handleSelect(() => router.push(spatialReturnHref())),
       },
     ],
     [dispatch, handleSelect, router]

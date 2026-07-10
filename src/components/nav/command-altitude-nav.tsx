@@ -7,6 +7,7 @@ import {
   resolveCommandAltitude,
   type CommandAltitude,
 } from './command-altitude';
+import { spatialReturnHref } from './spatial-return';
 
 const LEVELS: Array<{
   id: CommandAltitude;
@@ -68,7 +69,13 @@ export function CommandAltitudeNav() {
               aria-label={`${label}: ${detail}${shortcut ? ` (${shortcut})` : ''}`}
               title={`${detail}${shortcut ? ` · ${shortcut}` : ''}`}
               onClick={() => {
-                if (!current) router.push(COMMAND_ALTITUDE_HREFS[id]);
+                if (!current) {
+                  router.push(
+                    id === 'spatial'
+                      ? spatialReturnHref()
+                      : COMMAND_ALTITUDE_HREFS[id]
+                  );
+                }
               }}
               className={`group flex h-7 min-w-0 items-center gap-1.5 px-2 font-mono text-[10px] outline-none transition-[background-color,color,transform] duration-150 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-300 motion-reduce:transition-none sm:px-2.5 ${
                 current

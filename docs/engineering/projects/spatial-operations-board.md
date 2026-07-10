@@ -80,12 +80,12 @@ than merely smaller.
 
 ### Semantic altitude contract
 
-| Altitude | Primary objects | Required information | Deliberately hidden |
-| --- | --- | --- | --- |
-| Fleet | Initiatives/Projects | name, Agent count, health mix, attention pressure, activity, consumption when available | most Agent names and Session detail |
-| Project | one Project zone and anchored Agents | Agent identity, status, concise current goal/activity, attention ranking | long transcripts and provider payloads |
-| Agent | selected Agent in spatial context | full identity, status, Session target, concise operational summary | duplicated terminal content |
-| Session | existing terminal workspace | live harness interaction, transcript/TUI, Session actions | board geometry after handoff completes |
+| Altitude | Primary objects                      | Required information                                                                    | Deliberately hidden                    |
+| -------- | ------------------------------------ | --------------------------------------------------------------------------------------- | -------------------------------------- |
+| Fleet    | Initiatives/Projects                 | name, Agent count, health mix, attention pressure, activity, consumption when available | most Agent names and Session detail    |
+| Project  | one Project zone and anchored Agents | Agent identity, status, concise current goal/activity, attention ranking                | long transcripts and provider payloads |
+| Agent    | selected Agent in spatial context    | full identity, status, Session target, concise operational summary                      | duplicated terminal content            |
+| Session  | existing terminal workspace          | live harness interaction, transcript/TUI, Session actions                               | board geometry after handoff completes |
 
 Semantic altitude is a data-resolution decision, not a scale transform. At Fleet
 altitude, large populations collapse into meaningful Initiative/Project counts
@@ -873,7 +873,7 @@ constellation:
 
 ### V2.0 Spatial Operations Board
 
-Status: active-build — B0–B3 landed; B4 Session continuum next
+Status: active-build — B0–B4 landed; B5 release reconciliation next
 
 Scope, phase gates, budgets, and non-goals are defined in the V2.0 design brief
 above. Record each pushed B0–B5 checkpoint here with verification evidence. A
@@ -944,6 +944,26 @@ Progress log:
   no WebGL/console errors. Screenshot review passed both projections and the
   responsive board-tool layouts; isolated R3F remains 100/100 at 7 board draw
   calls.
+- **B4 landed (2026-07-10):** the selected live Agent now performs one short,
+  finite camera push before handing its existing PTY identity to the terminal
+  workspace. The handoff uses the existing cross-route session-jump contract;
+  it neither creates nor revives a Session. Reduced-motion replaces the push
+  delay with a brief opacity handoff, missing local Sessions retain the existing
+  Agent-detail fallback, and PTY-list failures leave the board in place with a
+  DOM alert.
+- The reverse path stores only a validated same-origin `/fleet/spatial` address
+  in session storage. Command-altitude controls, the workspace shortcut, global
+  shortcut, and command palette all restore that address, preserving Project,
+  Agent, and projection without allowing external or sibling-route injection.
+- B4 verification: 284/284 tests, full type-check, and lint pass. A browser-level
+  navigation evaluator proves reduced-motion Agent handoff, selected PTY
+  activation, and exact address return. A hermetic real Electron run launches a
+  shell PTY, descends Sessions → Project → Agent, opens the same PTY, restores
+  the exact fixed-angle Agent address, and confirms the one live process survives
+  the complete round trip. Full-route spatial evaluation continues to pass
+  desktop, mobile, reduced-motion, and low-power modes with zero settled idle
+  frames; the five-fixture R3F evaluator remains 100/100 and the board remains
+  at 7 isolated draw calls.
 
 ### V2.1 Scale & Truth
 

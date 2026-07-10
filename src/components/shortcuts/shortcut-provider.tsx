@@ -28,6 +28,7 @@ import type {
   Shortcut,
   ShortcutOverride,
 } from '@/types/shortcuts';
+import { spatialReturnHref } from '@/components/nav/spatial-return';
 
 interface ShortcutContextValue {
   openCommandPalette: () => void;
@@ -103,7 +104,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             // without re-registering shortcuts on every navigation
             router.push(
               window.location.pathname.startsWith('/workspace')
-                ? '/fleet/spatial'
+                ? spatialReturnHref()
                 : '/workspace'
             );
             break;

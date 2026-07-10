@@ -39,6 +39,7 @@ import {
 } from './session-jump';
 import { useShortcuts } from '@/components/shortcuts';
 import { HUD } from '@/components/hud';
+import { spatialReturnHref } from '@/components/nav/spatial-return';
 
 /** the discoverability layer (S3): the workspace SHOWS its keys, exactly
  *  like the spatial map's bottom legend — normal case, dim, always there */
@@ -192,7 +193,7 @@ export function WorkspaceClient() {
       // regime switching is a two-way street: ⌘⇧M here goes to the map, the
       // same chord anywhere else comes back (global shortcut, defaults.ts)
       toggleRegime: () => {
-        router.push('/fleet/spatial');
+        router.push(spatialReturnHref());
         return true;
       },
       // ⌘K/⌘/ re-bound here because the global chord engine never sees

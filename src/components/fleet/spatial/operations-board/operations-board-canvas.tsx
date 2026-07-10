@@ -85,6 +85,7 @@ export interface OperationsBoardHandle {
   recenter(): void;
   focusProject(projectId: string): void;
   focusAgent(agentId: string): void;
+  enterSession(agentId: string): void;
   zoom(steps: number): void;
   pan(dx: number, dy: number): void;
   nudge(dx: number, dy: number, dollySteps: number, orbitRadians: number): void;
@@ -245,6 +246,16 @@ function BoardCameraRig({
           y: piece.y - 6,
           width: 12,
           height: 12,
+        });
+      },
+      enterSession(agentId) {
+        const piece = layout.pieces.find(entry => entry.agentId === agentId);
+        if (!piece) return;
+        focusRect({
+          x: piece.x - 2.5,
+          y: piece.y - 2.5,
+          width: 5,
+          height: 5,
         });
       },
       zoom(steps) {
@@ -659,6 +670,7 @@ function AgentControls({
         >
           <button
             type="button"
+            data-board-agent={piece.agentId}
             aria-label={`${piece.label}, ${piece.status}`}
             onClick={() => onSelectAgent(piece.agentId!)}
             className="group relative grid h-11 w-11 place-items-center border border-transparent bg-transparent outline-none transition-[border-color,transform] duration-150 active:translate-y-px focus-visible:border-[oklch(0.72_0.1_185)] focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.1_185/0.4)]"

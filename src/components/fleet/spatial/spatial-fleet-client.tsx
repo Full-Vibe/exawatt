@@ -34,6 +34,8 @@ import {
 } from '@exawatt/ui-model';
 import type { AgentStatus } from '@exawatt/core';
 import { agentGoalDisplay } from './spatial-agent-copy';
+import { requestSessionJump } from '@/components/workspace/session-jump';
+import { rememberSpatialReturn } from '@/components/nav/spatial-return';
 
 const FILTERABLE_STATUSES: AgentStatus[] = [
   'working',
@@ -81,6 +83,12 @@ export function SpatialFleetClient() {
   // Fleet-scale search / status filter. Empty = full fleet (no behavior change).
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<AgentStatus[]>([]);
+  const [sessionHandoffAgentId, setSessionHandoffAgentId] = useState<
+    string | null
+  >(null);
+  const [sessionHandoffError, setSessionHandoffError] = useState<string | null>(
+    null
+  );
   const filtered = query.trim() !== '' || statusFilter.length > 0;
   const filteredState = useMemo(
     () => filterFleetState(fleetState, { query, statuses: statusFilter }),
@@ -282,6 +290,46 @@ export function SpatialFleetClient() {
   const inspectedGoal = inspectedAgent
     ? agentGoalDisplay(inspectedAgent.goal)
     : null;
+
+  const openInspectedSession = useCallback(async () => {
+    if (!inspectedAgent || sessionHandoffAgentId) return;
+    setSessionHandoffError(null);
+    const detailHref = `/fleet/${encodeURIComponent(inspectedAgent.id)}`;
+    const pty = window.electron?.pty;
+    if (!pty) {
+      router.push(detailHref);
+      return;
+    }
+
+    try {
+      const sessions = await pty.list();
+      const session = sessions.find(
+        candidate => candidate.id === inspectedAgent.sessionKey
+      );
+      if (!session) {
+        router.push(detailHref);
+        return;
+      }
+
+      rememberSpatialReturn(
+        `${window.location.pathname}${window.location.search}`
+      );
+      setSessionHandoffAgentId(inspectedAgent.id);
+      const reduced = window.matchMedia(
+        '(prefers-reduced-motion: reduce)'
+      ).matches;
+      await new Promise(resolve =>
+        window.setTimeout(resolve, reduced ? 40 : 240)
+      );
+      requestSessionJump(session.id);
+      router.push('/workspace');
+    } catch {
+      setSessionHandoffAgentId(null);
+      setSessionHandoffError(
+        'The live terminal could not be opened. Your board position is unchanged.'
+      );
+    }
+  }, [inspectedAgent, router, sessionHandoffAgentId]);
   const showSideRail = Boolean(inspectedAgent || visibleActivity.length > 0);
 
   const formatCurrency = (value: number) =>
@@ -479,6 +527,7 @@ export function SpatialFleetClient() {
             onSelectAgent={handleSelectAgent}
             onOverview={overview}
             onProjectionChange={changeProjection}
+            sessionTransitionAgentId={sessionHandoffAgentId}
           />
         </section>
 
@@ -543,13 +592,24 @@ export function SpatialFleetClient() {
                   </div>
                 )}
 
+                {sessionHandoffError && (
+                  <p
+                    role="alert"
+                    className="mt-4 border border-red-300/20 bg-red-300/10 p-3 text-sm leading-5 text-red-100"
+                  >
+                    {sessionHandoffError}
+                  </p>
+                )}
+
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Button asChild className="fleet-action-button">
-                    <Link
-                      href={`/fleet/${encodeURIComponent(inspectedAgent.id)}`}
-                    >
-                      Open session
-                    </Link>
+                  <Button
+                    type="button"
+                    data-open-agent-session={inspectedAgent.id}
+                    className="fleet-action-button"
+                    disabled={Boolean(sessionHandoffAgentId)}
+                    onClick={() => void openInspectedSession()}
+                  >
+                    {sessionHandoffAgentId ? 'Opening…' : 'Open session'}
                   </Button>
                   {inspectedAgent.needsOperator && (
                     <Button

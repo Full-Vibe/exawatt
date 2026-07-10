@@ -138,6 +138,7 @@ export function OperationsBoardSurface({
   onSelectAgent,
   onOverview,
   onProjectionChange,
+  sessionTransitionAgentId = null,
   preserveDrawingBuffer = false,
 }: {
   layout: SpatialBoardLayout;
@@ -147,6 +148,7 @@ export function OperationsBoardSurface({
   onSelectAgent: (agentId: string | null) => void;
   onOverview: () => void;
   onProjectionChange: (projection: SpatialBoardProjection) => void;
+  sessionTransitionAgentId?: string | null;
   preserveDrawingBuffer?: boolean;
 }) {
   const controller = useRef<OperationsBoardHandle | null>(null);
@@ -187,6 +189,12 @@ export function OperationsBoardSurface({
     rect.setAttribute('width', String(layout.cameraBounds.width));
     rect.setAttribute('height', String(layout.cameraBounds.height));
   }, [layout.cameraBounds]);
+
+  useEffect(() => {
+    if (sessionTransitionAgentId) {
+      controller.current?.enterSession(sessionTransitionAgentId);
+    }
+  }, [sessionTransitionAgentId]);
 
   const triage = useCallback(
     (direction: 1 | -1) => {
@@ -258,6 +266,7 @@ export function OperationsBoardSurface({
       data-board-projection={projection}
       data-board-projects={visibleZones.length}
       data-board-pieces={layout.stats.visiblePieceCount}
+      data-session-handoff={sessionTransitionAgentId ?? undefined}
       className="relative h-full w-full overflow-hidden bg-[oklch(0.135_0.009_220)]"
     >
       <div className="absolute inset-0">
@@ -288,100 +297,118 @@ export function OperationsBoardSurface({
         </div>
       )}
 
-      {hero && layout.altitude !== 'agent' && (
-        <button
-          type="button"
-          onClick={() => onSelectAgent(hero.agentId)}
-          className="absolute left-1/2 top-3 z-10 max-w-[min(30rem,calc(100%-2rem))] -translate-x-1/2 border border-[oklch(0.56_0.12_28)] bg-[oklch(0.19_0.045_28/0.97)] px-3 py-2 text-left shadow-[0_12px_32px_oklch(0.07_0.025_28/0.5)] outline-none transition-[border-color,transform] duration-150 hover:border-[oklch(0.68_0.14_28)] active:translate-y-px focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.12_28/0.45)]"
-        >
-          <span className="block truncate text-xs font-semibold text-[oklch(0.92_0.025_28)]">
-            {hero.title}
-          </span>
-          <span className="mt-0.5 block truncate text-[10px] text-[oklch(0.72_0.05_28)]">
-            {hero.reason}
-          </span>
-        </button>
-      )}
-
-      {attentionIds.length > 0 && (
-        <button
-          type="button"
-          onClick={() => triage(1)}
-          className="absolute bottom-16 left-3 z-10 min-h-11 border border-[oklch(0.52_0.1_28)] bg-[oklch(0.18_0.035_28/0.94)] px-2.5 py-1.5 font-mono text-[10px] text-[oklch(0.78_0.09_28)] outline-none transition-colors hover:bg-[oklch(0.22_0.045_28/0.98)] focus-visible:ring-2 focus-visible:ring-[oklch(0.68_0.12_28/0.4)] sm:bottom-3"
-        >
-          {attentionIds.length} need attention
-        </button>
-      )}
-
-      <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 hidden -translate-x-1/2 flex-wrap items-center justify-center gap-x-3 gap-y-1.5 border border-[oklch(0.29_0.01_215)] bg-[oklch(0.13_0.008_220/0.9)] px-2.5 py-2 xl:flex">
-        {layout.altitude === 'fleet' && (
-          <KeyHint keyName="1–9" label="Project" />
+      <div
+        className={`transition-opacity duration-150 motion-reduce:transition-none ${
+          sessionTransitionAgentId ? 'pointer-events-none opacity-0' : ''
+        }`}
+      >
+        {hero && layout.altitude !== 'agent' && (
+          <button
+            type="button"
+            onClick={() => onSelectAgent(hero.agentId)}
+            className="absolute left-1/2 top-3 z-10 max-w-[min(30rem,calc(100%-2rem))] -translate-x-1/2 border border-[oklch(0.56_0.12_28)] bg-[oklch(0.19_0.045_28/0.97)] px-3 py-2 text-left shadow-[0_12px_32px_oklch(0.07_0.025_28/0.5)] outline-none transition-[border-color,transform] duration-150 hover:border-[oklch(0.68_0.14_28)] active:translate-y-px focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.12_28/0.45)]"
+          >
+            <span className="block truncate text-xs font-semibold text-[oklch(0.92_0.025_28)]">
+              {hero.title}
+            </span>
+            <span className="mt-0.5 block truncate text-[10px] text-[oklch(0.72_0.05_28)]">
+              {hero.reason}
+            </span>
+          </button>
         )}
-        <KeyHint keyName="←↑↓→" label="pan" />
-        <KeyHint keyName="+ −" label="zoom" />
-        <KeyHint keyName="V" label="view" />
-        {attentionIds.length > 0 && <KeyHint keyName="N" label="attention" />}
-        <KeyHint
-          keyName={layout.altitude === 'fleet' ? '0' : 'Esc'}
-          label={layout.altitude === 'fleet' ? 'recenter' : 'zoom out'}
-        />
-      </div>
 
-      <div className="absolute bottom-3 right-3 z-10 flex flex-row items-end gap-1.5 sm:flex-col">
-        <div
-          className="flex border border-[oklch(0.34_0.014_210)] bg-[oklch(0.15_0.009_220/0.96)] p-1"
-          aria-label="Board projection"
-        >
-          {(['top-down', 'fixed-angle'] as const).map(option => (
+        {attentionIds.length > 0 && (
+          <button
+            type="button"
+            onClick={() => triage(1)}
+            className="absolute bottom-16 left-3 z-10 min-h-11 border border-[oklch(0.52_0.1_28)] bg-[oklch(0.18_0.035_28/0.94)] px-2.5 py-1.5 font-mono text-[10px] text-[oklch(0.78_0.09_28)] outline-none transition-colors hover:bg-[oklch(0.22_0.045_28/0.98)] focus-visible:ring-2 focus-visible:ring-[oklch(0.68_0.12_28/0.4)] sm:bottom-3"
+          >
+            {attentionIds.length} need attention
+          </button>
+        )}
+
+        <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 hidden -translate-x-1/2 flex-wrap items-center justify-center gap-x-3 gap-y-1.5 border border-[oklch(0.29_0.01_215)] bg-[oklch(0.13_0.008_220/0.9)] px-2.5 py-2 xl:flex">
+          {layout.altitude === 'fleet' && (
+            <KeyHint keyName="1–9" label="Project" />
+          )}
+          <KeyHint keyName="←↑↓→" label="pan" />
+          <KeyHint keyName="+ −" label="zoom" />
+          <KeyHint keyName="V" label="view" />
+          {attentionIds.length > 0 && <KeyHint keyName="N" label="attention" />}
+          <KeyHint
+            keyName={layout.altitude === 'fleet' ? '0' : 'Esc'}
+            label={layout.altitude === 'fleet' ? 'recenter' : 'zoom out'}
+          />
+        </div>
+
+        <div className="absolute bottom-3 right-3 z-10 flex flex-row items-end gap-1.5 sm:flex-col">
+          <div
+            className="flex border border-[oklch(0.34_0.014_210)] bg-[oklch(0.15_0.009_220/0.96)] p-1"
+            aria-label="Board projection"
+          >
+            {(['top-down', 'fixed-angle'] as const).map(option => (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={projection === option}
+                onClick={() => onProjectionChange(option)}
+                className={`min-h-11 px-2 text-[9px] font-semibold uppercase tracking-[0.08em] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:px-3 sm:text-[10px] sm:tracking-[0.1em] ${
+                  projection === option
+                    ? 'bg-[oklch(0.32_0.055_185)] text-[oklch(0.92_0.025_185)]'
+                    : 'text-[oklch(0.62_0.012_210)] hover:bg-[oklch(0.2_0.015_210)] hover:text-[oklch(0.82_0.015_210)]'
+                }`}
+              >
+                {option === 'top-down' ? 'Top' : 'Angle'}
+              </button>
+            ))}
+          </div>
+
+          <BoardMiniMap
+            layout={layout}
+            viewportRef={viewportRect}
+            onRecenter={() => controller.current?.recenter()}
+          />
+
+          <div className="flex border border-[oklch(0.34_0.014_210)] bg-[oklch(0.15_0.009_220/0.96)] p-1">
             <button
-              key={option}
               type="button"
-              aria-pressed={projection === option}
-              onClick={() => onProjectionChange(option)}
-              className={`min-h-11 px-2 text-[9px] font-semibold uppercase tracking-[0.08em] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:px-3 sm:text-[10px] sm:tracking-[0.1em] ${
-                projection === option
-                  ? 'bg-[oklch(0.32_0.055_185)] text-[oklch(0.92_0.025_185)]'
-                  : 'text-[oklch(0.62_0.012_210)] hover:bg-[oklch(0.2_0.015_210)] hover:text-[oklch(0.82_0.015_210)]'
-              }`}
+              aria-label="Zoom out"
+              onClick={() => controller.current?.zoom(-1)}
+              className="grid h-11 w-11 place-items-center font-mono text-sm text-[oklch(0.72_0.02_210)] outline-none hover:bg-[oklch(0.21_0.015_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)]"
             >
-              {option === 'top-down' ? 'Top' : 'Angle'}
+              −
             </button>
-          ))}
-        </div>
-
-        <BoardMiniMap
-          layout={layout}
-          viewportRef={viewportRect}
-          onRecenter={() => controller.current?.recenter()}
-        />
-
-        <div className="flex border border-[oklch(0.34_0.014_210)] bg-[oklch(0.15_0.009_220/0.96)] p-1">
-          <button
-            type="button"
-            aria-label="Zoom out"
-            onClick={() => controller.current?.zoom(-1)}
-            className="grid h-11 w-11 place-items-center font-mono text-sm text-[oklch(0.72_0.02_210)] outline-none hover:bg-[oklch(0.21_0.015_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)]"
-          >
-            −
-          </button>
-          <button
-            type="button"
-            aria-label="Recenter board"
-            onClick={() => controller.current?.recenter()}
-            className="grid h-11 min-w-11 place-items-center border-x border-[oklch(0.3_0.012_210)] px-1 font-mono text-[8px] uppercase tracking-[0.06em] text-[oklch(0.68_0.025_190)] outline-none hover:bg-[oklch(0.21_0.015_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:px-2 sm:text-[9px] sm:tracking-[0.08em]"
-          >
-            Center
-          </button>
-          <button
-            type="button"
-            aria-label="Zoom in"
-            onClick={() => controller.current?.zoom(1)}
-            className="grid h-11 w-11 place-items-center font-mono text-sm text-[oklch(0.72_0.02_210)] outline-none hover:bg-[oklch(0.21_0.015_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)]"
-          >
-            +
-          </button>
+            <button
+              type="button"
+              aria-label="Recenter board"
+              onClick={() => controller.current?.recenter()}
+              className="grid h-11 min-w-11 place-items-center border-x border-[oklch(0.3_0.012_210)] px-1 font-mono text-[8px] uppercase tracking-[0.06em] text-[oklch(0.68_0.025_190)] outline-none hover:bg-[oklch(0.21_0.015_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:px-2 sm:text-[9px] sm:tracking-[0.08em]"
+            >
+              Center
+            </button>
+            <button
+              type="button"
+              aria-label="Zoom in"
+              onClick={() => controller.current?.zoom(1)}
+              className="grid h-11 w-11 place-items-center font-mono text-sm text-[oklch(0.72_0.02_210)] outline-none hover:bg-[oklch(0.21_0.015_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)]"
+            >
+              +
+            </button>
+          </div>
         </div>
       </div>
+
+      {sessionTransitionAgentId && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none absolute inset-0 z-20 grid place-items-center bg-[oklch(0.08_0.008_220/0.18)]"
+        >
+          <div className="border border-[oklch(0.48_0.055_185)] bg-[oklch(0.13_0.012_220/0.94)] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[oklch(0.82_0.055_185)] shadow-[0_16px_48px_oklch(0.04_0.01_220/0.55)]">
+            Opening session
+          </div>
+        </div>
+      )}
     </div>
   );
 }
