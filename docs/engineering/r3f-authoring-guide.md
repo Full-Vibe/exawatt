@@ -51,17 +51,26 @@ Three surfaces (this worktree):
   under `/hud-gallery`. Ortho px-space (`zoom 1` ⇒ 1 world unit = 1 CSS px,
   centered), `frameloop` **default (always)**, `<FitToWidth>` scales content to
   the canvas.
-- **AgentField world** `src/components/hud/webgl/agent-field.tsx` — the canonical
-  scalable world (Tactical Clusters): one InstancedMesh of nodes + one of halos,
-  per-instance picking, staggered entrance + attention pulse, CameraControls
-  fly-to via an imperative `AgentFieldHandle` driven by the DOM keyboard layer.
-  Demo chrome at `/hud-gallery/agent-field`. `frameloop="demand"`.
-- **Spatial** `src/components/fleet/spatial/console3d/console3d-surface.tsx` +
-  `command-table/holo-bloom.tsx` (Bloom, `React.lazy`). `frameloop="demand"`.
+- **AgentField / Spatial world** `src/components/hud/webgl/agent-field.tsx`,
+  composed by
+  `src/components/fleet/spatial/agent-field/agent-field-surface.tsx` — Fleet
+  altitude uses one InstancedMesh of nodes + one of halos with per-instance
+  picking; Project and Agent altitudes use readable semantic regimes over the
+  same stable data/navigation model. Demo chrome lives at
+  `/hud-gallery/agent-field`; the real route is `/fleet/spatial`.
+  `frameloop="demand"`.
+- **Spatial DOM chrome**
+  `src/components/fleet/spatial/spatial-fleet-client.tsx` — URL altitude,
+  search/filter, breadcrumbs, inspector, activity, accessible selection, and
+  recovery. Postprocessing lives in a separate lazy module and is low-power
+  gated.
 
 **Architecture (resolved):** WebGL renders the decorative/scalable *world*; ALL
 text and ALL interactivity for chrome live in a pixel-aligned **DOM overlay**
 (crisp + keyboard-accessible). Keep that split — see decision `0003`.
+"One spatial surface" means one route/command model, not one geometry regime at
+every altitude. Fleet aggregates; Project reveals readable units; Agent focuses
+inspection.
 
 ## Non-negotiable rules
 
@@ -104,6 +113,17 @@ text and ALL interactivity for chrome live in a pixel-aligned **DOM overlay**
 12. **Reduced motion:** gate continuous motion on `useReducedMotion()`. Reduced
     motion kills MOTION, not bloom — a static glow is fine; a pulsing one isn't.
     For damp transitions, SNAP to target when reduced.
+13. **Input feel is velocity, not key-repeat or tap kicks.** Held camera input
+   damps current velocity toward a target and decays after release. Do not add an
+   immediate distance/angle kick before the rAF loop, and do not claim
+   CameraControls damping while passing `enableTransition=false` without your
+   own velocity smoothing.
+14. **Pointer-following DOM must not render React at pointer frequency.** Store
+   coordinates in refs and coalesce transform writes through one rAF. State is
+   for semantic hover identity, not every cursor pixel.
+15. **Stable identity survives filters.** Do not key the field, cluster, or
+   animation owner by `agents.length`. Preserve surviving agent/Project state by
+   stable IDs and animate actual additions/removals only.
 
 ## Motion patterns (zero new deps — `THREE.MathUtils`)
 
@@ -171,8 +191,9 @@ useFrame((state, delta) => {
 
 ## Bloom / postprocessing
 
-- Keep `<HoloBloom>` behind `React.lazy()` + a `bloomOn` (reduced-motion/low-power)
-  gate; postprocessing is the heaviest import.
+- Keep spatial effects in a separate module behind `React.lazy()` + a low-power
+  gate; postprocessing is the heaviest import. Reduced motion does not
+  automatically disable a static bloom, but low-power mode does.
 - Current selective look = `<Bloom luminanceThreshold={0.6} luminanceSmoothing={0.2}
   intensity={0.9} radius={0.5} mipmapBlur />` + `toneMapped={false}` lines. Only
   reach for `<Selection>/<Select>` (needs `<EffectComposer autoClear={false}>`)
