@@ -73,10 +73,31 @@ export async function openRepositoryProject(
 ): Promise<Project> {
   const supabase = createClient();
   const userId = await requireUserId(supabase);
-  const payload = buildRepositoryInsert(userId, ref, new Date().toISOString());
+  const nowIso = new Date().toISOString();
+  // Reuse an existing Project for this directory (the unique (user_id,
+  // root_path) index guarantees at most one). Igniting again in a known dir
+  // must NOT overwrite the operator's renamed / recolored / reordered Project,
+  // so on reopen we only bump recency and un-archive; a brand-new dir inserts.
+  const existing = await supabase
+    .from('projects')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('root_path', ref.rootPath)
+    .maybeSingle();
+  if (existing.error) throw new Error(existing.error.message);
+  if (existing.data) {
+    const { data, error } = await supabase
+      .from('projects')
+      .update({ last_opened_at: nowIso, archived_at: null })
+      .eq('id', existing.data.id)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
+  }
   const { data, error } = await supabase
     .from('projects')
-    .upsert(payload, { onConflict: 'user_id,root_path' })
+    .insert(buildRepositoryInsert(userId, ref, nowIso))
     .select()
     .single();
   if (error) throw new Error(error.message);
