@@ -90,8 +90,8 @@ Scope (reshaped by dogfood round 4 — discoverability first-class):
 
 ### S4 Context paging
 
-Status: planned — idea bank below; cheap pieces may ride along earlier
-phases (e.g. emblems with S3).
+Status: active-build — re-entry recap is the first implementation slice;
+remaining candidates stay in the idea bank below.
 
 The deep layer: the operator's real bottleneck at 5–10 agents is not the
 software, it's human working memory — paging a mental context back in
@@ -110,6 +110,19 @@ The first S4 implementation slice should prioritize the re-entry recap and
 change-since-last-visit digest. Emblems, spatial anchors, batching, and the
 cross-surface status grammar remain candidates to evaluate after that loop is
 useful.
+
+First-slice acceptance criteria:
+
+- leaving a session records a scrollback checkpoint; returning after at least
+  two minutes and meaningful new output summarizes only what changed while
+  away
+- the recap appears only over the session being revisited, never as a
+  background completion notification and never by stealing focus
+- ordinary short switches and insignificant output remain silent
+- the first keystroke dismisses the recap without consuming the keystroke;
+  typing or switching before generation completes suppresses stale output
+- one summarizer call runs globally, using the existing authenticated CLI and
+  failure cutoff; thresholds remain environment-tunable for dogfood
 
 ## Context-paging idea bank (research-grounded)
 
@@ -181,6 +194,30 @@ regime switch and route boundaries until dogfooding clarifies whether a literal
 zoom transition improves navigation or only adds motion and coupling.
 
 ## Progress log
+
+S4 re-entry recap, first slice (landed 2026-07-10):
+
+- Main-process scrollback now carries absolute cursors across bounded-buffer
+  trimming. Leaving a tab or the app records a cursor and time; returning
+  consumes only output produced since that checkpoint.
+- `ContextSummarizer` adds a delta-specific prompt behind the existing
+  authenticated CLI, global one-call limit, timeout, and failure cutoff. The
+  default trigger is two minutes away plus 200 cleaned characters; both are
+  environment-tunable for dogfood.
+- Recaps are deliberately quiet: no background completion event. A compact
+  "While you were away" card appears only over the active session, includes
+  the existing micro-context when available, never steals focus, and
+  disappears on the first keystroke without consuming it.
+- Human typing gained an explicit `pty:engage` signal from xterm `onKey`.
+  Raw `pty:write` cannot cancel a recap because it also carries automatic
+  terminal protocol replies; conflating the two made the first live smoke
+  suppress valid recaps.
+- Stale work is guarded at both ends: typing, switching, or losing focus while
+  generation is pending invalidates the result, and the renderer accepts a
+  recap only for its current active session.
+- Verified: 236 unit/component tests, type-check, lint, Electron compile,
+  production Next build, and a live two-session Electron smoke with screenshot
+  review and first-key dismissal.
 
 S3 Exposé, motion & discoverability (landed 2026-07-10, dogfood round 4):
 

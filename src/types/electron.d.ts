@@ -60,6 +60,8 @@ export type PtyCreateResult =
 export interface ElectronPtyApi {
   create: (options: PtyCreateOptions) => Promise<PtyCreateResult>;
   write: (id: string, data: string) => Promise<void>;
+  /** Explicit operator keystroke; terminal protocol replies do not call it. */
+  engage: (id: string) => Promise<void>;
   resize: (id: string, cols: number, rows: number) => Promise<void>;
   kill: (id: string) => Promise<void>;
   rename: (id: string, title: string) => Promise<void>;

@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('electron', {
   pty: {
     create: (options: unknown) => ipcRenderer.invoke('pty:create', options),
     write: (id: string, data: string) => ipcRenderer.invoke('pty:write', id, data),
+    engage: (id: string) => ipcRenderer.invoke('pty:engage', id),
     resize: (id: string, cols: number, rows: number) =>
       ipcRenderer.invoke('pty:resize', id, cols, rows),
     kill: (id: string) => ipcRenderer.invoke('pty:kill', id),

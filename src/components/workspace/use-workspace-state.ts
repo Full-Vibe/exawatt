@@ -27,7 +27,12 @@ import {
   consumePendingIgnite,
 } from './session-jump';
 import { loadTerminalFont } from './terminal-font';
-import type { PtyAttention, PtyHarness, PtySessionInfo } from '@/types/electron';
+import type {
+  PtyAttention,
+  PtyHarness,
+  PtyReentryRecap,
+  PtySessionInfo,
+} from '@/types/electron';
 
 export interface WorkspaceTab {
   /** stable across revives (sessionId changes when a tab is re-ignited) */
@@ -120,6 +125,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const [summaries, setSummaries] = useState<Record<string, string>>({});
   /** needs-operator flags keyed by sessionId (ENG-015 S1; main is truth) */
   const [attention, setAttention] = useState<Record<string, PtyAttention>>({});
+  /** quiet, one-shot S4 catch-up for the session currently being revisited */
+  const [reentryRecap, setReentryRecap] = useState<PtyReentryRecap | null>(null);
+  const dismissReentryRecap = useCallback(() => setReentryRecap(null), []);
   const stateRef = useRef({ initiatives, activeDir, lastUsedDir, pinnedTabId });
   stateRef.current = { initiatives, activeDir, lastUsedDir, pinnedTabId };
   const readyRef = useRef(ready);
@@ -298,6 +306,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const offContext = api.onContext?.(({ id, summary }) => {
       setSummaries((prev) => ({ ...prev, [id]: summary }));
     });
+    const offRecap = api.onRecap?.((next) => {
+      const { initiatives: groups, activeDir: dir } = stateRef.current;
+      const active = groups.find((group) => group.dir === dir);
+      const tab = active?.tabs.find(
+        (candidate) => candidate.id === active.activeTabId
+      );
+      if (tab?.sessionId === next.id) setReentryRecap(next);
+    });
     const offAttention = api.onAttention?.(({ id, attention: att }) => {
       if (att) clearedBeforeSeed.delete(id);
       else clearedBeforeSeed.add(id);
@@ -313,6 +329,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       cancelled = true;
       offExit();
       offContext?.();
+      offRecap?.();
       offAttention?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -647,6 +664,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   // The local record clears optimistically; main confirms via pty:attention.
   const activeSessionId = activeTab?.sessionId ?? null;
   useEffect(() => {
+    setReentryRecap((current) =>
+      current?.id === activeSessionId ? current : null
+    );
+  }, [activeSessionId]);
+
+  useEffect(() => {
     const api = window.electron?.pty;
     if (!api?.focus) return;
     void api.focus(activeSessionId);
@@ -673,8 +696,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     lastUsedDir,
     summaries,
     attention,
+    reentryRecap,
     error,
     setError,
+    dismissReentryRecap,
     ready,
     ignite,
     igniteHere,

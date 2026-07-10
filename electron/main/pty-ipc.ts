@@ -80,6 +80,11 @@ export function registerPtyIPC(): void {
     // being watched: writes ALSO carry xterm auto-replies from hidden panes
     // (cursor/device queries, backlog replay), which the monitor ignores
     attentionMonitor.noteInput(id);
+  });
+  // xterm's onData also carries terminal protocol replies. Only onKey is
+  // guaranteed human engagement, so it has a separate recap-cancellation
+  // channel instead of overloading pty:write.
+  ipcMain.handle('pty:engage', (_event, id: string) => {
     contextSummarizer.noteInput(id);
   });
   ipcMain.handle('pty:focus', (_event, id: string | null) => {

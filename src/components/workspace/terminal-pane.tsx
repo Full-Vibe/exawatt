@@ -171,6 +171,10 @@ export function TerminalPane({
         void api.write(sessionId, data);
       });
       cleanup.push(() => input.dispose());
+      const engagement = term.onKey(() => {
+        void api.engage(sessionId);
+      });
+      cleanup.push(() => engagement.dispose());
       const ro = new ResizeObserver(syncSize);
       ro.observe(el);
       cleanup.push(() => ro.disconnect());

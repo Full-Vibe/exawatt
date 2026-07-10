@@ -26,6 +26,7 @@ import type { EffectiveTerminalFont } from './terminal-font';
 import { TabStrip } from './tab-strip';
 import { IgniteControls } from './ignite-controls';
 import { ExposeOverlay } from './expose-overlay';
+import { ReentryRecapCard } from './reentry-recap';
 import { useWorkspaceState, REVIVE_FAILED } from './use-workspace-state';
 import { useWorkspaceShortcuts } from './use-workspace-shortcuts';
 import {
@@ -105,8 +106,10 @@ export function WorkspaceClient() {
     lastUsedDir,
     summaries,
     attention,
+    reentryRecap,
     error,
     setError,
+    dismissReentryRecap,
     ignite,
     igniteHere,
     closeTab,
@@ -318,6 +321,14 @@ export function WorkspaceClient() {
           Terminals are born with the EFFECTIVE font, so rendering waits for
           settings.json to resolve (one local IPC) */}
       <div ref={panesRef} className="relative min-h-0 flex-1">
+        {reentryRecap && activeTab?.sessionId === reentryRecap.id && (
+          <ReentryRecapCard
+            recap={reentryRecap}
+            title={activeTab.title}
+            context={summaries[reentryRecap.id]}
+            onDismiss={dismissReentryRecap}
+          />
+        )}
         {allTabs.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-4">
             <p className="font-mono text-sm" style={{ color: HUD.textDim }}>
