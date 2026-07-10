@@ -124,6 +124,97 @@ First-slice acceptance criteria:
 - one summarizer call runs globally, using the existing authenticated CLI and
   failure cutoff; thresholds remain environment-tunable for dogfood
 
+### S5 Durable Projects
+
+Status: planned — scoped 2026-07-10 (operator). Fixes the gap surfaced in
+dogfood: you cannot open or browse a Project unless a session is already
+running in it. Today a Project (mislabeled `Initiative` in code) is DERIVED —
+resolved from a session's cwd (`project-resolve.ts`, git-common-dir; worktrees
+fold to the main repo) and persisted in local `workspace.json` only while it
+has a surviving tab (`use-workspace-state.ts` prunes exited tabs and drops
+zero-tab groups). The last session ending forgets the Project; only
+`lastUsedDir` survives. There is no folder picker, no known-projects list, and
+no palette or menu action to open one.
+
+Operator decisions (2026-07-10):
+
+- Projects are a CURATED, durable registry, not merely recents — a Project
+  stays known with zero live sessions.
+- Storage is Supabase, user/workspace-scoped and synced across the operator's
+  machines. The Supabase project is already linked; browser/server clients and
+  Electron OAuth deep-link auth already exist.
+- v1 scope is launcher + identity, not a rich per-Project home. The rich
+  overview (state summary, agent count, blocker pressure, next attention point)
+  stays deferred and is the spatial board's Project-zone job (ENG-004).
+- Rename to canon: the code/UI concept becomes **Project / Context Group**;
+  `Initiative` is reserved for the durable-goal primitive (ENG-005,
+  `docs/product/concepts.md`).
+
+Architecture — split identity from layout:
+
+- Durable Project IDENTITY (name, color, resolved root path, optional
+  git-remote, recency, sort order, archived flag) lives in Supabase and SYNCS.
+- Ephemeral session/tab LAYOUT (live tabs, active tab, split pin) stays LOCAL
+  in `workspace.json` and does NOT sync — Machine A's live tabs must not
+  materialize on Machine B. The local layout references a Project by id.
+- Load reconciles the two: fetch the Project registry (the known list) + load
+  the local layout (live/revivable sessions) and join by id.
+
+Data model (new table; UI/code term "Project"; named to avoid the legacy demo
+`public.projects` kanban table, which stays untouched):
+
+- `context_groups`: id · user_id · name · color · root_path · git_remote
+  (nullable) · last_opened_at · archived_at (nullable) · sort_order ·
+  timestamps. RLS user-scoped, mirroring the existing table pattern.
+- Resolution bridge on ignite: resolve `projectDir` as today, match a row by
+  `root_path` then `git_remote`, upsert if new. A row whose `root_path` does
+  not exist on the current machine renders a graceful "locate on this machine"
+  rebind rather than an error; full per-machine path bindings are deferred
+  (single operator, mostly one machine).
+
+Open/browse UX (launcher + identity):
+
+- Native directory picker: new `dialog:openDirectory` main IPC + preload
+  surface → a 📁 Browse control on the ignite directory field (ends
+  path-typing).
+- ⌘K **Projects** group: open/switch a Project (sets active, prefills the
+  ignite dir / launches the default harness), Add Project (picker), rename,
+  recolor, archive. Reaching any Project is ≲2 keystrokes.
+- Recents fall out of `last_opened_at`. New Projects append; order never
+  auto-reshuffles (idea bank #2, stable spatial addresses).
+
+Phasing:
+
+- P1 Canon rename: code `Initiative` → `Project`, UI labels, `/architecture`
+  manifest + concept references. Mechanical and isolated; lands first so every
+  later phase speaks "Project". Canon `Initiative` (goal) is untouched — it is
+  not yet built, so there is no collision.
+- P2 Registry data layer: Supabase migration + RLS + typed accessors; the
+  renderer reads/writes via the browser client. Checkpoint: confirm the
+  `/workspace` renderer holds an authed Supabase session (OAuth deep-link
+  session available to the browser client); if not, add a thin main-process
+  proxy over the server client.
+- P3 Identity/layout split + resolution bridge + reconcile-on-load.
+- P4 Open/browse UX: picker IPC, Browse control, ⌘K Projects group,
+  rename/recolor/archive.
+- P5 Reconcile, dogfood, docs: missing-dir handling, roadmap status + this
+  doc, and a decision record for the Supabase-synced storage + identity/layout
+  split.
+
+Acceptance criteria:
+
+- A Project stays known after all its sessions end; it reopens later WITHOUT
+  retyping the path.
+- Add a Project by browsing to a folder (no path typing); it appears in the
+  registry and the ⌘K Projects group.
+- Switching or opening a Project from ⌘K takes ≲2 keystrokes; the list survives
+  app restart and appears on a second signed-in machine (synced), with a
+  graceful "locate on this machine" state where the path is absent.
+- Code and UI say "Project"; no lingering "initiative" for the session-group;
+  canon `Initiative` (goal) remains reserved for ENG-005.
+- The registry is the shared source of truth the spatial board's Project zones
+  (ENG-004) read, not a terminal-only structure.
+
 ## Context-paging idea bank (research-grounded)
 
 Ranked roughly by conviction × cost. These are candidates, not commitments;
