@@ -43,7 +43,7 @@ export interface PtySessionInfo {
   harness: PtyHarness;
   title: string;
   cwd: string;
-  /** directory-keyed Project/Initiative grouping (worktree-aware git root) */
+  /** directory-keyed Project/Project grouping (worktree-aware git root) */
   projectDir: string;
   projectName: string;
   cols: number;

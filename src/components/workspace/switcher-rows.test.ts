@@ -51,12 +51,12 @@ describe('sessionRowStatus', () => {
 });
 
 describe('extractProjectColors', () => {
-  it('reads dir -> color tolerantly and ignores junk', () => {
+  it('reads dir -> color from the v2 `projects` key, ignoring junk', () => {
     expect(
       extractProjectColors({
-        initiatives: [
+        projects: [
           { dir: '/p/a', color: '#123456' },
-          { dir: '/p/b' }, // no color yet (legacy layout)
+          { dir: '/p/b' }, // no color yet (fresh group)
           { nonsense: true },
           null,
         ],
@@ -64,6 +64,14 @@ describe('extractProjectColors', () => {
     ).toEqual({ '/p/a': '#123456' });
     expect(extractProjectColors(null)).toEqual({});
     expect(extractProjectColors('garbage')).toEqual({});
+  });
+
+  it('falls back to the v1 `initiatives` key (pre-ENG-015-S5 layouts)', () => {
+    expect(
+      extractProjectColors({
+        initiatives: [{ dir: '/p/a', color: '#123456' }],
+      })
+    ).toEqual({ '/p/a': '#123456' });
   });
 });
 
@@ -111,7 +119,7 @@ describe('buildSessionRows', () => {
   it('uses the layout color for the project, hash fallback otherwise', () => {
     const rows = buildSessionRows(
       [session({ id: 'a', projectDir: '/p/a' })],
-      { initiatives: [{ dir: '/p/a', color: '#ABCDEF' }] },
+      { projects: [{ dir: '/p/a', color: '#ABCDEF' }] },
       NOW
     );
     expect(rows[0].color).toBe('#ABCDEF');

@@ -37,7 +37,9 @@ export function sessionRowStatus(
 export function extractProjectColors(layout: unknown): Record<string, string> {
   const colors: Record<string, string> = {};
   if (!layout || typeof layout !== 'object') return colors;
-  const groups = (layout as { initiatives?: unknown }).initiatives;
+  // v2 stores groups under `projects`; v1 used `initiatives` (ENG-015 S5 rename)
+  const l = layout as { projects?: unknown; initiatives?: unknown };
+  const groups = Array.isArray(l.projects) ? l.projects : l.initiatives;
   if (!Array.isArray(groups)) return colors;
   for (const g of groups) {
     if (g && typeof g === 'object') {

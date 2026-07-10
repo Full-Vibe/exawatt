@@ -1,7 +1,7 @@
 // No 'use client' directive: only imported by the client workspace surface.
 
 /**
- * Grouped tab strip (ENG-002 W0.2–W0.4): initiatives are visual clusters —
+ * Grouped tab strip (ENG-002 W0.2–W0.4): projects are visual clusters —
  * a numbered, project-colored group chip (⌘1..9 target) followed by its
  * tabs, all sharing the project color. W0.4: double-click a group or tab
  * name to rename it (persists with the layout), and agent tabs carry an
@@ -18,7 +18,7 @@ import {
   RENAME_ACTIVE_EVENT,
   FOCUS_ACTIVE_TERMINAL_EVENT,
 } from './session-jump';
-import type { Initiative } from './use-workspace-state';
+import type { Project } from './use-workspace-state';
 import type { PtyAttention } from '@/types/electron';
 
 /** needs-operator pulse (S1) — amber, small, impossible to miss peripherally */
@@ -118,19 +118,19 @@ function ColorSwatches({
 }
 
 export function TabStrip({
-  initiatives,
+  projects,
   activeDir,
   pinnedTabId,
   summaries,
   attention,
-  onSelectInitiative,
+  onSelectProject,
   onSelectTab,
   onCloseTab,
   onRenameTab,
-  onRenameInitiative,
-  onSetInitiativeColor,
+  onRenameProject,
+  onSetProjectColor,
 }: {
-  initiatives: Initiative[];
+  projects: Project[];
   activeDir: string | null;
   /** tab pinned in the split view (S2); null = no split */
   pinnedTabId: string | null;
@@ -138,23 +138,23 @@ export function TabStrip({
   summaries: Record<string, string>;
   /** needs-operator flags keyed by sessionId (S1) */
   attention: Record<string, PtyAttention>;
-  onSelectInitiative: (index: number) => void;
+  onSelectProject: (index: number) => void;
   onSelectTab: (dir: string, tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onRenameTab: (tabId: string, title: string) => void;
-  onRenameInitiative: (dir: string, name: string) => void;
-  onSetInitiativeColor: (dir: string, color: string) => void;
+  onRenameProject: (dir: string, name: string) => void;
+  onSetProjectColor: (dir: string, color: string) => void;
 }) {
   const [editing, setEditing] = useState<Editing | null>(null);
 
   // ⌘E (S2): open the inline rename editor for the ACTIVE tab — the event
   // comes from the workspace key layer; a ref carries the latest props into
   // the stable listener
-  const activeRef = useRef({ initiatives, activeDir });
-  activeRef.current = { initiatives, activeDir };
+  const activeRef = useRef({ projects, activeDir });
+  activeRef.current = { projects, activeDir };
   useEffect(() => {
     const onRenameActive = () => {
-      const { initiatives: gs, activeDir: ad } = activeRef.current;
+      const { projects: gs, activeDir: ad } = activeRef.current;
       const g = gs.find((x) => x.dir === ad);
       const tab = g?.tabs.find((t) => t.id === g.activeTabId);
       if (tab) setEditing({ kind: 'tab', id: tab.id, value: tab.title });
@@ -172,14 +172,14 @@ export function TabStrip({
 
   const commit = () => {
     if (!editing) return;
-    if (editing.kind === 'group') onRenameInitiative(editing.id, editing.value);
+    if (editing.kind === 'group') onRenameProject(editing.id, editing.value);
     else onRenameTab(editing.id, editing.value);
     settle();
   };
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
-      {initiatives.map((g, gi) => {
+      {projects.map((g, gi) => {
         const color = g.color;
         const groupActive = g.dir === activeDir;
         const flaggedCount = g.tabs.filter(
@@ -188,8 +188,8 @@ export function TabStrip({
         return (
           <div
             key={g.dir}
-            data-initiative={g.name}
-            data-active-initiative={groupActive || undefined}
+            data-project={g.name}
+            data-active-project={groupActive || undefined}
             className="flex items-center gap-1 rounded border px-1 py-0.5"
             style={{
               borderColor: groupActive ? `${color}66` : 'rgba(138,160,190,0.12)',
@@ -197,7 +197,7 @@ export function TabStrip({
             }}
           >
             <button
-              onClick={() => onSelectInitiative(gi)}
+              onClick={() => onSelectProject(gi)}
               onDoubleClick={() =>
                 setEditing({ kind: 'group', id: g.dir, value: g.name })
               }
@@ -221,7 +221,7 @@ export function TabStrip({
                   />
                   <ColorSwatches
                     current={color}
-                    onPick={(c) => onSetInitiativeColor(g.dir, c)}
+                    onPick={(c) => onSetProjectColor(g.dir, c)}
                   />
                 </>
               ) : (
@@ -298,7 +298,7 @@ export function TabStrip({
                         />
                         <ColorSwatches
                           current={color}
-                          onPick={(c) => onSetInitiativeColor(g.dir, c)}
+                          onPick={(c) => onSetProjectColor(g.dir, c)}
                         />
                       </>
                     ) : (

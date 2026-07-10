@@ -3,9 +3,9 @@
 /**
  * Agent Terminal Workspace (ENG-002) — orchestration surface.
  *
- * W0.2 model: ONE window; initiatives are directory-keyed groups inside it
- * (⌘1..9 switches initiative, ⌘⇧[/] rotates the global tab ring across projects, ⌘T ignites a
- * shell in the active initiative). Layout persists across app restarts and
+ * W0.2 model: ONE window; projects are directory-keyed groups inside it
+ * (⌘1..9 switches project, ⌘⇧[/] rotates the global tab ring across projects, ⌘T ignites a
+ * shell in the active project). Layout persists across app restarts and
  * dead agent tabs auto-revive (claude --continue / codex resume --last).
  * State/verbs live in use-workspace-state; this file is composition only.
  *
@@ -113,8 +113,8 @@ export function WorkspaceClient() {
   const searchParams = useSearchParams();
   const { openCommandPalette, openHelpModal } = useShortcuts();
   const {
-    initiatives,
-    activeInitiative,
+    projects,
+    activeProject,
     activeTab,
     pinnedTabId,
     lastUsedDir,
@@ -127,14 +127,14 @@ export function WorkspaceClient() {
     ignite,
     igniteHere,
     closeTab,
-    selectInitiative,
+    selectProject,
     selectTab,
     cycleTab,
     jumpAttention,
     togglePin,
     renameTab,
-    renameInitiative,
-    setInitiativeColor,
+    renameProject,
+    setProjectColor,
   } = useWorkspaceState({ getInitialSize });
 
   // exposé overview (S3): ⌘O — sessions fan out as tiles
@@ -161,7 +161,7 @@ export function WorkspaceClient() {
   // handled by the state hook and the tab strip)
   useEffect(() => {
     const onCloseActive = () => {
-      const g = initiatives.find(x => x.tabs.some(t => t.id === activeTab?.id));
+      const g = projects.find(x => x.tabs.some(t => t.id === activeTab?.id));
       if (g && activeTab) void closeTab(activeTab.id);
     };
     const onOpenOverview = () => {
@@ -173,7 +173,7 @@ export function WorkspaceClient() {
       window.removeEventListener(CLOSE_ACTIVE_EVENT, onCloseActive);
       window.removeEventListener(OPEN_OVERVIEW_EVENT, onOpenOverview);
     };
-  }, [initiatives, activeTab, closeTab, updateOverview]);
+  }, [projects, activeTab, closeTab, updateOverview]);
 
   const shortcutActions = useMemo(
     () => ({
@@ -187,7 +187,7 @@ export function WorkspaceClient() {
         updateOverview(!overviewOpen);
         return true;
       },
-      selectIndex: selectInitiative,
+      selectIndex: selectProject,
       cycle: cycleTab,
       jumpAttention,
       // regime switching is a two-way street: ⌘⇧M here goes to the map, the
@@ -218,7 +218,7 @@ export function WorkspaceClient() {
       overviewOpen,
       igniteHere,
       closeTab,
-      selectInitiative,
+      selectProject,
       cycleTab,
       jumpAttention,
       togglePin,
@@ -257,7 +257,7 @@ export function WorkspaceClient() {
     );
   }
 
-  const allTabs = initiatives.flatMap(g =>
+  const allTabs = projects.flatMap(g =>
     g.tabs.map(t => ({ tab: t, dir: g.dir }))
   );
 
@@ -304,7 +304,7 @@ export function WorkspaceClient() {
       className="relative flex h-full flex-col"
       style={{ background: HUD.bg.void }}
     >
-      {/* initiative groups + tabs + ignite controls */}
+      {/* project groups + tabs + ignite controls */}
       <div
         className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2"
         style={{
@@ -313,20 +313,20 @@ export function WorkspaceClient() {
         }}
       >
         <TabStrip
-          initiatives={initiatives}
-          activeDir={activeInitiative?.dir ?? null}
+          projects={projects}
+          activeDir={activeProject?.dir ?? null}
           pinnedTabId={pinnedTabId}
           summaries={summaries}
           attention={attention}
-          onSelectInitiative={selectInitiative}
+          onSelectProject={selectProject}
           onSelectTab={selectTab}
           onCloseTab={id => void closeTab(id)}
           onRenameTab={renameTab}
-          onRenameInitiative={renameInitiative}
-          onSetInitiativeColor={setInitiativeColor}
+          onRenameProject={renameProject}
+          onSetProjectColor={setProjectColor}
         />
         <IgniteControls
-          prefillDir={activeInitiative?.dir ?? lastUsedDir}
+          prefillDir={activeProject?.dir ?? lastUsedDir}
           onIgnite={ignite}
         />
       </div>
@@ -354,7 +354,7 @@ export function WorkspaceClient() {
       )}
 
       {/* panes: ALL tabs stay mounted (sessions keep streaming across
-          initiative switches); exactly one is visible (two in a split).
+          project switches); exactly one is visible (two in a split).
           Terminals are born with the EFFECTIVE font, so rendering waits for
           settings.json to resolve (one local IPC) */}
       <div
@@ -432,7 +432,7 @@ export function WorkspaceClient() {
           modal (clicking them would drive invisible terminals) */}
       {overviewOpen && (
         <ExposeOverlay
-          initiatives={initiatives}
+          projects={projects}
           summaries={summaries}
           attention={attention}
           activeTabId={activeTab?.id ?? null}

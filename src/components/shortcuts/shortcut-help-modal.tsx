@@ -53,7 +53,7 @@ const WORKSPACE_KEYS: Array<{
   },
   { label: 'Close the active tab', keys: { key: 'w', modifiers: ['meta'] } },
   {
-    label: 'Jump to initiative 1–9',
+    label: 'Jump to project 1–9',
     keys: { key: '1…9', modifiers: ['meta'] },
   },
   {

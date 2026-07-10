@@ -45,7 +45,7 @@ try {
     path: join(SCREENSHOT_DIR, 'after-launch.png'),
     fullPage: true,
   });
-  await page.locator('[data-initiative]').waitFor();
+  await page.locator('[data-project]').waitFor();
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'terminal.png'),
     fullPage: true,
@@ -94,7 +94,7 @@ try {
 
   await page.keyboard.press('Meta+Shift+M');
   await page.waitForURL('**/workspace');
-  await page.locator('[data-initiative]').waitFor();
+  await page.locator('[data-project]').waitFor();
   const sessionCount = await page.evaluate(async () => {
     const sessions = await window.electron?.pty?.list();
     return sessions?.length ?? 0;

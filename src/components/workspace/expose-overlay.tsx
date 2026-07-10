@@ -12,7 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { HUD } from '@/components/hud';
 import { HarnessGlyph } from './harness-icons';
 import { previewLines } from './scrollback-preview';
-import type { Initiative } from './use-workspace-state';
+import type { Project } from './use-workspace-state';
 import type { PtyAttention, PtyHarness } from '@/types/electron';
 
 interface Tile {
@@ -28,14 +28,14 @@ interface Tile {
 const TILE_W = 300; // px — column math for ↑/↓ derives from this
 
 export function ExposeOverlay({
-  initiatives,
+  projects,
   summaries,
   attention,
   activeTabId,
   onPick,
   onClose,
 }: {
-  initiatives: Initiative[];
+  projects: Project[];
   summaries: Record<string, string>;
   attention: Record<string, PtyAttention>;
   /** selection starts on the session the operator came from */
@@ -46,7 +46,7 @@ export function ExposeOverlay({
   // stable order = model order (spatial memory: tiles never reshuffle)
   const tiles = useMemo<Tile[]>(
     () =>
-      initiatives.flatMap(g =>
+      projects.flatMap(g =>
         g.tabs
           .filter(t => t.sessionId && t.exitCode === null)
           .map(t => ({
@@ -59,7 +59,7 @@ export function ExposeOverlay({
             color: g.color,
           }))
       ),
-    [initiatives]
+    [projects]
   );
 
   // start where the operator was — ⌘O then Enter must be a no-op return,

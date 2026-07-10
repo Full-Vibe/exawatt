@@ -1,12 +1,12 @@
 'use client';
 
 /**
- * Workspace state (ENG-002 W0.2): initiative groups keyed by PROJECT
+ * Workspace state (ENG-002 W0.2): project groups keyed by PROJECT
  * DIRECTORY, tabs within them, persistence, and auto-revive.
  *
  * Model decisions (operator, 2026-07-02):
- * - one app window; initiatives are groups inside it (⌘1..9 switches
- *   initiative, ⌘⇧[/] rotates the GLOBAL tab ring, crossing projects)
+ * - one app window; projects are groups inside it (⌘1..9 switches
+ *   project, ⌘⇧[/] rotates the GLOBAL tab ring, crossing projects)
  * - igniting REQUIRES a project directory (never a silent home default);
  *   the last-used directory is remembered
  * - directory → project resolution happens in the main process (worktrees
@@ -45,7 +45,7 @@ export interface WorkspaceTab {
   exitCode: number | null;
 }
 
-export interface Initiative {
+export interface Project {
   /** projectDir — the identity/grouping key */
   dir: string;
   name: string;
@@ -55,14 +55,17 @@ export interface Initiative {
   activeTabId: string | null;
 }
 
-interface PersistedV1 {
-  v: 1;
+/** Current persisted layout (v2). Directory-keyed groups live under `projects`.
+ *  v1 stored the same groups under `initiatives`; the canon rename (ENG-015 S5)
+ *  renamed the key, and parsePersisted upgrades old files so no layout is lost. */
+interface PersistedV2 {
+  v: 2;
   lastUsedDir: string;
   activeDir: string | null;
   /** split view (S2): tab pinned beside the active one; optional (pre-S2
    *  layouts lack it) */
   pinnedTabId?: string | null;
-  initiatives: Array<{
+  projects: Array<{
     dir: string;
     name: string;
     color?: string;
@@ -77,6 +80,12 @@ interface PersistedV1 {
   }>;
 }
 
+/** v1 layout on disk: identical shape, but the groups lived under `initiatives`. */
+type PersistedV1 = Omit<PersistedV2, 'v' | 'projects'> & {
+  v: 1;
+  initiatives: PersistedV2['projects'];
+};
+
 export const REVIVE_FAILED = -999;
 
 let tabCounter = 0;
@@ -84,11 +93,17 @@ function newTabId(): string {
   return `tab-${Date.now().toString(36)}-${++tabCounter}`;
 }
 
-function parsePersisted(raw: unknown): PersistedV1 | null {
+/** Read the persisted layout, upgrading a v1 file (key `initiatives`) to the v2
+ *  shape (key `projects`) so the ENG-015 S5 rename never drops a saved layout. */
+function parsePersisted(raw: unknown): PersistedV2 | null {
   if (!raw || typeof raw !== 'object') return null;
-  const d = raw as Partial<PersistedV1>;
-  if (d.v !== 1 || !Array.isArray(d.initiatives)) return null;
-  return d as PersistedV1;
+  const d = raw as { v?: number; projects?: unknown; initiatives?: unknown };
+  if (d.v === 2 && Array.isArray(d.projects)) return raw as PersistedV2;
+  if (d.v === 1 && Array.isArray(d.initiatives)) {
+    const { initiatives, ...rest } = raw as PersistedV1;
+    return { ...rest, v: 2, projects: initiatives };
+  }
+  return null;
 }
 
 export interface IgniteOptions {
@@ -112,7 +127,7 @@ export interface WorkspaceStateOptions {
 export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const sizeRef = useRef(options.getInitialSize);
   sizeRef.current = options.getInitialSize;
-  const [initiatives, setInitiatives] = useState<Initiative[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [activeDir, setActiveDir] = useState<string | null>(null);
   const [lastUsedDir, setLastUsedDir] = useState('');
   /** split view (S2): this tab renders beside the active one ("watch one,
@@ -128,14 +143,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   /** quiet, one-shot S4 catch-up for the session currently being revisited */
   const [reentryRecap, setReentryRecap] = useState<PtyReentryRecap | null>(null);
   const dismissReentryRecap = useCallback(() => setReentryRecap(null), []);
-  const stateRef = useRef({ initiatives, activeDir, lastUsedDir, pinnedTabId });
-  stateRef.current = { initiatives, activeDir, lastUsedDir, pinnedTabId };
+  const stateRef = useRef({ projects, activeDir, lastUsedDir, pinnedTabId });
+  stateRef.current = { projects, activeDir, lastUsedDir, pinnedTabId };
   const readyRef = useRef(ready);
   readyRef.current = ready;
   const attentionRef = useRef(attention);
   attentionRef.current = attention;
 
-  /** append a live session as a tab in its (possibly new) initiative */
+  /** append a live session as a tab in its (possibly new) project */
   const addSession = useCallback((s: PtySessionInfo, tabId?: string) => {
     const tab: WorkspaceTab = {
       id: tabId ?? newTabId(),
@@ -145,7 +160,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       sessionId: s.id,
       exitCode: s.exited ? (s.exitCode ?? 0) : null,
     };
-    setInitiatives((prev) => {
+    setProjects((prev) => {
       const i = prev.findIndex((g) => g.dir === s.projectDir);
       if (i === -1) {
         return [
@@ -169,7 +184,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
 
   const updateTab = useCallback(
     (tabId: string, patch: Partial<WorkspaceTab>) => {
-      setInitiatives((prev) =>
+      setProjects((prev) =>
         prev.map((g) =>
           g.tabs.some((t) => t.id === tabId)
             ? { ...g, tabs: g.tabs.map((t) => (t.id === tabId ? { ...t, ...patch } : t)) }
@@ -221,10 +236,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const toRevive: Array<{ tabId: string; harness: PtyHarness; cwd: string; title: string }> = [];
 
       if (persisted) {
-        const assigned: Array<string | undefined> = persisted.initiatives.map(
+        const assigned: Array<string | undefined> = persisted.projects.map(
           (g) => g.color
         );
-        const restored: Initiative[] = persisted.initiatives.map((g, gi) => ({
+        const restored: Project[] = persisted.projects.map((g, gi) => ({
           dir: g.dir,
           name: g.name,
           color:
@@ -251,7 +266,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             return { ...t, sessionId: null, exitCode: null };
           }),
         }));
-        setInitiatives(restored);
+        setProjects(restored);
         setActiveDir(persisted.activeDir ?? restored[0]?.dir ?? null);
         setLastUsedDir(persisted.lastUsedDir ?? '');
         // restore the split only if the pinned tab still exists
@@ -294,7 +309,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     })();
 
     const offExit = api.onExit(({ id, exitCode }) => {
-      setInitiatives((prev) =>
+      setProjects((prev) =>
         prev.map((g) => ({
           ...g,
           tabs: g.tabs.map((t) =>
@@ -307,7 +322,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       setSummaries((prev) => ({ ...prev, [id]: summary }));
     });
     const offRecap = api.onRecap?.((next) => {
-      const { initiatives: groups, activeDir: dir } = stateRef.current;
+      const { projects: groups, activeDir: dir } = stateRef.current;
       const active = groups.find((group) => group.dir === dir);
       const tab = active?.tabs.find(
         (candidate) => candidate.id === active.activeTabId
@@ -342,7 +357,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     if (!ws) return;
     const handle = setTimeout(() => {
       const {
-        initiatives: gs,
+        projects: gs,
         activeDir: ad,
         lastUsedDir: lu,
         pinnedTabId: pin,
@@ -354,12 +369,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         gs.some((g) =>
           g.tabs.some((t) => t.id === pin && t.exitCode === null)
         );
-      const state: PersistedV1 = {
-        v: 1,
+      const state: PersistedV2 = {
+        v: 2,
         lastUsedDir: lu,
         activeDir: ad,
         pinnedTabId: pinSurvives ? pin : null,
-        initiatives: gs
+        projects: gs
           .map((g) => {
             const tabs = g.tabs
               .filter((t) => t.exitCode === null)
@@ -387,7 +402,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       void ws.save(state);
     }, 400);
     return () => clearTimeout(handle);
-  }, [initiatives, activeDir, lastUsedDir, pinnedTabId, ready]);
+  }, [projects, activeDir, lastUsedDir, pinnedTabId, ready]);
 
   // ---- verbs ----
   const ignite = useCallback(
@@ -430,12 +445,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const closeTab = useCallback(async (tabId: string) => {
     const api = window.electron?.pty;
     if (!api) return;
-    const { initiatives: gs } = stateRef.current;
+    const { projects: gs } = stateRef.current;
     const g = gs.find((x) => x.tabs.some((t) => t.id === tabId));
     const tab = g?.tabs.find((t) => t.id === tabId);
     setPinnedTabId((cur) => (cur === tabId ? null : cur));
     if (tab?.sessionId) await api.kill(tab.sessionId);
-    setInitiatives((prev) => {
+    setProjects((prev) => {
       const next = prev
         .map((grp) => {
           if (!grp.tabs.some((t) => t.id === tabId)) return grp;
@@ -454,11 +469,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     });
   }, []);
 
-  /** ignite in the active initiative's directory (fallback: last used) —
+  /** ignite in the active project's directory (fallback: last used) —
    *  the one dir-resolution path for ⌘T, palette commands, and buttons */
   const igniteHere = useCallback(
     (harness: PtyHarness): boolean => {
-      const { initiatives: gs, activeDir: ad, lastUsedDir: lu } = stateRef.current;
+      const { projects: gs, activeDir: ad, lastUsedDir: lu } = stateRef.current;
       const dir = gs.find((g) => g.dir === ad)?.dir ?? (lu || null);
       if (!dir) {
         setError('Project directory is required — pick where this session lives.');
@@ -470,8 +485,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     [ignite]
   );
 
-  const selectInitiative = useCallback((index: number): boolean => {
-    const g = stateRef.current.initiatives[index];
+  const selectProject = useCallback((index: number): boolean => {
+    const g = stateRef.current.projects[index];
     if (!g) return false;
     setActiveDir(g.dir);
     return true;
@@ -479,12 +494,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
 
   /** activate the tab hosting this session, wherever it lives (⌘K switcher) */
   const activateSession = useCallback((sessionId: string): boolean => {
-    const { initiatives: gs } = stateRef.current;
+    const { projects: gs } = stateRef.current;
     for (const g of gs) {
       const tab = g.tabs.find((t) => t.sessionId === sessionId);
       if (tab) {
         setActiveDir(g.dir);
-        setInitiatives((prev) =>
+        setProjects((prev) =>
           prev.map((x) =>
             x.dir === g.dir ? { ...x, activeTabId: tab.id } : x
           )
@@ -500,7 +515,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  A pin whose session died is stale, not a real pin — ⌘D then pins the
    *  active tab directly instead of "unpinning" nothing visible. */
   const togglePin = useCallback((): boolean => {
-    const { initiatives: gs, activeDir: ad, pinnedTabId: pin } = stateRef.current;
+    const { projects: gs, activeDir: ad, pinnedTabId: pin } = stateRef.current;
     const pinAlive =
       pin !== null &&
       gs.some((g) =>
@@ -522,7 +537,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
 
   const selectTab = useCallback((dir: string, tabId: string) => {
     setActiveDir(dir);
-    setInitiatives((prev) =>
+    setProjects((prev) =>
       prev.map((g) => (g.dir === dir ? { ...g, activeTabId: tabId } : g))
     );
   }, []);
@@ -530,7 +545,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   /** ⌘⇧[/]: rotate through ALL tabs in display order, crossing project
    *  boundaries (operator, 2026-07-03) — the strip is one global ring */
   const cycleTab = useCallback((delta: 1 | -1): boolean => {
-    const { initiatives: gs, activeDir: ad } = stateRef.current;
+    const { projects: gs, activeDir: ad } = stateRef.current;
     const flat = gs.flatMap((g) => g.tabs.map((t) => ({ dir: g.dir, tab: t })));
     if (flat.length === 0) return false;
     const g = gs.find((x) => x.dir === ad);
@@ -539,7 +554,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     );
     let next: (typeof flat)[number];
     if (cur === -1) {
-      // stale/no active tab: RECOVER in place on the current initiative's
+      // stale/no active tab: RECOVER in place on the current project's
       // first tab (never yank the user to another project)
       const anchor = flat.findIndex((e) => e.dir === ad);
       next = flat[anchor === -1 ? 0 : anchor];
@@ -547,7 +562,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       next = flat[(cur + delta + flat.length) % flat.length];
     }
     setActiveDir(next.dir);
-    setInitiatives((prev) =>
+    setProjects((prev) =>
       prev.map((x) =>
         x.dir === next.dir ? { ...x, activeTabId: next.tab.id } : x
       )
@@ -555,7 +570,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     return true;
   }, []);
 
-  const activeInitiative = initiatives.find((g) => g.dir === activeDir) ?? null;
+  const activeProject = projects.find((g) => g.dir === activeDir) ?? null;
   /** operator naming (W0.4): titles/names persist via the layout save; the
    *  PTY session is renamed too so fleet/spatial show the same identity */
   const renameTab = useCallback(
@@ -563,7 +578,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const next = title.trim();
       if (!next) return;
       updateTab(tabId, { title: next });
-      const tab = stateRef.current.initiatives
+      const tab = stateRef.current.projects
         .flatMap((g) => g.tabs)
         .find((t) => t.id === tabId);
       if (tab?.sessionId) {
@@ -573,28 +588,28 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     [updateTab]
   );
 
-  const setInitiativeColor = useCallback((dir: string, color: string) => {
-    setInitiatives((prev) =>
+  const setProjectColor = useCallback((dir: string, color: string) => {
+    setProjects((prev) =>
       prev.map((g) => (g.dir === dir ? { ...g, color } : g))
     );
   }, []);
 
-  const renameInitiative = useCallback((dir: string, name: string) => {
+  const renameProject = useCallback((dir: string, name: string) => {
     const next = name.trim();
     if (!next) return;
-    setInitiatives((prev) =>
+    setProjects((prev) =>
       prev.map((g) => (g.dir === dir ? { ...g, name: next } : g))
     );
   }, []);
 
   const activeTab =
-    activeInitiative?.tabs.find((t) => t.id === activeInitiative.activeTabId) ??
+    activeProject?.tabs.find((t) => t.id === activeProject.activeTabId) ??
     null;
 
   /** ⌘J: jump to the OLDEST session needing the operator (repeat = walk the
    *  queue — focusing each one clears it, surfacing the next-oldest) */
   const jumpAttention = useCallback((): boolean => {
-    const { initiatives: gs } = stateRef.current;
+    const { projects: gs } = stateRef.current;
     const flagged = Object.entries(attentionRef.current).sort(
       (a, b) => a[1].since - b[1].since
     );
@@ -605,7 +620,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         );
         if (tab) {
           setActiveDir(g.dir);
-          setInitiatives((prev) =>
+          setProjects((prev) =>
             prev.map((x) =>
               x.dir === g.dir ? { ...x, activeTabId: tab.id } : x
             )
@@ -689,8 +704,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   }, [activeSessionId]);
 
   return {
-    initiatives,
-    activeInitiative,
+    projects,
+    activeProject,
     activeTab,
     pinnedTabId,
     lastUsedDir,
@@ -704,14 +719,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     ignite,
     igniteHere,
     closeTab,
-    selectInitiative,
+    selectProject,
     selectTab,
     activateSession,
     cycleTab,
     jumpAttention,
     togglePin,
     renameTab,
-    renameInitiative,
-    setInitiativeColor,
+    renameProject,
+    setProjectColor,
   };
 }
