@@ -27,6 +27,7 @@ import {
   consumePendingIgnite,
 } from './session-jump';
 import { loadTerminalFont } from './terminal-font';
+import { openRepositoryProject } from '@/lib/projects/registry';
 import type {
   PtyAttention,
   PtyHarness,
@@ -437,6 +438,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       setError(null);
       setLastUsedDir(dir);
       addSession(res.session);
+      // Resolution bridge (ENG-015 S5 P3): register/refresh this directory's
+      // Project in the durable, synced registry. Best-effort — a registry
+      // failure (offline, not signed in) must NEVER stop the operator opening
+      // a session, so it runs detached and swallows its own errors.
+      void openRepositoryProject({
+        rootPath: res.session.projectDir,
+        name: res.session.projectName,
+      }).catch(() => {});
       return true;
     },
     [addSession]
