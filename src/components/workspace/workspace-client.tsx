@@ -14,7 +14,7 @@
  * same session system (see docs/product/operator-workflow.md).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { TerminalPane } from './terminal-pane';
 import type { PaneLayout } from './terminal-pane';
 import {
@@ -49,7 +49,7 @@ const KEY_HINTS: Array<[string, string]> = [
   ['⌘D', 'split'],
   ['⌘J', 'needs you'],
   ['⌘E', 'rename'],
-  ['⌘⇧M', 'map'],
+  ['⌘⇧M', 'spatial'],
   ['⌘/', 'all keys'],
 ];
 
@@ -76,15 +76,15 @@ export function WorkspaceClient() {
     if (!inElectron) return;
     let cancelled = false;
     const apply = (next: Promise<EffectiveTerminalFont>) =>
-      void next.then((resolved) => {
+      void next.then(resolved => {
         if (!cancelled) {
-          setFont((current) =>
+          setFont(current =>
             terminalFontsEqual(current, resolved) ? current : resolved
           );
         }
       });
     apply(loadTerminalFont());
-    const offSettings = window.electron?.settings?.onChanged?.((settings) => {
+    const offSettings = window.electron?.settings?.onChanged?.(settings => {
       apply(Promise.resolve(acceptTerminalSettings(settings)));
     });
     return () => {
@@ -109,6 +109,7 @@ export function WorkspaceClient() {
   }, []);
 
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { openCommandPalette, openHelpModal } = useShortcuts();
   const {
     initiatives,
@@ -136,32 +137,34 @@ export function WorkspaceClient() {
   } = useWorkspaceState({ getInitialSize });
 
   // exposé overview (S3): ⌘O — sessions fan out as tiles
-  const [overviewOpen, setOverviewOpen] = useState(false);
-  const hasSessions = initiatives.some((g) =>
-    g.tabs.some((t) => t.sessionId && t.exitCode === null)
+  const requestedOverview = searchParams.get('view') === 'sessions';
+  const [overviewOpen, setOverviewOpen] = useState(requestedOverview);
+  const updateOverview = useCallback(
+    (open: boolean) => {
+      setOverviewOpen(open);
+      const href = open ? '/workspace?view=sessions' : '/workspace';
+      const current = `${window.location.pathname}${window.location.search}`;
+      if (current !== href) router.replace(href, { scroll: false });
+    },
+    [router]
   );
+  useEffect(() => setOverviewOpen(requestedOverview), [requestedOverview]);
   const closeOverview = useCallback(() => {
-    setOverviewOpen(false);
-    window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
-  }, []);
+    updateOverview(false);
+    requestAnimationFrame(() =>
+      window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT))
+    );
+  }, [updateOverview]);
 
   // palette-issued workspace verbs (close/overview live here; the rest are
   // handled by the state hook and the tab strip)
   useEffect(() => {
     const onCloseActive = () => {
-      const g = initiatives.find((x) => x.tabs.some((t) => t.id === activeTab?.id));
+      const g = initiatives.find(x => x.tabs.some(t => t.id === activeTab?.id));
       if (g && activeTab) void closeTab(activeTab.id);
     };
     const onOpenOverview = () => {
-      // same guard as the ⌘O chord: an overview of zero sessions is a
-      // dead dark screen
-      if (
-        initiatives.some((g) =>
-          g.tabs.some((t) => t.sessionId && t.exitCode === null)
-        )
-      ) {
-        setOverviewOpen(true);
-      }
+      updateOverview(true);
     };
     window.addEventListener(CLOSE_ACTIVE_EVENT, onCloseActive);
     window.addEventListener(OPEN_OVERVIEW_EVENT, onOpenOverview);
@@ -169,7 +172,7 @@ export function WorkspaceClient() {
       window.removeEventListener(CLOSE_ACTIVE_EVENT, onCloseActive);
       window.removeEventListener(OPEN_OVERVIEW_EVENT, onOpenOverview);
     };
-  }, [initiatives, activeTab, closeTab]);
+  }, [initiatives, activeTab, closeTab, updateOverview]);
 
   const shortcutActions = useMemo(
     () => ({
@@ -180,8 +183,7 @@ export function WorkspaceClient() {
         return true;
       },
       toggleOverview: () => {
-        if (!hasSessions && !overviewOpen) return false;
-        setOverviewOpen((v) => !v);
+        updateOverview(!overviewOpen);
         return true;
       },
       selectIndex: selectInitiative,
@@ -210,7 +212,20 @@ export function WorkspaceClient() {
         return true;
       },
     }),
-    [activeTab, hasSessions, overviewOpen, igniteHere, closeTab, selectInitiative, cycleTab, jumpAttention, togglePin, router, openCommandPalette, openHelpModal]
+    [
+      activeTab,
+      overviewOpen,
+      igniteHere,
+      closeTab,
+      selectInitiative,
+      cycleTab,
+      jumpAttention,
+      togglePin,
+      router,
+      openCommandPalette,
+      openHelpModal,
+      updateOverview,
+    ]
   );
   useWorkspaceShortcuts(shortcutActions, inElectron);
 
@@ -226,7 +241,10 @@ export function WorkspaceClient() {
             background: 'rgba(7,12,20,0.9)',
           }}
         >
-          <p className="font-display text-lg font-semibold" style={{ color: HUD.text }}>
+          <p
+            className="font-display text-lg font-semibold"
+            style={{ color: HUD.text }}
+          >
             Terminal Workspace
           </p>
           <p className="mt-2 font-mono text-sm" style={{ color: HUD.textDim }}>
@@ -238,8 +256,8 @@ export function WorkspaceClient() {
     );
   }
 
-  const allTabs = initiatives.flatMap((g) =>
-    g.tabs.map((t) => ({ tab: t, dir: g.dir }))
+  const allTabs = initiatives.flatMap(g =>
+    g.tabs.map(t => ({ tab: t, dir: g.dir }))
   );
 
   // split view (S2): the pinned tab renders RIGHT beside a companion tab
@@ -249,23 +267,23 @@ export function WorkspaceClient() {
   // not even copy text out of the watched pane otherwise).
   const pinnedEntry =
     pinnedTabId !== null
-      ? allTabs.find(
-          (e) =>
+      ? (allTabs.find(
+          e =>
             e.tab.id === pinnedTabId &&
             e.tab.sessionId &&
             e.tab.exitCode === null
-        ) ?? null
+        ) ?? null)
       : null;
   if (activeTab && activeTab.sessionId && activeTab.id !== pinnedTabId) {
     companionRef.current = activeTab.id;
   }
   const companionEntry = pinnedEntry
-    ? allTabs.find(
-        (e) =>
+    ? (allTabs.find(
+        e =>
           e.tab.id === companionRef.current &&
           e.tab.sessionId &&
           e.tab.exitCode === null
-      ) ?? null
+      ) ?? null)
     : null;
   const split =
     !!pinnedEntry &&
@@ -281,11 +299,17 @@ export function WorkspaceClient() {
   };
 
   return (
-    <div className="relative flex h-full flex-col" style={{ background: HUD.bg.void }}>
+    <div
+      className="relative flex h-full flex-col"
+      style={{ background: HUD.bg.void }}
+    >
       {/* initiative groups + tabs + ignite controls */}
       <div
         className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2"
-        style={{ borderColor: 'rgba(80,230,255,0.15)', background: HUD.bg.deep }}
+        style={{
+          borderColor: 'rgba(80,230,255,0.15)',
+          background: HUD.bg.deep,
+        }}
       >
         <TabStrip
           initiatives={initiatives}
@@ -295,7 +319,7 @@ export function WorkspaceClient() {
           attention={attention}
           onSelectInitiative={selectInitiative}
           onSelectTab={selectTab}
-          onCloseTab={(id) => void closeTab(id)}
+          onCloseTab={id => void closeTab(id)}
           onRenameTab={renameTab}
           onRenameInitiative={renameInitiative}
           onSetInitiativeColor={setInitiativeColor}
@@ -332,7 +356,13 @@ export function WorkspaceClient() {
           initiative switches); exactly one is visible (two in a split).
           Terminals are born with the EFFECTIVE font, so rendering waits for
           settings.json to resolve (one local IPC) */}
-      <div ref={panesRef} className="relative min-h-0 flex-1">
+      <div
+        ref={panesRef}
+        data-workspace-stage
+        className={`relative min-h-0 flex-1 origin-center transition-[transform,opacity] duration-300 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:scale-100 motion-reduce:transition-opacity ${
+          overviewOpen ? 'scale-[0.975] opacity-35' : ''
+        }`}
+      >
         {reentryRecap && activeTab?.sessionId === reentryRecap.id && (
           <ReentryRecapCard
             recap={reentryRecap}
@@ -354,7 +384,10 @@ export function WorkspaceClient() {
                 <span key={keys} className="flex items-center gap-1.5">
                   <kbd
                     className="rounded border px-1 py-0.5 text-[10px]"
-                    style={{ borderColor: 'rgba(80,230,255,0.3)', color: HUD.textMono }}
+                    style={{
+                      borderColor: 'rgba(80,230,255,0.3)',
+                      color: HUD.textMono,
+                    }}
                   >
                     {keys}
                   </kbd>
@@ -415,13 +448,20 @@ export function WorkspaceClient() {
       <div
         data-key-hints
         className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t px-3 py-1 font-mono text-[10px]"
-        style={{ color: HUD.textDim, borderColor: 'rgba(80,230,255,0.12)', background: HUD.bg.deep }}
+        style={{
+          color: HUD.textDim,
+          borderColor: 'rgba(80,230,255,0.12)',
+          background: HUD.bg.deep,
+        }}
       >
         {KEY_HINTS.map(([keys, label]) => (
           <span key={keys} className="flex items-center gap-1">
             <kbd
               className="rounded border px-1 leading-4"
-              style={{ borderColor: 'rgba(80,230,255,0.25)', color: HUD.textMono }}
+              style={{
+                borderColor: 'rgba(80,230,255,0.25)',
+                color: HUD.textMono,
+              }}
             >
               {keys}
             </kbd>

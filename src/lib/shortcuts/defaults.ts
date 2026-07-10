@@ -56,8 +56,8 @@ export const defaultShortcuts: ShortcutDefinition[] = [
   {
     id: 'toggle-regime',
     keys: { key: 'm', modifiers: ['meta', 'shift'] },
-    label: 'Switch Regime (Workspace ↔ Map)',
-    description: 'Flip between the terminal workspace and the spatial map',
+    label: 'Switch Command Altitude (Terminal ↔ Spatial)',
+    description: 'Jump between terminal focus and Spatial Command',
     category: 'navigation',
     contexts: ['global'],
   },

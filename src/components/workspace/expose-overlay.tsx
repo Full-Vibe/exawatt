@@ -46,10 +46,10 @@ export function ExposeOverlay({
   // stable order = model order (spatial memory: tiles never reshuffle)
   const tiles = useMemo<Tile[]>(
     () =>
-      initiatives.flatMap((g) =>
+      initiatives.flatMap(g =>
         g.tabs
-          .filter((t) => t.sessionId && t.exitCode === null)
-          .map((t) => ({
+          .filter(t => t.sessionId && t.exitCode === null)
+          .map(t => ({
             sessionId: t.sessionId as string,
             tabId: t.id,
             dir: g.dir,
@@ -65,7 +65,7 @@ export function ExposeOverlay({
   // start where the operator was — ⌘O then Enter must be a no-op return,
   // never a jump to whatever happens to be tile 0
   const [sel, setSel] = useState(() => {
-    const i = tiles.findIndex((t) => t.tabId === activeTabId);
+    const i = tiles.findIndex(t => t.tabId === activeTabId);
     return i === -1 ? 0 : i;
   });
   const [previews, setPreviews] = useState<Record<string, string[]>>({});
@@ -75,7 +75,7 @@ export function ExposeOverlay({
 
   // tiles can shrink while open (a session exits) — selection stays in range
   useEffect(() => {
-    setSel((s) => Math.min(s, Math.max(0, tiles.length - 1)));
+    setSel(s => Math.min(s, Math.max(0, tiles.length - 1)));
   }, [tiles.length]);
 
   // fetch scrollback for tiles we haven't covered yet (tiles can also GROW
@@ -84,19 +84,19 @@ export function ExposeOverlay({
   useEffect(() => {
     const api = window.electron?.pty;
     if (!api) return;
-    const missing = tiles.filter((t) => !fetchedRef.current.has(t.sessionId));
+    const missing = tiles.filter(t => !fetchedRef.current.has(t.sessionId));
     if (missing.length === 0) return;
     for (const t of missing) fetchedRef.current.add(t.sessionId);
     let cancelled = false;
     void (async () => {
       const entries = await Promise.all(
-        missing.map(async (t) => {
+        missing.map(async t => {
           const buf = await api.buffer(t.sessionId).catch(() => '');
           return [t.sessionId, previewLines(buf, 5, 90)] as const;
         })
       );
       if (!cancelled) {
-        setPreviews((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+        setPreviews(prev => ({ ...prev, ...Object.fromEntries(entries) }));
       }
     })();
     return () => {
@@ -142,11 +142,9 @@ export function ExposeOverlay({
             : e.key === 'ArrowUp'
               ? -cols()
               : 0;
-    if (delta !== 0) {
+    if (delta !== 0 && tiles.length > 0) {
       e.preventDefault();
-      setSel((s) =>
-        Math.min(tiles.length - 1, Math.max(0, s + delta))
-      );
+      setSel(s => Math.min(tiles.length - 1, Math.max(0, s + delta)));
     }
   };
 
@@ -159,13 +157,14 @@ export function ExposeOverlay({
       data-expose
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      onMouseDown={(e) => {
+      onMouseDown={e => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="absolute inset-0 z-20 overflow-y-auto outline-none"
+      className="absolute inset-0 z-20 overflow-y-auto outline-none transition-opacity duration-200 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
       style={{
-        background: 'rgba(4,6,11,0.88)',
+        background: 'rgba(4,6,11,0.84)',
         backdropFilter: 'blur(6px)',
+        opacity: entered ? 1 : 0,
       }}
     >
       <div className="px-6 pb-6 pt-5">
@@ -173,11 +172,34 @@ export function ExposeOverlay({
           className="mb-4 flex items-baseline gap-3 font-mono text-xs"
           style={{ color: HUD.textDim }}
         >
-          <span className="font-display text-sm font-semibold" style={{ color: HUD.text }}>
+          <span
+            className="font-display text-sm font-semibold"
+            style={{ color: HUD.text }}
+          >
             All sessions
           </span>
           <span>arrows move · enter opens · esc closes</span>
         </div>
+        {tiles.length === 0 ? (
+          <div
+            className="flex min-h-48 max-w-lg flex-col justify-center gap-2 border-y py-8"
+            style={{ borderColor: 'rgba(80,230,255,0.12)' }}
+          >
+            <p
+              className="font-display text-base font-semibold"
+              style={{ color: HUD.text }}
+            >
+              No live sessions yet
+            </p>
+            <p
+              className="max-w-md font-mono text-xs leading-5"
+              style={{ color: HUD.textDim }}
+            >
+              Return to Terminal and launch an agent or shell. This altitude
+              will become the live overview for every running session.
+            </p>
+          </div>
+        ) : null}
         <div ref={gridRef} className="flex flex-wrap gap-3">
           {tiles.map((t, i) => {
             const selected = i === sel;
@@ -202,13 +224,18 @@ export function ExposeOverlay({
                       ? 'scale(1.02)'
                       : 'none'
                     : 'translateY(10px) scale(0.97)',
-                  transitionDelay: entered ? `${Math.min(i * 18, 300)}ms` : '0ms',
+                  transitionDelay: entered
+                    ? `${Math.min(i * 18, 300)}ms`
+                    : '0ms',
                 }}
               >
                 <div className="flex w-full items-center gap-1.5 font-mono text-xs">
                   <span
                     className="inline-block h-2 w-2 shrink-0 rotate-45"
-                    style={{ background: t.color, boxShadow: `0 0 5px ${t.color}` }}
+                    style={{
+                      background: t.color,
+                      boxShadow: `0 0 5px ${t.color}`,
+                    }}
                   />
                   {t.harness !== 'shell' && (
                     <span style={{ color: t.color }}>
@@ -218,7 +245,10 @@ export function ExposeOverlay({
                   <span className="truncate" style={{ color: HUD.text }}>
                     {t.title}
                   </span>
-                  <span className="ml-auto truncate pl-2 text-[10px]" style={{ color: `${t.color}B0` }}>
+                  <span
+                    className="ml-auto truncate pl-2 text-[10px]"
+                    style={{ color: `${t.color}B0` }}
+                  >
                     {t.projectName}
                   </span>
                   {needsYou && (
@@ -244,7 +274,11 @@ export function ExposeOverlay({
                 )}
                 <div
                   className="w-full whitespace-pre font-mono text-[9px] leading-[1.5]"
-                  style={{ color: HUD.textDim, minHeight: 54, overflow: 'hidden' }}
+                  style={{
+                    color: HUD.textDim,
+                    minHeight: 54,
+                    overflow: 'hidden',
+                  }}
                 >
                   {(previews[t.sessionId] ?? ['…']).join('\n')}
                 </div>

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import { WorkspaceClient } from '@/components/workspace/workspace-client';
 
 export const metadata: Metadata = {
@@ -9,7 +10,16 @@ export const metadata: Metadata = {
 export default function WorkspacePage() {
   return (
     <div className="h-[calc(100svh-3rem)] overflow-hidden">
-      <WorkspaceClient />
+      <Suspense
+        fallback={
+          <div
+            className="h-full bg-[#04060b]"
+            aria-label="Loading terminal workspace"
+          />
+        }
+      >
+        <WorkspaceClient />
+      </Suspense>
     </div>
   );
 }

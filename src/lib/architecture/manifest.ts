@@ -512,7 +512,7 @@ export const architectureManifest = {
           summary:
             'DOM/xterm focus and exposé regimes for direct session control and multi-session orientation.',
           layer: 'ui',
-          status: 'active-build',
+          status: 'implemented',
           x: 205,
           y: 180,
           width: 230,

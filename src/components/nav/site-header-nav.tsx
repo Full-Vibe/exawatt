@@ -23,6 +23,8 @@ import {
   SquareTerminal,
 } from 'lucide-react';
 import { signOut } from '@/app/actions/projects';
+import { CommandAltitudeNav } from './command-altitude-nav';
+import { isCommandSurface } from './command-altitude';
 
 interface SiteHeaderNavProps {
   isAuthenticated: boolean;
@@ -41,6 +43,7 @@ export function SiteHeaderNav({
   const isDashboard = pathname === '/dashboard';
   const isFleet = pathname?.startsWith('/fleet');
   const isWorkspace = pathname?.startsWith('/workspace');
+  const commandSurface = isCommandSurface(pathname ?? '');
   // in the desktop app the Workspace (terminal) link is always relevant,
   // signed in or not; detected post-mount for hydration safety
   const [inElectron, setInElectron] = useState(false);
@@ -97,6 +100,8 @@ export function SiteHeaderNav({
         </Button>
       )}
 
+      {inElectron && commandSurface && <CommandAltitudeNav />}
+
       {/* Right: Auth-dependent links */}
       <div
         className="flex items-center gap-1"
@@ -114,14 +119,16 @@ export function SiteHeaderNav({
             </Link>
           </Button>
         )}
-        {(inElectron || (isAuthenticated && !isHome)) && !isWorkspace && (
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/workspace">
-              <SquareTerminal className="h-3.5 w-3.5" />
-              Workspace
-            </Link>
-          </Button>
-        )}
+        {(inElectron || (isAuthenticated && !isHome)) &&
+          !isWorkspace &&
+          !(inElectron && commandSurface) && (
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/workspace">
+                <SquareTerminal className="h-3.5 w-3.5" />
+                Workspace
+              </Link>
+            </Button>
+          )}
         {isAuthenticated && !isHome && (
           <>
             {!isDashboard && (

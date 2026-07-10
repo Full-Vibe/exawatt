@@ -38,7 +38,10 @@ import {
   OPEN_OVERVIEW_EVENT,
 } from '@/components/workspace/session-jump';
 import { buildSessionRows } from '@/components/workspace/switcher-rows';
-import type { SessionRow, SessionRowStatus } from '@/components/workspace/switcher-rows';
+import type {
+  SessionRow,
+  SessionRowStatus,
+} from '@/components/workspace/switcher-rows';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import { HARNESS_META, HARNESS_ORDER } from '@/components/workspace/harnesses';
 import { HUD } from '@/components/hud';
@@ -46,12 +49,13 @@ import type { ShortcutKeys } from '@/types/shortcuts';
 import type { PtyHarness } from '@/types/electron';
 
 /** live status shown on switcher rows — one word, normal case (no all-caps) */
-const STATUS_META: Record<SessionRowStatus, { label: string; color: string }> = {
-  'needs-you': { label: 'needs you', color: HUD.amber },
-  working: { label: 'working', color: HUD.green },
-  idle: { label: 'idle', color: HUD.textDim },
-  exited: { label: 'exited', color: HUD.red },
-};
+const STATUS_META: Record<SessionRowStatus, { label: string; color: string }> =
+  {
+    'needs-you': { label: 'needs you', color: HUD.amber },
+    working: { label: 'working', color: HUD.green },
+    idle: { label: 'idle', color: HUD.textDim },
+    exited: { label: 'exited', color: HUD.red },
+  };
 
 interface CommandPaletteProps {
   open: boolean;
@@ -81,8 +85,7 @@ export function CommandPalette({
   // workspace verbs only make sense where the workspace is (S3): sampled
   // when the palette opens
   const [onWorkspaceRoute, setOnWorkspaceRoute] = useState(false);
-  const inElectron =
-    typeof window !== 'undefined' && !!window.electron?.pty;
+  const inElectron = typeof window !== 'undefined' && !!window.electron?.pty;
 
   // Reset search AND session rows when closing — stale rows on reopen can
   // list dead sessions or wrong statuses until the refetch lands, and Enter
@@ -123,8 +126,7 @@ export function CommandPalette({
 
   /** switcher/ignite requests land in the workspace: instantly when it is
    *  mounted (live event), or on mount after navigation (pending slot) */
-  const inWorkspace = () =>
-    window.location.pathname.startsWith('/workspace');
+  const inWorkspace = () => window.location.pathname.startsWith('/workspace');
   const openSession = useCallback(
     (id: string) =>
       handleSelect(() => {
@@ -145,7 +147,8 @@ export function CommandPalette({
   /** workspace verbs (S3): the palette is the discoverable face of the
    *  ⌘-chords — each row fires the same event the chord does */
   const dispatch = useCallback(
-    (event: string) => handleSelect(() => window.dispatchEvent(new CustomEvent(event))),
+    (event: string) =>
+      handleSelect(() => window.dispatchEvent(new CustomEvent(event))),
     [handleSelect]
   );
   const workspaceItems = useMemo(
@@ -200,8 +203,8 @@ export function CommandPalette({
       },
       {
         id: 'ws-map',
-        label: 'Switch to the spatial map',
-        value: 'map spatial regime fleet world switch',
+        label: 'Zoom out to Spatial Command',
+        value: 'map spatial altitude fleet world zoom out switch',
         keys: '⌘⇧M',
         icon: MapIcon,
         onSelect: () => handleSelect(() => router.push('/fleet/spatial')),
@@ -281,7 +284,7 @@ export function CommandPalette({
         {inElectron && sessions.length > 0 && (
           <>
             <CommandGroup heading="Sessions">
-              {sessions.map((s) => {
+              {sessions.map(s => {
                 const status = STATUS_META[s.status];
                 return (
                   <CommandItem
@@ -291,10 +294,16 @@ export function CommandPalette({
                   >
                     <span
                       className="mr-2 inline-block h-2 w-2 shrink-0 rotate-45"
-                      style={{ background: s.color, boxShadow: `0 0 5px ${s.color}` }}
+                      style={{
+                        background: s.color,
+                        boxShadow: `0 0 5px ${s.color}`,
+                      }}
                     />
                     {s.harness !== 'shell' && (
-                      <span className="mr-1.5 shrink-0" style={{ color: s.color }}>
+                      <span
+                        className="mr-1.5 shrink-0"
+                        style={{ color: s.color }}
+                      >
                         <HarnessGlyph harness={s.harness} size={12} />
                       </span>
                     )}
@@ -323,7 +332,7 @@ export function CommandPalette({
         {inElectron && (
           <>
             <CommandGroup heading="Launch">
-              {HARNESS_ORDER.map((h) => (
+              {HARNESS_ORDER.map(h => (
                 <CommandItem
                   key={`launch-${h}`}
                   value={`launch ignite ${HARNESS_META[h].label} new session agent`}
@@ -339,7 +348,9 @@ export function CommandPalette({
                       <HarnessGlyph harness={h} size={13} />
                     </span>
                   )}
-                  <span>New {HARNESS_META[h].label} session in the active project</span>
+                  <span>
+                    New {HARNESS_META[h].label} session in the active project
+                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -350,7 +361,7 @@ export function CommandPalette({
         {inElectron && onWorkspaceRoute && (
           <>
             <CommandGroup heading="Workspace">
-              {workspaceItems.map((item) => (
+              {workspaceItems.map(item => (
                 <CommandItem
                   key={item.id}
                   value={item.value}

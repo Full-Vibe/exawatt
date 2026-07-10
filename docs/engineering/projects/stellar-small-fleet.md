@@ -204,6 +204,27 @@ help modal or bottom hint, click Terminal → Sessions → Spatial and back, use
 same shortcuts while xterm owns focus, and retain all running sessions. This is
 a navigation unification, not permission to couple xterm and R3F internals.
 
+Implementation record (landed 2026-07-10):
+
+- The shared Electron title bar renders a three-level altitude rail on both
+  command routes. Each level has an explicit label, semantic icon, current-page
+  state, direct click target, and visible shortcut where applicable. The prior
+  duplicate Workspace link is suppressed only when this richer Electron control
+  is present; hosted/web navigation remains unchanged.
+- Session Overview is URL-backed at `/workspace?view=sessions`. Clicking the
+  rail, `⌘O`, closing exposé, and selecting a session synchronize the same state.
+  The terminal stage recedes through finite scale/opacity motion; reduced-motion
+  keeps the de-emphasis but removes spatial scaling. A useful empty overview
+  teaches how to populate the altitude.
+- Pure route tests cover all three levels and unrelated routes. The headless
+  Electron-mode evaluator covers click navigation, current-state semantics,
+  normal/reduced motion, and the two-way shortcut. A real isolated Electron
+  smoke launches a shell, traverses Terminal → Sessions → Spatial, returns with
+  `⌘⇧M`, and verifies that the live PTY remains present.
+- Verification: focused lint and type-check pass; all 267 tests pass; Electron
+  compile and production Next build pass; both navigation evaluators pass; the
+  full Spatial desktop/mobile/reduced-motion/low-power battery remains green.
+
 ## Progress log
 
 S4 re-entry recap, first slice (landed 2026-07-10):
