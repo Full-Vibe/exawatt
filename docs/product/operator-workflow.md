@@ -82,6 +82,45 @@ absence of Exawatt, this workflow IS "Exawatt v0."
    page dramatically different contexts in and out). This is roadmap item
    ENG-015.
 
+## Dogfood interview refinements (2026-07-10)
+
+Durable conclusions from the operator interview that scoped ENG-016
+(daily-driver adoption), ENG-017 (Project roadmap lens), and ENG-018
+(durable, resumable sessions):
+
+- **Don't take the Spaces mapping literally.** Exawatt should be ONE window
+  the operator switches to on the Mac; inside it, Project clusters replace
+  macOS Spaces and switching clusters/tabs replaces switching Spaces. No
+  multi-OS-window requirement.
+- **Adoption blockers named** (now ENG-016 scope): an installed,
+  Spotlight-launchable app that automatically tracks top-of-tree; legible
+  launch/revive (auto-revive today reads as "an arbitrary coding agent …
+  weird and opaque"); terminal fundamentals (scrollback search, copy/select
+  ergonomics, image paste, performance); chrome and keyboard polish to a
+  Slack / Superhuman / Linear bar, including an Escape-backs-out hierarchy
+  with terminal-focus semantics respected.
+- **Integration loop: agents self-integrate.** Worker agents commit, rebase,
+  and push to master themselves from their worktrees. Exawatt stays out of
+  git mechanics near-term; worktree create/pick at launch is enough.
+- **Project state is repo-canonical.** Each project's roadmap/queue — "does
+  every agent have enough food to eat?" — lives statefully, durably, and
+  malleably in that project's repo docs. Exawatt adds a really good
+  visualization of it (ENG-017), and may manage/assign the queue in the
+  future (toward ENG-013). Today the work is 80–95% coding agents; over
+  time it drifts toward higher-level, less terminal-nerd operation and
+  non-code work classes (marketing, outreach, email) — recorded for
+  direction, not near-term scope.
+- **Notifications: default quiet.** Dock badge + bounce is the right level
+  for the operator; native macOS notifications are a real future user
+  feature but must be configurable and default off. Phone/remote reach is
+  later.
+- **Persistence: tolerable short-term, standing pain long-term.** Machine
+  restarts, app updates, context compaction, and network loss all make
+  resuming agents painful in the status-quo workflow; Exawatt should
+  eventually beat this, not just match it (ENG-018).
+- **Plain shells are occasional.** Agent sessions are the center of
+  gravity; the existing shell harness covers the rest.
+
 ## Why this matters
 
 The operator wants to **use and dogfood Exawatt continuously** while the
