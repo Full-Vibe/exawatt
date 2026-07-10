@@ -181,17 +181,28 @@ S4 planning picks from here.
    switches and dwell times to tune defaults (badge thresholds, recap
    trigger time). Only if it stays invisible and local.
 
-## Open design question: exposé and AgentField
+## Command-altitude continuum (accepted 2026-07-10)
 
-The terminal workspace and AgentField keep their deliberately distinct jobs
-and visual identities for now. The operator is considering whether exposé
-could become a middle zoom level in a broader continuum: terminal focus near,
-live session tiles in the middle, and AgentField far away. This could make the
-surfaces feel connected without turning them into one visual regime.
+The terminal workspace and AgentField keep deliberately distinct jobs, visual
+identities, routes, and renderers, but navigation presents them as one command
+altitude continuum:
 
-This is an exploration, not an implementation decision. Preserve the current
-regime switch and route boundaries until dogfooding clarifies whether a literal
-zoom transition improves navigation or only adds motion and coupling.
+1. **Terminal Focus (near):** the active xterm session and direct conversation.
+2. **Session Overview (middle):** exposé tiles for live-session orientation.
+3. **Spatial Command (far):** Project/Agent fleet state and attention routing.
+
+The desktop app shell must show all three levels persistently on both terminal
+and spatial routes. Each level is one click away, the current level is explicit,
+and the control teaches `⌘O` for the middle level and `⌘⇧M` for the far/near
+toggle. `/workspace?view=sessions` is the durable middle-level address; entering
+or leaving it must not recreate PTYs. Motion should explain the terminal
+receding into overview, use only transform/opacity, and crossfade rather than
+translate under reduced motion.
+
+Acceptance: a first-time Electron operator can discover Spatial without the
+help modal or bottom hint, click Terminal → Sessions → Spatial and back, use the
+same shortcuts while xterm owns focus, and retain all running sessions. This is
+a navigation unification, not permission to couple xterm and R3F internals.
 
 ## Progress log
 
@@ -427,7 +438,7 @@ S1 Attention system (landed 2026-07-06):
   key layer (terminals swallow chord-engine keydowns) AND as a global
   shortcut (`toggle-regime`, shows in the ⌘K help modal); both compute the
   same target so double-fire is idempotent.
-- Infra: vitest config gained an `app` project — the packages/* glob had
+- Infra: vitest config gained an `app` project — the packages/\* glob had
   silently skipped ALL src/ + electron/ tests (extends concatenates
   includes, so packages are excluded there to avoid double runs).
 - Verified: 210 unit tests (16 monitor + 3 fleet-mapping new), type-check,

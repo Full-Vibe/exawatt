@@ -21,10 +21,17 @@ User-facing surfaces:
 The UI layer supports multiple modular regimes over the same command model:
 
 - DOM operations UI for dense text, forms, chat, and accessibility-critical controls
+- Electron Terminal Focus and DOM Session Overview for direct xterm control and
+  multi-session orientation
 - 3D Fleet Command Surface for project-grouped fleet observability, zooming, selection, attention scheduling, and state animation
 - future packaged or Electron-hosted UI variants
 
-UI regimes may render and compose controls, but they should not translate harness payloads, own provider-specific state, or bypass typed command boundaries.
+The Electron shell presents Terminal Focus → Session Overview → Spatial Command
+as one command-altitude navigation continuum. That shared navigation does not
+merge renderer ownership: xterm/DOM and R3F keep separate runtime boundaries and
+meet through normalized session/fleet state. UI regimes may render and compose
+controls, but they should not translate harness payloads, own provider-specific
+state, or bypass typed command boundaries.
 
 ### Coordination and Intelligence Layer
 
@@ -107,6 +114,8 @@ Built:
   xterm.js for Claude Code, Codex, and shells, behind a session-manager boundary
 - persisted project-grouped terminal sessions, attention state, keyboard-first
   command flows, split panes, and the exposé session overview
+- persistent command-altitude navigation between terminal focus, session
+  overview, and Spatial Command, with direct routes and shared shortcuts
 - `LocalSessionsTransport` normalization of local PTY sessions into the shared
   `FleetState` consumed by the DOM and spatial fleet surfaces
 

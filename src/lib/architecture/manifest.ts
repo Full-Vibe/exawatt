@@ -486,7 +486,7 @@ export const architectureManifest = {
           id: 'next-app-shell',
           label: 'Next.js App Shell',
           summary:
-            'Shared web surface used by desktop and hosted app contexts.',
+            'Shared web surface plus command-altitude navigation used by desktop and hosted app contexts.',
           layer: 'ui',
           status: 'implemented',
           x: 80,
@@ -504,6 +504,18 @@ export const architectureManifest = {
           x: 330,
           y: 95,
           width: 210,
+          height: 74,
+        },
+        {
+          id: 'terminal-workspace',
+          label: 'Terminal + Session Overview',
+          summary:
+            'DOM/xterm focus and exposé regimes for direct session control and multi-session orientation.',
+          layer: 'ui',
+          status: 'active-build',
+          x: 205,
+          y: 180,
+          width: 230,
           height: 74,
         },
         {
@@ -686,7 +698,11 @@ export const architectureManifest = {
       ],
       connections: [
         { from: 'next-app-shell', to: 'fleet-provider' },
+        { from: 'next-app-shell', to: 'terminal-workspace' },
+        { from: 'next-app-shell', to: '3d-fleet-command' },
         { from: 'fleet-ui', to: 'ui-model' },
+        { from: 'terminal-workspace', to: 'fleet-provider' },
+        { from: 'terminal-workspace', to: 'electron-shell' },
         { from: '3d-fleet-command', to: 'ui-model' },
         { from: 'architecture-map', to: 'architecture-manifest' },
         { from: 'review-ui', to: 'decision-context-layer', style: 'dashed' },
@@ -712,6 +728,7 @@ export const architectureManifest = {
   principles: [
     'UI surfaces speak Exawatt nouns, not provider-specific vocabulary.',
     'DOM and 3D Fleet Command regimes share typed view models and command contracts.',
+    'Terminal Focus, Session Overview, and Spatial Command form one navigation continuum while keeping separate renderer boundaries.',
     'Agent sources are replaceable harnesses behind explicit adapters.',
     'Demo behavior is a swappable harness path, not a separate product architecture.',
     'Governance, memory, and resource context live above individual providers.',
