@@ -31,12 +31,13 @@ export interface EffectiveTerminalFont {
 export function resolveTerminalFont(settings: {
   fontFamily?: string;
   fontSize?: number;
+  lineHeight?: number;
 } | null | undefined): EffectiveTerminalFont {
   const size = settings?.fontSize ?? TERMINAL_FONT.size;
   return {
     family: settings?.fontFamily ?? TERMINAL_FONT.family,
     size,
-    lineHeight: TERMINAL_FONT.lineHeight,
+    lineHeight: settings?.lineHeight ?? TERMINAL_FONT.lineHeight,
     cellWidthEstimate: size * 0.6,
   };
 }

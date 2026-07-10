@@ -206,13 +206,21 @@ S3 Exposé, motion & discoverability (landed 2026-07-10, dogfood round 4):
   palette rows — ignite stays internal vocabulary); tab hover/pressed
   feedback (brightness lift, press scale, close-× reveals on hover).
 - Terminal font setting: `<userData>/settings.json` →
-  `{ terminal: { fontFamily, fontSize } }` (main: settings-store.ts,
+  `{ terminal: { fontFamily, fontSize, lineHeight } }` (main: settings-store.ts,
   `settings:get` IPC); panes are born with the effective font and spawn
   estimates derive from it. Root cause of the operator's mismatch:
   Terminal.app profile "Jake" runs MesloLGS for Powerline 14 vs our
-  SF Mono 13 — their local settings.json now carries Meslo 14; the CODE
-  default stays the native stack (genericize rule). Exercised end-to-end
-  in the smoke (test userData settings.json → xterm options).
+  SF Mono 13 — their local settings.json now carries Meslo 14 at
+  lineHeight 1.0 (Terminal.app uses the font's OWN metrics; Meslo LG
+  variants tune the gap internally, so 1.25 reads visibly taller); the
+  CODE default stays the native stack (genericize rule). Exercised
+  end-to-end in the smoke (test userData settings.json → xterm options).
+  GOTCHA (found in dogfood round 5): the dev app's userData is
+  `~/Library/Application Support/exawatt` (package.json name), NOT
+  `.../Electron` — a settings.json in the wrong dir silently does
+  nothing. Verified live: family "Meslo LG S for Powerline" resolves
+  (document.fonts.check) and Meslo shares Menlo's exact advance metrics,
+  so the earlier mismatch was SF Mono's glyphs + the 1.25 line height.
 - Executed in an own git worktree per the new operator workflow rule
   (parallel agents share this repo).
 - Verified: 226 unit tests (5 new preview tests incl. the private-byte

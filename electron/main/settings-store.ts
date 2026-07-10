@@ -19,6 +19,9 @@ import * as path from 'path';
 export interface TerminalFontSettings {
   fontFamily?: string;
   fontSize?: number;
+  /** xterm line-height multiplier; 1.0 = the font's own metrics (what
+   *  Terminal.app uses — Meslo LG variants tune their gap internally) */
+  lineHeight?: number;
 }
 
 export interface ExawattSettings {
@@ -32,9 +35,10 @@ export function loadSettings(): ExawattSettings {
     if (!raw || typeof raw !== 'object') return {};
     const t = (raw as { terminal?: unknown }).terminal;
     if (!t || typeof t !== 'object') return {};
-    const { fontFamily, fontSize } = t as {
+    const { fontFamily, fontSize, lineHeight } = t as {
       fontFamily?: unknown;
       fontSize?: unknown;
+      lineHeight?: unknown;
     };
     const terminal: TerminalFontSettings = {};
     if (typeof fontFamily === 'string' && fontFamily.trim()) {
@@ -47,6 +51,14 @@ export function loadSettings(): ExawattSettings {
       fontSize <= 32
     ) {
       terminal.fontSize = fontSize;
+    }
+    if (
+      typeof lineHeight === 'number' &&
+      Number.isFinite(lineHeight) &&
+      lineHeight >= 0.8 &&
+      lineHeight <= 2
+    ) {
+      terminal.lineHeight = lineHeight;
     }
     return Object.keys(terminal).length > 0 ? { terminal } : {};
   } catch {
