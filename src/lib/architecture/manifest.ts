@@ -486,7 +486,7 @@ export const architectureManifest = {
           id: 'next-app-shell',
           label: 'Next.js App Shell',
           summary:
-            'Shared web surface plus command-altitude navigation used by desktop and hosted app contexts.',
+            'Shared UI source packaged locally for privileged desktop use and delivered separately for hosted contexts.',
           layer: 'ui',
           status: 'implemented',
           x: 80,
@@ -640,9 +640,10 @@ export const architectureManifest = {
         {
           id: 'electron-shell',
           label: 'Electron Shell',
-          summary: 'Desktop wrapper and local runtime boundary.',
+          summary:
+            'Versioned desktop artifact: packaged local renderer plus hardened main/preload and PTY runtime boundary.',
           layer: 'infrastructure',
-          status: 'implemented',
+          status: 'active-build',
           x: 75,
           y: 685,
           width: 180,

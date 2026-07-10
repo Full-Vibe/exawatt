@@ -120,6 +120,18 @@ Durable conclusions from the operator interview that scoped ENG-016
   eventually beat this, not just match it (ENG-018).
 - **Plain shells are occasional.** Agent sessions are the center of
   gravity; the existing shell harness covers the rest.
+- **Desktop delivery is one trusted build (operator, 2026-07-10):** the installed
+  daily-driver app packages its own renderer instead of loading the hosted site
+  into a privileged PTY bridge. During dogfood, the agent landing `master`
+  builds and installs it as part of closeout; signed/notarized update delivery
+  follows as a near-term product mechanism.
+- **Resume exact conversations, never "latest" (operator, 2026-07-10):** several
+  agents commonly work in the same Project at once. Each Exawatt tab must retain
+  one exact Claude/Codex session ID so four tabs resume the same four
+  conversations. Directory and recency are insufficient identity.
+- **Dogfood and building run together (operator, 2026-07-10):** the operator
+  supplies continuous usage evidence while coding agents keep executing the
+  adoption plan. No agent pauses for a separate week-long validation phase.
 
 ## Why this matters
 

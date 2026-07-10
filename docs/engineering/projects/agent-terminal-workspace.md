@@ -75,12 +75,11 @@ Progress log (landed 2026-07-02):
 
 W0.4 progress log (landed 2026-07-03):
 
-Known limitation (dogfood round 3): auto-revive uses `claude --continue` /
-`codex resume --last`, which resume the MOST RECENT conversation in that
-directory — including conversations started outside Exawatt (e.g. iTerm).
-Revived tabs now announce this with a dim marker line. Follow-up: capture
-the harness session id at ignite time and revive with `claude --resume
-<id>` so Exawatt only ever resumes its own threads.
+Known limitation (dogfood round 3, superseded by ENG-016 D3): auto-revive
+uses `claude --continue` / `codex resume --last`, which can select an unrelated
+conversation when several agents share a directory. This behavior must be
+removed, not polished. D3 restores layout without spawning, persists one exact
+harness session ID per tab, and resumes only that ID after an explicit action.
 
 - Micro-context subtitles: `electron/main/pty/context-summarizer.ts`
   periodically summarizes each session's recent scrollback into a ≤8-word
@@ -234,9 +233,10 @@ Decisions (operator, 2026-07-02):
 - ONE app window; initiatives are groups inside it (⌘1..9 switches
   initiative, ⌘⇧[/] rotates the global tab ring across projects — amended per operator 2026-07-03). Real-OS-windows-per-initiative
   rejected; optional pop-out may come later.
-- Auto-revive on app restart: agent tabs respawn automatically, resuming
-  their previous conversation in that directory (`claude --continue`,
-  `codex resume --last`); shells respawn plain.
+- Auto-revive on app restart was selected on 2026-07-02 and implemented with
+  directory-relative "latest" commands. Superseded 2026-07-10 by ENG-016 D3:
+  restore tabs without spawning and resume only a stored exact harness ID after
+  an explicit tab/Project/all action.
 - Worktree convention: sibling container `<repo>-wt/<branch-dirname>/`,
   branch auto-named `agent/<MMDD>-<HHmm>` and editable in the ignite flow.
 
@@ -320,12 +320,13 @@ superseded — both regimes are long-lived, user-selectable. Live sessions
 already render on the map (W0.3); driving sessions FROM the map returns as
 ENG-004 work when that regime's identity firms up.
 
-ENG-002's remaining exit: the dogfood week (the operator runs their real
-daily work inside Exawatt without falling back to iTerm).
+ENG-002's remaining exit is adoption evidence owned by ENG-016: accumulated
+operator use establishes Exawatt as the normal coding-agent surface while
+implementation continues. There is no fixed week-long engineering wait.
 
-## Open questions
+## Resolved adoption follow-up
 
-- Day-1 must-have bar for the operator to switch daily work into Exawatt
-  (candidates: full TUI fidelity; restart persistence of layout; worktree
-  helpers; global-hotkey-grade switching) — pending operator confirmation.
-- Codex interactive specifics (TUI behavior under PTY) to validate in W0.1.
+The day-one parity questions are resolved. Installation, exact-ID relaunch,
+terminal fundamentals, and chrome trust now execute under ENG-016. Codex exact
+session-ID capture remains a named D3 implementation requirement with an
+explicit-picker fallback; recency-based inference is not allowed.

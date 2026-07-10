@@ -29,6 +29,12 @@ The UI layer supports multiple modular regimes over the same command model:
   one source-agnostic board model
 - future packaged or Electron-hosted UI variants
 
+The privileged desktop renderer is local application code packaged in the same
+versioned Electron artifact as main/preload (decision `0008`). It must not load
+the hosted Exawatt site as its primary renderer or expose PTY preload methods to
+remote content. The hosted interface may share source and normalized UI models,
+but it is a separate delivery and privilege boundary.
+
 The Electron shell presents Terminal Focus → Session Overview → Spatial Command
 as one command-altitude navigation continuum. That shared navigation does not
 merge renderer ownership: xterm/DOM and R3F keep separate runtime boundaries and
@@ -131,6 +137,9 @@ Partial:
 - source/harness abstraction beyond OpenClaw/mock
 - architecture overview as a living map
 - Spatial Operations Board extraction into a standalone package
+- self-contained Electron packaging: the development shell and UI exist, but
+  production currently loads the hosted site and is being replaced by a
+  packaged local renderer under ENG-016
 
 Planned:
 
@@ -141,6 +150,7 @@ Planned:
 - secrets/configuration strategy
 - hosted OpenClaw / remote harnesses
 - multi-source fleet aggregation
+- signed/notarized desktop releases and product-grade update delivery
 
 ## Architecture Map
 
