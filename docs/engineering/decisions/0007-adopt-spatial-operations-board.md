@@ -77,3 +77,15 @@ but replace the immersive/free-camera 3D motif with a projection-independent
   evidence note beside it.
 - Version-pinned rendering constraints in
   `docs/engineering/r3f-authoring-guide.md`.
+- V2.0 B0–B5 implementation and verification evidence in the canonical ENG-004
+  project record, including deterministic 10,000-Agent model coverage, full-
+  route visual fixtures, demand-render idle checks, and a real Electron PTY
+  identity-preserving Session round trip.
+
+## Outcome
+
+V2.0 landed on 2026-07-10. The decision produced one projection-independent
+layout model, top-down and fixed-angle presentations, stable semantic addresses,
+bounded large-fleet output, and a reversible live-Session handoff. Future
+dogfood may change composition, density, or controls; it does not restore free
+orbit or decorative immersive 3D without a new evidence-backed decision.

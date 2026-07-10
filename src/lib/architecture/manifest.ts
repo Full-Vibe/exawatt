@@ -524,7 +524,7 @@ export const architectureManifest = {
           summary:
             'R3F tactical board with stable Project zones, semantic zoom, anchored Agents, attention, and Session handoff.',
           layer: 'ui',
-          status: 'active-build',
+          status: 'implemented',
           x: 455,
           y: 180,
           width: 230,

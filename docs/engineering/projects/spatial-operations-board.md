@@ -873,7 +873,7 @@ constellation:
 
 ### V2.0 Spatial Operations Board
 
-Status: active-build — B0–B4 landed; B5 release reconciliation next
+Status: landed 2026-07-10 — B0–B5 complete
 
 Scope, phase gates, budgets, and non-goals are defined in the V2.0 design brief
 above. Record each pushed B0–B5 checkpoint here with verification evidence. A
@@ -964,6 +964,24 @@ Progress log:
   desktop, mobile, reduced-motion, and low-power modes with zero settled idle
   frames; the five-fixture R3F evaluator remains 100/100 and the board remains
   at 7 isolated draw calls.
+- **B5 landed (2026-07-10):** release reconciliation re-ran the complete
+  type-check, lint, 284-test suite, production build, browser navigation, real
+  Electron navigation, isolated R3F evaluator, and full-route spatial evaluator
+  from the B4 checkpoint. All pass. The headed reference-desktop motion sample
+  records 8.3ms p50 and 8.8ms p95 at the 40-Agent medium fixture, and 8.3ms p50
+  and 9.1ms p95 at the flagship 8-Agent fixture. Both settle at zero idle scene
+  frames.
+- B5 visual/a11y review covered top-down and fixed-angle Fleet, focused Project,
+  selected Agent, 390px scroll-to-inspector, reduced motion, low power, the live
+  sparse Electron fixture, and the 5–8-Agent Demo fixture. Project and Agent
+  meshes retain focusable DOM twins; touch controls remain at least 44px; the
+  WebGL fallback retains a DOM route to Fleet. The result is accepted as the
+  V2.0 baseline, not a claim that visual iteration is finished.
+- Remaining hypotheses move forward instead of expanding V2.0: measure
+  Initiative/1k+/10k truth under V2.1; add opt-in direct manipulation only under
+  V2.2; decide default-surface consolidation only from dogfood under V2.3. The
+  manually arranged desktop-map feeling remains inspiration for V2.2, not a
+  reason to turn the V2.0 visual grid into ownership or movement semantics.
 
 ### V2.1 Scale & Truth
 
