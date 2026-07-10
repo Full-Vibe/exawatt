@@ -227,7 +227,7 @@ S4 post-land review (2026-07-10):
 - The summary sweep interval clamps to one second; an explicit zero can no
   longer create a hot timer.
 - Regression coverage exercises early input, mid-generation exit, and the
-  interval floor. Full verification after the review: 242 tests, lint,
+  interval floor. Full verification after rebasing current `master`: 250 tests, lint,
   type-check, Electron compile, production build, and live Electron font
   refresh/sizing smoke.
 
