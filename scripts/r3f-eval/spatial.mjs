@@ -268,6 +268,18 @@ async function runScenario(browser, scenario) {
       timeout: 30_000,
     });
     await waitForSpatialCanvas(page);
+    const board = await page.evaluate(() => {
+      const surface = document.querySelector('[data-spatial-board]');
+      return {
+        projection: surface?.getAttribute('data-board-projection'),
+        projects: Number(surface?.getAttribute('data-board-projects') || 0),
+        pieces: Number(surface?.getAttribute('data-board-pieces') || 0),
+      };
+    });
+    check(board.projection === 'top-down', 'Top-down board projection missing');
+    check(board.projects > 0, 'Operations Board rendered no visible Projects');
+    check(board.pieces > 0, 'Operations Board rendered no visible pieces');
+    result.board = board;
     await pauseDemo(page, scenario.mobile);
     result.pixelRatio = await page.evaluate(() =>
       window.__EVAL_GL__.getPixelRatio()
@@ -287,6 +299,7 @@ async function runScenario(browser, scenario) {
     const { projectCount, units } = await openProject(page);
     result.projectCount = projectCount;
     await page.waitForTimeout(1_000);
+    if (!scenario.mobile) await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({
       path: join(REPORT_DIR, `${scenario.name}-project.png`),
       fullPage: scenario.mobile,

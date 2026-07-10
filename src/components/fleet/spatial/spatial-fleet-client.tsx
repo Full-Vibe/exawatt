@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -26,8 +26,10 @@ import {
   filterFleetState,
   selectFleetCommandView,
   selectFleetSpatialScene,
+  selectSpatialBoardLayout,
   selectSpatialProjectZones,
   type Altitude,
+  type SpatialBoardLayout,
 } from '@exawatt/ui-model';
 import type { AgentStatus } from '@exawatt/core';
 import { agentGoalDisplay } from './spatial-agent-copy';
@@ -39,19 +41,18 @@ const FILTERABLE_STATUSES: AgentStatus[] = [
   'idle',
 ];
 
-// The Fleet spatial surface: one AgentField runtime with distinct Fleet,
-// Project, and Agent render regimes under shared DOM chrome. ssr:false keeps
-// three.js scoped to this route.
-const AgentFieldSurface = dynamic(
+// The Spatial Operations Board is route-scoped. ssr:false keeps Three.js out of
+// the DOM fleet bundle and lets the Electron/web shells share the same model.
+const OperationsBoardSurface = dynamic(
   () =>
-    import('./agent-field/agent-field-surface').then(
-      mod => mod.AgentFieldSurface
+    import('./operations-board/operations-board-surface').then(
+      mod => mod.OperationsBoardSurface
     ),
   {
     ssr: false,
     loading: () => (
       <div className="flex h-full min-h-[360px] items-center justify-center bg-[#070b10] text-sm text-zinc-500">
-        Initializing field…
+        Preparing operations board…
       </div>
     ),
   }
@@ -96,21 +97,44 @@ export function SpatialFleetClient() {
 
   const scene = useMemo(
     () =>
-      selectFleetSpatialScene(filteredState, {
+      selectFleetSpatialScene(fleetState, {
         altitude,
         focusedProjectId,
         selectedAgentId,
         blockerLimit: 3,
         now: Date.now(), // Attention Scheduling age; recomputed as fleet ticks
       }),
-    [filteredState, altitude, focusedProjectId, selectedAgentId]
+    [fleetState, altitude, focusedProjectId, selectedAgentId]
   );
 
-  // The world always shows the WHOLE (filtered) fleet regardless of altitude —
-  // altitude only moves the camera. Fleet-level zones feed the field layout.
+  // The layout computes from the full fleet, then applies filter visibility so
+  // surviving Projects/Agents keep their addresses. Previous output preserves
+  // existing slots when live Projects or Agents arrive.
+  const previousBoardLayout = useRef<SpatialBoardLayout | null>(null);
+  const visibleAgentIds = useMemo(
+    () => new Set(Object.keys(filteredState.agents)),
+    [filteredState.agents]
+  );
+  const boardLayout = useMemo(
+    () =>
+      selectSpatialBoardLayout(fleetState, {
+        altitude,
+        focusedProjectId,
+        selectedAgentId,
+        visibleAgentIds,
+        previousLayout: previousBoardLayout.current,
+      }),
+    [altitude, fleetState, focusedProjectId, selectedAgentId, visibleAgentIds]
+  );
+  useEffect(() => {
+    previousBoardLayout.current = boardLayout;
+  }, [boardLayout]);
+
+  // Legacy semantic selectors continue to supply Attention and DOM inspector
+  // content during V2.0; renderer layout is owned by the board model above.
   const fieldZones = useMemo(
-    () => selectSpatialProjectZones(filteredState, { now: Date.now() }),
-    [filteredState]
+    () => selectSpatialProjectZones(fleetState, { now: Date.now() }),
+    [fleetState]
   );
 
   const toggleStatus = (status: AgentStatus) =>
@@ -413,12 +437,8 @@ export function SpatialFleetClient() {
           className="relative h-[52svh] min-h-[360px] overflow-hidden sm:min-h-[420px] xl:h-auto"
           aria-label="Fleet command surface"
         >
-          <AgentFieldSurface
-            zones={fieldZones}
-            agents={filteredState.agents}
-            altitude={scene.altitude}
-            focusedProjectId={scene.focusedProjectId}
-            selectedAgentId={selectedAgentId}
+          <OperationsBoardSurface
+            layout={boardLayout}
             hero={
               scene.attention.hero
                 ? {

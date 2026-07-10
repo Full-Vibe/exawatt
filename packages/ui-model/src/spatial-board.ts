@@ -112,7 +112,7 @@ export interface SpatialBoardLayoutOptions {
 const BOARD = {
   columns: 4,
   fleetZoneWidth: 24,
-  fleetZoneHeight: 16,
+  fleetZoneHeight: 11.5,
   zoneGapX: 5,
   zoneGapY: 5,
   zoneHeaderHeight: 4,
@@ -120,7 +120,7 @@ const BOARD = {
   fleetPieceSize: 2.2,
   fleetPieceGap: 1.25,
   projectPieceWidth: 5.2,
-  projectPieceHeight: 3.8,
+  projectPieceHeight: 2.15,
   projectPieceGap: 1.6,
   projectColumns: 6,
 } as const;

@@ -11,7 +11,6 @@
  * Callers must NOT also handle these keys (double-handling doubles speed).
  */
 import { useEffect } from 'react';
-import type { AgentFieldHandle } from './agent-field';
 import {
   composeCameraTarget,
   createCameraVelocity,
@@ -20,8 +19,12 @@ import {
   stepCameraVelocity,
 } from './agent-field-motion';
 
+export interface CameraGlideHandle {
+  nudge(dx: number, dy: number, dollySteps: number, orbitRadians: number): void;
+}
+
 export function useAgentFieldGlide(controller: {
-  current: AgentFieldHandle | null;
+  current: CameraGlideHandle | null;
 }) {
   useEffect(() => {
     const pressed = new Set<string>();

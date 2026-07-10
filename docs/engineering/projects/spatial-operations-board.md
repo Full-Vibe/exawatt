@@ -873,7 +873,7 @@ constellation:
 
 ### V2.0 Spatial Operations Board
 
-Status: active-build — B0–B1 landed; B2 top-down board next
+Status: active-build — B0–B2 landed; B3 projection and board tools next
 
 Scope, phase gates, budgets, and non-goals are defined in the V2.0 design brief
 above. Record each pushed B0–B5 checkpoint here with verification evidence. A
@@ -905,6 +905,26 @@ Progress log:
   priority, stale deep links, Agent camera focus, and a 10,000-Agent/50-Project
   fixture whose emitted pieces remain bounded to status aggregates. Full type-
   check and lint pass; 281/281 repository tests pass.
+- **B2 landed (2026-07-10):** replaced the product route's AgentField world at
+  the dynamic renderer boundary with a demand-rendered orthographic Operations
+  Board. It renders a quiet square grid, bounded Project zones, health rails,
+  instanced anchored octagonal Agent/aggregate pieces, one finite attention
+  callout, DOM Project/Agent controls, deterministic camera fit, damped held-key
+  pan/zoom, content-aware empty state, and reduced-motion/low-power parity. The
+  old AgentField remains only as implementation history and isolated regression
+  evidence; it is no longer the `/fleet/spatial` product renderer.
+- B2 responsive correction: fleet zones and Project pieces were reduced after
+  screenshot review; phone Agent controls now meet 44px touch targets and use a
+  narrow label treatment that avoids collision while the inspector reveals full
+  identity. Desktop Project screenshots explicitly reset accidental harness
+  scroll before capture.
+- B2 verification: full type-check, focused lint, 281/281 tests, and production
+  build pass. The updated full-route evaluator asserts the top-down board and
+  passes desktop, 390px touch/mobile, reduced motion, and simulated low power at
+  DPR 1.25; Fleet → Project → Agent keyboard/pointer descent, Escape ascent,
+  held-key camera glide, and zero settled idle frames pass. New isolated fixture
+  `t5-operations-board` renders two Projects/five Agents in 7 draw calls with no
+  WebGL warnings and raises the five-fixture R3F evaluator to 100/100.
 
 ### V2.1 Scale & Truth
 

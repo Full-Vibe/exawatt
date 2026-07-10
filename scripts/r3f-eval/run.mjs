@@ -35,6 +35,12 @@ const TASKS = [
     drawCallMax: null,
     settleMs: 1_200,
   },
+  {
+    id: 't5-operations-board',
+    name: 'Spatial Operations Board',
+    drawCallMax: 12,
+    settleMs: 800,
+  },
 ];
 
 // Substrings that mean a real WebGL/shader failure -> hard gate.
@@ -229,6 +235,29 @@ async function runTask(browser, task) {
       result.notes.push(`sparse-composition: ${JSON.stringify(composition)}`);
       if (!composition.ok)
         result.errors.push('sparse Fleet composition failed');
+    }
+
+    if (task.id === 't5-operations-board') {
+      const board = await page.evaluate(() => {
+        const surface = document.querySelector('[data-spatial-board]');
+        const projects = Array.from(
+          document.querySelectorAll('[data-board-zone]')
+        );
+        const rects = projects.map(project => project.getBoundingClientRect());
+        return {
+          projection: surface?.getAttribute('data-board-projection'),
+          projectCount: projects.length,
+          horizontal:
+            rects.length === 2 && Math.abs(rects[0].top - rects[1].top) < 16,
+        };
+      });
+      result.semanticOk =
+        board.projection === 'top-down' &&
+        board.projectCount === 2 &&
+        board.horizontal;
+      result.notes.push(`operations-board: ${JSON.stringify(board)}`);
+      if (!result.semanticOk)
+        result.errors.push('Spatial Operations Board semantics failed');
     }
 
     await page
