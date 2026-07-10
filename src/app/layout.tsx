@@ -6,6 +6,7 @@ import { ShortcutProvider } from '@/components/shortcuts';
 import { SiteHeader } from '@/components/nav/site-header';
 import { SiteFooter } from '@/components/nav/site-footer';
 import { FleetProvider } from '@/lib/fleet/fleet-provider';
+import { UpdateReadyNotice } from '@/components/nav/update-ready-notice';
 
 const exo2 = Exo_2({
   variable: '--font-exo2',
@@ -46,6 +47,7 @@ export default function RootLayout({
           <ShortcutProvider>
             <FleetProvider>
               <SiteHeader />
+              <UpdateReadyNotice />
               {children}
             </FleetProvider>
           </ShortcutProvider>

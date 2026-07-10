@@ -103,6 +103,19 @@ export interface ElectronSettingsApi {
   onChanged: (handler: (settings: ExawattSettings) => void) => () => void;
 }
 
+export interface ExawattBuildInfo {
+  sha: string;
+  branch: string;
+  builtAt: string;
+}
+
+export interface ElectronAppApi {
+  getBuildInfo: () => Promise<ExawattBuildInfo>;
+  onUpdateReady: (
+    handler: (update: { currentSha: string; installedSha: string }) => void
+  ) => () => void;
+}
+
 declare global {
   interface Window {
     electron?: {
@@ -116,6 +129,7 @@ declare global {
       pty?: ElectronPtyApi;
       workspace?: ElectronWorkspaceApi;
       settings?: ElectronSettingsApi;
+      app?: ElectronAppApi;
       auth?: {
         openExternal: (url: string) => Promise<void>;
         onDeepLinkCode: (handler: (code: string) => void) => () => void;

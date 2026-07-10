@@ -69,6 +69,13 @@ contextBridge.exposeInMainWorld('electron', {
       };
     }>('settings:changed'),
   },
+  app: {
+    getBuildInfo: () => ipcRenderer.invoke('app:get-build-info'),
+    onUpdateReady: subscribe<{
+      currentSha: string;
+      installedSha: string;
+    }>('app:update-ready'),
+  },
   auth: {
     openExternal: (url: string) => ipcRenderer.invoke('auth:open-external', url),
     onDeepLinkCode: subscribe<string>('auth:deeplink-code'),

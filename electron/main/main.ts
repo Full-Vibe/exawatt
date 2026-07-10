@@ -28,6 +28,18 @@ let pendingDeepLinkUrl: string | null = null;
 let rendererServer: ChildProcess | null = null;
 let rendererOrigin: string | null = null;
 
+interface BuildInfo {
+  sha: string;
+  branch: string;
+  builtAt: string;
+}
+
+const buildInfo: BuildInfo = isDev
+  ? { sha: 'development', branch: 'development', builtAt: new Date().toISOString() }
+  : JSON.parse(
+      fs.readFileSync(path.join(__dirname, '..', 'build-info.json'), 'utf8')
+    );
+
 async function availableLoopbackPort(): Promise<number> {
   return await new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -226,6 +238,7 @@ function createMenu(): void {
       label: app.name,
       submenu: [
         { role: 'about' },
+        { label: `Build ${buildInfo.sha.slice(0, 12)}`, enabled: false },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
@@ -306,6 +319,35 @@ function registerDialogIPC(): void {
   });
 }
 
+function registerAppIPC(): void {
+  handleTrusted('app:get-build-info', () => buildInfo);
+}
+
+function watchInstalledBuild(): void {
+  const statePath = path.join(app.getPath('userData'), 'update-state.json');
+  const report = async () => {
+    try {
+      const state = JSON.parse(await fs.promises.readFile(statePath, 'utf8')) as {
+        installedSha?: string;
+      };
+      if (state.installedSha && state.installedSha !== buildInfo.sha) {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) {
+            win.webContents.send('app:update-ready', {
+              currentSha: buildInfo.sha,
+              installedSha: state.installedSha,
+            });
+          }
+        }
+      }
+    } catch {
+      // No installed update state yet.
+    }
+  };
+  fs.watchFile(statePath, { interval: 2_000 }, () => void report());
+  void report();
+}
+
 app.whenReady().then(async () => {
   if (!isDev) await startPackagedRenderer();
   setTrustedRendererOrigin(isDev ? DEV_URL : rendererOrigin!);
@@ -313,8 +355,10 @@ app.whenReady().then(async () => {
   registerPtyIPC();
   registerAuthIPC();
   registerDialogIPC();
+  registerAppIPC();
   createMenu();
   createWindow();
+  watchInstalledBuild();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -335,4 +379,5 @@ app.on('before-quit', () => {
   disposePty();
   rendererServer?.kill();
   rendererServer = null;
+  fs.unwatchFile(path.join(app.getPath('userData'), 'update-state.json'));
 });
