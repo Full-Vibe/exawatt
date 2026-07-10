@@ -110,7 +110,7 @@ interface Session {
 
 export class PtySessionManager extends EventEmitter {
   private sessions = new Map<string, Session>();
-  /** ~200 KB per session; late panes replay text and S4 reads visit deltas. */
+  /** Bounded 4 MB per session; late panes replay text and S4 reads visit deltas. */
   private scrollback = new ScrollbackStore();
   private nextId = 1;
 
@@ -197,7 +197,7 @@ export class PtySessionManager extends EventEmitter {
     proc.onData((data) => {
       info.lastDataAt = Date.now();
       this.appendBuffer(id, data);
-      this.emit('data', id, data);
+      this.emit('data', id, data, this.scrollback.cursor(id));
     });
     proc.onExit(({ exitCode }) => {
       // kill() may have already removed the session (process death is
@@ -210,7 +210,7 @@ export class PtySessionManager extends EventEmitter {
       // pane attaching after a fast death still shows what happened
       const marker = `\r\n\x1b[38;5;244m[session exited ${exitCode}]\x1b[0m\r\n`;
       this.appendBuffer(id, marker);
-      this.emit('data', id, marker);
+      this.emit('data', id, marker, this.scrollback.cursor(id));
       this.emit('exit', id, exitCode);
     });
 
@@ -252,6 +252,13 @@ export class PtySessionManager extends EventEmitter {
   /** replayable scrollback for a session (empty string if unknown) */
   buffer(id: string): string {
     return this.scrollback.text(id);
+  }
+
+  bufferSnapshot(id: string): { text: string; cursor: number } {
+    return {
+      text: this.scrollback.text(id),
+      cursor: this.scrollback.cursor(id),
+    };
   }
 
   /** Absolute scrollback position used as a last-visited checkpoint. */

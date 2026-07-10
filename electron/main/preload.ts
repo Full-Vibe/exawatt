@@ -40,11 +40,19 @@ contextBridge.exposeInMainWorld('electron', {
     focus: (id: string | null) => ipcRenderer.invoke('pty:focus', id),
     list: () => ipcRenderer.invoke('pty:list'),
     buffer: (id: string) => ipcRenderer.invoke('pty:buffer', id),
+    bufferSnapshot: (id: string) => ipcRenderer.invoke('pty:buffer-snapshot', id),
+    bufferSince: (id: string, cursor: number) =>
+      ipcRenderer.invoke('pty:buffer-since', id, cursor),
+    pasteClipboard: (id: string) => ipcRenderer.invoke('pty:paste-clipboard', id),
+    copyText: (text: string) => ipcRenderer.invoke('pty:copy-text', text),
+    openExternal: (url: string) => ipcRenderer.invoke('pty:open-external', url),
+    openPath: (filePath: string, cwd: string) =>
+      ipcRenderer.invoke('pty:open-path', filePath, cwd),
     createWorktree: (repoDir: string, branch: string) =>
       ipcRenderer.invoke('pty:worktree', repoDir, branch),
     listResumeCandidates: (harness: string, cwd: string) =>
       ipcRenderer.invoke('pty:list-resume-candidates', harness, cwd),
-    onData: subscribe<{ id: string; data: string }>('pty:data'),
+    onData: subscribe<{ id: string; data: string; cursor: number }>('pty:data'),
     onExit: subscribe<{ id: string; exitCode: number }>('pty:exit'),
     onContext: subscribe<{ id: string; summary: string }>('pty:context'),
     onRecap: subscribe<{

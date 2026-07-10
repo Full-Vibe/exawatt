@@ -407,6 +407,7 @@ export function WorkspaceClient() {
               <TerminalPane
                 key={tab.sessionId}
                 sessionId={tab.sessionId}
+                cwd={tab.cwd}
                 active={tab.id === activeTab?.id}
                 layout={layoutFor(tab.id)}
                 font={font}

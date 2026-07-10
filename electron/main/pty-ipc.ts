@@ -1,4 +1,4 @@
-import { BrowserWindow, app } from 'electron';
+import { BrowserWindow, app, shell } from 'electron';
 import { handleTrusted } from './ipc-security';
 import { ptySessions } from './pty/session-manager';
 import type { PtyCreateOptions } from './pty/session-manager';
@@ -8,6 +8,14 @@ import { createWorktree } from './pty/project-resolve';
 import { loadWorkspace, saveWorkspace } from './workspace-store';
 import { loadSettings } from './settings-store';
 import { listResumeCandidates } from './pty/resume-candidates';
+import {
+  clipboardInput,
+  cleanupClipboardImages,
+  writeClipboardText,
+} from './clipboard-paste';
+import path from 'path';
+import fs from 'fs';
+import os from 'os';
 
 /**
  * IPC surface for PTY sessions (decision 0005). Invocations are namespaced
@@ -21,8 +29,8 @@ export function registerPtyIPC(): void {
     }
   };
 
-  ptySessions.on('data', (id: string, data: string) => {
-    broadcast('pty:data', { id, data });
+  ptySessions.on('data', (id: string, data: string, cursor: number) => {
+    broadcast('pty:data', { id, data, cursor });
   });
   ptySessions.on('exit', (id: string, exitCode: number) => {
     broadcast('pty:exit', { id, exitCode });
@@ -113,6 +121,47 @@ export function registerPtyIPC(): void {
     }))
   );
   handleTrusted('pty:buffer', (_event, id: string) => ptySessions.buffer(id));
+  handleTrusted('pty:buffer-snapshot', (_event, id: string) =>
+    ptySessions.bufferSnapshot(id)
+  );
+  handleTrusted('pty:buffer-since', (_event, id: string, cursor: number) => ({
+    ...ptySessions.bufferSince(id, cursor),
+    cursor: ptySessions.bufferCursor(id),
+  }));
+  handleTrusted('pty:paste-clipboard', async (_event, id: string) => {
+    const payload = await clipboardInput();
+    if (payload.input) ptySessions.write(id, payload.input);
+    return { kind: payload.kind, path: payload.path };
+  });
+  handleTrusted('pty:copy-text', (_event, text: string) => {
+    if (typeof text !== 'string' || text.length > 4_000_000) {
+      throw new Error('Invalid clipboard text');
+    }
+    writeClipboardText(text);
+  });
+  handleTrusted('pty:open-external', async (_event, rawUrl: string) => {
+    const url = new URL(rawUrl);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      throw new Error('Only HTTP(S) links can open externally');
+    }
+    await shell.openExternal(url.toString());
+  });
+  handleTrusted(
+    'pty:open-path',
+    async (_event, rawPath: string, cwd: string) => {
+      if (!rawPath || rawPath.includes('\0') || rawPath.length > 4096) {
+        throw new Error('Invalid local path');
+      }
+      const expanded = rawPath.startsWith('~/')
+        ? path.join(os.homedir(), rawPath.slice(2))
+        : rawPath;
+      const resolved = path.resolve(cwd, expanded);
+      const stat = await fs.promises.stat(resolved);
+      if (!stat.isFile() && !stat.isDirectory()) throw new Error('Unsupported path');
+      const error = await shell.openPath(resolved);
+      if (error) throw new Error(error);
+    }
+  );
   handleTrusted(
     'pty:list-resume-candidates',
     (_event, harness: PtyCreateOptions['harness'], cwd: string) =>
@@ -149,4 +198,5 @@ export function disposePty(): void {
   contextSummarizer.stop();
   attentionMonitor.stop();
   ptySessions.killAll();
+  void cleanupClipboardImages();
 }

@@ -18,7 +18,7 @@ interface ScrollbackEntry {
 export class ScrollbackStore {
   private readonly entries = new Map<string, ScrollbackEntry>();
 
-  constructor(private readonly limit = 200_000) {}
+  constructor(private readonly limit = 4_000_000) {}
 
   append(id: string, data: string): void {
     const previous = this.entries.get(id) ?? { text: '', start: 0, end: 0 };

@@ -8,11 +8,13 @@
  * lost between tab switches. On (re)mount the main-process scrollback buffer
  * is replayed first, so renderer reloads restore what you saw.
  */
-import { useEffect, useRef, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from './session-jump';
 import { TERMINAL_FONT } from './terminal-font';
 import type { EffectiveTerminalFont } from './terminal-font';
+import { findFileLinks } from './terminal-links';
 
 export { TERMINAL_FONT, resolveTerminalFont } from './terminal-font';
 export type { EffectiveTerminalFont } from './terminal-font';
@@ -57,12 +59,14 @@ const LAYOUT_CLASS: Record<PaneLayout, string> = {
 
 export function TerminalPane({
   sessionId,
+  cwd,
   active,
   layout = 'full',
   font,
   onActivate,
 }: {
   sessionId: string;
+  cwd: string;
   active: boolean;
   layout?: PaneLayout;
   /** effective font (defaults + settings); panes render only after the
@@ -72,10 +76,24 @@ export function TerminalPane({
   onActivate?: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResult, setSearchResult] = useState('0/0');
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(
+    null
+  );
+  const searchInput = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<{
+    findNext(term: string, options?: object): boolean;
+    findPrevious(term: string, options?: object): boolean;
+    clearDecorations(): void;
+  } | null>(null);
   // latest xterm handle for activation and live font refresh
   const termRef = useRef<{
     focus(): void;
     fit(): void;
+    copySelection(): void;
+    selectAll(): void;
     applyFont(font: EffectiveTerminalFont): void;
   } | null>(null);
   // the term is created ASYNC (dynamic import) — it must read the CURRENT
@@ -108,9 +126,18 @@ export function TerminalPane({
     };
 
     (async () => {
-      const [{ Terminal }, { FitAddon }] = await Promise.all([
+      const [
+        { Terminal },
+        { FitAddon },
+        { SearchAddon },
+        { WebLinksAddon },
+        { WebglAddon },
+      ] = await Promise.all([
         import('@xterm/xterm'),
         import('@xterm/addon-fit'),
+        import('@xterm/addon-search'),
+        import('@xterm/addon-web-links'),
+        import('@xterm/addon-webgl'),
       ]);
       if (disposed) return;
 
@@ -121,13 +148,75 @@ export function TerminalPane({
         lineHeight: f?.lineHeight ?? TERMINAL_FONT.lineHeight,
         letterSpacing: f?.letterSpacing ?? TERMINAL_FONT.letterSpacing,
         cursorBlink: true,
-        scrollback: 8000,
+        scrollback: 50_000,
         theme: HUD_TERM_THEME,
       });
       cleanup.push(() => term.dispose());
       const fit = new FitAddon();
       term.loadAddon(fit);
+      const search = new SearchAddon({ highlightLimit: 2_000 });
+      term.loadAddon(search);
+      searchRef.current = search;
+      cleanup.push(() => {
+        searchRef.current = null;
+      });
+      const webLinks = new WebLinksAddon((_event, uri) => {
+        void api.openExternal(uri);
+      });
+      term.loadAddon(webLinks);
       term.open(el);
+      try {
+        const webgl = new WebglAddon();
+        term.loadAddon(webgl);
+        const contextLoss = webgl.onContextLoss(() => webgl.dispose());
+        cleanup.push(() => contextLoss.dispose());
+      } catch {
+        // Canvas renderer remains active when WebGL is unavailable.
+      }
+      const fileLinks = term.registerLinkProvider({
+        provideLinks: (bufferLineNumber, callback) => {
+          const line = term.buffer.active
+            .getLine(bufferLineNumber - 1)
+            ?.translateToString(true);
+          if (!line) {
+            callback(undefined);
+            return;
+          }
+          const links = findFileLinks(line).map(link => ({
+            range: {
+              start: { x: link.start, y: bufferLineNumber },
+              end: { x: link.end, y: bufferLineNumber },
+            },
+            text: link.text,
+            activate: () => void api.openPath(link.path, cwd),
+          }));
+          callback(links.length > 0 ? links : undefined);
+        },
+      });
+      cleanup.push(() => fileLinks.dispose());
+      term.attachCustomKeyEventHandler(event => {
+        if (event.type !== 'keydown' || !event.metaKey) return true;
+        const key = event.key.toLowerCase();
+        if (key === 'f') {
+          setSearchOpen(true);
+          requestAnimationFrame(() => searchInput.current?.focus());
+          return false;
+        }
+        if (key === 'c') {
+          const selection = term.getSelection();
+          if (selection) void api.copyText(selection);
+          return false;
+        }
+        if (key === 'v') {
+          void api.pasteClipboard(sessionId);
+          return false;
+        }
+        if (key === 'a') {
+          term.selectAll();
+          return false;
+        }
+        return true;
+      });
       fit.fit();
       // the ONE fit-then-propagate path (pane resize, activation, resync)
       const syncSize = () => {
@@ -139,6 +228,11 @@ export function TerminalPane({
       termRef.current = {
         focus: () => term.focus(),
         fit: syncSize,
+        copySelection: () => {
+          const selection = term.getSelection();
+          if (selection) void api.copyText(selection);
+        },
+        selectAll: () => term.selectAll(),
         applyFont: (next) => {
           term.options.fontFamily = next.family;
           term.options.fontSize = next.size;
@@ -151,15 +245,41 @@ export function TerminalPane({
         termRef.current = null;
       });
 
-      // replay main-process scrollback (renderer reloads, late attach)
-      const backlog = await api.buffer(sessionId);
+      // Subscribe before taking the replay snapshot. Absolute cursors make the
+      // handoff lossless without replaying bytes emitted during the IPC call.
+      let snapshotCursor = Number.POSITIVE_INFINITY;
+      const pendingData: Array<{ data: string; cursor: number }> = [];
+      const offData = api.onData(({ id, data, cursor }) => {
+        if (id !== sessionId) return;
+        if (snapshotCursor === Number.POSITIVE_INFINITY) {
+          pendingData.push({ data, cursor });
+        } else if (cursor > snapshotCursor) {
+          term.write(data);
+          snapshotCursor = cursor;
+        }
+      });
+      cleanup.push(offData);
+      const snapshot = await api.bufferSnapshot(sessionId);
       if (disposed) {
         // unmounted while the buffer fetch was in flight — the destructor
         // already ran; release what was created since
         dispose();
         return;
       }
-      if (backlog) term.write(backlog);
+      const catchup = await api.bufferSince(sessionId, snapshot.cursor);
+      if (disposed) {
+        dispose();
+        return;
+      }
+      if (snapshot.text) term.write(snapshot.text);
+      if (catchup.text) term.write(catchup.text);
+      snapshotCursor = catchup.cursor;
+      for (const item of pendingData) {
+        if (item.cursor <= snapshotCursor) continue;
+        term.write(item.data);
+        snapshotCursor = item.cursor;
+      }
+      pendingData.length = 0;
       void api.resize(sessionId, term.cols, term.rows);
       if (activeRef.current) term.focus();
       // Late re-sync for TUIs that were mid-init when a resize landed
@@ -178,10 +298,6 @@ export function TerminalPane({
 
       // the exit marker arrives through the data stream (the session manager
       // appends it to the buffer too, so replays after a fast death show it)
-      const offData = api.onData(({ id, data }) => {
-        if (id === sessionId) term.write(data);
-      });
-      cleanup.push(offData);
       const input = term.onData((data) => {
         void api.write(sessionId, data);
       });
@@ -207,7 +323,56 @@ export function TerminalPane({
       disposed = true;
       dispose();
     };
-  }, [sessionId]);
+  }, [cwd, sessionId]);
+
+  useEffect(() => {
+    if (!searchOpen || !searchQuery) {
+      searchRef.current?.clearDecorations();
+      setSearchResult('0/0');
+      return;
+    }
+    const found = searchRef.current?.findNext(searchQuery, {
+      incremental: true,
+    });
+    setSearchResult(found ? 'match' : '0/0');
+  }, [searchOpen, searchQuery]);
+
+  const stepSearch = (direction: 'next' | 'previous') => {
+    if (!searchQuery) return;
+    const search = searchRef.current;
+    const found =
+      direction === 'next'
+        ? search?.findNext(searchQuery)
+        : search?.findPrevious(searchQuery);
+    setSearchResult(found ? 'match' : '0/0');
+  };
+
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchQuery('');
+    searchRef.current?.clearDecorations();
+    termRef.current?.focus();
+  };
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+      termRef.current?.focus();
+    };
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('blur', close);
+    window.addEventListener('keydown', closeOnEscape, true);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('blur', close);
+      window.removeEventListener('keydown', closeOnEscape, true);
+    };
+  }, [contextMenu]);
 
   useEffect(() => {
     if (font) termRef.current?.applyFont(font);
@@ -235,7 +400,6 @@ export function TerminalPane({
 
   return (
     <div
-      ref={container}
       data-pane={layout}
       className={`terminal-pane ${LAYOUT_CLASS[layout]}`}
       style={
@@ -249,6 +413,108 @@ export function TerminalPane({
       onMouseDown={
         onActivate && !active && layout !== 'hidden' ? onActivate : undefined
       }
-    />
+      onContextMenu={event => {
+        event.preventDefault();
+        setContextMenu({
+          x: Math.min(event.clientX, window.innerWidth - 160),
+          y: Math.min(event.clientY, window.innerHeight - 120),
+        });
+      }}
+    >
+      <div ref={container} className="absolute inset-0" />
+      {searchOpen && (
+        <div
+          data-terminal-search
+          className="absolute right-3 top-3 z-20 flex h-9 items-center border border-white/15 bg-zinc-950 px-2 shadow-lg"
+        >
+          <input
+            ref={searchInput}
+            value={searchQuery}
+            onChange={event => setSearchQuery(event.target.value)}
+            onKeyDown={event => {
+              event.stopPropagation();
+              if (event.key === 'Escape') closeSearch();
+              if (event.key === 'Enter') {
+                stepSearch(event.shiftKey ? 'previous' : 'next');
+              }
+            }}
+            aria-label="Search terminal scrollback"
+            className="h-full w-56 bg-transparent text-sm text-zinc-100 outline-none"
+            placeholder="Search"
+          />
+          <span className="w-12 text-center font-mono text-[10px] text-zinc-500">
+            {searchResult}
+          </span>
+          <button
+            type="button"
+            className="grid h-7 w-7 place-items-center text-zinc-400 hover:text-white"
+            aria-label="Previous terminal match"
+            title="Previous match"
+            onClick={() => stepSearch('previous')}
+          >
+            <ChevronUp className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            className="grid h-7 w-7 place-items-center text-zinc-400 hover:text-white"
+            aria-label="Next terminal match"
+            title="Next match"
+            onClick={() => stepSearch('next')}
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            className="grid h-7 w-7 place-items-center text-zinc-400 hover:text-white"
+            aria-label="Close terminal search"
+            title="Close search"
+            onClick={closeSearch}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+      {contextMenu && (
+        <div
+          role="menu"
+          aria-label="Terminal actions"
+          className="fixed z-50 min-w-36 border border-white/15 bg-zinc-950 py-1 text-sm text-zinc-200 shadow-xl"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onPointerDown={event => event.stopPropagation()}
+        >
+          <button
+            role="menuitem"
+            className="block w-full px-3 py-1.5 text-left hover:bg-white/10"
+            onClick={() => {
+              termRef.current?.copySelection();
+              setContextMenu(null);
+            }}
+          >
+            Copy
+          </button>
+          <button
+            role="menuitem"
+            className="block w-full px-3 py-1.5 text-left hover:bg-white/10"
+            onClick={() => {
+              void window.electron?.pty?.pasteClipboard(sessionId);
+              setContextMenu(null);
+              termRef.current?.focus();
+            }}
+          >
+            Paste
+          </button>
+          <button
+            role="menuitem"
+            className="block w-full px-3 py-1.5 text-left hover:bg-white/10"
+            onClick={() => {
+              termRef.current?.selectAll();
+              setContextMenu(null);
+            }}
+          >
+            Select All
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

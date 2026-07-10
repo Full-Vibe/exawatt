@@ -71,12 +71,25 @@ export interface ElectronPtyApi {
   focus: (id: string | null) => Promise<void>;
   list: () => Promise<PtySessionInfo[]>;
   buffer: (id: string) => Promise<string>;
+  bufferSnapshot: (id: string) => Promise<{ text: string; cursor: number }>;
+  bufferSince: (
+    id: string,
+    cursor: number
+  ) => Promise<{ text: string; cursor: number; truncated: boolean }>;
+  pasteClipboard: (
+    id: string
+  ) => Promise<{ kind: 'image' | 'text' | 'empty'; path?: string }>;
+  copyText: (text: string) => Promise<void>;
+  openExternal: (url: string) => Promise<void>;
+  openPath: (filePath: string, cwd: string) => Promise<void>;
   createWorktree: (repoDir: string, branch: string) => Promise<WorktreeResult>;
   listResumeCandidates: (
     harness: PtyHarness,
     cwd: string
   ) => Promise<HarnessResumeCandidate[]>;
-  onData: (handler: (payload: { id: string; data: string }) => void) => () => void;
+  onData: (
+    handler: (payload: { id: string; data: string; cursor: number }) => void
+  ) => () => void;
   onExit: (handler: (payload: { id: string; exitCode: number }) => void) => () => void;
   onContext: (handler: (payload: { id: string; summary: string }) => void) => () => void;
   onRecap: (handler: (payload: PtyReentryRecap) => void) => () => void;
