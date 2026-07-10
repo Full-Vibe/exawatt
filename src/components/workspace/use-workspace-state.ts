@@ -21,9 +21,12 @@ import { pickDistinctColor, projectColor } from './project-colors';
 import {
   SESSION_JUMP_EVENT,
   IGNITE_EVENT,
+  TOGGLE_SPLIT_EVENT,
+  JUMP_ATTENTION_EVENT,
   consumePendingSessionJump,
   consumePendingIgnite,
 } from './session-jump';
+import { loadTerminalFont } from './terminal-font';
 import type { PtyAttention, PtyHarness, PtySessionInfo } from '@/types/electron';
 
 export interface WorkspaceTab {
@@ -180,9 +183,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const clearedBeforeSeed = new Set<string>();
 
     void (async () => {
+      // the font settles here too: the revive loop below reads the spawn
+      // size via getInitialSize, whose cell metrics come from the resolved
+      // font — spawning with defaults while a custom font loads recreates
+      // the TUI init-width race
       const [live, persistedRaw] = await Promise.all([
         api.list(),
         ws?.load() ?? Promise.resolve(null),
+        loadTerminalFont(),
       ]);
       if (cancelled) return;
       const persisted = parsePersisted(persistedRaw);
@@ -566,6 +574,32 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     activeInitiative?.tabs.find((t) => t.id === activeInitiative.activeTabId) ??
     null;
 
+  /** ⌘J: jump to the OLDEST session needing the operator (repeat = walk the
+   *  queue — focusing each one clears it, surfacing the next-oldest) */
+  const jumpAttention = useCallback((): boolean => {
+    const { initiatives: gs } = stateRef.current;
+    const flagged = Object.entries(attentionRef.current).sort(
+      (a, b) => a[1].since - b[1].since
+    );
+    for (const [sessionId] of flagged) {
+      for (const g of gs) {
+        const tab = g.tabs.find(
+          (t) => t.sessionId === sessionId && t.exitCode === null
+        );
+        if (tab) {
+          setActiveDir(g.dir);
+          setInitiatives((prev) =>
+            prev.map((x) =>
+              x.dir === g.dir ? { ...x, activeTabId: tab.id } : x
+            )
+          );
+          return true;
+        }
+      }
+    }
+    return false;
+  }, []);
+
   // ---- palette requests (S2): the ⌘K switcher lives at the app root and
   // asks the workspace to activate a session / ignite a harness. Live events
   // handle the mounted-and-ready case; before ready the pending slot is left
@@ -582,13 +616,23 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       consumePendingIgnite();
       igniteHere((e as CustomEvent<PtyHarness>).detail);
     };
+    const onToggleSplit = () => {
+      if (readyRef.current) togglePin();
+    };
+    const onJumpAttention = () => {
+      if (readyRef.current) jumpAttention();
+    };
     window.addEventListener(SESSION_JUMP_EVENT, onJump);
     window.addEventListener(IGNITE_EVENT, onIgnite);
+    window.addEventListener(TOGGLE_SPLIT_EVENT, onToggleSplit);
+    window.addEventListener(JUMP_ATTENTION_EVENT, onJumpAttention);
     return () => {
       window.removeEventListener(SESSION_JUMP_EVENT, onJump);
       window.removeEventListener(IGNITE_EVENT, onIgnite);
+      window.removeEventListener(TOGGLE_SPLIT_EVENT, onToggleSplit);
+      window.removeEventListener(JUMP_ATTENTION_EVENT, onJumpAttention);
     };
-  }, [activateSession, igniteHere]);
+  }, [activateSession, igniteHere, togglePin, jumpAttention]);
 
   useEffect(() => {
     if (!ready) return;
@@ -620,32 +664,6 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     // leaving the workspace (unmount) unfocuses — flags accumulate again
     return () => void api.focus(null);
   }, [activeSessionId]);
-
-  /** ⌘J: jump to the OLDEST session needing the operator (repeat = walk the
-   *  queue — focusing each one clears it, surfacing the next-oldest) */
-  const jumpAttention = useCallback((): boolean => {
-    const { initiatives: gs } = stateRef.current;
-    const flagged = Object.entries(attentionRef.current).sort(
-      (a, b) => a[1].since - b[1].since
-    );
-    for (const [sessionId] of flagged) {
-      for (const g of gs) {
-        const tab = g.tabs.find(
-          (t) => t.sessionId === sessionId && t.exitCode === null
-        );
-        if (tab) {
-          setActiveDir(g.dir);
-          setInitiatives((prev) =>
-            prev.map((x) =>
-              x.dir === g.dir ? { ...x, activeTabId: tab.id } : x
-            )
-          );
-          return true;
-        }
-      }
-    }
-    return false;
-  }, []);
 
   return {
     initiatives,

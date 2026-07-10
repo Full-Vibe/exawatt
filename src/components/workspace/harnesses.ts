@@ -19,9 +19,12 @@ export interface HarnessMeta {
 }
 
 export const HARNESS_META: Record<PtyHarness, HarnessMeta> = {
-  // brand colors: Anthropic terracotta / OpenAI neutral-on-dark
-  claude: { label: 'Claude Code', color: '#D97757', ignite: 'Claude Code' },
-  codex: { label: 'Codex', color: '#ECECEC', ignite: 'Codex' },
+  // brand colors: Anthropic terracotta / OpenAI neutral-on-dark.
+  // "+" prefix: the button CREATES a new session — "launch" language in
+  // tooltips/palette ("ignite" was internal shorthand, unclear to users;
+  // operator, dogfood round 4)
+  claude: { label: 'Claude Code', color: '#D97757', ignite: '+ Claude Code' },
+  codex: { label: 'Codex', color: '#ECECEC', ignite: '+ Codex' },
   shell: { label: 'Shell', color: HUD.idle, ignite: '+ Shell' },
 };
 

@@ -15,21 +15,40 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { TerminalPane, TERMINAL_FONT } from './terminal-pane';
+import { TerminalPane } from './terminal-pane';
 import type { PaneLayout } from './terminal-pane';
+import {
+  loadTerminalFont,
+  loadedTerminalFont,
+  resolveTerminalFont,
+} from './terminal-font';
+import type { EffectiveTerminalFont } from './terminal-font';
 import { TabStrip } from './tab-strip';
 import { IgniteControls } from './ignite-controls';
+import { ExposeOverlay } from './expose-overlay';
 import { useWorkspaceState, REVIVE_FAILED } from './use-workspace-state';
 import { useWorkspaceShortcuts } from './use-workspace-shortcuts';
-import { RENAME_ACTIVE_EVENT } from './session-jump';
+import {
+  RENAME_ACTIVE_EVENT,
+  CLOSE_ACTIVE_EVENT,
+  OPEN_OVERVIEW_EVENT,
+  FOCUS_ACTIVE_TERMINAL_EVENT,
+} from './session-jump';
 import { useShortcuts } from '@/components/shortcuts';
 import { HUD } from '@/components/hud';
 
-// derive the spawn-size estimate from the terminal's own font config —
-// new sessions spawn at (approximately) their final size so TUIs never
-// init at 80 cols; the pane's post-attach wiggle-resync covers any drift
-const CELL_W = TERMINAL_FONT.cellWidthEstimate;
-const CELL_H = TERMINAL_FONT.size * TERMINAL_FONT.lineHeight;
+/** the discoverability layer (S3): the workspace SHOWS its keys, exactly
+ *  like the spatial map's bottom legend — normal case, dim, always there */
+const KEY_HINTS: Array<[string, string]> = [
+  ['⌘K', 'sessions'],
+  ['⌘O', 'overview'],
+  ['⌘T', 'shell'],
+  ['⌘D', 'split'],
+  ['⌘J', 'needs you'],
+  ['⌘E', 'rename'],
+  ['⌘⇧M', 'map'],
+  ['⌘/', 'all keys'],
+];
 
 export function WorkspaceClient() {
   // SSR renders neither branch; the electron check runs after mount so the
@@ -43,12 +62,36 @@ export function WorkspaceClient() {
   // Lives up here unconditionally (rules of hooks); assigned below once the
   // active tab is known.
   const companionRef = useRef<string | null>(null);
+
+  // effective terminal font = defaults + userData/settings.json (S3) —
+  // panes render only after it resolves so every terminal is born with the
+  // right font (one local IPC; imperceptible). The state hook awaits the
+  // SAME loadTerminalFont() promise before auto-reviving, so restored
+  // sessions never spawn with default metrics while a custom font loads.
+  const [font, setFont] = useState<EffectiveTerminalFont | null>(null);
+  useEffect(() => {
+    if (!inElectron) return;
+    let cancelled = false;
+    void loadTerminalFont().then((f) => {
+      if (!cancelled) setFont(f);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [inElectron]);
+
+  // derive the spawn-size estimate from the terminal's own font config —
+  // new sessions spawn at (approximately) their final size so TUIs never
+  // init at 80 cols; the pane's post-attach wiggle-resync covers any drift
   const getInitialSize = useCallback(() => {
     const el = panesRef.current;
     if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return null;
+    const f = loadedTerminalFont() ?? resolveTerminalFont(null);
+    const cellW = f.cellWidthEstimate;
+    const cellH = f.size * f.lineHeight;
     return {
-      cols: Math.min(500, Math.max(20, Math.floor(el.offsetWidth / CELL_W))),
-      rows: Math.min(200, Math.max(10, Math.floor(el.offsetHeight / CELL_H))),
+      cols: Math.min(500, Math.max(20, Math.floor(el.offsetWidth / cellW))),
+      rows: Math.min(200, Math.max(10, Math.floor(el.offsetHeight / cellH))),
     };
   }, []);
 
@@ -77,12 +120,53 @@ export function WorkspaceClient() {
     setInitiativeColor,
   } = useWorkspaceState({ getInitialSize });
 
+  // exposé overview (S3): ⌘O — sessions fan out as tiles
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  const hasSessions = initiatives.some((g) =>
+    g.tabs.some((t) => t.sessionId && t.exitCode === null)
+  );
+  const closeOverview = useCallback(() => {
+    setOverviewOpen(false);
+    window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
+  }, []);
+
+  // palette-issued workspace verbs (close/overview live here; the rest are
+  // handled by the state hook and the tab strip)
+  useEffect(() => {
+    const onCloseActive = () => {
+      const g = initiatives.find((x) => x.tabs.some((t) => t.id === activeTab?.id));
+      if (g && activeTab) void closeTab(activeTab.id);
+    };
+    const onOpenOverview = () => {
+      // same guard as the ⌘O chord: an overview of zero sessions is a
+      // dead dark screen
+      if (
+        initiatives.some((g) =>
+          g.tabs.some((t) => t.sessionId && t.exitCode === null)
+        )
+      ) {
+        setOverviewOpen(true);
+      }
+    };
+    window.addEventListener(CLOSE_ACTIVE_EVENT, onCloseActive);
+    window.addEventListener(OPEN_OVERVIEW_EVENT, onOpenOverview);
+    return () => {
+      window.removeEventListener(CLOSE_ACTIVE_EVENT, onCloseActive);
+      window.removeEventListener(OPEN_OVERVIEW_EVENT, onOpenOverview);
+    };
+  }, [initiatives, activeTab, closeTab]);
+
   const shortcutActions = useMemo(
     () => ({
       igniteShell: () => igniteHere('shell'),
       closeActive: () => {
         if (!activeTab) return false;
         void closeTab(activeTab.id);
+        return true;
+      },
+      toggleOverview: () => {
+        if (!hasSessions && !overviewOpen) return false;
+        setOverviewOpen((v) => !v);
         return true;
       },
       selectIndex: selectInitiative,
@@ -111,7 +195,7 @@ export function WorkspaceClient() {
         return true;
       },
     }),
-    [activeTab, igniteHere, closeTab, selectInitiative, cycleTab, jumpAttention, togglePin, router, openCommandPalette, openHelpModal]
+    [activeTab, hasSessions, overviewOpen, igniteHere, closeTab, selectInitiative, cycleTab, jumpAttention, togglePin, router, openCommandPalette, openHelpModal]
   );
   useWorkspaceShortcuts(shortcutActions, inElectron);
 
@@ -182,7 +266,7 @@ export function WorkspaceClient() {
   };
 
   return (
-    <div className="flex h-full flex-col" style={{ background: HUD.bg.void }}>
+    <div className="relative flex h-full flex-col" style={{ background: HUD.bg.void }}>
       {/* initiative groups + tabs + ignite controls */}
       <div
         className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2"
@@ -230,15 +314,33 @@ export function WorkspaceClient() {
       )}
 
       {/* panes: ALL tabs stay mounted (sessions keep streaming across
-          initiative switches); exactly one is visible */}
+          initiative switches); exactly one is visible (two in a split).
+          Terminals are born with the EFFECTIVE font, so rendering waits for
+          settings.json to resolve (one local IPC) */}
       <div ref={panesRef} className="relative min-h-0 flex-1">
         {allTabs.length === 0 ? (
-          <div className="flex h-full items-center justify-center">
+          <div className="flex h-full flex-col items-center justify-center gap-4">
             <p className="font-mono text-sm" style={{ color: HUD.textDim }}>
-              Pick a project directory and ignite an agent — ⌘T for a shell.
+              Pick a project directory, then launch an agent or a shell.
             </p>
+            <div
+              className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 font-mono text-xs"
+              style={{ color: HUD.textDim }}
+            >
+              {KEY_HINTS.map(([keys, label]) => (
+                <span key={keys} className="flex items-center gap-1.5">
+                  <kbd
+                    className="rounded border px-1 py-0.5 text-[10px]"
+                    style={{ borderColor: 'rgba(80,230,255,0.3)', color: HUD.textMono }}
+                  >
+                    {keys}
+                  </kbd>
+                  {label}
+                </span>
+              ))}
+            </div>
           </div>
-        ) : (
+        ) : font === null ? null : (
           allTabs.map(({ tab, dir }) =>
             tab.sessionId ? (
               <TerminalPane
@@ -246,6 +348,7 @@ export function WorkspaceClient() {
                 sessionId={tab.sessionId}
                 active={tab.id === activeTab?.id}
                 layout={layoutFor(tab.id)}
+                font={font}
                 onActivate={() => selectTab(dir, tab.id)}
               />
             ) : (
@@ -257,13 +360,51 @@ export function WorkspaceClient() {
               >
                 <p className="font-mono text-sm" style={{ color: HUD.textDim }}>
                   {tab.exitCode === REVIVE_FAILED
-                    ? 'Revive failed — close this tab and ignite again.'
+                    ? 'Revive failed — close this tab and launch again.'
                     : 'Reviving session…'}
                 </p>
               </div>
             )
           )
         )}
+      </div>
+
+      {/* exposé overview (S3): ⌘O — every session as a glanceable tile.
+          Mounted at the ROOT so it truly covers the workspace: the tab
+          strip and launch controls must not stay interactive underneath a
+          modal (clicking them would drive invisible terminals) */}
+      {overviewOpen && (
+        <ExposeOverlay
+          initiatives={initiatives}
+          summaries={summaries}
+          attention={attention}
+          activeTabId={activeTab?.id ?? null}
+          onPick={(dir, tabId) => {
+            selectTab(dir, tabId);
+            closeOverview();
+          }}
+          onClose={closeOverview}
+        />
+      )}
+
+      {/* discoverability (S3): the workspace SHOWS its keys — same pattern
+          as the spatial map's bottom legend */}
+      <div
+        data-key-hints
+        className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t px-3 py-1 font-mono text-[10px]"
+        style={{ color: HUD.textDim, borderColor: 'rgba(80,230,255,0.12)', background: HUD.bg.deep }}
+      >
+        {KEY_HINTS.map(([keys, label]) => (
+          <span key={keys} className="flex items-center gap-1">
+            <kbd
+              className="rounded border px-1 leading-4"
+              style={{ borderColor: 'rgba(80,230,255,0.25)', color: HUD.textMono }}
+            >
+              {keys}
+            </kbd>
+            {label}
+          </span>
+        ))}
       </div>
     </div>
   );

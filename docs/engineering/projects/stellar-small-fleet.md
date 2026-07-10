@@ -73,19 +73,20 @@ Scope:
   color, worktree, jump) reachable by keyboard
 - shortcut discoverability: an in-app cheat-sheet overlay (⌘/)
 
-### S3 Exposé & motion
+### S3 Exposé, motion & discoverability
 
-Status: planned
+Status: landed 2026-07-10
 
-Scope:
+Scope (reshaped by dogfood round 4 — discoverability first-class):
 
-- exposé-style overview: all sessions as live tiles in a zoomable grid
-  (initiative-clustered, stable slots), one key in/out; click or keys drop
-  into the session — game-feel depth and spring motion, DOM-rendered per
-  the decision `0003` hybrid rule
-- animated tab/initiative switching (motion communicates direction and
-  hierarchy, not decoration); full pass on chrome depth/transitions
-- respects prefers-reduced-motion throughout
+- ⌘O exposé overview: all sessions as rich tiles (stable slots, keyboard
+  driven, staggered entrance motion), DOM-rendered per decision `0003`
+- discoverability: persistent bottom key-hint bar + hints in the empty
+  state; workspace verbs in the ⌘K palette with their chords
+- hover/pressed states on tabs; forced dark theme; "launch" language;
+  devIndicators off; terminal font setting (userData settings.json)
+- respects prefers-reduced-motion throughout; pane-content switch
+  animation deliberately skipped (terminals reflow badly under motion)
 
 ### S4 Context paging
 
@@ -156,6 +157,45 @@ S4 planning picks from here.
 
 ## Progress log
 
+S3 Exposé, motion & discoverability (landed 2026-07-10, dogfood round 4):
+
+- ⌘O exposé (`expose-overlay.tsx`): every live session as a tile —
+  project-color frame, harness mark, title, project, micro-context,
+  needs-you pulse, and the LAST LINES of scrollback (`scrollback-preview.ts`,
+  ANSI-stripped incl. private-byte CSI like kitty's `ESC [ > 4;1 m` —
+  found leaking into previews on the first screenshot pass). Arrows move
+  (column-aware), Enter/click drop in, Esc/⌘O close, focus returns to the
+  terminal. Stable slots (spatial memory), staggered entrance, reduced-
+  motion respected. role=dialog so workspace ⌘-verbs are guarded while
+  open.
+- Discoverability (the "how is this better than tmux" answer): a slim
+  bottom key-hint bar (⌘K/⌘O/⌘T/⌘D/⌘J/⌘E/⌘⇧M/⌘/) mirroring the spatial
+  map's legend, the same hints in the empty state, and a Workspace group
+  in ⌘K (overview / rename / change color / split / jump to needs-you /
+  close tab / switch to map) — each row fires the same event its chord
+  does, with the chord shown.
+- Round-4 fixes: app forced dark (`<html class="dark">` — the ⌘K palette
+  was following OS light mode over the dark HUD); Next devIndicators off;
+  "ignite" retired from the UI ("+ Claude Code" buttons, "Launch a new …
+  session in …" tooltips, "New Claude Code session in the active project"
+  palette rows — ignite stays internal vocabulary); tab hover/pressed
+  feedback (brightness lift, press scale, close-× reveals on hover).
+- Terminal font setting: `<userData>/settings.json` →
+  `{ terminal: { fontFamily, fontSize } }` (main: settings-store.ts,
+  `settings:get` IPC); panes are born with the effective font and spawn
+  estimates derive from it. Root cause of the operator's mismatch:
+  Terminal.app profile "Jake" runs MesloLGS for Powerline 14 vs our
+  SF Mono 13 — their local settings.json now carries Meslo 14; the CODE
+  default stays the native stack (genericize rule). Exercised end-to-end
+  in the smoke (test userData settings.json → xterm options).
+- Executed in an own git worktree per the new operator workflow rule
+  (parallel agents share this repo).
+- Verified: 226 unit tests (5 new preview tests incl. the private-byte
+  CSI regression), type-check, lint, electron compile, 11/11 live smoke
+  from the worktree's own dev server (hint bar, forced dark, live font
+  setting, exposé open/navigate/enter, dark palette, palette split
+  pin+unpin, launch wording), screenshots reviewed.
+
 S2 Command velocity (landed 2026-07-09):
 
 - ⌘K session switcher: the palette gains a Sessions group — every live
@@ -225,6 +265,32 @@ S2 review round (high, workflow, 10 findings — all fixed 2026-07-10):
   recency among exited rows (was: epoch-vs-negated-ms key mixing).
 - Re-verified: 221 unit tests, type-check, lint, electron compile, 13/13
   live smoke (new check: clicking the watched pane keeps the split).
+
+S3 review round (high, workflow, 10 findings — all fixed 2026-07-10):
+
+- CRLF handling: stripAnsi turned \r\n into DOUBLE newlines, so every
+  exposé preview rendered sparse with bogus blank lines (PTY scrollback is
+  CRLF) — fixed in the preview AND the context summarizer.
+- Font/revive race: auto-revive could spawn PTYs with DEFAULT cell metrics
+  while a custom font was still loading — the exact init-width race the
+  spawn estimate exists to kill. Font resolution moved to a shared
+  `terminal-font.ts` loader; the revive path AWAITS the same promise the
+  render gate uses.
+- Exposé modality: the overlay covered only the panes area — the tab strip
+  stayed clickable underneath, switching terminals invisibly. Now mounted
+  at the workspace root; backdrop click closes.
+- Exposé selection starts on the ACTIVE session (⌘O → Enter returns you
+  where you were; it jumped to tile 0 before), stays clamped when sessions
+  exit while open, previews fetch for tiles that appear mid-open (revive),
+  and the column math no longer undercounts (trailing-gap off-by-one).
+- Palette "Overview" honors the same no-sessions guard as ⌘O (was: dead
+  dark screen on an empty workspace).
+- Forced dark now sets `color-scheme: dark` — native scrollbars, form
+  controls, and autofill follow the app instead of a light OS.
+- Close-× regains visibility on keyboard focus (hover-only reveal broke
+  the keyboard path).
+- Re-verified: 227 unit tests, type-check, lint, electron compile, 12/12
+  live smoke (new checks: overview starts on the active session).
 
 S1 Attention system (landed 2026-07-06):
 

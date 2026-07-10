@@ -73,6 +73,18 @@ export interface ElectronWorkspaceApi {
   save: (state: unknown) => Promise<void>;
 }
 
+/** userData/settings.json — the personal-taste escape hatch (S3) */
+export interface ExawattSettings {
+  terminal?: {
+    fontFamily?: string;
+    fontSize?: number;
+  };
+}
+
+export interface ElectronSettingsApi {
+  get: () => Promise<ExawattSettings>;
+}
+
 declare global {
   interface Window {
     electron?: {
@@ -85,6 +97,7 @@ declare global {
       };
       pty?: ElectronPtyApi;
       workspace?: ElectronWorkspaceApi;
+      settings?: ElectronSettingsApi;
       auth?: {
         openExternal: (url: string) => Promise<void>;
         onDeepLinkCode: (handler: (code: string) => void) => () => void;

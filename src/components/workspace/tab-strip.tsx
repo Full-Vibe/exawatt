@@ -202,7 +202,7 @@ export function TabStrip({
                 setEditing({ kind: 'group', id: g.dir, value: g.name })
               }
               title={`${g.dir} · double-click to rename`}
-              className="flex items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+              className="flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-[11px] outline-none transition-[filter,transform] duration-100 hover:brightness-150 active:scale-95 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
               style={{ color: groupActive ? color : HUD.textDim }}
             >
               <span
@@ -247,10 +247,10 @@ export function TabStrip({
                 <div
                   key={t.id}
                   data-active={on || undefined}
-                  className="flex items-center overflow-hidden rounded border"
+                  className="group/tab flex items-center overflow-hidden rounded border transition-[border-color,background-color,filter] duration-150 hover:brightness-125 motion-reduce:transition-none"
                   style={{
                     borderColor: on ? `${color}99` : 'rgba(138,160,190,0.18)',
-                    background: on ? `${color}14` : 'transparent',
+                    background: on ? `${color}14` : 'rgba(138,160,190,0.04)',
                     opacity: dead ? 0.55 : 1,
                   }}
                 >
@@ -259,7 +259,7 @@ export function TabStrip({
                     onDoubleClick={() =>
                       setEditing({ kind: 'tab', id: t.id, value: t.title })
                     }
-                    className="flex items-center gap-1.5 px-2 py-0.5 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                    className="flex cursor-pointer items-center gap-1.5 px-2 py-0.5 font-mono text-xs outline-none transition-transform duration-100 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{ color: on ? HUD.text : HUD.textDim }}
                     title={`${t.cwd}${summary ? `\n${summary}` : ''}${
                       needsYou ? '\nneeds your attention (⌘J jumps here)' : ''
@@ -320,7 +320,7 @@ export function TabStrip({
                   <button
                     onClick={() => onCloseTab(t.id)}
                     aria-label={`Close ${t.title}`}
-                    className="px-1 py-0.5 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                    className="cursor-pointer px-1 py-0.5 font-mono text-xs opacity-40 outline-none transition-opacity duration-100 group-hover/tab:opacity-100 hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{ color: HUD.textDim }}
                   >
                     ×

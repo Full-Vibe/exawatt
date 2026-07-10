@@ -20,10 +20,22 @@ import {
   Settings,
   HelpCircle,
   Server,
+  LayoutPanelTop,
+  PenLine,
+  Palette,
+  Columns2,
+  BellRing,
+  XCircle,
+  Map as MapIcon,
 } from 'lucide-react';
 import {
   requestSessionJump,
   requestIgnite,
+  RENAME_ACTIVE_EVENT,
+  TOGGLE_SPLIT_EVENT,
+  JUMP_ATTENTION_EVENT,
+  CLOSE_ACTIVE_EVENT,
+  OPEN_OVERVIEW_EVENT,
 } from '@/components/workspace/session-jump';
 import { buildSessionRows } from '@/components/workspace/switcher-rows';
 import type { SessionRow, SessionRowStatus } from '@/components/workspace/switcher-rows';
@@ -66,6 +78,9 @@ export function CommandPalette({
   // live sessions for the switcher (S2) — desktop app only, fetched fresh
   // each time the palette opens
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  // workspace verbs only make sense where the workspace is (S3): sampled
+  // when the palette opens
+  const [onWorkspaceRoute, setOnWorkspaceRoute] = useState(false);
   const inElectron =
     typeof window !== 'undefined' && !!window.electron?.pty;
 
@@ -81,6 +96,7 @@ export function CommandPalette({
 
   useEffect(() => {
     if (!open) return;
+    setOnWorkspaceRoute(window.location.pathname.startsWith('/workspace'));
     const pty = window.electron?.pty;
     if (!pty) return;
     let cancelled = false;
@@ -124,6 +140,74 @@ export function CommandPalette({
         if (!inWorkspace()) router.push('/workspace');
       }),
     [handleSelect, router]
+  );
+
+  /** workspace verbs (S3): the palette is the discoverable face of the
+   *  ⌘-chords — each row fires the same event the chord does */
+  const dispatch = useCallback(
+    (event: string) => handleSelect(() => window.dispatchEvent(new CustomEvent(event))),
+    [handleSelect]
+  );
+  const workspaceItems = useMemo(
+    () => [
+      {
+        id: 'ws-overview',
+        label: 'Overview of all sessions',
+        value: 'overview all sessions expose grid tiles',
+        keys: '⌘O',
+        icon: LayoutPanelTop,
+        onSelect: () => dispatch(OPEN_OVERVIEW_EVENT),
+      },
+      {
+        id: 'ws-rename',
+        label: 'Rename the active tab',
+        value: 'rename tab title active',
+        keys: '⌘E',
+        icon: PenLine,
+        onSelect: () => dispatch(RENAME_ACTIVE_EVENT),
+      },
+      {
+        id: 'ws-color',
+        label: 'Change the project color',
+        value: 'color project swatch recolor palette hue',
+        icon: Palette,
+        // the inline rename editor carries the swatch row — same surface
+        onSelect: () => dispatch(RENAME_ACTIVE_EVENT),
+      },
+      {
+        id: 'ws-split',
+        label: 'Split: pin / unpin the active tab',
+        value: 'split pane pin unpin side by side watch',
+        keys: '⌘D',
+        icon: Columns2,
+        onSelect: () => dispatch(TOGGLE_SPLIT_EVENT),
+      },
+      {
+        id: 'ws-jump',
+        label: 'Jump to the session needing you',
+        value: 'jump attention needs you blocked waiting',
+        keys: '⌘J',
+        icon: BellRing,
+        onSelect: () => dispatch(JUMP_ATTENTION_EVENT),
+      },
+      {
+        id: 'ws-close',
+        label: 'Close the active tab',
+        value: 'close tab kill session end',
+        keys: '⌘W',
+        icon: XCircle,
+        onSelect: () => dispatch(CLOSE_ACTIVE_EVENT),
+      },
+      {
+        id: 'ws-map',
+        label: 'Switch to the spatial map',
+        value: 'map spatial regime fleet world switch',
+        keys: '⌘⇧M',
+        icon: MapIcon,
+        onSelect: () => handleSelect(() => router.push('/fleet/spatial')),
+      },
+    ],
+    [dispatch, handleSelect, router]
   );
 
   // Build command items
@@ -238,11 +322,11 @@ export function CommandPalette({
 
         {inElectron && (
           <>
-            <CommandGroup heading="Ignite">
+            <CommandGroup heading="Launch">
               {HARNESS_ORDER.map((h) => (
                 <CommandItem
-                  key={`ignite-${h}`}
-                  value={`ignite ${HARNESS_META[h].label} new session agent`}
+                  key={`launch-${h}`}
+                  value={`launch ignite ${HARNESS_META[h].label} new session agent`}
                   onSelect={() => igniteHarness(h)}
                 >
                   {h === 'shell' ? (
@@ -255,7 +339,26 @@ export function CommandPalette({
                       <HarnessGlyph harness={h} size={13} />
                     </span>
                   )}
-                  <span>Ignite {HARNESS_META[h].label} here</span>
+                  <span>New {HARNESS_META[h].label} session in the active project</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
+
+        {inElectron && onWorkspaceRoute && (
+          <>
+            <CommandGroup heading="Workspace">
+              {workspaceItems.map((item) => (
+                <CommandItem
+                  key={item.id}
+                  value={item.value}
+                  onSelect={item.onSelect}
+                >
+                  <item.icon className="mr-2 h-4 w-4" />
+                  <span>{item.label}</span>
+                  {item.keys && <CommandShortcut>{item.keys}</CommandShortcut>}
                 </CommandItem>
               ))}
             </CommandGroup>

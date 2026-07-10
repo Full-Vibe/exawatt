@@ -50,6 +50,9 @@ contextBridge.exposeInMainWorld('electron', {
     load: () => ipcRenderer.invoke('workspace:load'),
     save: (state: unknown) => ipcRenderer.invoke('workspace:save', state),
   },
+  settings: {
+    get: () => ipcRenderer.invoke('settings:get'),
+  },
   auth: {
     openExternal: (url: string) => ipcRenderer.invoke('auth:open-external', url),
     onDeepLinkCode: subscribe<string>('auth:deeplink-code'),

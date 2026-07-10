@@ -17,6 +17,12 @@ export const RENAME_ACTIVE_EVENT = 'exawatt:rename-active';
 /** the active terminal pane refocuses itself (rename editors steal focus —
  *  the keyboard flow must land back in the terminal) */
 export const FOCUS_ACTIVE_TERMINAL_EVENT = 'exawatt:focus-active-terminal';
+/** palette → workspace verbs (S3): only offered while ON /workspace, so
+ *  they are plain live events — no pending slots needed */
+export const TOGGLE_SPLIT_EVENT = 'exawatt:toggle-split';
+export const JUMP_ATTENTION_EVENT = 'exawatt:jump-attention';
+export const CLOSE_ACTIVE_EVENT = 'exawatt:close-active-tab';
+export const OPEN_OVERVIEW_EVENT = 'exawatt:open-overview';
 
 /** a pending request older than this is abandoned, not replayed — a slot
  *  that survived an unmount must not yank the workspace around minutes

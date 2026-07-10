@@ -8,6 +8,7 @@
  *   ⌘J           jump to the oldest session needing attention (S1)
  *   ⌘⇧M          switch regime: workspace ↔ spatial map
  *   ⌘K           session switcher / command palette (S2)
+ *   ⌘O           exposé overview of all sessions (S3)
  *   ⌘D           split: pin the active tab beside whatever you drive (S2)
  *   ⌘E           rename the active tab inline (S2)
  *   ⌘/           keyboard cheat-sheet (S2)
@@ -47,6 +48,8 @@ export interface WorkspaceShortcutActions {
   toggleRegime: () => boolean;
   /** open the ⌘K palette (session switcher) */
   openPalette: () => boolean;
+  /** toggle the exposé overview (S3) */
+  toggleOverview: () => boolean;
   /** toggle the split pin on the active tab */
   togglePin: () => boolean;
   /** open the inline rename editor for the active tab */
@@ -106,6 +109,8 @@ export function useWorkspaceShortcuts(
         if (actions.jumpAttention()) e.preventDefault();
       } else if (key === 'm' && e.shiftKey) {
         if (actions.toggleRegime()) e.preventDefault();
+      } else if (key === 'o' && !e.shiftKey) {
+        if (actions.toggleOverview()) e.preventDefault();
       } else if (key === 'd' && !e.shiftKey) {
         if (actions.togglePin()) e.preventDefault();
       } else if (key === 'e' && !e.shiftKey) {

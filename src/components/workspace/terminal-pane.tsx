@@ -11,21 +11,11 @@
 import { useEffect, useRef } from 'react';
 import '@xterm/xterm/css/xterm.css';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from './session-jump';
+import { TERMINAL_FONT } from './terminal-font';
+import type { EffectiveTerminalFont } from './terminal-font';
 
-/** single home for the terminal font config; the workspace client derives
- *  its spawn-size estimate from these same numbers.
- *  Family is a NATIVE-FIRST stack (not the site's display mono): terminals
- *  should look like the platform's terminals for every user — SF Mono when
- *  installed, Menlo on macOS, Consolas on Windows. A user-facing font
- *  setting is the eventual home for personal taste. */
-export const TERMINAL_FONT = {
-  family:
-    '"SF Mono", Menlo, Monaco, Consolas, "DejaVu Sans Mono", monospace',
-  size: 13,
-  lineHeight: 1.25,
-  /** Menlo/SF Mono advance ≈ 0.6em at 13px (estimate; fit refines) */
-  cellWidthEstimate: 7.8,
-} as const;
+export { TERMINAL_FONT, resolveTerminalFont } from './terminal-font';
+export type { EffectiveTerminalFont } from './terminal-font';
 
 const HUD_TERM_THEME = {
   background: '#04060B',
@@ -69,11 +59,15 @@ export function TerminalPane({
   sessionId,
   active,
   layout = 'full',
+  font,
   onActivate,
 }: {
   sessionId: string;
   active: boolean;
   layout?: PaneLayout;
+  /** effective font (defaults + settings); panes render only after the
+   *  workspace has resolved it, so it is fixed for the pane's lifetime */
+  font?: EffectiveTerminalFont;
   /** clicking into a visible-but-inactive pane makes its tab active */
   onActivate?: () => void;
 }) {
@@ -84,6 +78,10 @@ export function TerminalPane({
   // active state when it finally exists, or the first focus is lost
   const activeRef = useRef(active);
   activeRef.current = active;
+  // font is fixed for the pane's lifetime (workspace gates rendering until
+  // settings resolve); ref keeps it out of the mount effect's deps
+  const fontRef = useRef(font);
+  fontRef.current = font;
   // hidden panes must NOT resize their PTY: an invisible element keeps
   // full-container geometry, so during a split every hidden session would
   // get SIGWINCHed to the WRONG width on each layout change (TUIs then
@@ -112,10 +110,11 @@ export function TerminalPane({
       ]);
       if (disposed) return;
 
+      const f = fontRef.current;
       const term = new Terminal({
-        fontFamily: TERMINAL_FONT.family,
-        fontSize: TERMINAL_FONT.size,
-        lineHeight: TERMINAL_FONT.lineHeight,
+        fontFamily: f?.family ?? TERMINAL_FONT.family,
+        fontSize: f?.size ?? TERMINAL_FONT.size,
+        lineHeight: f?.lineHeight ?? TERMINAL_FONT.lineHeight,
         cursorBlink: true,
         scrollback: 8000,
         theme: HUD_TERM_THEME,

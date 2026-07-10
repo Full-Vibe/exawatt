@@ -37,7 +37,8 @@ const CATEGORY_ORDER: ShortcutCategory[] = [
  */
 const WORKSPACE_KEYS: Array<{ label: string; keys: { key: string; modifiers?: Array<'meta' | 'shift'> } }> = [
   { label: 'Session switcher / commands', keys: { key: 'k', modifiers: ['meta'] } },
-  { label: 'Ignite a shell here', keys: { key: 't', modifiers: ['meta'] } },
+  { label: 'Overview of all sessions', keys: { key: 'o', modifiers: ['meta'] } },
+  { label: 'New shell in the active project', keys: { key: 't', modifiers: ['meta'] } },
   { label: 'Close the active tab', keys: { key: 'w', modifiers: ['meta'] } },
   { label: 'Jump to initiative 1–9', keys: { key: '1…9', modifiers: ['meta'] } },
   { label: 'Previous / next tab (global ring)', keys: { key: '[ / ]', modifiers: ['meta', 'shift'] } },

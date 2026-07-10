@@ -5,6 +5,7 @@ import { contextSummarizer } from './pty/context-summarizer';
 import { attentionMonitor } from './pty/attention-monitor';
 import { createWorktree } from './pty/project-resolve';
 import { loadWorkspace, saveWorkspace } from './workspace-store';
+import { loadSettings } from './settings-store';
 
 /**
  * IPC surface for PTY sessions (decision 0005). Invocations are namespaced
@@ -112,6 +113,9 @@ export function registerPtyIPC(): void {
   ipcMain.handle('workspace:save', (_event, state: unknown) =>
     saveWorkspace(state)
   );
+
+  // user settings (S3): userData/settings.json — e.g. the terminal font
+  ipcMain.handle('settings:get', () => loadSettings());
 }
 
 /** app-quit cleanup: never leave orphan shells behind */

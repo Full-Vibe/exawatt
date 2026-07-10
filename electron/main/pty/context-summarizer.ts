@@ -46,9 +46,10 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 /** strip ANSI escapes + OSC sequences so the model sees prose, not codes */
 function stripAnsi(s: string): string {
   return s
-    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+    .replace(/\x1b\[[0-9;?>=<]*[a-zA-Z]/g, '')
     .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '')
     .replace(/\x1b[()][A-Z0-9]/g, '')
+    .replace(/\r\n/g, '\n') // CRLF is ONE break — PTY scrollback is full of it
     .replace(/\r/g, '\n');
 }
 

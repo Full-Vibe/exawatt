@@ -35,7 +35,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    // Exawatt is a dark-branded HUD product: force dark so shadcn surfaces
+    // (⌘K palette, dialogs) never render light on a light-mode OS while the
+    // HUD chrome around them is hardcoded dark
+    <html lang="en" className="dark">
       <body
         className={`${exo2.variable} ${geistMono.variable} ${geistSans.variable} font-sans antialiased`}
       >
