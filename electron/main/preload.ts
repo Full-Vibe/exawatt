@@ -59,6 +59,13 @@ contextBridge.exposeInMainWorld('electron', {
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
+    onChanged: subscribe<{
+      terminal?: {
+        fontFamily?: string;
+        fontSize?: number;
+        lineHeight?: number;
+      };
+    }>('settings:changed'),
   },
   auth: {
     openExternal: (url: string) => ipcRenderer.invoke('auth:open-external', url),

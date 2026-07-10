@@ -18,9 +18,11 @@ import { useRouter } from 'next/navigation';
 import { TerminalPane } from './terminal-pane';
 import type { PaneLayout } from './terminal-pane';
 import {
+  acceptTerminalSettings,
   loadTerminalFont,
   loadedTerminalFont,
   resolveTerminalFont,
+  terminalFontsEqual,
 } from './terminal-font';
 import type { EffectiveTerminalFont } from './terminal-font';
 import { TabStrip } from './tab-strip';
@@ -73,11 +75,21 @@ export function WorkspaceClient() {
   useEffect(() => {
     if (!inElectron) return;
     let cancelled = false;
-    void loadTerminalFont().then((f) => {
-      if (!cancelled) setFont(f);
+    const apply = (next: Promise<EffectiveTerminalFont>) =>
+      void next.then((resolved) => {
+        if (!cancelled) {
+          setFont((current) =>
+            terminalFontsEqual(current, resolved) ? current : resolved
+          );
+        }
+      });
+    apply(loadTerminalFont());
+    const offSettings = window.electron?.settings?.onChanged?.((settings) => {
+      apply(Promise.resolve(acceptTerminalSettings(settings)));
     });
     return () => {
       cancelled = true;
+      offSettings?.();
     };
   }, [inElectron]);
 

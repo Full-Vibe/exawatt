@@ -96,6 +96,7 @@ export interface ExawattSettings {
 
 export interface ElectronSettingsApi {
   get: () => Promise<ExawattSettings>;
+  onChanged: (handler: (settings: ExawattSettings) => void) => () => void;
 }
 
 declare global {

@@ -66,20 +66,24 @@ export function TerminalPane({
   active: boolean;
   layout?: PaneLayout;
   /** effective font (defaults + settings); panes render only after the
-   *  workspace has resolved it, so it is fixed for the pane's lifetime */
+   *  workspace has resolved it, then accept live settings refreshes */
   font?: EffectiveTerminalFont;
   /** clicking into a visible-but-inactive pane makes its tab active */
   onActivate?: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
-  // latest xterm handle for the activation effect below
-  const termRef = useRef<{ focus(): void; fit(): void } | null>(null);
+  // latest xterm handle for activation and live font refresh
+  const termRef = useRef<{
+    focus(): void;
+    fit(): void;
+    applyFont(font: EffectiveTerminalFont): void;
+  } | null>(null);
   // the term is created ASYNC (dynamic import) — it must read the CURRENT
   // active state when it finally exists, or the first focus is lost
   const activeRef = useRef(active);
   activeRef.current = active;
-  // font is fixed for the pane's lifetime (workspace gates rendering until
-  // settings resolve); ref keeps it out of the mount effect's deps
+  // the initial font resolves before mounting; later settings refreshes
+  // update this ref and the live xterm through applyFont below
   const fontRef = useRef(font);
   fontRef.current = font;
   // hidden panes must NOT resize their PTY: an invisible element keeps
@@ -131,7 +135,16 @@ export function TerminalPane({
         fit.fit();
         void api.resize(sessionId, term.cols, term.rows);
       };
-      termRef.current = { focus: () => term.focus(), fit: syncSize };
+      termRef.current = {
+        focus: () => term.focus(),
+        fit: syncSize,
+        applyFont: (next) => {
+          term.options.fontFamily = next.family;
+          term.options.fontSize = next.size;
+          term.options.lineHeight = next.lineHeight;
+          syncSize();
+        },
+      };
       cleanup.push(() => {
         termRef.current = null;
       });
@@ -193,6 +206,10 @@ export function TerminalPane({
       dispose();
     };
   }, [sessionId]);
+
+  useEffect(() => {
+    if (font) termRef.current?.applyFont(font);
+  }, [font]);
 
   // refit when the pane's geometry changes (activation, split/unsplit —
   // it may have been hidden during a container resize); focus follows the

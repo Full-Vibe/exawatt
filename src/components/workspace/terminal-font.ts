@@ -1,6 +1,8 @@
+import type { ExawattSettings } from '@/types/electron';
+
 /**
  * Terminal font resolution (ENG-015 S3): defaults + the user's
- * settings.json, loaded ONCE per renderer and shared by every consumer —
+ * settings.json, shared by every consumer —
  * the pane (xterm options), the workspace client (render gate), and the
  * auto-revive spawn-size estimate. The revive path AWAITS the same promise,
  * so restored sessions are never sized with default metrics while a custom
@@ -45,17 +47,39 @@ export function resolveTerminalFont(settings: {
 let loadPromise: Promise<EffectiveTerminalFont> | null = null;
 let loaded: EffectiveTerminalFont | null = null;
 
-/** one settings fetch per renderer; safe on the web (resolves to defaults) */
+function fetchTerminalFont(): Promise<EffectiveTerminalFont> {
+  return (window.electron?.settings?.get() ?? Promise.resolve(null))
+    .catch(() => null)
+    .then((settings) => resolveTerminalFont(settings?.terminal));
+}
+
+export function terminalFontsEqual(
+  a: EffectiveTerminalFont | null,
+  b: EffectiveTerminalFont
+): boolean {
+  return (
+    a?.family === b.family &&
+    a.size === b.size &&
+    a.lineHeight === b.lineHeight
+  );
+}
+
+function storeTerminalFont(font: EffectiveTerminalFont): EffectiveTerminalFont {
+  loaded = font;
+  loadPromise = Promise.resolve(font);
+  return font;
+}
+
+export function acceptTerminalSettings(
+  settings: ExawattSettings | null
+): EffectiveTerminalFont {
+  return storeTerminalFont(resolveTerminalFont(settings?.terminal));
+}
+
+/** initial settings fetch; safe on the web (resolves to defaults) */
 export function loadTerminalFont(): Promise<EffectiveTerminalFont> {
   if (!loadPromise) {
-    loadPromise = (
-      window.electron?.settings?.get() ?? Promise.resolve(null)
-    )
-      .catch(() => null)
-      .then((s) => {
-        loaded = resolveTerminalFont(s?.terminal);
-        return loaded;
-      });
+    loadPromise = fetchTerminalFont().then(storeTerminalFont);
   }
   return loadPromise;
 }

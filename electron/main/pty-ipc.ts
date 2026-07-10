@@ -46,6 +46,9 @@ export function registerPtyIPC(): void {
   app.on('browser-window-focus', () => {
     attentionMonitor.setWindowFocused(true);
     contextSummarizer.setWindowFocused(true);
+    // Settings may have been edited while Exawatt was in the background.
+    // Main owns authoritative OS focus, so refresh existing panes from here.
+    broadcast('settings:changed', loadSettings());
   });
   app.on('browser-window-blur', () => {
     attentionMonitor.setWindowFocused(false);

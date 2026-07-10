@@ -219,6 +219,18 @@ S4 re-entry recap, first slice (landed 2026-07-10):
   production Next build, and a live two-session Electron smoke with screenshot
   review and first-key dismissal.
 
+S4 post-land review (2026-07-10):
+
+- Explicit input now carries a per-session version, so a keystroke that beats
+  asynchronous focus IPC still suppresses the pending recap. An exiting
+  session also invalidates its in-flight recap instead of publishing stale UI.
+- The summary sweep interval clamps to one second; an explicit zero can no
+  longer create a hot timer.
+- Regression coverage exercises early input, mid-generation exit, and the
+  interval floor. Full verification after the review: 242 tests, lint,
+  type-check, Electron compile, production build, and live Electron font
+  refresh/sizing smoke.
+
 S3 Exposé, motion & discoverability (landed 2026-07-10, dogfood round 4):
 
 - ⌘O exposé (`expose-overlay.tsx`): every live session as a tile —
@@ -244,8 +256,9 @@ S3 Exposé, motion & discoverability (landed 2026-07-10, dogfood round 4):
   feedback (brightness lift, press scale, close-× reveals on hover).
 - Terminal font setting: `<userData>/settings.json` →
   `{ terminal: { fontFamily, fontSize, lineHeight } }` (main: settings-store.ts,
-  `settings:get` IPC); panes are born with the effective font and spawn
-  estimates derive from it. Root cause of the operator's mismatch:
+  `settings:get` IPC); panes are born with the effective font, refresh it
+  after app refocus, and use it for spawn estimates. Root cause of the
+  operator's mismatch:
   Terminal.app profile "Jake" runs MesloLGS for Powerline 14 vs our
   SF Mono 13 — their local settings.json now carries Meslo 14 at
   lineHeight 1.0 (Terminal.app uses the font's OWN metrics; Meslo LG
@@ -255,9 +268,12 @@ S3 Exposé, motion & discoverability (landed 2026-07-10, dogfood round 4):
   GOTCHA (found in dogfood round 5): the dev app's userData is
   `~/Library/Application Support/exawatt` (package.json name), NOT
   `.../Electron` — a settings.json in the wrong dir silently does
-  nothing. Verified live: family "Meslo LG S for Powerline" resolves
-  (document.fonts.check) and Meslo shares Menlo's exact advance metrics,
-  so the earlier mismatch was SF Mono's glyphs + the 1.25 line height.
+  nothing. The second mismatch was lifecycle: settings were cached for the
+  renderer lifetime and existing xterms never updated, so an override written
+  during dogfood appeared broken until a full app restart. Existing panes now
+  update on app refocus. Verified live: `MesloLGSForPowerline-Regular` at 14
+  measures the same 8.4287px advance and 18px line box in xterm and
+  Terminal.app.
 - Executed in an own git worktree per the new operator workflow rule
   (parallel agents share this repo).
 - Verified: 226 unit tests (5 new preview tests incl. the private-byte

@@ -10,10 +10,10 @@ import * as path from 'path';
  *
  *   <userData>/settings.json
  *   { "terminal": { "fontFamily": "\"MesloLGS For Powerline\", Menlo, monospace",
- *                   "fontSize": 14 } }
+ *                   "fontSize": 14, "lineHeight": 1.0 } }
  *
- * Read once per app run (renderers fetch via settings:get); tolerant of a
- * missing/invalid file.
+ * Renderers fetch via settings:get on mount and after window refocus;
+ * tolerant of a missing/invalid file.
  */
 
 export interface TerminalFontSettings {
