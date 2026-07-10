@@ -23,6 +23,18 @@ const EXA_BASE = process.env.EXA_BASE || 'http://localhost:7090';
 const TASKS = [
   { id: 't1-frame', name: 'Chamfered emissive frame', drawCallMax: null },
   { id: 't2-instanced', name: 'Instanced field (N=200)', drawCallMax: 3 },
+  {
+    id: 't3-spatial-sparse',
+    name: 'Sparse Live Fleet composition',
+    drawCallMax: null,
+    settleMs: 1_800,
+  },
+  {
+    id: 't4-agent-station',
+    name: 'Focused Agent workstation',
+    drawCallMax: null,
+    settleMs: 1_200,
+  },
 ];
 
 // Substrings that mean a real WebGL/shader failure -> hard gate.
@@ -79,7 +91,7 @@ async function runTask(browser, task) {
   const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
   const errors = [];
   const warnings = [];
-  page.on('pageerror', (e) => errors.push(String(e.message || e)));
+  page.on('pageerror', e => errors.push(String(e.message || e)));
   // only count R3F/WebGL-relevant warnings — ignore generic Next/React dev noise
   const RELEVANT_WARN =
     /three|webgl|r3f|fiber|drei|shader|texture|material|geometry|colorspace|deprecat/i;
@@ -88,13 +100,13 @@ async function runTask(browser, task) {
     'THREE.Clock: This module has been deprecated', // R3F internal (three 0.184)
     'GL Driver Message', // headless-GPU driver chatter, varies by machine
   ];
-  page.on('console', (m) => {
+  page.on('console', m => {
     const t = m.text();
     if (m.type() === 'error') errors.push(t);
     else if (
       m.type() === 'warning' &&
       RELEVANT_WARN.test(t) &&
-      !BENIGN_WARN.some((b) => t.includes(b))
+      !BENIGN_WARN.some(b => t.includes(b))
     )
       warnings.push(t);
   });
@@ -108,6 +120,7 @@ async function runTask(browser, task) {
     nonBlank: false,
     drawCalls: null,
     drawCallOk: false,
+    semanticOk: true,
     warnings: 0,
     errors: [],
     score: 0,
@@ -135,10 +148,11 @@ async function runTask(browser, task) {
     // two more rAFs so the painted frame is composited before capture
     await page.evaluate(
       () =>
-        new Promise((r) =>
+        new Promise(r =>
           requestAnimationFrame(() => requestAnimationFrame(() => r(null)))
         )
     );
+    if (task.settleMs) await page.waitForTimeout(task.settleMs);
 
     // non-blank: downscale the whole canvas to 64x64 and measure luminance
     // variance + range — robust to sparse content (e.g. an instanced field
@@ -188,6 +202,35 @@ async function runTask(browser, task) {
         ? true
         : result.drawCalls != null && result.drawCalls <= task.drawCallMax;
 
+    if (task.id === 't3-spatial-sparse') {
+      const composition = await page.evaluate(() => {
+        const controls = Array.from(
+          document.querySelectorAll('button[aria-label^="Open Project "]')
+        );
+        const rects = controls.map(control => control.getBoundingClientRect());
+        if (rects.length !== 2) return { ok: false, count: rects.length };
+        const centers = rects.map(rect => rect.top + rect.height / 2);
+        const left = Math.min(...rects.map(rect => rect.left));
+        const right = Math.max(...rects.map(rect => rect.right));
+        return {
+          ok:
+            Math.abs(centers[0] - centers[1]) < 12 &&
+            left > 16 &&
+            right < window.innerWidth - 16 &&
+            right - left > window.innerWidth * 0.45,
+          count: rects.length,
+          verticalDelta: Math.abs(centers[0] - centers[1]),
+          left,
+          right,
+          viewport: window.innerWidth,
+        };
+      });
+      result.semanticOk = composition.ok;
+      result.notes.push(`sparse-composition: ${JSON.stringify(composition)}`);
+      if (!composition.ok)
+        result.errors.push('sparse Fleet composition failed');
+    }
+
     await page
       .locator('canvas')
       .screenshot({ path: join(REPORT_DIR, `${task.id}.png`) });
@@ -195,7 +238,7 @@ async function runTask(browser, task) {
     result.errors.push(`run error: ${String(e.message || e)}`);
   }
 
-  result.hardFail = errors.some((e) => HARD_FAIL.some((h) => e.includes(h)));
+  result.hardFail = errors.some(e => HARD_FAIL.some(h => e.includes(h)));
   result.warnings = warnings.length;
   result.warningSamples = [...new Set(warnings)].slice(0, 3);
   result.errors.push(...errors.slice(0, 8));
@@ -207,6 +250,7 @@ async function runTask(browser, task) {
   if (result.warnings === 0) pts += 20; // no R3F/WebGL warnings
   if (result.hardFail) pts = Math.min(pts, 15); // gate 1: no GL/shader error
   if (!result.nonBlank) pts = Math.min(pts, 15); // gate 2: actually painted
+  if (!result.semanticOk) pts = Math.min(pts, 15); // gate 3: semantic fixture
   result.score = pts;
 
   await page.close();
@@ -238,15 +282,17 @@ async function runTask(browser, task) {
       `calls=${r.drawCalls ?? '?'}${r.drawCallOk ? '' : '!'}`,
       `warn=${r.warnings}`,
     ].join('  ');
-    console.log(`${String(r.score).padStart(3)}/100  ${r.id.padEnd(14)} ${flags}`);
+    console.log(
+      `${String(r.score).padStart(3)}/100  ${r.id.padEnd(14)} ${flags}`
+    );
     if (r.errors.length) console.log(`        errors: ${r.errors[0]}`);
     if (r.warningSamples?.length)
       console.log(`        warn: ${r.warningSamples[0].slice(0, 90)}`);
   }
   console.log('─'.repeat(72));
   console.log(`AGGREGATE: ${aggregate}/100   report/r3f-eval.json\n`);
-  process.exit(results.every((r) => r.score >= 70) ? 0 : 1);
-})().catch((e) => {
+  process.exit(results.every(r => r.score >= 70) ? 0 : 1);
+})().catch(e => {
   console.error(e);
   process.exit(1);
 });

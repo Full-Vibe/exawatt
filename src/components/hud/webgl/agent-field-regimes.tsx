@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import { Html, RoundedBox } from '@react-three/drei';
@@ -75,6 +75,7 @@ function UnitChassis({
   const material = useRef<THREE.MeshStandardMaterial>(null);
   const invalidate = useThree(state => state.invalidate);
   const entered = useRef(reduced ? 1 : 0.86);
+  const interactionScale = useRef(scale);
   const statusColor = HUD_STATUS_COLOR[unit.agent.status];
   const targetZ = selected ? 3.2 : hovered ? 2.2 : hero ? 1.8 : 1.25;
   const targetScale = scale * (selected ? 1.045 : hovered ? 1.025 : 1);
@@ -90,6 +91,7 @@ function UnitChassis({
     const dt = Math.min(delta, 0.05);
     if (reduced) {
       entered.current = 1;
+      interactionScale.current = targetScale;
       node.position.z = targetZ;
       node.scale.setScalar(targetScale);
       mat.emissiveIntensity = selected
@@ -104,8 +106,13 @@ function UnitChassis({
 
     entered.current = THREE.MathUtils.damp(entered.current, 1, 11, dt);
     node.position.z = THREE.MathUtils.damp(node.position.z, targetZ, 10, dt);
-    const nextScale = THREE.MathUtils.damp(node.scale.x, targetScale, 11, dt);
-    node.scale.setScalar(nextScale * entered.current);
+    interactionScale.current = THREE.MathUtils.damp(
+      interactionScale.current,
+      targetScale,
+      11,
+      dt
+    );
+    node.scale.setScalar(interactionScale.current * entered.current);
     const targetEmissive = selected
       ? 0.14
       : hero
@@ -121,7 +128,7 @@ function UnitChassis({
     );
     const moving =
       Math.abs(node.position.z - targetZ) > 0.002 ||
-      Math.abs(nextScale - targetScale) > 0.002 ||
+      Math.abs(interactionScale.current - targetScale) > 0.002 ||
       Math.abs(entered.current - 1) > 0.002 ||
       Math.abs(mat.emissiveIntensity - targetEmissive) > 0.002;
     if (moving) state.invalidate();
@@ -201,14 +208,12 @@ function UnitLabel({
   hero,
   onSelect,
   onHover,
-  prominent = false,
 }: {
   unit: ProjectUnitPlacement;
   selected: boolean;
   hero: boolean;
   onSelect: () => void;
   onHover: (hovered: boolean) => void;
-  prominent?: boolean;
 }) {
   const color = HUD_STATUS_COLOR[unit.agent.status];
   return (
@@ -230,9 +235,8 @@ function UnitLabel({
         onFocus={() => onHover(true)}
         onBlur={() => onHover(false)}
         aria-label={`${unit.agent.name}, ${unit.agent.status}`}
-        className="group pointer-events-auto min-w-40 rounded-md border px-3 py-2 text-left outline-none transition-[border-color,background-color,transform] duration-200 focus-visible:ring-2 focus-visible:ring-hud-cyan"
+        className="group pointer-events-auto w-32 rounded-md border px-2 py-2 text-left outline-none transition-[border-color,background-color,transform] duration-200 focus-visible:ring-2 focus-visible:ring-hud-cyan sm:w-[184px] sm:px-3"
         style={{
-          width: prominent ? 244 : 184,
           borderColor:
             selected || hero
               ? withAlpha(color, 0.72)
@@ -242,9 +246,7 @@ function UnitLabel({
         }}
       >
         <span className="flex items-center justify-between gap-3">
-          <span
-            className={`${prominent ? 'text-base' : 'text-sm'} max-w-40 truncate font-semibold tracking-tight text-slate-100`}
-          >
+          <span className="max-w-40 truncate text-sm font-semibold tracking-tight text-slate-100">
             {unit.agent.name}
           </span>
           <span
@@ -264,38 +266,55 @@ function UnitLabel({
   );
 }
 
+const PROJECT_DECK_EXTRUDE = {
+  depth: 0.9,
+  bevelEnabled: true,
+  bevelSegments: 2,
+  steps: 1,
+  bevelSize: 0.55,
+  bevelThickness: 0.38,
+} as const;
+
 function ProjectDeck({ layout }: { layout: ProjectDeckLayout }) {
+  const shape = useMemo(() => {
+    const cut = 3.2;
+    const left = -layout.width / 2;
+    const right = layout.width / 2;
+    const bottom = -layout.height / 2;
+    const top = layout.height / 2;
+    const next = new THREE.Shape();
+    next.moveTo(left + cut, bottom);
+    next.lineTo(right - cut, bottom);
+    next.lineTo(right, bottom + cut);
+    next.lineTo(right, top - cut);
+    next.lineTo(right - cut, top);
+    next.lineTo(left + cut, top);
+    next.lineTo(left, top - cut);
+    next.lineTo(left, bottom + cut);
+    next.closePath();
+    return next;
+  }, [layout.height, layout.width]);
   return (
     <group position={[layout.centerX, layout.centerY, -0.8]}>
       <GroundShadow width={layout.width} height={layout.height} />
-      <RoundedBox
-        args={[layout.width, layout.height, 1.1]}
-        radius={2.2}
-        smoothness={5}
-        bevelSegments={4}
-        raycast={() => null}
-      >
+      <mesh raycast={() => null}>
+        <extrudeGeometry args={[shape, PROJECT_DECK_EXTRUDE]} />
         <meshStandardMaterial
           color="#0c141b"
-          metalness={0.7}
-          roughness={0.36}
+          metalness={0.48}
+          roughness={0.58}
           emissive={layout.cluster.critical ? HUD.red : HUD.cyanDim}
-          emissiveIntensity={layout.cluster.critical ? 0.06 : 0.025}
+          emissiveIntensity={layout.cluster.critical ? 0.05 : 0.015}
         />
-      </RoundedBox>
-      <RoundedBox
-        position={[0, 0, 0.68]}
-        args={[layout.width - 2, layout.height - 2, 0.18]}
-        radius={1.6}
-        smoothness={4}
-        raycast={() => null}
-      >
+      </mesh>
+      <mesh position={[0, 0, 1.02]} raycast={() => null}>
+        <boxGeometry args={[layout.width - 2.2, layout.height - 2.2, 0.18]} />
         <meshStandardMaterial
           color="#0b1117"
           metalness={0.25}
           roughness={0.72}
         />
-      </RoundedBox>
+      </mesh>
     </group>
   );
 }
@@ -363,6 +382,186 @@ export function ProjectRegime({
   );
 }
 
+const AGENT_STATION_EXTRUDE = {
+  depth: 1.35,
+  bevelEnabled: true,
+  bevelSegments: 2,
+  steps: 1,
+  bevelSize: 0.5,
+  bevelThickness: 0.4,
+} as const;
+
+function AgentWorkstation({
+  unit,
+  hovered,
+  hero,
+  reduced,
+  onSelect,
+  onHover,
+}: {
+  unit: ProjectUnitPlacement;
+  hovered: boolean;
+  hero: boolean;
+  reduced: boolean;
+  onSelect: () => void;
+  onHover: (hovered: boolean) => void;
+}) {
+  const group = useRef<THREE.Group>(null);
+  const material = useRef<THREE.MeshStandardMaterial>(null);
+  const invalidate = useThree(state => state.invalidate);
+  const statusColor = HUD_STATUS_COLOR[unit.agent.status];
+  const shape = useMemo(() => {
+    const width = 34;
+    const height = 20;
+    const cut = 3.4;
+    const notch = 4.2;
+    const next = new THREE.Shape();
+    next.moveTo(-width / 2 + cut, -height / 2);
+    next.lineTo(width / 2 - cut, -height / 2);
+    next.lineTo(width / 2, -height / 2 + cut);
+    next.lineTo(width / 2, height / 2 - cut);
+    next.lineTo(width / 2 - cut, height / 2);
+    next.lineTo(notch, height / 2);
+    next.lineTo(0, height / 2 - 2.2);
+    next.lineTo(-notch, height / 2);
+    next.lineTo(-width / 2 + cut, height / 2);
+    next.lineTo(-width / 2, height / 2 - cut);
+    next.lineTo(-width / 2, -height / 2 + cut);
+    next.closePath();
+    return next;
+  }, []);
+  const targetZ = hovered ? 1.4 : 0.8;
+  const targetScale = hovered ? 1.025 : 1;
+
+  useEffect(() => {
+    invalidate();
+  }, [hovered, hero, invalidate]);
+
+  useFrame((state, delta) => {
+    const node = group.current;
+    const mat = material.current;
+    if (!node || !mat) return;
+    const targetEmissive = hero ? 0.12 : hovered ? 0.08 : 0.025;
+    if (reduced) {
+      node.position.z = targetZ;
+      node.scale.setScalar(targetScale);
+      mat.emissiveIntensity = targetEmissive;
+      return;
+    }
+    const dt = Math.min(delta, 0.05);
+    node.position.z = THREE.MathUtils.damp(node.position.z, targetZ, 10, dt);
+    const nextScale = THREE.MathUtils.damp(node.scale.x, targetScale, 10, dt);
+    node.scale.setScalar(nextScale);
+    mat.emissiveIntensity = THREE.MathUtils.damp(
+      mat.emissiveIntensity,
+      targetEmissive,
+      9,
+      dt
+    );
+    if (
+      Math.abs(node.position.z - targetZ) > 0.002 ||
+      Math.abs(nextScale - targetScale) > 0.002 ||
+      Math.abs(mat.emissiveIntensity - targetEmissive) > 0.002
+    ) {
+      state.invalidate();
+    }
+  });
+
+  return (
+    <group
+      ref={group}
+      position={[unit.x, unit.y, reduced ? targetZ : -0.4]}
+      onPointerOver={(event: ThreeEvent<PointerEvent>) => {
+        event.stopPropagation();
+        onHover(true);
+        invalidate();
+      }}
+      onPointerOut={() => {
+        onHover(false);
+        invalidate();
+      }}
+      onClick={(event: ThreeEvent<MouseEvent>) => {
+        event.stopPropagation();
+        if (event.delta < 6) onSelect();
+      }}
+    >
+      <GroundShadow width={34} height={20} />
+      <mesh position={[0, 0, -0.8]}>
+        <extrudeGeometry args={[shape, AGENT_STATION_EXTRUDE]} />
+        <meshStandardMaterial
+          ref={material}
+          color="#0a1217"
+          emissive={statusColor}
+          emissiveIntensity={hero ? 0.12 : 0.025}
+          metalness={0.58}
+          roughness={0.46}
+        />
+      </mesh>
+
+      <mesh position={[2.4, -0.4, 1.05]} raycast={() => null}>
+        <boxGeometry args={[21, 11.6, 0.48]} />
+        <meshStandardMaterial
+          color="#132027"
+          metalness={0.24}
+          roughness={0.7}
+        />
+      </mesh>
+      <mesh
+        position={[2.4, -0.4, 1.52]}
+        rotation={[0, 0, Math.PI / 4]}
+        raycast={() => null}
+      >
+        <boxGeometry args={[3.2, 3.2, 0.34]} />
+        <meshBasicMaterial
+          color={statusColor}
+          transparent
+          opacity={unit.agent.status === 'idle' ? 0.42 : 0.9}
+          toneMapped={false}
+        />
+      </mesh>
+      {[-3.8, 3.8].map(offset => (
+        <mesh
+          key={offset}
+          position={[2.4, offset - 0.4, 1.4]}
+          raycast={() => null}
+        >
+          <boxGeometry args={[12, 0.34, 0.18]} />
+          <meshBasicMaterial color="#314750" transparent opacity={0.7} />
+        </mesh>
+      ))}
+      <mesh position={[-12.5, -0.4, 1.05]} raycast={() => null}>
+        <boxGeometry args={[4.8, 12, 0.52]} />
+        <meshStandardMaterial
+          color="#101b20"
+          metalness={0.4}
+          roughness={0.58}
+        />
+      </mesh>
+      {[-3.6, 0, 3.6].map(offset => (
+        <mesh
+          key={offset}
+          position={[-12.5, offset - 0.4, 1.42]}
+          raycast={() => null}
+        >
+          <boxGeometry args={[2.8, 0.7, 0.2]} />
+          <meshBasicMaterial
+            color={offset === 0 ? statusColor : '#38505a'}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+      <mesh position={[-8.7, -8.1, 1.25]} raycast={() => null}>
+        <boxGeometry args={[12.5, 0.52, 0.3]} />
+        <meshBasicMaterial color={statusColor} toneMapped={false} />
+      </mesh>
+      <mesh position={[13.3, 7.4, 1.42]} raycast={() => null}>
+        <cylinderGeometry args={[0.55, 0.55, 0.36, 16]} />
+        <meshBasicMaterial color={statusColor} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
 export function AgentRegime({
   unit,
   hoveredId,
@@ -371,47 +570,16 @@ export function AgentRegime({
   onSelect,
   onHover,
 }: { unit: ProjectUnitPlacement } & RegimeInteraction) {
-  const focusUnit: ProjectUnitPlacement = {
-    ...unit,
-    width: 28,
-    height: 14,
-  };
   const hovered = unit.agent.id === hoveredId;
   const isHero = unit.agent.id === hero?.agentId;
   return (
     <group>
       <SemanticLights />
-      <group position={[unit.x, unit.y, -0.9]}>
-        <GroundShadow width={38} height={24} />
-        <RoundedBox
-          args={[38, 24, 1.2]}
-          radius={3}
-          smoothness={5}
-          raycast={() => null}
-        >
-          <meshStandardMaterial
-            color="#0a1218"
-            metalness={0.5}
-            roughness={0.48}
-            emissive={HUD_STATUS_COLOR[unit.agent.status]}
-            emissiveIntensity={0.02}
-          />
-        </RoundedBox>
-      </group>
-      <UnitChassis
-        unit={focusUnit}
+      <AgentWorkstation
+        unit={unit}
         hovered={hovered}
-        selected
         hero={isHero}
         reduced={reduced}
-        onSelect={() => onSelect(unit.agent.id)}
-        onHover={active => onHover(active ? unit.agent.id : null)}
-      />
-      <UnitLabel
-        unit={focusUnit}
-        selected
-        hero={isHero}
-        prominent
         onSelect={() => onSelect(unit.agent.id)}
         onHover={active => onHover(active ? unit.agent.id : null)}
       />

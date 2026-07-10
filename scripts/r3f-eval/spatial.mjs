@@ -286,6 +286,11 @@ async function runScenario(browser, scenario) {
 
     const { projectCount, units } = await openProject(page);
     result.projectCount = projectCount;
+    await page.waitForTimeout(1_000);
+    await page.screenshot({
+      path: join(REPORT_DIR, `${scenario.name}-project.png`),
+      fullPage: scenario.mobile,
+    });
     result.unitCount = await openAgent(page, units);
     result.idleFrames = await measureIdleFrames(page);
 

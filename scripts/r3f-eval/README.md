@@ -7,9 +7,9 @@ draw-call count."** Layer B (Playwright headless) only, for now.
 ## What it checks (per task)
 
 Each task is an isolated Next route under `/eval/<task>` that renders one R3F
-scene, exposes the renderer as `window.__EVAL_GL__`, and uses
-`gl={{ preserveDrawingBuffer: true }}` so the harness can read pixels + draw
-counts. For each task the runner:
+scene, exposes the renderer as `window.__EVAL_GL__`, and opts into drawing-buffer
+preservation so the harness can read pixels + draw counts. The product path
+leaves that expensive option disabled. For each task the runner:
 
 1. **No WebGL/shader errors** (hard gate) — captures `pageerror` + `console`
    errors; any of `THREE.WebGLProgram`, `shader`, `GL_INVALID`, `context lost`,
@@ -17,9 +17,13 @@ counts. For each task the runner:
 2. **Non-blank** (hard gate) — 9-point grid sample of the canvas; needs
    luminance variance or ≥2 points distinct from the clear color, else caps at 15.
 3. **Draw-call budget** — reads `renderer.info.render.calls`. `t2-instanced`
-   must stay ≤3 calls regardless of N (proves instancing); `t1` just records it.
-4. **Clean console** — zero warnings.
-5. Saves `report/<task>.png` + `report/r3f-eval.json`.
+   must stay ≤3 calls regardless of N (proves instancing); other tasks record it.
+4. **Sparse composition** — `t3-spatial-sparse` locks the reported two-Project,
+   three-idle-Agent fixture and asserts a compact, centered, side-by-side layout.
+5. **Agent station** — `t4-agent-station` keeps Agent focus non-blank and
+   independently screenshotable.
+6. **Clean console** — zero warnings.
+7. Saves `report/<task>.png` + `report/r3f-eval.json`.
 
 ## Scoring (0–100 per task, mean across tasks)
 
@@ -62,8 +66,8 @@ Reports and screenshots are written to ignored `spatial-report/`.
   check (pre-commit speed).
 - **Optional VLM judge** (`--judge`): temporal 3-screenshot strip + per-task
   rubric → per-axis 0–10 (Anthropic API = paid, or a local MLLM = free).
-- **More tasks:** T3 hover/select raycast, T4 delta-time idle + reduced-motion
-  gating, T5 selective bloom, T6 ortho-locked DOM-over-WebGL mini-HUD.
+- **More tasks:** hover/select raycast, delta-time idle + reduced-motion gating,
+  selective bloom, and DOM-over-WebGL mini-HUD coverage.
 - **CI runner:** decide SwiftShader (portable, slow/flaky) vs xvfb + real GPU
   (~7× faster); tune pixel/draw-call thresholds accordingly.
 - **Port reconcile:** `pnpm dev` serves `:7000`; the iterate loop has used

@@ -30,6 +30,7 @@ import {
   type Altitude,
 } from '@exawatt/ui-model';
 import type { AgentStatus } from '@exawatt/core';
+import { agentGoalDisplay } from './spatial-agent-copy';
 
 const FILTERABLE_STATUSES: AgentStatus[] = [
   'working',
@@ -228,6 +229,10 @@ export function SpatialFleetClient() {
     scene.focusedProjectId,
     selectedAgentId,
   ]);
+  const inspectedGoal = inspectedAgent
+    ? agentGoalDisplay(inspectedAgent.goal)
+    : null;
+  const showSideRail = Boolean(inspectedAgent || visibleActivity.length > 0);
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('en-US', {
@@ -292,6 +297,13 @@ export function SpatialFleetClient() {
         aria-label="Zoom altitude"
         className="relative z-20 flex shrink-0 items-center gap-1 border-b border-zinc-800/60 bg-zinc-950/70 px-4 py-1.5 text-xs"
       >
+        <span className="sr-only" aria-live="polite">
+          {scene.altitude === 'agent' && inspectedAgent
+            ? `Agent view: ${inspectedAgent.name}`
+            : scene.altitude === 'project' && focusedZoneLabel
+              ? `Project view: ${focusedZoneLabel}`
+              : 'Fleet view'}
+        </span>
         <button
           onClick={() =>
             navigate({ altitude: 'fleet', project: null, agent: null })
@@ -328,7 +340,10 @@ export function SpatialFleetClient() {
         {scene.altitude === 'agent' && inspectedAgent && (
           <>
             <span className="text-zinc-600">›</span>
-            <span className="max-w-[40vw] truncate rounded px-2 py-1 text-teal-200">
+            <span
+              className="max-w-[40vw] truncate rounded px-2 py-1 text-teal-200"
+              title={inspectedAgent.name}
+            >
               {inspectedAgent.name}
             </span>
           </>
@@ -339,55 +354,61 @@ export function SpatialFleetClient() {
           </span>
         )}
 
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          <div className="flex items-center gap-1 rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">
-            <Search className="h-3 w-3 text-zinc-500" />
-            <input
-              value={query}
-              onChange={event => setQuery(event.target.value)}
-              onKeyDown={event => {
-                if (event.key === 'Escape') {
-                  event.stopPropagation();
-                  setQuery('');
-                }
-              }}
-              placeholder="Search agents…"
-              aria-label="Search agents"
-              className="w-24 rounded-sm bg-transparent text-[11px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus-visible:ring-1 focus-visible:ring-teal-400/70 sm:w-40"
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-1">
-            {FILTERABLE_STATUSES.map(status => (
+        {scene.altitude !== 'agent' && (
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            <div className="flex items-center gap-1 rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">
+              <Search className="h-3 w-3 text-zinc-500" />
+              <input
+                value={query}
+                onChange={event => setQuery(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Escape') {
+                    event.stopPropagation();
+                    setQuery('');
+                  }
+                }}
+                placeholder="Search agents…"
+                aria-label="Search agents"
+                className="w-24 rounded-sm bg-transparent text-[11px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus-visible:ring-1 focus-visible:ring-teal-400/70 sm:w-40"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-1">
+              {FILTERABLE_STATUSES.map(status => (
+                <button
+                  key={status}
+                  onClick={() => toggleStatus(status)}
+                  aria-pressed={statusFilter.includes(status)}
+                  className={`rounded px-1.5 py-1 text-[10px] capitalize transition ${
+                    statusFilter.includes(status)
+                      ? 'bg-teal-600 text-white'
+                      : 'text-zinc-400 hover:text-zinc-100'
+                  }`}
+                >
+                  {status}
+                </button>
+              ))}
+            </div>
+            {filtered && (
               <button
-                key={status}
-                onClick={() => toggleStatus(status)}
-                aria-pressed={statusFilter.includes(status)}
-                className={`rounded px-1.5 py-1 text-[10px] capitalize transition ${
-                  statusFilter.includes(status)
-                    ? 'bg-teal-600 text-white'
-                    : 'text-zinc-400 hover:text-zinc-100'
-                }`}
+                onClick={() => {
+                  setQuery('');
+                  setStatusFilter([]);
+                }}
+                className="rounded px-1.5 py-1 text-[10px] text-zinc-500 hover:text-zinc-200"
+                title="Clear search and filters"
               >
-                {status}
+                clear
               </button>
-            ))}
+            )}
           </div>
-          {filtered && (
-            <button
-              onClick={() => {
-                setQuery('');
-                setStatusFilter([]);
-              }}
-              className="rounded px-1.5 py-1 text-[10px] text-zinc-500 hover:text-zinc-200"
-              title="Clear search and filters"
-            >
-              clear
-            </button>
-          )}
-        </div>
+        )}
       </nav>
 
-      <main className="relative grid min-h-0 flex-1 xl:grid-cols-[minmax(0,1fr)_360px] xl:overflow-hidden">
+      <main
+        className={`relative grid min-h-0 flex-1 xl:overflow-hidden ${
+          showSideRail ? 'xl:grid-cols-[minmax(0,1fr)_340px]' : ''
+        }`}
+      >
         <section
           className="relative h-[52svh] min-h-[360px] overflow-hidden sm:min-h-[420px] xl:h-auto"
           aria-label="Fleet command surface"
@@ -413,118 +434,128 @@ export function SpatialFleetClient() {
           />
         </section>
 
-        <aside className="relative z-10 flex flex-col gap-4 border-t border-zinc-800 bg-zinc-950/92 p-4 pb-24 backdrop-blur xl:min-h-0 xl:border-l xl:border-t-0 xl:pb-4">
-          {inspectedAgent ? (
-            <section className="fleet-panel p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                    Selected Agent
-                  </p>
-                  <h2 className="mt-1 truncate text-xl font-semibold text-zinc-50">
-                    {inspectedAgent.name}
-                  </h2>
-                </div>
-                <span className="rounded-full border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs capitalize text-zinc-300">
-                  {inspectedAgent.status}
-                </span>
-              </div>
-
-              <p className="mt-4 line-clamp-3 text-sm leading-6 text-zinc-300">
-                {inspectedAgent.goal || 'No goal set'}
-              </p>
-
-              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <div className="rounded-md border border-zinc-800 bg-zinc-950/65 p-3">
-                  <p className="text-xs text-zinc-500">Cost</p>
-                  <p className="mt-1 font-mono text-zinc-100">
-                    {formatCurrency(inspectedAgent.cost)}
-                  </p>
-                </div>
-                <div className="rounded-md border border-zinc-800 bg-zinc-950/65 p-3">
-                  <p className="text-xs text-zinc-500">Turns</p>
-                  <p className="mt-1 font-mono text-zinc-100">
-                    {inspectedAgent.turnCount}
-                  </p>
-                </div>
-              </div>
-
-              {inspectedAgent.needsOperator && (
-                <div className="mt-4 rounded-md border border-red-300/20 bg-red-300/10 p-3 text-sm text-red-100">
-                  <div className="flex items-center gap-2 font-semibold">
-                    <AlertTriangle className="h-4 w-4" />
-                    {inspectedAgent.blockerTitle ?? 'Needs operator'}
+        {showSideRail && (
+          <aside className="relative z-10 flex flex-col gap-3 border-t border-zinc-800 bg-zinc-950/94 p-4 pb-24 xl:min-h-0 xl:border-l xl:border-t-0 xl:pb-4">
+            {inspectedAgent ? (
+              <section className="fleet-panel p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Selected Agent
+                    </p>
+                    <h2 className="mt-1 break-words text-xl font-semibold leading-tight text-zinc-50">
+                      {inspectedAgent.name}
+                    </h2>
                   </div>
-                  {inspectedAgent.blockerDescription && (
-                    <p className="mt-2 line-clamp-3 text-red-100/75">
-                      {inspectedAgent.blockerDescription}
+                  <span className="rounded-full border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs capitalize text-zinc-300">
+                    {inspectedAgent.status}
+                  </span>
+                </div>
+
+                <div className="mt-4 space-y-1.5">
+                  <p className="text-sm leading-6 text-zinc-300">
+                    {inspectedGoal?.summary}
+                  </p>
+                  {inspectedGoal?.context && (
+                    <p
+                      className="break-words font-mono text-xs leading-5 text-zinc-500"
+                      title={inspectedGoal.contextTitle ?? undefined}
+                    >
+                      {inspectedGoal.context}
                     </p>
                   )}
                 </div>
-              )}
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button asChild className="fleet-action-button">
-                  <Link
-                    href={`/fleet/${encodeURIComponent(inspectedAgent.id)}`}
-                  >
-                    Focus
-                  </Link>
-                </Button>
+                <dl className="mt-4 grid grid-cols-2 divide-x divide-zinc-800 border-y border-zinc-800 py-3 text-sm">
+                  <div className="px-3 first:pl-0">
+                    <p className="text-xs text-zinc-500">Cost</p>
+                    <p className="mt-1 font-mono text-zinc-100">
+                      {formatCurrency(inspectedAgent.cost)}
+                    </p>
+                  </div>
+                  <div className="px-3">
+                    <p className="text-xs text-zinc-500">Turns</p>
+                    <p className="mt-1 font-mono text-zinc-100">
+                      {inspectedAgent.turnCount}
+                    </p>
+                  </div>
+                </dl>
+
                 {inspectedAgent.needsOperator && (
-                  <Button
-                    asChild
-                    className="fleet-action-button bg-red-200 text-zinc-950 hover:bg-red-100"
-                  >
+                  <div className="mt-4 rounded-md border border-red-300/20 bg-red-300/10 p-3 text-sm text-red-100">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <AlertTriangle className="h-4 w-4" />
+                      {inspectedAgent.blockerTitle ?? 'Needs operator'}
+                    </div>
+                    {inspectedAgent.blockerDescription && (
+                      <p className="mt-2 line-clamp-3 text-red-100/75">
+                        {inspectedAgent.blockerDescription}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button asChild className="fleet-action-button">
                     <Link
                       href={`/fleet/${encodeURIComponent(inspectedAgent.id)}`}
                     >
-                      Clear
+                      Open session
                     </Link>
                   </Button>
+                  {inspectedAgent.needsOperator && (
+                    <Button
+                      asChild
+                      className="fleet-action-button bg-red-200 text-zinc-950 hover:bg-red-100"
+                    >
+                      <Link
+                        href={`/fleet/${encodeURIComponent(inspectedAgent.id)}`}
+                      >
+                        Clear
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              </section>
+            ) : null}
+
+            {/* Activity feed — a live event stream, distinct from the hero/blocker
+              attention shown on the surface itself (no duplicate blocker list). */}
+            <section
+              className={`fleet-panel overflow-hidden p-4 ${
+                visibleActivity.length > 0 ? 'min-h-0 flex-1' : ''
+              }`}
+            >
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-100">
+                <Activity className="h-4 w-4 text-teal-200" />
+                Activity
+              </div>
+              <div className="space-y-2 overflow-y-auto pr-1">
+                {visibleActivity.length === 0 ? (
+                  <p className="text-sm leading-5 text-zinc-500">
+                    {scene.altitude === 'fleet'
+                      ? 'Waiting for events.'
+                      : `No recent activity for this ${scene.altitude === 'agent' ? 'Agent' : 'Project'}.`}
+                  </p>
+                ) : (
+                  visibleActivity.map(item => (
+                    <div
+                      key={item.id}
+                      className="rounded-md border border-zinc-800/70 bg-zinc-950/50 p-2.5"
+                    >
+                      <p className="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                        {item.agentName}
+                      </p>
+                      <p className="mt-0.5 line-clamp-2 text-sm text-zinc-300">
+                        {item.content}
+                      </p>
+                    </div>
+                  ))
                 )}
               </div>
             </section>
-          ) : (
-            <section className="fleet-panel p-4 text-sm text-zinc-500">
-              {scene.altitude === 'fleet'
-                ? 'Select a Project to zoom in, then an Agent to inspect.'
-                : 'Select an Agent to inspect.'}
-            </section>
-          )}
-
-          {/* Activity feed — a live event stream, distinct from the hero/blocker
-              attention shown on the surface itself (no duplicate blocker list). */}
-          <section className="fleet-panel min-h-0 flex-1 overflow-hidden p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-100">
-              <Activity className="h-4 w-4 text-teal-200" />
-              Activity
-            </div>
-            <div className="space-y-2 overflow-y-auto pr-1">
-              {visibleActivity.length === 0 ? (
-                <p className="rounded-md border border-zinc-800 bg-zinc-950/50 p-3 text-sm text-zinc-500">
-                  {scene.altitude === 'fleet'
-                    ? 'Waiting for events.'
-                    : `No recent activity for this ${scene.altitude === 'agent' ? 'Agent' : 'Project'}.`}
-                </p>
-              ) : (
-                visibleActivity.map(item => (
-                  <div
-                    key={item.id}
-                    className="rounded-md border border-zinc-800/70 bg-zinc-950/50 p-2.5"
-                  >
-                    <p className="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-                      {item.agentName}
-                    </p>
-                    <p className="mt-0.5 line-clamp-2 text-sm text-zinc-300">
-                      {item.content}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-        </aside>
+          </aside>
+        )}
       </main>
 
       <DemoControls />

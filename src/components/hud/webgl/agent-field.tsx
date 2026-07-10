@@ -48,6 +48,12 @@ import { HUD, HUD_STATUS_COLOR } from '../tokens';
 import { isLowPowerSpatialDevice } from './agent-field-capabilities';
 import { layoutProjectDeck } from './agent-field-regime-layout';
 import { AgentRegime, ProjectRegime } from './agent-field-regimes';
+import {
+  fleetClusterCenters,
+  fleetSceneRadius,
+  isSparseFleetComposition,
+  sparseProjectBaySize,
+} from './agent-field-fleet-layout';
 import type {
   AgentFieldRegime,
   ClusterInfo,
@@ -148,7 +154,6 @@ function statusForAgent(clusterSeed: number, localIdx: number): AgentStatus {
   return 'idle';
 }
 
-const CLUSTER_GAP = 1.7; // spacing multiplier between cluster centers
 const NODE_PITCH = 4.0;
 
 /**
@@ -171,18 +176,7 @@ export function layoutClusteredField(groups: FieldGroupSpec[]): {
     Math.max(NODE_PITCH * 2, Math.sqrt(Math.max(count, 1)) * NODE_PITCH);
 
   const maxLocal = Math.max(...counts.map(localRadius));
-  const hasCenter = numClusters >= 6;
-  const ringCount = hasCenter ? numClusters - 1 : numClusters;
-  // MIN_RING keeps tiny real fleets (2-4 agents/project) spread far enough
-  // apart that their (long, wrapped) labels can never collide.
-  const MIN_RING = 36;
-  const ringRadius =
-    ringCount <= 1
-      ? 0
-      : Math.max(
-          (maxLocal * CLUSTER_GAP) / Math.sin(Math.PI / ringCount),
-          MIN_RING
-        );
+  const centers = fleetClusterCenters(numClusters, maxLocal);
 
   const golden = Math.PI * (3 - Math.sqrt(5));
   const clusters: ClusterInfo[] = [];
@@ -190,11 +184,8 @@ export function layoutClusteredField(groups: FieldGroupSpec[]): {
 
   for (let c = 0; c < numClusters; c++) {
     const g = groups[c];
-    const onRing = !(hasCenter && c === 0) && numClusters > 1;
-    const ringIdx = hasCenter ? c - 1 : c;
-    const ang = (ringIdx / Math.max(ringCount, 1)) * Math.PI * 2 - Math.PI / 2;
-    const cx = onRing ? Math.cos(ang) * ringRadius : 0;
-    const cy = onRing ? Math.sin(ang) * ringRadius : 0;
+    const cx = centers[c].x;
+    const cy = centers[c].y;
     const r = localRadius(counts[c]);
 
     let dominant: AgentStatus = 'idle';
@@ -274,12 +265,13 @@ export function generateClusteredAgents(n: number): {
 
 /** Overall scene radius (for camera framing). */
 function sceneRadius(clusters: ClusterInfo[]): number {
-  let max = 40;
-  for (const c of clusters) {
-    const r = Math.hypot(c.cx, c.cy) + c.radius;
-    if (r > max) max = r;
-  }
-  return max * 1.12;
+  return fleetSceneRadius(
+    clusters.map(cluster => ({
+      x: cluster.cx,
+      y: cluster.cy,
+      radius: cluster.radius,
+    }))
+  );
 }
 
 /** Fraction of blocked/error agents above which a cluster is "critical" (red).
@@ -339,7 +331,7 @@ function easeOutCubic(u: number): number {
 const _dummy = new THREE.Object3D();
 const _color = new THREE.Color();
 const _white = new THREE.Color('#FFFFFF');
-const _sphere = new THREE.Sphere();
+const _box = new THREE.Box3();
 const _v3 = new THREE.Vector3();
 
 /**
@@ -395,6 +387,7 @@ function Constellation({
   hoveredIdx,
   selectedIdx,
   reduced,
+  surfaceZ = 0,
   onHover,
   onSelect,
 }: {
@@ -403,6 +396,7 @@ function Constellation({
   hoveredIdx: number | null;
   selectedIdx: number;
   reduced: boolean;
+  surfaceZ?: number;
   onHover: (i: number | null) => void;
   onSelect: (i: number) => void;
 }) {
@@ -487,9 +481,9 @@ function Constellation({
   };
 
   const zFor = (i: number): number => {
-    if (i === hoveredIdx || i === selectedIdx) return 1.4;
+    if (i === hoveredIdx || i === selectedIdx) return surfaceZ + 1.4;
     const st = agents[i].status;
-    return st === 'blocked' || st === 'error' ? 0.05 : 0;
+    return surfaceZ + (st === 'blocked' || st === 'error' ? 0.05 : 0);
   };
 
   // seed matrices + colors whenever the data changes. On MOUNT nodes start at
@@ -923,21 +917,179 @@ function ClusterRing({
   );
 }
 
+const BAY_EXTRUDE = {
+  depth: 1.1,
+  bevelEnabled: true,
+  bevelSegments: 2,
+  steps: 1,
+  bevelSize: 0.38,
+  bevelThickness: 0.34,
+} as const;
+
+function SparseProjectBay({
+  cluster,
+  emphasized,
+  reduced,
+  interactive,
+  onSelect,
+  onHoverChange,
+}: {
+  cluster: ClusterInfo;
+  emphasized: boolean;
+  reduced: boolean;
+  interactive: boolean;
+  onSelect?: () => void;
+  onHoverChange?: (hovered: boolean) => void;
+}) {
+  const group = useRef<THREE.Group>(null);
+  const material = useRef<THREE.MeshStandardMaterial>(null);
+  const invalidate = useThree(state => state.invalidate);
+  const { width, height } = sparseProjectBaySize(cluster.radius);
+  const shape = useMemo(() => {
+    const cut = 2.2;
+    const left = -width / 2;
+    const right = width / 2;
+    const bottom = -height / 2;
+    const top = height / 2;
+    const next = new THREE.Shape();
+    next.moveTo(left + cut, bottom);
+    next.lineTo(right - cut, bottom);
+    next.lineTo(right, bottom + cut);
+    next.lineTo(right, top - cut);
+    next.lineTo(right - cut, top);
+    next.lineTo(left + cut, top);
+    next.lineTo(left, top - cut);
+    next.lineTo(left, bottom + cut);
+    next.closePath();
+    return next;
+  }, [height, width]);
+  const statusColor = cluster.critical
+    ? HUD.red
+    : HUD_STATUS_COLOR[cluster.dominant];
+  const targetZ = emphasized ? 0.7 : 0;
+  const targetScale = emphasized ? 1.025 : 1;
+
+  useEffect(() => {
+    invalidate();
+  }, [emphasized, invalidate]);
+
+  useFrame((state, delta) => {
+    const node = group.current;
+    const mat = material.current;
+    if (!node || !mat) return;
+    const targetEmissive = emphasized ? 0.1 : cluster.critical ? 0.07 : 0.02;
+    if (reduced) {
+      node.position.z = targetZ;
+      node.scale.setScalar(targetScale);
+      mat.emissiveIntensity = targetEmissive;
+      return;
+    }
+    const dt = Math.min(delta, 0.05);
+    node.position.z = THREE.MathUtils.damp(node.position.z, targetZ, 10, dt);
+    const scale = THREE.MathUtils.damp(node.scale.x, targetScale, 11, dt);
+    node.scale.setScalar(scale);
+    mat.emissiveIntensity = THREE.MathUtils.damp(
+      mat.emissiveIntensity,
+      targetEmissive,
+      9,
+      dt
+    );
+    if (
+      Math.abs(node.position.z - targetZ) > 0.002 ||
+      Math.abs(scale - targetScale) > 0.002 ||
+      Math.abs(mat.emissiveIntensity - targetEmissive) > 0.002
+    ) {
+      state.invalidate();
+    }
+  });
+
+  return (
+    <group
+      ref={group}
+      position={[cluster.cx, cluster.cy, 0]}
+      onPointerOver={(event: ThreeEvent<PointerEvent>) => {
+        if (!interactive) return;
+        event.stopPropagation();
+        onHoverChange?.(true);
+        document.body.style.cursor = 'pointer';
+        invalidate();
+      }}
+      onPointerOut={() => {
+        onHoverChange?.(false);
+        document.body.style.cursor = 'auto';
+        invalidate();
+      }}
+      onClick={(event: ThreeEvent<MouseEvent>) => {
+        if (!interactive) return;
+        event.stopPropagation();
+        if (event.delta < 6) onSelect?.();
+      }}
+    >
+      <mesh position={[0, 0, -1.4]} raycast={() => null}>
+        <planeGeometry args={[width + 3, height + 3]} />
+        <meshBasicMaterial
+          color="#010407"
+          transparent
+          opacity={0.52}
+          depthWrite={false}
+        />
+      </mesh>
+      <mesh position={[0, 0, -0.9]}>
+        <extrudeGeometry args={[shape, BAY_EXTRUDE]} />
+        <meshStandardMaterial
+          ref={material}
+          color="#0a1217"
+          emissive={statusColor}
+          emissiveIntensity={cluster.critical ? 0.07 : 0.02}
+          metalness={0.52}
+          roughness={0.5}
+        />
+      </mesh>
+      <mesh position={[0, 0, 0.45]} raycast={() => null}>
+        <boxGeometry args={[width - 2.4, height - 2.4, 0.34]} />
+        <meshStandardMaterial
+          color="#101b21"
+          metalness={0.28}
+          roughness={0.7}
+        />
+      </mesh>
+      <mesh position={[-width / 2 + 0.8, 0, 0.9]} raycast={() => null}>
+        <boxGeometry args={[0.48, height - 4.2, 0.28]} />
+        <meshBasicMaterial color={statusColor} toneMapped={false} />
+      </mesh>
+      <mesh
+        position={[width / 2 - 1.2, -height / 2 + 1.15, 0.9]}
+        raycast={() => null}
+      >
+        <boxGeometry args={[2.1, 0.46, 0.26]} />
+        <meshBasicMaterial color={statusColor} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
 function ClusterLabel({
   cluster,
+  sparse = false,
   interactive = false,
   onSelect,
   onHoverChange,
 }: {
   cluster: ClusterInfo;
+  sparse?: boolean;
   interactive?: boolean;
   onSelect?: () => void;
   onHoverChange?: (hovered: boolean) => void;
 }) {
   const hot = cluster.critical;
+  const bay = sparseProjectBaySize(cluster.radius);
   return (
     <Html
-      position={[cluster.cx, cluster.cy + cluster.radius * 1.34, 0.8]}
+      position={[
+        cluster.cx,
+        cluster.cy + (sparse ? bay.height / 2 + 3.2 : cluster.radius * 1.34),
+        1.2,
+      ]}
       center
       zIndexRange={[24, 0]}
     >
@@ -955,13 +1107,24 @@ function ClusterLabel({
         onFocus={() => onHoverChange?.(true)}
         onBlur={() => onHoverChange?.(false)}
         aria-label={`Open Project ${cluster.label}`}
-        className="pointer-events-auto w-52 rounded-md border border-transparent bg-slate-950/80 px-3 py-2 text-center outline-none backdrop-blur-sm transition-[border-color,background-color] disabled:pointer-events-none focus-visible:border-hud-cyan focus-visible:ring-2 focus-visible:ring-hud-cyan"
+        className={`pointer-events-auto outline-none transition-[border-color,background-color,transform] disabled:pointer-events-none focus-visible:ring-2 focus-visible:ring-hud-cyan ${
+          sparse
+            ? 'w-48 rounded-sm border border-slate-700/70 bg-[#071015]/95 px-3 py-2 text-left shadow-[0_10px_30px_rgba(0,4,8,0.38)] hover:-translate-y-0.5 hover:border-slate-500/80 active:translate-y-0'
+            : 'w-52 rounded-md border border-transparent bg-slate-950/80 px-3 py-2 text-center backdrop-blur-sm focus-visible:border-hud-cyan'
+        }`}
       >
-        <span
-          className="block text-sm font-semibold leading-tight tracking-tight"
-          style={{ color: hot ? HUD.red : HUD.text }}
-        >
-          {cluster.label}
+        <span className="flex items-baseline gap-2">
+          {sparse && (
+            <span className="font-mono text-[9px] tabular-nums text-slate-600">
+              {String(cluster.index + 1).padStart(2, '0')}
+            </span>
+          )}
+          <span
+            className="block min-w-0 truncate text-sm font-semibold leading-tight tracking-tight"
+            style={{ color: hot ? HUD.red : HUD.text }}
+          >
+            {cluster.label}
+          </span>
         </span>
         <span
           className="mt-1 block font-mono text-[9px] uppercase tracking-[0.14em]"
@@ -1093,7 +1256,7 @@ function FocusRing({
 // Floor: grid (grafted from A) + far radial backdrop (grafted from B)
 // ---------------------------------------------------------------------------
 
-function VoidBackdrop({ radius }: { radius: number }) {
+function VoidBackdrop({ radius, quiet }: { radius: number; quiet: boolean }) {
   const tex = useMemo(() => {
     const size = 256;
     const c = document.createElement('canvas');
@@ -1107,15 +1270,15 @@ function VoidBackdrop({ radius }: { radius: number }) {
       size / 2,
       size / 2
     );
-    g.addColorStop(0, 'rgba(20,70,120,0.28)');
-    g.addColorStop(0.5, 'rgba(10,30,60,0.10)');
+    g.addColorStop(0, quiet ? 'rgba(22,43,48,0.12)' : 'rgba(20,70,120,0.28)');
+    g.addColorStop(0.5, quiet ? 'rgba(8,18,22,0.04)' : 'rgba(10,30,60,0.10)');
     g.addColorStop(1, 'rgba(4,6,11,0)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, size, size);
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     return t;
-  }, []);
+  }, [quiet]);
   useEffect(() => () => tex.dispose(), [tex]);
   return (
     <mesh
@@ -1140,6 +1303,38 @@ function VoidBackdrop({ radius }: { radius: number }) {
 
 const POLAR_TILT = Math.PI * 0.4; // war-table rake (see variant-C notes)
 
+interface SemanticFrame {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function writeFrameBox(frame: SemanticFrame): THREE.Box3 {
+  _box.min.set(frame.x - frame.width / 2, frame.y - frame.height / 2, -2.5);
+  _box.max.set(frame.x + frame.width / 2, frame.y + frame.height / 2, 4.5);
+  return _box;
+}
+
+function writeFleetBox(clusters: ClusterInfo[], sparse: boolean): THREE.Box3 {
+  _box.makeEmpty();
+  for (const cluster of clusters) {
+    const bay = sparse ? sparseProjectBaySize(cluster.radius) : null;
+    const width = bay?.width ?? cluster.radius * 2.35;
+    const height =
+      (bay?.height ?? cluster.radius * 2.35) +
+      (sparse ? 8 : cluster.radius * 0.5);
+    _v3.set(cluster.cx - width / 2, cluster.cy - height / 2, -2.5);
+    _box.expandByPoint(_v3);
+    _v3.set(cluster.cx + width / 2, cluster.cy + height / 2, 4.5);
+    _box.expandByPoint(_v3);
+  }
+  if (_box.isEmpty()) {
+    return writeFrameBox({ x: 0, y: 0, width: 40, height: 30 });
+  }
+  return _box;
+}
+
 function Rig({
   radius,
   agents,
@@ -1148,6 +1343,11 @@ function Rig({
   controllerRef,
   onNavigate,
   focusPositions,
+  focusClusterFrames,
+  sparseFleet,
+  activeRegime,
+  activeCluster,
+  activeAgentId,
 }: {
   radius: number;
   agents: FieldAgent[];
@@ -1157,10 +1357,12 @@ function Rig({
   /** fired on every programmatic camera move (used to drop stale hover) */
   onNavigate?: () => void;
   /** semantic-regime camera targets keyed by Agent id */
-  focusPositions?: ReadonlyMap<
-    string,
-    { x: number; y: number; radius: number }
-  >;
+  focusPositions?: ReadonlyMap<string, SemanticFrame>;
+  focusClusterFrames?: ReadonlyMap<number, SemanticFrame>;
+  sparseFleet: boolean;
+  activeRegime: AgentFieldRegime;
+  activeCluster: number | null;
+  activeAgentId: string | null;
 }) {
   const controls = useRef<CameraControls>(null);
   const invalidate = useThree(s => s.invalidate);
@@ -1168,14 +1370,15 @@ function Rig({
   useEffect(() => {
     const c = controls.current;
     if (!c) return;
-    // Frame the whole field, then apply the war-table tilt. fitToSphere moves
-    // the camera programmatically — under frameloop="demand" we must
-    // invalidate() afterwards or the fitted frame never paints (blank canvas).
-    _sphere.set(_v3.set(0, 0, 0), radius * 1.08);
-    c.fitToSphere(_sphere, false);
-    c.rotatePolarTo(POLAR_TILT, false);
+    c.rotateTo(0, POLAR_TILT, false);
+    c.fitToBox(writeFleetBox(clusters, sparseFleet), false, {
+      paddingLeft: sparseFleet ? 9 : 4,
+      paddingRight: sparseFleet ? 9 : 4,
+      paddingTop: sparseFleet ? 9 : 5,
+      paddingBottom: sparseFleet ? 8 : 4,
+    });
     invalidate();
-  }, [radius, invalidate]);
+  }, [clusters, sparseFleet, invalidate]);
 
   useEffect(() => {
     if (!controllerRef) return;
@@ -1189,10 +1392,25 @@ function Rig({
         const cl = clusters[index];
         const c = controls.current;
         if (!cl || !c) return;
-        // generous framing minimums: tiny sectors land with margin (labels +
-        // neighbors stay in peripheral view) instead of filling the screen
-        _sphere.set(_v3.set(cl.cx, cl.cy, 0), Math.max(cl.radius * 1.6, 44));
-        c.fitToSphere(_sphere, t);
+        const semantic = focusClusterFrames?.get(index);
+        c.rotateTo(0, POLAR_TILT, t);
+        c.fitToBox(
+          semantic
+            ? writeFrameBox(semantic)
+            : writeFrameBox({
+                x: cl.cx,
+                y: cl.cy,
+                width: cl.radius * 3.2,
+                height: cl.radius * 3.5,
+              }),
+          t,
+          {
+            paddingLeft: 3,
+            paddingRight: 3,
+            paddingTop: 4,
+            paddingBottom: 3,
+          }
+        );
         nav();
       },
       focusAgent(id) {
@@ -1201,28 +1419,45 @@ function Rig({
         if (!a || !c) return;
         const semantic = focusPositions?.get(id);
         if (semantic) {
-          _sphere.set(
-            _v3.set(semantic.x, semantic.y, 0),
-            Math.max(semantic.radius, 18)
-          );
-          c.fitToSphere(_sphere, t);
+          c.rotateTo(0, POLAR_TILT, t);
+          c.fitToBox(writeFrameBox(semantic), t, {
+            paddingLeft: 3,
+            paddingRight: 3,
+            paddingTop: 3,
+            paddingBottom: 3,
+          });
           nav();
           return;
         }
         const cl = clusters[a.cluster];
-        _sphere.set(
-          _v3.set(a.x, a.y, 0),
-          Math.max(34, (cl?.radius ?? 60) * 0.55)
+        c.rotateTo(0, POLAR_TILT, t);
+        c.fitToBox(
+          writeFrameBox({
+            x: a.x,
+            y: a.y,
+            width: Math.max(24, (cl?.radius ?? 20) * 1.2),
+            height: Math.max(18, (cl?.radius ?? 20) * 0.9),
+          }),
+          t,
+          {
+            paddingLeft: 3,
+            paddingRight: 3,
+            paddingTop: 3,
+            paddingBottom: 3,
+          }
         );
-        c.fitToSphere(_sphere, t);
         nav();
       },
       overview() {
         const c = controls.current;
         if (!c) return;
-        _sphere.set(_v3.set(0, 0, 0), radius * 1.08);
-        c.fitToSphere(_sphere, t);
-        c.rotatePolarTo(POLAR_TILT, t);
+        c.rotateTo(0, POLAR_TILT, t);
+        c.fitToBox(writeFleetBox(clusters, sparseFleet), t, {
+          paddingLeft: sparseFleet ? 9 : 4,
+          paddingRight: sparseFleet ? 9 : 4,
+          paddingTop: sparseFleet ? 9 : 5,
+          paddingBottom: sparseFleet ? 8 : 4,
+        });
         nav();
       },
       dolly(steps) {
@@ -1259,7 +1494,24 @@ function Rig({
     invalidate,
     onNavigate,
     focusPositions,
+    focusClusterFrames,
+    sparseFleet,
   ]);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const handle = controllerRef?.current;
+      if (!handle) return;
+      if (activeRegime === 'agent' && activeAgentId) {
+        handle.focusAgent(activeAgentId);
+      } else if (activeRegime === 'project' && activeCluster != null) {
+        handle.focusCluster(activeCluster);
+      } else {
+        handle.overview();
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeAgentId, activeCluster, activeRegime, controllerRef]);
 
   return (
     <CameraControls
@@ -1295,6 +1547,7 @@ export function AgentField({
   onHoverAgent,
   controllerRef,
   regime = 'fleet',
+  preserveDrawingBuffer = false,
 }: {
   agents: FieldAgent[];
   clusters: ClusterInfo[];
@@ -1311,6 +1564,8 @@ export function AgentField({
   onHoverAgent?: (agent: FieldAgent | null) => void;
   controllerRef?: { current: AgentFieldHandle | null };
   regime?: AgentFieldRegime;
+  /** Eval-only pixel readback. Keep disabled in the product render path. */
+  preserveDrawingBuffer?: boolean;
 }) {
   const reduced = useReducedMotion();
   const lowPower = useLowPowerMode();
@@ -1345,21 +1600,30 @@ export function AgentField({
     [agents, focusedProject]
   );
   const semanticFocusPositions = useMemo(() => {
-    const positions = new Map<
-      string,
-      { x: number; y: number; radius: number }
-    >();
+    const positions = new Map<string, SemanticFrame>();
     if (!projectLayout) return positions;
     for (const unit of projectLayout.units) {
       positions.set(unit.agent.id, {
         x: unit.x,
         y: unit.y,
-        radius:
-          regime === 'agent' ? 34 : Math.max(unit.width, unit.height) * 1.1,
+        width: regime === 'agent' ? 58 : unit.width + 8,
+        height: regime === 'agent' ? 40 : unit.height + 8,
       });
     }
     return positions;
   }, [projectLayout, regime]);
+  const semanticClusterFrames = useMemo(() => {
+    const frames = new Map<number, SemanticFrame>();
+    if (projectLayout) {
+      frames.set(projectLayout.cluster.index, {
+        x: projectLayout.centerX,
+        y: projectLayout.centerY + 1.5,
+        width: projectLayout.width + 8,
+        height: projectLayout.height + 14,
+      });
+    }
+    return frames;
+  }, [projectLayout]);
   const selectedSemanticUnit =
     selected && projectLayout
       ? (projectLayout.units.find(unit => unit.agent.id === selected.id) ??
@@ -1371,6 +1635,10 @@ export function AgentField({
       : regime === 'agent' && selectedSemanticUnit
         ? 'agent'
         : 'project';
+  const sparseFleet =
+    resolvedRegime === 'fleet' &&
+    isSparseFleetComposition(clusters.length, agents.length);
+  const quietWorld = sparseFleet || resolvedRegime !== 'fleet';
 
   useEffect(() => {
     onHoverAgent?.(hovered);
@@ -1417,7 +1685,10 @@ export function AgentField({
         near: 0.1,
         far: radius * 14,
       }}
-      gl={{ antialias: true }}
+      gl={{
+        antialias: true,
+        preserveDrawingBuffer,
+      }}
       onPointerMissed={() => {
         if (dragDist.current < 6) onSelect(null);
       }}
@@ -1448,9 +1719,14 @@ export function AgentField({
         controllerRef={controllerRef}
         onNavigate={clearHover}
         focusPositions={semanticFocusPositions}
+        focusClusterFrames={semanticClusterFrames}
+        sparseFleet={sparseFleet}
+        activeRegime={resolvedRegime}
+        activeCluster={focusedCluster}
+        activeAgentId={selectedId}
       />
 
-      <VoidBackdrop radius={radius} />
+      <VoidBackdrop radius={radius} quiet={quietWorld} />
       {/* floor grid (A graft): drei Grid lives in XZ, rotate into our XY plane.
           Cell/section sizes scale with the FIELD so density reads the same at
           64 and 4096 agents; colors sit just above the void so the grid stays
@@ -1460,11 +1736,11 @@ export function AgentField({
         rotation={[Math.PI / 2, 0, 0]}
         args={[radius * 2.6, radius * 2.6]}
         cellSize={radius / 18}
-        cellThickness={0.4}
-        cellColor="#0F2A34"
+        cellThickness={quietWorld ? 0.25 : 0.4}
+        cellColor={quietWorld ? '#0c1a1f' : '#0F2A34'}
         sectionSize={radius / 4.5}
-        sectionThickness={0.85}
-        sectionColor="#1B4E5C"
+        sectionThickness={quietWorld ? 0.5 : 0.85}
+        sectionColor={quietWorld ? '#173039' : '#1B4E5C'}
         fadeDistance={radius * 3.1}
         fadeStrength={2.4}
         followCamera={false}
@@ -1475,27 +1751,52 @@ export function AgentField({
 
       {resolvedRegime === 'fleet' && (
         <>
-          {clusters.map(c => (
-            <ClusterRing
-              key={c.id}
-              cluster={c}
-              emphasized={
-                hovered?.cluster === c.index ||
-                selected?.cluster === c.index ||
-                focusedCluster === c.index ||
-                hoverClusterId === c.id
-              }
-              reduced={reduced}
-              interactive={
-                !!onSelectCluster &&
-                (selectableClusters ? selectableClusters.has(c.id) : true)
-              }
-              onSelect={
-                onSelectCluster ? () => onSelectCluster(c.index) : undefined
-              }
-              onHoverChange={h => setHoverClusterId(h ? c.id : null)}
-            />
-          ))}
+          {sparseFleet && (
+            <>
+              <ambientLight intensity={0.42} color="#9ab0b7" />
+              <directionalLight
+                position={[-24, -18, 45]}
+                intensity={1.1}
+                color="#d7e6e9"
+              />
+            </>
+          )}
+          {clusters.map(c => {
+            const emphasized =
+              hovered?.cluster === c.index ||
+              selected?.cluster === c.index ||
+              focusedCluster === c.index ||
+              hoverClusterId === c.id;
+            const interactive =
+              !!onSelectCluster &&
+              (selectableClusters ? selectableClusters.has(c.id) : true);
+            const onSelect = onSelectCluster
+              ? () => onSelectCluster(c.index)
+              : undefined;
+            const onHoverChange = (hovered: boolean) =>
+              setHoverClusterId(hovered ? c.id : null);
+            return sparseFleet ? (
+              <SparseProjectBay
+                key={c.id}
+                cluster={c}
+                emphasized={emphasized}
+                reduced={reduced}
+                interactive={interactive}
+                onSelect={onSelect}
+                onHoverChange={onHoverChange}
+              />
+            ) : (
+              <ClusterRing
+                key={c.id}
+                cluster={c}
+                emphasized={emphasized}
+                reduced={reduced}
+                interactive={interactive}
+                onSelect={onSelect}
+                onHoverChange={onHoverChange}
+              />
+            );
+          })}
 
           <Constellation
             agents={agents}
@@ -1503,6 +1804,7 @@ export function AgentField({
             hoveredIdx={hoveredIdx >= 0 ? hoveredIdx : null}
             selectedIdx={selectedIdx}
             reduced={reduced}
+            surfaceZ={sparseFleet ? 1.15 : 0}
             onHover={index =>
               setHoveredId(index == null ? null : (agents[index]?.id ?? null))
             }
@@ -1514,6 +1816,7 @@ export function AgentField({
               <ClusterLabel
                 key={c.id}
                 cluster={c}
+                sparse={sparseFleet}
                 interactive={
                   !!onSelectCluster &&
                   (selectableClusters ? selectableClusters.has(c.id) : true)
@@ -1563,7 +1866,7 @@ export function AgentField({
         />
       )}
 
-      {!lowPower && (
+      {!lowPower && resolvedRegime === 'fleet' && !sparseFleet && (
         <Suspense fallback={null}>
           <AgentFieldEffects />
         </Suspense>
