@@ -126,9 +126,11 @@ First-slice acceptance criteria:
 
 ### S5 Durable Projects
 
-Status: planned — scoped 2026-07-10 (operator). Fixes the gap surfaced in
-dogfood: you cannot open or browse a Project unless a session is already
-running in it. Today a Project (mislabeled `Initiative` in code) is DERIVED —
+Status: active-build — scoped 2026-07-10 (operator); P1 (rename) + P2 (registry
+data layer + `projects` reclaim migration, applied to prod and verified) landed
+2026-07-10; P3 (workspace wiring), P4 (open/browse UX), P5 (dogfood + docs)
+next. Fixes the gap surfaced in dogfood: you cannot open or browse a Project
+unless a session is already running in it. Today a Project (mislabeled `Initiative` in code) is DERIVED —
 resolved from a session's cwd (`project-resolve.ts`, git-common-dir; worktrees
 fold to the main repo) and persisted in local `workspace.json` only while it
 has a surviving tab (`use-workspace-state.ts` prunes exited tabs and drops
@@ -206,11 +208,12 @@ Open/browse UX (launcher + identity):
 
 Phasing:
 
-- P1 Canon rename: code `Initiative` → `Project`, UI labels, `/architecture`
-  manifest + concept references. Mechanical and isolated; lands first so every
-  later phase speaks "Project". Canon `Initiative` (goal) is untouched — it is
-  not yet built, so there is no collision.
-- P2 Registry data layer: reclaim `projects` — migration renames the legacy
+- P1 Canon rename (landed 2026-07-10): code `Initiative` → `Project`, UI
+  labels, `data-project` hooks, and a `workspace.json` v1→v2 migration that
+  preserves saved layouts. `/architecture` manifest + `packages/core` already
+  used the canon goal-Initiative correctly and stayed untouched. Verified:
+  type-check, lint, 285 tests, Next build, workspace screenshot smoke.
+- P2 Registry data layer (landed 2026-07-10): reclaim `projects` — migration renames the legacy
   demo table to `demo_projects` and creates the canonical `projects` registry
   (+ RLS, kind discriminator, unique index on user_id+root_path); repoint demo
   queries via an embed alias and rename the demo TS type to `DemoProject`; add
