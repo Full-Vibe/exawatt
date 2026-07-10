@@ -1,9 +1,17 @@
 import { app, BrowserWindow, shell, Menu, ipcMain, dialog } from 'electron';
+import { spawn, type ChildProcess } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import fs from 'fs';
+import net from 'net';
+import http from 'http';
 import path from 'path';
 import { registerAgentIPC } from './agent-ipc';
 import { registerPtyIPC, disposePty } from './pty-ipc';
+import { handleTrusted, setTrustedRendererOrigin } from './ipc-security';
 
 const isDev = process.env.NODE_ENV === 'development';
+const execFileAsync = promisify(execFile);
 
 // hermetic test runs: isolated userData so smoke tests never touch the
 // operator's real workspace layout. Gated on EXAWATT_TEST so a stray env
@@ -17,6 +25,92 @@ const PROTOCOL = 'exawatt';
 
 let mainWindow: BrowserWindow | null = null;
 let pendingDeepLinkUrl: string | null = null;
+let rendererServer: ChildProcess | null = null;
+let rendererOrigin: string | null = null;
+
+async function availableLoopbackPort(): Promise<number> {
+  return await new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close();
+        reject(new Error('Could not allocate a renderer port'));
+        return;
+      }
+      server.close(error => (error ? reject(error) : resolve(address.port)));
+    });
+  });
+}
+
+async function waitForRenderer(url: string): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const ready = await new Promise<boolean>(resolve => {
+      const request = http.get(url, response => {
+        response.resume();
+        resolve(response.statusCode !== undefined && response.statusCode < 500);
+      });
+      request.once('error', () => resolve(false));
+      request.setTimeout(1_000, () => {
+        request.destroy();
+        resolve(false);
+      });
+    });
+    if (ready) return;
+    if (rendererServer?.exitCode !== null) {
+      throw new Error(`Packaged renderer exited with ${rendererServer?.exitCode}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, 150));
+  }
+  throw new Error('Timed out starting the packaged renderer');
+}
+
+async function startPackagedRenderer(): Promise<string> {
+  const port = await availableLoopbackPort();
+  const packagedRenderer = path.join(process.resourcesPath, 'renderer');
+  const archive = path.join(packagedRenderer, 'renderer.zip');
+  const archiveHash = (
+    await fs.promises.readFile(path.join(packagedRenderer, 'renderer.sha256'), 'utf8')
+  ).trim();
+  const cacheRoot = path.join(app.getPath('userData'), 'renderer-cache');
+  const versionRoot = path.join(cacheRoot, archiveHash);
+  const standaloneRoot = path.join(versionRoot, 'dist-renderer');
+  try {
+    await fs.promises.access(path.join(standaloneRoot, 'server.js'));
+  } catch {
+    const staging = `${versionRoot}.staging-${process.pid}`;
+    await fs.promises.rm(staging, { recursive: true, force: true });
+    await fs.promises.mkdir(staging, { recursive: true });
+    await execFileAsync('/usr/bin/ditto', ['-x', '-k', archive, staging]);
+    await fs.promises.mkdir(cacheRoot, { recursive: true });
+    await fs.promises.rename(staging, versionRoot).catch(async error => {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      await fs.promises.rm(staging, { recursive: true, force: true });
+    });
+  }
+  const serverEntry = path.join(standaloneRoot, 'server.js');
+  rendererServer = spawn(process.execPath, [serverEntry], {
+    cwd: standaloneRoot,
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      HOSTNAME: '127.0.0.1',
+      PORT: String(port),
+      NODE_ENV: 'production',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  rendererServer.stdout?.on('data', data => {
+    if (process.env.EXAWATT_RENDERER_LOGS === '1') process.stdout.write(data);
+  });
+  rendererServer.stderr?.on('data', data => process.stderr.write(data));
+  const origin = `http://127.0.0.1:${port}`;
+  await waitForRenderer(`${origin}/workspace`);
+  rendererOrigin = origin;
+  return origin;
+}
 
 // Register as protocol handler before app is ready.
 // In dev (process.defaultApp), pass execPath + script so macOS can re-launch correctly.
@@ -77,12 +171,27 @@ function createWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
     },
   });
 
-  // In dev, load the Next.js dev server; in prod, load the deployed site
-  const url = isDev ? DEV_URL : 'https://exawatt.ai';
+  // Development uses the explicit dev server. Production uses renderer code
+  // packaged in this exact app build; remote web code never receives PTY APIs.
+  const url = isDev ? DEV_URL : `${rendererOrigin}/workspace`;
   mainWindow.loadURL(url);
+
+  mainWindow.webContents.on('will-navigate', (event, target) => {
+    const allowedOrigin = new URL(url).origin;
+    if (new URL(target).origin !== allowedOrigin) {
+      event.preventDefault();
+      if (target.startsWith('https://')) void shell.openExternal(target);
+    }
+  });
+  mainWindow.webContents.on('will-attach-webview', event => event.preventDefault());
+  mainWindow.webContents.session.setPermissionRequestHandler(
+    (_webContents, _permission, callback) => callback(false)
+  );
 
   // Deliver any queued deep link once the page is loaded
   mainWindow.webContents.on('did-finish-load', () => {
@@ -94,7 +203,7 @@ function createWindow(): void {
 
   // Open external links in default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http')) {
+    if (url.startsWith('https://')) {
       shell.openExternal(url);
     }
     return { action: 'deny' };
@@ -173,7 +282,7 @@ function createMenu(): void {
 }
 
 function registerAuthIPC(): void {
-  ipcMain.handle('auth:open-external', async (_event, url: string) => {
+  handleTrusted('auth:open-external', async (_event, url: string) => {
     if (url.startsWith('https://')) {
       await shell.openExternal(url);
     }
@@ -197,7 +306,9 @@ function registerDialogIPC(): void {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  if (!isDev) await startPackagedRenderer();
+  setTrustedRendererOrigin(isDev ? DEV_URL : rendererOrigin!);
   registerAgentIPC();
   registerPtyIPC();
   registerAuthIPC();
@@ -222,4 +333,6 @@ app.on('window-all-closed', () => {
 // never leave orphan PTY shells/agents behind
 app.on('before-quit', () => {
   disposePty();
+  rendererServer?.kill();
+  rendererServer = null;
 });

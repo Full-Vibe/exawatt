@@ -1,4 +1,5 @@
-import { ipcMain, BrowserWindow, app } from 'electron';
+import { BrowserWindow, app } from 'electron';
+import { handleTrusted } from './ipc-security';
 import { ptySessions } from './pty/session-manager';
 import type { PtyCreateOptions } from './pty/session-manager';
 import { contextSummarizer } from './pty/context-summarizer';
@@ -67,7 +68,7 @@ export function registerPtyIPC(): void {
 
   // structured result instead of a thrown error: IPC rejections arrive as
   // opaque "Error invoking remote method" strings — useless for UX
-  ipcMain.handle('pty:create', async (_event, options: PtyCreateOptions) => {
+  handleTrusted('pty:create', async (_event, options: PtyCreateOptions) => {
     try {
       return { ok: true as const, session: await ptySessions.create(options) };
     } catch (err) {
@@ -77,7 +78,7 @@ export function registerPtyIPC(): void {
       };
     }
   });
-  ipcMain.handle('pty:write', (_event, id: string, data: string) => {
+  handleTrusted('pty:write', (_event, id: string, data: string) => {
     ptySessions.write(id, data);
     // engagement clears the flag — but only when the session is actually
     // being watched: writes ALSO carry xterm auto-replies from hidden panes
@@ -87,33 +88,33 @@ export function registerPtyIPC(): void {
   // xterm's onData also carries terminal protocol replies. Only onKey is
   // guaranteed human engagement, so it has a separate recap-cancellation
   // channel instead of overloading pty:write.
-  ipcMain.handle('pty:engage', (_event, id: string) => {
+  handleTrusted('pty:engage', (_event, id: string) => {
     contextSummarizer.noteInput(id);
   });
-  ipcMain.handle('pty:focus', (_event, id: string | null) => {
+  handleTrusted('pty:focus', (_event, id: string | null) => {
     attentionMonitor.setFocus(id);
     contextSummarizer.setFocus(id);
   });
-  ipcMain.handle('pty:resize', (_event, id: string, cols: number, rows: number) => {
+  handleTrusted('pty:resize', (_event, id: string, cols: number, rows: number) => {
     ptySessions.resize(id, cols, rows);
   });
-  ipcMain.handle('pty:kill', (_event, id: string) => {
+  handleTrusted('pty:kill', (_event, id: string) => {
     ptySessions.kill(id);
   });
-  ipcMain.handle('pty:rename', (_event, id: string, title: string) => {
+  handleTrusted('pty:rename', (_event, id: string, title: string) => {
     ptySessions.rename(id, title);
   });
-  ipcMain.handle('pty:list', () =>
+  handleTrusted('pty:list', () =>
     ptySessions.list().map((s) => ({
       ...s,
       contextSummary: contextSummarizer.getSummary(s.id),
       attention: attentionMonitor.get(s.id),
     }))
   );
-  ipcMain.handle('pty:buffer', (_event, id: string) => ptySessions.buffer(id));
+  handleTrusted('pty:buffer', (_event, id: string) => ptySessions.buffer(id));
 
   // one-gesture worktrees: <repo>-wt/<branch> sibling container
-  ipcMain.handle(
+  handleTrusted(
     'pty:worktree',
     async (_event, repoDir: string, branch: string) => {
       try {
@@ -128,13 +129,13 @@ export function registerPtyIPC(): void {
   );
 
   // workspace layout persistence (renderer-owned shape)
-  ipcMain.handle('workspace:load', () => loadWorkspace());
-  ipcMain.handle('workspace:save', (_event, state: unknown) =>
+  handleTrusted('workspace:load', () => loadWorkspace());
+  handleTrusted('workspace:save', (_event, state: unknown) =>
     saveWorkspace(state)
   );
 
   // user settings (S3): userData/settings.json — e.g. the terminal font
-  ipcMain.handle('settings:get', () => loadSettings());
+  handleTrusted('settings:get', () => loadSettings());
 }
 
 /** app-quit cleanup: never leave orphan shells behind */

@@ -45,6 +45,8 @@ next-env.d.ts
 
 # Electron
 dist-electron/
+dist-renderer/
+dist-renderer-archive/
 release/
 *.dmg
 
