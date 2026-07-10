@@ -19,7 +19,7 @@ export type { EffectiveTerminalFont } from './terminal-font';
 
 const HUD_TERM_THEME = {
   background: '#04060B',
-  foreground: '#DCEBFF',
+  foreground: '#F4F4F4',
   cursor: '#19E6FF',
   cursorAccent: '#04060B',
   selectionBackground: 'rgba(25,230,255,0.25)',
@@ -30,7 +30,7 @@ const HUD_TERM_THEME = {
   blue: '#55A0FF',
   magenta: '#FF3B8B',
   cyan: '#19E6FF',
-  white: '#DCEBFF',
+  white: '#F4F4F4',
   brightBlack: '#6A7585',
   brightRed: '#FF5C7A',
   brightGreen: '#8FF0B5',

@@ -302,6 +302,10 @@ S3 Exposé, motion & discoverability (landed 2026-07-10, dogfood round 4):
   coverage); the cross-platform default remains zero. Verified through the
   real settings → main IPC → React → computed CSS path, plus 263 tests, lint,
   type-check, Electron compile, and the production Next build.
+- The same round removed the HUD-blue tint from normal terminal text. Default
+  foreground and ANSI white are neutral `#F4F4F4` for stronger contrast and
+  native-terminal readability; Exawatt accent colors remain in chrome,
+  cursor, selection, and semantic ANSI colors.
 - Executed in an own git worktree per the new operator workflow rule
   (parallel agents share this repo).
 - Verified: 226 unit tests (5 new preview tests incl. the private-byte
