@@ -15,11 +15,12 @@
  *    commander parses the fleet at a glance;
  *  - node SIZE encodes importance (blocked/error largest), density-LOD shrinks
  *    nodes as clusters grow so 4096 agents stay parseable;
- *  - blocked/error agents pulse (reduced-motion gated) and burn hotter.
+ *  - blocked/error agents burn hotter; new blockers/activity receive a finite
+ *    state blip and then park.
  *
  * Game-feel systems (all demand-loop friendly — they park when settled):
  *  - staggered "deploy" entrance: nodes scale in over ~1.2s on mount;
- *  - hover-grow / select-grow with frame-rate-independent damp;
+ *  - hover-grow / select-grow with frame-rate-independent finite damp;
  *  - camera fly-to via an imperative AgentFieldHandle (focusCluster/focusAgent/
  *    overview/dolly/truck/orbit) driven by the DOM chrome's keyboard layer;
  *  - CameraControls smooth transitions self-sustain under frameloop="demand"
@@ -29,14 +30,28 @@
  * InstancedMesh (halos) — draw calls stay ~constant from 64 → 10k+. Clusters
  * are LAYOUT, not meshes. Follows docs/engineering/r3f-authoring-guide.md.
  */
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import { CameraControls, Grid, Html, Line, Text } from '@react-three/drei';
-import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import type { AgentStatus } from '@exawatt/core';
 import { HUD, HUD_STATUS_COLOR } from '../tokens';
+import { isLowPowerSpatialDevice } from './agent-field-capabilities';
+
+const AgentFieldEffects = lazy(() =>
+  import('./agent-field-effects').then(mod => ({
+    default: mod.AgentFieldEffects,
+  }))
+);
 
 // ---------------------------------------------------------------------------
 // Data model
@@ -203,7 +218,7 @@ export function layoutClusteredField(groups: FieldGroupSpec[]): {
   const numClusters = groups.length;
   if (numClusters === 0) return { agents: [], clusters: [] };
 
-  const counts = groups.map((g) => g.countOverride ?? g.agents.length);
+  const counts = groups.map(g => g.countOverride ?? g.agents.length);
 
   const localRadius = (count: number) =>
     Math.max(NODE_PITCH * 2, Math.sqrt(Math.max(count, 1)) * NODE_PITCH);
@@ -288,11 +303,14 @@ export function generateClusteredAgents(n: number): {
     PROJECT_NAMES.length,
     Math.max(3, Math.round(Math.sqrt(n) / 3))
   );
-  const groups: FieldGroupSpec[] = Array.from({ length: numClusters }, (_, c) => ({
-    id: PROJECT_NAMES[c],
-    label: PROJECT_NAMES[c],
-    agents: [],
-  }));
+  const groups: FieldGroupSpec[] = Array.from(
+    { length: numClusters },
+    (_, c) => ({
+      id: PROJECT_NAMES[c],
+      label: PROJECT_NAMES[c],
+      agents: [],
+    })
+  );
   const localCounter = new Array(numClusters).fill(0);
   for (let i = 0; i < n; i++) {
     const c = i % numClusters;
@@ -336,6 +354,24 @@ function useReducedMotion(): boolean {
   return reduced;
 }
 
+function readLowPowerHint(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const extended = navigator as Navigator & {
+    deviceMemory?: number;
+    connection?: { saveData?: boolean };
+  };
+  return isLowPowerSpatialDevice({
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    deviceMemory: extended.deviceMemory,
+    saveData: extended.connection?.saveData,
+  });
+}
+
+function useLowPowerMode(): boolean {
+  const [lowPower] = useState(readLowPowerHint);
+  return lowPower;
+}
+
 /** small deterministic hash -> [0,1) (no Math.random; SSR-stable) */
 function hash01(n: number): number {
   const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
@@ -377,7 +413,14 @@ function useHaloTexture(): THREE.Texture {
     const c = document.createElement('canvas');
     c.width = c.height = size;
     const ctx = c.getContext('2d')!;
-    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    const g = ctx.createRadialGradient(
+      size / 2,
+      size / 2,
+      0,
+      size / 2,
+      size / 2,
+      size / 2
+    );
     g.addColorStop(0, 'rgba(255,255,255,1)');
     g.addColorStop(0.2, 'rgba(255,255,255,0.7)');
     g.addColorStop(0.5, 'rgba(255,255,255,0.16)');
@@ -395,8 +438,6 @@ const ENTRANCE_SPREAD = 0.85; // max per-node deploy delay (s)
 const ENTRANCE_DUR = 0.5; // per-node deploy grow time (s)
 const HOVER_BOOST = 1.5;
 const SELECT_BOOST = 1.3;
-const PULSE_AMP = 0.16;
-const PULSE_SPEED = 2.6; // rad/s
 const BLIP_DUR = 0.7; // activity blip length (s)
 const BLIP_AMP = 0.45; // activity blip peak growth
 
@@ -419,12 +460,15 @@ function Constellation({
 }) {
   const mesh = useRef<THREE.InstancedMesh>(null);
   const halo = useRef<THREE.InstancedMesh>(null);
-  const invalidate = useThree((s) => s.invalidate);
+  const invalidate = useThree(s => s.invalidate);
   const count = agents.length;
 
   // diamond plate: a thin box reads as a beveled chit on the tactical map
   const geom = useMemo(() => new THREE.BoxGeometry(1, 1, 0.5), []);
-  const haloGeom = useMemo(() => new THREE.PlaneGeometry(HALO_MUL, HALO_MUL), []);
+  const haloGeom = useMemo(
+    () => new THREE.PlaneGeometry(HALO_MUL, HALO_MUL),
+    []
+  );
   const haloTex = useHaloTexture();
   useEffect(
     () => () => {
@@ -436,8 +480,12 @@ function Constellation({
   );
 
   const clusterDensity = useMemo(
-    () => clusters.map((c) => densityScale(c.count)),
+    () => clusters.map(c => densityScale(c.count)),
     [clusters]
+  );
+  const agentIndex = useMemo(
+    () => new Map(agents.map((agent, index) => [agent.id, index])),
+    [agents]
   );
 
   // per-node statics, cached so the animation loop is pure arithmetic
@@ -463,15 +511,6 @@ function Constellation({
     return arr;
   }, [agents, count, clusters.length]);
 
-  // which instances pulse (blocked/error)
-  const attentionIdx = useMemo(() => {
-    const out: number[] = [];
-    for (let i = 0; i < count; i++) {
-      if (agents[i].status === 'blocked' || agents[i].status === 'error') out.push(i);
-    }
-    return out;
-  }, [agents, count]);
-
   // ---- animation state (refs — never setState in useFrame) ----
   const boost = useRef<Float32Array>(new Float32Array(0));
   if (boost.current.length !== count) {
@@ -483,10 +522,11 @@ function Constellation({
   const settling = useRef(new Set<number>());
   const prevHover = useRef<number>(-1);
   const prevSelect = useRef<number>(-1);
-  const pulsePhase = useRef(0);
-  // activity blips: node pops briefly when its agent's activityAt advances
+  const seeded = useRef(false);
+  // Finite state blips: activity arrival or transition into attention.
   const prevActivity = useRef(new Map<string, number>());
-  const blips = useRef(new Map<number, number>()); // index -> seconds remaining
+  const prevStatus = useRef(new Map<string, AgentStatus>());
+  const blips = useRef(new Map<string, number>()); // stable agent id -> seconds remaining
 
   /** write node + halo matrix for instance i at scale multiplier m */
   const writeInstance = (i: number, m: number, z: number) => {
@@ -515,21 +555,31 @@ function Constellation({
     if (!m || !h) return;
     if (reduced) entrance.current.done = true;
     _dummy.rotation.set(0, 0, Math.PI / 4); // diamond
-    // detect fresh activity (a live event landed on an agent) → queue a blip.
-    // The first seed only records the baseline — no blip storm on mount.
-    const firstSeed = prevActivity.current.size === 0;
+    // Detect semantic changes. Stable blocked state stays visually strong but
+    // static; only a new blocker/error or activity event starts finite motion.
     for (let i = 0; i < count; i++) {
       const a = agents[i];
+      const previousStatus = prevStatus.current.get(a.id);
+      if (
+        seeded.current &&
+        previousStatus !== a.status &&
+        (a.status === 'blocked' || a.status === 'error') &&
+        entrance.current.done &&
+        !reduced
+      ) {
+        blips.current.set(a.id, BLIP_DUR);
+      }
+      prevStatus.current.set(a.id, a.status);
       if (a.activityAt !== undefined) {
         const prev = prevActivity.current.get(a.id);
         if (
-          !firstSeed &&
+          seeded.current &&
           prev !== undefined &&
           a.activityAt > prev &&
           entrance.current.done &&
           !reduced
         ) {
-          blips.current.set(i, BLIP_DUR);
+          blips.current.set(a.id, BLIP_DUR);
         }
         prevActivity.current.set(a.id, a.activityAt);
       }
@@ -545,11 +595,14 @@ function Constellation({
       if (attention) _color.multiplyScalar(1.55);
       m.setColorAt(i, _color);
       // halo: dimmer + density-dimmed so dense clusters don't blow out white
-      _color.set(base).multiplyScalar(
-        (attention ? 0.62 : 0.4) * (0.35 + clusterDensity[a.cluster] * 0.65)
-      );
+      _color
+        .set(base)
+        .multiplyScalar(
+          (attention ? 0.62 : 0.4) * (0.35 + clusterDensity[a.cluster] * 0.65)
+        );
       h.setColorAt(i, _color);
     }
+    seeded.current = true;
     m.instanceMatrix.needsUpdate = true;
     h.instanceMatrix.needsUpdate = true;
     if (m.instanceColor) m.instanceColor.needsUpdate = true;
@@ -580,19 +633,13 @@ function Constellation({
     invalidate();
   }, [hoveredIdx, agents, count, invalidate]);
 
-  // ---- the animation loop: entrance → (pulse + hover/select settle) ----
+  // ---- the animation loop: entrance → finite hover/select/state settles ----
   useFrame((state, delta) => {
     const m = mesh.current;
     const h = halo.current;
     if (!m || !h) return;
     const dt = Math.min(delta, 0.05);
     _dummy.rotation.set(0, 0, Math.PI / 4);
-
-    const pulseFor = (i: number): number => {
-      const a = agents[i];
-      if (!a || (a.status !== 'blocked' && a.status !== 'error')) return 1;
-      return 1 + Math.sin(pulsePhase.current + a.cluster * 0.9) * PULSE_AMP;
-    };
 
     // track hover/select changes inside the loop (avoids effect ordering).
     // Indices are range-checked: a stale index from a swapped agent set must
@@ -610,7 +657,7 @@ function Constellation({
     }
 
     if (reduced) {
-      // reduced motion: no entrance, no pulse, no blips — snap hover/select
+      // reduced motion: no entrance/blips — snap hover/select
       blips.current.clear();
       if (settling.current.size === 0) return;
       for (const i of settling.current) {
@@ -618,7 +665,8 @@ function Constellation({
           settling.current.delete(i);
           continue;
         }
-        const target = i === hov ? HOVER_BOOST : i === selectedIdx ? SELECT_BOOST : 1;
+        const target =
+          i === hov ? HOVER_BOOST : i === selectedIdx ? SELECT_BOOST : 1;
         boost.current[i] = target;
         writeInstance(i, target, zFor(i));
       }
@@ -629,7 +677,6 @@ function Constellation({
       return;
     }
 
-    pulsePhase.current += dt * PULSE_SPEED;
     let wrote = false;
 
     if (!entrance.current.done) {
@@ -638,57 +685,57 @@ function Constellation({
       const t = entrance.current.t;
       for (let i = 0; i < count; i++) {
         const grow = easeOutCubic((t - stagger[i]) / ENTRANCE_DUR);
-        const target = i === hov ? HOVER_BOOST : i === selectedIdx ? SELECT_BOOST : 1;
-        boost.current[i] = THREE.MathUtils.damp(boost.current[i], target, 12, dt);
-        writeInstance(i, grow * boost.current[i] * pulseFor(i), zFor(i));
+        const target =
+          i === hov ? HOVER_BOOST : i === selectedIdx ? SELECT_BOOST : 1;
+        boost.current[i] = THREE.MathUtils.damp(
+          boost.current[i],
+          target,
+          12,
+          dt
+        );
+        writeInstance(i, grow * boost.current[i], zFor(i));
       }
       if (t >= ENTRANCE_SPREAD + ENTRANCE_DUR) entrance.current.done = true;
       wrote = true;
     } else {
-      // steady state: only the attention set + anything mid-transition
-      for (let k = 0; k < attentionIdx.length; k++) {
-        const i = attentionIdx[k];
-        boost.current[i] = THREE.MathUtils.damp(
-          boost.current[i],
-          i === hov ? HOVER_BOOST : i === selectedIdx ? SELECT_BOOST : 1,
-          12,
-          dt
-        );
-        writeInstance(i, boost.current[i] * pulseFor(i), zFor(i));
-        wrote = true;
-      }
       if (settling.current.size > 0) {
         for (const i of settling.current) {
           if (i >= count) {
             settling.current.delete(i);
             continue;
           }
-          const target = i === hov ? HOVER_BOOST : i === selectedIdx ? SELECT_BOOST : 1;
-          boost.current[i] = THREE.MathUtils.damp(boost.current[i], target, 12, dt);
+          const target =
+            i === hov ? HOVER_BOOST : i === selectedIdx ? SELECT_BOOST : 1;
+          boost.current[i] = THREE.MathUtils.damp(
+            boost.current[i],
+            target,
+            12,
+            dt
+          );
           const done = Math.abs(boost.current[i] - target) < 0.004;
           if (done) boost.current[i] = target;
-          writeInstance(i, boost.current[i] * pulseFor(i), zFor(i));
-          // attention nodes stay animated via the pulse loop above
-          if (done && i !== hov && i !== selectedIdx) settling.current.delete(i);
+          writeInstance(i, boost.current[i], zFor(i));
+          if (done) settling.current.delete(i);
           wrote = true;
         }
       }
       // activity blips: brief pop when a live event lands on an agent
       if (blips.current.size > 0) {
-        for (const [i, rem] of blips.current) {
-          if (i >= count) {
-            blips.current.delete(i);
+        for (const [id, rem] of blips.current) {
+          const i = agentIndex.get(id);
+          if (i === undefined) {
+            blips.current.delete(id);
             continue;
           }
           const next = rem - dt;
           if (next <= 0) {
-            blips.current.delete(i);
-            writeInstance(i, boost.current[i] * pulseFor(i), zFor(i));
+            blips.current.delete(id);
+            writeInstance(i, boost.current[i], zFor(i));
           } else {
-            blips.current.set(i, next);
+            blips.current.set(id, next);
             const u = 1 - next / BLIP_DUR;
             const factor = 1 + Math.sin(Math.PI * u) * BLIP_AMP;
-            writeInstance(i, boost.current[i] * pulseFor(i) * factor, zFor(i));
+            writeInstance(i, boost.current[i] * factor, zFor(i));
           }
           wrote = true;
         }
@@ -759,7 +806,13 @@ function Constellation({
 // Cluster chrome (rings / hull / labels) — fixed small count
 // ---------------------------------------------------------------------------
 
-function ringPoints(cx: number, cy: number, r: number, z: number, seg = 72): [number, number, number][] {
+function ringPoints(
+  cx: number,
+  cy: number,
+  r: number,
+  z: number,
+  seg = 72
+): [number, number, number][] {
   const pts: [number, number, number][] = [];
   for (let i = 0; i <= seg; i++) {
     const a = (i / seg) * Math.PI * 2;
@@ -769,7 +822,12 @@ function ringPoints(cx: number, cy: number, r: number, z: number, seg = 72): [nu
 }
 
 /** Octagonal tactical hull (cut-corner bounding ring) for one cluster. */
-function hullPoints(cx: number, cy: number, r: number, z: number): [number, number, number][] {
+function hullPoints(
+  cx: number,
+  cy: number,
+  r: number,
+  z: number
+): [number, number, number][] {
   const pts: [number, number, number][] = [];
   const seg = 8;
   for (let i = 0; i <= seg; i++) {
@@ -796,7 +854,7 @@ function ClusterRing({
   onHoverChange?: (hovered: boolean) => void;
 }) {
   const group = useRef<THREE.Group>(null);
-  const invalidate = useThree((s) => s.invalidate);
+  const invalidate = useThree(s => s.invalidate);
   const hullR = cluster.radius * 1.14;
   // pick disc must clear MAX node reach, not just the layout disc: nodes are
   // 45°-rotated diamonds (corner = half-extent·√2) that pulse (1.16×) and
@@ -826,10 +884,11 @@ function ClusterRing({
   useEffect(() => {
     fade.current = { t: 0, done: reduced };
     if (reduced) return;
-    group.current?.traverse((o) => {
+    group.current?.traverse(o => {
       const mat = (o as THREE.Mesh).material as THREE.Material | undefined;
       if (mat && typeof mat.opacity === 'number') {
-        if (mat.userData.baseOpacity === undefined) mat.userData.baseOpacity = mat.opacity;
+        if (mat.userData.baseOpacity === undefined)
+          mat.userData.baseOpacity = mat.opacity;
         mat.opacity = 0;
       }
     });
@@ -837,8 +896,10 @@ function ClusterRing({
   useFrame((state, delta) => {
     if (fade.current.done || !group.current) return;
     fade.current.t += Math.min(delta, 0.05);
-    const u = easeOutCubic((fade.current.t - 0.12 - cluster.index * 0.07) / 0.6);
-    group.current.traverse((o) => {
+    const u = easeOutCubic(
+      (fade.current.t - 0.12 - cluster.index * 0.07) / 0.6
+    );
+    group.current.traverse(o => {
       const mat = (o as THREE.Mesh).material as THREE.Material | undefined;
       if (mat && mat.userData.baseOpacity !== undefined) {
         mat.opacity = mat.userData.baseOpacity * u;
@@ -946,10 +1007,13 @@ function ClusterLabel({
   const subRef = useRef<TextLike>(null);
   const group = useRef<THREE.Group>(null);
   const fade = useRef(1);
-  const invalidate = useThree((s) => s.invalidate);
+  const invalidate = useThree(s => s.invalidate);
   // approximate title+counts block for the invisible hit plane (troika sync
   // is async; a rough box is plenty for a hit target)
-  const hitW = Math.min(Math.max(cluster.radius * 3, 30), cluster.label.length * size * 0.66 + size);
+  const hitW = Math.min(
+    Math.max(cluster.radius * 3, 30),
+    cluster.label.length * size * 0.66 + size
+  );
   const hitH = size * 3.2;
   const hitY = cluster.radius * 1.18 + size * 1.55;
 
@@ -1050,10 +1114,8 @@ function ClusterLabel({
         material-transparent
         raycast={() => null}
       >
-        {(
-          cluster.statLine ??
-          `${cluster.count} units${cluster.attention > 0 ? ` · ${cluster.attention} blocked` : ''}`
-        )}
+        {cluster.statLine ??
+          `${cluster.count} units${cluster.attention > 0 ? ` · ${cluster.attention} blocked` : ''}`}
       </Text>
     </group>
   );
@@ -1131,7 +1193,10 @@ function HeroCallout({
         >
           ⚠ {hero.title}
         </span>
-        <span className="max-w-72 truncate font-mono text-[10px]" style={{ color: HUD.textDim }}>
+        <span
+          className="max-w-72 truncate font-mono text-[10px]"
+          style={{ color: HUD.textDim }}
+        >
           {hero.reason}
         </span>
       </button>
@@ -1140,7 +1205,7 @@ function HeroCallout({
 }
 
 // ---------------------------------------------------------------------------
-// Focus ring (hover = cyan, select = magenta) — spins + pops in
+// Focus ring (hover = cyan, select = magenta) — finite lock-on settle
 // ---------------------------------------------------------------------------
 
 function FocusRing({
@@ -1160,26 +1225,38 @@ function FocusRing({
     // keyed on the agent's ID: a live data tick (fresh agent object, same
     // agent) must not replay the pop
     pop.current = reduced ? 1 : 1.6;
+    spin.current = reduced ? 0.18 : 0;
   }, [agent.id, reduced]);
   useFrame((state, delta) => {
     if (!ref.current) return;
     if (reduced) {
       ref.current.scale.setScalar(1);
+      ref.current.rotation.z = Math.PI / 4 + 0.18;
       return;
     }
+    if (pop.current === 1 && Math.abs(spin.current - 0.18) < 0.002) return;
     const dt = Math.min(delta, 0.05);
-    spin.current += dt * 0.8;
+    spin.current = THREE.MathUtils.damp(spin.current, 0.18, 10, dt);
     pop.current = THREE.MathUtils.damp(pop.current, 1, 10, dt);
     if (Math.abs(pop.current - 1) < 0.002) pop.current = 1;
+    if (Math.abs(spin.current - 0.18) < 0.002) spin.current = 0.18;
     ref.current.rotation.z = Math.PI / 4 + spin.current;
     ref.current.scale.setScalar(pop.current);
     state.invalidate();
   });
   return (
-    <group ref={ref} position={[agent.x, agent.y, 1.8]} rotation={[0, 0, Math.PI / 4]}>
+    <group
+      ref={ref}
+      position={[agent.x, agent.y, 1.8]}
+      rotation={[0, 0, Math.PI / 4]}
+    >
       <mesh raycast={() => null}>
         <ringGeometry args={[baseR * 1.5, baseR * 1.85, 4]} />
-        <meshBasicMaterial color={color} toneMapped={false} side={THREE.DoubleSide} />
+        <meshBasicMaterial
+          color={color}
+          toneMapped={false}
+          side={THREE.DoubleSide}
+        />
       </mesh>
     </group>
   );
@@ -1195,7 +1272,14 @@ function VoidBackdrop({ radius }: { radius: number }) {
     const c = document.createElement('canvas');
     c.width = c.height = size;
     const ctx = c.getContext('2d')!;
-    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    const g = ctx.createRadialGradient(
+      size / 2,
+      size / 2,
+      0,
+      size / 2,
+      size / 2,
+      size / 2
+    );
     g.addColorStop(0, 'rgba(20,70,120,0.28)');
     g.addColorStop(0.5, 'rgba(10,30,60,0.10)');
     g.addColorStop(1, 'rgba(4,6,11,0)');
@@ -1207,9 +1291,18 @@ function VoidBackdrop({ radius }: { radius: number }) {
   }, []);
   useEffect(() => () => tex.dispose(), [tex]);
   return (
-    <mesh position={[0, 0, -radius * 1.2]} raycast={() => null} renderOrder={-1}>
+    <mesh
+      position={[0, 0, -radius * 1.2]}
+      raycast={() => null}
+      renderOrder={-1}
+    >
       <planeGeometry args={[radius * 5, radius * 5]} />
-      <meshBasicMaterial map={tex} transparent depthWrite={false} toneMapped={false} />
+      <meshBasicMaterial
+        map={tex}
+        transparent
+        depthWrite={false}
+        toneMapped={false}
+      />
     </mesh>
   );
 }
@@ -1237,7 +1330,7 @@ function Rig({
   onNavigate?: () => void;
 }) {
   const controls = useRef<CameraControls>(null);
-  const invalidate = useThree((s) => s.invalidate);
+  const invalidate = useThree(s => s.invalidate);
 
   useEffect(() => {
     const c = controls.current;
@@ -1270,11 +1363,14 @@ function Rig({
         nav();
       },
       focusAgent(id) {
-        const a = agents.find((x) => x.id === id);
+        const a = agents.find(x => x.id === id);
         const c = controls.current;
         if (!a || !c) return;
         const cl = clusters[a.cluster];
-        _sphere.set(_v3.set(a.x, a.y, 0), Math.max(34, (cl?.radius ?? 60) * 0.55));
+        _sphere.set(
+          _v3.set(a.x, a.y, 0),
+          Math.max(34, (cl?.radius ?? 60) * 0.55)
+        );
         c.fitToSphere(_sphere, t);
         nav();
       },
@@ -1311,21 +1407,29 @@ function Rig({
     return () => {
       controllerRef.current = null;
     };
-  }, [controllerRef, agents, clusters, radius, reduced, invalidate, onNavigate]);
+  }, [
+    controllerRef,
+    agents,
+    clusters,
+    radius,
+    reduced,
+    invalidate,
+    onNavigate,
+  ]);
 
   return (
     <CameraControls
       ref={controls}
       makeDefault
-      smoothTime={0.45}
-      draggingSmoothTime={0.08}
+      smoothTime={0.34}
+      draggingSmoothTime={0.1}
       minDistance={22}
       maxDistance={radius * 5}
       // war-table view band: never edge-on, never degenerate
-      minPolarAngle={Math.PI * 0.26}
-      maxPolarAngle={Math.PI * 0.48}
-      minAzimuthAngle={-0.9}
-      maxAzimuthAngle={0.9}
+      minPolarAngle={Math.PI * 0.34}
+      maxPolarAngle={Math.PI * 0.43}
+      minAzimuthAngle={-0.32}
+      maxAzimuthAngle={0.32}
       dollyToCursor
     />
   );
@@ -1363,32 +1467,29 @@ export function AgentField({
   controllerRef?: { current: AgentFieldHandle | null };
 }) {
   const reduced = useReducedMotion();
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
-  const [hoverCluster, setHoverCluster] = useState<number | null>(null);
+  const lowPower = useLowPowerMode();
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [hoverClusterId, setHoverClusterId] = useState<string | null>(null);
   const radius = useMemo(() => sceneRadius(clusters), [clusters]);
 
-  // a hover index from a differently-SIZED fleet is meaningless (and possibly
-  // out of range) — drop it. Same-size live ticks keep the hover (the range
-  // guards in Constellation cover the rare membership swap until the next
-  // pointer move).
-  useEffect(() => {
-    setHoveredIdx(null);
-    setHoverCluster(null);
-  }, [agents.length]);
+  const hoveredIdx = useMemo(
+    () => (hoveredId ? agents.findIndex(agent => agent.id === hoveredId) : -1),
+    [agents, hoveredId]
+  );
 
   // programmatic camera moves invalidate what's under the (stationary) pointer;
   // drop the hover so no stale ring/tooltip floats mid-screen after a fly-to
-  const clearHover = useCallback(() => setHoveredIdx(null), []);
+  const clearHover = useCallback(() => setHoveredId(null), []);
 
-  const hovered = hoveredIdx != null ? agents[hoveredIdx] ?? null : null;
+  const hovered = hoveredIdx >= 0 ? agents[hoveredIdx] : null;
   const selectedIdx = useMemo(
-    () => (selectedId ? agents.findIndex((a) => a.id === selectedId) : -1),
+    () => (selectedId ? agents.findIndex(a => a.id === selectedId) : -1),
     [agents, selectedId]
   );
   const selected = selectedIdx >= 0 ? agents[selectedIdx] : null;
   // the hero callout anchors to its agent's node (absent if filtered out)
   const heroAgent = useMemo(
-    () => (hero ? agents.find((a) => a.id === hero.agentId) ?? null : null),
+    () => (hero ? (agents.find(a => a.id === hero.agentId) ?? null) : null),
     [agents, hero]
   );
 
@@ -1414,7 +1515,9 @@ export function AgentField({
       down = { x: e.clientX, y: e.clientY };
     };
     const onUp = (e: PointerEvent) => {
-      dragDist.current = down ? Math.hypot(e.clientX - down.x, e.clientY - down.y) : 0;
+      dragDist.current = down
+        ? Math.hypot(e.clientX - down.x, e.clientY - down.y)
+        : 0;
       down = null;
     };
     window.addEventListener('pointerdown', onDown);
@@ -1428,7 +1531,7 @@ export function AgentField({
   return (
     <Canvas
       frameloop="demand"
-      dpr={[1, 2]}
+      dpr={lowPower ? [1, 1.25] : [1, 2]}
       camera={{
         position: [0, -radius * 0.55, radius * 1.25],
         fov: 42,
@@ -1492,43 +1595,46 @@ export function AgentField({
 
       <TrunkNetwork clusters={clusters} />
 
-      {clusters.map((c) => (
+      {clusters.map(c => (
         <ClusterRing
-          key={`${agents.length}-${c.index}`}
+          key={c.id}
           cluster={c}
           emphasized={
             hovered?.cluster === c.index ||
             selected?.cluster === c.index ||
             focusedCluster === c.index ||
-            hoverCluster === c.index
+            hoverClusterId === c.id
           }
           reduced={reduced}
           interactive={
             !!onSelectCluster &&
             (selectableClusters ? selectableClusters.has(c.id) : true)
           }
-          onSelect={onSelectCluster ? () => onSelectCluster(c.index) : undefined}
-          onHoverChange={(h) => setHoverCluster(h ? c.index : null)}
+          onSelect={
+            onSelectCluster ? () => onSelectCluster(c.index) : undefined
+          }
+          onHoverChange={h => setHoverClusterId(h ? c.id : null)}
         />
       ))}
 
       <Constellation
-        key={agents.length}
         agents={agents}
         clusters={clusters}
-        hoveredIdx={hoveredIdx}
+        hoveredIdx={hoveredIdx >= 0 ? hoveredIdx : null}
         selectedIdx={selectedIdx}
         reduced={reduced}
-        onHover={setHoveredIdx}
-        onSelect={(i) => onSelect(agents[i].id)}
+        onHover={index =>
+          setHoveredId(index == null ? null : (agents[index]?.id ?? null))
+        }
+        onSelect={i => onSelect(agents[i].id)}
       />
 
       {/* Labels in their own Suspense boundary: a slow font load can never
           gate the nodes/rings — labels pop in when the SDF is ready. */}
       <Suspense fallback={null}>
-        {clusters.map((c) => (
+        {clusters.map(c => (
           <ClusterLabel
-            key={c.index}
+            key={c.id}
             cluster={c}
             sceneR={radius}
             reduced={reduced}
@@ -1536,29 +1642,30 @@ export function AgentField({
               !!onSelectCluster &&
               (selectableClusters ? selectableClusters.has(c.id) : true)
             }
-            onSelect={onSelectCluster ? () => onSelectCluster(c.index) : undefined}
-            onHoverChange={(h) => setHoverCluster(h ? c.index : null)}
+            onSelect={
+              onSelectCluster ? () => onSelectCluster(c.index) : undefined
+            }
+            onHoverChange={h => setHoverClusterId(h ? c.id : null)}
           />
         ))}
       </Suspense>
 
-      {hovered && <FocusRing agent={hovered} color={HUD.cyan} reduced={reduced} />}
-      {selected && <FocusRing agent={selected} color={HUD.magenta} reduced={reduced} />}
+      {hovered && (
+        <FocusRing agent={hovered} color={HUD.cyan} reduced={reduced} />
+      )}
+      {selected && (
+        <FocusRing agent={selected} color={HUD.magenta} reduced={reduced} />
+      )}
 
       {hero && heroAgent && (
         <HeroCallout agent={heroAgent} hero={hero} onSelect={onSelect} />
       )}
 
-      <EffectComposer>
-        <Bloom
-          luminanceThreshold={0.5}
-          luminanceSmoothing={0.25}
-          intensity={0.95}
-          radius={0.6}
-          mipmapBlur
-        />
-        <Vignette eskil={false} offset={0.28} darkness={0.62} />
-      </EffectComposer>
+      {!lowPower && (
+        <Suspense fallback={null}>
+          <AgentFieldEffects />
+        </Suspense>
+      )}
     </Canvas>
   );
 }
