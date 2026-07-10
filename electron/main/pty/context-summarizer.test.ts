@@ -49,6 +49,15 @@ describe('ContextSummarizer re-entry recaps', () => {
     service.setFocus('a');
   });
 
+  it('clamps a zero summary sweep to a non-hot interval', () => {
+    const interval = vi.spyOn(globalThis, 'setInterval');
+    const clamped = new ContextSummarizer({ sweepMs: 0 });
+    clamped.start();
+    expect(interval).toHaveBeenCalledWith(expect.any(Function), 1000);
+    clamped.stop();
+    interval.mockRestore();
+  });
+
   it('summarizes only output produced while away', async () => {
     manager.data('a', 'old output that was already seen\n');
     service.setWindowFocused(false);
@@ -100,6 +109,36 @@ describe('ContextSummarizer re-entry recaps', () => {
     service.setWindowFocused(true);
     service.noteInput('a');
     resolveSummary('This result is already stale.');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(events).toEqual([]);
+  });
+
+  it('suppresses a recap when input beats the return-focus IPC', async () => {
+    service.setWindowFocused(false);
+    now += 20_000;
+    manager.data('a', 'enough meaningful output arrived while away');
+    service.noteInput('a');
+    service.setWindowFocused(true);
+    await Promise.resolve();
+
+    expect(summarize).not.toHaveBeenCalled();
+  });
+
+  it('drops an in-flight recap when its session exits', async () => {
+    let resolveSummary: (value: string) => void = () => {};
+    summarize.mockImplementation(
+      () => new Promise<string>((resolve) => (resolveSummary = resolve))
+    );
+    const events: unknown[] = [];
+    service.on('recap', (event) => events.push(event));
+    service.setWindowFocused(false);
+    now += 20_000;
+    manager.data('a', 'enough meaningful output arrived while away');
+    service.setWindowFocused(true);
+    manager.emit('exit', 'a');
+    resolveSummary('This session no longer exists.');
     await Promise.resolve();
     await Promise.resolve();
 

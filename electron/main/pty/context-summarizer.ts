@@ -76,6 +76,7 @@ export interface ContextSummarizerOptions {
 interface VisitCheckpoint {
   cursor: number;
   leftAt: number;
+  inputVersion: number;
 }
 
 interface PendingRecap {
@@ -103,8 +104,10 @@ export class ContextSummarizer extends EventEmitter {
   private checkpoints = new Map<string, VisitCheckpoint>();
   private focusedId: string | null = null;
   private windowFocused = false;
+  private inputVersions = new Map<string, number>();
   private recapGeneration = 0;
   private pendingRecap: PendingRecap | null = null;
+  private activeRecap: PendingRecap | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private inFlight = false;
   private failures = 0;
@@ -119,8 +122,10 @@ export class ContextSummarizer extends EventEmitter {
 
   constructor(options: ContextSummarizerOptions = {}) {
     super();
-    this.sweepMs =
-      options.sweepMs ?? envInt('EXAWATT_SUMMARY_SWEEP_MS', 60_000);
+    this.sweepMs = Math.max(
+      1000,
+      options.sweepMs ?? envInt('EXAWATT_SUMMARY_SWEEP_MS', 60_000)
+    );
     this.recapAwayMs =
       options.recapAwayMs ?? envInt('EXAWATT_RECAP_AWAY_MS', 120_000);
     this.recapMinChars =
@@ -174,8 +179,16 @@ export class ContextSummarizer extends EventEmitter {
 
   /** Real engagement makes any pending recap stale. */
   noteInput(id: string): void {
-    if (!this.windowFocused || id !== this.focusedId) return;
-    this.recapGeneration += 1;
+    this.inputVersions.set(id, (this.inputVersions.get(id) ?? 0) + 1);
+    // onKey is explicitly human input, so do not require focus IPC to have
+    // settled first. The inputVersion also suppresses a recap queued later.
+    if (
+      id === this.focusedId ||
+      id === this.pendingRecap?.id ||
+      id === this.activeRecap?.id
+    ) {
+      this.recapGeneration += 1;
+    }
     if (this.pendingRecap?.id === id) this.pendingRecap = null;
   }
 
@@ -184,6 +197,7 @@ export class ContextSummarizer extends EventEmitter {
     this.checkpoints.set(id, {
       cursor: this.manager.bufferCursor(id),
       leftAt: this.now(),
+      inputVersion: this.inputVersions.get(id) ?? 0,
     });
   }
 
@@ -191,6 +205,7 @@ export class ContextSummarizer extends EventEmitter {
     const checkpoint = this.checkpoints.get(id);
     this.checkpoints.delete(id);
     if (!checkpoint || !this.manager || this.disabled) return;
+    if ((this.inputVersions.get(id) ?? 0) !== checkpoint.inputVersion) return;
 
     const awayMs = this.now() - checkpoint.leftAt;
     if (awayMs < this.recapAwayMs) return;
@@ -226,6 +241,7 @@ export class ContextSummarizer extends EventEmitter {
     if (!this.isCurrent(request)) return;
 
     this.inFlight = true;
+    this.activeRecap = request;
     try {
       const text = await this.callEngine(request.input, MAX_RECAP_CHARS);
       this.failures = 0;
@@ -240,6 +256,7 @@ export class ContextSummarizer extends EventEmitter {
     } catch (err) {
       this.recordFailure(err);
     } finally {
+      if (this.activeRecap === request) this.activeRecap = null;
       this.inFlight = false;
       if (this.pendingRecap) void this.drainPendingRecap();
     }
@@ -304,6 +321,14 @@ export class ContextSummarizer extends EventEmitter {
     this.bytesSince.delete(id);
     this.lastAt.delete(id);
     this.checkpoints.delete(id);
+    this.inputVersions.delete(id);
+    if (
+      this.pendingRecap?.id === id ||
+      this.activeRecap?.id === id ||
+      this.focusedId === id
+    ) {
+      this.recapGeneration += 1;
+    }
     if (this.pendingRecap?.id === id) this.pendingRecap = null;
   }
 
