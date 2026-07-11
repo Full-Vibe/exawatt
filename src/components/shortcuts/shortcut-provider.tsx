@@ -32,6 +32,15 @@ import {
   surfaceForShortcut,
   resolveSurfaceHref,
 } from '@/components/nav/surfaces';
+import {
+  requestLaunch,
+  RENAME_ACTIVE_EVENT,
+  TOGGLE_SPLIT_EVENT,
+  JUMP_ATTENTION_EVENT,
+  CLOSE_ACTIVE_EVENT,
+  OPEN_OVERVIEW_EVENT,
+} from '@/components/workspace/session-jump';
+import type { PtyHarness } from '@/types/electron';
 
 interface ShortcutContextValue {
   openCommandPalette: () => void;
@@ -168,6 +177,68 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     return () => {
       shortcuts.forEach(s => shortcutRegistry.unregister(s.id));
     };
+  }, [router]);
+
+  // Application-menu commands (ENG-016 D8): the macOS menu bar mirrors the
+  // app's verbs; every command routes through the same actions the keyboard
+  // uses, so the menu is a cheat sheet and a mouse path, never a second brain
+  useEffect(() => {
+    const launch = (harness: PtyHarness) => {
+      requestLaunch(harness);
+      if (!window.location.pathname.startsWith('/workspace')) {
+        router.push('/workspace');
+      }
+    };
+    const dispatch = (event: string) =>
+      window.dispatchEvent(new CustomEvent(event));
+    return window.electron?.menu?.onCommand(command => {
+      switch (command) {
+        case 'go-terminal':
+          router.push('/workspace');
+          break;
+        case 'go-sessions':
+          window.location.pathname.startsWith('/workspace')
+            ? dispatch(OPEN_OVERVIEW_EVENT)
+            : router.push('/workspace?view=sessions');
+          break;
+        case 'go-spatial':
+          router.push(spatialReturnHref());
+          break;
+        case 'history-back':
+          router.back();
+          break;
+        case 'history-forward':
+          router.forward();
+          break;
+        case 'open-settings':
+          router.push('/settings');
+          break;
+        case 'command-palette':
+          setCommandPaletteOpen(true);
+          break;
+        case 'launch-claude':
+          launch('claude');
+          break;
+        case 'launch-codex':
+          launch('codex');
+          break;
+        case 'launch-shell':
+          launch('shell');
+          break;
+        case 'rename-tab':
+          dispatch(RENAME_ACTIVE_EVENT);
+          break;
+        case 'toggle-split':
+          dispatch(TOGGLE_SPLIT_EVENT);
+          break;
+        case 'close-tab':
+          dispatch(CLOSE_ACTIVE_EVENT);
+          break;
+        case 'jump-attention':
+          dispatch(JUMP_ATTENTION_EVENT);
+          break;
+      }
+    });
   }, [router]);
 
   // Determine current contexts based on route

@@ -120,4 +120,7 @@ contextBridge.exposeInMainWorld('electron', {
     pathExists: (path: string): Promise<boolean> =>
       ipcRenderer.invoke('dialog:pathExists', path),
   },
+  menu: {
+    onCommand: subscribe<string>('menu:command'),
+  },
 });

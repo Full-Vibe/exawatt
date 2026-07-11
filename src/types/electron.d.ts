@@ -210,6 +210,11 @@ declare global {
         /** does this path exist on the current machine? (S5 "locate" flow) */
         pathExists: (path: string) => Promise<boolean>;
       };
+      menu?: {
+        /** application-menu commands (ENG-016 D8): menu items mirror the
+         *  app's verbs and send their command name here on click */
+        onCommand: (handler: (command: string) => void) => () => void;
+      };
     };
   }
 }

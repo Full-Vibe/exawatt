@@ -39,6 +39,30 @@ try {
   page.setDefaultTimeout(15000);
   await page.locator('[data-command-altitude]').waitFor();
 
+  // the menu bar mirrors the app's verbs (W4): Go/Session menus exist,
+  // Settings… registers ⌘, for real, renderer-owned combos display-only
+  const menuDump = await app.evaluate(({ Menu }) =>
+    Menu.getApplicationMenu().items.map(i => ({
+      label: i.label,
+      sub: i.submenu?.items.map(
+        s => `${s.label}|${s.accelerator ?? ''}|reg:${s.registerAccelerator}`
+      ),
+    }))
+  );
+  const goMenu = menuDump.find(m => m.label === 'Go');
+  check(
+    'menu bar has Go and Session menus',
+    !!goMenu && menuDump.some(m => m.label === 'Session')
+  );
+  check(
+    'Settings… registers Command+,',
+    menuDump[0].sub.some(s => s.startsWith('Settings…|Command+,|reg:true'))
+  );
+  check(
+    'Go>Back displays Command+[ without registering it',
+    goMenu.sub.some(s => s.includes('Back|Command+[|reg:false'))
+  );
+
   // legacy stays reachable via its chord — and the spine follows you there
   await page.keyboard.press('KeyG');
   await page.waitForTimeout(120);

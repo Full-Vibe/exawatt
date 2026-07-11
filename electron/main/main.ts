@@ -242,6 +242,30 @@ function createWindow(): void {
   });
 }
 
+/** Send a named command to the focused renderer. Menu items are the
+ *  discoverable, always-current cheat sheet for the app's shortcuts; the
+ *  renderer stays the single keyboard authority (rebindable, terminal-focus
+ *  aware), so items show their combo with `registerAccelerator: false` and
+ *  only ⌘, — a chrome-level macOS invariant — registers for real. */
+function sendMenuCommand(command: string): void {
+  const win =
+    BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  win?.webContents.send('menu:command', command);
+}
+
+function menuCommand(
+  label: string,
+  command: string,
+  accelerator?: string,
+  registerAccelerator = false
+): Electron.MenuItemConstructorOptions {
+  return {
+    label,
+    ...(accelerator ? { accelerator, registerAccelerator } : {}),
+    click: () => sendMenuCommand(command),
+  };
+}
+
 function createMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
@@ -249,6 +273,8 @@ function createMenu(): void {
       submenu: [
         { role: 'about' },
         { label: `Build ${buildInfo.sha.slice(0, 12)}`, enabled: false },
+        { type: 'separator' },
+        menuCommand('Settings…', 'open-settings', 'Command+,', true),
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
@@ -288,6 +314,33 @@ function createMenu(): void {
               { role: 'toggleDevTools' as const },
             ]
           : []),
+      ],
+    },
+    {
+      label: 'Go',
+      submenu: [
+        menuCommand('Command Palette…', 'command-palette', 'Command+K'),
+        { type: 'separator' },
+        menuCommand('Terminal', 'go-terminal'),
+        menuCommand('Sessions', 'go-sessions', 'Command+O'),
+        menuCommand('Spatial', 'go-spatial', 'Command+Shift+M'),
+        { type: 'separator' },
+        menuCommand('Back', 'history-back', 'Command+['),
+        menuCommand('Forward', 'history-forward', 'Command+]'),
+      ],
+    },
+    {
+      label: 'Session',
+      submenu: [
+        menuCommand('New Claude Code Session', 'launch-claude'),
+        menuCommand('New Codex Session', 'launch-codex'),
+        menuCommand('New Shell Session', 'launch-shell', 'Command+T'),
+        { type: 'separator' },
+        menuCommand('Rename Session', 'rename-tab', 'Command+E'),
+        menuCommand('Split: Pin / Unpin', 'toggle-split', 'Command+D'),
+        menuCommand('Close Tab', 'close-tab', 'Command+W'),
+        { type: 'separator' },
+        menuCommand('Jump to Session Needing You', 'jump-attention', 'Command+J'),
       ],
     },
     {
