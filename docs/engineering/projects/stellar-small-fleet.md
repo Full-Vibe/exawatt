@@ -131,8 +131,8 @@ rename (Initiative→Project, ignite→launch), P2 registry + `projects` reclaim
 migration (applied to prod & verified), P3 resolution bridge (launching
 registers the Project), P4 native directory picker + Browse + ⌘N + ⌘K Projects
 group, P5 missing-dir "locate on this machine" + decision record `0010`.
-Remaining: the P3 identity/color sync + reconcile-on-load (the Project's synced
-name/color driving the tab strip) is DEFERRED as a follow-up. Fixes the gap
+Also landed: the P3 identity/color sync + reconcile-on-load, so the registry's
+synced name/color drive the tab strip (both directions). Fixes the gap
 surfaced in dogfood: you cannot open or browse a Project unless a session is
 already running in it. Today a Project (mislabeled `Initiative` in code) is DERIVED —
 resolved from a session's cwd (`project-resolve.ts`, git-common-dir; worktrees
@@ -227,10 +227,12 @@ Phasing:
 - P3 Identity/layout split + resolution bridge + reconcile-on-load. Resolution
   bridge landed 2026-07-10 (launching best-effort registers the Project; the
   full ⌘N → shell → registry-write flow verified against the real DB via the
-  Electron E2E `scripts/registry-e2e-eval.mjs`). Identity/color sync from the
-  registry + reconcile-on-load are DEFERRED as a follow-up: the workspace still
-  sources a Project's name/color locally; the synced registry values do not yet
-  drive the tab strip.
+  Electron E2E `scripts/registry-e2e-eval.mjs`). Identity/color sync landed
+  2026-07-10: the registry is the source of truth for a Project's name + color
+  — reconcile-on-load (async, non-blocking) adopts the synced values and links
+  each group to its registry row; launching adopts the registry identity (and
+  pushes a new Project's locally-assigned color up); the rename/recolor verbs
+  write back to the registry. All best-effort, degrading to local behavior.
 - P4 Open/browse UX (landed 2026-07-10): native directory picker + 📁 Browse
   control + ⌘N "new project", and the ⌘K Projects group (browse/open known
   Projects with no live session — activate if live, else launch a shell).
@@ -365,7 +367,9 @@ S5 Durable Projects (P1–P5 landed 2026-07-10):
   applied to prod and verified; typed browser-client accessors
   (`src/lib/projects/registry.ts`).
 - P3 resolution bridge: launching best-effort registers/refreshes the Project
-  by resolved root path. Identity/color sync + reconcile-on-load DEFERRED.
+  by resolved root path. Identity/color sync landed: reconcile-on-load +
+  launch adopt the registry's synced name/color, and rename/recolor write back
+  (all best-effort, non-blocking).
 - P4 open/browse: `dialog:openDirectory` IPC + 📁 Browse control, ⌘N "new
   project", and a ⌘K **Projects** group (open a known Project even with no live
   session — activate if live, else launch a shell).
