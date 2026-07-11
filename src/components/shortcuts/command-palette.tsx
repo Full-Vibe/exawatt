@@ -45,7 +45,7 @@ import type {
 } from '@/components/workspace/switcher-rows';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import { HARNESS_META, HARNESS_ORDER } from '@/components/workspace/harnesses';
-import { listProjects } from '@/lib/projects/registry';
+import { listProjects, rebindProjectPath } from '@/lib/projects/registry';
 import type { Project } from '@/lib/projects/registry';
 import { HUD } from '@/components/hud';
 import type { ShortcutKeys } from '@/types/shortcuts';
@@ -158,11 +158,22 @@ export function CommandPalette({
       }),
     [handleSelect, router]
   );
-  /** open a known Project by directory: the workspace activates it if it has
-   *  live tabs, else launches a shell there */
-  const openProjectDir = useCallback(
-    (dir: string) =>
-      handleSelect(() => {
+  /** open a known Project (⌘K Projects): if its directory is missing on this
+   *  machine (a synced Project from another machine), prompt to locate it and
+   *  re-bind the registry; then the workspace activates it (live tabs) or
+   *  launches a shell there */
+  const openProject = useCallback(
+    (p: Project) =>
+      handleSelect(async () => {
+        let dir = p.root_path;
+        if (!dir) return;
+        const exists = await window.electron?.dialog?.pathExists?.(dir);
+        if (exists === false) {
+          const picked = await window.electron?.dialog?.openDirectory();
+          if (!picked) return; // cancelled — leave it unavailable this time
+          await rebindProjectPath(p.id, picked).catch(() => {});
+          dir = picked;
+        }
         requestOpenProject(dir);
         if (!inWorkspace()) router.push('/workspace');
       }),
@@ -392,7 +403,7 @@ export function CommandPalette({
                   <CommandItem
                     key={`project-${p.id}`}
                     value={`project open ${p.name} ${p.root_path ?? ''}`}
-                    onSelect={() => openProjectDir(p.root_path as string)}
+                    onSelect={() => openProject(p)}
                   >
                     <span
                       className="mr-2 inline-block h-2 w-2 shrink-0 rotate-45"

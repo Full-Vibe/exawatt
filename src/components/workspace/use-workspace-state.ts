@@ -7,7 +7,7 @@
  * Model decisions (operator, 2026-07-02):
  * - one app window; projects are groups inside it (⌘1..9 switches
  *   project, ⌘⇧[/] rotates the GLOBAL tab ring, crossing projects)
- * - igniting REQUIRES a project directory (never a silent home default);
+ * - launching REQUIRES a project directory (never a silent home default);
  *   the last-used directory is remembered
  * - directory → project resolution happens in the main process (worktrees
  *   map to their main repo), so grouping is consistent everywhere

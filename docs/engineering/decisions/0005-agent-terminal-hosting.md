@@ -33,7 +33,7 @@ changes — architect ten miles ahead, build one mile.
 
 - v0 restart persistence covers layout, names, worktrees, and working dirs;
   running processes do NOT survive an app restart. Acceptable for daily
-  dogfood — agents are cheaply re-ignitable; a detachable backend is the
+  dogfood — agents are cheaply re-launchable; a detachable backend is the
   designated upgrade path when that stops being acceptable.
 - A native-module rebuild step joins the Electron build.
 - The existing headless runner (`electron/main/agents/claude-code-agent.ts`,

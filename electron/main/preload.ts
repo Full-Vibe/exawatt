@@ -108,5 +108,7 @@ contextBridge.exposeInMainWorld('electron', {
   dialog: {
     openDirectory: (): Promise<string | null> =>
       ipcRenderer.invoke('dialog:openDirectory'),
+    pathExists: (path: string): Promise<boolean> =>
+      ipcRenderer.invoke('dialog:pathExists', path),
   },
 });

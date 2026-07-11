@@ -66,7 +66,7 @@ export async function listProjects(): Promise<Project[]> {
 }
 
 /** Ensure a repository Project exists for this root path and mark it opened.
- *  Idempotent via the (user_id, root_path) unique index — igniting in a known
+ *  Idempotent via the (user_id, root_path) unique index — launching in a known
  *  directory reuses its Project instead of creating a duplicate. */
 export async function openRepositoryProject(
   ref: RepositoryProjectRef
@@ -75,7 +75,7 @@ export async function openRepositoryProject(
   const userId = await requireUserId(supabase);
   const nowIso = new Date().toISOString();
   // Reuse an existing Project for this directory (the unique (user_id,
-  // root_path) index guarantees at most one). Igniting again in a known dir
+  // root_path) index guarantees at most one). Launching again in a known dir
   // must NOT overwrite the operator's renamed / recolored / reordered Project,
   // so on reopen we only bump recency and un-archive; a brand-new dir inserts.
   const existing = await supabase
@@ -130,6 +130,22 @@ export async function setProjectColor(id: string, color: string): Promise<void> 
   const { error } = await supabase
     .from('projects')
     .update({ color })
+    .eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+/** Re-bind a Project's directory on THIS machine (S5 "locate on this machine"):
+ *  a synced Project whose root_path is absent here gets pointed at the folder
+ *  the operator picks. v1 updates the single root_path (full per-machine path
+ *  bindings are deferred); also bumps recency. */
+export async function rebindProjectPath(
+  id: string,
+  rootPath: string
+): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('projects')
+    .update({ root_path: rootPath, last_opened_at: new Date().toISOString() })
     .eq('id', id);
   if (error) throw new Error(error.message);
 }

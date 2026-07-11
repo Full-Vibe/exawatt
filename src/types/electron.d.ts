@@ -182,6 +182,8 @@ declare global {
       dialog?: {
         /** native folder picker; resolves to the chosen path or null if cancelled */
         openDirectory: () => Promise<string | null>;
+        /** does this path exist on the current machine? (S5 "locate" flow) */
+        pathExists: (path: string) => Promise<boolean>;
       };
     };
   }

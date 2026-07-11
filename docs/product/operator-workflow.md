@@ -53,7 +53,7 @@ absence of Exawatt, this workflow IS "Exawatt v0."
    - extremely good keyboard shortcuts for very fast navigation
    - automatic context augmentation
    - all scoped to the 1–6 coding-agent use case first
-3. **Directory = project (operator, 2026-07-02):** igniting a session
+3. **Directory = project (operator, 2026-07-02):** launching a session
    always requires a project directory (never a silent home-dir default;
    home is meaningless as an initiative and harnesses won't durably trust
    it) with the last-used directory remembered. The working directory is

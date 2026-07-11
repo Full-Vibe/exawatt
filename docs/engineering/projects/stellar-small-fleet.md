@@ -127,11 +127,13 @@ First-slice acceptance criteria:
 ### S5 Durable Projects
 
 Status: active-build — scoped 2026-07-10 (operator). Landed 2026-07-10: P1
-rename, P2 registry + `projects` reclaim migration (applied to prod & verified),
-P3 resolution bridge (igniting registers the Project), P4 native directory
-picker + Browse control. Remaining: P4 ⌘K Projects browse group, P3 identity/
-color sync + reconcile-on-load, P5 dogfood + docs + decision record. Fixes the
-gap surfaced in dogfood: you cannot open or browse a Project unless a session is
+rename (Initiative→Project, ignite→launch), P2 registry + `projects` reclaim
+migration (applied to prod & verified), P3 resolution bridge (launching
+registers the Project), P4 native directory picker + Browse + ⌘N + ⌘K Projects
+group, P5 missing-dir "locate on this machine" + decision record `0010`.
+Remaining: the P3 identity/color sync + reconcile-on-load (the Project's synced
+name/color driving the tab strip) is DEFERRED as a follow-up. Fixes the gap
+surfaced in dogfood: you cannot open or browse a Project unless a session is
 already running in it. Today a Project (mislabeled `Initiative` in code) is DERIVED —
 resolved from a session's cwd (`project-resolve.ts`, git-common-dir; worktrees
 fold to the main repo) and persisted in local `workspace.json` only while it
@@ -223,17 +225,18 @@ Phasing:
   `/workspace` renderer holds an authed Supabase browser session (PKCE via the
   OAuth deep-link), so RLS reads/writes work without a main-process proxy.
 - P3 Identity/layout split + resolution bridge + reconcile-on-load. Resolution
-  bridge landed 2026-07-10 (igniting best-effort registers the Project;
-  registry logic verified against the real DB). Identity/color sync from the
-  registry + reconcile-on-load remain.
-- P4 Open/browse UX: picker IPC, Browse control, ⌘K Projects group,
-  rename/recolor/archive. Native directory picker + 📁 Browse control landed
-  2026-07-10 (verified rendering + compile; native dialog exercises in the real
-  Electron app). The ⌘K Projects group (browse/open known Projects with no live
-  session) remains.
-- P5 Reconcile, dogfood, docs: missing-dir handling, roadmap status + this
-  doc, and a decision record for the Supabase-synced storage + identity/layout
-  split.
+  bridge landed 2026-07-10 (launching best-effort registers the Project; the
+  full ⌘N → shell → registry-write flow verified against the real DB via the
+  Electron E2E `scripts/registry-e2e-eval.mjs`). Identity/color sync from the
+  registry + reconcile-on-load are DEFERRED as a follow-up: the workspace still
+  sources a Project's name/color locally; the synced registry values do not yet
+  drive the tab strip.
+- P4 Open/browse UX (landed 2026-07-10): native directory picker + 📁 Browse
+  control + ⌘N "new project", and the ⌘K Projects group (browse/open known
+  Projects with no live session — activate if live, else launch a shell).
+- P5 Missing-dir + docs (landed 2026-07-10): "locate on this machine"
+  (`dialog:pathExists` + registry `rebindProjectPath` + the ⌘K locate flow),
+  decision record `0010`, and this status pass.
 
 Acceptance criteria:
 
@@ -351,6 +354,28 @@ Implementation record (landed 2026-07-10):
   full Spatial desktop/mobile/reduced-motion/low-power battery remains green.
 
 ## Progress log
+
+S5 Durable Projects (P1–P5 landed 2026-07-10):
+
+- P1 rename `Initiative`→`Project` (workspace cluster; canon `Initiative`/goal
+  untouched) + `ignite`→`launch` across code and plans; `workspace.json` v1→v2
+  migration preserves saved layouts.
+- P2 reclaimed the `projects` table for the canonical registry (legacy demo →
+  `demo_projects`, queries repointed via a PostgREST embed alias); migration
+  applied to prod and verified; typed browser-client accessors
+  (`src/lib/projects/registry.ts`).
+- P3 resolution bridge: launching best-effort registers/refreshes the Project
+  by resolved root path. Identity/color sync + reconcile-on-load DEFERRED.
+- P4 open/browse: `dialog:openDirectory` IPC + 📁 Browse control, ⌘N "new
+  project", and a ⌘K **Projects** group (open a known Project even with no live
+  session — activate if live, else launch a shell).
+- P5 missing-dir: `dialog:pathExists` + registry `rebindProjectPath` power a
+  "locate on this machine" flow when a synced Project's directory is absent
+  here. Decision record `0010`.
+- Test infra: a minted-session `TestAuthBridge` + `EXAWATT_TEST_DIR` dialog
+  hook make the OAuth/native-dialog paths auto-testable. Verified: type-check,
+  lint, tests, build; the full ⌘N → shell → registry-write E2E passes against
+  the real DB (`scripts/registry-e2e-eval.mjs`). Both hooks inert in prod.
 
 S4 re-entry recap, first slice (landed 2026-07-10):
 

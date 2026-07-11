@@ -328,6 +328,15 @@ function registerDialogIPC(): void {
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
   });
+  // does a path exist on THIS machine? — detects a synced Project whose
+  // directory is absent here (ENG-015 S5 P5 "locate on this machine")
+  ipcMain.handle('dialog:pathExists', (_event, p: string) => {
+    try {
+      return typeof p === 'string' && p.length > 0 && fs.existsSync(p);
+    } catch {
+      return false;
+    }
+  });
 }
 
 function registerAppIPC(): void {

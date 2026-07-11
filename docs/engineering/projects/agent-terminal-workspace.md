@@ -222,7 +222,7 @@ Acceptance criteria:
 
 - the operator can reconstruct their current macOS setup (2+ initiatives,
   several tabs each, 1–6 agents) inside Exawatt in under five minutes
-- igniting without a project directory is impossible; the last-used
+- launching without a project directory is impossible; the last-used
   directory prefills; tabs visibly cluster by project with stable colors
 - no harness re-prompts for trust across app restarts when working in a
   real project directory
