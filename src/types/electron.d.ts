@@ -138,13 +138,27 @@ export interface ExawattBuildInfo {
   sha: string;
   branch: string;
   builtAt: string;
+  delivery: 'dogfood' | 'signed';
+}
+
+export interface ProductUpdateStatus {
+  phase: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error';
+  currentVersion: string;
+  availableVersion: string | null;
+  percent: number | null;
+  liveSessions: number;
+  error: string | null;
 }
 
 export interface ElectronAppApi {
   getBuildInfo: () => Promise<ExawattBuildInfo>;
+  getUpdateStatus: () => Promise<ProductUpdateStatus>;
+  checkForUpdates: () => Promise<ProductUpdateStatus>;
+  restartUpdate: () => Promise<void>;
   onUpdateReady: (
     handler: (update: { currentSha: string; installedSha: string }) => void
   ) => () => void;
+  onUpdateStatus: (handler: (status: ProductUpdateStatus) => void) => () => void;
 }
 
 declare global {

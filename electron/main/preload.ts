@@ -85,10 +85,21 @@ contextBridge.exposeInMainWorld('electron', {
   },
   app: {
     getBuildInfo: () => ipcRenderer.invoke('app:get-build-info'),
+    getUpdateStatus: () => ipcRenderer.invoke('app:get-update-status'),
+    checkForUpdates: () => ipcRenderer.invoke('app:check-for-updates'),
+    restartUpdate: () => ipcRenderer.invoke('app:restart-update'),
     onUpdateReady: subscribe<{
       currentSha: string;
       installedSha: string;
     }>('app:update-ready'),
+    onUpdateStatus: subscribe<{
+      phase: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error';
+      currentVersion: string;
+      availableVersion: string | null;
+      percent: number | null;
+      liveSessions: number;
+      error: string | null;
+    }>('app:update-status'),
   },
   auth: {
     openExternal: (url: string) => ipcRenderer.invoke('auth:open-external', url),

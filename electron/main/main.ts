@@ -9,6 +9,8 @@ import path from 'path';
 import { registerAgentIPC } from './agent-ipc';
 import { registerPtyIPC, disposePty } from './pty-ipc';
 import { handleTrusted, setTrustedRendererOrigin } from './ipc-security';
+import { ptySessions } from './pty/session-manager';
+import { registerProductUpdater, startProductUpdater } from './updater';
 
 const isDev = process.env.NODE_ENV === 'development';
 const execFileAsync = promisify(execFile);
@@ -32,10 +34,16 @@ interface BuildInfo {
   sha: string;
   branch: string;
   builtAt: string;
+  delivery: 'dogfood' | 'signed';
 }
 
 const buildInfo: BuildInfo = isDev
-  ? { sha: 'development', branch: 'development', builtAt: new Date().toISOString() }
+  ? {
+      sha: 'development',
+      branch: 'development',
+      builtAt: new Date().toISOString(),
+      delivery: 'dogfood',
+    }
   : JSON.parse(
       fs.readFileSync(path.join(__dirname, '..', 'build-info.json'), 'utf8')
     );
@@ -356,9 +364,13 @@ app.whenReady().then(async () => {
   registerAuthIPC();
   registerDialogIPC();
   registerAppIPC();
+  registerProductUpdater(
+    () => ptySessions.list().filter(session => !session.exited).length
+  );
   createMenu();
   createWindow();
   watchInstalledBuild();
+  startProductUpdater(buildInfo.delivery === 'signed');
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

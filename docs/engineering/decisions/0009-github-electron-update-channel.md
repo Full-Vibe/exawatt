@@ -1,0 +1,60 @@
+<!-- Generated for the public repository by the "public-document-set" recipe. -->
+# 0009 Deliver signed desktop updates through GitHub Releases
+
+Date: 2026-07-10
+Status: accepted
+
+## Context
+
+Decision `0008` made the renderer part of the installed desktop artifact and
+named `electron-updater` as the successor to the local dogfood copy command.
+Product delivery now needs a concrete signing, notarization, feed, rollout, and
+restart contract. The app still owns local PTY processes, so an updater must
+never silently restart it while sessions are live.
+
+## Decision
+
+- Direct macOS distribution uses a Developer ID Application certificate,
+  hardened runtime, Apple notarization, and stapling. Release CI fails if code
+  signing is unavailable.
+- GitHub Releases in `Full-Vibe/exawatt` is the initial public artifact and
+  update-metadata host. `electron-builder` produces the arm64 DMG, update ZIP,
+  blockmap, and `latest-mac.yml`; `electron-updater` consumes that generated
+  feed without a hand-built feed URL.
+- App Store Connect API-key credentials are preferred for CI notarization.
+  Certificates and Apple credentials exist only as GitHub Actions secrets.
+- Update metadata may carry `stagingPercentage`. The release workflow edits
+  YAML through a parser and validates the result before publishing.
+- The app downloads an eligible update but sets `autoInstallOnAppQuit` false.
+  Applying it requires the explicit **Restart when convenient** command, which
+  states how many live sessions will stop. Update failure leaves the current
+  app launchable.
+- The agent-closeout installer remains a development escape hatch and keeps
+  forcing signing/notarization off. It never becomes the customer update feed.
+- The first release target is arm64, matching the operator's current Mac and
+  the project's build-one-mile rule. Intel/universal artifacts are added before
+  supporting Intel customers rather than blocking current dogfood activation.
+
+## Activation gate
+
+The code and workflow are active only after repository administrators provide:
+
+- `MAC_CSC_LINK`
+- `MAC_CSC_KEY_PASSWORD`
+- `APPLE_API_KEY_P8`
+- `APPLE_API_KEY_ID`
+- `APPLE_API_ISSUER`
+
+The first `v<package-version>` release must pass `codesign`, Gatekeeper
+assessment, stapler validation, install/update from the previous signed build,
+and failure rollback before D7 is fully landed.
+
+## Consequences
+
+- Release versions are real SemVer product state; a tag must exactly match
+  `package.json`.
+- GitHub availability and release permissions are part of initial update
+  delivery. A generic/S3 provider can replace it behind electron-updater later.
+- Normal update checks never require a secret on the user's machine.
+- Session-preserving background replacement remains ENG-018; explicit restart
+  is truthful until PTYs live outside the app process.

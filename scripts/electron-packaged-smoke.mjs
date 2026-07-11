@@ -36,6 +36,16 @@ try {
   }
   const hasPty = await page.evaluate(() => !!window.electron?.pty);
   if (!hasPty) throw new Error('Packaged renderer has no PTY preload');
+  const initialUpdate = await page.evaluate(() =>
+    window.electron?.app?.getUpdateStatus()
+  );
+  if (initialUpdate?.phase !== 'idle' || initialUpdate.currentVersion !== '0.1.0') {
+    throw new Error(`Packaged updater IPC is invalid: ${JSON.stringify(initialUpdate)}`);
+  }
+  const buildInfo = await page.evaluate(() => window.electron?.app?.getBuildInfo());
+  if (buildInfo?.delivery !== 'dogfood') {
+    throw new Error(`Local package unexpectedly enabled product updates: ${JSON.stringify(buildInfo)}`);
+  }
 
   const created = await page.evaluate(async () => {
     return await window.electron?.pty?.create({ harness: 'shell', cwd: '/tmp' });
@@ -51,6 +61,12 @@ try {
     const buffer = await window.electron?.pty?.buffer(id);
     return buffer?.includes('EXAWATT_PACKAGED_OK');
   }, sessionId);
+  const updateWithSession = await page.evaluate(() =>
+    window.electron?.app?.getUpdateStatus()
+  );
+  if (updateWithSession?.liveSessions !== 1) {
+    throw new Error('Updater status did not report restart impact from the live PTY');
+  }
 
   if (errors.length > 0) {
     throw new Error(`Packaged Electron errors: ${errors.join(' | ')}`);

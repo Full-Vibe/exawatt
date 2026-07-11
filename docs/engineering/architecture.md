@@ -132,6 +132,8 @@ Built:
 - exact harness conversation identity for Electron tabs: assigned Claude IDs,
   explicit Codex selection fallback, and no-spawn relaunch with exact
   tab/Project/all resume actions
+- self-contained Electron packaging, atomic clean-master dogfood installation,
+  deep terminal fundamentals, and opt-in native attention notifications
 
 Partial:
 
@@ -140,9 +142,9 @@ Partial:
 - source/harness abstraction beyond OpenClaw/mock
 - architecture overview as a living map
 - Spatial Operations Board extraction into a standalone package
-- self-contained Electron packaging: the development shell and UI exist, but
-  production currently loads the hosted site and is being replaced by a
-  packaged local renderer under ENG-016
+- signed/notarized GitHub Release delivery and `electron-updater` are
+  implemented but await Apple/repository secrets and a first live signed
+  previous-version-to-next-version verification
 
 Planned:
 
@@ -153,7 +155,8 @@ Planned:
 - secrets/configuration strategy
 - hosted OpenClaw / remote harnesses
 - multi-source fleet aggregation
-- signed/notarized desktop releases and product-grade update delivery
+- Intel/universal desktop artifacts when supported-customer evidence requires
+  them; the initial signed channel targets arm64
 
 ## Architecture Map
 
