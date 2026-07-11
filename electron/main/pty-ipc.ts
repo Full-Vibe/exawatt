@@ -1,4 +1,4 @@
-import { BrowserWindow, app, shell } from 'electron';
+import { BrowserWindow, Notification, app, shell } from 'electron';
 import { handleTrusted } from './ipc-security';
 import { ptySessions } from './pty/session-manager';
 import type { PtyCreateOptions } from './pty/session-manager';
@@ -6,7 +6,7 @@ import { contextSummarizer } from './pty/context-summarizer';
 import { attentionMonitor } from './pty/attention-monitor';
 import { createWorktree } from './pty/project-resolve';
 import { loadWorkspace, saveWorkspace } from './workspace-store';
-import { loadSettings } from './settings-store';
+import { loadSettings, setAttentionNotifications } from './settings-store';
 import { listResumeCandidates } from './pty/resume-candidates';
 import {
   clipboardInput,
@@ -16,6 +16,10 @@ import {
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import {
+  nativeNotificationCopy,
+  shouldDeliverNativeNotification,
+} from './notification-policy';
 
 /**
  * IPC surface for PTY sessions (decision 0005). Invocations are namespaced
@@ -23,6 +27,7 @@ import os from 'os';
  * (single-window app today; cheap to scope per-window later).
  */
 export function registerPtyIPC(): void {
+  const nativeNotifications = new Map<string, Notification>();
   const broadcast = (channel: string, payload: unknown) => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send(channel, payload);
@@ -73,6 +78,40 @@ export function registerPtyIPC(): void {
         app.dock.bounce('informational');
       }
     }
+    nativeNotifications.get(id)?.close();
+    nativeNotifications.delete(id);
+    const typedAttention = attention as
+      | import('./pty/attention-monitor').SessionAttention
+      | null;
+    if (
+      !shouldDeliverNativeNotification(
+        loadSettings().notifications?.attention ?? false,
+        BrowserWindow.getFocusedWindow() !== null,
+        typedAttention
+      ) ||
+      !Notification.isSupported()
+    ) {
+      return;
+    }
+    const session = ptySessions.list().find(item => item.id === id);
+    if (!session) return;
+    const notice = new Notification({
+      ...nativeNotificationCopy(session),
+      silent: true,
+    });
+    notice.on('click', () => {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (!win || win.isDestroyed()) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      win.webContents.send('pty:notification-click', { id });
+    });
+    notice.on('close', () => {
+      if (nativeNotifications.get(id) === notice) nativeNotifications.delete(id);
+    });
+    nativeNotifications.set(id, notice);
+    notice.show();
   });
 
   // structured result instead of a thrown error: IPC rejections arrive as
@@ -191,6 +230,12 @@ export function registerPtyIPC(): void {
 
   // user settings (S3): userData/settings.json — e.g. the terminal font
   handleTrusted('settings:get', () => loadSettings());
+  handleTrusted('settings:set-attention-notifications', (_event, enabled: boolean) => {
+    if (typeof enabled !== 'boolean') throw new Error('Invalid notification setting');
+    const settings = setAttentionNotifications(enabled);
+    broadcast('settings:changed', settings);
+    return settings;
+  });
 }
 
 /** app-quit cleanup: never leave orphan shells behind */

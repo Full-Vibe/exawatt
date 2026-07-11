@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld('electron', {
       generatedAt: number;
     }>('pty:recap'),
     onAttention: subscribe<{ id: string; attention: unknown }>('pty:attention'),
+    onNotificationClick: subscribe<{ id: string }>('pty:notification-click'),
   },
   workspace: {
     load: () => ipcRenderer.invoke('workspace:load'),
@@ -69,6 +70,8 @@ contextBridge.exposeInMainWorld('electron', {
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
+    setAttentionNotifications: (enabled: boolean) =>
+      ipcRenderer.invoke('settings:set-attention-notifications', enabled),
     onChanged: subscribe<{
       terminal?: {
         fontFamily?: string;
@@ -77,6 +80,7 @@ contextBridge.exposeInMainWorld('electron', {
         letterSpacing?: number;
         fontStrokeWidth?: number;
       };
+      notifications?: { attention: boolean };
     }>('settings:changed'),
   },
   app: {

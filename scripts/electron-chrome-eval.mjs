@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { _electron as electron } from 'playwright-core';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -44,6 +44,23 @@ try {
   await terminal.waitFor();
   const context = page.locator('[data-active-session-context]');
   await context.waitFor();
+  const enableNotifications = page.getByRole('button', {
+    name: 'Enable attention notifications',
+  });
+  await enableNotifications.waitFor();
+  if ((await enableNotifications.getAttribute('aria-pressed')) !== 'false') {
+    throw new Error('Attention notifications did not default off');
+  }
+  await enableNotifications.click();
+  await page
+    .getByRole('button', { name: 'Disable attention notifications' })
+    .waitFor();
+  const savedSettings = JSON.parse(
+    readFileSync(join(userData, 'settings.json'), 'utf8')
+  );
+  if (savedSettings.notifications?.attention !== true) {
+    throw new Error('Attention notification setting did not persist');
+  }
   const pathLabel = context.locator('[title]').first();
   if ((await pathLabel.getAttribute('title')) !== projectDir) {
     throw new Error('Active cwd does not disclose its full path');
@@ -68,7 +85,9 @@ try {
   await page.screenshot({ path: join(screenshots, 'workspace-800x600.png') });
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.screenshot({ path: join(screenshots, 'workspace-1400x900.png') });
-  console.log('PASS chrome: cwd disclosure + 800/1400 layout + F6/Escape focus boundary');
+  console.log(
+    'PASS chrome: cwd + layouts + focus boundary + default-off notification setting'
+  );
 } finally {
   await app.close();
   rmSync(root, { recursive: true, force: true });

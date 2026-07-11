@@ -41,7 +41,7 @@ import {
 import { useShortcuts } from '@/components/shortcuts';
 import { HUD } from '@/components/hud';
 import { spatialReturnHref } from '@/components/nav/spatial-return';
-import { FolderOpen, SquareTerminal } from 'lucide-react';
+import { Bell, BellOff, FolderOpen, SquareTerminal } from 'lucide-react';
 import { middleTruncatePath } from './path-label';
 
 /** the discoverability layer (S3): the workspace SHOWS its keys, exactly
@@ -77,6 +77,7 @@ export function WorkspaceClient() {
   // SAME loadTerminalFont() promise before auto-reviving, so restored
   // sessions never spawn with default metrics while a custom font loads.
   const [font, setFont] = useState<EffectiveTerminalFont | null>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   useEffect(() => {
     if (!inElectron) return;
     let cancelled = false;
@@ -89,8 +90,14 @@ export function WorkspaceClient() {
         }
       });
     apply(loadTerminalFont());
+    void window.electron?.settings
+      ?.get()
+      .then(settings =>
+        setNotificationsEnabled(settings.notifications?.attention ?? false)
+      );
     const offSettings = window.electron?.settings?.onChanged?.(settings => {
       apply(Promise.resolve(acceptTerminalSettings(settings)));
+      setNotificationsEnabled(settings.notifications?.attention ?? false);
     });
     return () => {
       cancelled = true;
@@ -143,6 +150,34 @@ export function WorkspaceClient() {
     renameProject,
     setProjectColor,
   } = useWorkspaceState({ getInitialSize });
+
+  useEffect(() => {
+    const off = window.electron?.pty?.onNotificationClick(({ id }) => {
+      for (const project of projects) {
+        const tab = project.tabs.find(item => item.sessionId === id);
+        if (tab) {
+          selectTab(project.dir, tab.id);
+          return;
+        }
+      }
+    });
+    return off;
+  }, [projects, selectTab]);
+
+  const toggleNotifications = () => {
+    void window.electron?.settings
+      ?.setAttentionNotifications(!notificationsEnabled)
+      .then(settings =>
+        setNotificationsEnabled(settings.notifications?.attention ?? false)
+      )
+      .catch(reason =>
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : 'Could not update notifications'
+        )
+      );
+  };
 
   // exposé overview (S3): ⌘O — sessions fan out as tiles
   const requestedOverview = searchParams.get('view') === 'sessions';
@@ -351,6 +386,34 @@ export function WorkspaceClient() {
           prefillDir={activeProject?.dir ?? lastUsedDir}
           onIgnite={ignite}
         />
+        <button
+          type="button"
+          aria-label={
+            notificationsEnabled
+              ? 'Disable attention notifications'
+              : 'Enable attention notifications'
+          }
+          aria-pressed={notificationsEnabled}
+          title={
+            notificationsEnabled
+              ? 'Attention notifications enabled'
+              : 'Attention notifications disabled'
+          }
+          onClick={toggleNotifications}
+          className="grid h-7 w-7 shrink-0 place-items-center rounded border outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+          style={{
+            color: notificationsEnabled ? HUD.amber : HUD.textDim,
+            borderColor: notificationsEnabled
+              ? 'rgba(255,184,77,0.42)'
+              : 'rgba(80,230,255,0.2)',
+          }}
+        >
+          {notificationsEnabled ? (
+            <Bell className="h-3.5 w-3.5" />
+          ) : (
+            <BellOff className="h-3.5 w-3.5" />
+          )}
+        </button>
       </div>
 
       {activeTab && (

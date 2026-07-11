@@ -96,6 +96,7 @@ export interface ElectronPtyApi {
   onAttention: (
     handler: (payload: { id: string; attention: PtyAttention | null }) => void
   ) => () => void;
+  onNotificationClick: (handler: (payload: { id: string }) => void) => () => void;
 }
 
 export interface HarnessResumeCandidate {
@@ -122,10 +123,14 @@ export interface ExawattSettings {
     /** Subpixel emboldening used to match native text rasterization. */
     fontStrokeWidth?: number;
   };
+  notifications?: {
+    attention: boolean;
+  };
 }
 
 export interface ElectronSettingsApi {
   get: () => Promise<ExawattSettings>;
+  setAttentionNotifications: (enabled: boolean) => Promise<ExawattSettings>;
   onChanged: (handler: (settings: ExawattSettings) => void) => () => void;
 }
 
