@@ -232,9 +232,44 @@ export function WorkspaceClient() {
         })),
     [activeProject, summaries, attention]
   );
+  // declared-at-launch links (S4): machine-local tab annotations that
+  // override inference; a declared id the roadmap no longer contains falls
+  // to the unmapped shelf, never silently back to inference
+  const declaredLinks = useMemo(
+    () =>
+      (activeProject?.tabs ?? [])
+        .filter(t => t.roadmapItemId && t.sessionId && tabIsLive(t))
+        .map(t => ({
+          sessionId: t.sessionId as string,
+          tabId: t.id,
+          projectDir: activeProject?.dir ?? '',
+          itemId: t.roadmapItemId as string,
+          method: 'declared' as const,
+          confidence: 'high' as const,
+          evidence: [{ kind: 'declared' as const, excerpt: 'declared at launch' }],
+          evaluatedAt: 0,
+        })),
+    [activeProject]
+  );
   const { view: roadmapView } = useProjectRoadmap(
     activeProject?.dir ?? null,
-    roadmapSessions
+    roadmapSessions,
+    declaredLinks
+  );
+  // the launch picker offers the unfinished queue of the active project
+  const launchRoadmapItems = useMemo(
+    () =>
+      roadmapView.status === 'ok'
+        ? [...roadmapView.now, ...roadmapView.next, ...roadmapView.later].map(
+            item => ({
+              id: item.id,
+              label: item.declaredId
+                ? `${item.declaredId} — ${item.title}`
+                : item.title,
+            })
+          )
+        : [],
+    [roadmapView]
   );
   const activeItemChip =
     activeTab && roadmapView.status === 'ok'
@@ -479,6 +514,7 @@ export function WorkspaceClient() {
         />
         <LaunchControls
           prefillDir={activeProject?.dir ?? lastUsedDir}
+          roadmapItems={launchRoadmapItems}
           onLaunch={launch}
         />
         <button

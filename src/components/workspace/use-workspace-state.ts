@@ -53,6 +53,9 @@ export interface WorkspaceTab {
   resumeState: ResumeState;
   /** null = running; number = exit code; REVIVE_FAILED = revive error */
   exitCode: number | null;
+  /** roadmap item declared at launch (ENG-017 S4) — a machine-local view
+   *  annotation per decision 0010; overrides link inference, never synced */
+  roadmapItemId: string | null;
 }
 
 export type ResumeState =
@@ -80,9 +83,10 @@ export interface Project {
   activeTabId: string | null;
 }
 
-/** Current persisted layout (v3). v3 adds exact provider conversation IDs. */
-interface PersistedV3 {
-  v: 3;
+/** Current persisted layout (v4). v4 adds per-tab declared roadmap links
+ *  (ENG-017 S4). */
+interface PersistedV4 {
+  v: 4;
   lastUsedDir: string;
   activeDir: string | null;
   /** split view (S2): tab pinned beside the active one; optional (pre-S2
@@ -100,9 +104,22 @@ interface PersistedV3 {
       cwd: string;
       sessionId: string | null;
       harnessSessionId: string | null;
+      roadmapItemId: string | null;
     }>;
   }>;
 }
+
+/** v3 layout on disk: v4 minus the per-tab declared roadmap link. */
+type PersistedV3 = Omit<PersistedV4, 'v' | 'projects'> & {
+  v: 3;
+  projects: Array<
+    Omit<PersistedV4['projects'][number], 'tabs'> & {
+      tabs: Array<
+        Omit<PersistedV4['projects'][number]['tabs'][number], 'roadmapItemId'>
+      >;
+    }
+  >;
+};
 
 type PersistedV2 = Omit<PersistedV3, 'v' | 'projects'> & {
   v: 2;
@@ -128,20 +145,33 @@ function newTabId(): string {
   return `tab-${Date.now().toString(36)}-${++tabCounter}`;
 }
 
-/** Read the persisted layout, upgrading a v1 file (key `initiatives`) to the v2
- *  shape (key `projects`) so the ENG-015 S5 rename never drops a saved layout. */
-export function parsePersisted(raw: unknown): PersistedV3 | null {
+/** Read the persisted layout, upgrading older shapes in place: v1 (key
+ *  `initiatives`) → v2 (key `projects`) → v3 (exact provider IDs) → v4
+ *  (declared roadmap links) so no upgrade ever drops a saved layout. */
+export function parsePersisted(raw: unknown): PersistedV4 | null {
   if (!raw || typeof raw !== 'object') return null;
   const d = raw as { v?: number; projects?: unknown; initiatives?: unknown };
-  if (d.v === 3 && Array.isArray(d.projects)) return raw as PersistedV3;
-  const upgrade = (projects: PersistedV2['projects'], rest: Omit<PersistedV2, 'v' | 'projects'>) => ({
-    ...rest,
-    v: 3 as const,
-    projects: projects.map(project => ({
+  if (d.v === 4 && Array.isArray(d.projects)) return raw as PersistedV4;
+  const toV4 = (p: Omit<PersistedV3, 'v'>): PersistedV4 => ({
+    ...p,
+    v: 4 as const,
+    projects: p.projects.map(project => ({
       ...project,
-      tabs: project.tabs.map(tab => ({ ...tab, harnessSessionId: null })),
+      tabs: project.tabs.map(tab => ({ ...tab, roadmapItemId: null })),
     })),
   });
+  if (d.v === 3 && Array.isArray(d.projects)) {
+    const { v: _v, ...rest } = raw as PersistedV3;
+    return toV4(rest);
+  }
+  const upgrade = (projects: PersistedV2['projects'], rest: Omit<PersistedV2, 'v' | 'projects'>) =>
+    toV4({
+      ...rest,
+      projects: projects.map(project => ({
+        ...project,
+        tabs: project.tabs.map(tab => ({ ...tab, harnessSessionId: null })),
+      })),
+    });
   if (d.v === 2 && Array.isArray(d.projects)) {
     const { projects, v: _v, ...rest } = raw as PersistedV2;
     return upgrade(projects, rest);
@@ -158,6 +188,8 @@ export interface LaunchOptions {
   dir: string;
   /** create a git worktree (<repo>-wt/<branch>) and launch inside it */
   worktreeBranch?: string;
+  /** roadmap item this session will work on (ENG-017 S4, optional) */
+  roadmapItemId?: string;
 }
 
 export interface WorkspaceStateOptions {
@@ -202,7 +234,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   attentionRef.current = attention;
 
   /** append a live session as a tab in its (possibly new) project */
-  const addSession = useCallback((s: PtySessionInfo, tabId?: string) => {
+  const addSession = useCallback((s: PtySessionInfo, tabId?: string, roadmapItemId?: string | null) => {
     const tab: WorkspaceTab = {
       id: tabId ?? newTabId(),
       harness: s.harness,
@@ -212,6 +244,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       harnessSessionId: s.harnessSessionId,
       resumeState: 'live',
       exitCode: s.exited ? (s.exitCode ?? 0) : null,
+      roadmapItemId: roadmapItemId ?? null,
     };
     setProjects((prev) => {
       const i = prev.findIndex((g) => g.dir === s.projectDir);
@@ -453,21 +486,22 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         gs.some((g) =>
           g.tabs.some((t) => t.id === pin && tabIsLive(t))
         );
-      const state: PersistedV3 = {
-        v: 3,
+      const state: PersistedV4 = {
+        v: 4,
         lastUsedDir: lu,
         activeDir: ad,
         pinnedTabId: pinSurvives ? pin : null,
         projects: gs
           .map((g) => {
             const tabs = g.tabs
-              .map(({ id, harness, title, cwd, sessionId, harnessSessionId }) => ({
+              .map(({ id, harness, title, cwd, sessionId, harnessSessionId, roadmapItemId }) => ({
                 id,
                 harness,
                 title,
                 cwd,
                 sessionId,
                 harnessSessionId,
+                roadmapItemId,
               }));
             return {
               dir: g.dir,
@@ -520,7 +554,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       }
       setError(null);
       setLastUsedDir(dir);
-      addSession(res.session);
+      addSession(res.session, undefined, opts.roadmapItemId ?? null);
       // Resolution bridge (ENG-015 S5 P3): register/refresh this directory's
       // Project in the durable, synced registry. Best-effort — a registry
       // failure (offline, not signed in) must NEVER stop the operator opening

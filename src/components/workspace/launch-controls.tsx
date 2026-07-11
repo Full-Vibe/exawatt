@@ -23,18 +23,29 @@ function defaultBranch(): string {
   return `agent/${mm}${dd}-${hh}${mi}`;
 }
 
+/** an unfinished roadmap item offered by the "working on" picker (S4) */
+export interface LaunchRoadmapItem {
+  id: string;
+  label: string;
+}
+
 export function LaunchControls({
   prefillDir,
+  roadmapItems = [],
   onLaunch,
 }: {
   /** active project dir, else last-used dir, else '' */
   prefillDir: string;
+  /** unfinished items of the ACTIVE project's roadmap; the picker only
+   *  shows while the dir field still follows the active project */
+  roadmapItems?: LaunchRoadmapItem[];
   onLaunch: (opts: LaunchOptions) => Promise<boolean>;
 }) {
   const [dir, setDir] = useState(prefillDir);
   const [dirTouched, setDirTouched] = useState(false);
   const [worktree, setWorktree] = useState(false);
   const [branch, setBranch] = useState(defaultBranch);
+  const [roadmapItemId, setRoadmapItemId] = useState('');
   // bumped on every manual edit — an launch must not clobber a dir or
   // branch typed WHILE its spawn was in flight
   const editSeq = useRef(0);
@@ -44,6 +55,16 @@ export function LaunchControls({
   useEffect(() => {
     if (!dirTouched) setDir(prefillDir);
   }, [prefillDir, dirTouched]);
+
+  // a declared link only makes sense against the roadmap it was picked
+  // from — reset when the item disappears or the operator leaves the
+  // active project's directory
+  useEffect(() => {
+    if (roadmapItemId && !roadmapItems.some(item => item.id === roadmapItemId)) {
+      setRoadmapItemId('');
+    }
+  }, [roadmapItems, roadmapItemId]);
+  const showRoadmapPicker = roadmapItems.length > 0 && !dirTouched;
 
   // the native folder picker is Electron-only; detect post-mount so SSR and
   // the first client render agree (no hydration mismatch)
@@ -68,6 +89,8 @@ export function LaunchControls({
       harness,
       dir,
       worktreeBranch: worktree ? branch : undefined,
+      roadmapItemId:
+        showRoadmapPicker && roadmapItemId ? roadmapItemId : undefined,
     });
     // fresh generated branch for the next one — unless the operator already
     // typed the next name while this spawn was in flight
@@ -129,6 +152,27 @@ export function LaunchControls({
           className="w-36 rounded border bg-transparent px-2 py-1 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
           style={{ color: HUD.cyan, borderColor: 'rgba(25,230,255,0.35)' }}
         />
+      )}
+      {showRoadmapPicker && (
+        <select
+          value={roadmapItemId}
+          onChange={(e) => setRoadmapItemId(e.target.value)}
+          aria-label="Roadmap item this session will work on"
+          title="Link the new session to a roadmap item (optional)"
+          className="max-w-44 rounded border bg-transparent px-1.5 py-1 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+          style={{
+            color: roadmapItemId ? HUD.textMono : HUD.textDim,
+            borderColor: 'rgba(80,230,255,0.2)',
+            background: HUD.bg.deep,
+          }}
+        >
+          <option value="">working on…</option>
+          {roadmapItems.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.label}
+            </option>
+          ))}
+        </select>
       )}
       {HARNESS_ORDER.map((h) => (
         <button

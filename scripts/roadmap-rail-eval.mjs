@@ -156,6 +156,32 @@ await withElectronApp(
       .then(n => n > 0));
     await shot(page, '6-collapsed-again');
 
+    // declare-at-launch (S4): pick an item in the launch picker, launch a
+    // shell, and the new session shows as a SOLID (declared) chip
+    await page.selectOption(
+      'select[aria-label="Roadmap item this session will work on"]',
+      'ACME-007'
+    );
+    await page.click('button[title^="Launch a new Shell"]');
+    await page.waitForTimeout(1500);
+    await page.keyboard.press('Meta+b');
+    await page.waitForTimeout(600);
+    results.declaredBadge = (await railText(page)).includes('▸1');
+    await page.click('[data-roadmap-row="ACME-007"]');
+    await page.waitForTimeout(400);
+    results.declaredChipInDetail = (await railText(page)).includes('sessions');
+    results.declaredChipSolid = await page.evaluate(() => {
+      const chip = document.querySelector(
+        '[data-roadmap-rail] [data-roadmap-chip]'
+      );
+      return chip ? getComputedStyle(chip).borderStyle === 'solid' : false;
+    });
+    await shot(page, '6b-declared-chip');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Meta+b');
+    await page.keyboard.press('Meta+b');
+    await page.waitForTimeout(300);
+
     // empty queue — the designed "no food" moment
     await openProject(page, empty);
     await page.waitForTimeout(1500);
