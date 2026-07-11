@@ -29,7 +29,12 @@ import {
   consumePendingOpenProject,
 } from './session-jump';
 import { loadTerminalFont } from './terminal-font';
-import { openRepositoryProject } from '@/lib/projects/registry';
+import {
+  openRepositoryProject,
+  listProjects,
+  renameProject as registryRenameProject,
+  setProjectColor as registrySetProjectColor,
+} from '@/lib/projects/registry';
 import type {
   PtyAttention,
   PtyHarness,
@@ -68,6 +73,9 @@ export interface Project {
   name: string;
   /** distinct per-project hue (least-used at creation; operator can pick) */
   color: string;
+  /** the synced registry row id (S5 P3): links this group to Supabase for
+   *  name/color sync. Derived from the registry on load / launch, not persisted. */
+  registryId?: string | null;
   tabs: WorkspaceTab[];
   activeTabId: string | null;
 }
@@ -330,6 +338,29 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       // the last save) — or the whole fresh-start case
       for (const s of liveById.values()) addSession(s);
       setReady(true);
+      // reconcile durable identity (S5 P3) — async, so a slow/offline registry
+      // never delays the terminal: adopt each Project's synced name/color (a
+      // rename/recolor made on another machine or a prior run shows here) and
+      // link the group to its registry row for future syncs.
+      void listProjects()
+        .then((registry) => {
+          if (cancelled || registry.length === 0) return;
+          const byPath = new Map(registry.map((p) => [p.root_path, p]));
+          setProjects((prev) =>
+            prev.map((g) => {
+              const r = byPath.get(g.dir);
+              return r
+                ? {
+                    ...g,
+                    registryId: r.id,
+                    name: r.name || g.name,
+                    color: r.color || g.color,
+                  }
+                : g;
+            })
+          );
+        })
+        .catch(() => {});
     })();
 
     const offExit = api.onExit(({ id, exitCode }) => {
@@ -476,7 +507,31 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       void openRepositoryProject({
         rootPath: res.session.projectDir,
         name: res.session.projectName,
-      }).catch(() => {});
+      })
+        .then((proj) => {
+          // link the group to its registry row + adopt synced identity; a NEW
+          // Project has no registry color yet, so push our locally-assigned
+          // one up so it syncs to other machines.
+          setProjects((prev) =>
+            prev.map((g) =>
+              g.dir === proj.root_path
+                ? {
+                    ...g,
+                    registryId: proj.id,
+                    name: proj.name || g.name,
+                    color: proj.color || g.color,
+                  }
+                : g
+            )
+          );
+          if (!proj.color) {
+            const g = stateRef.current.projects.find(
+              (p) => p.dir === proj.root_path
+            );
+            if (g) void registrySetProjectColor(proj.id, g.color).catch(() => {});
+          }
+        })
+        .catch(() => {});
       return true;
     },
     [addSession]
@@ -709,6 +764,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     setProjects((prev) =>
       prev.map((g) => (g.dir === dir ? { ...g, color } : g))
     );
+    // sync to the durable registry so the recolor persists + syncs (best-effort)
+    const g = stateRef.current.projects.find((p) => p.dir === dir);
+    if (g?.registryId) {
+      void registrySetProjectColor(g.registryId, color).catch(() => {});
+    }
   }, []);
 
   const renameProject = useCallback((dir: string, name: string) => {
@@ -717,6 +777,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     setProjects((prev) =>
       prev.map((g) => (g.dir === dir ? { ...g, name: next } : g))
     );
+    // sync to the durable registry so the rename persists + syncs (best-effort)
+    const g = stateRef.current.projects.find((p) => p.dir === dir);
+    if (g?.registryId) {
+      void registryRenameProject(g.registryId, next).catch(() => {});
+    }
   }, []);
 
   const activeTab =
