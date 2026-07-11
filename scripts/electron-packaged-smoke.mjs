@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { _electron as electron } from 'playwright-core';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -9,6 +9,9 @@ const executable = resolve(
   process.env.EXAWATT_APP_PATH ??
     'release/mac-arm64/Exawatt.app/Contents/MacOS/Exawatt'
 );
+const expectedVersion = JSON.parse(
+  readFileSync(resolve('package.json'), 'utf8')
+).version;
 const userData = mkdtempSync(join(tmpdir(), 'exawatt-packaged-smoke-'));
 const app = await electron.launch({
   executablePath: executable,
@@ -39,7 +42,10 @@ try {
   const initialUpdate = await page.evaluate(() =>
     window.electron?.app?.getUpdateStatus()
   );
-  if (initialUpdate?.phase !== 'idle' || initialUpdate.currentVersion !== '0.1.0') {
+  if (
+    initialUpdate?.phase !== 'idle' ||
+    initialUpdate.currentVersion !== expectedVersion
+  ) {
     throw new Error(`Packaged updater IPC is invalid: ${JSON.stringify(initialUpdate)}`);
   }
   const buildInfo = await page.evaluate(() => window.electron?.app?.getBuildInfo());

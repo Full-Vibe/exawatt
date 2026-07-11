@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
-import { _electron as electron } from 'playwright-core';
-import { existsSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { chromium } from 'playwright-core';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { tmpdir } from 'node:os';
+import { createServer } from 'node:net';
+import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
 const sourceApp = process.env.EXAWATT_BASE_APP_PATH
@@ -20,13 +21,33 @@ if (!expectedVersion) {
   throw new Error('EXAWATT_EXPECTED_UPDATE must name the version to install');
 }
 
-const root = mkdtempSync(join(tmpdir(), 'exawatt-product-update-'));
+const applications = '/Applications';
+mkdirSync(applications, { recursive: true });
+const root = join(applications, 'Exawatt Update Evaluation');
+rmSync(root, { recursive: true, force: true });
+mkdirSync(root, { recursive: true });
 const home = join(root, 'home');
 const userData = join(root, 'user-data');
 const targetApp = join(root, basename(sourceApp));
 const executable = join(targetApp, 'Contents', 'MacOS', 'Exawatt');
 mkdirSync(home, { recursive: true });
 mkdirSync(userData, { recursive: true });
+
+function resetShipIt() {
+  try {
+    execFileSync('/bin/launchctl', ['remove', 'com.exawatt.app.ShipIt'], {
+      stdio: 'ignore',
+    });
+  } catch {
+    // No registered updater helper.
+  }
+  rmSync(join(homedir(), 'Library', 'Caches', 'com.exawatt.app.ShipIt'), {
+    recursive: true,
+    force: true,
+  });
+}
+
+resetShipIt();
 execFileSync('/usr/bin/ditto', [sourceApp, targetApp]);
 
 const launchEnv = {
@@ -57,12 +78,56 @@ async function waitFor(predicate, message, timeout = 180_000) {
   throw new Error(message);
 }
 
-async function launch() {
-  return electron.launch({
-    executablePath: executable,
-    args: [`--user-data-dir=${userData}`],
-    env: launchEnv,
+async function availablePort() {
+  return await new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close();
+        reject(new Error('Could not allocate a DevTools port'));
+        return;
+      }
+      server.close(error => (error ? reject(error) : resolve(address.port)));
+    });
   });
+}
+
+async function launch() {
+  const port = await availablePort();
+  execFileSync(
+    '/usr/bin/open',
+    [
+      '-n',
+      '-a',
+      targetApp,
+      '--args',
+      `--remote-debugging-port=${port}`,
+      `--user-data-dir=${userData}`,
+    ],
+    { env: launchEnv }
+  );
+  return await waitFor(
+    async () => {
+      try {
+        const browser = await chromium.connectOverCDP(
+          `http://127.0.0.1:${port}`,
+          { timeout: 1_000 }
+        );
+        const page = browser.contexts()[0]?.pages()[0];
+        if (!page) {
+          await browser.close();
+          return null;
+        }
+        return { browser, page };
+      } catch {
+        return null;
+      }
+    },
+    'Timed out attaching to the LaunchServices app',
+    45_000
+  );
 }
 
 function matchingPids() {
@@ -76,17 +141,16 @@ function matchingPids() {
     .map(match => Number(match[1]));
 }
 
-let app = null;
+let browser = null;
 try {
-  app = await launch();
-  app.process().stdout?.on('data', chunk => process.stdout.write(chunk));
-  app.process().stderr?.on('data', chunk => process.stderr.write(chunk));
-  const page = await app.firstWindow({ timeout: 45_000 });
+  let launched = await launch();
+  browser = launched.browser;
+  let page = launched.page;
   page.setDefaultTimeout(20_000);
   await page.locator('[data-command-altitude]').waitFor();
 
-  const initialVersion = await app.evaluate(({ app: electronApp }) =>
-    electronApp.getVersion()
+  const initialVersion = await page.evaluate(
+    async () => (await window.electron?.app?.getUpdateStatus())?.currentVersion
   );
   if (initialVersion === expectedVersion) {
     throw new Error(`Baseline is already ${expectedVersion}`);
@@ -143,19 +207,18 @@ try {
     .getByText(`Restarting will stop 1 live session.`)
     .waitFor({ timeout: 10_000 });
 
-  const oldProcess = app.process();
-  const exited = new Promise(resolve => oldProcess.once('exit', resolve));
-  await page.evaluate(() => window.electron?.app?.restartUpdate());
-  await Promise.race([
-    exited,
-    new Promise((_, reject) =>
-      setTimeout(
-        () => reject(new Error('Baseline app did not quit for update')),
-        60_000
-      )
-    ),
-  ]);
-  app = null;
+  const oldProcess = matchingPids()[0];
+  if (!oldProcess)
+    throw new Error('Could not identify the baseline app process');
+  await page
+    .evaluate(() => window.electron?.app?.restartUpdate())
+    .catch(() => undefined);
+  await waitFor(
+    () => !matchingPids().includes(oldProcess),
+    'Baseline app did not quit for update',
+    60_000
+  );
+  browser = null;
 
   await waitFor(
     () => bundleVersion() === expectedVersion,
@@ -173,13 +236,14 @@ try {
     'Relaunched app did not stop'
   );
 
-  app = await launch();
-  const updatedPage = await app.firstWindow({ timeout: 45_000 });
-  await updatedPage.locator('[data-command-altitude]').waitFor();
-  const verified = await app.evaluate(({ app: electronApp }) =>
-    electronApp.getVersion()
+  launched = await launch();
+  browser = launched.browser;
+  page = launched.page;
+  await page.locator('[data-command-altitude]').waitFor();
+  const verified = await page.evaluate(
+    async () => (await window.electron?.app?.getUpdateStatus())?.currentVersion
   );
-  const buildInfo = await updatedPage.evaluate(() =>
+  const buildInfo = await page.evaluate(() =>
     window.electron?.app?.getBuildInfo()
   );
   if (verified !== expectedVersion || buildInfo?.delivery !== 'signed') {
@@ -192,7 +256,7 @@ try {
     `PASS signed update: ${initialVersion} -> ${verified}; live-session warning; automatic relaunch`
   );
 } finally {
-  await app?.close().catch(() => undefined);
+  await browser?.close().catch(() => undefined);
   for (const pid of matchingPids()) {
     try {
       process.kill(pid, 'SIGTERM');
@@ -200,5 +264,6 @@ try {
       // Process already exited.
     }
   }
+  resetShipIt();
   rmSync(root, { recursive: true, force: true });
 }
