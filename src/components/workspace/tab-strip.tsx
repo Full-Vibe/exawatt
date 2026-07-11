@@ -259,7 +259,7 @@ export function TabStrip({
                     onDoubleClick={() =>
                       setEditing({ kind: 'tab', id: t.id, value: t.title })
                     }
-                    className="flex cursor-pointer items-center gap-1.5 px-2 py-0.5 font-mono text-xs outline-none transition-transform duration-100 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                    className="flex cursor-pointer items-center gap-1.5 px-2 py-1 font-mono text-xs outline-none transition-transform duration-100 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{ color: on ? HUD.text : HUD.textDim }}
                     title={`${t.cwd}${summary ? `\n${summary}` : ''}${
                       needsYou ? '\nneeds your attention (⌘J jumps here)' : ''
@@ -298,12 +298,12 @@ export function TabStrip({
                         />
                       </>
                     ) : (
-                      <span className="flex flex-col items-start">
+                      <span className="flex max-w-60 flex-col items-start">
                         <span className="leading-tight">{t.title}</span>
                         {summary && !dead && (
                           <span
                             data-subtitle
-                            className="max-w-44 truncate text-left text-[9px] leading-tight"
+                            className="line-clamp-2 max-w-56 text-left font-sans text-[11px] leading-4"
                             style={{ color: `${color}B0` }}
                           >
                             {summary}

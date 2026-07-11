@@ -266,7 +266,7 @@ export function ExposeOverlay({
                 </div>
                 {subtitle && (
                   <div
-                    className="w-full truncate font-mono text-[10px]"
+                    className="line-clamp-2 min-h-10 w-full text-sm leading-5"
                     style={{ color: `${t.color}B0` }}
                   >
                     {subtitle}

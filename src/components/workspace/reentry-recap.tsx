@@ -50,7 +50,7 @@ export function ReentryRecapCard({
             </span>
           </div>
           {context && (
-            <p className="mt-1 truncate font-mono text-[11px]" style={{ color: HUD.textMono }}>
+            <p className="mt-1 line-clamp-2 text-sm leading-5" style={{ color: HUD.textMono }}>
               {context}
             </p>
           )}

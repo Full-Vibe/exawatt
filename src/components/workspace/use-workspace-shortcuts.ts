@@ -12,6 +12,7 @@
  *   ⌘D           split: pin the active tab beside whatever you drive (S2)
  *   ⌘E           rename the active tab inline (S2)
  *   ⌘/           keyboard cheat-sheet (S2)
+ *   F6           toggle focus between terminal and workspace chrome
  *
  * ⌘-chords are global workspace verbs: they fire even while a terminal or
  * the working-dir input is focused (xterm consumes plain keys; ⌘-chords are
@@ -56,6 +57,10 @@ export interface WorkspaceShortcutActions {
   renameActive: () => boolean;
   /** open the keyboard cheat-sheet */
   openHelp: () => boolean;
+  /** move focus to the other terminal/chrome region */
+  toggleFocus: () => boolean;
+  /** leave chrome and return to the active terminal */
+  focusTerminal: () => boolean;
 }
 
 export function useWorkspaceShortcuts(
@@ -64,6 +69,16 @@ export function useWorkspaceShortcuts(
 ): void {
   useEffect(() => {
     if (!enabled) return;
+    const onFocusKey = (e: KeyboardEvent) => {
+      if (e.key !== 'F6' || e.defaultPrevented) return;
+      if (
+        e.target instanceof Element &&
+        e.target.closest('[role="dialog"], [cmdk-root]')
+      ) {
+        return;
+      }
+      if (actions.toggleFocus()) e.preventDefault();
+    };
     const onKey = (e: KeyboardEvent) => {
       // another window-level layer (the global chord engine also binds
       // ⌘⇧M) already handled this keystroke — never double-apply a verb
@@ -74,6 +89,13 @@ export function useWorkspaceShortcuts(
         e.target instanceof Element &&
         e.target.closest('[role="dialog"], [cmdk-root]')
       ) {
+        return;
+      }
+      if (e.key === 'Escape') {
+        const inTerminal =
+          e.target instanceof Element &&
+          !!e.target.closest('.xterm-helper-textarea');
+        if (!inTerminal && actions.focusTerminal()) e.preventDefault();
         return;
       }
       // palette + cheat-sheet: registry-resolved (rebindable), reachable
@@ -119,7 +141,11 @@ export function useWorkspaceShortcuts(
         if (actions.selectIndex(Number(e.key) - 1)) e.preventDefault();
       }
     };
+    window.addEventListener('keydown', onFocusKey, true);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onFocusKey, true);
+      window.removeEventListener('keydown', onKey);
+    };
   }, [actions, enabled]);
 }

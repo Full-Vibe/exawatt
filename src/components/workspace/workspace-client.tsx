@@ -41,6 +41,8 @@ import {
 import { useShortcuts } from '@/components/shortcuts';
 import { HUD } from '@/components/hud';
 import { spatialReturnHref } from '@/components/nav/spatial-return';
+import { FolderOpen, SquareTerminal } from 'lucide-react';
+import { middleTruncatePath } from './path-label';
 
 /** the discoverability layer (S3): the workspace SHOWS its keys, exactly
  *  like the spatial map's bottom legend — normal case, dim, always there */
@@ -63,6 +65,7 @@ export function WorkspaceClient() {
   const inElectron = mounted && !!window.electron?.pty;
 
   const panesRef = useRef<HTMLDivElement>(null);
+  const chromeRef = useRef<HTMLDivElement>(null);
   // split view (S2): the last active NON-pinned tab — the driven/left side.
   // Lives up here unconditionally (rules of hooks); assigned below once the
   // active tab is known.
@@ -179,44 +182,57 @@ export function WorkspaceClient() {
     };
   }, [projects, activeTab, closeTab, updateOverview]);
 
-  const shortcutActions = useMemo(
-    () => ({
-      igniteShell: () => igniteHere('shell'),
-      closeActive: () => {
-        if (!activeTab) return false;
-        void closeTab(activeTab.id);
-        return true;
-      },
-      toggleOverview: () => {
-        updateOverview(!overviewOpen);
-        return true;
-      },
-      selectIndex: selectProject,
-      cycle: cycleTab,
-      jumpAttention,
-      // regime switching is a two-way street: ⌘⇧M here goes to the map, the
-      // same chord anywhere else comes back (global shortcut, defaults.ts)
-      toggleRegime: () => {
-        router.push(spatialReturnHref());
-        return true;
-      },
-      // ⌘K/⌘/ re-bound here because the global chord engine never sees
-      // keystrokes from inside xterm's hidden textarea
-      openPalette: () => {
-        openCommandPalette();
-        return true;
-      },
-      openHelp: () => {
-        openHelpModal();
-        return true;
-      },
-      togglePin,
-      renameActive: () => {
-        if (!activeTab) return false;
-        window.dispatchEvent(new CustomEvent(RENAME_ACTIVE_EVENT));
-        return true;
-      },
-    }),
+  const shortcutActions = useMemo(() => {
+      const focusTerminal = () => {
+        window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
+        return !!activeTab?.sessionId;
+      };
+      return {
+        igniteShell: () => igniteHere('shell'),
+        closeActive: () => {
+          if (!activeTab) return false;
+          void closeTab(activeTab.id);
+          return true;
+        },
+        toggleOverview: () => {
+          updateOverview(!overviewOpen);
+          return true;
+        },
+        selectIndex: selectProject,
+        cycle: cycleTab,
+        jumpAttention,
+        toggleRegime: () => {
+          router.push(spatialReturnHref());
+          return true;
+        },
+        openPalette: () => {
+          openCommandPalette();
+          return true;
+        },
+        openHelp: () => {
+          openHelpModal();
+          return true;
+        },
+        focusTerminal,
+        toggleFocus: () => {
+          const inTerminal = !!document.activeElement?.closest(
+            '.xterm-helper-textarea'
+          );
+          if (!inTerminal) return focusTerminal();
+          const target = chromeRef.current?.querySelector<HTMLElement>(
+            'button:not([disabled]), input:not([disabled])'
+          );
+          target?.focus();
+          return !!target;
+        },
+        togglePin,
+        renameActive: () => {
+          if (!activeTab) return false;
+          window.dispatchEvent(new CustomEvent(RENAME_ACTIVE_EVENT));
+          return true;
+        },
+      };
+    },
     [
       activeTab,
       overviewOpen,
@@ -310,6 +326,8 @@ export function WorkspaceClient() {
     >
       {/* project groups + tabs + ignite controls */}
       <div
+        ref={chromeRef}
+        data-workspace-chrome
         className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2"
         style={{
           borderColor: 'rgba(80,230,255,0.15)',
@@ -334,6 +352,50 @@ export function WorkspaceClient() {
           onIgnite={ignite}
         />
       </div>
+
+      {activeTab && (
+        <div
+          data-active-session-context
+          className="flex min-h-9 shrink-0 items-center gap-2 border-b px-3 py-1.5"
+          style={{
+            borderColor: 'rgba(80,230,255,0.1)',
+            background: 'rgba(8,13,22,0.92)',
+          }}
+        >
+          <FolderOpen className="h-3.5 w-3.5 shrink-0" style={{ color: HUD.textDim }} />
+          <span
+            className="min-w-0 shrink truncate font-mono text-[11px]"
+            title={activeTab.cwd}
+            tabIndex={0}
+            style={{ color: HUD.textMono }}
+          >
+            {middleTruncatePath(activeTab.cwd)}
+          </span>
+          {activeTab.sessionId && summaries[activeTab.sessionId] && (
+            <span
+              className="line-clamp-2 min-w-0 flex-1 border-l pl-3 text-sm leading-5"
+              style={{
+                color: HUD.textDim,
+                borderColor: 'rgba(138,160,190,0.18)',
+              }}
+            >
+              {summaries[activeTab.sessionId]}
+            </span>
+          )}
+          <button
+            type="button"
+            aria-label="Focus active terminal"
+            title="Focus active terminal"
+            onClick={() =>
+              window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT))
+            }
+            className="grid h-7 w-7 shrink-0 place-items-center rounded outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+            style={{ color: HUD.textDim }}
+          >
+            <SquareTerminal className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* ignite errors (missing/bad dir, worktree or spawn failures) */}
       {error && (

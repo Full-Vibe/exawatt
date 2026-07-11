@@ -40,8 +40,6 @@ export function SiteHeaderNav({
   const pathname = usePathname();
   const isHome = pathname === '/';
   const isArchitecture = pathname?.startsWith('/architecture');
-  const isDashboard = pathname === '/dashboard';
-  const isFleet = pathname?.startsWith('/fleet');
   const isWorkspace = pathname?.startsWith('/workspace');
   const commandSurface = isCommandSurface(pathname ?? '');
   // in the desktop app the Workspace (terminal) link is always relevant,
@@ -129,26 +127,6 @@ export function SiteHeaderNav({
               </Link>
             </Button>
           )}
-        {isAuthenticated && !isHome && (
-          <>
-            {!isDashboard && (
-              <Button variant="ghost" size="sm" asChild>
-                <Link href="/dashboard">
-                  <LayoutDashboard className="h-3.5 w-3.5" />
-                  Lattice
-                </Link>
-              </Button>
-            )}
-            {!isFleet && (
-              <Button variant="ghost" size="sm" asChild>
-                <Link href="/fleet">
-                  <Server className="h-3.5 w-3.5" />
-                  Fleet
-                </Link>
-              </Button>
-            )}
-          </>
-        )}
         {!isAuthenticated && !isHome && (
           <Button variant="ghost" size="sm" asChild>
             <Link href="/sign-in">Sign In</Link>
@@ -185,6 +163,22 @@ export function SiteHeaderNav({
                 <Link href="/settings">
                   <Settings className="mr-2 h-4 w-4" />
                   Settings
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs text-muted-foreground">
+                Legacy views
+              </DropdownMenuLabel>
+              <DropdownMenuItem asChild>
+                <Link href="/dashboard">
+                  <LayoutDashboard className="mr-2 h-4 w-4" />
+                  Lattice
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/fleet">
+                  <Server className="mr-2 h-4 w-4" />
+                  Fleet
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
