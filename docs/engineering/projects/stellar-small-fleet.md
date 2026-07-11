@@ -126,7 +126,9 @@ First-slice acceptance criteria:
 
 ### S5 Durable Projects
 
-Status: active-build — scoped 2026-07-10 (operator). Landed 2026-07-10: P1
+Status: landed 2026-07-10 — scoped same day (operator); all phases complete.
+Multi-machine sync behavior awaits dogfood evidence (tracked via ENG-016's
+continuous evidence stream). Landed 2026-07-10: P1
 rename (Initiative→Project, ignite→launch), P2 registry + `projects` reclaim
 migration (applied to prod & verified), P3 resolution bridge (launching
 registers the Project), P4 native directory picker + Browse + ⌘N + ⌘K Projects
