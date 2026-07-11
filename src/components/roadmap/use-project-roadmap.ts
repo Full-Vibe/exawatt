@@ -1,20 +1,38 @@
 /**
- * Roadmap lens data hook (ENG-017 S2): reads the focused Project's roadmap
+ * Roadmap lens data hook (ENG-017): reads the focused Project's roadmap
  * file over the dumb `roadmap:read` IPC, parses it renderer-side with
- * `@exawatt/core` (decision 0011), and builds the pure ui-model lens view.
+ * `@exawatt/core` (decision 0011), gathers per-session git evidence, runs
+ * closed-vocabulary link inference, and builds the pure ui-model lens view.
  *
- * Refresh triggers: project switch, window focus (same trigger the settings
- * store uses), and explicit refresh. Live file-watching arrives in S5.
+ * Refresh triggers: project switch, session set change, window focus (same
+ * trigger the settings store uses), and explicit refresh. Live
+ * file-watching arrives in S5.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { parseRoadmap } from '@exawatt/core';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  inferSessionLinks,
+  parseRoadmap,
+  type SessionLink,
+  type SessionLinkCandidate,
+} from '@exawatt/core';
 import {
   buildRoadmapLens,
   type RoadmapLensRead,
   type RoadmapLensSessionInput,
   type RoadmapLensView,
 } from '@exawatt/ui-model';
-import type { SessionLink } from '@exawatt/core';
+import type { RoadmapSessionEvidence } from '@/types/electron';
+
+/** What the workspace knows about a live session in the focused Project. */
+export interface RoadmapSessionDescriptor {
+  sessionId: string;
+  tabId: string;
+  title: string;
+  harness: string;
+  cwd: string;
+  contextSummary: string | null;
+  needsAttention: boolean;
+}
 
 export interface ProjectRoadmap {
   view: RoadmapLensView;
@@ -23,10 +41,12 @@ export interface ProjectRoadmap {
 
 export function useProjectRoadmap(
   projectDir: string | null,
-  sessions: RoadmapLensSessionInput[] = [],
-  links: SessionLink[] = []
+  sessions: RoadmapSessionDescriptor[] = [],
+  /** declared-at-launch links (S4); they override inference in the lens */
+  declaredLinks: SessionLink[] = []
 ): ProjectRoadmap {
   const [read, setRead] = useState<RoadmapLensRead>({ status: 'loading' });
+  const [evidence, setEvidence] = useState<Record<string, RoadmapSessionEvidence>>({});
   // survives re-renders; bumped to invalidate in-flight reads on refresh
   const generation = useRef(0);
 
@@ -46,7 +66,11 @@ export function useProjectRoadmap(
             projectDir,
             file: result.file,
           });
-          setRead({ status: 'ok', doc, mtimeMs: result.mtimeMs });
+          setRead(prev =>
+            prev.status === 'ok' && prev.doc.contentHash === doc.contentHash
+              ? prev
+              : { status: 'ok', doc, mtimeMs: result.mtimeMs }
+          );
         } else if (result.status === 'none') {
           setRead({ status: 'none', checked: result.checked });
         } else {
@@ -68,14 +92,70 @@ export function useProjectRoadmap(
     load();
   }, [load]);
 
+  // git evidence per unique session cwd (worktrees carry their own branch)
+  const cwdKey = useMemo(
+    () => [...new Set(sessions.map(s => s.cwd))].sort().join('\n'),
+    [sessions]
+  );
+  const loadEvidence = useCallback(() => {
+    const api = window.electron?.roadmap;
+    if (!api || cwdKey === '') return;
+    for (const cwd of cwdKey.split('\n')) {
+      void api
+        .sessionEvidence(cwd)
+        .then(result =>
+          setEvidence(prev =>
+            prev[cwd]?.branch === result.branch &&
+            prev[cwd]?.commitSubjects.join('\n') === result.commitSubjects.join('\n')
+              ? prev
+              : { ...prev, [cwd]: result }
+          )
+        )
+        .catch(() => {});
+    }
+  }, [cwdKey]);
+  useEffect(loadEvidence, [loadEvidence]);
+
   useEffect(() => {
-    const onFocus = () => load();
+    const onFocus = () => {
+      load();
+      loadEvidence();
+    };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [load]);
+  }, [load, loadEvidence]);
 
-  return {
-    view: buildRoadmapLens({ read, sessions, links }),
-    refresh: load,
-  };
+  const view = useMemo(() => {
+    const inputs: RoadmapLensSessionInput[] = sessions.map(s => ({
+      sessionId: s.sessionId,
+      tabId: s.tabId,
+      title: s.title,
+      harness: s.harness,
+      needsAttention: s.needsAttention,
+    }));
+    let links: SessionLink[] = declaredLinks;
+    if (read.status === 'ok' && projectDir) {
+      const candidates: SessionLinkCandidate[] = sessions.map(s => ({
+        sessionId: s.sessionId,
+        tabId: s.tabId,
+        projectDir,
+        title: s.title,
+        contextSummary: s.contextSummary,
+        cwd: s.cwd,
+        branch: evidence[s.cwd]?.branch ?? null,
+        worktreeDirname: evidence[s.cwd]?.worktreeDirname ?? null,
+        commitSubjects: evidence[s.cwd]?.commitSubjects ?? [],
+      }));
+      const declaredSessions = new Set(declaredLinks.map(l => l.sessionId));
+      links = [
+        ...declaredLinks,
+        ...inferSessionLinks(read.doc, candidates).filter(
+          l => !declaredSessions.has(l.sessionId)
+        ),
+      ];
+    }
+    return buildRoadmapLens({ read, sessions: inputs, links });
+  }, [read, sessions, declaredLinks, evidence, projectDir]);
+
+  return { view, refresh: load };
 }

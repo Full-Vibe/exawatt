@@ -131,6 +131,20 @@ function emptyView(status: RoadmapLensStatus): RoadmapLensView {
   };
 }
 
+/** The reciprocal lookup: which item is this workspace tab executing? */
+export function findRoadmapSessionChip(
+  view: RoadmapLensView,
+  tabId: string
+): { item: RoadmapItemView; chip: RoadmapSessionChip } | null {
+  for (const group of [view.now, view.next, view.later, view.shipped, view.parked]) {
+    for (const item of group) {
+      const chip = item.chips.find(c => c.tabId === tabId);
+      if (chip) return { item, chip };
+    }
+  }
+  return null;
+}
+
 export function buildRoadmapLens(input: RoadmapLensInput): RoadmapLensView {
   const { read, sessions = [], links = [] } = input;
   if (read.status === 'loading') return emptyView('loading');

@@ -118,8 +118,16 @@ export type RoadmapReadResult =
   | { status: 'none'; checked: string[] }
   | { status: 'error'; error: string };
 
+/** Read-only git signals for session→item link inference. */
+export interface RoadmapSessionEvidence {
+  branch: string | null;
+  worktreeDirname: string;
+  commitSubjects: string[];
+}
+
 export interface ElectronRoadmapApi {
   read: (projectDir: string) => Promise<RoadmapReadResult>;
+  sessionEvidence: (cwd: string) => Promise<RoadmapSessionEvidence>;
 }
 
 /** userData/settings.json — the personal-taste escape hatch (S3) */

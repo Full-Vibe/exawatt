@@ -42,10 +42,16 @@ import { useShortcuts } from '@/components/shortcuts';
 import {
   RoadmapRail,
   ROADMAP_RAIL_FOCUS_EVENT,
+  ROADMAP_DRILL_EVENT,
   loadRailMode,
   saveRailMode,
   type RoadmapRailMode,
 } from '@/components/roadmap/roadmap-rail';
+import {
+  useProjectRoadmap,
+  type RoadmapSessionDescriptor,
+} from '@/components/roadmap/use-project-roadmap';
+import { findRoadmapSessionChip } from '@exawatt/ui-model';
 import { HUD } from '@/components/hud';
 import { spatialReturnHref } from '@/components/nav/spatial-return';
 import { Bell, BellOff, FolderOpen, SquareTerminal } from 'lucide-react';
@@ -207,6 +213,33 @@ export function WorkspaceClient() {
     mq.addEventListener('change', apply);
     return () => mq.removeEventListener('change', apply);
   }, []);
+
+  // the lens data: live sessions of the focused Project, linked to roadmap
+  // items by inference (S3); the same view feeds the rail and the
+  // context-bar reciprocal chip
+  const roadmapSessions = useMemo<RoadmapSessionDescriptor[]>(
+    () =>
+      (activeProject?.tabs ?? [])
+        .filter(t => t.sessionId && tabIsLive(t))
+        .map(t => ({
+          sessionId: t.sessionId as string,
+          tabId: t.id,
+          title: t.title,
+          harness: t.harness,
+          cwd: t.cwd,
+          contextSummary: summaries[t.sessionId as string] ?? null,
+          needsAttention: !!attention[t.sessionId as string],
+        })),
+    [activeProject, summaries, attention]
+  );
+  const { view: roadmapView } = useProjectRoadmap(
+    activeProject?.dir ?? null,
+    roadmapSessions
+  );
+  const activeItemChip =
+    activeTab && roadmapView.status === 'ok'
+      ? findRoadmapSessionChip(roadmapView, activeTab.id)
+      : null;
 
   // exposé overview (S3): ⌘O — sessions fan out as tiles
   const requestedOverview = searchParams.get('view') === 'sessions';
@@ -502,6 +535,31 @@ export function WorkspaceClient() {
           >
             {middleTruncatePath(activeTab.cwd)}
           </span>
+          {activeItemChip && (
+            <button
+              type="button"
+              title={`working on ${activeItemChip.item.title} — open in roadmap`}
+              onClick={() => {
+                updateRailMode('open');
+                requestAnimationFrame(() =>
+                  window.dispatchEvent(
+                    new CustomEvent(ROADMAP_DRILL_EVENT, {
+                      detail: activeItemChip.item.id,
+                    })
+                  )
+                );
+              }}
+              className="shrink-0 rounded border px-1.5 py-px font-mono text-[10px] outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+              style={{
+                color: activeProject?.color ?? HUD.textMono,
+                borderColor: `${activeProject?.color ?? HUD.cyan}55`,
+                borderStyle:
+                  activeItemChip.chip.method === 'inferred' ? 'dashed' : 'solid',
+              }}
+            >
+              {activeItemChip.item.declaredId ?? activeItemChip.item.title}
+            </button>
+          )}
           {activeTab.sessionId && summaries[activeTab.sessionId] && (
             <span
               className="line-clamp-2 min-w-0 flex-1 border-l pl-3 text-sm leading-5"
@@ -638,11 +696,18 @@ export function WorkspaceClient() {
         </div>
 
         <RoadmapRail
+          view={roadmapView}
           projectDir={activeProject?.dir ?? null}
           projectName={activeProject?.name ?? null}
           projectColor={activeProject?.color ?? null}
           mode={railMode}
           onModeChange={updateRailMode}
+          onSelectSession={tabId => {
+            if (activeProject) selectTab(activeProject.dir, tabId);
+            requestAnimationFrame(() =>
+              window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT))
+            );
+          }}
           overlay={railMode === 'open' && !railDocks}
         />
       </div>

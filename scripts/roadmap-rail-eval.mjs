@@ -124,6 +124,8 @@ await withElectronApp(
     results.shippedCollapsed = text.includes('2 shipped');
     results.trustLine = text.includes('7 items');
     results.readOnlyFooter = text.includes('read-only');
+    // the plain shell session matches no item → visibly unmapped (S3)
+    results.unmappedShelf = text.includes('not linked to an item');
 
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('ArrowDown');
@@ -170,12 +172,30 @@ await withElectronApp(
     results.noRoadmapState = noneText.includes('No roadmap found');
     await shot(page, '8-no-roadmap');
 
-    // the real exawatt roadmap (worktree resolves to the main repo)
+    // the real exawatt roadmap (worktree resolves to the main repo); the
+    // session's branch/worktree/commits should infer a link to ENG-017 (S3)
     await openProject(page, process.cwd());
-    await page.waitForTimeout(1800);
+    await page.waitForTimeout(2500);
     const exaText = await railText(page);
     results.realRepoRenders = exaText.includes('ENG-');
+    results.inferredChipBadge = /▸\s?1/.test(exaText) || exaText.includes('▸1');
+    const contextBar = await page.evaluate(
+      () =>
+        document.querySelector('[data-active-session-context]')?.textContent ?? ''
+    );
+    results.reciprocalChip = contextBar.includes('ENG-017');
     await shot(page, '9-exawatt-real');
+
+    // reciprocal chip click opens the rail drilled into ENG-017 with the
+    // session chip in the detail panel
+    if (results.reciprocalChip) {
+      await page.click('[data-active-session-context] button[title*="open in roadmap"]');
+      await page.waitForTimeout(600);
+      const drillText = await railText(page);
+      results.reciprocalDrill =
+        drillText.includes('roadmap · ENG-017') && drillText.includes('sessions');
+      await shot(page, '10-reciprocal-drill');
+    }
 
     console.log(JSON.stringify({ out: OUT, results }, null, 2));
     const failed = Object.entries(results).filter(([, v]) => v !== true);

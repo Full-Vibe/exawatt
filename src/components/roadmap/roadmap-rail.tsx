@@ -21,9 +21,14 @@ import {
 } from 'react';
 import { HUD, withAlpha } from '@/components/hud';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from '../workspace/session-jump';
-import type { RoadmapItemView, RoadmapLensView } from '@exawatt/ui-model';
-import { useProjectRoadmap } from './use-project-roadmap';
+import type {
+  RoadmapItemView,
+  RoadmapLensSessionInput,
+  RoadmapLensView,
+  RoadmapSessionChip,
+} from '@exawatt/ui-model';
 import { RoadmapItemCard } from './roadmap-item-card';
+import { RoadmapSessionChipButton } from './roadmap-session-chip';
 import { RoadmapItemDetail } from './roadmap-item-detail';
 import {
   RoadmapEmptyQueue,
@@ -35,6 +40,8 @@ export type RoadmapRailMode = 'strip' | 'open';
 
 /** dispatched by the workspace ⌘B verb to move focus into the rail */
 export const ROADMAP_RAIL_FOCUS_EVENT = 'exawatt:focus-roadmap-rail';
+/** dispatched (detail: item id) to open the rail drilled into one item */
+export const ROADMAP_DRILL_EVENT = 'exawatt:roadmap-drill';
 
 export const ROADMAP_RAIL_WIDTH = 320;
 export const ROADMAP_STRIP_WIDTH = 36;
@@ -61,7 +68,9 @@ export function saveRailMode(mode: RoadmapRailMode): void {
 
 type RailRow =
   | { kind: 'group'; group: 'shipped' | 'parked'; label: string }
-  | { kind: 'item'; item: RoadmapItemView; variant: 'hero' | 'row' | 'compact' };
+  | { kind: 'item'; item: RoadmapItemView; variant: 'hero' | 'row' | 'compact' }
+  | { kind: 'chip'; chip: RoadmapSessionChip; itemId: string }
+  | { kind: 'unmapped'; session: RoadmapLensSessionInput };
 
 function formatUpdated(mtimeMs: number): string {
   const age = Date.now() - mtimeMs;
@@ -83,22 +92,26 @@ function trustLine(view: RoadmapLensView): string {
 }
 
 export function RoadmapRail({
+  view,
   projectDir,
   projectName,
   projectColor,
   mode,
   onModeChange,
+  onSelectSession,
   /** dock beside the stage, or float over it on narrow windows */
   overlay,
 }: {
+  view: RoadmapLensView;
   projectDir: string | null;
   projectName: string | null;
   projectColor: string | null;
   mode: RoadmapRailMode;
   onModeChange: (mode: RoadmapRailMode) => void;
+  /** focus the terminal tab a chip points at */
+  onSelectSession: (tabId: string) => void;
   overlay: boolean;
 }) {
-  const { view } = useProjectRoadmap(projectDir);
   const color = projectColor ?? HUD.cyan;
   const rootRef = useRef<HTMLDivElement>(null);
   const [entered, setEntered] = useState(false);
@@ -130,9 +143,25 @@ export function RoadmapRail({
     return () => window.removeEventListener(ROADMAP_RAIL_FOCUS_EVENT, onFocusRail);
   }, []);
 
+  // the context-bar reciprocal chip opens the rail drilled into its item
+  useEffect(() => {
+    const onDrill = (e: Event) => {
+      const itemId = (e as CustomEvent<string>).detail;
+      if (typeof itemId === 'string') {
+        setDrillId(itemId);
+        rootRef.current?.focus();
+      }
+    };
+    window.addEventListener(ROADMAP_DRILL_EVENT, onDrill);
+    return () => window.removeEventListener(ROADMAP_DRILL_EVENT, onDrill);
+  }, []);
+
   const rows = useMemo<RailRow[]>(() => {
     if (view.status !== 'ok' || view.queueEmpty) return [];
     const list: RailRow[] = [];
+    for (const session of view.unmappedSessions) {
+      list.push({ kind: 'unmapped', session });
+    }
     if (view.shipped.length > 0) {
       list.push({
         kind: 'group',
@@ -144,9 +173,14 @@ export function RoadmapRail({
           list.push({ kind: 'item', item, variant: 'compact' });
       }
     }
-    view.now.forEach((item, i) =>
-      list.push({ kind: 'item', item, variant: i === 0 ? 'hero' : 'row' })
-    );
+    view.now.forEach((item, i) => {
+      list.push({ kind: 'item', item, variant: i === 0 ? 'hero' : 'row' });
+      // hero chips are individually focusable stations on the line
+      if (i === 0) {
+        for (const chip of item.chips)
+          list.push({ kind: 'chip', chip, itemId: item.id });
+      }
+    });
     for (const item of view.next) list.push({ kind: 'item', item, variant: 'row' });
     for (const item of view.later)
       list.push({ kind: 'item', item, variant: 'compact' });
@@ -192,6 +226,10 @@ export function RoadmapRail({
     if (row.kind === 'group') {
       if (row.group === 'shipped') setShippedOpen(open => !open);
       else setParkedOpen(open => !open);
+    } else if (row.kind === 'chip') {
+      if (row.chip.tabId) onSelectSession(row.chip.tabId);
+    } else if (row.kind === 'unmapped') {
+      if (row.session.tabId) onSelectSession(row.session.tabId);
     } else {
       setDrillId(row.item.id);
     }
@@ -244,10 +282,17 @@ export function RoadmapRail({
   // keep the selected row in view as selection roves
   useEffect(() => {
     const row = rows[sel];
-    if (!row || row.kind !== 'item') return;
-    rootRef.current
-      ?.querySelector(`[data-roadmap-row="${CSS.escape(row.item.id)}"]`)
-      ?.scrollIntoView({ block: 'nearest' });
+    if (!row) return;
+    const selector =
+      row.kind === 'item'
+        ? `[data-roadmap-row="${CSS.escape(row.item.id)}"]`
+        : row.kind === 'chip'
+          ? `[data-roadmap-chip="${CSS.escape(row.chip.sessionId)}"]`
+          : row.kind === 'unmapped'
+            ? `[data-roadmap-unmapped="${CSS.escape(row.session.sessionId)}"]`
+            : null;
+    if (!selector) return;
+    rootRef.current?.querySelector(selector)?.scrollIntoView({ block: 'nearest' });
   }, [sel, rows]);
 
   const remaining =
@@ -408,7 +453,12 @@ export function RoadmapRail({
                 roadmap · {drilled.declaredId ?? drilled.title}
               </span>
             </div>
-            <RoadmapItemDetail item={drilled} onOpenPath={openPath} />
+            <RoadmapItemDetail
+              item={drilled}
+              color={color}
+              onOpenPath={openPath}
+              onSelectSession={onSelectSession}
+            />
           </div>
         ) : view.queueEmpty ? (
           <div className="relative">
@@ -431,8 +481,70 @@ export function RoadmapRail({
               style={{ background: withAlpha(color, 0.3) }}
             />
             {rows.map((row, i) => (
-              <div key={row.kind === 'item' ? row.item.id : row.group} style={stagger(i)}>
-                {row.kind === 'group' ? (
+              <div
+                key={
+                  row.kind === 'item'
+                    ? row.item.id
+                    : row.kind === 'chip'
+                      ? `c-${row.chip.sessionId}`
+                      : row.kind === 'unmapped'
+                        ? `u-${row.session.sessionId}`
+                        : row.group
+                }
+                style={stagger(i)}
+              >
+                {row.kind === 'unmapped' ? (
+                  <div className="pl-6 pr-2">
+                    {(i === 0 || rows[i - 1].kind !== 'unmapped') && (
+                      <p
+                        className="pb-1 pt-1.5 font-mono text-[10px]"
+                        style={{ color: HUD.amber }}
+                      >
+                        {view.unmappedSessions.length === 1
+                          ? '1 session not linked to an item'
+                          : `${view.unmappedSessions.length} sessions not linked to an item`}
+                      </p>
+                    )}
+                    <div className="pb-1" onMouseEnter={() => setSel(i)}>
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        data-roadmap-unmapped={row.session.sessionId}
+                        data-selected={i === sel || undefined}
+                        title="no roadmap item matched this session"
+                        onClick={() =>
+                          row.session.tabId && onSelectSession(row.session.tabId)
+                        }
+                        className="flex min-w-0 max-w-full items-center gap-1.5 rounded border border-dashed px-1.5 py-0.5 font-mono text-[10px] outline-none hover:bg-white/10"
+                        style={{
+                          borderColor: withAlpha(HUD.amber, i === sel ? 0.9 : 0.45),
+                          color: HUD.text,
+                          background:
+                            i === sel ? withAlpha(HUD.amber, 0.1) : 'transparent',
+                        }}
+                      >
+                        <span
+                          aria-hidden
+                          className="inline-block h-1.5 w-1.5 shrink-0 rotate-45"
+                          style={{ background: HUD.amber }}
+                        />
+                        <span className="min-w-0 truncate">{row.session.title}</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : row.kind === 'chip' ? (
+                  <div
+                    className="flex pb-1 pl-10 pr-3"
+                    onMouseEnter={() => setSel(i)}
+                  >
+                    <RoadmapSessionChipButton
+                      chip={row.chip}
+                      color={color}
+                      selected={i === sel}
+                      onJump={() => row.chip.tabId && onSelectSession(row.chip.tabId)}
+                    />
+                  </div>
+                ) : row.kind === 'group' ? (
                   <button
                     type="button"
                     tabIndex={-1}

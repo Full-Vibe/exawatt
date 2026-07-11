@@ -165,6 +165,15 @@ export function RoadmapItemCard({
           !
         </span>
       )}
+      {item.chips.length > 0 && (
+        <span
+          title={`${item.chips.length} linked session${item.chips.length === 1 ? '' : 's'}`}
+          className="shrink-0 font-mono text-[10px]"
+          style={{ color: statusColor }}
+        >
+          ▸{item.chips.length}
+        </span>
+      )}
       {!compact && item.milestones.length > 0 && (
         <span
           className="ml-auto shrink-0 font-mono text-[10px]"

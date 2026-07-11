@@ -12,6 +12,16 @@ import {
   RoadmapBlockedBadge,
   RoadmapStatusPill,
 } from './roadmap-status-pill';
+import { RoadmapSessionChipButton } from './roadmap-session-chip';
+
+/** roadmap prose is markdown; the rail renders it as plain text, so strip
+ *  the inline tokens that would otherwise show literally */
+function deMarkdown(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+}
 
 function SectionLabel({ children }: { children: string }) {
   return (
@@ -33,7 +43,7 @@ function BulletList({ lines }: { lines: string[] }) {
           <span aria-hidden className="shrink-0" style={{ color: HUD.textDim }}>
             ·
           </span>
-          <span className="min-w-0">{line}</span>
+          <span className="min-w-0">{deMarkdown(line)}</span>
         </li>
       ))}
     </ul>
@@ -42,11 +52,16 @@ function BulletList({ lines }: { lines: string[] }) {
 
 export function RoadmapItemDetail({
   item,
+  color,
   onOpenPath,
+  onSelectSession,
 }: {
   item: RoadmapItemView;
+  /** the Project identity color for session chips */
+  color: string;
   /** open a repo-relative path in the OS default app */
   onOpenPath: (path: string) => void;
+  onSelectSession: (tabId: string) => void;
 }) {
   const statusColor = ROADMAP_STATUS_COLOR[item.displayStatus];
   return (
@@ -68,8 +83,24 @@ export function RoadmapItemDetail({
       </p>
       {item.statusNote && (
         <p className="text-xs leading-5" style={{ color: HUD.textDim }}>
-          {item.statusNote}
+          {deMarkdown(item.statusNote)}
         </p>
+      )}
+      {item.chips.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <SectionLabel>sessions</SectionLabel>
+          <div className="flex flex-wrap gap-1.5">
+            {item.chips.map(chip => (
+              <RoadmapSessionChipButton
+                key={chip.sessionId}
+                chip={chip}
+                color={color}
+                selected={false}
+                onJump={() => chip.tabId && onSelectSession(chip.tabId)}
+              />
+            ))}
+          </div>
+        </div>
       )}
       {item.scope.length > 0 && (
         <div className="flex flex-col gap-1.5">
@@ -123,7 +154,7 @@ export function RoadmapItemDetail({
           <div className="flex flex-col gap-1">
             {item.description.map((line, i) => (
               <p key={i} className="text-xs leading-5" style={{ color: HUD.textDim }}>
-                {line}
+                {deMarkdown(line)}
               </p>
             ))}
           </div>

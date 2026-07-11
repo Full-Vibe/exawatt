@@ -70,6 +70,8 @@ contextBridge.exposeInMainWorld('electron', {
   },
   roadmap: {
     read: (projectDir: string) => ipcRenderer.invoke('roadmap:read', projectDir),
+    sessionEvidence: (cwd: string) =>
+      ipcRenderer.invoke('roadmap:session-evidence', cwd),
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
