@@ -79,6 +79,8 @@ function matchingPids() {
 let app = null;
 try {
   app = await launch();
+  app.process().stdout?.on('data', chunk => process.stdout.write(chunk));
+  app.process().stderr?.on('data', chunk => process.stderr.write(chunk));
   const page = await app.firstWindow({ timeout: 45_000 });
   page.setDefaultTimeout(20_000);
   await page.locator('[data-command-altitude]').waitFor();
@@ -99,13 +101,32 @@ try {
     );
   }
 
-  await page.evaluate(() => window.electron?.app?.checkForUpdates());
+  let transientRetries = 0;
+  let retryAfter = 0;
   const downloaded = await waitFor(async () => {
     const next = await page.evaluate(() =>
       window.electron?.app?.getUpdateStatus()
     );
-    if (next?.phase === 'error')
+    if (next?.phase === 'error') {
+      if (
+        next.error?.includes('ERR_CONNECTION_CLOSED') &&
+        transientRetries < 2
+      ) {
+        if (retryAfter === 0) retryAfter = Date.now() + 5_000;
+        if (Date.now() >= retryAfter) {
+          transientRetries += 1;
+          retryAfter = 0;
+          console.log(
+            `[product-update] retrying transient connection failure (${transientRetries}/2)`
+          );
+          await page
+            .evaluate(() => window.electron?.app?.checkForUpdates())
+            .catch(() => undefined);
+        }
+        return null;
+      }
       throw new Error(`Updater failed: ${next.error}`);
+    }
     return next?.phase === 'downloaded' ? next : null;
   }, `Timed out downloading Exawatt ${expectedVersion}`);
   if (downloaded.availableVersion !== expectedVersion) {
