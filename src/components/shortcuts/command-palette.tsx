@@ -31,6 +31,7 @@ import {
 import {
   requestSessionJump,
   requestLaunch,
+  requestOpenProject,
   RENAME_ACTIVE_EVENT,
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
@@ -44,6 +45,8 @@ import type {
 } from '@/components/workspace/switcher-rows';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import { HARNESS_META, HARNESS_ORDER } from '@/components/workspace/harnesses';
+import { listProjects } from '@/lib/projects/registry';
+import type { Project } from '@/lib/projects/registry';
 import { HUD } from '@/components/hud';
 import type { ShortcutKeys } from '@/types/shortcuts';
 import type { PtyHarness } from '@/types/electron';
@@ -83,6 +86,9 @@ export function CommandPalette({
   // live sessions for the switcher (S2) — desktop app only, fetched fresh
   // each time the palette opens
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  // known Projects from the durable registry (S5) — browse/open one even with
+  // no live session; fetched fresh each time the palette opens
+  const [projects, setProjects] = useState<Project[]>([]);
   // workspace verbs only make sense where the workspace is (S3): sampled
   // when the palette opens
   const [onWorkspaceRoute, setOnWorkspaceRoute] = useState(false);
@@ -95,6 +101,7 @@ export function CommandPalette({
     if (!open) {
       setSearch('');
       setSessions([]);
+      setProjects([]);
     }
   }, [open]);
 
@@ -111,6 +118,13 @@ export function CommandPalette({
       ]);
       if (!cancelled) setSessions(buildSessionRows(list, layout, Date.now()));
     })();
+    // durable Projects (S5) — best-effort: needs an authed Supabase session,
+    // so a failure (offline / signed out) just leaves the group empty
+    void listProjects()
+      .then(p => {
+        if (!cancelled) setProjects(p);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -140,6 +154,16 @@ export function CommandPalette({
     (harness: PtyHarness) =>
       handleSelect(() => {
         requestLaunch(harness);
+        if (!inWorkspace()) router.push('/workspace');
+      }),
+    [handleSelect, router]
+  );
+  /** open a known Project by directory: the workspace activates it if it has
+   *  live tabs, else launches a shell there */
+  const openProjectDir = useCallback(
+    (dir: string) =>
+      handleSelect(() => {
+        requestOpenProject(dir);
         if (!inWorkspace()) router.push('/workspace');
       }),
     [handleSelect, router]
@@ -359,6 +383,34 @@ export function CommandPalette({
           </>
         )}
 
+        {inElectron && projects.some(p => p.root_path) && (
+          <>
+            <CommandGroup heading="Projects">
+              {projects
+                .filter(p => p.root_path)
+                .map(p => (
+                  <CommandItem
+                    key={`project-${p.id}`}
+                    value={`project open ${p.name} ${p.root_path ?? ''}`}
+                    onSelect={() => openProjectDir(p.root_path as string)}
+                  >
+                    <span
+                      className="mr-2 inline-block h-2 w-2 shrink-0 rotate-45"
+                      style={{ background: p.color ?? HUD.textDim }}
+                    />
+                    <span className="truncate">{p.name}</span>
+                    <span
+                      className="ml-auto truncate pl-2 text-[10px]"
+                      style={{ color: HUD.textDim }}
+                    >
+                      {p.root_path}
+                    </span>
+                  </CommandItem>
+                ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
         {inElectron && onWorkspaceRoute && (
           <>
             <CommandGroup heading="Workspace">

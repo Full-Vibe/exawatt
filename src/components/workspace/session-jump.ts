@@ -12,6 +12,9 @@ import type { PtyHarness } from '@/types/electron';
 
 export const SESSION_JUMP_EVENT = 'exawatt:open-session';
 export const LAUNCH_EVENT = 'exawatt:launch';
+/** ⌘K Projects group: open a known Project by its directory (activate if it
+ *  already has live tabs, else launch a shell there) */
+export const OPEN_PROJECT_EVENT = 'exawatt:open-project';
 /** tab-strip listens: open the inline rename editor for the active tab */
 export const RENAME_ACTIVE_EVENT = 'exawatt:rename-active';
 /** the active terminal pane refocuses itself (rename editors steal focus —
@@ -36,6 +39,7 @@ interface Pending<T> {
 
 let pendingSession: Pending<string> | null = null;
 let pendingLaunch: Pending<PtyHarness> | null = null;
+let pendingOpenProject: Pending<string> | null = null;
 
 function take<T>(slot: Pending<T> | null): T | null {
   if (!slot) return null;
@@ -63,5 +67,16 @@ export function consumePendingSessionJump(): string | null {
 export function consumePendingLaunch(): PtyHarness | null {
   const p = take(pendingLaunch);
   pendingLaunch = null;
+  return p;
+}
+
+export function requestOpenProject(dir: string): void {
+  pendingOpenProject = { value: dir, at: Date.now() };
+  window.dispatchEvent(new CustomEvent(OPEN_PROJECT_EVENT, { detail: dir }));
+}
+
+export function consumePendingOpenProject(): string | null {
+  const p = take(pendingOpenProject);
+  pendingOpenProject = null;
   return p;
 }

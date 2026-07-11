@@ -21,10 +21,12 @@ import { pickDistinctColor, projectColor } from './project-colors';
 import {
   SESSION_JUMP_EVENT,
   LAUNCH_EVENT,
+  OPEN_PROJECT_EVENT,
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
   consumePendingSessionJump,
   consumePendingLaunch,
+  consumePendingOpenProject,
 } from './session-jump';
 import { loadTerminalFont } from './terminal-font';
 import { openRepositoryProject } from '@/lib/projects/registry';
@@ -586,6 +588,20 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     [launch]
   );
 
+  /** ⌘K Projects: open a known Project by its directory — activate it if it
+   *  already has live tabs, else launch a shell there (opening/reviving it). */
+  const openProject = useCallback(
+    (dir: string): void => {
+      const g = stateRef.current.projects.find((p) => p.dir === dir);
+      if (g && g.tabs.length > 0) {
+        setActiveDir(dir);
+        return;
+      }
+      void launch({ harness: 'shell', dir });
+    },
+    [launch]
+  );
+
   const selectProject = useCallback((index: number): boolean => {
     const g = stateRef.current.projects[index];
     if (!g) return false;
@@ -755,17 +771,24 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const onJumpAttention = () => {
       if (readyRef.current) jumpAttention();
     };
+    const onOpenProject = (e: Event) => {
+      if (!readyRef.current) return;
+      consumePendingOpenProject();
+      openProject((e as CustomEvent<string>).detail);
+    };
     window.addEventListener(SESSION_JUMP_EVENT, onJump);
     window.addEventListener(LAUNCH_EVENT, onLaunch);
+    window.addEventListener(OPEN_PROJECT_EVENT, onOpenProject);
     window.addEventListener(TOGGLE_SPLIT_EVENT, onToggleSplit);
     window.addEventListener(JUMP_ATTENTION_EVENT, onJumpAttention);
     return () => {
       window.removeEventListener(SESSION_JUMP_EVENT, onJump);
       window.removeEventListener(LAUNCH_EVENT, onLaunch);
+      window.removeEventListener(OPEN_PROJECT_EVENT, onOpenProject);
       window.removeEventListener(TOGGLE_SPLIT_EVENT, onToggleSplit);
       window.removeEventListener(JUMP_ATTENTION_EVENT, onJumpAttention);
     };
-  }, [activateSession, launchHere, togglePin, jumpAttention]);
+  }, [activateSession, launchHere, openProject, togglePin, jumpAttention]);
 
   useEffect(() => {
     if (!ready) return;
@@ -773,7 +796,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     if (jump) activateSession(jump);
     const harness = consumePendingLaunch();
     if (harness) launchHere(harness);
-  }, [ready, activateSession, launchHere]);
+    const proj = consumePendingOpenProject();
+    if (proj) openProject(proj);
+  }, [ready, activateSession, launchHere, openProject]);
 
   // ---- attention focus contract (S1): tell main which session the operator
   // is looking at — the focused session never flags, and focusing clears.
