@@ -52,6 +52,46 @@ export function extractProjectColors(layout: unknown): Record<string, string> {
   return colors;
 }
 
+export interface RecentProject {
+  dir: string;
+  name: string;
+  color?: string;
+}
+
+/** Tolerant read of the layout's open groups merged with its durable
+ *  `recentProjects` record (ENG-016 D8): a Project whose tabs all closed —
+ *  or whose registry row is unreachable — stays one ⌘K keystroke away.
+ *  Open groups come first (they are the most recent by definition). */
+export function extractRecentProjects(layout: unknown): RecentProject[] {
+  if (!layout || typeof layout !== 'object') return [];
+  const l = layout as {
+    projects?: unknown;
+    initiatives?: unknown;
+    recentProjects?: unknown;
+  };
+  const rows: RecentProject[] = [];
+  const seen = new Set<string>();
+  const push = (entry: unknown) => {
+    if (!entry || typeof entry !== 'object') return;
+    const { dir, name, color } = entry as {
+      dir?: unknown;
+      name?: unknown;
+      color?: unknown;
+    };
+    if (typeof dir !== 'string' || !dir || seen.has(dir)) return;
+    seen.add(dir);
+    rows.push({
+      dir,
+      name: typeof name === 'string' && name ? name : dir.split('/').pop() || dir,
+      ...(typeof color === 'string' ? { color } : {}),
+    });
+  };
+  const groups = Array.isArray(l.projects) ? l.projects : l.initiatives;
+  if (Array.isArray(groups)) groups.forEach(push);
+  if (Array.isArray(l.recentProjects)) l.recentProjects.forEach(push);
+  return rows;
+}
+
 const STATUS_RANK: Record<SessionRowStatus, number> = {
   'needs-you': 0,
   working: 1,

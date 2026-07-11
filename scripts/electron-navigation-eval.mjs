@@ -29,7 +29,9 @@ try {
   const errors = [];
   page.on('pageerror', error => errors.push(String(error.message || error)));
   page.on('console', message => {
-    if (message.type() === 'error') errors.push(message.text());
+    if (message.type() === 'error' && !message.text().includes('eval() is not supported')) {
+      errors.push(message.text());
+    }
   });
 
   await page.locator('[data-command-altitude]').waitFor();

@@ -92,6 +92,15 @@ interface PersistedV4 {
   /** split view (S2): tab pinned beside the active one; optional (pre-S2
    *  layouts lack it) */
   pinnedTabId?: string | null;
+  /** durable recency record (ENG-016 D8): a Project whose tabs all closed
+   *  stays reachable from ⌘K even offline or signed out; most recent first,
+   *  capped. Optional — pre-D8 layouts lack it. */
+  recentProjects?: Array<{
+    dir: string;
+    name: string;
+    color?: string;
+    lastOpenedAt: number;
+  }>;
   projects: Array<{
     dir: string;
     name: string;
@@ -228,6 +237,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   // must not clobber a rename/recolor made while the registry fetch was still
   // in flight (its snapshot is already stale), and instead pushes it up.
   const editedDirsRef = useRef<Set<string>>(new Set());
+  /** durable Project recency (ENG-016 D8) — loaded from the persisted layout,
+   *  re-merged on every save so closed Projects survive */
+  const recentsRef = useRef<NonNullable<PersistedV4['recentProjects']>>([]);
   const readyRef = useRef(ready);
   readyRef.current = ready;
   const attentionRef = useRef(attention);
@@ -362,6 +374,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         setProjects(restored);
         setActiveDir(persisted.activeDir ?? restored[0]?.dir ?? null);
         setLastUsedDir(persisted.lastUsedDir ?? '');
+        recentsRef.current = persisted.recentProjects ?? [];
         // restore the split only if the pinned tab still exists
         const pinned = persisted.pinnedTabId ?? null;
         if (
@@ -486,11 +499,26 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         gs.some((g) =>
           g.tabs.some((t) => t.id === pin && tabIsLive(t))
         );
+      // merge open groups into the durable recency record: open groups are
+      // the most recent by definition; prior entries survive their tabs
+      // closing so ⌘K can still reach them (ENG-016 D8)
+      const now = Date.now();
+      const recents = [
+        ...gs.map((g) => ({
+          dir: g.dir,
+          name: g.name,
+          ...(g.color ? { color: g.color } : {}),
+          lastOpenedAt: now,
+        })),
+        ...recentsRef.current.filter((r) => !gs.some((g) => g.dir === r.dir)),
+      ].slice(0, 12);
+      recentsRef.current = recents;
       const state: PersistedV4 = {
         v: 4,
         lastUsedDir: lu,
         activeDir: ad,
         pinnedTabId: pinSurvives ? pin : null,
+        recentProjects: recents,
         projects: gs
           .map((g) => {
             const tabs = g.tabs

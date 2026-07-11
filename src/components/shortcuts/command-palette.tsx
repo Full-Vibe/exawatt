@@ -27,6 +27,9 @@ import {
   BellRing,
   XCircle,
   Map as MapIcon,
+  FolderOpen,
+  LogIn,
+  type LucideIcon,
 } from 'lucide-react';
 import {
   requestSessionJump,
@@ -38,11 +41,20 @@ import {
   CLOSE_ACTIVE_EVENT,
   OPEN_OVERVIEW_EVENT,
 } from '@/components/workspace/session-jump';
-import { buildSessionRows } from '@/components/workspace/switcher-rows';
+import {
+  buildSessionRows,
+  extractRecentProjects,
+} from '@/components/workspace/switcher-rows';
 import type {
   SessionRow,
   SessionRowStatus,
+  RecentProject,
 } from '@/components/workspace/switcher-rows';
+import {
+  surfacesByTier,
+  resolveSurfaceHref,
+  type AppSurface,
+} from '@/components/nav/surfaces';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import { HARNESS_META, HARNESS_ORDER } from '@/components/workspace/harnesses';
 import { listProjects, rebindProjectPath } from '@/lib/projects/registry';
@@ -70,11 +82,22 @@ interface CommandPaletteProps {
 interface CommandItem {
   id: string;
   label: string;
+  value: string;
   shortcut?: ShortcutKeys;
   icon: React.ComponentType<{ className?: string }>;
   onSelect: () => void;
-  keywords?: string[];
 }
+
+/** palette icon per manifest surface — the manifest stays render-free */
+const SURFACE_ICONS: Record<AppSurface['id'], LucideIcon> = {
+  terminal: SquareTerminal,
+  sessions: LayoutPanelTop,
+  spatial: MapIcon,
+  settings: Settings,
+  dashboard: LayoutDashboard,
+  board: LayoutGrid,
+  fleet: Server,
+};
 
 export function CommandPalette({
   open,
@@ -89,6 +112,12 @@ export function CommandPalette({
   // known Projects from the durable registry (S5) — browse/open one even with
   // no live session; fetched fresh each time the palette opens
   const [projects, setProjects] = useState<Project[]>([]);
+  // local recency record (D8): Projects from the persisted layout, so a
+  // Project with no open tabs — or an unreachable registry — stays reachable
+  const [recents, setRecents] = useState<RecentProject[]>([]);
+  // the registry read failed (signed out / offline): say so instead of
+  // silently rendering an empty group
+  const [registryFailed, setRegistryFailed] = useState(false);
   // workspace verbs only make sense where the workspace is (S3): sampled
   // when the palette opens
   const [onWorkspaceRoute, setOnWorkspaceRoute] = useState(false);
@@ -102,6 +131,8 @@ export function CommandPalette({
       setSearch('');
       setSessions([]);
       setProjects([]);
+      setRecents([]);
+      setRegistryFailed(false);
     }
   }, [open]);
 
@@ -116,15 +147,19 @@ export function CommandPalette({
         pty.list(),
         window.electron?.workspace?.load() ?? Promise.resolve(null),
       ]);
-      if (!cancelled) setSessions(buildSessionRows(list, layout, Date.now()));
+      if (cancelled) return;
+      setSessions(buildSessionRows(list, layout, Date.now()));
+      setRecents(extractRecentProjects(layout));
     })();
-    // durable Projects (S5) — best-effort: needs an authed Supabase session,
-    // so a failure (offline / signed out) just leaves the group empty
+    // durable Projects (S5) — needs an authed Supabase session; on failure the
+    // group falls back to local recents and shows a sign-in row (D8)
     void listProjects()
       .then(p => {
         if (!cancelled) setProjects(p);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setRegistryFailed(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -175,6 +210,27 @@ export function CommandPalette({
           dir = picked;
         }
         requestOpenProject(dir);
+        if (!inWorkspace()) router.push('/workspace');
+      }),
+    [handleSelect, router]
+  );
+  /** open a Project known only from the local recency record (registry
+   *  unreachable or the row predates it) — same open path, no re-bind step */
+  const openRecentProject = useCallback(
+    (dir: string) =>
+      handleSelect(() => {
+        requestOpenProject(dir);
+        if (!inWorkspace()) router.push('/workspace');
+      }),
+    [handleSelect, router]
+  );
+  /** add a Project by browsing for its directory — the palette twin of ⌘N */
+  const addProject = useCallback(
+    () =>
+      handleSelect(async () => {
+        const picked = await window.electron?.dialog?.openDirectory();
+        if (!picked) return;
+        requestOpenProject(picked);
         if (!inWorkspace()) router.push('/workspace');
       }),
     [handleSelect, router]
@@ -249,63 +305,41 @@ export function CommandPalette({
     [dispatch, handleSelect, router]
   );
 
-  // Build command items
-  const items = useMemo<CommandItem[]>(() => {
-    return [
-      {
-        id: 'nav-dashboard',
-        label: 'Go to Dashboard',
-        icon: LayoutDashboard,
-        shortcut: shortcutRegistry.getEffectiveKeys('go-dashboard'),
-        onSelect: () => handleSelect(() => router.push('/dashboard')),
-        keywords: ['home', 'overview', 'metrics'],
-      },
-      {
-        id: 'nav-board',
-        label: 'Go to Board',
-        icon: LayoutGrid,
-        shortcut: shortcutRegistry.getEffectiveKeys('go-board'),
-        onSelect: () => handleSelect(() => router.push('/board')),
-        keywords: ['kanban', 'tasks', 'swimlane'],
-      },
-      {
-        id: 'nav-workspace',
-        label: 'Go to Workspace',
-        icon: SquareTerminal,
-        shortcut: shortcutRegistry.getEffectiveKeys('go-workspace'),
-        onSelect: () => handleSelect(() => router.push('/workspace')),
-        keywords: ['terminal', 'agents', 'sessions', 'launch'],
-      },
-      {
-        id: 'nav-fleet',
-        label: 'Go to Fleet',
-        icon: Server,
-        shortcut: shortcutRegistry.getEffectiveKeys('go-fleet'),
-        onSelect: () => handleSelect(() => router.push('/fleet')),
-        keywords: ['agents', 'bots', 'ai'],
-      },
-      {
-        id: 'nav-settings',
-        label: 'Go to Settings',
-        icon: Settings,
-        shortcut: shortcutRegistry.getEffectiveKeys('go-settings'),
-        onSelect: () => handleSelect(() => router.push('/settings')),
-        keywords: ['preferences', 'config', 'customize'],
-      },
+  // Navigation rows derive from the manifest (ENG-016 D8): the palette, the
+  // go-chords, and the header must always agree on names and targets. Legacy
+  // surfaces render in their own group at the bottom.
+  const surfaceItem = useCallback(
+    (s: AppSurface): CommandItem => ({
+      id: `nav-${s.id}`,
+      label: `Go to ${s.name}`,
+      value: `go ${s.name} ${s.keywords.join(' ')}`,
+      icon: SURFACE_ICONS[s.id],
+      shortcut: shortcutRegistry.getEffectiveKeys(s.shortcutId),
+      onSelect: () => handleSelect(() => router.push(resolveSurfaceHref(s))),
+    }),
+    [handleSelect, router]
+  );
+  const navigationItems = useMemo<CommandItem[]>(
+    () => [...surfacesByTier('spine'), ...surfacesByTier('app')].map(surfaceItem),
+    [surfaceItem]
+  );
+  const legacyItems = useMemo<CommandItem[]>(
+    () => surfacesByTier('legacy').map(surfaceItem),
+    [surfaceItem]
+  );
+  const actionItems = useMemo<CommandItem[]>(
+    () => [
       {
         id: 'action-help',
         label: 'Keyboard Shortcuts',
+        value: 'keyboard shortcuts help keys hotkeys cheat sheet',
         icon: HelpCircle,
         shortcut: shortcutRegistry.getEffectiveKeys('help-modal'),
         onSelect: () => handleSelect(onOpenHelpModal),
-        keywords: ['help', 'keys', 'hotkeys'],
       },
-    ];
-  }, [router, handleSelect, onOpenHelpModal]);
-
-  // Group items
-  const navigationItems = items.filter(i => i.id.startsWith('nav-'));
-  const actionItems = items.filter(i => i.id.startsWith('action-'));
+    ],
+    [handleSelect, onOpenHelpModal]
+  );
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
@@ -394,7 +428,7 @@ export function CommandPalette({
           </>
         )}
 
-        {inElectron && projects.some(p => p.root_path) && (
+        {inElectron && (
           <>
             <CommandGroup heading="Projects">
               {projects
@@ -418,6 +452,48 @@ export function CommandPalette({
                     </span>
                   </CommandItem>
                 ))}
+              {/* local recency fallback (D8): Projects the registry doesn't
+                  cover right now — closed tabs, signed out, offline */}
+              {recents
+                .filter(r => !projects.some(p => p.root_path === r.dir))
+                .map(r => (
+                  <CommandItem
+                    key={`recent-${r.dir}`}
+                    value={`project open recent ${r.name} ${r.dir}`}
+                    onSelect={() => openRecentProject(r.dir)}
+                  >
+                    <span
+                      className="mr-2 inline-block h-2 w-2 shrink-0 rotate-45"
+                      style={{ background: r.color ?? HUD.textDim }}
+                    />
+                    <span className="truncate">{r.name}</span>
+                    <span
+                      className="ml-auto truncate pl-2 text-[10px]"
+                      style={{ color: HUD.textDim }}
+                    >
+                      {r.dir}
+                    </span>
+                  </CommandItem>
+                ))}
+              {registryFailed && (
+                <CommandItem
+                  value="project sign in sync account"
+                  onSelect={() =>
+                    handleSelect(() => router.push('/sign-in'))
+                  }
+                >
+                  <LogIn className="mr-2 h-3.5 w-3.5 shrink-0" />
+                  <span>Sign in to sync Projects across machines</span>
+                </CommandItem>
+              )}
+              <CommandItem
+                value="project add new open folder directory browse"
+                onSelect={addProject}
+              >
+                <FolderOpen className="mr-2 h-3.5 w-3.5 shrink-0" />
+                <span>Add project…</span>
+                <CommandShortcut>⌘N</CommandShortcut>
+              </CommandItem>
             </CommandGroup>
             <CommandSeparator />
           </>
@@ -443,7 +519,7 @@ export function CommandPalette({
 
         <CommandGroup heading="Navigation">
           {navigationItems.map(item => (
-            <CommandItem key={item.id} onSelect={item.onSelect}>
+            <CommandItem key={item.id} value={item.value} onSelect={item.onSelect}>
               <item.icon className="mr-2 h-4 w-4" />
               <span>{item.label}</span>
               {item.shortcut && (
@@ -459,7 +535,24 @@ export function CommandPalette({
 
         <CommandGroup heading="Actions">
           {actionItems.map(item => (
-            <CommandItem key={item.id} onSelect={item.onSelect}>
+            <CommandItem key={item.id} value={item.value} onSelect={item.onSelect}>
+              <item.icon className="mr-2 h-4 w-4" />
+              <span>{item.label}</span>
+              {item.shortcut && (
+                <CommandShortcut>
+                  {formatShortcutKeys(item.shortcut)}
+                </CommandShortcut>
+              )}
+            </CommandItem>
+          ))}
+        </CommandGroup>
+
+        <CommandSeparator />
+
+        {/* legacy demo surfaces: reachable, never primary (ENG-016) */}
+        <CommandGroup heading="Legacy">
+          {legacyItems.map(item => (
+            <CommandItem key={item.id} value={item.value} onSelect={item.onSelect}>
               <item.icon className="mr-2 h-4 w-4" />
               <span>{item.label}</span>
               {item.shortcut && (

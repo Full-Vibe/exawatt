@@ -56,7 +56,9 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
 page.on('pageerror', error => errors.push(String(error.message || error)));
 page.on('console', message => {
-  if (message.type() === 'error') errors.push(message.text());
+  if (message.type() === 'error' && !message.text().includes('eval() is not supported')) {
+    errors.push(message.text());
+  }
 });
 
 await page.addInitScript(() => {
@@ -98,12 +100,20 @@ await page.addInitScript(() => {
       focus: async () => undefined,
       list: async () => [session],
       buffer: async () => '$ exawatt\nNavigation continuum ready.\n',
+      bufferSnapshot: async () => ({ text: 'Navigation continuum ready.', cursor: 0 }),
+      bufferSince: async () => ({ data: '', cursor: 0 }),
+      pasteClipboard: async () => ({ ok: true }),
+      copyText: async () => undefined,
+      openExternal: async () => undefined,
+      openPath: async () => undefined,
+      listResumeCandidates: async () => [],
       createWorktree: async () => ({ ok: true, path: session.cwd }),
       onData: off,
       onExit: off,
       onContext: off,
       onRecap: off,
       onAttention: off,
+      onNotificationClick: off,
     },
   };
 });

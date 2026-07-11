@@ -26,9 +26,12 @@ import type {
   KeyBinding,
   ShortcutContext as ShortcutCtx,
   Shortcut,
-  ShortcutOverride,
 } from '@/types/shortcuts';
 import { spatialReturnHref } from '@/components/nav/spatial-return';
+import {
+  surfaceForShortcut,
+  resolveSurfaceHref,
+} from '@/components/nav/surfaces';
 
 interface ShortcutContextValue {
   openCommandPalette: () => void;
@@ -83,21 +86,19 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     const shortcuts: Shortcut[] = defaultShortcuts.map(def => ({
       ...def,
       action: () => {
+        // go-chords navigate to their manifest surface — one source of truth
+        // for names and targets (ENG-016 D8)
+        const surface = surfaceForShortcut(def.id);
+        if (surface) {
+          router.push(resolveSurfaceHref(surface));
+          return;
+        }
         switch (def.id) {
-          case 'go-dashboard':
-            router.push('/dashboard');
+          case 'history-back':
+            router.back();
             break;
-          case 'go-board':
-            router.push('/board');
-            break;
-          case 'go-workspace':
-            router.push('/workspace');
-            break;
-          case 'go-fleet':
-            router.push('/fleet');
-            break;
-          case 'go-settings':
-            router.push('/settings');
+          case 'history-forward':
+            router.forward();
             break;
           case 'toggle-regime':
             // window.location (not the pathname closure) keeps this correct

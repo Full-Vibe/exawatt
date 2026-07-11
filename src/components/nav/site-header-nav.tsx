@@ -15,16 +15,24 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   LayoutDashboard,
+  LayoutGrid,
   User,
   LogOut,
   Network,
   Settings,
   Server,
   SquareTerminal,
+  type LucideIcon,
 } from 'lucide-react';
 import { signOut } from '@/app/actions/projects';
 import { CommandAltitudeNav } from './command-altitude-nav';
-import { isCommandSurface } from './command-altitude';
+import { surfacesByTier, type AppSurface } from './surfaces';
+
+const LEGACY_ICONS: Partial<Record<AppSurface['id'], LucideIcon>> = {
+  dashboard: LayoutDashboard,
+  board: LayoutGrid,
+  fleet: Server,
+};
 
 interface SiteHeaderNavProps {
   isAuthenticated: boolean;
@@ -41,7 +49,6 @@ export function SiteHeaderNav({
   const isHome = pathname === '/';
   const isArchitecture = pathname?.startsWith('/architecture');
   const isWorkspace = pathname?.startsWith('/workspace');
-  const commandSurface = isCommandSurface(pathname ?? '');
   // in the desktop app the Workspace (terminal) link is always relevant,
   // signed in or not; detected post-mount for hydration safety
   const [inElectron, setInElectron] = useState(false);
@@ -98,7 +105,9 @@ export function SiteHeaderNav({
         </Button>
       )}
 
-      {inElectron && commandSurface && <CommandAltitudeNav />}
+      {/* the navigation spine: present on every desktop surface so the way
+          back to Terminal is never hunted for (ENG-016 D8) */}
+      {inElectron && <CommandAltitudeNav />}
 
       {/* Right: Auth-dependent links */}
       <div
@@ -117,16 +126,15 @@ export function SiteHeaderNav({
             </Link>
           </Button>
         )}
-        {(inElectron || (isAuthenticated && !isHome)) &&
-          !isWorkspace &&
-          !(inElectron && commandSurface) && (
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/workspace">
-                <SquareTerminal className="h-3.5 w-3.5" />
-                Workspace
-              </Link>
-            </Button>
-          )}
+        {/* web only — in Electron the altitude rail owns this destination */}
+        {!inElectron && isAuthenticated && !isHome && !isWorkspace && (
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/workspace">
+              <SquareTerminal className="h-3.5 w-3.5" />
+              Workspace
+            </Link>
+          </Button>
+        )}
         {!isAuthenticated && !isHome && (
           <Button variant="ghost" size="sm" asChild>
             <Link href="/sign-in">Sign In</Link>
@@ -169,18 +177,17 @@ export function SiteHeaderNav({
               <DropdownMenuLabel className="text-xs text-muted-foreground">
                 Legacy views
               </DropdownMenuLabel>
-              <DropdownMenuItem asChild>
-                <Link href="/dashboard">
-                  <LayoutDashboard className="mr-2 h-4 w-4" />
-                  Lattice
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/fleet">
-                  <Server className="mr-2 h-4 w-4" />
-                  Fleet
-                </Link>
-              </DropdownMenuItem>
+              {surfacesByTier('legacy').map(s => {
+                const Icon = LEGACY_ICONS[s.id] ?? Server;
+                return (
+                  <DropdownMenuItem key={s.id} asChild>
+                    <Link href={s.href}>
+                      <Icon className="mr-2 h-4 w-4" />
+                      {s.name}
+                    </Link>
+                  </DropdownMenuItem>
+                );
+              })}
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={async () => {

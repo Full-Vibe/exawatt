@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   sessionRowStatus,
   extractProjectColors,
+  extractRecentProjects,
   buildSessionRows,
 } from './switcher-rows';
 import type { PtySessionInfo } from '@/types/electron';
@@ -136,5 +137,33 @@ describe('buildSessionRows', () => {
     );
     expect(row.searchValue).toBe('Claude Code alpha fixing auth tests');
     expect(row.subtitle).toBe('fixing auth tests');
+  });
+});
+
+describe('extractRecentProjects', () => {
+  it('merges open groups with the durable recency record, open first', () => {
+    const layout = {
+      v: 3,
+      projects: [{ dir: '/p/a', name: 'alpha', color: '#0ff', tabs: [] }],
+      recentProjects: [
+        { dir: '/p/a', name: 'alpha-stale', lastOpenedAt: 1 },
+        { dir: '/p/b', name: 'beta', color: '#f0f', lastOpenedAt: 2 },
+      ],
+    };
+    expect(extractRecentProjects(layout)).toEqual([
+      { dir: '/p/a', name: 'alpha', color: '#0ff' },
+      { dir: '/p/b', name: 'beta', color: '#f0f' },
+    ]);
+  });
+
+  it('reads pre-D8 layouts (no recentProjects) and v1 initiatives', () => {
+    expect(
+      extractRecentProjects({
+        v: 1,
+        initiatives: [{ dir: '/p/c', name: '', tabs: [] }],
+      })
+    ).toEqual([{ dir: '/p/c', name: 'c' }]);
+    expect(extractRecentProjects(null)).toEqual([]);
+    expect(extractRecentProjects({ v: 3, projects: 'bogus' })).toEqual([]);
   });
 });

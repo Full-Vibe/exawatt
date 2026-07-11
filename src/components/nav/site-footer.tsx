@@ -2,28 +2,16 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { isMarketingRoute } from './surfaces';
 
 /**
- * Marketing footer. Hidden on app/dashboard routes, which render as fixed,
- * full-viewport surfaces (no page scroll, so no footer at the bottom).
+ * Marketing footer. Renders only on the public website routes (navigation
+ * manifest); app surfaces are fixed, full-viewport, and never scroll to a
+ * footer.
  */
-const APP_PREFIXES = [
-  '/workspace',
-  '/fleet',
-  '/dashboard',
-  '/board',
-  '/settings',
-  '/deck',
-  '/thrml',
-  '/hud-gallery',
-];
-
 export function SiteFooter() {
   const pathname = usePathname() ?? '';
-  const isAppRoute = APP_PREFIXES.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`)
-  );
-  if (isAppRoute) return null;
+  if (!isMarketingRoute(pathname)) return null;
 
   return (
     <footer

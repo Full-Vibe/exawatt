@@ -52,9 +52,12 @@ async function requireUserId(
 }
 
 /** Live (non-archived) Projects for the signed-in user, in display order:
- *  operator sort_order first, then most-recently-opened. */
+ *  operator sort_order first, then most-recently-opened. Throws when signed
+ *  out — RLS would otherwise return zero rows as a success, and callers could
+ *  not tell "no Projects" from "not syncing" (ENG-016 D8). */
 export async function listProjects(): Promise<Project[]> {
   const supabase = createClient();
+  await requireUserId(supabase);
   const { data, error } = await supabase
     .from('projects')
     .select('*')

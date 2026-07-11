@@ -7,36 +7,30 @@ import type { ShortcutDefinition } from '@/types/shortcuts';
  * Actions are bound at runtime by the ShortcutProvider.
  */
 export const defaultShortcuts: ShortcutDefinition[] = [
-  // Navigation - Go chords (G → X)
-  {
-    id: 'go-dashboard',
-    keys: [{ key: 'g' }, { key: 'd' }],
-    label: 'Go to Dashboard',
-    description: 'Navigate to the dashboard view',
-    category: 'navigation',
-    contexts: ['global'],
-  },
-  {
-    id: 'go-board',
-    keys: [{ key: 'g' }, { key: 'b' }],
-    label: 'Go to Board',
-    description: 'Navigate to the board view',
-    category: 'navigation',
-    contexts: ['global'],
-  },
+  // Navigation - Go chords (G → X). Targets and canonical names live in the
+  // navigation manifest (src/components/nav/surfaces.ts); ids here must match
+  // its shortcutId values.
   {
     id: 'go-workspace',
     keys: [{ key: 'g' }, { key: 'w' }],
-    label: 'Go to Workspace',
-    description: 'Navigate to the agent terminal workspace',
+    label: 'Go to Terminal',
+    description: 'Navigate to the terminal workspace (near altitude)',
     category: 'navigation',
     contexts: ['global'],
   },
   {
-    id: 'go-fleet',
-    keys: [{ key: 'g' }, { key: 'f' }],
-    label: 'Go to Fleet',
-    description: 'Navigate to fleet dashboard',
+    id: 'go-sessions',
+    keys: [{ key: 'g' }, { key: 'o' }],
+    label: 'Go to Sessions',
+    description: 'Navigate to the session overview (middle altitude)',
+    category: 'navigation',
+    contexts: ['global'],
+  },
+  {
+    id: 'go-spatial',
+    keys: [{ key: 'g' }, { key: 'm' }],
+    label: 'Go to Spatial',
+    description: 'Navigate to Spatial Command (far altitude)',
     category: 'navigation',
     contexts: ['global'],
   },
@@ -45,6 +39,51 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     keys: [{ key: 'g' }, { key: 's' }],
     label: 'Go to Settings',
     description: 'Navigate to settings',
+    category: 'navigation',
+    contexts: ['global'],
+  },
+  {
+    id: 'go-dashboard',
+    keys: [{ key: 'g' }, { key: 'd' }],
+    label: 'Go to Lattice (legacy)',
+    description: 'Navigate to the legacy Lattice demo dashboard',
+    category: 'navigation',
+    contexts: ['global'],
+  },
+  {
+    id: 'go-board',
+    keys: [{ key: 'g' }, { key: 'b' }],
+    label: 'Go to Board (legacy)',
+    description: 'Navigate to the legacy kanban board',
+    category: 'navigation',
+    contexts: ['global'],
+  },
+  {
+    id: 'go-fleet',
+    keys: [{ key: 'g' }, { key: 'f' }],
+    label: 'Go to Fleet Command (legacy)',
+    description: 'Navigate to the legacy fleet dashboard',
+    category: 'navigation',
+    contexts: ['global'],
+  },
+
+  // History (ENG-016 D8): back/forward through router history while chrome
+  // owns focus. The chord engine ignores events from inputs and xterm, so the
+  // terminal keeps every key it owns; Escape stays "up the hierarchy" while
+  // these answer "where I just was".
+  {
+    id: 'history-back',
+    keys: { key: '[', modifiers: ['meta'] },
+    label: 'Back',
+    description: 'Go back to the previous surface',
+    category: 'navigation',
+    contexts: ['global'],
+  },
+  {
+    id: 'history-forward',
+    keys: { key: ']', modifiers: ['meta'] },
+    label: 'Forward',
+    description: 'Go forward again after going back',
     category: 'navigation',
     contexts: ['global'],
   },

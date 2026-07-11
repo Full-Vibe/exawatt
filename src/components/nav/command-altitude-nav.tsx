@@ -42,9 +42,9 @@ export function CommandAltitudeNav() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
+  // null on non-spine surfaces (settings, legacy views): the rail still
+  // renders — every level stays one click away — with no current level marked
   const active = resolveCommandAltitude(pathname, searchParams);
-
-  if (!active) return null;
 
   return (
     <nav

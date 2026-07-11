@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
-  ArrowLeft,
   Activity,
   Clock3,
   Crosshair,
@@ -350,18 +349,6 @@ export function SpatialFleetClient() {
       <FleetMetricsBar />
 
       <header className="relative z-20 flex shrink-0 flex-wrap items-center gap-3 border-b border-zinc-800/80 bg-zinc-950/90 px-4 py-3 backdrop-blur">
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className="text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
-        >
-          <Link href="/fleet">
-            <ArrowLeft className="h-4 w-4" />
-            Fleet
-          </Link>
-        </Button>
-
         <div className="flex min-w-0 items-center gap-2">
           <Crosshair className="h-4 w-4 text-teal-200" />
           <h1 className="truncate text-lg font-semibold tracking-tight text-zinc-50">
