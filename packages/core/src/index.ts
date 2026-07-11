@@ -27,3 +27,18 @@ export type {
   LocalSessionsSource,
   LocalSessionsOptions,
 } from './transports/local-sessions';
+export { parseRoadmap } from './roadmap/parse';
+export type { ParseRoadmapOptions } from './roadmap/parse';
+export type {
+  RoadmapItemStatus,
+  RoadmapSourceRef,
+  RoadmapMilestone,
+  RoadmapItem,
+  RoadmapDiagnostic,
+  RoadmapConformance,
+  RoadmapDoc,
+  SessionLinkMethod,
+  SessionLinkConfidence,
+  SessionLinkEvidence,
+  SessionLink,
+} from './roadmap/types';
