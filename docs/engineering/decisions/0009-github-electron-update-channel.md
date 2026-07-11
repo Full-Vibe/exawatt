@@ -23,6 +23,12 @@ never silently restart it while sessions are live.
   CI retries a clean release build at most three times when Apple's timestamp
   or notarization service is transiently unavailable; it never drops secure
   timestamps or notarization to make a release pass.
+- If Apple timestamp requests fail from every hosted runner but succeed on the
+  release operator's Mac, the manual workflow may consume a private GitHub
+  Release asset containing the locally Developer-ID-signed app. CI verifies the
+  app and hidden renderer signatures and timestamps, notarizes and staples the
+  app, rebuilds the distribution containers, runs the normal release checks,
+  publishes, and deletes the temporary private asset.
 - The private `Full-Vibe/exawatt` GitHub Release remains the source-linked CI
   archive. It cannot be the installed app's feed: anonymous clients receive
   `404`, while a private GitHub updater would require a reusable repository
