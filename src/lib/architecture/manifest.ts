@@ -641,7 +641,7 @@ export const architectureManifest = {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
-            'Versioned local renderer, hardened main/preload and PTY boundary, plus staged signed-update delivery awaiting release credentials.',
+            'Versioned local renderer, hardened main/preload and PTY boundary, plus Developer-ID-signed staged update delivery through public artifact storage.',
           layer: 'infrastructure',
           status: 'active-build',
           x: 75,
@@ -675,8 +675,9 @@ export const architectureManifest = {
         },
         {
           id: 'supabase-data',
-          label: 'Supabase App Data',
-          summary: 'Auth and app data store for the current hosted surface.',
+          label: 'Supabase Data + Artifacts',
+          summary:
+            'Auth and app data for hosted surfaces plus the anonymous signed desktop update channel.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 760,
@@ -722,6 +723,7 @@ export const architectureManifest = {
         { from: 'source-adapters', to: 'demo-harness' },
         { from: 'source-adapters', to: 'hosted-runtime', style: 'dashed' },
         { from: 'electron-shell', to: 'openclaw-client' },
+        { from: 'electron-shell', to: 'supabase-data' },
         { from: 'demo-harness', to: 'supabase-data', style: 'dashed' },
       ],
     },

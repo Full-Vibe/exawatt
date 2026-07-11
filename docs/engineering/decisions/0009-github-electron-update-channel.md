@@ -1,5 +1,5 @@
 <!-- Generated for the public repository by the "public-document-set" recipe. -->
-# 0009 Deliver signed desktop updates through GitHub Releases
+# 0009 Deliver signed desktop updates through a public artifact channel
 
 Date: 2026-07-10
 Status: accepted
@@ -17,10 +17,15 @@ never silently restart it while sessions are live.
 - Direct macOS distribution uses a Developer ID Application certificate,
   hardened runtime, Apple notarization, and stapling. Release CI fails if code
   signing is unavailable.
-- GitHub Releases in `Full-Vibe/exawatt` is the initial public artifact and
-  update-metadata host. `electron-builder` produces the arm64 DMG, update ZIP,
-  blockmap, and `latest-mac.yml`; `electron-updater` consumes that generated
-  feed without a hand-built feed URL.
+- The private `Full-Vibe/exawatt` GitHub Release remains the source-linked CI
+  archive. It cannot be the installed app's feed: anonymous clients receive
+  `404`, while a private GitHub updater would require a reusable repository
+  token on every Mac.
+- A public Supabase Storage bucket is the initial product update host.
+  `electron-builder` produces the arm64 DMG, update ZIP, blockmaps, and
+  `latest-mac.yml`; CI uploads immutable artifacts first and mutable metadata
+  last. `electron-updater` uses the generated generic HTTPS provider config.
+  The app never receives a Supabase service-role key.
 - App Store Connect API-key credentials are preferred for CI notarization.
   CI receives certificates and Apple credentials only through GitHub Actions
   secrets.
@@ -50,6 +55,7 @@ The code and workflow are active only after repository administrators provide:
 - `APPLE_API_KEY_P8`
 - `APPLE_API_KEY_ID`
 - `APPLE_API_ISSUER`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
 The first `v<package-version>` release must pass `codesign`, Gatekeeper
 assessment, stapler validation, install/update from the previous signed build,
@@ -59,8 +65,9 @@ and failure rollback before D7 is fully landed.
 
 - Release versions are real SemVer product state; a tag must exactly match
   `package.json`.
-- GitHub availability and release permissions are part of initial update
-  delivery. A generic/S3 provider can replace it behind electron-updater later.
+- Supabase Storage availability and public CDN egress are part of initial
+  update delivery. CI keeps only the latest three artifact versions while the
+  private GitHub Release remains the source-linked archive.
 - Normal update checks never require a secret on the user's machine.
 - Session-preserving background replacement remains ENG-018; explicit restart
   is truthful until PTYs live outside the app process.

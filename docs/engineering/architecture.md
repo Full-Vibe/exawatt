@@ -142,9 +142,10 @@ Partial:
 - source/harness abstraction beyond OpenClaw/mock
 - architecture overview as a living map
 - Spatial Operations Board extraction into a standalone package
-- signed/notarized GitHub Release delivery and `electron-updater` are
-  implemented but await Apple/repository secrets and a first live signed
-  previous-version-to-next-version verification
+- Developer-ID signing, Apple notarization, private source-linked GitHub
+  Releases, public Supabase Storage update artifacts, and `electron-updater`
+  are implemented. The first live signed previous-version-to-next-version
+  verification remains in progress
 
 Planned:
 
