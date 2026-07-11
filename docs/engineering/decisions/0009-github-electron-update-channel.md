@@ -16,8 +16,10 @@ never silently restart it while sessions are live.
 
 - Direct macOS distribution uses a Developer ID Application certificate,
   hardened runtime, Apple notarization, and stapling. Release CI fails if code
-  signing is unavailable. The release runner is pinned to macOS 15 so GitHub's
-  moving `macos-latest` alias cannot silently change the codesign toolchain.
+  signing is unavailable. Tag releases default to a pinned macOS 15 runner so
+  GitHub's moving `macos-latest` alias cannot silently change the codesign
+  toolchain. Manual recovery may select the pinned macOS 26 runner when Apple's
+  timestamp service is unreachable from the default runner image.
   CI retries a clean release build at most three times when Apple's timestamp
   or notarization service is transiently unavailable; it never drops secure
   timestamps or notarization to make a release pass.
