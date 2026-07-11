@@ -164,9 +164,13 @@ export async function archiveProject(id: string): Promise<void> {
 /** Persist a new manual ordering (drag-to-reorder in the Projects surface). */
 export async function reorderProjects(orderedIds: string[]): Promise<void> {
   const supabase = createClient();
-  await Promise.all(
+  const results = await Promise.all(
     orderedIds.map((id, i) =>
       supabase.from('projects').update({ sort_order: i }).eq('id', id)
     )
   );
+  // surface a failed reorder like every sibling accessor does, rather than
+  // reporting success while the registry silently diverges from the UI.
+  const failed = results.find((r) => r.error);
+  if (failed?.error) throw new Error(failed.error.message);
 }

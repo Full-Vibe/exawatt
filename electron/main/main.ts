@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, Menu, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, shell, Menu, dialog } from 'electron';
 import { spawn, type ChildProcess } from 'child_process';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -314,10 +314,14 @@ function registerAuthIPC(): void {
  *  browse to a project instead of typing a path. Returns the chosen absolute
  *  path, or null if cancelled. */
 function registerDialogIPC(): void {
-  ipcMain.handle('dialog:openDirectory', async () => {
+  handleTrusted('dialog:openDirectory', async () => {
     // test hook: skip the native modal (which automation can't drive) and
     // return a fixed directory, so ⌘N / Browse can be exercised end-to-end.
-    if (process.env.EXAWATT_TEST_DIR) return process.env.EXAWATT_TEST_DIR;
+    // Double-gated (like the userData redirect) so a stray env var in a normal
+    // launch can never silently replace the real folder picker.
+    if (process.env.EXAWATT_TEST && process.env.EXAWATT_TEST_DIR) {
+      return process.env.EXAWATT_TEST_DIR;
+    }
     const options: Electron.OpenDialogOptions = {
       title: 'Open project directory',
       properties: ['openDirectory', 'createDirectory'],
@@ -330,7 +334,7 @@ function registerDialogIPC(): void {
   });
   // does a path exist on THIS machine? — detects a synced Project whose
   // directory is absent here (ENG-015 S5 P5 "locate on this machine")
-  ipcMain.handle('dialog:pathExists', (_event, p: string) => {
+  handleTrusted('dialog:pathExists', (_event, p: string) => {
     try {
       return typeof p === 'string' && p.length > 0 && fs.existsSync(p);
     } catch {

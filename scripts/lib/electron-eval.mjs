@@ -43,6 +43,7 @@ export function sweepOrphans() {
 export async function withElectronApp(launchOpts, body, opts = {}) {
   const maxMs = opts.maxMs ?? 90_000;
   const firstWindowMs = opts.firstWindowMs ?? 25_000;
+  const gracefulMs = opts.gracefulMs ?? 8_000;
   sweepOrphans();
 
   const app = await electron.launch({ timeout: 30_000, ...launchOpts });
@@ -57,18 +58,36 @@ export async function withElectronApp(launchOpts, body, opts = {}) {
     }
     sweepOrphans();
   };
-  // watchdog REPLACES the external `timeout`: on a hang it force-closes and
-  // exits, but from inside the process so nothing is orphaned.
-  const watchdog = setTimeout(() => {
-    if (!done) {
-      console.error(`[harness] watchdog fired after ${maxMs}ms — force-closing`);
-      hardKill();
-      process.exit(2);
-    }
-  }, maxMs);
-  const onSignal = () => {
+
+  // Single teardown path for success / hang / signal. Always try a bounded
+  // graceful app.close() FIRST: only the Electron main can reap its own
+  // Chromium child processes (a bare SIGKILL on main is uncatchable, so the
+  // helpers would reparent to launchd and our playwright-scoped sweep — which
+  // matches only the main's argv — wouldn't catch them). hardKill is the
+  // backstop for a wedged renderer where app.close() itself hangs.
+  let watchdog;
+  const shutdown = async () => {
+    if (done) return;
+    done = true;
+    if (watchdog) clearTimeout(watchdog);
+    await Promise.race([
+      app.close().catch(() => {}),
+      new Promise((r) => setTimeout(r, gracefulMs)),
+    ]);
     hardKill();
-    process.exit(130);
+  };
+
+  // watchdog REPLACES the external `timeout`: on a hang it tears down from
+  // inside the process (graceful-then-kill) so nothing is orphaned.
+  watchdog = setTimeout(() => {
+    if (done) return;
+    console.error(`[harness] watchdog fired after ${maxMs}ms — force-closing`);
+    void shutdown().finally(() => process.exit(2));
+  }, maxMs);
+  // Stay registered through teardown so a Ctrl-C mid-close still routes through
+  // the graceful path instead of the default handler orphaning the tree.
+  const onSignal = () => {
+    void shutdown().finally(() => process.exit(130));
   };
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
@@ -77,16 +96,8 @@ export async function withElectronApp(launchOpts, body, opts = {}) {
     const page = await app.firstWindow({ timeout: firstWindowMs });
     return await body(app, page);
   } finally {
-    done = true;
-    clearTimeout(watchdog);
+    await shutdown();
     process.off('SIGINT', onSignal);
     process.off('SIGTERM', onSignal);
-    // graceful close, then belt-and-suspenders hard kill (app.close() can hang
-    // if the renderer is wedged) + a final orphan sweep.
-    await Promise.race([
-      app.close().catch(() => {}),
-      new Promise((r) => setTimeout(r, 8_000)),
-    ]);
-    hardKill();
   }
 }

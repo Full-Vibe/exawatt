@@ -192,6 +192,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const dismissReentryRecap = useCallback(() => setReentryRecap(null), []);
   const stateRef = useRef({ projects, activeDir, lastUsedDir, pinnedTabId });
   stateRef.current = { projects, activeDir, lastUsedDir, pinnedTabId };
+  // dirs whose identity the operator edited locally — the reconcile-on-load
+  // must not clobber a rename/recolor made while the registry fetch was still
+  // in flight (its snapshot is already stale), and instead pushes it up.
+  const editedDirsRef = useRef<Set<string>>(new Set());
   const readyRef = useRef(ready);
   readyRef.current = ready;
   const attentionRef = useRef(attention);
@@ -349,16 +353,33 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           setProjects((prev) =>
             prev.map((g) => {
               const r = byPath.get(g.dir);
-              return r
-                ? {
+              if (!r) return g;
+              // A rename/recolor made during this async window must win over
+              // the now-stale registry snapshot: link the row but keep the
+              // local edit (it's pushed up below so it still syncs). Otherwise
+              // adopt the synced name/color.
+              return editedDirsRef.current.has(g.dir)
+                ? { ...g, registryId: r.id }
+                : {
                     ...g,
                     registryId: r.id,
                     name: r.name || g.name,
                     color: r.color || g.color,
-                  }
-                : g;
+                  };
             })
           );
+          // Edits made before the row's id was known couldn't sync (the verbs
+          // guard on registryId); now that we have the ids, push them up.
+          for (const g of stateRef.current.projects) {
+            const r = byPath.get(g.dir);
+            if (!r || !editedDirsRef.current.has(g.dir)) continue;
+            if (g.name && g.name !== r.name) {
+              void registryRenameProject(r.id, g.name).catch(() => {});
+            }
+            if (g.color && g.color !== r.color) {
+              void registrySetProjectColor(r.id, g.color).catch(() => {});
+            }
+          }
         })
         .catch(() => {});
     })();
@@ -648,7 +669,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const openProject = useCallback(
     (dir: string): void => {
       const g = stateRef.current.projects.find((p) => p.dir === dir);
-      if (g && g.tabs.length > 0) {
+      // activate only if something is actually live there; a group of only
+      // dead/resumable tabs should launch a fresh shell (per the contract),
+      // not switch to a resume panel.
+      if (g && g.tabs.some(tabIsLive)) {
         setActiveDir(dir);
         return;
       }
@@ -761,6 +785,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   );
 
   const setProjectColor = useCallback((dir: string, color: string) => {
+    editedDirsRef.current.add(dir);
     setProjects((prev) =>
       prev.map((g) => (g.dir === dir ? { ...g, color } : g))
     );
@@ -774,6 +799,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const renameProject = useCallback((dir: string, name: string) => {
     const next = name.trim();
     if (!next) return;
+    editedDirsRef.current.add(dir);
     setProjects((prev) =>
       prev.map((g) => (g.dir === dir ? { ...g, name: next } : g))
     );
