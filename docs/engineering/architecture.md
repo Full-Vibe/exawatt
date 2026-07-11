@@ -134,6 +134,11 @@ Built:
   tab/Project/all resume actions
 - self-contained Electron packaging, atomic clean-master dogfood installation,
   deep terminal fundamentals, and opt-in native attention notifications
+- Developer-ID signing, Apple notarization, private source-linked GitHub
+  Releases, public Supabase Storage update artifacts, and explicit
+  `electron-updater` restart with live-session impact. Electron 43 includes the
+  macOS 26 Squirrel.Mac helper-activation fix; signed `v0.1.2` to `v0.1.3`
+  update and automatic relaunch are verified
 
 Partial:
 
@@ -142,10 +147,6 @@ Partial:
 - source/harness abstraction beyond OpenClaw/mock
 - architecture overview as a living map
 - Spatial Operations Board extraction into a standalone package
-- Developer-ID signing, Apple notarization, private source-linked GitHub
-  Releases, public Supabase Storage update artifacts, and `electron-updater`
-  are implemented. The first live signed previous-version-to-next-version
-  verification remains in progress
 
 Planned:
 

@@ -57,10 +57,19 @@ never silently restart it while sessions are live.
 - The first release target is arm64, matching the operator's current Mac and
   the project's build-one-mile rule. Intel/universal artifacts are added before
   supporting Intel customers rather than blocking current dogfood activation.
+- macOS update delivery requires an Electron line containing Squirrel.Mac's
+  launchd helper-activation fix (Electron 42 or later; Exawatt activated on
+  Electron 43). Older lines can leave ShipIt registered but unstarted on macOS
+  26 while a system update is pending. Exawatt does not add a LaunchAgent or a
+  product-level `launchctl` workaround.
+- `electron-builder` resolves the exact Electron runtime into its managed cache.
+  Release configuration does not point `electronDist` at pnpm's optional
+  `node_modules/electron/dist` directory because a clean CI install may not
+  materialize that directory.
 
-## Activation gate
+## Activation evidence
 
-The code and workflow are active only after repository administrators provide:
+Repository administrators provided the required release secrets:
 
 - `MAC_CSC_LINK`
 - `MAC_CSC_KEY_PASSWORD`
@@ -69,9 +78,13 @@ The code and workflow are active only after repository administrators provide:
 - `APPLE_API_ISSUER`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
-The first `v<package-version>` release must pass `codesign`, Gatekeeper
-assessment, stapler validation, install/update from the previous signed build,
-and failure rollback before D7 is fully landed.
+The gate is satisfied. `v0.1.2` and `v0.1.3` passed Developer ID signing, secure
+timestamps, Apple notarization, deep codesign, Gatekeeper assessment, and
+stapler validation. An independently downloaded `v0.1.2` discovered, downloaded,
+verified, and installed `v0.1.3`, warned that one live PTY would stop, and
+relaunched automatically without manual helper activation. Failure-state tests
+keep the current installed app launchable and expose retry instead of replacing
+the bundle.
 
 ## Consequences
 

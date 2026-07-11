@@ -641,9 +641,9 @@ export const architectureManifest = {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
-            'Versioned local renderer, hardened main/preload and PTY boundary, plus Developer-ID-signed staged update delivery through public artifact storage.',
+            'Versioned local renderer, hardened main/preload and PTY boundary, plus verified Developer-ID-signed automatic updates through public artifact storage.',
           layer: 'infrastructure',
-          status: 'active-build',
+          status: 'implemented',
           x: 75,
           y: 685,
           width: 180,
