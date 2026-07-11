@@ -315,6 +315,9 @@ function registerAuthIPC(): void {
  *  path, or null if cancelled. */
 function registerDialogIPC(): void {
   ipcMain.handle('dialog:openDirectory', async () => {
+    // test hook: skip the native modal (which automation can't drive) and
+    // return a fixed directory, so ⌘N / Browse can be exercised end-to-end.
+    if (process.env.EXAWATT_TEST_DIR) return process.env.EXAWATT_TEST_DIR;
     const options: Electron.OpenDialogOptions = {
       title: 'Open project directory',
       properties: ['openDirectory', 'createDirectory'],
