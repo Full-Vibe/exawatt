@@ -220,6 +220,17 @@ describe('parseRoadmap', () => {
     ).toBe(true);
   });
 
+  it('keeps dotted milestone ids whole (W0.5, D1.2)', () => {
+    const doc = parseRoadmap(
+      `## Now\n\n### A-1 Thing\n\nMilestones:\n\n- W0.5 Spatial cockpit — replaced by exposé\n- [x] D1.2 Follow-up\n`,
+      OPTS,
+    );
+    expect(doc.items[0].milestones).toEqual([
+      expect.objectContaining({ id: 'W0.5', title: 'Spatial cockpit — replaced by exposé', done: false }),
+      expect.objectContaining({ id: 'D1.2', title: 'Follow-up', done: true }),
+    ]);
+  });
+
   it('hashes content stably for reparse skipping', () => {
     const a = parseRoadmap(CONFORMANT, OPTS);
     const b = parseRoadmap(CONFORMANT, OPTS);

@@ -139,6 +139,9 @@ Built:
   `electron-updater` restart with live-session impact. Electron 43 includes the
   macOS 26 Squirrel.Mac helper-activation fix; signed `v0.1.2` to `v0.1.3`
   update and automatic relaunch are verified
+- roadmap lens (ENG-017): a read-only workspace rail rendering each Project's
+  repo-canonical roadmap per the published convention (`@exawatt/core` parser,
+  `@exawatt/ui-model` lens view, validated `roadmap:read` IPC in Electron main)
 
 Partial:
 

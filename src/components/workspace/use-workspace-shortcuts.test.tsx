@@ -18,6 +18,7 @@ function actions(): WorkspaceShortcutActions {
     openPalette: yes,
     toggleOverview: yes,
     togglePin: yes,
+    toggleRoadmap: yes,
     renameActive: yes,
     openHelp: yes,
     toggleFocus: vi.fn(() => true),

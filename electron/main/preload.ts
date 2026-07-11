@@ -68,6 +68,9 @@ contextBridge.exposeInMainWorld('electron', {
     load: () => ipcRenderer.invoke('workspace:load'),
     save: (state: unknown) => ipcRenderer.invoke('workspace:save', state),
   },
+  roadmap: {
+    read: (projectDir: string) => ipcRenderer.invoke('roadmap:read', projectDir),
+  },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
     setAttentionNotifications: (enabled: boolean) =>

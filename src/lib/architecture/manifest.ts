@@ -510,7 +510,7 @@ export const architectureManifest = {
           id: 'terminal-workspace',
           label: 'Terminal + Session Overview',
           summary:
-            'DOM/xterm focus and exposé regimes for direct session control and multi-session orientation.',
+            'DOM/xterm focus and exposé regimes for direct session control and multi-session orientation, with the read-only roadmap rail visualizing each repo-canonical Project queue.',
           layer: 'ui',
           status: 'implemented',
           x: 205,

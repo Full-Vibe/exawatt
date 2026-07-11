@@ -10,6 +10,7 @@
  *   ⌘K           session switcher / command palette (S2)
  *   ⌘O           exposé overview of all sessions (S3)
  *   ⌘D           split: pin the active tab beside whatever you drive (S2)
+ *   ⌘B           roadmap rail: open → focus → collapse (ENG-017)
  *   ⌘E           rename the active tab inline (S2)
  *   ⌘/           keyboard cheat-sheet (S2)
  *   F6           toggle focus between terminal and workspace chrome
@@ -55,6 +56,8 @@ export interface WorkspaceShortcutActions {
   toggleOverview: () => boolean;
   /** toggle the split pin on the active tab */
   togglePin: () => boolean;
+  /** ⌘B three-state cycle: open the roadmap rail → focus it → collapse it */
+  toggleRoadmap: () => boolean;
   /** open the inline rename editor for the active tab */
   renameActive: () => boolean;
   /** open the keyboard cheat-sheet */
@@ -139,6 +142,8 @@ export function useWorkspaceShortcuts(
         if (actions.toggleOverview()) e.preventDefault();
       } else if (key === 'd' && !e.shiftKey) {
         if (actions.togglePin()) e.preventDefault();
+      } else if (key === 'b' && !e.shiftKey) {
+        if (actions.toggleRoadmap()) e.preventDefault();
       } else if (key === 'e' && !e.shiftKey) {
         if (actions.renameActive()) e.preventDefault();
       } else if (!e.shiftKey && e.key >= '1' && e.key <= '9') {

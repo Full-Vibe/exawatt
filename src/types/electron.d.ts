@@ -111,6 +111,17 @@ export interface ElectronWorkspaceApi {
   save: (state: unknown) => Promise<void>;
 }
 
+/** Raw roadmap file read for the roadmap lens (ENG-017); parsing happens
+ *  renderer-side in @exawatt/core per decision 0011. */
+export type RoadmapReadResult =
+  | { status: 'ok'; file: string; text: string; mtimeMs: number }
+  | { status: 'none'; checked: string[] }
+  | { status: 'error'; error: string };
+
+export interface ElectronRoadmapApi {
+  read: (projectDir: string) => Promise<RoadmapReadResult>;
+}
+
 /** userData/settings.json — the personal-taste escape hatch (S3) */
 export interface ExawattSettings {
   terminal?: {
@@ -173,6 +184,7 @@ declare global {
       };
       pty?: ElectronPtyApi;
       workspace?: ElectronWorkspaceApi;
+      roadmap?: ElectronRoadmapApi;
       settings?: ElectronSettingsApi;
       app?: ElectronAppApi;
       auth?: {

@@ -12,6 +12,7 @@ import {
 } from '@exawatt/core';
 
 export * from './spatial-board';
+export * from './roadmap-lens';
 
 export type FleetSurfaceMode = 'dom' | 'spatial';
 

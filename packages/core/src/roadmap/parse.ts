@@ -56,7 +56,7 @@ const STATUS_LINE = /^Status:\s*(.+)$/i;
 const LABEL_LINE = /^(Scope|Exit criteria|Milestones|Project doc):\s*$/i;
 const BULLET_LINE = /^[-*]\s+(.+)$/;
 const MILESTONE_CHECKBOX = /^\[( |x|X)\]\s+/;
-const MILESTONE_ID = /^([A-Z]{1,4}\d+)\b[\s:]*/;
+const MILESTONE_ID = /^([A-Z]{1,4}\d+(?:\.\d+)*)\b[\s:]*/;
 const MILESTONE_DONE_MARKER = /\((landed|shipped)[^)]*\)/i;
 
 type LabeledBlock = 'scope' | 'exitCriteria' | 'milestones' | 'docPaths';

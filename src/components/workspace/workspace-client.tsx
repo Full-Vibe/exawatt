@@ -39,6 +39,13 @@ import {
   FOCUS_ACTIVE_TERMINAL_EVENT,
 } from './session-jump';
 import { useShortcuts } from '@/components/shortcuts';
+import {
+  RoadmapRail,
+  ROADMAP_RAIL_FOCUS_EVENT,
+  loadRailMode,
+  saveRailMode,
+  type RoadmapRailMode,
+} from '@/components/roadmap/roadmap-rail';
 import { HUD } from '@/components/hud';
 import { spatialReturnHref } from '@/components/nav/spatial-return';
 import { Bell, BellOff, FolderOpen, SquareTerminal } from 'lucide-react';
@@ -52,6 +59,7 @@ const KEY_HINTS: Array<[string, string]> = [
   ['⌘N', 'new project'],
   ['⌘T', 'shell'],
   ['⌘D', 'split'],
+  ['⌘B', 'roadmap'],
   ['⌘J', 'needs you'],
   ['⌘E', 'rename'],
   ['⌘⇧M', 'spatial'],
@@ -180,6 +188,26 @@ export function WorkspaceClient() {
       );
   };
 
+  // roadmap rail (ENG-017 S2): ⌘B cycles open → focused → collapsed strip.
+  // Mode is a machine-local view preference (localStorage); starts as the
+  // ambient strip and re-reads the saved preference after mount (SSR-safe).
+  const [railMode, setRailMode] = useState<RoadmapRailMode>('strip');
+  useEffect(() => setRailMode(loadRailMode()), []);
+  const updateRailMode = useCallback((mode: RoadmapRailMode) => {
+    setRailMode(mode);
+    saveRailMode(mode);
+  }, []);
+  // narrow windows: the rail floats over the stage instead of docking, so
+  // terminals never reflow below a comfortable column width
+  const [railDocks, setRailDocks] = useState(true);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1180px)');
+    const apply = () => setRailDocks(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
+
   // exposé overview (S3): ⌘O — sessions fan out as tiles
   const requestedOverview = searchParams.get('view') === 'sessions';
   const [overviewOpen, setOverviewOpen] = useState(requestedOverview);
@@ -273,6 +301,25 @@ export function WorkspaceClient() {
           return !!target;
         },
         togglePin,
+        // ⌘B three-state cycle: collapsed → open+focused → (already focused)
+        // collapse and hand the keyboard back to the terminal
+        toggleRoadmap: () => {
+          const railFocused = !!document.activeElement?.closest(
+            '[data-roadmap-rail]'
+          );
+          if (railMode !== 'open') {
+            updateRailMode('open');
+            requestAnimationFrame(() =>
+              window.dispatchEvent(new CustomEvent(ROADMAP_RAIL_FOCUS_EVENT))
+            );
+          } else if (!railFocused) {
+            window.dispatchEvent(new CustomEvent(ROADMAP_RAIL_FOCUS_EVENT));
+          } else {
+            updateRailMode('strip');
+            window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
+          }
+          return true;
+        },
         renameActive: () => {
           if (!activeTab) return false;
           window.dispatchEvent(new CustomEvent(RENAME_ACTIVE_EVENT));
@@ -283,6 +330,8 @@ export function WorkspaceClient() {
     [
       activeTab,
       overviewOpen,
+      railMode,
+      updateRailMode,
       launch,
       launchHere,
       closeTab,
@@ -429,6 +478,12 @@ export function WorkspaceClient() {
         </button>
       </div>
 
+      {/* middle band: [context bar + errors + stage] beside the roadmap
+          rail (ENG-017). The stage width changes ONCE when the rail mode
+          flips (single xterm fit) — only rail CONTENTS animate, per the
+          ENG-015 S3 reflow rule. On narrow windows the rail overlays. */}
+      <div className="relative flex min-h-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {activeTab && (
         <div
           data-active-session-context
@@ -579,6 +634,17 @@ export function WorkspaceClient() {
             ) : null
           )
         )}
+      </div>
+        </div>
+
+        <RoadmapRail
+          projectDir={activeProject?.dir ?? null}
+          projectName={activeProject?.name ?? null}
+          projectColor={activeProject?.color ?? null}
+          mode={railMode}
+          onModeChange={updateRailMode}
+          overlay={railMode === 'open' && !railDocks}
+        />
       </div>
 
       {/* exposé overview (S3): ⌘O — every session as a glanceable tile.

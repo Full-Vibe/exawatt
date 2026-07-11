@@ -8,6 +8,7 @@ import http from 'http';
 import path from 'path';
 import { registerAgentIPC } from './agent-ipc';
 import { registerPtyIPC, disposePty } from './pty-ipc';
+import { registerRoadmapIPC } from './roadmap/roadmap-ipc';
 import { handleTrusted, setTrustedRendererOrigin } from './ipc-security';
 import { ptySessions } from './pty/session-manager';
 import { registerProductUpdater, startProductUpdater } from './updater';
@@ -377,6 +378,7 @@ app.whenReady().then(async () => {
   setTrustedRendererOrigin(isDev ? DEV_URL : rendererOrigin!);
   registerAgentIPC();
   registerPtyIPC();
+  registerRoadmapIPC();
   registerAuthIPC();
   registerDialogIPC();
   registerAppIPC();
