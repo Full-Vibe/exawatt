@@ -2,7 +2,7 @@
 // ENG-017 S2: drive the roadmap rail end-to-end — strip, ⌘B summon, keyboard
 // walk, drill, empty-queue and no-roadmap states — and screenshot each state.
 // Run with EXA_BASE pointing at a dev server serving THIS checkout.
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { withElectronApp } from './lib/electron-eval.mjs';
@@ -126,6 +126,12 @@ await withElectronApp(
     results.readOnlyFooter = text.includes('read-only');
     // the plain shell session matches no item → visibly unmapped (S3)
     results.unmappedShelf = text.includes('not linked to an item');
+
+    // live update (S5): an on-disk edit reparses without any focus change
+    appendFileSync(join(healthy, 'ROADMAP.md'), '\n### ACME-013 Live probe\n');
+    await page.waitForTimeout(2000);
+    results.liveUpdate = (await railText(page)).includes('8 items');
+    await shot(page, '2b-live-update');
 
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('ArrowDown');

@@ -9,6 +9,7 @@ import path from 'path';
 import { registerAgentIPC } from './agent-ipc';
 import { registerPtyIPC, disposePty } from './pty-ipc';
 import { registerRoadmapIPC } from './roadmap/roadmap-ipc';
+import { disposeRoadmapWatchers } from './roadmap/roadmap-watcher';
 import { handleTrusted, setTrustedRendererOrigin } from './ipc-security';
 import { ptySessions } from './pty/session-manager';
 import { registerProductUpdater, startProductUpdater } from './updater';
@@ -406,6 +407,7 @@ app.on('window-all-closed', () => {
 
 // never leave orphan PTY shells/agents behind
 app.on('before-quit', () => {
+  disposeRoadmapWatchers();
   disposePty();
   rendererServer?.kill();
   rendererServer = null;

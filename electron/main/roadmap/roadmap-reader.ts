@@ -35,6 +35,22 @@ function assertValidProjectDir(projectDir: string): void {
   }
 }
 
+/** First discovery candidate that exists as a file, as an absolute path. */
+export async function discoverRoadmapPath(projectDir: string): Promise<string | null> {
+  assertValidProjectDir(projectDir);
+  const root = path.resolve(projectDir);
+  for (const candidate of ROADMAP_DISCOVERY_ORDER) {
+    const resolved = path.resolve(root, candidate);
+    if (!resolved.startsWith(root + path.sep)) continue;
+    try {
+      if ((await fs.promises.stat(resolved)).isFile()) return resolved;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 export async function readRoadmap(projectDir: string): Promise<RoadmapReadResult> {
   assertValidProjectDir(projectDir);
   const root = path.resolve(projectDir);

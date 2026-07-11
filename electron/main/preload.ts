@@ -72,6 +72,10 @@ contextBridge.exposeInMainWorld('electron', {
     read: (projectDir: string) => ipcRenderer.invoke('roadmap:read', projectDir),
     sessionEvidence: (cwd: string) =>
       ipcRenderer.invoke('roadmap:session-evidence', cwd),
+    watch: (projectDir: string) => ipcRenderer.invoke('roadmap:watch', projectDir),
+    unwatch: (projectDir: string) =>
+      ipcRenderer.invoke('roadmap:unwatch', projectDir),
+    onFileChanged: subscribe<{ projectDir: string }>('roadmap:file-changed'),
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),

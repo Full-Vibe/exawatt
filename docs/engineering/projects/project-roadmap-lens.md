@@ -112,7 +112,10 @@ Source: operator dogfood interview 2026-07-10 and operator design interview
 
 ## Execution order
 
-- S0 Canon (landed 2026-07-11): roadmap entry updated, this doc created.
+All six slices landed 2026-07-11; operator dogfood remains before the
+roadmap item is called done.
+
+- S0 Canon: roadmap entry updated, this doc created.
 - S1 Convention + parser: spec doc, decision `0011`,
   `packages/core/src/roadmap/{types,parse}.ts`, fixture tests (exawatt
   excerpt, conformant sample, near-miss, garbage).
@@ -124,14 +127,14 @@ Source: operator dogfood interview 2026-07-10 and operator design interview
   `roadmap:session-evidence` IPC, confidence chips, unmapped shelf,
   context-bar reciprocal chip.
 - S4 Declare-at-launch: `LaunchOptions.roadmapItemId`, launch-controls
-  picker, `workspace.json` v3→v4 migration, declared-overrides-inferred with
-  stale-declared warning.
-- S5 Live watch + polish: dir-level watcher + change broadcast, motion pass,
-  sibling-repo adaptation validating the migration guide, degradation
-  verified against an unadapted repo.
+  picker, `workspace.json` v3→v4 migration, declared-overrides-inferred;
+  a stale declared id falls to the visible unmapped shelf.
+- S5 Live watch + polish: dir-level watcher + change broadcast, header
+  sweep + FLIP motion, workmusic and compliance-intel adapted to the
+  convention, degradation verified against unadapted ucp-list.
 
-Each slice is independently shippable; work happens in a dedicated worktree
-and integrates to `master` frequently.
+Work happened in a dedicated worktree and integrated to `master` per slice.
+The end-to-end evaluator is `scripts/roadmap-rail-eval.mjs` (21 checks).
 
 ## Verification
 

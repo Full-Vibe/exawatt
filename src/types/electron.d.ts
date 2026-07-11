@@ -128,6 +128,11 @@ export interface RoadmapSessionEvidence {
 export interface ElectronRoadmapApi {
   read: (projectDir: string) => Promise<RoadmapReadResult>;
   sessionEvidence: (cwd: string) => Promise<RoadmapSessionEvidence>;
+  watch: (projectDir: string) => Promise<void>;
+  unwatch: (projectDir: string) => Promise<void>;
+  onFileChanged: (
+    handler: (payload: { projectDir: string }) => void
+  ) => () => void;
 }
 
 /** userData/settings.json — the personal-taste escape hatch (S3) */

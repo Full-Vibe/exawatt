@@ -15,6 +15,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -71,6 +72,16 @@ type RailRow =
   | { kind: 'item'; item: RoadmapItemView; variant: 'hero' | 'row' | 'compact' }
   | { kind: 'chip'; chip: RoadmapSessionChip; itemId: string }
   | { kind: 'unmapped'; session: RoadmapLensSessionInput };
+
+function rowKey(row: RailRow): string {
+  return row.kind === 'item'
+    ? row.item.id
+    : row.kind === 'chip'
+      ? `c-${row.chip.sessionId}`
+      : row.kind === 'unmapped'
+        ? `u-${row.session.sessionId}`
+        : row.group;
+}
 
 function formatUpdated(mtimeMs: number): string {
   const age = Date.now() - mtimeMs;
@@ -201,6 +212,39 @@ export function RoadmapRail({
   useEffect(() => {
     setSel(s => Math.min(s, Math.max(0, rows.length - 1)));
   }, [rows.length]);
+
+  // update motion (S5): a file change on disk announces itself — one cyan
+  // sweep across the header, and moved rows FLIP to their new slots so a
+  // repo-side reprioritization reads as motion, not a mystery reshuffle
+  const [sweep, setSweep] = useState(0);
+  const lastMtime = useRef<number | null>(null);
+  useEffect(() => {
+    if (view.mtimeMs === null) return;
+    if (lastMtime.current !== null && lastMtime.current !== view.mtimeMs) {
+      setSweep(s => s + 1);
+    }
+    lastMtime.current = view.mtimeMs;
+  }, [view.mtimeMs]);
+
+  const rowRefs = useRef(new Map<string, HTMLDivElement | null>());
+  const prevTops = useRef(new Map<string, number>());
+  useLayoutEffect(() => {
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const next = new Map<string, number>();
+    for (const [key, el] of rowRefs.current) {
+      if (!el || !el.isConnected) continue;
+      const top = el.getBoundingClientRect().top;
+      next.set(key, top);
+      const prev = prevTops.current.get(key);
+      if (!reduced && prev !== undefined && Math.abs(prev - top) > 4) {
+        el.animate(
+          [{ transform: `translateY(${prev - top}px)` }, { transform: 'translateY(0)' }],
+          { duration: 300, easing: 'cubic-bezier(0.16,1,0.3,1)' }
+        );
+      }
+    }
+    prevTops.current = next;
+  }, [rows]);
 
   const drilled = useMemo<RoadmapItemView | null>(() => {
     if (!drillId || view.status !== 'ok') return null;
@@ -367,9 +411,20 @@ export function RoadmapRail({
     >
       {/* header: whose roadmap this is, from which file */}
       <div
-        className="flex shrink-0 flex-col gap-1 border-b px-3 py-2"
+        className="relative flex shrink-0 flex-col gap-1 overflow-hidden border-b px-3 py-2"
         style={{ borderColor: 'rgba(80,230,255,0.12)' }}
       >
+        {sweep > 0 && (
+          <span
+            key={sweep}
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 w-1/3 motion-reduce:hidden"
+            style={{
+              background: `linear-gradient(90deg, transparent, ${withAlpha(HUD.cyan, 0.16)}, transparent)`,
+              animation: 'roadmap-sweep 700ms cubic-bezier(0.16,1,0.3,1) forwards',
+            }}
+          />
+        )}
         <div className="flex items-center gap-1.5">
           <span
             aria-hidden
@@ -482,15 +537,11 @@ export function RoadmapRail({
             />
             {rows.map((row, i) => (
               <div
-                key={
-                  row.kind === 'item'
-                    ? row.item.id
-                    : row.kind === 'chip'
-                      ? `c-${row.chip.sessionId}`
-                      : row.kind === 'unmapped'
-                        ? `u-${row.session.sessionId}`
-                        : row.group
-                }
+                key={rowKey(row)}
+                ref={el => {
+                  if (el) rowRefs.current.set(rowKey(row), el);
+                  else rowRefs.current.delete(rowKey(row));
+                }}
                 style={stagger(i)}
               >
                 {row.kind === 'unmapped' ? (

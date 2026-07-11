@@ -125,6 +125,22 @@ export function useProjectRoadmap(
     return () => window.removeEventListener('focus', onFocus);
   }, [load, loadEvidence]);
 
+  // live updates (S5): main watches the roadmap file's directory and
+  // broadcasts; a change to THIS project's roadmap reparses immediately —
+  // an agent committing a roadmap edit shows up without a focus round-trip
+  useEffect(() => {
+    const api = window.electron?.roadmap;
+    if (!projectDir || !api?.watch) return;
+    void api.watch(projectDir).catch(() => {});
+    const off = api.onFileChanged?.(({ projectDir: changed }) => {
+      if (changed === projectDir) load();
+    });
+    return () => {
+      off?.();
+      void api.unwatch(projectDir).catch(() => {});
+    };
+  }, [projectDir, load]);
+
   const view = useMemo(() => {
     const inputs: RoadmapLensSessionInput[] = sessions.map(s => ({
       sessionId: s.sessionId,

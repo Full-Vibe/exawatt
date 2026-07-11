@@ -213,6 +213,19 @@ body {
   }
 }
 
+/* roadmap rail (ENG-017 S5): one-shot header sweep when the roadmap file
+   changes on disk — motion explains the state change */
+@keyframes roadmap-sweep {
+  from {
+    transform: translateX(-100%);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(400%);
+    opacity: 0;
+  }
+}
+
 @keyframes fleet-rise {
   from {
     opacity: 0;
