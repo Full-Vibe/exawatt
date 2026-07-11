@@ -22,7 +22,13 @@ never silently restart it while sessions are live.
   blockmap, and `latest-mac.yml`; `electron-updater` consumes that generated
   feed without a hand-built feed URL.
 - App Store Connect API-key credentials are preferred for CI notarization.
-  Certificates and Apple credentials exist only as GitHub Actions secrets.
+  CI receives certificates and Apple credentials only through GitHub Actions
+  secrets.
+- The standalone renderer remains a content-addressed archive. Release builds
+  open that archive after the CI certificate is imported, Developer-ID-sign
+  and verify every native `.node` and `.dylib` with a secure timestamp, then
+  reseal the archive and hash before the enclosing app is signed. A native
+  binary hidden from the signing pass fails the release.
 - Update metadata may carry `stagingPercentage`. The release workflow edits
   YAML through a parser and validates the result before publishing.
 - The app downloads an eligible update but sets `autoInstallOnAppQuit` false.
