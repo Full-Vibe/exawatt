@@ -15,7 +15,7 @@ const execFileAsync = promisify(execFile);
  * PTY session manager — the terminal-hosting boundary (decision 0005).
  *
  * Owns one real pseudo-terminal per session in the Electron main process.
- * The product gesture upstream is "ignite an agent" of a harness type; here
+ * The product gesture upstream is "launch an agent" of a harness type; here
  * that resolves to spawning the harness CLI through the user's login shell
  * (GUI apps get a minimal PATH — the login shell restores brew/nvm/etc.).
  *
@@ -64,7 +64,7 @@ export interface PtySessionInfo {
  * the app was launched from a different shell or a harness), but every
  * candidate is VALIDATED for executability — a stale UserShell (uninstalled
  * brew shell, Intel-path leftover) must degrade to the next candidate, not
- * brick every ignite. Async: no subprocess/fs waits on the main event loop.
+ * brick every launch. Async: no subprocess/fs waits on the main event loop.
  */
 let cachedShell: string | null = null;
 async function isExecutable(p: string): Promise<boolean> {

@@ -1,6 +1,6 @@
 /**
  * Cross-surface workspace requests (ENG-015 S2): the ⌘K palette (mounted at
- * the app root) asks the workspace to activate a session or ignite a
+ * the app root) asks the workspace to activate a session or launch a
  * harness. Two delivery paths cover both mount states:
  *   - live: a window event, handled immediately if the workspace is mounted
  *   - pending: a module-level slot, consumed when the workspace mounts
@@ -11,7 +11,7 @@
 import type { PtyHarness } from '@/types/electron';
 
 export const SESSION_JUMP_EVENT = 'exawatt:open-session';
-export const IGNITE_EVENT = 'exawatt:ignite';
+export const LAUNCH_EVENT = 'exawatt:launch';
 /** tab-strip listens: open the inline rename editor for the active tab */
 export const RENAME_ACTIVE_EVENT = 'exawatt:rename-active';
 /** the active terminal pane refocuses itself (rename editors steal focus —
@@ -35,7 +35,7 @@ interface Pending<T> {
 }
 
 let pendingSession: Pending<string> | null = null;
-let pendingIgnite: Pending<PtyHarness> | null = null;
+let pendingLaunch: Pending<PtyHarness> | null = null;
 
 function take<T>(slot: Pending<T> | null): T | null {
   if (!slot) return null;
@@ -49,9 +49,9 @@ export function requestSessionJump(sessionId: string): void {
   );
 }
 
-export function requestIgnite(harness: PtyHarness): void {
-  pendingIgnite = { value: harness, at: Date.now() };
-  window.dispatchEvent(new CustomEvent(IGNITE_EVENT, { detail: harness }));
+export function requestLaunch(harness: PtyHarness): void {
+  pendingLaunch = { value: harness, at: Date.now() };
+  window.dispatchEvent(new CustomEvent(LAUNCH_EVENT, { detail: harness }));
 }
 
 export function consumePendingSessionJump(): string | null {
@@ -60,8 +60,8 @@ export function consumePendingSessionJump(): string | null {
   return p;
 }
 
-export function consumePendingIgnite(): PtyHarness | null {
-  const p = take(pendingIgnite);
-  pendingIgnite = null;
+export function consumePendingLaunch(): PtyHarness | null {
+  const p = take(pendingLaunch);
+  pendingLaunch = null;
   return p;
 }

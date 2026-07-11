@@ -1,7 +1,7 @@
 /**
  * Workspace keyboard layer (ENG-002 — "Spaces-speed switching").
  *
- *   ⌘T (or ⌘⇧T)  ignite a shell
+ *   ⌘T (or ⌘⇧T)  launch a shell
  *   ⌘W (or ⌘⇧W)  close the active tab
  *   ⌘1…⌘9        jump to tab N
  *   ⌘⇧[ / ⌘⇧]    previous / next tab (wraps)
@@ -38,7 +38,9 @@ function matchesRegistry(e: KeyboardEvent, id: string): boolean {
 }
 
 export interface WorkspaceShortcutActions {
-  igniteShell: () => boolean;
+  launchShell: () => boolean;
+  /** ⌘N — browse for a directory and open it as a new Project */
+  newProject: () => boolean;
   closeActive: () => boolean;
   selectIndex: (index: number) => boolean;
   /** move selection by delta with wraparound */
@@ -124,7 +126,9 @@ export function useWorkspaceShortcuts(
       // lowercase so ⌘⇧T / ⌘⇧W keep working (shift capitalizes e.key)
       const key = e.key.toLowerCase();
       if (key === 't') {
-        if (actions.igniteShell()) e.preventDefault();
+        if (actions.launchShell()) e.preventDefault();
+      } else if (key === 'n' && !e.shiftKey) {
+        if (actions.newProject()) e.preventDefault();
       } else if (key === 'w') {
         if (actions.closeActive()) e.preventDefault();
       } else if (key === 'j' && !e.shiftKey) {

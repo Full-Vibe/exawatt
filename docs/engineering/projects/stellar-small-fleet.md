@@ -69,7 +69,7 @@ Scope:
   sessions + initiatives searchable by name, project, and micro-context;
   live status in the result rows; ≲2 keystrokes to anywhere
 - split panes: two sessions side by side (the "watch one, drive one" case)
-- complete no-mouse audit: every daily action (ignite, close, rename,
+- complete no-mouse audit: every daily action (launch, close, rename,
   color, worktree, jump) reachable by keyboard
 - shortcut discoverability: an in-app cheat-sheet overlay (⌘/)
 
@@ -191,7 +191,7 @@ SHAPED for the general grouping via `kind`; v1 builds only the repository kind:
 - Legacy demo table → `demo_projects` (unchanged columns: id, user_id, name,
   description, timestamps). Preserve its functionality without bending over
   backwards; ENG-016 buries it from primary nav regardless.
-- Resolution bridge on ignite: resolve `projectDir` as today, match a row by
+- Resolution bridge on launch: resolve `projectDir` as today, match a row by
   `root_path` then `git_remote`, upsert if new. A row whose `root_path` does
   not exist on the current machine renders a graceful "locate on this machine"
   rebind rather than an error; full per-machine path bindings are deferred
@@ -200,10 +200,10 @@ SHAPED for the general grouping via `kind`; v1 builds only the repository kind:
 Open/browse UX (launcher + identity):
 
 - Native directory picker: new `dialog:openDirectory` main IPC + preload
-  surface → a 📁 Browse control on the ignite directory field (ends
+  surface → a 📁 Browse control on the launch directory field (ends
   path-typing).
 - ⌘K **Projects** group: open/switch a Project (sets active, prefills the
-  ignite dir / launches the default harness), Add Project (picker), rename,
+  launch dir / launches the default harness), Add Project (picker), rename,
   recolor, archive. Reaching any Project is ≲2 keystrokes.
 - Recents fall out of `last_opened_at`. New Projects append; order never
   auto-reshuffles (idea bank #2, stable spatial addresses).
@@ -407,9 +407,10 @@ S3 Exposé, motion & discoverability (landed 2026-07-10, dogfood round 4):
   does, with the chord shown.
 - Round-4 fixes: app forced dark (`<html class="dark">` — the ⌘K palette
   was following OS light mode over the dark HUD); Next devIndicators off;
-  "ignite" retired from the UI ("+ Claude Code" buttons, "Launch a new …
-  session in …" tooltips, "New Claude Code session in the active project"
-  palette rows — ignite stays internal vocabulary); tab hover/pressed
+  the action word became "launch" in the UI ("+ Claude Code" buttons, "Launch
+  a new … session in …" tooltips, "New Claude Code session in the active
+  project" palette rows; the internal code term was later unified to "launch"
+  to match in S5); tab hover/pressed
   feedback (brightness lift, press scale, close-× reveals on hover).
 - Terminal font setting: `<userData>/settings.json` →
   `{ terminal: { fontFamily, fontSize, lineHeight, letterSpacing, fontStrokeWidth } }` (main: settings-store.ts,
@@ -472,8 +473,8 @@ S2 Command velocity (landed 2026-07-09):
 - Palette ↔ workspace plumbing (`session-jump.ts`): requests travel as a
   window event (workspace mounted) AND a pending slot consumed on mount
   (palette → navigate → mount), so switching works from any route.
-- Palette ignite commands: "Ignite Claude Code / Codex / Shell here" land
-  in the active initiative via the same channel; `igniteHere()` is now the
+- Palette launch commands: "Launch Claude Code / Codex / Shell here" land
+  in the active initiative via the same channel; `launchHere()` is now the
   one dir-resolution path (⌘T, palette, events).
 - ⌘K/⌘/ are RE-BOUND in the workspace key layer: the global chord engine
   ignores keystrokes from inside xterm's hidden textarea, so palette and
@@ -491,12 +492,12 @@ S2 Command velocity (landed 2026-07-09):
 - ⌘/ cheat-sheet: help modal gains a static Terminal Workspace section
   (the workspace chords are handled outside the registry — registering
   them would double-fire); ⌘/ also bound globally.
-- Ignite-controls fix (found by the smoke): an ignite resolving no longer
+- Launch-controls fix (found by the smoke): an launch resolving no longer
   clobbers a directory typed while the spawn was in flight (edit-sequence
   guard).
 - Verified: 220 unit tests (6 new switcher-row tests), type-check, lint,
   electron compile, 12/12 live Playwright smoke (switcher from inside a
-  terminal, filter → cross-project jump, palette ignite, split geometry
+  terminal, filter → cross-project jump, palette launch, split geometry
   50/50, unsplit, ⌘E rename, ⌘/ sheet), screenshots reviewed.
 - Known follow-up: the palette dialog still wears the light shadcn theme —
   jarring over the dark HUD; restyle in S3 (exposé & motion / chrome
@@ -512,7 +513,7 @@ S2 review round (high, workflow, 10 findings — all fixed 2026-07-10):
   switch was SIGWINCHing background sessions to the wrong width and
   garbling TUI scrollback — reveal refits).
 - Palette↔workspace protocol: requests now defer until the workspace is
-  `ready` (an ignite selected during initial load errored spuriously and
+  `ready` (an launch selected during initial load errored spuriously and
   was lost); consumed-when-ready even on failure; pending slots carry a
   15s TTL so a slot surviving an unmount can't yank the workspace to an
   old session minutes later.

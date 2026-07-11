@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import {
   requestSessionJump,
-  requestIgnite,
+  requestLaunch,
   RENAME_ACTIVE_EVENT,
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
@@ -125,7 +125,7 @@ export function CommandPalette({
     [onOpenChange]
   );
 
-  /** switcher/ignite requests land in the workspace: instantly when it is
+  /** switcher/launch requests land in the workspace: instantly when it is
    *  mounted (live event), or on mount after navigation (pending slot) */
   const inWorkspace = () => window.location.pathname.startsWith('/workspace');
   const openSession = useCallback(
@@ -136,10 +136,10 @@ export function CommandPalette({
       }),
     [handleSelect, router]
   );
-  const igniteHarness = useCallback(
+  const launchHarness = useCallback(
     (harness: PtyHarness) =>
       handleSelect(() => {
-        requestIgnite(harness);
+        requestLaunch(harness);
         if (!inWorkspace()) router.push('/workspace');
       }),
     [handleSelect, router]
@@ -239,7 +239,7 @@ export function CommandPalette({
         icon: SquareTerminal,
         shortcut: shortcutRegistry.getEffectiveKeys('go-workspace'),
         onSelect: () => handleSelect(() => router.push('/workspace')),
-        keywords: ['terminal', 'agents', 'sessions', 'ignite'],
+        keywords: ['terminal', 'agents', 'sessions', 'launch'],
       },
       {
         id: 'nav-fleet',
@@ -336,8 +336,8 @@ export function CommandPalette({
               {HARNESS_ORDER.map(h => (
                 <CommandItem
                   key={`launch-${h}`}
-                  value={`launch ignite ${HARNESS_META[h].label} new session agent`}
-                  onSelect={() => igniteHarness(h)}
+                  value={`launch launch ${HARNESS_META[h].label} new session agent`}
+                  onSelect={() => launchHarness(h)}
                 >
                   {h === 'shell' ? (
                     <SquareTerminal className="mr-2 h-3.5 w-3.5 shrink-0" />

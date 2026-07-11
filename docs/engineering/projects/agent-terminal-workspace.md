@@ -11,7 +11,7 @@ come later).
 
 ## Product framing
 
-- The gesture is **ignite an agent**, not "open a terminal": pick a harness
+- The gesture is **launch an agent**, not "open a terminal": pick a harness
   (Claude Code, Codex, plain shell), pick or create a git worktree, go.
 - The view is **tmux-like**: the operator talks to harness TUIs directly.
 - The structure is the operator's mental model: one window per initiative,
@@ -55,7 +55,7 @@ Progress log (landed 2026-07-02):
   reloads replay output. Harness CLIs run through the user's login shell so
   PATH resolves like a real terminal. `pty-ipc.ts` bridges to the renderer;
   app `before-quit` kills all sessions (no orphans).
-- `/workspace` route + `WorkspaceClient`: ignite buttons (Claude Code /
+- `/workspace` route + `WorkspaceClient`: launch buttons (Claude Code /
   Codex / Shell) with a working-dir input, tab strip with harness-colored
   diamonds, cmd+T / cmd+W / cmd+1-9. Panes stay MOUNTED when inactive
   (CSS-hidden) so no output is lost on tab switch; on web it renders a
@@ -71,7 +71,7 @@ Progress log (landed 2026-07-02):
   `prebuilds/`, so the Electron-ABI build wins; a fresh install wipes
   `build/` and the rebuild must be re-run.
 - Known W0.2 targets from this pass: initiative windows, worktree
-  create/pick in the ignite flow, layout persistence, richer tab titles.
+  create/pick in the launch flow, layout persistence, richer tab titles.
 
 W0.4 progress log (landed 2026-07-03):
 
@@ -125,7 +125,7 @@ Dogfood feedback round 3 (2026-07-03, all fixed + verified):
   group creation (hash collisions produced two pink projects), persisted
   with the layout; inline 10-swatch color picker appears with the
   double-click rename editor (mousedown so picking never commits the edit)
-- Claude Code / Codex ignite buttons wear their brand colors (Anthropic
+- Claude Code / Codex launch buttons wear their brand colors (Anthropic
   terracotta #D97757 / OpenAI neutral)
 - terminal font is a NATIVE-FIRST stack ("SF Mono", Menlo, Monaco,
   Consolas, ...) instead of the site's display mono — generic for every
@@ -202,7 +202,7 @@ Status: landed
 
 Scope:
 
-- directory-required ignite: a project directory is mandatory (NO silent
+- directory-required launch: a project directory is mandatory (NO silent
   home-dir fallback — home is meaningless as an initiative and harness
   trust never sticks there, see the 2026-07-02 re-prompting diagnosis);
   the last-used directory is remembered and prefilled
@@ -213,7 +213,7 @@ Scope:
   adjacent; different projects get distinct colors (transitional UI on the
   way to the W0.5 world map)
 - initiative-labeled windows containing session tabs (thin ENG-005 slice)
-- the ignite flow: harness picker + worktree create/pick in one gesture
+- the launch flow: harness picker + worktree create/pick in one gesture
 - restart persistence: layout, names, worktrees, working dirs restored
   (processes are not preserved in v0)
 - fast keyboard: initiative/window/tab switching at macOS-Spaces speed
@@ -238,7 +238,7 @@ Decisions (operator, 2026-07-02):
   restore tabs without spawning and resume only a stored exact harness ID after
   an explicit tab/Project/all action.
 - Worktree convention: sibling container `<repo>-wt/<branch-dirname>/`,
-  branch auto-named `agent/<MMDD>-<HHmm>` and editable in the ignite flow.
+  branch auto-named `agent/<MMDD>-<HHmm>` and editable in the launch flow.
 
 Progress log (landed 2026-07-02):
 
@@ -253,8 +253,8 @@ Progress log (landed 2026-07-02):
   persistence (exited tabs pruned), mount flow that ADOPTS live sessions
   (renderer reload) and AUTO-REVIVES dead ones sequentially (app restart).
   `tab-strip.tsx` renders numbered, project-colored group clusters
-  (deterministic palette hash in `project-colors.ts`); `ignite-controls.tsx`
-  is the ignite gesture (required dir following the active initiative,
+  (deterministic palette hash in `project-colors.ts`); `launch-controls.tsx`
+  is the launch gesture (required dir following the active initiative,
   worktree toggle + branch field). Shortcuts rewired: ⌘1..9 = initiative,
   ⌘⇧[/] = tabs within, ⌘T = shell in the active initiative.
 - Verified via a Playwright Electron RESTART cycle: forced-dir error,

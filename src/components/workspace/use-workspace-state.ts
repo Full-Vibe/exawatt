@@ -20,11 +20,11 @@ import { HARNESS_META } from './harnesses';
 import { pickDistinctColor, projectColor } from './project-colors';
 import {
   SESSION_JUMP_EVENT,
-  IGNITE_EVENT,
+  LAUNCH_EVENT,
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
   consumePendingSessionJump,
-  consumePendingIgnite,
+  consumePendingLaunch,
 } from './session-jump';
 import { loadTerminalFont } from './terminal-font';
 import { openRepositoryProject } from '@/lib/projects/registry';
@@ -36,7 +36,7 @@ import type {
 } from '@/types/electron';
 
 export interface WorkspaceTab {
-  /** stable across revives (sessionId changes when a tab is re-ignited) */
+  /** stable across revives (sessionId changes when a tab is re-launchd) */
   id: string;
   harness: PtyHarness;
   title: string;
@@ -143,10 +143,10 @@ export function parsePersisted(raw: unknown): PersistedV3 | null {
   return null;
 }
 
-export interface IgniteOptions {
+export interface LaunchOptions {
   harness: PtyHarness;
   dir: string;
-  /** create a git worktree (<repo>-wt/<branch>) and ignite inside it */
+  /** create a git worktree (<repo>-wt/<branch>) and launch inside it */
   worktreeBranch?: string;
 }
 
@@ -435,8 +435,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   }, [projects, activeDir, lastUsedDir, pinnedTabId, ready]);
 
   // ---- verbs ----
-  const ignite = useCallback(
-    async (opts: IgniteOptions): Promise<boolean> => {
+  const launch = useCallback(
+    async (opts: LaunchOptions): Promise<boolean> => {
       const api = window.electron?.pty;
       if (!api) return false;
       const dir = opts.dir.trim();
@@ -570,9 +570,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     void resumeTabs(stateRef.current.projects.flatMap(project => project.tabs));
   }, [resumeTabs]);
 
-  /** ignite in the active project's directory (fallback: last used) —
+  /** launch in the active project's directory (fallback: last used) —
    *  the one dir-resolution path for ⌘T, palette commands, and buttons */
-  const igniteHere = useCallback(
+  const launchHere = useCallback(
     (harness: PtyHarness): boolean => {
       const { projects: gs, activeDir: ad, lastUsedDir: lu } = stateRef.current;
       const dir = gs.find((g) => g.dir === ad)?.dir ?? (lu || null);
@@ -580,10 +580,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         setError('Project directory is required — pick where this session lives.');
         return false;
       }
-      void ignite({ harness, dir });
+      void launch({ harness, dir });
       return true;
     },
-    [ignite]
+    [launch]
   );
 
   const selectProject = useCallback((index: number): boolean => {
@@ -734,7 +734,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   }, []);
 
   // ---- palette requests (S2): the ⌘K switcher lives at the app root and
-  // asks the workspace to activate a session / ignite a harness. Live events
+  // asks the workspace to activate a session / launch a harness. Live events
   // handle the mounted-and-ready case; before ready the pending slot is left
   // alone so the ready-effect below applies it against the LOADED layout
   // (acting early would fail against empty state and lose the request).
@@ -744,10 +744,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       consumePendingSessionJump();
       activateSession((e as CustomEvent<string>).detail);
     };
-    const onIgnite = (e: Event) => {
+    const onLaunch = (e: Event) => {
       if (!readyRef.current) return;
-      consumePendingIgnite();
-      igniteHere((e as CustomEvent<PtyHarness>).detail);
+      consumePendingLaunch();
+      launchHere((e as CustomEvent<PtyHarness>).detail);
     };
     const onToggleSplit = () => {
       if (readyRef.current) togglePin();
@@ -756,24 +756,24 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (readyRef.current) jumpAttention();
     };
     window.addEventListener(SESSION_JUMP_EVENT, onJump);
-    window.addEventListener(IGNITE_EVENT, onIgnite);
+    window.addEventListener(LAUNCH_EVENT, onLaunch);
     window.addEventListener(TOGGLE_SPLIT_EVENT, onToggleSplit);
     window.addEventListener(JUMP_ATTENTION_EVENT, onJumpAttention);
     return () => {
       window.removeEventListener(SESSION_JUMP_EVENT, onJump);
-      window.removeEventListener(IGNITE_EVENT, onIgnite);
+      window.removeEventListener(LAUNCH_EVENT, onLaunch);
       window.removeEventListener(TOGGLE_SPLIT_EVENT, onToggleSplit);
       window.removeEventListener(JUMP_ATTENTION_EVENT, onJumpAttention);
     };
-  }, [activateSession, igniteHere, togglePin, jumpAttention]);
+  }, [activateSession, launchHere, togglePin, jumpAttention]);
 
   useEffect(() => {
     if (!ready) return;
     const jump = consumePendingSessionJump();
     if (jump) activateSession(jump);
-    const harness = consumePendingIgnite();
-    if (harness) igniteHere(harness);
-  }, [ready, activateSession, igniteHere]);
+    const harness = consumePendingLaunch();
+    if (harness) launchHere(harness);
+  }, [ready, activateSession, launchHere]);
 
   // ---- attention focus contract (S1): tell main which session the operator
   // is looking at — the focused session never flags, and focusing clears.
@@ -817,8 +817,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     setError,
     dismissReentryRecap,
     ready,
-    ignite,
-    igniteHere,
+    launch,
+    launchHere,
     closeTab,
     resumeTab,
     resumeProject,

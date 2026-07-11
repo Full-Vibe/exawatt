@@ -1,7 +1,7 @@
 /**
  * Harness registry for the Agent Terminal Workspace (ENG-002).
  *
- * A harness is what an operator IGNITES — the product gesture is agent-first
+ * A harness is what an operator LAUNCHS — the product gesture is agent-first
  * (decision 0005), so this is the single place a new harness type (OpenClaw,
  * custom CLIs, ...) gets registered for the workspace UI. The main-process
  * command resolution lives in electron/main/pty/session-manager.ts.
@@ -14,18 +14,18 @@ export interface HarnessMeta {
   label: string;
   /** status-diamond + accent color */
   color: string;
-  /** ignite button caption */
-  ignite: string;
+  /** launch button caption */
+  launch: string;
 }
 
 export const HARNESS_META: Record<PtyHarness, HarnessMeta> = {
   // brand colors: Anthropic terracotta / OpenAI neutral-on-dark.
   // "+" prefix: the button CREATES a new session — "launch" language in
-  // tooltips/palette ("ignite" was internal shorthand, unclear to users;
+  // tooltips/palette ("launch" was internal shorthand, unclear to users;
   // operator, dogfood round 4)
-  claude: { label: 'Claude Code', color: '#D97757', ignite: '+ Claude Code' },
-  codex: { label: 'Codex', color: '#ECECEC', ignite: '+ Codex' },
-  shell: { label: 'Shell', color: HUD.idle, ignite: '+ Shell' },
+  claude: { label: 'Claude Code', color: '#D97757', launch: '+ Claude Code' },
+  codex: { label: 'Codex', color: '#ECECEC', launch: '+ Codex' },
+  shell: { label: 'Shell', color: HUD.idle, launch: '+ Shell' },
 };
 
 /** derived from the registry — declaration order IS display order */

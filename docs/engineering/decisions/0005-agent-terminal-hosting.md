@@ -8,7 +8,7 @@ Status: accepted
 ENG-002 (Agent Terminal Workspace) needs interactive terminal sessions for
 coding-agent harnesses (Claude Code, Codex) and plain shells inside the
 Electron app. The operator talks to harness TUIs directly — a "tmux-like
-view" — but the product gesture is agent-first ("ignite an agent" of a given
+view" — but the product gesture is agent-first ("launch an agent" of a given
 harness type in a worktree), not generic terminal multiplexing.
 
 Options considered:

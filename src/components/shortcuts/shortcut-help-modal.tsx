@@ -51,6 +51,10 @@ const WORKSPACE_KEYS: Array<{
     label: 'New shell in the active project',
     keys: { key: 't', modifiers: ['meta'] },
   },
+  {
+    label: 'Open a new project (browse for a folder)',
+    keys: { key: 'n', modifiers: ['meta'] },
+  },
   { label: 'Close the active tab', keys: { key: 'w', modifiers: ['meta'] } },
   {
     label: 'Jump to project 1–9',

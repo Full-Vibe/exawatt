@@ -8,7 +8,8 @@ import {
 function actions(): WorkspaceShortcutActions {
   const yes = vi.fn(() => true);
   return {
-    igniteShell: yes,
+    launchShell: yes,
+    newProject: yes,
     closeActive: yes,
     selectIndex: yes,
     cycle: yes,

@@ -4,7 +4,7 @@
  * Agent Terminal Workspace (ENG-002) — orchestration surface.
  *
  * W0.2 model: ONE window; projects are directory-keyed groups inside it
- * (⌘1..9 switches project, ⌘⇧[/] rotates the global tab ring across projects, ⌘T ignites a
+ * (⌘1..9 switches project, ⌘⇧[/] rotates the global tab ring across projects, ⌘T launchs a
  * shell in the active project). Layout persists across app restarts and
  * ended tabs restore without spawning and resume only an exact provider ID.
  * State/verbs live in use-workspace-state; this file is composition only.
@@ -26,7 +26,7 @@ import {
 } from './terminal-font';
 import type { EffectiveTerminalFont } from './terminal-font';
 import { TabStrip } from './tab-strip';
-import { IgniteControls } from './ignite-controls';
+import { LaunchControls } from './launch-controls';
 import { ExposeOverlay } from './expose-overlay';
 import { ReentryRecapCard } from './reentry-recap';
 import { useWorkspaceState, tabIsLive } from './use-workspace-state';
@@ -49,6 +49,7 @@ import { middleTruncatePath } from './path-label';
 const KEY_HINTS: Array<[string, string]> = [
   ['⌘K', 'sessions'],
   ['⌘O', 'overview'],
+  ['⌘N', 'new project'],
   ['⌘T', 'shell'],
   ['⌘D', 'split'],
   ['⌘J', 'needs you'],
@@ -135,8 +136,8 @@ export function WorkspaceClient() {
     error,
     setError,
     dismissReentryRecap,
-    ignite,
-    igniteHere,
+    launch,
+    launchHere,
     closeTab,
     resumeTab,
     resumeProject,
@@ -223,7 +224,18 @@ export function WorkspaceClient() {
         return !!activeTab?.sessionId;
       };
       return {
-        igniteShell: () => igniteHere('shell'),
+        launchShell: () => launchHere('shell'),
+        // ⌘N — browse for a directory and open it as a new Project: the native
+        // picker, then a shell in the chosen dir (which registers the Project).
+        newProject: () => {
+          const dialog = window.electron?.dialog;
+          if (!dialog) return false;
+          void (async () => {
+            const dir = await dialog.openDirectory();
+            if (dir) await launch({ harness: 'shell', dir });
+          })();
+          return true;
+        },
         closeActive: () => {
           if (!activeTab) return false;
           void closeTab(activeTab.id);
@@ -271,7 +283,8 @@ export function WorkspaceClient() {
     [
       activeTab,
       overviewOpen,
-      igniteHere,
+      launch,
+      launchHere,
       closeTab,
       selectProject,
       cycleTab,
@@ -359,7 +372,7 @@ export function WorkspaceClient() {
       className="relative flex h-full flex-col"
       style={{ background: HUD.bg.void }}
     >
-      {/* project groups + tabs + ignite controls */}
+      {/* project groups + tabs + launch controls */}
       <div
         ref={chromeRef}
         data-workspace-chrome
@@ -382,9 +395,9 @@ export function WorkspaceClient() {
           onRenameProject={renameProject}
           onSetProjectColor={setProjectColor}
         />
-        <IgniteControls
+        <LaunchControls
           prefillDir={activeProject?.dir ?? lastUsedDir}
-          onIgnite={ignite}
+          onLaunch={launch}
         />
         <button
           type="button"
@@ -460,7 +473,7 @@ export function WorkspaceClient() {
         </div>
       )}
 
-      {/* ignite errors (missing/bad dir, worktree or spawn failures) */}
+      {/* launch errors (missing/bad dir, worktree or spawn failures) */}
       {error && (
         <div
           role="alert"
