@@ -18,6 +18,9 @@ never silently restart it while sessions are live.
   hardened runtime, Apple notarization, and stapling. Release CI fails if code
   signing is unavailable. The release runner is pinned to macOS 15 so GitHub's
   moving `macos-latest` alias cannot silently change the codesign toolchain.
+  CI retries a clean release build at most three times when Apple's timestamp
+  or notarization service is transiently unavailable; it never drops secure
+  timestamps or notarization to make a release pass.
 - The private `Full-Vibe/exawatt` GitHub Release remains the source-linked CI
   archive. It cannot be the installed app's feed: anonymous clients receive
   `404`, while a private GitHub updater would require a reusable repository
