@@ -25,6 +25,7 @@ import type { ShortcutCategory, ShortcutKeys, KeyBinding } from '@/types/shortcu
 import { RotateCcw, AlertCircle } from 'lucide-react';
 
 const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
+  workspace: 'Terminal Workspace',
   navigation: 'Navigation',
   actions: 'Actions',
   selection: 'Selection',
@@ -33,6 +34,7 @@ const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
 };
 
 const CATEGORY_ORDER: ShortcutCategory[] = [
+  'workspace',
   'navigation',
   'actions',
   'selection',

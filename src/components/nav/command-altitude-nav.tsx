@@ -66,6 +66,13 @@ export function CommandAltitudeNav() {
               type="button"
               data-command-altitude-level={id}
               aria-current={current ? 'page' : undefined}
+              aria-keyshortcuts={
+                id === 'sessions'
+                  ? 'Meta+O'
+                  : id === 'spatial'
+                    ? 'Meta+Shift+M'
+                    : undefined
+              }
               aria-label={`${label}: ${detail}${shortcut ? ` (${shortcut})` : ''}`}
               title={`${detail}${shortcut ? ` · ${shortcut}` : ''}`}
               onClick={() => {

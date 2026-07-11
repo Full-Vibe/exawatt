@@ -132,14 +132,18 @@ export function ExposeOverlay({
       }
       return;
     }
+    // arrows move the grid selection; plain j/k mirror down/up (D9 — the
+    // app's list-navigation vocabulary works here too). Modifier combos are
+    // NOT movement: ⌘K must stay the palette, ⌘J the attention jump.
+    const plainKey = !e.metaKey && !e.ctrlKey && !e.altKey;
     const delta =
       e.key === 'ArrowRight'
         ? 1
         : e.key === 'ArrowLeft'
           ? -1
-          : e.key === 'ArrowDown'
+          : e.key === 'ArrowDown' || (plainKey && e.key === 'j')
             ? cols()
-            : e.key === 'ArrowUp'
+            : e.key === 'ArrowUp' || (plainKey && e.key === 'k')
               ? -cols()
               : 0;
     if (delta !== 0 && tiles.length > 0) {

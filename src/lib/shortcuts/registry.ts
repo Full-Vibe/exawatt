@@ -200,6 +200,7 @@ class ShortcutRegistry {
     }
 
     const result: Record<ShortcutCategory, Shortcut[]> = {
+      workspace: [],
       navigation: [],
       actions: [],
       selection: [],

@@ -37,6 +37,17 @@ const app = await electron.launch({
 try {
   const page = await app.firstWindow();
   page.setDefaultTimeout(15000);
+  page.on('pageerror', e =>
+    console.log('[pageerror]', String(e.message || e).slice(0, 300))
+  );
+  page.on('console', m => {
+    if (
+      m.type() === 'error' &&
+      !m.text().includes('eval() is not supported')
+    ) {
+      console.log('[console]', m.text().slice(0, 300));
+    }
+  });
   await page.locator('[data-command-altitude]').waitFor();
 
   // the menu bar mirrors the app's verbs (W4): Go/Session menus exist,
@@ -138,6 +149,119 @@ try {
     'recentProjects persisted in workspace layout',
     Array.isArray(persisted?.recentProjects) &&
       persisted.recentProjects.some(r => r.dir === '/tmp')
+  );
+
+  // ---- D9: keyboard authority, searchable help, recents, titles ----
+
+  // per-surface titles via the metadata template
+  check(
+    'workspace title is Terminal — Exawatt',
+    (await page.title()) === 'Terminal — Exawatt'
+  );
+
+  // registry-resolved workspace verb still fires: ⌘E opens the rename editor
+  await page.keyboard.press('Meta+KeyE');
+  await page.waitForTimeout(500);
+  const renameFocused = await page.evaluate(
+    () => document.activeElement?.tagName === 'INPUT'
+  );
+  check('cmd+E opens the inline rename editor', renameFocused);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+
+  // searchable help overlay lists workspace verbs dynamically
+  await page.keyboard.press('Meta+Slash');
+  await page.waitForTimeout(600);
+  const helpFilter = page.getByLabel('Filter shortcuts');
+  check('help overlay has a filter input', await helpFilter.isVisible());
+  const wsSection = page.locator('[data-help-category="workspace"]');
+  check(
+    'help lists workspace verbs dynamically',
+    (await wsSection.innerText()).includes('Rename the active tab')
+  );
+  await helpFilter.fill('rename');
+  await page.waitForTimeout(300);
+  const filtered = (
+    await page.locator('[data-help-category]').allInnerTexts()
+  ).join(' ');
+  check(
+    'help filter narrows to matching rows',
+    filtered.includes('Rename the active tab') &&
+      !filtered.includes('Overview of all sessions')
+  );
+  // chord gating: g d behind the open modal must not navigate
+  await page.keyboard.press('Shift+Tab'); // leave the filter input
+  await page.keyboard.press('KeyG');
+  await page.waitForTimeout(120);
+  await page.keyboard.press('KeyD');
+  await page.waitForTimeout(700);
+  check(
+    'g d behind the help modal does not navigate',
+    page.url().includes('/workspace')
+  );
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(400);
+
+  // palette recents: selecting a command makes it appear in Recent on reopen
+  await page.keyboard.press('Meta+KeyK');
+  await page.waitForTimeout(600);
+  await page
+    .locator('[cmdk-item]')
+    .filter({ hasText: 'Go to Sessions' })
+    .first()
+    .click();
+  await page.waitForURL('**view=sessions**');
+  // wait for the exposé to actually mount before toggling it closed —
+  // ⌘O within the mount race would re-open instead
+  await page.locator('[data-expose-tile]').first().waitFor();
+  await page.waitForTimeout(400);
+  await page.keyboard.press('Meta+KeyO'); // toggle the overview closed
+  await page.waitForURL(url => !url.href.includes('view=sessions'));
+  await page.waitForTimeout(400);
+  // dev-mode Fast Refresh can momentarily detach listeners — retry the
+  // palette open a bounded number of times before judging it broken
+  let paletteEmptyText = '';
+  for (let attempt = 0; attempt < 3 && !paletteEmptyText; attempt++) {
+    await page.keyboard.press('Meta+KeyK');
+    await page.waitForTimeout(800);
+    paletteEmptyText = await page
+      .locator('[cmdk-list]')
+      .innerText({ timeout: 3000 })
+      .catch(() => '');
+  }
+  const recentOk =
+    paletteEmptyText.includes('Recent') &&
+    paletteEmptyText.includes('Go to Sessions');
+  if (!recentOk) {
+    console.log(
+      '[debug] palette text head:',
+      JSON.stringify(paletteEmptyText.slice(0, 200))
+    );
+  }
+  check('palette shows a Recent group after use', recentOk);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+
+  // legacy title — reach Fleet Command through the palette's Legacy group
+  // (plain-key chords correctly stay dead while the terminal or an input
+  // owns focus, so the palette is the honest keyboard path from here)
+  await page
+    .locator('[cmdk-root]')
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => {});
+  await page.waitForTimeout(400);
+  await page.keyboard.press('Meta+KeyK');
+  await page.waitForTimeout(700);
+  await page
+    .locator('[cmdk-item]')
+    .filter({ hasText: 'Go to Fleet Command' })
+    .first()
+    .click();
+  await page.waitForURL('**/fleet');
+  await page.waitForTimeout(600);
+  check(
+    'fleet title is Fleet Command — Exawatt',
+    (await page.title()) === 'Fleet Command — Exawatt'
   );
 } finally {
   await app.close();

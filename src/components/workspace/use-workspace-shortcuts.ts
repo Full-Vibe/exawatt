@@ -18,11 +18,12 @@
  * ⌘-chords are global workspace verbs: they fire even while a terminal or
  * the working-dir input is focused (xterm consumes plain keys; ⌘-chords are
  * reserved for the workspace — the global chord engine can't see keystrokes
- * from inside xterm's hidden textarea, so the palette/help chords are
- * re-bound here, resolved from the registry so user rebinds keep working).
- * Each action reports whether it actually applied — default behavior is
- * prevented ONLY then, so impossible chords (no tabs, web fallback) keep
- * their browser behavior.
+ * from inside xterm's hidden textarea). Every verb resolves its CURRENT
+ * combo from the shortcut registry (ENG-016 D9), so rebinding in Settings
+ * changes what the workspace responds to; only ⌘1…9 and the ⌘⇧[/⌘⇧] tab
+ * ring remain fixed key families. Each action reports whether it actually
+ * applied — default behavior is prevented ONLY then, so impossible chords
+ * (no tabs, web fallback) keep their browser behavior.
  */
 import { useEffect } from 'react';
 import { shortcutRegistry } from '@/lib/shortcuts';
@@ -30,12 +31,24 @@ import { eventToBinding } from '@/lib/shortcuts/format';
 import { bindingsMatch, isChord } from '@/types/shortcuts';
 
 /** does this event match the registry's CURRENT binding for a shortcut id?
- *  (users can rebind ⌘K/⌘/; hard-coding them here would make settings lie
- *  inside the workspace) */
+ *  (users can rebind any workspace verb; hard-coding combos here would make
+ *  Settings lie inside the workspace — ENG-016 D9) */
 function matchesRegistry(e: KeyboardEvent, id: string): boolean {
   const keys = shortcutRegistry.getEffectiveKeys(id);
   if (!keys || isChord(keys)) return false;
   return bindingsMatch(keys, eventToBinding(e));
+}
+
+/** like matchesRegistry, but also accepts the binding with shift added —
+ *  ⌘⇧T / ⌘⇧W have always worked as aliases of ⌘T / ⌘W */
+function matchesRegistryShiftAlias(e: KeyboardEvent, id: string): boolean {
+  if (matchesRegistry(e, id)) return true;
+  const keys = shortcutRegistry.getEffectiveKeys(id);
+  if (!keys || isChord(keys) || keys.modifiers?.includes('shift')) return false;
+  return bindingsMatch(
+    { key: keys.key, modifiers: [...(keys.modifiers ?? []), 'shift'] },
+    eventToBinding(e)
+  );
 }
 
 export interface WorkspaceShortcutActions {
@@ -114,8 +127,32 @@ export function useWorkspaceShortcuts(
         return;
       }
 
+      // every workspace verb resolves its combo from the registry (D9):
+      // rebinding it in Settings changes what the workspace responds to
+      const verbs: Array<[id: string, apply: () => boolean, shiftAlias?: boolean]> = [
+        ['workspace-new-shell', actions.launchShell, true],
+        ['workspace-new-project', actions.newProject],
+        ['workspace-close-tab', actions.closeActive, true],
+        ['workspace-jump-attention', actions.jumpAttention],
+        ['toggle-regime', actions.toggleRegime],
+        ['workspace-overview', actions.toggleOverview],
+        ['workspace-split', actions.togglePin],
+        ['workspace-roadmap', actions.toggleRoadmap],
+        ['workspace-rename', actions.renameActive],
+      ];
+      for (const [id, apply, shiftAlias] of verbs) {
+        const hit = shiftAlias
+          ? matchesRegistryShiftAlias(e, id)
+          : matchesRegistry(e, id);
+        if (hit) {
+          if (apply()) e.preventDefault();
+          return;
+        }
+      }
+
       if (!e.metaKey || e.ctrlKey || e.altKey) return;
 
+      // fixed key families (not registry-rebindable):
       // ⌘⇧[ / ⌘⇧] — use e.code: with shift held, e.key becomes '{' / '}'
       if (e.shiftKey && e.code === 'BracketLeft') {
         if (actions.cycle(-1)) e.preventDefault();
@@ -125,28 +162,8 @@ export function useWorkspaceShortcuts(
         if (actions.cycle(1)) e.preventDefault();
         return;
       }
-
-      // lowercase so ⌘⇧T / ⌘⇧W keep working (shift capitalizes e.key)
-      const key = e.key.toLowerCase();
-      if (key === 't') {
-        if (actions.launchShell()) e.preventDefault();
-      } else if (key === 'n' && !e.shiftKey) {
-        if (actions.newProject()) e.preventDefault();
-      } else if (key === 'w') {
-        if (actions.closeActive()) e.preventDefault();
-      } else if (key === 'j' && !e.shiftKey) {
-        if (actions.jumpAttention()) e.preventDefault();
-      } else if (key === 'm' && e.shiftKey) {
-        if (actions.toggleRegime()) e.preventDefault();
-      } else if (key === 'o' && !e.shiftKey) {
-        if (actions.toggleOverview()) e.preventDefault();
-      } else if (key === 'd' && !e.shiftKey) {
-        if (actions.togglePin()) e.preventDefault();
-      } else if (key === 'b' && !e.shiftKey) {
-        if (actions.toggleRoadmap()) e.preventDefault();
-      } else if (key === 'e' && !e.shiftKey) {
-        if (actions.renameActive()) e.preventDefault();
-      } else if (!e.shiftKey && e.key >= '1' && e.key <= '9') {
+      // ⌘1…⌘9 — project ordinals
+      if (!e.shiftKey && e.key >= '1' && e.key <= '9') {
         if (actions.selectIndex(Number(e.key) - 1)) e.preventDefault();
       }
     };

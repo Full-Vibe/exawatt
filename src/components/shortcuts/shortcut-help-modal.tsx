@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncExternalStore, useMemo, useCallback } from 'react';
+import { useSyncExternalStore, useMemo, useCallback, useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -8,12 +8,15 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { shortcutRegistry } from '@/lib/shortcuts';
+import { formatShortcutKeys } from '@/lib/shortcuts/format';
 import { ShortcutBadge } from './shortcut-badge';
 import type { ShortcutCategory } from '@/types/shortcuts';
 
 const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
+  workspace: 'Terminal Workspace',
   navigation: 'Navigation',
   actions: 'Actions',
   selection: 'Selection',
@@ -22,6 +25,7 @@ const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
 };
 
 const CATEGORY_ORDER: ShortcutCategory[] = [
+  'workspace',
   'navigation',
   'actions',
   'selection',
@@ -30,32 +34,15 @@ const CATEGORY_ORDER: ShortcutCategory[] = [
 ];
 
 /**
- * Terminal-workspace chords (ENG-002/ENG-015). Static: these are handled by
- * the workspace's own key layer (the chord engine cannot see keystrokes
- * inside xterm), so registering them would double-fire — they are listed
- * here for discoverability only.
+ * Fixed key families (ENG-016 D9): handled positionally by the workspace key
+ * layer, deliberately not rebindable — listed statically for discoverability.
+ * Every other workspace verb now lives in the registry and renders
+ * dynamically with its effective (possibly rebound) combo.
  */
-const WORKSPACE_KEYS: Array<{
+const FIXED_FAMILIES: Array<{
   label: string;
   keys: { key: string; modifiers?: Array<'meta' | 'shift'> };
 }> = [
-  {
-    label: 'Session switcher / commands',
-    keys: { key: 'k', modifiers: ['meta'] },
-  },
-  {
-    label: 'Overview of all sessions',
-    keys: { key: 'o', modifiers: ['meta'] },
-  },
-  {
-    label: 'New shell in the active project',
-    keys: { key: 't', modifiers: ['meta'] },
-  },
-  {
-    label: 'Open a new project (browse for a folder)',
-    keys: { key: 'n', modifiers: ['meta'] },
-  },
-  { label: 'Close the active tab', keys: { key: 'w', modifiers: ['meta'] } },
   {
     label: 'Jump to project 1–9',
     keys: { key: '1…9', modifiers: ['meta'] },
@@ -64,20 +51,6 @@ const WORKSPACE_KEYS: Array<{
     label: 'Previous / next tab (global ring)',
     keys: { key: '[ / ]', modifiers: ['meta', 'shift'] },
   },
-  {
-    label: 'Jump to the session needing you',
-    keys: { key: 'j', modifiers: ['meta'] },
-  },
-  {
-    label: 'Split: pin / unpin the active tab',
-    keys: { key: 'd', modifiers: ['meta'] },
-  },
-  { label: 'Rename the active tab', keys: { key: 'e', modifiers: ['meta'] } },
-  {
-    label: 'Switch altitude (Terminal ↔ Spatial)',
-    keys: { key: 'm', modifiers: ['meta', 'shift'] },
-  },
-  { label: 'This cheat-sheet', keys: { key: '/', modifiers: ['meta'] } },
 ];
 
 interface ShortcutHelpModalProps {
@@ -104,11 +77,36 @@ export function ShortcutHelpModal({
     getServerSnapshot
   );
 
-  const categories = useMemo(() => {
-    return CATEGORY_ORDER.filter(
-      cat => shortcuts[cat] && shortcuts[cat].length > 0
-    );
-  }, [shortcuts]);
+  // type-to-filter (Linear made its shortcut panel searchable specifically
+  // to grow shortcut adoption)
+  const [query, setQuery] = useState('');
+  useEffect(() => {
+    if (!open) setQuery('');
+  }, [open]);
+  const q = query.trim().toLowerCase();
+  const matches = useCallback(
+    (label: string, keysText: string) =>
+      !q || label.toLowerCase().includes(q) || keysText.toLowerCase().includes(q),
+    [q]
+  );
+
+  const sections = useMemo(() => {
+    return CATEGORY_ORDER.map(category => {
+      const rows = (shortcuts[category] ?? []).flatMap(shortcut => {
+        const effectiveKeys = shortcutRegistry.getEffectiveKeys(shortcut.id);
+        if (!effectiveKeys) return [];
+        if (!matches(shortcut.label, formatShortcutKeys(effectiveKeys))) {
+          return [];
+        }
+        return [{ id: shortcut.id, label: shortcut.label, keys: effectiveKeys }];
+      });
+      const fixed =
+        category === 'workspace'
+          ? FIXED_FAMILIES.filter(f => matches(f.label, f.keys.key))
+          : [];
+      return { category, rows, fixed };
+    }).filter(s => s.rows.length > 0 || s.fixed.length > 0);
+  }, [shortcuts, matches]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -120,54 +118,48 @@ export function ShortcutHelpModal({
           </DialogDescription>
         </DialogHeader>
 
+        <Input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Filter shortcuts…"
+          aria-label="Filter shortcuts"
+          autoFocus
+        />
+
         <ScrollArea className="max-h-[60vh]">
           <div className="space-y-6 pr-4">
-            <div data-workspace-keys>
-              <h3 className="text-sm font-semibold text-muted-foreground mb-3">
-                Terminal Workspace
-              </h3>
-              <div className="space-y-2">
-                {WORKSPACE_KEYS.map(entry => (
-                  <div
-                    key={entry.label}
-                    className="flex items-center justify-between py-1"
-                  >
-                    <span className="text-sm">{entry.label}</span>
-                    <ShortcutBadge keys={entry.keys} size="md" />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {categories.map(category => {
-              const categoryShortcuts = shortcuts[category];
-
-              return (
-                <div key={category}>
-                  <h3 className="text-sm font-semibold text-muted-foreground mb-3">
-                    {CATEGORY_LABELS[category]}
-                  </h3>
-                  <div className="space-y-2">
-                    {categoryShortcuts.map(shortcut => {
-                      const effectiveKeys = shortcutRegistry.getEffectiveKeys(
-                        shortcut.id
-                      );
-                      if (!effectiveKeys) return null;
-
-                      return (
-                        <div
-                          key={shortcut.id}
-                          className="flex items-center justify-between py-1"
-                        >
-                          <span className="text-sm">{shortcut.label}</span>
-                          <ShortcutBadge keys={effectiveKeys} size="md" />
-                        </div>
-                      );
-                    })}
-                  </div>
+            {sections.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                No shortcuts match “{query}”.
+              </p>
+            )}
+            {sections.map(({ category, rows, fixed }) => (
+              <div key={category} data-help-category={category}>
+                <h3 className="text-sm font-semibold text-muted-foreground mb-3">
+                  {CATEGORY_LABELS[category]}
+                </h3>
+                <div className="space-y-2">
+                  {rows.map(row => (
+                    <div
+                      key={row.id}
+                      className="flex items-center justify-between py-1"
+                    >
+                      <span className="text-sm">{row.label}</span>
+                      <ShortcutBadge keys={row.keys} size="md" />
+                    </div>
+                  ))}
+                  {fixed.map(entry => (
+                    <div
+                      key={entry.label}
+                      className="flex items-center justify-between py-1"
+                    >
+                      <span className="text-sm">{entry.label}</span>
+                      <ShortcutBadge keys={entry.keys} size="md" />
+                    </div>
+                  ))}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         </ScrollArea>
       </DialogContent>

@@ -4,7 +4,7 @@ import { WorkspaceClient } from '@/components/workspace/workspace-client';
 import { TestAuthBridge } from '@/components/workspace/test-auth-bridge';
 
 export const metadata: Metadata = {
-  title: 'Workspace — Exawatt',
+  title: 'Terminal',
   description: 'Agent terminal workspace',
 };
 

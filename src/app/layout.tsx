@@ -26,7 +26,10 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: 'Exawatt',
+  // per-surface titles (ENG-016 D9): segment layouts set a plain title and
+  // this template suffixes the app name, so the window switcher, ⌘Tab, and
+  // history can tell surfaces apart
+  title: { default: 'Exawatt', template: '%s — Exawatt' },
   description: 'Power your AI agents',
 };
 

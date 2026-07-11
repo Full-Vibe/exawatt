@@ -29,6 +29,8 @@ import {
   Map as MapIcon,
   FolderOpen,
   LogIn,
+  History,
+  RotateCw,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -63,6 +65,11 @@ import { HUD } from '@/components/hud';
 import type { ShortcutKeys } from '@/types/shortcuts';
 import type { PtyHarness } from '@/types/electron';
 import { spatialReturnHref } from '@/components/nav/spatial-return';
+import {
+  rankRecents,
+  readPaletteUses,
+  recordPaletteUse,
+} from './palette-recents';
 
 /** live status shown on switcher rows — one word, normal case (no all-caps) */
 const STATUS_META: Record<SessionRowStatus, { label: string; color: string }> =
@@ -121,6 +128,10 @@ export function CommandPalette({
   // workspace verbs only make sense where the workspace is (S3): sampled
   // when the palette opens
   const [onWorkspaceRoute, setOnWorkspaceRoute] = useState(false);
+  // surface-contextual verbs (D9): sampled when the palette opens
+  const [onSpatialRoute, setOnSpatialRoute] = useState(false);
+  // frecency-ranked ids for the Recent group (D9)
+  const [recentIds, setRecentIds] = useState<string[]>([]);
   const inElectron = typeof window !== 'undefined' && !!window.electron?.pty;
 
   // Reset search AND session rows when closing — stale rows on reopen can
@@ -139,6 +150,8 @@ export function CommandPalette({
   useEffect(() => {
     if (!open) return;
     setOnWorkspaceRoute(window.location.pathname.startsWith('/workspace'));
+    setOnSpatialRoute(window.location.pathname.startsWith('/fleet/spatial'));
+    setRecentIds(rankRecents(readPaletteUses(), Date.now()));
     const pty = window.electron?.pty;
     if (!pty) return;
     let cancelled = false;
@@ -232,6 +245,21 @@ export function CommandPalette({
         if (!picked) return;
         requestOpenProject(picked);
         if (!inWorkspace()) router.push('/workspace');
+      }),
+    [handleSelect, router]
+  );
+
+  /** surface-contextual verb (D9): flip the spatial projection in place */
+  const toggleProjection = useCallback(
+    () =>
+      handleSelect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const next =
+          params.get('projection') === 'fixed-angle'
+            ? 'top-down'
+            : 'fixed-angle';
+        params.set('projection', next);
+        router.push(`${window.location.pathname}?${params.toString()}`);
       }),
     [handleSelect, router]
   );
@@ -341,6 +369,87 @@ export function CommandPalette({
     [handleSelect, onOpenHelpModal]
   );
 
+  // Recent group (D9): resolve frecency ids against everything currently
+  // offerable. Live sessions are excluded on purpose — the Sessions group
+  // already ranks needs-you first.
+  interface RecentCandidate {
+    label: string;
+    icon?: React.ComponentType<{ className?: string }>;
+    harness?: PtyHarness;
+    color?: string;
+    onSelect: () => void;
+  }
+  const recentRows = useMemo(() => {
+    const candidates = new Map<string, RecentCandidate>();
+    for (const item of [...navigationItems, ...legacyItems, ...actionItems]) {
+      candidates.set(item.id, {
+        label: item.label,
+        icon: item.icon,
+        onSelect: item.onSelect,
+      });
+    }
+    if (inElectron) {
+      for (const h of HARNESS_ORDER) {
+        candidates.set(`launch:${h}`, {
+          label: `New ${HARNESS_META[h].label} session in the active project`,
+          harness: h,
+          onSelect: () => launchHarness(h),
+        });
+      }
+      for (const p of projects) {
+        if (!p.root_path) continue;
+        candidates.set(`project:${p.root_path}`, {
+          label: p.name,
+          color: p.color ?? undefined,
+          onSelect: () => openProject(p),
+        });
+      }
+      for (const r of recents) {
+        if (candidates.has(`project:${r.dir}`)) continue;
+        candidates.set(`project:${r.dir}`, {
+          label: r.name,
+          color: r.color,
+          onSelect: () => openRecentProject(r.dir),
+        });
+      }
+      if (onWorkspaceRoute) {
+        for (const w of workspaceItems) {
+          candidates.set(w.id, {
+            label: w.label,
+            icon: w.icon,
+            onSelect: w.onSelect,
+          });
+        }
+      }
+      if (onSpatialRoute) {
+        candidates.set('spatial-projection', {
+          label: 'Toggle projection (top-down ↔ angled)',
+          icon: RotateCw,
+          onSelect: toggleProjection,
+        });
+      }
+    }
+    return recentIds.flatMap(id => {
+      const c = candidates.get(id);
+      return c ? [{ id, ...c }] : [];
+    });
+  }, [
+    navigationItems,
+    legacyItems,
+    actionItems,
+    inElectron,
+    projects,
+    recents,
+    onWorkspaceRoute,
+    onSpatialRoute,
+    workspaceItems,
+    launchHarness,
+    openProject,
+    openRecentProject,
+    toggleProjection,
+    recentIds,
+  ]);
+
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
       <CommandInput
@@ -350,6 +459,43 @@ export function CommandPalette({
       />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
+
+        {!search && recentRows.length > 0 && (
+          <>
+            <CommandGroup heading="Recent">
+              {recentRows.map(row => (
+                <CommandItem
+                  key={`recent-use-${row.id}`}
+                  value={`recent ${row.id}`}
+                  onSelect={() => {
+                    recordPaletteUse(row.id);
+                    row.onSelect();
+                  }}
+                >
+                  {row.icon ? (
+                    <row.icon className="mr-2 h-4 w-4" />
+                  ) : row.harness ? (
+                    <span
+                      className="mr-2 shrink-0"
+                      style={{ color: HARNESS_META[row.harness].color }}
+                    >
+                      <HarnessGlyph harness={row.harness} size={13} />
+                    </span>
+                  ) : row.color ? (
+                    <span
+                      className="mr-2 inline-block h-2 w-2 shrink-0 rotate-45"
+                      style={{ background: row.color }}
+                    />
+                  ) : (
+                    <History className="mr-2 h-4 w-4" />
+                  )}
+                  <span className="truncate">{row.label}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
 
         {inElectron && sessions.length > 0 && (
           <>
@@ -406,7 +552,10 @@ export function CommandPalette({
                 <CommandItem
                   key={`launch-${h}`}
                   value={`launch launch ${HARNESS_META[h].label} new session agent`}
-                  onSelect={() => launchHarness(h)}
+                  onSelect={() => {
+                    recordPaletteUse(`launch:${h}`);
+                    launchHarness(h);
+                  }}
                 >
                   {h === 'shell' ? (
                     <SquareTerminal className="mr-2 h-3.5 w-3.5 shrink-0" />
@@ -437,7 +586,10 @@ export function CommandPalette({
                   <CommandItem
                     key={`project-${p.id}`}
                     value={`project open ${p.name} ${p.root_path ?? ''}`}
-                    onSelect={() => openProject(p)}
+                    onSelect={() => {
+                      recordPaletteUse(`project:${p.root_path}`);
+                      openProject(p);
+                    }}
                   >
                     <span
                       className="mr-2 inline-block h-2 w-2 shrink-0 rotate-45"
@@ -460,7 +612,10 @@ export function CommandPalette({
                   <CommandItem
                     key={`recent-${r.dir}`}
                     value={`project open recent ${r.name} ${r.dir}`}
-                    onSelect={() => openRecentProject(r.dir)}
+                    onSelect={() => {
+                      recordPaletteUse(`project:${r.dir}`);
+                      openRecentProject(r.dir);
+                    }}
                   >
                     <span
                       className="mr-2 inline-block h-2 w-2 shrink-0 rotate-45"
@@ -505,7 +660,10 @@ export function CommandPalette({
                 <CommandItem
                   key={item.id}
                   value={item.value}
-                  onSelect={item.onSelect}
+                  onSelect={() => {
+                    recordPaletteUse(item.id);
+                    item.onSelect();
+                  }}
                 >
                   <item.icon className="mr-2 h-4 w-4" />
                   <span>{item.label}</span>
@@ -517,9 +675,35 @@ export function CommandPalette({
           </>
         )}
 
+        {inElectron && onSpatialRoute && (
+          <>
+            <CommandGroup heading="Spatial">
+              <CommandItem
+                value="spatial toggle projection top-down angled fixed view"
+                onSelect={() => {
+                  recordPaletteUse('spatial-projection');
+                  toggleProjection();
+                }}
+              >
+                <RotateCw className="mr-2 h-4 w-4" />
+                <span>Toggle projection (top-down ↔ angled)</span>
+                <CommandShortcut>V</CommandShortcut>
+              </CommandItem>
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
+
         <CommandGroup heading="Navigation">
           {navigationItems.map(item => (
-            <CommandItem key={item.id} value={item.value} onSelect={item.onSelect}>
+            <CommandItem
+              key={item.id}
+              value={item.value}
+              onSelect={() => {
+                recordPaletteUse(item.id);
+                item.onSelect();
+              }}
+            >
               <item.icon className="mr-2 h-4 w-4" />
               <span>{item.label}</span>
               {item.shortcut && (
@@ -535,7 +719,14 @@ export function CommandPalette({
 
         <CommandGroup heading="Actions">
           {actionItems.map(item => (
-            <CommandItem key={item.id} value={item.value} onSelect={item.onSelect}>
+            <CommandItem
+              key={item.id}
+              value={item.value}
+              onSelect={() => {
+                recordPaletteUse(item.id);
+                item.onSelect();
+              }}
+            >
               <item.icon className="mr-2 h-4 w-4" />
               <span>{item.label}</span>
               {item.shortcut && (
@@ -552,7 +743,14 @@ export function CommandPalette({
         {/* legacy demo surfaces: reachable, never primary (ENG-016) */}
         <CommandGroup heading="Legacy">
           {legacyItems.map(item => (
-            <CommandItem key={item.id} value={item.value} onSelect={item.onSelect}>
+            <CommandItem
+              key={item.id}
+              value={item.value}
+              onSelect={() => {
+                recordPaletteUse(item.id);
+                item.onSelect();
+              }}
+            >
               <item.icon className="mr-2 h-4 w-4" />
               <span>{item.label}</span>
               {item.shortcut && (

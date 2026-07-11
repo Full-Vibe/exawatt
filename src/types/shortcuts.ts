@@ -18,10 +18,21 @@ export type ShortcutContext =
   | 'task-selected' // When a task is selected
   | 'task-detail' // When task detail sheet is open
   | 'command-palette' // Inside command palette
-  | 'modal-open'; // When any modal is open
+  | 'modal-open' // When any modal is open
+  // NEVER activated in the chord engine: workspace verbs are executed by the
+  // workspace key layer (the only layer that can see keystrokes inside
+  // xterm). Registering them under this context makes them rebindable,
+  // conflict-checked, and help-listed without ever double-firing (ENG-016 D9).
+  | 'workspace';
 
 /** Category for organizing shortcuts in help modal */
-export type ShortcutCategory = 'navigation' | 'actions' | 'selection' | 'view' | 'help';
+export type ShortcutCategory =
+  | 'workspace'
+  | 'navigation'
+  | 'actions'
+  | 'selection'
+  | 'view'
+  | 'help';
 
 /** Complete shortcut definition (without action - for registration) */
 export interface ShortcutDefinition {

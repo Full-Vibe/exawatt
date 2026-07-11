@@ -38,7 +38,7 @@ export const APP_SURFACES: AppSurface[] = [
     href: '/workspace',
     tier: 'spine',
     shortcutId: 'go-workspace',
-    keywords: ['workspace', 'terminal', 'agents', 'sessions', 'launch'],
+    keywords: ['workspace', 'terminal', 'agents', 'launch'],
   },
   {
     id: 'sessions',

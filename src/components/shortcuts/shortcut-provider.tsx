@@ -259,6 +259,10 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
       // Let command palette handle its own input
       if (commandPaletteOpen) return;
 
+      // The help modal owns the keyboard while open (D9): `g d` behind the
+      // cheat-sheet must not navigate. Radix handles Escape itself.
+      if (helpModalOpen) return;
+
       // Prevent double-triggering when a modal just closed (e.g., Enter in command palette)
       if (Date.now() - modalClosedAtRef.current < 100) return;
 
@@ -267,7 +271,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [commandPaletteOpen]);
+  }, [commandPaletteOpen, helpModalOpen]);
 
   // Wrapper to track when command palette closes
   const handleCommandPaletteChange = useCallback((open: boolean) => {

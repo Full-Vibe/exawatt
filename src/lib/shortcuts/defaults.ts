@@ -88,6 +88,78 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     contexts: ['global'],
   },
 
+  // Terminal-workspace verbs (ENG-016 D9). Registered under the `workspace`
+  // context, which the chord engine NEVER activates: the workspace key layer
+  // is the sole executor (only it can see keystrokes inside xterm) and
+  // resolves each combo from this registry — so these are rebindable in
+  // Settings, conflict-checked, and listed dynamically in the cheat-sheet.
+  // ⌘1–9 (project ordinals) and ⌘⇧[ / ⌘⇧] (tab ring) stay fixed key
+  // families outside the registry.
+  {
+    id: 'workspace-new-shell',
+    keys: { key: 't', modifiers: ['meta'] },
+    label: 'New shell in the active project',
+    description: 'Launch a shell session in the active project',
+    category: 'workspace',
+    contexts: ['workspace'],
+  },
+  {
+    id: 'workspace-new-project',
+    keys: { key: 'n', modifiers: ['meta'] },
+    label: 'Open a new project (browse for a folder)',
+    description: 'Pick a directory and open it as a Project',
+    category: 'workspace',
+    contexts: ['workspace'],
+  },
+  {
+    id: 'workspace-close-tab',
+    keys: { key: 'w', modifiers: ['meta'] },
+    label: 'Close the active tab',
+    description: 'End the active session tab',
+    category: 'workspace',
+    contexts: ['workspace'],
+  },
+  {
+    id: 'workspace-jump-attention',
+    keys: { key: 'j', modifiers: ['meta'] },
+    label: 'Jump to the session needing you',
+    description: 'Focus the oldest needs-attention session',
+    category: 'workspace',
+    contexts: ['workspace'],
+  },
+  {
+    id: 'workspace-overview',
+    keys: { key: 'o', modifiers: ['meta'] },
+    label: 'Overview of all sessions',
+    description: 'Toggle the exposé overview',
+    category: 'workspace',
+    contexts: ['workspace'],
+  },
+  {
+    id: 'workspace-split',
+    keys: { key: 'd', modifiers: ['meta'] },
+    label: 'Split: pin / unpin the active tab',
+    description: 'Pin the active tab beside the one you drive',
+    category: 'workspace',
+    contexts: ['workspace'],
+  },
+  {
+    id: 'workspace-rename',
+    keys: { key: 'e', modifiers: ['meta'] },
+    label: 'Rename the active tab',
+    description: 'Open the inline rename editor',
+    category: 'workspace',
+    contexts: ['workspace'],
+  },
+  {
+    id: 'workspace-roadmap',
+    keys: { key: 'b', modifiers: ['meta'] },
+    label: 'Roadmap rail (open / focus / collapse)',
+    description: 'Cycle the project roadmap rail',
+    category: 'workspace',
+    contexts: ['workspace'],
+  },
+
   // Regime switching (ENG-015): terminal workspace ↔ spatial map — two
   // first-class UI regimes over the same sessions, one gesture apart. The
   // workspace binds the same chord itself (its terminals swallow window
