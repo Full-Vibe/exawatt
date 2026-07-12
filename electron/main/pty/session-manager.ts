@@ -3,6 +3,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as os from 'os';
+import * as path from 'path';
 import * as pty from 'node-pty';
 import { expandTilde, resolveProject } from './project-resolve';
 import { ScrollbackStore } from './scrollback-store';
@@ -114,6 +115,8 @@ export async function defaultShell(): Promise<string> {
 interface Session {
   proc: pty.IPty;
   info: PtySessionInfo;
+  codexTrustAccepted: boolean;
+  codexIdentityStarted: boolean;
 }
 
 export class PtySessionManager extends EventEmitter {
@@ -127,6 +130,7 @@ export class PtySessionManager extends EventEmitter {
   private creatingDurableIds = new Set<string>();
   private claimedCodexIds = new Set<string>();
   private pendingCodexIdentities = new Set<Promise<void>>();
+  private codexSubmissionTail: Promise<void> = Promise.resolve();
 
   async configurePersistence(root: string): Promise<void> {
     this.history = new SessionHistoryStore(root);
@@ -196,14 +200,12 @@ export class PtySessionManager extends EventEmitter {
       options.harness === 'claude'
         ? (options.resumeSessionId ?? randomUUID())
         : (options.resumeSessionId ?? null);
-    const codexIdsBefore =
-      options.harness === 'codex' && !options.resumeSessionId
-        ? new Set(
-            (await listResumeCandidates('codex', cwd)).map(
-              candidate => candidate.id
-            )
-          )
-        : null;
+    const testHarnessExecutable =
+      process.env.EXAWATT_TEST === '1' &&
+      process.env.EXAWATT_TEST_HARNESS_BIN &&
+      path.isAbsolute(process.env.EXAWATT_TEST_HARNESS_BIN)
+        ? path.join(process.env.EXAWATT_TEST_HARNESS_BIN, options.harness)
+        : undefined;
 
     // plain shell: interactive login shell. Harness: run its CLI through the
     // login shell so PATH (homebrew, nvm, ...) resolves like the user's
@@ -218,7 +220,8 @@ export class PtySessionManager extends EventEmitter {
             buildHarnessCommand(
               options.harness,
               harnessSessionId,
-              !!options.resumeSessionId
+              !!options.resumeSessionId,
+              testHarnessExecutable
             ),
           ];
 
@@ -253,7 +256,12 @@ export class PtySessionManager extends EventEmitter {
       harnessSessionId,
     };
 
-    this.sessions.set(id, { proc, info });
+    this.sessions.set(id, {
+      proc,
+      info,
+      codexTrustAccepted: false,
+      codexIdentityStarted: false,
+    });
 
     if (options.resumeSessionId && options.harness !== 'shell') {
       this.appendBuffer(
@@ -295,32 +303,13 @@ export class PtySessionManager extends EventEmitter {
       this.emit('exit', id, exitCode, durableSessionId);
     });
 
-    if (codexIdsBefore) {
-      const identity = this.trackCodexIdentity(info, codexIdsBefore);
-      await Promise.race([
-        identity,
-        new Promise(resolve => setTimeout(resolve, 2_000)),
-      ]);
-    }
-
     return { ...info };
-  }
-
-  private trackCodexIdentity(
-    info: PtySessionInfo,
-    before: Set<string>
-  ): Promise<void> {
-    let tracked!: Promise<void>;
-    tracked = this.captureCodexIdentity(info, before).finally(() =>
-      this.pendingCodexIdentities.delete(tracked)
-    );
-    this.pendingCodexIdentities.add(tracked);
-    return tracked;
   }
 
   private async captureCodexIdentity(
     info: PtySessionInfo,
-    before: Set<string>
+    before: Set<string>,
+    submittedAt = info.startedAt
   ): Promise<void> {
     const deadline = Date.now() + 15_000;
     while (Date.now() < deadline && !info.exited && !info.harnessSessionId) {
@@ -329,7 +318,7 @@ export class PtySessionManager extends EventEmitter {
         candidate =>
           !before.has(candidate.id) &&
           !this.claimedCodexIds.has(candidate.id) &&
-          candidate.updatedAt >= info.startedAt - 2_000
+          candidate.updatedAt >= submittedAt - 2_000
       );
       if (match) {
         this.claimedCodexIds.add(match.id);
@@ -348,7 +337,63 @@ export class PtySessionManager extends EventEmitter {
 
   write(id: string, data: string): void {
     const s = this.sessions.get(id);
-    if (s && !s.info.exited) s.proc.write(data);
+    if (!s || s.info.exited) return;
+    if (
+      s.info.harness === 'codex' &&
+      !s.info.harnessSessionId &&
+      !s.codexIdentityStarted &&
+      /[\r\n]/.test(data)
+    ) {
+      const output = this.scrollback.text(s.info.durableSessionId).toLowerCase();
+      if (
+        !s.codexTrustAccepted &&
+        output.includes('trust') &&
+        output.includes('press')
+      ) {
+        s.codexTrustAccepted = true;
+        s.proc.write(data);
+        return;
+      }
+      s.codexIdentityStarted = true;
+      this.queueCodexSubmission(s, data);
+      return;
+    }
+    s.proc.write(data);
+  }
+
+  private queueCodexSubmission(session: Session, data: string): void {
+    const previous = this.codexSubmissionTail;
+    let release!: () => void;
+    this.codexSubmissionTail = new Promise(resolve => {
+      release = resolve;
+    });
+    let task!: Promise<void>;
+    task = (async () => {
+      await previous;
+      try {
+        if (
+          session.info.exited ||
+          !this.sessions.has(session.info.id) ||
+          session.info.harnessSessionId
+        ) {
+          return;
+        }
+        const before = new Set(
+          (await listResumeCandidates('codex', session.info.cwd)).map(
+            candidate => candidate.id
+          )
+        );
+        const submittedAt = Date.now();
+        session.proc.write(data);
+        await this.captureCodexIdentity(session.info, before, submittedAt);
+        if (!session.info.harnessSessionId) {
+          session.codexIdentityStarted = false;
+        }
+      } finally {
+        release();
+      }
+    })().finally(() => this.pendingCodexIdentities.delete(task));
+    this.pendingCodexIdentities.add(task);
   }
 
   /** operator rename (W0.4): keeps fleet/spatial names in step with the

@@ -27,6 +27,14 @@ async function jsonlFiles(directory: string): Promise<string[]> {
   return nested.flat();
 }
 
+async function canonicalDirectory(directory: string): Promise<string> {
+  try {
+    return await fs.promises.realpath(directory);
+  } catch {
+    return path.resolve(directory);
+  }
+}
+
 function userLabel(lines: string[], id: string): string {
   for (const line of lines.slice(1, 250)) {
     try {
@@ -52,6 +60,16 @@ export async function listResumeCandidates(
   sessionsRoot = path.join(os.homedir(), '.codex', 'sessions')
 ): Promise<HarnessResumeCandidate[]> {
   if (harness !== 'codex') return [];
+  const requestedDirectory = await canonicalDirectory(cwd);
+  const canonicalDirectories = new Map<string, Promise<string>>();
+  const canonical = (directory: string) => {
+    let resolved = canonicalDirectories.get(directory);
+    if (!resolved) {
+      resolved = canonicalDirectory(directory);
+      canonicalDirectories.set(directory, resolved);
+    }
+    return resolved;
+  };
   const files = await jsonlFiles(sessionsRoot);
   const stats = await Promise.all(
     files.map(async file => ({ file, stat: await fs.promises.stat(file) }))
@@ -66,7 +84,13 @@ export async function listResumeCandidates(
       const first = JSON.parse(lines[0]);
       const meta = first?.type === 'session_meta' ? first.payload : null;
       const id = meta?.session_id ?? meta?.id;
-      if (!id || meta?.cwd !== cwd) continue;
+      if (
+        !id ||
+        typeof meta?.cwd !== 'string' ||
+        (await canonical(meta.cwd)) !== requestedDirectory
+      ) {
+        continue;
+      }
       candidates.push({
         id,
         cwd: meta.cwd,

@@ -58,4 +58,25 @@ describe('listResumeCandidates', () => {
     expect(await listResumeCandidates('codex', '/projects/exawatt', root)).toEqual([]);
     expect(await listResumeCandidates('claude', '/projects/other', root)).toEqual([]);
   });
+
+  it('matches the same directory through a filesystem symlink', async () => {
+    const projectRoot = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), 'exawatt-project-')
+    );
+    roots.push(projectRoot);
+    const realCwd = path.join(projectRoot, 'real');
+    const linkedCwd = path.join(projectRoot, 'linked');
+    await fs.promises.mkdir(realCwd);
+    await fs.promises.symlink(realCwd, linkedCwd);
+    const { root } = await rollout(
+      '44444444-4444-4444-8444-444444444444',
+      realCwd,
+      'Resume through a canonical macOS path'
+    );
+
+    const candidates = await listResumeCandidates('codex', linkedCwd, root);
+    expect(candidates.map(candidate => candidate.id)).toEqual([
+      '44444444-4444-4444-8444-444444444444',
+    ]);
+  });
 });

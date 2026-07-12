@@ -38,6 +38,13 @@ if (process.env.EXAWATT_TEST && process.env.EXAWATT_USER_DATA) {
 // EXAWATT_DEV_URL lets harnesses point the shell at a different dev server
 const DEV_URL = process.env.EXAWATT_DEV_URL || 'http://localhost:7000';
 const PROTOCOL = 'exawatt';
+const testQuitResponses =
+  process.env.EXAWATT_TEST === '1'
+    ? (process.env.EXAWATT_TEST_QUIT_RESPONSES ?? '')
+        .split(',')
+        .map(value => value.trim())
+        .filter(Boolean)
+    : [];
 
 let mainWindow: BrowserWindow | null = null;
 let pendingDeepLinkUrl: string | null = null;
@@ -513,7 +520,9 @@ async function confirmShutdown(
   counts: { agents: number; shells: number }
 ): Promise<boolean> {
   if (process.env.EXAWATT_TEST === '1') {
-    if (process.env.EXAWATT_TEST_QUIT_RESPONSE === 'cancel') return false;
+    const response =
+      testQuitResponses.shift() ?? process.env.EXAWATT_TEST_QUIT_RESPONSE;
+    if (response === 'cancel') return false;
     return true;
   }
   const copy = shutdownCopy(intent, counts);

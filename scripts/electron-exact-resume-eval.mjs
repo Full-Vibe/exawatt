@@ -100,12 +100,15 @@ try {
   app = await launch();
   page = await app.firstWindow({ timeout: 45_000 });
   page.setDefaultTimeout(20_000);
-  await page.getByRole('button', { name: 'Resume all eligible' }).waitFor();
+  const resumeBanner = page
+    .getByRole('status')
+    .filter({ hasText: '4 agents are ready to resume' });
+  await resumeBanner.waitFor();
   const before = await page.evaluate(async () =>
     (await window.electron?.pty?.list())?.length
   );
   if (before !== 0) throw new Error(`Relaunch silently spawned ${before} sessions`);
-  await page.getByRole('button', { name: 'Resume all eligible' }).click();
+  await resumeBanner.getByRole('button', { name: 'Resume All' }).click();
   await waitForSessionCount(page, 4);
 
   const resumed = await page.evaluate(async () => {

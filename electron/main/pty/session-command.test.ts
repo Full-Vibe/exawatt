@@ -27,4 +27,20 @@ describe('buildHarnessCommand', () => {
       'Invalid harness session ID'
     );
   });
+
+  it('supports a shell-safe absolute executable for hermetic packaged tests', () => {
+    expect(
+      buildHarnessCommand(
+        'codex',
+        '22222222-2222-4222-8222-222222222222',
+        true,
+        "/tmp/fixture's bin/codex"
+      )
+    ).toBe(
+      `'\/tmp\/fixture'"'"'s bin\/codex' resume 22222222-2222-4222-8222-222222222222`.replaceAll('\\/', '/')
+    );
+    expect(() =>
+      buildHarnessCommand('codex', null, false, 'relative/codex')
+    ).toThrow('must be absolute');
+  });
 });
