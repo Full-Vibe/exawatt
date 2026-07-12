@@ -12,9 +12,11 @@ starting work. The operator resumes agents explicitly.
 
 ## Contracts
 
-- The existing stable tab ID becomes the durable Session ID in workspace v5.
-- PTY runtime IDs are ephemeral; Claude/Codex conversation IDs are exact source
-  identities. The three are never substituted for one another.
+- Workspace v5 stores an explicit durable Session ID. Migrated v4 tabs seed it
+  from the stable tab ID; new Sessions receive a separate UUID.
+- Tab IDs are UI identity, PTY runtime IDs are ephemeral, and Claude/Codex
+  conversation IDs are exact source identities. None are substituted for one
+  another.
 - Lifecycle is `running`, `stopped-clean`, `interrupted`, `exited`, `resuming`,
   or `failed`.
 - History is machine-local, atomically replaced, permission-restricted, bounded

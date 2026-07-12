@@ -82,7 +82,9 @@ async function waitForRenderer(url: string): Promise<void> {
     });
     if (ready) return;
     if (rendererServer?.exitCode !== null) {
-      throw new Error(`Packaged renderer exited with ${rendererServer?.exitCode}`);
+      throw new Error(
+        `Packaged renderer exited with ${rendererServer?.exitCode}`
+      );
     }
     await new Promise(resolve => setTimeout(resolve, 150));
   }
@@ -94,7 +96,10 @@ async function startPackagedRenderer(): Promise<string> {
   const packagedRenderer = path.join(process.resourcesPath, 'renderer');
   const archive = path.join(packagedRenderer, 'renderer.zip');
   const archiveHash = (
-    await fs.promises.readFile(path.join(packagedRenderer, 'renderer.sha256'), 'utf8')
+    await fs.promises.readFile(
+      path.join(packagedRenderer, 'renderer.sha256'),
+      'utf8'
+    )
   ).trim();
   const cacheRoot = path.join(app.getPath('userData'), 'renderer-cache');
   const versionRoot = path.join(cacheRoot, archiveHash);
@@ -210,7 +215,9 @@ function createWindow(): void {
       if (target.startsWith('https://')) void shell.openExternal(target);
     }
   });
-  mainWindow.webContents.on('will-attach-webview', event => event.preventDefault());
+  mainWindow.webContents.on('will-attach-webview', event =>
+    event.preventDefault()
+  );
   mainWindow.webContents.session.setPermissionRequestHandler(
     (_webContents, _permission, callback) => callback(false)
   );
@@ -442,7 +449,9 @@ function watchInstalledBuild(): void {
   const statePath = path.join(app.getPath('userData'), 'update-state.json');
   const report = async () => {
     try {
-      const state = JSON.parse(await fs.promises.readFile(statePath, 'utf8')) as {
+      const state = JSON.parse(
+        await fs.promises.readFile(statePath, 'utf8')
+      ) as {
         installedSha?: string;
       };
       if (state.installedSha && state.installedSha !== buildInfo.sha) {
@@ -465,6 +474,9 @@ function watchInstalledBuild(): void {
 
 app.whenReady().then(async () => {
   if (!isDev) await startPackagedRenderer();
+  await ptySessions.configurePersistence(
+    path.join(app.getPath('userData'), 'sessions')
+  );
   setTrustedRendererOrigin(isDev ? DEV_URL : rendererOrigin!);
   registerAgentIPC();
   registerPtyIPC();

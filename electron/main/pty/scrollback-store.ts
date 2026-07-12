@@ -20,6 +20,16 @@ export class ScrollbackStore {
 
   constructor(private readonly limit = 4_000_000) {}
 
+  seed(id: string, text: string, cursor = text.length): void {
+    const retained = text.length > this.limit ? text.slice(-this.limit) : text;
+    const end = Math.max(cursor, retained.length);
+    this.entries.set(id, {
+      text: retained,
+      start: end - retained.length,
+      end,
+    });
+  }
+
   append(id: string, data: string): void {
     const previous = this.entries.get(id) ?? { text: '', start: 0, end: 0 };
     const end = previous.end + data.length;

@@ -10,6 +10,8 @@ export interface PtyCreateOptions {
   title?: string;
   /** Resume one exact provider conversation. */
   resumeSessionId?: string;
+  /** Stable logical Exawatt Session identity. */
+  durableSessionId?: string;
 }
 
 export type PtyAttentionKind = 'bell' | 'turn-end';
@@ -30,6 +32,7 @@ export interface PtyReentryRecap {
 
 export interface PtySessionInfo {
   id: string;
+  durableSessionId: string;
   harness: PtyHarness;
   title: string;
   cwd: string;
@@ -66,6 +69,7 @@ export interface ElectronPtyApi {
   engage: (id: string) => Promise<void>;
   resize: (id: string, cols: number, rows: number) => Promise<void>;
   kill: (id: string) => Promise<void>;
+  deleteSession: (durableSessionId: string) => Promise<void>;
   rename: (id: string, title: string) => Promise<void>;
   /** the operator is looking at this session (null = none focused) */
   focus: (id: string | null) => Promise<void>;
@@ -76,6 +80,12 @@ export interface ElectronPtyApi {
     id: string,
     cursor: number
   ) => Promise<{ text: string; cursor: number; truncated: boolean }>;
+  retainedHistory: (durableSessionId: string) => Promise<{
+    text: string;
+    cursor: number;
+    updatedAt: number;
+    corrupt: boolean;
+  }>;
   pasteClipboard: (
     id: string
   ) => Promise<{ kind: 'image' | 'text' | 'empty'; path?: string }>;
@@ -88,15 +98,30 @@ export interface ElectronPtyApi {
     cwd: string
   ) => Promise<HarnessResumeCandidate[]>;
   onData: (
-    handler: (payload: { id: string; data: string; cursor: number }) => void
+    handler: (payload: {
+      id: string;
+      durableSessionId: string;
+      data: string;
+      cursor: number;
+    }) => void
   ) => () => void;
-  onExit: (handler: (payload: { id: string; exitCode: number }) => void) => () => void;
-  onContext: (handler: (payload: { id: string; summary: string }) => void) => () => void;
+  onExit: (
+    handler: (payload: {
+      id: string;
+      durableSessionId: string;
+      exitCode: number;
+    }) => void
+  ) => () => void;
+  onContext: (
+    handler: (payload: { id: string; summary: string }) => void
+  ) => () => void;
   onRecap: (handler: (payload: PtyReentryRecap) => void) => () => void;
   onAttention: (
     handler: (payload: { id: string; attention: PtyAttention | null }) => void
   ) => () => void;
-  onNotificationClick: (handler: (payload: { id: string }) => void) => () => void;
+  onNotificationClick: (
+    handler: (payload: { id: string }) => void
+  ) => () => void;
 }
 
 export interface HarnessResumeCandidate {
@@ -166,7 +191,13 @@ export interface ExawattBuildInfo {
 }
 
 export interface ProductUpdateStatus {
-  phase: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error';
+  phase:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'downloading'
+    | 'downloaded'
+    | 'error';
   currentVersion: string;
   availableVersion: string | null;
   percent: number | null;
@@ -182,7 +213,9 @@ export interface ElectronAppApi {
   onUpdateReady: (
     handler: (update: { currentSha: string; installedSha: string }) => void
   ) => () => void;
-  onUpdateStatus: (handler: (status: ProductUpdateStatus) => void) => () => void;
+  onUpdateStatus: (
+    handler: (status: ProductUpdateStatus) => void
+  ) => () => void;
 }
 
 declare global {

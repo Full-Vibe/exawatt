@@ -21,7 +21,10 @@ contextBridge.exposeInMainWorld('electron', {
     invoke: (method: string, ...args: unknown[]) =>
       ipcRenderer.invoke(`agent:${method}`, ...args),
     on: (channel: string, handler: (...args: unknown[]) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => handler(...args);
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        ...args: unknown[]
+      ) => handler(...args);
       ipcRenderer.on(channel, listener);
     },
     off: (channel: string, handler: (...args: unknown[]) => void) => {
@@ -30,20 +33,27 @@ contextBridge.exposeInMainWorld('electron', {
   },
   pty: {
     create: (options: unknown) => ipcRenderer.invoke('pty:create', options),
-    write: (id: string, data: string) => ipcRenderer.invoke('pty:write', id, data),
+    write: (id: string, data: string) =>
+      ipcRenderer.invoke('pty:write', id, data),
     engage: (id: string) => ipcRenderer.invoke('pty:engage', id),
     resize: (id: string, cols: number, rows: number) =>
       ipcRenderer.invoke('pty:resize', id, cols, rows),
     kill: (id: string) => ipcRenderer.invoke('pty:kill', id),
+    deleteSession: (durableSessionId: string) =>
+      ipcRenderer.invoke('pty:delete-session', durableSessionId),
     rename: (id: string, title: string) =>
       ipcRenderer.invoke('pty:rename', id, title),
     focus: (id: string | null) => ipcRenderer.invoke('pty:focus', id),
     list: () => ipcRenderer.invoke('pty:list'),
     buffer: (id: string) => ipcRenderer.invoke('pty:buffer', id),
-    bufferSnapshot: (id: string) => ipcRenderer.invoke('pty:buffer-snapshot', id),
+    bufferSnapshot: (id: string) =>
+      ipcRenderer.invoke('pty:buffer-snapshot', id),
     bufferSince: (id: string, cursor: number) =>
       ipcRenderer.invoke('pty:buffer-since', id, cursor),
-    pasteClipboard: (id: string) => ipcRenderer.invoke('pty:paste-clipboard', id),
+    retainedHistory: (durableSessionId: string) =>
+      ipcRenderer.invoke('pty:retained-history', durableSessionId),
+    pasteClipboard: (id: string) =>
+      ipcRenderer.invoke('pty:paste-clipboard', id),
     copyText: (text: string) => ipcRenderer.invoke('pty:copy-text', text),
     openExternal: (url: string) => ipcRenderer.invoke('pty:open-external', url),
     openPath: (filePath: string, cwd: string) =>
@@ -52,8 +62,17 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('pty:worktree', repoDir, branch),
     listResumeCandidates: (harness: string, cwd: string) =>
       ipcRenderer.invoke('pty:list-resume-candidates', harness, cwd),
-    onData: subscribe<{ id: string; data: string; cursor: number }>('pty:data'),
-    onExit: subscribe<{ id: string; exitCode: number }>('pty:exit'),
+    onData: subscribe<{
+      id: string;
+      durableSessionId: string;
+      data: string;
+      cursor: number;
+    }>('pty:data'),
+    onExit: subscribe<{
+      id: string;
+      durableSessionId: string;
+      exitCode: number;
+    }>('pty:exit'),
     onContext: subscribe<{ id: string; summary: string }>('pty:context'),
     onRecap: subscribe<{
       id: string;
@@ -69,10 +88,12 @@ contextBridge.exposeInMainWorld('electron', {
     save: (state: unknown) => ipcRenderer.invoke('workspace:save', state),
   },
   roadmap: {
-    read: (projectDir: string) => ipcRenderer.invoke('roadmap:read', projectDir),
+    read: (projectDir: string) =>
+      ipcRenderer.invoke('roadmap:read', projectDir),
     sessionEvidence: (cwd: string) =>
       ipcRenderer.invoke('roadmap:session-evidence', cwd),
-    watch: (projectDir: string) => ipcRenderer.invoke('roadmap:watch', projectDir),
+    watch: (projectDir: string) =>
+      ipcRenderer.invoke('roadmap:watch', projectDir),
     unwatch: (projectDir: string) =>
       ipcRenderer.invoke('roadmap:unwatch', projectDir),
     onFileChanged: subscribe<{ projectDir: string }>('roadmap:file-changed'),
@@ -102,7 +123,13 @@ contextBridge.exposeInMainWorld('electron', {
       installedSha: string;
     }>('app:update-ready'),
     onUpdateStatus: subscribe<{
-      phase: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error';
+      phase:
+        | 'idle'
+        | 'checking'
+        | 'available'
+        | 'downloading'
+        | 'downloaded'
+        | 'error';
       currentVersion: string;
       availableVersion: string | null;
       percent: number | null;
@@ -111,7 +138,8 @@ contextBridge.exposeInMainWorld('electron', {
     }>('app:update-status'),
   },
   auth: {
-    openExternal: (url: string) => ipcRenderer.invoke('auth:open-external', url),
+    openExternal: (url: string) =>
+      ipcRenderer.invoke('auth:open-external', url),
     onDeepLinkCode: subscribe<string>('auth:deeplink-code'),
   },
   dialog: {

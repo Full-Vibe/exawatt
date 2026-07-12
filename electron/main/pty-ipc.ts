@@ -34,12 +34,18 @@ export function registerPtyIPC(): void {
     }
   };
 
-  ptySessions.on('data', (id: string, data: string, cursor: number) => {
-    broadcast('pty:data', { id, data, cursor });
-  });
-  ptySessions.on('exit', (id: string, exitCode: number) => {
-    broadcast('pty:exit', { id, exitCode });
-  });
+  ptySessions.on(
+    'data',
+    (id: string, data: string, cursor: number, durableSessionId: string) => {
+      broadcast('pty:data', { id, durableSessionId, data, cursor });
+    }
+  );
+  ptySessions.on(
+    'exit',
+    (id: string, exitCode: number, durableSessionId: string) => {
+      broadcast('pty:exit', { id, durableSessionId, exitCode });
+    }
+  );
 
   // micro-context subtitles (W0.4): summaries stream as they refresh, and
   // ride along on pty:list so late attaches/pollers see the latest
@@ -108,7 +114,8 @@ export function registerPtyIPC(): void {
       win.webContents.send('pty:notification-click', { id });
     });
     notice.on('close', () => {
-      if (nativeNotifications.get(id) === notice) nativeNotifications.delete(id);
+      if (nativeNotifications.get(id) === notice)
+        nativeNotifications.delete(id);
     });
     nativeNotifications.set(id, notice);
     notice.show();
@@ -143,17 +150,21 @@ export function registerPtyIPC(): void {
     attentionMonitor.setFocus(id);
     contextSummarizer.setFocus(id);
   });
-  handleTrusted('pty:resize', (_event, id: string, cols: number, rows: number) => {
-    ptySessions.resize(id, cols, rows);
-  });
-  handleTrusted('pty:kill', (_event, id: string) => {
-    ptySessions.kill(id);
-  });
+  handleTrusted(
+    'pty:resize',
+    (_event, id: string, cols: number, rows: number) => {
+      ptySessions.resize(id, cols, rows);
+    }
+  );
+  handleTrusted('pty:kill', (_event, id: string) => ptySessions.kill(id));
+  handleTrusted('pty:delete-session', (_event, durableSessionId: string) =>
+    ptySessions.deleteSession(durableSessionId)
+  );
   handleTrusted('pty:rename', (_event, id: string, title: string) => {
     ptySessions.rename(id, title);
   });
   handleTrusted('pty:list', () =>
-    ptySessions.list().map((s) => ({
+    ptySessions.list().map(s => ({
       ...s,
       contextSummary: contextSummarizer.getSummary(s.id),
       attention: attentionMonitor.get(s.id),
@@ -167,6 +178,9 @@ export function registerPtyIPC(): void {
     ...ptySessions.bufferSince(id, cursor),
     cursor: ptySessions.bufferCursor(id),
   }));
+  handleTrusted('pty:retained-history', (_event, durableSessionId: string) =>
+    ptySessions.retainedHistory(durableSessionId)
+  );
   handleTrusted('pty:paste-clipboard', async (_event, id: string) => {
     const payload = await clipboardInput();
     if (payload.input) ptySessions.write(id, payload.input);
@@ -196,7 +210,8 @@ export function registerPtyIPC(): void {
         : rawPath;
       const resolved = path.resolve(cwd, expanded);
       const stat = await fs.promises.stat(resolved);
-      if (!stat.isFile() && !stat.isDirectory()) throw new Error('Unsupported path');
+      if (!stat.isFile() && !stat.isDirectory())
+        throw new Error('Unsupported path');
       const error = await shell.openPath(resolved);
       if (error) throw new Error(error);
     }
@@ -212,7 +227,10 @@ export function registerPtyIPC(): void {
     'pty:worktree',
     async (_event, repoDir: string, branch: string) => {
       try {
-        return { ok: true as const, path: await createWorktree(repoDir, branch) };
+        return {
+          ok: true as const,
+          path: await createWorktree(repoDir, branch),
+        };
       } catch (err) {
         return {
           ok: false as const,
@@ -230,12 +248,16 @@ export function registerPtyIPC(): void {
 
   // user settings (S3): userData/settings.json — e.g. the terminal font
   handleTrusted('settings:get', () => loadSettings());
-  handleTrusted('settings:set-attention-notifications', (_event, enabled: boolean) => {
-    if (typeof enabled !== 'boolean') throw new Error('Invalid notification setting');
-    const settings = setAttentionNotifications(enabled);
-    broadcast('settings:changed', settings);
-    return settings;
-  });
+  handleTrusted(
+    'settings:set-attention-notifications',
+    (_event, enabled: boolean) => {
+      if (typeof enabled !== 'boolean')
+        throw new Error('Invalid notification setting');
+      const settings = setAttentionNotifications(enabled);
+      broadcast('settings:changed', settings);
+      return settings;
+    }
+  );
 }
 
 /** app-quit cleanup: never leave orphan shells behind */

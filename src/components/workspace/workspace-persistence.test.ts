@@ -28,7 +28,9 @@ describe('workspace persistence v3', () => {
         },
       ],
     });
-    expect(parsed?.projects[0].tabs.map(item => item.harnessSessionId)).toEqual(ids);
+    expect(parsed?.projects[0].tabs.map(item => item.harnessSessionId)).toEqual(
+      ids
+    );
   });
 
   it('migrates old tabs to identity missing instead of inventing an ID', () => {
@@ -66,15 +68,18 @@ describe('workspace persistence v4 (ENG-017 S4)', () => {
         },
       ],
     });
-    expect(parsed?.v).toBe(4);
+    expect(parsed?.v).toBe(5);
     expect(parsed?.pinnedTabId).toBe('tab-1');
     expect(parsed?.projects[0].tabs[0]).toMatchObject({
       harnessSessionId: '00000001-1111-4111-8111-111111111111',
       roadmapItemId: null,
+      durableSessionId: 'tab-1',
+      lifecycle: 'stopped-clean',
+      exitCode: null,
     });
   });
 
-  it('keeps declared roadmap links through a save/load round trip', () => {
+  it('migrates v4 links while assigning non-aliased durable identities', () => {
     const parsed = parsePersisted({
       v: 4,
       lastUsedDir: '/project',
@@ -84,11 +89,17 @@ describe('workspace persistence v4 (ENG-017 S4)', () => {
           dir: '/project',
           name: 'Project',
           activeTabId: 'tab-1',
-          tabs: [{ ...tab('1'), roadmapItemId: 'ENG-017' }],
+          tabs: [
+            { ...tab('1'), roadmapItemId: 'ENG-017' },
+            { ...tab('2'), roadmapItemId: null },
+          ],
         },
       ],
     });
     expect(parsed?.projects[0].tabs[0].roadmapItemId).toBe('ENG-017');
+    expect(parsed?.projects[0].tabs.map(item => item.durableSessionId)).toEqual(
+      ['tab-1', 'tab-2']
+    );
   });
 
   it('chains a v1 initiatives layout all the way to v4', () => {
@@ -105,10 +116,52 @@ describe('workspace persistence v4 (ENG-017 S4)', () => {
         },
       ],
     });
-    expect(parsed?.v).toBe(4);
+    expect(parsed?.v).toBe(5);
     expect(parsed?.projects[0].tabs[0]).toMatchObject({
       harnessSessionId: null,
       roadmapItemId: null,
+      durableSessionId: 'tab-1',
+      lifecycle: 'stopped-clean',
+    });
+  });
+});
+
+describe('workspace persistence v5 (ENG-018)', () => {
+  it('preserves lifecycle and repairs duplicate durable IDs deterministically', () => {
+    const parsed = parsePersisted({
+      v: 5,
+      lastUsedDir: '/project',
+      activeDir: '/project',
+      projects: [
+        {
+          dir: '/project',
+          name: 'Project',
+          activeTabId: 'tab-1',
+          tabs: [
+            {
+              ...tab('1'),
+              durableSessionId: 'same',
+              roadmapItemId: null,
+              lifecycle: 'interrupted',
+              exitCode: null,
+            },
+            {
+              ...tab('2'),
+              durableSessionId: 'same',
+              roadmapItemId: null,
+              lifecycle: 'nonsense',
+              exitCode: 7,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(parsed?.projects[0].tabs[0].lifecycle).toBe('interrupted');
+    expect(parsed?.projects[0].tabs[1]).toMatchObject({
+      durableSessionId: 'tab-2-session',
+      lifecycle: 'stopped-clean',
+      exitCode: 7,
     });
   });
 });

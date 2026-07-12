@@ -8,6 +8,10 @@ import { expandTilde, resolveProject } from './project-resolve';
 import { ScrollbackStore } from './scrollback-store';
 import { randomUUID } from 'crypto';
 import { buildHarnessCommand } from './harness-command';
+import {
+  SessionHistoryStore,
+  type SessionHistorySnapshot,
+} from './session-history-store';
 
 const execFileAsync = promisify(execFile);
 
@@ -37,10 +41,13 @@ export interface PtyCreateOptions {
   title?: string;
   /** Exact provider conversation ID. Presence means resume that ID. */
   resumeSessionId?: string;
+  /** Stable Exawatt Session identity; survives PTY process replacement. */
+  durableSessionId?: string;
 }
 
 export interface PtySessionInfo {
   id: string;
+  durableSessionId: string;
   harness: PtyHarness;
   title: string;
   cwd: string;
@@ -102,7 +109,6 @@ export async function defaultShell(): Promise<string> {
   return cachedShell;
 }
 
-
 interface Session {
   proc: pty.IPty;
   info: PtySessionInfo;
@@ -112,7 +118,13 @@ export class PtySessionManager extends EventEmitter {
   private sessions = new Map<string, Session>();
   /** Bounded 4 MB per session; late panes replay text and S4 reads visit deltas. */
   private scrollback = new ScrollbackStore();
+  private history: SessionHistoryStore | null = null;
   private nextId = 1;
+
+  async configurePersistence(root: string): Promise<void> {
+    this.history = new SessionHistoryStore(root);
+    await this.history.initialize();
+  }
 
   // async: cwd validation and shell resolution do I/O — a stat on a dead
   // network mount must hang a threadpool worker, never the main event loop
@@ -134,6 +146,12 @@ export class PtySessionManager extends EventEmitter {
     const shell = await defaultShell();
     const project = await resolveProject(cwd);
     const id = `pty-${this.nextId++}`;
+    const durableSessionId =
+      options.durableSessionId ?? `session-${randomUUID()}`;
+    const retained = this.history
+      ? await this.history.load(durableSessionId)
+      : { text: '', cursor: 0, updatedAt: 0, corrupt: false };
+    this.scrollback.seed(durableSessionId, retained.text, retained.cursor);
     const harnessSessionId =
       options.harness === 'claude'
         ? (options.resumeSessionId ?? randomUUID())
@@ -172,6 +190,7 @@ export class PtySessionManager extends EventEmitter {
 
     const info: PtySessionInfo = {
       id,
+      durableSessionId,
       harness: options.harness,
       title: options.title || options.harness,
       projectDir: project.projectDir,
@@ -186,6 +205,14 @@ export class PtySessionManager extends EventEmitter {
       harnessSessionId,
     };
 
+    for (const [runtimeId, existing] of this.sessions) {
+      if (existing.info.durableSessionId === durableSessionId) {
+        if (!existing.info.exited) existing.proc.kill();
+        this.sessions.delete(runtimeId);
+      }
+    }
+    this.sessions.set(id, { proc, info });
+
     if (options.resumeSessionId && options.harness !== 'shell') {
       this.appendBuffer(
         id,
@@ -194,10 +221,16 @@ export class PtySessionManager extends EventEmitter {
       );
     }
 
-    proc.onData((data) => {
+    proc.onData(data => {
       info.lastDataAt = Date.now();
       this.appendBuffer(id, data);
-      this.emit('data', id, data, this.scrollback.cursor(id));
+      this.emit(
+        'data',
+        id,
+        data,
+        this.scrollback.cursor(durableSessionId),
+        durableSessionId
+      );
     });
     proc.onExit(({ exitCode }) => {
       // kill() may have already removed the session (process death is
@@ -210,11 +243,16 @@ export class PtySessionManager extends EventEmitter {
       // pane attaching after a fast death still shows what happened
       const marker = `\r\n\x1b[38;5;244m[session exited ${exitCode}]\x1b[0m\r\n`;
       this.appendBuffer(id, marker);
-      this.emit('data', id, marker, this.scrollback.cursor(id));
-      this.emit('exit', id, exitCode);
+      this.emit(
+        'data',
+        id,
+        marker,
+        this.scrollback.cursor(durableSessionId),
+        durableSessionId
+      );
+      this.emit('exit', id, exitCode, durableSessionId);
     });
 
-    this.sessions.set(id, { proc, info });
     return { ...info };
   }
 
@@ -234,52 +272,86 @@ export class PtySessionManager extends EventEmitter {
   resize(id: string, cols: number, rows: number): void {
     const s = this.sessions.get(id);
     if (!s || s.info.exited) return;
-    if (cols > 0 && rows > 0 && Number.isFinite(cols) && Number.isFinite(rows)) {
+    if (
+      cols > 0 &&
+      rows > 0 &&
+      Number.isFinite(cols) &&
+      Number.isFinite(rows)
+    ) {
       s.proc.resize(cols, rows);
       s.info.cols = cols;
       s.info.rows = rows;
     }
   }
 
-  kill(id: string): void {
+  async kill(id: string): Promise<void> {
     const s = this.sessions.get(id);
     if (!s) return;
     if (!s.info.exited) s.proc.kill();
     this.sessions.delete(id);
-    this.scrollback.delete(id);
+    this.scrollback.delete(s.info.durableSessionId);
+    await this.history?.delete(s.info.durableSessionId);
+  }
+
+  async deleteSession(durableSessionId: string): Promise<void> {
+    const runtime = Array.from(this.sessions.entries()).find(
+      ([, session]) => session.info.durableSessionId === durableSessionId
+    );
+    if (runtime) {
+      await this.kill(runtime[0]);
+      return;
+    }
+    this.scrollback.delete(durableSessionId);
+    await this.history?.delete(durableSessionId);
   }
 
   /** replayable scrollback for a session (empty string if unknown) */
   buffer(id: string): string {
-    return this.scrollback.text(id);
+    const durableId = this.sessions.get(id)?.info.durableSessionId;
+    return durableId ? this.scrollback.text(durableId) : '';
   }
 
   bufferSnapshot(id: string): { text: string; cursor: number } {
+    const durableId = this.sessions.get(id)?.info.durableSessionId;
     return {
-      text: this.scrollback.text(id),
-      cursor: this.scrollback.cursor(id),
+      text: durableId ? this.scrollback.text(durableId) : '',
+      cursor: durableId ? this.scrollback.cursor(durableId) : 0,
     };
   }
 
   /** Absolute scrollback position used as a last-visited checkpoint. */
   bufferCursor(id: string): number {
-    return this.scrollback.cursor(id);
+    const durableId = this.sessions.get(id)?.info.durableSessionId;
+    return durableId ? this.scrollback.cursor(durableId) : 0;
   }
 
   /** Output produced after a last-visited checkpoint. */
-  bufferSince(id: string, cursor: number): { text: string; truncated: boolean } {
-    return this.scrollback.since(id, cursor);
+  bufferSince(
+    id: string,
+    cursor: number
+  ): { text: string; truncated: boolean } {
+    const durableId = this.sessions.get(id)?.info.durableSessionId;
+    return durableId
+      ? this.scrollback.since(durableId, cursor)
+      : { text: '', truncated: false };
   }
 
   /** single append path: trims to BUFFER_LIMIT, then resyncs at a line
    *  boundary — a raw slice can land mid-escape-sequence or mid-surrogate,
    *  which garbles the top of every replay */
   private appendBuffer(id: string, data: string): void {
-    this.scrollback.append(id, data);
+    const durableId = this.sessions.get(id)?.info.durableSessionId;
+    if (!durableId) return;
+    this.scrollback.append(durableId, data);
+    this.history?.queue(durableId, {
+      text: this.scrollback.text(durableId),
+      cursor: this.scrollback.cursor(durableId),
+      updatedAt: Date.now(),
+    });
   }
 
   list(): PtySessionInfo[] {
-    return Array.from(this.sessions.values(), (s) => ({ ...s.info }));
+    return Array.from(this.sessions.values(), s => ({ ...s.info }));
   }
 
   /** layout persistence source (W0.2): everything EXCEPT the live process */
@@ -287,8 +359,44 @@ export class PtySessionManager extends EventEmitter {
     return this.list();
   }
 
-  killAll(): void {
-    for (const id of Array.from(this.sessions.keys())) this.kill(id);
+  async retainedHistory(
+    durableSessionId: string
+  ): Promise<SessionHistorySnapshot> {
+    const runtime = Array.from(this.sessions.values()).find(
+      session => session.info.durableSessionId === durableSessionId
+    );
+    if (runtime) {
+      return {
+        text: this.scrollback.text(durableSessionId),
+        cursor: this.scrollback.cursor(durableSessionId),
+        updatedAt: runtime.info.lastDataAt,
+        corrupt: false,
+      };
+    }
+    return (
+      this.history?.load(durableSessionId) ?? {
+        text: '',
+        cursor: 0,
+        updatedAt: 0,
+        corrupt: false,
+      }
+    );
+  }
+
+  async flushHistory(): Promise<void> {
+    await this.history?.flush();
+  }
+
+  async stopAll(): Promise<void> {
+    for (const [id, session] of Array.from(this.sessions.entries())) {
+      if (!session.info.exited) session.proc.kill();
+      this.sessions.delete(id);
+    }
+    await this.flushHistory();
+  }
+
+  async killAll(): Promise<void> {
+    for (const id of Array.from(this.sessions.keys())) await this.kill(id);
   }
 }
 

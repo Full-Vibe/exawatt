@@ -45,18 +45,29 @@ import type {
 export interface WorkspaceTab {
   /** stable across revives (sessionId changes when a tab is re-launchd) */
   id: string;
+  /** stable logical Session identity, distinct from tab/PTY/provider IDs */
+  durableSessionId: string;
   harness: PtyHarness;
   title: string;
   cwd: string;
   sessionId: string | null;
   harnessSessionId: string | null;
   resumeState: ResumeState;
+  lifecycle: SessionLifecycle;
   /** null = running; number = exit code; REVIVE_FAILED = revive error */
   exitCode: number | null;
   /** roadmap item declared at launch (ENG-017 S4) — a machine-local view
    *  annotation per decision 0010; overrides link inference, never synced */
   roadmapItemId: string | null;
 }
+
+export type SessionLifecycle =
+  | 'running'
+  | 'stopped-clean'
+  | 'interrupted'
+  | 'exited'
+  | 'resuming'
+  | 'failed';
 
 export type ResumeState =
   | 'live'
@@ -83,10 +94,9 @@ export interface Project {
   activeTabId: string | null;
 }
 
-/** Current persisted layout (v4). v4 adds per-tab declared roadmap links
- *  (ENG-017 S4). */
-interface PersistedV4 {
-  v: 4;
+/** Current persisted layout (v5). v5 adds durable identity and lifecycle. */
+export interface PersistedV5 {
+  v: 5;
   lastUsedDir: string;
   activeDir: string | null;
   /** split view (S2): tab pinned beside the active one; optional (pre-S2
@@ -108,15 +118,33 @@ interface PersistedV4 {
     activeTabId: string | null;
     tabs: Array<{
       id: string;
+      durableSessionId: string;
       harness: PtyHarness;
       title: string;
       cwd: string;
       sessionId: string | null;
       harnessSessionId: string | null;
       roadmapItemId: string | null;
+      lifecycle: SessionLifecycle;
+      exitCode: number | null;
     }>;
   }>;
 }
+
+/** v4 layout on disk: v5 minus durable identity and lifecycle. */
+type PersistedV4 = Omit<PersistedV5, 'v' | 'projects'> & {
+  v: 4;
+  projects: Array<
+    Omit<PersistedV5['projects'][number], 'tabs'> & {
+      tabs: Array<
+        Omit<
+          PersistedV5['projects'][number]['tabs'][number],
+          'durableSessionId' | 'lifecycle' | 'exitCode'
+        >
+      >;
+    }
+  >;
+};
 
 /** v3 layout on disk: v4 minus the per-tab declared roadmap link. */
 type PersistedV3 = Omit<PersistedV4, 'v' | 'projects'> & {
@@ -135,7 +163,10 @@ type PersistedV2 = Omit<PersistedV3, 'v' | 'projects'> & {
   projects: Array<
     Omit<PersistedV3['projects'][number], 'tabs'> & {
       tabs: Array<
-        Omit<PersistedV3['projects'][number]['tabs'][number], 'harnessSessionId'>
+        Omit<
+          PersistedV3['projects'][number]['tabs'][number],
+          'harnessSessionId'
+        >
       >;
     }
   >;
@@ -154,13 +185,62 @@ function newTabId(): string {
   return `tab-${Date.now().toString(36)}-${++tabCounter}`;
 }
 
+function newDurableSessionId(): string {
+  return `session-${crypto.randomUUID()}`;
+}
+
 /** Read the persisted layout, upgrading older shapes in place: v1 (key
  *  `initiatives`) → v2 (key `projects`) → v3 (exact provider IDs) → v4
- *  (declared roadmap links) so no upgrade ever drops a saved layout. */
-export function parsePersisted(raw: unknown): PersistedV4 | null {
+ *  (declared roadmap links) → v5 (durable lifecycle). */
+export function parsePersisted(raw: unknown): PersistedV5 | null {
   if (!raw || typeof raw !== 'object') return null;
   const d = raw as { v?: number; projects?: unknown; initiatives?: unknown };
-  if (d.v === 4 && Array.isArray(d.projects)) return raw as PersistedV4;
+  const toV5 = (p: PersistedV4): PersistedV5 => ({
+    ...p,
+    v: 5,
+    projects: p.projects.map(project => ({
+      ...project,
+      tabs: project.tabs.map(tab => ({
+        ...tab,
+        durableSessionId: tab.id,
+        lifecycle: 'stopped-clean' as const,
+        exitCode: null,
+      })),
+    })),
+  });
+  if (d.v === 5 && Array.isArray(d.projects)) {
+    const parsed = raw as PersistedV5;
+    const seen = new Set<string>();
+    return {
+      ...parsed,
+      projects: parsed.projects.map(project => ({
+        ...project,
+        tabs: project.tabs.map(tab => {
+          let durableSessionId = tab.durableSessionId || tab.id;
+          if (seen.has(durableSessionId))
+            durableSessionId = `${tab.id}-session`;
+          seen.add(durableSessionId);
+          const lifecycle: SessionLifecycle = [
+            'running',
+            'stopped-clean',
+            'interrupted',
+            'exited',
+            'resuming',
+            'failed',
+          ].includes(tab.lifecycle)
+            ? tab.lifecycle
+            : 'stopped-clean';
+          return {
+            ...tab,
+            durableSessionId,
+            lifecycle,
+            exitCode: tab.exitCode ?? null,
+          };
+        }),
+      })),
+    };
+  }
+  if (d.v === 4 && Array.isArray(d.projects)) return toV5(raw as PersistedV4);
   const toV4 = (p: Omit<PersistedV3, 'v'>): PersistedV4 => ({
     ...p,
     v: 4 as const,
@@ -171,16 +251,21 @@ export function parsePersisted(raw: unknown): PersistedV4 | null {
   });
   if (d.v === 3 && Array.isArray(d.projects)) {
     const { v: _v, ...rest } = raw as PersistedV3;
-    return toV4(rest);
+    return toV5(toV4(rest));
   }
-  const upgrade = (projects: PersistedV2['projects'], rest: Omit<PersistedV2, 'v' | 'projects'>) =>
-    toV4({
-      ...rest,
-      projects: projects.map(project => ({
-        ...project,
-        tabs: project.tabs.map(tab => ({ ...tab, harnessSessionId: null })),
-      })),
-    });
+  const upgrade = (
+    projects: PersistedV2['projects'],
+    rest: Omit<PersistedV2, 'v' | 'projects'>
+  ) =>
+    toV5(
+      toV4({
+        ...rest,
+        projects: projects.map(project => ({
+          ...project,
+          tabs: project.tabs.map(tab => ({ ...tab, harnessSessionId: null })),
+        })),
+      })
+    );
   if (d.v === 2 && Array.isArray(d.projects)) {
     const { projects, v: _v, ...rest } = raw as PersistedV2;
     return upgrade(projects, rest);
@@ -229,7 +314,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   /** needs-operator flags keyed by sessionId (ENG-015 S1; main is truth) */
   const [attention, setAttention] = useState<Record<string, PtyAttention>>({});
   /** quiet, one-shot S4 catch-up for the session currently being revisited */
-  const [reentryRecap, setReentryRecap] = useState<PtyReentryRecap | null>(null);
+  const [reentryRecap, setReentryRecap] = useState<PtyReentryRecap | null>(
+    null
+  );
   const dismissReentryRecap = useCallback(() => setReentryRecap(null), []);
   const stateRef = useRef({ projects, activeDir, lastUsedDir, pinnedTabId });
   stateRef.current = { projects, activeDir, lastUsedDir, pinnedTabId };
@@ -239,53 +326,67 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const editedDirsRef = useRef<Set<string>>(new Set());
   /** durable Project recency (ENG-016 D8) — loaded from the persisted layout,
    *  re-merged on every save so closed Projects survive */
-  const recentsRef = useRef<NonNullable<PersistedV4['recentProjects']>>([]);
+  const recentsRef = useRef<NonNullable<PersistedV5['recentProjects']>>([]);
   const readyRef = useRef(ready);
   readyRef.current = ready;
   const attentionRef = useRef(attention);
   attentionRef.current = attention;
 
   /** append a live session as a tab in its (possibly new) project */
-  const addSession = useCallback((s: PtySessionInfo, tabId?: string, roadmapItemId?: string | null) => {
-    const tab: WorkspaceTab = {
-      id: tabId ?? newTabId(),
-      harness: s.harness,
-      title: s.title,
-      cwd: s.cwd,
-      sessionId: s.id,
-      harnessSessionId: s.harnessSessionId,
-      resumeState: 'live',
-      exitCode: s.exited ? (s.exitCode ?? 0) : null,
-      roadmapItemId: roadmapItemId ?? null,
-    };
-    setProjects((prev) => {
-      const i = prev.findIndex((g) => g.dir === s.projectDir);
-      if (i === -1) {
-        return [
-          ...prev,
-          {
-            dir: s.projectDir,
-            name: s.projectName,
-            color: pickDistinctColor(prev.map((g) => g.color)),
-            tabs: [tab],
-            activeTabId: tab.id,
-          },
-        ];
-      }
-      const next = [...prev];
-      next[i] = { ...next[i], tabs: [...next[i].tabs, tab], activeTabId: tab.id };
-      return next;
-    });
-    setActiveDir(s.projectDir);
-    return tab.id;
-  }, []);
+  const addSession = useCallback(
+    (s: PtySessionInfo, tabId?: string, roadmapItemId?: string | null) => {
+      const tab: WorkspaceTab = {
+        id: tabId ?? newTabId(),
+        durableSessionId: s.durableSessionId,
+        harness: s.harness,
+        title: s.title,
+        cwd: s.cwd,
+        sessionId: s.id,
+        harnessSessionId: s.harnessSessionId,
+        resumeState: 'live',
+        lifecycle: 'running',
+        exitCode: s.exited ? (s.exitCode ?? 0) : null,
+        roadmapItemId: roadmapItemId ?? null,
+      };
+      setProjects(prev => {
+        const i = prev.findIndex(g => g.dir === s.projectDir);
+        if (i === -1) {
+          return [
+            ...prev,
+            {
+              dir: s.projectDir,
+              name: s.projectName,
+              color: pickDistinctColor(prev.map(g => g.color)),
+              tabs: [tab],
+              activeTabId: tab.id,
+            },
+          ];
+        }
+        const next = [...prev];
+        next[i] = {
+          ...next[i],
+          tabs: [...next[i].tabs, tab],
+          activeTabId: tab.id,
+        };
+        return next;
+      });
+      setActiveDir(s.projectDir);
+      return tab.id;
+    },
+    []
+  );
 
   const updateTab = useCallback(
     (tabId: string, patch: Partial<WorkspaceTab>) => {
-      setProjects((prev) =>
-        prev.map((g) =>
-          g.tabs.some((t) => t.id === tabId)
-            ? { ...g, tabs: g.tabs.map((t) => (t.id === tabId ? { ...t, ...patch } : t)) }
+      setProjects(prev =>
+        prev.map(g =>
+          g.tabs.some(t => t.id === tabId)
+            ? {
+                ...g,
+                tabs: g.tabs.map(t =>
+                  t.id === tabId ? { ...t, ...patch } : t
+                ),
+              }
             : g
         )
       );
@@ -315,7 +416,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       ]);
       if (cancelled) return;
       const persisted = parsePersisted(persistedRaw);
-      const liveById = new Map(live.map((s) => [s.id, s]));
+      const liveByDurableId = new Map(live.map(s => [s.durableSessionId, s]));
       // adopt existing summaries + attention flags (renderer reload)
       const seeded: Record<string, string> = {};
       const seededAttention: Record<string, PtyAttention> = {};
@@ -326,14 +427,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         }
       }
       if (Object.keys(seeded).length > 0) {
-        setSummaries((prev) => ({ ...seeded, ...prev }));
+        setSummaries(prev => ({ ...seeded, ...prev }));
       }
       if (Object.keys(seededAttention).length > 0) {
-        setAttention((prev) => ({ ...seededAttention, ...prev }));
+        setAttention(prev => ({ ...seededAttention, ...prev }));
       }
       if (persisted) {
         const assigned: Array<string | undefined> = persisted.projects.map(
-          (g) => g.color
+          g => g.color
         );
         const restored: Project[] = persisted.projects.map((g, gi) => ({
           dir: g.dir,
@@ -344,18 +445,19 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             projectColor(g.dir),
           // belt-and-suspenders vs older/hand-edited files: an activeTabId
           // that matches no tab would blank the pane area
-          activeTabId: g.tabs.some((t) => t.id === g.activeTabId)
+          activeTabId: g.tabs.some(t => t.id === g.activeTabId)
             ? g.activeTabId
             : (g.tabs[0]?.id ?? null),
-          tabs: g.tabs.map((t) => {
-            const s = t.sessionId ? liveById.get(t.sessionId) : undefined;
+          tabs: g.tabs.map(t => {
+            const s = liveByDurableId.get(t.durableSessionId);
             if (s) {
-              liveById.delete(s.id); // renderer reload: session still alive
+              liveByDurableId.delete(s.durableSessionId);
               return {
                 ...t,
                 sessionId: s.id,
                 harnessSessionId: s.harnessSessionId ?? t.harnessSessionId,
                 resumeState: 'live' as const,
+                lifecycle: 'running' as const,
                 exitCode: s.exited ? (s.exitCode ?? 0) : null,
               };
             }
@@ -364,7 +466,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             return {
               ...t,
               sessionId: null,
-              exitCode: 0,
+              exitCode: t.exitCode,
               resumeState: t.harnessSessionId
                 ? ('ended-resumable' as const)
                 : ('identity-missing' as const),
@@ -377,27 +479,24 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         recentsRef.current = persisted.recentProjects ?? [];
         // restore the split only if the pinned tab still exists
         const pinned = persisted.pinnedTabId ?? null;
-        if (
-          pinned &&
-          restored.some((g) => g.tabs.some((t) => t.id === pinned))
-        ) {
+        if (pinned && restored.some(g => g.tabs.some(t => t.id === pinned))) {
           setPinnedTabId(pinned);
         }
       }
       // live sessions unknown to the persisted layout (e.g. created since
       // the last save) — or the whole fresh-start case
-      for (const s of liveById.values()) addSession(s);
+      for (const s of liveByDurableId.values()) addSession(s);
       setReady(true);
       // reconcile durable identity (S5 P3) — async, so a slow/offline registry
       // never delays the terminal: adopt each Project's synced name/color (a
       // rename/recolor made on another machine or a prior run shows here) and
       // link the group to its registry row for future syncs.
       void listProjects()
-        .then((registry) => {
+        .then(registry => {
           if (cancelled || registry.length === 0) return;
-          const byPath = new Map(registry.map((p) => [p.root_path, p]));
-          setProjects((prev) =>
-            prev.map((g) => {
+          const byPath = new Map(registry.map(p => [p.root_path, p]));
+          setProjects(prev =>
+            prev.map(g => {
               const r = byPath.get(g.dir);
               if (!r) return g;
               // A rename/recolor made during this async window must win over
@@ -431,10 +530,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     })();
 
     const offExit = api.onExit(({ id, exitCode }) => {
-      setProjects((prev) =>
-        prev.map((g) => ({
+      setProjects(prev =>
+        prev.map(g => ({
           ...g,
-          tabs: g.tabs.map((t) =>
+          tabs: g.tabs.map(t =>
             t.sessionId === id
               ? {
                   ...t,
@@ -442,6 +541,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                   resumeState: t.harnessSessionId
                     ? 'ended-resumable'
                     : 'identity-missing',
+                  lifecycle: 'exited',
                 }
               : t
           ),
@@ -449,20 +549,20 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       );
     });
     const offContext = api.onContext?.(({ id, summary }) => {
-      setSummaries((prev) => ({ ...prev, [id]: summary }));
+      setSummaries(prev => ({ ...prev, [id]: summary }));
     });
-    const offRecap = api.onRecap?.((next) => {
+    const offRecap = api.onRecap?.(next => {
       const { projects: groups, activeDir: dir } = stateRef.current;
-      const active = groups.find((group) => group.dir === dir);
+      const active = groups.find(group => group.dir === dir);
       const tab = active?.tabs.find(
-        (candidate) => candidate.id === active.activeTabId
+        candidate => candidate.id === active.activeTabId
       );
       if (tab?.sessionId === next.id) setReentryRecap(next);
     });
     const offAttention = api.onAttention?.(({ id, attention: att }) => {
       if (att) clearedBeforeSeed.delete(id);
       else clearedBeforeSeed.add(id);
-      setAttention((prev) => {
+      setAttention(prev => {
         if (att) return { ...prev, [id]: att };
         if (!(id in prev)) return prev;
         const next = { ...prev };
@@ -496,54 +596,67 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       // dangling pin
       const pinSurvives =
         pin !== null &&
-        gs.some((g) =>
-          g.tabs.some((t) => t.id === pin && tabIsLive(t))
-        );
+        gs.some(g => g.tabs.some(t => t.id === pin && tabIsLive(t)));
       // merge open groups into the durable recency record: open groups are
       // the most recent by definition; prior entries survive their tabs
       // closing so ⌘K can still reach them (ENG-016 D8)
       const now = Date.now();
       const recents = [
-        ...gs.map((g) => ({
+        ...gs.map(g => ({
           dir: g.dir,
           name: g.name,
           ...(g.color ? { color: g.color } : {}),
           lastOpenedAt: now,
         })),
-        ...recentsRef.current.filter((r) => !gs.some((g) => g.dir === r.dir)),
+        ...recentsRef.current.filter(r => !gs.some(g => g.dir === r.dir)),
       ].slice(0, 12);
       recentsRef.current = recents;
-      const state: PersistedV4 = {
-        v: 4,
+      const state: PersistedV5 = {
+        v: 5,
         lastUsedDir: lu,
         activeDir: ad,
         pinnedTabId: pinSurvives ? pin : null,
         recentProjects: recents,
         projects: gs
-          .map((g) => {
-            const tabs = g.tabs
-              .map(({ id, harness, title, cwd, sessionId, harnessSessionId, roadmapItemId }) => ({
+          .map(g => {
+            const tabs = g.tabs.map(
+              ({
                 id,
+                durableSessionId,
                 harness,
                 title,
                 cwd,
                 sessionId,
                 harnessSessionId,
                 roadmapItemId,
-              }));
+                lifecycle,
+                exitCode,
+              }) => ({
+                id,
+                durableSessionId,
+                harness,
+                title,
+                cwd,
+                sessionId,
+                harnessSessionId,
+                roadmapItemId,
+                lifecycle,
+                exitCode,
+              })
+            );
             return {
               dir: g.dir,
               name: g.name,
               color: g.color,
               // the active tab may have been pruned (it exited) — never
               // persist a dangling id, or the restore renders no pane
-              activeTabId: tabs.some((t) => t.id === g.activeTabId)
+              activeTabId: tabs.some(t => t.id === g.activeTabId)
                 ? g.activeTabId
                 : (tabs[0]?.id ?? null),
               tabs,
             };
           })
-          .filter((g) => g.tabs.length > 0),
+          .filter(g => g.tabs.length > 0),
       };
       void ws.save(state);
     }, 400);
@@ -557,7 +670,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (!api) return false;
       const dir = opts.dir.trim();
       if (!dir) {
-        setError('Project directory is required — pick where this session lives.');
+        setError(
+          'Project directory is required — pick where this session lives.'
+        );
         return false;
       }
       let cwd = dir;
@@ -570,10 +685,13 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         cwd = wt.path;
       }
       const size = sizeRef.current?.() ?? null;
+      const tabId = newTabId();
+      const durableSessionId = newDurableSessionId();
       const res = await api.create({
         harness: opts.harness,
         cwd,
         title: HARNESS_META[opts.harness].label,
+        durableSessionId,
         ...(size ?? {}),
       });
       if (!res.ok) {
@@ -582,7 +700,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       }
       setError(null);
       setLastUsedDir(dir);
-      addSession(res.session, undefined, opts.roadmapItemId ?? null);
+      addSession(res.session, tabId, opts.roadmapItemId ?? null);
       // Resolution bridge (ENG-015 S5 P3): register/refresh this directory's
       // Project in the durable, synced registry. Best-effort — a registry
       // failure (offline, not signed in) must NEVER stop the operator opening
@@ -591,12 +709,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         rootPath: res.session.projectDir,
         name: res.session.projectName,
       })
-        .then((proj) => {
+        .then(proj => {
           // link the group to its registry row + adopt synced identity; a NEW
           // Project has no registry color yet, so push our locally-assigned
           // one up so it syncs to other machines.
-          setProjects((prev) =>
-            prev.map((g) =>
+          setProjects(prev =>
+            prev.map(g =>
               g.dir === proj.root_path
                 ? {
                     ...g,
@@ -609,9 +727,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           );
           if (!proj.color) {
             const g = stateRef.current.projects.find(
-              (p) => p.dir === proj.root_path
+              p => p.dir === proj.root_path
             );
-            if (g) void registrySetProjectColor(proj.id, g.color).catch(() => {});
+            if (g)
+              void registrySetProjectColor(proj.id, g.color).catch(() => {});
           }
         })
         .catch(() => {});
@@ -624,24 +743,24 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const api = window.electron?.pty;
     if (!api) return;
     const { projects: gs } = stateRef.current;
-    const g = gs.find((x) => x.tabs.some((t) => t.id === tabId));
-    const tab = g?.tabs.find((t) => t.id === tabId);
-    setPinnedTabId((cur) => (cur === tabId ? null : cur));
-    if (tab?.sessionId) await api.kill(tab.sessionId);
-    setProjects((prev) => {
+    const g = gs.find(x => x.tabs.some(t => t.id === tabId));
+    const tab = g?.tabs.find(t => t.id === tabId);
+    setPinnedTabId(cur => (cur === tabId ? null : cur));
+    if (tab) await api.deleteSession(tab.durableSessionId);
+    setProjects(prev => {
       const next = prev
-        .map((grp) => {
-          if (!grp.tabs.some((t) => t.id === tabId)) return grp;
-          const tabs = grp.tabs.filter((t) => t.id !== tabId);
+        .map(grp => {
+          if (!grp.tabs.some(t => t.id === tabId)) return grp;
+          const tabs = grp.tabs.filter(t => t.id !== tabId);
           const activeTabId =
             grp.activeTabId === tabId
               ? (tabs[tabs.length - 1]?.id ?? null)
               : grp.activeTabId;
           return { ...grp, tabs, activeTabId };
         })
-        .filter((grp) => grp.tabs.length > 0);
-      setActiveDir((cur) =>
-        next.some((grp) => grp.dir === cur) ? cur : (next[0]?.dir ?? null)
+        .filter(grp => grp.tabs.length > 0);
+      setActiveDir(cur =>
+        next.some(grp => grp.dir === cur) ? cur : (next[0]?.dir ?? null)
       );
       return next;
     });
@@ -654,23 +773,35 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const tab = stateRef.current.projects
         .flatMap(project => project.tabs)
         .find(candidate => candidate.id === tabId);
-      if (!tab || tabIsLive(tab) || tab.resumeState === 'resuming') return false;
+      if (!tab || tabIsLive(tab) || tab.resumeState === 'resuming')
+        return false;
       const exactId = selectedHarnessId ?? tab.harnessSessionId;
       if (tab.harness !== 'shell' && !exactId) {
-        setError(`Choose the exact ${HARNESS_META[tab.harness].label} conversation.`);
+        setError(
+          `Choose the exact ${HARNESS_META[tab.harness].label} conversation.`
+        );
         return false;
       }
-      updateTab(tabId, { resumeState: 'resuming', exitCode: null });
+      updateTab(tabId, {
+        resumeState: 'resuming',
+        lifecycle: 'resuming',
+        exitCode: null,
+      });
       const size = sizeRef.current?.() ?? null;
       const result = await api.create({
         harness: tab.harness,
         cwd: tab.cwd,
         title: tab.title,
+        durableSessionId: tab.durableSessionId,
         ...(exactId ? { resumeSessionId: exactId } : {}),
         ...(size ?? {}),
       });
       if (!result.ok) {
-        updateTab(tabId, { resumeState: 'failed', exitCode: REVIVE_FAILED });
+        updateTab(tabId, {
+          resumeState: 'failed',
+          lifecycle: 'failed',
+          exitCode: REVIVE_FAILED,
+        });
         setError(result.error);
         return false;
       }
@@ -679,6 +810,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         harnessSessionId: result.session.harnessSessionId ?? exactId ?? null,
         cwd: result.session.cwd,
         resumeState: exactId ? 'resumed' : 'live',
+        lifecycle: 'running',
         exitCode: null,
       });
       setError(null);
@@ -690,7 +822,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const resumeTabs = useCallback(
     async (tabs: WorkspaceTab[]) => {
       for (const tab of tabs) {
-        if (tab.harness === 'shell' || tab.harnessSessionId) {
+        if (tab.harness !== 'shell' && tab.harnessSessionId) {
           await resumeTab(tab.id);
         }
       }
@@ -700,7 +832,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
 
   const resumeProject = useCallback(
     (dir: string) => {
-      const project = stateRef.current.projects.find(group => group.dir === dir);
+      const project = stateRef.current.projects.find(
+        group => group.dir === dir
+      );
       if (project) void resumeTabs(project.tabs);
     },
     [resumeTabs]
@@ -715,9 +849,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const launchHere = useCallback(
     (harness: PtyHarness): boolean => {
       const { projects: gs, activeDir: ad, lastUsedDir: lu } = stateRef.current;
-      const dir = gs.find((g) => g.dir === ad)?.dir ?? (lu || null);
+      const dir = gs.find(g => g.dir === ad)?.dir ?? (lu || null);
       if (!dir) {
-        setError('Project directory is required — pick where this session lives.');
+        setError(
+          'Project directory is required — pick where this session lives.'
+        );
         return false;
       }
       void launch({ harness, dir });
@@ -730,7 +866,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  already has live tabs, else launch a shell there (opening/reviving it). */
   const openProject = useCallback(
     (dir: string): void => {
-      const g = stateRef.current.projects.find((p) => p.dir === dir);
+      const g = stateRef.current.projects.find(p => p.dir === dir);
       // activate only if something is actually live there; a group of only
       // dead/resumable tabs should launch a fresh shell (per the contract),
       // not switch to a resume panel.
@@ -754,13 +890,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const activateSession = useCallback((sessionId: string): boolean => {
     const { projects: gs } = stateRef.current;
     for (const g of gs) {
-      const tab = g.tabs.find((t) => t.sessionId === sessionId);
+      const tab = g.tabs.find(t => t.sessionId === sessionId);
       if (tab) {
         setActiveDir(g.dir);
-        setProjects((prev) =>
-          prev.map((x) =>
-            x.dir === g.dir ? { ...x, activeTabId: tab.id } : x
-          )
+        setProjects(prev =>
+          prev.map(x => (x.dir === g.dir ? { ...x, activeTabId: tab.id } : x))
         );
         return true;
       }
@@ -776,15 +910,13 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const { projects: gs, activeDir: ad, pinnedTabId: pin } = stateRef.current;
     const pinAlive =
       pin !== null &&
-      gs.some((g) =>
-        g.tabs.some((t) => t.id === pin && tabIsLive(t))
-      );
+      gs.some(g => g.tabs.some(t => t.id === pin && tabIsLive(t)));
     if (pinAlive) {
       setPinnedTabId(null);
       return true;
     }
-    const active = gs.find((g) => g.dir === ad);
-    const tab = active?.tabs.find((t) => t.id === active.activeTabId);
+    const active = gs.find(g => g.dir === ad);
+    const tab = active?.tabs.find(t => t.id === active.activeTabId);
     if (!tab) {
       setPinnedTabId(null); // still drop a stale pin
       return pin !== null;
@@ -795,8 +927,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
 
   const selectTab = useCallback((dir: string, tabId: string) => {
     setActiveDir(dir);
-    setProjects((prev) =>
-      prev.map((g) => (g.dir === dir ? { ...g, activeTabId: tabId } : g))
+    setProjects(prev =>
+      prev.map(g => (g.dir === dir ? { ...g, activeTabId: tabId } : g))
     );
   }, []);
 
@@ -804,31 +936,31 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  boundaries (operator, 2026-07-03) — the strip is one global ring */
   const cycleTab = useCallback((delta: 1 | -1): boolean => {
     const { projects: gs, activeDir: ad } = stateRef.current;
-    const flat = gs.flatMap((g) => g.tabs.map((t) => ({ dir: g.dir, tab: t })));
+    const flat = gs.flatMap(g => g.tabs.map(t => ({ dir: g.dir, tab: t })));
     if (flat.length === 0) return false;
-    const g = gs.find((x) => x.dir === ad);
+    const g = gs.find(x => x.dir === ad);
     const cur = flat.findIndex(
-      (e) => e.dir === ad && e.tab.id === g?.activeTabId
+      e => e.dir === ad && e.tab.id === g?.activeTabId
     );
     let next: (typeof flat)[number];
     if (cur === -1) {
       // stale/no active tab: RECOVER in place on the current project's
       // first tab (never yank the user to another project)
-      const anchor = flat.findIndex((e) => e.dir === ad);
+      const anchor = flat.findIndex(e => e.dir === ad);
       next = flat[anchor === -1 ? 0 : anchor];
     } else {
       next = flat[(cur + delta + flat.length) % flat.length];
     }
     setActiveDir(next.dir);
-    setProjects((prev) =>
-      prev.map((x) =>
+    setProjects(prev =>
+      prev.map(x =>
         x.dir === next.dir ? { ...x, activeTabId: next.tab.id } : x
       )
     );
     return true;
   }, []);
 
-  const activeProject = projects.find((g) => g.dir === activeDir) ?? null;
+  const activeProject = projects.find(g => g.dir === activeDir) ?? null;
   /** operator naming (W0.4): titles/names persist via the layout save; the
    *  PTY session is renamed too so fleet/spatial show the same identity */
   const renameTab = useCallback(
@@ -837,8 +969,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (!next) return;
       updateTab(tabId, { title: next });
       const tab = stateRef.current.projects
-        .flatMap((g) => g.tabs)
-        .find((t) => t.id === tabId);
+        .flatMap(g => g.tabs)
+        .find(t => t.id === tabId);
       if (tab?.sessionId) {
         void window.electron?.pty?.rename(tab.sessionId, next);
       }
@@ -848,11 +980,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
 
   const setProjectColor = useCallback((dir: string, color: string) => {
     editedDirsRef.current.add(dir);
-    setProjects((prev) =>
-      prev.map((g) => (g.dir === dir ? { ...g, color } : g))
-    );
+    setProjects(prev => prev.map(g => (g.dir === dir ? { ...g, color } : g)));
     // sync to the durable registry so the recolor persists + syncs (best-effort)
-    const g = stateRef.current.projects.find((p) => p.dir === dir);
+    const g = stateRef.current.projects.find(p => p.dir === dir);
     if (g?.registryId) {
       void registrySetProjectColor(g.registryId, color).catch(() => {});
     }
@@ -862,19 +992,18 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const next = name.trim();
     if (!next) return;
     editedDirsRef.current.add(dir);
-    setProjects((prev) =>
-      prev.map((g) => (g.dir === dir ? { ...g, name: next } : g))
+    setProjects(prev =>
+      prev.map(g => (g.dir === dir ? { ...g, name: next } : g))
     );
     // sync to the durable registry so the rename persists + syncs (best-effort)
-    const g = stateRef.current.projects.find((p) => p.dir === dir);
+    const g = stateRef.current.projects.find(p => p.dir === dir);
     if (g?.registryId) {
       void registryRenameProject(g.registryId, next).catch(() => {});
     }
   }, []);
 
   const activeTab =
-    activeProject?.tabs.find((t) => t.id === activeProject.activeTabId) ??
-    null;
+    activeProject?.tabs.find(t => t.id === activeProject.activeTabId) ?? null;
 
   /** ⌘J: jump to the OLDEST session needing the operator (repeat = walk the
    *  queue — focusing each one clears it, surfacing the next-oldest) */
@@ -886,14 +1015,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     for (const [sessionId] of flagged) {
       for (const g of gs) {
         const tab = g.tabs.find(
-          (t) => t.sessionId === sessionId && t.exitCode === null
+          t => t.sessionId === sessionId && t.exitCode === null
         );
         if (tab) {
           setActiveDir(g.dir);
-          setProjects((prev) =>
-            prev.map((x) =>
-              x.dir === g.dir ? { ...x, activeTabId: tab.id } : x
-            )
+          setProjects(prev =>
+            prev.map(x => (x.dir === g.dir ? { ...x, activeTabId: tab.id } : x))
           );
           return true;
         }
@@ -958,7 +1085,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   // The local record clears optimistically; main confirms via pty:attention.
   const activeSessionId = activeTab?.sessionId ?? null;
   useEffect(() => {
-    setReentryRecap((current) =>
+    setReentryRecap(current =>
       current?.id === activeSessionId ? current : null
     );
   }, [activeSessionId]);
@@ -971,7 +1098,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     // focused) — main keeps flags alive for a backgrounded window and is
     // the source of truth; it clears + broadcasts on window refocus
     if (activeSessionId && document.hasFocus()) {
-      setAttention((prev) => {
+      setAttention(prev => {
         if (!(activeSessionId in prev)) return prev;
         const next = { ...prev };
         delete next[activeSessionId];

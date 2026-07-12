@@ -9,6 +9,7 @@ import type { PtySessionInfo } from '@/types/electron';
 
 const session = (over: Partial<PtySessionInfo> = {}): PtySessionInfo => ({
   id: 'pty-1',
+  durableSessionId: 'session-one',
   harness: 'claude',
   title: 'Claude Code',
   cwd: '/p/a',
@@ -85,14 +86,22 @@ describe('buildSessionRows', () => {
       [
         session({ id: 'idle', lastDataAt: NOW - 60_000 }),
         session({ id: 'dead', exited: true, exitCode: 0 }),
-        session({ id: 'flag-new', attention: { kind: 'bell', since: NOW - 1_000 }, lastDataAt: NOW }),
+        session({
+          id: 'flag-new',
+          attention: { kind: 'bell', since: NOW - 1_000 },
+          lastDataAt: NOW,
+        }),
         session({ id: 'working', lastDataAt: NOW - 2_000 }),
-        session({ id: 'flag-old', attention: { kind: 'turn-end', since: NOW - 9_000 }, lastDataAt: NOW }),
+        session({
+          id: 'flag-old',
+          attention: { kind: 'turn-end', since: NOW - 9_000 },
+          lastDataAt: NOW,
+        }),
       ],
       null,
       NOW
     );
-    expect(rows.map((r) => r.id)).toEqual([
+    expect(rows.map(r => r.id)).toEqual([
       'flag-old',
       'flag-new',
       'working',
@@ -115,7 +124,7 @@ describe('buildSessionRows', () => {
       null,
       NOW
     );
-    expect(rows.map((r) => r.id)).toEqual(['dead-flagged-recent', 'dead-old']);
+    expect(rows.map(r => r.id)).toEqual(['dead-flagged-recent', 'dead-old']);
   });
 
   it('uses the layout color for the project, hash fallback otherwise', () => {
