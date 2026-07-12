@@ -7,18 +7,51 @@
  * ends in a toast saying what WOULD happen. Nothing here touches a file,
  * launches a session, or ships to the workspace rail — an accepted option
  * graduates to its own milestone with real plumbing and acceptance.
+ *
+ * Vocabulary (operator, 2026-07-12): the verb is ASSIGN, not feed; the
+ * progress gestures are spelled out in plain language because their first
+ * labels ("check milestones", "cycle status") were incomprehensible.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { HUD, withAlpha } from '@/components/hud';
 import type { RoadmapItemView, RoadmapLensView } from '@exawatt/ui-model';
+import { cleanMilestoneTitle } from '@/components/roadmap/roadmap-format';
 
-type Gesture = 'feed' | 'reorder' | 'milestones';
+type Gesture = 'assign' | 'reorder' | 'progress';
 type OptionKey = 'a' | 'b';
 
-const GESTURES: Array<{ key: Gesture; label: string; a: string; b: string }> = [
-  { key: 'feed', label: 'Feed an item', a: 'inline feed row', b: 'feed dialog' },
-  { key: 'reorder', label: 'Reorder queue', a: 'move mode (m)', b: 'direct ⌘↑/⌘↓' },
-  { key: 'milestones', label: 'Check milestones', a: 'space toggles', b: 's cycles status' },
+const GESTURES: Array<{
+  key: Gesture;
+  label: string;
+  /** one plain sentence: what this gesture does to the real world */
+  explainer: string;
+  a: string;
+  b: string;
+}> = [
+  {
+    key: 'assign',
+    label: 'Assign to an agent',
+    explainer:
+      'Enter on an item launches an agent already pointed at it — pick the harness, optionally a fresh worktree; the session starts with a kickoff prompt referencing the roadmap.',
+    a: 'inline row under the item',
+    b: 'centered dialog',
+  },
+  {
+    key: 'reorder',
+    label: 'Reorder the queue',
+    explainer:
+      'Change what comes next. Committing would rewrite the item order in roadmap.md.',
+    a: 'move mode (press m, arrows move, Enter commits)',
+    b: 'hold ⌘ and press arrows',
+  },
+  {
+    key: 'progress',
+    label: 'Record progress',
+    explainer:
+      'Report finished work back into the roadmap file — the file stays the only truth.',
+    a: 'Space — mark the next milestone done',
+    b: 's — advance the item toward shipped',
+  },
 ];
 
 function useToast(): [string | null, (msg: string) => void] {
@@ -27,7 +60,7 @@ function useToast(): [string | null, (msg: string) => void] {
   const show = (msg: string) => {
     setToast(msg);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setToast(null), 2600);
+    timer.current = setTimeout(() => setToast(null), 3200);
   };
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current);
@@ -41,7 +74,7 @@ function seededPrompt(item: RoadmapItemView): string {
 }
 
 export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
-  const [gesture, setGesture] = useState<Gesture>('feed');
+  const [gesture, setGesture] = useState<Gesture>('assign');
   const [option, setOption] = useState<OptionKey>('a');
   const [toast, showToast] = useToast();
 
@@ -53,7 +86,7 @@ export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
   const [items, setItems] = useState<RoadmapItemView[]>(initial);
   useEffect(() => setItems(initial), [initial]);
   const [sel, setSel] = useState(0);
-  const [feedOpen, setFeedOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
   const [moveMode, setMoveMode] = useState(false);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
@@ -70,11 +103,11 @@ export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
   };
 
   const launchMock = (item: RoadmapItemView, harness: string, worktree = false) => {
-    setFeedOpen(false);
+    setAssignOpen(false);
     showToast(
-      `mock: would launch ${harness}${worktree ? ' in a new worktree' : ''} declared on ${
-        item.declaredId ?? item.title
-      } with a seeded kickoff prompt`
+      `Prototype — this would launch ${harness}${
+        worktree ? ' in a new worktree' : ''
+      }, assigned to ${item.declaredId ?? item.title}, with a kickoff prompt from the roadmap.`
     );
   };
 
@@ -90,26 +123,33 @@ export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
       else setSel(s => Math.max(0, s - 1));
     } else if (e.key === 'Enter' && item) {
       e.preventDefault();
-      if (gesture === 'feed') setFeedOpen(true);
+      if (gesture === 'assign') setAssignOpen(true);
       else if (gesture === 'reorder' && moveMode) {
         setMoveMode(false);
-        showToast('mock: would rewrite the queue order in roadmap.md — prototype, no writes');
+        showToast('Prototype — this would rewrite the queue order in roadmap.md.');
       }
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      setFeedOpen(false);
+      setAssignOpen(false);
       setMoveMode(false);
     } else if (gesture === 'reorder' && option === 'a' && e.key === 'm') {
       e.preventDefault();
       setMoveMode(m => !m);
-    } else if (gesture === 'milestones' && item) {
+    } else if (gesture === 'progress' && item) {
       if (option === 'a' && e.key === ' ') {
         e.preventDefault();
+        const next = item.milestones.find(m => !m.done && !m.retired);
         setChecked(c => ({ ...c, [item.id]: !c[item.id] }));
-        showToast(`mock: would check the next milestone of ${item.declaredId ?? item.title} in roadmap.md`);
+        showToast(
+          next
+            ? `Prototype — this would mark “${cleanMilestoneTitle(next.title)}” done in roadmap.md (its “- [ ]” becomes “- [x]”).`
+            : `Prototype — ${item.declaredId ?? item.title} has no open milestone; nothing to mark done.`
+        );
       } else if (option === 'b' && e.key === 's') {
         e.preventDefault();
-        showToast(`mock: would cycle the Status: line of ${item.declaredId ?? item.title}`);
+        showToast(
+          `Prototype — this would move ${item.declaredId ?? item.title} one step toward shipped by editing its Status: line in roadmap.md.`
+        );
       }
     }
   };
@@ -122,12 +162,13 @@ export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
       <h2 className="font-display text-sm font-semibold" style={{ color: HUD.text }}>
         Prototypes — gated on operator play
       </h2>
-      <p className="mb-3 mt-1 text-xs" style={{ color: HUD.textDim }}>
-        Mock interactions only. Accept or reject each option; verdicts go in the
-        project doc before anything ships.
+      <p className="mb-3 mt-1 font-ui text-xs leading-5" style={{ color: HUD.textDim }}>
+        Mock interactions only — every commit ends in a toast saying what would
+        happen; no files are written. Accept or reject each option; verdicts go
+        in the project doc before anything ships.
       </p>
 
-      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
         {GESTURES.map(g => (
           <button
             key={g.key}
@@ -135,10 +176,10 @@ export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
             data-lab-gesture={g.key}
             onClick={() => {
               setGesture(g.key);
-              setFeedOpen(false);
+              setAssignOpen(false);
               setMoveMode(false);
             }}
-            className="rounded border px-2 py-1 font-mono text-[11px] outline-none hover:bg-white/10"
+            className="rounded border px-2 py-1 font-ui text-[12px] outline-none hover:bg-white/10"
             style={{
               borderColor:
                 g.key === gesture ? withAlpha(HUD.cyan, 0.7) : 'rgba(80,230,255,0.18)',
@@ -155,16 +196,19 @@ export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
             type="button"
             data-lab-option={o}
             onClick={() => setOption(o)}
-            className="rounded border px-2 py-1 font-mono text-[11px] outline-none hover:bg-white/10"
+            className="rounded border px-2 py-1 font-ui text-[12px] outline-none hover:bg-white/10"
             style={{
               borderColor: o === option ? withAlpha(HUD.amber, 0.7) : 'rgba(80,230,255,0.18)',
               color: o === option ? HUD.text : HUD.textDim,
             }}
           >
-            option {o.toUpperCase()} — {o === 'a' ? active.a : active.b}
+            Option {o.toUpperCase()} — {o === 'a' ? active.a : active.b}
           </button>
         ))}
       </div>
+      <p className="mb-2 font-ui text-[12px] leading-5" style={{ color: HUD.textDim }}>
+        {active.explainer}
+      </p>
 
       <div
         tabIndex={0}
@@ -173,17 +217,17 @@ export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
         className="rounded border p-2 outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
         style={{ borderColor: 'rgba(80,230,255,0.15)', background: HUD.bg.deep }}
       >
-        <p className="mb-1.5 font-mono text-[10px]" style={{ color: HUD.textDim }}>
-          click to focus · j/k move ·{' '}
-          {gesture === 'feed'
-            ? '⏎ feed the selected item'
+        <p className="mb-1.5 font-ui text-[11px]" style={{ color: HUD.textDim }}>
+          Click to focus, then j/k or arrows to select an item.{' '}
+          {gesture === 'assign'
+            ? 'Enter assigns the selected item.'
             : gesture === 'reorder'
               ? option === 'a'
-                ? 'm toggles move mode · ⏎ commits'
-                : '⌘j/⌘k (or ⌘↑/⌘↓) move the item'
+                ? 'm starts moving it; arrows carry it; Enter commits.'
+                : 'Hold ⌘ and press ↑/↓ (or j/k) to move it.'
               : option === 'a'
-                ? 'space checks the next milestone'
-                : 's cycles the status'}
+                ? 'Space marks its next milestone done.'
+                : 's advances it toward shipped.'}
         </p>
         {items.map((item, i) => (
           <div key={item.id}>
@@ -191,7 +235,7 @@ export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
               data-lab-item={item.id}
               data-selected={i === sel || undefined}
               onClick={() => setSel(i)}
-              className="flex items-center gap-2 rounded px-2 py-1 font-mono text-[11px]"
+              className="flex items-center gap-2 rounded px-2 py-1 text-[12px]"
               style={{
                 background:
                   i === sel
@@ -204,16 +248,27 @@ export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
                 opacity: checked[item.id] ? 0.6 : 1,
               }}
             >
-              <span style={{ color: moveMode && i === sel ? HUD.amber : HUD.textDim }}>
+              <span
+                className="font-mono text-[11px]"
+                style={{ color: moveMode && i === sel ? HUD.amber : HUD.textDim }}
+              >
                 {moveMode && i === sel ? '⇕' : `${i + 1}.`}
               </span>
-              <span style={{ color: HUD.textMono }}>{item.declaredId ?? '—'}</span>
-              <span className="min-w-0 truncate">{item.title}</span>
+              <span className="font-mono text-[11px]" style={{ color: HUD.textMono }}>
+                {item.declaredId ?? '—'}
+              </span>
+              <span className="min-w-0 truncate font-ui">{item.title}</span>
               {item.chips.length > 0 && (
-                <span style={{ color: HUD.cyan }}>▸{item.chips.length}</span>
+                <span
+                  className="font-mono text-[11px]"
+                  title={`${item.chips.length} session${item.chips.length === 1 ? '' : 's'} on this item`}
+                  style={{ color: HUD.cyan }}
+                >
+                  ▸{item.chips.length}
+                </span>
               )}
             </div>
-            {gesture === 'feed' && option === 'a' && feedOpen && i === sel && (
+            {gesture === 'assign' && option === 'a' && assignOpen && i === sel && (
               <div
                 className="mb-1 ml-7 flex flex-wrap items-center gap-1.5 rounded border p-1.5"
                 style={{ borderColor: withAlpha(HUD.cyan, 0.35) }}
@@ -223,7 +278,7 @@ export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
                     key={h}
                     type="button"
                     onClick={() => launchMock(item, h)}
-                    className="rounded border px-2 py-0.5 font-mono text-[10px] hover:bg-white/10"
+                    className="rounded border px-2 py-0.5 font-ui text-[11px] hover:bg-white/10"
                     style={{ borderColor: 'rgba(80,230,255,0.3)', color: HUD.text }}
                   >
                     ✳ {h}
@@ -232,10 +287,10 @@ export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
                 <button
                   type="button"
                   onClick={() => launchMock(item, 'Claude Code', true)}
-                  className="rounded border px-2 py-0.5 font-mono text-[10px] hover:bg-white/10"
+                  className="rounded border px-2 py-0.5 font-ui text-[11px] hover:bg-white/10"
                   style={{ borderColor: 'rgba(80,230,255,0.3)', color: HUD.textDim }}
                 >
-                  ⌘↵ in worktree
+                  ⌘↵ in a new worktree
                 </button>
               </div>
             )}
@@ -243,13 +298,13 @@ export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
         ))}
       </div>
 
-      {gesture === 'feed' && option === 'b' && feedOpen && items[sel] && (
+      {gesture === 'assign' && option === 'b' && assignOpen && items[sel] && (
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Feed item"
+          aria-label="Assign item"
           className="fixed inset-0 z-40 grid place-items-center bg-black/60"
-          onClick={() => setFeedOpen(false)}
+          onClick={() => setAssignOpen(false)}
         >
           <div
             className="w-96 rounded border p-4"
@@ -257,7 +312,7 @@ export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
             onClick={e => e.stopPropagation()}
           >
             <p className="font-display text-sm font-semibold" style={{ color: HUD.text }}>
-              Feed {items[sel].declaredId ?? items[sel].title} to…
+              Assign {items[sel].declaredId ?? items[sel].title} to…
             </p>
             <div className="mt-3 flex flex-col gap-1.5">
               {['Claude Code', 'Codex', 'Shell'].map(h => (
@@ -265,15 +320,15 @@ export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
                   key={h}
                   type="button"
                   onClick={() => launchMock(items[sel], h)}
-                  className="rounded border px-2 py-1.5 text-left font-mono text-xs hover:bg-white/10"
+                  className="rounded border px-2 py-1.5 text-left font-ui text-xs hover:bg-white/10"
                   style={{ borderColor: 'rgba(80,230,255,0.3)', color: HUD.text }}
                 >
                   ✳ New {h} session on this item
                 </button>
               ))}
             </div>
-            <p className="mt-3 font-mono text-[10px] leading-4" style={{ color: HUD.textDim }}>
-              prompt: “{seededPrompt(items[sel])}”
+            <p className="mt-3 font-ui text-[11px] leading-4" style={{ color: HUD.textDim }}>
+              Kickoff prompt: “{seededPrompt(items[sel])}”
             </p>
           </div>
         </div>
@@ -282,7 +337,7 @@ export function RoadmapFeedPrototypes({ view }: { view: RoadmapLensView }) {
       {toast && (
         <div
           data-lab-toast
-          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded border px-3 py-1.5 font-mono text-[11px]"
+          className="fixed bottom-6 left-1/2 z-50 max-w-xl -translate-x-1/2 rounded border px-3 py-1.5 font-ui text-[12px]"
           style={{
             borderColor: withAlpha(HUD.amber, 0.5),
             background: HUD.bg.deep,

@@ -496,7 +496,12 @@ export function RoadmapRail({
     if (key === 'Escape' || key === 'ArrowLeft') {
       handled();
       if (drillId) setDrillId(null);
-      else if (key === 'Escape') focusTerminal();
+      else if (key === 'Escape') {
+        // the lens is scoped to the project, and Escape backs out of it
+        // (operator, 2026-07-12): drill → queue → collapsed strip + terminal
+        onModeChange('strip');
+        focusTerminal();
+      }
       return;
     }
     if (drillId) {

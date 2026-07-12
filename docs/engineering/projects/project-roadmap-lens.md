@@ -253,7 +253,33 @@ directions' vocabulary without changing the structure — landed same day, see
 progress log. The directions module was retired (git history keeps it); the
 lab is back to the real strip + rail against fixture states.
 
+**Round-3 operator decisions (2026-07-12), pre-play vocabulary + scope:**
+
+- **The verb is ASSIGN, not feed.** "Assign to an agent" everywhere the
+  gesture appears; the reorder gesture is accepted as a concept.
+- **The progress gestures must be self-explanatory.** "Check milestones" and
+  "cycle status" meant nothing to the operator. Relabeled "Record progress":
+  Option A "Space — mark the next milestone done" (edits `- [ ]` → `- [x]`
+  in roadmap.md), Option B "s — advance the item toward shipped" (steps the
+  `Status:` line). Every prototype now carries a one-sentence explainer and
+  toasts say exactly what file edit would happen.
+- **The lens stays project-scoped; Escape backs out.** Escape ladder landed:
+  drill → queue → collapsed strip + terminal focus. Switching projects
+  re-scopes the rail (already true).
+- **Multi-project roadmap truth is DEFERRED, not rejected.** The operator
+  agrees in principle but wants the single-project lens built up and the
+  direction refined before committing to a global, cross-project layer. Do
+  not start it without a fresh operator conversation.
+
 ## Progress log (second arc)
+
+- 2026-07-12, round-3 decisions applied (see decisions above): prototypes
+  renamed to the ASSIGN vocabulary with plain-language options, per-gesture
+  explainers, and concrete would-write toasts (names the milestone it would
+  check off); rail Escape ladder landed — Escape at queue level collapses to
+  the strip and returns focus to the terminal (project-scoped back-out), with
+  a new rail-eval check (`escCollapsesRail`, 31 checks). ENG-003 marked
+  operator-hold in the roadmap; multi-project lens deferral recorded.
 
 - 2026-07-12, S11 landed (operator round-2 verdict: refine the shipped
   design, don't replace it): the rail keeps its structure and gains the

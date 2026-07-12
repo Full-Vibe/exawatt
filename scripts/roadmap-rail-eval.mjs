@@ -197,6 +197,17 @@ await withElectronApp(
     await page.waitForTimeout(300);
     results.escReturnsToQueue = !(await railText(page)).includes('Roadmap ·');
 
+    // Escape at queue level backs out of the lens entirely (project-scoped):
+    // the rail collapses to the strip and the terminal takes focus
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+    results.escCollapsesRail = await page
+      .locator('[data-roadmap-rail]')
+      .count()
+      .then(n => n === 0);
+    await page.keyboard.press('Meta+b');
+    await page.waitForTimeout(500);
+
     // shipped group expands
     await page.keyboard.press('g');
     await page.keyboard.press('ArrowUp');
