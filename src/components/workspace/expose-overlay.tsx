@@ -1,11 +1,11 @@
 // No 'use client' directive: only imported by the client workspace surface.
 
 /**
- * Exposé overview (ENG-015 S3): ⌘O fans every live session out as a rich
+ * Exposé overview (ENG-015 S3): ⌘2 fans every live session out as a rich
  * tile — project color, harness mark, title, micro-context, needs-you
  * pulse, and the last lines of scrollback — so "where is everything?"
  * answers itself in one glance. Fully keyboard-driven: arrows move,
- * Enter/click drops into the session, Esc/⌘O closes. DOM-rendered per the
+ * Enter/click drops into the session, Escape closes. DOM-rendered per the
  * decision `0003` hybrid rule; motion respects prefers-reduced-motion.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -93,7 +93,7 @@ export function ExposeOverlay({
     [projects]
   );
 
-  // start where the operator was — ⌘O then Enter must be a no-op return,
+  // start where the operator was — ⌘2 then Enter must be a no-op return,
   // never a jump to whatever happens to be tile 0
   const [sel, setSel] = useState(() => {
     const i = tiles.findIndex(t => t.tabId === activeTabId);

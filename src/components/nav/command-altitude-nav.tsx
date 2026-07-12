@@ -4,22 +4,13 @@ import { useEffect } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Grid2X2, Orbit, SquareTerminal } from 'lucide-react';
 import {
-  altitudeGestureShortcutId,
+  altitudeShortcutId,
   resolveCommandAltitude,
   type CommandAltitude,
 } from './command-altitude';
 import { formatShortcutKeys, formatShortcutKeysAria } from '@/lib/shortcuts';
 import { useEffectiveShortcut } from '@/components/shortcuts';
-import {
-  resolveSurfaceHref,
-  surfacesByTier,
-  type AppSurface,
-} from './surfaces';
-import { FOCUS_ACTIVE_TERMINAL_EVENT } from '@/components/workspace/session-jump';
-import {
-  FOCUS_SESSIONS_EVENT,
-  RECENTER_SPATIAL_EVENT,
-} from './command-altitude-events';
+import { surfacesByTier, type AppSurface } from './surfaces';
 import {
   commandSurfaceAddress,
   LAST_COMMAND_SURFACE_KEY,
@@ -47,10 +38,10 @@ function AltitudeLevel({
   surface: SpineSurface;
   active: CommandAltitude | null;
   index: number;
-  onActivate: (surface: SpineSurface, current: boolean) => void;
+  onActivate: (surface: SpineSurface) => void;
 }) {
   const current = surface.id === active;
-  const shortcutId = altitudeGestureShortcutId(active, surface.id);
+  const shortcutId = altitudeShortcutId(surface.id);
   const keys = useEffectiveShortcut(shortcutId);
   const shortcut = keys ? formatShortcutKeys(keys) : undefined;
   const ariaShortcut = keys ? formatShortcutKeysAria(keys) : undefined;
@@ -68,7 +59,7 @@ function AltitudeLevel({
         aria-keyshortcuts={ariaShortcut}
         aria-label={`${surface.name}: ${surface.summary}${shortcut ? ` (${shortcut})` : ''}`}
         title={`${surface.summary}${shortcut ? ` · ${shortcut}` : ''}`}
-        onClick={() => onActivate(surface, current)}
+        onClick={() => onActivate(surface)}
         className={`group flex h-7 min-w-0 items-center gap-1.5 px-2 font-mono text-[10px] outline-none transition-[background-color,color,transform] duration-150 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-300 motion-reduce:transition-none sm:px-2.5 ${
           current
             ? 'bg-zinc-800/90 text-zinc-50'
@@ -103,7 +94,7 @@ export function CommandAltitudeNav() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { navigateCommandSurface } = useCommandNavigation();
+  const { activateCommandAltitude } = useCommandNavigation();
   // null on non-spine surfaces (settings, legacy views): the rail still
   // renders — every level stays one click away — with no current level marked
   const active = resolveCommandAltitude(pathname, searchParams);
@@ -142,19 +133,7 @@ export function CommandAltitudeNav() {
           surface={surface}
           active={active}
           index={index}
-          onActivate={(target, current) => {
-            if (current) {
-              const event =
-                target.id === 'terminal'
-                  ? FOCUS_ACTIVE_TERMINAL_EVENT
-                  : target.id === 'sessions'
-                    ? FOCUS_SESSIONS_EVENT
-                    : RECENTER_SPATIAL_EVENT;
-              window.dispatchEvent(new CustomEvent(event));
-            } else {
-              navigateCommandSurface(resolveSurfaceHref(target));
-            }
-          }}
+          onActivate={target => activateCommandAltitude(target.id)}
         />
       ))}
     </nav>

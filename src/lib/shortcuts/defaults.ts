@@ -34,6 +34,33 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     category: 'navigation',
     contexts: ['global'],
   },
+  // Primary command-altitude keys (ENG-016 D12). These are absolute,
+  // idempotent destinations rather than contextual toggles: repeating one
+  // focuses/recenters that altitude instead of leaving it.
+  {
+    id: 'command-terminal',
+    keys: { key: '1', modifiers: ['meta'] },
+    label: 'Terminal',
+    description: 'Open or focus Terminal command altitude',
+    category: 'navigation',
+    contexts: ['global'],
+  },
+  {
+    id: 'command-sessions',
+    keys: { key: '2', modifiers: ['meta'] },
+    label: 'Sessions',
+    description: 'Open or focus Sessions command altitude',
+    category: 'navigation',
+    contexts: ['global'],
+  },
+  {
+    id: 'command-spatial',
+    keys: { key: '3', modifiers: ['meta'] },
+    label: 'Spatial',
+    description: 'Open or recenter Spatial command altitude',
+    category: 'navigation',
+    contexts: ['global'],
+  },
   {
     id: 'go-settings',
     keys: [{ key: 'g' }, { key: 's' }],
@@ -93,8 +120,8 @@ export const defaultShortcuts: ShortcutDefinition[] = [
   // is the sole executor (only it can see keystrokes inside xterm) and
   // resolves each combo from this registry — so these are rebindable in
   // Settings, conflict-checked, and listed dynamically in the cheat-sheet.
-  // ⌘1–9 (project ordinals) and ⌘⇧[ / ⌘⇧] (tab ring) stay fixed key
-  // families outside the registry.
+  // ⌘⌥1–9 (project ordinals) and ⌘⇧[ / ⌘⇧] (tab ring) stay fixed
+  // key families outside the registry.
   {
     id: 'workspace-new-shell',
     keys: { key: 't', modifiers: ['meta'] },
@@ -128,14 +155,6 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     contexts: ['workspace'],
   },
   {
-    id: 'workspace-overview',
-    keys: { key: 'o', modifiers: ['meta'] },
-    label: 'Overview of all sessions',
-    description: 'Toggle the exposé overview',
-    category: 'workspace',
-    contexts: ['global', 'workspace'],
-  },
-  {
     id: 'workspace-split',
     keys: { key: 'd', modifiers: ['meta'] },
     label: 'Split: pin / unpin the active tab',
@@ -158,19 +177,6 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     description: 'Cycle the project roadmap rail',
     category: 'workspace',
     contexts: ['workspace'],
-  },
-
-  // Regime switching (ENG-015): terminal workspace ↔ spatial map — two
-  // first-class UI regimes over the same sessions, one gesture apart. The
-  // workspace binds the same chord itself (its terminals swallow window
-  // keydowns from the chord engine); both paths compute the same target.
-  {
-    id: 'toggle-regime',
-    keys: { key: 'm', modifiers: ['meta', 'shift'] },
-    label: 'Switch Command Altitude (Terminal ↔ Spatial)',
-    description: 'Jump between terminal focus and Spatial Command',
-    category: 'navigation',
-    contexts: ['global'],
   },
 
   // Command palette

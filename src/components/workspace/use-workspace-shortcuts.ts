@@ -3,12 +3,11 @@
  *
  *   ⌘T (or ⌘⇧T)  launch a shell
  *   ⌘W (or ⌘⇧W)  close the active tab
- *   ⌘1…⌘9        jump to tab N
+ *   ⌘⌥1…⌘⌥9      jump to Project N
  *   ⌘⇧[ / ⌘⇧]    previous / next tab (wraps)
  *   ⌘J           jump to the oldest session needing attention (S1)
- *   ⌘⇧M          switch regime: workspace ↔ spatial map
+ *   ⌘1 / ⌘2 / ⌘3  Terminal / Sessions / Spatial
  *   ⌘K           session switcher / command palette (S2)
- *   ⌘O           exposé overview of all sessions (S3)
  *   ⌘D           split: pin the active tab beside whatever you drive (S2)
  *   ⌘B           roadmap rail: open → focus → collapse (ENG-017)
  *   ⌘E           rename the active tab inline (S2)
@@ -20,7 +19,7 @@
  * reserved for the workspace — the global chord engine can't see keystrokes
  * from inside xterm's hidden textarea). Every verb resolves its CURRENT
  * combo from the shortcut registry (ENG-016 D9), so rebinding in Settings
- * changes what the workspace responds to; only ⌘1…9 and the ⌘⇧[/⌘⇧] tab
+ * changes what the workspace responds to; only ⌘⌥1…9 and the ⌘⇧[/⌘⇧] tab
  * ring remain fixed key families. Each action reports whether it actually
  * applied — default behavior is prevented ONLY then, so impossible chords
  * (no tabs, web fallback) keep their browser behavior.
@@ -29,6 +28,7 @@ import { useEffect } from 'react';
 import { shortcutRegistry } from '@/lib/shortcuts';
 import { eventToBinding } from '@/lib/shortcuts/format';
 import { bindingsMatch, isChord } from '@/types/shortcuts';
+import type { CommandAltitude } from '@/components/nav/command-altitude';
 
 /** does this event match the registry's CURRENT binding for a shortcut id?
  *  (users can rebind any workspace verb; hard-coding combos here would make
@@ -71,12 +71,10 @@ export interface WorkspaceShortcutActions {
   cycle: (delta: 1 | -1) => boolean;
   /** jump to the oldest needs-attention session */
   jumpAttention: () => boolean;
-  /** flip to the other UI regime (spatial map) */
-  toggleRegime: () => boolean;
+  /** open or refocus one absolute command altitude */
+  activateCommandAltitude: (target: CommandAltitude) => boolean;
   /** open the ⌘K palette (session switcher) */
   openPalette: () => boolean;
-  /** toggle the exposé overview (S3) */
-  toggleOverview: () => boolean;
   /** toggle the split pin on the active tab */
   togglePin: () => boolean;
   /** ⌘B three-state cycle: open the roadmap rail → focus it → collapse it */
@@ -112,25 +110,45 @@ export function useWorkspaceShortcuts(
         if (actions.toggleFocus()) e.preventDefault();
         return;
       }
-      if (!e.metaKey || e.ctrlKey || e.altKey) return;
+      // Absolute command altitudes own capture phase so they work from xterm.
+      // Require Command/Control here: a plain or Option-only rebind must never
+      // eat terminal text or macOS character entry.
+      if (e.metaKey || e.ctrlKey) {
+        const altitudes: Array<[string, CommandAltitude]> = [
+          ['command-terminal', 'terminal'],
+          ['command-sessions', 'sessions'],
+          ['command-spatial', 'spatial'],
+        ];
+        for (const [id, target] of altitudes) {
+          if (matchesRegistry(e, id)) {
+            if (actions.activateCommandAltitude(target)) e.preventDefault();
+            return;
+          }
+        }
+      }
+
+      if (!e.metaKey || e.ctrlKey) return;
 
       // Fixed workspace navigation owns capture phase so xterm and the
       // global ⌘[/⌘] history layer cannot consume overlapping key families.
-      if (e.shiftKey && e.code === 'BracketLeft') {
+      if (!e.altKey && e.shiftKey && e.code === 'BracketLeft') {
         if (actions.cycle(-1)) e.preventDefault();
         return;
       }
-      if (e.shiftKey && e.code === 'BracketRight') {
+      if (!e.altKey && e.shiftKey && e.code === 'BracketRight') {
         if (actions.cycle(1)) e.preventDefault();
         return;
       }
-      if (!e.shiftKey && e.key >= '1' && e.key <= '9') {
-        if (actions.selectIndex(Number(e.key) - 1)) e.preventDefault();
+      const projectOrdinal = /^Digit([1-9])$/.exec(e.code);
+      if (e.altKey && !e.shiftKey && projectOrdinal) {
+        if (actions.selectIndex(Number(projectOrdinal[1]) - 1)) {
+          e.preventDefault();
+        }
       }
     };
     const onKey = (e: KeyboardEvent) => {
-      // another window-level layer (the global chord engine also binds
-      // ⌘⇧M) already handled this keystroke — never double-apply a verb
+      // another window-level layer already handled this keystroke — never
+      // double-apply a verb
       if (e.defaultPrevented) return;
       // a modal surface (⌘K palette, help modal) owns the keyboard while
       // open — ⌘W there must not close a terminal tab behind it
@@ -172,8 +190,6 @@ export function useWorkspaceShortcuts(
         ['workspace-new-project', actions.newProject],
         ['workspace-close-tab', actions.closeActive, true],
         ['workspace-jump-attention', actions.jumpAttention],
-        ['toggle-regime', actions.toggleRegime],
-        ['workspace-overview', actions.toggleOverview],
         ['workspace-split', actions.togglePin],
         ['workspace-roadmap', actions.toggleRoadmap],
         ['workspace-rename', actions.renameActive],

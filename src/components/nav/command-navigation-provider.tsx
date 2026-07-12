@@ -5,18 +5,30 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Orbit, SquareTerminal } from 'lucide-react';
+import { Grid2X2, Orbit, SquareTerminal } from 'lucide-react';
+import {
+  COMMAND_ALTITUDE_SURFACES,
+  resolveCommandAltitude,
+  type CommandAltitude,
+} from './command-altitude';
+import { resolveSurfaceHref } from './surfaces';
+import {
+  FOCUS_SESSIONS_EVENT,
+  RECENTER_SPATIAL_EVENT,
+} from './command-altitude-events';
+import { FOCUS_ACTIVE_TERMINAL_EVENT } from '@/components/workspace/session-jump';
 
 type TransitionPhase = 'departing' | 'traversing' | 'arriving';
 
 interface CommandTransition {
   phase: TransitionPhase;
-  target: 'terminal' | 'spatial';
+  target: CommandAltitude;
   startedAt: number;
 }
 
@@ -25,6 +37,7 @@ interface CommandNavigationContextValue {
     href: string,
     options?: { replace?: boolean }
   ) => void;
+  activateCommandAltitude: (target: CommandAltitude) => void;
 }
 
 const CommandNavigationContext =
@@ -70,6 +83,10 @@ export function CommandNavigationProvider({
       const targetUrl = new URL(href, window.location.origin);
       const currentRegime = commandRegime(window.location.pathname);
       const targetRegime = commandRegime(targetUrl.pathname);
+      const targetAltitude = resolveCommandAltitude(
+        targetUrl.pathname,
+        targetUrl.searchParams
+      );
       const crossesRegime =
         currentRegime !== null &&
         targetRegime !== null &&
@@ -86,14 +103,14 @@ export function CommandNavigationProvider({
       targetPath.current = targetUrl.pathname;
       setTransition({
         phase: 'departing',
-        target: targetRegime,
+        target: targetAltitude ?? targetRegime,
         startedAt,
       });
       frame.current = window.requestAnimationFrame(() => {
         frame.current = null;
         setTransition({
           phase: 'traversing',
-          target: targetRegime,
+          target: targetAltitude ?? targetRegime,
           startedAt,
         });
         timer.current = window.setTimeout(() => {
@@ -106,6 +123,29 @@ export function CommandNavigationProvider({
       });
     },
     [clearScheduled, router]
+  );
+
+  const activateCommandAltitude = useCallback(
+    (target: CommandAltitude) => {
+      const active = resolveCommandAltitude(
+        window.location.pathname,
+        new URLSearchParams(window.location.search)
+      );
+      if (active === target) {
+        const event =
+          target === 'terminal'
+            ? FOCUS_ACTIVE_TERMINAL_EVENT
+            : target === 'sessions'
+              ? FOCUS_SESSIONS_EVENT
+              : RECENTER_SPATIAL_EVENT;
+        window.dispatchEvent(new CustomEvent(event));
+        return;
+      }
+      navigateCommandSurface(
+        resolveSurfaceHref(COMMAND_ALTITUDE_SURFACES[target])
+      );
+    },
+    [navigateCommandSurface]
   );
 
   useEffect(() => {
@@ -142,8 +182,16 @@ export function CommandNavigationProvider({
 
   useEffect(() => clearScheduled, [clearScheduled]);
 
-  const value = { navigateCommandSurface };
-  const TargetIcon = transition?.target === 'spatial' ? Orbit : SquareTerminal;
+  const value = useMemo(
+    () => ({ navigateCommandSurface, activateCommandAltitude }),
+    [activateCommandAltitude, navigateCommandSurface]
+  );
+  const TargetIcon =
+    transition?.target === 'spatial'
+      ? Orbit
+      : transition?.target === 'sessions'
+        ? Grid2X2
+        : SquareTerminal;
 
   return (
     <CommandNavigationContext.Provider value={value}>

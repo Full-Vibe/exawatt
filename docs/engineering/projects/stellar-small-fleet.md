@@ -325,8 +325,9 @@ altitude continuum:
 
 The desktop app shell must show all three levels persistently on both terminal
 and spatial routes. Each level is one click away, the current level is explicit,
-and the control teaches `⌘O` for the middle level and `⌘⇧M` for the far/near
-toggle. `/workspace?view=sessions` is the durable middle-level address; entering
+and the control teaches the absolute `⌘1` Terminal, `⌘2` Sessions, and
+`⌘3` Spatial destinations. `/workspace?view=sessions` is the durable
+middle-level address; entering
 or leaving it must not recreate PTYs. Motion should explain the terminal
 receding into overview, use only transform/opacity, and crossfade rather than
 translate under reduced motion.
@@ -344,7 +345,7 @@ Implementation record (landed 2026-07-10):
   duplicate Workspace link is suppressed only when this richer Electron control
   is present; hosted/web navigation remains unchanged.
 - Session Overview is URL-backed at `/workspace?view=sessions`. Clicking the
-  rail, `⌘O`, closing exposé, and selecting a session synchronize the same state.
+  rail, `⌘2`, Escape, and selecting a session synchronize the same state.
   The terminal stage recedes through finite scale/opacity motion; reduced-motion
   keeps the de-emphasis but removes spatial scaling. A useful empty overview
   teaches how to populate the altitude.
@@ -352,7 +353,7 @@ Implementation record (landed 2026-07-10):
   Electron-mode evaluator covers click navigation, current-state semantics,
   normal/reduced motion, and the two-way shortcut. A real isolated Electron
   smoke launches a shell, traverses Terminal → Sessions → Spatial, returns with
-  `⌘⇧M`, and verifies that the live PTY remains present.
+  `⌘1`, and verifies that the live PTY remains present.
 - Verification: focused lint and type-check pass; all 267 tests pass; Electron
   compile and production Next build pass; both navigation evaluators pass; the
   full Spatial desktop/mobile/reduced-motion/low-power battery remains green.

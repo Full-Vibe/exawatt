@@ -261,14 +261,14 @@ await withElectronApp(
     await shot(page, '6c-blocked-attention');
 
     // S9: exposé tiles mirror what each agent is executing
-    await page.keyboard.press('Meta+o');
+    await page.keyboard.press('Meta+2');
     await page.waitForTimeout(900);
     results.exposeMirror = await page
       .locator('[data-expose-roadmap-item]')
       .count()
       .then(n => n >= 2);
     await shot(page, '6d-expose-mirror');
-    await page.keyboard.press('Meta+o');
+    await page.keyboard.press('Escape');
     await page.waitForTimeout(500);
 
     // empty queue — the designed "no food" moment

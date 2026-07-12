@@ -4,7 +4,7 @@
  * Agent Terminal Workspace (ENG-002) — orchestration surface.
  *
  * W0.2 model: ONE window; projects are directory-keyed groups inside it
- * (⌘1..9 switches project, ⌘⇧[/] rotates the global tab ring across projects, ⌘T launchs a
+ * (⌘⌥1..9 switches project, ⌘⇧[/] rotates the global tab ring across projects, ⌘T launchs a
  * shell in the active project). Layout persists across app restarts and
  * ended tabs restore without spawning and resume only an exact provider ID.
  * State/verbs live in use-workspace-state; this file is composition only.
@@ -36,7 +36,10 @@ import {
 } from './use-workspace-state';
 import { SessionRestorePanel } from './session-restore-panel';
 import { RetainedTerminalPane } from './retained-terminal-pane';
-import { useWorkspaceShortcuts } from './use-workspace-shortcuts';
+import {
+  useWorkspaceShortcuts,
+  type WorkspaceShortcutActions,
+} from './use-workspace-shortcuts';
 import {
   JUMP_ATTENTION_EVENT,
   RENAME_ACTIVE_EVENT,
@@ -69,7 +72,6 @@ import {
   orderedRoadmapJumpTargets,
 } from '@exawatt/ui-model';
 import { HUD } from '@/components/hud';
-import { spatialReturnHref } from '@/components/nav/spatial-return';
 import { Bell, BellOff, FolderOpen, Play, SquareTerminal, X } from 'lucide-react';
 import { middleTruncatePath } from './path-label';
 
@@ -77,14 +79,14 @@ import { middleTruncatePath } from './path-label';
  *  like the spatial map's bottom legend — normal case, dim, always there */
 const KEY_HINTS: Array<{ shortcutId: string; label: string }> = [
   { shortcutId: 'command-palette', label: 'commands' },
-  { shortcutId: 'workspace-overview', label: 'overview' },
+  { shortcutId: 'command-sessions', label: 'sessions' },
   { shortcutId: 'workspace-new-project', label: 'new project' },
   { shortcutId: 'workspace-new-shell', label: 'shell' },
   { shortcutId: 'workspace-split', label: 'split' },
   { shortcutId: 'workspace-roadmap', label: 'roadmap' },
   { shortcutId: 'workspace-jump-attention', label: 'needs you' },
   { shortcutId: 'workspace-rename', label: 'rename' },
-  { shortcutId: 'toggle-regime', label: 'spatial' },
+  { shortcutId: 'command-spatial', label: 'spatial' },
   { shortcutId: 'help-modal-slash', label: 'all keys' },
 ];
 
@@ -118,7 +120,7 @@ function WorkspaceKeyHint({
 }
 
 export function WorkspaceClient() {
-  const { navigateCommandSurface } = useCommandNavigation();
+  const { activateCommandAltitude } = useCommandNavigation();
   // SSR renders neither branch; the electron check runs after mount so the
   // server and client HTML always match (hydration safety)
   const [mounted, setMounted] = useState(false);
@@ -450,7 +452,7 @@ export function WorkspaceClient() {
     [roadmapAttention, attention]
   );
 
-  // exposé overview (S3): ⌘O — sessions fan out as tiles
+  // Sessions altitude (S3): ⌘2 — sessions fan out as tiles
   const requestedOverview = searchParams.get('view') === 'sessions';
   const [overviewOpen, setOverviewOpen] = useState(requestedOverview);
   const updateOverview = useCallback(
@@ -488,7 +490,7 @@ export function WorkspaceClient() {
     };
   }, [projects, activeTab, closeTab, updateOverview]);
 
-  const shortcutActions = useMemo(() => {
+  const shortcutActions = useMemo<WorkspaceShortcutActions>(() => {
       const focusTerminal = () => {
         window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
         return !!activeTab?.sessionId;
@@ -511,21 +513,11 @@ export function WorkspaceClient() {
           void closeTab(activeTab.id);
           return true;
         },
-        toggleOverview: () => {
-          // derive open-state from the URL at gesture time (D10): a toggle
-          // issued during the open/close transition must close the overview,
-          // not re-open it from a stale state closure
-          const openNow =
-            new URLSearchParams(window.location.search).get('view') ===
-            'sessions';
-          updateOverview(!openNow);
-          return true;
-        },
         selectIndex: selectProject,
         cycle: cycleTab,
         jumpAttention: jumpAttentionLadder,
-        toggleRegime: () => {
-          navigateCommandSurface(spatialReturnHref());
+        activateCommandAltitude: target => {
+          activateCommandAltitude(target);
           return true;
         },
         openPalette: () => {
@@ -586,10 +578,9 @@ export function WorkspaceClient() {
       cycleTab,
       jumpAttentionLadder,
       togglePin,
-      navigateCommandSurface,
+      activateCommandAltitude,
       openCommandPalette,
       openHelpModal,
-      updateOverview,
     ]
   );
   useWorkspaceShortcuts(shortcutActions, inElectron);

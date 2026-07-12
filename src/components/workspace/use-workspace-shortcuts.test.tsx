@@ -1,32 +1,44 @@
 import { fireEvent, renderHook } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { defaultShortcuts, shortcutRegistry } from '@/lib/shortcuts';
 import {
   useWorkspaceShortcuts,
   type WorkspaceShortcutActions,
 } from './use-workspace-shortcuts';
 
 function actions(): WorkspaceShortcutActions {
-  const yes = vi.fn(() => true);
+  const yes = () => vi.fn(() => true);
   return {
-    launchShell: yes,
-    newProject: yes,
-    closeActive: yes,
-    selectIndex: yes,
-    cycle: yes,
-    jumpAttention: yes,
-    toggleRegime: yes,
-    openPalette: yes,
-    toggleOverview: yes,
-    togglePin: yes,
-    toggleRoadmap: yes,
-    renameActive: yes,
-    openHelp: yes,
+    launchShell: yes(),
+    newProject: yes(),
+    closeActive: yes(),
+    selectIndex: yes(),
+    cycle: yes(),
+    jumpAttention: yes(),
+    activateCommandAltitude: yes(),
+    openPalette: yes(),
+    togglePin: yes(),
+    toggleRoadmap: yes(),
+    renameActive: yes(),
+    openHelp: yes(),
     toggleFocus: vi.fn(() => true),
     focusTerminal: vi.fn(() => true),
   };
 }
 
 describe('workspace focus shortcuts', () => {
+  beforeEach(() => {
+    for (const definition of defaultShortcuts) {
+      shortcutRegistry.register({ ...definition, action: vi.fn() });
+    }
+  });
+
+  afterEach(() => {
+    for (const definition of defaultShortcuts) {
+      shortcutRegistry.unregister(definition.id);
+    }
+  });
+
   it('cycles tabs before xterm can consume shifted bracket commands', () => {
     const handlers = actions();
     renderHook(() => useWorkspaceShortcuts(handlers));
@@ -71,6 +83,48 @@ describe('workspace focus shortcuts', () => {
       metaKey: true,
     });
     expect(handlers.cycle).not.toHaveBeenCalled();
+  });
+
+  it('owns absolute altitude commands before xterm and never treats them as Project ordinals', () => {
+    const handlers = actions();
+    renderHook(() => useWorkspaceShortcuts(handlers));
+    const terminal = document.createElement('textarea');
+    terminal.className = 'xterm-helper-textarea';
+    terminal.addEventListener('keydown', event => event.preventDefault());
+    document.body.append(terminal);
+
+    for (const [key, target] of [
+      ['1', 'terminal'],
+      ['2', 'sessions'],
+      ['3', 'spatial'],
+    ] as const) {
+      terminal.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key,
+          code: `Digit${key}`,
+          metaKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      expect(handlers.activateCommandAltitude).toHaveBeenLastCalledWith(target);
+    }
+    expect(handlers.selectIndex).not.toHaveBeenCalled();
+    terminal.remove();
+  });
+
+  it('moves fixed Project ordinals to command-option digits', () => {
+    const handlers = actions();
+    renderHook(() => useWorkspaceShortcuts(handlers));
+
+    fireEvent.keyDown(window, {
+      key: '¢',
+      code: 'Digit4',
+      metaKey: true,
+      altKey: true,
+    });
+    expect(handlers.selectIndex).toHaveBeenCalledWith(3);
+    expect(handlers.activateCommandAltitude).not.toHaveBeenCalled();
   });
 
   it('uses F6 to cross the terminal/chrome boundary', () => {

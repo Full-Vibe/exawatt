@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  altitudeGestureShortcutId,
+  altitudeShortcutId,
   COMMAND_ALTITUDE_HREFS,
   isCommandSurface,
   resolveCommandAltitude,
@@ -32,20 +32,10 @@ describe('command altitude navigation', () => {
     });
   });
 
-  it('advertises the direct gesture for each altitude transition', () => {
-    expect(altitudeGestureShortcutId('terminal', 'sessions')).toBe(
-      'workspace-overview'
-    );
-    expect(altitudeGestureShortcutId('sessions', 'terminal')).toBe(
-      'workspace-overview'
-    );
-    expect(altitudeGestureShortcutId('terminal', 'spatial')).toBe(
-      'toggle-regime'
-    );
-    expect(altitudeGestureShortcutId('spatial', 'terminal')).toBe(
-      'toggle-regime'
-    );
-    expect(altitudeGestureShortcutId('terminal', 'terminal')).toBeNull();
+  it('advertises one absolute shortcut for each altitude', () => {
+    expect(altitudeShortcutId('terminal')).toBe('command-terminal');
+    expect(altitudeShortcutId('sessions')).toBe('command-sessions');
+    expect(altitudeShortcutId('spatial')).toBe('command-spatial');
   });
 
   it('shows the shared control only on command surfaces', () => {

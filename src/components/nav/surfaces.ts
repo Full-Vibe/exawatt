@@ -50,6 +50,7 @@ export const APP_SURFACES: AppSurface[] = [
     href: '/workspace',
     tier: 'spine',
     shortcutId: 'go-workspace',
+    gestureShortcutId: 'command-terminal',
     keywords: ['workspace', 'terminal', 'agents', 'launch'],
   },
   {
@@ -59,7 +60,7 @@ export const APP_SURFACES: AppSurface[] = [
     href: '/workspace?view=sessions',
     tier: 'spine',
     shortcutId: 'go-sessions',
-    gestureShortcutId: 'workspace-overview',
+    gestureShortcutId: 'command-sessions',
     keywords: ['overview', 'expose', 'grid', 'tiles', 'all sessions'],
   },
   {
@@ -69,7 +70,7 @@ export const APP_SURFACES: AppSurface[] = [
     href: '/fleet/spatial',
     tier: 'spine',
     shortcutId: 'go-spatial',
-    gestureShortcutId: 'toggle-regime',
+    gestureShortcutId: 'command-spatial',
     keywords: ['map', 'board', 'fleet command', 'altitude', 'zoom'],
   },
   {

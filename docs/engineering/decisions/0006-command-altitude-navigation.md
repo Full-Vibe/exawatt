@@ -1,6 +1,6 @@
 # 0006 — Present terminal, session overview, and Spatial as one command altitude
 
-Date: 2026-07-10
+Date: 2026-07-10; amended 2026-07-12
 Status: accepted
 
 ## Context
@@ -28,29 +28,31 @@ Choose option 3. The Electron app shell presents:
 - **Spatial** — far altitude, Project/Agent fleet command.
 
 All three levels remain directly clickable from terminal and spatial routes.
-`/workspace?view=sessions` addresses the middle altitude. `⌘O` remains the
-Session Overview gesture and `⌘⇧M` remains the direct Terminal ↔ Spatial toggle,
-including while xterm owns focus. The control labels the shortcuts instead of
-requiring prior knowledge.
+`/workspace?view=sessions` addresses the middle altitude. Each level has one
+absolute, rebindable destination shortcut: `⌘1` Terminal, `⌘2` Sessions,
+and `⌘3` Spatial, including while xterm or Spatial search owns focus.
+Repeating a destination focuses/recenters it and never toggles away. The control
+labels all three shortcuts instead of requiring prior knowledge. Fixed Project
+ordinals use `⌘⌥1`–`⌘⌥9`; `⌘⇧[` / `⌘⇧]` retain the global tab ring.
 
 Refinement (operator, 2026-07-11): Sessions behaves like a Mission Control-style
 transient overview rather than an application-modal dialog. It preserves the
-originating Session, uses arrows/J/K for selection, Enter to open, and Escape or
-`⌘O` to return. Obscured workspace chrome is inert, but the shell-level altitude
+originating Session, uses arrows/J/K for selection, Enter to open, and Escape to
+return. Obscured workspace chrome is inert, but the shell-level altitude
 control remains reachable. Escape remains owned by the running TUI while xterm
 has focus; Spatial uses Escape only to clear its own Agent/Project selection.
 
-The direct Terminal ↔ Spatial gesture routes through one finite transition
-owner. This shared motion/command contract is the extension point for making
+Direct cross-regime destinations route through one finite transition owner.
+This shared motion/command contract is the extension point for making
 the regimes feel like one game board over time; it does not merge the xterm and
 R3F renderer boundaries. The shell restores the last altitude, Spatial semantic
 filters are URL state, and bounded camera return state is session-local.
 
 Implementation note (2026-07-11): `CommandNavigationProvider` is that owner.
 It is called by the altitude control, shortcut engine, native menu bridge,
-command palette, workspace toggle, and Spatial Agent handoff. Navigation is not
-held behind the animation; the target-aware overlay settles in about 320 ms and
-collapses to a short opacity handoff when reduced motion is requested.
+command palette, workspace capture layer, and Spatial Agent handoff. Navigation
+is not held behind the animation; the target-aware overlay settles in about 320
+ms and collapses to a short opacity handoff when reduced motion is requested.
 
 ## Consequences
 

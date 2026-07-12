@@ -52,8 +52,8 @@ const FIXED_FAMILIES: Array<{
 }> = [
   {
     category: 'workspace',
-    label: 'Jump to project 1–9',
-    keys: { key: '1…9', modifiers: ['meta'] },
+    label: 'Jump to Project 1–9',
+    keys: { key: '1…9', modifiers: ['meta', 'alt'] },
   },
   {
     category: 'workspace',

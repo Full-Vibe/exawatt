@@ -41,7 +41,6 @@ import {
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
   CLOSE_ACTIVE_EVENT,
-  OPEN_OVERVIEW_EVENT,
 } from '@/components/workspace/session-jump';
 import {
   buildSessionRows,
@@ -63,8 +62,8 @@ import { listProjects, rebindProjectPath } from '@/lib/projects/registry';
 import type { Project } from '@/lib/projects/registry';
 import { HUD } from '@/components/hud';
 import type { ShortcutKeys } from '@/types/shortcuts';
+import type { CommandAltitude } from '@/components/nav/command-altitude';
 import type { PtyHarness } from '@/types/electron';
-import { spatialReturnHref } from '@/components/nav/spatial-return';
 import { useShortcutRegistryVersion } from './use-effective-shortcut';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 import {
@@ -114,7 +113,8 @@ export function CommandPalette({
   onOpenHelpModal,
 }: CommandPaletteProps) {
   const router = useRouter();
-  const { navigateCommandSurface } = useCommandNavigation();
+  const { navigateCommandSurface, activateCommandAltitude } =
+    useCommandNavigation();
   const shortcutVersion = useShortcutRegistryVersion();
   const newProjectShortcut = shortcutRegistry.getEffectiveKeys(
     'workspace-new-project'
@@ -282,14 +282,6 @@ export function CommandPalette({
     void shortcutVersion;
     return [
       {
-        id: 'ws-overview',
-        label: 'Overview of all sessions',
-        value: 'overview all sessions expose grid tiles',
-        shortcut: shortcutRegistry.getEffectiveKeys('workspace-overview'),
-        icon: LayoutPanelTop,
-        onSelect: () => dispatch(OPEN_OVERVIEW_EVENT),
-      },
-      {
         id: 'ws-rename',
         label: 'Rename the active tab',
         value: 'rename tab title active',
@@ -329,17 +321,8 @@ export function CommandPalette({
         icon: XCircle,
         onSelect: () => dispatch(CLOSE_ACTIVE_EVENT),
       },
-      {
-        id: 'ws-map',
-        label: 'Zoom out to Spatial Command',
-        value: 'map spatial altitude fleet world zoom out switch',
-        shortcut: shortcutRegistry.getEffectiveKeys('toggle-regime'),
-        icon: MapIcon,
-        onSelect: () =>
-          handleSelect(() => navigateCommandSurface(spatialReturnHref())),
-      },
     ];
-  }, [dispatch, handleSelect, navigateCommandSurface, shortcutVersion]);
+  }, [dispatch, shortcutVersion]);
 
   // Navigation rows derive from the manifest (ENG-016 D8): the palette, the
   // go-chords, and the header must always agree on names and targets. Legacy
@@ -352,12 +335,25 @@ export function CommandPalette({
         label: `Go to ${s.name}`,
         value: `go ${s.name} ${s.keywords.join(' ')}`,
         icon: SURFACE_ICONS[s.id],
-        shortcut: shortcutRegistry.getEffectiveKeys(s.shortcutId),
+        shortcut: shortcutRegistry.getEffectiveKeys(
+          s.gestureShortcutId ?? s.shortcutId
+        ),
         onSelect: () =>
-          handleSelect(() => navigateCommandSurface(resolveSurfaceHref(s))),
+          handleSelect(() => {
+            if (s.tier === 'spine') {
+              activateCommandAltitude(s.id as CommandAltitude);
+            } else {
+              navigateCommandSurface(resolveSurfaceHref(s));
+            }
+          }),
       };
     },
-    [handleSelect, navigateCommandSurface, shortcutVersion]
+    [
+      activateCommandAltitude,
+      handleSelect,
+      navigateCommandSurface,
+      shortcutVersion,
+    ]
   );
   const navigationItems = useMemo<CommandItem[]>(
     () =>

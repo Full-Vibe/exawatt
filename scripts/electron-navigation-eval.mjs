@@ -105,7 +105,7 @@ try {
   );
   console.log('[electron-navigation] exact board address restored');
 
-  await page.keyboard.press('Meta+Shift+M');
+  await page.keyboard.press('Meta+1');
   await page.waitForURL('**/workspace');
   await page.locator('[data-project]').waitFor();
   const sessionCount = await page.evaluate(async () => {

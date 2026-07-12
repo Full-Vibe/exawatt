@@ -29,18 +29,17 @@ import type {
 } from '@/types/shortcuts';
 import { isChord } from '@/types/shortcuts';
 import { bindingToAccelerator } from '@/lib/shortcuts/accelerator';
-import { spatialReturnHref } from '@/components/nav/spatial-return';
 import {
   surfaceForShortcut,
   resolveSurfaceHref,
 } from '@/components/nav/surfaces';
+import type { CommandAltitude } from '@/components/nav/command-altitude';
 import {
   requestLaunch,
   RENAME_ACTIVE_EVENT,
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
   CLOSE_ACTIVE_EVENT,
-  OPEN_OVERVIEW_EVENT,
 } from '@/components/workspace/session-jump';
 import type { PtyHarness } from '@/types/electron';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
@@ -49,8 +48,9 @@ import { useCommandNavigation } from '@/components/nav/command-navigation-provid
  *  (D10): rebinding a verb updates the menu's accelerator column */
 const MENU_COMMAND_SHORTCUTS: Record<string, string> = {
   'command-palette': 'command-palette',
-  'go-sessions': 'workspace-overview',
-  'go-spatial': 'toggle-regime',
+  'go-terminal': 'command-terminal',
+  'go-sessions': 'command-sessions',
+  'go-spatial': 'command-spatial',
   'history-back': 'history-back',
   'history-forward': 'history-forward',
   'launch-shell': 'workspace-new-shell',
@@ -85,7 +85,8 @@ interface ShortcutProviderProps {
 export function ShortcutProvider({ children }: ShortcutProviderProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const { navigateCommandSurface } = useCommandNavigation();
+  const { navigateCommandSurface, activateCommandAltitude } =
+    useCommandNavigation();
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
@@ -118,7 +119,11 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
         // for names and targets (ENG-016 D8)
         const surface = surfaceForShortcut(def.id);
         if (surface) {
-          navigateCommandSurface(resolveSurfaceHref(surface));
+          if (surface.tier === 'spine') {
+            activateCommandAltitude(surface.id as CommandAltitude);
+          } else {
+            navigateCommandSurface(resolveSurfaceHref(surface));
+          }
           return;
         }
         switch (def.id) {
@@ -128,27 +133,15 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           case 'history-forward':
             router.forward();
             break;
-          case 'toggle-regime':
-            // window.location (not the pathname closure) keeps this correct
-            // without re-registering shortcuts on every navigation
-            navigateCommandSurface(
-              window.location.pathname.startsWith('/workspace')
-                ? spatialReturnHref()
-                : '/workspace'
-            );
+          case 'command-terminal':
+            activateCommandAltitude('terminal');
             break;
-          case 'workspace-overview': {
-            const onWorkspace =
-              window.location.pathname.startsWith('/workspace');
-            const open =
-              new URLSearchParams(window.location.search).get('view') ===
-              'sessions';
-            if (onWorkspace && open) navigateCommandSurface('/workspace');
-            else if (onWorkspace) {
-              window.dispatchEvent(new CustomEvent(OPEN_OVERVIEW_EVENT));
-            } else navigateCommandSurface('/workspace?view=sessions');
+          case 'command-sessions':
+            activateCommandAltitude('sessions');
             break;
-          }
+          case 'command-spatial':
+            activateCommandAltitude('spatial');
+            break;
           case 'command-palette':
             setCommandPaletteOpen(true);
             break;
@@ -208,7 +201,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     return () => {
       shortcuts.forEach(s => shortcutRegistry.unregister(s.id));
     };
-  }, [navigateCommandSurface, router]);
+  }, [activateCommandAltitude, navigateCommandSurface, router]);
 
   // Application-menu commands (ENG-016 D8): the macOS menu bar mirrors the
   // app's verbs; every command routes through the same actions the keyboard
@@ -225,15 +218,13 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     return window.electron?.menu?.onCommand(command => {
       switch (command) {
         case 'go-terminal':
-          navigateCommandSurface('/workspace');
+          activateCommandAltitude('terminal');
           break;
         case 'go-sessions':
-          window.location.pathname.startsWith('/workspace')
-            ? dispatch(OPEN_OVERVIEW_EVENT)
-            : navigateCommandSurface('/workspace?view=sessions');
+          activateCommandAltitude('sessions');
           break;
         case 'go-spatial':
-          navigateCommandSurface(spatialReturnHref());
+          activateCommandAltitude('spatial');
           break;
         case 'history-back':
           router.back();
@@ -270,7 +261,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           break;
       }
     });
-  }, [navigateCommandSurface, router]);
+  }, [activateCommandAltitude, navigateCommandSurface, router]);
 
   // Menu accelerator truthfulness (D10): the macOS menus display whatever
   // the registry currently binds — rebinding ⌘E updates the Session menu

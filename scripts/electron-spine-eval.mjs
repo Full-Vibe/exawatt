@@ -84,6 +84,16 @@ try {
     'Go>Back displays Command+[ without registering it',
     goMenu.sub.some(s => s.includes('Back|Command+[|reg:false'))
   );
+  for (const [label, accelerator] of [
+    ['Terminal', 'Command+1'],
+    ['Sessions', 'Command+2'],
+    ['Spatial', 'Command+3'],
+  ]) {
+    check(
+      `Go>${label} displays ${accelerator} without registering it`,
+      goMenu.sub.some(s => s.includes(`${label}|${accelerator}|reg:false`))
+    );
+  }
 
   // D10: menu accelerators follow the registry — sync a rebind, read it back
   await page.evaluate(() =>
@@ -147,10 +157,10 @@ try {
   // still provide an escape path back to Terminal.
   const spatialSearch = page.getByLabel('Search agents');
   await spatialSearch.fill('operator query');
-  await page.keyboard.press('Meta+Shift+KeyM');
+  await page.keyboard.press('Meta+1');
   await page.waitForURL('**/workspace');
-  check('cmd+shift+m returns from focused Spatial search', true);
-  await page.keyboard.press('Meta+Shift+KeyM');
+  check('cmd+1 returns from focused Spatial search', true);
+  await page.keyboard.press('Meta+3');
   await page.waitForURL('**/fleet/spatial');
 
   // spine affordances never link into legacy: no "← Fleet" on Spatial
@@ -159,7 +169,7 @@ try {
   await page.screenshot({ path: join(OUT, 'spatial-no-backlink.png') });
 
   // project-first ⌘K: spine vocabulary, Legacy group, add-project, signed-out row
-  await page.keyboard.press('Meta+Shift+KeyM');
+  await page.keyboard.press('Meta+1');
   await page.waitForTimeout(800);
   await page.keyboard.press('Meta+KeyK');
   await page.waitForTimeout(700);
@@ -293,11 +303,10 @@ try {
     .first()
     .click();
   await page.waitForURL('**view=sessions**');
-  // wait for the exposé to actually mount before toggling it closed —
-  // ⌘O within the mount race would re-open instead
+  // wait for the exposé to mount before dismissing it hierarchically
   await page.locator('[data-expose]').waitFor();
   await page.waitForTimeout(400);
-  await page.keyboard.press('Meta+KeyO'); // toggle the overview closed
+  await page.keyboard.press('Escape');
   await page.waitForURL(url => !url.href.includes('view=sessions'));
   await page.waitForTimeout(400);
   // dev-mode Fast Refresh can momentarily detach listeners — retry the
@@ -347,10 +356,14 @@ try {
   );
 
   // D10: the rename cycle must not produce nested-interactive markup warnings
-  check(
-    'no nested-interactive markup warnings',
-    markupWarnings.length === 0
-  );
+  check('no nested-interactive markup warnings', markupWarnings.length === 0);
+  // Leave the app on Terminal so its workspace checkpoint owner can answer the
+  // normal coordinated-quit handshake used by ElectronApplication.close().
+  await page.keyboard.press('Meta+1');
+  await page.waitForURL('**/workspace');
+  await page.locator('[data-workspace-underlay]').waitFor();
+  await page.waitForTimeout(500);
+  check('cmd+1 returns from legacy Fleet Command', true);
 } finally {
   await app.close();
 }

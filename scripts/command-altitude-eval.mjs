@@ -152,15 +152,21 @@ try {
   );
   requireState(
     (await page
+      .locator('[data-command-altitude-level="terminal"]')
+      .getAttribute('aria-keyshortcuts')) === 'Meta+1',
+    'Terminal altitude did not advertise its absolute shortcut'
+  );
+  requireState(
+    (await page
       .locator('[data-command-altitude-level="sessions"]')
-      .getAttribute('aria-keyshortcuts')) === 'Meta+o',
-    'Sessions altitude did not advertise its effective shortcut'
+      .getAttribute('aria-keyshortcuts')) === 'Meta+2',
+    'Sessions altitude did not advertise its absolute shortcut'
   );
   requireState(
     (await page
       .locator('[data-command-altitude-level="spatial"]')
-      .getAttribute('aria-keyshortcuts')) === 'Meta+Shift+m',
-    'Spatial altitude did not advertise its effective shortcut'
+      .getAttribute('aria-keyshortcuts')) === 'Meta+3',
+    'Spatial altitude did not advertise its absolute shortcut'
   );
   const initialTabText = await page
     .locator('[data-active="true"]')
@@ -221,10 +227,10 @@ try {
   );
   await page.keyboard.press('Escape');
   await page.waitForURL(url => !url.searchParams.has('view'));
-  await page.locator('[data-command-altitude-level="sessions"]').click();
+  await page.keyboard.press('Meta+2');
   await page.waitForURL('**/workspace?view=sessions');
   await page.locator('[data-expose]').waitFor();
-  await page.locator('[data-command-altitude-level="sessions"]').click();
+  await page.keyboard.press('Meta+2');
   requireState(
     await page
       .locator('[data-expose-tile][data-selected="true"]')
@@ -315,16 +321,13 @@ try {
     'Spatial camera viewport was not stored for the renderer session'
   );
   await page.locator('[data-command-altitude-level="spatial"]').click();
-  await page.waitForFunction(
-    zoomedWidth => {
-      const value = window.sessionStorage.getItem(
-        'exawatt:spatial-viewport:v2:fleet:~:~:top-down'
-      );
-      if (!value) return false;
-      return JSON.parse(value).width > zoomedWidth;
-    },
-    zoomedViewport.width
-  );
+  await page.waitForFunction(zoomedWidth => {
+    const value = window.sessionStorage.getItem(
+      'exawatt:spatial-viewport:v2:fleet:~:~:top-down'
+    );
+    if (!value) return false;
+    return JSON.parse(value).width > zoomedWidth;
+  }, zoomedViewport.width);
   const recenteredViewport = await page.evaluate(() => {
     const value = window.sessionStorage.getItem(
       'exawatt:spatial-viewport:v2:fleet:~:~:top-down'
@@ -366,6 +369,51 @@ try {
   await page.waitForURL(
     url => !url.searchParams.has('q') && !url.searchParams.has('status')
   );
+  const fleetAddress =
+    new URL(page.url()).pathname + new URL(page.url()).search;
+
+  await spatialSearch.focus();
+  await page.keyboard.press('Meta+1');
+  await page.waitForURL('**/workspace');
+  await page
+    .locator('[data-command-altitude-level="terminal"][aria-current="page"]')
+    .waitFor();
+  await page
+    .locator('.xterm-helper-textarea')
+    .first()
+    .waitFor({ state: 'attached' });
+  await page.keyboard.press('Meta+1');
+  await page.waitForFunction(() =>
+    document.activeElement?.classList.contains('xterm-helper-textarea')
+  );
+  requireState(
+    await page.evaluate(() =>
+      document.activeElement?.classList.contains('xterm-helper-textarea')
+    ),
+    'Repeated Terminal shortcut did not restore xterm focus'
+  );
+
+  await page.keyboard.press('Meta+2');
+  await page.waitForURL('**/workspace?view=sessions');
+  await page.locator('[data-expose]').waitFor();
+  await page.keyboard.press('Meta+2');
+  requireState(
+    await page
+      .locator('[data-expose-tile][data-selected="true"]')
+      .evaluate(element => element === document.activeElement),
+    'Repeated Sessions shortcut did not restore overview focus'
+  );
+
+  await page.keyboard.press('Meta+3');
+  await page.waitForURL(url => `${url.pathname}${url.search}` === fleetAddress);
+  await page
+    .locator('[data-command-altitude-level="spatial"][aria-current="page"]')
+    .waitFor();
+  await page.keyboard.press('Meta+3');
+  requireState(
+    page.url().includes('/fleet/spatial'),
+    'Repeated Spatial shortcut left Spatial instead of recentering it'
+  );
 
   await page.getByRole('button', { name: 'Angle' }).click();
   await page.waitForURL(
@@ -398,20 +446,15 @@ try {
   );
   await page.emulateMedia({ reducedMotion: 'no-preference' });
 
-  await page.keyboard.press('Meta+Shift+M');
+  await page.keyboard.press('Meta+1');
   await page.waitForURL('**/workspace');
-  await page
-    .locator('[data-command-altitude-level="terminal"][aria-current="page"]')
-    .waitFor();
-
-  await page.keyboard.press('Meta+Shift+M');
+  await page.keyboard.press('Meta+3');
   await page.waitForURL(
     url => `${url.pathname}${url.search}` === returnAddress
   );
   await page
     .locator('[data-command-altitude-level="spatial"][aria-current="page"]')
     .waitFor();
-
   await page.locator('[data-command-altitude-level="terminal"]').click();
   await page.waitForURL('**/workspace');
   await page.emulateMedia({ reducedMotion: 'reduce' });

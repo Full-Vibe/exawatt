@@ -31,7 +31,7 @@ class ChordEngine {
 
   /** Process a key event, returns true if handled */
   processKeyEvent(event: KeyboardEvent): boolean {
-    // Another handler (e.g. the workspace key layer, which shares ⌘⇧M)
+    // Another handler (e.g. the workspace capture layer for ⌘1/⌘2/⌘3)
     // already consumed this keystroke — don't fire the action twice
     if (event.defaultPrevented) return false;
     // Skip if in input/textarea/contenteditable
