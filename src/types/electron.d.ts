@@ -69,7 +69,7 @@ export interface ElectronPtyApi {
   engage: (id: string) => Promise<void>;
   resize: (id: string, cols: number, rows: number) => Promise<void>;
   kill: (id: string) => Promise<void>;
-  deleteSession: (durableSessionId: string) => Promise<void>;
+  deleteSession: (durableSessionId: string) => Promise<boolean>;
   rename: (id: string, title: string) => Promise<void>;
   /** the operator is looking at this session (null = none focused) */
   focus: (id: string | null) => Promise<void>;
@@ -112,6 +112,13 @@ export interface ElectronPtyApi {
       exitCode: number;
     }) => void
   ) => () => void;
+  onIdentity: (
+    handler: (payload: {
+      id: string;
+      durableSessionId: string;
+      harnessSessionId: string;
+    }) => void
+  ) => () => void;
   onContext: (
     handler: (payload: { id: string; summary: string }) => void
   ) => () => void;
@@ -134,6 +141,7 @@ export interface HarnessResumeCandidate {
 export interface ElectronWorkspaceApi {
   load: () => Promise<unknown | null>;
   save: (state: unknown) => Promise<void>;
+  recovery: () => Promise<{ previousRunInterrupted: boolean }>;
 }
 
 /** Raw roadmap file read for the roadmap lens (ENG-017); parsing happens
@@ -210,6 +218,22 @@ export interface ElectronAppApi {
   getUpdateStatus: () => Promise<ProductUpdateStatus>;
   checkForUpdates: () => Promise<ProductUpdateStatus>;
   restartUpdate: () => Promise<void>;
+  completeCheckpoint: (requestId: string, ok: boolean) => Promise<void>;
+  onCheckpointRequest: (
+    handler: (request: { requestId: string; reason: 'quit' | 'update' }) => void
+  ) => () => void;
+  onShutdownStatus: (
+    handler: (status: {
+      phase:
+        | 'idle'
+        | 'confirming'
+        | 'checkpointing'
+        | 'stopping'
+        | 'finalizing';
+      agents: number;
+      shells: number;
+    }) => void
+  ) => () => void;
   onUpdateReady: (
     handler: (update: { currentSha: string; installedSha: string }) => void
   ) => () => void;

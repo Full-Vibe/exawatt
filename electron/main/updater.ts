@@ -47,7 +47,10 @@ function version(info: UpdateInfo): string {
   return info.version || 'unknown';
 }
 
-export function registerProductUpdater(countLiveSessions: () => number): void {
+export function registerProductUpdater(
+  countLiveSessions: () => number,
+  restartForUpdate: () => Promise<boolean>
+): void {
   liveSessionCount = countLiveSessions;
   if (registered) return;
   registered = true;
@@ -105,10 +108,15 @@ export function registerProductUpdater(countLiveSessions: () => number): void {
     await autoUpdater.checkForUpdates();
     return status;
   });
-  handleTrusted('app:restart-update', () => {
+  handleTrusted('app:restart-update', async () => {
     if (!downloaded) throw new Error('No downloaded update is ready');
-    setImmediate(() => autoUpdater.quitAndInstall(false, true));
+    await restartForUpdate();
   });
+}
+
+export function installProductUpdate(): void {
+  if (!downloaded) throw new Error('No downloaded update is ready');
+  autoUpdater.quitAndInstall(false, true);
 }
 
 export function startProductUpdater(enabled: boolean): void {
@@ -117,7 +125,8 @@ export function startProductUpdater(enabled: boolean): void {
     void autoUpdater.checkForUpdates().catch(error => {
       setStatus({
         phase: 'error',
-        error: error instanceof Error ? error.message.slice(0, 300) : String(error),
+        error:
+          error instanceof Error ? error.message.slice(0, 300) : String(error),
       });
     });
   }, 5_000).unref?.();

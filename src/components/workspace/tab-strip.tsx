@@ -64,11 +64,11 @@ function RenameInput({
       value={value}
       autoFocus
       aria-label="Rename"
-      onChange={(e) => onChange(e.target.value)}
+      onChange={e => onChange(e.target.value)}
       onBlur={() => {
         if (!settled.current) onCommit();
       }}
-      onKeyDown={(e) => {
+      onKeyDown={e => {
         e.stopPropagation();
         if (e.key === 'Enter') {
           settled.current = true;
@@ -79,7 +79,7 @@ function RenameInput({
           onCancel();
         }
       }}
-      onClick={(e) => e.stopPropagation()}
+      onClick={e => e.stopPropagation()}
       className="w-28 bg-transparent font-mono text-xs outline-none"
       style={{ color, borderBottom: `1px solid ${color}99` }}
     />
@@ -97,11 +97,11 @@ function ColorSwatches({
 }) {
   return (
     <span className="ml-1.5 inline-flex items-center gap-1">
-      {PROJECT_PALETTE.map((c) => (
+      {PROJECT_PALETTE.map(c => (
         <button
           key={c}
           aria-label={`Set project color ${c}`}
-          onMouseDown={(e) => {
+          onMouseDown={e => {
             e.preventDefault();
             e.stopPropagation();
             onPick(c);
@@ -109,7 +109,8 @@ function ColorSwatches({
           className="h-3 w-3 rounded-full transition-transform hover:scale-125"
           style={{
             background: c,
-            boxShadow: c === current ? `0 0 0 1.5px #fff, 0 0 6px ${c}` : 'none',
+            boxShadow:
+              c === current ? `0 0 0 1.5px #fff, 0 0 6px ${c}` : 'none',
           }}
         />
       ))}
@@ -170,12 +171,13 @@ export function TabStrip({
   useEffect(() => {
     const onRenameActive = () => {
       const { projects: gs, activeDir: ad } = activeRef.current;
-      const g = gs.find((x) => x.dir === ad);
-      const tab = g?.tabs.find((t) => t.id === g.activeTabId);
+      const g = gs.find(x => x.dir === ad);
+      const tab = g?.tabs.find(t => t.id === g.activeTabId);
       if (tab) setEditing({ kind: 'tab', id: tab.id, value: tab.title });
     };
     window.addEventListener(RENAME_ACTIVE_EVENT, onRenameActive);
-    return () => window.removeEventListener(RENAME_ACTIVE_EVENT, onRenameActive);
+    return () =>
+      window.removeEventListener(RENAME_ACTIVE_EVENT, onRenameActive);
   }, []);
 
   /** editor closed (commit or cancel) — hand the keyboard back to the
@@ -198,7 +200,7 @@ export function TabStrip({
         const color = g.color;
         const groupActive = g.dir === activeDir;
         const flaggedCount = g.tabs.filter(
-          (t) => t.sessionId && attention[t.sessionId] && tabIsLive(t)
+          t => t.sessionId && attention[t.sessionId] && tabIsLive(t)
         ).length;
         return (
           <div
@@ -207,7 +209,9 @@ export function TabStrip({
             data-active-project={groupActive || undefined}
             className="flex items-center gap-1 rounded border px-1 py-0.5"
             style={{
-              borderColor: groupActive ? `${color}66` : 'rgba(138,160,190,0.12)',
+              borderColor: groupActive
+                ? `${color}66`
+                : 'rgba(138,160,190,0.12)',
               background: groupActive ? `${color}0d` : 'transparent',
             }}
           >
@@ -231,13 +235,13 @@ export function TabStrip({
                   <RenameInput
                     value={editing.value}
                     color={color}
-                    onChange={(v) => setEditing({ ...editing, value: v })}
+                    onChange={v => setEditing({ ...editing, value: v })}
                     onCommit={commit}
                     onCancel={settle}
                   />
                   <ColorSwatches
                     current={color}
-                    onPick={(c) => onSetProjectColor(g.dir, c)}
+                    onPick={c => onSetProjectColor(g.dir, c)}
                   />
                 </>
               ) : (
@@ -253,12 +257,20 @@ export function TabStrip({
                 </span>
               )}
             </EditableChrome>
-            {g.tabs.map((t) => {
+            {g.tabs.map(t => {
               const on = groupActive && t.id === g.activeTabId;
               const dead = !tabIsLive(t);
               const summary = t.sessionId ? summaries[t.sessionId] : undefined;
               const needsYou =
                 !dead && !!(t.sessionId && attention[t.sessionId]);
+              const stoppedStatus =
+                t.lifecycle === 'interrupted'
+                  ? 'Interrupted'
+                  : t.lifecycle === 'failed'
+                    ? 'Failed'
+                    : t.lifecycle === 'exited'
+                      ? 'Exited'
+                      : 'Stopped';
               return (
                 <div
                   key={t.id}
@@ -267,7 +279,7 @@ export function TabStrip({
                   style={{
                     borderColor: on ? `${color}99` : 'rgba(138,160,190,0.18)',
                     background: on ? `${color}14` : 'rgba(138,160,190,0.04)',
-                    opacity: dead ? 0.55 : 1,
+                    opacity: dead ? 0.72 : 1,
                   }}
                 >
                   <EditableChrome
@@ -305,13 +317,13 @@ export function TabStrip({
                         <RenameInput
                           value={editing.value}
                           color={color}
-                          onChange={(v) => setEditing({ ...editing, value: v })}
+                          onChange={v => setEditing({ ...editing, value: v })}
                           onCommit={commit}
                           onCancel={settle}
                         />
                         <ColorSwatches
                           current={color}
-                          onPick={(c) => onSetProjectColor(g.dir, c)}
+                          onPick={c => onSetProjectColor(g.dir, c)}
                         />
                       </>
                     ) : (
@@ -328,7 +340,22 @@ export function TabStrip({
                         )}
                       </span>
                     )}
-                    {dead && <span style={{ color: HUD.red }}>✕</span>}
+                    {dead && (
+                      <span
+                        aria-label={stoppedStatus}
+                        className="border border-white/10 px-1 py-0.5 text-[9px] leading-none"
+                        style={{
+                          color:
+                            t.lifecycle === 'interrupted'
+                              ? HUD.amber
+                              : t.lifecycle === 'failed'
+                                ? HUD.red
+                                : HUD.textDim,
+                        }}
+                      >
+                        {stoppedStatus}
+                      </span>
+                    )}
                   </EditableChrome>
                   <button
                     onClick={() => onCloseTab(t.id)}

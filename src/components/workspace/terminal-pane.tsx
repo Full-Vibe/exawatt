@@ -19,7 +19,7 @@ import { findFileLinks } from './terminal-links';
 export { TERMINAL_FONT, resolveTerminalFont } from './terminal-font';
 export type { EffectiveTerminalFont } from './terminal-font';
 
-const HUD_TERM_THEME = {
+export const HUD_TERM_THEME = {
   background: '#04060B',
   foreground: '#F4F4F4',
   cursor: '#19E6FF',

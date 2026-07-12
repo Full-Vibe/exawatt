@@ -29,8 +29,13 @@ import { TabStrip } from './tab-strip';
 import { LaunchControls } from './launch-controls';
 import { ExposeOverlay } from './expose-overlay';
 import { ReentryRecapCard } from './reentry-recap';
-import { useWorkspaceState, tabIsLive } from './use-workspace-state';
+import {
+  useWorkspaceState,
+  tabCanResumeAsAgent,
+  tabIsLive,
+} from './use-workspace-state';
 import { SessionRestorePanel } from './session-restore-panel';
+import { RetainedTerminalPane } from './retained-terminal-pane';
 import { useWorkspaceShortcuts } from './use-workspace-shortcuts';
 import {
   RENAME_ACTIVE_EVENT,
@@ -59,7 +64,7 @@ import {
 import { findRoadmapSessionChip } from '@exawatt/ui-model';
 import { HUD } from '@/components/hud';
 import { spatialReturnHref } from '@/components/nav/spatial-return';
-import { Bell, BellOff, FolderOpen, SquareTerminal } from 'lucide-react';
+import { Bell, BellOff, FolderOpen, Play, SquareTerminal, X } from 'lucide-react';
 import { middleTruncatePath } from './path-label';
 
 /** the discoverability layer (S3): the workspace SHOWS its keys, exactly
@@ -128,6 +133,7 @@ export function WorkspaceClient() {
   // sessions never spawn with default metrics while a custom font loads.
   const [font, setFont] = useState<EffectiveTerminalFont | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [resumeNoticeDismissed, setResumeNoticeDismissed] = useState(false);
   useEffect(() => {
     if (!inElectron) return;
     let cancelled = false;
@@ -200,6 +206,14 @@ export function WorkspaceClient() {
     renameProject,
     setProjectColor,
   } = useWorkspaceState({ getInitialSize });
+
+  const readyAgentCount = useMemo(
+    () =>
+      projects
+        .flatMap(project => project.tabs)
+        .filter(tabCanResumeAsAgent).length,
+    [projects]
+  );
 
   useEffect(() => {
     const off = window.electron?.pty?.onNotificationClick(({ id }) => {
@@ -593,6 +607,40 @@ export function WorkspaceClient() {
         </button>
       </div>
 
+      {readyAgentCount > 0 && !resumeNoticeDismissed && (
+        <div
+          role="status"
+          className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 font-mono text-xs"
+          style={{
+            borderColor: 'rgba(25,230,255,0.18)',
+            background: 'rgba(25,230,255,0.06)',
+            color: HUD.textDim,
+          }}
+        >
+          <span className="min-w-0 flex-1">
+            {readyAgentCount} {readyAgentCount === 1 ? 'agent is' : 'agents are'} ready to resume
+          </span>
+          <button
+            type="button"
+            onClick={resumeAll}
+            className="inline-flex h-7 items-center gap-1.5 border px-2 outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+            style={{ borderColor: 'rgba(25,230,255,0.3)', color: HUD.text }}
+          >
+            <Play className="h-3.5 w-3.5" />
+            Resume All
+          </button>
+          <button
+            type="button"
+            aria-label="Dismiss resume notice"
+            title="Dismiss"
+            onClick={() => setResumeNoticeDismissed(true)}
+            className="grid h-7 w-7 place-items-center outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* middle band: [context bar + errors + stage] beside the roadmap
           rail (ENG-017). The stage width changes ONCE when the rail mode
           flips (single xterm fit) — only rail CONTENTS animate, per the
@@ -738,26 +786,31 @@ export function WorkspaceClient() {
             ) : tab.id === activeTab?.id && activeProject ? (
               <div
                 key={tab.id}
-                className="absolute inset-0 flex items-center justify-center p-6"
+                className="absolute inset-0"
               >
                 {tab.resumeState === 'resuming' ? (
-                  <p className="text-sm" style={{ color: HUD.textDim }}>
+                  <p
+                    className="absolute inset-0 flex items-center justify-center text-sm"
+                    style={{ color: HUD.textDim }}
+                  >
                     Starting a new process for the saved conversation...
                   </p>
                 ) : (
-                  <SessionRestorePanel
-                    tab={tab}
-                    project={activeProject}
-                    resumableCount={allTabs.filter(
-                      entry =>
-                        !tabIsLive(entry.tab) &&
-                        (entry.tab.harness === 'shell' ||
-                          !!entry.tab.harnessSessionId)
-                    ).length}
-                    onResumeTab={resumeTab}
-                    onResumeProject={resumeProject}
-                    onResumeAll={resumeAll}
-                  />
+                  <>
+                    <RetainedTerminalPane
+                      durableSessionId={tab.durableSessionId}
+                      title={tab.title}
+                      font={font}
+                    />
+                    <SessionRestorePanel
+                      tab={tab}
+                      project={activeProject}
+                      resumableCount={readyAgentCount}
+                      onResumeTab={resumeTab}
+                      onResumeProject={resumeProject}
+                      onResumeAll={resumeAll}
+                    />
+                  </>
                 )}
               </div>
             ) : null

@@ -12,7 +12,19 @@ import { registerRoadmapIPC } from './roadmap/roadmap-ipc';
 import { disposeRoadmapWatchers } from './roadmap/roadmap-watcher';
 import { handleTrusted, setTrustedRendererOrigin } from './ipc-security';
 import { ptySessions } from './pty/session-manager';
-import { registerProductUpdater, startProductUpdater } from './updater';
+import {
+  installProductUpdate,
+  registerProductUpdater,
+  startProductUpdater,
+} from './updater';
+import {
+  ShutdownCoordinator,
+  shutdownCopy,
+  type ShutdownIntent,
+  type ShutdownPhase,
+} from './shutdown-coordinator';
+import { RunStateStore } from './run-state';
+import { randomUUID } from 'crypto';
 
 const isDev = process.env.NODE_ENV === 'development';
 const execFileAsync = promisify(execFile);
@@ -31,6 +43,9 @@ let mainWindow: BrowserWindow | null = null;
 let pendingDeepLinkUrl: string | null = null;
 let rendererServer: ChildProcess | null = null;
 let rendererOrigin: string | null = null;
+let shutdownCoordinator: ShutdownCoordinator | null = null;
+let runStateStore: RunStateStore | null = null;
+const pendingCheckpoints = new Map<string, (ok: boolean) => void>();
 
 interface BuildInfo {
   sha: string;
@@ -443,6 +458,16 @@ function registerDialogIPC(): void {
 
 function registerAppIPC(): void {
   handleTrusted('app:get-build-info', () => buildInfo);
+  handleTrusted(
+    'app:complete-checkpoint',
+    (_event, requestId: string, ok: boolean) => {
+      if (typeof requestId !== 'string' || typeof ok !== 'boolean') return;
+      const complete = pendingCheckpoints.get(requestId);
+      if (!complete) return;
+      pendingCheckpoints.delete(requestId);
+      complete(ok);
+    }
+  );
 }
 
 function watchInstalledBuild(): void {
@@ -472,6 +497,122 @@ function watchInstalledBuild(): void {
   void report();
 }
 
+function broadcastShutdown(
+  phase: ShutdownPhase,
+  counts: { agents: number; shells: number }
+): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('app:shutdown-status', { phase, ...counts });
+    }
+  }
+}
+
+async function confirmShutdown(
+  intent: ShutdownIntent,
+  counts: { agents: number; shells: number }
+): Promise<boolean> {
+  if (process.env.EXAWATT_TEST === '1') {
+    if (process.env.EXAWATT_TEST_QUIT_RESPONSE === 'cancel') return false;
+    return true;
+  }
+  const copy = shutdownCopy(intent, counts);
+  const options: Electron.MessageBoxOptions = {
+    type: 'warning',
+    title: copy.title,
+    message: copy.title,
+    detail:
+      intent === 'update'
+        ? `${copy.detail} The downloaded update will then install and reopen Exawatt.`
+        : copy.detail,
+    buttons: [
+      'Cancel',
+      intent === 'update' ? 'Restart and Stop' : 'Quit and Stop',
+    ],
+    cancelId: 0,
+    noLink: true,
+  };
+  const result =
+    mainWindow && !mainWindow.isDestroyed()
+      ? await dialog.showMessageBox(mainWindow, options)
+      : await dialog.showMessageBox(options);
+  return result.response === 1;
+}
+
+async function confirmWithoutCheckpoint(
+  intent: ShutdownIntent
+): Promise<boolean> {
+  if (
+    process.env.EXAWATT_TEST === '1' &&
+    process.env.EXAWATT_TEST_CHECKPOINT_FAILURE === 'confirm'
+  ) {
+    return true;
+  }
+  const options: Electron.MessageBoxOptions = {
+    type: 'warning',
+    title: "Exawatt couldn't save the latest Session state",
+    message: "Exawatt couldn't save the latest Session state",
+    detail:
+      'Quitting now may lose recent layout changes. Terminal history already checkpointed by the main process will remain.',
+    buttons: ['Cancel', intent === 'update' ? 'Restart Anyway' : 'Quit Anyway'],
+    cancelId: 0,
+    noLink: true,
+  };
+  const result =
+    mainWindow && !mainWindow.isDestroyed()
+      ? await dialog.showMessageBox(mainWindow, options)
+      : await dialog.showMessageBox(options);
+  return result.response === 1;
+}
+
+async function checkpointRenderer(intent: ShutdownIntent): Promise<boolean> {
+  await ptySessions.settleProviderIdentities();
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return true;
+  const requestId = randomUUID();
+  return await new Promise<boolean>(resolve => {
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      pendingCheckpoints.delete(requestId);
+      resolve(ok);
+    };
+    const timeout = setTimeout(() => finish(false), 3_000);
+    pendingCheckpoints.set(requestId, finish);
+    win.webContents.send('app:checkpoint-request', {
+      requestId,
+      reason: intent,
+    });
+  });
+}
+
+async function cleanupForExit(): Promise<void> {
+  disposeRoadmapWatchers();
+  await disposePty();
+  rendererServer?.kill();
+  rendererServer = null;
+  fs.unwatchFile(path.join(app.getPath('userData'), 'update-state.json'));
+}
+
+async function reportShutdownFailure(error: unknown): Promise<void> {
+  const detail = error instanceof Error ? error.message : String(error);
+  const options: Electron.MessageBoxOptions = {
+    type: 'error',
+    title: "Exawatt couldn't stop every Session",
+    message: "Exawatt couldn't stop every Session",
+    detail: `${detail.slice(0, 400)}\n\nExawatt will remain open. Check the affected Session before quitting again.`,
+    buttons: ['OK'],
+    noLink: true,
+  };
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    await dialog.showMessageBox(mainWindow, options);
+  } else {
+    await dialog.showMessageBox(options);
+  }
+}
+
 app.whenReady().then(async () => {
   if (!isDev) await startPackagedRenderer();
   await ptySessions.configurePersistence(
@@ -479,14 +620,43 @@ app.whenReady().then(async () => {
   );
   setTrustedRendererOrigin(isDev ? DEV_URL : rendererOrigin!);
   registerAgentIPC();
-  registerPtyIPC();
+  runStateStore = new RunStateStore(
+    path.join(app.getPath('userData'), 'run-state.json')
+  );
+  const recovery = await runStateStore.begin();
+  registerPtyIPC(recovery.previousRunInterrupted);
   registerRoadmapIPC();
   registerAuthIPC();
   registerDialogIPC();
   registerAppIPC();
   registerMenuIPC();
+  shutdownCoordinator = new ShutdownCoordinator({
+    countLive: () => {
+      const live = ptySessions.list().filter(session => !session.exited);
+      return {
+        agents: live.filter(session => session.harness !== 'shell').length,
+        shells: live.filter(session => session.harness === 'shell').length,
+      };
+    },
+    confirm: confirmShutdown,
+    checkpoint: checkpointRenderer,
+    confirmWithoutCheckpoint,
+    pauseNewWork: () => ptySessions.pauseCreates(),
+    resumeNewWork: () => ptySessions.resumeCreates(),
+    flushHistory: () => ptySessions.flushHistory(),
+    stopProcesses: () => ptySessions.stopAll(),
+    markClean: () => runStateStore?.markClean() ?? Promise.resolve(),
+    cleanup: cleanupForExit,
+    failure: reportShutdownFailure,
+    finalize: intent => {
+      if (intent === 'update') installProductUpdate();
+      else app.quit();
+    },
+    status: broadcastShutdown,
+  });
   registerProductUpdater(
-    () => ptySessions.list().filter(session => !session.exited).length
+    () => ptySessions.list().filter(session => !session.exited).length,
+    () => shutdownCoordinator!.request('update')
   );
   createMenu();
   createWindow();
@@ -494,10 +664,17 @@ app.whenReady().then(async () => {
   startProductUpdater(buildInfo.delivery === 'signed');
 
   app.on('activate', () => {
+    if (shutdownCoordinator?.phase !== 'idle') return;
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
+});
+
+app.on('before-quit', event => {
+  if (!shutdownCoordinator || shutdownCoordinator.allowsFinalExit) return;
+  event.preventDefault();
+  void shutdownCoordinator.request('quit');
 });
 
 // macOS: keep app in dock when all windows closed
@@ -505,13 +682,4 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
-});
-
-// never leave orphan PTY shells/agents behind
-app.on('before-quit', () => {
-  disposeRoadmapWatchers();
-  disposePty();
-  rendererServer?.kill();
-  rendererServer = null;
-  fs.unwatchFile(path.join(app.getPath('userData'), 'update-state.json'));
 });

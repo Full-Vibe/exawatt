@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parsePersisted } from './use-workspace-state';
+import {
+  parsePersisted,
+  tabCanResumeAsAgent,
+  type WorkspaceTab,
+} from './use-workspace-state';
 
 const tab = (id: string, harnessSessionId?: string) => ({
   id: `tab-${id}`,
@@ -163,5 +167,36 @@ describe('workspace persistence v5 (ENG-018)', () => {
       lifecycle: 'stopped-clean',
       exitCode: 7,
     });
+  });
+});
+
+describe('Resume All eligibility', () => {
+  const stopped = {
+    id: 'tab-1',
+    durableSessionId: 'durable-1',
+    harness: 'claude',
+    title: 'Agent',
+    cwd: '/project',
+    sessionId: null,
+    harnessSessionId: 'provider-1',
+    resumeState: 'ended-resumable',
+    lifecycle: 'stopped-clean',
+    exitCode: null,
+    roadmapItemId: null,
+  } satisfies WorkspaceTab;
+
+  it('includes stopped exact agents but excludes shells, live, and unidentified tabs', () => {
+    expect(tabCanResumeAsAgent(stopped)).toBe(true);
+    expect(tabCanResumeAsAgent({ ...stopped, harness: 'shell' })).toBe(false);
+    expect(
+      tabCanResumeAsAgent({
+        ...stopped,
+        resumeState: 'live',
+        sessionId: 'pty-1',
+      })
+    ).toBe(false);
+    expect(tabCanResumeAsAgent({ ...stopped, harnessSessionId: null })).toBe(
+      false
+    );
   });
 });

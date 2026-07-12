@@ -40,15 +40,15 @@ starting work. The operator resumes agents explicitly.
 
 ## Work packets
 
-1. S0 canon: roadmap, concepts, architecture/manifest, decision `0012`, and this
+1. S0 canon (landed 2026-07-11): roadmap, concepts, architecture/manifest, decision `0012`, and this
    implementation contract.
-2. S1 durability: workspace v5, durable lifecycle model, disk history store,
+2. S1 durability (landed 2026-07-11): workspace v5, durable lifecycle model, disk history store,
    periodic checkpoints, clean-run marker, migration and corruption tests.
-3. S2 shutdown: reentrant main-process coordinator, native quit alert, flush,
+3. S2 shutdown (landed 2026-07-11): reentrant main-process coordinator, native quit alert, flush,
    bounded process termination, window-close distinction, and updater routing.
-4. S3 rehydration: retained-history preload, compact status UI, exact individual
+4. S3 rehydration (landed 2026-07-11): retained-history preload, compact status UI, exact individual
    resume, sequential agents-only Resume All, locking, and localized failures.
-5. S4 proof: packaged UI checks, process/orphan checks, crash recovery, and a
+5. S4 proof (active): packaged UI checks, process/orphan checks, crash recovery, and a
    signed multi-agent version-to-version update.
 
 Each packet is independently reviewed, tested, committed, rebased, and

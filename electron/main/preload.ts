@@ -73,6 +73,11 @@ contextBridge.exposeInMainWorld('electron', {
       durableSessionId: string;
       exitCode: number;
     }>('pty:exit'),
+    onIdentity: subscribe<{
+      id: string;
+      durableSessionId: string;
+      harnessSessionId: string;
+    }>('pty:identity'),
     onContext: subscribe<{ id: string; summary: string }>('pty:context'),
     onRecap: subscribe<{
       id: string;
@@ -86,6 +91,7 @@ contextBridge.exposeInMainWorld('electron', {
   workspace: {
     load: () => ipcRenderer.invoke('workspace:load'),
     save: (state: unknown) => ipcRenderer.invoke('workspace:save', state),
+    recovery: () => ipcRenderer.invoke('workspace:recovery'),
   },
   roadmap: {
     read: (projectDir: string) =>
@@ -118,6 +124,22 @@ contextBridge.exposeInMainWorld('electron', {
     getUpdateStatus: () => ipcRenderer.invoke('app:get-update-status'),
     checkForUpdates: () => ipcRenderer.invoke('app:check-for-updates'),
     restartUpdate: () => ipcRenderer.invoke('app:restart-update'),
+    completeCheckpoint: (requestId: string, ok: boolean) =>
+      ipcRenderer.invoke('app:complete-checkpoint', requestId, ok),
+    onCheckpointRequest: subscribe<{
+      requestId: string;
+      reason: 'quit' | 'update';
+    }>('app:checkpoint-request'),
+    onShutdownStatus: subscribe<{
+      phase:
+        | 'idle'
+        | 'confirming'
+        | 'checkpointing'
+        | 'stopping'
+        | 'finalizing';
+      agents: number;
+      shells: number;
+    }>('app:shutdown-status'),
     onUpdateReady: subscribe<{
       currentSha: string;
       installedSha: string;

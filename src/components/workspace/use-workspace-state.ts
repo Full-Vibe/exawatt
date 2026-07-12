@@ -81,6 +81,15 @@ export function tabIsLive(tab: WorkspaceTab): boolean {
   return tab.resumeState === 'live' || tab.resumeState === 'resumed';
 }
 
+export function tabCanResumeAsAgent(tab: WorkspaceTab): boolean {
+  return (
+    !tabIsLive(tab) &&
+    tab.resumeState !== 'resuming' &&
+    tab.harness !== 'shell' &&
+    !!tab.harnessSessionId
+  );
+}
+
 export interface Project {
   /** projectDir — the identity/grouping key */
   dir: string;
@@ -331,6 +340,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   readyRef.current = ready;
   const attentionRef = useRef(attention);
   attentionRef.current = attention;
+  const resumeInFlightRef = useRef<Set<string>>(new Set());
 
   /** append a live session as a tab in its (possibly new) project */
   const addSession = useCallback(
@@ -409,9 +419,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       // size via getInitialSize, whose cell metrics come from the resolved
       // font — spawning with defaults while a custom font loads recreates
       // the TUI init-width race
-      const [live, persistedRaw] = await Promise.all([
+      const [live, persistedRaw, recovery] = await Promise.all([
         api.list(),
         ws?.load() ?? Promise.resolve(null),
+        ws?.recovery() ?? Promise.resolve({ previousRunInterrupted: false }),
         loadTerminalFont(),
       ]);
       if (cancelled) return;
@@ -450,7 +461,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             : (g.tabs[0]?.id ?? null),
           tabs: g.tabs.map(t => {
             const s = liveByDurableId.get(t.durableSessionId);
-            if (s) {
+            if (s && !s.exited) {
               liveByDurableId.delete(s.durableSessionId);
               return {
                 ...t,
@@ -461,12 +472,32 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 exitCode: s.exited ? (s.exitCode ?? 0) : null,
               };
             }
+            if (s?.exited) {
+              liveByDurableId.delete(s.durableSessionId);
+              return {
+                ...t,
+                sessionId: null,
+                harnessSessionId: s.harnessSessionId ?? t.harnessSessionId,
+                resumeState: s.harnessSessionId
+                  ? ('ended-resumable' as const)
+                  : ('identity-missing' as const),
+                lifecycle: 'exited' as const,
+                exitCode: s.exitCode ?? t.exitCode,
+              };
+            }
             // App restart: process is gone. Restore history and identity, but
             // never spawn until the operator explicitly resumes.
             return {
               ...t,
               sessionId: null,
               exitCode: t.exitCode,
+              lifecycle:
+                recovery.previousRunInterrupted &&
+                (t.lifecycle === 'running' || t.lifecycle === 'resuming')
+                  ? ('interrupted' as const)
+                  : t.lifecycle === 'running' || t.lifecycle === 'resuming'
+                    ? ('stopped-clean' as const)
+                    : t.lifecycle,
               resumeState: t.harnessSessionId
                 ? ('ended-resumable' as const)
                 : ('identity-missing' as const),
@@ -485,7 +516,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       }
       // live sessions unknown to the persisted layout (e.g. created since
       // the last save) — or the whole fresh-start case
-      for (const s of liveByDurableId.values()) addSession(s);
+      for (const s of liveByDurableId.values()) {
+        if (!s.exited) addSession(s);
+      }
       setReady(true);
       // reconcile durable identity (S5 P3) — async, so a slow/offline registry
       // never delays the terminal: adopt each Project's synced name/color (a
@@ -529,14 +562,15 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         .catch(() => {});
     })();
 
-    const offExit = api.onExit(({ id, exitCode }) => {
+    const offExit = api.onExit(({ id, durableSessionId, exitCode }) => {
       setProjects(prev =>
         prev.map(g => ({
           ...g,
           tabs: g.tabs.map(t =>
-            t.sessionId === id
+            t.sessionId === id || t.durableSessionId === durableSessionId
               ? {
                   ...t,
+                  sessionId: null,
                   exitCode,
                   resumeState: t.harnessSessionId
                     ? 'ended-resumable'
@@ -548,6 +582,20 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         }))
       );
     });
+    const offIdentity = api.onIdentity?.(
+      ({ id, durableSessionId, harnessSessionId }) => {
+        setProjects(prev =>
+          prev.map(g => ({
+            ...g,
+            tabs: g.tabs.map(t =>
+              t.sessionId === id || t.durableSessionId === durableSessionId
+                ? { ...t, harnessSessionId }
+                : t
+            ),
+          }))
+        );
+      }
+    );
     const offContext = api.onContext?.(({ id, summary }) => {
       setSummaries(prev => ({ ...prev, [id]: summary }));
     });
@@ -573,6 +621,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     return () => {
       cancelled = true;
       offExit();
+      offIdentity?.();
       offContext?.();
       offRecap?.();
       offAttention?.();
@@ -580,26 +629,17 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- persistence: debounced; ended tabs remain as explicit resume targets ----
-  useEffect(() => {
-    if (!ready) return;
-    const ws = window.electron?.workspace;
-    if (!ws) return;
-    const handle = setTimeout(() => {
+  const serializeWorkspace = useCallback(
+    (cleanShutdown = false): PersistedV5 => {
       const {
         projects: gs,
         activeDir: ad,
         lastUsedDir: lu,
         pinnedTabId: pin,
       } = stateRef.current;
-      // the pinned tab may be pruned below (exited) — never persist a
-      // dangling pin
       const pinSurvives =
         pin !== null &&
         gs.some(g => g.tabs.some(t => t.id === pin && tabIsLive(t)));
-      // merge open groups into the durable recency record: open groups are
-      // the most recent by definition; prior entries survive their tabs
-      // closing so ⌘K can still reach them (ENG-016 D8)
       const now = Date.now();
       const recents = [
         ...gs.map(g => ({
@@ -611,7 +651,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         ...recentsRef.current.filter(r => !gs.some(g => g.dir === r.dir)),
       ].slice(0, 12);
       recentsRef.current = recents;
-      const state: PersistedV5 = {
+      return {
         v: 5,
         lastUsedDir: lu,
         activeDir: ad,
@@ -619,37 +659,27 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         recentProjects: recents,
         projects: gs
           .map(g => {
-            const tabs = g.tabs.map(
-              ({
-                id,
-                durableSessionId,
-                harness,
-                title,
-                cwd,
-                sessionId,
-                harnessSessionId,
-                roadmapItemId,
-                lifecycle,
-                exitCode,
-              }) => ({
-                id,
-                durableSessionId,
-                harness,
-                title,
-                cwd,
-                sessionId,
-                harnessSessionId,
-                roadmapItemId,
-                lifecycle,
-                exitCode,
-              })
-            );
+            const tabs = g.tabs.map(tab => {
+              const stopped =
+                cleanShutdown &&
+                (tabIsLive(tab) || tab.lifecycle === 'resuming');
+              return {
+                id: tab.id,
+                durableSessionId: tab.durableSessionId,
+                harness: tab.harness,
+                title: tab.title,
+                cwd: tab.cwd,
+                sessionId: stopped ? null : tab.sessionId,
+                harnessSessionId: tab.harnessSessionId,
+                roadmapItemId: tab.roadmapItemId,
+                lifecycle: stopped ? ('stopped-clean' as const) : tab.lifecycle,
+                exitCode: tab.exitCode,
+              };
+            });
             return {
               dir: g.dir,
               name: g.name,
               color: g.color,
-              // the active tab may have been pruned (it exited) — never
-              // persist a dangling id, or the restore renders no pane
               activeTabId: tabs.some(t => t.id === g.activeTabId)
                 ? g.activeTabId
                 : (tabs[0]?.id ?? null),
@@ -658,10 +688,54 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           })
           .filter(g => g.tabs.length > 0),
       };
-      void ws.save(state);
-    }, 400);
+    },
+    []
+  );
+
+  // ---- persistence: debounced; ended tabs remain as explicit resume targets ----
+  useEffect(() => {
+    if (!ready) return;
+    const ws = window.electron?.workspace;
+    if (!ws) return;
+    const handle = setTimeout(() => void ws.save(serializeWorkspace()), 400);
     return () => clearTimeout(handle);
-  }, [projects, activeDir, lastUsedDir, pinnedTabId, ready]);
+  }, [
+    projects,
+    activeDir,
+    lastUsedDir,
+    pinnedTabId,
+    ready,
+    serializeWorkspace,
+  ]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const appApi = window.electron?.app;
+    const ws = window.electron?.workspace;
+    const ptyApi = window.electron?.pty;
+    if (!appApi || !ws || !ptyApi) return;
+    return appApi.onCheckpointRequest(({ requestId }) => {
+      const state = serializeWorkspace(true);
+      void ptyApi
+        .list()
+        .then(live => {
+          const byDurable = new Map(
+            live.map(session => [session.durableSessionId, session])
+          );
+          for (const project of state.projects) {
+            for (const tab of project.tabs) {
+              const session = byDurable.get(tab.durableSessionId);
+              if (session?.harnessSessionId) {
+                tab.harnessSessionId = session.harnessSessionId;
+              }
+            }
+          }
+          return ws.save(state);
+        })
+        .then(() => appApi.completeCheckpoint(requestId, true))
+        .catch(() => appApi.completeCheckpoint(requestId, false));
+    });
+  }, [ready, serializeWorkspace]);
 
   // ---- verbs ----
   const launch = useCallback(
@@ -746,7 +820,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const g = gs.find(x => x.tabs.some(t => t.id === tabId));
     const tab = g?.tabs.find(t => t.id === tabId);
     setPinnedTabId(cur => (cur === tabId ? null : cur));
-    if (tab) await api.deleteSession(tab.durableSessionId);
+    if (tab && !(await api.deleteSession(tab.durableSessionId))) return;
     setProjects(prev => {
       const next = prev
         .map(grp => {
@@ -773,6 +847,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const tab = stateRef.current.projects
         .flatMap(project => project.tabs)
         .find(candidate => candidate.id === tabId);
+      if (resumeInFlightRef.current.has(tabId)) return false;
       if (!tab || tabIsLive(tab) || tab.resumeState === 'resuming')
         return false;
       const exactId = selectedHarnessId ?? tab.harnessSessionId;
@@ -782,20 +857,26 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         );
         return false;
       }
+      resumeInFlightRef.current.add(tabId);
       updateTab(tabId, {
         resumeState: 'resuming',
         lifecycle: 'resuming',
         exitCode: null,
       });
       const size = sizeRef.current?.() ?? null;
-      const result = await api.create({
-        harness: tab.harness,
-        cwd: tab.cwd,
-        title: tab.title,
-        durableSessionId: tab.durableSessionId,
-        ...(exactId ? { resumeSessionId: exactId } : {}),
-        ...(size ?? {}),
-      });
+      let result;
+      try {
+        result = await api.create({
+          harness: tab.harness,
+          cwd: tab.cwd,
+          title: tab.title,
+          durableSessionId: tab.durableSessionId,
+          ...(exactId ? { resumeSessionId: exactId } : {}),
+          ...(size ?? {}),
+        });
+      } finally {
+        resumeInFlightRef.current.delete(tabId);
+      }
       if (!result.ok) {
         updateTab(tabId, {
           resumeState: 'failed',
@@ -822,7 +903,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const resumeTabs = useCallback(
     async (tabs: WorkspaceTab[]) => {
       for (const tab of tabs) {
-        if (tab.harness !== 'shell' && tab.harnessSessionId) {
+        if (tabCanResumeAsAgent(tab)) {
           await resumeTab(tab.id);
         }
       }

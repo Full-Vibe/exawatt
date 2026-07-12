@@ -34,6 +34,9 @@ function installApi() {
         throw new Error('unused');
       },
       restartUpdate,
+      completeCheckpoint: async () => undefined,
+      onCheckpointRequest: () => () => undefined,
+      onShutdownStatus: () => () => undefined,
       onUpdateReady: () => () => undefined,
       onUpdateStatus: handler => {
         emitStatus = handler;
@@ -59,8 +62,8 @@ describe('UpdateReadyNotice', () => {
         error: null,
       })
     );
-    expect(screen.getByText(/Restarting will stop 4 live sessions/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Restart when convenient/ }));
+    expect(screen.getByText(/ready to install/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Restart to Update/ }));
     expect(restart).toHaveBeenCalledOnce();
   });
 
@@ -78,6 +81,8 @@ describe('UpdateReadyNotice', () => {
         error: 'network unavailable',
       })
     );
-    expect(screen.getByText('Update failed. Exawatt 1.0.0 remains installed.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Update failed. Exawatt 1.0.0 remains installed.')
+    ).toBeInTheDocument();
   });
 });

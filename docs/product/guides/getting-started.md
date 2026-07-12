@@ -4,6 +4,16 @@ Exawatt is a command center for agents.
 
 The first version focuses on making local agent control clearer, more beautiful, and easier to trust. Future versions will command hosted and multi-source fleets.
 
+## Quitting and returning
+
+When local Sessions are running, quitting Exawatt asks before stopping them.
+Their layout, exact agent conversation identity, and retained terminal history
+return on the next launch, but nothing resumes automatically. Use **Resume All**
+for agents or **New Shell Here** for an individual stopped shell.
+
+See the [Session lifecycle reference](../reference/session-lifecycle.md) for the
+state and persistence contract.
+
 ## Modes
 
 Exawatt has two first-class modes:

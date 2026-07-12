@@ -12,6 +12,8 @@ import {
   SessionHistoryStore,
   type SessionHistorySnapshot,
 } from './session-history-store';
+import { stopProcessGroups } from './process-groups';
+import { listResumeCandidates } from './resume-candidates';
 
 const execFileAsync = promisify(execFile);
 
@@ -120,15 +122,48 @@ export class PtySessionManager extends EventEmitter {
   private scrollback = new ScrollbackStore();
   private history: SessionHistoryStore | null = null;
   private nextId = 1;
+  private acceptingCreates = true;
+  private creating = 0;
+  private creatingDurableIds = new Set<string>();
+  private claimedCodexIds = new Set<string>();
+  private pendingCodexIdentities = new Set<Promise<void>>();
 
   async configurePersistence(root: string): Promise<void> {
     this.history = new SessionHistoryStore(root);
     await this.history.initialize();
   }
 
+  pauseCreates(): void {
+    this.acceptingCreates = false;
+  }
+
+  resumeCreates(): void {
+    this.acceptingCreates = true;
+  }
+
+  async create(options: PtyCreateOptions): Promise<PtySessionInfo> {
+    if (!this.acceptingCreates) throw new Error('Exawatt is stopping Sessions');
+    const durableSessionId =
+      options.durableSessionId ?? `session-${randomUUID()}`;
+    if (this.creatingDurableIds.has(durableSessionId)) {
+      throw new Error('This Session is already starting');
+    }
+    this.creating += 1;
+    this.creatingDurableIds.add(durableSessionId);
+    try {
+      return await this.createUnlocked(options, durableSessionId);
+    } finally {
+      this.creating -= 1;
+      this.creatingDurableIds.delete(durableSessionId);
+    }
+  }
+
   // async: cwd validation and shell resolution do I/O — a stat on a dead
   // network mount must hang a threadpool worker, never the main event loop
-  async create(options: PtyCreateOptions): Promise<PtySessionInfo> {
+  private async createUnlocked(
+    options: PtyCreateOptions,
+    durableSessionId: string
+  ): Promise<PtySessionInfo> {
     const cwd = expandTilde((options.cwd || '').trim()) || os.homedir();
     // fail loudly BEFORE spawning: node-pty with a bad cwd dies instantly
     // with no output, which reads as "the harness is broken"
@@ -146,8 +181,13 @@ export class PtySessionManager extends EventEmitter {
     const shell = await defaultShell();
     const project = await resolveProject(cwd);
     const id = `pty-${this.nextId++}`;
-    const durableSessionId =
-      options.durableSessionId ?? `session-${randomUUID()}`;
+    const existing = Array.from(this.sessions.entries()).find(
+      ([, session]) => session.info.durableSessionId === durableSessionId
+    );
+    if (existing && !existing[1].info.exited) {
+      throw new Error('This Session already has a running process');
+    }
+    if (existing) this.sessions.delete(existing[0]);
     const retained = this.history
       ? await this.history.load(durableSessionId)
       : { text: '', cursor: 0, updatedAt: 0, corrupt: false };
@@ -156,6 +196,14 @@ export class PtySessionManager extends EventEmitter {
       options.harness === 'claude'
         ? (options.resumeSessionId ?? randomUUID())
         : (options.resumeSessionId ?? null);
+    const codexIdsBefore =
+      options.harness === 'codex' && !options.resumeSessionId
+        ? new Set(
+            (await listResumeCandidates('codex', cwd)).map(
+              candidate => candidate.id
+            )
+          )
+        : null;
 
     // plain shell: interactive login shell. Harness: run its CLI through the
     // login shell so PATH (homebrew, nvm, ...) resolves like the user's
@@ -205,12 +253,6 @@ export class PtySessionManager extends EventEmitter {
       harnessSessionId,
     };
 
-    for (const [runtimeId, existing] of this.sessions) {
-      if (existing.info.durableSessionId === durableSessionId) {
-        if (!existing.info.exited) existing.proc.kill();
-        this.sessions.delete(runtimeId);
-      }
-    }
     this.sessions.set(id, { proc, info });
 
     if (options.resumeSessionId && options.harness !== 'shell') {
@@ -253,7 +295,55 @@ export class PtySessionManager extends EventEmitter {
       this.emit('exit', id, exitCode, durableSessionId);
     });
 
+    if (codexIdsBefore) {
+      const identity = this.trackCodexIdentity(info, codexIdsBefore);
+      await Promise.race([
+        identity,
+        new Promise(resolve => setTimeout(resolve, 2_000)),
+      ]);
+    }
+
     return { ...info };
+  }
+
+  private trackCodexIdentity(
+    info: PtySessionInfo,
+    before: Set<string>
+  ): Promise<void> {
+    let tracked!: Promise<void>;
+    tracked = this.captureCodexIdentity(info, before).finally(() =>
+      this.pendingCodexIdentities.delete(tracked)
+    );
+    this.pendingCodexIdentities.add(tracked);
+    return tracked;
+  }
+
+  private async captureCodexIdentity(
+    info: PtySessionInfo,
+    before: Set<string>
+  ): Promise<void> {
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline && !info.exited && !info.harnessSessionId) {
+      const candidates = await listResumeCandidates('codex', info.cwd);
+      const match = candidates.find(
+        candidate =>
+          !before.has(candidate.id) &&
+          !this.claimedCodexIds.has(candidate.id) &&
+          candidate.updatedAt >= info.startedAt - 2_000
+      );
+      if (match) {
+        this.claimedCodexIds.add(match.id);
+        info.harnessSessionId = match.id;
+        this.emit(
+          'identity',
+          info.id,
+          info.durableSessionId,
+          info.harnessSessionId
+        );
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
   }
 
   write(id: string, data: string): void {
@@ -287,7 +377,11 @@ export class PtySessionManager extends EventEmitter {
   async kill(id: string): Promise<void> {
     const s = this.sessions.get(id);
     if (!s) return;
-    if (!s.info.exited) s.proc.kill();
+    if (!s.info.exited) {
+      await stopProcessGroups([s.proc.pid], (_pid, signal) =>
+        s.proc.kill(signal)
+      );
+    }
     this.sessions.delete(id);
     this.scrollback.delete(s.info.durableSessionId);
     await this.history?.delete(s.info.durableSessionId);
@@ -387,11 +481,30 @@ export class PtySessionManager extends EventEmitter {
     await this.history?.flush();
   }
 
+  async settleProviderIdentities(timeoutMs = 2_000): Promise<void> {
+    if (this.pendingCodexIdentities.size === 0) return;
+    await Promise.race([
+      Promise.allSettled(Array.from(this.pendingCodexIdentities)),
+      new Promise(resolve => setTimeout(resolve, timeoutMs)),
+    ]);
+  }
+
   async stopAll(): Promise<void> {
-    for (const [id, session] of Array.from(this.sessions.entries())) {
-      if (!session.info.exited) session.proc.kill();
-      this.sessions.delete(id);
+    this.pauseCreates();
+    while (this.creating > 0) {
+      await new Promise(resolve => setTimeout(resolve, 25));
     }
+    const active = Array.from(this.sessions.entries()).filter(
+      ([, session]) => !session.info.exited
+    );
+    await stopProcessGroups(
+      active.map(([, session]) => session.proc.pid),
+      (pid, signal) => {
+        const target = active.find(([, session]) => session.proc.pid === pid);
+        target?.[1].proc.kill(signal);
+      }
+    );
+    for (const id of Array.from(this.sessions.keys())) this.sessions.delete(id);
     await this.flushHistory();
   }
 

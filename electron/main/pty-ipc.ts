@@ -1,4 +1,4 @@
-import { BrowserWindow, Notification, app, shell } from 'electron';
+import { BrowserWindow, Notification, app, dialog, shell } from 'electron';
 import { handleTrusted } from './ipc-security';
 import { ptySessions } from './pty/session-manager';
 import type { PtyCreateOptions } from './pty/session-manager';
@@ -26,7 +26,7 @@ import {
  * `pty:*`; output/exit stream to every window via `pty:data` / `pty:exit`
  * (single-window app today; cheap to scope per-window later).
  */
-export function registerPtyIPC(): void {
+export function registerPtyIPC(previousRunInterrupted = false): void {
   const nativeNotifications = new Map<string, Notification>();
   const broadcast = (channel: string, payload: unknown) => {
     for (const win of BrowserWindow.getAllWindows()) {
@@ -44,6 +44,12 @@ export function registerPtyIPC(): void {
     'exit',
     (id: string, exitCode: number, durableSessionId: string) => {
       broadcast('pty:exit', { id, durableSessionId, exitCode });
+    }
+  );
+  ptySessions.on(
+    'identity',
+    (id: string, durableSessionId: string, harnessSessionId: string) => {
+      broadcast('pty:identity', { id, durableSessionId, harnessSessionId });
     }
   );
 
@@ -157,8 +163,42 @@ export function registerPtyIPC(): void {
     }
   );
   handleTrusted('pty:kill', (_event, id: string) => ptySessions.kill(id));
-  handleTrusted('pty:delete-session', (_event, durableSessionId: string) =>
-    ptySessions.deleteSession(durableSessionId)
+  handleTrusted(
+    'pty:delete-session',
+    async (_event, durableSessionId: string) => {
+      const session = ptySessions
+        .list()
+        .find(item => item.durableSessionId === durableSessionId);
+      if (session && !session.exited) {
+        const testMode = process.env.EXAWATT_TEST === '1';
+        if (testMode && process.env.EXAWATT_TEST_CLOSE_RESPONSE === 'cancel') {
+          return false;
+        }
+        let confirmed = testMode;
+        if (!confirmed) {
+          const agent = session.harness !== 'shell';
+          const options: Electron.MessageBoxOptions = {
+            type: 'warning',
+            title: `Close ${session.title} and stop this ${agent ? 'agent' : 'shell'}?`,
+            message: `Close ${session.title} and stop this ${agent ? 'agent' : 'shell'}?`,
+            detail: agent
+              ? 'Its retained terminal history will be deleted. The provider conversation can still be resumed from its source.'
+              : 'Its retained terminal history will be deleted.',
+            buttons: ['Cancel', 'Close and Stop'],
+            cancelId: 0,
+            noLink: true,
+          };
+          const win = BrowserWindow.getFocusedWindow();
+          const result = win
+            ? await dialog.showMessageBox(win, options)
+            : await dialog.showMessageBox(options);
+          confirmed = result.response === 1;
+        }
+        if (!confirmed) return false;
+      }
+      await ptySessions.deleteSession(durableSessionId);
+      return true;
+    }
   );
   handleTrusted('pty:rename', (_event, id: string, title: string) => {
     ptySessions.rename(id, title);
@@ -245,6 +285,7 @@ export function registerPtyIPC(): void {
   handleTrusted('workspace:save', (_event, state: unknown) =>
     saveWorkspace(state)
   );
+  handleTrusted('workspace:recovery', () => ({ previousRunInterrupted }));
 
   // user settings (S3): userData/settings.json — e.g. the terminal font
   handleTrusted('settings:get', () => loadSettings());
@@ -261,9 +302,8 @@ export function registerPtyIPC(): void {
 }
 
 /** app-quit cleanup: never leave orphan shells behind */
-export function disposePty(): void {
+export async function disposePty(): Promise<void> {
   contextSummarizer.stop();
   attentionMonitor.stop();
-  ptySessions.killAll();
-  void cleanupClipboardImages();
+  await cleanupClipboardImages();
 }
