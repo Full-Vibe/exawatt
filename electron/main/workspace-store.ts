@@ -14,6 +14,7 @@ export class WorkspaceStore {
   constructor(private readonly file: string) {}
 
   async load(): Promise<unknown | null> {
+    await this.saveTail;
     try {
       return JSON.parse(await fs.promises.readFile(this.file, 'utf8'));
     } catch {
@@ -26,10 +27,14 @@ export class WorkspaceStore {
     const operation = this.saveTail.then(async () => {
       await fs.promises.mkdir(path.dirname(this.file), { recursive: true });
       const temporary = `${this.file}.tmp-${process.pid}-${++this.temporarySequence}`;
-      await fs.promises.writeFile(temporary, serialized, { mode: 0o600 });
-      await fs.promises.chmod(temporary, 0o600);
-      await fs.promises.rename(temporary, this.file);
-      await fs.promises.chmod(this.file, 0o600);
+      try {
+        await fs.promises.writeFile(temporary, serialized, { mode: 0o600 });
+        await fs.promises.chmod(temporary, 0o600);
+        await fs.promises.rename(temporary, this.file);
+        await fs.promises.chmod(this.file, 0o600);
+      } finally {
+        await fs.promises.rm(temporary, { force: true });
+      }
     });
     this.saveTail = operation.catch(() => undefined);
     await operation;

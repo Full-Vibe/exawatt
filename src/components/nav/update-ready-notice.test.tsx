@@ -34,6 +34,7 @@ function installApi() {
         throw new Error('unused');
       },
       restartUpdate,
+      setWorkspaceCheckpointOwner: async () => undefined,
       completeCheckpoint: async () => undefined,
       onCheckpointRequest: () => () => undefined,
       onShutdownStatus: () => () => undefined,

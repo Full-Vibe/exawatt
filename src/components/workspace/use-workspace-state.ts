@@ -728,7 +728,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const ws = window.electron?.workspace;
     const ptyApi = window.electron?.pty;
     if (!appApi || !ws || !ptyApi) return;
-    return appApi.onCheckpointRequest(({ requestId, stage }) => {
+    void appApi.setWorkspaceCheckpointOwner(true);
+    const offCheckpoint = appApi.onCheckpointRequest(({ requestId, stage }) => {
       if (stage === 'pre-stop') {
         shutdownTargetsRef.current = new Set(
           stateRef.current.projects.flatMap(project =>
@@ -758,6 +759,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         .then(() => appApi.completeCheckpoint(requestId, true))
         .catch(() => appApi.completeCheckpoint(requestId, false));
     });
+    return () => {
+      offCheckpoint();
+      void appApi.setWorkspaceCheckpointOwner(false);
+    };
   }, [ready, serializeWorkspace]);
 
   // ---- verbs ----

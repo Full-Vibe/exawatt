@@ -53,6 +53,7 @@ let rendererOrigin: string | null = null;
 let shutdownCoordinator: ShutdownCoordinator | null = null;
 let runStateStore: RunStateStore | null = null;
 const pendingCheckpoints = new Map<string, (ok: boolean) => void>();
+const workspaceCheckpointOwners = new Set<number>();
 
 interface BuildInfo {
   sha: string;
@@ -225,6 +226,17 @@ function createWindow(): void {
     },
   });
 
+  const webContentsId = mainWindow.webContents.id;
+  const clearCheckpointOwner = () =>
+    workspaceCheckpointOwners.delete(webContentsId);
+  mainWindow.webContents.on(
+    'did-start-navigation',
+    (_event, _target, isInPlace, isMainFrame) => {
+      if (isMainFrame && !isInPlace) clearCheckpointOwner();
+    }
+  );
+  mainWindow.webContents.on('destroyed', clearCheckpointOwner);
+
   // Development uses the explicit dev server. Production uses renderer code
   // packaged in this exact app build; remote web code never receives PTY APIs.
   const url = isDev ? DEV_URL : `${rendererOrigin}/workspace`;
@@ -267,6 +279,7 @@ function createWindow(): void {
   }
 
   mainWindow.on('closed', () => {
+    clearCheckpointOwner();
     mainWindow = null;
   });
 }
@@ -468,6 +481,14 @@ function registerDialogIPC(): void {
 function registerAppIPC(): void {
   handleTrusted('app:get-build-info', () => buildInfo);
   handleTrusted(
+    'app:set-workspace-checkpoint-owner',
+    (event, ownsWorkspaceState: boolean) => {
+      if (typeof ownsWorkspaceState !== 'boolean') return;
+      if (ownsWorkspaceState) workspaceCheckpointOwners.add(event.sender.id);
+      else workspaceCheckpointOwners.delete(event.sender.id);
+    }
+  );
+  handleTrusted(
     'app:complete-checkpoint',
     (_event, requestId: string, ok: boolean) => {
       if (typeof requestId !== 'string' || typeof ok !== 'boolean') return;
@@ -583,6 +604,9 @@ async function checkpointRenderer(
   if (stage === 'pre-stop') await ptySessions.settleProviderIdentities();
   const win = mainWindow;
   if (!win || win.isDestroyed()) return true;
+  // Workspace state is mutable only while the workspace hook is mounted. On
+  // Fleet/Spatial/other routes the serialized store is already authoritative.
+  if (!workspaceCheckpointOwners.has(win.webContents.id)) return true;
   const requestId = randomUUID();
   return await new Promise<boolean>(resolve => {
     let settled = false;

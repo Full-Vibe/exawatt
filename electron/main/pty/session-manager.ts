@@ -336,6 +336,7 @@ export class PtySessionManager extends EventEmitter {
             !before.has(candidate.id) &&
             !this.claimedCodexIds.has(candidate.id) &&
             candidate.updatedAt >= submittedAt - 2_000 &&
+            Math.abs(candidate.startedAt - info.startedAt) <= 30_000 &&
             ownerOfCodexCandidate(pending, candidate) === info.id
         )
         .sort(

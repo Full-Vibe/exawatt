@@ -19,7 +19,12 @@ cost without serving that requirement.
 - Treat a Session as durable and a local PTY process as one incarnation of it.
 - Persist exact provider identity, lifecycle metadata, and bounded terminal
   history under the app's machine-local data directory.
-- Explicit quit and update restart use one coordinated checkpoint-and-stop path.
+- Serialize durable writes. Terminal history uses an append journal with
+  bounded snapshot compaction rather than repeatedly rewriting full scrollback.
+- Explicit quit and update restart use one coordinated path with a pre-stop
+  checkpoint and a stopped-clean commit only after process verification.
+- Discover Codex identities through bounded provider metadata reads and bind
+  simultaneous launches by provider launch time, never by latest/cwd guessing.
 - Relaunch restores state without spawning. Operators resume agents explicitly;
   shells start fresh in the same directory.
 - Resume is deterministic: exact provider identity or no automatic resume.

@@ -142,8 +142,12 @@ Built:
 - `LocalSessionsTransport` normalization of local PTY sessions into the shared
   `FleetState` consumed by the DOM and spatial fleet surfaces
 - exact harness conversation identity for Electron tabs: assigned Claude IDs,
-  explicit Codex selection fallback, and no-spawn relaunch with exact
-  tab/Project/all resume actions
+  bounded/cached Codex rollout discovery with launch-time association for
+  parallel agents, explicit selection fallback, and no-spawn relaunch with
+  exact tab/Project/all resume actions
+- serialized workspace persistence and bounded terminal-history snapshots with
+  append journals; steady-state disk work scales with new terminal output and
+  compacts without exposing partial state
 - self-contained Electron packaging, atomic clean-master dogfood installation,
   deep terminal fundamentals, and opt-in native attention notifications
 - Developer-ID signing, Apple notarization, private source-linked GitHub
@@ -155,11 +159,11 @@ Built:
   repo-canonical roadmap per the published convention (`@exawatt/core` parser,
   `@exawatt/ui-model` lens view, validated `roadmap:read` IPC in Electron main)
 
-Active build:
+Implemented:
 
 - deterministic local Session rehydration (ENG-018): durable logical identity,
-  crash-safe bounded terminal history, coordinated quit/update shutdown, and
-  explicit exact-provider resume without a detached runtime
+  crash-safe bounded journaled terminal history, two-commit quit/update
+  shutdown, and explicit exact-provider resume without a detached runtime
 
 Partial:
 

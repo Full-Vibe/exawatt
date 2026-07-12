@@ -25,7 +25,14 @@ const fakeBin = join(root, 'bin');
 const pidDir = join(root, 'pids');
 const projectDir = join(root, 'project');
 const screenshots = resolve('.artifacts', 'eng-018');
-for (const directory of [userData, fakeHome, fakeBin, pidDir, projectDir, screenshots]) {
+for (const directory of [
+  userData,
+  fakeHome,
+  fakeBin,
+  pidDir,
+  projectDir,
+  screenshots,
+]) {
   mkdirSync(directory, { recursive: true });
 }
 
@@ -97,7 +104,9 @@ async function pageFor(app) {
 }
 
 async function sessions(page) {
-  return (await page.evaluate(async () => (await window.electron?.pty?.list()) ?? []));
+  return await page.evaluate(
+    async () => (await window.electron?.pty?.list()) ?? []
+  );
 }
 
 async function waitForSessions(page, count) {
@@ -187,7 +196,8 @@ try {
   for (const [index, session] of original.entries()) {
     const marker = `ENG018_HISTORY_${index + 1}`;
     await page.evaluate(
-      async ({ id, text }) => window.electron?.pty?.write(id, `printf '${text}\\n'\n`),
+      async ({ id, text }) =>
+        window.electron?.pty?.write(id, `printf '${text}\\n'\n`),
       { id: session.id, text: marker }
     );
     await waitForBuffer(page, session.id, marker);
@@ -200,7 +210,8 @@ try {
   }
   const shell = original.find(session => session.harness === 'shell');
   await page.evaluate(
-    async ({ id, file }) => window.electron?.pty?.write(id, `printf '%s' $$ > '${file}'\n`),
+    async ({ id, file }) =>
+      window.electron?.pty?.write(id, `printf '%s' $$ > '${file}'\n`),
     { id: shell.id, file: join(pidDir, 'shell.pid') }
   );
   await page.waitForTimeout(500);
@@ -218,23 +229,49 @@ try {
   app = null;
   console.log('[eng-018] confirmed quit completed');
 
-  const persisted = JSON.parse(readFileSync(join(userData, 'workspace.json'), 'utf8'));
+  const persisted = JSON.parse(
+    readFileSync(join(userData, 'workspace.json'), 'utf8')
+  );
   const tabs = persisted.projects.flatMap(project => project.tabs);
-  if (persisted.v !== 5 || tabs.length !== 5) throw new Error('Workspace v5 checkpoint missing');
-  if (tabs.some(tab => tab.lifecycle !== 'stopped-clean' || tab.sessionId !== null)) {
-    throw new Error(`Clean lifecycle checkpoint mismatch: ${JSON.stringify(tabs)}`);
+  if (persisted.v !== 5 || tabs.length !== 5)
+    throw new Error('Workspace v5 checkpoint missing');
+  if (
+    tabs.some(
+      tab => tab.lifecycle !== 'stopped-clean' || tab.sessionId !== null
+    )
+  ) {
+    throw new Error(
+      `Clean lifecycle checkpoint mismatch: ${JSON.stringify(tabs)}`
+    );
   }
   const exactIds = tabs
     .filter(tab => tab.harness !== 'shell')
     .map(tab => tab.harnessSessionId);
-  if (exactIds.length !== 4 || exactIds.some(id => !id) || new Set(exactIds).size !== 4) {
+  if (
+    exactIds.length !== 4 ||
+    exactIds.some(id => !id) ||
+    new Set(exactIds).size !== 4
+  ) {
     throw new Error(`Expected four exact provider IDs: ${exactIds.join(',')}`);
   }
-  if (pids().some(alive)) throw new Error('Confirmed quit left an agent or shell alive');
-  const histories = readdirSync(join(userData, 'sessions')).filter(name => name.endsWith('.json'));
-  if (histories.length !== 5) throw new Error(`Expected five histories; got ${histories.length}`);
+  if (pids().some(alive))
+    throw new Error('Confirmed quit left an agent or shell alive');
+  const histories = readdirSync(join(userData, 'sessions')).filter(name =>
+    name.endsWith('.json')
+  );
+  if (histories.length !== 5)
+    throw new Error(`Expected five histories; got ${histories.length}`);
+  const durableHistoryFiles = readdirSync(join(userData, 'sessions')).filter(
+    name => name.endsWith('.json') || name.endsWith('.journal')
+  );
   for (let i = 1; i <= 5; i++) {
-    if (!histories.some(name => readFileSync(join(userData, 'sessions', name), 'utf8').includes(`ENG018_HISTORY_${i}`))) {
+    if (
+      !durableHistoryFiles.some(name =>
+        readFileSync(join(userData, 'sessions', name), 'utf8').includes(
+          `ENG018_HISTORY_${i}`
+        )
+      )
+    ) {
       throw new Error(`Retained history ${i} missing`);
     }
   }
@@ -248,11 +285,16 @@ try {
   app = await launch();
   page = await pageFor(app);
   console.log('[eng-018] clean restore ready');
-  if ((await sessions(page)).length !== 0) throw new Error('Relaunch spawned work silently');
-  const ready = page.getByRole('status').filter({ hasText: '4 agents are ready to resume' });
+  if ((await sessions(page)).length !== 0)
+    throw new Error('Relaunch spawned work silently');
+  const ready = page
+    .getByRole('status')
+    .filter({ hasText: '4 agents are ready to resume' });
   await ready.waitFor();
   await page.getByText('Shell', { exact: true }).last().click();
-  await page.getByText('Retained history unavailable', { exact: true }).waitFor();
+  await page
+    .getByText('Retained history unavailable', { exact: true })
+    .waitFor();
   await page.screenshot({ path: join(screenshots, 'restored-1400x900.png') });
   await page.setViewportSize({ width: 800, height: 600 });
   await page.screenshot({ path: join(screenshots, 'restored-800x600.png') });
@@ -264,9 +306,14 @@ try {
   const resumed = await sessions(page);
   const resumedAgents = resumed.filter(session => session.harness !== 'shell');
   if (resumed.filter(session => session.harness === 'shell').length !== 1) {
-    throw new Error('The explicit shell action did not start exactly one shell');
+    throw new Error(
+      'The explicit shell action did not start exactly one shell'
+    );
   }
-  if (JSON.stringify(resumedAgents.map(item => item.harnessSessionId).sort()) !== JSON.stringify([...exactIds].sort())) {
+  if (
+    JSON.stringify(resumedAgents.map(item => item.harnessSessionId).sort()) !==
+    JSON.stringify([...exactIds].sort())
+  ) {
     throw new Error(
       `Resume All identity mismatch: expected ${JSON.stringify(exactIds)}, got ${JSON.stringify(resumedAgents.map(item => item.harnessSessionId))}`
     );
@@ -284,7 +331,8 @@ try {
   await page.getByTitle(/Launch a new Shell session/).click();
   const withCrashShell = await waitForSessions(page, 1);
   await page.evaluate(
-    async id => window.electron?.pty?.write(id, "printf 'ENG018_CRASH_HISTORY\\n'\n"),
+    async id =>
+      window.electron?.pty?.write(id, "printf 'ENG018_CRASH_HISTORY\\n'\n"),
     withCrashShell[0].id
   );
   await page.waitForTimeout(700);
@@ -297,19 +345,37 @@ try {
   page = await pageFor(app);
   console.log('[eng-018] interrupted restore ready');
   await page.getByText('Interrupted', { exact: true }).last().waitFor();
-  await page.screenshot({ path: join(screenshots, 'interrupted-1400x900.png') });
+  await page.screenshot({
+    path: join(screenshots, 'interrupted-1400x900.png'),
+  });
+  await page.goto(new URL('/fleet', page.url()).toString());
+  await page.getByRole('heading', { name: 'Fleet Command' }).waitFor();
   const finalClose = waitForClose(app);
   await requestQuit(app);
-  await finalClose;
+  await Promise.race([
+    finalClose,
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error('Non-workspace quit waited for a native modal')),
+        2_500
+      )
+    ),
+  ]);
   app = null;
+  console.log('[eng-018] non-workspace quit completed without a native modal');
 
-  console.log('PASS session lifecycle: 2 Claude + 2 Codex + shell, cancel/quit/corrupt-history/restore/resume/crash');
+  console.log(
+    'PASS session lifecycle: 2 Claude + 2 Codex + shell, cancel/quit/corrupt-history/restore/resume/crash/non-workspace-quit'
+  );
   console.log(`[eng-018] screenshots: ${screenshots}`);
 } finally {
   if (app) {
     const forced = waitForClose(app);
     app.process().kill('SIGKILL');
-    await Promise.race([forced, new Promise(resolve => setTimeout(resolve, 2_000))]);
+    await Promise.race([
+      forced,
+      new Promise(resolve => setTimeout(resolve, 2_000)),
+    ]);
   }
   if (!process.env.EXAWATT_KEEP_EVAL) {
     rmSync(root, { recursive: true, force: true });

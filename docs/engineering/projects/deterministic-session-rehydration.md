@@ -20,7 +20,14 @@ starting work. The operator resumes agents explicitly.
 - Lifecycle is `running`, `stopped-clean`, `interrupted`, `exited`, `resuming`,
   or `failed`.
 - History is machine-local, atomically replaced, permission-restricted, bounded
-  per Session, and removed only when the Session is permanently deleted.
+  per Session, journaled between bounded compactions, and removed only when the
+  Session is permanently deleted. Disk writes are serialized with deletion.
+- Workspace saves are serialized in invocation order. Shutdown first persists
+  Sessions as running, verifies process death, then commits stopped-clean; an
+  incomplete shutdown remains conservatively interrupted.
+- Codex discovery reads bounded rollout prefixes, tolerates provider file churn,
+  and associates parallel launches by provider launch time while preserving PTY
+  input order.
 - Resume All is explicit, sequential, and agents-only. It never starts shells.
 - Exact resume never guesses from latest conversation or cwd.
 
@@ -97,6 +104,23 @@ Recorded 2026-07-11 evidence:
   replaced and relaunched automatically, all five histories restored without
   spawning, four exact agents resumed, the shell remained stopped, and no agent
   or shell process survived either shutdown boundary.
+
+Hardening review and evidence, 2026-07-12:
+
+- Closed six review findings covering rollout churn, first-submit input order,
+  concurrent history/workspace writes, premature clean-state persistence, and
+  scrollback write amplification. Regression tests delay atomic renames, overlap
+  flush/delete/save calls, rotate rollout files, and exercise a 16 MB rollout.
+- The production Codex catalog on 293 rollout files totaling 1.37 GB improved
+  from 2.34 seconds / about 704 MB RSS to 98 ms / about 68 MB RSS while returning
+  the same 18 Project candidates.
+- `pnpm lint`, `pnpm type-check`, `pnpm electron:compile`, and all 397 tests
+  passed. The unsigned packaged production build and five-Session lifecycle
+  evaluation passed, including cancel, verified quit, journal replay, corrupt
+  history isolation, four exact resumes, shell exclusion, crash recovery, and
+  modal-free quit from a non-workspace route.
+- The authenticated real-harness evaluator passed against installed Claude and
+  Codex CLIs and captured an exact new Codex identity through the bounded catalog.
 
 ## Deferred semantic closeout
 

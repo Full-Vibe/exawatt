@@ -127,6 +127,11 @@ contextBridge.exposeInMainWorld('electron', {
     getUpdateStatus: () => ipcRenderer.invoke('app:get-update-status'),
     checkForUpdates: () => ipcRenderer.invoke('app:check-for-updates'),
     restartUpdate: () => ipcRenderer.invoke('app:restart-update'),
+    setWorkspaceCheckpointOwner: (ownsWorkspaceState: boolean) =>
+      ipcRenderer.invoke(
+        'app:set-workspace-checkpoint-owner',
+        ownsWorkspaceState
+      ),
     completeCheckpoint: (requestId: string, ok: boolean) =>
       ipcRenderer.invoke('app:complete-checkpoint', requestId, ok),
     onCheckpointRequest: subscribe<{

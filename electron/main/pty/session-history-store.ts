@@ -265,15 +265,19 @@ export class SessionHistoryStore {
   private async replace(id: string, record: StoredHistoryV1): Promise<void> {
     const destination = this.file(id);
     const temporary = `${destination}.tmp-${process.pid}-${++this.temporarySequence}`;
-    await fs.promises.writeFile(temporary, JSON.stringify(record), {
-      encoding: 'utf8',
-      mode: 0o600,
-    });
-    await fs.promises.chmod(temporary, 0o600);
-    await fs.promises.rename(temporary, destination);
-    await fs.promises.chmod(destination, 0o600);
-    await fs.promises.rm(this.journal(id), { force: true });
-    this.journalBytes.set(id, 0);
-    this.persisted.set(id, record);
+    try {
+      await fs.promises.writeFile(temporary, JSON.stringify(record), {
+        encoding: 'utf8',
+        mode: 0o600,
+      });
+      await fs.promises.chmod(temporary, 0o600);
+      await fs.promises.rename(temporary, destination);
+      await fs.promises.chmod(destination, 0o600);
+      await fs.promises.rm(this.journal(id), { force: true });
+      this.journalBytes.set(id, 0);
+      this.persisted.set(id, record);
+    } finally {
+      await fs.promises.rm(temporary, { force: true });
+    }
   }
 }

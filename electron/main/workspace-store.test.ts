@@ -25,9 +25,10 @@ describe('WorkspaceStore', () => {
 
     const older = store.save({ revision: 1, payload: 'x'.repeat(2_000_000) });
     const newer = store.save({ revision: 2 });
+    const loaded = store.load();
     await Promise.all([older, newer]);
 
-    await expect(store.load()).resolves.toEqual({ revision: 2 });
+    await expect(loaded).resolves.toEqual({ revision: 2 });
     expect((await fs.promises.stat(file)).mode & 0o777).toBe(0o600);
     expect(
       (await fs.promises.readdir(root)).some(name => name.includes('.tmp-'))

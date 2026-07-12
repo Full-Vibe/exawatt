@@ -224,6 +224,7 @@ export interface ElectronAppApi {
   getUpdateStatus: () => Promise<ProductUpdateStatus>;
   checkForUpdates: () => Promise<ProductUpdateStatus>;
   restartUpdate: () => Promise<void>;
+  setWorkspaceCheckpointOwner: (ownsWorkspaceState: boolean) => Promise<void>;
   completeCheckpoint: (requestId: string, ok: boolean) => Promise<void>;
   onCheckpointRequest: (
     handler: (request: {
