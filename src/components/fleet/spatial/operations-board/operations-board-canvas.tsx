@@ -83,6 +83,7 @@ function useLowPowerMode(): boolean {
 
 export interface OperationsBoardHandle {
   recenter(): void;
+  restoreViewport(viewport: OperationsBoardViewport): void;
   focusProject(projectId: string): void;
   focusAgent(agentId: string): void;
   enterSession(agentId: string): void;
@@ -234,6 +235,15 @@ function BoardCameraRig({
       recenter() {
         focusRect(layout.cameraBounds);
       },
+      restoreViewport(viewport) {
+        target.current.x = viewport.centerX;
+        target.current.y = -viewport.centerY;
+        target.current.zoom = Math.max(
+          0.001,
+          Math.min(size.width / viewport.width, size.height / viewport.height)
+        );
+        cameraChanged();
+      },
       focusProject(projectId) {
         const zone = layout.zones.find(entry => entry.id === projectId);
         if (zone) focusRect(zone.rect);
@@ -301,6 +311,8 @@ function BoardCameraRig({
     layout.pieces,
     layout.zones,
     reduced,
+    size.height,
+    size.width,
     snapToTarget,
     targetForRect,
   ]);

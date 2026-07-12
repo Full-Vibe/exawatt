@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Grid2X2, Orbit, SquareTerminal } from 'lucide-react';
 import {
@@ -19,6 +20,13 @@ import {
   FOCUS_SESSIONS_EVENT,
   RECENTER_SPATIAL_EVENT,
 } from './command-altitude-events';
+import {
+  commandSurfaceAddress,
+  LAST_COMMAND_SURFACE_KEY,
+  validStoredCommandSurface,
+} from './command-surface-memory';
+
+let didRestoreInitialCommandSurface = false;
 
 type SpineSurface = AppSurface & { id: CommandAltitude };
 
@@ -97,6 +105,27 @@ export function CommandAltitudeNav() {
   // null on non-spine surfaces (settings, legacy views): the rail still
   // renders — every level stays one click away — with no current level marked
   const active = resolveCommandAltitude(pathname, searchParams);
+
+  useEffect(() => {
+    if (!window.electron?.isElectron) return;
+    const current = commandSurfaceAddress(
+      pathname,
+      new URLSearchParams(searchParams.toString())
+    );
+    if (!current) return;
+
+    if (!didRestoreInitialCommandSurface) {
+      didRestoreInitialCommandSurface = true;
+      const stored = validStoredCommandSurface(
+        window.localStorage.getItem(LAST_COMMAND_SURFACE_KEY)
+      );
+      if (current === '/workspace' && stored && stored !== current) {
+        router.replace(stored);
+        return;
+      }
+    }
+    window.localStorage.setItem(LAST_COMMAND_SURFACE_KEY, current);
+  }, [pathname, router, searchParams]);
 
   return (
     <nav

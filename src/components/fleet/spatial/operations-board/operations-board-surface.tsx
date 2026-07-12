@@ -19,6 +19,8 @@ import {
   type OperationsBoardHandle,
   type OperationsBoardViewport,
 } from './operations-board-canvas';
+import { RECENTER_SPATIAL_EVENT } from '@/components/nav/command-altitude-events';
+import { parseStoredViewport } from '../spatial-navigation-state';
 
 class BoardErrorBoundary extends Component<
   { children: ReactNode },
@@ -139,6 +141,7 @@ export function OperationsBoardSurface({
   onOverview,
   onProjectionChange,
   sessionTransitionAgentId = null,
+  viewportStorageKey = 'exawatt:spatial-viewport:v1:fleet:-:-:top-down',
   preserveDrawingBuffer = false,
 }: {
   layout: SpatialBoardLayout;
@@ -149,10 +152,13 @@ export function OperationsBoardSurface({
   onOverview: () => void;
   onProjectionChange: (projection: SpatialBoardProjection) => void;
   sessionTransitionAgentId?: string | null;
+  viewportStorageKey?: string;
   preserveDrawingBuffer?: boolean;
 }) {
   const controller = useRef<OperationsBoardHandle | null>(null);
   const viewportRect = useRef<SVGRectElement | null>(null);
+  const pendingViewport = useRef<OperationsBoardViewport | null>(null);
+  const viewportSaveTimer = useRef<number | null>(null);
   const visibleZones = useMemo(
     () => layout.zones.filter(zone => zone.visible),
     [layout.zones]
@@ -172,14 +178,62 @@ export function OperationsBoardSurface({
 
   useAgentFieldGlide(controller);
 
-  const updateViewport = useCallback((viewport: OperationsBoardViewport) => {
-    const rect = viewportRect.current;
-    if (!rect) return;
-    rect.setAttribute('x', String(viewport.centerX - viewport.width / 2));
-    rect.setAttribute('y', String(viewport.centerY - viewport.height / 2));
-    rect.setAttribute('width', String(viewport.width));
-    rect.setAttribute('height', String(viewport.height));
+  useEffect(() => {
+    const recenter = () => controller.current?.recenter();
+    window.addEventListener(RECENTER_SPATIAL_EVENT, recenter);
+    return () => window.removeEventListener(RECENTER_SPATIAL_EVENT, recenter);
   }, []);
+
+  useEffect(() => {
+    const viewport = parseStoredViewport(
+      window.sessionStorage.getItem(viewportStorageKey)
+    );
+    if (!viewport) return;
+    const frame = window.requestAnimationFrame(() => {
+      controller.current?.restoreViewport(viewport);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [viewportStorageKey]);
+
+  const updateViewport = useCallback(
+    (viewport: OperationsBoardViewport) => {
+      const rect = viewportRect.current;
+      if (rect) {
+        rect.setAttribute('x', String(viewport.centerX - viewport.width / 2));
+        rect.setAttribute('y', String(viewport.centerY - viewport.height / 2));
+        rect.setAttribute('width', String(viewport.width));
+        rect.setAttribute('height', String(viewport.height));
+      }
+      pendingViewport.current = viewport;
+      if (viewportSaveTimer.current !== null) return;
+      viewportSaveTimer.current = window.setTimeout(() => {
+        viewportSaveTimer.current = null;
+        if (pendingViewport.current) {
+          window.sessionStorage.setItem(
+            viewportStorageKey,
+            JSON.stringify(pendingViewport.current)
+          );
+        }
+      }, 200);
+    },
+    [viewportStorageKey]
+  );
+
+  useEffect(
+    () => () => {
+      if (viewportSaveTimer.current !== null) {
+        window.clearTimeout(viewportSaveTimer.current);
+        viewportSaveTimer.current = null;
+      }
+      if (pendingViewport.current) {
+        window.sessionStorage.setItem(
+          viewportStorageKey,
+          JSON.stringify(pendingViewport.current)
+        );
+      }
+    },
+    [viewportStorageKey]
+  );
 
   useEffect(() => {
     const rect = viewportRect.current;

@@ -9,6 +9,7 @@ import {
   Activity,
   Clock3,
   Crosshair,
+  Keyboard,
   RadioTower,
   Search,
 } from 'lucide-react';
@@ -31,17 +32,16 @@ import {
   type SpatialBoardLayout,
   type SpatialBoardProjection,
 } from '@exawatt/ui-model';
-import type { AgentStatus } from '@exawatt/core';
 import { agentGoalDisplay } from './spatial-agent-copy';
 import { requestSessionJump } from '@/components/workspace/session-jump';
 import { rememberSpatialReturn } from '@/components/nav/spatial-return';
-
-const FILTERABLE_STATUSES: AgentStatus[] = [
-  'working',
-  'blocked',
-  'reviewing',
-  'idle',
-];
+import { useShortcuts } from '@/components/shortcuts';
+import {
+  readSpatialFilters,
+  SPATIAL_FILTERABLE_STATUSES,
+  spatialViewportStorageKey,
+  writeSpatialFilters,
+} from './spatial-navigation-state';
 
 // The Spatial Operations Board is route-scoped. ssr:false keeps Three.js out of
 // the DOM fleet bundle and lets the Electron/web shells share the same model.
@@ -78,10 +78,14 @@ export function SpatialFleetClient() {
   const { isDemo } = useFleetConnection();
   const { connectToRealOC, canConnect } = useConnectToOC();
   const { jobs } = useCron();
+  const { openHelpModal } = useShortcuts();
 
-  // Fleet-scale search / status filter. Empty = full fleet (no behavior change).
-  const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<AgentStatus[]>([]);
+  // Semantic filters live in the URL so a Spatial address survives route and
+  // session handoffs. Camera position remains renderer-session state.
+  const { query, statuses: statusFilter } = useMemo(
+    () => readSpatialFilters(searchParams),
+    [searchParams]
+  );
   const [sessionHandoffAgentId, setSessionHandoffAgentId] = useState<
     string | null
   >(null);
@@ -157,10 +161,41 @@ export function SpatialFleetClient() {
     [fleetState]
   );
 
-  const toggleStatus = (status: AgentStatus) =>
-    setStatusFilter(prev =>
-      prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]
+  const updateFilters = useCallback(
+    (next: { query: string; statuses: typeof statusFilter }) => {
+      const params = writeSpatialFilters(
+        new URLSearchParams(searchParams.toString()),
+        next
+      );
+      const value = params.toString();
+      router.replace(`/fleet/spatial${value ? `?${value}` : ''}`, {
+        scroll: false,
+      });
+    },
+    [router, searchParams]
+  );
+
+  const toggleStatus = (status: (typeof statusFilter)[number]) =>
+    updateFilters({
+      query,
+      statuses: statusFilter.includes(status)
+        ? statusFilter.filter(item => item !== status)
+        : [...statusFilter, status],
+    });
+
+  const viewportStorageKey = spatialViewportStorageKey({
+    altitude: scene.altitude,
+    projectId: scene.focusedProjectId,
+    agentId: scene.selectedAgentId,
+    projection,
+  });
+
+  useEffect(() => {
+    const queryString = searchParams.toString();
+    rememberSpatialReturn(
+      `/fleet/spatial${queryString ? `?${queryString}` : ''}`
     );
+  }, [searchParams]);
 
   // Drive zoom-resolution + selection through the URL (deep-linkable). The
   // selector resolves the effective altitude (ascends if a focus is stale).
@@ -375,6 +410,15 @@ export function SpatialFleetClient() {
               Connect
             </Button>
           )}
+          <Button
+            type="button"
+            className="fleet-action-button grid h-11 w-11 place-items-center p-0 xl:hidden"
+            onClick={openHelpModal}
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts · ⌘/"
+          >
+            <Keyboard className="h-4 w-4" />
+          </Button>
         </div>
       </header>
 
@@ -445,11 +489,16 @@ export function SpatialFleetClient() {
               <Search className="h-3 w-3 text-zinc-500" />
               <input
                 value={query}
-                onChange={event => setQuery(event.target.value)}
+                onChange={event =>
+                  updateFilters({
+                    query: event.target.value,
+                    statuses: statusFilter,
+                  })
+                }
                 onKeyDown={event => {
                   if (event.key === 'Escape') {
                     event.stopPropagation();
-                    setQuery('');
+                    updateFilters({ query: '', statuses: statusFilter });
                   }
                 }}
                 placeholder="Search agents…"
@@ -458,7 +507,7 @@ export function SpatialFleetClient() {
               />
             </div>
             <div className="flex flex-wrap items-center gap-1">
-              {FILTERABLE_STATUSES.map(status => (
+              {SPATIAL_FILTERABLE_STATUSES.map(status => (
                 <button
                   key={status}
                   onClick={() => toggleStatus(status)}
@@ -476,8 +525,7 @@ export function SpatialFleetClient() {
             {filtered && (
               <button
                 onClick={() => {
-                  setQuery('');
-                  setStatusFilter([]);
+                  updateFilters({ query: '', statuses: [] });
                 }}
                 className="rounded px-1.5 py-1 text-[10px] text-zinc-500 hover:text-zinc-200"
                 title="Clear search and filters"
@@ -515,6 +563,7 @@ export function SpatialFleetClient() {
             onOverview={overview}
             onProjectionChange={changeProjection}
             sessionTransitionAgentId={sessionHandoffAgentId}
+            viewportStorageKey={viewportStorageKey}
           />
         </section>
 

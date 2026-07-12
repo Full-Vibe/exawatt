@@ -67,6 +67,7 @@ page.on('console', message => {
 await page.addInitScript(() => {
   const session = {
     id: 'nav-eval-session',
+    durableSessionId: 'nav-eval-session',
     harness: 'shell',
     title: 'Navigation evaluation',
     cwd: '/tmp/exawatt-navigation-eval',
@@ -79,11 +80,13 @@ await page.addInitScript(() => {
     exitCode: null,
     lastDataAt: Date.now(),
     contextSummary: 'Verify the command altitude continuum',
+    harnessSessionId: null,
     attention: null,
   };
   const secondSession = {
     ...session,
     id: 'nav-eval-session-2',
+    durableSessionId: 'nav-eval-session-2',
     title: 'Secondary navigation evaluation',
     contextSummary: 'Keep the overview keyboard model deterministic',
   };
@@ -258,10 +261,77 @@ try {
       .count()) === 1,
     'Spatial altitude was not active'
   );
+  await page.locator('[data-spatial-board]').waitFor();
+  await page.waitForTimeout(800);
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'spatial.png'),
     fullPage: true,
   });
+
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await page.waitForTimeout(500);
+  const zoomedViewport = await page.evaluate(() => {
+    const value = window.sessionStorage.getItem(
+      'exawatt:spatial-viewport:v1:fleet:-:-:top-down'
+    );
+    return value ? JSON.parse(value) : null;
+  });
+  requireState(
+    zoomedViewport?.width > 0,
+    'Spatial camera viewport was not stored for the renderer session'
+  );
+  await page.locator('[data-command-altitude-level="spatial"]').click();
+  await page.waitForFunction(
+    zoomedWidth => {
+      const value = window.sessionStorage.getItem(
+        'exawatt:spatial-viewport:v1:fleet:-:-:top-down'
+      );
+      if (!value) return false;
+      return JSON.parse(value).width > zoomedWidth;
+    },
+    zoomedViewport.width
+  );
+  const recenteredViewport = await page.evaluate(() => {
+    const value = window.sessionStorage.getItem(
+      'exawatt:spatial-viewport:v1:fleet:-:-:top-down'
+    );
+    return value ? JSON.parse(value) : null;
+  });
+  requireState(
+    recenteredViewport?.width > zoomedViewport.width,
+    `Active Spatial click did not recenter the board (${JSON.stringify({ zoomedViewport, recenteredViewport })})`
+  );
+
+  await page.setViewportSize({ width: 1000, height: 800 });
+  const shortcutHelpButton = page.getByRole('button', {
+    name: 'Keyboard shortcuts',
+  });
+  requireState(
+    await shortcutHelpButton.isVisible(),
+    'Narrow Spatial layout did not expose shortcut help'
+  );
+  await shortcutHelpButton.click();
+  await page.getByLabel('Filter shortcuts').waitFor();
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  const spatialSearch = page.getByLabel('Search agents');
+  await spatialSearch.fill('navigation');
+  await page.waitForURL(url => url.searchParams.get('q') === 'navigation');
+  await page.getByRole('button', { name: 'working' }).click();
+  await page.waitForURL(url => url.searchParams.get('status') === 'working');
+  const filteredAddress =
+    new URL(page.url()).pathname + new URL(page.url()).search;
+  await page.locator('[data-command-altitude-level="terminal"]').click();
+  await page.waitForURL('**/workspace');
+  await page.locator('[data-command-altitude-level="spatial"]').click();
+  await page.waitForURL(
+    url => `${url.pathname}${url.search}` === filteredAddress
+  );
+  await page.getByTitle('Clear search and filters').click();
+  await page.waitForURL(
+    url => !url.searchParams.has('q') && !url.searchParams.has('status')
+  );
 
   await page.getByRole('button', { name: 'Angle' }).click();
   await page.waitForURL(
@@ -328,6 +398,19 @@ try {
   requireState(
     reducedStageStyle.opacity < 0.7,
     'Reduced-motion overview lost visual de-emphasis'
+  );
+
+  await page.evaluate(() => {
+    window.localStorage.setItem(
+      'exawatt:last-command-surface:v1',
+      '/fleet/spatial?projection=fixed-angle'
+    );
+  });
+  await page.goto(`${BASE}/workspace`, { waitUntil: 'networkidle' });
+  await page.waitForURL(
+    url =>
+      url.pathname === '/fleet/spatial' &&
+      url.searchParams.get('projection') === 'fixed-angle'
   );
 
   requireState(errors.length === 0, `Browser errors: ${errors.join(' | ')}`);
