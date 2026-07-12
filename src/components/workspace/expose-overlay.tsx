@@ -8,8 +8,9 @@
  * Enter/click drops into the session, Esc/⌘O closes. DOM-rendered per the
  * decision `0003` hybrid rule; motion respects prefers-reduced-motion.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HUD } from '@/components/hud';
+import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import { HarnessGlyph } from './harness-icons';
 import { previewLines } from './scrollback-preview';
 import type { Project } from './use-workspace-state';
@@ -72,11 +73,32 @@ export function ExposeOverlay({
   const [entered, setEntered] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const tileRefs = useRef(new Map<string, HTMLButtonElement>());
+  const selectedIndexRef = useRef(sel);
+  selectedIndexRef.current = sel;
+
+  const focusSelection = useCallback(
+    (index = selectedIndexRef.current) => {
+      const tile = tiles[index];
+      if (tile) {
+        const node = tileRefs.current.get(tile.tabId);
+        node?.focus({ preventScroll: true });
+        node?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+      } else {
+        rootRef.current?.focus({ preventScroll: true });
+      }
+    },
+    [tiles]
+  );
 
   // tiles can shrink while open (a session exits) — selection stays in range
   useEffect(() => {
-    setSel(s => Math.min(s, Math.max(0, tiles.length - 1)));
-  }, [tiles.length]);
+    setSel(s => {
+      const next = Math.min(s, Math.max(0, tiles.length - 1));
+      requestAnimationFrame(() => focusSelection(next));
+      return next;
+    });
+  }, [focusSelection, tiles.length]);
 
   // fetch scrollback for tiles we haven't covered yet (tiles can also GROW
   // while open, e.g. a tab finishing auto-revive)
@@ -107,10 +129,18 @@ export function ExposeOverlay({
   // take the keyboard away from xterm; entrance flag flips post-mount so
   // tiles transition in (staggered)
   useEffect(() => {
-    rootRef.current?.focus();
-    const raf = requestAnimationFrame(() => setEntered(true));
+    const raf = requestAnimationFrame(() => {
+      setEntered(true);
+      focusSelection();
+    });
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [focusSelection]);
+
+  useEffect(() => {
+    const focus = () => focusSelection();
+    window.addEventListener(FOCUS_SESSIONS_EVENT, focus);
+    return () => window.removeEventListener(FOCUS_SESSIONS_EVENT, focus);
+  }, [focusSelection]);
 
   const cols = () => {
     const w = gridRef.current?.offsetWidth ?? TILE_W;
@@ -148,15 +178,18 @@ export function ExposeOverlay({
               : 0;
     if (delta !== 0 && tiles.length > 0) {
       e.preventDefault();
-      setSel(s => Math.min(tiles.length - 1, Math.max(0, s + delta)));
+      setSel(s => {
+        const next = Math.min(tiles.length - 1, Math.max(0, s + delta));
+        requestAnimationFrame(() => focusSelection(next));
+        return next;
+      });
     }
   };
 
   return (
     <div
       ref={rootRef}
-      role="dialog"
-      aria-modal="true"
+      role="region"
       aria-label="Session overview"
       data-expose
       tabIndex={-1}
@@ -176,13 +209,13 @@ export function ExposeOverlay({
           className="mb-4 flex items-baseline gap-3 font-mono text-xs"
           style={{ color: HUD.textDim }}
         >
-          <span
+          <h2
             className="font-display text-sm font-semibold"
             style={{ color: HUD.text }}
           >
             All sessions
-          </span>
-          <span>arrows move · enter opens · esc closes</span>
+          </h2>
+          <span>arrows or J/K move · enter opens · esc returns</span>
         </div>
         {tiles.length === 0 ? (
           <div
@@ -212,10 +245,17 @@ export function ExposeOverlay({
             return (
               <button
                 key={t.sessionId}
+                ref={node => {
+                  if (node) tileRefs.current.set(t.tabId, node);
+                  else tileRefs.current.delete(t.tabId);
+                }}
                 data-expose-tile
                 data-selected={selected || undefined}
+                tabIndex={selected ? 0 : -1}
+                aria-label={`${t.title}, ${t.projectName}${needsYou ? ', needs attention' : ''}`}
                 onClick={() => onPick(t.dir, t.tabId)}
                 onMouseEnter={() => setSel(i)}
+                onFocus={() => setSel(i)}
                 className="flex flex-col gap-1.5 rounded border p-3 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
                 style={{
                   width: TILE_W,

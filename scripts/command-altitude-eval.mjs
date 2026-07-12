@@ -56,7 +56,10 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
 page.on('pageerror', error => errors.push(String(error.message || error)));
 page.on('console', message => {
-  if (message.type() === 'error' && !message.text().includes('eval() is not supported')) {
+  if (
+    message.type() === 'error' &&
+    !message.text().includes('eval() is not supported')
+  ) {
     errors.push(message.text());
   }
 });
@@ -78,6 +81,12 @@ await page.addInitScript(() => {
     contextSummary: 'Verify the command altitude continuum',
     attention: null,
   };
+  const secondSession = {
+    ...session,
+    id: 'nav-eval-session-2',
+    title: 'Secondary navigation evaluation',
+    contextSummary: 'Keep the overview keyboard model deterministic',
+  };
   const off = () => () => undefined;
   window.electron = {
     isElectron: true,
@@ -98,9 +107,12 @@ await page.addInitScript(() => {
       kill: async () => undefined,
       rename: async () => undefined,
       focus: async () => undefined,
-      list: async () => [session],
+      list: async () => [session, secondSession],
       buffer: async () => '$ exawatt\nNavigation continuum ready.\n',
-      bufferSnapshot: async () => ({ text: 'Navigation continuum ready.', cursor: 0 }),
+      bufferSnapshot: async () => ({
+        text: 'Navigation continuum ready.',
+        cursor: 0,
+      }),
       bufferSince: async () => ({ data: '', cursor: 0 }),
       pasteClipboard: async () => ({ ok: true }),
       copyText: async () => undefined,
@@ -143,6 +155,46 @@ try {
   await page.waitForURL('**/workspace?view=sessions');
   await page.locator('[data-expose]').waitFor();
   await page.waitForTimeout(400);
+  requireState(
+    (await page.locator('[data-expose]').getAttribute('role')) === 'region',
+    'Sessions overview still exposed modal semantics'
+  );
+  requireState(
+    (await page.locator('[data-workspace-underlay]').getAttribute('inert')) !==
+      null,
+    'Obscured workspace controls were not inert'
+  );
+  const originTile = page.locator('[data-expose-tile][data-selected="true"]');
+  requireState(
+    await originTile.evaluate(element => element === document.activeElement),
+    'Sessions overview did not focus the originating Session'
+  );
+  const originText = await originTile.textContent();
+  await page.keyboard.press(
+    originText?.includes('Secondary navigation evaluation')
+      ? 'ArrowLeft'
+      : 'ArrowRight'
+  );
+  requireState(
+    (await page
+      .locator('[data-expose-tile][data-selected="true"]')
+      .textContent()) !== originText,
+    'Sessions arrow navigation did not move the roving selection'
+  );
+  await page.keyboard.press('Tab');
+  requireState(
+    !(await page.evaluate(() =>
+      document.activeElement?.closest('[data-workspace-underlay]')
+    )),
+    'Tab reached obscured workspace controls'
+  );
+  await page.locator('[data-command-altitude-level="sessions"]').click();
+  requireState(
+    await page
+      .locator('[data-expose-tile][data-selected="true"]')
+      .evaluate(element => element === document.activeElement),
+    'Active Sessions click did not restore overview focus'
+  );
   const stageStyle = await page
     .locator('[data-workspace-stage]')
     .evaluate(element => ({
@@ -167,6 +219,24 @@ try {
     path: join(SCREENSHOT_DIR, 'sessions.png'),
     fullPage: true,
   });
+
+  await page.keyboard.press('Escape');
+  await page.waitForURL(url => !url.searchParams.has('view'));
+  requireState(
+    (await page.locator('[data-active="true"]').textContent())?.includes(
+      originText?.includes('Secondary navigation evaluation')
+        ? 'Secondary navigation evaluation'
+        : 'Navigation evaluation'
+    ),
+    'Escape from Sessions changed the originating Session'
+  );
+  await page.locator('[data-command-altitude-level="terminal"]').click();
+  requireState(
+    await page.evaluate(() =>
+      document.activeElement?.classList.contains('xterm-helper-textarea')
+    ),
+    'Active Terminal click did not restore xterm focus'
+  );
 
   await page.locator('[data-command-altitude-level="spatial"]').click();
   await page.waitForURL('**/fleet/spatial');

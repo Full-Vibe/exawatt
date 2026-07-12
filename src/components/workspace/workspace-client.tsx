@@ -403,7 +403,6 @@ export function WorkspaceClient() {
     },
     [
       activeTab,
-      overviewOpen,
       railMode,
       updateRailMode,
       launch,
@@ -495,6 +494,12 @@ export function WorkspaceClient() {
       className="relative flex h-full flex-col"
       style={{ background: HUD.bg.void }}
     >
+      <div
+        data-workspace-underlay
+        inert={overviewOpen}
+        aria-hidden={overviewOpen || undefined}
+        className="flex min-h-0 flex-1 flex-col"
+      >
       {/* project groups + tabs + launch controls */}
       <div
         ref={chromeRef}
@@ -754,24 +759,6 @@ export function WorkspaceClient() {
         />
       </div>
 
-      {/* exposé overview (S3): ⌘O — every session as a glanceable tile.
-          Mounted at the ROOT so it truly covers the workspace: the tab
-          strip and launch controls must not stay interactive underneath a
-          modal (clicking them would drive invisible terminals) */}
-      {overviewOpen && (
-        <ExposeOverlay
-          projects={projects}
-          summaries={summaries}
-          attention={attention}
-          activeTabId={activeTab?.id ?? null}
-          onPick={(dir, tabId) => {
-            selectTab(dir, tabId);
-            closeOverview();
-          }}
-          onClose={closeOverview}
-        />
-      )}
-
       {/* discoverability (S3): the workspace SHOWS its keys — same pattern
           as the spatial map's bottom legend */}
       <div
@@ -798,6 +785,23 @@ export function WorkspaceClient() {
           </span>
         ))}
       </div>
+      </div>
+
+      {/* Mission Control-style Sessions overview. The obscured workspace
+          underlay is inert; shell-level navigation remains reachable. */}
+      {overviewOpen && (
+        <ExposeOverlay
+          projects={projects}
+          summaries={summaries}
+          attention={attention}
+          activeTabId={activeTab?.id ?? null}
+          onPick={(dir, tabId) => {
+            selectTab(dir, tabId);
+            closeOverview();
+          }}
+          onClose={closeOverview}
+        />
+      )}
     </div>
   );
 }
