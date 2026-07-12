@@ -17,6 +17,9 @@ export interface SessionRow {
   subtitle: string | null;
   color: string;
   status: SessionRowStatus;
+  /** roadmap item declared at launch (ENG-017 S9 mirror) — from the
+   *  machine-local layout, so it works for every project without a lens */
+  roadmapItemId: string | null;
   /** cmdk match target: title + project + micro-context */
   searchValue: string;
 }
@@ -92,6 +95,30 @@ export function extractRecentProjects(layout: unknown): RecentProject[] {
   return rows;
 }
 
+/** tolerant read of the layout's sessionId → declared roadmap item id */
+export function extractRoadmapItemIds(layout: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!layout || typeof layout !== 'object') return out;
+  const l = layout as { projects?: unknown; initiatives?: unknown };
+  const groups = Array.isArray(l.projects) ? l.projects : l.initiatives;
+  if (!Array.isArray(groups)) return out;
+  for (const g of groups) {
+    const tabs = (g as { tabs?: unknown })?.tabs;
+    if (!Array.isArray(tabs)) continue;
+    for (const tab of tabs) {
+      if (!tab || typeof tab !== 'object') continue;
+      const { sessionId, roadmapItemId } = tab as {
+        sessionId?: unknown;
+        roadmapItemId?: unknown;
+      };
+      if (typeof sessionId === 'string' && typeof roadmapItemId === 'string') {
+        out[sessionId] = roadmapItemId;
+      }
+    }
+  }
+  return out;
+}
+
 const STATUS_RANK: Record<SessionRowStatus, number> = {
   'needs-you': 0,
   working: 1,
@@ -106,10 +133,12 @@ export function buildSessionRows(
   now: number
 ): SessionRow[] {
   const colors = extractProjectColors(layout);
+  const itemIds = extractRoadmapItemIds(layout);
   return sessions
     .map((s) => {
       const subtitle = s.contextSummary?.trim() || null;
       const status = sessionRowStatus(s, now);
+      const roadmapItemId = itemIds[s.id] ?? null;
       const row: SessionRow = {
         id: s.id,
         title: s.title,
@@ -118,7 +147,8 @@ export function buildSessionRows(
         subtitle,
         color: colors[s.projectDir] ?? projectColor(s.projectDir),
         status,
-        searchValue: `${s.title} ${s.projectName} ${subtitle ?? ''}`.trim(),
+        roadmapItemId,
+        searchValue: `${s.title} ${s.projectName} ${subtitle ?? ''} ${roadmapItemId ?? ''}`.trim(),
       };
       // within needs-you: oldest flag first (queue order); every other
       // rank (incl. exited-with-stale-flag) sorts by output recency

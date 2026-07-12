@@ -540,6 +540,7 @@ export function CommandPalette({
                       {s.title}
                       <span className="ml-2 text-xs text-muted-foreground">
                         {s.projectName}
+                        {s.roadmapItemId ? ` · ${s.roadmapItemId}` : ''}
                         {s.subtitle ? ` · ${s.subtitle}` : ''}
                       </span>
                     </span>

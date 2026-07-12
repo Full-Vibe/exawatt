@@ -228,6 +228,26 @@ gesture and explicitly accepted or rejected each; decisions recorded here.
 
 ## Progress log (second arc)
 
+- 2026-07-11, S8+S9 landed; arc verified end-to-end: roadmap-derived
+  attention (`packages/ui-model/src/roadmap-attention.ts`, 3 tests) merges
+  into the workspace needs-you map — blocked-with-agent badges the tab, ⌘J
+  walks PTY attention → roadmap-blocked → starving-opens-the-rail; native
+  notifications stay PTY-only for now (roadmap parse is renderer-side;
+  main-side parse is the noted follow-up if dogfood wants toasts for
+  starvation). S9 mirrors: exposé tiles and ⌘K switcher rows show the
+  linked item (declared ids cover every project via the layout —
+  `extractRoadmapItemIds`; the active project's lens enriches labels,
+  fractions, inferred styling). `roadmap-rail-eval` grew from 21 to 30
+  checks (strip spine/current/blocked, sequence bar, milestone roving,
+  chip rows, blocked badge, exposé mirror, starving ⌘J) and its inference
+  check now uses a deterministic git fixture (branch carries the item id)
+  instead of this checkout's agent-churned history. Full gate: 369 tests,
+  type, lint, electron compile, spine eval, rail eval, screenshots.
+  S10 NEXT ACTION (any agent or the operator): open
+  /hud-gallery/roadmap-lab on a dev server, play the three gestures
+  (feed A/B, reorder A/B, milestones A/B) across fixture states, record
+  accept/reject verdicts here, then scope the accepted design as S11.
+
 - 2026-07-11, S6+S7 implemented (worktree eng017-arc2): strip spine model in
   `packages/ui-model/src/roadmap-strip.ts` (pure, 5 unit tests: current-by-
   attachment, now-station fallback, shipped-then-later compression, starving,

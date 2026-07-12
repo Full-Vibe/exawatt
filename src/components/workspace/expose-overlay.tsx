@@ -32,13 +32,21 @@ export function ExposeOverlay({
   projects,
   summaries,
   attention,
+  roadmapByTab = {},
   activeTabId,
   onPick,
   onClose,
 }: {
   projects: Project[];
   summaries: Record<string, string>;
-  attention: Record<string, PtyAttention>;
+  /** presence-only (S8 merges roadmap-derived entries) */
+  attention: Record<string, { since: number }>;
+  /** tabId → linked roadmap item (ENG-017 S9 mirror): the exposé is an
+   *  AGENT-FIRST view, so each tile says what its agent is executing */
+  roadmapByTab?: Record<
+    string,
+    { label: string; fraction: string | null; inferred: boolean }
+  >;
   /** selection starts on the session the operator came from */
   activeTabId: string | null;
   onPick: (dir: string, tabId: string) => void;
@@ -295,6 +303,24 @@ export function ExposeOverlay({
                   >
                     {t.projectName}
                   </span>
+                  {roadmapByTab[t.tabId] && (
+                    <span
+                      data-expose-roadmap-item
+                      title={
+                        roadmapByTab[t.tabId].inferred
+                          ? 'inferred link'
+                          : 'declared at launch'
+                      }
+                      className="shrink-0 pl-1.5 font-mono text-[10px]"
+                      style={{ color: HUD.textMono }}
+                    >
+                      {roadmapByTab[t.tabId].inferred ? '▹' : '▸'}{' '}
+                      {roadmapByTab[t.tabId].label}
+                      {roadmapByTab[t.tabId].fraction
+                        ? ` ${roadmapByTab[t.tabId].fraction}`
+                        : ''}
+                    </span>
+                  )}
                   {needsYou && (
                     <span className="relative ml-1 inline-flex h-1.5 w-1.5 shrink-0">
                       <span

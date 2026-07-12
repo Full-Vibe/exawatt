@@ -14,6 +14,7 @@ import {
 export * from './spatial-board';
 export * from './roadmap-lens';
 export * from './roadmap-strip';
+export * from './roadmap-attention';
 
 export type FleetSurfaceMode = 'dom' | 'spatial';
 

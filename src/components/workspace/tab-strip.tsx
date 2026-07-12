@@ -152,8 +152,9 @@ export function TabStrip({
   pinnedTabId: string | null;
   /** micro-context subtitles keyed by sessionId */
   summaries: Record<string, string>;
-  /** needs-operator flags keyed by sessionId (S1) */
-  attention: Record<string, PtyAttention>;
+  /** needs-operator flags keyed by sessionId (S1; S8 adds
+   *  roadmap-derived entries — only presence and recency matter here) */
+  attention: Record<string, { since: number }>;
   onSelectProject: (index: number) => void;
   onSelectTab: (dir: string, tabId: string) => void;
   onCloseTab: (tabId: string) => void;

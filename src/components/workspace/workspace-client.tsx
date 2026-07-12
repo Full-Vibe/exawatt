@@ -61,7 +61,11 @@ import {
   useProjectRoadmap,
   type RoadmapSessionDescriptor,
 } from '@/components/roadmap/use-project-roadmap';
-import { findRoadmapSessionChip } from '@exawatt/ui-model';
+import {
+  findRoadmapSessionChip,
+  deriveRoadmapBlockedSessions,
+  isProjectStarving,
+} from '@exawatt/ui-model';
 import { HUD } from '@/components/hud';
 import { spatialReturnHref } from '@/components/nav/spatial-return';
 import { Bell, BellOff, FolderOpen, Play, SquareTerminal, X } from 'lucide-react';
@@ -325,6 +329,75 @@ export function WorkspaceClient() {
       ? findRoadmapSessionChip(roadmapView, activeTab.id)
       : null;
 
+  // roadmap-derived attention (S8): blocked items with agents attached join
+  // the SAME needs-you truth as terminal bells — badges and ⌘J, one pipeline.
+  // `since` is pinned on first sight so the ⌘J oldest-first order is stable.
+  const roadmapBlockedSince = useRef(new Map<string, number>());
+  const roadmapAttention = useMemo(() => {
+    const out: Record<string, { kind: 'roadmap-blocked'; since: number }> = {};
+    const blocked = deriveRoadmapBlockedSessions(roadmapView);
+    const seen = new Set<string>();
+    for (const entry of blocked) {
+      seen.add(entry.sessionId);
+      const since =
+        roadmapBlockedSince.current.get(entry.sessionId) ?? Date.now();
+      roadmapBlockedSince.current.set(entry.sessionId, since);
+      out[entry.sessionId] = { kind: 'roadmap-blocked', since };
+    }
+    for (const key of [...roadmapBlockedSince.current.keys()]) {
+      if (!seen.has(key)) roadmapBlockedSince.current.delete(key);
+    }
+    return out;
+  }, [roadmapView]);
+  const starving = isProjectStarving(roadmapView, roadmapSessions.length);
+  // agent-first mirror (S9): tabId → what that agent is executing. Declared
+  // ids cover every project (machine-local layout truth); the active
+  // project's lens enriches with real labels, fractions, inferred links.
+  const roadmapByTab = useMemo(() => {
+    const out: Record<
+      string,
+      { label: string; fraction: string | null; inferred: boolean }
+    > = {};
+    for (const g of projects) {
+      for (const t of g.tabs) {
+        if (t.roadmapItemId && tabIsLive(t)) {
+          out[t.id] = { label: t.roadmapItemId, fraction: null, inferred: false };
+        }
+      }
+    }
+    if (roadmapView.status === 'ok') {
+      const groups = [
+        roadmapView.now,
+        roadmapView.next,
+        roadmapView.later,
+        roadmapView.shipped,
+        roadmapView.parked,
+      ];
+      for (const group of groups) {
+        for (const item of group) {
+          for (const chip of item.chips) {
+            if (!chip.tabId) continue;
+            out[chip.tabId] = {
+              label: item.declaredId ?? item.title,
+              fraction:
+                item.milestones.length > 0
+                  ? `${item.milestonesDone}/${item.milestones.length}`
+                  : null,
+              inferred: chip.method !== 'declared',
+            };
+          }
+        }
+      }
+    }
+    return out;
+  }, [projects, roadmapView]);
+  // PTY attention (bell/turn-end from main) wins on collision — it is the
+  // richer, harness-observed signal
+  const mergedAttention = useMemo(
+    () => ({ ...roadmapAttention, ...attention }),
+    [roadmapAttention, attention]
+  );
+
   // exposé overview (S3): ⌘O — sessions fan out as tiles
   const requestedOverview = searchParams.get('view') === 'sessions';
   const [overviewOpen, setOverviewOpen] = useState(requestedOverview);
@@ -398,7 +471,32 @@ export function WorkspaceClient() {
         },
         selectIndex: selectProject,
         cycle: cycleTab,
-        jumpAttention,
+        // ⌘J walks one queue: PTY needs-you first (main's truth), then
+        // roadmap-blocked sessions, then starvation opens the rail on the
+        // designed empty-queue moment (S8)
+        jumpAttention: () => {
+          if (jumpAttention()) return true;
+          const oldest = Object.entries(roadmapAttention).sort(
+            (a, b) => a[1].since - b[1].since
+          );
+          for (const [sessionId] of oldest) {
+            for (const g of projects) {
+              const tab = g.tabs.find(t => t.sessionId === sessionId);
+              if (tab) {
+                selectTab(g.dir, tab.id);
+                return true;
+              }
+            }
+          }
+          if (starving) {
+            updateRailMode('open');
+            requestAnimationFrame(() =>
+              window.dispatchEvent(new CustomEvent(ROADMAP_RAIL_FOCUS_EVENT))
+            );
+            return true;
+          }
+          return false;
+        },
         toggleRegime: () => {
           navigateCommandSurface(spatialReturnHref());
           return true;
@@ -460,6 +558,10 @@ export function WorkspaceClient() {
       selectProject,
       cycleTab,
       jumpAttention,
+      roadmapAttention,
+      starving,
+      projects,
+      selectTab,
       togglePin,
       navigateCommandSurface,
       openCommandPalette,
@@ -564,7 +666,7 @@ export function WorkspaceClient() {
           activeDir={activeProject?.dir ?? null}
           pinnedTabId={pinnedTabId}
           summaries={summaries}
-          attention={attention}
+          attention={mergedAttention}
           onSelectProject={selectProject}
           onSelectTab={selectTab}
           onCloseTab={id => void closeTab(id)}
@@ -857,9 +959,10 @@ export function WorkspaceClient() {
           underlay is inert; shell-level navigation remains reachable. */}
       {overviewOpen && (
         <ExposeOverlay
+          roadmapByTab={roadmapByTab}
           projects={projects}
           summaries={summaries}
-          attention={attention}
+          attention={mergedAttention}
           activeTabId={activeTab?.id ?? null}
           onPick={(dir, tabId) => {
             selectTab(dir, tabId);

@@ -3,6 +3,7 @@ import {
   sessionRowStatus,
   extractProjectColors,
   extractRecentProjects,
+  extractRoadmapItemIds,
   buildSessionRows,
 } from './switcher-rows';
 import type { PtySessionInfo } from '@/types/electron';
@@ -174,5 +175,40 @@ describe('extractRecentProjects', () => {
     ).toEqual([{ dir: '/p/c', name: 'c' }]);
     expect(extractRecentProjects(null)).toEqual([]);
     expect(extractRecentProjects({ v: 3, projects: 'bogus' })).toEqual([]);
+  });
+});
+
+describe('extractRoadmapItemIds', () => {
+  it('maps sessionId to the declared roadmap item across projects', () => {
+    const layout = {
+      v: 4,
+      projects: [
+        {
+          dir: '/p/a',
+          tabs: [
+            { sessionId: 'pty-1', roadmapItemId: 'APP-018' },
+            { sessionId: 'pty-2', roadmapItemId: null },
+          ],
+        },
+        { dir: '/p/b', tabs: [{ sessionId: 'pty-3', roadmapItemId: 'APP-003' }] },
+      ],
+    };
+    expect(extractRoadmapItemIds(layout)).toEqual({
+      'pty-1': 'APP-018',
+      'pty-3': 'APP-003',
+    });
+    expect(extractRoadmapItemIds(null)).toEqual({});
+  });
+
+  it('rides into rows and their search value', () => {
+    const layout = {
+      v: 4,
+      projects: [
+        { dir: '/p/a', tabs: [{ sessionId: 'pty-1', roadmapItemId: 'APP-018' }] },
+      ],
+    };
+    const rows = buildSessionRows([session()], layout, 100_000);
+    expect(rows[0].roadmapItemId).toBe('APP-018');
+    expect(rows[0].searchValue).toContain('APP-018');
   });
 });
