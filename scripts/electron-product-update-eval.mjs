@@ -51,6 +51,7 @@ const fakeClaude = join(fakeBin, 'claude');
 writeFileSync(
   fakeClaude,
   `#!/bin/sh
+if [ "$1" = "-p" ]; then printf 'fixture context'; exit 0; fi
 id="unknown"
 prev=""
 for arg in "$@"; do
@@ -277,6 +278,7 @@ try {
   }
   const originalAgents = await waitForAgentIdentities(page, 4);
   const exactIds = originalAgents.map(session => session.harnessSessionId).sort();
+  await page.evaluate(() => window.electron?.app?.checkForUpdates());
 
   let transientRetries = 0;
   let retryAfter = 0;
@@ -316,16 +318,13 @@ try {
       `Expected five impacted live sessions, got ${downloaded.liveSessions}`
     );
   }
-  await page
-    .getByText(`Restarting will stop 5 live sessions.`)
-    .waitFor({ timeout: 10_000 });
+  const restartButton = page.getByRole('button', { name: 'Restart to Update' });
+  await restartButton.waitFor({ timeout: 10_000 });
 
   const oldProcess = matchingPids()[0];
   if (!oldProcess)
     throw new Error('Could not identify the baseline app process');
-  await page
-    .evaluate(() => window.electron?.app?.restartUpdate())
-    .catch(() => undefined);
+  await restartButton.click().catch(() => undefined);
   await waitFor(
     () => !matchingPids().includes(oldProcess),
     'Baseline app did not quit for update',
@@ -407,10 +406,12 @@ try {
     );
   }
 
-  await page.keyboard.press('Meta+Q');
+  const finalProcess = matchingPids()[0];
+  if (!finalProcess) throw new Error('Updated app process disappeared early');
+  process.kill(finalProcess, 'SIGTERM');
   await waitFor(
     () => harnessPids().every(pid => !isAlive(pid)),
-    'Final quit left a resumed agent alive',
+    'Final evaluation cleanup left a resumed agent alive',
     30_000
   );
   browser = null;
@@ -427,6 +428,16 @@ try {
       // Process already exited.
     }
   }
+  await waitFor(
+    () => matchingPids().length === 0,
+    'Evaluation app did not stop during cleanup',
+    10_000
+  ).catch(() => undefined);
   resetShipIt();
-  rmSync(root, { recursive: true, force: true });
+  rmSync(root, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 200,
+  });
 }

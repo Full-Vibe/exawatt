@@ -238,6 +238,12 @@ try {
       throw new Error(`Retained history ${i} missing`);
     }
   }
+  const savedShell = tabs.find(tab => tab.harness === 'shell');
+  if (!savedShell) throw new Error('Saved shell Session missing');
+  writeFileSync(
+    join(userData, 'sessions', `${savedShell.durableSessionId}.json`),
+    '{corrupt'
+  );
 
   app = await launch();
   page = await pageFor(app);
@@ -245,10 +251,11 @@ try {
   if ((await sessions(page)).length !== 0) throw new Error('Relaunch spawned work silently');
   const ready = page.getByRole('status').filter({ hasText: '4 agents are ready to resume' });
   await ready.waitFor();
+  await page.getByText('Shell', { exact: true }).last().click();
+  await page.getByText('Retained history unavailable', { exact: true }).waitFor();
   await page.screenshot({ path: join(screenshots, 'restored-1400x900.png') });
   await page.setViewportSize({ width: 800, height: 600 });
   await page.screenshot({ path: join(screenshots, 'restored-800x600.png') });
-  await page.getByText('Shell', { exact: true }).last().click();
   await page.getByRole('button', { name: 'New Shell Here' }).click();
   await waitForSessions(page, 1);
   await ready.getByRole('button', { name: 'Resume All' }).click();
@@ -296,7 +303,7 @@ try {
   await finalClose;
   app = null;
 
-  console.log('PASS session lifecycle: 2 Claude + 2 Codex + shell, cancel/quit/restore/resume/crash');
+  console.log('PASS session lifecycle: 2 Claude + 2 Codex + shell, cancel/quit/corrupt-history/restore/resume/crash');
   console.log(`[eng-018] screenshots: ${screenshots}`);
 } finally {
   if (app) {
