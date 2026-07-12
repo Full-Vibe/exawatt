@@ -3,6 +3,9 @@
 Date: 2026-07-02
 Status: accepted
 
+The designated-detachable-upgrade assumption below was superseded by decision
+`0012`; Electron-main PTY ownership remains accepted.
+
 ## Context
 
 ENG-002 (Agent Terminal Workspace) needs interactive terminal sessions for
@@ -25,16 +28,15 @@ Options considered:
 ## Decision
 
 Option 1 for v0. The session manager is an explicit boundary
-(spawn / attach / write / resize / kill / serialize) so a detachable backend
-(option 2 or 3) can replace the in-process PTY owner later without UI
-changes — architect ten miles ahead, build one mile.
+(spawn / attach / write / resize / kill / serialize). Decision `0012` later
+kept that ownership and chose deterministic rehydration instead of replacing it
+with options 2 or 3.
 
 ## Consequences
 
-- v0 restart persistence covers layout, names, worktrees, and working dirs;
-  running processes do NOT survive an app restart. Acceptable for daily
-  dogfood — agents are cheaply re-launchable; a detachable backend is the
-  designated upgrade path when that stops being acceptable.
+- Restart persistence covers layout, names, worktrees, and working dirs;
+  running processes do not survive an app restart. ENG-018 makes their logical
+  Sessions deterministic to rehydrate (decision `0012`).
 - A native-module rebuild step joins the Electron build.
 - The existing headless runner (`electron/main/agents/claude-code-agent.ts`,
   `claude -p` JSON stream) remains for autonomous sessions. Interactive PTY

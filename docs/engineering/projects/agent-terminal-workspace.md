@@ -6,7 +6,7 @@ The dogfood-parity workspace: replicate the canonical operator workflow
 (`docs/product/operator-workflow.md`) inside Exawatt — initiatives → windows
 → session tabs, parallel coding agents in git worktrees — then improve it
 incrementally. Terminal hosting approach is decision `0005` (node-pty +
-xterm.js in Electron; session-manager boundary so a detachable backend can
+xterm.js in Electron; session-manager boundary so durable rehydration can
 come later).
 
 ## Product framing

@@ -94,5 +94,6 @@ the bundle.
   update delivery. CI keeps only the latest three artifact versions while the
   private GitHub Release remains the source-linked archive.
 - Normal update checks never require a secret on the user's machine.
-- Session-preserving background replacement remains ENG-018; explicit restart
-  is truthful until PTYs live outside the app process.
+- ENG-018 coordinates explicit checkpoint, process stop, update install, and
+  logical Session rehydration. PTYs remain inside the app process (decision
+  `0012`).

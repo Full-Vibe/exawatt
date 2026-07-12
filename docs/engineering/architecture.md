@@ -143,10 +143,14 @@ Built:
   repo-canonical roadmap per the published convention (`@exawatt/core` parser,
   `@exawatt/ui-model` lens view, validated `roadmap:read` IPC in Electron main)
 
+Active build:
+
+- deterministic local Session rehydration (ENG-018): durable logical identity,
+  crash-safe bounded terminal history, coordinated quit/update shutdown, and
+  explicit exact-provider resume without a detached runtime
+
 Partial:
 
-- detachable Electron session/process backend; terminal layouts revive after an
-  app restart, but the underlying processes do not yet survive it
 - source/harness abstraction beyond OpenClaw/mock
 - architecture overview as a living map
 - Spatial Operations Board extraction into a standalone package

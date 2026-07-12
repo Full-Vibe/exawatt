@@ -55,8 +55,8 @@ Source: operator dogfood interview 2026-07-10 and operator design interview
   `roadmap:session-evidence` (git branch/worktree/commit subjects per cwd),
   and `roadmap:watch`/`roadmap:file-changed` (dir-level watch, debounced).
   Main compiles with plain tsc and cannot import `@exawatt/core`; that build
-  conversation belongs to ENG-018's detachable backend if it ever becomes
-  necessary.
+  conversation belongs to ENG-018's durable Session boundary; PTYs remain in
+  Electron main per decision `0012`.
 - **Shared view-model.** `buildRoadmapLens` in `@exawatt/ui-model` is pure
   and encodes no DOM geometry. The workspace rail is its first consumer; a
   horizontal strip or spatial/R3F expression consumes the same model later.

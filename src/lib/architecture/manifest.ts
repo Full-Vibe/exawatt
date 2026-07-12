@@ -60,7 +60,7 @@ export const architectureManifest = {
   title: 'Exawatt Architecture',
   summary:
     'Exawatt is a command interface for managing agent fleets across local, hosted, and third-party harnesses.',
-  lastReviewed: '2026-07-10',
+  lastReviewed: '2026-07-11',
   layers: [
     {
       key: 'ui',
@@ -309,7 +309,8 @@ export const architectureManifest = {
         {
           id: 'session',
           label: 'Session',
-          summary: 'One execution episode for an agent.',
+          summary:
+            'A durable execution episode that can span multiple local process incarnations.',
           layer: 'coordination',
           x: 715,
           y: 300,
@@ -510,7 +511,7 @@ export const architectureManifest = {
           id: 'terminal-workspace',
           label: 'Terminal + Session Overview',
           summary:
-            'DOM/xterm focus and exposé regimes for direct session control and multi-session orientation, with the read-only roadmap rail visualizing each repo-canonical Project queue.',
+            'DOM/xterm focus and exposé regimes for direct session control, deterministic rehydration, and multi-session orientation, with the read-only roadmap rail visualizing each repo-canonical Project queue.',
           layer: 'ui',
           status: 'implemented',
           x: 205,
@@ -641,7 +642,7 @@ export const architectureManifest = {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
-            'Versioned local renderer, hardened main/preload and PTY boundary, plus verified Developer-ID-signed automatic updates through public artifact storage.',
+            'Versioned local renderer, hardened main/preload and PTY boundary, coordinated Session checkpoint/quit, plus verified Developer-ID-signed automatic updates through public artifact storage.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 75,
@@ -732,6 +733,7 @@ export const architectureManifest = {
     'UI surfaces speak Exawatt nouns, not provider-specific vocabulary.',
     'DOM and Spatial Operations Board regimes share typed view models and command contracts.',
     'Terminal Focus, Session Overview, and Spatial Command form one navigation continuum while keeping separate renderer boundaries.',
+    'Logical Sessions survive local process death through explicit, deterministic rehydration; local processes do not outlive Exawatt.',
     'Agent sources are replaceable harnesses behind explicit adapters.',
     'Demo behavior is a swappable harness path, not a separate product architecture.',
     'Governance, memory, and resource context live above individual providers.',

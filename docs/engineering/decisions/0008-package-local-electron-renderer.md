@@ -36,9 +36,10 @@ privileges and should not define the desktop trust boundary.
 - The build must package the Next renderer and native `node-pty` dependencies.
 - Hosted and desktop surfaces may share source and UI models, but their delivery
   and privilege boundaries are explicit.
-- A running v0 app is never force-restarted for an update because its PTY
-  processes still share the app lifecycle. A newly installed build takes effect
-  on the next operator-chosen restart until ENG-018 detaches session processes.
+- A running app is never silently restarted for an update because its PTY
+  processes share the app lifecycle. ENG-018 later adds explicit coordinated
+  checkpoint-and-stop before update restart, not process detachment (decision
+  `0012`).
 
 ## Alternatives rejected
 
