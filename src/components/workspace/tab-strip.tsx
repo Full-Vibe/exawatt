@@ -117,6 +117,21 @@ function ColorSwatches({
   );
 }
 
+/** Group pill / tab chrome. While its rename editor is open it renders as a
+ *  `div`: the editor's input and swatch buttons must not be interactive
+ *  elements nested inside a `<button>` (invalid HTML — React hydration
+ *  warning, found by the spine eval's renderer error capture). */
+function EditableChrome({
+  editing,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { editing: boolean }) {
+  return editing ? (
+    <div {...(props as React.HTMLAttributes<HTMLDivElement>)} />
+  ) : (
+    <button type="button" {...props} />
+  );
+}
+
 export function TabStrip({
   projects,
   activeDir,
@@ -196,7 +211,8 @@ export function TabStrip({
               background: groupActive ? `${color}0d` : 'transparent',
             }}
           >
-            <button
+            <EditableChrome
+              editing={editing?.kind === 'group' && editing.id === g.dir}
               onClick={() => onSelectProject(gi)}
               onDoubleClick={() =>
                 setEditing({ kind: 'group', id: g.dir, value: g.name })
@@ -236,7 +252,7 @@ export function TabStrip({
                   {flaggedCount}
                 </span>
               )}
-            </button>
+            </EditableChrome>
             {g.tabs.map((t) => {
               const on = groupActive && t.id === g.activeTabId;
               const dead = !tabIsLive(t);
@@ -254,7 +270,8 @@ export function TabStrip({
                     opacity: dead ? 0.55 : 1,
                   }}
                 >
-                  <button
+                  <EditableChrome
+                    editing={editing?.kind === 'tab' && editing.id === t.id}
                     onClick={() => onSelectTab(g.dir, t.id)}
                     onDoubleClick={() =>
                       setEditing({ kind: 'tab', id: t.id, value: t.title })
@@ -312,7 +329,7 @@ export function TabStrip({
                       </span>
                     )}
                     {dead && <span style={{ color: HUD.red }}>✕</span>}
-                  </button>
+                  </EditableChrome>
                   <button
                     onClick={() => onCloseTab(t.id)}
                     aria-label={`Close ${t.title}`}

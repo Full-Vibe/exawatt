@@ -30,7 +30,7 @@ const app = await electron.launch({
     NODE_ENV: 'development',
     EXAWATT_TEST: '1',
     EXAWATT_USER_DATA: userData,
-    EXAWATT_DEV_URL: 'http://localhost:7000/workspace',
+    EXAWATT_DEV_URL: `${process.env.EXA_BASE ?? 'http://localhost:7000'}/workspace`,
   },
 });
 
@@ -40,13 +40,17 @@ try {
   page.on('pageerror', e =>
     console.log('[pageerror]', String(e.message || e).slice(0, 300))
   );
+  const markupWarnings = [];
   page.on('console', m => {
+    if (m.type() !== 'error') return;
+    if (m.text().includes('eval() is not supported')) return;
     if (
-      m.type() === 'error' &&
-      !m.text().includes('eval() is not supported')
+      m.text().includes('cannot contain a nested') ||
+      m.text().includes('cannot be a descendant')
     ) {
-      console.log('[console]', m.text().slice(0, 300));
+      markupWarnings.push(m.text().slice(0, 120));
     }
+    console.log('[console]', m.text().slice(0, 300));
   });
   await page.locator('[data-command-altitude]').waitFor();
 
@@ -72,6 +76,24 @@ try {
   check(
     'Go>Back displays Command+[ without registering it',
     goMenu.sub.some(s => s.includes('Back|Command+[|reg:false'))
+  );
+
+  // D10: menu accelerators follow the registry — sync a rebind, read it back
+  await page.evaluate(() =>
+    window.electron.menu.syncAccelerators({ 'rename-tab': 'Command+Shift+E' })
+  );
+  await page.waitForTimeout(500);
+  const sessionMenu = await app.evaluate(({ Menu }) =>
+    Menu.getApplicationMenu()
+      .items.find(i => i.label === 'Session')
+      .submenu.items.map(s => `${s.label}|${s.accelerator ?? ''}`)
+  );
+  check(
+    'Session menu accelerator follows a rebind sync',
+    sessionMenu.includes('Rename Session|Command+Shift+E')
+  );
+  await page.evaluate(() =>
+    window.electron.menu.syncAccelerators({ 'rename-tab': 'Command+E' })
   );
 
   // legacy stays reachable via its chord — and the spine follows you there
@@ -262,6 +284,12 @@ try {
   check(
     'fleet title is Fleet Command — Exawatt',
     (await page.title()) === 'Fleet Command — Exawatt'
+  );
+
+  // D10: the rename cycle must not produce nested-interactive markup warnings
+  check(
+    'no nested-interactive markup warnings',
+    markupWarnings.length === 0
   );
 } finally {
   await app.close();

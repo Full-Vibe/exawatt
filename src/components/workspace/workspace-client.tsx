@@ -338,7 +338,13 @@ export function WorkspaceClient() {
           return true;
         },
         toggleOverview: () => {
-          updateOverview(!overviewOpen);
+          // derive open-state from the URL at gesture time (D10): a toggle
+          // issued during the open/close transition must close the overview,
+          // not re-open it from a stale state closure
+          const openNow =
+            new URLSearchParams(window.location.search).get('view') ===
+            'sessions';
+          updateOverview(!openNow);
           return true;
         },
         selectIndex: selectProject,

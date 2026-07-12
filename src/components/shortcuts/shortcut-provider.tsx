@@ -27,6 +27,8 @@ import type {
   ShortcutContext as ShortcutCtx,
   Shortcut,
 } from '@/types/shortcuts';
+import { isChord } from '@/types/shortcuts';
+import { bindingToAccelerator } from '@/lib/shortcuts/accelerator';
 import { spatialReturnHref } from '@/components/nav/spatial-return';
 import {
   surfaceForShortcut,
@@ -41,6 +43,21 @@ import {
   OPEN_OVERVIEW_EVENT,
 } from '@/components/workspace/session-jump';
 import type { PtyHarness } from '@/types/electron';
+
+/** application-menu command → the registry id whose binding it displays
+ *  (D10): rebinding a verb updates the menu's accelerator column */
+const MENU_COMMAND_SHORTCUTS: Record<string, string> = {
+  'command-palette': 'command-palette',
+  'go-sessions': 'workspace-overview',
+  'go-spatial': 'toggle-regime',
+  'history-back': 'history-back',
+  'history-forward': 'history-forward',
+  'launch-shell': 'workspace-new-shell',
+  'rename-tab': 'workspace-rename',
+  'toggle-split': 'workspace-split',
+  'close-tab': 'workspace-close-tab',
+  'jump-attention': 'workspace-jump-attention',
+};
 
 interface ShortcutContextValue {
   openCommandPalette: () => void;
@@ -240,6 +257,28 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
       }
     });
   }, [router]);
+
+  // Menu accelerator truthfulness (D10): the macOS menus display whatever
+  // the registry currently binds — rebinding ⌘E updates the Session menu
+  // without a restart. A chord rebind clears the column instead of lying.
+  useEffect(() => {
+    const sync = () => {
+      const api = window.electron?.menu?.syncAccelerators;
+      if (!api) return;
+      const map: Record<string, string> = {};
+      for (const [command, id] of Object.entries(MENU_COMMAND_SHORTCUTS)) {
+        const keys = shortcutRegistry.getEffectiveKeys(id);
+        const acc = keys && !isChord(keys) ? bindingToAccelerator(keys) : null;
+        map[command] = acc ?? '';
+      }
+      // before the defaults register, everything is empty — don't blank the
+      // menus during that window
+      if (Object.values(map).every(v => v === '')) return;
+      void api(map);
+    };
+    sync();
+    return shortcutRegistry.subscribe(sync);
+  }, []);
 
   // Determine current contexts based on route
   useEffect(() => {

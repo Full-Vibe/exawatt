@@ -122,5 +122,7 @@ contextBridge.exposeInMainWorld('electron', {
   },
   menu: {
     onCommand: subscribe<string>('menu:command'),
+    syncAccelerators: (map: Record<string, string>) =>
+      ipcRenderer.invoke('menu:sync-accelerators', map),
   },
 });

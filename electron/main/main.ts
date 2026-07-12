@@ -253,12 +253,48 @@ function sendMenuCommand(command: string): void {
   win?.webContents.send('menu:command', command);
 }
 
+/** Display accelerators per menu command (D10): seeded with the defaults,
+ *  overwritten when the renderer syncs the registry's effective bindings —
+ *  a rebind updates what the menus show instead of letting them lie. An
+ *  empty string clears the column (e.g. a verb rebound to a chord). */
+const menuAccelerators: Record<string, string> = {
+  'command-palette': 'Command+K',
+  'go-sessions': 'Command+O',
+  'go-spatial': 'Command+Shift+M',
+  'history-back': 'Command+[',
+  'history-forward': 'Command+]',
+  'launch-shell': 'Command+T',
+  'rename-tab': 'Command+E',
+  'toggle-split': 'Command+D',
+  'close-tab': 'Command+W',
+  'jump-attention': 'Command+J',
+};
+
+const ACCELERATOR_PATTERN =
+  /^((Command|Control|Alt|Shift)\+)*([A-Z0-9]|F([1-9]|1[0-9]|2[0-4])|[\[\]\\;',./`=-]|Enter|Escape|Tab|Space|Backspace|Delete|Up|Down|Left|Right|Home|End|PageUp|PageDown)$/;
+
+function registerMenuIPC(): void {
+  handleTrusted('menu:sync-accelerators', async (_event, map: unknown) => {
+    if (!map || typeof map !== 'object') return;
+    for (const [command, value] of Object.entries(map)) {
+      if (!(command in menuAccelerators)) continue;
+      if (value === '') {
+        menuAccelerators[command] = '';
+      } else if (typeof value === 'string' && ACCELERATOR_PATTERN.test(value)) {
+        menuAccelerators[command] = value;
+      }
+    }
+    createMenu();
+  });
+}
+
 function menuCommand(
   label: string,
   command: string,
-  accelerator?: string,
   registerAccelerator = false
 ): Electron.MenuItemConstructorOptions {
+  const accelerator =
+    command === 'open-settings' ? 'Command+,' : menuAccelerators[command];
   return {
     label,
     ...(accelerator ? { accelerator, registerAccelerator } : {}),
@@ -274,7 +310,7 @@ function createMenu(): void {
         { role: 'about' },
         { label: `Build ${buildInfo.sha.slice(0, 12)}`, enabled: false },
         { type: 'separator' },
-        menuCommand('Settings…', 'open-settings', 'Command+,', true),
+        menuCommand('Settings…', 'open-settings', true),
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
@@ -319,14 +355,14 @@ function createMenu(): void {
     {
       label: 'Go',
       submenu: [
-        menuCommand('Command Palette…', 'command-palette', 'Command+K'),
+        menuCommand('Command Palette…', 'command-palette'),
         { type: 'separator' },
         menuCommand('Terminal', 'go-terminal'),
-        menuCommand('Sessions', 'go-sessions', 'Command+O'),
-        menuCommand('Spatial', 'go-spatial', 'Command+Shift+M'),
+        menuCommand('Sessions', 'go-sessions'),
+        menuCommand('Spatial', 'go-spatial'),
         { type: 'separator' },
-        menuCommand('Back', 'history-back', 'Command+['),
-        menuCommand('Forward', 'history-forward', 'Command+]'),
+        menuCommand('Back', 'history-back'),
+        menuCommand('Forward', 'history-forward'),
       ],
     },
     {
@@ -334,13 +370,13 @@ function createMenu(): void {
       submenu: [
         menuCommand('New Claude Code Session', 'launch-claude'),
         menuCommand('New Codex Session', 'launch-codex'),
-        menuCommand('New Shell Session', 'launch-shell', 'Command+T'),
+        menuCommand('New Shell Session', 'launch-shell'),
         { type: 'separator' },
-        menuCommand('Rename Session', 'rename-tab', 'Command+E'),
-        menuCommand('Split: Pin / Unpin', 'toggle-split', 'Command+D'),
-        menuCommand('Close Tab', 'close-tab', 'Command+W'),
+        menuCommand('Rename Session', 'rename-tab'),
+        menuCommand('Split: Pin / Unpin', 'toggle-split'),
+        menuCommand('Close Tab', 'close-tab'),
         { type: 'separator' },
-        menuCommand('Jump to Session Needing You', 'jump-attention', 'Command+J'),
+        menuCommand('Jump to Session Needing You', 'jump-attention'),
       ],
     },
     {
@@ -436,6 +472,7 @@ app.whenReady().then(async () => {
   registerAuthIPC();
   registerDialogIPC();
   registerAppIPC();
+  registerMenuIPC();
   registerProductUpdater(
     () => ptySessions.list().filter(session => !session.exited).length
   );

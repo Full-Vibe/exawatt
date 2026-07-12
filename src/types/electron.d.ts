@@ -214,6 +214,9 @@ declare global {
         /** application-menu commands (ENG-016 D8): menu items mirror the
          *  app's verbs and send their command name here on click */
         onCommand: (handler: (command: string) => void) => () => void;
+        /** sync effective registry bindings into the menus' display
+         *  accelerators (D10) — '' clears a column (chord rebinds) */
+        syncAccelerators?: (map: Record<string, string>) => Promise<void>;
       };
     };
   }
