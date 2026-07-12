@@ -7,6 +7,7 @@ import { SiteHeader } from '@/components/nav/site-header';
 import { SiteFooter } from '@/components/nav/site-footer';
 import { FleetProvider } from '@/lib/fleet/fleet-provider';
 import { UpdateReadyNotice } from '@/components/nav/update-ready-notice';
+import { CommandNavigationProvider } from '@/components/nav/command-navigation-provider';
 
 const exo2 = Exo_2({
   variable: '--font-exo2',
@@ -47,13 +48,15 @@ export default function RootLayout({
         className={`${exo2.variable} ${geistMono.variable} ${geistSans.variable} font-sans antialiased`}
       >
         <TooltipProvider>
-          <ShortcutProvider>
-            <FleetProvider>
-              <SiteHeader />
-              <UpdateReadyNotice />
-              {children}
-            </FleetProvider>
-          </ShortcutProvider>
+          <CommandNavigationProvider>
+            <ShortcutProvider>
+              <FleetProvider>
+                <SiteHeader />
+                <UpdateReadyNotice />
+                {children}
+              </FleetProvider>
+            </ShortcutProvider>
+          </CommandNavigationProvider>
         </TooltipProvider>
         <SiteFooter />
       </body>

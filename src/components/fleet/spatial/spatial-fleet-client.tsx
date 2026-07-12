@@ -36,6 +36,7 @@ import { agentGoalDisplay } from './spatial-agent-copy';
 import { requestSessionJump } from '@/components/workspace/session-jump';
 import { rememberSpatialReturn } from '@/components/nav/spatial-return';
 import { useShortcuts } from '@/components/shortcuts';
+import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 import {
   readSpatialFilters,
   SPATIAL_FILTERABLE_STATUSES,
@@ -79,6 +80,7 @@ export function SpatialFleetClient() {
   const { connectToRealOC, canConnect } = useConnectToOC();
   const { jobs } = useCron();
   const { openHelpModal } = useShortcuts();
+  const { navigateCommandSurface } = useCommandNavigation();
 
   // Semantic filters live in the URL so a Spatial address survives route and
   // session handoffs. Camera position remains renderer-session state.
@@ -356,14 +358,14 @@ export function SpatialFleetClient() {
         window.setTimeout(resolve, reduced ? 40 : 240)
       );
       requestSessionJump(session.id);
-      router.push('/workspace');
+      navigateCommandSurface('/workspace');
     } catch {
       setSessionHandoffAgentId(null);
       setSessionHandoffError(
         'The live terminal could not be opened. Your board position is unchanged.'
       );
     }
-  }, [inspectedAgent, router, sessionHandoffAgentId]);
+  }, [inspectedAgent, navigateCommandSurface, router, sessionHandoffAgentId]);
   const showSideRail = Boolean(inspectedAgent || visibleActivity.length > 0);
 
   const formatCurrency = (value: number) =>

@@ -66,6 +66,7 @@ import type { ShortcutKeys } from '@/types/shortcuts';
 import type { PtyHarness } from '@/types/electron';
 import { spatialReturnHref } from '@/components/nav/spatial-return';
 import { useShortcutRegistryVersion } from './use-effective-shortcut';
+import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 import {
   rankRecents,
   readPaletteUses,
@@ -113,6 +114,7 @@ export function CommandPalette({
   onOpenHelpModal,
 }: CommandPaletteProps) {
   const router = useRouter();
+  const { navigateCommandSurface } = useCommandNavigation();
   const shortcutVersion = useShortcutRegistryVersion();
   const newProjectShortcut = shortcutRegistry.getEffectiveKeys(
     'workspace-new-project'
@@ -199,17 +201,17 @@ export function CommandPalette({
     (id: string) =>
       handleSelect(() => {
         requestSessionJump(id);
-        if (!inWorkspace()) router.push('/workspace');
+        if (!inWorkspace()) navigateCommandSurface('/workspace');
       }),
-    [handleSelect, router]
+    [handleSelect, navigateCommandSurface]
   );
   const launchHarness = useCallback(
     (harness: PtyHarness) =>
       handleSelect(() => {
         requestLaunch(harness);
-        if (!inWorkspace()) router.push('/workspace');
+        if (!inWorkspace()) navigateCommandSurface('/workspace');
       }),
-    [handleSelect, router]
+    [handleSelect, navigateCommandSurface]
   );
   /** open a known Project (⌘K Projects): if its directory is missing on this
    *  machine (a synced Project from another machine), prompt to locate it and
@@ -228,9 +230,9 @@ export function CommandPalette({
           dir = picked;
         }
         requestOpenProject(dir);
-        if (!inWorkspace()) router.push('/workspace');
+        if (!inWorkspace()) navigateCommandSurface('/workspace');
       }),
-    [handleSelect, router]
+    [handleSelect, navigateCommandSurface]
   );
   /** open a Project known only from the local recency record (registry
    *  unreachable or the row predates it) — same open path, no re-bind step */
@@ -238,9 +240,9 @@ export function CommandPalette({
     (dir: string) =>
       handleSelect(() => {
         requestOpenProject(dir);
-        if (!inWorkspace()) router.push('/workspace');
+        if (!inWorkspace()) navigateCommandSurface('/workspace');
       }),
-    [handleSelect, router]
+    [handleSelect, navigateCommandSurface]
   );
   /** add a Project by browsing for its directory — the palette twin of ⌘N */
   const addProject = useCallback(
@@ -249,9 +251,9 @@ export function CommandPalette({
         const picked = await window.electron?.dialog?.openDirectory();
         if (!picked) return;
         requestOpenProject(picked);
-        if (!inWorkspace()) router.push('/workspace');
+        if (!inWorkspace()) navigateCommandSurface('/workspace');
       }),
-    [handleSelect, router]
+    [handleSelect, navigateCommandSurface]
   );
 
   /** surface-contextual verb (D9): flip the spatial projection in place */
@@ -333,10 +335,11 @@ export function CommandPalette({
         value: 'map spatial altitude fleet world zoom out switch',
         shortcut: shortcutRegistry.getEffectiveKeys('toggle-regime'),
         icon: MapIcon,
-        onSelect: () => handleSelect(() => router.push(spatialReturnHref())),
+        onSelect: () =>
+          handleSelect(() => navigateCommandSurface(spatialReturnHref())),
       },
     ];
-  }, [dispatch, handleSelect, router, shortcutVersion]);
+  }, [dispatch, handleSelect, navigateCommandSurface, shortcutVersion]);
 
   // Navigation rows derive from the manifest (ENG-016 D8): the palette, the
   // go-chords, and the header must always agree on names and targets. Legacy
@@ -350,10 +353,11 @@ export function CommandPalette({
         value: `go ${s.name} ${s.keywords.join(' ')}`,
         icon: SURFACE_ICONS[s.id],
         shortcut: shortcutRegistry.getEffectiveKeys(s.shortcutId),
-        onSelect: () => handleSelect(() => router.push(resolveSurfaceHref(s))),
+        onSelect: () =>
+          handleSelect(() => navigateCommandSurface(resolveSurfaceHref(s))),
       };
     },
-    [handleSelect, router, shortcutVersion]
+    [handleSelect, navigateCommandSurface, shortcutVersion]
   );
   const navigationItems = useMemo<CommandItem[]>(
     () =>

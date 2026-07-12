@@ -254,6 +254,18 @@ try {
   );
 
   await page.locator('[data-command-altitude-level="spatial"]').click();
+  const commandTransition = page.locator('[data-command-transition]');
+  await commandTransition.waitFor();
+  requireState(
+    (await commandTransition.getAttribute('data-command-transition-target')) ===
+      'spatial',
+    'Shared transition did not identify the Spatial destination'
+  );
+  await page.locator('[data-command-transition="traversing"]').waitFor();
+  await page.screenshot({
+    path: join(SCREENSHOT_DIR, 'transition-to-spatial.png'),
+    fullPage: true,
+  });
   await page.waitForURL('**/fleet/spatial');
   requireState(
     (await page
@@ -262,6 +274,7 @@ try {
     'Spatial altitude was not active'
   );
   await page.locator('[data-spatial-board]').waitFor();
+  await commandTransition.waitFor({ state: 'detached' });
   await page.waitForTimeout(800);
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'spatial.png'),

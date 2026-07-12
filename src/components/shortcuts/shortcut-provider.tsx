@@ -43,6 +43,7 @@ import {
   OPEN_OVERVIEW_EVENT,
 } from '@/components/workspace/session-jump';
 import type { PtyHarness } from '@/types/electron';
+import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 
 /** application-menu command → the registry id whose binding it displays
  *  (D10): rebinding a verb updates the menu's accelerator column */
@@ -84,6 +85,7 @@ interface ShortcutProviderProps {
 export function ShortcutProvider({ children }: ShortcutProviderProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const { navigateCommandSurface } = useCommandNavigation();
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
@@ -116,7 +118,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
         // for names and targets (ENG-016 D8)
         const surface = surfaceForShortcut(def.id);
         if (surface) {
-          router.push(resolveSurfaceHref(surface));
+          navigateCommandSurface(resolveSurfaceHref(surface));
           return;
         }
         switch (def.id) {
@@ -129,7 +131,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           case 'toggle-regime':
             // window.location (not the pathname closure) keeps this correct
             // without re-registering shortcuts on every navigation
-            router.push(
+            navigateCommandSurface(
               window.location.pathname.startsWith('/workspace')
                 ? spatialReturnHref()
                 : '/workspace'
@@ -141,10 +143,10 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             const open =
               new URLSearchParams(window.location.search).get('view') ===
               'sessions';
-            if (onWorkspace && open) router.push('/workspace');
+            if (onWorkspace && open) navigateCommandSurface('/workspace');
             else if (onWorkspace) {
               window.dispatchEvent(new CustomEvent(OPEN_OVERVIEW_EVENT));
-            } else router.push('/workspace?view=sessions');
+            } else navigateCommandSurface('/workspace?view=sessions');
             break;
           }
           case 'command-palette':
@@ -206,7 +208,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     return () => {
       shortcuts.forEach(s => shortcutRegistry.unregister(s.id));
     };
-  }, [router]);
+  }, [navigateCommandSurface, router]);
 
   // Application-menu commands (ENG-016 D8): the macOS menu bar mirrors the
   // app's verbs; every command routes through the same actions the keyboard
@@ -215,7 +217,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     const launch = (harness: PtyHarness) => {
       requestLaunch(harness);
       if (!window.location.pathname.startsWith('/workspace')) {
-        router.push('/workspace');
+        navigateCommandSurface('/workspace');
       }
     };
     const dispatch = (event: string) =>
@@ -223,15 +225,15 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     return window.electron?.menu?.onCommand(command => {
       switch (command) {
         case 'go-terminal':
-          router.push('/workspace');
+          navigateCommandSurface('/workspace');
           break;
         case 'go-sessions':
           window.location.pathname.startsWith('/workspace')
             ? dispatch(OPEN_OVERVIEW_EVENT)
-            : router.push('/workspace?view=sessions');
+            : navigateCommandSurface('/workspace?view=sessions');
           break;
         case 'go-spatial':
-          router.push(spatialReturnHref());
+          navigateCommandSurface(spatialReturnHref());
           break;
         case 'history-back':
           router.back();
@@ -268,7 +270,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           break;
       }
     });
-  }, [router]);
+  }, [navigateCommandSurface, router]);
 
   // Menu accelerator truthfulness (D10): the macOS menus display whatever
   // the registry currently binds — rebinding ⌘E updates the Session menu

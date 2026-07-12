@@ -25,6 +25,7 @@ import {
   LAST_COMMAND_SURFACE_KEY,
   validStoredCommandSurface,
 } from './command-surface-memory';
+import { useCommandNavigation } from './command-navigation-provider';
 
 let didRestoreInitialCommandSurface = false;
 
@@ -102,6 +103,7 @@ export function CommandAltitudeNav() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { navigateCommandSurface } = useCommandNavigation();
   // null on non-spine surfaces (settings, legacy views): the rail still
   // renders — every level stays one click away — with no current level marked
   const active = resolveCommandAltitude(pathname, searchParams);
@@ -150,7 +152,7 @@ export function CommandAltitudeNav() {
                     : RECENTER_SPATIAL_EVENT;
               window.dispatchEvent(new CustomEvent(event));
             } else {
-              router.push(resolveSurfaceHref(target));
+              navigateCommandSurface(resolveSurfaceHref(target));
             }
           }}
         />
