@@ -49,7 +49,16 @@ try {
     path: join(SCREENSHOT_DIR, 'after-launch.png'),
     fullPage: true,
   });
-  await page.locator('[data-project]').waitFor();
+  await page.locator('[data-project]').waitFor().catch(async error => {
+    console.error(
+      '[electron-navigation] terminal launch debug',
+      JSON.stringify({
+        errors,
+        sessions: await page.evaluate(() => window.electron?.pty?.list()),
+      })
+    );
+    throw error;
+  });
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'terminal.png'),
     fullPage: true,

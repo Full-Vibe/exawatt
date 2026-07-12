@@ -101,6 +101,7 @@ await page.addInitScript(() => {
     workspace: {
       load: async () => null,
       save: async () => undefined,
+      recovery: async () => ({ previousRunInterrupted: false }),
     },
     pty: {
       create: async () => ({ ok: true, session }),
