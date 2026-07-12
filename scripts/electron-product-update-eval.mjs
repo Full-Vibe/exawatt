@@ -1,7 +1,15 @@
 #!/usr/bin/env node
 
 import { chromium } from 'playwright-core';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { homedir } from 'node:os';
@@ -28,10 +36,59 @@ rmSync(root, { recursive: true, force: true });
 mkdirSync(root, { recursive: true });
 const home = join(root, 'home');
 const userData = join(root, 'user-data');
+const fakeBin = join(root, 'bin');
+const pidDir = join(root, 'pids');
+const projectDir = join(root, 'project');
 const targetApp = join(root, basename(sourceApp));
 const executable = join(targetApp, 'Contents', 'MacOS', 'Exawatt');
 mkdirSync(home, { recursive: true });
 mkdirSync(userData, { recursive: true });
+mkdirSync(fakeBin, { recursive: true });
+mkdirSync(pidDir, { recursive: true });
+mkdirSync(projectDir, { recursive: true });
+
+const fakeClaude = join(fakeBin, 'claude');
+writeFileSync(
+  fakeClaude,
+  `#!/bin/sh
+id="unknown"
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "--session-id" ] || [ "$prev" = "--resume" ]; then id="$arg"; fi
+  prev="$arg"
+done
+printf '%s\n' "$$" > "$EXAWATT_TEST_PID_DIR/claude-$id-$$.pid"
+printf 'UPDATE_CLAUDE:%s\n' "$*"
+while IFS= read -r line; do printf '%s\n' "$line"; done
+`
+);
+chmodSync(fakeClaude, 0o755);
+
+const fakeCodex = join(fakeBin, 'codex');
+writeFileSync(
+  fakeCodex,
+  `#!/bin/sh
+if [ "$1" = "resume" ]; then
+  id="$2"
+  fresh=0
+else
+  id="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
+  fresh=1
+fi
+printf '%s\n' "$$" > "$EXAWATT_TEST_PID_DIR/codex-$id-$$.pid"
+printf 'UPDATE_CODEX:%s\n' "$*"
+while IFS= read -r line; do
+  if [ "$fresh" = "1" ]; then
+    dir="$HOME/.codex/sessions/fixture"
+    /bin/mkdir -p "$dir"
+    printf '{"type":"session_meta","payload":{"id":"%s","cwd":"%s"}}\n' "$id" "$PWD" > "$dir/rollout-$id.jsonl"
+    fresh=0
+  fi
+  printf '%s\n' "$line"
+done
+`
+);
+chmodSync(fakeCodex, 0o755);
 
 function resetShipIt() {
   try {
@@ -53,7 +110,13 @@ execFileSync('/usr/bin/ditto', [sourceApp, targetApp]);
 const launchEnv = {
   ...process.env,
   HOME: home,
+  PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
   EXAWATT_RENDERER_LOGS: '1',
+  EXAWATT_TEST: '1',
+  EXAWATT_USER_DATA: userData,
+  EXAWATT_TEST_HARNESS_BIN: fakeBin,
+  EXAWATT_TEST_PID_DIR: pidDir,
+  EXAWATT_TEST_QUIT_RESPONSE: 'confirm',
 };
 
 function bundleVersion() {
@@ -141,6 +204,44 @@ function matchingPids() {
     .map(match => Number(match[1]));
 }
 
+async function sessions(page) {
+  return (await page.evaluate(async () => (await window.electron?.pty?.list()) ?? []));
+}
+
+async function waitForSessions(page, count) {
+  return await waitFor(async () => {
+    const current = await sessions(page);
+    return current.length === count ? current : null;
+  }, `Timed out waiting for ${count} live sessions`, 45_000);
+}
+
+async function waitForAgentIdentities(page, count) {
+  return await waitFor(async () => {
+    const agents = (await sessions(page)).filter(
+      session => session.harness !== 'shell'
+    );
+    return agents.length === count && agents.every(session => session.harnessSessionId)
+      ? agents
+      : null;
+  }, `Timed out waiting for ${count} provider identities`, 45_000);
+}
+
+function harnessPids() {
+  return readdirSync(pidDir)
+    .filter(name => name.endsWith('.pid'))
+    .map(name => Number(readFileSync(join(pidDir, name), 'utf8').trim()))
+    .filter(Number.isFinite);
+}
+
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 let browser = null;
 try {
   let launched = await launch();
@@ -156,14 +257,26 @@ try {
     throw new Error(`Baseline is already ${expectedVersion}`);
   }
 
-  const created = await page.evaluate(() =>
-    window.electron?.pty?.create({ harness: 'shell', cwd: '/tmp' })
-  );
-  if (!created?.ok) {
-    throw new Error(
-      `Could not create update-impact session: ${created?.error ?? 'unknown'}`
+  await page.getByLabel('Working directory for new sessions').fill(projectDir);
+  for (let i = 0; i < 2; i++) {
+    await page.getByTitle(/Launch a new Claude Code session/).click();
+    await waitForSessions(page, i + 1);
+  }
+  for (let i = 0; i < 2; i++) {
+    await page.getByTitle(/Launch a new Codex session/).click();
+    await waitForSessions(page, i + 3);
+  }
+  await page.getByTitle(/Launch a new Shell session/).click();
+  const original = await waitForSessions(page, 5);
+  for (const [index, session] of original.entries()) {
+    await page.evaluate(
+      async ({ id, marker }) =>
+        window.electron?.pty?.write(id, `printf '${marker}\\n'\n`),
+      { id: session.id, marker: `ENG018_UPDATE_HISTORY_${index + 1}` }
     );
   }
+  const originalAgents = await waitForAgentIdentities(page, 4);
+  const exactIds = originalAgents.map(session => session.harnessSessionId).sort();
 
   let transientRetries = 0;
   let retryAfter = 0;
@@ -198,13 +311,13 @@ try {
       `Expected ${expectedVersion}, got ${downloaded.availableVersion}`
     );
   }
-  if (downloaded.liveSessions !== 1) {
+  if (downloaded.liveSessions !== 5) {
     throw new Error(
-      `Expected one impacted live session, got ${downloaded.liveSessions}`
+      `Expected five impacted live sessions, got ${downloaded.liveSessions}`
     );
   }
   await page
-    .getByText(`Restarting will stop 1 live session.`)
+    .getByText(`Restarting will stop 5 live sessions.`)
     .waitFor({ timeout: 10_000 });
 
   const oldProcess = matchingPids()[0];
@@ -219,6 +332,12 @@ try {
     60_000
   );
   browser = null;
+
+  await waitFor(
+    () => harnessPids().every(pid => !isAlive(pid)),
+    'Update restart left an agent or shell process alive',
+    30_000
+  );
 
   await waitFor(
     () => bundleVersion() === expectedVersion,
@@ -252,8 +371,52 @@ try {
     );
   }
 
+  const histories = readdirSync(join(userData, 'sessions')).filter(name =>
+    name.endsWith('.json')
+  );
+  if (histories.length !== 5) {
+    throw new Error(`Expected five retained histories; got ${histories.length}`);
+  }
+  for (let index = 1; index <= 5; index++) {
+    const marker = `ENG018_UPDATE_HISTORY_${index}`;
+    if (
+      !histories.some(name =>
+        readFileSync(join(userData, 'sessions', name), 'utf8').includes(marker)
+      )
+    ) {
+      throw new Error(`Retained update history ${index} is missing`);
+    }
+  }
+
+  if ((await sessions(page)).length !== 0) {
+    throw new Error('Updated relaunch spawned work without operator action');
+  }
+  const resumeBanner = page
+    .getByRole('status')
+    .filter({ hasText: '4 agents are ready to resume' });
+  await resumeBanner.waitFor({ timeout: 20_000 });
+  await resumeBanner.getByRole('button', { name: 'Resume All' }).click();
+  const resumed = await waitForSessions(page, 4);
+  if (resumed.some(session => session.harness === 'shell')) {
+    throw new Error('Resume All restarted the shell');
+  }
+  const resumedIds = resumed.map(session => session.harnessSessionId).sort();
+  if (JSON.stringify(resumedIds) !== JSON.stringify(exactIds)) {
+    throw new Error(
+      `Update resume identity mismatch: ${JSON.stringify({ exactIds, resumedIds })}`
+    );
+  }
+
+  await page.keyboard.press('Meta+Q');
+  await waitFor(
+    () => harnessPids().every(pid => !isAlive(pid)),
+    'Final quit left a resumed agent alive',
+    30_000
+  );
+  browser = null;
+
   console.log(
-    `PASS signed update: ${initialVersion} -> ${verified}; live-session warning; automatic relaunch`
+    `PASS signed update: ${initialVersion} -> ${verified}; 4 exact agents + 1 stopped shell; automatic relaunch`
   );
 } finally {
   await browser?.close().catch(() => undefined);
