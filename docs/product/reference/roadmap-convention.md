@@ -131,6 +131,13 @@ Milestone bullets may carry a short id token (`S2`, `D4`, `M10`). A
 milestone is done when its checkbox is checked (`- [x]`), when its text
 contains a `(landed …)` or `(shipped …)` marker, or when it carries `✅`.
 
+A milestone is retired — it left the plan without landing — when its text
+contains a `(rescoped …)`, `(retired …)`, `(dropped …)`, `(superseded …)`,
+or `(cut …)` marker. Retired milestones stay visible in detail views
+(struck through) but are never advertised as the next milestone and are
+excluded from progress fractions: they were not accomplished, and they are
+no longer owed. A done marker wins if both appear.
+
 All other prose inside an item (paragraphs, `Sequencing:` notes, extra
 labeled lists) belongs to the item as description text. It is preserved,
 never treated as an error.

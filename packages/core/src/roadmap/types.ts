@@ -24,6 +24,8 @@ export interface RoadmapMilestone {
   id: string | null;
   title: string;
   done: boolean;
+  /** Left the plan without landing — "(rescoped …)", "(retired …)", "(dropped …)", "(superseded …)", "(cut …)". Never both done and retired. */
+  retired: boolean;
   source: RoadmapSourceRef;
 }
 

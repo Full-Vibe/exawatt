@@ -231,6 +231,20 @@ describe('parseRoadmap', () => {
     ]);
   });
 
+  it('marks rescoped/retired/dropped/superseded/cut milestones as retired, not pending', () => {
+    const doc = parseRoadmap(
+      `## Now\n\n### A-1 Thing\n\nMilestones:\n\n- W0.5 Spatial cockpit (rescoped 2026-07 — replaced by exposé)\n- D2 Old plan (retired)\n- D3 Cut idea (dropped for D4)\n- [x] D4 Landed anyway (superseded note is ignored when done)\n- D5 Real next step\n`,
+      OPTS,
+    );
+    expect(doc.items[0].milestones).toEqual([
+      expect.objectContaining({ id: 'W0.5', done: false, retired: true }),
+      expect.objectContaining({ id: 'D2', done: false, retired: true }),
+      expect.objectContaining({ id: 'D3', done: false, retired: true }),
+      expect.objectContaining({ id: 'D4', done: true, retired: false }),
+      expect.objectContaining({ id: 'D5', done: false, retired: false }),
+    ]);
+  });
+
   it('hashes content stably for reparse skipping', () => {
     const a = parseRoadmap(CONFORMANT, OPTS);
     const b = parseRoadmap(CONFORMANT, OPTS);

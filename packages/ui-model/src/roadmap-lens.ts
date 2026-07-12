@@ -55,6 +55,8 @@ export interface RoadmapItemView {
   exitCriteria: string[];
   milestones: RoadmapMilestone[];
   milestonesDone: number;
+  /** Countable milestones — retired ones are excluded from progress fractions. */
+  milestonesTotal: number;
   docPaths: string[];
   sourceLine: number;
   /** Parser warnings anchored inside this item's line range. */
@@ -216,6 +218,7 @@ export function buildRoadmapLens(input: RoadmapLensInput): RoadmapLensView {
     exitCriteria: item.exitCriteria,
     milestones: item.milestones,
     milestonesDone: item.milestones.filter((m) => m.done).length,
+    milestonesTotal: item.milestones.filter((m) => !m.retired).length,
     docPaths: item.docPaths,
     sourceLine: item.source.line,
     hasWarnings: itemHasWarning.has(item.id),

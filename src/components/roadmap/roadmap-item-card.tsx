@@ -67,7 +67,7 @@ export function RoadmapItemCard({
           : 'open';
 
   if (variant === 'hero') {
-    const nextMilestone = item.milestones.find(m => !m.done);
+    const nextMilestone = item.milestones.find(m => !m.done && !m.retired);
     return (
       <button
         type="button"
@@ -98,12 +98,12 @@ export function RoadmapItemCard({
                 {item.declaredId}
               </span>
             )}
-            {item.milestones.length > 0 && (
+            {item.milestonesTotal > 0 && (
               <span
                 className="ml-auto font-mono text-[10px]"
                 style={{ color: HUD.textDim }}
               >
-                {item.milestonesDone}/{item.milestones.length}
+                {item.milestonesDone}/{item.milestonesTotal}
               </span>
             )}
           </div>
@@ -174,12 +174,12 @@ export function RoadmapItemCard({
           ▸{item.chips.length}
         </span>
       )}
-      {item.milestones.length > 0 && (
+      {item.milestonesTotal > 0 && (
         <span
           className="ml-auto shrink-0 font-mono text-[10px]"
           style={{ color: compact ? withAlpha(HUD.textDim, 0.7) : HUD.textDim }}
         >
-          {item.milestonesDone}/{item.milestones.length}
+          {item.milestonesDone}/{item.milestonesTotal}
         </span>
       )}
     </button>

@@ -285,7 +285,7 @@ export function ExposeOverlay({
               style={{ color: HUD.textDim }}
             >
               Return to Terminal and launch an agent or shell. This altitude
-              will become the live overview for every running session.
+              shows every open tab — live or ended — across your projects.
             </p>
           </div>
         ) : null}

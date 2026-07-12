@@ -228,6 +228,19 @@ gesture and explicitly accepted or rejected each; decisions recorded here.
 
 ## Progress log (second arc)
 
+- 2026-07-12, product-lens pass (drove the real app against the real exawatt
+  roadmap): the hero card advertised **W0.5 — a rescoped milestone — as the
+  next milestone** because the parser only knew done/pending. Convention v1
+  now defines *retired* milestones (`(rescoped …)`, `(retired …)`,
+  `(dropped …)`, `(superseded …)`, `(cut …)`): never advertised as next,
+  excluded from progress fractions (they were not accomplished and are no
+  longer owed), still visible struck-through in the drill view
+  (`roadmap-convention.md`, `parse.ts`, `RoadmapItemView.milestonesTotal`,
+  parser + lens tests). Also: rail trust line now says "5h ago" /
+  `YYYY-MM-DD` instead of an ambiguous bare clock time for older mtimes.
+  Verified end-to-end via a temp Electron eval (hero skips retired, 1/2
+  fraction, drill strikethrough) plus the full 30-check rail eval.
+
 - 2026-07-11, code review + Sessions-overview fix: two adversarial reviews of
   the D8-D10 + S6-S10 change set (0 P0). Fixed: **security** — `pty:open-path`
   now takes an opt-in `contain` mode (roadmap `Project doc:` bullets are

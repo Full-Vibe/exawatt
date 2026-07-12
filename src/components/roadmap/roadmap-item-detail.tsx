@@ -119,7 +119,7 @@ export function RoadmapItemDetail({
       )}
       {item.milestones.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <SectionLabel>{`milestones · ${item.milestonesDone}/${item.milestones.length}`}</SectionLabel>
+          <SectionLabel>{`milestones · ${item.milestonesDone}/${item.milestonesTotal}`}</SectionLabel>
           <ul className="flex flex-col">
             {item.milestones.map((m, i) => {
               const roved = selectedMilestone === i;
@@ -136,26 +136,35 @@ export function RoadmapItemDetail({
                   className="relative flex gap-2 rounded py-1 pl-5 pr-1"
                   style={{ background: roved ? HUD.fillHi : 'transparent' }}
                 >
-                  {/* mini-spine: a done node is filled, an open one hollow */}
+                  {/* mini-spine: done filled, open hollow, retired dashed and struck out below */}
                   <span
                     aria-hidden
                     className="absolute left-1 top-[9px] h-2 w-2 rounded-full"
                     style={{
                       background: m.done ? HUD.green : 'transparent',
-                      border: `1.5px solid ${m.done ? HUD.green : withAlpha(statusColor, 0.6)}`,
+                      border: m.retired
+                        ? `1.5px dashed ${withAlpha(HUD.textDim, 0.6)}`
+                        : `1.5px solid ${m.done ? HUD.green : withAlpha(statusColor, 0.6)}`,
                     }}
                   />
                   {m.id && (
                     <span
                       className="shrink-0 font-mono text-[11px] leading-5"
-                      style={{ color: m.done ? HUD.textDim : HUD.textMono }}
+                      style={{
+                        color: m.done || m.retired ? HUD.textDim : HUD.textMono,
+                        textDecoration: m.retired ? 'line-through' : undefined,
+                      }}
                     >
                       {m.id}
                     </span>
                   )}
                   <span
                     className="min-w-0 text-xs leading-5"
-                    style={{ color: m.done ? HUD.textDim : HUD.text }}
+                    style={{
+                      color: m.done || m.retired ? HUD.textDim : HUD.text,
+                      textDecoration: m.retired ? 'line-through' : undefined,
+                      opacity: m.retired ? 0.75 : 1,
+                    }}
                   >
                     {m.title}
                   </span>

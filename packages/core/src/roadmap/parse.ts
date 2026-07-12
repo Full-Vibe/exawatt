@@ -58,6 +58,7 @@ const BULLET_LINE = /^[-*]\s+(.+)$/;
 const MILESTONE_CHECKBOX = /^\[( |x|X)\]\s+/;
 const MILESTONE_ID = /^([A-Z]{1,4}\d+(?:\.\d+)*)\b[\s:]*/;
 const MILESTONE_DONE_MARKER = /\((landed|shipped)[^)]*\)/i;
+const MILESTONE_RETIRED_MARKER = /\((rescoped|retired|dropped|superseded|cut)[^)]*\)/i;
 
 type LabeledBlock = 'scope' | 'exitCriteria' | 'milestones' | 'docPaths';
 
@@ -93,6 +94,7 @@ function parseMilestone(text: string, file: string, line: number): RoadmapMilest
     rest = rest.slice(checkbox[0].length);
   }
   if (MILESTONE_DONE_MARKER.test(rest) || rest.includes('✅')) done = true;
+  const retired = !done && MILESTONE_RETIRED_MARKER.test(rest);
   let id: string | null = null;
   const idMatch = MILESTONE_ID.exec(rest);
   if (idMatch) {
@@ -100,7 +102,7 @@ function parseMilestone(text: string, file: string, line: number): RoadmapMilest
     rest = rest.slice(idMatch[0].length);
   }
   const title = rest.trim() || id || text.trim();
-  return { id, title, done, source: { file, line } };
+  return { id, title, done, retired, source: { file, line } };
 }
 
 /**

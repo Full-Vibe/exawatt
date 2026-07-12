@@ -7,10 +7,10 @@
  * state is visible). Requires the dev server (`pnpm dev`) and a compiled
  * Electron main (`pnpm electron:compile`).
  */
-import { _electron as electron } from 'playwright-core';
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { withElectronApp } from './lib/electron-eval.mjs';
 
 const OUT = process.env.NAV_SCREENSHOT_DIR || '/tmp/exawatt-spine-eval';
 mkdirSync(OUT, { recursive: true });
@@ -22,20 +22,19 @@ const check = (name, ok) => {
   if (!ok) failures.push(name);
 };
 
-const app = await electron.launch({
-  args: ['.'],
-  cwd: process.cwd(),
-  env: {
-    ...process.env,
-    NODE_ENV: 'development',
-    EXAWATT_TEST: '1',
-    EXAWATT_USER_DATA: userData,
-    EXAWATT_DEV_URL: `${process.env.EXA_BASE ?? 'http://localhost:7000'}/workspace`,
+await withElectronApp(
+  {
+    args: ['.'],
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NODE_ENV: 'development',
+      EXAWATT_TEST: '1',
+      EXAWATT_USER_DATA: userData,
+      EXAWATT_DEV_URL: `${process.env.EXA_BASE ?? 'http://localhost:7000'}/workspace`,
+    },
   },
-});
-
-try {
-  const page = await app.firstWindow();
+  async (app, page) => {
   page.setDefaultTimeout(15000);
   page.on('pageerror', e =>
     console.log('[pageerror]', String(e.message || e).slice(0, 300))
@@ -364,9 +363,10 @@ try {
   await page.locator('[data-workspace-underlay]').waitFor();
   await page.waitForTimeout(500);
   check('cmd+1 returns from legacy Fleet Command', true);
-} finally {
-  await app.close();
-}
+  },
+  // this eval legitimately runs long (33 checks, several navigations)
+  { maxMs: 480_000 }
+);
 
 if (failures.length > 0) {
   console.error(`FAIL navigation spine: ${failures.join(' | ')}`);

@@ -41,8 +41,8 @@ export const ROADMAP_STRIP_MAX_NODES = 14;
 function itemLabel(item: RoadmapItemView, role: string): string {
   const id = item.declaredId ?? item.title;
   const fraction =
-    item.milestones.length > 0
-      ? ` · ${item.milestonesDone}/${item.milestones.length}`
+    item.milestonesTotal > 0
+      ? ` · ${item.milestonesDone}/${item.milestonesTotal}`
       : '';
   const state = item.blocked ? 'blocked' : role;
   return `${id} — ${item.title} · ${state}${fraction}`;

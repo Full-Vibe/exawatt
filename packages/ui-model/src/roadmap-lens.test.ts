@@ -15,6 +15,7 @@ Milestones:
 
 - [x] D0 Baseline gates
 - [ ] D7 Product-grade updates
+- W0.5 Spatial cockpit (rescoped 2026-07 — replaced by exposé)
 
 ### ENG-017 Project roadmap lens
 
@@ -61,6 +62,8 @@ describe('buildRoadmapLens', () => {
     expect(view.now[1].isNowStation).toBe(false);
     expect(view.now[0].displayStatus).toBe('active');
     expect(view.now[0].milestonesDone).toBe(1);
+    // retired milestones leave the fraction entirely: 1/2, not 1/3
+    expect(view.now[0].milestonesTotal).toBe(2);
     expect(view.next.map((i) => i.id)).toEqual(['ENG-018']);
     expect(view.next[0].blocked).toBe(true);
     expect(view.shipped.map((i) => i.id)).toEqual(['ENG-001']);

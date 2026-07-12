@@ -434,8 +434,8 @@ export function WorkspaceClient() {
             out[chip.tabId] = {
               label: item.declaredId ?? item.title,
               fraction:
-                item.milestones.length > 0
-                  ? `${item.milestonesDone}/${item.milestones.length}`
+                item.milestonesTotal > 0
+                  ? `${item.milestonesDone}/${item.milestonesTotal}`
                   : null,
               inferred: chip.method !== 'declared',
             };

@@ -88,10 +88,11 @@ function formatUpdated(mtimeMs: number): string {
   const age = Date.now() - mtimeMs;
   if (age < 60_000) return 'updated just now';
   if (age < 3_600_000) return `updated ${Math.floor(age / 60_000)}m ago`;
+  if (age < 86_400_000) return `updated ${Math.floor(age / 3_600_000)}h ago`;
   const d = new Date(mtimeMs);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `updated ${hh}:${mm}`;
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `updated ${d.getFullYear()}-${mo}-${dd}`;
 }
 
 /**
