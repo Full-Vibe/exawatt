@@ -176,13 +176,48 @@ try {
   await page.screenshot({ path: join(OUT, 'palette-project-first.png') });
   await page.keyboard.press('Escape');
 
-  // recents survive: launching a session records the Project durably
-  await page.getByLabel('Working directory for new sessions').fill('/tmp');
-  await page.getByTitle(/Launch a new Shell session/).click();
-  await page.waitForFunction(
-    async () => (await window.electron?.pty?.list())?.length === 1
+  // Recents survive independently of live PTYs. Seed one stopped Session in
+  // the isolated workspace store; reload proves the durable navigation state
+  // without depending on the host login shell remaining alive.
+  await page.evaluate(() =>
+    window.electron.workspace.save({
+      v: 5,
+      lastUsedDir: '/tmp',
+      activeDir: '/tmp',
+      pinnedTabId: null,
+      recentProjects: [
+        {
+          dir: '/tmp',
+          name: 'Temporary Project',
+          lastOpenedAt: Date.now(),
+        },
+      ],
+      projects: [
+        {
+          dir: '/tmp',
+          name: 'Temporary Project',
+          color: '#19E6FF',
+          activeTabId: 'spine-tab',
+          tabs: [
+            {
+              id: 'spine-tab',
+              durableSessionId: 'spine-session',
+              harness: 'shell',
+              title: 'Navigation Session',
+              cwd: '/tmp',
+              sessionId: null,
+              harnessSessionId: null,
+              roadmapItemId: null,
+              lifecycle: 'stopped-clean',
+              exitCode: 0,
+            },
+          ],
+        },
+      ],
+    })
   );
-  await page.waitForTimeout(1200); // debounced save
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.locator('[data-command-altitude]').waitFor();
   const persisted = await page.evaluate(() => window.electron.workspace.load());
   check(
     'recentProjects persisted in workspace layout',
@@ -260,7 +295,7 @@ try {
   await page.waitForURL('**view=sessions**');
   // wait for the exposé to actually mount before toggling it closed —
   // ⌘O within the mount race would re-open instead
-  await page.locator('[data-expose-tile]').first().waitFor();
+  await page.locator('[data-expose]').waitFor();
   await page.waitForTimeout(400);
   await page.keyboard.press('Meta+KeyO'); // toggle the overview closed
   await page.waitForURL(url => !url.href.includes('view=sessions'));

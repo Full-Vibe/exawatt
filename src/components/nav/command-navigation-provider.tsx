@@ -114,7 +114,7 @@ export function CommandNavigationProvider({
     const reduced = window.matchMedia(
       '(prefers-reduced-motion: reduce)'
     ).matches;
-    const minimumTravel = reduced ? 20 : 150;
+    const minimumTravel = reduced ? 20 : 130;
     const elapsed = performance.now() - transition.startedAt;
     timer.current = window.setTimeout(
       () => {
@@ -127,7 +127,7 @@ export function CommandNavigationProvider({
             targetPath.current = null;
             timer.current = null;
           },
-          reduced ? 70 : 220
+          reduced ? 70 : 190
         );
       },
       Math.max(0, minimumTravel - elapsed)
@@ -147,14 +147,14 @@ export function CommandNavigationProvider({
           data-command-transition={transition.phase}
           data-command-transition-target={transition.target}
           aria-hidden="true"
-          className={`pointer-events-none fixed inset-x-0 bottom-0 top-12 z-[60] overflow-hidden transition-colors duration-200 motion-reduce:duration-75 ${
+          className={`pointer-events-none fixed inset-x-0 bottom-0 top-12 z-[60] overflow-hidden transition-colors duration-[180ms] motion-reduce:duration-75 ${
             transition.phase === 'traversing'
               ? 'bg-zinc-950/20'
               : 'bg-transparent'
           }`}
         >
           <div
-            className={`absolute left-0 right-0 top-[calc(50%-22px)] h-px origin-center bg-teal-200/35 transition-[transform,opacity] duration-200 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-opacity motion-reduce:duration-75 ${
+            className={`absolute left-0 right-0 top-[calc(50%-22px)] h-px origin-center bg-teal-200/35 transition-[transform,opacity] duration-[180ms] [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-opacity motion-reduce:duration-75 ${
               transition.phase === 'departing'
                 ? 'scale-x-[0.15] opacity-0'
                 : transition.phase === 'traversing'
@@ -163,7 +163,7 @@ export function CommandNavigationProvider({
             }`}
           />
           <div
-            className={`absolute left-0 right-0 top-[calc(50%+22px)] h-px origin-center bg-teal-200/25 transition-[transform,opacity] duration-200 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-opacity motion-reduce:duration-75 ${
+            className={`absolute left-0 right-0 top-[calc(50%+22px)] h-px origin-center bg-teal-200/25 transition-[transform,opacity] duration-[180ms] [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-opacity motion-reduce:duration-75 ${
               transition.phase === 'departing'
                 ? 'scale-x-[0.15] opacity-0'
                 : transition.phase === 'traversing'
@@ -172,7 +172,7 @@ export function CommandNavigationProvider({
             }`}
           />
           <div
-            className={`absolute left-1/2 top-1/2 grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center border border-teal-200/45 bg-zinc-950/90 text-teal-100 shadow-[0_0_32px_rgba(94,234,212,0.12)] transition-[opacity,transform] duration-200 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-opacity motion-reduce:duration-75 ${
+            className={`absolute left-1/2 top-1/2 grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center border border-teal-200/45 bg-zinc-950/90 text-teal-100 shadow-[0_0_32px_rgba(94,234,212,0.12)] transition-[opacity,transform] duration-[180ms] [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-opacity motion-reduce:duration-75 ${
               transition.phase === 'departing'
                 ? 'scale-75 opacity-0'
                 : transition.phase === 'traversing'

@@ -42,6 +42,16 @@ meet through normalized session/fleet state. UI regimes may render and compose
 controls, but they should not translate harness payloads, own provider-specific
 state, or bypass typed command boundaries.
 
+`CommandNavigationProvider` is the shell-level route and transition boundary for
+cross-regime Terminal ↔ Spatial movement. Header clicks, registry shortcuts,
+native menu commands, palette navigation, workspace gestures, and Agent handoff
+delegate route completion to it. The provider begins navigation immediately and
+owns only a finite transform/opacity overlay with reduced-motion parity; it does
+not own PTY lifetime, workspace selection, Spatial semantics, or camera state.
+The surface manifest owns route identity, the shortcut registry owns effective
+keys, Spatial owns URL filters plus session-local camera return, and the
+workspace owns terminal/Sessions focus.
+
 ### Coordination and Intelligence Layer
 
 Canonical product objects:
@@ -125,8 +135,10 @@ Built:
 - persisted project-grouped terminal sessions, attention state, keyboard-first
   command flows, split panes, and the exposé session overview
 - persistent command-altitude navigation between terminal focus, session
-  overview, and Spatial Command, with direct routes, shared shortcuts, existing-
-  PTY Agent handoff, and exact semantic board-address return
+  overview, and Spatial Command, with one route/transition command service,
+  direct routes, shared shortcuts, last-altitude restore, URL-backed Spatial
+  filters, session-local camera return, existing-PTY Agent handoff, and exact
+  semantic board-address return
 - `LocalSessionsTransport` normalization of local PTY sessions into the shared
   `FleetState` consumed by the DOM and spatial fleet surfaces
 - exact harness conversation identity for Electron tabs: assigned Claude IDs,

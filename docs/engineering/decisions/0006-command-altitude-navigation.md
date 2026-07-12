@@ -46,6 +46,12 @@ the regimes feel like one game board over time; it does not merge the xterm and
 R3F renderer boundaries. The shell restores the last altitude, Spatial semantic
 filters are URL state, and bounded camera return state is session-local.
 
+Implementation note (2026-07-11): `CommandNavigationProvider` is that owner.
+It is called by the altitude control, shortcut engine, native menu bridge,
+command palette, workspace toggle, and Spatial Agent handoff. Navigation is not
+held behind the animation; the target-aware overlay settles in about 320 ms and
+collapses to a short opacity handoff when reduced motion is requested.
+
 ## Consequences
 
 - Navigation and orientation feel continuous without loading Three.js into the

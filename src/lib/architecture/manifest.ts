@@ -532,6 +532,18 @@ export const architectureManifest = {
           height: 74,
         },
         {
+          id: 'command-navigation',
+          label: 'Command Navigation',
+          summary:
+            'Typed Terminal, Sessions, and Spatial route service with registry-derived gestures, context restore, and finite reduced-motion-safe handoffs.',
+          layer: 'ui',
+          status: 'implemented',
+          x: 705,
+          y: 180,
+          width: 230,
+          height: 74,
+        },
+        {
           id: 'architecture-map',
           label: 'Architecture Map',
           summary:
@@ -703,6 +715,9 @@ export const architectureManifest = {
         { from: 'next-app-shell', to: 'fleet-provider' },
         { from: 'next-app-shell', to: 'terminal-workspace' },
         { from: 'next-app-shell', to: 'spatial-operations-board' },
+        { from: 'next-app-shell', to: 'command-navigation' },
+        { from: 'command-navigation', to: 'terminal-workspace' },
+        { from: 'command-navigation', to: 'spatial-operations-board' },
         { from: 'fleet-ui', to: 'ui-model' },
         { from: 'terminal-workspace', to: 'fleet-provider' },
         { from: 'terminal-workspace', to: 'electron-shell' },

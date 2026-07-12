@@ -36,7 +36,9 @@ try {
 
   await page.locator('[data-command-altitude]').waitFor();
   console.log('[electron-navigation] workspace ready');
-  await page.getByLabel('Working directory for new sessions').fill('/tmp');
+  await page
+    .getByLabel('Working directory for new sessions')
+    .fill(process.cwd());
   await page.getByTitle(/Launch a new Shell session/).click();
   await page.waitForFunction(async () => {
     const sessions = await window.electron?.pty?.list();
