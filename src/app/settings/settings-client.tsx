@@ -18,7 +18,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ShortcutBadge } from '@/components/shortcuts';
-import { shortcutRegistry, formatShortcutKeys } from '@/lib/shortcuts';
+import {
+  shortcutRegistry,
+  formatShortcutKeys,
+  reservedShortcutFamily,
+  validateShortcutBinding,
+  type ShortcutPlatform,
+} from '@/lib/shortcuts';
 import { updateKeyboardShortcuts, resetKeyboardShortcuts } from '@/app/actions/preferences';
 import { eventToBinding } from '@/lib/shortcuts/format';
 import type { ShortcutCategory, ShortcutKeys, KeyBinding } from '@/types/shortcuts';
@@ -46,10 +52,25 @@ const CATEGORY_ORDER: ShortcutCategory[] = [
 const getSnapshot = () => shortcutRegistry.getByCategory();
 const getServerSnapshot = () => shortcutRegistry.getByCategory();
 
+function currentShortcutPlatform(): ShortcutPlatform {
+  const electronPlatform = window.electron?.platform;
+  if (
+    electronPlatform === 'darwin' ||
+    electronPlatform === 'win32' ||
+    electronPlatform === 'linux'
+  ) {
+    return electronPlatform;
+  }
+  if (/Mac|iPhone|iPad/.test(navigator.userAgent)) return 'darwin';
+  if (/Windows/.test(navigator.userAgent)) return 'win32';
+  if (/Linux/.test(navigator.userAgent)) return 'linux';
+  return 'other';
+}
+
 export function SettingsClient() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [recordedKeys, setRecordedKeys] = useState<KeyBinding[]>([]);
-  const [conflictError, setConflictError] = useState<string | null>(null);
+  const [bindingError, setBindingError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const subscribe = useCallback((callback: () => void) => {
@@ -62,7 +83,7 @@ export function SettingsClient() {
   const startEditing = useCallback((shortcutId: string) => {
     setEditingId(shortcutId);
     setRecordedKeys([]);
-    setConflictError(null);
+    setBindingError(null);
   }, []);
 
   const handleKeyDown = useCallback(
@@ -75,18 +96,38 @@ export function SettingsClient() {
         return;
       }
 
-      const binding = eventToBinding(event.nativeEvent);
+      const reservation = reservedShortcutFamily(event.nativeEvent);
+      if (reservation) {
+        setRecordedKeys([]);
+        setBindingError(reservation);
+        return;
+      }
 
-      setRecordedKeys((prev) => {
+      const binding = eventToBinding(event.nativeEvent);
+      const shortcut = editingId ? shortcutRegistry.get(editingId) : undefined;
+      const nextKeys = (() => {
+        if (shortcut?.bindingPolicy === 'universal-command') return [binding];
         // If we already have 2 keys (a chord), start over
-        if (prev.length >= 2) {
+        if (recordedKeys.length >= 2) {
           return [binding];
         }
-        return [...prev, binding];
-      });
-      setConflictError(null);
+        return [...recordedKeys, binding];
+      })();
+      setRecordedKeys(nextKeys);
+
+      const nextBinding: ShortcutKeys =
+        nextKeys.length === 2 ? [nextKeys[0], nextKeys[1]] : nextKeys[0];
+      setBindingError(
+        shortcut
+          ? validateShortcutBinding(
+              shortcut,
+              nextBinding,
+              currentShortcutPlatform()
+            )
+          : null
+      );
     },
-    []
+    [editingId, recordedKeys]
   );
 
   const saveShortcut = useCallback(async () => {
@@ -97,10 +138,23 @@ export function SettingsClient() {
         ? [recordedKeys[0], recordedKeys[1]]
         : recordedKeys[0];
 
+    const shortcut = shortcutRegistry.get(editingId);
+    const policyError = shortcut
+      ? validateShortcutBinding(
+          shortcut,
+          newKeys,
+          currentShortcutPlatform()
+        )
+      : null;
+    if (policyError) {
+      setBindingError(policyError);
+      return;
+    }
+
     // Check for conflicts
     const conflict = shortcutRegistry.findConflict(newKeys, editingId);
     if (conflict) {
-      setConflictError(
+      setBindingError(
         `Conflicts with "${conflict.label}" (${formatShortcutKeys(shortcutRegistry.getEffectiveKeys(conflict.id)!)})`
       );
       return;
@@ -141,6 +195,11 @@ export function SettingsClient() {
   const categories = CATEGORY_ORDER.filter(
     (cat) => shortcuts[cat] && shortcuts[cat].length > 0
   );
+  const editingShortcut = editingId
+    ? shortcutRegistry.get(editingId)
+    : undefined;
+  const editingUniversal =
+    editingShortcut?.bindingPolicy === 'universal-command';
 
   return (
     <div className="container mx-auto py-6 px-4 max-w-3xl">
@@ -231,12 +290,14 @@ export function SettingsClient() {
           <DialogHeader>
             <DialogTitle>Edit Shortcut</DialogTitle>
             <DialogDescription>
-              Press one key for a simple shortcut, or two keys for a chord
-              sequence (like G then D).
+              {editingUniversal
+                ? 'Press one key combination containing ⌘. This command must work from Terminal and text fields.'
+                : 'Press one key for a simple shortcut, or two keys for a chord sequence (like G then D).'}
             </DialogDescription>
           </DialogHeader>
 
           <div
+            data-shortcut-capture
             className="flex items-center justify-center p-8 border-2 border-dashed rounded-lg focus:outline-none focus:border-primary"
             tabIndex={0}
             onKeyDown={handleKeyDown}
@@ -250,7 +311,7 @@ export function SettingsClient() {
                 {recordedKeys.map((key, i) => (
                   <ShortcutBadge key={i} keys={key} size="md" />
                 ))}
-                {recordedKeys.length === 1 && (
+                {recordedKeys.length === 1 && !editingUniversal && (
                   <span className="text-sm text-muted-foreground ml-2">
                     Press another key for a chord, or save
                   </span>
@@ -259,10 +320,10 @@ export function SettingsClient() {
             )}
           </div>
 
-          {conflictError && (
+          {bindingError && (
             <div className="flex items-center gap-2 text-destructive text-sm">
               <AlertCircle className="h-4 w-4" />
-              {conflictError}
+              {bindingError}
             </div>
           )}
 
@@ -272,7 +333,7 @@ export function SettingsClient() {
             </Button>
             <Button
               onClick={saveShortcut}
-              disabled={recordedKeys.length === 0 || saving}
+              disabled={recordedKeys.length === 0 || !!bindingError || saving}
             >
               {saving ? 'Saving...' : 'Save'}
             </Button>

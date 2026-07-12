@@ -44,6 +44,7 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     description: 'Open or focus Terminal command altitude',
     category: 'navigation',
     contexts: ['global'],
+    bindingPolicy: 'universal-command',
   },
   {
     id: 'command-sessions',
@@ -52,6 +53,7 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     description: 'Open or focus Sessions command altitude',
     category: 'navigation',
     contexts: ['global'],
+    bindingPolicy: 'universal-command',
   },
   {
     id: 'command-spatial',
@@ -60,6 +62,7 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     description: 'Open or recenter Spatial command altitude',
     category: 'navigation',
     contexts: ['global'],
+    bindingPolicy: 'universal-command',
   },
   {
     id: 'go-settings',

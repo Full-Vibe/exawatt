@@ -34,6 +34,10 @@ export type ShortcutCategory =
   | 'view'
   | 'help';
 
+/** Behavioral guarantee a customized binding must preserve. */
+export type ShortcutBindingPolicy =
+  | 'universal-command'; // One primary-modifier combo; works through text/xterm focus.
+
 /** Complete shortcut definition (without action - for registration) */
 export interface ShortcutDefinition {
   id: string; // Unique identifier, e.g., 'go-dashboard'
@@ -42,6 +46,7 @@ export interface ShortcutDefinition {
   description?: string; // Detailed description
   category: ShortcutCategory; // For help modal organization
   contexts: ShortcutContext[]; // Where this shortcut is active
+  bindingPolicy?: ShortcutBindingPolicy;
 }
 
 /** Shortcut with action callback (runtime) */
