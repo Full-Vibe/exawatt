@@ -44,7 +44,15 @@ describe('spatial navigation state', () => {
         agentId: 'agent-a',
         projection: 'fixed-angle',
       })
-    ).toBe('exawatt:spatial-viewport:v1:agent:project-a:agent-a:fixed-angle');
+    ).toBe('exawatt:spatial-viewport:v2:agent:project-a:agent-a:fixed-angle');
+    expect(
+      spatialViewportStorageKey({
+        altitude: 'agent',
+        projectId: 'project:a',
+        agentId: 'agent:b',
+        projection: 'top-down',
+      })
+    ).toBe('exawatt:spatial-viewport:v2:agent:project%3Aa:agent%3Ab:top-down');
   });
 
   it('accepts only finite, positive stored viewports', () => {
@@ -57,6 +65,16 @@ describe('spatial navigation state', () => {
     expect(
       parseStoredViewport(
         JSON.stringify({ centerX: 1, centerY: 2, width: 0, height: 20 })
+      )
+    ).toBeNull();
+    expect(
+      parseStoredViewport(
+        JSON.stringify({
+          centerX: 10_000_000,
+          centerY: 2,
+          width: 30,
+          height: 20,
+        })
       )
     ).toBeNull();
   });

@@ -90,11 +90,17 @@ export function CommandNavigationProvider({
         startedAt,
       });
       frame.current = window.requestAnimationFrame(() => {
+        frame.current = null;
         setTransition({
           phase: 'traversing',
           target: targetRegime,
           startedAt,
         });
+        timer.current = window.setTimeout(() => {
+          setTransition(null);
+          targetPath.current = null;
+          timer.current = null;
+        }, 1_200);
         if (options?.replace) router.replace(href);
         else router.push(href);
       });

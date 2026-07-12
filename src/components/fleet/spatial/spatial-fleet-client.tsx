@@ -35,8 +35,9 @@ import {
 import { agentGoalDisplay } from './spatial-agent-copy';
 import { requestSessionJump } from '@/components/workspace/session-jump';
 import { rememberSpatialReturn } from '@/components/nav/spatial-return';
-import { useShortcuts } from '@/components/shortcuts';
+import { useEffectiveShortcut, useShortcuts } from '@/components/shortcuts';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
+import { formatShortcutKeys, formatShortcutKeysAria } from '@/lib/shortcuts';
 import {
   readSpatialFilters,
   SPATIAL_FILTERABLE_STATUSES,
@@ -81,6 +82,8 @@ export function SpatialFleetClient() {
   const { jobs } = useCron();
   const { openHelpModal } = useShortcuts();
   const { navigateCommandSurface } = useCommandNavigation();
+  const helpKeys = useEffectiveShortcut('help-modal-slash');
+  const helpShortcut = helpKeys ? formatShortcutKeys(helpKeys) : null;
 
   // Semantic filters live in the URL so a Spatial address survives route and
   // session handoffs. Camera position remains renderer-session state.
@@ -417,7 +420,10 @@ export function SpatialFleetClient() {
             className="fleet-action-button grid h-11 w-11 place-items-center p-0 xl:hidden"
             onClick={openHelpModal}
             aria-label="Keyboard shortcuts"
-            title="Keyboard shortcuts · ⌘/"
+            aria-keyshortcuts={
+              helpKeys ? formatShortcutKeysAria(helpKeys) : undefined
+            }
+            title={`Keyboard shortcuts${helpShortcut ? ` · ${helpShortcut}` : ''}`}
           >
             <Keyboard className="h-4 w-4" />
           </Button>

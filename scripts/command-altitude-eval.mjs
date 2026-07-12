@@ -162,6 +162,21 @@ try {
       .getAttribute('aria-keyshortcuts')) === 'Meta+Shift+m',
     'Spatial altitude did not advertise its effective shortcut'
   );
+  const initialTabText = await page
+    .locator('[data-active="true"]')
+    .textContent();
+  await page.keyboard.press('Meta+Shift+BracketLeft');
+  await page.waitForFunction(
+    previous =>
+      document.querySelector('[data-active="true"]')?.textContent !== previous,
+    initialTabText
+  );
+  await page.keyboard.press('Meta+Shift+BracketRight');
+  await page.waitForFunction(
+    initial =>
+      document.querySelector('[data-active="true"]')?.textContent === initial,
+    initialTabText
+  );
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'terminal.png'),
     fullPage: true,
@@ -204,6 +219,11 @@ try {
     )),
     'Tab reached obscured workspace controls'
   );
+  await page.keyboard.press('Escape');
+  await page.waitForURL(url => !url.searchParams.has('view'));
+  await page.locator('[data-command-altitude-level="sessions"]').click();
+  await page.waitForURL('**/workspace?view=sessions');
+  await page.locator('[data-expose]').waitFor();
   await page.locator('[data-command-altitude-level="sessions"]').click();
   requireState(
     await page
@@ -286,7 +306,7 @@ try {
   await page.waitForTimeout(500);
   const zoomedViewport = await page.evaluate(() => {
     const value = window.sessionStorage.getItem(
-      'exawatt:spatial-viewport:v1:fleet:-:-:top-down'
+      'exawatt:spatial-viewport:v2:fleet:~:~:top-down'
     );
     return value ? JSON.parse(value) : null;
   });
@@ -298,7 +318,7 @@ try {
   await page.waitForFunction(
     zoomedWidth => {
       const value = window.sessionStorage.getItem(
-        'exawatt:spatial-viewport:v1:fleet:-:-:top-down'
+        'exawatt:spatial-viewport:v2:fleet:~:~:top-down'
       );
       if (!value) return false;
       return JSON.parse(value).width > zoomedWidth;
@@ -307,7 +327,7 @@ try {
   );
   const recenteredViewport = await page.evaluate(() => {
     const value = window.sessionStorage.getItem(
-      'exawatt:spatial-viewport:v1:fleet:-:-:top-down'
+      'exawatt:spatial-viewport:v2:fleet:~:~:top-down'
     );
     return value ? JSON.parse(value) : null;
   });

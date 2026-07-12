@@ -87,15 +87,36 @@ export function useWorkspaceShortcuts(
 ): void {
   useEffect(() => {
     if (!enabled) return;
-    const onFocusKey = (e: KeyboardEvent) => {
-      if (e.key !== 'F6' || e.defaultPrevented) return;
+    const isModalTarget = (e: KeyboardEvent) => {
       if (
         e.target instanceof Element &&
         e.target.closest('[role="dialog"], [cmdk-root]')
       ) {
+        return true;
+      }
+      return false;
+    };
+    const onCaptureKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || isModalTarget(e)) return;
+      if (e.key === 'F6') {
+        if (actions.toggleFocus()) e.preventDefault();
         return;
       }
-      if (actions.toggleFocus()) e.preventDefault();
+      if (!e.metaKey || e.ctrlKey || e.altKey) return;
+
+      // Fixed workspace navigation owns capture phase so xterm and the
+      // global ⌘[/⌘] history layer cannot consume overlapping key families.
+      if (e.shiftKey && e.code === 'BracketLeft') {
+        if (actions.cycle(-1)) e.preventDefault();
+        return;
+      }
+      if (e.shiftKey && e.code === 'BracketRight') {
+        if (actions.cycle(1)) e.preventDefault();
+        return;
+      }
+      if (!e.shiftKey && e.key >= '1' && e.key <= '9') {
+        if (actions.selectIndex(Number(e.key) - 1)) e.preventDefault();
+      }
     };
     const onKey = (e: KeyboardEvent) => {
       // another window-level layer (the global chord engine also binds
@@ -103,12 +124,7 @@ export function useWorkspaceShortcuts(
       if (e.defaultPrevented) return;
       // a modal surface (⌘K palette, help modal) owns the keyboard while
       // open — ⌘W there must not close a terminal tab behind it
-      if (
-        e.target instanceof Element &&
-        e.target.closest('[role="dialog"], [cmdk-root]')
-      ) {
-        return;
-      }
+      if (isModalTarget(e)) return;
       if (e.key === 'Escape') {
         const inTerminal =
           e.target instanceof Element &&
@@ -129,7 +145,9 @@ export function useWorkspaceShortcuts(
 
       // every workspace verb resolves its combo from the registry (D9):
       // rebinding it in Settings changes what the workspace responds to
-      const verbs: Array<[id: string, apply: () => boolean, shiftAlias?: boolean]> = [
+      const verbs: Array<
+        [id: string, apply: () => boolean, shiftAlias?: boolean]
+      > = [
         ['workspace-new-shell', actions.launchShell, true],
         ['workspace-new-project', actions.newProject],
         ['workspace-close-tab', actions.closeActive, true],
@@ -149,28 +167,11 @@ export function useWorkspaceShortcuts(
           return;
         }
       }
-
-      if (!e.metaKey || e.ctrlKey || e.altKey) return;
-
-      // fixed key families (not registry-rebindable):
-      // ⌘⇧[ / ⌘⇧] — use e.code: with shift held, e.key becomes '{' / '}'
-      if (e.shiftKey && e.code === 'BracketLeft') {
-        if (actions.cycle(-1)) e.preventDefault();
-        return;
-      }
-      if (e.shiftKey && e.code === 'BracketRight') {
-        if (actions.cycle(1)) e.preventDefault();
-        return;
-      }
-      // ⌘1…⌘9 — project ordinals
-      if (!e.shiftKey && e.key >= '1' && e.key <= '9') {
-        if (actions.selectIndex(Number(e.key) - 1)) e.preventDefault();
-      }
     };
-    window.addEventListener('keydown', onFocusKey, true);
+    window.addEventListener('keydown', onCaptureKey, true);
     window.addEventListener('keydown', onKey);
     return () => {
-      window.removeEventListener('keydown', onFocusKey, true);
+      window.removeEventListener('keydown', onCaptureKey, true);
       window.removeEventListener('keydown', onKey);
     };
   }, [actions, enabled]);

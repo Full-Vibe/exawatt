@@ -6,23 +6,21 @@ export const COMMAND_ALTITUDE_HREFS = Object.fromEntries(
   surfacesByTier('spine').map(surface => [surface.id, surface.href])
 ) as Record<CommandAltitude, string>;
 
+const COMMAND_ALTITUDE_SURFACES = Object.fromEntries(
+  surfacesByTier('spine').map(surface => [surface.id, surface])
+) as Record<CommandAltitude, ReturnType<typeof surfacesByTier>[number]>;
+
 /** Which rebindable gesture moves from the current altitude to the target. */
 export function altitudeGestureShortcutId(
   active: CommandAltitude | null,
   target: CommandAltitude
 ): string | null {
   if (active === target) return null;
-  if (target === 'sessions') return 'workspace-overview';
-  if (target === 'terminal' && active === 'sessions') {
-    return 'workspace-overview';
-  }
-  if (
-    (target === 'terminal' && active === 'spatial') ||
-    (target === 'spatial' && active !== 'spatial')
-  ) {
-    return 'toggle-regime';
-  }
-  return null;
+  const gestureOwner =
+    target === 'terminal' && active
+      ? COMMAND_ALTITUDE_SURFACES[active]
+      : COMMAND_ALTITUDE_SURFACES[target];
+  return gestureOwner.gestureShortcutId ?? null;
 }
 
 export function resolveCommandAltitude(

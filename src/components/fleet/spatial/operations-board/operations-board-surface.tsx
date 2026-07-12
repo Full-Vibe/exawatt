@@ -141,7 +141,7 @@ export function OperationsBoardSurface({
   onOverview,
   onProjectionChange,
   sessionTransitionAgentId = null,
-  viewportStorageKey = 'exawatt:spatial-viewport:v1:fleet:-:-:top-down',
+  viewportStorageKey = 'exawatt:spatial-viewport:v2:fleet:~:~:top-down',
   preserveDrawingBuffer = false,
 }: {
   layout: SpatialBoardLayout;

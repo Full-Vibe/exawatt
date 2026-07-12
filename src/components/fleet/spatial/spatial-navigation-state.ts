@@ -54,11 +54,13 @@ export function spatialViewportStorageKey({
   agentId: string | null;
   projection: SpatialBoardProjection;
 }): string {
+  const segment = (value: string | null) =>
+    value === null ? '~' : encodeURIComponent(value);
   return [
-    'exawatt:spatial-viewport:v1',
+    'exawatt:spatial-viewport:v2',
     altitude,
-    projectId ?? '-',
-    agentId ?? '-',
+    segment(projectId),
+    segment(agentId),
     projection,
   ].join(':');
 }
@@ -80,7 +82,17 @@ export function parseStoredViewport(
     ) {
       return null;
     }
-    if (candidate.width! <= 0 || candidate.height! <= 0) return null;
+    const maxMagnitude = 1_000_000;
+    if (
+      Math.abs(candidate.centerX!) > maxMagnitude ||
+      Math.abs(candidate.centerY!) > maxMagnitude ||
+      candidate.width! < 0.01 ||
+      candidate.height! < 0.01 ||
+      candidate.width! > maxMagnitude ||
+      candidate.height! > maxMagnitude
+    ) {
+      return null;
+    }
     return candidate as OperationsBoardViewport;
   } catch {
     return null;

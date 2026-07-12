@@ -150,6 +150,25 @@ export function ExposeOverlay({
     return () => window.removeEventListener(FOCUS_SESSIONS_EVENT, focus);
   }, [focusSelection]);
 
+  useEffect(() => {
+    const closeFromShellChrome = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.key !== 'Escape') return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (rootRef.current?.contains(target)) return;
+      if (
+        target.closest('[role="dialog"], [cmdk-root], .xterm-helper-textarea')
+      ) {
+        return;
+      }
+      event.preventDefault();
+      onClose();
+    };
+    window.addEventListener('keydown', closeFromShellChrome, true);
+    return () =>
+      window.removeEventListener('keydown', closeFromShellChrome, true);
+  }, [onClose]);
+
   const cols = () => {
     const w = gridRef.current?.offsetWidth ?? TILE_W;
     // the last tile in a row needs no trailing gap

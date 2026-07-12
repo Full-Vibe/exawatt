@@ -86,6 +86,31 @@ describe('Sessions overview', () => {
     expect(onPick).toHaveBeenCalledWith('/one', 'tab-a');
   });
 
+  it('returns with Escape after focus moves to persistent shell chrome', async () => {
+    const onClose = vi.fn();
+    const shellControl = document.createElement('button');
+    shellControl.textContent = 'Terminal altitude';
+    document.body.append(shellControl);
+    render(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        activeTabId="tab-a"
+        onPick={vi.fn()}
+        onClose={onClose}
+      />
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Alpha, One' })).toHaveFocus()
+    );
+    shellControl.focus();
+    fireEvent.keyDown(shellControl, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledOnce();
+    shellControl.remove();
+  });
+
   it('is a non-modal region and active-altitude focus returns to selection', async () => {
     render(
       <ExposeOverlay

@@ -27,6 +27,52 @@ function actions(): WorkspaceShortcutActions {
 }
 
 describe('workspace focus shortcuts', () => {
+  it('cycles tabs before xterm can consume shifted bracket commands', () => {
+    const handlers = actions();
+    renderHook(() => useWorkspaceShortcuts(handlers));
+    const terminal = document.createElement('textarea');
+    terminal.className = 'xterm-helper-textarea';
+    terminal.addEventListener('keydown', event => event.preventDefault());
+    document.body.append(terminal);
+
+    const previous = new KeyboardEvent('keydown', {
+      key: '{',
+      code: 'BracketLeft',
+      metaKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    terminal.dispatchEvent(previous);
+    expect(handlers.cycle).toHaveBeenLastCalledWith(-1);
+    expect(previous.defaultPrevented).toBe(true);
+
+    const next = new KeyboardEvent('keydown', {
+      key: '}',
+      code: 'BracketRight',
+      metaKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    terminal.dispatchEvent(next);
+    expect(handlers.cycle).toHaveBeenLastCalledWith(1);
+    expect(handlers.cycle).toHaveBeenCalledTimes(2);
+    terminal.remove();
+  });
+
+  it('leaves unshifted command brackets to route history', () => {
+    const handlers = actions();
+    renderHook(() => useWorkspaceShortcuts(handlers));
+
+    fireEvent.keyDown(window, {
+      key: '[',
+      code: 'BracketLeft',
+      metaKey: true,
+    });
+    expect(handlers.cycle).not.toHaveBeenCalled();
+  });
+
   it('uses F6 to cross the terminal/chrome boundary', () => {
     const handlers = actions();
     renderHook(() => useWorkspaceShortcuts(handlers));
