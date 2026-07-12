@@ -114,7 +114,7 @@ Hardening review and evidence, 2026-07-12:
 - The production Codex catalog on 293 rollout files totaling 1.37 GB improved
   from 2.34 seconds / about 704 MB RSS to 98 ms / about 68 MB RSS while returning
   the same 18 Project candidates.
-- `pnpm lint`, `pnpm type-check`, `pnpm electron:compile`, and all 397 tests
+- `pnpm lint`, `pnpm type-check`, `pnpm electron:compile`, and all 407 tests
   passed. The unsigned packaged production build and five-Session lifecycle
   evaluation passed, including cancel, verified quit, journal replay, corrupt
   history isolation, four exact resumes, shell exclusion, crash recovery, and
