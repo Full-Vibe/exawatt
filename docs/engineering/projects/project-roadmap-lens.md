@@ -112,8 +112,8 @@ Source: operator dogfood interview 2026-07-10 and operator design interview
 
 ## Execution order
 
-All six slices landed 2026-07-11; operator dogfood remains before the
-roadmap item is called done.
+S0-S5 landed 2026-07-11. The second arc (S6-S10, below) makes the lens
+felt; operator dogfood continues throughout.
 
 - S0 Canon: roadmap entry updated, this doc created.
 - S1 Convention + parser: spec doc, decision `0011`,
@@ -135,6 +135,96 @@ roadmap item is called done.
 
 Work happened in a dedicated worktree and integrated to `master` per slice.
 The end-to-end evaluator is `scripts/roadmap-rail-eval.mjs` (21 checks).
+
+## Second arc: make the lens felt (S6-S10)
+
+Added 2026-07-11 after an operator UX interview plus an external research
+pass (Linear, GitHub Projects/sub-issue pills, Devin command center, Copilot
+mission control, Cursor background agents, Codex cloud, Conductor, VS Code
+status-bar doctrine, Zellij, Warp blocks, ProdPad Now/Next/Later,
+Backlog.md/xit/todo.txt). Finding: S0-S5 is correct but not FELT — the rail
+rests as a low-signal 36px sliver, session links rarely engage in real use,
+and a read-only panel summoned by ⌘B never earns a glance habit.
+
+Operator decisions (2026-07-11), recorded so they are not re-litigated:
+
+- **Resting posture: collapsed, but signal-rich.** Do not open the rail by
+  default; make the strip itself readable (a per-item spine, not a count).
+- **Work-first sequence, always.** The lens is an ordered flow answering
+  "where are we, what's next, what's shipped, what's active, what's
+  blocked" — no dates, no gantt precision; position is the schedule.
+  Sessions overview and Spatial are the AGENT-FIRST views; they mirror item
+  context instead of the rail inverting to an agent list.
+- **Read-only for now.** The manipulable lens (feed items to agents,
+  reorder, transitions) is wanted but gated on design play with disposable
+  prototypes and multiple options; ship nothing until the operator accepts
+  a top-notch interaction design.
+- **Starving is attention.** Blocked items and empty queues flow through
+  the existing needs-you pipeline — one attention truth, no second machine.
+
+Research-backed rules the second arc holds to: "current" = live session
+ATTACHED, "next" = queue position (Linear's inferred-diamond lesson);
+honest n/m milestone fractions, never blended percentages; nominal states
+stay visually quiet — color only for blocked/starving/parse trouble
+(VS Code last-resort rule); agent→item→terminal is one keypress each way
+(Copilot chain); mid-task progress is current milestone + elapsed time,
+never a percent (Cursor/Devin).
+
+### S6 Signal-rich strip
+
+Work: replace the count-sliver with a vertical spine, one node per queue
+item in sequence — shipped (filled, dim), now (attachment-marked with a
+subtle activity pulse), next/later (hollow), blocked/starving (amber, the
+loudest pixel); keyboard/hover peek shows id + title without opening;
+strip click/⌘B unchanged. The strip must satisfy the "across the room"
+test: roughly where are we, and is anything wrong.
+
+Acceptance: with the rail collapsed, a blocked item and the current item
+are identifiable at a glance in a screenshot at 1400x900; nothing animates
+except the current node's pulse (reduced-motion: none).
+
+### S7 Sequence-first rail
+
+Work: agent chips with elapsed time on every attached row (hero-only
+today); n/m fraction pills on all rows; a compact header sequence bar
+(shipped ▰ / now ● / next ○); suppressed nominal color per the status
+discipline; drill-in milestone expansion (the deferred R1→R2 level: ↑↓
+roves milestones inside the detail panel).
+
+Acceptance: the five questions are answerable from one open-rail
+screenshot; drill reaches an individual milestone by keyboard.
+
+### S8 Attention integration
+
+Work: two new attention sources — item-blocked (a linked session on a
+blocked item, or a `blocked` item with no session) and project-starving
+(queue empty while sessions are live in that Project) — emitted into the
+existing attention system (⌘J queue, tab badges, FleetState mirror,
+default-off native notifications). No new notification machinery.
+
+Acceptance: emptying a fixture roadmap while a session runs produces a
+needs-you event that ⌘J reaches; clearing it clears the event.
+
+### S9 Agent-first mirrors
+
+Work: Sessions overview tiles and ⌘K switcher rows carry the linked item
+id + milestone fraction; the spatial agent piece adopts the same chip when
+ENG-004 unparks (view-model only until then).
+
+Acceptance: a session declared on an item shows that item in the exposé
+tile and the switcher row with no rail open.
+
+### S10 Manipulable-lens design play (gated)
+
+Work: disposable prototypes only — feed-an-item (Enter on an unclaimed
+item offers harness pick + optional worktree + seeded kickoff prompt
+referencing the roadmap file; declared link on launch), reorder, and
+status-transition interactions; present 2-3 UI options per gesture in
+play sessions. The repo file remains the only truth; any accepted design
+ships as a NEW milestone with its own acceptance, bridging toward ENG-013.
+
+Acceptance: operator has played with at least two interaction options per
+gesture and explicitly accepted or rejected each; decisions recorded here.
 
 ## Verification
 
