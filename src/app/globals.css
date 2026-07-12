@@ -226,6 +226,19 @@ body {
   }
 }
 
+/* roadmap strip (ENG-017 S6): the CURRENT node — the one with a live agent
+   attached — carries the strip's only motion, a slow breathing glow. The
+   nominal queue stays visually silent; color is reserved for trouble. */
+@keyframes roadmap-node-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 3px var(--roadmap-pulse-color, rgba(80, 230, 255, 0.5));
+  }
+  50% {
+    box-shadow: 0 0 9px var(--roadmap-pulse-color, rgba(80, 230, 255, 0.9));
+  }
+}
+
 @keyframes fleet-rise {
   from {
     opacity: 0;

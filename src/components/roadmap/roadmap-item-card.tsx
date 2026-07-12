@@ -174,10 +174,10 @@ export function RoadmapItemCard({
           ▸{item.chips.length}
         </span>
       )}
-      {!compact && item.milestones.length > 0 && (
+      {item.milestones.length > 0 && (
         <span
           className="ml-auto shrink-0 font-mono text-[10px]"
-          style={{ color: HUD.textDim }}
+          style={{ color: compact ? withAlpha(HUD.textDim, 0.7) : HUD.textDim }}
         >
           {item.milestonesDone}/{item.milestones.length}
         </span>

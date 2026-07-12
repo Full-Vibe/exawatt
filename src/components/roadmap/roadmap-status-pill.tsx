@@ -9,9 +9,12 @@
 import { HUD, withAlpha } from '@/components/hud';
 import type { RoadmapDisplayStatus } from '@exawatt/ui-model';
 
+// Status discipline (S7): color belongs to the states that matter — active
+// (the project color family) and shipped (green). Everything queued is
+// neutral; blocked/amber comes from the badge, never from the pill.
 export const ROADMAP_STATUS_COLOR: Record<RoadmapDisplayStatus, string> = {
   active: HUD.cyan2,
-  next: HUD.cyan,
+  next: HUD.idle,
   later: HUD.idle,
   shipped: HUD.green,
   parked: HUD.idle,

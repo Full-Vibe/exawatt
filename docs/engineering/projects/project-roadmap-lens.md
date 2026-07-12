@@ -226,6 +226,24 @@ ships as a NEW milestone with its own acceptance, bridging toward ENG-013.
 Acceptance: operator has played with at least two interaction options per
 gesture and explicitly accepted or rejected each; decisions recorded here.
 
+## Progress log (second arc)
+
+- 2026-07-11, S6+S7 implemented (worktree eng017-arc2): strip spine model in
+  `packages/ui-model/src/roadmap-strip.ts` (pure, 5 unit tests: current-by-
+  attachment, now-station fallback, shipped-then-later compression, starving,
+  blocked/attention flags) rendered by `RoadmapStripSpine`; `roadmap-node-
+  pulse` keyframes; header `RoadmapSequenceBar` (same model, 24-glyph cap);
+  chips now render on every attached now/next row; fraction pills on all
+  variants; next/later pills went neutral (color discipline); milestone
+  roving in the drill (↑↓/jk, `data-roadmap-milestone`). Roadmap LAB landed
+  at `/hud-gallery/roadmap-lab`: markdown fixtures through the real parser
+  (`lab-fixtures.ts` — mid-flight/blocked/starving/huge/warnings/fresh/none/
+  error) + S10 mock prototypes (feed inline/dialog, move-mode/direct
+  reorder, milestone check/status cycle). Screenshot-verified: mid-flight,
+  blocked, starving, huge. Drive-by: fixed master-red `expose-overlay.test`
+  fixtures missing ENG-018's new WorkspaceTab fields. Eval extension +
+  milestone status flips happen at arc integration.
+
 ## Verification
 
 - Parser, linker, and view-model carry vitest unit tests in their packages.

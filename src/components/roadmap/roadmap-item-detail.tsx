@@ -53,12 +53,15 @@ function BulletList({ lines }: { lines: string[] }) {
 export function RoadmapItemDetail({
   item,
   color,
+  selectedMilestone = null,
   onOpenPath,
   onSelectSession,
 }: {
   item: RoadmapItemView;
   /** the Project identity color for session chips */
   color: string;
+  /** roved milestone index (S7 R2 keyboard level); null = no roving */
+  selectedMilestone?: number | null;
   /** open a repo-relative path in the OS default app */
   onOpenPath: (path: string) => void;
   onSelectSession: (tabId: string) => void;
@@ -118,33 +121,47 @@ export function RoadmapItemDetail({
         <div className="flex flex-col gap-1.5">
           <SectionLabel>{`milestones · ${item.milestonesDone}/${item.milestones.length}`}</SectionLabel>
           <ul className="flex flex-col">
-            {item.milestones.map((m, i) => (
-              <li key={i} className="relative flex gap-2 py-1 pl-5">
-                {/* mini-spine: a done node is filled, an open one hollow */}
-                <span
-                  aria-hidden
-                  className="absolute left-1 top-[9px] h-2 w-2 rounded-full"
-                  style={{
-                    background: m.done ? HUD.green : 'transparent',
-                    border: `1.5px solid ${m.done ? HUD.green : withAlpha(statusColor, 0.6)}`,
-                  }}
-                />
-                {m.id && (
-                  <span
-                    className="shrink-0 font-mono text-[11px] leading-5"
-                    style={{ color: m.done ? HUD.textDim : HUD.textMono }}
-                  >
-                    {m.id}
-                  </span>
-                )}
-                <span
-                  className="min-w-0 text-xs leading-5"
-                  style={{ color: m.done ? HUD.textDim : HUD.text }}
+            {item.milestones.map((m, i) => {
+              const roved = selectedMilestone === i;
+              return (
+                <li
+                  key={i}
+                  data-roadmap-milestone={i}
+                  data-selected={roved || undefined}
+                  ref={
+                    roved
+                      ? el => el?.scrollIntoView({ block: 'nearest' })
+                      : undefined
+                  }
+                  className="relative flex gap-2 rounded py-1 pl-5 pr-1"
+                  style={{ background: roved ? HUD.fillHi : 'transparent' }}
                 >
-                  {m.title}
-                </span>
-              </li>
-            ))}
+                  {/* mini-spine: a done node is filled, an open one hollow */}
+                  <span
+                    aria-hidden
+                    className="absolute left-1 top-[9px] h-2 w-2 rounded-full"
+                    style={{
+                      background: m.done ? HUD.green : 'transparent',
+                      border: `1.5px solid ${m.done ? HUD.green : withAlpha(statusColor, 0.6)}`,
+                    }}
+                  />
+                  {m.id && (
+                    <span
+                      className="shrink-0 font-mono text-[11px] leading-5"
+                      style={{ color: m.done ? HUD.textDim : HUD.textMono }}
+                    >
+                      {m.id}
+                    </span>
+                  )}
+                  <span
+                    className="min-w-0 text-xs leading-5"
+                    style={{ color: m.done ? HUD.textDim : HUD.text }}
+                  >
+                    {m.title}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

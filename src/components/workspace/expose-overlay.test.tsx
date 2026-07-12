@@ -13,6 +13,8 @@ const projects: Project[] = [
     tabs: [
       {
         id: 'tab-a',
+        durableSessionId: 'durable-a',
+        lifecycle: 'running',
         harness: 'shell',
         title: 'Alpha',
         cwd: '/one',
@@ -26,6 +28,8 @@ const projects: Project[] = [
       },
       {
         id: 'tab-b',
+        durableSessionId: 'durable-b',
+        lifecycle: 'running',
         harness: 'codex',
         title: 'Beta',
         cwd: '/one',

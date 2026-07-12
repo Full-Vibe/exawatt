@@ -13,6 +13,7 @@ import {
 
 export * from './spatial-board';
 export * from './roadmap-lens';
+export * from './roadmap-strip';
 
 export type FleetSurfaceMode = 'dom' | 'spatial';
 

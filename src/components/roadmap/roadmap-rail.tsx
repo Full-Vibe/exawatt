@@ -28,6 +28,7 @@ import type {
   RoadmapLensView,
   RoadmapSessionChip,
 } from '@exawatt/ui-model';
+import { buildRoadmapStrip } from '@exawatt/ui-model';
 import { RoadmapItemCard } from './roadmap-item-card';
 import { RoadmapSessionChipButton } from './roadmap-session-chip';
 import { RoadmapItemDetail } from './roadmap-item-detail';
@@ -93,6 +94,179 @@ function formatUpdated(mtimeMs: number): string {
   return `updated ${hh}:${mm}`;
 }
 
+/**
+ * The collapsed strip's spine (S6): one node per queue position, top-to-
+ * bottom as the queue reads. The CURRENT node (live agent attached) carries
+ * the strip's only motion; blocked/starving/unmapped are the only color.
+ */
+function RoadmapStripSpine({
+  view,
+  color,
+}: {
+  view: RoadmapLensView;
+  color: string;
+}) {
+  const nodes = useMemo(() => buildRoadmapStrip(view), [view]);
+  if (nodes.length === 0) return null;
+  return (
+    <span className="flex flex-col items-center gap-[6px]">
+      {nodes.map((node, i) => {
+        if (node.kind === 'unmapped') {
+          return (
+            <span
+              key={`u-${i}`}
+              data-strip-node="unmapped"
+              title={node.label}
+              aria-hidden
+              className="h-1.5 w-1.5 rotate-45"
+              style={{ background: HUD.amber }}
+            />
+          );
+        }
+        if (node.kind === 'starving') {
+          return (
+            <span
+              key="starving"
+              data-strip-node="starving"
+              title={node.label}
+              aria-hidden
+              className="grid h-3.5 w-3.5 place-items-center rounded-full font-mono text-[9px] font-bold motion-safe:[animation:roadmap-node-pulse_2.4s_ease-in-out_infinite]"
+              style={
+                {
+                  color: HUD.amber,
+                  border: `1.5px solid ${HUD.amber}`,
+                  '--roadmap-pulse-color': withAlpha(HUD.amber, 0.8),
+                } as React.CSSProperties
+              }
+            >
+              !
+            </span>
+          );
+        }
+        if (node.kind === 'aggregate') {
+          return (
+            <span
+              key={`agg-${node.group}`}
+              data-strip-node={`agg-${node.group}`}
+              title={node.label}
+              aria-hidden
+              className="font-mono text-[9px] leading-none"
+              style={{
+                color: node.group === 'shipped' ? withAlpha(HUD.green, 0.65) : HUD.textDim,
+              }}
+            >
+              {node.group === 'shipped' ? `▰${node.count}` : `+${node.count}`}
+            </span>
+          );
+        }
+        const loud = node.blocked || node.needsAttention;
+        const nodeColor = loud
+          ? HUD.amber
+          : node.role === 'shipped'
+            ? withAlpha(HUD.green, 0.55)
+            : node.role === 'current' || node.role === 'now'
+              ? color
+              : HUD.idle;
+        const size = node.role === 'current' ? 10 : 7;
+        const filled =
+          node.role === 'shipped' || node.role === 'current' || node.blocked;
+        return (
+          <span
+            key={node.id}
+            data-strip-node={node.role}
+            data-strip-item={node.id}
+            title={node.label}
+            aria-hidden
+            className={`shrink-0 rounded-full ${
+              node.role === 'current'
+                ? 'motion-safe:[animation:roadmap-node-pulse_2.4s_ease-in-out_infinite]'
+                : ''
+            }`}
+            style={
+              {
+                width: size,
+                height: size,
+                background: filled ? nodeColor : 'transparent',
+                border: `1.5px solid ${nodeColor}`,
+                opacity: node.role === 'later' ? 0.55 : 1,
+                '--roadmap-pulse-color': withAlpha(nodeColor, 0.85),
+              } as React.CSSProperties
+            }
+          />
+        );
+      })}
+    </span>
+  );
+}
+
+/**
+ * Header sequence bar (S7): the whole queue as one glanceable line —
+ * shipped ▰, active ●, queued ○ — so "where are we" survives scrolling.
+ */
+function RoadmapSequenceBar({
+  view,
+  color,
+}: {
+  view: RoadmapLensView;
+  color: string;
+}) {
+  const nodes = useMemo(() => buildRoadmapStrip(view, 24), [view]);
+  if (view.status !== 'ok' || nodes.length === 0) return null;
+  const summary = `${view.shipped.length} shipped · ${view.now.length} active · ${
+    view.next.length + view.later.length
+  } queued`;
+  return (
+    <div
+      data-roadmap-sequence
+      title={summary}
+      aria-label={summary}
+      className="flex items-center gap-[3px] overflow-hidden font-mono text-[9px] leading-none"
+    >
+      {nodes.map((node, i) => {
+        if (node.kind === 'unmapped') return null; // header stays queue-only
+        if (node.kind === 'starving') {
+          return (
+            <span key="starving" style={{ color: HUD.amber }}>
+              !
+            </span>
+          );
+        }
+        if (node.kind === 'aggregate') {
+          return (
+            <span
+              key={`agg-${node.group}-${i}`}
+              style={{
+                color:
+                  node.group === 'shipped' ? withAlpha(HUD.green, 0.6) : HUD.textDim,
+              }}
+            >
+              {node.group === 'shipped' ? `▰${node.count}` : `+${node.count}`}
+            </span>
+          );
+        }
+        const loud = node.blocked || node.needsAttention;
+        return (
+          <span
+            key={node.id}
+            style={{
+              color: loud
+                ? HUD.amber
+                : node.role === 'shipped'
+                  ? withAlpha(HUD.green, 0.6)
+                  : node.role === 'current' || node.role === 'now'
+                    ? color
+                    : HUD.idle,
+              opacity: node.role === 'later' ? 0.55 : 1,
+            }}
+          >
+            {node.role === 'shipped' ? '▰' : node.role === 'current' ? '●' : '○'}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function trustLine(view: RoadmapLensView): string {
   const t = view.trust;
   if (!t) return '';
@@ -130,6 +304,9 @@ export function RoadmapRail({
   const [parkedOpen, setParkedOpen] = useState(false);
   const [drillId, setDrillId] = useState<string | null>(null);
   const [sel, setSel] = useState(0);
+  // milestone roving inside the drill (S7, the deferred R2 level)
+  const [msel, setMsel] = useState(0);
+  useEffect(() => setMsel(0), [drillId]);
 
   // entrance stagger (exposé recipe): flag flips post-mount
   useEffect(() => {
@@ -184,15 +361,18 @@ export function RoadmapRail({
           list.push({ kind: 'item', item, variant: 'compact' });
       }
     }
+    // every attached session is an individually focusable station (S7) —
+    // agents are visible wherever they are in the queue, not only on the hero
     view.now.forEach((item, i) => {
       list.push({ kind: 'item', item, variant: i === 0 ? 'hero' : 'row' });
-      // hero chips are individually focusable stations on the line
-      if (i === 0) {
-        for (const chip of item.chips)
-          list.push({ kind: 'chip', chip, itemId: item.id });
-      }
+      for (const chip of item.chips)
+        list.push({ kind: 'chip', chip, itemId: item.id });
     });
-    for (const item of view.next) list.push({ kind: 'item', item, variant: 'row' });
+    for (const item of view.next) {
+      list.push({ kind: 'item', item, variant: 'row' });
+      for (const chip of item.chips)
+        list.push({ kind: 'chip', chip, itemId: item.id });
+    }
     for (const item of view.later)
       list.push({ kind: 'item', item, variant: 'compact' });
     if (view.parked.length > 0) {
@@ -296,8 +476,19 @@ export function RoadmapRail({
       if (key === 'o') {
         handled();
         openPath(view.file);
+        return;
       }
-      return; // R1: native scroll owns ↑↓
+      // milestone roving (R2): ↑↓/jk walk the milestone spine when the
+      // drilled item has one; items without milestones keep native scroll
+      const count = drilled?.milestones.length ?? 0;
+      if (count > 0 && (key === 'ArrowDown' || key === 'j')) {
+        handled();
+        setMsel(s => Math.min(count - 1, s + 1));
+      } else if (count > 0 && (key === 'ArrowUp' || key === 'k')) {
+        handled();
+        setMsel(s => Math.max(0, s - 1));
+      }
+      return;
     }
     if (key === 'ArrowDown' || key === 'j') {
       handled();
@@ -342,7 +533,11 @@ export function RoadmapRail({
   const remaining =
     view.status === 'ok' ? view.now.length + view.next.length + view.later.length : 0;
   const healthAlert =
-    view.status === 'ok' && (view.queueEmpty || (view.trust?.warningCount ?? 0) > 0);
+    view.status === 'ok' &&
+    (view.queueEmpty ||
+      (view.trust?.warningCount ?? 0) > 0 ||
+      view.unmappedSessions.length > 0 ||
+      [...view.now, ...view.next].some(item => item.blocked));
 
   if (mode === 'strip') {
     return (
@@ -351,31 +546,23 @@ export function RoadmapRail({
         aria-label={`Open roadmap rail${healthAlert ? ' — needs attention' : ''}`}
         title="Roadmap (⌘B)"
         onClick={() => onModeChange('open')}
-        className="relative flex shrink-0 flex-col items-center gap-2 border-l pt-3 outline-none hover:bg-white/5 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+        className="relative flex shrink-0 flex-col items-center border-l pb-2 pt-3 outline-none hover:bg-white/5 focus-visible:ring-1 focus-visible:ring-hud-cyan"
         style={{
           width: ROADMAP_STRIP_WIDTH,
           borderColor: 'rgba(80,230,255,0.12)',
           background: HUD.bg.deep,
         }}
       >
-        {/* the spine survives collapse: node + remaining count = health at a glance */}
+        <RoadmapStripSpine view={view} color={color} />
         <span
           aria-hidden
-          className="h-2.5 w-2.5 rounded-full"
-          style={{
-            background: view.queueEmpty ? 'transparent' : color,
-            border: `1.5px solid ${view.queueEmpty ? HUD.amber : color}`,
-            boxShadow: `0 0 6px ${withAlpha(view.queueEmpty ? HUD.amber : color, 0.6)}`,
-          }}
-        />
-        <span
-          aria-hidden
-          className="w-px flex-1"
-          style={{ background: withAlpha(color, 0.35) }}
+          className="my-1.5 w-px flex-1"
+          style={{ background: withAlpha(color, 0.3) }}
         />
         {view.status === 'ok' && (
           <span
-            className="pb-2 font-mono text-[10px]"
+            data-strip-remaining
+            className="font-mono text-[10px]"
             style={{ color: healthAlert ? HUD.amber : HUD.textDim }}
           >
             {view.queueEmpty ? '!' : remaining}
@@ -469,6 +656,7 @@ export function RoadmapRail({
             {view.mtimeMs !== null && <span className="shrink-0">{formatUpdated(view.mtimeMs)}</span>}
           </div>
         )}
+        <RoadmapSequenceBar view={view} color={color} />
       </div>
 
       {/* body */}
@@ -511,6 +699,7 @@ export function RoadmapRail({
             <RoadmapItemDetail
               item={drilled}
               color={color}
+              selectedMilestone={drilled.milestones.length > 0 ? msel : null}
               onOpenPath={openPath}
               onSelectSession={onSelectSession}
             />
