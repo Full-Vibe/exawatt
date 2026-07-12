@@ -33,6 +33,19 @@ Session Overview gesture and `⌘⇧M` remains the direct Terminal ↔ Spatial t
 including while xterm owns focus. The control labels the shortcuts instead of
 requiring prior knowledge.
 
+Refinement (operator, 2026-07-11): Sessions behaves like a Mission Control-style
+transient overview rather than an application-modal dialog. It preserves the
+originating Session, uses arrows/J/K for selection, Enter to open, and Escape or
+`⌘O` to return. Obscured workspace chrome is inert, but the shell-level altitude
+control remains reachable. Escape remains owned by the running TUI while xterm
+has focus; Spatial uses Escape only to clear its own Agent/Project selection.
+
+The direct Terminal ↔ Spatial gesture routes through one finite transition
+owner. This shared motion/command contract is the extension point for making
+the regimes feel like one game board over time; it does not merge the xterm and
+R3F renderer boundaries. The shell restores the last altitude, Spatial semantic
+filters are URL state, and bounded camera return state is session-local.
+
 ## Consequences
 
 - Navigation and orientation feel continuous without loading Three.js into the
