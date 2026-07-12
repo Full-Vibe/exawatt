@@ -20,18 +20,26 @@ export const ROADMAP_STATUS_COLOR: Record<RoadmapDisplayStatus, string> = {
   parked: HUD.idle,
 };
 
+const STATUS_WORD: Record<RoadmapDisplayStatus, string> = {
+  active: 'Active',
+  next: 'Next',
+  later: 'Later',
+  shipped: 'Shipped',
+  parked: 'Parked',
+};
+
 export function RoadmapStatusPill({ status }: { status: RoadmapDisplayStatus }) {
   const color = ROADMAP_STATUS_COLOR[status];
   return (
     <span
-      className="inline-flex shrink-0 items-center rounded-sm border px-1.5 py-px font-mono text-[10px] leading-4"
+      className="inline-flex shrink-0 items-center rounded-sm border px-1.5 py-px font-ui text-[10px] font-medium leading-4"
       style={{
         color,
         borderColor: withAlpha(color, 0.4),
         background: withAlpha(color, 0.08),
       }}
     >
-      {status}
+      {STATUS_WORD[status]}
     </span>
   );
 }
@@ -39,14 +47,14 @@ export function RoadmapStatusPill({ status }: { status: RoadmapDisplayStatus }) 
 export function RoadmapBlockedBadge() {
   return (
     <span
-      className="inline-flex shrink-0 items-center rounded-sm border px-1.5 py-px font-mono text-[10px] leading-4"
+      className="inline-flex shrink-0 items-center rounded-sm border px-1.5 py-px font-ui text-[10px] font-medium leading-4"
       style={{
         color: HUD.red,
         borderColor: withAlpha(HUD.red, 0.4),
         background: withAlpha(HUD.red, 0.08),
       }}
     >
-      blocked
+      Blocked
     </span>
   );
 }

@@ -70,7 +70,13 @@ export function saveRailMode(mode: RoadmapRailMode): void {
 
 type RailRow =
   | { kind: 'group'; group: 'shipped' | 'parked'; label: string }
-  | { kind: 'item'; item: RoadmapItemView; variant: 'hero' | 'row' | 'compact' }
+  | {
+      kind: 'item';
+      item: RoadmapItemView;
+      variant: 'hero' | 'row' | 'compact';
+      /** plain-language group label rendered above the first row of a run */
+      heading?: string;
+    }
   | { kind: 'chip'; chip: RoadmapSessionChip; itemId: string }
   | { kind: 'unmapped'; session: RoadmapLensSessionInput };
 
@@ -156,7 +162,7 @@ function RoadmapStripSpine({
                 color: node.group === 'shipped' ? withAlpha(HUD.green, 0.65) : HUD.textDim,
               }}
             >
-              {node.group === 'shipped' ? `▰${node.count}` : `+${node.count}`}
+              {node.group === 'shipped' ? `✓${node.count}` : `+${node.count}`}
             </span>
           );
         }
@@ -241,7 +247,7 @@ function RoadmapSequenceBar({
                   node.group === 'shipped' ? withAlpha(HUD.green, 0.6) : HUD.textDim,
               }}
             >
-              {node.group === 'shipped' ? `▰${node.count}` : `+${node.count}`}
+              {node.group === 'shipped' ? `✓${node.count}` : `+${node.count}`}
             </span>
           );
         }
@@ -260,7 +266,7 @@ function RoadmapSequenceBar({
               opacity: node.role === 'later' ? 0.55 : 1,
             }}
           >
-            {node.role === 'shipped' ? '▰' : node.role === 'current' ? '●' : '○'}
+            {node.role === 'shipped' ? '✓' : node.role === 'current' ? '●' : '○'}
           </span>
         );
       })}
@@ -365,17 +371,33 @@ export function RoadmapRail({
     // every attached session is an individually focusable station (S7) —
     // agents are visible wherever they are in the queue, not only on the hero
     view.now.forEach((item, i) => {
-      list.push({ kind: 'item', item, variant: i === 0 ? 'hero' : 'row' });
+      list.push({
+        kind: 'item',
+        item,
+        variant: i === 0 ? 'hero' : 'row',
+        heading: i === 0 ? 'Now' : undefined,
+      });
       for (const chip of item.chips)
         list.push({ kind: 'chip', chip, itemId: item.id });
     });
-    for (const item of view.next) {
-      list.push({ kind: 'item', item, variant: 'row' });
+    view.next.forEach((item, i) => {
+      list.push({
+        kind: 'item',
+        item,
+        variant: 'row',
+        heading: i === 0 ? 'Up next' : undefined,
+      });
       for (const chip of item.chips)
         list.push({ kind: 'chip', chip, itemId: item.id });
-    }
-    for (const item of view.later)
-      list.push({ kind: 'item', item, variant: 'compact' });
+    });
+    view.later.forEach((item, i) => {
+      list.push({
+        kind: 'item',
+        item,
+        variant: 'compact',
+        heading: i === 0 ? 'Later' : undefined,
+      });
+    });
     if (view.parked.length > 0) {
       list.push({
         kind: 'group',
@@ -519,10 +541,13 @@ export function RoadmapRail({
     }
   };
 
-  // keep the selected row in view as selection roves
+  // keep the selected row in view as selection roves — but only while the
+  // rail owns focus; otherwise a re-render (project switch, lab state flip)
+  // scrolls every scrollable ancestor, including the page
   useEffect(() => {
     const row = rows[sel];
     if (!row) return;
+    if (!rootRef.current?.contains(document.activeElement)) return;
     const selector =
       row.kind === 'item'
         ? `[data-roadmap-row="${CSS.escape(row.item.id)}"]`
@@ -629,8 +654,8 @@ export function RoadmapRail({
           >
             {projectName ?? 'No project'}
           </span>
-          <span className="font-mono text-xs" style={{ color: HUD.textDim }}>
-            roadmap
+          <span className="font-ui text-xs" style={{ color: HUD.textDim }}>
+            Roadmap
           </span>
           <button
             type="button"
@@ -697,8 +722,8 @@ export function RoadmapRail({
               >
                 ←
               </button>
-              <span className="font-mono text-[11px]" style={{ color: HUD.textDim }}>
-                roadmap · {drilled.declaredId ?? drilled.title}
+              <span className="min-w-0 truncate font-ui text-[11px]" style={{ color: HUD.textDim }}>
+                Roadmap · {drilled.declaredId ?? drilled.title}
               </span>
             </div>
             <RoadmapItemDetail
@@ -742,7 +767,7 @@ export function RoadmapRail({
                   <div className="pl-6 pr-2">
                     {(i === 0 || rows[i - 1].kind !== 'unmapped') && (
                       <p
-                        className="pb-1 pt-1.5 font-mono text-[10px]"
+                        className="pb-1 pt-1.5 font-ui text-[11px] font-medium"
                         style={{ color: HUD.amber }}
                       >
                         {view.unmappedSessions.length === 1
@@ -796,7 +821,7 @@ export function RoadmapRail({
                     data-selected={i === sel || undefined}
                     onClick={() => activateRow(row)}
                     onMouseEnter={() => setSel(i)}
-                    className="flex w-full cursor-default items-center gap-2 py-1 pl-6 pr-2 text-left font-mono text-[11px] outline-none"
+                    className="flex w-full cursor-default items-center gap-2 py-1 pl-6 pr-2 text-left font-ui text-[11px] outline-none"
                     style={{
                       color: row.group === 'shipped' ? HUD.green : HUD.textDim,
                       background: i === sel ? HUD.fillHi : 'transparent',
@@ -809,13 +834,23 @@ export function RoadmapRail({
                     {row.label}
                   </button>
                 ) : (
-                  <RoadmapItemCard
-                    item={row.item}
-                    variant={row.variant}
-                    selected={i === sel}
-                    onDrill={() => setDrillId(row.item.id)}
-                    onHover={() => setSel(i)}
-                  />
+                  <>
+                    {row.heading && (
+                      <p
+                        className="pb-1 pl-6 pr-2 pt-2.5 font-ui text-[11px] font-medium"
+                        style={{ color: HUD.textDim }}
+                      >
+                        {row.heading}
+                      </p>
+                    )}
+                    <RoadmapItemCard
+                      item={row.item}
+                      variant={row.variant}
+                      selected={i === sel}
+                      onDrill={() => setDrillId(row.item.id)}
+                      onHover={() => setSel(i)}
+                    />
+                  </>
                 )}
               </div>
             ))}
@@ -829,11 +864,16 @@ export function RoadmapRail({
         style={{ borderColor: 'rgba(80,230,255,0.12)', color: HUD.textDim }}
       >
         {view.status === 'ok' && view.trust && (
-          <span style={{ color: (view.trust.warningCount > 0 || view.trust.unparsedLineCount > 0) ? HUD.amber : HUD.textDim }}>
+          <span
+            className="font-ui text-[11px]"
+            style={{ color: (view.trust.warningCount > 0 || view.trust.unparsedLineCount > 0) ? HUD.amber : HUD.textDim }}
+          >
             {trustLine(view)}
           </span>
         )}
-        <span>reads repo state · read-only</span>
+        <span className="font-ui text-[11px]">
+          Read-only — Exawatt reads this file, never writes it
+        </span>
         <span>↑↓ move · ⏎ open · esc back · ⌘B close</span>
       </div>
     </div>

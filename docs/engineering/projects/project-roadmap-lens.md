@@ -243,7 +243,37 @@ the same `RoadmapLensView`; the shipped design is demoted to a comparison
 panel. Awaiting operator verdict; the winner graduates into the real rail
 as S11.
 
+**Round-2 verdict (operator, 2026-07-12): wholesale replacement REJECTED —
+refine the shipped design instead.** The three-direction lab read as too
+much at once ("hard to grok what's going on with our new examples"), plus a
+lab usability bug: clicking a state chip scrolled the page (the rail's
+selection scrollIntoView fired on every re-render). Resolution: **S11 =
+incremental legibility refinement of the shipped rail/strip**, borrowing the
+directions' vocabulary without changing the structure — landed same day, see
+progress log. The directions module was retired (git history keeps it); the
+lab is back to the real strip + rail against fixture states.
+
 ## Progress log (second arc)
+
+- 2026-07-12, S11 landed (operator round-2 verdict: refine the shipped
+  design, don't replace it): the rail keeps its structure and gains the
+  directions' legibility vocabulary — plain-language group headings ("Now",
+  "Up next", "Later") over the queue; hero card gets a thin progress bar,
+  "Next up: <milestone>" in sans, and an amber "Blocked — <reason>" line
+  when blocked (the reason beats the milestone for actionability); drill
+  milestones render as readable checkmark circles (✓ done / hollow open /
+  dashed struck-through retired) with "Milestones · 3 of 5 done"; status
+  pills and section labels moved from lowercase mono to capitalized Geist
+  Sans ("Active", "Blocked", "Scope"…); status-token jargon is stripped
+  from prose (`statusNoteProse` in `roadmap-format.ts` — "active-build"
+  never renders as a sentence); footer says "Read-only — Exawatt reads this
+  file, never writes it"; strip/sequence shipped glyph ▰ → ✓. **Bug fix**:
+  the rail's selection scrollIntoView now runs only while the rail owns
+  focus — it used to scroll the page on any re-render (the lab's state
+  chips jumped the viewport; same hazard existed in the workspace).
+  Directions module retired; lab simplified back to strip + rail. Gate:
+  418 tests, type, lint, electron compile, 30-check rail eval (assertions
+  updated to the new copy), spine eval, screenshots of all states + drill.
 
 - 2026-07-12, S10 round 2 (after the operator's round-1 rejection, recorded
   above): rebuilt `/hud-gallery/roadmap-lab` around three design directions

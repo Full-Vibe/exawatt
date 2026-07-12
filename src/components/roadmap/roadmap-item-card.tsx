@@ -13,6 +13,11 @@ import {
   RoadmapBlockedBadge,
   RoadmapStatusPill,
 } from './roadmap-status-pill';
+import {
+  cleanMilestoneTitle,
+  milestoneFractionSentence,
+  statusNoteProse,
+} from './roadmap-format';
 
 export type RoadmapCardVariant = 'hero' | 'row' | 'compact';
 
@@ -68,6 +73,10 @@ export function RoadmapItemCard({
 
   if (variant === 'hero') {
     const nextMilestone = item.milestones.find(m => !m.done && !m.retired);
+    const pct =
+      item.milestonesTotal > 0
+        ? Math.round((item.milestonesDone / item.milestonesTotal) * 100)
+        : null;
     return (
       <button
         type="button"
@@ -101,6 +110,7 @@ export function RoadmapItemCard({
             {item.milestonesTotal > 0 && (
               <span
                 className="ml-auto font-mono text-[10px]"
+                title={`${milestoneFractionSentence(item.milestonesDone, item.milestonesTotal)} milestones`}
                 style={{ color: HUD.textDim }}
               >
                 {item.milestonesDone}/{item.milestonesTotal}
@@ -113,12 +123,37 @@ export function RoadmapItemCard({
           >
             {item.title}
           </p>
-          {nextMilestone && (
-            <p className="truncate font-mono text-[11px]" style={{ color: HUD.textDim }}>
-              milestone {nextMilestone.id ? `${nextMilestone.id.toLowerCase()} · ` : ''}
-              {nextMilestone.title}
-            </p>
+          {pct !== null && (
+            <div
+              aria-hidden
+              className="h-[3px] w-full overflow-hidden rounded-full"
+              style={{ background: 'rgba(255,255,255,0.08)' }}
+            >
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${pct}%`,
+                  background: item.blocked ? HUD.amber : HUD.green,
+                }}
+              />
+            </div>
           )}
+          {/* the blocker is more actionable than the next milestone */}
+          {item.blocked && statusNoteProse(item.statusNote) ? (
+            <p
+              className="line-clamp-2 font-ui text-[11.5px] leading-4"
+              style={{ color: HUD.amber }}
+            >
+              Blocked — {statusNoteProse(item.statusNote)}
+            </p>
+          ) : nextMilestone ? (
+            <p className="truncate font-ui text-[11.5px]" style={{ color: HUD.textDim }}>
+              Next up:{' '}
+              <span style={{ color: HUD.text }}>
+                {cleanMilestoneTitle(nextMilestone.title)}
+              </span>
+            </p>
+          ) : null}
         </div>
       </button>
     );

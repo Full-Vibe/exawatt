@@ -164,11 +164,11 @@ await withElectronApp(
       .then(n => n === 1);
     const text = await railText(page);
     results.heroVisible = text.includes('ACME-003');
-    results.milestoneReadout = text.includes('m2') || text.includes('M2');
-    results.blockedBadge = text.includes('blocked');
+    results.milestoneReadout = text.includes('Next up:');
+    results.blockedBadge = /blocked/i.test(text);
     results.shippedCollapsed = text.includes('2 shipped');
     results.trustLine = text.includes('7 items');
-    results.readOnlyFooter = text.includes('read-only');
+    results.readOnlyFooter = text.includes('Read-only');
     // the plain shell session matches no item → visibly unmapped (S3)
     results.unmappedShelf = text.includes('not linked to an item');
 
@@ -185,7 +185,7 @@ await withElectronApp(
     await page.keyboard.press('Enter');
     await page.waitForTimeout(400);
     await shot(page, '4-drilled');
-    results.drillShowsDetail = (await railText(page)).includes('roadmap ·');
+    results.drillShowsDetail = (await railText(page)).includes('Roadmap ·');
     // S7 (R2): ↑↓ roves the milestone spine inside the drill
     await page.keyboard.press('ArrowDown');
     await page.waitForTimeout(200);
@@ -195,7 +195,7 @@ await withElectronApp(
       .then(n => n === 1);
     await page.keyboard.press('Escape');
     await page.waitForTimeout(300);
-    results.escReturnsToQueue = !(await railText(page)).includes('roadmap ·');
+    results.escReturnsToQueue = !(await railText(page)).includes('Roadmap ·');
 
     // shipped group expands
     await page.keyboard.press('g');
@@ -233,7 +233,7 @@ await withElectronApp(
       .then(n => n >= 1);
     await page.click('[data-roadmap-row="ACME-007"]');
     await page.waitForTimeout(400);
-    results.declaredChipInDetail = (await railText(page)).includes('sessions');
+    results.declaredChipInDetail = (await railText(page)).includes('Sessions');
     results.declaredChipSolid = await page.evaluate(() => {
       const chip = document.querySelector(
         '[data-roadmap-rail] [data-roadmap-chip]'
@@ -331,7 +331,7 @@ await withElectronApp(
       await page.waitForTimeout(600);
       const drillText = await railText(page);
       results.reciprocalDrill =
-        drillText.includes('roadmap · FIX-042') && drillText.includes('sessions');
+        drillText.includes('Roadmap · FIX-042') && drillText.includes('Sessions');
       await shot(page, '10-reciprocal-drill');
     }
 

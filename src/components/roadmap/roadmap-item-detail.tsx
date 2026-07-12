@@ -13,6 +13,11 @@ import {
   RoadmapStatusPill,
 } from './roadmap-status-pill';
 import { RoadmapSessionChipButton } from './roadmap-session-chip';
+import {
+  cleanMilestoneTitle,
+  milestoneFractionSentence,
+  statusNoteProse,
+} from './roadmap-format';
 
 /** roadmap prose is markdown; the rail renders it as plain text, so strip
  *  the inline tokens that would otherwise show literally */
@@ -25,7 +30,7 @@ function deMarkdown(text: string): string {
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <p className="font-mono text-[10px]" style={{ color: HUD.textDim }}>
+    <p className="font-ui text-[11px] font-medium" style={{ color: HUD.textDim }}>
       {children}
     </p>
   );
@@ -84,14 +89,14 @@ export function RoadmapItemDetail({
       >
         {item.title}
       </p>
-      {item.statusNote && (
+      {statusNoteProse(item.statusNote) && (
         <p className="text-xs leading-5" style={{ color: HUD.textDim }}>
-          {deMarkdown(item.statusNote)}
+          {deMarkdown(statusNoteProse(item.statusNote) as string)}
         </p>
       )}
       {item.chips.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <SectionLabel>sessions</SectionLabel>
+          <SectionLabel>Sessions</SectionLabel>
           <div className="flex flex-wrap gap-1.5">
             {item.chips.map(chip => (
               <RoadmapSessionChipButton
@@ -107,19 +112,19 @@ export function RoadmapItemDetail({
       )}
       {item.scope.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <SectionLabel>scope</SectionLabel>
+          <SectionLabel>Scope</SectionLabel>
           <BulletList lines={item.scope} />
         </div>
       )}
       {item.exitCriteria.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <SectionLabel>exit criteria</SectionLabel>
+          <SectionLabel>Exit criteria</SectionLabel>
           <BulletList lines={item.exitCriteria} />
         </div>
       )}
       {item.milestones.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <SectionLabel>{`milestones · ${item.milestonesDone}/${item.milestonesTotal}`}</SectionLabel>
+          <SectionLabel>{`Milestones · ${milestoneFractionSentence(item.milestonesDone, item.milestonesTotal)}`}</SectionLabel>
           <ul className="flex flex-col">
             {item.milestones.map((m, i) => {
               const roved = selectedMilestone === i;
@@ -130,23 +135,40 @@ export function RoadmapItemDetail({
                   data-selected={roved || undefined}
                   ref={
                     roved
-                      ? el => el?.scrollIntoView({ block: 'nearest' })
+                      ? el => {
+                          // roving implies rail focus; the guard keeps a
+                          // background re-render from scrolling the page
+                          if (
+                            el
+                              ?.closest('[data-roadmap-rail]')
+                              ?.contains(document.activeElement)
+                          ) {
+                            el.scrollIntoView({ block: 'nearest' });
+                          }
+                        }
                       : undefined
                   }
-                  className="relative flex gap-2 rounded py-1 pl-5 pr-1"
+                  className="relative flex gap-2 rounded py-1 pl-6 pr-1"
                   style={{ background: roved ? HUD.fillHi : 'transparent' }}
                 >
-                  {/* mini-spine: done filled, open hollow, retired dashed and struck out below */}
+                  {/* a checkmark you can read: done ✓, open hollow,
+                      retired dashed + struck out below */}
                   <span
                     aria-hidden
-                    className="absolute left-1 top-[9px] h-2 w-2 rounded-full"
-                    style={{
-                      background: m.done ? HUD.green : 'transparent',
-                      border: m.retired
-                        ? `1.5px dashed ${withAlpha(HUD.textDim, 0.6)}`
-                        : `1.5px solid ${m.done ? HUD.green : withAlpha(statusColor, 0.6)}`,
-                    }}
-                  />
+                    className="absolute left-0.5 top-[5px] grid h-[14px] w-[14px] place-items-center rounded-full text-[9px] font-bold"
+                    style={
+                      m.done
+                        ? { background: HUD.green, color: '#08120b' }
+                        : {
+                            border: m.retired
+                              ? `1.5px dashed ${withAlpha(HUD.textDim, 0.6)}`
+                              : `1.5px solid ${withAlpha(statusColor, 0.6)}`,
+                            color: 'transparent',
+                          }
+                    }
+                  >
+                    ✓
+                  </span>
                   {m.id && (
                     <span
                       className="shrink-0 font-mono text-[11px] leading-5"
@@ -166,7 +188,7 @@ export function RoadmapItemDetail({
                       opacity: m.retired ? 0.75 : 1,
                     }}
                   >
-                    {m.title}
+                    {cleanMilestoneTitle(m.title)}
                   </span>
                 </li>
               );
@@ -176,7 +198,7 @@ export function RoadmapItemDetail({
       )}
       {item.description.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <SectionLabel>notes</SectionLabel>
+          <SectionLabel>Notes</SectionLabel>
           <div className="flex flex-col gap-1">
             {item.description.map((line, i) => (
               <p key={i} className="text-xs leading-5" style={{ color: HUD.textDim }}>
@@ -188,7 +210,7 @@ export function RoadmapItemDetail({
       )}
       {item.docPaths.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <SectionLabel>project doc</SectionLabel>
+          <SectionLabel>Project doc</SectionLabel>
           <div className="flex flex-wrap gap-1.5">
             {item.docPaths.map(docPath => (
               <button
