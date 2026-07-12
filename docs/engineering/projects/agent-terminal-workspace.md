@@ -11,8 +11,10 @@ come later).
 
 ## Product framing
 
-- The gesture is **launch an agent**, not "open a terminal": pick a harness
-  (Claude Code, Codex, plain shell), pick or create a git worktree, go.
+- The gesture is **start an Agent**, not "open a terminal": choose a Project,
+  optionally state the first task, confirm the visible Agent Source, and go.
+  Claude Code and Codex are initial sources. A plain shell is a secondary
+  Project tool, not an Agent Source (amended 2026-07-12; decision `0013`).
 - The view is **tmux-like**: the operator talks to harness TUIs directly.
 - The structure is the operator's mental model: one window per initiative,
   many tabs per window.
@@ -66,7 +68,7 @@ Progress log (landed 2026-07-02):
   in a tab, tab switch preserves buffers, zero page errors.
 - Build note: `pnpm electron:rebuild` (@electron/rebuild) needs network for
   Electron headers; offline fallback is `node-gyp rebuild --nodedir=<extracted
-  headers>` inside the node-pty package (headers fetchable via curl from
+headers>` inside the node-pty package (headers fetchable via curl from
   electronjs.org/headers). node-pty resolves `build/Release` BEFORE
   `prebuilds/`, so the Electron-ABI build wins; a fresh install wipes
   `build/` and the rebuild must be re-run.
@@ -112,7 +114,7 @@ harness session ID per tab, and resumes only that ID after an explicit action.
   hue shift from color rekeying).
 - Verified: 6/6 smoke (subtitle renders, summary lands as fleet goal via
   a fake summarizer, both renames + reload persistence), real `claude -p
-  --model haiku` one-shot validated on-machine, 191 tests, full battery.
+--model haiku` one-shot validated on-machine, 191 tests, full battery.
 
 Dogfood feedback round 3 (2026-07-03, all fixed + verified):
 

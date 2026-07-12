@@ -132,6 +132,9 @@ Built:
   superseded immersive 3D composition)
 - Electron agent terminal workspace with real `node-pty` sessions rendered by
   xterm.js for Claude Code, Codex, and shells, behind a session-manager boundary
+- inert persisted Projects independent of Session tabs; a curated Project
+  chooser with reviewed parent-folder import; and a compact source-aware Agent
+  composer whose optional first task crosses the launch boundary as data
 - persisted project-grouped terminal sessions, attention state, keyboard-first
   command flows, split panes, and the exposé session overview
 - persistent command-altitude navigation between terminal focus, session

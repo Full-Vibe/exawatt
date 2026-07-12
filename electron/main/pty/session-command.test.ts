@@ -3,10 +3,20 @@ import { buildHarnessCommand } from './harness-command';
 
 describe('buildHarnessCommand', () => {
   it('assigns and resumes exact Claude identities', () => {
-    expect(buildHarnessCommand('claude', '11111111-1111-4111-8111-111111111111', false))
-      .toBe('claude --session-id 11111111-1111-4111-8111-111111111111');
-    expect(buildHarnessCommand('claude', '11111111-1111-4111-8111-111111111111', true))
-      .toBe('claude --resume 11111111-1111-4111-8111-111111111111');
+    expect(
+      buildHarnessCommand(
+        'claude',
+        '11111111-1111-4111-8111-111111111111',
+        false
+      )
+    ).toBe('claude --session-id 11111111-1111-4111-8111-111111111111');
+    expect(
+      buildHarnessCommand(
+        'claude',
+        '11111111-1111-4111-8111-111111111111',
+        true
+      )
+    ).toBe('claude --resume 11111111-1111-4111-8111-111111111111');
   });
 
   it('resumes an exact Codex identity and never supplies --last', () => {
@@ -37,10 +47,51 @@ describe('buildHarnessCommand', () => {
         "/tmp/fixture's bin/codex"
       )
     ).toBe(
-      `'\/tmp\/fixture'"'"'s bin\/codex' resume 22222222-2222-4222-8222-222222222222`.replaceAll('\\/', '/')
+      `'\/tmp\/fixture'"'"'s bin\/codex' resume 22222222-2222-4222-8222-222222222222`.replaceAll(
+        '\\/',
+        '/'
+      )
     );
     expect(() =>
       buildHarnessCommand('codex', null, false, 'relative/codex')
     ).toThrow('must be absolute');
+  });
+
+  it('quotes an initial task as one positional argument', () => {
+    expect(
+      buildHarnessCommand(
+        'codex',
+        null,
+        false,
+        undefined,
+        "Fix the user's tests"
+      )
+    ).toBe(`codex 'Fix the user'"'"'s tests'`);
+    expect(
+      buildHarnessCommand(
+        'claude',
+        '11111111-1111-4111-8111-111111111111',
+        false,
+        undefined,
+        'Review auth'
+      )
+    ).toBe(
+      "claude --session-id 11111111-1111-4111-8111-111111111111 'Review auth'"
+    );
+  });
+
+  it('rejects oversized tasks and tasks on exact resume', () => {
+    expect(() =>
+      buildHarnessCommand('codex', null, false, undefined, 'x'.repeat(8_001))
+    ).toThrow('Initial task is invalid or too long');
+    expect(() =>
+      buildHarnessCommand(
+        'codex',
+        '11111111-1111-4111-8111-111111111111',
+        true,
+        undefined,
+        'start over'
+      )
+    ).toThrow('cannot be supplied when resuming');
   });
 });

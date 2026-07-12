@@ -288,6 +288,8 @@ export function parsePersisted(raw: unknown): PersistedV5 | null {
 export interface LaunchOptions {
   harness: PtyHarness;
   dir: string;
+  /** optional first user task for a new interactive Agent Session */
+  initialPrompt?: string;
   /** create a git worktree (<repo>-wt/<branch>) and launch inside it */
   worktreeBranch?: string;
   /** roadmap item this session will work on (ENG-017 S4, optional) */
@@ -341,6 +343,38 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   attentionRef.current = attention;
   const resumeInFlightRef = useRef<Set<string>>(new Set());
   const shutdownTargetsRef = useRef<Set<string>>(new Set());
+
+  const syncProjectIdentity = useCallback(
+    (ref: { rootPath: string; name: string }) => {
+      void openRepositoryProject(ref)
+        .then(proj => {
+          setProjects(prev =>
+            prev.map(group =>
+              group.dir === proj.root_path
+                ? {
+                    ...group,
+                    registryId: proj.id,
+                    name: proj.name || group.name,
+                    color: proj.color || group.color,
+                  }
+                : group
+            )
+          );
+          if (!proj.color) {
+            const group = stateRef.current.projects.find(
+              project => project.dir === proj.root_path
+            );
+            if (group) {
+              void registrySetProjectColor(proj.id, group.color).catch(
+                () => {}
+              );
+            }
+          }
+        })
+        .catch(() => {});
+    },
+    []
+  );
 
   /** append a live session as a tab in its (possibly new) project */
   const addSession = useCallback(
@@ -665,38 +699,36 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         activeDir: ad,
         pinnedTabId: pinSurvives ? pin : null,
         recentProjects: recents,
-        projects: gs
-          .map(g => {
-            const tabs = g.tabs.map(tab => {
-              const stopped =
-                cleanShutdown &&
-                (shutdownTargetsRef.current.has(tab.durableSessionId) ||
-                  tabIsLive(tab) ||
-                  tab.lifecycle === 'resuming');
-              return {
-                id: tab.id,
-                durableSessionId: tab.durableSessionId,
-                harness: tab.harness,
-                title: tab.title,
-                cwd: tab.cwd,
-                sessionId: stopped ? null : tab.sessionId,
-                harnessSessionId: tab.harnessSessionId,
-                roadmapItemId: tab.roadmapItemId,
-                lifecycle: stopped ? ('stopped-clean' as const) : tab.lifecycle,
-                exitCode: tab.exitCode,
-              };
-            });
+        projects: gs.map(g => {
+          const tabs = g.tabs.map(tab => {
+            const stopped =
+              cleanShutdown &&
+              (shutdownTargetsRef.current.has(tab.durableSessionId) ||
+                tabIsLive(tab) ||
+                tab.lifecycle === 'resuming');
             return {
-              dir: g.dir,
-              name: g.name,
-              color: g.color,
-              activeTabId: tabs.some(t => t.id === g.activeTabId)
-                ? g.activeTabId
-                : (tabs[0]?.id ?? null),
-              tabs,
+              id: tab.id,
+              durableSessionId: tab.durableSessionId,
+              harness: tab.harness,
+              title: tab.title,
+              cwd: tab.cwd,
+              sessionId: stopped ? null : tab.sessionId,
+              harnessSessionId: tab.harnessSessionId,
+              roadmapItemId: tab.roadmapItemId,
+              lifecycle: stopped ? ('stopped-clean' as const) : tab.lifecycle,
+              exitCode: tab.exitCode,
             };
-          })
-          .filter(g => g.tabs.length > 0),
+          });
+          return {
+            dir: g.dir,
+            name: g.name,
+            color: g.color,
+            activeTabId: tabs.some(t => t.id === g.activeTabId)
+              ? g.activeTabId
+              : (tabs[0]?.id ?? null),
+            tabs,
+          };
+        }),
       };
     },
     []
@@ -794,6 +826,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         cwd,
         title: HARNESS_META[opts.harness].label,
         durableSessionId,
+        ...(opts.initialPrompt?.trim()
+          ? { initialPrompt: opts.initialPrompt.trim() }
+          : {}),
         ...(size ?? {}),
       });
       if (!res.ok) {
@@ -807,38 +842,13 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       // Project in the durable, synced registry. Best-effort — a registry
       // failure (offline, not signed in) must NEVER stop the operator opening
       // a session, so it runs detached and swallows its own errors.
-      void openRepositoryProject({
+      syncProjectIdentity({
         rootPath: res.session.projectDir,
         name: res.session.projectName,
-      })
-        .then(proj => {
-          // link the group to its registry row + adopt synced identity; a NEW
-          // Project has no registry color yet, so push our locally-assigned
-          // one up so it syncs to other machines.
-          setProjects(prev =>
-            prev.map(g =>
-              g.dir === proj.root_path
-                ? {
-                    ...g,
-                    registryId: proj.id,
-                    name: proj.name || g.name,
-                    color: proj.color || g.color,
-                  }
-                : g
-            )
-          );
-          if (!proj.color) {
-            const g = stateRef.current.projects.find(
-              p => p.dir === proj.root_path
-            );
-            if (g)
-              void registrySetProjectColor(proj.id, g.color).catch(() => {});
-          }
-        })
-        .catch(() => {});
+      });
       return true;
     },
-    [addSession]
+    [addSession, syncProjectIdentity]
   );
 
   const closeTab = useCallback(async (tabId: string) => {
@@ -850,20 +860,15 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     setPinnedTabId(cur => (cur === tabId ? null : cur));
     if (tab && !(await api.deleteSession(tab.durableSessionId))) return;
     setProjects(prev => {
-      const next = prev
-        .map(grp => {
-          if (!grp.tabs.some(t => t.id === tabId)) return grp;
-          const tabs = grp.tabs.filter(t => t.id !== tabId);
-          const activeTabId =
-            grp.activeTabId === tabId
-              ? (tabs[tabs.length - 1]?.id ?? null)
-              : grp.activeTabId;
-          return { ...grp, tabs, activeTabId };
-        })
-        .filter(grp => grp.tabs.length > 0);
-      setActiveDir(cur =>
-        next.some(grp => grp.dir === cur) ? cur : (next[0]?.dir ?? null)
-      );
+      const next = prev.map(grp => {
+        if (!grp.tabs.some(t => t.id === tabId)) return grp;
+        const tabs = grp.tabs.filter(t => t.id !== tabId);
+        const activeTabId =
+          grp.activeTabId === tabId
+            ? (tabs[tabs.length - 1]?.id ?? null)
+            : grp.activeTabId;
+        return { ...grp, tabs, activeTabId };
+      });
       return next;
     });
   }, []);
@@ -971,21 +976,93 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     [launch]
   );
 
-  /** ⌘K Projects: open a known Project by its directory — activate it if it
-   *  already has live tabs, else launch a shell there (opening/reviving it). */
+  /** Open a Project independently of Sessions. Main-process resolution keeps
+   *  git worktrees grouped under the same durable Project identity. */
   const openProject = useCallback(
-    (dir: string): void => {
-      const g = stateRef.current.projects.find(p => p.dir === dir);
-      // activate only if something is actually live there; a group of only
-      // dead/resumable tabs should launch a fresh shell (per the contract),
-      // not switch to a resume panel.
-      if (g && g.tabs.some(tabIsLive)) {
-        setActiveDir(dir);
-        return;
+    async (dir: string): Promise<boolean> => {
+      const result = await window.electron?.projects?.resolve(dir);
+      if (!result) return false;
+      if (!result.ok) {
+        setError(result.error);
+        return false;
       }
-      void launch({ harness: 'shell', dir });
+      const canonicalDir = result.projectDir;
+      setProjects(prev => {
+        if (prev.some(project => project.dir === canonicalDir)) return prev;
+        return [
+          ...prev,
+          {
+            dir: canonicalDir,
+            name: result.projectName,
+            color: pickDistinctColor(prev.map(project => project.color)),
+            tabs: [],
+            activeTabId: null,
+          },
+        ];
+      });
+      setActiveDir(canonicalDir);
+      setLastUsedDir(canonicalDir);
+      setError(null);
+      syncProjectIdentity({
+        rootPath: canonicalDir,
+        name: result.projectName,
+      });
+      return true;
     },
-    [launch]
+    [syncProjectIdentity]
+  );
+
+  /** Curated import adds inert Projects in one state transition. Every path is
+   *  resolved again at the trust boundary even when it came from our scanner. */
+  const importProjects = useCallback(
+    async (directories: string[]): Promise<boolean> => {
+      const unique = [...new Set(directories)];
+      if (unique.length === 0) return false;
+      const resolved = await Promise.all(
+        unique.map(directory => window.electron?.projects?.resolve(directory))
+      );
+      const failedIndex = resolved.findIndex(result => !result || !result.ok);
+      if (failedIndex >= 0) {
+        const failed = resolved[failedIndex];
+        setError(
+          failed && 'error' in failed
+            ? failed.error
+            : 'Project discovery is unavailable in this app build.'
+        );
+        return false;
+      }
+      const refs = resolved.filter(
+        (result): result is Extract<NonNullable<typeof result>, { ok: true }> =>
+          !!result && result.ok
+      );
+      if (refs.length === 0) return false;
+      setProjects(prev => {
+        const next = [...prev];
+        for (const ref of refs) {
+          if (next.some(project => project.dir === ref.projectDir)) continue;
+          next.push({
+            dir: ref.projectDir,
+            name: ref.projectName,
+            color: pickDistinctColor(next.map(project => project.color)),
+            tabs: [],
+            activeTabId: null,
+          });
+        }
+        return next;
+      });
+      const first = refs[0];
+      setActiveDir(first.projectDir);
+      setLastUsedDir(first.projectDir);
+      setError(null);
+      for (const ref of refs) {
+        syncProjectIdentity({
+          rootPath: ref.projectDir,
+          name: ref.projectName,
+        });
+      }
+      return true;
+    },
+    [syncProjectIdentity]
   );
 
   const selectProject = useCallback((index: number): boolean => {
@@ -1165,7 +1242,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const onOpenProject = (e: Event) => {
       if (!readyRef.current) return;
       consumePendingOpenProject();
-      openProject((e as CustomEvent<string>).detail);
+      void openProject((e as CustomEvent<string>).detail);
     };
     window.addEventListener(SESSION_JUMP_EVENT, onJump);
     window.addEventListener(LAUNCH_EVENT, onLaunch);
@@ -1186,7 +1263,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const harness = consumePendingLaunch();
     if (harness) launchHere(harness);
     const proj = consumePendingOpenProject();
-    if (proj) openProject(proj);
+    if (proj) void openProject(proj);
   }, [ready, activateSession, launchHere, openProject]);
 
   // ---- attention focus contract (S1): tell main which session the operator
@@ -1233,6 +1310,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     ready,
     launch,
     launchHere,
+    openProject,
+    importProjects,
     closeTab,
     resumeTab,
     resumeProject,

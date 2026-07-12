@@ -48,6 +48,8 @@ export interface PtyCreateOptions {
   resumeSessionId?: string;
   /** Stable Exawatt Session identity; survives PTY process replacement. */
   durableSessionId?: string;
+  /** Optional first user task for a newly-created interactive agent. */
+  initialPrompt?: string;
 }
 
 export interface PtySessionInfo {
@@ -223,7 +225,8 @@ export class PtySessionManager extends EventEmitter {
               options.harness,
               harnessSessionId,
               !!options.resumeSessionId,
-              testHarnessExecutable
+              testHarnessExecutable,
+              options.initialPrompt
             ),
           ];
 

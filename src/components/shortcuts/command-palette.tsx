@@ -37,6 +37,8 @@ import {
   requestSessionJump,
   requestLaunch,
   requestOpenProject,
+  requestProjectPicker,
+  requestAgentComposer,
   RENAME_ACTIVE_EVENT,
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
@@ -58,6 +60,11 @@ import {
 } from '@/components/nav/surfaces';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import { HARNESS_META, HARNESS_ORDER } from '@/components/workspace/harnesses';
+import {
+  AGENT_SOURCE_META,
+  AGENT_SOURCE_ORDER,
+  type AgentSourceId,
+} from '@/components/workspace/agent-sources';
 import { listProjects, rebindProjectPath } from '@/lib/projects/registry';
 import type { Project } from '@/lib/projects/registry';
 import { HUD } from '@/components/hud';
@@ -205,6 +212,14 @@ export function CommandPalette({
       }),
     [handleSelect, navigateCommandSurface]
   );
+  const openAgentComposer = useCallback(
+    (source: AgentSourceId) =>
+      handleSelect(() => {
+        requestAgentComposer(source);
+        if (!inWorkspace()) navigateCommandSurface('/workspace');
+      }),
+    [handleSelect, navigateCommandSurface]
+  );
   const launchHarness = useCallback(
     (harness: PtyHarness) =>
       handleSelect(() => {
@@ -215,8 +230,7 @@ export function CommandPalette({
   );
   /** open a known Project (⌘K Projects): if its directory is missing on this
    *  machine (a synced Project from another machine), prompt to locate it and
-   *  re-bind the registry; then the workspace activates it (live tabs) or
-   *  launches a shell there */
+   *  re-bind the registry; then the workspace activates it without spawning */
   const openProject = useCallback(
     (p: Project) =>
       handleSelect(async () => {
@@ -244,13 +258,11 @@ export function CommandPalette({
       }),
     [handleSelect, navigateCommandSurface]
   );
-  /** add a Project by browsing for its directory — the palette twin of ⌘N */
+  /** open the Project chooser — the palette twin of ⌘N */
   const addProject = useCallback(
     () =>
-      handleSelect(async () => {
-        const picked = await window.electron?.dialog?.openDirectory();
-        if (!picked) return;
-        requestOpenProject(picked);
+      handleSelect(() => {
+        requestProjectPicker();
         if (!inWorkspace()) navigateCommandSurface('/workspace');
       }),
     [handleSelect, navigateCommandSurface]
@@ -400,9 +412,13 @@ export function CommandPalette({
     if (inElectron) {
       for (const h of HARNESS_ORDER) {
         candidates.set(`launch:${h}`, {
-          label: `New ${HARNESS_META[h].label} session in the active project`,
+          label:
+            h === 'shell'
+              ? 'Open shell in the active Project'
+              : `Start Agent with ${HARNESS_META[h].label}`,
           harness: h,
-          onSelect: () => launchHarness(h),
+          onSelect: () =>
+            h === 'shell' ? launchHarness(h) : openAgentComposer(h),
         });
       }
       for (const p of projects) {
@@ -453,6 +469,7 @@ export function CommandPalette({
     onSpatialRoute,
     workspaceItems,
     launchHarness,
+    openAgentComposer,
     openProject,
     openRecentProject,
     toggleProjection,
@@ -557,31 +574,35 @@ export function CommandPalette({
 
         {inElectron && (
           <>
-            <CommandGroup heading="Launch">
-              {HARNESS_ORDER.map(h => (
+            <CommandGroup heading="Start Agent">
+              {AGENT_SOURCE_ORDER.map(source => (
                 <CommandItem
-                  key={`launch-${h}`}
-                  value={`launch launch ${HARNESS_META[h].label} new session agent`}
+                  key={`launch-${source}`}
+                  value={`start agent ${AGENT_SOURCE_META[source].label} new session task`}
                   onSelect={() => {
-                    recordPaletteUse(`launch:${h}`);
-                    launchHarness(h);
+                    recordPaletteUse(`launch:${source}`);
+                    openAgentComposer(source);
                   }}
                 >
-                  {h === 'shell' ? (
-                    <SquareTerminal className="mr-2 h-3.5 w-3.5 shrink-0" />
-                  ) : (
-                    <span
-                      className="mr-2 shrink-0"
-                      style={{ color: HARNESS_META[h].color }}
-                    >
-                      <HarnessGlyph harness={h} size={13} />
-                    </span>
-                  )}
-                  <span>
-                    New {HARNESS_META[h].label} session in the active project
+                  <span
+                    className="mr-2 shrink-0"
+                    style={{ color: AGENT_SOURCE_META[source].color }}
+                  >
+                    <HarnessGlyph harness={source} size={13} />
                   </span>
+                  <span>Start Agent with {AGENT_SOURCE_META[source].label}</span>
                 </CommandItem>
               ))}
+            </CommandGroup>
+            <CommandSeparator />
+            <CommandGroup heading="Tools">
+              <CommandItem
+                value="open shell terminal active project"
+                onSelect={() => launchHarness('shell')}
+              >
+                <SquareTerminal className="mr-2 h-3.5 w-3.5 shrink-0" />
+                <span>Open shell in the active Project</span>
+              </CommandItem>
             </CommandGroup>
             <CommandSeparator />
           </>

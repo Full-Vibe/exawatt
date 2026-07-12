@@ -7,7 +7,11 @@ import { contextSummarizer } from './pty/context-summarizer';
 import { attentionMonitor } from './pty/attention-monitor';
 import { createWorktree } from './pty/project-resolve';
 import { loadWorkspace, saveWorkspace } from './workspace-store';
-import { loadSettings, setAttentionNotifications } from './settings-store';
+import {
+  loadSettings,
+  recordAgentSourceUse,
+  setAttentionNotifications,
+} from './settings-store';
 import { listResumeCandidates } from './pty/resume-candidates';
 import {
   clipboardInput,
@@ -325,6 +329,14 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       if (typeof enabled !== 'boolean')
         throw new Error('Invalid notification setting');
       const settings = setAttentionNotifications(enabled);
+      broadcast('settings:changed', settings);
+      return settings;
+    }
+  );
+  handleTrusted(
+    'settings:record-agent-source-use',
+    (_event, projectDir: string, source: string, usedAt: number) => {
+      const settings = recordAgentSourceUse(projectDir, source, usedAt);
       broadcast('settings:changed', settings);
       return settings;
     }

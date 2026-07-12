@@ -36,10 +36,13 @@ try {
 
   await page.locator('[data-command-altitude]').waitFor();
   console.log('[electron-navigation] workspace ready');
-  await page
-    .getByLabel('Working directory for new sessions')
-    .fill(process.cwd());
-  await page.getByTitle(/Launch a new Shell session/).click();
+  await page.evaluate(dir => {
+    window.dispatchEvent(
+      new CustomEvent('exawatt:open-project', { detail: dir })
+    );
+  }, process.cwd());
+  await page.locator('[data-agent-composer]').waitFor();
+  await page.getByRole('button', { name: /Open shell in / }).click();
   await page.waitForFunction(async () => {
     const sessions = await window.electron?.pty?.list();
     return sessions?.length === 1;

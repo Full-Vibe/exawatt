@@ -70,10 +70,15 @@ try {
   let page = await app.firstWindow({ timeout: 45_000 });
   page.setDefaultTimeout(20_000);
   await page.locator('[data-command-altitude]').waitFor();
-  await page.getByLabel('Working directory for new sessions').fill(projectDir);
+  await page.evaluate(dir => {
+    window.dispatchEvent(
+      new CustomEvent('exawatt:open-project', { detail: dir })
+    );
+  }, projectDir);
+  await page.locator('[data-agent-composer]').waitFor();
 
   for (let count = 1; count <= 4; count++) {
-    await page.getByTitle(/Launch a new Claude Code session/).click();
+    await page.getByRole('button', { name: 'Start' }).click();
     const snapshot = await waitForSessionCount(page, count);
     console.log(
       `[exact-resume] launch ${count}: ${snapshot?.map(session => `${session.id}:${session.harnessSessionId}`).join(', ')}`

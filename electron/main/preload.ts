@@ -111,6 +111,17 @@ contextBridge.exposeInMainWorld('electron', {
     get: () => ipcRenderer.invoke('settings:get'),
     setAttentionNotifications: (enabled: boolean) =>
       ipcRenderer.invoke('settings:set-attention-notifications', enabled),
+    recordAgentSourceUse: (
+      projectDir: string,
+      source: string,
+      usedAt: number
+    ) =>
+      ipcRenderer.invoke(
+        'settings:record-agent-source-use',
+        projectDir,
+        source,
+        usedAt
+      ),
     onChanged: subscribe<{
       terminal?: {
         fontFamily?: string;
@@ -120,6 +131,10 @@ contextBridge.exposeInMainWorld('electron', {
         fontStrokeWidth?: number;
       };
       notifications?: { attention: boolean };
+      agentSources?: {
+        projectLastUsed: Record<string, string>;
+        sourceRecency: Record<string, number>;
+      };
     }>('settings:changed'),
   },
   app: {
@@ -174,10 +189,15 @@ contextBridge.exposeInMainWorld('electron', {
     onDeepLinkCode: subscribe<string>('auth:deeplink-code'),
   },
   dialog: {
-    openDirectory: (): Promise<string | null> =>
-      ipcRenderer.invoke('dialog:openDirectory'),
+    openDirectory: (title?: string): Promise<string | null> =>
+      ipcRenderer.invoke('dialog:openDirectory', title),
     pathExists: (path: string): Promise<boolean> =>
       ipcRenderer.invoke('dialog:pathExists', path),
+  },
+  projects: {
+    resolve: (path: string) => ipcRenderer.invoke('projects:resolve', path),
+    scanDirectory: (path: string) =>
+      ipcRenderer.invoke('projects:scan-directory', path),
   },
   menu: {
     onCommand: subscribe<string>('menu:command'),

@@ -136,8 +136,8 @@ export const defaultShortcuts: ShortcutDefinition[] = [
   {
     id: 'workspace-new-project',
     keys: { key: 'n', modifiers: ['meta'] },
-    label: 'Open a new project (browse for a folder)',
-    description: 'Pick a directory and open it as a Project',
+    label: 'Open Project chooser',
+    description: 'Choose a known Project or add one from disk',
     category: 'workspace',
     contexts: ['workspace'],
   },

@@ -12,6 +12,8 @@ export interface PtyCreateOptions {
   resumeSessionId?: string;
   /** Stable logical Exawatt Session identity. */
   durableSessionId?: string;
+  /** Optional first task for a newly-created interactive agent. */
+  initialPrompt?: string;
 }
 
 export type PtyAttentionKind = 'bell' | 'turn-end';
@@ -56,6 +58,20 @@ export interface PtySessionInfo {
 
 export type WorktreeResult =
   | { ok: true; path: string }
+  | { ok: false; error: string };
+
+export type ProjectResolveResult =
+  | { ok: true; projectDir: string; projectName: string }
+  | { ok: false; error: string };
+
+export interface ProjectImportCandidate {
+  projectDir: string;
+  projectName: string;
+  suggested: boolean;
+}
+
+export type ProjectScanResult =
+  | { ok: true; candidates: ProjectImportCandidate[] }
   | { ok: false; error: string };
 
 export type PtyCreateResult =
@@ -189,11 +205,20 @@ export interface ExawattSettings {
   notifications?: {
     attention: boolean;
   };
+  agentSources?: {
+    projectLastUsed: Record<string, string>;
+    sourceRecency: Record<string, number>;
+  };
 }
 
 export interface ElectronSettingsApi {
   get: () => Promise<ExawattSettings>;
   setAttentionNotifications: (enabled: boolean) => Promise<ExawattSettings>;
+  recordAgentSourceUse: (
+    projectDir: string,
+    source: string,
+    usedAt: number
+  ) => Promise<ExawattSettings>;
   onChanged: (handler: (settings: ExawattSettings) => void) => () => void;
 }
 
@@ -274,9 +299,13 @@ declare global {
       };
       dialog?: {
         /** native folder picker; resolves to the chosen path or null if cancelled */
-        openDirectory: () => Promise<string | null>;
+        openDirectory: (title?: string) => Promise<string | null>;
         /** does this path exist on the current machine? (S5 "locate" flow) */
         pathExists: (path: string) => Promise<boolean>;
+      };
+      projects?: {
+        resolve: (path: string) => Promise<ProjectResolveResult>;
+        scanDirectory: (path: string) => Promise<ProjectScanResult>;
       };
       menu?: {
         /** application-menu commands (ENG-016 D8): menu items mirror the

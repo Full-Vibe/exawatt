@@ -511,7 +511,7 @@ export const architectureManifest = {
           id: 'terminal-workspace',
           label: 'Terminal + Session Overview',
           summary:
-            'DOM/xterm focus and exposé regimes for direct session control, deterministic rehydration, and multi-session orientation, with the read-only roadmap rail visualizing each repo-canonical Project queue.',
+            'Inert Project selection, source-aware Agent composition, and DOM/xterm focus plus exposé regimes for direct Session control and deterministic rehydration.',
           layer: 'ui',
           status: 'implemented',
           x: 205,
@@ -606,7 +606,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Adapters',
           summary:
-            'Provider boundaries that normalize harness-specific concepts into Exawatt objects.',
+            'Capability-described provider boundaries that translate Agent actions into source-specific create, observe, resume, and control operations.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,

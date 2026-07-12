@@ -37,8 +37,13 @@ try {
   page.setDefaultTimeout(20_000);
   await page.setViewportSize({ width: 800, height: 600 });
   await page.locator('[data-command-altitude]').waitFor();
-  await page.getByLabel('Working directory for new sessions').fill(projectDir);
-  await page.getByTitle(/Launch a new Shell session/).click();
+  await page.evaluate(dir => {
+    window.dispatchEvent(
+      new CustomEvent('exawatt:open-project', { detail: dir })
+    );
+  }, projectDir);
+  await page.locator('[data-agent-composer]').waitFor();
+  await page.getByRole('button', { name: /Open shell in / }).click();
 
   const terminal = page.locator('.xterm-helper-textarea');
   await terminal.waitFor();

@@ -119,6 +119,25 @@ async function waitForSessions(page, count) {
   throw new Error(`Timed out waiting for ${count} sessions`);
 }
 
+async function openProject(page, dir) {
+  await page.evaluate(projectDir => {
+    window.dispatchEvent(
+      new CustomEvent('exawatt:open-project', { detail: projectDir })
+    );
+  }, dir);
+  await page.locator('[data-agent-composer]').waitFor();
+}
+
+async function startAgent(page, source) {
+  await page.getByLabel('Agent Source').click();
+  await page.getByRole('option', { name: source }).click();
+  await page.getByRole('button', { name: 'Start' }).click();
+}
+
+async function openShell(page) {
+  await page.getByRole('button', { name: /Open shell in / }).click();
+}
+
 async function waitForAgentIdentities(page, count) {
   const deadline = Date.now() + 25_000;
   while (Date.now() < deadline) {
@@ -179,16 +198,16 @@ try {
   app = await launch('cancel,confirm');
   let page = await pageFor(app);
   console.log('[eng-018] workspace ready');
-  await page.getByLabel('Working directory for new sessions').fill(projectDir);
+  await openProject(page, projectDir);
   for (let i = 0; i < 2; i++) {
-    await page.getByTitle(/Launch a new Claude Code session/).click();
+    await startAgent(page, 'Claude Code');
     await waitForSessions(page, i + 1);
   }
   for (let i = 0; i < 2; i++) {
-    await page.getByTitle(/Launch a new Codex session/).click();
+    await startAgent(page, 'Codex');
     await waitForSessions(page, i + 3);
   }
-  await page.getByTitle(/Launch a new Shell session/).click();
+  await openShell(page);
   await waitForSessions(page, 5);
   let original = await sessions(page);
   console.log('[eng-018] five sessions launched');
@@ -327,8 +346,8 @@ try {
   app = await launch('confirm');
   page = await pageFor(app);
   console.log('[eng-018] crash fixture ready');
-  await page.getByLabel('Working directory for new sessions').fill(projectDir);
-  await page.getByTitle(/Launch a new Shell session/).click();
+  await openProject(page, projectDir);
+  await openShell(page);
   const withCrashShell = await waitForSessions(page, 1);
   await page.evaluate(
     async id =>

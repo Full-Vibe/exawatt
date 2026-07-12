@@ -4,6 +4,18 @@ Exawatt is a command center for agents.
 
 The first version focuses on making local agent control clearer, more beautiful, and easier to trust. Future versions will command hosted and multi-source fleets.
 
+## Projects and Agents
+
+Use **Open Project** to select a known Project, browse to one folder, or review
+folders from an optional parent-directory import. Opening a Project only changes
+the working context; it does not start a shell or Agent.
+
+Inside a Project, the Agent composer accepts an optional first task and shows the
+Agent Source that will run it. Exawatt remembers the last source used in each
+Project, while keeping the choice visible and changeable. A blank task starts an
+interactive Agent Session. Plain shells remain available as a separate Project
+tool.
+
 ## Quitting and returning
 
 When local Sessions are running, quitting Exawatt asks before stopping them.

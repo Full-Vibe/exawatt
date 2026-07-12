@@ -40,6 +40,8 @@ import {
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
   CLOSE_ACTIVE_EVENT,
+  requestProjectPicker,
+  requestAgentComposer,
 } from '@/components/workspace/session-jump';
 import type { PtyHarness } from '@/types/electron';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
@@ -53,6 +55,7 @@ const MENU_COMMAND_SHORTCUTS: Record<string, string> = {
   'go-spatial': 'command-spatial',
   'history-back': 'history-back',
   'history-forward': 'history-forward',
+  'open-project': 'workspace-new-project',
   'launch-shell': 'workspace-new-shell',
   'rename-tab': 'workspace-rename',
   'toggle-split': 'workspace-split',
@@ -239,13 +242,25 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           setCommandPaletteOpen(true);
           break;
         case 'launch-claude':
-          launch('claude');
+          requestAgentComposer('claude');
+          if (!window.location.pathname.startsWith('/workspace')) {
+            navigateCommandSurface('/workspace');
+          }
           break;
         case 'launch-codex':
-          launch('codex');
+          requestAgentComposer('codex');
+          if (!window.location.pathname.startsWith('/workspace')) {
+            navigateCommandSurface('/workspace');
+          }
           break;
         case 'launch-shell':
           launch('shell');
+          break;
+        case 'open-project':
+          requestProjectPicker();
+          if (!window.location.pathname.startsWith('/workspace')) {
+            navigateCommandSurface('/workspace');
+          }
           break;
         case 'rename-tab':
           dispatch(RENAME_ACTIVE_EVENT);

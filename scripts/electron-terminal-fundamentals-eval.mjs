@@ -23,8 +23,13 @@ try {
   const page = await app.firstWindow({ timeout: 45_000 });
   page.setDefaultTimeout(30_000);
   await page.locator('[data-command-altitude]').waitFor();
-  await page.getByLabel('Working directory for new sessions').fill('/tmp');
-  await page.getByTitle(/Launch a new Shell session/).click();
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent('exawatt:open-project', { detail: '/tmp' })
+    );
+  });
+  await page.locator('[data-agent-composer]').waitFor();
+  await page.getByRole('button', { name: /Open shell in / }).click();
   const textarea = page.locator('.xterm-helper-textarea');
   await textarea.waitFor();
 

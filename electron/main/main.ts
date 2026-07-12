@@ -9,6 +9,7 @@ import path from 'path';
 import { registerAgentIPC } from './agent-ipc';
 import { registerPtyIPC, disposePty } from './pty-ipc';
 import { registerRoadmapIPC } from './roadmap/roadmap-ipc';
+import { registerProjectIPC } from './projects/project-ipc';
 import { disposeRoadmapWatchers } from './roadmap/roadmap-watcher';
 import { handleTrusted, setTrustedRendererOrigin } from './ipc-security';
 import { ptySessions } from './pty/session-manager';
@@ -317,6 +318,7 @@ const menuAccelerators: Record<string, string> = {
   'go-spatial': 'Command+3',
   'history-back': 'Command+[',
   'history-forward': 'Command+]',
+  'open-project': 'Command+N',
   'launch-shell': 'Command+T',
   'rename-tab': 'Command+E',
   'toggle-split': 'Command+D',
@@ -377,6 +379,10 @@ function createMenu(): void {
       ],
     },
     {
+      label: 'File',
+      submenu: [menuCommand('Open Project…', 'open-project')],
+    },
+    {
       label: 'Edit',
       submenu: [
         { role: 'undo' },
@@ -423,9 +429,10 @@ function createMenu(): void {
     {
       label: 'Session',
       submenu: [
-        menuCommand('New Claude Code Session', 'launch-claude'),
-        menuCommand('New Codex Session', 'launch-codex'),
-        menuCommand('New Shell Session', 'launch-shell'),
+        menuCommand('Start Agent with Claude Code…', 'launch-claude'),
+        menuCommand('Start Agent with Codex…', 'launch-codex'),
+        { type: 'separator' },
+        menuCommand('Open Shell', 'launch-shell'),
         { type: 'separator' },
         menuCommand('Rename Session', 'rename-tab'),
         menuCommand('Split: Pin / Unpin', 'toggle-split'),
@@ -460,24 +467,30 @@ function registerAuthIPC(): void {
  *  browse to a project instead of typing a path. Returns the chosen absolute
  *  path, or null if cancelled. */
 function registerDialogIPC(): void {
-  handleTrusted('dialog:openDirectory', async () => {
-    // test hook: skip the native modal (which automation can't drive) and
-    // return a fixed directory, so ⌘N / Browse can be exercised end-to-end.
-    // Double-gated (like the userData redirect) so a stray env var in a normal
-    // launch can never silently replace the real folder picker.
-    if (process.env.EXAWATT_TEST && process.env.EXAWATT_TEST_DIR) {
-      return process.env.EXAWATT_TEST_DIR;
+  handleTrusted(
+    'dialog:openDirectory',
+    async (_event, requestedTitle?: string) => {
+      // test hook: skip the native modal (which automation can't drive) and
+      // return a fixed directory, so ⌘N / Browse can be exercised end-to-end.
+      // Double-gated (like the userData redirect) so a stray env var in a normal
+      // launch can never silently replace the real folder picker.
+      if (process.env.EXAWATT_TEST && process.env.EXAWATT_TEST_DIR) {
+        return process.env.EXAWATT_TEST_DIR;
+      }
+      const options: Electron.OpenDialogOptions = {
+        title:
+          typeof requestedTitle === 'string' && requestedTitle.length <= 80
+            ? requestedTitle
+            : 'Open project directory',
+        properties: ['openDirectory', 'createDirectory'],
+      };
+      const result = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options);
+      if (result.canceled || result.filePaths.length === 0) return null;
+      return result.filePaths[0];
     }
-    const options: Electron.OpenDialogOptions = {
-      title: 'Open project directory',
-      properties: ['openDirectory', 'createDirectory'],
-    };
-    const result = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, options)
-      : await dialog.showOpenDialog(options);
-    if (result.canceled || result.filePaths.length === 0) return null;
-    return result.filePaths[0];
-  });
+  );
   // does a path exist on THIS machine? — detects a synced Project whose
   // directory is absent here (ENG-015 S5 P5 "locate on this machine")
   handleTrusted('dialog:pathExists', (_event, p: string) => {
@@ -676,6 +689,7 @@ app.whenReady().then(async () => {
   const recovery = await runStateStore.begin();
   registerPtyIPC(recovery.previousRunInterrupted);
   registerRoadmapIPC();
+  registerProjectIPC();
   registerAuthIPC();
   registerDialogIPC();
   registerAppIPC();

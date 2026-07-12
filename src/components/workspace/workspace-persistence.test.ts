@@ -131,6 +131,30 @@ describe('workspace persistence v4 (ENG-017 S4)', () => {
 });
 
 describe('workspace persistence v5 (ENG-018)', () => {
+  it('preserves an inert Project with no Session tabs', () => {
+    const parsed = parsePersisted({
+      v: 5,
+      lastUsedDir: '/project',
+      activeDir: '/project',
+      projects: [
+        {
+          dir: '/project',
+          name: 'Project',
+          activeTabId: null,
+          tabs: [],
+        },
+      ],
+    });
+    expect(parsed?.projects).toEqual([
+      {
+        dir: '/project',
+        name: 'Project',
+        activeTabId: null,
+        tabs: [],
+      },
+    ]);
+  });
+
   it('preserves lifecycle and repairs duplicate durable IDs deterministically', () => {
     const parsed = parsePersisted({
       v: 5,

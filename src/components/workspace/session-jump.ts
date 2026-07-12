@@ -9,12 +9,14 @@
  * request is never applied twice.
  */
 import type { PtyHarness } from '@/types/electron';
+import type { AgentSourceId } from './agent-sources';
 
 export const SESSION_JUMP_EVENT = 'exawatt:open-session';
 export const LAUNCH_EVENT = 'exawatt:launch';
-/** ⌘K Projects group: open a known Project by its directory (activate if it
- *  already has live tabs, else launch a shell there) */
+/** Open a known Project by directory, resolving it without creating a PTY. */
 export const OPEN_PROJECT_EVENT = 'exawatt:open-project';
+export const OPEN_PROJECT_PICKER_EVENT = 'exawatt:open-project-picker';
+export const FOCUS_AGENT_COMPOSER_EVENT = 'exawatt:focus-agent-composer';
 /** tab-strip listens: open the inline rename editor for the active tab */
 export const RENAME_ACTIVE_EVENT = 'exawatt:rename-active';
 /** the active terminal pane refocuses itself (rename editors steal focus —
@@ -31,6 +33,7 @@ export const OPEN_OVERVIEW_EVENT = 'exawatt:open-overview';
  *  that survived an unmount must not yank the workspace around minutes
  *  later on an unrelated visit */
 const PENDING_TTL_MS = 15_000;
+const AGENT_COMPOSER_TTL_MS = 5 * 60_000;
 
 interface Pending<T> {
   value: T;
@@ -40,6 +43,8 @@ interface Pending<T> {
 let pendingSession: Pending<string> | null = null;
 let pendingLaunch: Pending<PtyHarness> | null = null;
 let pendingOpenProject: Pending<string> | null = null;
+let pendingProjectPicker: Pending<true> | null = null;
+let pendingAgentComposer: Pending<AgentSourceId | null> | null = null;
 
 function take<T>(slot: Pending<T> | null): T | null {
   if (!slot) return null;
@@ -79,4 +84,38 @@ export function consumePendingOpenProject(): string | null {
   const p = take(pendingOpenProject);
   pendingOpenProject = null;
   return p;
+}
+
+export function requestProjectPicker(): void {
+  pendingProjectPicker = { value: true, at: Date.now() };
+  window.dispatchEvent(new CustomEvent(OPEN_PROJECT_PICKER_EVENT));
+}
+
+export function consumePendingProjectPicker(): boolean {
+  const pending = take(pendingProjectPicker);
+  pendingProjectPicker = null;
+  return pending === true;
+}
+
+export function requestAgentComposer(source: AgentSourceId | null = null): void {
+  pendingAgentComposer = { value: source, at: Date.now() };
+  window.dispatchEvent(
+    new CustomEvent(FOCUS_AGENT_COMPOSER_EVENT, { detail: source })
+  );
+}
+
+export function consumePendingAgentComposer(): AgentSourceId | null | undefined {
+  if (!pendingAgentComposer) return undefined;
+  const slot = pendingAgentComposer;
+  pendingAgentComposer = null;
+  return Date.now() - slot.at <= AGENT_COMPOSER_TTL_MS
+    ? slot.value
+    : undefined;
+}
+
+export function hasPendingAgentComposer(): boolean {
+  return (
+    !!pendingAgentComposer &&
+    Date.now() - pendingAgentComposer.at <= AGENT_COMPOSER_TTL_MS
+  );
 }

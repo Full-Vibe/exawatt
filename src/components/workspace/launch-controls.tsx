@@ -1,18 +1,33 @@
-// No 'use client' directive: only imported by the client workspace surface.
-
-/**
- * The LAUNCH gesture (ENG-002 W0.2): pick a harness, go. A project
- * directory is REQUIRED (never a silent home default — harness trust
- * doesn't stick there); the field prefills from the active project or
- * the last-used dir. The worktree toggle creates <repo>-wt/<branch> and
- * launchs inside it, one gesture.
- */
 import { useEffect, useRef, useState } from 'react';
+import { GitBranch, Play, Settings2, SquareTerminal } from 'lucide-react';
 import { HUD } from '@/components/hud';
-import { HARNESS_META, HARNESS_ORDER } from './harnesses';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  AGENT_SOURCE_META,
+  AGENT_SOURCE_ORDER,
+  isAgentSourceId,
+  loadAgentSourcePreferences,
+  recommendAgentSource,
+  rememberAgentSource,
+  type AgentSourceId,
+} from './agent-sources';
 import { HarnessGlyph } from './harness-icons';
 import type { LaunchOptions } from './use-workspace-state';
-import type { PtyHarness } from '@/types/electron';
+import {
+  consumePendingAgentComposer,
+  FOCUS_AGENT_COMPOSER_EVENT,
+} from './session-jump';
 
 function defaultBranch(): string {
   const d = new Date();
@@ -23,173 +38,284 @@ function defaultBranch(): string {
   return `agent/${mm}${dd}-${hh}${mi}`;
 }
 
-/** an unfinished roadmap item offered by the "working on" picker (S4) */
 export interface LaunchRoadmapItem {
   id: string;
   label: string;
 }
 
-export function LaunchControls({
-  prefillDir,
+export function AgentComposer({
+  projectDir,
+  projectName,
   roadmapItems = [],
+  variant = 'compact',
   onLaunch,
 }: {
-  /** active project dir, else last-used dir, else '' */
-  prefillDir: string;
-  /** unfinished items of the ACTIVE project's roadmap; the picker only
-   *  shows while the dir field still follows the active project */
+  projectDir: string;
+  projectName: string;
   roadmapItems?: LaunchRoadmapItem[];
+  variant?: 'compact' | 'empty';
   onLaunch: (opts: LaunchOptions) => Promise<boolean>;
 }) {
-  const [dir, setDir] = useState(prefillDir);
-  const [dirTouched, setDirTouched] = useState(false);
+  const [task, setTask] = useState('');
+  const [source, setSource] = useState<AgentSourceId>('claude');
   const [worktree, setWorktree] = useState(false);
   const [branch, setBranch] = useState(defaultBranch);
   const [roadmapItemId, setRoadmapItemId] = useState('');
-  // bumped on every manual edit — an launch must not clobber a dir or
-  // branch typed WHILE its spawn was in flight
-  const editSeq = useRef(0);
+  const [starting, setStarting] = useState(false);
   const branchEditSeq = useRef(0);
+  const taskRef = useRef<HTMLTextAreaElement>(null);
+  const effectiveSource = isAgentSourceId(source)
+    ? source
+    : AGENT_SOURCE_ORDER[0];
+  const sourceMeta = AGENT_SOURCE_META[effectiveSource];
 
-  // follow the active project until the operator edits the field
   useEffect(() => {
-    if (!dirTouched) setDir(prefillDir);
-  }, [prefillDir, dirTouched]);
+    let cancelled = false;
+    void loadAgentSourcePreferences().then(preferences => {
+      if (!cancelled) setSource(recommendAgentSource(preferences, projectDir));
+    });
+    setTask('');
+    setRoadmapItemId('');
+    return () => {
+      cancelled = true;
+    };
+  }, [projectDir]);
 
-  // a declared link only makes sense against the roadmap it was picked
-  // from — reset when the item disappears or the operator leaves the
-  // active project's directory
   useEffect(() => {
-    if (roadmapItemId && !roadmapItems.some(item => item.id === roadmapItemId)) {
+    const focus = (sourceOverride?: AgentSourceId | null) => {
+      if (sourceOverride) setSource(sourceOverride);
+      requestAnimationFrame(() => taskRef.current?.focus());
+    };
+    const onFocus = (event: Event) => {
+      consumePendingAgentComposer();
+      focus((event as CustomEvent<AgentSourceId | null>).detail);
+    };
+    window.addEventListener(FOCUS_AGENT_COMPOSER_EVENT, onFocus);
+    const pending = consumePendingAgentComposer();
+    if (pending !== undefined) focus(pending);
+    return () =>
+      window.removeEventListener(FOCUS_AGENT_COMPOSER_EVENT, onFocus);
+  }, []);
+
+  useEffect(() => {
+    if (
+      roadmapItemId &&
+      !roadmapItems.some(item => item.id === roadmapItemId)
+    ) {
       setRoadmapItemId('');
     }
   }, [roadmapItems, roadmapItemId]);
-  const showRoadmapPicker = roadmapItems.length > 0 && !dirTouched;
 
-  // the native folder picker is Electron-only; detect post-mount so SSR and
-  // the first client render agree (no hydration mismatch)
-  const [canBrowse, setCanBrowse] = useState(false);
-  useEffect(() => {
-    setCanBrowse(!!window.electron?.dialog?.openDirectory);
-  }, []);
-
-  const browse = async () => {
-    const picked = await window.electron?.dialog?.openDirectory();
-    if (picked) {
-      editSeq.current += 1;
-      setDir(picked);
-      setDirTouched(true);
-    }
-  };
-
-  const launch = async (harness: PtyHarness) => {
-    const seqAtLaunch = editSeq.current;
+  const launchAgent = async () => {
+    if (starting) return;
+    setStarting(true);
     const branchSeqAtLaunch = branchEditSeq.current;
     const ok = await onLaunch({
-      harness,
-      dir,
-      worktreeBranch: worktree ? branch : undefined,
-      roadmapItemId:
-        showRoadmapPicker && roadmapItemId ? roadmapItemId : undefined,
+      harness: effectiveSource,
+      dir: projectDir,
+      initialPrompt: task.trim() || undefined,
+      worktreeBranch: worktree ? branch.trim() : undefined,
+      roadmapItemId: roadmapItemId || undefined,
     });
-    // fresh generated branch for the next one — unless the operator already
-    // typed the next name while this spawn was in flight
-    if (ok && worktree && branchEditSeq.current === branchSeqAtLaunch) {
+    setStarting(false);
+    if (!ok) return;
+    await rememberAgentSource(projectDir, effectiveSource);
+    setTask('');
+    if (worktree && branchEditSeq.current === branchSeqAtLaunch) {
       setBranch(defaultBranch());
     }
-    // resume following the active project — but only if the operator
-    // hasn't typed a different dir while the spawn was running
-    if (ok && editSeq.current === seqAtLaunch) setDirTouched(false);
   };
 
-  return (
-    <div className="ml-auto flex flex-wrap items-center gap-1.5">
-      <input
-        value={dir}
-        onChange={(e) => {
-          editSeq.current += 1;
-          setDir(e.target.value);
-          setDirTouched(true);
+  const openShell = async () => {
+    if (starting) return;
+    setStarting(true);
+    await onLaunch({ harness: 'shell', dir: projectDir });
+    setStarting(false);
+  };
+
+  const controls = (
+    <form
+      data-agent-composer
+      data-variant={variant}
+      onSubmit={event => {
+        event.preventDefault();
+        void launchAgent();
+      }}
+      className={`flex min-w-0 items-stretch gap-1.5 ${
+        variant === 'empty' ? 'w-full max-w-2xl' : 'w-full max-w-3xl'
+      }`}
+    >
+      <textarea
+        ref={taskRef}
+        rows={1}
+        value={task}
+        maxLength={8_000}
+        onChange={event => setTask(event.target.value)}
+        onKeyDown={event => {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            void launchAgent();
+          }
         }}
-        placeholder="project directory (required)"
-        aria-label="Working directory for new sessions"
-        className="w-72 rounded border bg-transparent px-2 py-1 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-        style={{ color: HUD.textMono, borderColor: 'rgba(80,230,255,0.2)' }}
-      />
-      {canBrowse && (
-        <button
-          type="button"
-          onClick={() => void browse()}
-          title="Browse for a project directory"
-          aria-label="Browse for a project directory"
-          className="rounded border px-2 py-1 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-          style={{ color: HUD.textDim, borderColor: 'rgba(80,230,255,0.2)' }}
-        >
-          📁 Browse
-        </button>
-      )}
-      <button
-        onClick={() => setWorktree((w) => !w)}
-        aria-pressed={worktree}
-        title="Launch inside a fresh git worktree (<repo>-wt/<branch>)"
-        className="rounded border px-2 py-1 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+        placeholder="What should this Agent do?"
+        aria-label="Initial task for the new Agent"
+        className="min-h-9 min-w-32 flex-1 resize-none rounded border bg-transparent px-3 py-2 font-mono text-xs leading-5 outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
         style={{
-          color: worktree ? HUD.cyan : HUD.textDim,
-          borderColor: worktree ? 'rgba(25,230,255,0.45)' : 'rgba(80,230,255,0.2)',
-          background: worktree ? 'rgba(25,230,255,0.08)' : 'transparent',
+          color: HUD.text,
+          borderColor: 'rgba(80,230,255,0.24)',
+          background: 'rgba(8,13,22,0.78)',
+        }}
+      />
+
+      <Select
+        value={effectiveSource}
+        onValueChange={value => {
+          if (isAgentSourceId(value)) setSource(value);
         }}
       >
-        ⎇ worktree
-      </button>
-      {worktree && (
-        <input
-          value={branch}
-          onChange={(e) => {
-            branchEditSeq.current += 1;
-            setBranch(e.target.value);
-          }}
-          aria-label="Branch name for the new worktree"
-          className="w-36 rounded border bg-transparent px-2 py-1 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-          style={{ color: HUD.cyan, borderColor: 'rgba(25,230,255,0.35)' }}
-        />
-      )}
-      {showRoadmapPicker && (
-        <select
-          value={roadmapItemId}
-          onChange={(e) => setRoadmapItemId(e.target.value)}
-          aria-label="Roadmap item this session will work on"
-          title="Link the new session to a roadmap item (optional)"
-          className="max-w-44 rounded border bg-transparent px-1.5 py-1 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+        <SelectTrigger
+          aria-label="Agent Source"
+          className="h-9 w-[148px] rounded border px-2 font-mono text-xs shadow-none"
           style={{
-            color: roadmapItemId ? HUD.textMono : HUD.textDim,
-            borderColor: 'rgba(80,230,255,0.2)',
+            color: sourceMeta.color,
+            borderColor: 'rgba(80,230,255,0.24)',
             background: HUD.bg.deep,
           }}
         >
-          <option value="">working on…</option>
-          {roadmapItems.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-            </option>
+          <span className="flex min-w-0 items-center gap-2">
+            <HarnessGlyph harness={effectiveSource} size={13} />
+            <SelectValue />
+          </span>
+        </SelectTrigger>
+        <SelectContent>
+          {AGENT_SOURCE_ORDER.map(id => (
+            <SelectItem key={id} value={id}>
+              {AGENT_SOURCE_META[id].label}
+            </SelectItem>
           ))}
-        </select>
-      )}
-      {HARNESS_ORDER.map((h) => (
-        <button
-          key={h}
-          onClick={() => void launch(h)}
-          className="hud-lift flex items-center gap-1.5 rounded border px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-hud-cyan"
+        </SelectContent>
+      </Select>
+
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label="Agent launch options"
+            title="Agent launch options"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded border outline-none hover:bg-white/5 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+            style={{
+              color: worktree || roadmapItemId ? HUD.cyan : HUD.textDim,
+              borderColor: 'rgba(80,230,255,0.24)',
+            }}
+          >
+            <Settings2 className="h-4 w-4" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="end"
+          className="w-80 rounded-md border p-3"
           style={{
-            color: HARNESS_META[h].color,
+            background: HUD.bg.deep,
             borderColor: 'rgba(80,230,255,0.25)',
-            background: 'rgba(10,20,32,0.6)',
           }}
-          title={`Launch a new ${HARNESS_META[h].label} session${dir ? ` in ${dir}` : ''}${worktree ? ` (new worktree ${branch})` : ''}`}
         >
-          <HarnessGlyph harness={h} />
-          {HARNESS_META[h].launch}
-        </button>
-      ))}
+          <label
+            className="flex cursor-pointer items-center gap-2 font-mono text-xs"
+            style={{ color: HUD.text }}
+          >
+            <input
+              type="checkbox"
+              checked={worktree}
+              onChange={event => setWorktree(event.target.checked)}
+              className="accent-cyan-400"
+            />
+            <GitBranch className="h-3.5 w-3.5" />
+            New git worktree
+          </label>
+          {worktree && (
+            <input
+              value={branch}
+              onChange={event => {
+                branchEditSeq.current += 1;
+                setBranch(event.target.value);
+              }}
+              aria-label="Branch name for the new worktree"
+              className="mt-2 h-8 w-full rounded border bg-transparent px-2 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+              style={{ color: HUD.cyan, borderColor: 'rgba(25,230,255,0.3)' }}
+            />
+          )}
+          {roadmapItems.length > 0 && (
+            <label
+              className="mt-3 block font-mono text-[10px]"
+              style={{ color: HUD.textDim }}
+            >
+              Working on
+              <select
+                aria-label="Roadmap item this session will work on"
+                value={roadmapItemId}
+                onChange={event => setRoadmapItemId(event.target.value)}
+                className="mt-1 h-8 w-full rounded border bg-transparent px-2 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                style={{
+                  color: HUD.text,
+                  borderColor: 'rgba(80,230,255,0.2)',
+                  background: HUD.bg.deep,
+                }}
+              >
+                <option value="">No roadmap link</option>
+                {roadmapItems.map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </PopoverContent>
+      </Popover>
+
+      <button
+        type="submit"
+        disabled={starting}
+        className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded border px-3 font-mono text-xs outline-none disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+        style={{
+          color: HUD.text,
+          borderColor: `${sourceMeta.color}77`,
+          background: `${sourceMeta.color}12`,
+        }}
+      >
+        <Play className="h-3.5 w-3.5" />
+        Start
+      </button>
+
+      <button
+        type="button"
+        disabled={starting}
+        onClick={() => void openShell()}
+        aria-label={`Open shell in ${projectName}`}
+        title="Open shell"
+        className="grid h-9 w-9 shrink-0 place-items-center rounded outline-none hover:bg-white/5 disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+        style={{ color: HUD.textDim }}
+      >
+        <SquareTerminal className="h-4 w-4" />
+      </button>
+    </form>
+  );
+
+  if (variant === 'compact') return controls;
+  return (
+    <div className="flex w-full flex-col items-center gap-4 px-6">
+      <div className="text-center">
+        <p
+          className="font-display text-lg font-semibold"
+          style={{ color: HUD.text }}
+        >
+          {projectName}
+        </p>
+        <p className="mt-1 font-mono text-xs" style={{ color: HUD.textDim }}>
+          No Agents running
+        </p>
+      </div>
+      {controls}
     </div>
   );
 }

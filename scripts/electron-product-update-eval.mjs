@@ -216,6 +216,25 @@ async function waitForSessions(page, count) {
   }, `Timed out waiting for ${count} live sessions`, 45_000);
 }
 
+async function openProject(page, dir) {
+  await page.evaluate(projectDir => {
+    window.dispatchEvent(
+      new CustomEvent('exawatt:open-project', { detail: projectDir })
+    );
+  }, dir);
+  await page.locator('[data-agent-composer]').waitFor();
+}
+
+async function startAgent(page, source) {
+  await page.getByLabel('Agent Source').click();
+  await page.getByRole('option', { name: source }).click();
+  await page.getByRole('button', { name: 'Start' }).click();
+}
+
+async function openShell(page) {
+  await page.getByRole('button', { name: /Open shell in / }).click();
+}
+
 async function waitForAgentIdentities(page, count) {
   return await waitFor(async () => {
     const agents = (await sessions(page)).filter(
@@ -258,16 +277,16 @@ try {
     throw new Error(`Baseline is already ${expectedVersion}`);
   }
 
-  await page.getByLabel('Working directory for new sessions').fill(projectDir);
+  await openProject(page, projectDir);
   for (let i = 0; i < 2; i++) {
-    await page.getByTitle(/Launch a new Claude Code session/).click();
+    await startAgent(page, 'Claude Code');
     await waitForSessions(page, i + 1);
   }
   for (let i = 0; i < 2; i++) {
-    await page.getByTitle(/Launch a new Codex session/).click();
+    await startAgent(page, 'Codex');
     await waitForSessions(page, i + 3);
   }
-  await page.getByTitle(/Launch a new Shell session/).click();
+  await openShell(page);
   const original = await waitForSessions(page, 5);
   for (const [index, session] of original.entries()) {
     await page.evaluate(

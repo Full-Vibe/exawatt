@@ -87,9 +87,14 @@ try {
   const page = await app.firstWindow({ timeout: 45_000 });
   page.setDefaultTimeout(30_000);
   await page.locator('[data-command-altitude]').waitFor();
-  await page.getByLabel('Working directory for new sessions').fill(projectDir);
+  await page.evaluate(dir => {
+    window.dispatchEvent(
+      new CustomEvent('exawatt:open-project', { detail: dir })
+    );
+  }, projectDir);
+  await page.locator('[data-agent-composer]').waitFor();
 
-  await page.getByTitle(/Launch a new Claude Code session/).click();
+  await page.getByRole('button', { name: 'Start' }).click();
   const claude = await waitFor(
     page,
     current => current.find(session => session.harness === 'claude'),
@@ -98,7 +103,9 @@ try {
   console.log(`[real-harness] Claude launched as ${claude.harnessSessionId}`);
   await acceptFixtureDirectoryTrust(page, claude);
   console.log('[real-harness] Claude directory trusted');
-  await page.getByTitle(/Launch a new Codex session/).click();
+  await page.getByLabel('Agent Source').click();
+  await page.getByRole('option', { name: 'Codex' }).click();
+  await page.getByRole('button', { name: 'Start' }).click();
   const startingCodex = await waitFor(
     page,
     current => current.find(session => session.harness === 'codex'),

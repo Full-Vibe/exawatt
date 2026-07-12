@@ -137,6 +137,8 @@ await withElectronApp(
     // healthy fixture: strip → ⌘B open → keyboard walk → drill → back
     await openProject(page, healthy);
     await page.waitForTimeout(1800);
+    await page.getByRole('button', { name: /Open shell in / }).click();
+    await page.locator('.xterm-helper-textarea').last().waitFor();
     await shot(page, '1-healthy-strip');
 
     // S6: the strip is a readable spine — one node per item, exactly one
@@ -182,6 +184,9 @@ await withElectronApp(
     await page.keyboard.press('ArrowDown');
     await page.waitForTimeout(250);
     await shot(page, '3-selection-moved');
+    // Drill the item that owns milestones so the detail's roving-milestone
+    // contract is tested deliberately rather than depending on queue order.
+    await page.click('[data-roadmap-row="ACME-003"]');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(400);
     await shot(page, '4-drilled');
@@ -193,12 +198,13 @@ await withElectronApp(
       .locator('[data-roadmap-milestone][data-selected]')
       .count()
       .then(n => n === 1);
-    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Back to queue' }).click();
     await page.waitForTimeout(300);
-    results.escReturnsToQueue = !(await railText(page)).includes('Roadmap ·');
+    results.backReturnsToQueue = !(await railText(page)).includes('Roadmap ·');
 
     // Escape at queue level backs out of the lens entirely (project-scoped):
     // the rail collapses to the strip and the terminal takes focus
+    await page.locator('[data-roadmap-rail]').focus();
     await page.keyboard.press('Escape');
     await page.waitForTimeout(400);
     results.escCollapsesRail = await page
@@ -209,14 +215,13 @@ await withElectronApp(
     await page.waitForTimeout(500);
 
     // shipped group expands
-    await page.keyboard.press('g');
-    await page.keyboard.press('ArrowUp');
-    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: /shipped/ }).click();
     await page.waitForTimeout(300);
     results.shippedExpands = (await railText(page)).includes('ACME-001');
     await shot(page, '5-shipped-expanded');
 
-    // ⌘B while focused → collapses to strip
+    // The shipped control owns focus inside the rail, so ⌘B should collapse
+    // and hand focus back to the terminal.
     await page.keyboard.press('Meta+b');
     await page.waitForTimeout(400);
     results.cmdBCollapses = !(await page
@@ -225,16 +230,26 @@ await withElectronApp(
       .then(n => n > 0));
     await shot(page, '6-collapsed-again');
 
-    // declare-at-launch (S4): pick an item in the launch picker, launch a
-    // shell, and the new session shows as a SOLID (declared) chip
+    // declare-at-launch (S4): link an item through Agent launch options; the
+    // new Agent shows as a SOLID (declared) chip
+    await page.getByLabel('Agent launch options').click();
     await page.selectOption(
       'select[aria-label="Roadmap item this session will work on"]',
       'ACME-007'
     );
-    await page.click('button[title^="Launch a new Shell"]');
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Start' }).click();
     await page.waitForTimeout(1500);
-    await page.keyboard.press('Meta+b');
+    await page
+      .getByRole('button', { name: /Open roadmap rail/ })
+      .click();
     await page.waitForTimeout(600);
+    // Collapsing preserves the prior drill address; return to the queue before
+    // inspecting the newly declared item.
+    if ((await page.locator('[data-roadmap-row="ACME-007"]').count()) === 0) {
+      await page.getByRole('button', { name: 'Back to queue' }).click();
+      await page.waitForTimeout(300);
+    }
     results.declaredBadge = (await railText(page)).includes('▸1');
     // S7: the declared session renders as a focusable chip ROW on its
     // (next) item, not only a count badge
@@ -259,11 +274,13 @@ await withElectronApp(
 
     // S8: declare a session on the BLOCKED item — its tab badge goes amber
     // through the same needs-you pipeline as terminal bells
+    await page.getByLabel('Agent launch options').click();
     await page.selectOption(
       'select[aria-label="Roadmap item this session will work on"]',
       'ACME-009'
     );
-    await page.click('button[title^="Launch a new Shell"]');
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Start' }).click();
     await page.waitForTimeout(1500);
     results.blockedTabBadge = await page
       .locator('[data-project] [data-attention]')
@@ -287,7 +304,7 @@ await withElectronApp(
     await page.waitForTimeout(1500);
     // S8: launch a live session here so the project is STARVING, then ⌘J
     // (with no PTY attention pending) opens the rail on the no-food moment
-    await page.click('button[title^="Launch a new Shell"]');
+    await page.getByRole('button', { name: /Open shell in / }).click();
     await page.waitForTimeout(1500);
     // deterministically collapse first so ⌘J is what opens the rail
     for (let i = 0; i < 3 && (await page.locator('[data-roadmap-rail]').count()); i++) {
@@ -326,6 +343,9 @@ await withElectronApp(
     // item id → high-confidence link, chip badge, reciprocal context chip
     await openProject(page, gitFix);
     await page.waitForTimeout(2500);
+    await page.getByRole('button', { name: /Open shell in / }).click();
+    await page.locator('.xterm-helper-textarea').last().waitFor();
+    await page.waitForTimeout(1000);
     const fixText = await railText(page);
     results.inferredChipBadge = fixText.includes('▸1') || fixText.includes('FIX-042');
     const contextBar = await page.evaluate(

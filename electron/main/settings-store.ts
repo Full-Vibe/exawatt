@@ -36,6 +36,10 @@ export interface ExawattSettings {
   notifications?: {
     attention: boolean;
   };
+  agentSources?: {
+    projectLastUsed: Record<string, string>;
+    sourceRecency: Record<string, number>;
+  };
 }
 
 export function parseSettings(raw: unknown): ExawattSettings {
@@ -55,10 +59,34 @@ export function parseSettings(raw: unknown): ExawattSettings {
       if (typeof fontFamily === 'string' && fontFamily.trim()) {
         terminal.fontFamily = fontFamily.trim();
       }
-      if (typeof fontSize === 'number' && Number.isFinite(fontSize) && fontSize >= 8 && fontSize <= 32) terminal.fontSize = fontSize;
-      if (typeof lineHeight === 'number' && Number.isFinite(lineHeight) && lineHeight >= 0.8 && lineHeight <= 2) terminal.lineHeight = lineHeight;
-      if (typeof letterSpacing === 'number' && Number.isFinite(letterSpacing) && letterSpacing >= -5 && letterSpacing <= 20) terminal.letterSpacing = letterSpacing;
-      if (typeof fontStrokeWidth === 'number' && Number.isFinite(fontStrokeWidth) && fontStrokeWidth >= 0 && fontStrokeWidth <= 1) terminal.fontStrokeWidth = fontStrokeWidth;
+      if (
+        typeof fontSize === 'number' &&
+        Number.isFinite(fontSize) &&
+        fontSize >= 8 &&
+        fontSize <= 32
+      )
+        terminal.fontSize = fontSize;
+      if (
+        typeof lineHeight === 'number' &&
+        Number.isFinite(lineHeight) &&
+        lineHeight >= 0.8 &&
+        lineHeight <= 2
+      )
+        terminal.lineHeight = lineHeight;
+      if (
+        typeof letterSpacing === 'number' &&
+        Number.isFinite(letterSpacing) &&
+        letterSpacing >= -5 &&
+        letterSpacing <= 20
+      )
+        terminal.letterSpacing = letterSpacing;
+      if (
+        typeof fontStrokeWidth === 'number' &&
+        Number.isFinite(fontStrokeWidth) &&
+        fontStrokeWidth >= 0 &&
+        fontStrokeWidth <= 1
+      )
+        terminal.fontStrokeWidth = fontStrokeWidth;
       if (Object.keys(terminal).length > 0) settings.terminal = terminal;
     }
   }
@@ -66,6 +94,50 @@ export function parseSettings(raw: unknown): ExawattSettings {
   if (notifications && typeof notifications === 'object') {
     const attention = (notifications as { attention?: unknown }).attention;
     if (typeof attention === 'boolean') settings.notifications = { attention };
+  }
+  const agentSources = (raw as { agentSources?: unknown }).agentSources;
+  if (agentSources && typeof agentSources === 'object') {
+    const candidate = agentSources as {
+      projectLastUsed?: unknown;
+      sourceRecency?: unknown;
+    };
+    const projectLastUsed: Record<string, string> = {};
+    const sourceRecency: Record<string, number> = {};
+    if (
+      candidate.projectLastUsed &&
+      typeof candidate.projectLastUsed === 'object'
+    ) {
+      for (const [projectDir, source] of Object.entries(
+        candidate.projectLastUsed
+      )) {
+        if (
+          projectDir &&
+          projectDir.length <= 4096 &&
+          typeof source === 'string' &&
+          /^[a-z0-9-]{1,64}$/.test(source)
+        ) {
+          projectLastUsed[projectDir] = source;
+        }
+      }
+    }
+    if (
+      candidate.sourceRecency &&
+      typeof candidate.sourceRecency === 'object'
+    ) {
+      for (const [source, timestamp] of Object.entries(
+        candidate.sourceRecency
+      )) {
+        if (
+          /^[a-z0-9-]{1,64}$/.test(source) &&
+          typeof timestamp === 'number' &&
+          Number.isFinite(timestamp) &&
+          timestamp >= 0
+        ) {
+          sourceRecency[source] = timestamp;
+        }
+      }
+    }
+    settings.agentSources = { projectLastUsed, sourceRecency };
   }
   return settings;
 }
@@ -82,13 +154,49 @@ export function loadSettings(): ExawattSettings {
   }
 }
 
-export function setAttentionNotifications(enabled: boolean): ExawattSettings {
-  const settings = loadSettings();
-  settings.notifications = { attention: enabled };
+function writeSettings(settings: ExawattSettings): void {
   const file = settingsFile();
   const staging = `${file}.tmp-${process.pid}`;
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(staging, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });
+  fs.writeFileSync(staging, `${JSON.stringify(settings, null, 2)}\n`, {
+    mode: 0o600,
+  });
   fs.renameSync(staging, file);
+}
+
+export function setAttentionNotifications(enabled: boolean): ExawattSettings {
+  const settings = loadSettings();
+  settings.notifications = { attention: enabled };
+  writeSettings(settings);
+  return settings;
+}
+
+export function recordAgentSourceUse(
+  projectDir: string,
+  source: string,
+  usedAt: number
+): ExawattSettings {
+  if (
+    typeof projectDir !== 'string' ||
+    !projectDir ||
+    projectDir.includes('\0') ||
+    projectDir.length > 4096 ||
+    typeof source !== 'string' ||
+    !/^[a-z0-9-]{1,64}$/.test(source) ||
+    !Number.isFinite(usedAt) ||
+    usedAt < 0
+  ) {
+    throw new Error('Invalid Agent Source preference');
+  }
+  const settings = loadSettings();
+  const current = settings.agentSources ?? {
+    projectLastUsed: {},
+    sourceRecency: {},
+  };
+  settings.agentSources = {
+    projectLastUsed: { ...current.projectLastUsed, [projectDir]: source },
+    sourceRecency: { ...current.sourceRecency, [source]: usedAt },
+  };
+  writeSettings(settings);
   return settings;
 }

@@ -1,7 +1,8 @@
 /**
  * Workspace keyboard layer (ENG-002 — "Spaces-speed switching").
  *
- *   ⌘T (or ⌘⇧T)  launch a shell
+ *   ⌘T (or ⌘⇧T)  open a shell in the active Project
+ *   ⌘N            open the Project chooser
  *   ⌘W (or ⌘⇧W)  close the active tab
  *   ⌘⌥1…⌘⌥9      jump to Project N
  *   ⌘⇧[ / ⌘⇧]    previous / next tab (wraps)
@@ -63,7 +64,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 export interface WorkspaceShortcutActions {
   launchShell: () => boolean;
-  /** ⌘N — browse for a directory and open it as a new Project */
+  /** ⌘N — open Exawatt's curated Project chooser */
   newProject: () => boolean;
   closeActive: () => boolean;
   selectIndex: (index: number) => boolean;
