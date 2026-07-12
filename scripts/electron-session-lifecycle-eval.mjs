@@ -348,8 +348,8 @@ try {
   await page.screenshot({
     path: join(screenshots, 'interrupted-1400x900.png'),
   });
-  await page.goto(new URL('/fleet', page.url()).toString());
-  await page.getByRole('heading', { name: 'Fleet Command' }).waitFor();
+  await page.locator('[data-command-altitude-level="spatial"]').click();
+  await page.waitForURL(/\/fleet\/spatial/);
   const finalClose = waitForClose(app);
   await requestQuit(app);
   await Promise.race([

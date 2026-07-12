@@ -235,6 +235,17 @@ function createWindow(): void {
       if (isMainFrame && !isInPlace) clearCheckpointOwner();
     }
   );
+  mainWindow.webContents.on(
+    'did-navigate-in-page',
+    (_event, target, isMainFrame) => {
+      if (!isMainFrame) return;
+      try {
+        if (new URL(target).pathname !== '/workspace') clearCheckpointOwner();
+      } catch {
+        clearCheckpointOwner();
+      }
+    }
+  );
   mainWindow.webContents.on('destroyed', clearCheckpointOwner);
 
   // Development uses the explicit dev server. Production uses renderer code
