@@ -65,6 +65,7 @@ import { HUD } from '@/components/hud';
 import type { ShortcutKeys } from '@/types/shortcuts';
 import type { PtyHarness } from '@/types/electron';
 import { spatialReturnHref } from '@/components/nav/spatial-return';
+import { useShortcutRegistryVersion } from './use-effective-shortcut';
 import {
   rankRecents,
   readPaletteUses,
@@ -112,6 +113,10 @@ export function CommandPalette({
   onOpenHelpModal,
 }: CommandPaletteProps) {
   const router = useRouter();
+  const shortcutVersion = useShortcutRegistryVersion();
+  const newProjectShortcut = shortcutRegistry.getEffectiveKeys(
+    'workspace-new-project'
+  );
   const [search, setSearch] = useState('');
   // live sessions for the switcher (S2) — desktop app only, fetched fresh
   // each time the palette opens
@@ -271,13 +276,14 @@ export function CommandPalette({
       handleSelect(() => window.dispatchEvent(new CustomEvent(event))),
     [handleSelect]
   );
-  const workspaceItems = useMemo(
-    () => [
+  const workspaceItems = useMemo(() => {
+    void shortcutVersion;
+    return [
       {
         id: 'ws-overview',
         label: 'Overview of all sessions',
         value: 'overview all sessions expose grid tiles',
-        keys: '⌘O',
+        shortcut: shortcutRegistry.getEffectiveKeys('workspace-overview'),
         icon: LayoutPanelTop,
         onSelect: () => dispatch(OPEN_OVERVIEW_EVENT),
       },
@@ -285,7 +291,7 @@ export function CommandPalette({
         id: 'ws-rename',
         label: 'Rename the active tab',
         value: 'rename tab title active',
-        keys: '⌘E',
+        shortcut: shortcutRegistry.getEffectiveKeys('workspace-rename'),
         icon: PenLine,
         onSelect: () => dispatch(RENAME_ACTIVE_EVENT),
       },
@@ -301,7 +307,7 @@ export function CommandPalette({
         id: 'ws-split',
         label: 'Split: pin / unpin the active tab',
         value: 'split pane pin unpin side by side watch',
-        keys: '⌘D',
+        shortcut: shortcutRegistry.getEffectiveKeys('workspace-split'),
         icon: Columns2,
         onSelect: () => dispatch(TOGGLE_SPLIT_EVENT),
       },
@@ -309,7 +315,7 @@ export function CommandPalette({
         id: 'ws-jump',
         label: 'Jump to the session needing you',
         value: 'jump attention needs you blocked waiting',
-        keys: '⌘J',
+        shortcut: shortcutRegistry.getEffectiveKeys('workspace-jump-attention'),
         icon: BellRing,
         onSelect: () => dispatch(JUMP_ATTENTION_EVENT),
       },
@@ -317,7 +323,7 @@ export function CommandPalette({
         id: 'ws-close',
         label: 'Close the active tab',
         value: 'close tab kill session end',
-        keys: '⌘W',
+        shortcut: shortcutRegistry.getEffectiveKeys('workspace-close-tab'),
         icon: XCircle,
         onSelect: () => dispatch(CLOSE_ACTIVE_EVENT),
       },
@@ -325,38 +331,42 @@ export function CommandPalette({
         id: 'ws-map',
         label: 'Zoom out to Spatial Command',
         value: 'map spatial altitude fleet world zoom out switch',
-        keys: '⌘⇧M',
+        shortcut: shortcutRegistry.getEffectiveKeys('toggle-regime'),
         icon: MapIcon,
         onSelect: () => handleSelect(() => router.push(spatialReturnHref())),
       },
-    ],
-    [dispatch, handleSelect, router]
-  );
+    ];
+  }, [dispatch, handleSelect, router, shortcutVersion]);
 
   // Navigation rows derive from the manifest (ENG-016 D8): the palette, the
   // go-chords, and the header must always agree on names and targets. Legacy
   // surfaces render in their own group at the bottom.
   const surfaceItem = useCallback(
-    (s: AppSurface): CommandItem => ({
-      id: `nav-${s.id}`,
-      label: `Go to ${s.name}`,
-      value: `go ${s.name} ${s.keywords.join(' ')}`,
-      icon: SURFACE_ICONS[s.id],
-      shortcut: shortcutRegistry.getEffectiveKeys(s.shortcutId),
-      onSelect: () => handleSelect(() => router.push(resolveSurfaceHref(s))),
-    }),
-    [handleSelect, router]
+    (s: AppSurface): CommandItem => {
+      void shortcutVersion;
+      return {
+        id: `nav-${s.id}`,
+        label: `Go to ${s.name}`,
+        value: `go ${s.name} ${s.keywords.join(' ')}`,
+        icon: SURFACE_ICONS[s.id],
+        shortcut: shortcutRegistry.getEffectiveKeys(s.shortcutId),
+        onSelect: () => handleSelect(() => router.push(resolveSurfaceHref(s))),
+      };
+    },
+    [handleSelect, router, shortcutVersion]
   );
   const navigationItems = useMemo<CommandItem[]>(
-    () => [...surfacesByTier('spine'), ...surfacesByTier('app')].map(surfaceItem),
+    () =>
+      [...surfacesByTier('spine'), ...surfacesByTier('app')].map(surfaceItem),
     [surfaceItem]
   );
   const legacyItems = useMemo<CommandItem[]>(
     () => surfacesByTier('legacy').map(surfaceItem),
     [surfaceItem]
   );
-  const actionItems = useMemo<CommandItem[]>(
-    () => [
+  const actionItems = useMemo<CommandItem[]>(() => {
+    void shortcutVersion;
+    return [
       {
         id: 'action-help',
         label: 'Keyboard Shortcuts',
@@ -365,9 +375,8 @@ export function CommandPalette({
         shortcut: shortcutRegistry.getEffectiveKeys('help-modal'),
         onSelect: () => handleSelect(onOpenHelpModal),
       },
-    ],
-    [handleSelect, onOpenHelpModal]
-  );
+    ];
+  }, [handleSelect, onOpenHelpModal, shortcutVersion]);
 
   // Recent group (D9): resolve frecency ids against everything currently
   // offerable. Live sessions are excluded on purpose — the Sessions group
@@ -633,9 +642,7 @@ export function CommandPalette({
               {registryFailed && (
                 <CommandItem
                   value="project sign in sync account"
-                  onSelect={() =>
-                    handleSelect(() => router.push('/sign-in'))
-                  }
+                  onSelect={() => handleSelect(() => router.push('/sign-in'))}
                 >
                   <LogIn className="mr-2 h-3.5 w-3.5 shrink-0" />
                   <span>Sign in to sync Projects across machines</span>
@@ -647,7 +654,11 @@ export function CommandPalette({
               >
                 <FolderOpen className="mr-2 h-3.5 w-3.5 shrink-0" />
                 <span>Add project…</span>
-                <CommandShortcut>⌘N</CommandShortcut>
+                {newProjectShortcut && (
+                  <CommandShortcut>
+                    {formatShortcutKeys(newProjectShortcut)}
+                  </CommandShortcut>
+                )}
               </CommandItem>
             </CommandGroup>
             <CommandSeparator />
@@ -667,7 +678,11 @@ export function CommandPalette({
                 >
                   <item.icon className="mr-2 h-4 w-4" />
                   <span>{item.label}</span>
-                  {item.keys && <CommandShortcut>{item.keys}</CommandShortcut>}
+                  {item.shortcut && (
+                    <CommandShortcut>
+                      {formatShortcutKeys(item.shortcut)}
+                    </CommandShortcut>
+                  )}
                 </CommandItem>
               ))}
             </CommandGroup>

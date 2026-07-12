@@ -38,7 +38,11 @@ import {
   OPEN_OVERVIEW_EVENT,
   FOCUS_ACTIVE_TERMINAL_EVENT,
 } from './session-jump';
-import { useShortcuts } from '@/components/shortcuts';
+import {
+  useEffectiveShortcut,
+  useShortcuts,
+} from '@/components/shortcuts';
+import { formatShortcutKeys } from '@/lib/shortcuts';
 import {
   RoadmapRail,
   ROADMAP_RAIL_FOCUS_EVENT,
@@ -59,18 +63,47 @@ import { middleTruncatePath } from './path-label';
 
 /** the discoverability layer (S3): the workspace SHOWS its keys, exactly
  *  like the spatial map's bottom legend — normal case, dim, always there */
-const KEY_HINTS: Array<[string, string]> = [
-  ['⌘K', 'sessions'],
-  ['⌘O', 'overview'],
-  ['⌘N', 'new project'],
-  ['⌘T', 'shell'],
-  ['⌘D', 'split'],
-  ['⌘B', 'roadmap'],
-  ['⌘J', 'needs you'],
-  ['⌘E', 'rename'],
-  ['⌘⇧M', 'spatial'],
-  ['⌘/', 'all keys'],
+const KEY_HINTS: Array<{ shortcutId: string; label: string }> = [
+  { shortcutId: 'command-palette', label: 'commands' },
+  { shortcutId: 'workspace-overview', label: 'overview' },
+  { shortcutId: 'workspace-new-project', label: 'new project' },
+  { shortcutId: 'workspace-new-shell', label: 'shell' },
+  { shortcutId: 'workspace-split', label: 'split' },
+  { shortcutId: 'workspace-roadmap', label: 'roadmap' },
+  { shortcutId: 'workspace-jump-attention', label: 'needs you' },
+  { shortcutId: 'workspace-rename', label: 'rename' },
+  { shortcutId: 'toggle-regime', label: 'spatial' },
+  { shortcutId: 'help-modal-slash', label: 'all keys' },
 ];
+
+function WorkspaceKeyHint({
+  shortcutId,
+  label,
+  roomy = false,
+}: {
+  shortcutId: string;
+  label: string;
+  roomy?: boolean;
+}) {
+  const keys = useEffectiveShortcut(shortcutId);
+  if (!keys) return null;
+  return (
+    <span className={`flex items-center ${roomy ? 'gap-1.5' : 'gap-1'}`}>
+      <kbd
+        className={`rounded border px-1 ${roomy ? 'py-0.5 text-[10px]' : 'leading-4'}`}
+        style={{
+          borderColor: roomy
+            ? 'rgba(80,230,255,0.3)'
+            : 'rgba(80,230,255,0.25)',
+          color: HUD.textMono,
+        }}
+      >
+        {formatShortcutKeys(keys)}
+      </kbd>
+      {label}
+    </span>
+  );
+}
 
 export function WorkspaceClient() {
   // SSR renders neither branch; the electron check runs after mount so the
@@ -683,19 +716,8 @@ export function WorkspaceClient() {
               className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 font-mono text-xs"
               style={{ color: HUD.textDim }}
             >
-              {KEY_HINTS.map(([keys, label]) => (
-                <span key={keys} className="flex items-center gap-1.5">
-                  <kbd
-                    className="rounded border px-1 py-0.5 text-[10px]"
-                    style={{
-                      borderColor: 'rgba(80,230,255,0.3)',
-                      color: HUD.textMono,
-                    }}
-                  >
-                    {keys}
-                  </kbd>
-                  {label}
-                </span>
+              {KEY_HINTS.map(hint => (
+                <WorkspaceKeyHint key={hint.shortcutId} {...hint} roomy />
               ))}
             </div>
           </div>
@@ -770,19 +792,8 @@ export function WorkspaceClient() {
           background: HUD.bg.deep,
         }}
       >
-        {KEY_HINTS.map(([keys, label]) => (
-          <span key={keys} className="flex items-center gap-1">
-            <kbd
-              className="rounded border px-1 leading-4"
-              style={{
-                borderColor: 'rgba(80,230,255,0.25)',
-                color: HUD.textMono,
-              }}
-            >
-              {keys}
-            </kbd>
-            {label}
-          </span>
+        {KEY_HINTS.map(hint => (
+          <WorkspaceKeyHint key={hint.shortcutId} {...hint} />
         ))}
       </div>
       </div>

@@ -133,7 +133,7 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     label: 'Overview of all sessions',
     description: 'Toggle the exposé overview',
     category: 'workspace',
-    contexts: ['workspace'],
+    contexts: ['global', 'workspace'],
   },
   {
     id: 'workspace-split',

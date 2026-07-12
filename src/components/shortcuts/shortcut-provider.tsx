@@ -135,6 +135,18 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
                 : '/workspace'
             );
             break;
+          case 'workspace-overview': {
+            const onWorkspace =
+              window.location.pathname.startsWith('/workspace');
+            const open =
+              new URLSearchParams(window.location.search).get('view') ===
+              'sessions';
+            if (onWorkspace && open) router.push('/workspace');
+            else if (onWorkspace) {
+              window.dispatchEvent(new CustomEvent(OPEN_OVERVIEW_EVENT));
+            } else router.push('/workspace?view=sessions');
+            break;
+          }
           case 'command-palette':
             setCommandPaletteOpen(true);
             break;

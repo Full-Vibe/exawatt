@@ -55,7 +55,7 @@ export function formatShortcutKeysAccessible(keys: ShortcutKeys): string {
     const parts: string[] = [];
     if (b.modifiers) {
       parts.push(
-        ...b.modifiers.map((m) => m.charAt(0).toUpperCase() + m.slice(1))
+        ...b.modifiers.map(m => m.charAt(0).toUpperCase() + m.slice(1))
       );
     }
     parts.push(b.key);
@@ -66,6 +66,21 @@ export function formatShortcutKeysAccessible(keys: ShortcutKeys): string {
     return keys.map(formatBinding).join(' then ');
   }
   return formatBinding(keys);
+}
+
+/** WAI-ARIA `aria-keyshortcuts` syntax for single-key commands. Chord
+ *  sequences do not have an interoperable representation and are omitted. */
+export function formatShortcutKeysAria(keys: ShortcutKeys): string | undefined {
+  if (isChord(keys)) return undefined;
+  const names: Record<ModifierKey, string> = {
+    meta: 'Meta',
+    ctrl: 'Control',
+    alt: 'Alt',
+    shift: 'Shift',
+  };
+  const parts = (keys.modifiers ?? []).map(modifier => names[modifier]);
+  parts.push(keys.key === ' ' ? 'Space' : keys.key);
+  return parts.join('+');
 }
 
 /** Convert a KeyboardEvent to a KeyBinding */

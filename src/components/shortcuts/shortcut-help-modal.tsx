@@ -1,6 +1,12 @@
 'use client';
 
-import { useSyncExternalStore, useMemo, useCallback, useState, useEffect } from 'react';
+import {
+  useSyncExternalStore,
+  useMemo,
+  useCallback,
+  useState,
+  useEffect,
+} from 'react';
 import {
   Dialog,
   DialogContent,
@@ -13,7 +19,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { shortcutRegistry } from '@/lib/shortcuts';
 import { formatShortcutKeys } from '@/lib/shortcuts/format';
 import { ShortcutBadge } from './shortcut-badge';
-import type { ShortcutCategory } from '@/types/shortcuts';
+import type { KeyBinding, ShortcutCategory } from '@/types/shortcuts';
 
 const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
   workspace: 'Terminal Workspace',
@@ -40,16 +46,54 @@ const CATEGORY_ORDER: ShortcutCategory[] = [
  * dynamically with its effective (possibly rebound) combo.
  */
 const FIXED_FAMILIES: Array<{
+  category: ShortcutCategory;
   label: string;
-  keys: { key: string; modifiers?: Array<'meta' | 'shift'> };
+  keys: KeyBinding;
 }> = [
   {
+    category: 'workspace',
     label: 'Jump to project 1–9',
     keys: { key: '1…9', modifiers: ['meta'] },
   },
   {
+    category: 'workspace',
     label: 'Previous / next tab (global ring)',
     keys: { key: '[ / ]', modifiers: ['meta', 'shift'] },
+  },
+  {
+    category: 'view',
+    label: 'Spatial: open Project 1–9',
+    keys: { key: '1…9' },
+  },
+  {
+    category: 'view',
+    label: 'Spatial: pan board',
+    keys: { key: '← ↑ ↓ →' },
+  },
+  {
+    category: 'view',
+    label: 'Spatial: zoom board',
+    keys: { key: '+ / −' },
+  },
+  {
+    category: 'view',
+    label: 'Spatial: toggle projection',
+    keys: { key: 'V' },
+  },
+  {
+    category: 'view',
+    label: 'Spatial: recenter / overview',
+    keys: { key: '0' },
+  },
+  {
+    category: 'view',
+    label: 'Spatial: next / previous attention',
+    keys: { key: 'N / P' },
+  },
+  {
+    category: 'view',
+    label: 'Spatial: zoom out selection',
+    keys: { key: 'Escape' },
   },
 ];
 
@@ -86,7 +130,9 @@ export function ShortcutHelpModal({
   const q = query.trim().toLowerCase();
   const matches = useCallback(
     (label: string, keysText: string) =>
-      !q || label.toLowerCase().includes(q) || keysText.toLowerCase().includes(q),
+      !q ||
+      label.toLowerCase().includes(q) ||
+      keysText.toLowerCase().includes(q),
     [q]
   );
 
@@ -98,12 +144,14 @@ export function ShortcutHelpModal({
         if (!matches(shortcut.label, formatShortcutKeys(effectiveKeys))) {
           return [];
         }
-        return [{ id: shortcut.id, label: shortcut.label, keys: effectiveKeys }];
+        return [
+          { id: shortcut.id, label: shortcut.label, keys: effectiveKeys },
+        ];
       });
-      const fixed =
-        category === 'workspace'
-          ? FIXED_FAMILIES.filter(f => matches(f.label, f.keys.key))
-          : [];
+      const fixed = FIXED_FAMILIES.filter(
+        family =>
+          family.category === category && matches(family.label, family.keys.key)
+      );
       return { category, rows, fixed };
     }).filter(s => s.rows.length > 0 || s.fixed.length > 0);
   }, [shortcuts, matches]);

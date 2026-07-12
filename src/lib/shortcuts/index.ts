@@ -5,5 +5,6 @@ export {
   formatKeyBinding,
   formatShortcutKeys,
   formatShortcutKeysAccessible,
+  formatShortcutKeysAria,
   eventToBinding,
 } from './format';

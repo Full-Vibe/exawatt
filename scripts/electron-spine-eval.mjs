@@ -228,6 +228,14 @@ try {
     filtered.includes('Rename the active tab') &&
       !filtered.includes('Overview of all sessions')
   );
+  await helpFilter.fill('projection');
+  await page.waitForTimeout(300);
+  check(
+    'help makes Spatial raw keys searchable',
+    (await page.locator('[data-help-category="view"]').innerText()).includes(
+      'Spatial: toggle projection'
+    )
+  );
   // chord gating: g d behind the open modal must not navigate
   await page.keyboard.press('Shift+Tab'); // leave the filter input
   await page.keyboard.press('KeyG');

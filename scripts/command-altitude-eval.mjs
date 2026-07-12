@@ -146,6 +146,18 @@ try {
       .count()) === 1,
     'Terminal altitude was not active'
   );
+  requireState(
+    (await page
+      .locator('[data-command-altitude-level="sessions"]')
+      .getAttribute('aria-keyshortcuts')) === 'Meta+o',
+    'Sessions altitude did not advertise its effective shortcut'
+  );
+  requireState(
+    (await page
+      .locator('[data-command-altitude-level="spatial"]')
+      .getAttribute('aria-keyshortcuts')) === 'Meta+Shift+m',
+    'Spatial altitude did not advertise its effective shortcut'
+  );
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'terminal.png'),
     fullPage: true,

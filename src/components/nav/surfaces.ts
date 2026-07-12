@@ -20,13 +20,24 @@ import { spatialReturnHref } from './spatial-return';
 export type SurfaceTier = 'spine' | 'app' | 'legacy';
 
 export interface AppSurface {
-  id: 'terminal' | 'sessions' | 'spatial' | 'settings' | 'dashboard' | 'board' | 'fleet';
+  id:
+    | 'terminal'
+    | 'sessions'
+    | 'spatial'
+    | 'settings'
+    | 'dashboard'
+    | 'board'
+    | 'fleet';
   /** canonical display name — every consumer must render exactly this */
   name: string;
+  /** concise operational meaning used by navigation controls */
+  summary: string;
   href: string;
   tier: SurfaceTier;
   /** registry shortcut id whose go-chord navigates here */
   shortcutId: string;
+  /** direct gesture advertised when moving to this surface */
+  gestureShortcutId?: string;
   /** extra palette search terms */
   keywords: string[];
 }
@@ -35,6 +46,7 @@ export const APP_SURFACES: AppSurface[] = [
   {
     id: 'terminal',
     name: 'Terminal',
+    summary: 'Focus one live Session',
     href: '/workspace',
     tier: 'spine',
     shortcutId: 'go-workspace',
@@ -43,22 +55,27 @@ export const APP_SURFACES: AppSurface[] = [
   {
     id: 'sessions',
     name: 'Sessions',
+    summary: 'Overview of live Sessions',
     href: '/workspace?view=sessions',
     tier: 'spine',
     shortcutId: 'go-sessions',
+    gestureShortcutId: 'workspace-overview',
     keywords: ['overview', 'expose', 'grid', 'tiles', 'all sessions'],
   },
   {
     id: 'spatial',
     name: 'Spatial',
+    summary: 'Fleet command field',
     href: '/fleet/spatial',
     tier: 'spine',
     shortcutId: 'go-spatial',
+    gestureShortcutId: 'toggle-regime',
     keywords: ['map', 'board', 'fleet command', 'altitude', 'zoom'],
   },
   {
     id: 'settings',
     name: 'Settings',
+    summary: 'Preferences and shortcuts',
     href: '/settings',
     tier: 'app',
     shortcutId: 'go-settings',
@@ -67,6 +84,7 @@ export const APP_SURFACES: AppSurface[] = [
   {
     id: 'dashboard',
     name: 'Lattice',
+    summary: 'Legacy task dashboard',
     href: '/dashboard',
     tier: 'legacy',
     shortcutId: 'go-dashboard',
@@ -75,6 +93,7 @@ export const APP_SURFACES: AppSurface[] = [
   {
     id: 'board',
     name: 'Board',
+    summary: 'Legacy task board',
     href: '/board',
     tier: 'legacy',
     shortcutId: 'go-board',
@@ -83,6 +102,7 @@ export const APP_SURFACES: AppSurface[] = [
   {
     id: 'fleet',
     name: 'Fleet Command',
+    summary: 'Legacy fleet dashboard',
     href: '/fleet',
     tier: 'legacy',
     shortcutId: 'go-fleet',
