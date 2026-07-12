@@ -226,7 +226,36 @@ ships as a NEW milestone with its own acceptance, bridging toward ENG-013.
 Acceptance: operator has played with at least two interaction options per
 gesture and explicitly accepted or rejected each; decisions recorded here.
 
+**Round-1 verdict (operator, 2026-07-12): presentation REJECTED.** Quote-level
+findings: the lab and the shipped lens read as "UI vomit" — can't tell what
+you're looking at or what to do; hierarchy is bad; too dense; fonts "too
+geeky and monospace and Star Trekkie"; the filled-vs-hollow spine dots are a
+bad affordance ("random dots… doesn't make any sense to me as a user").
+Consequence: the manipulable-lens gestures stay gated, and the VISUAL
+language itself reopened. Round 2 (same day) leads the lab with three
+opinionated directions — **Brief** (editorial status page: plain sentences,
+checkmark checklists, progress bars), **Focus** (one giant answer: current
+item + next milestone, rest compressed), **Journey** (horizontal
+left-to-right track: shipped → you are here → next → later, detail on
+click) — each with its own collapsed-strip proposal (title-bar chip / plain
+words / minified track) so the dot rail has real challengers. All three read
+the same `RoadmapLensView`; the shipped design is demoted to a comparison
+panel. Awaiting operator verdict; the winner graduates into the real rail
+as S11.
+
 ## Progress log (second arc)
+
+- 2026-07-12, S10 round 2 (after the operator's round-1 rejection, recorded
+  above): rebuilt `/hud-gallery/roadmap-lab` around three design directions
+  (`directions.tsx` — Brief / Focus / Journey, each with a collapsed-strip
+  proposal), calm palette + Geist Sans instead of the HUD mono wash, the
+  shipped rail demoted to a "Current (shipped)" comparison panel, gesture
+  prototypes kept below. Presentation-only; no state writes. Also fixed the
+  BLOCKED fixture's duplicate `Status:` line (the reason never parsed) and
+  taught the directions to strip status tokens and "(landed)" markers out of
+  prose. Screenshot-iterated all six key states in the running Electron app
+  (three rounds; fixed strip-caption collisions, starving mislabeled as "no
+  roadmap", journey track overflow). Awaiting operator verdict → S11.
 
 - 2026-07-12, product-lens pass (drove the real app against the real exawatt
   roadmap): the hero card advertised **W0.5 — a rescoped milestone — as the

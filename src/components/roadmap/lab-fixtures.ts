@@ -147,9 +147,7 @@ ${item('APP-001', 'Repo consolidation', 'shipped')}
 
 ## Now
 
-${item('APP-018', 'Durable, resumable sessions', 'blocked', `
-Status: blocked — needs the operator to approve the PTY host entitlement
-
+${item('APP-018', 'Durable, resumable sessions', 'blocked — needs the operator to approve the PTY host entitlement', `
 Milestones:
 
 - D1 Session host process (landed)
