@@ -163,4 +163,42 @@ describe('Sessions overview', () => {
     window.dispatchEvent(new CustomEvent(FOCUS_SESSIONS_EVENT));
     expect(alpha).toHaveFocus();
   });
+
+  it('applies scrollback previews even when tiles re-render mid-fetch', async () => {
+    // the fetch outliving ONE workspace re-render used to drop the batch
+    // forever (sessions were already marked fetched) — tiles froze on "…"
+    const resolvers: Array<(v: string) => void> = [];
+    const buffer = vi.fn(
+      () => new Promise<string>(res => resolvers.push(res))
+    );
+    (window as unknown as { electron: unknown }).electron = {
+      pty: { buffer },
+    };
+    try {
+      const props = {
+        summaries: {},
+        attention: {},
+        activeTabId: 'tab-a',
+        onPick: vi.fn(),
+        onClose: vi.fn(),
+      };
+      const { rerender } = render(
+        <ExposeOverlay projects={projects} {...props} />
+      );
+      await waitFor(() => expect(buffer).toHaveBeenCalled());
+      // new projects identity while the fetch is still in flight
+      rerender(
+        <ExposeOverlay
+          projects={projects.map(p => ({ ...p, tabs: [...p.tabs] }))}
+          {...props}
+        />
+      );
+      resolvers.forEach(res => res('$ pnpm test\nall green\n'));
+      await waitFor(() =>
+        expect(screen.getAllByText(/all green/).length).toBeGreaterThan(0)
+      );
+    } finally {
+      delete (window as unknown as { electron?: unknown }).electron;
+    }
+  });
 });

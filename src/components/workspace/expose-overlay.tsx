@@ -133,6 +133,13 @@ export function ExposeOverlay({
   // fetch scrollback for tiles we haven't covered yet (tiles can also GROW
   // while open, e.g. a tab finishing auto-revive)
   const fetchedRef = useRef(new Set<string>());
+  const unmountedRef = useRef(false);
+  useEffect(() => {
+    unmountedRef.current = false; // strict-mode remount resets the latch
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
   useEffect(() => {
     const api = window.electron?.pty;
     if (!api) return;
@@ -142,7 +149,6 @@ export function ExposeOverlay({
     );
     if (missing.length === 0) return;
     for (const t of missing) fetchedRef.current.add(t.sessionId);
-    let cancelled = false;
     void (async () => {
       const entries = await Promise.all(
         missing.map(async t => {
@@ -150,13 +156,14 @@ export function ExposeOverlay({
           return [t.sessionId, previewLines(buf, 5, 90)] as const;
         })
       );
-      if (!cancelled) {
+      // results are keyed by sessionId, so they stay valid across tile
+      // re-renders — a per-effect cancel here silently dropped every batch
+      // whose fetch outlived one workspace re-render, leaving tiles on "…"
+      // forever (sessions were already marked fetched). Guard only unmount.
+      if (!unmountedRef.current) {
         setPreviews(prev => ({ ...prev, ...Object.fromEntries(entries) }));
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, [tiles]);
 
   // take the keyboard away from xterm; entrance flag flips post-mount so

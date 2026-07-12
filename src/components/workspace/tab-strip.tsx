@@ -64,6 +64,9 @@ function RenameInput({
       value={value}
       autoFocus
       aria-label="Rename"
+      // rename semantics: the old name arrives selected, so typing replaces
+      // it — without this, ⌘E + typing APPENDS ("Shellbeta scratch")
+      onFocus={e => e.currentTarget.select()}
       onChange={e => onChange(e.target.value)}
       onBlur={() => {
         if (!settled.current) onCommit();
