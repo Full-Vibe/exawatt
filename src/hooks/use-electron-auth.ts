@@ -3,13 +3,17 @@
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  electronAuthErrorMessage,
+  exchangeElectronCodeWithRetry,
+} from '@/lib/auth/electron-code-exchange';
 
 export function useElectronAuth(
   supabase: SupabaseClient,
   callbacks: {
     onError: (message: string) => void;
     onLoadingChange: (loading: boolean) => void;
-  },
+  }
 ) {
   const router = useRouter();
   const callbacksRef = useRef(callbacks);
@@ -20,11 +24,19 @@ export function useElectronAuth(
   useEffect(() => {
     if (!window.electron?.auth?.onDeepLinkCode) return;
 
-    const cleanup = window.electron.auth.onDeepLinkCode(async (code) => {
-      const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const cleanup = window.electron.auth.onDeepLinkCode(async code => {
+      const { error } = await exchangeElectronCodeWithRetry(() =>
+        supabase.auth.exchangeCodeForSession(code)
+      );
 
       if (error) {
-        callbacksRef.current.onError('Authentication failed. Please try again.');
+        console.error('[auth] Electron OAuth code exchange failed', {
+          name: error.name,
+          message: error.message,
+          status: error.status,
+          code: error.code,
+        });
+        callbacksRef.current.onError(electronAuthErrorMessage(error));
         callbacksRef.current.onLoadingChange(false);
       } else {
         router.push('/workspace');
