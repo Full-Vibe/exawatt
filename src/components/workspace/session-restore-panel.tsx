@@ -26,6 +26,7 @@ export function SessionRestorePanel({
     null
   );
   const [loading, setLoading] = useState(false);
+  const [candidateError, setCandidateError] = useState(false);
   const harnessLabel = HARNESS_META[tab.harness].label;
   const exact = !!tab.harnessSessionId || tab.harness === 'shell';
   const status =
@@ -39,6 +40,7 @@ export function SessionRestorePanel({
 
   const findCodexConversations = async () => {
     setLoading(true);
+    setCandidateError(false);
     try {
       const found =
         (await window.electron?.pty?.listResumeCandidates(
@@ -46,6 +48,8 @@ export function SessionRestorePanel({
           tab.cwd
         )) ?? [];
       setCandidates(found);
+    } catch {
+      setCandidateError(true);
     } finally {
       setLoading(false);
     }
@@ -80,6 +84,11 @@ export function SessionRestorePanel({
             <RotateCcw className="h-3.5 w-3.5" />
             {loading ? 'Finding…' : 'Choose Conversation'}
           </Button>
+        )}
+        {candidateError && (
+          <span role="status" className="text-[10px] text-amber-300">
+            Conversations unavailable
+          </span>
         )}
         {project.tabs.filter(
           candidate =>

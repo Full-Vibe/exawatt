@@ -15,6 +15,8 @@ import {
 } from './session-history-store';
 import { stopProcessGroups } from './process-groups';
 import { listResumeCandidates } from './resume-candidates';
+import { ownerOfCodexCandidate } from './codex-identity-match';
+import { OrderedWriteBuffer } from './ordered-write-buffer';
 
 const execFileAsync = promisify(execFile);
 
@@ -117,6 +119,7 @@ interface Session {
   info: PtySessionInfo;
   codexTrustAccepted: boolean;
   codexIdentityStarted: boolean;
+  codexInput: OrderedWriteBuffer;
 }
 
 export class PtySessionManager extends EventEmitter {
@@ -130,7 +133,6 @@ export class PtySessionManager extends EventEmitter {
   private creatingDurableIds = new Set<string>();
   private claimedCodexIds = new Set<string>();
   private pendingCodexIdentities = new Set<Promise<void>>();
-  private codexSubmissionTail: Promise<void> = Promise.resolve();
 
   async configurePersistence(root: string): Promise<void> {
     this.history = new SessionHistoryStore(root);
@@ -261,6 +263,7 @@ export class PtySessionManager extends EventEmitter {
       info,
       codexTrustAccepted: false,
       codexIdentityStarted: false,
+      codexInput: new OrderedWriteBuffer(),
     });
 
     if (options.resumeSessionId && options.harness !== 'shell') {
@@ -314,12 +317,33 @@ export class PtySessionManager extends EventEmitter {
     const deadline = Date.now() + 15_000;
     while (Date.now() < deadline && !info.exited && !info.harnessSessionId) {
       const candidates = await listResumeCandidates('codex', info.cwd);
-      const match = candidates.find(
-        candidate =>
-          !before.has(candidate.id) &&
-          !this.claimedCodexIds.has(candidate.id) &&
-          candidate.updatedAt >= submittedAt - 2_000
-      );
+      const pending = Array.from(this.sessions.values())
+        .filter(
+          session =>
+            session.info.harness === 'codex' &&
+            session.codexIdentityStarted &&
+            !session.info.harnessSessionId &&
+            !session.info.exited
+        )
+        .map(session => ({
+          id: session.info.id,
+          cwd: session.info.cwd,
+          startedAt: session.info.startedAt,
+        }));
+      const match = candidates
+        .filter(
+          candidate =>
+            !before.has(candidate.id) &&
+            !this.claimedCodexIds.has(candidate.id) &&
+            candidate.updatedAt >= submittedAt - 2_000 &&
+            ownerOfCodexCandidate(pending, candidate) === info.id
+        )
+        .sort(
+          (a, b) =>
+            Math.abs(a.startedAt - info.startedAt) -
+              Math.abs(b.startedAt - info.startedAt) ||
+            b.updatedAt - a.updatedAt
+        )[0];
       if (match) {
         this.claimedCodexIds.add(match.id);
         info.harnessSessionId = match.id;
@@ -338,13 +362,16 @@ export class PtySessionManager extends EventEmitter {
   write(id: string, data: string): void {
     const s = this.sessions.get(id);
     if (!s || s.info.exited) return;
+    if (s.codexInput.hold(data)) return;
     if (
       s.info.harness === 'codex' &&
       !s.info.harnessSessionId &&
       !s.codexIdentityStarted &&
       /[\r\n]/.test(data)
     ) {
-      const output = this.scrollback.text(s.info.durableSessionId).toLowerCase();
+      const output = this.scrollback
+        .text(s.info.durableSessionId)
+        .toLowerCase();
       if (
         !s.codexTrustAccepted &&
         output.includes('trust') &&
@@ -355,44 +382,53 @@ export class PtySessionManager extends EventEmitter {
         return;
       }
       s.codexIdentityStarted = true;
-      this.queueCodexSubmission(s, data);
+      s.codexInput.begin(data);
+      this.beginCodexIdentityCapture(s);
       return;
     }
     s.proc.write(data);
   }
 
-  private queueCodexSubmission(session: Session, data: string): void {
-    const previous = this.codexSubmissionTail;
-    let release!: () => void;
-    this.codexSubmissionTail = new Promise(resolve => {
-      release = resolve;
-    });
+  private beginCodexIdentityCapture(session: Session): void {
     let task!: Promise<void>;
     task = (async () => {
-      await previous;
+      let before = new Set<string>();
       try {
-        if (
-          session.info.exited ||
-          !this.sessions.has(session.info.id) ||
-          session.info.harnessSessionId
-        ) {
-          return;
-        }
-        const before = new Set(
+        before = new Set(
           (await listResumeCandidates('codex', session.info.cwd)).map(
             candidate => candidate.id
           )
         );
-        const submittedAt = Date.now();
-        session.proc.write(data);
-        await this.captureCodexIdentity(session.info, before, submittedAt);
-        if (!session.info.harnessSessionId) {
-          session.codexIdentityStarted = false;
-        }
+      } catch (error) {
+        console.warn('Codex identity baseline unavailable', error);
       } finally {
-        release();
+        session.codexInput.release(data => {
+          if (!session.info.exited && this.sessions.has(session.info.id)) {
+            session.proc.write(data);
+          }
+        });
       }
-    })().finally(() => this.pendingCodexIdentities.delete(task));
+      if (
+        session.info.exited ||
+        !this.sessions.has(session.info.id) ||
+        session.info.harnessSessionId
+      ) {
+        return;
+      }
+      try {
+        const submittedAt = Date.now();
+        await this.captureCodexIdentity(session.info, before, submittedAt);
+      } catch (error) {
+        console.warn('Codex identity capture failed', error);
+      }
+      if (!session.info.harnessSessionId) session.codexIdentityStarted = false;
+    })()
+      .catch(error => {
+        // Never let catalog I/O turn a terminal write into an unhandled rejection.
+        session.codexIdentityStarted = false;
+        console.error('Codex submission setup failed', error);
+      })
+      .finally(() => this.pendingCodexIdentities.delete(task));
     this.pendingCodexIdentities.add(task);
   }
 

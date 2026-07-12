@@ -3,30 +3,52 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Workspace layout persistence (ENG-002 W0.2): initiative groups, tabs,
- * working dirs, last-used dir. The RENDERER owns the shape (versioned JSON);
- * main just stores it durably in userData so it survives app restarts.
- * Live processes are not persisted. The renderer restores ended tabs and exact
- * provider conversation IDs; it never starts a process until explicit resume.
+ * Workspace layout persistence. The renderer owns the versioned shape; main
+ * serializes atomic replacements so debounce and shutdown checkpoints cannot
+ * race or reorder on disk.
  */
-const FILE = 'workspace.json';
+export class WorkspaceStore {
+  private saveTail: Promise<void> = Promise.resolve();
+  private temporarySequence = 0;
 
-function filePath(): string {
-  return path.join(app.getPath('userData'), FILE);
-}
+  constructor(private readonly file: string) {}
 
-export async function loadWorkspace(): Promise<unknown | null> {
-  try {
-    return JSON.parse(await fs.promises.readFile(filePath(), 'utf8'));
-  } catch {
-    return null; // first run / unreadable — renderer starts fresh
+  async load(): Promise<unknown | null> {
+    try {
+      return JSON.parse(await fs.promises.readFile(this.file, 'utf8'));
+    } catch {
+      return null;
+    }
+  }
+
+  async save(state: unknown): Promise<void> {
+    const serialized = JSON.stringify(state);
+    const operation = this.saveTail.then(async () => {
+      await fs.promises.mkdir(path.dirname(this.file), { recursive: true });
+      const temporary = `${this.file}.tmp-${process.pid}-${++this.temporarySequence}`;
+      await fs.promises.writeFile(temporary, serialized, { mode: 0o600 });
+      await fs.promises.chmod(temporary, 0o600);
+      await fs.promises.rename(temporary, this.file);
+      await fs.promises.chmod(this.file, 0o600);
+    });
+    this.saveTail = operation.catch(() => undefined);
+    await operation;
   }
 }
 
-export async function saveWorkspace(state: unknown): Promise<void> {
-  const p = filePath();
-  await fs.promises.mkdir(path.dirname(p), { recursive: true });
-  const tmp = `${p}.tmp`;
-  await fs.promises.writeFile(tmp, JSON.stringify(state));
-  await fs.promises.rename(tmp, p); // atomic-ish: no torn files on crash
+let defaultStore: WorkspaceStore | null = null;
+
+function store(): WorkspaceStore {
+  defaultStore ??= new WorkspaceStore(
+    path.join(app.getPath('userData'), 'workspace.json')
+  );
+  return defaultStore;
+}
+
+export function loadWorkspace(): Promise<unknown | null> {
+  return store().load();
+}
+
+export function saveWorkspace(state: unknown): Promise<void> {
+  return store().save(state);
 }

@@ -17,7 +17,10 @@ export interface ShutdownDependencies {
     intent: ShutdownIntent,
     counts: LiveProcessCounts
   ) => Promise<boolean>;
-  checkpoint: (intent: ShutdownIntent) => Promise<boolean>;
+  checkpoint: (
+    intent: ShutdownIntent,
+    stage: 'pre-stop' | 'stopped'
+  ) => Promise<boolean>;
   confirmWithoutCheckpoint: (intent: ShutdownIntent) => Promise<boolean>;
   pauseNewWork: () => void;
   resumeNewWork: () => void;
@@ -77,7 +80,7 @@ export class ShutdownCoordinator {
 
     this.deps.pauseNewWork();
     this.setPhase('checkpointing', counts);
-    const checkpointed = await this.deps.checkpoint(intent);
+    const checkpointed = await this.deps.checkpoint(intent, 'pre-stop');
     if (!checkpointed && !(await this.deps.confirmWithoutCheckpoint(intent))) {
       return false;
     }
@@ -86,7 +89,10 @@ export class ShutdownCoordinator {
     this.setPhase('stopping', counts);
     await this.deps.stopProcesses();
     await this.deps.flushHistory();
-    if (checkpointed) await this.deps.markClean();
+    // Persist stopped-clean only after process-group verification succeeds. If
+    // this commit fails, leave the run marker unclean so recovery is honest.
+    const cleanCheckpointed = await this.deps.checkpoint(intent, 'stopped');
+    if (cleanCheckpointed) await this.deps.markClean();
 
     this.setPhase('finalizing', counts);
     await this.deps.cleanup();

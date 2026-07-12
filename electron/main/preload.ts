@@ -132,6 +132,7 @@ contextBridge.exposeInMainWorld('electron', {
     onCheckpointRequest: subscribe<{
       requestId: string;
       reason: 'quit' | 'update';
+      stage: 'pre-stop' | 'stopped';
     }>('app:checkpoint-request'),
     onShutdownStatus: subscribe<{
       phase:

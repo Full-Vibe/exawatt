@@ -226,7 +226,11 @@ export interface ElectronAppApi {
   restartUpdate: () => Promise<void>;
   completeCheckpoint: (requestId: string, ok: boolean) => Promise<void>;
   onCheckpointRequest: (
-    handler: (request: { requestId: string; reason: 'quit' | 'update' }) => void
+    handler: (request: {
+      requestId: string;
+      reason: 'quit' | 'update';
+      stage: 'pre-stop' | 'stopped';
+    }) => void
   ) => () => void;
   onShutdownStatus: (
     handler: (status: {

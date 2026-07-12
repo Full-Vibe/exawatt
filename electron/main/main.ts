@@ -576,8 +576,11 @@ async function confirmWithoutCheckpoint(
   return result.response === 1;
 }
 
-async function checkpointRenderer(intent: ShutdownIntent): Promise<boolean> {
-  await ptySessions.settleProviderIdentities();
+async function checkpointRenderer(
+  intent: ShutdownIntent,
+  stage: 'pre-stop' | 'stopped'
+): Promise<boolean> {
+  if (stage === 'pre-stop') await ptySessions.settleProviderIdentities();
   const win = mainWindow;
   if (!win || win.isDestroyed()) return true;
   const requestId = randomUUID();
@@ -595,6 +598,7 @@ async function checkpointRenderer(intent: ShutdownIntent): Promise<boolean> {
     win.webContents.send('app:checkpoint-request', {
       requestId,
       reason: intent,
+      stage,
     });
   });
 }

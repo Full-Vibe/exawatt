@@ -340,6 +340,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const attentionRef = useRef(attention);
   attentionRef.current = attention;
   const resumeInFlightRef = useRef<Set<string>>(new Set());
+  const shutdownTargetsRef = useRef<Set<string>>(new Set());
 
   /** append a live session as a tab in its (possibly new) project */
   const addSession = useCallback(
@@ -669,7 +670,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             const tabs = g.tabs.map(tab => {
               const stopped =
                 cleanShutdown &&
-                (tabIsLive(tab) || tab.lifecycle === 'resuming');
+                (shutdownTargetsRef.current.has(tab.durableSessionId) ||
+                  tabIsLive(tab) ||
+                  tab.lifecycle === 'resuming');
               return {
                 id: tab.id,
                 durableSessionId: tab.durableSessionId,
@@ -704,7 +707,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     if (!ready) return;
     const ws = window.electron?.workspace;
     if (!ws) return;
-    const handle = setTimeout(() => void ws.save(serializeWorkspace()), 400);
+    const handle = setTimeout(() => {
+      void ws
+        .save(serializeWorkspace())
+        .catch(error => console.error('Workspace persistence failed', error));
+    }, 400);
     return () => clearTimeout(handle);
   }, [
     projects,
@@ -721,8 +728,17 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const ws = window.electron?.workspace;
     const ptyApi = window.electron?.pty;
     if (!appApi || !ws || !ptyApi) return;
-    return appApi.onCheckpointRequest(({ requestId }) => {
-      const state = serializeWorkspace(true);
+    return appApi.onCheckpointRequest(({ requestId, stage }) => {
+      if (stage === 'pre-stop') {
+        shutdownTargetsRef.current = new Set(
+          stateRef.current.projects.flatMap(project =>
+            project.tabs
+              .filter(tab => tabIsLive(tab) || tab.lifecycle === 'resuming')
+              .map(tab => tab.durableSessionId)
+          )
+        );
+      }
+      const state = serializeWorkspace(stage === 'stopped');
       void ptyApi
         .list()
         .then(live => {

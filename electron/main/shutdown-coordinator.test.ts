@@ -10,7 +10,10 @@ function dependencies(overrides: Partial<ShutdownDependencies> = {}) {
   const deps: ShutdownDependencies = {
     countLive: () => ({ agents: 2, shells: 1 }),
     confirm: async () => (order.push('confirm'), true),
-    checkpoint: async () => (order.push('checkpoint'), true),
+    checkpoint: async (_intent, stage) => (
+      order.push(`checkpoint:${stage}`),
+      true
+    ),
     confirmWithoutCheckpoint: async () => true,
     pauseNewWork: () => undefined,
     resumeNewWork: () => undefined,
@@ -39,10 +42,11 @@ describe('ShutdownCoordinator', () => {
     await expect(coordinator.request('update')).resolves.toBe(true);
     expect(order).toEqual([
       'confirm',
-      'checkpoint',
+      'checkpoint:pre-stop',
       'flush',
       'stop',
       'flush',
+      'checkpoint:stopped',
       'clean',
       'cleanup',
       'final:update',
@@ -101,6 +105,21 @@ describe('ShutdownCoordinator', () => {
     expect(failure).toHaveBeenCalledOnce();
     expect(finalize).not.toHaveBeenCalled();
     expect(phases.at(-1)).toBe('idle');
+  });
+
+  it('never records a clean run when the post-stop checkpoint fails', async () => {
+    const clean = vi.fn(async () => undefined);
+    const finalize = vi.fn();
+    const { deps } = dependencies({
+      checkpoint: async (_intent, stage) => stage === 'pre-stop',
+      markClean: clean,
+      finalize,
+    });
+    await expect(new ShutdownCoordinator(deps).request('quit')).resolves.toBe(
+      true
+    );
+    expect(clean).not.toHaveBeenCalled();
+    expect(finalize).toHaveBeenCalledWith('quit');
   });
 });
 

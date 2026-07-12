@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -55,6 +55,88 @@ describe('SessionHistoryStore', () => {
     await flushing;
     await value.flush();
     expect((await value.load('tab-one')).text).toBe('two');
+  });
+
+  it('serializes overlapping flushes so an older snapshot cannot win', async () => {
+    const { value } = await store();
+    const originalRename = fs.promises.rename.bind(fs.promises);
+    let release!: () => void;
+    const blocked = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    let first = true;
+    const rename = vi
+      .spyOn(fs.promises, 'rename')
+      .mockImplementation(async (...args) => {
+        if (first) {
+          first = false;
+          await blocked;
+        }
+        return originalRename(...args);
+      });
+    try {
+      value.queue('tab-one', { text: 'old', cursor: 3, updatedAt: 1 });
+      const older = value.flush();
+      await new Promise(resolve => setTimeout(resolve, 10));
+      value.queue('tab-one', { text: 'new', cursor: 3, updatedAt: 2 });
+      const newer = value.flush();
+      release();
+      await Promise.all([older, newer]);
+      expect((await value.load('tab-one')).text).toBe('new');
+    } finally {
+      rename.mockRestore();
+    }
+  });
+
+  it('orders deletion after an in-flight write and cannot resurrect history', async () => {
+    const { root, value } = await store();
+    const originalRename = fs.promises.rename.bind(fs.promises);
+    let release!: () => void;
+    const blocked = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    const rename = vi
+      .spyOn(fs.promises, 'rename')
+      .mockImplementationOnce(async (...args) => {
+        await blocked;
+        return originalRename(...args);
+      });
+    try {
+      value.queue('tab-one', { text: 'output', cursor: 6, updatedAt: 1 });
+      const flushing = value.flush();
+      await new Promise(resolve => setTimeout(resolve, 10));
+      const deleting = value.delete('tab-one');
+      release();
+      await Promise.all([flushing, deleting]);
+      expect(await fs.promises.readdir(root)).not.toContain('tab-one.json');
+      expect((await value.load('tab-one')).text).toBe('');
+    } finally {
+      rename.mockRestore();
+    }
+  });
+
+  it('journals incremental output instead of rewriting the full snapshot', async () => {
+    const { root, value } = await store();
+    let text = 'x'.repeat(4_000_000);
+    let cursor = text.length;
+    value.queue('busy', { text, cursor, updatedAt: 1 });
+    await value.flush();
+    const snapshot = path.join(root, 'busy.json');
+    const initialMtime = (await fs.promises.stat(snapshot)).mtimeMs;
+
+    for (let index = 0; index < 20; index += 1) {
+      const delta = `${index}`.padEnd(1024, 'y');
+      cursor += delta.length;
+      text = (text + delta).slice(-4_000_000);
+      value.queue('busy', { text, cursor, updatedAt: index + 2 });
+      await value.flush();
+    }
+
+    expect((await fs.promises.stat(snapshot)).mtimeMs).toBe(initialMtime);
+    expect(
+      (await fs.promises.stat(path.join(root, 'busy.journal'))).size
+    ).toBeLessThan(30_000);
+    await expect(value.load('busy')).resolves.toMatchObject({ text, cursor });
   });
 
   it('isolates malformed records and deletes only the selected Session', async () => {
