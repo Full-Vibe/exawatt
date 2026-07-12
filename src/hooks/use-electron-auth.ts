@@ -3,10 +3,6 @@
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import {
-  electronAuthErrorMessage,
-  exchangeElectronCodeWithRetry,
-} from '@/lib/auth/electron-code-exchange';
 
 export function useElectronAuth(
   supabase: SupabaseClient,
@@ -19,51 +15,57 @@ export function useElectronAuth(
   const callbacksRef = useRef(callbacks);
   callbacksRef.current = callbacks;
 
-  // Listen for auth code arriving via deep link from Electron main process.
-  // The PKCE code verifier is in this renderer's storage, so we exchange here.
+  // Electron main owns the system-browser PKCE flow and gives the sandboxed
+  // renderer only the completed session pair through the trusted preload API.
   useEffect(() => {
-    if (!window.electron?.auth?.onDeepLinkCode) return;
+    const auth = window.electron?.auth;
+    if (!auth) return;
 
-    const cleanup = window.electron.auth.onDeepLinkCode(async code => {
-      const { error } = await exchangeElectronCodeWithRetry(() =>
-        supabase.auth.exchangeCodeForSession(code)
-      );
-
+    const cleanupSession = auth.onSession(async session => {
+      const { error } = await supabase.auth.setSession({
+        access_token: session.accessToken,
+        refresh_token: session.refreshToken,
+      });
       if (error) {
-        console.error('[auth] Electron OAuth code exchange failed', {
+        console.error('[auth] Electron OAuth session install failed', {
           name: error.name,
           message: error.message,
           status: error.status,
           code: error.code,
         });
-        callbacksRef.current.onError(electronAuthErrorMessage(error));
+        callbacksRef.current.onError(authErrorMessage(error));
         callbacksRef.current.onLoadingChange(false);
       } else {
         router.push('/workspace');
         router.refresh();
       }
     });
+    const cleanupError = auth.onError(error => {
+      console.error('[auth] Electron OAuth failed', error);
+      callbacksRef.current.onError(authErrorMessage(error));
+      callbacksRef.current.onLoadingChange(false);
+    });
 
-    return cleanup;
+    return () => {
+      cleanupSession();
+      cleanupError();
+    };
   }, [supabase, router]);
 
   const signInWithGoogle = async () => {
     const isElectron = !!window.electron?.isElectron;
 
     if (isElectron && window.electron?.auth) {
-      // Get the OAuth URL without navigating, then open in system browser
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          skipBrowserRedirect: true,
-          redirectTo: `${window.location.origin}/auth/electron-callback`,
-        },
-      });
-
-      if (error) throw error;
-      if (data.url) {
-        await window.electron.auth.openExternal(data.url);
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !supabaseAnonKey) {
+        throw new Error('Authentication is not configured.');
       }
+      await window.electron.auth.startGoogle({
+        supabaseUrl,
+        supabaseAnonKey,
+        redirectTo: `${window.location.origin}/auth/electron-callback`,
+      });
     } else {
       // Standard web flow — redirect in-page
       const { error } = await supabase.auth.signInWithOAuth({
@@ -77,4 +79,11 @@ export function useElectronAuth(
   };
 
   return { signInWithGoogle };
+}
+
+function authErrorMessage(error: { name?: string; message: string }): string {
+  if (error.name === 'AuthRetryableFetchError') {
+    return "Couldn't reach the authentication service. Check your connection and try again.";
+  }
+  return error.message || 'Authentication failed. Please try again.';
 }

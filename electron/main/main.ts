@@ -26,6 +26,11 @@ import {
 } from './shutdown-coordinator';
 import { RunStateStore } from './run-state';
 import { randomUUID } from 'crypto';
+import {
+  ElectronAuthCoordinator,
+  safeElectronAuthError,
+  type ElectronAuthStartConfig,
+} from './auth-coordinator';
 
 const isDev = process.env.NODE_ENV === 'development';
 const execFileAsync = promisify(execFile);
@@ -53,6 +58,7 @@ let rendererServer: ChildProcess | null = null;
 let rendererOrigin: string | null = null;
 let shutdownCoordinator: ShutdownCoordinator | null = null;
 let runStateStore: RunStateStore | null = null;
+let authCoordinator: ElectronAuthCoordinator | null = null;
 const pendingCheckpoints = new Map<string, (ok: boolean) => void>();
 const workspaceCheckpointOwners = new Set<number>();
 
@@ -198,14 +204,29 @@ function handleDeepLink(url: string): void {
 
     if (code) {
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('auth:deeplink-code', code);
         if (mainWindow.isMinimized()) mainWindow.restore();
         mainWindow.focus();
+        void completeElectronAuth(code);
       } else {
         // Window not ready — queue for delivery after load
         pendingDeepLinkUrl = url;
       }
     }
+  }
+}
+
+async function completeElectronAuth(code: string): Promise<void> {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return;
+
+  try {
+    if (!authCoordinator) throw new Error('Authentication is not ready.');
+    const session = await authCoordinator.exchangeCode(code);
+    if (!win.isDestroyed()) win.webContents.send('auth:session', session);
+  } catch (error) {
+    const safeError = safeElectronAuthError(error);
+    console.error('[auth] Electron OAuth code exchange failed', safeError);
+    if (!win.isDestroyed()) win.webContents.send('auth:error', safeError);
   }
 }
 
@@ -456,11 +477,13 @@ function createMenu(): void {
 }
 
 function registerAuthIPC(): void {
-  handleTrusted('auth:open-external', async (_event, url: string) => {
-    if (url.startsWith('https://')) {
-      await shell.openExternal(url);
+  handleTrusted(
+    'auth:start-google',
+    async (_event, config: ElectronAuthStartConfig) => {
+      if (!authCoordinator) throw new Error('Authentication is not ready.');
+      await authCoordinator.startGoogle(config);
     }
-  });
+  );
 }
 
 /** Native "Open project directory" picker (ENG-015 S5 P4) — lets the operator
@@ -681,7 +704,12 @@ app.whenReady().then(async () => {
   await ptySessions.configurePersistence(
     path.join(app.getPath('userData'), 'sessions')
   );
-  setTrustedRendererOrigin(isDev ? DEV_URL : rendererOrigin!);
+  const trustedRendererUrl = isDev ? DEV_URL : rendererOrigin!;
+  setTrustedRendererOrigin(trustedRendererUrl);
+  authCoordinator = new ElectronAuthCoordinator({
+    expectedRendererOrigin: trustedRendererUrl,
+    openExternal: url => shell.openExternal(url),
+  });
   registerAgentIPC();
   runStateStore = new RunStateStore(
     path.join(app.getPath('userData'), 'run-state.json')

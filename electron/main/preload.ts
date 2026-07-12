@@ -184,9 +184,21 @@ contextBridge.exposeInMainWorld('electron', {
     }>('app:update-status'),
   },
   auth: {
-    openExternal: (url: string) =>
-      ipcRenderer.invoke('auth:open-external', url),
-    onDeepLinkCode: subscribe<string>('auth:deeplink-code'),
+    startGoogle: (config: {
+      supabaseUrl: string;
+      supabaseAnonKey: string;
+      redirectTo: string;
+    }) => ipcRenderer.invoke('auth:start-google', config),
+    onSession: subscribe<{
+      accessToken: string;
+      refreshToken: string;
+    }>('auth:session'),
+    onError: subscribe<{
+      name: string;
+      message: string;
+      status?: number;
+      code?: string;
+    }>('auth:error'),
   },
   dialog: {
     openDirectory: (title?: string): Promise<string | null> =>

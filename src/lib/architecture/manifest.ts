@@ -654,7 +654,7 @@ export const architectureManifest = {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
-            'Versioned local renderer, serialized workspace/history durability, bounded provider discovery, verified two-commit Session shutdown, plus Developer-ID-signed automatic updates through public artifact storage.',
+            'Versioned local renderer, main-process PKCE OAuth, serialized workspace/history durability, bounded provider discovery, verified two-commit Session shutdown, plus Developer-ID-signed automatic updates through public artifact storage.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 75,

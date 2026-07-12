@@ -152,7 +152,10 @@ Built:
   append journals; steady-state disk work scales with new terminal output and
   compacts without exposing partial state
 - self-contained Electron packaging, atomic clean-master dogfood installation,
-  deep terminal fundamentals, and opt-in native attention notifications
+  deep terminal fundamentals, and opt-in native attention notifications;
+  system-browser OAuth is coordinated by Electron main, which owns the PKCE
+  verifier and code exchange, while the sandboxed renderer receives only the
+  completed session through trusted preload IPC
 - Developer-ID signing, Apple notarization, private source-linked GitHub
   Releases, public Supabase Storage update artifacts, and explicit
   `electron-updater` restart with live-session impact. Electron 43 includes the

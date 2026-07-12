@@ -294,8 +294,25 @@ declare global {
       settings?: ElectronSettingsApi;
       app?: ElectronAppApi;
       auth?: {
-        openExternal: (url: string) => Promise<void>;
-        onDeepLinkCode: (handler: (code: string) => void) => () => void;
+        startGoogle: (config: {
+          supabaseUrl: string;
+          supabaseAnonKey: string;
+          redirectTo: string;
+        }) => Promise<void>;
+        onSession: (
+          handler: (session: {
+            accessToken: string;
+            refreshToken: string;
+          }) => void
+        ) => () => void;
+        onError: (
+          handler: (error: {
+            name: string;
+            message: string;
+            status?: number;
+            code?: string;
+          }) => void
+        ) => () => void;
       };
       dialog?: {
         /** native folder picker; resolves to the chosen path or null if cancelled */

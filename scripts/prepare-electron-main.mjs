@@ -12,11 +12,33 @@ await rm(dependencyRoot, { recursive: true, force: true });
 await mkdir(dependencyRoot, { recursive: true });
 
 const staged = new Set();
+
+async function resolvePackageManifest(name, localRequire) {
+  try {
+    return localRequire.resolve(`${name}/package.json`);
+  } catch (error) {
+    if (error?.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') throw error;
+
+    let directory = path.dirname(await realpath(localRequire.resolve(name)));
+    while (directory !== path.dirname(directory)) {
+      const candidate = path.join(directory, 'package.json');
+      try {
+        const parsed = JSON.parse(await readFile(candidate, 'utf8'));
+        if (parsed.name === name) return candidate;
+      } catch (candidateError) {
+        if (candidateError?.code !== 'ENOENT') throw candidateError;
+      }
+      directory = path.dirname(directory);
+    }
+    throw error;
+  }
+}
+
 async function stagePackage(name, resolveFrom = path.join(root, 'package.json')) {
   if (staged.has(name)) return;
   staged.add(name);
   const localRequire = createRequire(resolveFrom);
-  const manifest = localRequire.resolve(`${name}/package.json`);
+  const manifest = await resolvePackageManifest(name, localRequire);
   const source = await realpath(path.dirname(manifest));
   const target = path.join(dependencyRoot, ...name.split('/'));
   await mkdir(path.dirname(target), { recursive: true });
@@ -29,6 +51,7 @@ async function stagePackage(name, resolveFrom = path.join(root, 'package.json'))
 
 await stagePackage('node-pty');
 await stagePackage('electron-updater');
+await stagePackage('@supabase/supabase-js');
 
 const { stdout: shaOutput } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
   cwd: root,
