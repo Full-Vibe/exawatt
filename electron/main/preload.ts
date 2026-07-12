@@ -56,8 +56,11 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('pty:paste-clipboard', id),
     copyText: (text: string) => ipcRenderer.invoke('pty:copy-text', text),
     openExternal: (url: string) => ipcRenderer.invoke('pty:open-external', url),
-    openPath: (filePath: string, cwd: string) =>
-      ipcRenderer.invoke('pty:open-path', filePath, cwd),
+    openPath: (
+      filePath: string,
+      cwd: string,
+      options?: { contain?: boolean }
+    ) => ipcRenderer.invoke('pty:open-path', filePath, cwd, options),
     createWorktree: (repoDir: string, branch: string) =>
       ipcRenderer.invoke('pty:worktree', repoDir, branch),
     listResumeCandidates: (harness: string, cwd: string) =>

@@ -67,6 +67,26 @@ describe('buildRoadmapStrip', () => {
     expect(nodes).toHaveLength(8);
   });
 
+  it('counts the unmapped node in the budget (never exceeds the cap)', () => {
+    const shipped = Array.from({ length: 5 }, (_, i) => item(`S-${i}`, `Done ${i}`, 'shipped')).join('');
+    const later = Array.from({ length: 20 }, (_, i) => item(`L-${i}`, `Later ${i}`, 'later')).join('');
+    const view = lens(
+      `## Shipped\n\n${shipped}\n## Now\n\n${item('N-1', 'Current', 'now')}\n## Later\n\n${later}`,
+      [session(1)] // an unmapped session (no link)
+    );
+    const nodes = buildRoadmapStrip(view, 8);
+    expect(nodes.length).toBeLessThanOrEqual(8);
+    expect(nodes[0].kind).toBe('unmapped');
+  });
+
+  it('never hides now/next even when they exceed the cap', () => {
+    const now = Array.from({ length: 10 }, (_, i) => item(`N-${i}`, `Now ${i}`, 'now')).join('');
+    const view = lens(`## Now\n\n${now}`);
+    const nodes = buildRoadmapStrip(view, 4);
+    const nowNodes = nodes.filter(n => n.kind === 'item');
+    expect(nowNodes).toHaveLength(10);
+  });
+
   it('renders starving with shipped context when the queue is empty', () => {
     const view = lens(`## Shipped\n\n${item('S-1', 'Done', 'shipped')}`, [session(1)]);
     const nodes = buildRoadmapStrip(view);

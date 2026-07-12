@@ -32,7 +32,10 @@ export type RoadmapStripNode =
   | { kind: 'unmapped'; count: number; label: string }
   | { kind: 'starving'; label: string };
 
-/** hard cap so the spine always fits beside a terminal without scrolling */
+/** target node count so the spine fits beside a terminal. shipped and later
+ *  compress into aggregates to honor it; now + next (the operative queue)
+ *  always show individually and may exceed it on a pathological roadmap —
+ *  hiding current work would be worse than a rare scroll. */
 export const ROADMAP_STRIP_MAX_NODES = 14;
 
 function itemLabel(item: RoadmapItemView, role: string): string {
@@ -99,12 +102,24 @@ export function buildRoadmapStrip(
     view.now.find(item => item.isNowStation) ??
     null;
 
-  // budget: shipped compresses first, then the later tail; now/next survive
-  let budget = maxNodes;
-  const shippedIndividually = view.shipped.length <= 2;
-  budget -= shippedIndividually ? view.shipped.length : 1;
-  budget -= view.now.length + view.next.length;
-  const laterShown = budget > view.later.length ? view.later.length : Math.max(0, budget - 1);
+  // Budget so the total NEVER exceeds maxNodes (review P2: unmapped and the
+  // aggregate placeholders must be counted too). now + next are the operative
+  // queue and always show individually; shipped compresses first, then the
+  // later tail — each aggregate placeholder costs one slot it must earn.
+  let budget = maxNodes - nodes.length - view.now.length - view.next.length;
+
+  // shipped: individually only if ≤2 AND they fit; else one aggregate slot
+  const shippedIndividually = view.shipped.length <= 2 && view.shipped.length <= budget;
+  budget -= shippedIndividually ? view.shipped.length : view.shipped.length > 0 ? 1 : 0;
+
+  // later: fill remaining budget, reserving one slot for the "+N more" node
+  // whenever anything is hidden
+  let laterShown: number;
+  if (view.later.length <= Math.max(0, budget)) {
+    laterShown = view.later.length;
+  } else {
+    laterShown = Math.max(0, budget - 1);
+  }
 
   if (view.shipped.length > 0) {
     if (shippedIndividually) {

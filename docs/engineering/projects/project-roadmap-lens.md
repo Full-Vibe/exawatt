@@ -228,6 +228,34 @@ gesture and explicitly accepted or rejected each; decisions recorded here.
 
 ## Progress log (second arc)
 
+- 2026-07-11, code review + Sessions-overview fix: two adversarial reviews of
+  the D8-D10 + S6-S10 change set (0 P0). Fixed: **security** — `pty:open-path`
+  now takes an opt-in `contain` mode (roadmap `Project doc:` bullets are
+  untrusted repo content; a malicious roadmap could point a chip at
+  ~/x.command and have a click launch it — now rejected via realpath
+  containment, unit-tested in `electron/main/contained-path.test.ts`);
+  the ⌘J roadmap-blocked walk no longer dead-ends on the active tab
+  (`orderedRoadmapJumpTargets`, tested) and the Session-menu + palette rows
+  run the SAME ladder as the key (JUMP_ATTENTION_EVENT ownership moved to
+  WorkspaceClient); workspace-verb shift-aliases (⌘⇧T/⌘⇧W) now match only
+  after explicit bindings so a rebind can't be shadowed; a modifier-less
+  keystroke in a text surface can never trigger a mis-rebound verb; the strip
+  budget honestly caps node count (unmapped counted, no negative budget);
+  duplicate roadmap ids no longer collide React keys; corrupt
+  `recentProjects` is tolerated on restore; exposé mirror label truncates;
+  `top-nav-mobile` legacy links come from the manifest (killed the last
+  "Dashboard" vs "Lattice" drift); `Object.hasOwn` for the menu-sync guard.
+  Plus the operator-reported bug: the Sessions overview now shows EVERY tab —
+  stopped/ended ones dimmed with their lifecycle word and still openable
+  (was filtered to live PTYs only, pre-ENG-018).
+  Two findings DEFERRED with rationale: (a) roadmap-blocked tab badges show
+  only for the active project because the lens is active-project-scoped —
+  cross-project roadmap attention needs a multi-project lens (future); PTY
+  bells still badge across projects. (b) Session/Go menu items stay enabled
+  off-/workspace and are silent no-ops there — the data-loss case
+  (close-tab from /settings) is verified impossible (no listener off-surface);
+  disabling per-route needs route→main threading, deferred as polish.
+
 - 2026-07-11, S8+S9 landed; arc verified end-to-end: roadmap-derived
   attention (`packages/ui-model/src/roadmap-attention.ts`, 3 tests) merges
   into the workspace needs-you map — blocked-with-agent badges the tab, ⌘J

@@ -38,6 +38,7 @@ import { SessionRestorePanel } from './session-restore-panel';
 import { RetainedTerminalPane } from './retained-terminal-pane';
 import { useWorkspaceShortcuts } from './use-workspace-shortcuts';
 import {
+  JUMP_ATTENTION_EVENT,
   RENAME_ACTIVE_EVENT,
   CLOSE_ACTIVE_EVENT,
   OPEN_OVERVIEW_EVENT,
@@ -65,6 +66,7 @@ import {
   findRoadmapSessionChip,
   deriveRoadmapBlockedSessions,
   isProjectStarving,
+  orderedRoadmapJumpTargets,
 } from '@exawatt/ui-model';
 import { HUD } from '@/components/hud';
 import { spatialReturnHref } from '@/components/nav/spatial-return';
@@ -350,6 +352,53 @@ export function WorkspaceClient() {
     return out;
   }, [roadmapView]);
   const starving = isProjectStarving(roadmapView, roadmapSessions.length);
+
+  // the ⌘J ladder (S8), shared by the key, the Session menu item, and the
+  // palette row so all three behave identically: PTY needs-you first (bells
+  // clear on focus so repeat ⌘J walks the queue), then roadmap-blocked
+  // sessions (which never self-clear — skip the active tab so the walk
+  // advances), then starvation opens the rail on the no-food moment.
+  const jumpAttentionLadder = useCallback((): boolean => {
+    if (jumpAttention()) return true;
+    const targets = orderedRoadmapJumpTargets(
+      roadmapAttention,
+      activeTab?.sessionId ?? null
+    );
+    for (const sessionId of targets) {
+      for (const g of projects) {
+        const tab = g.tabs.find(t => t.sessionId === sessionId);
+        if (tab) {
+          selectTab(g.dir, tab.id);
+          return true;
+        }
+      }
+    }
+    if (starving) {
+      updateRailMode('open');
+      requestAnimationFrame(() =>
+        window.dispatchEvent(new CustomEvent(ROADMAP_RAIL_FOCUS_EVENT))
+      );
+      return true;
+    }
+    return false;
+  }, [
+    jumpAttention,
+    roadmapAttention,
+    activeTab,
+    projects,
+    selectTab,
+    starving,
+    updateRailMode,
+  ]);
+
+  // the menu item and palette row dispatch JUMP_ATTENTION_EVENT; run the
+  // same ladder here so they never do less than the ⌘J key they advertise
+  useEffect(() => {
+    const onJump = () => jumpAttentionLadder();
+    window.addEventListener(JUMP_ATTENTION_EVENT, onJump);
+    return () => window.removeEventListener(JUMP_ATTENTION_EVENT, onJump);
+  }, [jumpAttentionLadder]);
+
   // agent-first mirror (S9): tabId → what that agent is executing. Declared
   // ids cover every project (machine-local layout truth); the active
   // project's lens enriches with real labels, fractions, inferred links.
@@ -360,7 +409,10 @@ export function WorkspaceClient() {
     > = {};
     for (const g of projects) {
       for (const t of g.tabs) {
-        if (t.roadmapItemId && tabIsLive(t)) {
+        // declared ids are machine-local tab annotations — valid whether or
+        // not the process is live, so a STOPPED tab keeps its item in the
+        // overview (exactly the info you want when deciding what to resume)
+        if (t.roadmapItemId) {
           out[t.id] = { label: t.roadmapItemId, fraction: null, inferred: false };
         }
       }
@@ -471,32 +523,7 @@ export function WorkspaceClient() {
         },
         selectIndex: selectProject,
         cycle: cycleTab,
-        // ⌘J walks one queue: PTY needs-you first (main's truth), then
-        // roadmap-blocked sessions, then starvation opens the rail on the
-        // designed empty-queue moment (S8)
-        jumpAttention: () => {
-          if (jumpAttention()) return true;
-          const oldest = Object.entries(roadmapAttention).sort(
-            (a, b) => a[1].since - b[1].since
-          );
-          for (const [sessionId] of oldest) {
-            for (const g of projects) {
-              const tab = g.tabs.find(t => t.sessionId === sessionId);
-              if (tab) {
-                selectTab(g.dir, tab.id);
-                return true;
-              }
-            }
-          }
-          if (starving) {
-            updateRailMode('open');
-            requestAnimationFrame(() =>
-              window.dispatchEvent(new CustomEvent(ROADMAP_RAIL_FOCUS_EVENT))
-            );
-            return true;
-          }
-          return false;
-        },
+        jumpAttention: jumpAttentionLadder,
         toggleRegime: () => {
           navigateCommandSurface(spatialReturnHref());
           return true;
@@ -557,11 +584,7 @@ export function WorkspaceClient() {
       closeTab,
       selectProject,
       cycleTab,
-      jumpAttention,
-      roadmapAttention,
-      starving,
-      projects,
-      selectTab,
+      jumpAttentionLadder,
       togglePin,
       navigateCommandSurface,
       openCommandPalette,

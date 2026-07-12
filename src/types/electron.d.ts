@@ -91,7 +91,13 @@ export interface ElectronPtyApi {
   ) => Promise<{ kind: 'image' | 'text' | 'empty'; path?: string }>;
   copyText: (text: string) => Promise<void>;
   openExternal: (url: string) => Promise<void>;
-  openPath: (filePath: string, cwd: string) => Promise<void>;
+  openPath: (
+    filePath: string,
+    cwd: string,
+    /** contain: true for UNTRUSTED repo-derived paths (roadmap docs) —
+     *  main rejects anything that escapes cwd */
+    options?: { contain?: boolean }
+  ) => Promise<void>;
   createWorktree: (repoDir: string, branch: string) => Promise<WorktreeResult>;
   listResumeCandidates: (
     harness: PtyHarness,

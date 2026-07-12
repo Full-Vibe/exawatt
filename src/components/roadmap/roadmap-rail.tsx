@@ -172,7 +172,7 @@ function RoadmapStripSpine({
           node.role === 'shipped' || node.role === 'current' || node.blocked;
         return (
           <span
-            key={node.id}
+            key={`${node.id}-${i}`}
             data-strip-node={node.role}
             data-strip-item={node.id}
             title={node.label}
@@ -247,7 +247,7 @@ function RoadmapSequenceBar({
         const loud = node.blocked || node.needsAttention;
         return (
           <span
-            key={node.id}
+            key={`${node.id}-${i}`}
             style={{
               color: loud
                 ? HUD.amber
@@ -438,7 +438,11 @@ export function RoadmapRail({
   const openPath = useCallback(
     (path: string | null) => {
       if (!path || !projectDir) return;
-      void window.electron?.pty?.openPath(path, projectDir).catch(() => {});
+      // roadmap file + `Project doc:` bullets are repo content — contain to
+      // the project so a malicious roadmap can't open paths outside it
+      void window.electron?.pty
+        ?.openPath(path, projectDir, { contain: true })
+        .catch(() => {});
     },
     [projectDir]
   );

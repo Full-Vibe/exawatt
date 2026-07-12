@@ -306,7 +306,8 @@ function registerMenuIPC(): void {
   handleTrusted('menu:sync-accelerators', async (_event, map: unknown) => {
     if (!map || typeof map !== 'object') return;
     for (const [command, value] of Object.entries(map)) {
-      if (!(command in menuAccelerators)) continue;
+      if (!Object.prototype.hasOwnProperty.call(menuAccelerators, command))
+        continue;
       if (value === '') {
         menuAccelerators[command] = '';
       } else if (typeof value === 'string' && ACCELERATOR_PATTERN.test(value)) {

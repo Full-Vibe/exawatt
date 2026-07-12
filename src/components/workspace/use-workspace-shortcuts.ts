@@ -39,15 +39,25 @@ function matchesRegistry(e: KeyboardEvent, id: string): boolean {
   return bindingsMatch(keys, eventToBinding(e));
 }
 
-/** like matchesRegistry, but also accepts the binding with shift added —
- *  ⌘⇧T / ⌘⇧W have always worked as aliases of ⌘T / ⌘W */
-function matchesRegistryShiftAlias(e: KeyboardEvent, id: string): boolean {
-  if (matchesRegistry(e, id)) return true;
+/** the shifted variant of a binding (⌘⇧T for ⌘T) — an ALIAS only, matched
+ *  after every explicit binding so a verb's implicit alias never shadows a
+ *  different verb the user explicitly bound to that combo (review P1-2) */
+function matchesShiftAliasOnly(e: KeyboardEvent, id: string): boolean {
   const keys = shortcutRegistry.getEffectiveKeys(id);
   if (!keys || isChord(keys) || keys.modifiers?.includes('shift')) return false;
   return bindingsMatch(
     { key: keys.key, modifiers: [...(keys.modifiers ?? []), 'shift'] },
     eventToBinding(e)
+  );
+}
+
+/** text-entry surfaces where a modifier-less verb would eat the character
+ *  (a mis-rebind of a workspace verb to a plain key) — the terminal's hidden
+ *  textarea, form inputs, the rename editor, contenteditable */
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return !!target.closest(
+    'input, textarea, [contenteditable="true"], .xterm-helper-textarea, [cmdk-input]'
   );
 }
 
@@ -132,6 +142,13 @@ export function useWorkspaceShortcuts(
         if (!inTerminal && actions.focusTerminal()) e.preventDefault();
         return;
       }
+      // a modifier-less keystroke in a text surface is TYPING — never let a
+      // workspace verb consume it (guards against a verb mis-rebound to a
+      // plain key eating terminal/input characters; every default verb uses
+      // ⌘, so this only affects bad rebinds — review P1-3)
+      const bareKey = !e.metaKey && !e.ctrlKey && !e.altKey;
+      if (bareKey && isEditableTarget(e.target)) return;
+
       // palette + cheat-sheet: registry-resolved (rebindable), reachable
       // from inside terminals where the chord engine is blind
       if (matchesRegistry(e, 'command-palette')) {
@@ -144,7 +161,10 @@ export function useWorkspaceShortcuts(
       }
 
       // every workspace verb resolves its combo from the registry (D9):
-      // rebinding it in Settings changes what the workspace responds to
+      // rebinding it in Settings changes what the workspace responds to.
+      // `shiftAlias` verbs (⌘T/⌘W) also answer ⌘⇧T/⌘⇧W — but ONLY after
+      // every explicit binding is checked, so an alias never shadows a verb
+      // the user bound to that exact combo (review P1-2).
       const verbs: Array<
         [id: string, apply: () => boolean, shiftAlias?: boolean]
       > = [
@@ -158,11 +178,14 @@ export function useWorkspaceShortcuts(
         ['workspace-roadmap', actions.toggleRoadmap],
         ['workspace-rename', actions.renameActive],
       ];
+      for (const [id, apply] of verbs) {
+        if (matchesRegistry(e, id)) {
+          if (apply()) e.preventDefault();
+          return;
+        }
+      }
       for (const [id, apply, shiftAlias] of verbs) {
-        const hit = shiftAlias
-          ? matchesRegistryShiftAlias(e, id)
-          : matchesRegistry(e, id);
-        if (hit) {
+        if (shiftAlias && matchesShiftAliasOnly(e, id)) {
           if (apply()) e.preventDefault();
           return;
         }

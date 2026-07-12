@@ -23,7 +23,6 @@ import {
   LAUNCH_EVENT,
   OPEN_PROJECT_EVENT,
   TOGGLE_SPLIT_EVENT,
-  JUMP_ATTENTION_EVENT,
   consumePendingSessionJump,
   consumePendingLaunch,
   consumePendingOpenProject,
@@ -507,7 +506,15 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         setProjects(restored);
         setActiveDir(persisted.activeDir ?? restored[0]?.dir ?? null);
         setLastUsedDir(persisted.lastUsedDir ?? '');
-        recentsRef.current = persisted.recentProjects ?? [];
+        // tolerate a corrupt/hand-edited recentProjects: a bad shape here
+        // must not break every later debounced save or the shutdown
+        // checkpoint (which calls recentsRef.current.filter)
+        recentsRef.current = Array.isArray(persisted.recentProjects)
+          ? persisted.recentProjects.filter(
+              (r): r is (typeof persisted.recentProjects)[number] =>
+                !!r && typeof r === 'object' && typeof r.dir === 'string'
+            )
+          : [];
         // restore the split only if the pinned tab still exists
         const pinned = persisted.pinnedTabId ?? null;
         if (pinned && restored.some(g => g.tabs.some(t => t.id === pinned))) {
@@ -1129,9 +1136,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const onToggleSplit = () => {
       if (readyRef.current) togglePin();
     };
-    const onJumpAttention = () => {
-      if (readyRef.current) jumpAttention();
-    };
+    // JUMP_ATTENTION_EVENT is owned by WorkspaceClient (ENG-017 S8): it runs
+    // the full ladder — PTY needs-you, then roadmap-blocked, then starving —
+    // so the ⌘J key, the Session menu item, and the palette row all behave
+    // identically. The bare state-level jumpAttention() is still called from
+    // inside that ladder.
     const onOpenProject = (e: Event) => {
       if (!readyRef.current) return;
       consumePendingOpenProject();
@@ -1141,15 +1150,13 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     window.addEventListener(LAUNCH_EVENT, onLaunch);
     window.addEventListener(OPEN_PROJECT_EVENT, onOpenProject);
     window.addEventListener(TOGGLE_SPLIT_EVENT, onToggleSplit);
-    window.addEventListener(JUMP_ATTENTION_EVENT, onJumpAttention);
     return () => {
       window.removeEventListener(SESSION_JUMP_EVENT, onJump);
       window.removeEventListener(LAUNCH_EVENT, onLaunch);
       window.removeEventListener(OPEN_PROJECT_EVENT, onOpenProject);
       window.removeEventListener(TOGGLE_SPLIT_EVENT, onToggleSplit);
-      window.removeEventListener(JUMP_ATTENTION_EVENT, onJumpAttention);
     };
-  }, [activateSession, launchHere, openProject, togglePin, jumpAttention]);
+  }, [activateSession, launchHere, openProject, togglePin]);
 
   useEffect(() => {
     if (!ready) return;

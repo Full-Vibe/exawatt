@@ -5,6 +5,7 @@ import { buildRoadmapLens, type RoadmapLensSessionInput } from './roadmap-lens';
 import {
   deriveRoadmapBlockedSessions,
   isProjectStarving,
+  orderedRoadmapJumpTargets,
 } from './roadmap-attention';
 
 const DIR = '/p';
@@ -84,5 +85,20 @@ Status: shipped
   it('true only when the queue is empty AND agents run', () => {
     expect(isProjectStarving(empty, 2)).toBe(true);
     expect(isProjectStarving(empty, 0)).toBe(false);
+  });
+});
+
+describe('orderedRoadmapJumpTargets', () => {
+  it('orders oldest-blocked first and excludes the active session', () => {
+    const map = {
+      's1': { since: 300 },
+      's2': { since: 100 },
+      's3': { since: 200 },
+    };
+    expect(orderedRoadmapJumpTargets(map, null)).toEqual(['s2', 's3', 's1']);
+    expect(orderedRoadmapJumpTargets(map, 's2')).toEqual(['s3', 's1']);
+  });
+  it('is empty when the only blocked session is already active', () => {
+    expect(orderedRoadmapJumpTargets({ 's1': { since: 1 } }, 's1')).toEqual([]);
   });
 });

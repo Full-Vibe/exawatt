@@ -44,3 +44,20 @@ export function isProjectStarving(
 ): boolean {
   return view.status === 'ok' && view.queueEmpty && liveSessionCount > 0;
 }
+
+/**
+ * The ⌘J walk order over roadmap-blocked sessions: oldest-blocked first,
+ * and NEVER the already-active tab. Roadmap-blocked attention (unlike PTY
+ * bells) doesn't clear on focus, so without excluding the active session a
+ * repeat ⌘J would re-select the same tab forever and a second blocked
+ * session — or the starving branch — would be unreachable (review P1).
+ */
+export function orderedRoadmapJumpTargets(
+  roadmapAttention: Record<string, { since: number }>,
+  activeSessionId: string | null
+): string[] {
+  return Object.entries(roadmapAttention)
+    .filter(([sessionId]) => sessionId !== activeSessionId)
+    .sort((a, b) => a[1].since - b[1].since)
+    .map(([sessionId]) => sessionId);
+}

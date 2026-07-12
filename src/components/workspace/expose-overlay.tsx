@@ -13,18 +13,34 @@ import { HUD } from '@/components/hud';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import { HarnessGlyph } from './harness-icons';
 import { previewLines } from './scrollback-preview';
+import { tabIsLive } from './use-workspace-state';
 import type { Project } from './use-workspace-state';
-import type { PtyAttention, PtyHarness } from '@/types/electron';
+import type { PtyHarness } from '@/types/electron';
 
 interface Tile {
-  sessionId: string;
+  /** null when the tab has no process (restored, not resumed) */
+  sessionId: string | null;
   tabId: string;
   dir: string;
   harness: PtyHarness;
   title: string;
   projectName: string;
   color: string;
+  /** running/resumed process behind the tab */
+  live: boolean;
+  /** short state word for non-live tabs ("stopped", "interrupted", …) */
+  stateLabel: string | null;
 }
+
+/** ENG-018 lifecycle → tile state word (overview shows EVERY tab, live or
+ *  not — a stopped agent is still a session the operator owns) */
+const TILE_STATE_LABEL: Record<string, string> = {
+  'stopped-clean': 'stopped',
+  interrupted: 'interrupted',
+  exited: 'exited',
+  resuming: 'resuming…',
+  failed: 'failed',
+};
 
 const TILE_W = 300; // px — column math for ↑/↓ derives from this
 
@@ -56,17 +72,23 @@ export function ExposeOverlay({
   const tiles = useMemo<Tile[]>(
     () =>
       projects.flatMap(g =>
-        g.tabs
-          .filter(t => t.sessionId && t.exitCode === null)
-          .map(t => ({
-            sessionId: t.sessionId as string,
+        g.tabs.map(t => {
+          const live = tabIsLive(t) && !!t.sessionId && t.exitCode === null;
+          return {
+            sessionId: t.sessionId,
             tabId: t.id,
             dir: g.dir,
             harness: t.harness,
             title: t.title,
             projectName: g.name,
             color: g.color,
-          }))
+            live,
+            stateLabel: live
+              ? null
+              : (TILE_STATE_LABEL[t.lifecycle] ??
+                (t.exitCode !== null ? 'exited' : 'stopped')),
+          };
+        })
       ),
     [projects]
   );
@@ -114,7 +136,10 @@ export function ExposeOverlay({
   useEffect(() => {
     const api = window.electron?.pty;
     if (!api) return;
-    const missing = tiles.filter(t => !fetchedRef.current.has(t.sessionId));
+    const missing = tiles.filter(
+      (t): t is Tile & { sessionId: string } =>
+        !!t.sessionId && !fetchedRef.current.has(t.sessionId)
+    );
     if (missing.length === 0) return;
     for (const t of missing) fetchedRef.current.add(t.sessionId);
     let cancelled = false;
@@ -253,7 +278,7 @@ export function ExposeOverlay({
               className="font-display text-base font-semibold"
               style={{ color: HUD.text }}
             >
-              No live sessions yet
+              No sessions yet
             </p>
             <p
               className="max-w-md font-mono text-xs leading-5"
@@ -267,11 +292,11 @@ export function ExposeOverlay({
         <div ref={gridRef} className="flex flex-wrap gap-3">
           {tiles.map((t, i) => {
             const selected = i === sel;
-            const needsYou = !!attention[t.sessionId];
-            const subtitle = summaries[t.sessionId];
+            const needsYou = !!(t.sessionId && attention[t.sessionId]);
+            const subtitle = t.sessionId ? summaries[t.sessionId] : undefined;
             return (
               <button
-                key={t.sessionId}
+                key={t.tabId}
                 ref={node => {
                   if (node) tileRefs.current.set(t.tabId, node);
                   else tileRefs.current.delete(t.tabId);
@@ -279,7 +304,7 @@ export function ExposeOverlay({
                 data-expose-tile
                 data-selected={selected || undefined}
                 tabIndex={selected ? 0 : -1}
-                aria-label={`${t.title}, ${t.projectName}${needsYou ? ', needs attention' : ''}`}
+                aria-label={`${t.title}, ${t.projectName}${needsYou ? ', needs attention' : ''}${t.stateLabel ? `, ${t.stateLabel}` : ''}`}
                 onClick={() => onPick(t.dir, t.tabId)}
                 onMouseEnter={() => setSel(i)}
                 onFocus={() => setSel(i)}
@@ -289,7 +314,7 @@ export function ExposeOverlay({
                   borderColor: selected ? t.color : `${t.color}44`,
                   background: 'rgba(7,12,20,0.92)',
                   boxShadow: selected ? `0 0 14px ${t.color}55` : 'none',
-                  opacity: entered ? 1 : 0,
+                  opacity: entered ? (t.live ? 1 : 0.55) : 0,
                   transform: entered
                     ? selected
                       ? 'scale(1.02)'
@@ -322,6 +347,15 @@ export function ExposeOverlay({
                   >
                     {t.projectName}
                   </span>
+                  {t.stateLabel && (
+                    <span
+                      data-expose-state={t.stateLabel}
+                      className="shrink-0 pl-1.5 font-mono text-[10px]"
+                      style={{ color: HUD.textDim }}
+                    >
+                      {t.stateLabel}
+                    </span>
+                  )}
                   {roadmapByTab[t.tabId] && (
                     <span
                       data-expose-roadmap-item
@@ -330,7 +364,7 @@ export function ExposeOverlay({
                           ? 'inferred link'
                           : 'declared at launch'
                       }
-                      className="shrink-0 pl-1.5 font-mono text-[10px]"
+                      className="max-w-[45%] shrink truncate pl-1.5 font-mono text-[10px]"
                       style={{ color: HUD.textMono }}
                     >
                       {roadmapByTab[t.tabId].inferred ? '▹' : '▸'}{' '}
@@ -369,7 +403,8 @@ export function ExposeOverlay({
                     overflow: 'hidden',
                   }}
                 >
-                  {(previews[t.sessionId] ?? ['…']).join('\n')}
+                  {(t.sessionId ? previews[t.sessionId] : undefined)?.join('\n') ??
+                    (t.live ? '…' : 'process ended — enter opens the tab')}
                 </div>
               </button>
             );

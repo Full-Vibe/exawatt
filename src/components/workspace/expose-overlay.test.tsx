@@ -37,11 +37,43 @@ const projects: Project[] = [
         exitCode: null,
         roadmapItemId: null,
       },
+      {
+        id: 'tab-c',
+        durableSessionId: 'durable-c',
+        harness: 'claude',
+        title: 'Gamma',
+        cwd: '/one',
+        sessionId: null,
+        harnessSessionId: 'provider-c',
+        resumeState: 'ended-resumable',
+        lifecycle: 'stopped-clean',
+        exitCode: null,
+        roadmapItemId: null,
+      },
     ],
   },
 ];
 
 describe('Sessions overview', () => {
+  it('shows EVERY tab — stopped ones dimmed with their state, still openable', () => {
+    const onPick = vi.fn();
+    render(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        activeTabId="tab-a"
+        onPick={onPick}
+        onClose={vi.fn()}
+      />
+    );
+    const gamma = screen.getByRole('button', { name: 'Gamma, One, stopped' });
+    expect(gamma.querySelector('[data-expose-state="stopped"]')).not.toBeNull();
+    fireEvent.click(gamma);
+    expect(onPick).toHaveBeenCalledWith('/one', 'tab-c');
+  });
+
+
   it('starts on the originating Session and moves focus with arrows', async () => {
     render(
       <ExposeOverlay

@@ -1,5 +1,6 @@
 import { BrowserWindow, Notification, app, dialog, shell } from 'electron';
 import { handleTrusted } from './ipc-security';
+import { resolveContainedPath, isRepoRelativePath } from './contained-path';
 import { ptySessions } from './pty/session-manager';
 import type { PtyCreateOptions } from './pty/session-manager';
 import { contextSummarizer } from './pty/context-summarizer';
@@ -241,9 +242,38 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   });
   handleTrusted(
     'pty:open-path',
-    async (_event, rawPath: string, cwd: string) => {
+    async (
+      _event,
+      rawPath: string,
+      cwd: string,
+      options?: { contain?: boolean }
+    ) => {
       if (!rawPath || rawPath.includes('\0') || rawPath.length > 4096) {
         throw new Error('Invalid local path');
+      }
+      // `contain` = the path came from UNTRUSTED repo content (roadmap
+      // `Project doc:` bullets). Such a path must stay inside the project:
+      // no home expansion, no absolute paths, no `..` escape, and — after
+      // symlink resolution — the real target must sit under the real cwd.
+      // Otherwise a cloned repo could point a chip at ~/x.command and have
+      // the operator's click launch it. Terminal ⌘-click keeps its existing
+      // uncontained behavior (the operator clicked a literal path).
+      if (options?.contain) {
+        if (!isRepoRelativePath(rawPath)) {
+          throw new Error('Path must be inside the project');
+        }
+        const root = await fs.promises.realpath(cwd);
+        const realTarget = await fs.promises.realpath(
+          path.resolve(root, rawPath)
+        );
+        const resolved = resolveContainedPath(root, realTarget);
+        if (!resolved) throw new Error('Path escapes the project');
+        const stat = await fs.promises.stat(resolved);
+        if (!stat.isFile() && !stat.isDirectory())
+          throw new Error('Unsupported path');
+        const error = await shell.openPath(resolved);
+        if (error) throw new Error(error);
+        return;
       }
       const expanded = rawPath.startsWith('~/')
         ? path.join(os.homedir(), rawPath.slice(2))
