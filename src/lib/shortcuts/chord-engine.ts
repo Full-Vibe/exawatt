@@ -6,6 +6,21 @@ const CHORD_TIMEOUT_MS = 500;
 
 type ChordListener = (pending: KeyBinding | null) => void;
 
+/** Text fields own ordinary typing and Option-modified character entry. Global
+ *  command modifiers remain available so an operator can leave search with
+ *  Cmd+Shift+M or open Cmd+K/Cmd+/ without first moving focus. */
+export function shouldIgnoreShortcutEvent(event: KeyboardEvent): boolean {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return false;
+
+  if (target.closest('[cmdk-input]')) return true;
+
+  const tagName = target.tagName.toLowerCase();
+  const editable =
+    tagName === 'input' || tagName === 'textarea' || target.isContentEditable;
+  return editable && !event.metaKey && !event.ctrlKey;
+}
+
 class ChordEngine {
   private state: ChordState = {
     pending: null,
@@ -20,7 +35,7 @@ class ChordEngine {
     // already consumed this keystroke — don't fire the action twice
     if (event.defaultPrevented) return false;
     // Skip if in input/textarea/contenteditable
-    if (this.shouldIgnoreEvent(event)) return false;
+    if (shouldIgnoreShortcutEvent(event)) return false;
 
     const binding = eventToBinding(event);
 
@@ -92,20 +107,6 @@ class ChordEngine {
       this.state = { pending: null, timestamp: 0 };
       this.notifyListeners();
     }
-  }
-
-  private shouldIgnoreEvent(event: KeyboardEvent): boolean {
-    const target = event.target as HTMLElement;
-    const tagName = target.tagName.toLowerCase();
-
-    // Ignore if typing in input, textarea, or contenteditable
-    if (tagName === 'input' || tagName === 'textarea') return true;
-    if (target.isContentEditable) return true;
-
-    // Ignore if inside command palette input
-    if (target.closest('[cmdk-input]')) return true;
-
-    return false;
   }
 
   private notifyListeners(): void {

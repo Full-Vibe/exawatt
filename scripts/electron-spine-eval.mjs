@@ -53,6 +53,13 @@ try {
     console.log('[console]', m.text().slice(0, 300));
   });
   await page.locator('[data-command-altitude]').waitFor();
+  check(
+    'altitude rail is a no-drag title-bar island',
+    (await page
+      .locator('[data-command-altitude]')
+      .evaluate(element => getComputedStyle(element).webkitAppRegion)) ===
+      'no-drag'
+  );
 
   // the menu bar mirrors the app's verbs (W4): Go/Session menus exist,
   // Settings… registers ⌘, for real, renderer-owned combos display-only
@@ -135,6 +142,16 @@ try {
   await page.keyboard.press('KeyM');
   await page.waitForTimeout(1200);
   check('g m reaches spatial', page.url().includes('/fleet/spatial'));
+
+  // D11: a focused search field keeps text, but modified global commands must
+  // still provide an escape path back to Terminal.
+  const spatialSearch = page.getByLabel('Search agents');
+  await spatialSearch.fill('operator query');
+  await page.keyboard.press('Meta+Shift+KeyM');
+  await page.waitForURL('**/workspace');
+  check('cmd+shift+m returns from focused Spatial search', true);
+  await page.keyboard.press('Meta+Shift+KeyM');
+  await page.waitForURL('**/fleet/spatial');
 
   // spine affordances never link into legacy: no "← Fleet" on Spatial
   const backLink = await page.locator('a[href="/fleet"]').count();

@@ -8,6 +8,11 @@ import {
   type CommandAltitude,
 } from './command-altitude';
 import { spatialReturnHref } from './spatial-return';
+import { FOCUS_ACTIVE_TERMINAL_EVENT } from '@/components/workspace/session-jump';
+import {
+  FOCUS_SESSIONS_EVENT,
+  RECENTER_SPATIAL_EVENT,
+} from './command-altitude-events';
 
 const LEVELS: Array<{
   id: CommandAltitude;
@@ -51,6 +56,7 @@ export function CommandAltitudeNav() {
       data-command-altitude
       aria-label="Command altitude"
       className="mx-3 flex min-w-0 items-center border border-zinc-800/90 bg-zinc-950/70 p-0.5 shadow-[0_8px_24px_rgba(0,0,0,0.22)]"
+      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
     >
       {LEVELS.map(({ id, label, detail, shortcut, icon: Icon }, index) => {
         const current = id === active;
@@ -76,13 +82,21 @@ export function CommandAltitudeNav() {
               aria-label={`${label}: ${detail}${shortcut ? ` (${shortcut})` : ''}`}
               title={`${detail}${shortcut ? ` · ${shortcut}` : ''}`}
               onClick={() => {
-                if (!current) {
-                  router.push(
-                    id === 'spatial'
-                      ? spatialReturnHref()
-                      : COMMAND_ALTITUDE_HREFS[id]
-                  );
+                if (current) {
+                  const event =
+                    id === 'terminal'
+                      ? FOCUS_ACTIVE_TERMINAL_EVENT
+                      : id === 'sessions'
+                        ? FOCUS_SESSIONS_EVENT
+                        : RECENTER_SPATIAL_EVENT;
+                  window.dispatchEvent(new CustomEvent(event));
+                  return;
                 }
+                router.push(
+                  id === 'spatial'
+                    ? spatialReturnHref()
+                    : COMMAND_ALTITUDE_HREFS[id]
+                );
               }}
               className={`group flex h-7 min-w-0 items-center gap-1.5 px-2 font-mono text-[10px] outline-none transition-[background-color,color,transform] duration-150 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-300 motion-reduce:transition-none sm:px-2.5 ${
                 current
