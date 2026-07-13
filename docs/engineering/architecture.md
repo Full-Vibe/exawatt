@@ -167,8 +167,9 @@ Built:
   deferred command-module loading, warm renderer prestart, and bounded renderer
   cache retention;
   system-browser OAuth is coordinated by Electron main, which owns the PKCE
-  verifier and code exchange, while the sandboxed renderer receives only the
-  completed session through trusted preload IPC
+  verifier and code exchange and persists the completed session into the local
+  renderer's canonical Supabase cookie jar; the sandboxed renderer receives
+  only a completion signal through trusted preload IPC
 - Developer-ID signing, Apple notarization, private source-linked GitHub
   Releases, public Supabase Storage update artifacts, and explicit
   `electron-updater` restart with live-session impact. Electron 43 includes the

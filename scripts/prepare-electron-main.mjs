@@ -51,6 +51,7 @@ async function stagePackage(name, resolveFrom = path.join(root, 'package.json'))
 
 await stagePackage('node-pty');
 await stagePackage('electron-updater');
+await stagePackage('@supabase/ssr');
 await stagePackage('@supabase/supabase-js');
 
 const { stdout: shaOutput } = await execFileAsync('git', ['rev-parse', 'HEAD'], {

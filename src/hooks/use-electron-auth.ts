@@ -15,30 +15,16 @@ export function useElectronAuth(
   const callbacksRef = useRef(callbacks);
   callbacksRef.current = callbacks;
 
-  // Electron main owns the system-browser PKCE flow and gives the sandboxed
-  // renderer only the completed session pair through the trusted preload API.
+  // Electron main owns system-browser PKCE and persists the completed session
+  // into this renderer's canonical Supabase cookie jar. No renderer auth fetch
+  // is needed after the deep link returns.
   useEffect(() => {
     const auth = window.electron?.auth;
     if (!auth) return;
 
-    const cleanupSession = auth.onSession(async session => {
-      const { error } = await supabase.auth.setSession({
-        access_token: session.accessToken,
-        refresh_token: session.refreshToken,
-      });
-      if (error) {
-        console.error('[auth] Electron OAuth session install failed', {
-          name: error.name,
-          message: error.message,
-          status: error.status,
-          code: error.code,
-        });
-        callbacksRef.current.onError(authErrorMessage(error));
-        callbacksRef.current.onLoadingChange(false);
-      } else {
-        router.push('/workspace');
-        router.refresh();
-      }
+    const cleanupComplete = auth.onComplete(() => {
+      router.push('/workspace');
+      router.refresh();
     });
     const cleanupError = auth.onError(error => {
       console.error('[auth] Electron OAuth failed', error);
@@ -47,10 +33,10 @@ export function useElectronAuth(
     });
 
     return () => {
-      cleanupSession();
+      cleanupComplete();
       cleanupError();
     };
-  }, [supabase, router]);
+  }, [router]);
 
   const signInWithGoogle = async () => {
     const isElectron = !!window.electron?.isElectron;

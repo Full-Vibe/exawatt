@@ -189,16 +189,21 @@ contextBridge.exposeInMainWorld('electron', {
       supabaseAnonKey: string;
       redirectTo: string;
     }) => ipcRenderer.invoke('auth:start-google', config),
-    onSession: subscribe<{
-      accessToken: string;
-      refreshToken: string;
-    }>('auth:session'),
+    onComplete: subscribe<void>('auth:complete'),
     onError: subscribe<{
       name: string;
       message: string;
       status?: number;
       code?: string;
     }>('auth:error'),
+    ...(process.env.EXAWATT_TEST === '1'
+      ? {
+          installTestSession: (
+            config: { supabaseUrl: string; supabaseAnonKey: string },
+            tokens: { accessToken: string; refreshToken: string }
+          ) => ipcRenderer.invoke('auth:install-test-session', config, tokens),
+        }
+      : {}),
   },
   dialog: {
     openDirectory: (title?: string): Promise<string | null> =>

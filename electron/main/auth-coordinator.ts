@@ -1,18 +1,10 @@
-import {
-  createClient,
-  type AuthError,
-  type SupportedStorage,
-} from '@supabase/supabase-js';
+import { createBrowserClient, type CookieMethodsBrowser } from '@supabase/ssr';
+import type { AuthError } from '@supabase/supabase-js';
 
 export interface ElectronAuthStartConfig {
   supabaseUrl: string;
   supabaseAnonKey: string;
   redirectTo: string;
-}
-
-export interface ElectronAuthSession {
-  accessToken: string;
-  refreshToken: string;
 }
 
 export interface ElectronAuthError {
@@ -37,12 +29,17 @@ interface ExchangeResult {
 interface ElectronAuthClient {
   signInWithGoogle(redirectTo: string): Promise<OAuthResult>;
   exchangeCode(code: string): Promise<ExchangeResult>;
+  installSession(tokens: {
+    accessToken: string;
+    refreshToken: string;
+  }): Promise<ExchangeResult>;
 }
 
 interface AuthClientConfig {
   supabaseUrl: string;
   supabaseAnonKey: string;
-  storage: SupportedStorage;
+  cookies: CookieMethodsBrowser;
+  fetch: typeof fetch;
 }
 
 type AuthClientFactory = (config: AuthClientConfig) => ElectronAuthClient;
@@ -50,36 +47,21 @@ type AuthClientFactory = (config: AuthClientConfig) => ElectronAuthClient;
 export interface ElectronAuthCoordinatorOptions {
   expectedRendererOrigin: string;
   openExternal: (url: string) => Promise<unknown>;
+  cookies: CookieMethodsBrowser;
+  fetch?: typeof fetch;
   createAuthClient?: AuthClientFactory;
 }
 
-class MemoryStorage implements SupportedStorage {
-  private readonly values = new Map<string, string>();
-
-  getItem(key: string): string | null {
-    return this.values.get(key) ?? null;
-  }
-
-  setItem(key: string, value: string): void {
-    this.values.set(key, value);
-  }
-
-  removeItem(key: string): void {
-    this.values.delete(key);
-  }
-}
-
 const createSupabaseAuthClient: AuthClientFactory = config => {
-  const client = createClient(config.supabaseUrl, config.supabaseAnonKey, {
-    auth: {
-      flowType: 'pkce',
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-      storage: config.storage,
-    },
-    global: { fetch: globalThis.fetch },
-  });
+  const client = createBrowserClient(
+    config.supabaseUrl,
+    config.supabaseAnonKey,
+    {
+      isSingleton: false,
+      cookies: config.cookies,
+      global: { fetch: config.fetch },
+    }
+  );
 
   return {
     signInWithGoogle: redirectTo =>
@@ -88,6 +70,11 @@ const createSupabaseAuthClient: AuthClientFactory = config => {
         options: { skipBrowserRedirect: true, redirectTo },
       }),
     exchangeCode: code => client.auth.exchangeCodeForSession(code),
+    installSession: ({ accessToken, refreshToken }) =>
+      client.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      }),
   };
 };
 
@@ -99,6 +86,8 @@ const createSupabaseAuthClient: AuthClientFactory = config => {
 export class ElectronAuthCoordinator {
   private readonly expectedRendererOrigin: string;
   private readonly openExternal: (url: string) => Promise<unknown>;
+  private readonly cookies: CookieMethodsBrowser;
+  private readonly fetch: typeof fetch;
   private readonly createAuthClient: AuthClientFactory;
   private pendingClient: ElectronAuthClient | null = null;
 
@@ -107,6 +96,8 @@ export class ElectronAuthCoordinator {
       options.expectedRendererOrigin
     ).origin;
     this.openExternal = options.openExternal;
+    this.cookies = options.cookies;
+    this.fetch = options.fetch ?? globalThis.fetch;
     this.createAuthClient =
       options.createAuthClient ?? createSupabaseAuthClient;
   }
@@ -117,7 +108,8 @@ export class ElectronAuthCoordinator {
     const client = this.createAuthClient({
       supabaseUrl: config.supabaseUrl,
       supabaseAnonKey: config.supabaseAnonKey,
-      storage: new MemoryStorage(),
+      cookies: this.cookies,
+      fetch: this.fetch,
     });
     this.pendingClient = client;
 
@@ -135,7 +127,7 @@ export class ElectronAuthCoordinator {
     }
   }
 
-  async exchangeCode(code: string): Promise<ElectronAuthSession> {
+  async exchangeCode(code: string): Promise<void> {
     if (!code || code.length > 2_048) {
       throw new Error('The authentication callback code was invalid.');
     }
@@ -155,11 +147,23 @@ export class ElectronAuthCoordinator {
     if (!data.session?.access_token || !data.session.refresh_token) {
       throw new Error('The authentication service returned no session.');
     }
+  }
 
-    return {
-      accessToken: data.session.access_token,
-      refreshToken: data.session.refresh_token,
-    };
+  async installSession(
+    config: Pick<ElectronAuthStartConfig, 'supabaseUrl' | 'supabaseAnonKey'>,
+    tokens: { accessToken: string; refreshToken: string }
+  ): Promise<void> {
+    validateSupabaseConfig(config);
+    const client = this.createAuthClient({
+      ...config,
+      cookies: this.cookies,
+      fetch: this.fetch,
+    });
+    const { data, error } = await client.installSession(tokens);
+    if (error) throw error;
+    if (!data.session) {
+      throw new Error('The authentication service returned no session.');
+    }
   }
 }
 
@@ -191,22 +195,14 @@ function validateStartConfig(
   config: ElectronAuthStartConfig,
   expectedRendererOrigin: string
 ): void {
-  let supabaseUrl: URL;
   let redirectTo: URL;
   try {
-    supabaseUrl = new URL(config.supabaseUrl);
     redirectTo = new URL(config.redirectTo);
   } catch {
     throw new Error('The authentication configuration was invalid.');
   }
 
-  if (
-    supabaseUrl.protocol !== 'https:' ||
-    !config.supabaseAnonKey ||
-    config.supabaseAnonKey.length > 16_384
-  ) {
-    throw new Error('The authentication configuration was invalid.');
-  }
+  validateSupabaseConfig(config);
 
   if (
     redirectTo.origin !== expectedRendererOrigin ||
@@ -215,5 +211,23 @@ function validateStartConfig(
     redirectTo.hash
   ) {
     throw new Error('The authentication callback URL was rejected.');
+  }
+}
+
+function validateSupabaseConfig(
+  config: Pick<ElectronAuthStartConfig, 'supabaseUrl' | 'supabaseAnonKey'>
+): void {
+  let supabaseUrl: URL;
+  try {
+    supabaseUrl = new URL(config.supabaseUrl);
+  } catch {
+    throw new Error('The authentication configuration was invalid.');
+  }
+  if (
+    supabaseUrl.protocol !== 'https:' ||
+    !config.supabaseAnonKey ||
+    config.supabaseAnonKey.length > 16_384
+  ) {
+    throw new Error('The authentication configuration was invalid.');
   }
 }

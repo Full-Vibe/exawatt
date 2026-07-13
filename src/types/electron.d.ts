@@ -299,12 +299,7 @@ declare global {
           supabaseAnonKey: string;
           redirectTo: string;
         }) => Promise<void>;
-        onSession: (
-          handler: (session: {
-            accessToken: string;
-            refreshToken: string;
-          }) => void
-        ) => () => void;
+        onComplete: (handler: () => void) => () => void;
         onError: (
           handler: (error: {
             name: string;
@@ -313,6 +308,10 @@ declare global {
             code?: string;
           }) => void
         ) => () => void;
+        installTestSession?: (
+          config: { supabaseUrl: string; supabaseAnonKey: string },
+          tokens: { accessToken: string; refreshToken: string }
+        ) => Promise<void>;
       };
       dialog?: {
         /** native folder picker; resolves to the chosen path or null if cancelled */

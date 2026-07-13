@@ -1,4 +1,11 @@
-import { app, BrowserWindow, shell, Menu, dialog } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  shell,
+  Menu,
+  dialog,
+  session as electronSession,
+} from 'electron';
 import { spawn, type ChildProcess } from 'child_process';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -20,6 +27,7 @@ import type {
   ElectronAuthCoordinator,
   ElectronAuthStartConfig,
 } from './auth-coordinator';
+import { createElectronAuthCookies } from './auth-cookies';
 
 const isDev = process.env.NODE_ENV === 'development';
 const execFileAsync = promisify(execFile);
@@ -306,8 +314,8 @@ async function completeElectronAuth(code: string): Promise<void> {
 
   try {
     if (!authCoordinator) throw new Error('Authentication is not ready.');
-    const session = await authCoordinator.exchangeCode(code);
-    if (!win.isDestroyed()) win.webContents.send('auth:session', session);
+    await authCoordinator.exchangeCode(code);
+    if (!win.isDestroyed()) win.webContents.send('auth:complete');
   } catch (error) {
     const safeError = safeElectronAuthError(error);
     console.error('[auth] Electron OAuth code exchange failed', safeError);
@@ -595,6 +603,23 @@ function registerAuthIPC(): void {
     async (_event, config: ElectronAuthStartConfig) => {
       if (!authCoordinator) throw new Error('Authentication is not ready.');
       await authCoordinator.startGoogle(config);
+    }
+  );
+  handleTrusted(
+    'auth:install-test-session',
+    async (
+      _event,
+      config: Pick<ElectronAuthStartConfig, 'supabaseUrl' | 'supabaseAnonKey'>,
+      tokens: { accessToken: string; refreshToken: string }
+    ) => {
+      if (
+        process.env.EXAWATT_TEST !== '1' ||
+        process.env.EXAWATT_TEST_AUTH !== '1'
+      ) {
+        throw new Error('Test authentication is disabled.');
+      }
+      if (!authCoordinator) throw new Error('Authentication is not ready.');
+      await authCoordinator.installSession(config, tokens);
     }
   );
 }
@@ -885,6 +910,10 @@ async function bootstrapCommandSurface(): Promise<void> {
   authCoordinator = new runtime.auth.ElectronAuthCoordinator({
     expectedRendererOrigin: trustedRendererUrl,
     openExternal: url => shell.openExternal(url),
+    cookies: createElectronAuthCookies(
+      electronSession.defaultSession.cookies,
+      trustedRendererUrl
+    ),
   });
   runStateStore = new runtime.runState.RunStateStore(
     path.join(app.getPath('userData'), 'run-state.json')
