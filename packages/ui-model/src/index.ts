@@ -38,10 +38,7 @@ export interface FleetCommandActions {
   selectAgent: (agentId: string | null) => CommandResult;
   openAgentFocus: (agentId: string) => CommandResult;
   sendMessage: (agentId: string, text: string) => Promise<CommandResult>;
-  resolveBlocker: (
-    agentId: string,
-    response: string
-  ) => Promise<CommandResult>;
+  resolveBlocker: (agentId: string, response: string) => Promise<CommandResult>;
   abortAgent: (agentId: string) => Promise<CommandResult>;
   runHeartbeat: (jobId: string) => Promise<CommandResult>;
   connectSource: () => Promise<CommandResult>;
@@ -54,6 +51,7 @@ export interface FleetAgentView {
   goal: string;
   project: string;
   sessionKey: string;
+  sessionState?: 'live' | 'stopped';
   lastActivityAt: number;
   cost: number;
   costRate: number;
@@ -340,13 +338,14 @@ export const STATUS_COLORS: Record<AgentStatus, string> = {
   idle: '#6a7585',
 };
 
-const ACTIVITY_TONES: Record<AgentActivity['type'], ActivityFeedItem['tone']> = {
-  status_change: 'neutral',
-  chat_message: 'active',
-  tool_use: 'active',
-  blocker_created: 'warning',
-  blocker_resolved: 'success',
-};
+const ACTIVITY_TONES: Record<AgentActivity['type'], ActivityFeedItem['tone']> =
+  {
+    status_change: 'neutral',
+    chat_message: 'active',
+    tool_use: 'active',
+    blocker_created: 'warning',
+    blocker_resolved: 'success',
+  };
 
 function getAgents(state: FleetState): ExawattAgent[] {
   return Object.values(state.agents);
@@ -372,6 +371,7 @@ function toAgentView(agent: ExawattAgent): FleetAgentView {
     goal: agent.goal,
     project: agent.project,
     sessionKey: agent.sessionKey,
+    ...(agent.sessionState ? { sessionState: agent.sessionState } : {}),
     lastActivityAt: agent.lastActivityAt,
     cost: agent.metrics.estimatedCost,
     costRate: agent.metrics.costRate,
@@ -429,12 +429,31 @@ export function filterFleetState(
 }
 
 const GOAL_STOP_WORDS = new Set([
-  'a', 'an', 'the', 'of', 'on', 'in', 'up', 'by', 'all', 'its', 'their', 'new',
+  'a',
+  'an',
+  'the',
+  'of',
+  'on',
+  'in',
+  'up',
+  'by',
+  'all',
+  'its',
+  'their',
+  'new',
 ]);
 // Conjunctions/prepositions that end the useful summary once a couple of words
 // are in hand (so "Improve onboarding flow and add ..." -> "Improve onboarding flow").
 const GOAL_BREAK_WORDS = new Set([
-  'and', '&', 'then', 'to', 'for', 'with', 'plus', 'so', 'that',
+  'and',
+  '&',
+  'then',
+  'to',
+  'for',
+  'with',
+  'plus',
+  'so',
+  'that',
 ]);
 
 /**
@@ -585,7 +604,14 @@ export function selectAttentionSchedule(
           : 0;
       const stalledInProject = stalledByProject.get(agent.project) ?? 0;
       const score = typeWeight * 1000 + ageMinutes + stalledInProject * 10;
-      return { agent, blocker, blockerType, ageMinutes, stalledInProject, score };
+      return {
+        agent,
+        blocker,
+        blockerType,
+        ageMinutes,
+        stalledInProject,
+        score,
+      };
     })
     .sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
@@ -1089,10 +1115,7 @@ export function selectSpatialAttention(
       z: frontZ + RAIL.secondaryZOffset,
     })
   );
-  const overflowCount = Math.max(
-    0,
-    fullQueue.length - (1 + secondary.length)
-  );
+  const overflowCount = Math.max(0, fullQueue.length - (1 + secondary.length));
 
   let ambientActiveCount = 0;
   for (const agent of getAgents(state)) {
@@ -1119,7 +1142,10 @@ export function selectSpatialAttention(
   };
 }
 
-function boundsOf(zones: SpatialProjectZone[]): { width: number; depth: number } {
+function boundsOf(zones: SpatialProjectZone[]): {
+  width: number;
+  depth: number;
+} {
   let halfWidth = 0;
   let halfDepth = 0;
   for (const zone of zones) {
@@ -1139,7 +1165,9 @@ function subState(state: FleetState, agentIds: string[]): FleetState {
   return { agents, metrics: state.metrics, lastUpdated: state.lastUpdated };
 }
 
-function heroLinkFor(attention: SpatialAttention): FleetSpatialScene['heroLink'] {
+function heroLinkFor(
+  attention: SpatialAttention
+): FleetSpatialScene['heroLink'] {
   if (!attention.hero) return null;
   return {
     fromX: attention.hero.railX,
@@ -1245,7 +1273,12 @@ export function selectFleetSpatialScene(
   const bounds = boundsOf(groups);
   const showRail = altitude === 'project';
   // Attention is scoped to the focused Project (its own blockers / active count).
-  const attention = selectSpatialAttention(projectState, tiles, options, bounds);
+  const attention = selectSpatialAttention(
+    projectState,
+    tiles,
+    options,
+    bounds
+  );
 
   return {
     groups,

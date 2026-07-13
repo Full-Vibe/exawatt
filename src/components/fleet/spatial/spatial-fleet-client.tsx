@@ -341,13 +341,17 @@ export function SpatialFleetClient() {
     }
 
     try {
-      const sessions = await pty.list();
-      const session = sessions.find(
-        candidate => candidate.id === inspectedAgent.sessionKey
-      );
-      if (!session) {
-        router.push(detailHref);
-        return;
+      let sessionRef = inspectedAgent.sessionKey;
+      if (inspectedAgent.sessionState !== 'stopped') {
+        const sessions = await pty.list();
+        const session = sessions.find(
+          candidate => candidate.id === inspectedAgent.sessionKey
+        );
+        if (!session) {
+          router.push(detailHref);
+          return;
+        }
+        sessionRef = session.id;
       }
 
       rememberSpatialReturn(
@@ -360,7 +364,7 @@ export function SpatialFleetClient() {
       await new Promise(resolve =>
         window.setTimeout(resolve, reduced ? 40 : 240)
       );
-      requestSessionJump(session.id);
+      requestSessionJump(sessionRef);
       navigateCommandSurface('/workspace');
     } catch {
       setSessionHandoffAgentId(null);
@@ -589,7 +593,9 @@ export function SpatialFleetClient() {
                     </h2>
                   </div>
                   <span className="rounded-full border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs capitalize text-zinc-300">
-                    {inspectedAgent.status}
+                    {inspectedAgent.sessionState === 'stopped'
+                      ? 'stopped'
+                      : inspectedAgent.status}
                   </span>
                 </div>
 
@@ -653,7 +659,11 @@ export function SpatialFleetClient() {
                     disabled={Boolean(sessionHandoffAgentId)}
                     onClick={() => void openInspectedSession()}
                   >
-                    {sessionHandoffAgentId ? 'Opening…' : 'Open session'}
+                    {sessionHandoffAgentId
+                      ? 'Opening…'
+                      : inspectedAgent.sessionState === 'stopped'
+                        ? 'Open stopped session'
+                        : 'Open session'}
                   </Button>
                   {inspectedAgent.needsOperator && (
                     <Button

@@ -56,7 +56,11 @@ export function SessionRestorePanel({
   };
 
   return (
-    <div className="absolute inset-x-0 top-0 z-10 border-b border-white/10 bg-zinc-950/95 px-3 py-2 text-zinc-100 shadow-lg backdrop-blur">
+    <div
+      data-session-restore={tab.id}
+      data-session-durable={tab.durableSessionId}
+      className="absolute inset-x-0 top-0 z-10 border-b border-white/10 bg-zinc-950/95 px-3 py-2 text-zinc-100 shadow-lg backdrop-blur"
+    >
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span
           role="status"

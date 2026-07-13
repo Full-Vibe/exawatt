@@ -152,8 +152,13 @@ Built:
   direct routes, shared shortcuts, last-altitude restore, URL-backed Spatial
   filters, session-local camera return, existing-PTY Agent handoff, and exact
   semantic board-address return
-- `LocalSessionsTransport` normalization of local PTY sessions into the shared
-  `FleetState` consumed by the DOM and spatial fleet surfaces
+- `LocalSessionsTransport` normalization of a local Session inventory into the
+  shared `FleetState` consumed by the DOM and spatial fleet surfaces. The source
+  boundary merges live Electron-main PTYs with persisted open workspace tabs:
+  live PTYs provide runtime activity, while tabs without a process remain
+  explicit stopped Session-backed Agents with stable handoff identity. This
+  keeps Terminal, Sessions, and Spatial aligned without pretending a stopped
+  local process is alive.
 - exact harness conversation identity for Electron tabs: assigned Claude IDs,
   bounded/cached Codex rollout discovery with launch-time association for
   parallel agents, explicit selection fallback, and no-spawn relaunch with

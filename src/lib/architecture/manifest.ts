@@ -511,7 +511,7 @@ export const architectureManifest = {
           id: 'terminal-workspace',
           label: 'Terminal + Session Overview',
           summary:
-            'Inert Project selection, source-aware Agent composition, and DOM/xterm focus plus exposé regimes for direct Session control and deterministic rehydration.',
+            'Inert Project selection, source-aware Agent composition, and DOM/xterm focus plus exposé regimes for direct live-or-stopped Session control and deterministic rehydration.',
           layer: 'ui',
           status: 'implemented',
           x: 205,
@@ -523,7 +523,7 @@ export const architectureManifest = {
           id: 'spatial-operations-board',
           label: 'Spatial Operations Board',
           summary:
-            'R3F tactical board with stable Project zones, semantic zoom, anchored Agents, attention, and Session handoff.',
+            'R3F tactical board with stable Project zones, semantic zoom, anchored live and dotted stopped Agents, attention, and exact Session handoff.',
           layer: 'ui',
           status: 'implemented',
           x: 455,
@@ -748,6 +748,7 @@ export const architectureManifest = {
     'UI surfaces speak Exawatt nouns, not provider-specific vocabulary.',
     'DOM and Spatial Operations Board regimes share typed view models and command contracts.',
     'Terminal Focus, Session Overview, and Spatial Command form one navigation continuum while keeping separate renderer boundaries.',
+    'Open Session identity spans Terminal, Sessions, and Spatial; PTYs add live runtime state but do not define whether a Session-backed Agent exists.',
     'Logical Sessions survive local process death through explicit, deterministic rehydration; local processes do not outlive Exawatt.',
     'Agent sources are replaceable harnesses behind explicit adapters.',
     'Demo behavior is a swappable harness path, not a separate product architecture.',

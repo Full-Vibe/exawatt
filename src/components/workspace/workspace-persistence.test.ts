@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   parsePersisted,
   tabCanResumeAsAgent,
+  tabFromPtySession,
   type WorkspaceTab,
 } from './use-workspace-state';
 
@@ -222,5 +223,38 @@ describe('Resume All eligibility', () => {
     expect(tabCanResumeAsAgent({ ...stopped, harnessSessionId: null })).toBe(
       false
     );
+  });
+});
+
+describe('PTY tab adoption', () => {
+  it('reconstructs an unknown exited PTY as a stopped durable tab', () => {
+    const adopted = tabFromPtySession(
+      {
+        id: 'pty-ended',
+        durableSessionId: 'session-ended',
+        harness: 'shell',
+        title: 'Shell',
+        cwd: '/project',
+        projectDir: '/project',
+        projectName: 'Project',
+        cols: 120,
+        rows: 40,
+        startedAt: 100,
+        exited: true,
+        exitCode: 0,
+        lastDataAt: 200,
+        harnessSessionId: null,
+      },
+      'session-ended'
+    );
+
+    expect(adopted).toMatchObject({
+      id: 'session-ended',
+      durableSessionId: 'session-ended',
+      sessionId: null,
+      resumeState: 'identity-missing',
+      lifecycle: 'exited',
+      exitCode: 0,
+    });
   });
 });

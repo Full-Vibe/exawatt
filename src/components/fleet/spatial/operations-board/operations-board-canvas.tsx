@@ -1,6 +1,6 @@
 'use client';
 
-import { Instances, Instance, Html, useCursor } from '@react-three/drei';
+import { Instances, Instance, Html, Line, useCursor } from '@react-three/drei';
 import {
   Canvas,
   type ThreeEvent,
@@ -597,6 +597,7 @@ function AgentPieceLayer({
   onSelectAgent: (agentId: string) => void;
 }) {
   const visible = pieces.filter(piece => piece.visible);
+  const solid = visible.filter(piece => piece.sessionState !== 'stopped');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const pieceGeometry = useMemo(() => {
     const geometry = new THREE.CylinderGeometry(0.5, 0.5, 0.28, 8);
@@ -608,9 +609,9 @@ function AgentPieceLayer({
   const selected = visible.find(piece => piece.selected);
   return (
     <>
-      <Instances geometry={pieceGeometry} limit={256} range={visible.length}>
+      <Instances geometry={pieceGeometry} limit={256} range={solid.length}>
         <meshBasicMaterial />
-        {visible.map(piece => {
+        {solid.map(piece => {
           const interactive = piece.kind === 'agent' && altitude !== 'fleet';
           return (
             <Instance
@@ -633,6 +634,7 @@ function AgentPieceLayer({
           );
         })}
       </Instances>
+      <StoppedAgentOutlines pieces={visible} />
       {selected && (
         <mesh position={[selected.x, -selected.y, 0.7]} raycast={() => null}>
           <ringGeometry
@@ -656,6 +658,55 @@ function AgentPieceLayer({
           </Html>
         ))}
     </>
+  );
+}
+
+/** One dashed Line2 draw for every stopped Session-backed Agent. The DOM
+ * controls remain the interaction/a11y owner; this layer is visual state. */
+function StoppedAgentOutlines({ pieces }: { pieces: SpatialBoardPiece[] }) {
+  const geometry = useMemo(() => {
+    const points: Array<[number, number, number]> = [];
+    const vertexColors: THREE.Color[] = [];
+    for (const piece of pieces) {
+      if (piece.kind !== 'agent' || piece.sessionState !== 'stopped') continue;
+      const radius = piece.size * 0.52;
+      const color = new THREE.Color(statusColor(piece.status));
+      for (let edge = 0; edge < 8; edge += 1) {
+        const from = (edge / 8) * Math.PI * 2 + Math.PI / 8;
+        const to = ((edge + 1) / 8) * Math.PI * 2 + Math.PI / 8;
+        points.push(
+          [
+            piece.x + Math.cos(from) * radius,
+            -piece.y + Math.sin(from) * radius,
+            0.72,
+          ],
+          [
+            piece.x + Math.cos(to) * radius,
+            -piece.y + Math.sin(to) * radius,
+            0.72,
+          ]
+        );
+        vertexColors.push(color, color);
+      }
+    }
+    return { points, vertexColors };
+  }, [pieces]);
+
+  if (geometry.points.length === 0) return null;
+  return (
+    <Line
+      points={geometry.points}
+      vertexColors={geometry.vertexColors}
+      segments
+      dashed
+      dashSize={0.08}
+      gapSize={0.11}
+      lineWidth={1.35}
+      transparent
+      opacity={0.78}
+      depthWrite={false}
+      raycast={() => null}
+    />
   );
 }
 
@@ -683,7 +734,8 @@ function AgentControls({
           <button
             type="button"
             data-board-agent={piece.agentId}
-            aria-label={`${piece.label}, ${piece.status}`}
+            data-board-session-state={piece.sessionState}
+            aria-label={`${piece.label}, ${piece.status}${piece.sessionState === 'stopped' ? ', stopped session' : ''}`}
             onClick={() => onSelectAgent(piece.agentId!)}
             className="group relative grid h-11 w-11 place-items-center border border-transparent bg-transparent outline-none transition-[border-color,transform] duration-150 active:translate-y-px focus-visible:border-[oklch(0.72_0.1_185)] focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.1_185/0.4)]"
           >

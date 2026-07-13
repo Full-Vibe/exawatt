@@ -25,6 +25,7 @@ import {
   type ExawattCronRun,
   type ExawattCronJobCreate,
 } from '@exawatt/core';
+import { mergeLocalWorkspaceSessions } from './local-workspace-sessions';
 
 // --- Context ---
 
@@ -102,7 +103,13 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           prevConnectionStatusRef.current = 'connected';
 
           const localTransport = new LocalSessionsTransport({
-            list: () => pty.list(),
+            list: async () => {
+              const [live, layout] = await Promise.all([
+                pty.list(),
+                window.electron?.workspace?.load() ?? Promise.resolve(null),
+              ]);
+              return mergeLocalWorkspaceSessions(live, layout);
+            },
             onData: pty.onData,
             onExit: pty.onExit,
           });

@@ -28,10 +28,16 @@ cost without serving that requirement.
 - Relaunch restores state without spawning. Operators resume agents explicitly;
   shells start fresh in the same directory.
 - Resume is deterministic: exact provider identity or no automatic resume.
+- A persisted open tab remains a Session-backed Agent in fleet views even when
+  it has no PTY incarnation. Fleet adapters mark that state explicitly as
+  stopped; Spatial uses a dotted outline and opens the exact stopped tab's
+  restore surface rather than dropping it or implying runtime activity.
 
 ## Consequences
 
 - Local work never silently continues after Exawatt quits.
+- Terminal, Sessions, and Spatial can share one durable open-Session inventory;
+  process death changes lifecycle and presentation, not product identity.
 - Crash and update recovery can be reliable without a privileged background
   component, but work in flight after the last checkpoint can still be lost.
 - A future requirement for uninterrupted background agents must be justified

@@ -73,7 +73,6 @@ describe('Sessions overview', () => {
     expect(onPick).toHaveBeenCalledWith('/one', 'tab-c');
   });
 
-
   it('starts on the originating Session and moves focus with arrows', async () => {
     render(
       <ExposeOverlay
@@ -92,6 +91,35 @@ describe('Sessions overview', () => {
     fireEvent.keyDown(beta, { key: 'ArrowLeft' });
     await waitFor(() => expect(alpha).toHaveFocus());
     expect(alpha).toHaveAttribute('data-selected', 'true');
+  });
+
+  it('follows active-tab changes from the global command-shift bracket ring', async () => {
+    const view = render(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        activeTabId="tab-a"
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    const alpha = screen.getByRole('button', { name: 'Alpha, One' });
+    const beta = screen.getByRole('button', { name: 'Beta, One' });
+    await waitFor(() => expect(alpha).toHaveFocus());
+
+    view.rerender(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        activeTabId="tab-b"
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    await waitFor(() => expect(beta).toHaveFocus());
+    expect(beta).toHaveAttribute('data-selected', 'true');
   });
 
   it('opens with Enter and returns with Escape without changing Session', async () => {
@@ -168,9 +196,7 @@ describe('Sessions overview', () => {
     // the fetch outliving ONE workspace re-render used to drop the batch
     // forever (sessions were already marked fetched) — tiles froze on "…"
     const resolvers: Array<(v: string) => void> = [];
-    const buffer = vi.fn(
-      () => new Promise<string>(res => resolvers.push(res))
-    );
+    const buffer = vi.fn(() => new Promise<string>(res => resolvers.push(res)));
     (window as unknown as { electron: unknown }).electron = {
       pty: { buffer },
     };

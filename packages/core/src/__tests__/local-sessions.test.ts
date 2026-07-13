@@ -10,7 +10,9 @@ import type {
 } from '../transports/local-sessions';
 import { FleetManager } from '../state/fleet-manager';
 
-const snap = (over: Partial<LocalSessionSnapshot> = {}): LocalSessionSnapshot => ({
+const snap = (
+  over: Partial<LocalSessionSnapshot> = {}
+): LocalSessionSnapshot => ({
   id: 'pty-1',
   harness: 'claude',
   title: 'Claude Code',
@@ -25,23 +27,44 @@ const snap = (over: Partial<LocalSessionSnapshot> = {}): LocalSessionSnapshot =>
 
 describe('sessionStatus', () => {
   it('maps exit codes to complete/error', () => {
-    expect(sessionStatus({ exited: true, exitCode: 0 }, 0, 10_000, 15_000)).toBe('complete');
-    expect(sessionStatus({ exited: true, exitCode: 1 }, 0, 10_000, 15_000)).toBe('error');
+    expect(
+      sessionStatus({ exited: true, exitCode: 0 }, 0, 10_000, 15_000)
+    ).toBe('complete');
+    expect(
+      sessionStatus({ exited: true, exitCode: null }, 0, 10_000, 15_000)
+    ).toBe('complete');
+    expect(
+      sessionStatus({ exited: true, exitCode: 1 }, 0, 10_000, 15_000)
+    ).toBe('error');
   });
 
   it('maps recent output to working, quiet to idle', () => {
-    expect(sessionStatus({ exited: false, exitCode: null }, 9_000, 10_000, 15_000)).toBe('working');
-    expect(sessionStatus({ exited: false, exitCode: null }, 1_000, 50_000, 15_000)).toBe('idle');
+    expect(
+      sessionStatus({ exited: false, exitCode: null }, 9_000, 10_000, 15_000)
+    ).toBe('working');
+    expect(
+      sessionStatus({ exited: false, exitCode: null }, 1_000, 50_000, 15_000)
+    ).toBe('idle');
   });
 
   it('attention flags an alive session blocked (needs the operator)', () => {
     const attention = { kind: 'bell', since: 9_500 };
     expect(
-      sessionStatus({ exited: false, exitCode: null, attention }, 9_000, 10_000, 15_000)
+      sessionStatus(
+        { exited: false, exitCode: null, attention },
+        9_000,
+        10_000,
+        15_000
+      )
     ).toBe('blocked'); // even while output is recent
     // exit always wins — a dead session is not waiting on anyone
     expect(
-      sessionStatus({ exited: true, exitCode: 0, attention }, 9_000, 10_000, 15_000)
+      sessionStatus(
+        { exited: true, exitCode: 0, attention },
+        9_000,
+        10_000,
+        15_000
+      )
     ).toBe('complete');
   });
 });
@@ -55,7 +78,26 @@ describe('sessionToAgent', () => {
     expect(a.status).toBe('working');
     expect(a.lastActivityAt).toBe(2_000);
     expect(a.createdAt).toBe(1_000);
+    expect(a.sessionState).toBe('live');
     expect(a.goal).toContain('/Users/x/Code/exawatt-wt/agent-a');
+  });
+
+  it('preserves the stable tab reference for a stopped Session', () => {
+    const a = sessionToAgent(
+      snap({
+        id: 'workspace:durable-2',
+        sessionKey: 'tab-2',
+        sessionState: 'stopped',
+        exited: true,
+        exitCode: null,
+      }),
+      0,
+      3_000,
+      15_000
+    );
+    expect(a.status).toBe('complete');
+    expect(a.sessionKey).toBe('tab-2');
+    expect(a.sessionState).toBe('stopped');
   });
 
   it('uses the micro-context summary as the goal when present', () => {
@@ -67,7 +109,12 @@ describe('sessionToAgent', () => {
     );
     expect(a.goal).toBe('Fixing token refresh expiry tests');
     // blank summaries fall back to the descriptive default
-    const b = sessionToAgent(snap({ contextSummary: '  ' }), 2_000, 3_000, 15_000);
+    const b = sessionToAgent(
+      snap({ contextSummary: '  ' }),
+      2_000,
+      3_000,
+      15_000
+    );
     expect(b.goal).toContain('Interactive');
   });
 
@@ -106,14 +153,14 @@ describe('LocalSessionsTransport', () => {
     dataHandler = null;
     exitHandler = null;
     source = {
-      list: () => Promise.resolve(sessions.map((s) => ({ ...s }))),
-      onData: (h) => {
+      list: () => Promise.resolve(sessions.map(s => ({ ...s }))),
+      onData: h => {
         dataHandler = h;
         return () => {
           dataHandler = null;
         };
       },
-      onExit: (h) => {
+      onExit: h => {
         exitHandler = h;
         return () => {
           exitHandler = null;
@@ -181,7 +228,17 @@ describe('LocalSessionsTransport', () => {
   it('new sessions appearing between polls are picked up via their first output', async () => {
     transport.start();
     await flush();
-    sessions.push(snap({ id: 'pty-2', harness: 'shell', title: 'Shell', cwd: '/tmp', projectDir: '/tmp', projectName: 'tmp', startedAt: now }));
+    sessions.push(
+      snap({
+        id: 'pty-2',
+        harness: 'shell',
+        title: 'Shell',
+        cwd: '/tmp',
+        projectDir: '/tmp',
+        projectName: 'tmp',
+        startedAt: now,
+      })
+    );
     dataHandler?.({ id: 'pty-2' });
     await flush();
     expect(manager.getFleetState().agents['pty-2']).toBeDefined();

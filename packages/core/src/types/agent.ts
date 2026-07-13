@@ -11,6 +11,10 @@ export type AgentStatus =
   | 'complete'
   | 'error';
 
+/** Optional Session-backed runtime state. Provider-native Agents may omit it;
+ * local terminal Agents use it to preserve stopped-but-owned Sessions. */
+export type AgentSessionState = 'live' | 'stopped';
+
 export type BlockerType =
   | 'input_needed'
   | 'approval_required'
@@ -62,7 +66,8 @@ export interface ExawattAgent {
   status: AgentStatus;
   goal: string;
   project: string;
-  sessionKey: string; // OC session key (internal)
+  sessionKey: string; // source-owned runtime or durable Session reference
+  sessionState?: AgentSessionState;
   cronJobId?: string; // OC cron job ID if scheduled
   metrics: AgentMetrics;
   lastActivityAt: number; // unix ms

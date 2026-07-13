@@ -37,6 +37,10 @@ export interface LocalSessionSnapshot {
   startedAt: number;
   exited: boolean;
   exitCode: number | null;
+  /** tab/durable reference used when no current PTY id exists */
+  sessionKey?: string;
+  /** explicit because a cleanly stopped tab can have no exit code */
+  sessionState?: 'live' | 'stopped';
   /** auto-summarized micro-context (W0.4) — becomes the agent's goal */
   contextSummary?: string | null;
   /** needs-operator flag (ENG-015 S1) — becomes 'blocked' + blockerInfo */
@@ -47,7 +51,9 @@ export interface LocalSessionsSource {
   list(): Promise<LocalSessionSnapshot[]>;
   /** fires on session output — the activity signal */
   onData(handler: (payload: { id: string }) => void): () => void;
-  onExit(handler: (payload: { id: string; exitCode: number }) => void): () => void;
+  onExit(
+    handler: (payload: { id: string; exitCode: number }) => void
+  ): () => void;
 }
 
 export interface LocalSessionsOptions {
@@ -78,7 +84,10 @@ export function sessionStatus(
   now: number,
   workingWindowMs: number
 ): AgentStatus {
-  if (session.exited) return session.exitCode === 0 ? 'complete' : 'error';
+  if (session.exited)
+    return session.exitCode == null || session.exitCode === 0
+      ? 'complete'
+      : 'error';
   if (session.attention) return 'blocked';
   return now - lastActivityAt <= workingWindowMs ? 'working' : 'idle';
 }
@@ -112,7 +121,8 @@ export function sessionToAgent(
       session.contextSummary?.trim() ||
       `Interactive ${session.title} session in ${session.cwd}`,
     project: session.projectName,
-    sessionKey: session.id,
+    sessionKey: session.sessionKey ?? session.id,
+    sessionState: session.sessionState ?? (session.exited ? 'stopped' : 'live'),
     metrics: { ...INITIAL_AGENT_METRICS },
     lastActivityAt,
     blockerInfo: sessionBlocker(session),
@@ -198,7 +208,8 @@ export class LocalSessionsTransport {
     const seen = new Set<string>();
     for (const s of list) {
       seen.add(s.id);
-      if (!this.lastActivity.has(s.id)) this.lastActivity.set(s.id, s.startedAt);
+      if (!this.lastActivity.has(s.id))
+        this.lastActivity.set(s.id, s.startedAt);
       this.known.set(s.id, s);
       this.upsert(s);
     }
@@ -222,7 +233,7 @@ export class LocalSessionsTransport {
       this.now(),
       this.opts.workingWindowMs
     );
-    const key = `${agent.status}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${session.attention?.since ?? ''}`;
+    const key = `${agent.status}:${agent.sessionState}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${session.attention?.since ?? ''}`;
     if (this.emitted.get(session.id) === key) return; // nothing changed
     this.emitted.set(session.id, key);
     this.manager.upsertAgent(agent);

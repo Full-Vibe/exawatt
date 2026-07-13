@@ -56,7 +56,7 @@ export const APP_SURFACES: AppSurface[] = [
   {
     id: 'sessions',
     name: 'Sessions',
-    summary: 'Overview of live Sessions',
+    summary: 'All open Sessions, live and stopped',
     href: '/workspace?view=sessions',
     tier: 'spine',
     shortcutId: 'go-sessions',

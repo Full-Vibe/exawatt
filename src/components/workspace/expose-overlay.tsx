@@ -130,6 +130,16 @@ export function ExposeOverlay({
     });
   }, [focusSelection, tiles.length]);
 
+  // The fixed tab-ring shortcuts remain live at Sessions altitude. Mirror an
+  // active-tab change back into the overview's roving selection so ⌘⇧[/]
+  // visibly moves here instead of only changing the inert underlay.
+  useEffect(() => {
+    const next = tiles.findIndex(tile => tile.tabId === activeTabId);
+    if (next === -1 || next === selectedIndexRef.current) return;
+    setSel(next);
+    requestAnimationFrame(() => focusSelection(next));
+  }, [activeTabId, focusSelection, tiles]);
+
   // fetch scrollback for tiles we haven't covered yet (tiles can also GROW
   // while open, e.g. a tab finishing auto-revive)
   const fetchedRef = useRef(new Set<string>());
@@ -309,6 +319,7 @@ export function ExposeOverlay({
                   else tileRefs.current.delete(t.tabId);
                 }}
                 data-expose-tile
+                data-expose-tab={t.tabId}
                 data-selected={selected || undefined}
                 tabIndex={selected ? 0 : -1}
                 aria-label={`${t.title}, ${t.projectName}${needsYou ? ', needs attention' : ''}${t.stateLabel ? `, ${t.stateLabel}` : ''}`}
@@ -410,8 +421,9 @@ export function ExposeOverlay({
                     overflow: 'hidden',
                   }}
                 >
-                  {(t.sessionId ? previews[t.sessionId] : undefined)?.join('\n') ??
-                    (t.live ? '…' : 'process ended — enter opens the tab')}
+                  {(t.sessionId ? previews[t.sessionId] : undefined)?.join(
+                    '\n'
+                  ) ?? (t.live ? '…' : 'process ended — enter opens the tab')}
                 </div>
               </button>
             );

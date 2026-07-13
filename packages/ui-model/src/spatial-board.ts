@@ -56,6 +56,7 @@ export interface SpatialBoardPiece {
   label: string;
   summary: string;
   status: AgentStatus;
+  sessionState?: 'live' | 'stopped';
   count: number;
   x: number;
   y: number;
@@ -445,6 +446,7 @@ function individualPieces(
       label: agent.name,
       summary: agent.goal,
       status: agent.status,
+      ...(agent.sessionState ? { sessionState: agent.sessionState } : {}),
       count: 1,
       x: position.x,
       y: position.y,

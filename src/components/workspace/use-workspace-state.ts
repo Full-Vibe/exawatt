@@ -89,6 +89,32 @@ export function tabCanResumeAsAgent(tab: WorkspaceTab): boolean {
   );
 }
 
+/** Re-adopt a main-process PTY without overstating its lifecycle. This also
+ * reconstructs a stopped tab when persistence lagged behind process exit. */
+export function tabFromPtySession(
+  session: PtySessionInfo,
+  id: string,
+  roadmapItemId: string | null = null
+): WorkspaceTab {
+  return {
+    id,
+    durableSessionId: session.durableSessionId,
+    harness: session.harness,
+    title: session.title,
+    cwd: session.cwd,
+    sessionId: session.exited ? null : session.id,
+    harnessSessionId: session.harnessSessionId,
+    resumeState: session.exited
+      ? session.harnessSessionId
+        ? 'ended-resumable'
+        : 'identity-missing'
+      : 'live',
+    lifecycle: session.exited ? 'exited' : 'running',
+    exitCode: session.exited ? (session.exitCode ?? 0) : null,
+    roadmapItemId,
+  };
+}
+
 export interface Project {
   /** projectDir — the identity/grouping key */
   dir: string;
@@ -376,22 +402,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     []
   );
 
-  /** append a live session as a tab in its (possibly new) project */
+  /** append a PTY incarnation as a live or stopped tab in its Project */
   const addSession = useCallback(
     (s: PtySessionInfo, tabId?: string, roadmapItemId?: string | null) => {
-      const tab: WorkspaceTab = {
-        id: tabId ?? newTabId(),
-        durableSessionId: s.durableSessionId,
-        harness: s.harness,
-        title: s.title,
-        cwd: s.cwd,
-        sessionId: s.id,
-        harnessSessionId: s.harnessSessionId,
-        resumeState: 'live',
-        lifecycle: 'running',
-        exitCode: s.exited ? (s.exitCode ?? 0) : null,
-        roadmapItemId: roadmapItemId ?? null,
-      };
+      const tab = tabFromPtySession(
+        s,
+        tabId ?? newTabId(),
+        roadmapItemId ?? null
+      );
       setProjects(prev => {
         const i = prev.findIndex(g => g.dir === s.projectDir);
         if (i === -1) {
@@ -556,10 +574,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           setPinnedTabId(pinned);
         }
       }
-      // live sessions unknown to the persisted layout (e.g. created since
-      // the last save) — or the whole fresh-start case
+      // PTY incarnations unknown to the persisted layout (e.g. created or
+      // exited since the last save) — or the whole fresh-start case. Exited
+      // entries reconstruct an honest stopped tab; dropping them here would
+      // make Terminal disagree with the local Fleet/Spatial inventory.
       for (const s of liveByDurableId.values()) {
-        if (!s.exited) addSession(s);
+        addSession(s, s.exited ? s.durableSessionId : undefined);
       }
       setReady(true);
       // reconcile durable identity (S5 P3) — async, so a slow/offline registry
@@ -1072,11 +1092,16 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     return true;
   }, []);
 
-  /** activate the tab hosting this session, wherever it lives (⌘K switcher) */
-  const activateSession = useCallback((sessionId: string): boolean => {
+  /** Activate a tab by live PTY, stable tab, or durable Session identity. */
+  const activateSession = useCallback((sessionRef: string): boolean => {
     const { projects: gs } = stateRef.current;
     for (const g of gs) {
-      const tab = g.tabs.find(t => t.sessionId === sessionId);
+      const tab = g.tabs.find(
+        t =>
+          t.sessionId === sessionRef ||
+          t.id === sessionRef ||
+          t.durableSessionId === sessionRef
+      );
       if (tab) {
         setActiveDir(g.dir);
         setProjects(prev =>
