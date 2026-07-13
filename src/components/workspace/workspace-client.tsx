@@ -1046,8 +1046,14 @@ export function WorkspaceClient() {
           summaries={summaries}
           attention={mergedAttention}
           activeTabId={activeTab?.id ?? null}
+          activeProjectDir={activeProject?.dir ?? null}
           onPick={(dir, tabId) => {
             selectTab(dir, tabId);
+            closeOverview();
+          }}
+          onPickProject={dir => {
+            const index = projects.findIndex(project => project.dir === dir);
+            if (index >= 0) selectProject(index);
             closeOverview();
           }}
           onClose={closeOverview}

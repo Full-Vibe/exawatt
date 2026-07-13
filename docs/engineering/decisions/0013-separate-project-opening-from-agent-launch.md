@@ -45,6 +45,10 @@ can grow beyond coding CLIs without committing Exawatt to one provider.
 
 - Project state must persist with zero Session tabs and survive closing its last
   tab.
+- An open Project must remain the same addressable object in Terminal, Sessions,
+  and Spatial even with zero Agents or Sessions. Agent-derived grouping alone is
+  insufficient; sources expose a Project catalog, and later Agents join its
+  stable identity rather than creating a parallel group.
 - Project discovery and git-worktree resolution belong in Electron main, not in
   renderer path heuristics.
 - Initial tasks travel through the source launch contract, not simulated terminal

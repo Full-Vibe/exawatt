@@ -138,6 +138,63 @@ try {
         (await sessions(page)).length === 0
       );
 
+      await page.keyboard.press('Meta+2');
+      const emptyProject = page.locator('[data-expose-empty-project]').filter({
+        hasText: 'No Sessions yet',
+      });
+      await emptyProject.waitFor();
+      check(
+        'Sessions keeps the zero-Session Project visible',
+        (await emptyProject.getAttribute('data-expose-empty-project')) ===
+          projectA && (await page.locator('[data-expose-tile]').count()) === 0
+      );
+      await page.waitForTimeout(250);
+      await page.screenshot({
+        path: join(output, '02-empty-project-sessions.png'),
+      });
+
+      // Leave immediately, before the normal debounce. Route teardown must
+      // flush the shared Project catalog so Spatial sees the same identity.
+      await page.keyboard.press('Meta+3');
+      await page.waitForURL('**/fleet/spatial**');
+      const clusterId = `project:${projectA}`;
+      const emptyZone = page.locator(`[data-board-zone="${clusterId}"]`);
+      await emptyZone.waitFor();
+      check(
+        'Spatial keeps the same zero-Agent Project visible',
+        (await page
+          .locator('[data-spatial-board]')
+          .getAttribute('data-board-projects')) === '1' &&
+          (await page
+            .locator('[data-spatial-board]')
+            .getAttribute('data-board-pieces')) === '0' &&
+          (await emptyZone.innerText()).includes('No agents yet')
+      );
+      await emptyZone.click();
+      await page.waitForURL(
+        url =>
+          url.searchParams.get('altitude') === 'project' &&
+          url.searchParams.get('project') === clusterId
+      );
+      check(
+        'empty Spatial Project remains drillable at Project altitude',
+        (await page
+          .locator('[data-spatial-board]')
+          .getAttribute('data-board-projects')) === '1' &&
+          (await page
+            .locator('[data-spatial-board]')
+            .getAttribute('data-board-pieces')) === '0'
+      );
+      await page.screenshot({
+        path: join(output, '03-empty-project-spatial.png'),
+      });
+
+      await page.keyboard.press('Meta+1');
+      await page.waitForURL('**/workspace**');
+      await page
+        .locator('[data-agent-composer][data-variant="empty"]')
+        .waitFor();
+
       const firstTask = "Review the user's auth flow";
       await page.getByLabel('Initial task for the new Agent').fill(firstTask);
       await page.getByRole('button', { name: 'Start' }).click();
@@ -157,6 +214,30 @@ try {
       );
       await waitForBuffer(page, current[0].id, `<${firstTask}>`);
       check('initial task arrives as one quoted source argument', true);
+
+      await page.keyboard.press('Meta+3');
+      await page.waitForURL(
+        url =>
+          url.searchParams.get('altitude') === 'project' &&
+          url.searchParams.get('project') === clusterId
+      );
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector('[data-spatial-board]')
+            ?.getAttribute('data-board-pieces') === '1'
+      );
+      check(
+        'the first Agent populates the existing Project instead of duplicating it',
+        (await page
+          .locator('[data-spatial-board]')
+          .getAttribute('data-board-projects')) === '1' &&
+          (await page
+            .locator('[data-agent-count]')
+            .getAttribute('data-agent-count')) === '1'
+      );
+      await page.keyboard.press('Meta+1');
+      await page.waitForURL('**/workspace**');
 
       await page.getByLabel('Agent Source').click();
       await page.getByRole('option', { name: 'Codex' }).click();
@@ -195,7 +276,7 @@ try {
       );
 
       await page.screenshot({
-        path: join(output, '02-two-agents-composer.png'),
+        path: join(output, '04-two-agents-composer.png'),
       });
       await page.getByRole('button', { name: 'Close Claude Code' }).click();
       await waitForSessionCount(page, 1);
@@ -248,7 +329,7 @@ try {
         composerBounds.left >= 0 && composerBounds.right <= composerBounds.width
       );
       await page.screenshot({
-        path: join(output, '03-empty-project-800x600.png'),
+        path: join(output, '05-empty-project-800x600.png'),
       });
     },
     { maxMs: 120_000 }

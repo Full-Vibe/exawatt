@@ -774,6 +774,23 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     serializeWorkspace,
   ]);
 
+  // Route changes can unmount Terminal before the debounce fires (for example,
+  // opening an empty Project and immediately pressing Command-3). Flush the
+  // latest catalog on unmount so Spatial cannot observe the previous layout.
+  useEffect(
+    () => () => {
+      if (!readyRef.current) return;
+      // The shutdown coordinator already owns a clean two-stage checkpoint.
+      if (shutdownTargetsRef.current.size > 0) return;
+      const ws = window.electron?.workspace;
+      if (!ws) return;
+      void ws
+        .save(serializeWorkspace())
+        .catch(error => console.error('Workspace unmount save failed', error));
+    },
+    [serializeWorkspace]
+  );
+
   useEffect(() => {
     if (!ready) return;
     const appApi = window.electron?.app;

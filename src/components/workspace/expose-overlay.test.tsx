@@ -73,6 +73,40 @@ describe('Sessions overview', () => {
     expect(onPick).toHaveBeenCalledWith('/one', 'tab-c');
   });
 
+  it('shows an empty Project as a selectable group without inventing a Session', async () => {
+    const onPickProject = vi.fn();
+    const emptyProject: Project = {
+      dir: '/empty',
+      name: 'Empty',
+      color: '#FFD166',
+      activeTabId: null,
+      tabs: [],
+    };
+    render(
+      <ExposeOverlay
+        projects={[...projects, emptyProject]}
+        summaries={{}}
+        attention={{}}
+        activeTabId={null}
+        activeProjectDir="/empty"
+        onPick={vi.fn()}
+        onPickProject={onPickProject}
+        onClose={vi.fn()}
+      />
+    );
+
+    expect(
+      screen.getByRole('region', { name: 'Empty, 0 Sessions' })
+    ).toBeInTheDocument();
+    const empty = screen.getByRole('button', {
+      name: 'Open Empty in Terminal, no Sessions yet',
+    });
+    await waitFor(() => expect(empty).toHaveFocus());
+    expect(screen.queryByText('No Projects open')).not.toBeInTheDocument();
+    fireEvent.keyDown(empty, { key: 'Enter' });
+    expect(onPickProject).toHaveBeenCalledWith('/empty');
+  });
+
   it('starts on the originating Session and moves focus with arrows', async () => {
     render(
       <ExposeOverlay
