@@ -221,6 +221,36 @@ describe('@exawatt/ui-model', () => {
     expect(beta.depth).toBeGreaterThan(0);
   });
 
+  it('keeps an empty known Project at fleet and project altitudes', () => {
+    const projects = [{ id: '/code/alpha', label: 'Alpha' }];
+    const fleetScene = selectFleetSpatialScene(
+      { ...multiState(), agents: {} },
+      { projects }
+    );
+    expect(fleetScene.groups).toEqual([
+      expect.objectContaining({
+        clusterId: 'project:/code/alpha',
+        label: 'Alpha',
+        agentCount: 0,
+        summaryMode: true,
+      }),
+    ]);
+    expect(fleetScene.tiles).toEqual([]);
+
+    const projectScene = selectFleetSpatialScene(
+      { ...multiState(), agents: {} },
+      {
+        projects,
+        altitude: 'project',
+        focusedProjectId: 'project:/code/alpha',
+      }
+    );
+    expect(projectScene.altitude).toBe('project');
+    expect(projectScene.focusedProjectId).toBe('project:/code/alpha');
+    expect(projectScene.groups).toHaveLength(1);
+    expect(projectScene.tiles).toEqual([]);
+  });
+
   it('lays out agent tiles inside their zone bounds, lifting hero/selected', () => {
     const zones = selectSpatialProjectZones(multiState(), {
       selectedAgentId: 'alpha-working',

@@ -44,53 +44,63 @@ export function resolveContextGroups(
   const ungrouped = options.ungroupedLabel ?? 'Unassigned';
   const keyOf = GROUPING_KEY[kind] ?? GROUPING_KEY.project!;
 
-  const buckets = new Map<string, ExawattAgent[]>();
+  const buckets = new Map<string, { label: string; agents: ExawattAgent[] }>();
+  if (kind === 'project') {
+    for (const project of options.projects ?? []) {
+      const id = project.id.trim();
+      if (!id || buckets.has(id)) continue;
+      buckets.set(id, {
+        label: project.label.trim() || id,
+        agents: [],
+      });
+    }
+  }
   for (const agent of Object.values(state.agents)) {
     const label = keyOf(agent)?.trim() || ungrouped;
-    const list = buckets.get(label);
-    if (list) list.push(agent);
-    else buckets.set(label, [agent]);
+    const id = kind === 'project' ? agent.projectId?.trim() || label : label;
+    const bucket = buckets.get(id);
+    if (bucket) bucket.agents.push(agent);
+    else buckets.set(id, { label, agents: [agent] });
   }
 
-  const groups: ContextGroup[] = [...buckets.entries()].map(
-    ([label, agents]) => {
-      const sorted = [...agents].sort(sortAgentsForCluster);
-      let active = 0;
-      let blocked = 0;
-      let idle = 0;
-      let costRate = 0;
-      let totalCost = 0;
-      let dominant: AgentStatus = 'idle';
-      for (const a of sorted) {
-        if (a.status === 'working' || a.status === 'reviewing') active++;
-        else if (a.status === 'blocked' || a.status === 'error') blocked++;
-        else idle++;
-        costRate += a.metrics.costRate;
-        totalCost += a.metrics.estimatedCost;
-        if (STATUS_RANK[a.status] < STATUS_RANK[dominant]) dominant = a.status;
-      }
-      const reviewing = sorted.filter(a => a.status === 'reviewing').length;
-      const denom = Math.max(1, sorted.length * 3);
-      const attentionPressure = Math.min(1, (blocked * 3 + reviewing) / denom);
-      const summary: ProjectSummary = {
-        agentCount: sorted.length,
-        activeCount: active,
-        blockedCount: blocked,
-        idleCount: idle,
-        costRate: Number(costRate.toFixed(4)),
-        totalCost: Number(totalCost.toFixed(4)),
-        attentionPressure: Number(attentionPressure.toFixed(4)),
-        dominantStatus: dominant,
-      };
-      return {
-        clusterId: `${kind}:${label}`,
-        kind,
-        label,
-        agentIds: sorted.map(a => a.id),
-        summary,
-      };
+  const groups: ContextGroup[] = [...buckets.entries()].map(([id, bucket]) => {
+    const { label, agents } = bucket;
+    const sorted = [...agents].sort(sortAgentsForCluster);
+    let active = 0;
+    let blocked = 0;
+    let idle = 0;
+    let costRate = 0;
+    let totalCost = 0;
+    let dominant: AgentStatus = 'idle';
+    for (const a of sorted) {
+      if (a.status === 'working' || a.status === 'reviewing') active++;
+      else if (a.status === 'blocked' || a.status === 'error') blocked++;
+      else idle++;
+      costRate += a.metrics.costRate;
+      totalCost += a.metrics.estimatedCost;
+      if (STATUS_RANK[a.status] < STATUS_RANK[dominant]) dominant = a.status;
     }
-  );
+    const reviewing = sorted.filter(a => a.status === 'reviewing').length;
+    const denom = Math.max(1, sorted.length * 3);
+    const attentionPressure = Math.min(1, (blocked * 3 + reviewing) / denom);
+    const summary: ProjectSummary = {
+      agentCount: sorted.length,
+      activeCount: active,
+      blockedCount: blocked,
+      idleCount: idle,
+      costRate: Number(costRate.toFixed(4)),
+      totalCost: Number(totalCost.toFixed(4)),
+      attentionPressure: Number(attentionPressure.toFixed(4)),
+      dominantStatus: dominant,
+    };
+    return {
+      clusterId: `${kind}:${id}`,
+      kind,
+      label,
+      agentIds: sorted.map(a => a.id),
+      summary,
+    };
+  });
 
   // Deterministic baseline order by label; ui-model re-sorts by pressure for layout.
   return groups.sort((a, b) => a.label.localeCompare(b.label));

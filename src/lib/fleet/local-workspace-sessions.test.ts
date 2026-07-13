@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { PtySessionInfo } from '@/types/electron';
-import { mergeLocalWorkspaceSessions } from './local-workspace-sessions';
+import {
+  extractLocalWorkspaceProjects,
+  mergeLocalWorkspaceSessions,
+} from './local-workspace-sessions';
 
 const live = (over: Partial<PtySessionInfo> = {}): PtySessionInfo => ({
   id: 'pty-1',
@@ -134,5 +137,35 @@ describe('mergeLocalWorkspaceSessions', () => {
       exitCode: 1,
       sessionState: 'stopped',
     });
+  });
+});
+
+describe('extractLocalWorkspaceProjects', () => {
+  it('keeps empty Projects and their presentation metadata', () => {
+    expect(
+      extractLocalWorkspaceProjects({
+        v: 5,
+        projects: [
+          {
+            dir: '/code/alpha',
+            name: 'Alpha',
+            color: '#19E6FF',
+            tabs: [],
+          },
+        ],
+      })
+    ).toEqual([{ id: '/code/alpha', label: 'Alpha', color: '#19E6FF' }]);
+  });
+
+  it('deduplicates malformed layouts and falls back to the directory leaf', () => {
+    expect(
+      extractLocalWorkspaceProjects({
+        initiatives: [
+          { dir: '/code/alpha', tabs: [] },
+          { dir: '/code/alpha', name: 'Duplicate', tabs: [] },
+          { name: 'Missing path', tabs: [] },
+        ],
+      })
+    ).toEqual([{ id: '/code/alpha', label: 'alpha' }]);
   });
 });

@@ -555,7 +555,11 @@ function ProjectControls({
           </span>
         </span>
         <span className="mt-0.5 flex gap-2 font-mono text-[9px] tabular-nums text-[oklch(0.64_0.012_210)]">
-          <span>{zone.activeCount} active</span>
+          <span>
+            {zone.agentCount === 0
+              ? 'No agents yet'
+              : `${zone.activeCount} active`}
+          </span>
           {zone.blockedCount > 0 && (
             <span className="text-[oklch(0.72_0.13_28)]">
               {zone.blockedCount} blocked

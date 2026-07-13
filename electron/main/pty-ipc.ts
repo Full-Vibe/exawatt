@@ -316,9 +316,10 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
 
   // workspace layout persistence (renderer-owned shape)
   handleTrusted('workspace:load', () => loadWorkspace());
-  handleTrusted('workspace:save', (_event, state: unknown) =>
-    saveWorkspace(state)
-  );
+  handleTrusted('workspace:save', async (_event, state: unknown) => {
+    await saveWorkspace(state);
+    broadcast('workspace:changed', state);
+  });
   handleTrusted('workspace:recovery', () => ({ previousRunInterrupted }));
 
   // user settings (S3): userData/settings.json — e.g. the terminal font

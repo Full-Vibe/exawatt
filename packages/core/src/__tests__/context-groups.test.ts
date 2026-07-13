@@ -132,4 +132,35 @@ describe('resolveContextGroups', () => {
   it('returns an empty array for an empty fleet', () => {
     expect(resolveContextGroups(stateOf([]))).toEqual([]);
   });
+
+  it('keeps known Projects without inventing Agents and joins later Agents by stable id', () => {
+    const projects = [{ id: '/code/alpha', label: 'Alpha' }];
+    const empty = resolveContextGroups(stateOf([]), { projects });
+    expect(empty).toEqual([
+      expect.objectContaining({
+        clusterId: 'project:/code/alpha',
+        label: 'Alpha',
+        agentIds: [],
+        summary: expect.objectContaining({ agentCount: 0 }),
+      }),
+    ]);
+
+    const active = resolveContextGroups(
+      stateOf([
+        mk({
+          id: 'a1',
+          name: 'A1',
+          projectId: '/code/alpha',
+          project: 'Alpha (stale label)',
+        }),
+      ]),
+      { projects }
+    );
+    expect(active).toHaveLength(1);
+    expect(active[0]).toMatchObject({
+      clusterId: 'project:/code/alpha',
+      label: 'Alpha',
+      agentIds: ['a1'],
+    });
+  });
 });

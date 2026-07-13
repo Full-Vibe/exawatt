@@ -95,6 +95,7 @@ contextBridge.exposeInMainWorld('electron', {
     load: () => ipcRenderer.invoke('workspace:load'),
     save: (state: unknown) => ipcRenderer.invoke('workspace:save', state),
     recovery: () => ipcRenderer.invoke('workspace:recovery'),
+    onChanged: subscribe<unknown>('workspace:changed'),
   },
   roadmap: {
     read: (projectDir: string) =>

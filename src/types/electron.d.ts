@@ -164,6 +164,7 @@ export interface ElectronWorkspaceApi {
   load: () => Promise<unknown | null>;
   save: (state: unknown) => Promise<void>;
   recovery: () => Promise<{ previousRunInterrupted: boolean }>;
+  onChanged: (handler: (state: unknown) => void) => () => void;
 }
 
 /** Raw roadmap file read for the roadmap lens (ENG-017); parsing happens

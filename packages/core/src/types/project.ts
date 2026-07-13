@@ -2,14 +2,24 @@
  * Project / Context Group — a RESOLVABLE grouping LENS over agents.
  *
  * This is NOT a structural parent of Agent. Agents are grouped on demand by a
- * grouping rule (currently their `project` string). `clusterId` is the stable
- * key for the resolved group; `kind` records which rule produced it so future
+ * grouping rule (currently a Project catalog plus Agent Project identity).
+ * `clusterId` is the stable key for the resolved group; `kind` records which
+ * rule produced it so future
  * rules slot in without changing consumers. The planned Initiative->Agent
  * hierarchy is orthogonal and may later surface as a non-authoritative
  * projection via `kind: 'initiative'` — it must never become a stored parent here.
  */
 
 import type { AgentStatus } from './agent';
+
+/** A source-owned Project that exists independently of its current Agents. */
+export interface ProjectCatalogEntry {
+  /** Stable within the source, such as an absolute local repository path. */
+  id: string;
+  label: string;
+  /** Optional presentation metadata; grouping never depends on it. */
+  color?: string;
+}
 
 export type ContextGroupKind =
   | 'project' // grouped by ExawattAgent.project string (the only rule wired in V0.1)
@@ -60,4 +70,6 @@ export interface ResolveContextGroupsOptions {
   kind?: ContextGroupKind;
   /** Label for agents with no value under the active rule. Default 'Unassigned'. */
   ungroupedLabel?: string;
+  /** Known Projects seed empty groups and supply stable identity/labels. */
+  projects?: readonly ProjectCatalogEntry[];
 }

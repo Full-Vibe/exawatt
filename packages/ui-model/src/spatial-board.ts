@@ -4,6 +4,7 @@ import {
   type ContextGroup,
   type ExawattAgent,
   type FleetState,
+  type ProjectCatalogEntry,
 } from '@exawatt/core';
 
 export type SpatialBoardAltitude = 'fleet' | 'project' | 'agent';
@@ -101,6 +102,10 @@ export interface SpatialBoardLayoutOptions {
   projection?: SpatialBoardProjection;
   /** Compute from full FleetState, then hide without changing stable addresses. */
   visibleAgentIds?: ReadonlySet<string>;
+  /** Known Projects remain addressable before their first Agent exists. */
+  projects?: readonly ProjectCatalogEntry[];
+  /** Empty Projects matching the active semantic filter. */
+  visibleProjectIds?: ReadonlySet<string>;
   previousLayout?: SpatialBoardLayout | null;
   maxProjectZones?: number;
   maxFleetPieces?: number;
@@ -317,6 +322,7 @@ function projectZone(
   rect: SpatialBoardRect,
   selectedAgentId: string | null,
   visibleAgentIds: ReadonlySet<string> | undefined,
+  visibleProjectIds: ReadonlySet<string> | undefined,
   isAggregate: boolean,
   aggregatedProjectCount: number
 ): SpatialBoardProjectZone {
@@ -335,7 +341,12 @@ function projectZone(
     label: group.label,
     agentIds: agents.map(agent => agent.id),
     rect,
-    visible: isAggregate || visible.length > 0,
+    visible:
+      isAggregate ||
+      visible.length > 0 ||
+      (agents.length === 0 &&
+        (visibleAgentIds === undefined ||
+          visibleProjectIds?.has(group.clusterId) === true)),
     selected,
     isAggregate,
     aggregatedProjectCount,
@@ -538,9 +549,9 @@ export function selectSpatialBoardLayout(
   const selectedAgentId = options.selectedAgentId ?? null;
   let altitude = options.altitude ?? 'fleet';
   let focusedProjectId = options.focusedProjectId ?? null;
-  const allGroups = resolveContextGroups(state).sort((a, b) =>
-    a.clusterId.localeCompare(b.clusterId)
-  );
+  const allGroups = resolveContextGroups(state, {
+    projects: options.projects,
+  }).sort((a, b) => a.clusterId.localeCompare(b.clusterId));
   const sourceProjectCount = allGroups.length;
   const sourceAgentCount = Object.keys(state.agents).length;
 
@@ -603,6 +614,7 @@ export function selectSpatialBoardLayout(
       rect,
       selectedAgentId,
       options.visibleAgentIds,
+      options.visibleProjectIds,
       isAggregate,
       isAggregate ? aggregateProjectCount : 0
     );

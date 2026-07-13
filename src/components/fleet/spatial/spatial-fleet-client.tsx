@@ -76,7 +76,7 @@ export function SpatialFleetClient() {
     searchParams.get('projection') === 'fixed-angle'
       ? 'fixed-angle'
       : 'top-down';
-  const { fleetState } = useFleet();
+  const { fleetState, projects } = useFleet();
   const { isDemo } = useFleetConnection();
   const { connectToRealOC, canConnect } = useConnectToOC();
   const { jobs } = useCron();
@@ -124,8 +124,9 @@ export function SpatialFleetClient() {
         selectedAgentId,
         blockerLimit: 3,
         now: Date.now(), // Attention Scheduling age; recomputed as fleet ticks
+        projects,
       }),
-    [fleetState, altitude, focusedProjectId, selectedAgentId]
+    [fleetState, altitude, focusedProjectId, projects, selectedAgentId]
   );
 
   // The layout computes from the full fleet, then applies filter visibility so
@@ -136,6 +137,20 @@ export function SpatialFleetClient() {
     () => new Set(Object.keys(filteredState.agents)),
     [filteredState.agents]
   );
+  const visibleProjectIds = useMemo(() => {
+    if (statusFilter.length > 0) return new Set<string>();
+    const needle = query.trim().toLowerCase();
+    return new Set(
+      projects
+        .filter(
+          project =>
+            !needle ||
+            project.label.toLowerCase().includes(needle) ||
+            project.id.toLowerCase().includes(needle)
+        )
+        .map(project => `project:${project.id}`)
+    );
+  }, [projects, query, statusFilter.length]);
   const boardLayout = useMemo(
     () =>
       selectSpatialBoardLayout(fleetState, {
@@ -144,6 +159,8 @@ export function SpatialFleetClient() {
         selectedAgentId,
         projection,
         visibleAgentIds,
+        visibleProjectIds,
+        projects,
         previousLayout: previousBoardLayout.current,
       }),
     [
@@ -151,8 +168,10 @@ export function SpatialFleetClient() {
       fleetState,
       focusedProjectId,
       projection,
+      projects,
       selectedAgentId,
       visibleAgentIds,
+      visibleProjectIds,
     ]
   );
   useEffect(() => {
@@ -162,8 +181,12 @@ export function SpatialFleetClient() {
   // Legacy semantic selectors continue to supply Attention and DOM inspector
   // content during V2.0; renderer layout is owned by the board model above.
   const fieldZones = useMemo(
-    () => selectSpatialProjectZones(fleetState, { now: Date.now() }),
-    [fleetState]
+    () =>
+      selectSpatialProjectZones(fleetState, {
+        now: Date.now(),
+        projects,
+      }),
+    [fleetState, projects]
   );
 
   const updateFilters = useCallback(

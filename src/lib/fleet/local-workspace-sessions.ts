@@ -1,8 +1,51 @@
-import type { LocalSessionSnapshot } from '@exawatt/core';
+import type { LocalSessionSnapshot, ProjectCatalogEntry } from '@exawatt/core';
 import type { PtySessionInfo } from '@/types/electron';
 
 function leaf(path: string): string {
   return path.split('/').filter(Boolean).pop() ?? path;
+}
+
+function workspaceGroups(layout: unknown): unknown[] {
+  if (!layout || typeof layout !== 'object') return [];
+  const root = layout as { projects?: unknown; initiatives?: unknown };
+  const groups = Array.isArray(root.projects)
+    ? root.projects
+    : root.initiatives;
+  return Array.isArray(groups) ? groups : [];
+}
+
+/** Project inventory is durable workspace state, not an Agent side effect. */
+export function extractLocalWorkspaceProjects(
+  layout: unknown
+): ProjectCatalogEntry[] {
+  const projects: ProjectCatalogEntry[] = [];
+  const seen = new Set<string>();
+  for (const candidate of workspaceGroups(layout)) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const project = candidate as {
+      dir?: unknown;
+      name?: unknown;
+      color?: unknown;
+    };
+    if (
+      typeof project.dir !== 'string' ||
+      !project.dir ||
+      seen.has(project.dir)
+    )
+      continue;
+    seen.add(project.dir);
+    projects.push({
+      id: project.dir,
+      label:
+        typeof project.name === 'string' && project.name.trim()
+          ? project.name
+          : leaf(project.dir),
+      ...(typeof project.color === 'string' && project.color
+        ? { color: project.color }
+        : {}),
+    });
+  }
+  return projects;
 }
 
 /**
@@ -22,13 +65,8 @@ export function mergeLocalWorkspaceSessions(
         : { sessionKey: session.id }),
       sessionState: session.exited ? ('stopped' as const) : ('live' as const),
     }));
-  if (!layout || typeof layout !== 'object') return rawLive();
-
-  const root = layout as { projects?: unknown; initiatives?: unknown };
-  const groups = Array.isArray(root.projects)
-    ? root.projects
-    : root.initiatives;
-  if (!Array.isArray(groups)) return rawLive();
+  const groups = workspaceGroups(layout);
+  if (groups.length === 0) return rawLive();
 
   const tabByRuntimeId = new Map<string, string>();
   const tabByDurableId = new Map<string, string>();

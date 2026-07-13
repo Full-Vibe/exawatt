@@ -77,6 +77,50 @@ describe('selectSpatialBoardLayout', () => {
     expect(layout.stats.sourceAgentCount).toBe(0);
   });
 
+  it('renders a known zero-Agent Project and preserves its zone when an Agent starts', () => {
+    const projects = [{ id: '/code/alpha', label: 'Alpha' }];
+    const empty = selectSpatialBoardLayout(fleet([]), { projects });
+    expect(empty.zones).toEqual([
+      expect.objectContaining({
+        id: 'project:/code/alpha',
+        label: 'Alpha',
+        agentCount: 0,
+        visible: true,
+      }),
+    ]);
+    expect(empty.pieces).toEqual([]);
+
+    const started = agent('a', 'Alpha', 'working');
+    started.projectId = '/code/alpha';
+    const active = selectSpatialBoardLayout(fleet([started]), {
+      projects,
+      previousLayout: empty,
+    });
+    expect(active.zones).toHaveLength(1);
+    expect(active.zones[0]).toMatchObject({
+      id: 'project:/code/alpha',
+      agentCount: 1,
+      rect: empty.zones[0]!.rect,
+    });
+    expect(active.pieces).toHaveLength(1);
+  });
+
+  it('keeps or hides empty Projects according to semantic Project visibility', () => {
+    const projects = [{ id: '/code/alpha', label: 'Alpha' }];
+    const visible = selectSpatialBoardLayout(fleet([]), {
+      projects,
+      visibleAgentIds: new Set(),
+      visibleProjectIds: new Set(['project:/code/alpha']),
+    });
+    expect(visible.zones[0]!.visible).toBe(true);
+    const hidden = selectSpatialBoardLayout(fleet([]), {
+      projects,
+      visibleAgentIds: new Set(),
+      visibleProjectIds: new Set(),
+    });
+    expect(hidden.zones[0]!.visible).toBe(false);
+  });
+
   it.each([1, 2, 3, 6])(
     'places %i sparse Projects on a compact fixed lattice',
     projectCount => {

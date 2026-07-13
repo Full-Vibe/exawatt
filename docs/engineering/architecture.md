@@ -68,7 +68,8 @@ Canonical product objects:
 
 - Workspace
 - Initiative
-- Project / Context Group (a resolvable grouping lens keyed off agents, not a stored parent)
+- Project / Context Group (a resolvable grouping lens seeded by the source's
+  Project catalog and joined by Agents, not a structural parent of Agent)
 - Agent
 - Session
 - Decision
@@ -112,7 +113,8 @@ The UI should depend on normalized Exawatt concepts, not raw provider-specific p
 
 - Workspace
 - Initiative
-- Project / Context Group (a resolvable grouping lens keyed off agents, not a stored parent)
+- Project / Context Group (a resolvable grouping lens seeded by the source's
+  Project catalog and joined by Agents, not a structural parent of Agent)
 - Agent
 - Session
 - Event
@@ -145,6 +147,12 @@ Built:
 - inert persisted Projects independent of Session tabs; a curated Project
   chooser with reviewed parent-folder import; and a compact source-aware Agent
   composer whose optional first task crosses the launch boundary as data
+- a source-agnostic Project catalog derived from durable workspace state. The
+  Electron workspace save broadcasts an authoritative change event through the
+  preload boundary; FleetProvider refreshes the catalog and local Session
+  inventory so Terminal, Sessions, and Spatial render the same open Projects,
+  including zero-Agent/zero-Session Projects. Local Agents carry the stable
+  directory-backed Project identity and join the existing group when started.
 - persisted project-grouped terminal sessions, attention state, keyboard-first
   command flows, split panes, and the exposé session overview
 - persistent command-altitude navigation between terminal focus, session

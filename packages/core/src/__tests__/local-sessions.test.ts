@@ -74,6 +74,7 @@ describe('sessionToAgent', () => {
     const a = sessionToAgent(snap(), 2_000, 3_000, 15_000);
     expect(a.id).toBe('pty-1');
     expect(a.name).toBe('agent-a · Claude Code');
+    expect(a.projectId).toBe('/Users/x/Code/exawatt');
     expect(a.project).toBe('exawatt');
     expect(a.status).toBe('working');
     expect(a.lastActivityAt).toBe(2_000);
@@ -260,5 +261,38 @@ describe('LocalSessionsTransport', () => {
     now += 20_000; // long past the working window
     await vi.advanceTimersByTimeAsync(20_000);
     expect(manager.getFleetState().agents['pty-1'].status).toBe('idle');
+  });
+
+  it('ignores an older reconciliation that completes after a manual refresh', async () => {
+    const pending: Array<(value: LocalSessionSnapshot[]) => void> = [];
+    source.list = () =>
+      new Promise(resolve => {
+        pending.push(resolve);
+      });
+    transport = new LocalSessionsTransport(source, { now: () => now });
+    transport.initialize(manager);
+    transport.start();
+    expect(pending).toHaveLength(1);
+
+    const refresh = transport.refresh();
+    expect(pending).toHaveLength(2);
+    pending[1]!([
+      snap({
+        projectName: 'Renamed',
+        projectDir: '/code/renamed',
+      }),
+    ]);
+    await refresh;
+    expect(manager.getFleetState().agents['pty-1']).toMatchObject({
+      project: 'Renamed',
+      projectId: '/code/renamed',
+    });
+
+    pending[0]!([snap({ projectName: 'Stale' })]);
+    await flush();
+    expect(manager.getFleetState().agents['pty-1']).toMatchObject({
+      project: 'Renamed',
+      projectId: '/code/renamed',
+    });
   });
 });

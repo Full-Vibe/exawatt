@@ -65,6 +65,8 @@ export interface ExawattAgent {
   name: string;
   status: AgentStatus;
   goal: string;
+  /** Source-owned stable Project identity. `project` remains the display label. */
+  projectId?: string;
   project: string;
   sessionKey: string; // source-owned runtime or durable Session reference
   sessionState?: AgentSessionState;

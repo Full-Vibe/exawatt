@@ -120,6 +120,7 @@ export function sessionToAgent(
     goal:
       session.contextSummary?.trim() ||
       `Interactive ${session.title} session in ${session.cwd}`,
+    projectId: session.projectDir,
     project: session.projectName,
     sessionKey: session.sessionKey ?? session.id,
     sessionState: session.sessionState ?? (session.exited ? 'stopped' : 'live'),
@@ -143,6 +144,7 @@ export class LocalSessionsTransport {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
+  private syncSequence = 0;
 
   constructor(
     private readonly source: LocalSessionsSource,
@@ -169,6 +171,11 @@ export class LocalSessionsTransport {
     // for the next poll
     this.unsubs.push(this.source.onExit(() => void this.sync()));
     this.pollTimer = setInterval(() => void this.sync(), this.opts.pollMs);
+  }
+
+  /** Reconcile immediately after authoritative workspace metadata changes. */
+  refresh(): Promise<void> {
+    return this.sync();
   }
 
   stop(): void {
@@ -203,8 +210,9 @@ export class LocalSessionsTransport {
 
   private async sync(): Promise<void> {
     if (!this.running) return;
+    const sequence = ++this.syncSequence;
     const list = await this.source.list();
-    if (!this.running) return;
+    if (!this.running || sequence !== this.syncSequence) return;
     const seen = new Set<string>();
     for (const s of list) {
       seen.add(s.id);
@@ -233,7 +241,7 @@ export class LocalSessionsTransport {
       this.now(),
       this.opts.workingWindowMs
     );
-    const key = `${agent.status}:${agent.sessionState}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${session.attention?.since ?? ''}`;
+    const key = `${agent.status}:${agent.sessionState}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${agent.projectId ?? ''}:${agent.project}:${session.attention?.since ?? ''}`;
     if (this.emitted.get(session.id) === key) return; // nothing changed
     this.emitted.set(session.id, key);
     this.manager.upsertAgent(agent);

@@ -24,8 +24,12 @@ import {
   type ExawattCronJob,
   type ExawattCronRun,
   type ExawattCronJobCreate,
+  type ProjectCatalogEntry,
 } from '@exawatt/core';
-import { mergeLocalWorkspaceSessions } from './local-workspace-sessions';
+import {
+  extractLocalWorkspaceProjects,
+  mergeLocalWorkspaceSessions,
+} from './local-workspace-sessions';
 
 // --- Context ---
 
@@ -35,6 +39,8 @@ interface FleetContextValue {
   isDemo: boolean;
   /** desktop local-sessions mode: the terminal workspace IS the fleet */
   isLocal: boolean;
+  /** Projects exist independently of whether they currently contain Agents. */
+  projects: ProjectCatalogEntry[];
   connectionStatus: OCConnectionStatus | 'initializing';
   ocAvailable: boolean;
   connectToRealOC: () => void;
@@ -47,6 +53,21 @@ interface ConnectionToast {
 
 const FleetContext = createContext<FleetContextValue | null>(null);
 
+function sameProjectCatalog(
+  current: ProjectCatalogEntry[],
+  next: ProjectCatalogEntry[]
+): boolean {
+  return (
+    current.length === next.length &&
+    current.every(
+      (project, index) =>
+        project.id === next[index]?.id &&
+        project.label === next[index]?.label &&
+        project.color === next[index]?.color
+    )
+  );
+}
+
 // --- Provider ---
 
 export function FleetProvider({ children }: { children: ReactNode }) {
@@ -58,6 +79,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   );
   const [isDemo, setIsDemo] = useState(false);
   const [isLocal, setIsLocal] = useState(false);
+  const [projects, setProjects] = useState<ProjectCatalogEntry[]>([]);
   const [ocAvailable, setOcAvailable] = useState(false);
   const [isConnectingToOC, setIsConnectingToOC] = useState(false);
   const mockTransportRef = useRef<MockFleetTransport | null>(null);
@@ -85,6 +107,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    let offWorkspaceChanged: (() => void) | undefined;
 
     async function initializeFleet() {
       console.log('[Exawatt] initializeFleet: starting');
@@ -102,12 +125,19 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           setConnectionStatus('connected');
           prevConnectionStatusRef.current = 'connected';
 
+          const workspace = window.electron?.workspace;
           const localTransport = new LocalSessionsTransport({
             list: async () => {
               const [live, layout] = await Promise.all([
                 pty.list(),
-                window.electron?.workspace?.load() ?? Promise.resolve(null),
+                workspace?.load() ?? Promise.resolve(null),
               ]);
+              if (mounted) {
+                const next = extractLocalWorkspaceProjects(layout);
+                setProjects(current =>
+                  sameProjectCatalog(current, next) ? current : next
+                );
+              }
               return mergeLocalWorkspaceSessions(live, layout);
             },
             onData: pty.onData,
@@ -116,6 +146,14 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           localTransportRef.current = localTransport;
           localTransport.initialize(manager);
           localTransport.start();
+          offWorkspaceChanged = workspace?.onChanged?.(layout => {
+            if (!mounted) return;
+            const next = extractLocalWorkspaceProjects(layout);
+            setProjects(current =>
+              sameProjectCatalog(current, next) ? current : next
+            );
+            void localTransport.refresh();
+          });
           return;
         }
 
@@ -229,6 +267,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false;
+      offWorkspaceChanged?.();
       ocClientRef.current?.disconnect();
       for (const timer of toastTimersRef.current) clearTimeout(timer);
       toastTimersRef.current = [];
@@ -325,6 +364,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       mockTransport: mockTransportRef.current,
       isDemo,
       isLocal,
+      projects,
       connectionStatus: isConnectingToOC
         ? ('connecting' as const)
         : connectionStatus,
@@ -335,6 +375,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       manager,
       isDemo,
       isLocal,
+      projects,
       connectionStatus,
       ocAvailable,
       connectToRealOC,
@@ -390,8 +431,9 @@ export function useFleet(): {
   agents: ExawattAgent[];
   metrics: FleetMetrics;
   fleetState: FleetState;
+  projects: ProjectCatalogEntry[];
 } {
-  const { manager } = useFleetContext();
+  const { manager, projects } = useFleetContext();
   const [fleetState, setFleetState] = useState<FleetState>({
     agents: {},
     metrics: {
@@ -419,7 +461,7 @@ export function useFleet(): {
   }, [manager]);
 
   const agents = Object.values(fleetState.agents);
-  return { agents, metrics: fleetState.metrics, fleetState };
+  return { agents, metrics: fleetState.metrics, fleetState, projects };
 }
 
 export function useAgent(agentId: string): {

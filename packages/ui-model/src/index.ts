@@ -9,6 +9,7 @@ import {
   type ExawattCronJob,
   type FleetMetrics,
   type FleetState,
+  type ProjectCatalogEntry,
 } from '@exawatt/core';
 
 export * from './spatial-board';
@@ -296,6 +297,8 @@ export interface FleetSpatialSceneOptions {
   maxZones?: number;
   /** when true, collapse Projects beyond maxZones into one "+N quieter projects" cluster */
   aggregateOverflow?: boolean;
+  /** Known Projects remain spatially addressable before they have Agents. */
+  projects?: readonly ProjectCatalogEntry[];
 }
 
 export interface FleetCommandViewOptions {
@@ -881,7 +884,9 @@ export function selectSpatialProjectZones(
   const selectedAgentId = options.selectedAgentId ?? null;
   const heroId = heroAgentId(state, options.now);
 
-  const groups: ContextGroup[] = resolveContextGroups(state);
+  const groups: ContextGroup[] = resolveContextGroups(state, {
+    projects: options.projects,
+  });
   const anyZoneSelected =
     selectedAgentId != null &&
     groups.some(group => group.agentIds.includes(selectedAgentId));
