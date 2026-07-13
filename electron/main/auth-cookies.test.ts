@@ -10,9 +10,11 @@ describe('Electron auth cookie adapter', () => {
       ]);
     const set = vi.fn().mockResolvedValue(undefined);
     const remove = vi.fn().mockResolvedValue(undefined);
+    const recordDiagnostic = vi.fn();
     const adapter = createElectronAuthCookies(
       { get, set, remove },
-      'http://127.0.0.1:43123/workspace'
+      'http://127.0.0.1:43123/workspace',
+      recordDiagnostic
     );
 
     await expect(adapter.getAll()).resolves.toEqual([
@@ -43,6 +45,18 @@ describe('Electron auth cookie adapter', () => {
         expirationDate: expect.any(Number),
       })
     );
+    expect(recordDiagnostic).toHaveBeenCalledWith('auth.cookies.read', {
+      count: 1,
+      verifierCount: 0,
+      sessionCount: 1,
+    });
+    expect(recordDiagnostic).toHaveBeenCalledWith('auth.cookies.mutated', {
+      requestedCount: 1,
+      setCount: 1,
+      removeCount: 0,
+      verifierCount: 0,
+      sessionCount: 1,
+    });
   });
 
   it('removes expired or empty chunks instead of retaining stale session data', async () => {

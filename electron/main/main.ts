@@ -5,12 +5,13 @@ import {
   Menu,
   dialog,
   session as electronSession,
+  net as electronNet,
 } from 'electron';
 import { spawn, type ChildProcess } from 'child_process';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
-import net from 'net';
+import nodeNet from 'net';
 import http from 'http';
 import path from 'path';
 import { handleTrusted, setTrustedRendererOrigin } from './ipc-security';
@@ -28,6 +29,7 @@ import type {
   ElectronAuthStartConfig,
 } from './auth-coordinator';
 import { createElectronAuthCookies } from './auth-cookies';
+import type { AuthDiagnosticRecorder } from './auth-diagnostics';
 
 const isDev = process.env.NODE_ENV === 'development';
 const execFileAsync = promisify(execFile);
@@ -63,6 +65,7 @@ let rendererWasWarmAtLaunch = false;
 let shutdownCoordinator: ShutdownCoordinator | null = null;
 let runStateStore: RunStateStore | null = null;
 let authCoordinator: ElectronAuthCoordinator | null = null;
+let recordAuthDiagnostic: AuthDiagnosticRecorder = () => {};
 let ptySessions: PtySessionManager;
 let disposePty: () => Promise<void> = async () => {};
 let disposeRoadmapWatchers: () => void = () => {};
@@ -108,7 +111,7 @@ const buildInfo: BuildInfo = isDev
 
 async function availableLoopbackPort(): Promise<number> {
   return await new Promise((resolve, reject) => {
-    const server = net.createServer();
+    const server = nodeNet.createServer();
     server.once('error', reject);
     server.listen(0, '127.0.0.1', () => {
       const address = server.address();
@@ -277,18 +280,33 @@ app.on('open-url', (event, url) => {
 });
 
 function handleDeepLink(url: string): void {
-  if (!url.startsWith(`${PROTOCOL}://`)) return;
+  if (!url.startsWith(`${PROTOCOL}://`)) {
+    recordAuthDiagnostic('auth.callback.rejected_scheme');
+    return;
+  }
 
   let parsed: URL;
   try {
     parsed = new URL(url);
-  } catch {
+  } catch (error) {
+    recordAuthDiagnostic('auth.callback.parse_failure', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return;
   }
 
   // exawatt://auth/callback?code=...
   if (parsed.hostname === 'auth' && parsed.pathname === '/callback') {
     const code = parsed.searchParams.get('code');
+    recordAuthDiagnostic('auth.callback.received', {
+      host: parsed.hostname,
+      path: parsed.pathname,
+      queryNames: [...new Set(parsed.searchParams.keys())].sort(),
+      hasCode: Boolean(code),
+      codeLength: code?.length ?? 0,
+      windowReady: Boolean(mainWindow && !mainWindow.isDestroyed()),
+      coordinatorReady: Boolean(authCoordinator),
+    });
 
     if (code) {
       if (
@@ -303,8 +321,16 @@ function handleDeepLink(url: string): void {
       } else {
         // Window not ready — queue for delivery after load
         pendingDeepLinkUrl = url;
+        recordAuthDiagnostic('auth.callback.queued');
       }
+    } else {
+      recordAuthDiagnostic('auth.callback.missing_code');
     }
+  } else {
+    recordAuthDiagnostic('auth.callback.ignored_route', {
+      host: parsed.hostname,
+      path: parsed.pathname,
+    });
   }
 }
 
@@ -315,9 +341,15 @@ async function completeElectronAuth(code: string): Promise<void> {
   try {
     if (!authCoordinator) throw new Error('Authentication is not ready.');
     await authCoordinator.exchangeCode(code);
-    if (!win.isDestroyed()) win.webContents.send('auth:complete');
+    if (!win.isDestroyed()) {
+      win.webContents.send('auth:complete');
+      recordAuthDiagnostic('auth.renderer_completion_sent');
+    } else {
+      recordAuthDiagnostic('auth.renderer_completion_skipped_destroyed');
+    }
   } catch (error) {
     const safeError = safeElectronAuthError(error);
+    recordAuthDiagnostic('auth.completion_failure', { error: safeError });
     console.error('[auth] Electron OAuth code exchange failed', safeError);
     if (!win.isDestroyed()) win.webContents.send('auth:error', safeError);
   }
@@ -602,7 +634,14 @@ function registerAuthIPC(): void {
     'auth:start-google',
     async (_event, config: ElectronAuthStartConfig) => {
       if (!authCoordinator) throw new Error('Authentication is not ready.');
-      await authCoordinator.startGoogle(config);
+      try {
+        await authCoordinator.startGoogle(config);
+      } catch (error) {
+        recordAuthDiagnostic('auth.start_ipc_failure', {
+          error: safeElectronAuthError(error),
+        });
+        throw error;
+      }
     }
   );
   handleTrusted(
@@ -862,6 +901,7 @@ async function bootstrapCommandSurface(): Promise<void> {
     import('./shutdown-coordinator'),
     import('./run-state'),
     import('./auth-coordinator'),
+    import('./auth-diagnostics'),
   ]).then(
     ([
       agentIpc,
@@ -874,6 +914,7 @@ async function bootstrapCommandSurface(): Promise<void> {
       shutdown,
       runState,
       auth,
+      authDiagnostics,
     ]) => {
       updateStartupScreen({
         progress: 0.36,
@@ -891,6 +932,7 @@ async function bootstrapCommandSurface(): Promise<void> {
         shutdown,
         runState,
         auth,
+        authDiagnostics,
       };
     }
   );
@@ -906,14 +948,45 @@ async function bootstrapCommandSurface(): Promise<void> {
   shutdownCopy = runtime.shutdown.shutdownCopy;
   safeElectronAuthError = runtime.auth.safeElectronAuthError;
 
+  const authLogPath = path.join(app.getPath('userData'), 'logs', 'auth.jsonl');
+  recordAuthDiagnostic =
+    runtime.authDiagnostics.createPersistentAuthDiagnostics({
+      logPath: authLogPath,
+      context: {
+        buildSha: buildInfo.sha,
+        buildBranch: buildInfo.branch,
+        buildDelivery: buildInfo.delivery,
+        appVersion: app.getVersion(),
+        electronVersion: process.versions.electron,
+        nodeVersion: process.versions.node,
+        platform: process.platform,
+        arch: process.arch,
+      },
+    });
+  recordAuthDiagnostic('auth.runtime.ready', {
+    transport: 'electron.net.fetch',
+    logPath: authLogPath,
+  });
+
+  const electronAuthFetch: typeof fetch = (input, init) =>
+    electronNet.fetch(input instanceof URL ? input.toString() : input, init);
+  const authFetch = runtime.authDiagnostics.instrumentAuthFetch(
+    electronAuthFetch,
+    recordAuthDiagnostic,
+    'electron.net.fetch'
+  );
+
   setTrustedRendererOrigin(trustedRendererUrl);
   authCoordinator = new runtime.auth.ElectronAuthCoordinator({
     expectedRendererOrigin: trustedRendererUrl,
     openExternal: url => shell.openExternal(url),
     cookies: createElectronAuthCookies(
       electronSession.defaultSession.cookies,
-      trustedRendererUrl
+      trustedRendererUrl,
+      recordAuthDiagnostic
     ),
+    fetch: authFetch,
+    recordDiagnostic: recordAuthDiagnostic,
   });
   runStateStore = new runtime.runState.RunStateStore(
     path.join(app.getPath('userData'), 'run-state.json')

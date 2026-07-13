@@ -64,11 +64,15 @@ function setup() {
     installSession,
   }));
   const openExternal = vi.fn().mockResolvedValue(undefined);
+  const fetch = vi.fn() as unknown as typeof globalThis.fetch;
+  const recordDiagnostic = vi.fn();
   const { cookies } = memoryCookies();
   const coordinator = new ElectronAuthCoordinator({
     expectedRendererOrigin: 'http://127.0.0.1:43123',
     openExternal,
     cookies,
+    fetch,
+    recordDiagnostic,
     createAuthClient,
   });
 
@@ -80,6 +84,8 @@ function setup() {
     exchangeCode,
     installSession,
     openExternal,
+    fetch,
+    recordDiagnostic,
   };
 }
 
@@ -149,8 +155,13 @@ describe('ElectronAuthCoordinator', () => {
   });
 
   it('opens the generated system-browser URL from a cookie-backed client', async () => {
-    const { coordinator, createAuthClient, signInWithGoogle, openExternal } =
-      setup();
+    const {
+      coordinator,
+      createAuthClient,
+      signInWithGoogle,
+      openExternal,
+      fetch,
+    } = setup();
 
     await coordinator.startGoogle(startConfig);
 
@@ -161,7 +172,7 @@ describe('ElectronAuthCoordinator', () => {
         getAll: expect.any(Function),
         setAll: expect.any(Function),
       }),
-      fetch: expect.any(Function),
+      fetch,
     });
     expect(signInWithGoogle).toHaveBeenCalledWith(startConfig.redirectTo);
     expect(openExternal).toHaveBeenCalledWith(
@@ -179,6 +190,30 @@ describe('ElectronAuthCoordinator', () => {
     expect(exchangeCode).toHaveBeenCalledWith('one-time-code');
     await expect(coordinator.exchangeCode('replay')).rejects.toThrow(
       'No Google sign-in is pending'
+    );
+  });
+
+  it('emits correlated lifecycle diagnostics without auth code values', async () => {
+    const { coordinator, recordDiagnostic } = setup();
+    await coordinator.startGoogle(startConfig);
+    await coordinator.exchangeCode('one-time-code');
+
+    const events = recordDiagnostic.mock.calls.map(([event]) => event);
+    expect(events).toEqual([
+      'auth.flow.start',
+      'auth.flow.authorization_url_ready',
+      'auth.flow.browser_opened',
+      'auth.flow.exchange_start',
+      'auth.flow.exchange_complete',
+    ]);
+    const serialized = JSON.stringify(recordDiagnostic.mock.calls);
+    expect(serialized).not.toContain('one-time-code');
+    expect(recordDiagnostic).toHaveBeenCalledWith(
+      'auth.flow.exchange_start',
+      expect.objectContaining({
+        flowId: expect.any(String),
+        codeLength: 13,
+      })
     );
   });
 
