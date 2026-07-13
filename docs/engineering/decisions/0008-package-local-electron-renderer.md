@@ -27,6 +27,14 @@ privileges and should not define the desktop trust boundary.
 - Near-term dogfood delivery uses a one-command, agent-closeout install to
   `/Applications`. Product distribution advances to signed/notarized CI builds
   and `electron-updater`; the local copy is not the long-term updater.
+- Startup exposes the real BrowserWindow immediately with a self-contained
+  launch document, then navigates that same window to the trusted loopback
+  renderer when command services are ready. The launch document is not assigned
+  the trusted IPC origin and cannot invoke privileged handlers.
+- The signed renderer remains a compact archive extracted into a content-keyed
+  user-data cache. Warm versions prestart their server before `app.ready`; cold
+  extraction waits for the launch frame; old content keys are removed after a
+  successful start.
 
 ## Consequences
 
@@ -34,6 +42,9 @@ privileges and should not define the desktop trust boundary.
   installed app reflects them.
 - Offline launch and packaged-app tests become required daily-driver behavior.
 - The build must package the Next renderer and native `node-pty` dependencies.
+- Startup progress reflects completed bootstrap boundaries rather than a timed
+  intro, and a failed bootstrap remains visible instead of hanging on a blank
+  window.
 - Hosted and desktop surfaces may share source and UI models, but their delivery
   and privilege boundaries are explicit.
 - A running app is never silently restarted for an update because its PTY
@@ -53,3 +64,8 @@ privileges and should not define the desktop trust boundary.
    unnecessarily delays the installed daily-driver loop. It remains a named
    near-term work packet with signing, notarization, release metadata, and
    staged update delivery.
+4. Ship the traced Next runtime as thousands of unpacked files inside the app
+   bundle. This removed cache-miss extraction, but packaged measurements showed
+   that bundle validation and file traversal slowed every warm launch and grew
+   the installed surface. Keeping one signed archive plus immediate progress
+   preserves the faster steady-state path.

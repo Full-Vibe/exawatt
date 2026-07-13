@@ -35,6 +35,16 @@ the hosted Exawatt site as its primary renderer or expose PTY preload methods to
 remote content. The hosted interface may share source and normalized UI models,
 but it is a separate delivery and privilege boundary.
 
+Desktop startup has two explicit phases. Electron creates the real main window
+with a self-contained, CSP-restricted launch document as soon as Chromium is
+ready; that document has no trusted IPC origin and reports only main-owned boot
+milestones. The packaged Next renderer, PTY/session services, auth, updater, and
+other command modules initialize behind it. A cached renderer server starts
+before Electron's ready event; archive extraction on a version cache miss waits
+until the launch frame exists so disk work cannot delay visible acknowledgement.
+The same window then navigates to the trusted loopback renderer. This is a
+presentation boundary, not a second application or alternate data source.
+
 The Electron shell presents Terminal Focus → Session Overview → Spatial Command
 as one command-altitude navigation continuum. That shared navigation does not
 merge renderer ownership: xterm/DOM and R3F keep separate runtime boundaries and
@@ -153,6 +163,9 @@ Built:
   compacts without exposing partial state
 - self-contained Electron packaging, atomic clean-master dogfood installation,
   deep terminal fundamentals, and opt-in native attention notifications;
+  immediate measured startup feedback backed by real bootstrap milestones,
+  deferred command-module loading, warm renderer prestart, and bounded renderer
+  cache retention;
   system-browser OAuth is coordinated by Electron main, which owns the PKCE
   verifier and code exchange, while the sandboxed renderer receives only the
   completed session through trusted preload IPC

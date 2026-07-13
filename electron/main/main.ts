@@ -6,34 +6,27 @@ import fs from 'fs';
 import net from 'net';
 import http from 'http';
 import path from 'path';
-import { registerAgentIPC } from './agent-ipc';
-import { registerPtyIPC, disposePty } from './pty-ipc';
-import { registerRoadmapIPC } from './roadmap/roadmap-ipc';
-import { registerProjectIPC } from './projects/project-ipc';
-import { disposeRoadmapWatchers } from './roadmap/roadmap-watcher';
 import { handleTrusted, setTrustedRendererOrigin } from './ipc-security';
-import { ptySessions } from './pty/session-manager';
-import {
-  installProductUpdate,
-  registerProductUpdater,
-  startProductUpdater,
-} from './updater';
-import {
-  ShutdownCoordinator,
-  shutdownCopy,
-  type ShutdownIntent,
-  type ShutdownPhase,
-} from './shutdown-coordinator';
-import { RunStateStore } from './run-state';
 import { randomUUID } from 'crypto';
-import {
+import { launchScreenUrl, type StartupStage } from './launch-screen';
+import type { PtySessionManager } from './pty/session-manager';
+import type {
+  ShutdownCoordinator,
+  ShutdownIntent,
+  ShutdownPhase,
+} from './shutdown-coordinator';
+import type { RunStateStore } from './run-state';
+import type {
   ElectronAuthCoordinator,
-  safeElectronAuthError,
-  type ElectronAuthStartConfig,
+  ElectronAuthStartConfig,
 } from './auth-coordinator';
 
 const isDev = process.env.NODE_ENV === 'development';
 const execFileAsync = promisify(execFile);
+
+// Prevent Electron from constructing a default menu while the app is booting.
+// Exawatt installs its real command menu once command services are available.
+Menu.setApplicationMenu(null);
 
 // hermetic test runs: isolated userData so smoke tests never touch the
 // operator's real workspace layout. Gated on EXAWATT_TEST so a stray env
@@ -56,9 +49,34 @@ let mainWindow: BrowserWindow | null = null;
 let pendingDeepLinkUrl: string | null = null;
 let rendererServer: ChildProcess | null = null;
 let rendererOrigin: string | null = null;
+let activeRendererCacheKey: string | null = null;
+let rendererReadyPromise: Promise<string> | null = null;
+let rendererWasWarmAtLaunch = false;
 let shutdownCoordinator: ShutdownCoordinator | null = null;
 let runStateStore: RunStateStore | null = null;
 let authCoordinator: ElectronAuthCoordinator | null = null;
+let ptySessions: PtySessionManager;
+let disposePty: () => Promise<void> = async () => {};
+let disposeRoadmapWatchers: () => void = () => {};
+let installProductUpdate: () => void = () => {
+  throw new Error('Product updates are not ready.');
+};
+let shutdownCopy: typeof import('./shutdown-coordinator').shutdownCopy;
+let safeElectronAuthError: (error: unknown) => {
+  name: string;
+  message: string;
+  status?: number;
+  code?: string;
+} = error => ({
+  name: 'Error',
+  message: error instanceof Error ? error.message : 'Authentication failed.',
+});
+let startupComplete = false;
+let startupStage: StartupStage = {
+  progress: 0.08,
+  label: 'Opening command surface',
+  detail: 'Preparing the local agent interface',
+};
 const pendingCheckpoints = new Map<string, (ok: boolean) => void>();
 const workspaceCheckpointOwners = new Set<number>();
 
@@ -116,7 +134,7 @@ async function waitForRenderer(url: string): Promise<void> {
         `Packaged renderer exited with ${rendererServer?.exitCode}`
       );
     }
-    await new Promise(resolve => setTimeout(resolve, 150));
+    await new Promise(resolve => setTimeout(resolve, 40));
   }
   throw new Error('Timed out starting the packaged renderer');
 }
@@ -131,6 +149,7 @@ async function startPackagedRenderer(): Promise<string> {
       'utf8'
     )
   ).trim();
+  activeRendererCacheKey = archiveHash;
   const cacheRoot = path.join(app.getPath('userData'), 'renderer-cache');
   const versionRoot = path.join(cacheRoot, archiveHash);
   const standaloneRoot = path.join(versionRoot, 'dist-renderer');
@@ -169,6 +188,67 @@ async function startPackagedRenderer(): Promise<string> {
   return origin;
 }
 
+function pruneRendererCache(): void {
+  const cacheRoot = path.join(app.getPath('userData'), 'renderer-cache');
+  const keep = activeRendererCacheKey;
+  if (!keep) return;
+  const delay = process.env.EXAWATT_TEST === '1' ? 250 : 15_000;
+  setTimeout(() => {
+    void fs.promises
+      .readdir(cacheRoot, { withFileTypes: true })
+      .then(entries =>
+        Promise.all(
+          entries
+            .filter(entry => entry.name !== keep)
+            .map(entry =>
+              fs.promises.rm(path.join(cacheRoot, entry.name), {
+                recursive: true,
+                force: true,
+              })
+            )
+        )
+      )
+      .catch(error => {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn('[startup] could not prune renderer cache', error);
+        }
+      });
+  }, delay).unref?.();
+}
+
+function hasWarmRendererCache(): boolean {
+  try {
+    const packagedRenderer = path.join(process.resourcesPath, 'renderer');
+    const key = fs
+      .readFileSync(path.join(packagedRenderer, 'renderer.sha256'), 'utf8')
+      .trim();
+    return fs.existsSync(
+      path.join(
+        app.getPath('userData'),
+        'renderer-cache',
+        key,
+        'dist-renderer',
+        'server.js'
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
+// A cached renderer uses only Node APIs and can boot before Electron's ready
+// event, overlapping its server start with Chromium initialization. A cold
+// renderer intentionally waits until the launch frame exists so archive I/O
+// cannot delay the first visible acknowledgement.
+rendererWasWarmAtLaunch = !isDev && hasWarmRendererCache();
+if (rendererWasWarmAtLaunch) {
+  rendererReadyPromise = startPackagedRenderer();
+  // bootstrapCommandSurface awaits and reports this same promise. Attach an
+  // early observer so a very fast failure cannot become an unhandled rejection
+  // before app.whenReady resolves.
+  void rendererReadyPromise.catch(() => {});
+}
+
 // Register as protocol handler before app is ready.
 // In dev (process.defaultApp), pass execPath + script so macOS can re-launch correctly.
 if (process.defaultApp) {
@@ -203,7 +283,12 @@ function handleDeepLink(url: string): void {
     const code = parsed.searchParams.get('code');
 
     if (code) {
-      if (mainWindow && !mainWindow.isDestroyed()) {
+      if (
+        mainWindow &&
+        !mainWindow.isDestroyed() &&
+        authCoordinator &&
+        isWorkspaceTarget(mainWindow.webContents.getURL())
+      ) {
         if (mainWindow.isMinimized()) mainWindow.restore();
         mainWindow.focus();
         void completeElectronAuth(code);
@@ -230,7 +315,36 @@ async function completeElectronAuth(code: string): Promise<void> {
   }
 }
 
-function createWindow(): void {
+function workspaceUrl(): string {
+  return isDev ? DEV_URL : `${rendererOrigin}/workspace`;
+}
+
+function isWorkspaceTarget(target: string): boolean {
+  try {
+    return new URL(target).origin === new URL(workspaceUrl()).origin;
+  } catch {
+    return false;
+  }
+}
+
+function updateStartupScreen(stage: StartupStage): void {
+  if (!stage.failed && stage.progress < startupStage.progress) return;
+  startupStage = stage;
+  const win = mainWindow;
+  if (
+    !win ||
+    win.isDestroyed() ||
+    !win.webContents.getURL().startsWith('data:text/html')
+  ) {
+    return;
+  }
+  const serialized = JSON.stringify(stage);
+  void win.webContents
+    .executeJavaScript(`window.exawattSetStartupStage?.(${serialized})`)
+    .catch(() => {});
+}
+
+function createWindow(initialUrl: string): void {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -270,14 +384,10 @@ function createWindow(): void {
   );
   mainWindow.webContents.on('destroyed', clearCheckpointOwner);
 
-  // Development uses the explicit dev server. Production uses renderer code
-  // packaged in this exact app build; remote web code never receives PTY APIs.
-  const url = isDev ? DEV_URL : `${rendererOrigin}/workspace`;
-  mainWindow.loadURL(url);
+  void mainWindow.loadURL(initialUrl);
 
   mainWindow.webContents.on('will-navigate', (event, target) => {
-    const allowedOrigin = new URL(url).origin;
-    if (new URL(target).origin !== allowedOrigin) {
+    if (!isWorkspaceTarget(target)) {
       event.preventDefault();
       if (target.startsWith('https://')) void shell.openExternal(target);
     }
@@ -291,7 +401,10 @@ function createWindow(): void {
 
   // Deliver any queued deep link once the page is loaded
   mainWindow.webContents.on('did-finish-load', () => {
-    if (pendingDeepLinkUrl) {
+    const currentUrl = mainWindow?.webContents.getURL() ?? '';
+    if (currentUrl.startsWith('data:text/html')) {
+      updateStartupScreen(startupStage);
+    } else if (pendingDeepLinkUrl && isWorkspaceTarget(currentUrl)) {
       handleDeepLink(pendingDeepLinkUrl);
       pendingDeepLinkUrl = null;
     }
@@ -699,30 +812,104 @@ async function reportShutdownFailure(error: unknown): Promise<void> {
   }
 }
 
-app.whenReady().then(async () => {
-  if (!isDev) await startPackagedRenderer();
-  await ptySessions.configurePersistence(
-    path.join(app.getPath('userData'), 'sessions')
+async function bootstrapCommandSurface(): Promise<void> {
+  const rendererReady = (
+    isDev
+      ? Promise.resolve(DEV_URL)
+      : (rendererReadyPromise ??= startPackagedRenderer())
+  ).then(url => {
+    updateStartupScreen({
+      progress: 0.62,
+      label: 'Renderer online',
+      detail: 'Local command surface is accepting connections',
+    });
+    return url;
+  });
+
+  const runtimeReady = Promise.all([
+    import('./agent-ipc'),
+    import('./pty-ipc'),
+    import('./roadmap/roadmap-ipc'),
+    import('./projects/project-ipc'),
+    import('./roadmap/roadmap-watcher'),
+    import('./pty/session-manager'),
+    import('./updater'),
+    import('./shutdown-coordinator'),
+    import('./run-state'),
+    import('./auth-coordinator'),
+  ]).then(
+    ([
+      agentIpc,
+      ptyIpc,
+      roadmapIpc,
+      projectIpc,
+      roadmapWatcher,
+      sessionManager,
+      updater,
+      shutdown,
+      runState,
+      auth,
+    ]) => {
+      updateStartupScreen({
+        progress: 0.36,
+        label: 'Command engine loaded',
+        detail: 'Agent and Session services are initializing',
+      });
+      return {
+        agentIpc,
+        ptyIpc,
+        roadmapIpc,
+        projectIpc,
+        roadmapWatcher,
+        sessionManager,
+        updater,
+        shutdown,
+        runState,
+        auth,
+      };
+    }
   );
-  const trustedRendererUrl = isDev ? DEV_URL : rendererOrigin!;
+
+  const [trustedRendererUrl, runtime] = await Promise.all([
+    rendererReady,
+    runtimeReady,
+  ]);
+  ptySessions = runtime.sessionManager.ptySessions;
+  disposePty = runtime.ptyIpc.disposePty;
+  disposeRoadmapWatchers = runtime.roadmapWatcher.disposeRoadmapWatchers;
+  installProductUpdate = runtime.updater.installProductUpdate;
+  shutdownCopy = runtime.shutdown.shutdownCopy;
+  safeElectronAuthError = runtime.auth.safeElectronAuthError;
+
   setTrustedRendererOrigin(trustedRendererUrl);
-  authCoordinator = new ElectronAuthCoordinator({
+  authCoordinator = new runtime.auth.ElectronAuthCoordinator({
     expectedRendererOrigin: trustedRendererUrl,
     openExternal: url => shell.openExternal(url),
   });
-  registerAgentIPC();
-  runStateStore = new RunStateStore(
+  runStateStore = new runtime.runState.RunStateStore(
     path.join(app.getPath('userData'), 'run-state.json')
   );
-  const recovery = await runStateStore.begin();
-  registerPtyIPC(recovery.previousRunInterrupted);
-  registerRoadmapIPC();
-  registerProjectIPC();
+  const [, recovery] = await Promise.all([
+    ptySessions.configurePersistence(
+      path.join(app.getPath('userData'), 'sessions')
+    ),
+    runStateStore.begin(),
+  ]);
+  updateStartupScreen({
+    progress: 0.78,
+    label: 'Session index restored',
+    detail: 'Durable local state is ready',
+  });
+
+  runtime.agentIpc.registerAgentIPC();
+  runtime.ptyIpc.registerPtyIPC(recovery.previousRunInterrupted);
+  runtime.roadmapIpc.registerRoadmapIPC();
+  runtime.projectIpc.registerProjectIPC();
   registerAuthIPC();
   registerDialogIPC();
   registerAppIPC();
   registerMenuIPC();
-  shutdownCoordinator = new ShutdownCoordinator({
+  shutdownCoordinator = new runtime.shutdown.ShutdownCoordinator({
     countLive: () => {
       const live = ptySessions.list().filter(session => !session.exited);
       return {
@@ -746,25 +933,59 @@ app.whenReady().then(async () => {
     },
     status: broadcastShutdown,
   });
-  registerProductUpdater(
+  runtime.updater.registerProductUpdater(
     () => ptySessions.list().filter(session => !session.exited).length,
     () => shutdownCoordinator!.request('update')
   );
   createMenu();
-  createWindow();
+  updateStartupScreen({
+    progress: 0.94,
+    label: 'Entering workspace',
+    detail: 'Command services are ready',
+  });
+
+  const win = mainWindow;
+  if (win && !win.isDestroyed()) await win.loadURL(workspaceUrl());
+  startupComplete = true;
   watchInstalledBuild();
-  startProductUpdater(buildInfo.delivery === 'signed');
+  runtime.updater.startProductUpdater(buildInfo.delivery === 'signed');
+  if (!isDev) pruneRendererCache();
+}
+
+app.whenReady().then(() => {
+  // Warm server startup is already in flight. On a version cache miss, give
+  // the native launch frame priority over archive extraction.
+  let commandSurface = rendererWasWarmAtLaunch
+    ? bootstrapCommandSurface()
+    : null;
+  createWindow(launchScreenUrl());
+  commandSurface ??= bootstrapCommandSurface();
 
   app.on('activate', () => {
     if (shutdownCoordinator?.phase !== 'idle') return;
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      createWindow(startupComplete ? workspaceUrl() : launchScreenUrl());
     }
+  });
+
+  void commandSurface.catch(error => {
+    console.error('[startup] command surface failed', error);
+    updateStartupScreen({
+      progress: startupStage.progress,
+      label: 'Command engine paused',
+      detail: 'Exawatt could not start its local command services',
+      failed: true,
+    });
   });
 });
 
 app.on('before-quit', event => {
-  if (!shutdownCoordinator || shutdownCoordinator.allowsFinalExit) return;
+  if (!shutdownCoordinator) {
+    rendererServer?.kill();
+    rendererServer = null;
+    return;
+  }
+  if (shutdownCoordinator.allowsFinalExit) return;
   event.preventDefault();
   void shutdownCoordinator.request('quit');
 });
