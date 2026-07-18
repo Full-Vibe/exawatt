@@ -2,7 +2,7 @@
 # 0009 Deliver signed desktop updates through a public artifact channel
 
 Date: 2026-07-10
-Status: accepted
+Status: accepted; amended 2026-07-18
 
 ## Context
 
@@ -52,8 +52,13 @@ never silently restart it while sessions are live.
   Applying it requires the explicit **Restart when convenient** command, which
   states how many live sessions will stop. Update failure leaves the current
   app launchable.
-- The agent-closeout installer remains a development escape hatch and keeps
-  forcing signing/notarization off. It never becomes the customer update feed.
+- The agent-closeout installer remains a development escape hatch and never
+  becomes the customer update feed. AMENDED 2026-07-18: D17 replaces its
+  identity-null/ad-hoc app with a stable, verifiable Exawatt signing identity so
+  identity-based local policy survives clean-`master` refreshes. The local path
+  need not become a notarized distribution channel, but it must fail explicitly
+  rather than silently install an identity-unstable fallback. Private signing
+  material stays outside the repository and logs.
 - The first release target is arm64, matching the operator's current Mac and
   the project's build-one-mile rule. Intel/universal artifacts are added before
   supporting Intel customers rather than blocking current dogfood activation.
@@ -94,6 +99,9 @@ the bundle.
   update delivery. CI keeps only the latest three artifact versions while the
   private GitHub Release remains the source-linked archive.
 - Normal update checks never require a secret on the user's machine.
+- Local dogfood refreshes preserve one Exawatt code identity for tools such as
+  Little Snitch without importing, weakening, or modifying user firewall rules.
+  Harness executables retain their own identities and policy boundaries.
 - ENG-018 coordinates explicit checkpoint, process stop, update install, and
   logical Session rehydration. PTYs remain inside the app process (decision
   `0012`).
