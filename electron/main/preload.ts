@@ -123,6 +123,17 @@ contextBridge.exposeInMainWorld('electron', {
         source,
         usedAt
       ),
+    setAgentPermissionMode: (
+      projectDir: string,
+      source: string,
+      permissionMode: string
+    ) =>
+      ipcRenderer.invoke(
+        'settings:set-agent-permission-mode',
+        projectDir,
+        source,
+        permissionMode
+      ),
     onChanged: subscribe<{
       terminal?: {
         fontFamily?: string;
@@ -135,6 +146,7 @@ contextBridge.exposeInMainWorld('electron', {
       agentSources?: {
         projectLastUsed: Record<string, string>;
         sourceRecency: Record<string, number>;
+        projectPermissionModes: Record<string, Record<string, string>>;
       };
     }>('settings:changed'),
   },

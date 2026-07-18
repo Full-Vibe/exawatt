@@ -16,10 +16,17 @@ import {
 import {
   AGENT_SOURCE_META,
   AGENT_SOURCE_ORDER,
+  AGENT_PERMISSION_MODE_META,
+  AGENT_PERMISSION_MODE_ORDER,
+  DEFAULT_AGENT_PERMISSION_MODE,
   isAgentSourceId,
+  isAgentPermissionMode,
   loadAgentSourcePreferences,
+  permissionModeFor,
   recommendAgentSource,
+  rememberAgentPermissionMode,
   rememberAgentSource,
+  type AgentSourcePreferenceState,
   type AgentSourceId,
 } from './agent-sources';
 import { HarnessGlyph } from './harness-icons';
@@ -58,6 +65,11 @@ export function AgentComposer({
 }) {
   const [task, setTask] = useState('');
   const [source, setSource] = useState<AgentSourceId>('claude');
+  const [permissionMode, setPermissionMode] = useState(
+    DEFAULT_AGENT_PERMISSION_MODE
+  );
+  const [sourcePreferences, setSourcePreferences] =
+    useState<AgentSourcePreferenceState | null>(null);
   const [worktree, setWorktree] = useState(false);
   const [branch, setBranch] = useState(defaultBranch);
   const [roadmapItemId, setRoadmapItemId] = useState('');
@@ -68,11 +80,20 @@ export function AgentComposer({
     ? source
     : AGENT_SOURCE_ORDER[0];
   const sourceMeta = AGENT_SOURCE_META[effectiveSource];
+  const permissionMeta = AGENT_PERMISSION_MODE_META[permissionMode];
 
   useEffect(() => {
     let cancelled = false;
+    setSourcePreferences(null);
+    setPermissionMode(DEFAULT_AGENT_PERMISSION_MODE);
     void loadAgentSourcePreferences().then(preferences => {
-      if (!cancelled) setSource(recommendAgentSource(preferences, projectDir));
+      if (cancelled) return;
+      const recommendedSource = recommendAgentSource(preferences, projectDir);
+      setSourcePreferences(preferences);
+      setSource(recommendedSource);
+      setPermissionMode(
+        permissionModeFor(preferences, projectDir, recommendedSource)
+      );
     });
     setTask('');
     setRoadmapItemId('');
@@ -113,6 +134,7 @@ export function AgentComposer({
     const ok = await onLaunch({
       harness: effectiveSource,
       dir: projectDir,
+      permissionMode,
       initialPrompt: task.trim() || undefined,
       worktreeBranch: worktree ? branch.trim() : undefined,
       roadmapItemId: roadmapItemId || undefined,
@@ -120,6 +142,24 @@ export function AgentComposer({
     setStarting(false);
     if (!ok) return;
     await rememberAgentSource(projectDir, effectiveSource);
+    await rememberAgentPermissionMode(
+      projectDir,
+      effectiveSource,
+      permissionMode
+    );
+    setSourcePreferences(current => {
+      if (!current) return current;
+      return {
+        ...current,
+        projectPermissionModes: {
+          ...current.projectPermissionModes,
+          [projectDir]: {
+            ...current.projectPermissionModes[projectDir],
+            [effectiveSource]: permissionMode,
+          },
+        },
+      };
+    });
     setTask('');
     if (worktree && branchEditSeq.current === branchSeqAtLaunch) {
       setBranch(defaultBranch());
@@ -141,7 +181,7 @@ export function AgentComposer({
         event.preventDefault();
         void launchAgent();
       }}
-      className={`flex min-w-0 items-stretch gap-1.5 ${
+      className={`flex min-w-0 items-stretch gap-1 ${
         variant === 'empty' ? 'w-full max-w-2xl' : 'w-full max-w-3xl'
       }`}
     >
@@ -170,7 +210,13 @@ export function AgentComposer({
       <Select
         value={effectiveSource}
         onValueChange={value => {
-          if (isAgentSourceId(value)) setSource(value);
+          if (!isAgentSourceId(value)) return;
+          setSource(value);
+          setPermissionMode(
+            sourcePreferences
+              ? permissionModeFor(sourcePreferences, projectDir, value)
+              : DEFAULT_AGENT_PERMISSION_MODE
+          );
         }}
       >
         <SelectTrigger
@@ -193,6 +239,43 @@ export function AgentComposer({
               {AGENT_SOURCE_META[id].label}
             </SelectItem>
           ))}
+        </SelectContent>
+      </Select>
+
+      <Select
+        value={permissionMode}
+        onValueChange={value => {
+          if (isAgentPermissionMode(value)) setPermissionMode(value);
+        }}
+      >
+        <SelectTrigger
+          aria-label="Agent permissions"
+          title={`${permissionMeta.label}: ${permissionMeta.description}`}
+          className="h-9 w-[80px] shrink-0 rounded border px-2 font-mono text-xs shadow-none"
+          style={{
+            color:
+              permissionMode === 'unrestricted'
+                ? HUD.amber
+                : permissionMode === 'auto'
+                  ? HUD.green
+                  : HUD.textDim,
+            borderColor:
+              permissionMode === 'unrestricted'
+                ? `${HUD.amber}66`
+                : 'rgba(80,230,255,0.24)',
+            background: HUD.bg.deep,
+          }}
+        >
+          <SelectValue>{permissionMeta.shortLabel}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {sourceMeta.capabilities.permissionModes
+            .filter(mode => AGENT_PERMISSION_MODE_ORDER.includes(mode))
+            .map(mode => (
+              <SelectItem key={mode} value={mode}>
+                {AGENT_PERMISSION_MODE_META[mode].label}
+              </SelectItem>
+            ))}
         </SelectContent>
       </Select>
 

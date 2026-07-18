@@ -1,6 +1,7 @@
 export {};
 
 export type PtyHarness = 'shell' | 'claude' | 'codex';
+export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
 
 export interface PtyCreateOptions {
   harness: PtyHarness;
@@ -14,6 +15,8 @@ export interface PtyCreateOptions {
   durableSessionId?: string;
   /** Optional first task for a newly-created interactive agent. */
   initialPrompt?: string;
+  /** Source-agnostic launch policy translated by the harness boundary. */
+  permissionMode?: AgentPermissionMode;
 }
 
 export type PtyAttentionKind = 'bell' | 'turn-end';
@@ -209,6 +212,7 @@ export interface ExawattSettings {
   agentSources?: {
     projectLastUsed: Record<string, string>;
     sourceRecency: Record<string, number>;
+    projectPermissionModes: Record<string, Record<string, AgentPermissionMode>>;
   };
 }
 
@@ -219,6 +223,11 @@ export interface ElectronSettingsApi {
     projectDir: string,
     source: string,
     usedAt: number
+  ) => Promise<ExawattSettings>;
+  setAgentPermissionMode: (
+    projectDir: string,
+    source: string,
+    permissionMode: AgentPermissionMode
   ) => Promise<ExawattSettings>;
   onChanged: (handler: (settings: ExawattSettings) => void) => () => void;
 }

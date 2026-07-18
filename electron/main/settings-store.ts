@@ -2,6 +2,8 @@ import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 
+export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
+
 /**
  * User settings (ENG-015 S3): a plain JSON file in userData — the escape
  * hatch for personal taste the DEFAULTS deliberately don't encode (the
@@ -13,8 +15,9 @@ import * as path from 'path';
  *                   "fontSize": 14, "lineHeight": 1.0,
  *                   "letterSpacing": -1, "fontStrokeWidth": 0.15 } }
  *
- * Renderers fetch via settings:get on mount and after window refocus;
- * tolerant of a missing/invalid file.
+ * Terminal settings still use the file directly; launch preferences are
+ * written through validated IPC. Renderers fetch via settings:get on mount and
+ * after window refocus, tolerant of a missing/invalid file.
  */
 
 export interface TerminalFontSettings {
@@ -39,7 +42,25 @@ export interface ExawattSettings {
   agentSources?: {
     projectLastUsed: Record<string, string>;
     sourceRecency: Record<string, number>;
+    projectPermissionModes: Record<string, Record<string, AgentPermissionMode>>;
   };
+}
+
+const AGENT_PERMISSION_MODES = new Set<AgentPermissionMode>([
+  'prompt',
+  'auto',
+  'unrestricted',
+]);
+
+function isSafeSourceId(value: string): boolean {
+  return /^[a-z0-9-]{1,64}$/.test(value);
+}
+
+function isAgentPermissionMode(value: unknown): value is AgentPermissionMode {
+  return (
+    typeof value === 'string' &&
+    AGENT_PERMISSION_MODES.has(value as AgentPermissionMode)
+  );
 }
 
 export function parseSettings(raw: unknown): ExawattSettings {
@@ -100,9 +121,14 @@ export function parseSettings(raw: unknown): ExawattSettings {
     const candidate = agentSources as {
       projectLastUsed?: unknown;
       sourceRecency?: unknown;
+      projectPermissionModes?: unknown;
     };
     const projectLastUsed: Record<string, string> = {};
     const sourceRecency: Record<string, number> = {};
+    const projectPermissionModes: Record<
+      string,
+      Record<string, AgentPermissionMode>
+    > = {};
     if (
       candidate.projectLastUsed &&
       typeof candidate.projectLastUsed === 'object'
@@ -114,7 +140,7 @@ export function parseSettings(raw: unknown): ExawattSettings {
           projectDir &&
           projectDir.length <= 4096 &&
           typeof source === 'string' &&
-          /^[a-z0-9-]{1,64}$/.test(source)
+          isSafeSourceId(source)
         ) {
           projectLastUsed[projectDir] = source;
         }
@@ -128,7 +154,7 @@ export function parseSettings(raw: unknown): ExawattSettings {
         candidate.sourceRecency
       )) {
         if (
-          /^[a-z0-9-]{1,64}$/.test(source) &&
+          isSafeSourceId(source) &&
           typeof timestamp === 'number' &&
           Number.isFinite(timestamp) &&
           timestamp >= 0
@@ -137,7 +163,37 @@ export function parseSettings(raw: unknown): ExawattSettings {
         }
       }
     }
-    settings.agentSources = { projectLastUsed, sourceRecency };
+    if (
+      candidate.projectPermissionModes &&
+      typeof candidate.projectPermissionModes === 'object'
+    ) {
+      for (const [projectDir, sourceModes] of Object.entries(
+        candidate.projectPermissionModes
+      )) {
+        if (
+          !projectDir ||
+          projectDir.length > 4096 ||
+          !sourceModes ||
+          typeof sourceModes !== 'object'
+        ) {
+          continue;
+        }
+        const parsed: Record<string, AgentPermissionMode> = {};
+        for (const [source, permissionMode] of Object.entries(sourceModes)) {
+          if (isSafeSourceId(source) && isAgentPermissionMode(permissionMode)) {
+            parsed[source] = permissionMode;
+          }
+        }
+        if (Object.keys(parsed).length > 0) {
+          projectPermissionModes[projectDir] = parsed;
+        }
+      }
+    }
+    settings.agentSources = {
+      projectLastUsed,
+      sourceRecency,
+      projectPermissionModes,
+    };
   }
   return settings;
 }
@@ -192,10 +248,49 @@ export function recordAgentSourceUse(
   const current = settings.agentSources ?? {
     projectLastUsed: {},
     sourceRecency: {},
+    projectPermissionModes: {},
   };
   settings.agentSources = {
     projectLastUsed: { ...current.projectLastUsed, [projectDir]: source },
     sourceRecency: { ...current.sourceRecency, [source]: usedAt },
+    projectPermissionModes: current.projectPermissionModes,
+  };
+  writeSettings(settings);
+  return settings;
+}
+
+export function setAgentPermissionMode(
+  projectDir: string,
+  source: string,
+  permissionMode: AgentPermissionMode
+): ExawattSettings {
+  if (
+    typeof projectDir !== 'string' ||
+    !projectDir ||
+    projectDir.includes('\0') ||
+    projectDir.length > 4096 ||
+    typeof source !== 'string' ||
+    !isSafeSourceId(source) ||
+    !isAgentPermissionMode(permissionMode)
+  ) {
+    throw new Error('Invalid Agent permission preference');
+  }
+  const settings = loadSettings();
+  const current = settings.agentSources ?? {
+    projectLastUsed: {},
+    sourceRecency: {},
+    projectPermissionModes: {},
+  };
+  settings.agentSources = {
+    projectLastUsed: current.projectLastUsed,
+    sourceRecency: current.sourceRecency,
+    projectPermissionModes: {
+      ...current.projectPermissionModes,
+      [projectDir]: {
+        ...current.projectPermissionModes[projectDir],
+        [source]: permissionMode,
+      },
+    },
   };
   writeSettings(settings);
   return settings;

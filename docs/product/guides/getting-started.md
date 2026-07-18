@@ -16,6 +16,19 @@ Project, while keeping the choice visible and changeable. A blank task starts an
 interactive Agent Session. Plain shells remain available as a separate Project
 tool.
 
+The adjacent permission selector controls how much autonomy the new Agent
+receives:
+
+- **Prompt:** keep operator approval in the loop.
+- **Auto-review:** let the harness's safety reviewer handle routine actions and
+  block risky ones.
+- **YOLO:** bypass harness approvals and sandboxing.
+
+New Project-and-source combinations start on **YOLO**. Exawatt remembers a
+separate personal choice for each Project and Agent Source, so Claude Code and
+Codex can use different policies in the same Project. YOLO gives the Agent full
+machine access; use Prompt or Auto-review when that is not appropriate.
+
 ## Quitting and returning
 
 When local Sessions are running, quitting Exawatt asks before stopping them.

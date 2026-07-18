@@ -146,7 +146,10 @@ Built:
   xterm.js for Claude Code, Codex, and shells, behind a session-manager boundary
 - inert persisted Projects independent of Session tabs; a curated Project
   chooser with reviewed parent-folder import; and a compact source-aware Agent
-  composer whose optional first task crosses the launch boundary as data
+  composer whose optional first task and source-agnostic launch-permission
+  policy cross the launch boundary as data. Personal permission defaults are
+  persisted by Project and harness; the PTY/source boundary translates
+  `prompt`, `auto`, and `unrestricted` into current Claude Code and Codex flags
 - a source-agnostic Project catalog derived from durable workspace state. The
   Electron workspace save broadcasts an authoritative change event through the
   preload boundary; FleetProvider refreshes the catalog and local Session

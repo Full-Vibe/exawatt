@@ -35,6 +35,7 @@ const execFileAsync = promisify(execFile);
  */
 
 export type PtyHarness = 'shell' | 'claude' | 'codex';
+export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
 
 export interface PtyCreateOptions {
   harness: PtyHarness;
@@ -50,6 +51,8 @@ export interface PtyCreateOptions {
   durableSessionId?: string;
   /** Optional first user task for a newly-created interactive agent. */
   initialPrompt?: string;
+  /** Source-agnostic launch policy translated to provider CLI flags. */
+  permissionMode?: AgentPermissionMode;
 }
 
 export interface PtySessionInfo {
@@ -226,7 +229,8 @@ export class PtySessionManager extends EventEmitter {
               harnessSessionId,
               !!options.resumeSessionId,
               testHarnessExecutable,
-              options.initialPrompt
+              options.initialPrompt,
+              options.permissionMode
             ),
           ];
 

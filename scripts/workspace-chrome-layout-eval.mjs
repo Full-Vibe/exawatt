@@ -315,6 +315,15 @@ try {
         `Agent Source collapsed at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
+    const permissionWidth =
+      metrics.composer.controls.find(
+        control => control.label === 'Agent permissions'
+      )?.width ?? 0;
+    if (permissionWidth < 79) {
+      throw new Error(
+        `Agent permission policy collapsed at ${width}px: ${JSON.stringify(metrics)}`
+      );
+    }
     const compact = width <= 1520;
     if (
       (compact && metrics.subtitleDisplay !== 'none') ||

@@ -196,6 +196,12 @@ try {
         .waitFor();
 
       const firstTask = "Review the user's auth flow";
+      check(
+        'new Project and source pair visibly defaults to YOLO',
+        (await page.getByLabel('Agent permissions').innerText()).includes(
+          'YOLO'
+        )
+      );
       await page.getByLabel('Initial task for the new Agent').fill(firstTask);
       await page.getByRole('button', { name: 'Start' }).click();
       await page.waitForTimeout(500);
@@ -214,6 +220,12 @@ try {
       );
       await waitForBuffer(page, current[0].id, `<${firstTask}>`);
       check('initial task arrives as one quoted source argument', true);
+      await waitForBuffer(
+        page,
+        current[0].id,
+        '<--dangerously-skip-permissions>'
+      );
+      check('Claude Code receives the visible YOLO policy', true);
 
       await page.keyboard.press('Meta+3');
       await page.waitForURL(
@@ -241,6 +253,14 @@ try {
 
       await page.getByLabel('Agent Source').click();
       await page.getByRole('option', { name: 'Codex' }).click();
+      check(
+        'a new Codex pair has its own YOLO default',
+        (await page.getByLabel('Agent permissions').innerText()).includes(
+          'YOLO'
+        )
+      );
+      await page.getByLabel('Agent permissions').click();
+      await page.getByRole('option', { name: 'Auto-review' }).click();
       await page
         .getByLabel('Initial task for the new Agent')
         .fill('Run focused tests');
@@ -256,6 +276,8 @@ try {
       const codex = current.find(item => item.harness === 'codex');
       await waitForBuffer(page, codex.id, '<Run focused tests>');
       check('Codex receives its first task through the launch contract', true);
+      await waitForBuffer(page, codex.id, '<approvals_reviewer="auto_review">');
+      check('Codex receives the visible Auto-review policy', true);
 
       await page.keyboard.press('Meta+KeyK');
       const palette = page.locator('[cmdk-list]');
@@ -300,6 +322,12 @@ try {
         'last source recommendation survives close-last-tab',
         (await page.getByLabel('Agent Source').innerText()).includes('Codex')
       );
+      check(
+        'Project and harness permission survives close-last-tab',
+        (await page.getByLabel('Agent permissions').innerText()).includes(
+          'Auto'
+        )
+      );
 
       await page.reload({ waitUntil: 'networkidle' });
       await page
@@ -313,6 +341,22 @@ try {
         'source recommendation survives reload',
         (await page.getByLabel('Agent Source').innerText()).includes('Codex')
       );
+      check(
+        'permission recommendation survives reload',
+        (await page.getByLabel('Agent permissions').innerText()).includes(
+          'Auto'
+        )
+      );
+      await page.getByLabel('Agent Source').click();
+      await page.getByRole('option', { name: 'Claude Code' }).click();
+      check(
+        'Claude and Codex retain independent permission choices',
+        (await page.getByLabel('Agent permissions').innerText()).includes(
+          'YOLO'
+        )
+      );
+      await page.getByLabel('Agent Source').click();
+      await page.getByRole('option', { name: 'Codex' }).click();
 
       await app.evaluate(({ BrowserWindow }) =>
         BrowserWindow.getAllWindows()[0].setSize(800, 600)
@@ -346,6 +390,12 @@ try {
       check(
         'source recommendation survives a full app restart',
         (await page.getByLabel('Agent Source').innerText()).includes('Codex')
+      );
+      check(
+        'permission recommendation survives a full app restart',
+        (await page.getByLabel('Agent permissions').innerText()).includes(
+          'Auto'
+        )
       );
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();

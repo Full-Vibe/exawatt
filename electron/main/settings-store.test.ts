@@ -30,11 +30,21 @@ describe('parseSettings', () => {
             '/bad': 'not a source!',
           },
           sourceRecency: { codex: 42, broken: -1 },
+          projectPermissionModes: {
+            '/project': {
+              codex: 'auto',
+              claude: 'unrestricted',
+              bad: 'always',
+            },
+          },
         },
       }).agentSources
     ).toEqual({
       projectLastUsed: { '/project': 'codex' },
       sourceRecency: { codex: 42 },
+      projectPermissionModes: {
+        '/project': { codex: 'auto', claude: 'unrestricted' },
+      },
     });
   });
 });

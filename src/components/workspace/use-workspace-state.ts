@@ -28,6 +28,7 @@ import {
   consumePendingOpenProject,
 } from './session-jump';
 import { loadTerminalFont } from './terminal-font';
+import { loadAgentSourcePreferences, permissionModeFor } from './agent-sources';
 import {
   openRepositoryProject,
   listProjects,
@@ -35,6 +36,7 @@ import {
   setProjectColor as registrySetProjectColor,
 } from '@/lib/projects/registry';
 import type {
+  AgentPermissionMode,
   PtyAttention,
   PtyHarness,
   PtyReentryRecap,
@@ -314,6 +316,7 @@ export function parsePersisted(raw: unknown): PersistedV5 | null {
 export interface LaunchOptions {
   harness: PtyHarness;
   dir: string;
+  permissionMode?: AgentPermissionMode;
   /** optional first user task for a new interactive Agent Session */
   initialPrompt?: string;
   /** create a git worktree (<repo>-wt/<branch>) and launch inside it */
@@ -863,6 +866,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         cwd,
         title: HARNESS_META[opts.harness].label,
         durableSessionId,
+        ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
         ...(opts.initialPrompt?.trim()
           ? { initialPrompt: opts.initialPrompt.trim() }
           : {}),
@@ -927,6 +931,18 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         );
         return false;
       }
+      const projectDir =
+        stateRef.current.projects.find(project =>
+          project.tabs.some(candidate => candidate.id === tabId)
+        )?.dir ?? tab.cwd;
+      const permissionMode =
+        tab.harness === 'shell'
+          ? undefined
+          : permissionModeFor(
+              await loadAgentSourcePreferences(),
+              projectDir,
+              tab.harness
+            );
       resumeInFlightRef.current.add(tabId);
       updateTab(tabId, {
         resumeState: 'resuming',
@@ -941,6 +957,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           cwd: tab.cwd,
           title: tab.title,
           durableSessionId: tab.durableSessionId,
+          ...(permissionMode ? { permissionMode } : {}),
           ...(exactId ? { resumeSessionId: exactId } : {}),
           ...(size ?? {}),
         });

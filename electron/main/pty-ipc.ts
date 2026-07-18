@@ -10,6 +10,7 @@ import { loadWorkspace, saveWorkspace } from './workspace-store';
 import {
   loadSettings,
   recordAgentSourceUse,
+  setAgentPermissionMode,
   setAttentionNotifications,
 } from './settings-store';
 import { listResumeCandidates } from './pty/resume-candidates';
@@ -338,6 +339,18 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     'settings:record-agent-source-use',
     (_event, projectDir: string, source: string, usedAt: number) => {
       const settings = recordAgentSourceUse(projectDir, source, usedAt);
+      broadcast('settings:changed', settings);
+      return settings;
+    }
+  );
+  handleTrusted(
+    'settings:set-agent-permission-mode',
+    (_event, projectDir: string, source: string, permissionMode: string) => {
+      const settings = setAgentPermissionMode(
+        projectDir,
+        source,
+        permissionMode as import('./settings-store').AgentPermissionMode
+      );
       broadcast('settings:changed', settings);
       return settings;
     }

@@ -60,7 +60,7 @@ export const architectureManifest = {
   title: 'Exawatt Architecture',
   summary:
     'Exawatt is a command interface for managing agent fleets across local, hosted, and third-party harnesses.',
-  lastReviewed: '2026-07-11',
+  lastReviewed: '2026-07-18',
   layers: [
     {
       key: 'ui',
@@ -511,7 +511,7 @@ export const architectureManifest = {
           id: 'terminal-workspace',
           label: 'Terminal + Session Overview',
           summary:
-            'Inert Project selection, source-aware Agent composition, and grouped exposé over every open Project, including zero-Session state, plus direct live-or-stopped Session control.',
+            'Inert Project selection, source-aware Agent composition with visible per-Project permission defaults, and grouped exposé over every open Project, including zero-Session state, plus direct live-or-stopped Session control.',
           layer: 'ui',
           status: 'implemented',
           x: 205,
@@ -607,7 +607,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Adapters',
           summary:
-            'Capability-described provider boundaries that translate Agent actions into source-specific create, observe, resume, and control operations.',
+            'Capability-described provider boundaries that translate Agent actions and prompt/auto/unrestricted launch policy into source-specific create, observe, resume, and control operations.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,
@@ -753,6 +753,7 @@ export const architectureManifest = {
     'Open Session identity spans Terminal, Sessions, and Spatial; PTYs add live runtime state but do not define whether a Session-backed Agent exists.',
     'Logical Sessions survive local process death through explicit, deterministic rehydration; local processes do not outlive Exawatt.',
     'Agent sources are replaceable harnesses behind explicit adapters.',
+    'Launch permission policy is source-agnostic; adapters translate visible personal Project defaults into provider controls without silent escalation.',
     'Demo behavior is a swappable harness path, not a separate product architecture.',
     'Governance, memory, and resource context live above individual providers.',
   ],
