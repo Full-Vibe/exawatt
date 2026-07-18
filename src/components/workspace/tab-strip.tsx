@@ -199,7 +199,10 @@ export function TabStrip({
   };
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+    <div
+      data-workspace-tab-strip
+      className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5"
+    >
       {projects.map((g, gi) => {
         const color = g.color;
         const groupActive = g.dir === activeDir;

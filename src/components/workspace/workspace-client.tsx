@@ -715,7 +715,7 @@ export function WorkspaceClient() {
             onSetProjectColor={setProjectColor}
           />
           {activeProject && activeProject.tabs.length > 0 ? (
-            <div className="ml-auto min-w-80 flex-1">
+            <div className="ml-auto min-w-0 basis-[36rem] flex-1">
               <AgentComposer
                 projectDir={activeProject.dir}
                 projectName={activeProject.name}

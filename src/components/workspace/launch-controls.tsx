@@ -175,7 +175,7 @@ export function AgentComposer({
       >
         <SelectTrigger
           aria-label="Agent Source"
-          className="h-9 w-[148px] rounded border px-2 font-mono text-xs shadow-none"
+          className="h-9 w-[148px] shrink-0 rounded border px-2 font-mono text-xs shadow-none"
           style={{
             color: sourceMeta.color,
             borderColor: 'rgba(80,230,255,0.24)',
