@@ -20,21 +20,22 @@ export const AGENT_PERMISSION_MODE_META: Record<
   }
 > = {
   prompt: {
-    label: 'Prompt',
+    label: 'Ask first',
     shortLabel: 'Ask',
-    description: 'Pause for operator approval when the harness requires it.',
+    description:
+      'Keep harness protections on and ask before sensitive actions.',
   },
   auto: {
     label: 'Auto-review',
     shortLabel: 'Auto',
     description:
-      'Use the harness safety reviewer to allow routine work and block risky actions.',
+      'Let the harness review actions. Routine work proceeds; risky work asks or stops.',
   },
   unrestricted: {
     label: 'YOLO',
     shortLabel: 'YOLO',
     description:
-      'Bypass approval prompts and sandboxing. The Agent receives full machine access.',
+      'No approvals or sandbox. The Agent can do anything this user can.',
   },
 };
 
@@ -177,13 +178,14 @@ export function recommendAgentSource(
 export function permissionModeFor(
   state: AgentSourcePreferenceState,
   projectDir: string,
-  source: AgentSourceId
+  source: AgentSourceId,
+  fallbackMode: AgentPermissionMode = DEFAULT_AGENT_PERMISSION_MODE
 ): AgentPermissionMode {
   const supported = AGENT_SOURCE_META[source].capabilities.permissionModes;
   const saved = state.projectPermissionModes[projectDir]?.[source];
   if (saved && supported.includes(saved)) return saved;
-  return supported.includes(DEFAULT_AGENT_PERMISSION_MODE)
-    ? DEFAULT_AGENT_PERMISSION_MODE
+  return supported.includes(fallbackMode)
+    ? fallbackMode
     : (supported[0] ?? 'prompt');
 }
 
@@ -200,13 +202,45 @@ export function recordAgentSourceUse(
   };
 }
 
-export async function loadAgentSourcePreferences(): Promise<AgentSourcePreferenceState> {
-  if (typeof window === 'undefined') return emptyPreferences();
+export function recordAgentPermissionMode(
+  state: AgentSourcePreferenceState,
+  projectDir: string,
+  source: AgentSourceId,
+  permissionMode: AgentPermissionMode
+): AgentSourcePreferenceState {
+  return {
+    ...state,
+    projectPermissionModes: {
+      ...state.projectPermissionModes,
+      [projectDir]: {
+        ...state.projectPermissionModes[projectDir],
+        [source]: permissionMode,
+      },
+    },
+  };
+}
+
+export interface AgentSourcePreferenceLoadResult {
+  preferences: AgentSourcePreferenceState;
+  usedSafeFallback: boolean;
+}
+
+export async function loadAgentSourcePreferences(): Promise<AgentSourcePreferenceLoadResult> {
+  if (typeof window === 'undefined') {
+    return { preferences: emptyPreferences(), usedSafeFallback: false };
+  }
+  const getSettings = window.electron?.settings?.get;
+  if (!getSettings) {
+    return { preferences: emptyPreferences(), usedSafeFallback: true };
+  }
   try {
-    const settings = await window.electron?.settings?.get();
-    return parseAgentSourcePreferences(settings?.agentSources);
+    const settings = await getSettings();
+    return {
+      preferences: parseAgentSourcePreferences(settings?.agentSources),
+      usedSafeFallback: false,
+    };
   } catch {
-    return emptyPreferences();
+    return { preferences: emptyPreferences(), usedSafeFallback: true };
   }
 }
 
@@ -231,15 +265,15 @@ export async function rememberAgentPermissionMode(
   projectDir: string,
   source: AgentSourceId,
   permissionMode: AgentPermissionMode
-): Promise<void> {
-  if (typeof window === 'undefined') return;
+): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  const setAgentPermissionMode =
+    window.electron?.settings?.setAgentPermissionMode;
+  if (!setAgentPermissionMode) return false;
   try {
-    await window.electron?.settings?.setAgentPermissionMode(
-      projectDir,
-      source,
-      permissionMode
-    );
+    await setAgentPermissionMode(projectDir, source, permissionMode);
+    return true;
   } catch {
-    // A launch must still work when personal settings are unavailable.
+    return false;
   }
 }

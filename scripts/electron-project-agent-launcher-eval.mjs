@@ -202,6 +202,36 @@ try {
           'YOLO'
         )
       );
+      const permissionTrigger = page.getByLabel('Agent permissions');
+      await permissionTrigger.focus();
+      await page.keyboard.press('Space');
+      const permissionMenu = page.getByRole('listbox');
+      await permissionMenu.waitFor();
+      const permissionMenuText = await permissionMenu.innerText();
+      check(
+        'permission menu explains all three access policies',
+        (await page.getByRole('option').count()) === 3 &&
+          permissionMenuText.includes('Ask first') &&
+          permissionMenuText.includes('Keep harness protections on') &&
+          permissionMenuText.includes('Auto-review') &&
+          permissionMenuText.includes('Routine work proceeds') &&
+          permissionMenuText.includes('YOLO') &&
+          permissionMenuText.includes('No approvals or sandbox')
+      );
+      await page.keyboard.press('Home');
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(
+        () =>
+          document.activeElement?.getAttribute('aria-label') ===
+          'Agent permissions'
+      );
+      check(
+        'Escape preserves YOLO and returns focus to the permission trigger',
+        (await permissionTrigger.innerText()).includes('YOLO') &&
+          (await permissionTrigger.evaluate(
+            element => document.activeElement === element
+          ))
+      );
       await page.getByLabel('Initial task for the new Agent').fill(firstTask);
       await page.getByRole('button', { name: 'Start' }).click();
       await page.waitForTimeout(500);
@@ -259,8 +289,49 @@ try {
           'YOLO'
         )
       );
-      await page.getByLabel('Agent permissions').click();
-      await page.getByRole('option', { name: 'Auto-review' }).click();
+      await page.getByLabel('Agent permissions').focus();
+      await page.keyboard.press('Space');
+      await page.keyboard.press('Home');
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(() => {
+        const trigger = document.querySelector(
+          '[aria-label="Agent permissions"]'
+        );
+        return (
+          trigger?.textContent?.includes('Auto') &&
+          document.activeElement === trigger
+        );
+      });
+      check(
+        'keyboard selection commits Auto-review and restores trigger focus',
+        (await page.getByLabel('Agent permissions').innerText()).includes(
+          'Auto'
+        ) &&
+          (await page
+            .getByLabel('Agent permissions')
+            .evaluate(element => document.activeElement === element))
+      );
+      await page.getByLabel('Agent Source').click();
+      await page.getByRole('option', { name: 'Claude Code' }).click();
+      await page.waitForFunction(() =>
+        document
+          .querySelector('[aria-label="Agent Source"]')
+          ?.textContent?.includes('Claude Code')
+      );
+      await page.getByLabel('Agent Source').click();
+      await page.getByRole('option', { name: 'Codex' }).click();
+      await page.waitForFunction(() =>
+        document
+          .querySelector('[aria-label="Agent Source"]')
+          ?.textContent?.includes('Codex')
+      );
+      check(
+        'an unlaunched policy choice survives a harness round trip',
+        (await page.getByLabel('Agent permissions').innerText()).includes(
+          'Auto'
+        )
+      );
       await page
         .getByLabel('Initial task for the new Agent')
         .fill('Run focused tests');
@@ -290,11 +361,34 @@ try {
           paletteText.includes('Tools') &&
           paletteText.includes('Open shell in the active Project')
       );
-      await page.getByText('Start Agent with Codex', { exact: true }).click();
+      await page
+        .getByText('Start Agent with Claude Code', { exact: true })
+        .click();
       await page.getByLabel('Initial task for the new Agent').waitFor();
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector('[aria-label="Agent Source"]')
+            ?.textContent?.includes('Claude Code') &&
+          document
+            .querySelector('[aria-label="Agent permissions"]')
+            ?.textContent?.includes('YOLO')
+      );
       check(
-        'palette routes into the visible composer',
-        (await page.getByLabel('Agent Source').innerText()).includes('Codex')
+        'palette routes into the visible composer with that harness policy',
+        (await page.getByLabel('Agent Source').innerText()).includes(
+          'Claude Code'
+        ) &&
+          (await page.getByLabel('Agent permissions').innerText()).includes(
+            'YOLO'
+          )
+      );
+      await page.getByLabel('Agent Source').click();
+      await page.getByRole('option', { name: 'Codex' }).click();
+      await page.waitForFunction(() =>
+        document
+          .querySelector('[aria-label="Agent Source"]')
+          ?.textContent?.includes('Codex')
       );
 
       await page.screenshot({

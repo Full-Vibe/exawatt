@@ -19,15 +19,18 @@ tool.
 The adjacent permission selector controls how much autonomy the new Agent
 receives:
 
-- **Prompt:** keep operator approval in the loop.
+- **Ask first:** keep operator approval in the loop.
 - **Auto-review:** let the harness's safety reviewer handle routine actions and
   block risky ones.
 - **YOLO:** bypass harness approvals and sandboxing.
 
 New Project-and-source combinations start on **YOLO**. Exawatt remembers a
 separate personal choice for each Project and Agent Source, so Claude Code and
-Codex can use different policies in the same Project. YOLO gives the Agent full
-machine access; use Prompt or Auto-review when that is not appropriate.
+Codex can use different policies in the same Project. Changing the selector
+saves that pair immediately; starting an Agent is not required. YOLO gives the
+Agent full machine access; use Ask first or Auto-review when that is not
+appropriate. If saved preferences cannot be read, Exawatt visibly falls back
+to Ask first instead of silently broadening access.
 
 ## Quitting and returning
 

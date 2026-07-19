@@ -336,6 +336,59 @@ try {
     results.push({ width, metrics });
   }
 
+  await page.setViewportSize({ width: 800, height: 700 });
+  const permissionTrigger = page.getByLabel('Agent permissions');
+  await permissionTrigger.focus();
+  await page.keyboard.press('Space');
+  const permissionMenu = page.getByRole('listbox');
+  await permissionMenu.waitFor();
+  const permissionMenuBounds = await permissionMenu.evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return {
+      left: rect.left,
+      right: rect.right,
+      top: rect.top,
+      bottom: rect.bottom,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    };
+  });
+  const permissionMenuText = await permissionMenu.innerText();
+  if (
+    permissionMenuBounds.left < 0 ||
+    permissionMenuBounds.right > permissionMenuBounds.viewportWidth ||
+    permissionMenuBounds.top < 0 ||
+    permissionMenuBounds.bottom > permissionMenuBounds.viewportHeight
+  ) {
+    throw new Error(
+      `Permission menu exceeds the viewport: ${JSON.stringify(permissionMenuBounds)}`
+    );
+  }
+  if (
+    (await page.getByRole('option').count()) !== 3 ||
+    !permissionMenuText.includes('Ask first') ||
+    !permissionMenuText.includes('Keep harness protections on') ||
+    !permissionMenuText.includes('Auto-review') ||
+    !permissionMenuText.includes('Routine work proceeds') ||
+    !permissionMenuText.includes('YOLO') ||
+    !permissionMenuText.includes('No approvals or sandbox')
+  ) {
+    throw new Error(
+      `Permission menu does not explain all policies: ${permissionMenuText}`
+    );
+  }
+  await page.screenshot({
+    path: join(SCREENSHOT_DIR, 'workspace-800x700-permissions.png'),
+  });
+  await page.keyboard.press('Escape');
+  if (
+    !(await permissionTrigger.evaluate(
+      element => document.activeElement === element
+    ))
+  ) {
+    throw new Error('Permission menu did not restore keyboard focus');
+  }
+
   if (errors.length > 0) {
     throw new Error(`Renderer errors:\n${errors.join('\n')}`);
   }

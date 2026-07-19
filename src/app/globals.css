@@ -132,6 +132,22 @@ body {
   }
 }
 
+/* Electron is pointer-first today, but the composer also runs through the
+   hosted-compatible renderer boundary. Preserve its dense desktop geometry
+   while giving coarse pointers the 44px targets expected of a primary action
+   strip. */
+@media (pointer: coarse) {
+  [data-agent-composer] textarea,
+  [data-agent-composer] button,
+  [data-agent-composer] [role='combobox'] {
+    min-height: 44px;
+  }
+
+  [data-agent-composer] button {
+    min-width: 44px;
+  }
+}
+
 /* The app chrome deliberately uses grayscale antialiasing, but inheriting
    that choice made xterm thinner than native macOS terminals even when both
    selected the same installed face. Let the platform rasterize terminal text

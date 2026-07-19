@@ -28,7 +28,11 @@ import {
   consumePendingOpenProject,
 } from './session-jump';
 import { loadTerminalFont } from './terminal-font';
-import { loadAgentSourcePreferences, permissionModeFor } from './agent-sources';
+import {
+  DEFAULT_AGENT_PERMISSION_MODE,
+  loadAgentSourcePreferences,
+  permissionModeFor,
+} from './agent-sources';
 import {
   openRepositoryProject,
   listProjects,
@@ -841,7 +845,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const launch = useCallback(
     async (opts: LaunchOptions): Promise<boolean> => {
       const api = window.electron?.pty;
-      if (!api) return false;
+      if (!api) {
+        setError(
+          'Local Agent launch is unavailable. Restart Exawatt and try again.'
+        );
+        return false;
+      }
       const dir = opts.dir.trim();
       if (!dir) {
         setError(
@@ -849,45 +858,55 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         );
         return false;
       }
-      let cwd = dir;
-      if (opts.worktreeBranch) {
-        const wt = await api.createWorktree(dir, opts.worktreeBranch.trim());
-        if (!wt.ok) {
-          setError(wt.error);
+      const launchLabel = opts.harness === 'shell' ? 'shell' : 'Agent';
+      try {
+        let cwd = dir;
+        if (opts.worktreeBranch) {
+          const wt = await api.createWorktree(dir, opts.worktreeBranch.trim());
+          if (!wt.ok) {
+            setError(wt.error);
+            return false;
+          }
+          cwd = wt.path;
+        }
+        const size = sizeRef.current?.() ?? null;
+        const tabId = newTabId();
+        const durableSessionId = newDurableSessionId();
+        const res = await api.create({
+          harness: opts.harness,
+          cwd,
+          title: HARNESS_META[opts.harness].label,
+          durableSessionId,
+          ...(opts.permissionMode
+            ? { permissionMode: opts.permissionMode }
+            : {}),
+          ...(opts.initialPrompt?.trim()
+            ? { initialPrompt: opts.initialPrompt.trim() }
+            : {}),
+          ...(size ?? {}),
+        });
+        if (!res.ok) {
+          setError(res.error);
           return false;
         }
-        cwd = wt.path;
-      }
-      const size = sizeRef.current?.() ?? null;
-      const tabId = newTabId();
-      const durableSessionId = newDurableSessionId();
-      const res = await api.create({
-        harness: opts.harness,
-        cwd,
-        title: HARNESS_META[opts.harness].label,
-        durableSessionId,
-        ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
-        ...(opts.initialPrompt?.trim()
-          ? { initialPrompt: opts.initialPrompt.trim() }
-          : {}),
-        ...(size ?? {}),
-      });
-      if (!res.ok) {
-        setError(res.error);
+        setError(null);
+        setLastUsedDir(dir);
+        addSession(res.session, tabId, opts.roadmapItemId ?? null);
+        // Resolution bridge (ENG-015 S5 P3): register/refresh this directory's
+        // Project in the durable, synced registry. Best-effort — a registry
+        // failure (offline, not signed in) must NEVER stop the operator opening
+        // a session, so it runs detached and swallows its own errors.
+        syncProjectIdentity({
+          rootPath: res.session.projectDir,
+          name: res.session.projectName,
+        });
+        return true;
+      } catch (cause) {
+        const detail =
+          cause instanceof Error && cause.message ? `: ${cause.message}` : '.';
+        setError(`Could not start the ${launchLabel}${detail}`);
         return false;
       }
-      setError(null);
-      setLastUsedDir(dir);
-      addSession(res.session, tabId, opts.roadmapItemId ?? null);
-      // Resolution bridge (ENG-015 S5 P3): register/refresh this directory's
-      // Project in the durable, synced registry. Best-effort — a registry
-      // failure (offline, not signed in) must NEVER stop the operator opening
-      // a session, so it runs detached and swallows its own errors.
-      syncProjectIdentity({
-        rootPath: res.session.projectDir,
-        name: res.session.projectName,
-      });
-      return true;
     },
     [addSession, syncProjectIdentity]
   );
@@ -935,13 +954,18 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         stateRef.current.projects.find(project =>
           project.tabs.some(candidate => candidate.id === tabId)
         )?.dir ?? tab.cwd;
+      const preferenceLoad =
+        tab.harness === 'shell' ? null : await loadAgentSourcePreferences();
       const permissionMode =
         tab.harness === 'shell'
           ? undefined
           : permissionModeFor(
-              await loadAgentSourcePreferences(),
+              preferenceLoad!.preferences,
               projectDir,
-              tab.harness
+              tab.harness,
+              preferenceLoad!.usedSafeFallback
+                ? 'prompt'
+                : DEFAULT_AGENT_PERMISSION_MODE
             );
       resumeInFlightRef.current.add(tabId);
       updateTab(tabId, {
@@ -961,6 +985,16 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           ...(exactId ? { resumeSessionId: exactId } : {}),
           ...(size ?? {}),
         });
+      } catch (cause) {
+        updateTab(tabId, {
+          resumeState: 'failed',
+          lifecycle: 'failed',
+          exitCode: REVIVE_FAILED,
+        });
+        const detail =
+          cause instanceof Error && cause.message ? `: ${cause.message}` : '.';
+        setError(`Could not resume ${tab.title}${detail}`);
+        return false;
       } finally {
         resumeInFlightRef.current.delete(tabId);
       }

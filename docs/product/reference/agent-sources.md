@@ -44,10 +44,15 @@ flag. A harness must advertise a policy before the composer offers it.
 
 The machine-local preference is keyed by user, Project, and Agent Source. New
 pairs default to `unrestricted` (shown as **YOLO**) and the composer keeps that
-high-impact state visible. Resuming a local Session uses the current remembered
+high-impact state visible. The selector explains each policy in place and saves
+changes immediately, including draft choices made before an Agent starts.
+Source changes from the composer, palette, or shortcuts restore that source's
+pair-specific choice. Resuming a local Session uses the current remembered
 policy for its Project and source; the policy is not part of provider
-conversation identity. If a harness or account cannot use a selected policy,
-Exawatt surfaces the harness response and does not silently broaden access.
+conversation identity. If personal preferences cannot be read, Exawatt uses
+`prompt` (shown as **Ask first**) as a visible safe fallback. If a harness or
+account cannot use a selected policy, Exawatt surfaces the harness response and
+does not silently broaden access.
 
 Create, attach, resume, branch, background, and delegation are source
 capabilities. The UI should expose only capabilities an adapter actually

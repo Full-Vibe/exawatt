@@ -29,12 +29,15 @@ and
   - `prompt`: the harness keeps human approval in the loop;
   - `auto`: a harness safety reviewer or classifier evaluates escalation;
   - `unrestricted`: approval and sandbox boundaries are bypassed.
-- The composer shows those as **Prompt**, **Auto-review**, and **YOLO**.
+- The composer shows those as **Ask first**, **Auto-review**, and **YOLO**.
   Unrestricted access is visible and warning-colored; it is not a hidden
-  default.
+  default. The policy menu explains consequences in plain language and remains
+  fully keyboard-operable.
 - A new user+Project+harness combination defaults to `unrestricted`, matching
   the operator's requested local workflow. The personal choice is stored in
   Electron `userData/settings.json` by stable Project directory and source.
+  Changing the selector persists immediately, while the in-memory draft remains
+  effective if persistence is temporarily unavailable.
 - Claude Code maps the policies to `--permission-mode default`,
   `--permission-mode auto`, and `--dangerously-skip-permissions`.
 - Codex maps them to workspace-write plus on-request approvals,
@@ -45,6 +48,9 @@ and
   they actually support.
 - Exact local resume uses the current remembered Project+harness policy. The
   launch policy is personal runtime policy, not provider conversation identity.
+- Preference loading gates Agent start so a stale or default policy cannot race
+  a saved choice. A settings read failure visibly falls back to `prompt`; it
+  never silently escalates to `unrestricted`.
 - If a harness version, account, model, provider, or administrator does not
   allow a selected mode, Exawatt surfaces the harness response. It does not
   silently fall back to unrestricted access.
