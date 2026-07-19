@@ -1,0 +1,6 @@
+extends: ./electron-builder.yml
+forceCodeSigning: true
+afterPack: scripts/sign-renderer-archive.cjs
+
+mac:
+  notarize: false

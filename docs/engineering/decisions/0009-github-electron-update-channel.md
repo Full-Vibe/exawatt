@@ -2,7 +2,7 @@
 # 0009 Deliver signed desktop updates through a public artifact channel
 
 Date: 2026-07-10
-Status: accepted; amended 2026-07-18
+Status: accepted; amended 2026-07-19
 
 ## Context
 
@@ -53,12 +53,18 @@ never silently restart it while sessions are live.
   states how many live sessions will stop. Update failure leaves the current
   app launchable.
 - The agent-closeout installer remains a development escape hatch and never
-  becomes the customer update feed. AMENDED 2026-07-18: D17 replaces its
+  becomes the customer update feed. AMENDED 2026-07-19: D17 replaces its
   identity-null/ad-hoc app with a stable, verifiable Exawatt signing identity so
   identity-based local policy survives clean-`master` refreshes. The local path
   need not become a notarized distribution channel, but it must fail explicitly
   rather than silently install an identity-unstable fallback. Private signing
-  material stays outside the repository and logs.
+  material stays outside the repository and logs. The noninteractive local
+  source is a valid Developer ID Application identity in the macOS Keychain.
+  Exactly one such identity is selected automatically; an ambiguous Keychain
+  requires an exact SHA-1 fingerprint through a process environment override.
+  The build signs archived native renderer code before electron-builder signs
+  nested helpers and the enclosing app. A strict identity evaluator gates both
+  smoke testing and the atomic install swap.
 - The first release target is arm64, matching the operator's current Mac and
   the project's build-one-mile rule. Intel/universal artifacts are added before
   supporting Intel customers rather than blocking current dogfood activation.

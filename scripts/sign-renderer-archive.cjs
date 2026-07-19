@@ -5,6 +5,7 @@ const {
   opendir,
   readFile,
   rm,
+  stat,
   writeFile,
 } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
@@ -19,8 +20,17 @@ async function collectNativeBinaries(directory, result = []) {
     const entryPath = path.join(directory, entry.name);
     if (entry.isDirectory()) {
       await collectNativeBinaries(entryPath, result);
-    } else if (entry.isFile() && /\.(?:dylib|node)$/.test(entry.name)) {
-      result.push(entryPath);
+    } else if (entry.isFile()) {
+      const metadata = await stat(entryPath);
+      const isNativeCandidate =
+        /\.(?:dylib|node|so)$/.test(entry.name) ||
+        (metadata.mode & 0o111) !== 0;
+      if (!isNativeCandidate) continue;
+      const { stdout } = await execFileAsync('/usr/bin/file', [
+        '-b',
+        entryPath,
+      ]);
+      if (stdout.includes('Mach-O')) result.push(entryPath);
     }
   }
   return result;
@@ -65,7 +75,9 @@ module.exports = async function signRendererArchive(context) {
       .find(Boolean);
   }
   if (!identity) {
-    throw new Error('No Developer ID Application identity found for renderer signing');
+    throw new Error(
+      'No Developer ID Application identity found for renderer signing'
+    );
   }
 
   const staging = await mkdtemp(path.join(tmpdir(), 'exawatt-renderer-sign-'));
@@ -90,7 +102,11 @@ module.exports = async function signRendererArchive(context) {
       }
       args.push(binary);
       await execFileAsync('/usr/bin/codesign', args, { timeout: 120_000 });
-      await execFileAsync('/usr/bin/codesign', ['--verify', '--strict', binary]);
+      await execFileAsync('/usr/bin/codesign', [
+        '--verify',
+        '--strict',
+        binary,
+      ]);
     }
 
     await rm(archive, { force: true });

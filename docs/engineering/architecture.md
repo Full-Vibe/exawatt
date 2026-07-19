@@ -177,8 +177,9 @@ Built:
 - serialized workspace persistence and bounded terminal-history snapshots with
   append journals; steady-state disk work scales with new terminal output and
   compacts without exposing partial state
-- self-contained Electron packaging, atomic clean-master dogfood installation,
-  deep terminal fundamentals, and opt-in native attention notifications;
+- self-contained Electron packaging, Developer-ID-signed and strict-verified
+  atomic clean-master dogfood installation, deep terminal fundamentals, and
+  opt-in native attention notifications;
   immediate measured startup feedback backed by real bootstrap milestones,
   deferred command-module loading, warm renderer prestart, and bounded renderer
   cache retention;
