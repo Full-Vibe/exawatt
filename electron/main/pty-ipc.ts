@@ -12,6 +12,7 @@ import {
   recordAgentSourceUse,
   setAgentPermissionMode,
   setAttentionNotifications,
+  setDockBadge,
 } from './settings-store';
 import { listResumeCandidates } from './pty/resume-candidates';
 import {
@@ -95,8 +96,11 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     broadcast('pty:attention', { id, attention });
     const count = attentionMonitor.count();
     if (app.dock) {
-      app.dock.setBadge(count > 0 ? String(count) : '');
-      if (attention && BrowserWindow.getFocusedWindow() === null) {
+      // ambient OS-level signals are opt-in (D18): an unexplained dock
+      // number with no in-app way to clear it reads as noise, not truth
+      const dockBadge = loadSettings().notifications?.dockBadge ?? false;
+      app.dock.setBadge(dockBadge && count > 0 ? String(count) : '');
+      if (dockBadge && attention && BrowserWindow.getFocusedWindow() === null) {
         app.dock.bounce('informational');
       }
     }
@@ -342,6 +346,19 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       return settings;
     }
   );
+  handleTrusted('settings:set-dock-badge', (_event, enabled: boolean) => {
+    if (typeof enabled !== 'boolean')
+      throw new Error('Invalid dock badge setting');
+    const settings = setDockBadge(enabled);
+    // apply immediately: turning the badge off must clear it right now, and
+    // turning it on must reflect any attention already waiting
+    if (app.dock) {
+      const count = attentionMonitor.count();
+      app.dock.setBadge(enabled && count > 0 ? String(count) : '');
+    }
+    broadcast('settings:changed', settings);
+    return settings;
+  });
   handleTrusted(
     'settings:record-agent-source-use',
     (_event, projectDir: string, source: string, usedAt: number) => {

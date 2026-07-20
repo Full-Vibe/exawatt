@@ -38,6 +38,9 @@ export interface ExawattSettings {
   terminal?: TerminalFontSettings;
   notifications?: {
     attention: boolean;
+    /** macOS dock badge count + bounce for needs-you attention (D18):
+     *  default off — ambient OS-level signals are opt-in. */
+    dockBadge?: boolean;
   };
   agentSources?: {
     projectLastUsed: Record<string, string>;
@@ -113,8 +116,21 @@ export function parseSettings(raw: unknown): ExawattSettings {
   }
   const notifications = (raw as { notifications?: unknown }).notifications;
   if (notifications && typeof notifications === 'object') {
-    const attention = (notifications as { attention?: unknown }).attention;
-    if (typeof attention === 'boolean') settings.notifications = { attention };
+    const candidate = notifications as {
+      attention?: unknown;
+      dockBadge?: unknown;
+    };
+    const parsed: NonNullable<ExawattSettings['notifications']> = {
+      attention:
+        typeof candidate.attention === 'boolean' ? candidate.attention : false,
+    };
+    if (typeof candidate.dockBadge === 'boolean')
+      parsed.dockBadge = candidate.dockBadge;
+    if (
+      typeof candidate.attention === 'boolean' ||
+      typeof candidate.dockBadge === 'boolean'
+    )
+      settings.notifications = parsed;
   }
   const agentSources = (raw as { agentSources?: unknown }).agentSources;
   if (agentSources && typeof agentSources === 'object') {
@@ -222,7 +238,17 @@ function writeSettings(settings: ExawattSettings): void {
 
 export function setAttentionNotifications(enabled: boolean): ExawattSettings {
   const settings = loadSettings();
-  settings.notifications = { attention: enabled };
+  settings.notifications = { ...settings.notifications, attention: enabled };
+  writeSettings(settings);
+  return settings;
+}
+
+export function setDockBadge(enabled: boolean): ExawattSettings {
+  const settings = loadSettings();
+  settings.notifications = {
+    attention: settings.notifications?.attention ?? false,
+    dockBadge: enabled,
+  };
   writeSettings(settings);
   return settings;
 }

@@ -113,6 +113,8 @@ contextBridge.exposeInMainWorld('electron', {
     get: () => ipcRenderer.invoke('settings:get'),
     setAttentionNotifications: (enabled: boolean) =>
       ipcRenderer.invoke('settings:set-attention-notifications', enabled),
+    setDockBadge: (enabled: boolean) =>
+      ipcRenderer.invoke('settings:set-dock-badge', enabled),
     recordAgentSourceUse: (
       projectDir: string,
       source: string,

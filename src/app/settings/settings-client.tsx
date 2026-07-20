@@ -26,6 +26,7 @@ import {
   type ShortcutPlatform,
 } from '@/lib/shortcuts';
 import { updateKeyboardShortcuts, resetKeyboardShortcuts } from '@/app/actions/preferences';
+import { NotificationsSettings } from './notifications-settings';
 import { eventToBinding } from '@/lib/shortcuts/format';
 import type { ShortcutCategory, ShortcutKeys, KeyBinding } from '@/types/shortcuts';
 import { RotateCcw, AlertCircle } from 'lucide-react';
@@ -207,6 +208,8 @@ export function SettingsClient() {
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="text-muted-foreground">Customize your Exawatt experience</p>
       </div>
+
+      <NotificationsSettings />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">

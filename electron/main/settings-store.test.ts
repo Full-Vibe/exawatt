@@ -48,3 +48,19 @@ describe('parseSettings', () => {
     });
   });
 });
+
+describe('parseSettings dock badge (D18)', () => {
+  it('parses dockBadge beside attention and defaults both off', () => {
+    expect(
+      parseSettings({ notifications: { attention: true, dockBadge: true } })
+        .notifications
+    ).toEqual({ attention: true, dockBadge: true });
+    // dockBadge alone still yields a valid record with attention defaulted off
+    expect(
+      parseSettings({ notifications: { dockBadge: true } }).notifications
+    ).toEqual({ attention: false, dockBadge: true });
+    expect(
+      parseSettings({ notifications: { dockBadge: 'yes' } }).notifications
+    ).toBeUndefined();
+  });
+});

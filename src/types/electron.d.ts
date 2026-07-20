@@ -211,6 +211,8 @@ export interface ExawattSettings {
   };
   notifications?: {
     attention: boolean;
+    /** macOS dock badge count + bounce (D18) — default off */
+    dockBadge?: boolean;
   };
   agentSources?: {
     projectLastUsed: Record<string, string>;
@@ -222,6 +224,7 @@ export interface ExawattSettings {
 export interface ElectronSettingsApi {
   get: () => Promise<ExawattSettings>;
   setAttentionNotifications: (enabled: boolean) => Promise<ExawattSettings>;
+  setDockBadge: (enabled: boolean) => Promise<ExawattSettings>;
   recordAgentSourceUse: (
     projectDir: string,
     source: string,
