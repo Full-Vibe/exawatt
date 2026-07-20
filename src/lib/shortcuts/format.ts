@@ -90,6 +90,19 @@ export function eventToBinding(event: KeyboardEvent): KeyBinding {
   if (event.altKey) modifiers.push('alt');
   if (event.metaKey) modifiers.push('meta');
 
+  // Digit-row keys match by PHYSICAL position: ⇧1 must resolve to
+  // { key: '1', modifiers: ['shift'] }, never to the layout-dependent
+  // shifted symbol ('!', '+', …) — otherwise a ⌘⇧1 binding can only be
+  // triggered on one keyboard layout (ENG-016 D18).
+  const physicalDigit = /^Digit([0-9])$/.exec(event.code)?.[1];
+  if (physicalDigit !== undefined) {
+    if (event.shiftKey) modifiers.push('shift');
+    return {
+      key: physicalDigit,
+      modifiers: modifiers.length > 0 ? modifiers : undefined,
+    };
+  }
+
   // Don't add shift as a modifier if the key is already a shifted symbol (like ?, !, @, etc.)
   // This allows defining shortcuts as { key: '?' } instead of { key: '?', modifiers: ['shift'] }
   const isShiftedSymbol =

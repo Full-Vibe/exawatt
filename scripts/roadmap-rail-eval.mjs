@@ -289,7 +289,7 @@ await withElectronApp(
     await shot(page, '6c-blocked-attention');
 
     // S9: exposé tiles mirror what each agent is executing
-    await page.keyboard.press('Meta+2');
+    await page.keyboard.press('Meta+Shift+2');
     await page.waitForTimeout(900);
     results.exposeMirror = await page
       .locator('[data-expose-roadmap-item]')

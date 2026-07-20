@@ -94,9 +94,24 @@ describe('shortcut binding policy', () => {
         event({ code: 'Digit4', metaKey: true, altKey: true })
       )
     ).toMatch(/Project switching/);
+  });
+
+  it('reserves bare command digits for Session tabs but leaves ⌘⇧digits bindable', () => {
+    // D18: ⌘1–9 is the fixed tab family; the altitude destinations default
+    // to ⌘⇧1/2/3 and stay rebindable universal commands.
     expect(
       reservedShortcutFamily(
         event({ code: 'Digit4', metaKey: true, altKey: false })
+      )
+    ).toMatch(/Session tab switching/);
+    expect(
+      reservedShortcutFamily(
+        event({
+          code: 'Digit2',
+          metaKey: true,
+          altKey: false,
+          shiftKey: true,
+        })
       )
     ).toBeNull();
   });

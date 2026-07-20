@@ -5,7 +5,7 @@
  * DIRECTORY, tabs within them, persistence, and exact-ID resume.
  *
  * Model decisions (operator, 2026-07-02):
- * - one app window; projects are groups inside it (⌘1..9 switches
+ * - one app window; projects are groups inside it (⌘⌥1..9 switches
  *   project, ⌘⇧[/] rotates the GLOBAL tab ring, crossing projects)
  * - launching REQUIRES a project directory (never a silent home default);
  *   the last-used directory is remembered
@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HARNESS_META } from './harnesses';
 import { pickDistinctColor, projectColor } from './project-colors';
+import { nextTabInRing, tabAtOrdinal } from './tab-ring';
 import {
   SESSION_JUMP_EVENT,
   LAUNCH_EVENT,
@@ -1212,28 +1213,30 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   }, []);
 
   /** ⌘⇧[/]: rotate through ALL tabs in display order, crossing project
-   *  boundaries (operator, 2026-07-03) — the strip is one global ring */
+   *  boundaries (operator, 2026-07-03) — the strip is one global ring.
+   *  The ring math is pure and unit-tested in tab-ring.ts (D18). */
   const cycleTab = useCallback((delta: 1 | -1): boolean => {
     const { projects: gs, activeDir: ad } = stateRef.current;
-    const flat = gs.flatMap(g => g.tabs.map(t => ({ dir: g.dir, tab: t })));
-    if (flat.length === 0) return false;
-    const g = gs.find(x => x.dir === ad);
-    const cur = flat.findIndex(
-      e => e.dir === ad && e.tab.id === g?.activeTabId
-    );
-    let next: (typeof flat)[number];
-    if (cur === -1) {
-      // stale/no active tab: RECOVER in place on the current project's
-      // first tab (never yank the user to another project)
-      const anchor = flat.findIndex(e => e.dir === ad);
-      next = flat[anchor === -1 ? 0 : anchor];
-    } else {
-      next = flat[(cur + delta + flat.length) % flat.length];
-    }
+    const next = nextTabInRing(gs, ad, delta);
+    if (!next) return false;
     setActiveDir(next.dir);
     setProjects(prev =>
       prev.map(x =>
         x.dir === next.dir ? { ...x, activeTabId: next.tab.id } : x
+      )
+    );
+    return true;
+  }, []);
+
+  /** ⌘1–⌘9: jump straight to the Nth tab of the global ring (D18 — the
+   *  highest-frequency switch gets the cheapest chord, browser-style). */
+  const selectTabByOrdinal = useCallback((index: number): boolean => {
+    const target = tabAtOrdinal(stateRef.current.projects, index);
+    if (!target) return false;
+    setActiveDir(target.dir);
+    setProjects(prev =>
+      prev.map(x =>
+        x.dir === target.dir ? { ...x, activeTabId: target.tab.id } : x
       )
     );
     return true;
@@ -1413,6 +1416,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     selectTab,
     activateSession,
     cycleTab,
+    selectTabByOrdinal,
     jumpAttention,
     togglePin,
     renameTab,

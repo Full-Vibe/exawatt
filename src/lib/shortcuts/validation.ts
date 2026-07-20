@@ -29,6 +29,14 @@ export function reservedShortcutFamily(
   }
 
   if (
+    !event.altKey &&
+    !event.shiftKey &&
+    /^Digit[1-9]$/.test(event.code)
+  ) {
+    return '⌘1–9 is reserved for Session tab switching.';
+  }
+
+  if (
     event.shiftKey &&
     !event.altKey &&
     (event.code === 'BracketLeft' || event.code === 'BracketRight')

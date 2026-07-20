@@ -13,6 +13,7 @@ function actions(): WorkspaceShortcutActions {
     newProject: yes(),
     closeActive: yes(),
     selectIndex: yes(),
+    selectTabOrdinal: yes(),
     cycle: yes(),
     jumpAttention: yes(),
     activateCommandAltitude: yes(),
@@ -85,7 +86,7 @@ describe('workspace focus shortcuts', () => {
     expect(handlers.cycle).not.toHaveBeenCalled();
   });
 
-  it('owns absolute altitude commands before xterm and never treats them as Project ordinals', () => {
+  it('owns absolute altitude commands (⌘⇧digit) before xterm and never treats them as ordinals', () => {
     const handlers = actions();
     renderHook(() => useWorkspaceShortcuts(handlers));
     const terminal = document.createElement('textarea');
@@ -93,22 +94,49 @@ describe('workspace focus shortcuts', () => {
     terminal.addEventListener('keydown', event => event.preventDefault());
     document.body.append(terminal);
 
-    for (const [key, target] of [
-      ['1', 'terminal'],
-      ['2', 'sessions'],
-      ['3', 'spatial'],
+    for (const [digit, shifted, target] of [
+      ['1', '!', 'terminal'],
+      ['2', '@', 'sessions'],
+      ['3', '#', 'spatial'],
     ] as const) {
+      // event.key is the layout-dependent shifted symbol; matching must ride
+      // the physical Digit code (D18)
       terminal.dispatchEvent(
         new KeyboardEvent('keydown', {
-          key,
-          code: `Digit${key}`,
+          key: shifted,
+          code: `Digit${digit}`,
           metaKey: true,
+          shiftKey: true,
           bubbles: true,
           cancelable: true,
         })
       );
       expect(handlers.activateCommandAltitude).toHaveBeenLastCalledWith(target);
     }
+    expect(handlers.selectIndex).not.toHaveBeenCalled();
+    expect(handlers.selectTabOrdinal).not.toHaveBeenCalled();
+    terminal.remove();
+  });
+
+  it('jumps to tab ordinals on bare command digits from inside xterm (D18)', () => {
+    const handlers = actions();
+    renderHook(() => useWorkspaceShortcuts(handlers));
+    const terminal = document.createElement('textarea');
+    terminal.className = 'xterm-helper-textarea';
+    terminal.addEventListener('keydown', event => event.preventDefault());
+    document.body.append(terminal);
+
+    terminal.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: '2',
+        code: 'Digit2',
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+    expect(handlers.selectTabOrdinal).toHaveBeenCalledWith(1);
+    expect(handlers.activateCommandAltitude).not.toHaveBeenCalled();
     expect(handlers.selectIndex).not.toHaveBeenCalled();
     terminal.remove();
   });

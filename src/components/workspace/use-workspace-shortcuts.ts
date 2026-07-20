@@ -4,10 +4,11 @@
  *   ⌘T (or ⌘⇧T)  open a shell in the active Project
  *   ⌘N            open the Project chooser
  *   ⌘W (or ⌘⇧W)  close the active tab
+ *   ⌘1…⌘9        jump to tab N of the global ring (D18, browser-style)
  *   ⌘⌥1…⌘⌥9      jump to Project N
  *   ⌘⇧[ / ⌘⇧]    previous / next tab (wraps)
  *   ⌘J           jump to the oldest session needing attention (S1)
- *   ⌘1 / ⌘2 / ⌘3  Terminal / Sessions / Spatial
+ *   ⌘⇧1 / ⌘⇧2 / ⌘⇧3  Terminal / Sessions / Spatial (D18)
  *   ⌘K           session switcher / command palette (S2)
  *   ⌘D           split: pin the active tab beside whatever you drive (S2)
  *   ⌘B           roadmap rail: open → focus → collapse (ENG-017)
@@ -68,6 +69,8 @@ export interface WorkspaceShortcutActions {
   newProject: () => boolean;
   closeActive: () => boolean;
   selectIndex: (index: number) => boolean;
+  /** ⌘1–⌘9 — jump to the Nth tab of the global ring */
+  selectTabOrdinal: (index: number) => boolean;
   /** move selection by delta with wraparound */
   cycle: (delta: 1 | -1) => boolean;
   /** jump to the oldest needs-attention session */
@@ -140,9 +143,18 @@ export function useWorkspaceShortcuts(
         if (actions.cycle(1)) e.preventDefault();
         return;
       }
-      const projectOrdinal = /^Digit([1-9])$/.exec(e.code);
-      if (e.altKey && !e.shiftKey && projectOrdinal) {
-        if (actions.selectIndex(Number(projectOrdinal[1]) - 1)) {
+      const ordinal = /^Digit([1-9])$/.exec(e.code);
+      if (e.altKey && !e.shiftKey && ordinal) {
+        if (actions.selectIndex(Number(ordinal[1]) - 1)) {
+          e.preventDefault();
+        }
+        return;
+      }
+      // ⌘1–⌘9 tab ordinals (D18): the highest-frequency switch gets the
+      // cheapest chord. The altitude destinations matched above run first,
+      // so a rebind of an altitude back onto a bare ⌘digit still wins there.
+      if (!e.altKey && !e.shiftKey && ordinal) {
+        if (actions.selectTabOrdinal(Number(ordinal[1]) - 1)) {
           e.preventDefault();
         }
       }

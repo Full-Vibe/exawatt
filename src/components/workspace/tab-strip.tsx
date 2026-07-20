@@ -2,7 +2,7 @@
 
 /**
  * Grouped tab strip (ENG-002 W0.2–W0.4): projects are visual clusters —
- * a numbered, project-colored group chip (⌘1..9 target) followed by its
+ * a numbered, project-colored group chip (⌘⌥1..9 target) followed by its
  * tabs, all sharing the project color. W0.4: double-click a group or tab
  * name to rename it (persists with the layout), and agent tabs carry an
  * auto-summarized micro-context subtitle ("what was I working on here?").

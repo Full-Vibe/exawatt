@@ -138,7 +138,7 @@ try {
         (await sessions(page)).length === 0
       );
 
-      await page.keyboard.press('Meta+2');
+      await page.keyboard.press('Meta+Shift+2');
       const emptyProject = page.locator('[data-expose-empty-project]').filter({
         hasText: 'No Sessions yet',
       });
@@ -155,7 +155,7 @@ try {
 
       // Leave immediately, before the normal debounce. Route teardown must
       // flush the shared Project catalog so Spatial sees the same identity.
-      await page.keyboard.press('Meta+3');
+      await page.keyboard.press('Meta+Shift+3');
       await page.waitForURL('**/fleet/spatial**');
       const clusterId = `project:${projectA}`;
       const emptyZone = page.locator(`[data-board-zone="${clusterId}"]`);
@@ -189,7 +189,7 @@ try {
         path: join(output, '03-empty-project-spatial.png'),
       });
 
-      await page.keyboard.press('Meta+1');
+      await page.keyboard.press('Meta+Shift+1');
       await page.waitForURL('**/workspace**');
       await page
         .locator('[data-agent-composer][data-variant="empty"]')
@@ -257,7 +257,7 @@ try {
       );
       check('Claude Code receives the visible YOLO policy', true);
 
-      await page.keyboard.press('Meta+3');
+      await page.keyboard.press('Meta+Shift+3');
       await page.waitForURL(
         url =>
           url.searchParams.get('altitude') === 'project' &&
@@ -278,7 +278,7 @@ try {
             .locator('[data-agent-count]')
             .getAttribute('data-agent-count')) === '1'
       );
-      await page.keyboard.press('Meta+1');
+      await page.keyboard.press('Meta+Shift+1');
       await page.waitForURL('**/workspace**');
 
       await page.getByLabel('Agent Source').click();

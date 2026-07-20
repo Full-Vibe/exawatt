@@ -156,10 +156,10 @@ await withElectronApp(
   // still provide an escape path back to Terminal.
   const spatialSearch = page.getByLabel('Search agents');
   await spatialSearch.fill('operator query');
-  await page.keyboard.press('Meta+1');
+  await page.keyboard.press('Meta+Shift+1');
   await page.waitForURL('**/workspace');
   check('cmd+1 returns from focused Spatial search', true);
-  await page.keyboard.press('Meta+3');
+  await page.keyboard.press('Meta+Shift+3');
   await page.waitForURL('**/fleet/spatial');
 
   // spine affordances never link into legacy: no "← Fleet" on Spatial
@@ -168,7 +168,7 @@ await withElectronApp(
   await page.screenshot({ path: join(OUT, 'spatial-no-backlink.png') });
 
   // project-first ⌘K: spine vocabulary, Legacy group, add-project, signed-out row
-  await page.keyboard.press('Meta+1');
+  await page.keyboard.press('Meta+Shift+1');
   await page.waitForTimeout(800);
   await page.keyboard.press('Meta+KeyK');
   await page.waitForTimeout(700);
@@ -358,7 +358,7 @@ await withElectronApp(
   check('no nested-interactive markup warnings', markupWarnings.length === 0);
   // Leave the app on Terminal so its workspace checkpoint owner can answer the
   // normal coordinated-quit handshake used by ElectronApplication.close().
-  await page.keyboard.press('Meta+1');
+  await page.keyboard.press('Meta+Shift+1');
   await page.waitForURL('**/workspace');
   await page.locator('[data-workspace-underlay]').waitFor();
   await page.waitForTimeout(500);

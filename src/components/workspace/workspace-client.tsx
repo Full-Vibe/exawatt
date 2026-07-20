@@ -217,6 +217,7 @@ export function WorkspaceClient() {
     selectProject,
     selectTab,
     cycleTab,
+    selectTabByOrdinal,
     jumpAttention,
     togglePin,
     renameTab,
@@ -491,7 +492,7 @@ export function WorkspaceClient() {
     [roadmapAttention, attention]
   );
 
-  // Sessions altitude (S3): ⌘2 — sessions fan out as tiles
+  // Sessions altitude (S3): ⌘⇧2 — sessions fan out as tiles
   const requestedOverview = searchParams.get('view') === 'sessions';
   const [overviewOpen, setOverviewOpen] = useState(requestedOverview);
   const updateOverview = useCallback(
@@ -546,6 +547,7 @@ export function WorkspaceClient() {
         return true;
       },
       selectIndex: selectProject,
+      selectTabOrdinal: selectTabByOrdinal,
       cycle: cycleTab,
       jumpAttention: jumpAttentionLadder,
       activateCommandAltitude: target => {
@@ -606,6 +608,7 @@ export function WorkspaceClient() {
     closeTab,
     selectProject,
     cycleTab,
+    selectTabByOrdinal,
     jumpAttentionLadder,
     togglePin,
     activateCommandAltitude,

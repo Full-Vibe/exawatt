@@ -487,9 +487,9 @@ function sendMenuCommand(command: string): void {
  *  empty string clears the column (e.g. a verb rebound to a chord). */
 const menuAccelerators: Record<string, string> = {
   'command-palette': 'Command+K',
-  'go-terminal': 'Command+1',
-  'go-sessions': 'Command+2',
-  'go-spatial': 'Command+3',
+  'go-terminal': 'Command+Shift+1',
+  'go-sessions': 'Command+Shift+2',
+  'go-spatial': 'Command+Shift+3',
   'history-back': 'Command+[',
   'history-forward': 'Command+]',
   'open-project': 'Command+N',

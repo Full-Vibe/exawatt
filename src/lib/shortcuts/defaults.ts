@@ -34,12 +34,14 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     category: 'navigation',
     contexts: ['global'],
   },
-  // Primary command-altitude keys (ENG-016 D12). These are absolute,
-  // idempotent destinations rather than contextual toggles: repeating one
-  // focuses/recenters that altitude instead of leaving it.
+  // Primary command-altitude keys (ENG-016 D12, remapped by D18). These are
+  // absolute, idempotent destinations rather than contextual toggles:
+  // repeating one focuses/recenters that altitude instead of leaving it.
+  // ⌘1–⌘9 belongs to Session tabs (browser convention — the highest-frequency
+  // switch gets the cheapest chord), so the altitudes ride ⌘⇧digit.
   {
     id: 'command-terminal',
-    keys: { key: '1', modifiers: ['meta'] },
+    keys: { key: '1', modifiers: ['meta', 'shift'] },
     label: 'Terminal',
     description: 'Open or focus Terminal command altitude',
     category: 'navigation',
@@ -48,7 +50,7 @@ export const defaultShortcuts: ShortcutDefinition[] = [
   },
   {
     id: 'command-sessions',
-    keys: { key: '2', modifiers: ['meta'] },
+    keys: { key: '2', modifiers: ['meta', 'shift'] },
     label: 'Sessions',
     description: 'Open or focus Sessions command altitude',
     category: 'navigation',
@@ -57,7 +59,7 @@ export const defaultShortcuts: ShortcutDefinition[] = [
   },
   {
     id: 'command-spatial',
-    keys: { key: '3', modifiers: ['meta'] },
+    keys: { key: '3', modifiers: ['meta', 'shift'] },
     label: 'Spatial',
     description: 'Open or recenter Spatial command altitude',
     category: 'navigation',

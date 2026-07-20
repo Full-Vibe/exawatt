@@ -60,12 +60,25 @@ describe('shortcut settings policy', () => {
     expect(screen.getByText(/must include ⌘/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
 
+    // bare ⌘digit now belongs to the fixed Session-tab family (D18)
     fireEvent.keyDown(capture, {
       key: '4',
       code: 'Digit4',
       metaKey: true,
     });
+    expect(
+      screen.getByText(/reserved for Session tab switching/)
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+
+    fireEvent.keyDown(capture, {
+      key: '$',
+      code: 'Digit4',
+      metaKey: true,
+      shiftKey: true,
+    });
     expect(screen.queryByText(/must include ⌘/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/reserved for/)).not.toBeInTheDocument();
     const save = screen.getByRole('button', { name: 'Save' });
     expect(save).toBeEnabled();
     fireEvent.click(save);
@@ -73,7 +86,7 @@ describe('shortcut settings policy', () => {
     await waitFor(() => expect(updateKeyboardShortcuts).toHaveBeenCalledOnce());
     expect(shortcutRegistry.getEffectiveKeys('command-terminal')).toEqual({
       key: '4',
-      modifiers: ['meta'],
+      modifiers: ['meta', 'shift'],
     });
   });
 

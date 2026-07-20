@@ -1,7 +1,7 @@
 // No 'use client' directive: only imported by the client workspace surface.
 
 /**
- * Exposé overview (ENG-015 S3): ⌘2 fans every live session out as a rich
+ * Exposé overview (ENG-015 S3): ⌘⇧2 fans every live session out as a rich
  * tile — project color, harness mark, title, micro-context, needs-you
  * pulse, and the last lines of scrollback — so "where is everything?"
  * answers itself in one glance. Fully keyboard-driven: arrows move,
@@ -130,7 +130,7 @@ export function ExposeOverlay({
     [projects, tiles]
   );
 
-  // start where the operator was — ⌘2 then Enter must be a no-op return,
+  // start where the operator was — ⌘⇧2 then Enter must be a no-op return,
   // never a jump to whatever happens to be tile 0
   const [sel, setSel] = useState(() => {
     const i = items.findIndex(item =>
