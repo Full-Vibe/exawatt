@@ -4,6 +4,7 @@ import {
   shell,
   Menu,
   dialog,
+  screen,
   session as electronSession,
   net as electronNet,
 } from 'electron';
@@ -384,8 +385,32 @@ function updateStartupScreen(stage: StartupStage): void {
     .catch(() => {});
 }
 
+/** Harness-driven runs (evals, agent screenshot loops) open on a NON-primary
+ *  display when one exists, so automated UI checks stop popping over the
+ *  operator's working screen (operator request, 2026-07-20). Set
+ *  EXAWATT_TEST_SCREEN=primary to opt back in; production launches are
+ *  unaffected. */
+function testWindowPosition(): { x: number; y: number } | undefined {
+  if (process.env.EXAWATT_TEST !== '1') return undefined;
+  if (process.env.EXAWATT_TEST_SCREEN === 'primary') return undefined;
+  try {
+    const primary = screen.getPrimaryDisplay();
+    const secondary = screen
+      .getAllDisplays()
+      .find(display => display.id !== primary.id);
+    if (!secondary) return undefined;
+    return {
+      x: secondary.workArea.x + 40,
+      y: secondary.workArea.y + 40,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 function createWindow(initialUrl: string): void {
   mainWindow = new BrowserWindow({
+    ...(testWindowPosition() ?? {}),
     width: 1400,
     height: 900,
     minWidth: 800,

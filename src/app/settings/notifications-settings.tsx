@@ -112,3 +112,44 @@ export function NotificationsSettings() {
     </Card>
   );
 }
+
+/**
+ * Why macOS asks for folder access (ENG-016 D18). Agent processes run as
+ * children of Exawatt, so their file access is attributed to Exawatt by
+ * macOS privacy protection. This card makes the system prompts explicable
+ * instead of mysterious. Electron-only, static copy.
+ */
+export function PermissionsExplainer() {
+  const [available, setAvailable] = useState(false);
+  useEffect(() => {
+    setAvailable(!!window.electron?.isElectron);
+  }, []);
+  if (!available) return null;
+
+  return (
+    <Card className="mb-6" data-permissions-explainer>
+      <CardHeader>
+        <CardTitle>macOS permission prompts</CardTitle>
+        <CardDescription>
+          What the system dialogs mean and why they name Exawatt.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 text-xs text-muted-foreground">
+        <p>
+          Agents you launch run as part of Exawatt, so when one works in a
+          protected location — Desktop, Documents, Downloads, or an external
+          drive — macOS asks once whether Exawatt may access that folder
+          category. Allowing it is what lets your agents read and write those
+          projects; denying it makes agent work there fail with permission
+          errors.
+        </p>
+        <p>
+          Grants stick to the app&apos;s signed identity, which is stable
+          across updates — you should not be re-asked for the same category
+          again. Review or revoke grants any time in System Settings →
+          Privacy &amp; Security → Files and Folders.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}

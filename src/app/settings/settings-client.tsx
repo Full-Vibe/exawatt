@@ -26,7 +26,10 @@ import {
   type ShortcutPlatform,
 } from '@/lib/shortcuts';
 import { updateKeyboardShortcuts, resetKeyboardShortcuts } from '@/app/actions/preferences';
-import { NotificationsSettings } from './notifications-settings';
+import {
+  NotificationsSettings,
+  PermissionsExplainer,
+} from './notifications-settings';
 import { eventToBinding } from '@/lib/shortcuts/format';
 import type { ShortcutCategory, ShortcutKeys, KeyBinding } from '@/types/shortcuts';
 import { RotateCcw, AlertCircle } from 'lucide-react';
@@ -210,6 +213,7 @@ export function SettingsClient() {
       </div>
 
       <NotificationsSettings />
+      <PermissionsExplainer />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
