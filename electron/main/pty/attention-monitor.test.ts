@@ -261,3 +261,65 @@ describe('AttentionMonitor', () => {
     expect(monitor.count()).toBe(0);
   });
 });
+
+describe('AttentionMonitor activity truth (D18)', () => {
+  let manager: FakeManager;
+  let monitor: AttentionMonitor;
+  let clock: number;
+  let transitions: Array<{ id: string; working: boolean }>;
+
+  beforeEach(() => {
+    manager = new FakeManager();
+    clock = 100_000;
+    monitor = new AttentionMonitor({
+      quietMs: 4000,
+      minBurstBytes: 100,
+      spawnGraceMs: 20_000,
+      now: () => clock,
+    });
+    monitor.attach(manager as unknown as PtySessionManager);
+    transitions = [];
+    monitor.on('activity', (id: string, working: boolean) =>
+      transitions.push({ id, working })
+    );
+  });
+
+  it('marks a session working on output and quiet after the window', () => {
+    manager.sessions.push({
+      id: 'a',
+      harness: 'claude',
+      startedAt: 0,
+      exited: false,
+    });
+    manager.emit('data', 'a', 'streaming output');
+    expect(transitions).toEqual([{ id: 'a', working: true }]);
+    expect(monitor.isWorking('a')).toBe(true);
+
+    // continued output does not re-emit
+    manager.emit('data', 'a', 'more output');
+    expect(transitions).toHaveLength(1);
+
+    clock += 3500;
+    monitor.sweepNow();
+    expect(transitions).toEqual([
+      { id: 'a', working: true },
+      { id: 'a', working: false },
+    ]);
+    expect(monitor.isWorking('a')).toBe(false);
+  });
+
+  it('drops the working state when the session exits', () => {
+    manager.sessions.push({
+      id: 'a',
+      harness: 'claude',
+      startedAt: 0,
+      exited: false,
+    });
+    manager.emit('data', 'a', 'output');
+    manager.emit('exit', 'a');
+    expect(transitions).toEqual([
+      { id: 'a', working: true },
+      { id: 'a', working: false },
+    ]);
+  });
+});

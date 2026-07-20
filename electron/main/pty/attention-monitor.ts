@@ -61,6 +61,11 @@ const DEFAULTS = {
   spawnGraceMs: 20_000,
 };
 
+/** Output within this window means the session is visibly WORKING (D18:
+ *  running vs waiting must read at a glance). Below quietMs so a session
+ *  goes visually quiet before a turn-end flag can raise. */
+const WORKING_WINDOW_MS = 3000;
+
 /** carry cap for an OSC sequence split across chunks */
 const OSC_CARRY_LIMIT = 4096;
 
@@ -69,6 +74,8 @@ export class AttentionMonitor extends EventEmitter {
   private attention = new Map<string, SessionAttention>();
   private lastDataAt = new Map<string, number>();
   private burstBytes = new Map<string, number>();
+  /** sessions currently emitting output — the renderer's "working" glyphs */
+  private working = new Set<string>();
   /** output since a flag was raised — substantial resumption clears it */
   private bytesSinceFlag = new Map<string, number>();
   /** unterminated escape-sequence tail carried to the next chunk */
@@ -119,6 +126,11 @@ export class AttentionMonitor extends EventEmitter {
     return this.attention.size;
   }
 
+  /** is this session actively producing output right now? */
+  isWorking(id: string): boolean {
+    return this.working.has(id);
+  }
+
   /** which session's tab is active (null = none) */
   setFocus(id: string | null): void {
     this.focusedId = id;
@@ -151,6 +163,10 @@ export class AttentionMonitor extends EventEmitter {
     if (this.disabled) return;
     const { bell } = this.scan(id, data);
     this.lastDataAt.set(id, this.now());
+    if (!this.working.has(id)) {
+      this.working.add(id);
+      this.emit('activity', id, true);
+    }
     this.burstBytes.set(id, (this.burstBytes.get(id) ?? 0) + data.length);
     // a flagged session that RESUMES real work was not actually waiting —
     // clear once post-flag output is substantial (repaint noise stays under
@@ -173,6 +189,14 @@ export class AttentionMonitor extends EventEmitter {
     const live = new Set<string>();
     for (const s of this.manager.list()) {
       live.add(s.id);
+      // working → quiet transition (activity truth for status glyphs)
+      if (this.working.has(s.id)) {
+        const last = this.lastDataAt.get(s.id);
+        if (s.exited || last === undefined || now - last >= WORKING_WINDOW_MS) {
+          this.working.delete(s.id);
+          this.emit('activity', s.id, false);
+        }
+      }
       if (s.exited || s.harness === 'shell') continue;
       const last = this.lastDataAt.get(s.id);
       if (last === undefined || now - last < this.opts.quietMs) continue;
@@ -209,6 +233,7 @@ export class AttentionMonitor extends EventEmitter {
     this.lastDataAt.delete(id);
     this.burstBytes.delete(id);
     this.carry.delete(id);
+    if (this.working.delete(id)) this.emit('activity', id, false);
     this.clear(id);
   }
 

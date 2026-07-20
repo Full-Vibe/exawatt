@@ -202,6 +202,7 @@ export function WorkspaceClient() {
     pinnedTabId,
     summaries,
     attention,
+    activity,
     reentryRecap,
     error,
     setError,
@@ -710,6 +711,7 @@ export function WorkspaceClient() {
             pinnedTabId={pinnedTabId}
             summaries={summaries}
             attention={mergedAttention}
+            activity={activity}
             onSelectProject={selectProject}
             onSelectTab={selectTab}
             onCloseTab={id => void closeTab(id)}
@@ -1048,6 +1050,7 @@ export function WorkspaceClient() {
           projects={projects}
           summaries={summaries}
           attention={mergedAttention}
+          activity={activity}
           activeTabId={activeTab?.id ?? null}
           activeProjectDir={activeProject?.dir ?? null}
           onPick={(dir, tabId) => {

@@ -62,6 +62,7 @@ export function ExposeOverlay({
   projects,
   summaries,
   attention,
+  activity = {},
   roadmapByTab = {},
   activeTabId,
   activeProjectDir = null,
@@ -73,6 +74,8 @@ export function ExposeOverlay({
   summaries: Record<string, string>;
   /** presence-only (S8 merges roadmap-derived entries) */
   attention: Record<string, { since: number }>;
+  /** sessions actively producing output, keyed by sessionId (D18) */
+  activity?: Record<string, boolean>;
   /** tabId → linked roadmap item (ENG-017 S9 mirror): the exposé is an
    *  AGENT-FIRST view, so each tile says what its agent is executing */
   roadmapByTab?: Record<
@@ -298,6 +301,7 @@ export function ExposeOverlay({
     const index = items.findIndex(item => item.tabId === tile.tabId);
     const selected = index === sel;
     const needsYou = !!(tile.sessionId && attention[tile.sessionId]);
+    const working = !!(tile.sessionId && activity[tile.sessionId]);
     const subtitle = tile.sessionId ? summaries[tile.sessionId] : undefined;
     return (
       <button
@@ -310,7 +314,9 @@ export function ExposeOverlay({
         data-expose-tab={tile.tabId}
         data-selected={selected || undefined}
         tabIndex={selected ? 0 : -1}
-        aria-label={`${tile.title}, ${tile.projectName}${needsYou ? ', needs attention' : ''}${tile.stateLabel ? `, ${tile.stateLabel}` : ''}`}
+        aria-label={`${tile.title}, ${tile.projectName}${needsYou ? ', needs attention' : ''}${
+          tile.live && !needsYou ? (working ? ', working' : ', quiet') : ''
+        }${tile.stateLabel ? `, ${tile.stateLabel}` : ''}`}
         onClick={() => onPick(tile.dir, tile.tabId)}
         onMouseEnter={() => setSel(index)}
         onFocus={() => setSel(index)}
@@ -372,7 +378,7 @@ export function ExposeOverlay({
                 : ''}
             </span>
           )}
-          {needsYou && (
+          {needsYou ? (
             <span className="relative ml-1 inline-flex h-1.5 w-1.5 shrink-0">
               <span
                 className="absolute inline-flex h-full w-full animate-ping rounded-full motion-reduce:animate-none"
@@ -383,7 +389,23 @@ export function ExposeOverlay({
                 style={{ background: HUD.amber }}
               />
             </span>
-          )}
+          ) : tile.live ? (
+            working ? (
+              <span
+                data-status="working"
+                title="working — output streaming"
+                className="ml-1 inline-flex h-1.5 w-1.5 shrink-0 rounded-full motion-safe:animate-pulse"
+                style={{ background: HUD.cyan2, boxShadow: `0 0 4px ${HUD.cyan2}` }}
+              />
+            ) : (
+              <span
+                data-status="quiet"
+                title="quiet — waiting or between turns"
+                className="ml-1 inline-flex h-1.5 w-1.5 shrink-0 rounded-full border"
+                style={{ borderColor: HUD.idle }}
+              />
+            )
+          ) : null}
         </div>
         {subtitle && (
           <div

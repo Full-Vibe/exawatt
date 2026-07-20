@@ -37,6 +37,26 @@ function AttentionDot() {
   );
 }
 
+/** live-session activity (D18): running vs waiting must read at a glance.
+ *  Working = solid breathing teal (output streaming right now); quiet =
+ *  hollow neutral (waiting at a prompt or between turns). The amber
+ *  AttentionDot replaces this whenever the session needs the operator. */
+function StatusDot({ working }: { working: boolean }) {
+  return working ? (
+    <span
+      data-status="working"
+      className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full motion-safe:animate-pulse"
+      style={{ background: HUD.cyan2, boxShadow: `0 0 4px ${HUD.cyan2}` }}
+    />
+  ) : (
+    <span
+      data-status="quiet"
+      className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full border"
+      style={{ borderColor: HUD.idle }}
+    />
+  );
+}
+
 interface Editing {
   kind: 'group' | 'tab';
   id: string;
@@ -142,6 +162,7 @@ export function TabStrip({
   pinnedTabId,
   summaries,
   attention,
+  activity = {},
   onSelectProject,
   onSelectTab,
   onCloseTab,
@@ -158,6 +179,8 @@ export function TabStrip({
   /** needs-operator flags keyed by sessionId (S1; S8 adds
    *  roadmap-derived entries — only presence and recency matter here) */
   attention: Record<string, { since: number }>;
+  /** sessions actively producing output, keyed by sessionId (D18) */
+  activity?: Record<string, boolean>;
   onSelectProject: (index: number) => void;
   onSelectTab: (dir: string, tabId: string) => void;
   onCloseTab: (tabId: string) => void;
@@ -197,6 +220,21 @@ export function TabStrip({
     else onRenameTab(editing.id, editing.value);
     settle();
   };
+
+  // global ring ordinals for the first nine tabs (⌘1–⌘9 targets, D18):
+  // the shortcut shows itself the same way the project chips show ⌘⌥N
+  const ordinalByTabId = new Map<string, number>();
+  {
+    let ordinal = 0;
+    for (const g of projects) {
+      for (const t of g.tabs) {
+        ordinal += 1;
+        if (ordinal > 9) break;
+        ordinalByTabId.set(t.id, ordinal);
+      }
+      if (ordinal > 9) break;
+    }
+  }
 
   return (
     <div
@@ -270,6 +308,9 @@ export function TabStrip({
               const summary = t.sessionId ? summaries[t.sessionId] : undefined;
               const needsYou =
                 !dead && !!(t.sessionId && attention[t.sessionId]);
+              const working =
+                !dead && !!(t.sessionId && activity[t.sessionId]);
+              const ordinal = ordinalByTabId.get(t.id);
               const stoppedStatus =
                 t.lifecycle === 'interrupted'
                   ? 'Interrupted'
@@ -300,10 +341,29 @@ export function TabStrip({
                     title={`${t.cwd}${summary ? `\n${summary}` : ''}${
                       needsYou ? '\nneeds your attention (⌘J jumps here)' : ''
                     }${
+                      !dead && !needsYou
+                        ? working
+                          ? '\nworking — output streaming'
+                          : '\nquiet — waiting or between turns'
+                        : ''
+                    }${
                       dead ? `\n${t.resumeState.replace('-', ' ')}` : ''
-                    }\ndouble-click to rename`}
+                    }${ordinal ? `\n⌘${ordinal} selects` : ''}\ndouble-click to rename`}
                   >
-                    {needsYou && <AttentionDot />}
+                    {ordinal !== undefined && (
+                      <span
+                        data-tab-ordinal={ordinal}
+                        className="font-mono text-[10px] leading-none opacity-60"
+                        style={{ color: on ? color : HUD.textDim }}
+                      >
+                        {ordinal}
+                      </span>
+                    )}
+                    {needsYou ? (
+                      <AttentionDot />
+                    ) : !dead ? (
+                      <StatusDot working={working} />
+                    ) : null}
                     {t.id === pinnedTabId && (
                       <span
                         data-pinned

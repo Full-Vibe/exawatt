@@ -89,6 +89,7 @@ contextBridge.exposeInMainWorld('electron', {
       generatedAt: number;
     }>('pty:recap'),
     onAttention: subscribe<{ id: string; attention: unknown }>('pty:attention'),
+    onActivity: subscribe<{ id: string; working: boolean }>('pty:activity'),
     onNotificationClick: subscribe<{ id: string }>('pty:notification-click'),
   },
   workspace: {

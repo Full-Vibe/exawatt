@@ -87,6 +87,10 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     attentionMonitor.setWindowFocused(false);
     contextSummarizer.setWindowFocused(false);
   });
+  // working/quiet transitions (D18): the tab strip's live status glyphs
+  attentionMonitor.on('activity', (id: string, working: boolean) => {
+    broadcast('pty:activity', { id, working });
+  });
   attentionMonitor.on('attention', (id: string, attention: unknown) => {
     broadcast('pty:attention', { id, attention });
     const count = attentionMonitor.count();

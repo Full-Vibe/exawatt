@@ -119,8 +119,8 @@ describe('Sessions overview', () => {
       />
     );
 
-    const alpha = screen.getByRole('button', { name: 'Alpha, One' });
-    const beta = screen.getByRole('button', { name: 'Beta, One' });
+    const alpha = screen.getByRole('button', { name: /^Alpha, One/ });
+    const beta = screen.getByRole('button', { name: /^Beta, One/ });
     await waitFor(() => expect(beta).toHaveFocus());
     fireEvent.keyDown(beta, { key: 'ArrowLeft' });
     await waitFor(() => expect(alpha).toHaveFocus());
@@ -138,8 +138,8 @@ describe('Sessions overview', () => {
         onClose={vi.fn()}
       />
     );
-    const alpha = screen.getByRole('button', { name: 'Alpha, One' });
-    const beta = screen.getByRole('button', { name: 'Beta, One' });
+    const alpha = screen.getByRole('button', { name: /^Alpha, One/ });
+    const beta = screen.getByRole('button', { name: /^Beta, One/ });
     await waitFor(() => expect(alpha).toHaveFocus());
 
     view.rerender(
@@ -170,7 +170,7 @@ describe('Sessions overview', () => {
       />
     );
 
-    const alpha = screen.getByRole('button', { name: 'Alpha, One' });
+    const alpha = screen.getByRole('button', { name: /^Alpha, One/ });
     await waitFor(() => expect(alpha).toHaveFocus());
     fireEvent.keyDown(alpha, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledOnce();
@@ -197,7 +197,7 @@ describe('Sessions overview', () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Alpha, One' })).toHaveFocus()
+      expect(screen.getByRole('button', { name: /^Alpha, One/ })).toHaveFocus()
     );
     shellControl.focus();
     fireEvent.keyDown(shellControl, { key: 'Escape' });
@@ -219,7 +219,7 @@ describe('Sessions overview', () => {
 
     const overview = screen.getByRole('region', { name: 'Session overview' });
     expect(overview).not.toHaveAttribute('aria-modal');
-    const alpha = screen.getByRole('button', { name: 'Alpha, One' });
+    const alpha = screen.getByRole('button', { name: /^Alpha, One/ });
     await waitFor(() => expect(alpha).toHaveFocus());
     alpha.blur();
     window.dispatchEvent(new CustomEvent(FOCUS_SESSIONS_EVENT));

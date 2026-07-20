@@ -357,6 +357,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const [summaries, setSummaries] = useState<Record<string, string>>({});
   /** needs-operator flags keyed by sessionId (ENG-015 S1; main is truth) */
   const [attention, setAttention] = useState<Record<string, PtyAttention>>({});
+  /** sessions actively producing output right now, keyed by sessionId
+   *  (D18: running vs waiting must read at a glance; main is truth) */
+  const [activity, setActivity] = useState<Record<string, boolean>>({});
   /** quiet, one-shot S4 catch-up for the session currently being revisited */
   const [reentryRecap, setReentryRecap] = useState<PtyReentryRecap | null>(
     null
@@ -677,6 +680,15 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       );
       if (tab?.sessionId === next.id) setReentryRecap(next);
     });
+    const offActivity = api.onActivity?.(({ id, working }) => {
+      setActivity(prev => {
+        if (working) return prev[id] ? prev : { ...prev, [id]: true };
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    });
     const offAttention = api.onAttention?.(({ id, attention: att }) => {
       if (att) clearedBeforeSeed.delete(id);
       else clearedBeforeSeed.add(id);
@@ -694,6 +706,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       offIdentity?.();
       offContext?.();
       offRecap?.();
+      offActivity?.();
       offAttention?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1399,6 +1412,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     lastUsedDir,
     summaries,
     attention,
+    activity,
     reentryRecap,
     error,
     setError,

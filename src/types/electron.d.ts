@@ -151,6 +151,9 @@ export interface ElectronPtyApi {
   onAttention: (
     handler: (payload: { id: string; attention: PtyAttention | null }) => void
   ) => () => void;
+  onActivity: (
+    handler: (payload: { id: string; working: boolean }) => void
+  ) => () => void;
   onNotificationClick: (
     handler: (payload: { id: string }) => void
   ) => () => void;
