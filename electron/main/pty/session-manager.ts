@@ -125,6 +125,9 @@ interface Session {
   codexTrustAccepted: boolean;
   codexIdentityStarted: boolean;
   codexInput: OrderedWriteBuffer;
+  /** The composer's first task, kept for goal-oriented context summaries
+   *  (D18): the operator's own words are the best statement of the goal. */
+  initialTask?: string;
 }
 
 export class PtySessionManager extends EventEmitter {
@@ -271,6 +274,9 @@ export class PtySessionManager extends EventEmitter {
       codexTrustAccepted: false,
       codexIdentityStarted: false,
       codexInput: new OrderedWriteBuffer(),
+      ...(options.initialPrompt?.trim()
+        ? { initialTask: options.initialPrompt.trim() }
+        : {}),
     });
 
     if (options.resumeSessionId && options.harness !== 'shell') {
@@ -500,6 +506,11 @@ export class PtySessionManager extends EventEmitter {
       text: durableId ? this.scrollback.text(durableId) : '',
       cursor: durableId ? this.scrollback.cursor(durableId) : 0,
     };
+  }
+
+  /** The composer's first task for this session, if one was given (D18). */
+  initialTask(id: string): string | null {
+    return this.sessions.get(id)?.initialTask ?? null;
   }
 
   /** Absolute scrollback position used as a last-visited checkpoint. */

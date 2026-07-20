@@ -137,7 +137,10 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   // opaque "Error invoking remote method" strings — useless for UX
   handleTrusted('pty:create', async (_event, options: PtyCreateOptions) => {
     try {
-      return { ok: true as const, session: await ptySessions.create(options) };
+      const session = await ptySessions.create(options);
+      // the composer's task is the goal — show it as the subtitle instantly
+      contextSummarizer.seedFromTask(session.id, options.initialPrompt);
+      return { ok: true as const, session };
     } catch (err) {
       return {
         ok: false as const,

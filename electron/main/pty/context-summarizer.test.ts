@@ -1,13 +1,22 @@
 import { EventEmitter } from 'events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ContextSummarizer } from './context-summarizer';
+import {
+  ContextSummarizer,
+  buildContextInput,
+  provisionalSubtitle,
+} from './context-summarizer';
 import type { PtySessionManager } from './session-manager';
 
 class FakeManager extends EventEmitter {
   private text = new Map<string, string>();
+  tasks = new Map<string, string>();
 
   list() {
     return [{ id: 'a', exited: false, harness: 'claude' }];
+  }
+
+  initialTask(id: string) {
+    return this.tasks.get(id) ?? null;
   }
 
   buffer(id: string) {
@@ -143,5 +152,56 @@ describe('ContextSummarizer re-entry recaps', () => {
     await Promise.resolve();
 
     expect(events).toEqual([]);
+  });
+});
+
+describe('goal-oriented subtitles (D18)', () => {
+  it('orders stated task, session start, then tail — all fenced as data', () => {
+    const input = buildContextInput({
+      task: 'Release Apple Silicon support',
+      head: 'claude: what should I do?',
+      tail: 'fixing swifty beaver deployment target',
+    });
+    expect(input).toContain('overall goal');
+    const taskAt = input.indexOf('<stated-task>');
+    const headAt = input.indexOf('<session-start>');
+    const tailAt = input.indexOf('<untrusted-scrollback>');
+    expect(taskAt).toBeGreaterThan(-1);
+    expect(headAt).toBeGreaterThan(taskAt);
+    expect(tailAt).toBeGreaterThan(headAt);
+    expect(input).toContain('</untrusted-scrollback>');
+  });
+
+  it('omits empty sections', () => {
+    const input = buildContextInput({ task: null, head: '', tail: 'tail' });
+    expect(input).not.toContain('<stated-task>');
+    expect(input).not.toContain('<session-start>');
+    expect(input).toContain('<untrusted-scrollback>');
+  });
+
+  it('derives an instant provisional subtitle from the composer task', () => {
+    expect(provisionalSubtitle('Get Switcheroo ready for Apple Silicon.')).toBe(
+      'Get Switcheroo ready for Apple Silicon'
+    );
+    expect(provisionalSubtitle('  \n')).toBeNull();
+    const long = provisionalSubtitle(
+      'Please investigate why the SwiftyBeaver dependency fails to build on arm64 and land a durable fix'
+    );
+    expect(long).not.toBeNull();
+    expect(long!.length).toBeLessThanOrEqual(64);
+    expect(long!.endsWith('…')).toBe(true);
+    expect(long).not.toContain('  ');
+  });
+
+  it('seeds the subtitle from the task once, never overwriting a model summary', () => {
+    const service = new ContextSummarizer({ summarize: async () => null });
+    const events: Array<[string, string]> = [];
+    service.on('context', (id: string, summary: string) =>
+      events.push([id, summary])
+    );
+    service.seedFromTask('a', 'Adopt Apple Silicon');
+    service.seedFromTask('a', 'Different later task');
+    expect(events).toEqual([['a', 'Adopt Apple Silicon']]);
+    expect(service.getSummary('a')).toBe('Adopt Apple Silicon');
   });
 });
