@@ -128,13 +128,24 @@ async function openProject(page, dir) {
   await page.locator('[data-agent-composer]').waitFor();
 }
 
+/** the composer is summoned, not permanent (D18) — expand it if collapsed */
+async function summonComposer(page) {
+  const toggle = page.locator('[data-composer-toggle][aria-expanded="false"]');
+  if ((await toggle.count()) > 0) {
+    await toggle.click();
+  }
+  await page.locator('[data-agent-composer]').waitFor();
+}
+
 async function startAgent(page, source) {
+  await summonComposer(page);
   await page.getByLabel('Agent Source').click();
   await page.getByRole('option', { name: source }).click();
   await page.getByRole('button', { name: 'Start' }).click();
 }
 
 async function openShell(page) {
+  await summonComposer(page);
   await page.getByRole('button', { name: /Open shell in / }).click();
 }
 

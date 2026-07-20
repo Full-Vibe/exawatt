@@ -78,6 +78,14 @@ try {
   await page.locator('[data-agent-composer]').waitFor();
 
   for (let count = 1; count <= 4; count++) {
+    // the composer is summoned, not permanent (D18) — expand it if collapsed
+    const toggle = page.locator(
+      '[data-composer-toggle][aria-expanded="false"]'
+    );
+    if ((await toggle.count()) > 0) {
+      await toggle.click();
+      await page.locator('[data-agent-composer]').waitFor();
+    }
     await page.getByRole('button', { name: 'Start' }).click();
     const snapshot = await waitForSessionCount(page, count);
     console.log(
