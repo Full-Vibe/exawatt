@@ -121,17 +121,6 @@ body {
   color: var(--foreground);
 }
 
-/* The workspace toolbar contains two competing dense surfaces: live Session
-   context and the new-Agent composer. In compact desktop windows, secondary
-   tab summaries yield before the composer becomes unusable. The active
-   summary remains visible in the context bar, and every tab still exposes its
-   summary in its title. */
-@media (max-width: 95rem) {
-  [data-workspace-tab-strip] [data-subtitle] {
-    display: none;
-  }
-}
-
 /* Electron is pointer-first today, but the composer also runs through the
    hosted-compatible renderer boundary. Preserve its dense desktop geometry
    while giving coarse pointers the 44px targets expected of a primary action

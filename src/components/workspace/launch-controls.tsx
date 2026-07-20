@@ -3,6 +3,7 @@ import {
   GitBranch,
   LoaderCircle,
   Play,
+  Plus,
   Settings2,
   ShieldCheck,
   ShieldQuestion,
@@ -48,6 +49,7 @@ import type { AgentPermissionMode } from '@/types/electron';
 import {
   consumePendingAgentComposer,
   FOCUS_AGENT_COMPOSER_EVENT,
+  FOCUS_ACTIVE_TERMINAL_EVENT,
 } from './session-jump';
 
 function defaultBranch(): string {
@@ -105,6 +107,11 @@ export function AgentComposer({
   const [branch, setBranch] = useState(defaultBranch);
   const [roadmapItemId, setRoadmapItemId] = useState('');
   const [launching, setLaunching] = useState<'agent' | 'shell' | null>(null);
+  // D18: the composer is summoned, not permanent. The empty state keeps it
+  // inline (it IS the primary action there); with tabs open it collapses to
+  // one button and expands into an anchored panel with room to breathe.
+  const [open, setOpen] = useState(variant === 'empty');
+  const rootRef = useRef<HTMLDivElement>(null);
   const branchEditSeq = useRef(0);
   const permissionSaveSeq = useRef(0);
   const permissionSaveQueue = useRef(Promise.resolve());
@@ -189,6 +196,7 @@ export function AgentComposer({
           setSource(sourceOverride);
         }
       }
+      setOpen(true);
       requestAnimationFrame(() => taskRef.current?.focus());
     };
     const onFocus = (event: Event) => {
@@ -210,6 +218,26 @@ export function AgentComposer({
       setRoadmapItemId('');
     }
   }, [roadmapItems, roadmapItemId]);
+
+  // click-away collapses the anchored panel; Radix portals (select/popover
+  // content mounts on body) are INSIDE the interaction, not outside it
+  useEffect(() => {
+    if (variant !== 'compact' || !open) return;
+    const onDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (rootRef.current?.contains(target)) return;
+      if (
+        target.closest(
+          '[data-radix-popper-content-wrapper], [role="listbox"]'
+        )
+      )
+        return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [variant, open]);
 
   const persistPermissionMode = useCallback(
     async (nextSource: AgentSourceId, nextMode: AgentPermissionMode) => {
@@ -250,6 +278,7 @@ export function AgentComposer({
       setLaunching(null);
     }
     if (!ok) return;
+    if (variant === 'compact') setOpen(false);
     void rememberAgentSource(projectDir, effectiveSource);
     void persistPermissionMode(effectiveSource, permissionMode);
     setTask('');
@@ -280,9 +309,7 @@ export function AgentComposer({
         event.preventDefault();
         void launchAgent();
       }}
-      className={`flex min-w-0 items-stretch gap-1 ${
-        variant === 'empty' ? 'w-full max-w-2xl' : 'w-full max-w-3xl'
-      }`}
+      className="flex w-full min-w-0 flex-col gap-1.5"
     >
       <textarea
         ref={taskRef}
@@ -303,7 +330,7 @@ export function AgentComposer({
         }}
         placeholder="What should this Agent do?"
         aria-label="Initial task for the new Agent"
-        className="min-h-9 min-w-32 flex-1 resize-none rounded border bg-transparent px-3 py-2 font-mono text-xs leading-5 outline-none transition-colors placeholder:text-hud-text-dim/80 hover:border-hud-cyan/40 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+        className="max-h-40 min-h-9 w-full resize-none rounded border bg-transparent px-3 py-2 font-mono text-xs leading-5 outline-none transition-colors [field-sizing:content] placeholder:text-hud-text-dim/80 hover:border-hud-cyan/40 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
         style={{
           color: HUD.text,
           borderColor: 'rgba(80,230,255,0.24)',
@@ -311,6 +338,7 @@ export function AgentComposer({
         }}
       />
 
+      <div className="flex min-w-0 items-center gap-1">
       <Select
         value={effectiveSource}
         disabled={!preferencesReady || controlsDisabled}
@@ -448,7 +476,7 @@ export function AgentComposer({
           className="w-[min(22rem,calc(100vw-1.5rem))] border-hud-cyan/25 bg-hud-deep shadow-xl"
         >
           <SelectGroup>
-            <SelectLabel className="px-2 pb-1 pt-2 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-hud-text-dim">
+            <SelectLabel className="px-2 pb-1 pt-2 font-mono text-[11px] font-medium text-hud-text-dim">
               {sourceMeta.label} permissions
             </SelectLabel>
             {sourceMeta.capabilities.permissionModes
@@ -600,6 +628,7 @@ export function AgentComposer({
         </PopoverContent>
       </Popover>
 
+      <span className="flex-1" />
       <button
         type="submit"
         disabled={controlsDisabled || !preferencesReady || !branchReady}
@@ -642,6 +671,7 @@ export function AgentComposer({
           <SquareTerminal className="h-4 w-4" />
         )}
       </button>
+      </div>
       <span className="sr-only" aria-live="polite">
         {launching === 'agent'
           ? `Starting ${sourceMeta.label} with ${permissionMeta.label} permissions.`
@@ -654,7 +684,64 @@ export function AgentComposer({
     </form>
   );
 
-  if (variant === 'compact') return controls;
+  if (variant === 'compact') {
+    return (
+      <div ref={rootRef} data-agent-composer-root className="relative">
+        <button
+          type="button"
+          data-composer-toggle
+          aria-expanded={open}
+          aria-label={open ? 'Close the new Agent composer' : 'New Agent'}
+          title={
+            open
+              ? 'Close the new Agent composer'
+              : `Launch an Agent in ${projectName}`
+          }
+          onClick={() => {
+            if (open) {
+              setOpen(false);
+              return;
+            }
+            setOpen(true);
+            requestAnimationFrame(() => taskRef.current?.focus());
+          }}
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded border px-2.5 font-mono text-xs outline-none transition-[filter,transform] duration-150 hover:brightness-125 active:scale-[0.97] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+          style={{
+            color: open ? HUD.cyan : HUD.text,
+            borderColor: open ? `${HUD.cyan}66` : 'rgba(80,230,255,0.28)',
+            background: open ? 'rgba(25,230,255,0.08)' : 'transparent',
+          }}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          New Agent
+        </button>
+        {open && (
+          <div
+            data-agent-composer-panel
+            onKeyDown={event => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpen(false);
+                window.dispatchEvent(
+                  new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT)
+                );
+              }
+            }}
+            className="absolute right-0 top-full z-30 mt-2 w-[min(40rem,calc(100vw-2rem))] rounded-md border p-2 shadow-2xl"
+            style={{
+              background: HUD.bg.deep,
+              borderColor: 'rgba(80,230,255,0.28)',
+              boxShadow:
+                '0 18px 48px rgba(0,0,0,0.5), 0 0 24px rgba(25,230,255,0.06)',
+            }}
+          >
+            {controls}
+          </div>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="flex w-full flex-col items-center gap-4 px-6">
       <div className="text-center">
@@ -668,7 +755,7 @@ export function AgentComposer({
           No Agents running
         </p>
       </div>
-      {controls}
+      <div className="w-full max-w-2xl">{controls}</div>
     </div>
   );
 }

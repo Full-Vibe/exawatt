@@ -216,10 +216,15 @@ await page.addInitScript(
 try {
   await page.goto(`${BASE}/workspace`, { waitUntil: 'networkidle' });
   const chrome = page.locator('[data-workspace-chrome]');
-  const composer = page.locator('[data-agent-composer]');
   await chrome.waitFor();
-  await composer.waitFor();
   await page.locator('[data-project="cortex-ehr"]').waitFor();
+  // D18: the composer is summoned, not permanent — expand it for the panel
+  // geometry checks below
+  const composerToggle = page.locator('[data-composer-toggle]');
+  await composerToggle.waitFor();
+  await composerToggle.click();
+  const composer = page.locator('[data-agent-composer]');
+  await composer.waitFor();
 
   const results = [];
   for (const width of [800, 1024, 1312, 1400, 1600]) {
@@ -233,19 +238,29 @@ try {
 
     const metrics = await page.evaluate(() => {
       const chromeElement = document.querySelector('[data-workspace-chrome]');
-      const composerElement = document.querySelector('[data-agent-composer]');
+      const panelElement = document.querySelector(
+        '[data-agent-composer-panel]'
+      );
       const taskElement = document.querySelector(
         '[aria-label="Initial task for the new Agent"]'
       );
+      const sourceElement = document.querySelector(
+        '[aria-label="Agent Source"]'
+      );
+      const permissionElement = document.querySelector(
+        '[aria-label="Agent permissions"]'
+      );
       if (
         !(chromeElement instanceof HTMLElement) ||
-        !(composerElement instanceof HTMLElement) ||
-        !(taskElement instanceof HTMLTextAreaElement)
+        !(panelElement instanceof HTMLElement) ||
+        !(taskElement instanceof HTMLTextAreaElement) ||
+        !(sourceElement instanceof HTMLElement) ||
+        !(permissionElement instanceof HTMLElement)
       ) {
         throw new Error('Workspace chrome fixture did not render');
       }
       const chromeRect = chromeElement.getBoundingClientRect();
-      const composerRect = composerElement.getBoundingClientRect();
+      const panelRect = panelElement.getBoundingClientRect();
       const taskRect = taskElement.getBoundingClientRect();
       const subtitleElement = document.querySelector('[data-subtitle]');
       return {
@@ -255,18 +270,14 @@ try {
           width: chromeRect.width,
           scrollWidth: chromeElement.scrollWidth,
         },
-        composer: {
-          left: composerRect.left,
-          right: composerRect.right,
-          width: composerRect.width,
-          controls: Array.from(composerElement.children).map(element => {
-            const rect = element.getBoundingClientRect();
-            return {
-              label: element.getAttribute('aria-label') || element.tagName,
-              width: rect.width,
-            };
-          }),
+        panel: {
+          left: panelRect.left,
+          right: panelRect.right,
+          width: panelRect.width,
+          viewportWidth: window.innerWidth,
         },
+        sourceWidth: sourceElement.getBoundingClientRect().width,
+        permissionWidth: permissionElement.getBoundingClientRect().width,
         task: {
           width: taskRect.width,
           clientHeight: taskElement.clientHeight,
@@ -289,14 +300,14 @@ try {
       );
     }
     if (
-      metrics.composer.left < metrics.chrome.left ||
-      metrics.composer.right > metrics.chrome.right + 1
+      metrics.panel.left < 0 ||
+      metrics.panel.right > metrics.panel.viewportWidth + 1
     ) {
       throw new Error(
-        `Agent composer exceeds chrome at ${width}px: ${JSON.stringify(metrics)}`
+        `Composer panel exceeds the viewport at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
-    if (metrics.task.width < 240) {
+    if (metrics.task.width < 320) {
       throw new Error(
         `Agent task field is too narrow at ${width}px: ${JSON.stringify(metrics)}`
       );
@@ -306,31 +317,21 @@ try {
         `Agent task placeholder is clipped at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
-    const sourceWidth =
-      metrics.composer.controls.find(
-        control => control.label === 'Agent Source'
-      )?.width ?? 0;
-    if (sourceWidth < 147) {
+    if (metrics.sourceWidth < 147) {
       throw new Error(
         `Agent Source collapsed at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
-    const permissionWidth =
-      metrics.composer.controls.find(
-        control => control.label === 'Agent permissions'
-      )?.width ?? 0;
-    if (permissionWidth < 79) {
+    if (metrics.permissionWidth < 79) {
       throw new Error(
         `Agent permission policy collapsed at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
-    const compact = width <= 1520;
-    if (
-      (compact && metrics.subtitleDisplay !== 'none') ||
-      (!compact && metrics.subtitleDisplay === 'none')
-    ) {
+    // subtitles no longer yield to the composer: the strip owns its row and
+    // the panel floats above it (D18)
+    if (metrics.subtitleDisplay === 'none') {
       throw new Error(
-        `Session subtitle priority is wrong at ${width}px: ${JSON.stringify(metrics)}`
+        `Session subtitle hidden at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
     results.push({ width, metrics });
