@@ -30,3 +30,19 @@ export const HARNESS_META: Record<PtyHarness, HarnessMeta> = {
 
 /** derived from the registry — declaration order IS display order */
 export const HARNESS_ORDER = Object.keys(HARNESS_META) as PtyHarness[];
+
+/** Is this title just the harness's own name (never renamed by the operator)?
+ *  The harness glyph already carries source identity, so a default title is
+ *  pure redundancy once a goal subtitle exists (operator, D18 follow-up) —
+ *  chrome hides it then. Tolerates the raw harness id ('codex') that older
+ *  persisted tabs carried as their fallback title. */
+export function isDefaultHarnessTitle(
+  harness: PtyHarness,
+  title: string
+): boolean {
+  const normalized = title.trim().toLowerCase();
+  return (
+    normalized === HARNESS_META[harness].label.toLowerCase() ||
+    normalized === harness
+  );
+}

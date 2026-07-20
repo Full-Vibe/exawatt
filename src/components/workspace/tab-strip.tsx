@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import { HUD } from '@/components/hud';
 import { PROJECT_PALETTE } from './project-colors';
 import { HarnessGlyph } from './harness-icons';
+import { isDefaultHarnessTitle } from './harnesses';
 import { tabIsLive } from './use-workspace-state';
 import {
   RENAME_ACTIVE_EVENT,
@@ -395,7 +396,14 @@ export function TabStrip({
                       </>
                     ) : (
                       <span className="flex max-w-60 flex-col items-start">
-                        <span className="leading-tight">{t.title}</span>
+                        {/* an unrenamed harness title duplicates the glyph —
+                            once a goal subtitle exists it carries the tab
+                            (D18 follow-up); renames always show */}
+                        {!(
+                          summary &&
+                          !dead &&
+                          isDefaultHarnessTitle(t.harness, t.title)
+                        ) && <span className="leading-tight">{t.title}</span>}
                         {summary && !dead && (
                           <span
                             data-subtitle

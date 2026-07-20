@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HUD } from '@/components/hud';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import { HarnessGlyph } from './harness-icons';
+import { isDefaultHarnessTitle } from './harnesses';
 import { previewLines } from './scrollback-preview';
 import { tabIsLive } from './use-workspace-state';
 import type { Project } from './use-workspace-state';
@@ -348,9 +349,14 @@ export function ExposeOverlay({
               <HarnessGlyph harness={tile.harness} size={11} />
             </span>
           )}
-          <span className="truncate" style={{ color: HUD.text }}>
-            {tile.title}
-          </span>
+          {/* an unrenamed harness title duplicates the glyph — with a goal
+              subtitle below it, the tile header keeps only the glyph (D18
+              follow-up); the accessible name retains the full title */}
+          {!(subtitle && isDefaultHarnessTitle(tile.harness, tile.title)) && (
+            <span className="truncate" style={{ color: HUD.text }}>
+              {tile.title}
+            </span>
+          )}
           {tile.stateLabel && (
             <span
               data-expose-state={tile.stateLabel}
