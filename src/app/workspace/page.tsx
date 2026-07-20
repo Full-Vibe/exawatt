@@ -15,9 +15,14 @@ export default function WorkspacePage() {
       <Suspense
         fallback={
           <div
-            className="h-full bg-[#04060b]"
+            className="flex h-full items-center justify-center bg-[#04060b]"
+            role="status"
             aria-label="Loading terminal workspace"
-          />
+          >
+            <p className="animate-pulse font-mono text-xs text-zinc-500">
+              Loading workspace…
+            </p>
+          </div>
         }
       >
         <WorkspaceClient />
