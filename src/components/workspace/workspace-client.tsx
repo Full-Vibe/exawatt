@@ -29,7 +29,7 @@ import { TabStrip } from './tab-strip';
 import { AgentComposer } from './launch-controls';
 import { ProjectOpener } from './project-opener';
 import { ExposeOverlay } from './expose-overlay';
-import { ReentryRecapCard } from './reentry-recap';
+import { ReentryRecapLine } from './reentry-recap';
 import {
   useWorkspaceState,
   tabCanResumeAsAgent,
@@ -858,16 +858,24 @@ export function WorkspaceClient() {
                       activeItemChip.item.title}
                   </button>
                 )}
-                {activeTab.sessionId && summaries[activeTab.sessionId] && (
-                  <span
-                    className="line-clamp-2 min-w-0 flex-1 border-l pl-3 text-sm leading-5"
-                    style={{
-                      color: HUD.textDim,
-                      borderColor: 'rgba(138,160,190,0.18)',
-                    }}
-                  >
-                    {summaries[activeTab.sessionId]}
-                  </span>
+                {reentryRecap && activeTab.sessionId === reentryRecap.id ? (
+                  <ReentryRecapLine
+                    recap={reentryRecap}
+                    onExpire={dismissReentryRecap}
+                  />
+                ) : (
+                  activeTab.sessionId &&
+                  summaries[activeTab.sessionId] && (
+                    <span
+                      className="line-clamp-2 min-w-0 flex-1 border-l pl-3 text-sm leading-5"
+                      style={{
+                        color: HUD.textDim,
+                        borderColor: 'rgba(138,160,190,0.18)',
+                      }}
+                    >
+                      {summaries[activeTab.sessionId]}
+                    </span>
+                  )
                 )}
                 <button
                   type="button"
@@ -919,14 +927,6 @@ export function WorkspaceClient() {
                 overviewOpen ? 'scale-[0.975] opacity-35' : ''
               }`}
             >
-              {reentryRecap && activeTab?.sessionId === reentryRecap.id && (
-                <ReentryRecapCard
-                  recap={reentryRecap}
-                  title={activeTab.title}
-                  context={summaries[reentryRecap.id]}
-                  onDismiss={dismissReentryRecap}
-                />
-              )}
               {!activeProject ? (
                 <div className="flex h-full flex-col items-center justify-center gap-4">
                   <button

@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-import { ReentryRecapCard } from './reentry-recap';
+import { render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ReentryRecapLine } from './reentry-recap';
 
 const recap = {
   id: 'pty-1',
@@ -9,43 +9,43 @@ const recap = {
   generatedAt: 1,
 };
 
-describe('ReentryRecapCard', () => {
-  it('shows the current thread and change summary', () => {
-    render(
-      <ReentryRecapCard
-        recap={recap}
-        title="Auth migration"
-        context="validating database rollback"
-        onDismiss={() => {}}
-      />
-    );
-    expect(screen.getByText('While you were away')).toBeInTheDocument();
-    expect(screen.getByText('Auth migration')).toBeInTheDocument();
-    expect(screen.getByText('validating database rollback')).toBeInTheDocument();
-    expect(screen.getByText(recap.text)).toBeInTheDocument();
+describe('ReentryRecapLine', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
   });
 
-  it('dismisses on a keystroke without consuming it', () => {
-    const onDismiss = vi.fn();
-    render(
-      <ReentryRecapCard recap={recap} title="Auth" onDismiss={onDismiss} />
-    );
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('renders the delta ambiently with a polite live region', () => {
+    render(<ReentryRecapLine recap={recap} onExpire={() => {}} />);
+    const line = screen.getByRole('status');
+    expect(line).toHaveTextContent('since you left');
+    expect(line).toHaveTextContent(recap.text);
+    // ambient means chrome, not overlay: no dismiss affordance exists
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('expires on a keystroke without consuming it', () => {
+    const onExpire = vi.fn();
+    render(<ReentryRecapLine recap={recap} onExpire={onExpire} />);
     const event = new KeyboardEvent('keydown', {
       key: 'a',
       bubbles: true,
       cancelable: true,
     });
     window.dispatchEvent(event);
-    expect(onDismiss).toHaveBeenCalledOnce();
+    expect(onExpire).toHaveBeenCalledOnce();
     expect(event.defaultPrevented).toBe(false);
   });
 
-  it('provides an icon button to dismiss explicitly', () => {
-    const onDismiss = vi.fn();
-    render(
-      <ReentryRecapCard recap={recap} title="Auth" onDismiss={onDismiss} />
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss recap' }));
-    expect(onDismiss).toHaveBeenCalledOnce();
+  it('expires on its own after the ambient window', () => {
+    const onExpire = vi.fn();
+    render(<ReentryRecapLine recap={recap} onExpire={onExpire} />);
+    vi.advanceTimersByTime(44_000);
+    expect(onExpire).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(2_000);
+    expect(onExpire).toHaveBeenCalledOnce();
   });
 });

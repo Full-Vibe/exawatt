@@ -1,74 +1,64 @@
 'use client';
 
 import { useEffect } from 'react';
-import { History, X } from 'lucide-react';
+import { History } from 'lucide-react';
 import type { PtyReentryRecap } from '@/types/electron';
 import { HUD } from '@/components/hud';
 
-export function ReentryRecapCard({
+/** How long the ambient recap line stays before yielding back to the
+ *  ordinary micro-context summary. */
+const RECAP_LINE_MS = 45_000;
+
+/**
+ * Ambient re-entry recap (ENG-015 S4, reshaped by ENG-016 D18). The first
+ * S4 slice floated a dismissible card over the terminal — dogfood rejected
+ * it: it landed seconds after the operator had already started reading and
+ * demanded a dismissal. The recap now lives INLINE in the context bar where
+ * the micro-context summary normally sits: nothing covers the terminal,
+ * nothing needs dismissing, and it expires on its own (or on the next real
+ * keystroke, which makes it stale by definition).
+ */
+export function ReentryRecapLine({
   recap,
-  title,
-  context,
-  onDismiss,
+  onExpire,
 }: {
   recap: PtyReentryRecap;
-  title: string;
-  context?: string;
-  onDismiss: () => void;
+  onExpire: () => void;
 }) {
   useEffect(() => {
-    const dismissOnInput = () => onDismiss();
-    window.addEventListener('keydown', dismissOnInput, { capture: true });
-    return () =>
-      window.removeEventListener('keydown', dismissOnInput, { capture: true });
-  }, [onDismiss]);
+    const timer = setTimeout(onExpire, RECAP_LINE_MS);
+    // typing means the operator re-engaged — the "what changed" answer is
+    // consumed; never swallow the keystroke itself
+    const expireOnInput = () => onExpire();
+    window.addEventListener('keydown', expireOnInput, { capture: true });
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('keydown', expireOnInput, { capture: true });
+    };
+  }, [onExpire, recap.generatedAt]);
 
   return (
-    <section
+    <span
       data-reentry-recap
       role="status"
       aria-live="polite"
-      className="pointer-events-none absolute left-1/2 top-4 z-20 w-[min(34rem,calc(100%-2rem))] -translate-x-1/2 rounded border px-4 py-3 shadow-2xl"
-      style={{
-        color: HUD.text,
-        borderColor: 'rgba(25,230,255,0.38)',
-        background: 'rgba(7,11,20,0.96)',
-        boxShadow: '0 18px 48px rgba(0,0,0,0.48), 0 0 24px rgba(25,230,255,0.08)',
-      }}
+      className="flex min-w-0 flex-1 items-baseline gap-1.5 border-l pl-3 text-sm leading-5"
+      style={{ borderColor: 'rgba(25,230,255,0.28)' }}
     >
-      <div className="flex items-start gap-3">
-        <History
-          aria-hidden="true"
-          className="mt-0.5 h-4 w-4 shrink-0"
-          style={{ color: HUD.cyan }}
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <h2 className="font-display text-sm font-semibold">While you were away</h2>
-            <span className="truncate font-mono text-[11px]" style={{ color: HUD.textDim }}>
-              {title}
-            </span>
-          </div>
-          {context && (
-            <p className="mt-1 line-clamp-2 text-sm leading-5" style={{ color: HUD.textMono }}>
-              {context}
-            </p>
-          )}
-          <p className="mt-1.5 text-sm leading-5" style={{ color: HUD.text }}>
-            {recap.text}
-          </p>
-        </div>
-        <button
-          type="button"
-          title="Dismiss recap"
-          aria-label="Dismiss recap"
-          onClick={onDismiss}
-          className="pointer-events-auto -mr-1 -mt-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded outline-none transition-colors hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
-          style={{ color: HUD.textDim }}
-        >
-          <X aria-hidden="true" className="h-4 w-4" />
-        </button>
-      </div>
-    </section>
+      <History
+        aria-hidden="true"
+        className="h-3.5 w-3.5 shrink-0 self-center"
+        style={{ color: HUD.cyan }}
+      />
+      <span
+        className="shrink-0 font-mono text-[11px]"
+        style={{ color: HUD.cyan }}
+      >
+        since you left
+      </span>
+      <span className="line-clamp-2 min-w-0" style={{ color: HUD.text }}>
+        {recap.text}
+      </span>
+    </span>
   );
 }
