@@ -125,7 +125,12 @@ async function openProject(page, dir) {
       new CustomEvent('exawatt:open-project', { detail: projectDir })
     );
   }, dir);
-  await page.locator('[data-agent-composer]').waitFor();
+  // empty projects render the inline composer; projects with restored tabs
+  // render the collapsed summon button (D18)
+  await page
+    .locator('[data-agent-composer], [data-composer-toggle]')
+    .first()
+    .waitFor();
 }
 
 /** the composer is summoned, not permanent (D18) — expand it if collapsed */
@@ -134,7 +139,12 @@ async function summonComposer(page) {
   if ((await toggle.count()) > 0) {
     await toggle.click();
   }
-  await page.locator('[data-agent-composer]').waitFor();
+  // empty projects render the inline composer; projects with restored tabs
+  // render the collapsed summon button (D18)
+  await page
+    .locator('[data-agent-composer], [data-composer-toggle]')
+    .first()
+    .waitFor();
 }
 
 async function startAgent(page, source) {
