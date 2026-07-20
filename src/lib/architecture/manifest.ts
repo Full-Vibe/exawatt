@@ -655,7 +655,7 @@ export const architectureManifest = {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
-            'Immediate milestone-driven launch frame, versioned local renderer with warm prestart, main-process PKCE OAuth over Electron-native networking with canonical renderer-cookie persistence and redacted diagnostics, serialized workspace/history durability, bounded provider discovery and renderer caching, verified two-commit Session shutdown, strict Developer ID-gated local installs, plus signed automatic updates.',
+            'Immediate launch frame, versioned local renderer with warm prestart, native-network PKCE, serialized workspace/history, bounded provider discovery, verified two-commit Session shutdown, immutable Developer-ID-gated local delivery with atomic rollback, and signed automatic updates.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 75,

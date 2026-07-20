@@ -2,7 +2,7 @@
 # 0009 Deliver signed desktop updates through a public artifact channel
 
 Date: 2026-07-10
-Status: accepted; amended 2026-07-19
+Status: accepted; amended 2026-07-20
 
 ## Context
 
@@ -60,11 +60,31 @@ never silently restart it while sessions are live.
   rather than silently install an identity-unstable fallback. Private signing
   material stays outside the repository and logs. The noninteractive local
   source is a valid Developer ID Application identity in the macOS Keychain.
-  Exactly one such identity is selected automatically; an ambiguous Keychain
-  requires an exact SHA-1 fingerprint through a process environment override.
-  The build signs archived native renderer code before electron-builder signs
-  nested helpers and the enclosing app. A strict identity evaluator gates both
-  smoke testing and the atomic install swap.
+  The public Exawatt Team Identifier is pinned in the delivery policy; only a
+  Developer ID Application identity from that Team is eligible. Exactly one
+  eligible identity is selected automatically; multiple eligible identities
+  require an exact SHA-1 fingerprint through a process environment override.
+  A certificate for another Team is never accepted merely because it is the
+  only Developer ID identity available. The transaction resolves the eligible
+  identity once and pins its fingerprint into the detached build, so a Keychain
+  change cannot switch signers mid-delivery. The build signs archived native
+  renderer code before electron-builder signs nested helpers and the enclosing
+  app. A strict identity evaluator requires the program and Team identifiers,
+  code-directory hash, secure timestamp, hardened runtime, nested code, and
+  archived native code before smoke testing or installation.
+- AMENDED 2026-07-20: local dogfood delivery is one recoverable transaction,
+  not a build followed by unrelated copy commands. It captures one clean
+  committed source SHA, builds it in a detached immutable git worktree, embeds
+  that SHA, and rechecks the source checkout before installation. A
+  repository-scoped lock coordinates `agent:land` with manual installers so
+  the shared `master` checkout and remote integration cannot advance during an
+  active delivery; a target-scoped lock also protects the global installed app
+  from separate clones. Existing installs are replaced with macOS's atomic
+  same-volume `RENAME_SWAP`, leaving the previous bundle at the transaction
+  path until the new installed bundle passes strict verification. Startup
+  recovery deterministically keeps, restores, or completes the one verified
+  bundle after interruption. Unsigned legacy apps may migrate once, but an
+  uninspectable app or stable signer mismatch is left untouched.
 - The first release target is arm64, matching the operator's current Mac and
   the project's build-one-mile rule. Intel/universal artifacts are added before
   supporting Intel customers rather than blocking current dogfood activation.
@@ -108,6 +128,10 @@ the bundle.
 - Local dogfood refreshes preserve one Exawatt code identity for tools such as
   Little Snitch without importing, weakening, or modifying user firewall rules.
   Harness executables retain their own identities and policy boundaries.
+- Concurrent agent closeout cannot mix source revisions or mutate the shared
+  checkout under a running build. A failed build, signature check, swap, or
+  post-swap verification retains a verified prior app or a recoverable rollback
+  object; it never installs a partially copied bundle.
 - ENG-018 coordinates explicit checkpoint, process stop, update install, and
   logical Session rehydration. PTYs remain inside the app process (decision
   `0012`).

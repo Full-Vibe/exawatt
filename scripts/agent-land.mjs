@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { acquireDeliveryLock } from './lib/delivery-lock.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -76,9 +77,13 @@ async function git(cwd, ...args) {
   return execute('git', args, cwd);
 }
 
-async function run(command, args, cwd) {
+async function run(command, args, cwd, env = {}) {
   await new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: 'inherit' });
+    const child = spawn(command, args, {
+      cwd,
+      stdio: 'inherit',
+      env: { ...process.env, ...env },
+    });
     child.once('error', reject);
     child.once('exit', code =>
       code === 0
@@ -148,41 +153,63 @@ async function main() {
   }
 
   const head = await git(root, 'rev-parse', 'HEAD');
-  console.log(`[agent-land] push: ${branch}`);
-  await run('git', ['push', '-u', 'origin', branch], root);
-
-  console.log('[agent-land] integrate: fast-forward origin/master');
-  await run('git', ['push', 'origin', 'HEAD:refs/heads/master'], root);
-  await run('git', ['fetch', 'origin', 'master'], root);
-  if (!(await isAncestor(root, head, 'origin/master'))) {
-    throw new Error('The landed commit is not reachable from origin/master.');
-  }
-
   const worktrees = parseWorktrees(
     await git(root, 'worktree', 'list', '--porcelain')
   );
   const master = worktrees.find(entry => entry.branch === 'refs/heads/master');
   if (!master?.worktree) {
     throw new Error(
-      'No local master worktree was found. Remote integration succeeded, but local master could not be synchronized.'
+      'No local master worktree was found. The agent branch was not pushed or integrated.'
     );
   }
 
-  await requireClean(master.worktree, 'Shared master worktree');
-  await run('git', ['merge', '--ff-only', 'origin/master'], master.worktree);
-  const masterHead = await git(master.worktree, 'rev-parse', 'HEAD');
-  const remoteHead = await git(root, 'rev-parse', 'origin/master');
-  if (masterHead !== remoteHead) {
-    throw new Error(
-      'Local master does not match origin/master after integration.'
-    );
-  }
+  console.log(`[agent-land] push: ${branch}`);
+  await run('git', ['push', '-u', 'origin', branch], root);
 
+  const deliveryLock = await acquireDeliveryLock(root);
+  let remoteHead;
   let installed = false;
-  if (options.dogfood) {
-    console.log('[agent-land] install: Electron dogfood');
-    await run('pnpm', ['run', 'electron:install-dogfood'], master.worktree);
-    installed = true;
+  try {
+    await run('git', ['fetch', 'origin', 'master'], root);
+    if (!(await isAncestor(root, 'origin/master', 'HEAD'))) {
+      throw new Error(
+        'origin/master moved while this delivery was waiting. Rebase this agent branch, rerun verification, and land again.'
+      );
+    }
+
+    await requireClean(master.worktree, 'Shared master worktree');
+    const currentMasterHead = await git(master.worktree, 'rev-parse', 'HEAD');
+    if (!(await isAncestor(root, currentMasterHead, 'HEAD'))) {
+      throw new Error(
+        'Shared master contains work outside this agent branch. Synchronize it before landing.'
+      );
+    }
+
+    console.log('[agent-land] integrate: fast-forward origin/master');
+    await run('git', ['push', 'origin', 'HEAD:refs/heads/master'], root);
+    await run('git', ['fetch', 'origin', 'master'], root);
+    if (!(await isAncestor(root, head, 'origin/master'))) {
+      throw new Error('The landed commit is not reachable from origin/master.');
+    }
+
+    await run('git', ['merge', '--ff-only', 'origin/master'], master.worktree);
+    const masterHead = await git(master.worktree, 'rev-parse', 'HEAD');
+    remoteHead = await git(root, 'rev-parse', 'origin/master');
+    if (masterHead !== remoteHead) {
+      throw new Error(
+        'Local master does not match origin/master after integration.'
+      );
+    }
+
+    if (options.dogfood) {
+      console.log('[agent-land] install: Electron dogfood');
+      await run('pnpm', ['run', 'electron:install-dogfood'], master.worktree, {
+        EXAWATT_MASTER_DELIVERY_LOCK_TOKEN: deliveryLock.token,
+      });
+      installed = true;
+    }
+  } finally {
+    await deliveryLock.release();
   }
 
   if (!options.keepBranch) {

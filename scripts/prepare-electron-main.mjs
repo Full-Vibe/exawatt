@@ -34,7 +34,10 @@ async function resolvePackageManifest(name, localRequire) {
   }
 }
 
-async function stagePackage(name, resolveFrom = path.join(root, 'package.json')) {
+async function stagePackage(
+  name,
+  resolveFrom = path.join(root, 'package.json')
+) {
   if (staged.has(name)) return;
   staged.add(name);
   const localRequire = createRequire(resolveFrom);
@@ -54,25 +57,34 @@ await stagePackage('electron-updater');
 await stagePackage('@supabase/ssr');
 await stagePackage('@supabase/supabase-js');
 
-const { stdout: shaOutput } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
-  cwd: root,
-});
+const { stdout: shaOutput } = await execFileAsync(
+  'git',
+  ['rev-parse', 'HEAD'],
+  {
+    cwd: root,
+  }
+);
 const { stdout: branchOutput } = await execFileAsync(
   'git',
   ['branch', '--show-current'],
   { cwd: root }
 );
+const actualSha = shaOutput.trim();
+const expectedSha = process.env.EXAWATT_BUILD_SOURCE_SHA;
+if (expectedSha && actualSha !== expectedSha) {
+  throw new Error(
+    `Immutable build snapshot moved from ${expectedSha} to ${actualSha}.`
+  );
+}
 await writeFile(
   path.join(root, 'dist-electron', 'build-info.json'),
   `${JSON.stringify(
     {
-      sha: shaOutput.trim(),
-      branch: branchOutput.trim(),
+      sha: actualSha,
+      branch: process.env.EXAWATT_BUILD_SOURCE_BRANCH ?? branchOutput.trim(),
       builtAt: new Date().toISOString(),
       delivery:
-        process.env.EXAWATT_RELEASE_CHANNEL === 'signed'
-          ? 'signed'
-          : 'dogfood',
+        process.env.EXAWATT_RELEASE_CHANNEL === 'signed' ? 'signed' : 'dogfood',
     },
     null,
     2

@@ -177,9 +177,16 @@ Built:
 - serialized workspace persistence and bounded terminal-history snapshots with
   append journals; steady-state disk work scales with new terminal output and
   compacts without exposing partial state
-- self-contained Electron packaging, Developer-ID-signed and strict-verified
-  atomic clean-master dogfood installation, deep terminal fundamentals, and
-  opt-in native attention notifications;
+- self-contained Electron packaging and transactional local delivery. Dogfood
+  builds run from a detached snapshot of one committed clean-`master` SHA while
+  a repository-scoped delivery lock prevents another agent from advancing the
+  shared checkout. A second install-target lock serializes separate clones.
+  The expected Exawatt Developer ID Team, secure timestamp, hardened runtime,
+  main identifier, nested helpers, and archived native code are strict-verified
+  before a same-volume atomic app exchange; the previous bundle remains the
+  rollback object until post-swap verification succeeds, and the next run can
+  recover any interrupted transaction. The running app is never restarted;
+- deep terminal fundamentals and opt-in native attention notifications;
   immediate measured startup feedback backed by real bootstrap milestones,
   deferred command-module loading, warm renderer prestart, and bounded renderer
   cache retention;

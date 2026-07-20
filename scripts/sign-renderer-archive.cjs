@@ -89,13 +89,7 @@ module.exports = async function signRendererArchive(context) {
     }
 
     for (const binary of binaries) {
-      const args = ['--force', '--options', 'runtime'];
-      if (
-        identity !== '-' &&
-        process.env.EXAWATT_RENDERER_SIGN_TIMESTAMP !== 'false'
-      ) {
-        args.push('--timestamp');
-      }
+      const args = ['--force', '--options', 'runtime', '--timestamp'];
       args.push('--sign', identity);
       if (signingInfo.keychainFile) {
         args.push('--keychain', signingInfo.keychainFile);

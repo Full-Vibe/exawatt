@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 import { parseArgs, parseWorktrees } from './agent-land.mjs';
+import { acquireDeliveryLock } from './lib/delivery-lock.mjs';
 
 const execFileAsync = promisify(execFile);
 const script = fileURLToPath(new URL('./agent-land.mjs', import.meta.url));
@@ -19,6 +20,37 @@ async function command(commandName, args, cwd) {
 
 async function git(cwd, ...args) {
   return command('git', args, cwd);
+}
+
+function runStreaming(commandName, args, cwd) {
+  let output = '';
+  const child = spawn(commandName, args, { cwd });
+  child.stdout.on('data', chunk => {
+    output += chunk;
+  });
+  child.stderr.on('data', chunk => {
+    output += chunk;
+  });
+  return {
+    output: () => output,
+    completion: new Promise((resolve, reject) => {
+      child.once('error', reject);
+      child.once('exit', code => {
+        if (code === 0) resolve(output);
+        else reject(new Error(`command exited ${code}:\n${output}`));
+      });
+    }),
+  };
+}
+
+async function waitFor(predicate, timeoutMs = 5_000) {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error('Timed out waiting for child process output.');
+    }
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
 }
 
 test('parses repeated verification and delivery options', () => {
@@ -57,6 +89,7 @@ test('lands a verified agent branch through a remote fast-forward', async () => 
   const remote = path.join(directory, 'remote.git');
   const main = path.join(directory, 'main');
   const agent = path.join(directory, 'agent');
+  let deliveryLock;
 
   try {
     await git(directory, 'init', '--bare', '--initial-branch=master', remote);
@@ -83,12 +116,32 @@ test('lands a verified agent branch through a remote fast-forward', async () => 
     await git(agent, 'add', 'change.txt');
     await git(agent, 'commit', '-m', 'Test change');
     const expected = await git(agent, 'rev-parse', 'HEAD');
+    const initial = await git(main, 'rev-parse', 'HEAD');
 
-    const output = await command(
+    deliveryLock = await acquireDeliveryLock(main, { log() {} });
+    const landing = runStreaming(
       process.execPath,
       [script, '--verify', 'verify-ok'],
       agent
     );
+    await waitFor(() =>
+      landing
+        .output()
+        .includes('waiting for the active master delivery transaction')
+    );
+    assert.equal(
+      await git(main, 'rev-parse', 'HEAD'),
+      initial,
+      'shared master must not move while another delivery owns the lock'
+    );
+    assert.equal(
+      await git(main, 'rev-parse', 'origin/master'),
+      initial,
+      'remote master must not move while another delivery owns the lock'
+    );
+    await deliveryLock.release();
+    deliveryLock = null;
+    const output = await landing.completion;
 
     assert.match(output, /pushed=true/);
     assert.match(output, /installed=not-requested/);
@@ -107,6 +160,7 @@ test('lands a verified agent branch through a remote fast-forward', async () => 
       'landed\n'
     );
   } finally {
+    await deliveryLock?.release();
     await rm(directory, { recursive: true, force: true });
   }
 });

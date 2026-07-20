@@ -2,7 +2,11 @@
 // Generated for the public repository by the "public-dogfood-tooling" recipe.
 
 import path from 'node:path';
-import { evaluateAppCodeIdentity } from './lib/macos-code-signing.mjs';
+import {
+  EXPECTED_DOGFOOD_IDENTIFIER,
+  EXPECTED_DOGFOOD_TEAM_IDENTIFIER,
+  evaluateAppCodeIdentity,
+} from './lib/macos-code-signing.mjs';
 
 const appPath =
   process.argv[2] ??
@@ -11,8 +15,10 @@ const appPath =
 
 const result = await evaluateAppCodeIdentity(appPath, {
   expectedIdentifier:
-    process.env.EXAWATT_EXPECTED_APP_IDENTIFIER ?? 'com.exawatt.app',
-  expectedTeamIdentifier: process.env.EXAWATT_EXPECTED_TEAM_IDENTIFIER,
+    process.env.EXAWATT_EXPECTED_APP_IDENTIFIER ?? EXPECTED_DOGFOOD_IDENTIFIER,
+  expectedTeamIdentifier:
+    process.env.EXAWATT_EXPECTED_TEAM_IDENTIFIER ??
+    EXPECTED_DOGFOOD_TEAM_IDENTIFIER,
 });
 
 console.log(

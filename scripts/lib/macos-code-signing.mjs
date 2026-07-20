@@ -7,6 +7,8 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const developerIdPrefix = 'Developer ID Application:';
+export const EXPECTED_DOGFOOD_IDENTIFIER = 'com.exawatt.app';
+export const EXPECTED_DOGFOOD_TEAM_IDENTIFIER = '5G5A77XLHZ';
 
 export function parseCodeSigningIdentities(output) {
   return output
@@ -26,9 +28,17 @@ export function teamIdentifierFromIdentityName(name) {
   return name.match(/\(([A-Z0-9]{10})\)\s*$/)?.[1] ?? null;
 }
 
-export function selectDeveloperIdIdentity(identities, requestedFingerprint) {
+export function selectDeveloperIdIdentity(
+  identities,
+  requestedFingerprint,
+  expectedTeamIdentifier = EXPECTED_DOGFOOD_TEAM_IDENTIFIER
+) {
   const candidates = identities.filter(identity =>
     identity.name.startsWith(developerIdPrefix)
+  );
+  const expectedCandidates = candidates.filter(
+    identity =>
+      teamIdentifierFromIdentityName(identity.name) === expectedTeamIdentifier
   );
 
   if (requestedFingerprint) {
@@ -47,20 +57,28 @@ export function selectDeveloperIdIdentity(identities, requestedFingerprint) {
         'EXAWATT_DOGFOOD_SIGN_IDENTITY does not match a valid Developer ID Application identity in the current Keychain.'
       );
     }
+    const selectedTeamIdentifier = teamIdentifierFromIdentityName(
+      selected.name
+    );
+    if (selectedTeamIdentifier !== expectedTeamIdentifier) {
+      throw new Error(
+        `EXAWATT_DOGFOOD_SIGN_IDENTITY belongs to Team ${selectedTeamIdentifier ?? '(unknown)'}; Exawatt dogfood builds require Team ${expectedTeamIdentifier}.`
+      );
+    }
     return selected;
   }
 
-  if (candidates.length === 0) {
+  if (expectedCandidates.length === 0) {
     throw new Error(
-      'No valid Developer ID Application identity is available. Import the existing Exawatt Developer ID certificate and private key into the login Keychain, then rerun the dogfood install.'
+      `No valid Developer ID Application identity for Exawatt Team ${expectedTeamIdentifier} is available. Import the existing Exawatt Developer ID certificate and private key into the login Keychain, then rerun the dogfood install.`
     );
   }
-  if (candidates.length > 1) {
+  if (expectedCandidates.length > 1) {
     throw new Error(
-      'Multiple Developer ID Application identities are available. Set EXAWATT_DOGFOOD_SIGN_IDENTITY to the exact 40-character SHA-1 fingerprint returned by `security find-identity -v -p codesigning`.'
+      `Multiple Developer ID Application identities for Exawatt Team ${expectedTeamIdentifier} are available. Set EXAWATT_DOGFOOD_SIGN_IDENTITY to the exact 40-character SHA-1 fingerprint returned by \`security find-identity -v -p codesigning\`.`
     );
   }
-  return candidates[0];
+  return expectedCandidates[0];
 }
 
 export async function resolveDeveloperIdIdentity({
@@ -77,7 +95,8 @@ export async function resolveDeveloperIdIdentity({
   ]);
   return selectDeveloperIdIdentity(
     parseCodeSigningIdentities(stdout),
-    requestedFingerprint
+    requestedFingerprint,
+    EXPECTED_DOGFOOD_TEAM_IDENTIFIER
   );
 }
 
@@ -97,6 +116,8 @@ export function parseCodesignDetails(output) {
     teamIdentifier: values.get('TeamIdentifier') ?? null,
     signature: values.get('Signature') ?? null,
     cdHash: values.get('CDHash') ?? null,
+    timestamp: values.get('Timestamp') ?? null,
+    runtimeVersion: values.get('Runtime Version') ?? null,
     authorities,
   };
 }
@@ -118,6 +139,15 @@ export function assertStableDeveloperIdSignature(
     signature.teamIdentifier.toLowerCase() === 'not set'
   ) {
     throw new Error(`${label} has no stable Team Identifier.`);
+  }
+  if (!signature.cdHash) {
+    throw new Error(`${label} has no code-directory hash.`);
+  }
+  if (!signature.timestamp) {
+    throw new Error(`${label} has no secure signing timestamp.`);
+  }
+  if (!signature.runtimeVersion) {
+    throw new Error(`${label} is not signed with hardened-runtime options.`);
   }
   if (
     expectedTeamIdentifier &&
@@ -147,10 +177,19 @@ async function codesignDetails(codePath) {
       { maxBuffer: 1024 * 1024 }
     );
     return parseCodesignDetails(stderr);
-  } catch {
-    throw new Error(
+  } catch (cause) {
+    const error = new Error(
       `${codePath} is unsigned or its signature cannot be inspected.`
     );
+    if (
+      /code object is not signed at all/i.test(
+        String(cause?.stderr ?? cause?.stdout ?? '')
+      )
+    ) {
+      error.code = 'ERR_CODE_OBJECT_UNSIGNED';
+    }
+    error.cause = cause;
+    throw error;
   }
 }
 
@@ -203,13 +242,14 @@ export async function inspectCodeSignature(codePath) {
   return codesignDetails(codePath);
 }
 
-export function hasStableDeveloperIdSignature(signature) {
-  try {
-    assertStableDeveloperIdSignature(signature);
-    return true;
-  } catch {
-    return false;
-  }
+export function hasStableSignerIdentity(signature) {
+  return Boolean(
+    signature.identifier &&
+    signature.teamIdentifier &&
+    signature.teamIdentifier.toLowerCase() !== 'not set' &&
+    signature.signature?.toLowerCase() !== 'adhoc' &&
+    signature.authorities.length > 0
+  );
 }
 
 async function verifyCodeObjects(
@@ -260,7 +300,10 @@ async function verifyRendererArchive(rendererArchive, expectedTeamIdentifier) {
 
 export async function evaluateAppCodeIdentity(
   appPath,
-  { expectedIdentifier = 'com.exawatt.app', expectedTeamIdentifier } = {}
+  {
+    expectedIdentifier = EXPECTED_DOGFOOD_IDENTIFIER,
+    expectedTeamIdentifier = EXPECTED_DOGFOOD_TEAM_IDENTIFIER,
+  } = {}
 ) {
   if (process.platform !== 'darwin') {
     throw new Error('The macOS code-identity evaluator requires macOS.');

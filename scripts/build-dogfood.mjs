@@ -1,13 +1,44 @@
 #!/usr/bin/env node
 // Generated for the public repository by the "public-dogfood-tooling" recipe.
 
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { promisify } from 'node:util';
 import {
   teamIdentifierFromIdentityName,
   resolveDeveloperIdIdentity,
 } from './lib/macos-code-signing.mjs';
 
 const root = process.cwd();
+const execFileAsync = promisify(execFile);
+
+async function git(...args) {
+  const { stdout } = await execFileAsync('git', args, { cwd: root });
+  return stdout.trim();
+}
+
+const sourceSha =
+  process.env.EXAWATT_BUILD_SOURCE_SHA ?? (await git('rev-parse', 'HEAD'));
+
+async function assertImmutableSource() {
+  const currentSha = await git('rev-parse', 'HEAD');
+  if (currentSha !== sourceSha) {
+    throw new Error(
+      `Dogfood source moved from ${sourceSha} to ${currentSha}; refusing a mixed-revision build.`
+    );
+  }
+  const trackedChanges = await git(
+    'status',
+    '--porcelain',
+    '--untracked-files=no'
+  );
+  if (trackedChanges) {
+    throw new Error(
+      `Dogfood source ${sourceSha} contains tracked changes; refusing a mixed-content build.\n${trackedChanges}`
+    );
+  }
+}
 
 async function run(command, args, env = {}) {
   await new Promise((resolve, reject) => {
@@ -28,6 +59,8 @@ const teamIdentifier = teamIdentifierFromIdentityName(identity.name);
 console.log(
   `[dogfood-signing] using the Keychain Developer ID Application identity${teamIdentifier ? ` for Team ${teamIdentifier}` : ''}`
 );
+
+await assertImmutableSource();
 
 await run('pnpm', ['build']);
 await run('pnpm', ['electron:prepare-renderer']);
@@ -57,3 +90,13 @@ await run(
     EXAWATT_RENDERER_SIGN_IDENTITY: identity.fingerprint,
   }
 );
+
+await assertImmutableSource();
+const buildInfo = JSON.parse(
+  await readFile(path.join(root, 'dist-electron', 'build-info.json'), 'utf8')
+);
+if (buildInfo.sha !== sourceSha) {
+  throw new Error(
+    `Dogfood artifact records ${buildInfo.sha}; expected immutable source ${sourceSha}.`
+  );
+}
