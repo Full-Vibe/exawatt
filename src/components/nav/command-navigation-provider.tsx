@@ -26,9 +26,22 @@ import { FOCUS_ACTIVE_TERMINAL_EVENT } from '@/components/workspace/session-jump
 
 type TransitionPhase = 'departing' | 'traversing' | 'arriving';
 
+/** V2.4: transitions are DIRECTIONAL along the command-altitude continuum.
+ *  Ascending (toward Spatial) pulls back — the frame rings contract like a
+ *  world shrinking below you; descending (toward Terminal) dives — the rings
+ *  expand past the viewport. */
+type TransitionDirection = 'ascend' | 'descend';
+
+const ALTITUDE_ORDER: Record<CommandAltitude, number> = {
+  terminal: 0,
+  sessions: 1,
+  spatial: 2,
+};
+
 interface CommandTransition {
   phase: TransitionPhase;
   target: CommandAltitude;
+  direction: TransitionDirection;
   startedAt: number;
 }
 
@@ -101,16 +114,28 @@ export function CommandNavigationProvider({
       clearScheduled();
       const startedAt = performance.now();
       targetPath.current = targetUrl.pathname;
+      const currentAltitude = resolveCommandAltitude(
+        window.location.pathname,
+        new URLSearchParams(window.location.search)
+      );
+      const target = targetAltitude ?? targetRegime;
+      const direction: TransitionDirection =
+        ALTITUDE_ORDER[target] >=
+        ALTITUDE_ORDER[currentAltitude ?? 'terminal']
+          ? 'ascend'
+          : 'descend';
       setTransition({
         phase: 'departing',
-        target: targetAltitude ?? targetRegime,
+        target,
+        direction,
         startedAt,
       });
       frame.current = window.requestAnimationFrame(() => {
         frame.current = null;
         setTransition({
           phase: 'traversing',
-          target: targetAltitude ?? targetRegime,
+          target,
+          direction,
           startedAt,
         });
         timer.current = window.setTimeout(() => {
@@ -200,38 +225,53 @@ export function CommandNavigationProvider({
         <div
           data-command-transition={transition.phase}
           data-command-transition-target={transition.target}
+          data-command-transition-direction={transition.direction}
           aria-hidden="true"
           className={`pointer-events-none fixed inset-x-0 bottom-0 top-12 z-[60] overflow-hidden transition-colors duration-[180ms] motion-reduce:duration-75 ${
             transition.phase === 'traversing'
-              ? 'bg-zinc-950/20'
+              ? 'bg-zinc-950/25'
               : 'bg-transparent'
           }`}
         >
-          <div
-            className={`absolute left-0 right-0 top-[calc(50%-22px)] h-px origin-center bg-teal-200/35 transition-[transform,opacity] duration-[180ms] [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-opacity motion-reduce:duration-75 ${
+          {/* Nested viewport frames flying past: ascending contracts them
+              (world pulling away below), descending expands them (diving
+              back in). Reduced motion keeps the crossfade only. */}
+          {[
+            { size: '46vmin', border: 'border-teal-200/40', span: 0.1 },
+            { size: '72vmin', border: 'border-teal-200/20', span: 0.16 },
+          ].map(ring => {
+            const contract = transition.direction === 'ascend';
+            const from = contract ? 1 + ring.span : 1 - ring.span;
+            const to = contract ? 1 - ring.span : 1 + ring.span;
+            const scale =
               transition.phase === 'departing'
-                ? 'scale-x-[0.15] opacity-0'
+                ? from
                 : transition.phase === 'traversing'
-                  ? 'scale-x-100 opacity-100'
-                  : 'scale-x-[0.3] opacity-0'
-            }`}
-          />
-          <div
-            className={`absolute left-0 right-0 top-[calc(50%+22px)] h-px origin-center bg-teal-200/25 transition-[transform,opacity] duration-[180ms] [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-opacity motion-reduce:duration-75 ${
-              transition.phase === 'departing'
-                ? 'scale-x-[0.15] opacity-0'
-                : transition.phase === 'traversing'
-                  ? 'scale-x-100 opacity-100'
-                  : 'scale-x-[0.3] opacity-0'
-            }`}
-          />
+                  ? 1
+                  : to;
+            return (
+              <div
+                key={ring.size}
+                style={{
+                  width: ring.size,
+                  height: ring.size,
+                  transform: `translate(-50%, -50%) scale(${scale})`,
+                }}
+                className={`absolute left-1/2 top-1/2 border ${ring.border} transition-[transform,opacity] duration-[180ms] [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-opacity motion-reduce:duration-75 ${
+                  transition.phase === 'traversing'
+                    ? 'opacity-100'
+                    : 'opacity-0'
+                }`}
+              />
+            );
+          })}
           <div
             className={`absolute left-1/2 top-1/2 grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center border border-teal-200/45 bg-zinc-950/90 text-teal-100 shadow-[0_0_32px_rgba(94,234,212,0.12)] transition-[opacity,transform] duration-[180ms] [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-opacity motion-reduce:duration-75 ${
               transition.phase === 'departing'
-                ? 'scale-75 opacity-0'
+                ? `${transition.direction === 'ascend' ? 'scale-75' : 'scale-125'} opacity-0`
                 : transition.phase === 'traversing'
                   ? 'scale-100 opacity-100'
-                  : 'scale-110 opacity-0'
+                  : `${transition.direction === 'ascend' ? 'scale-110' : 'scale-90'} opacity-0`
             }`}
           >
             <TargetIcon className="h-4 w-4" strokeWidth={1.5} />

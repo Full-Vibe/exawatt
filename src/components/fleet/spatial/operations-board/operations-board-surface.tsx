@@ -385,8 +385,8 @@ export function OperationsBoardSurface({
           {layout.altitude === 'fleet' && (
             <KeyHint keyName="1–9" label="Project" />
           )}
-          <KeyHint keyName="←↑↓→" label="pan" />
-          <KeyHint keyName="+ −" label="zoom" />
+          <KeyHint keyName="drag ←↑↓→" label="pan" />
+          <KeyHint keyName="pinch + −" label="zoom" />
           <KeyHint keyName="V" label="view" />
           {attentionIds.length > 0 && <KeyHint keyName="N" label="attention" />}
           <KeyHint
@@ -456,10 +456,26 @@ export function OperationsBoardSurface({
         <div
           role="status"
           aria-live="polite"
-          className="pointer-events-none absolute inset-0 z-20 grid place-items-center bg-[oklch(0.08_0.008_220/0.18)]"
+          className="pointer-events-none absolute inset-0 z-20 grid place-items-center"
+          style={{
+            background:
+              'radial-gradient(ellipse at center, oklch(0.08 0.008 220 / 0) 30%, oklch(0.08 0.008 220 / 0.55) 100%)',
+          }}
         >
-          <div className="border border-[oklch(0.48_0.055_185)] bg-[oklch(0.13_0.012_220/0.94)] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[oklch(0.82_0.055_185)] shadow-[0_16px_48px_oklch(0.04_0.01_220/0.55)]">
-            Opening session
+          <div className="board-control-enter border border-[oklch(0.48_0.055_185)] bg-[oklch(0.13_0.012_220/0.94)] px-4 py-2 text-center shadow-[0_16px_48px_oklch(0.04_0.01_220/0.55)]">
+            <span className="block font-mono text-[10px] uppercase tracking-[0.14em] text-[oklch(0.82_0.055_185)]">
+              Opening session
+            </span>
+            {(() => {
+              const piece = layout.pieces.find(
+                entry => entry.agentId === sessionTransitionAgentId
+              );
+              return piece ? (
+                <span className="mt-0.5 block max-w-56 truncate text-[11px] font-medium text-[oklch(0.9_0.01_210)]">
+                  {piece.label}
+                </span>
+              ) : null;
+            })()}
           </div>
         </div>
       )}

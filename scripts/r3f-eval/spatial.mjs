@@ -424,10 +424,14 @@ async function runScenario(browser, scenario) {
         await page.getByText('Selected Agent', { exact: true }).isVisible(),
         'Mobile Agent inspector is not visible'
       );
-    } else {
+    } else if (scenario.reduced || scenario.lowPower) {
+      // V2.4 gate amendment: ambient status motion (breathing halos,
+      // selection rotation) deliberately keeps the VISIBLE scene alive, so
+      // the park-at-rest assertion moves to the contexts that must park —
+      // reduced motion and low power (hidden tabs park too, untestable here).
       check(
         result.idleFrames === 0,
-        `Demand scene drew ${result.idleFrames} idle frames`
+        `Reduced/low-power scene must park; drew ${result.idleFrames} idle frames`
       );
     }
 

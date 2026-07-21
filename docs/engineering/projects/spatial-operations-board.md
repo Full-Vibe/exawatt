@@ -985,7 +985,31 @@ Progress log:
 
 ### V2.4 Experience pass — graphics, motion, navigation, transitions
 
-Status: active-build (2026-07-20, operator unpark); executes before V2.1–V2.3
+Status: landed 2026-07-20 (same-day build after the operator unpark); operator
+visual acceptance is the remaining dogfood evidence
+
+Implementation record (2026-07-20): world materiality (ambient+directional
+lighting; per-project accent zone edges in one vertex-colored Line2 draw;
+accent-tinted lambert zone plates; emissive toneMapped-off status cores;
+thin breathing status halos in two additively blended instanced classes;
+radially fading vertex-colored grid; lazy low-power-gated Bloom+Vignette in
+`operations-board-effects.tsx`), motion (mount-keyed slotIndex-staggered
+piece entrance; zone fade-up; FLIGHT vs NUDGE camera lambdas 5.5/13;
+arrival dolly from 0.82x fit zoom; rotating dashed selection reticle;
+`board-control-enter` crossfade on the DOM controls), direct navigation
+(drag-pan with pointer capture, plain-wheel pan, ctrl/meta-wheel
+zoom-at-cursor on the shared damped target; click guards intact), and
+directional regime transitions (ascend contracts / descend expands nested
+viewport frames in the CommandNavigationProvider overlay; enter-session
+scrim gains a radial fade and the Agent's name). The dev CSP now allows
+'unsafe-eval' in development only (React dev callstacks were failing every
+console-clean eval), and `eval:spatial`'s park-at-rest assertion moved to
+the reduced-motion/low-power contexts per the gate amendment. Evidence:
+eval:r3f 100/100 (t5 board 1 draw call), eval:spatial 4/4 contexts,
+new `eval:spatial:pointer` (drag/wheel/pinch/click-guard/M/L/reduced-park),
+browser altitude eval, real-Electron navigation eval (live PTY -> Spatial
+Agent -> same PTY -> exact address), 515 unit tests, type-check, lint,
+production build.
 
 The operator's ask (2026-07-20): "take us past the spatial experience …
 super good graphics, really smooth, navigable, excellent transitions in
