@@ -413,8 +413,15 @@ function createWindow(initialUrl: string): void {
     ...(testWindowPosition() ?? {}),
     width: 1400,
     height: 900,
-    minWidth: 800,
-    minHeight: 600,
+    // Keep the floor BELOW common tiling cells: AX window managers (Divvy,
+    // Rectangle, …) set frames through the Accessibility API and macOS
+    // clamps them to the window minimum — an 800×600 floor silently vetoed
+    // every half/third-screen cell on laptop displays, which read as "the
+    // window manager can't resize Exawatt" (operator, 2026-07-20). Half of
+    // a 14" MacBook Pro is ~756×460 logical; the chrome is responsive and
+    // eval-verified down to 560 wide.
+    minWidth: 560,
+    minHeight: 400,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     backgroundColor: '#09090b',

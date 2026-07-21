@@ -227,7 +227,7 @@ try {
   await composer.waitFor();
 
   const results = [];
-  for (const width of [800, 1024, 1312, 1400, 1600]) {
+  for (const width of [560, 800, 1024, 1312, 1400, 1600]) {
     await page.setViewportSize({ width, height: 700 });
     await page.evaluate(
       () =>

@@ -686,7 +686,11 @@ export function AgentComposer({
 
   if (variant === 'compact') {
     return (
-      <div ref={rootRef} data-agent-composer-root className="relative">
+      // NOT position:relative — the panel anchors to the full-width chrome
+      // bar (nearest positioned ancestor) so it right-aligns inside the
+      // window even when the window is narrower than the panel plus the
+      // controls right of the toggle (Divvy-size windows, D18)
+      <div ref={rootRef} data-agent-composer-root>
         <button
           type="button"
           data-composer-toggle

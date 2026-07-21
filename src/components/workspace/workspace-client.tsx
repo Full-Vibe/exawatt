@@ -699,7 +699,7 @@ export function WorkspaceClient() {
         <div
           ref={chromeRef}
           data-workspace-chrome
-          className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2"
+          className="relative flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2"
           style={{
             borderColor: 'rgba(80,230,255,0.15)',
             background: HUD.bg.deep,
