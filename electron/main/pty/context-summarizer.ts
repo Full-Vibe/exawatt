@@ -35,7 +35,12 @@ const CONTEXT_PROMPT =
   'activity. Prefer the stated task over recent output when both exist. ' +
   '6 words or fewer, an imperative or noun phrase like ' +
   '"Release Apple Silicon support". No trailing period. Output ONLY the ' +
-  'phrase, no quotes.\n';
+  'phrase, no quotes. If the scrollback is unreadable or you cannot ' +
+  'determine a goal, output exactly NO_GOAL.\n';
+
+/** The model's explicit "I could not determine a goal" token. Treated as a
+ *  quiet no-update, never a failure and never a subtitle. */
+const NO_GOAL = 'NO_GOAL';
 
 const CONTEXT_SCROLLBACK_OPEN = '<untrusted-scrollback>\n';
 
@@ -121,6 +126,15 @@ export function buildContextInput({
   return input + CONTEXT_SCROLLBACK_OPEN + tail + PROMPT_END;
 }
 
+/** Word-boundary truncation: cut at the last space past a reasonable
+ *  minimum and append an ellipsis, never mid-word. Pure. */
+export function truncateAtWord(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const cut = text.slice(0, maxChars - 1);
+  const atWord = cut.lastIndexOf(' ');
+  return `${cut.slice(0, atWord > 24 ? atWord : cut.length)}…`;
+}
+
 /** Instant provisional subtitle from the composer's task (D18): the goal is
  *  visible the moment the Agent launches, before any model call. Pure. */
 export function provisionalSubtitle(task: string): string | null {
@@ -131,10 +145,46 @@ export function provisionalSubtitle(task: string): string | null {
     .replace(/[.!;,\s]+$/g, '')
     .trim();
   if (!line) return null;
-  if (line.length <= MAX_SUMMARY_CHARS) return line;
-  const cut = line.slice(0, MAX_SUMMARY_CHARS - 1);
-  const atWord = cut.lastIndexOf(' ');
-  return `${cut.slice(0, atWord > 24 ? atWord : cut.length)}…`;
+  return truncateAtWord(line, MAX_SUMMARY_CHARS);
+}
+
+// Shape guardrails (dogfood 2026-07-20): a tab once showed the summarizer
+// model's own confused reply ("I see corrupted session data that I can't
+// interpret. What would") sliced mid-sentence. A goal subtitle is a short
+// imperative or noun phrase; anything conversational, interrogative, or
+// self-narrating is unusable content, not a subtitle. Conservative
+// allowlist-of-shape — not an attempt at perfection.
+const REJECTED_SUBTITLE_PREFIXES = [
+  'i ',
+  "i'm",
+  "i've",
+  'i see',
+  'i can',
+  'i cannot',
+  "i don't",
+  'sorry',
+  'what ',
+  'here is',
+  "here's",
+  'sure',
+  'unfortunately',
+  'it looks',
+  'as an ai',
+];
+
+const REJECTED_SUBTITLE_SUBSTRINGS = ['scrollback', 'summariz'];
+
+/** Is this engine output usable as a goal subtitle? Pure. */
+export function acceptableSubtitle(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (/\p{Cc}/u.test(trimmed)) return false;
+  if (trimmed.includes('?')) return false;
+  if (trimmed.split(/\s+/).length > 10) return false;
+  const lower = trimmed.toLowerCase();
+  if (REJECTED_SUBTITLE_PREFIXES.some((p) => lower.startsWith(p))) return false;
+  if (REJECTED_SUBTITLE_SUBSTRINGS.some((s) => lower.includes(s))) return false;
+  return true;
 }
 
 /** strip ANSI escapes + OSC sequences so the model sees prose, not codes */
@@ -367,7 +417,19 @@ export class ContextSummarizer extends EventEmitter {
         MAX_SUMMARY_CHARS
       );
       this.failures = 0;
-      if (summary && !this.disabled) {
+      if (!summary || summary === NO_GOAL || this.disabled) {
+        // The model affirmatively found no goal (or said nothing): quiet
+        // no-update, keep the previous subtitle, wait for fresh output.
+      } else if (!acceptableSubtitle(summary)) {
+        // The engine call succeeded but the content is unusable (a
+        // conversational reply, a question, self-narration). Keep the
+        // previous subtitle, emit nothing, and refund the consumed bytes so
+        // the next sweep retries. Not an engine failure.
+        this.bytesSince.set(
+          candidate.id,
+          (this.bytesSince.get(candidate.id) ?? 0) + consumed
+        );
+      } else {
         this.summaries.set(candidate.id, summary);
         this.lastAt.set(candidate.id, this.now());
         this.emit('context', candidate.id, summary);
@@ -456,7 +518,7 @@ export class ContextSummarizer extends EventEmitter {
           ?.replace(/\p{Cc}/gu, '')
           .trim()
           .replace(/^["']|["']$/g, '');
-        resolve(line ? line.slice(0, maxChars) : null);
+        resolve(line ? truncateAtWord(line, maxChars) : null);
       });
       proc.stdin.write(input);
       proc.stdin.end();

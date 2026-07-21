@@ -2,8 +2,10 @@ import { EventEmitter } from 'events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ContextSummarizer,
+  acceptableSubtitle,
   buildContextInput,
   provisionalSubtitle,
+  truncateAtWord,
 } from './context-summarizer';
 import type { PtySessionManager } from './session-manager';
 
@@ -193,6 +195,60 @@ describe('goal-oriented subtitles (D18)', () => {
     expect(long).not.toContain('  ');
   });
 
+  it('accepts goal-shaped phrases', () => {
+    expect(acceptableSubtitle('Release Apple Silicon support')).toBe(true);
+    expect(acceptableSubtitle('Ship subtitle guardrails for tabs')).toBe(true);
+    expect(acceptableSubtitle('Terminal session context layer')).toBe(true);
+  });
+
+  it('rejects the corrupted-session reply from the dogfood screenshot', () => {
+    expect(
+      acceptableSubtitle(
+        "I see corrupted session data that I can't interpret. What would"
+      )
+    ).toBe(false);
+  });
+
+  it('rejects conversational, interrogative, and self-narrating output', () => {
+    expect(acceptableSubtitle('')).toBe(false);
+    expect(acceptableSubtitle('   ')).toBe(false);
+    expect(
+      acceptableSubtitle(
+        'one two three four five six seven eight nine ten eleven'
+      )
+    ).toBe(false);
+    expect(acceptableSubtitle('Fix the build?')).toBe(false);
+    expect(acceptableSubtitle("I'm analyzing the terminal output")).toBe(false);
+    expect(acceptableSubtitle('I cannot determine a goal here')).toBe(false);
+    expect(acceptableSubtitle('Sorry, no clear goal found')).toBe(false);
+    expect(acceptableSubtitle('What would you like next')).toBe(false);
+    expect(acceptableSubtitle("Here's the session goal")).toBe(false);
+    expect(acceptableSubtitle('Here is the subtitle')).toBe(false);
+    expect(acceptableSubtitle('Sure, releasing Apple Silicon now')).toBe(false);
+    expect(acceptableSubtitle('Unfortunately the data is garbled')).toBe(false);
+    expect(acceptableSubtitle('It looks like a build session')).toBe(false);
+    expect(acceptableSubtitle('As an AI I lack context')).toBe(false);
+    expect(acceptableSubtitle('Summarize the scrollback contents')).toBe(false);
+    expect(acceptableSubtitle('Summarizing recent terminal output')).toBe(false);
+    expect(acceptableSubtitle('Fix build\x07pipeline')).toBe(false);
+  });
+
+  it('truncates at a word boundary with an ellipsis, never mid-word', () => {
+    expect(truncateAtWord('Short goal', 64)).toBe('Short goal');
+    const long =
+      'Guard the summarizer output so corrupted replies never reach a tab title';
+    const cut = truncateAtWord(long, 64);
+    expect(cut.length).toBeLessThanOrEqual(64);
+    expect(cut.endsWith('…')).toBe(true);
+    // everything kept is a whole-word prefix of the source
+    expect(long.startsWith(cut.slice(0, -1))).toBe(true);
+    expect(long[cut.length - 1]).toBe(' ');
+    // wordless input falls back to a hard cut
+    expect(truncateAtWord('x'.repeat(80), 64)).toHaveLength(64);
+    // recap-length caps use the same path
+    expect(truncateAtWord(`${long} `.repeat(5), 240).endsWith('…')).toBe(true);
+  });
+
   it('seeds the subtitle from the task once, never overwriting a model summary', () => {
     const service = new ContextSummarizer({ summarize: async () => null });
     const events: Array<[string, string]> = [];
@@ -203,5 +259,73 @@ describe('goal-oriented subtitles (D18)', () => {
     service.seedFromTask('a', 'Different later task');
     expect(events).toEqual([['a', 'Adopt Apple Silicon']]);
     expect(service.getSummary('a')).toBe('Adopt Apple Silicon');
+  });
+});
+
+describe('sweep output guardrails', () => {
+  const junk =
+    "I see corrupted session data that I can't interpret. What would";
+  let manager: FakeManager;
+  let summarize: ReturnType<typeof vi.fn>;
+  let service: ContextSummarizer;
+  const runSweep = () =>
+    (service as unknown as { sweep: () => Promise<void> }).sweep();
+
+  beforeEach(() => {
+    manager = new FakeManager();
+    summarize = vi.fn(async () => junk);
+    service = new ContextSummarizer({ summarize });
+    service.attach(manager as unknown as PtySessionManager);
+  });
+
+  it('keeps the previous subtitle on unusable content and refunds bytes for a retry', async () => {
+    service.seedFromTask('a', 'Ship subtitle guardrails');
+    const events: string[] = [];
+    service.on('context', (_id: string, summary: string) =>
+      events.push(summary)
+    );
+    manager.data('a', 'meaningful terminal output '.repeat(20));
+
+    await runSweep();
+    expect(summarize).toHaveBeenCalledOnce();
+    expect(service.getSummary('a')).toBe('Ship subtitle guardrails');
+    expect(events).toEqual([]);
+
+    // bytes were refunded: the next sweep retries without fresh output
+    summarize.mockResolvedValueOnce('Release Apple Silicon support');
+    await runSweep();
+    expect(summarize).toHaveBeenCalledTimes(2);
+    expect(service.getSummary('a')).toBe('Release Apple Silicon support');
+    expect(events).toEqual(['Release Apple Silicon support']);
+  });
+
+  it('treats NO_GOAL as a quiet no-update that waits for fresh output', async () => {
+    summarize.mockResolvedValue('NO_GOAL');
+    service.seedFromTask('a', 'Ship subtitle guardrails');
+    const events: string[] = [];
+    service.on('context', (_id: string, summary: string) =>
+      events.push(summary)
+    );
+    manager.data('a', 'unreadable binary noise '.repeat(20));
+
+    await runSweep();
+    expect(service.getSummary('a')).toBe('Ship subtitle guardrails');
+    expect(events).toEqual([]);
+    // no refund: a NO_GOAL verdict is not retried on the same content
+    await runSweep();
+    expect(summarize).toHaveBeenCalledOnce();
+  });
+
+  it('never counts unusable content toward the failure disable threshold', async () => {
+    manager.data('a', 'meaningful terminal output '.repeat(20));
+    await runSweep();
+    await runSweep();
+    await runSweep();
+    await runSweep();
+    // three real failures would have disabled the summarizer by now
+    expect(summarize).toHaveBeenCalledTimes(4);
+    summarize.mockResolvedValueOnce('Release Apple Silicon support');
+    await runSweep();
+    expect(service.getSummary('a')).toBe('Release Apple Silicon support');
   });
 });
