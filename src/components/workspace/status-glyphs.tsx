@@ -16,6 +16,9 @@
  *             no turns, so started/unstarted does not apply).
  * The amber AttentionDot outranks all of these while a turn-end/bell is
  * unseen, so amber → glance → green is the natural progression.
+ *
+ * Every glyph (attention included) renders in the same GLYPH_BOX footprint:
+ * state changes must never nudge the tab's layout sideways.
  */
 import { HUD } from '@/components/hud';
 
@@ -38,18 +41,40 @@ export function sessionGlyphState({
   return started ? 'done' : 'fresh';
 }
 
+/** tooltip copy — one voice across the strip and the overview */
+export const SESSION_GLYPH_COPY: Record<SessionGlyphState, string> = {
+  working: 'working — output streaming',
+  done: 'turn finished — waiting on you',
+  fresh: 'new — not given a task yet',
+  quiet: 'quiet — waiting or between turns',
+};
+
+/** compact state words for accessible names */
+export const SESSION_GLYPH_LABEL: Record<SessionGlyphState, string> = {
+  working: 'working',
+  done: 'turn finished',
+  fresh: 'new',
+  quiet: 'quiet',
+};
+
+/** constant footprint so working↔rest↔attention swaps never shift the row */
+const GLYPH_BOX =
+  'inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center';
+
 /** needs-operator pulse (S1) — amber, small, impossible to miss peripherally */
 export function AttentionDot() {
   return (
-    <span data-attention className="relative inline-flex h-1.5 w-1.5 shrink-0">
-      <span
-        className="absolute inline-flex h-full w-full animate-ping rounded-full"
-        style={{ background: HUD.amber, opacity: 0.6 }}
-      />
-      <span
-        className="relative inline-flex h-1.5 w-1.5 rounded-full"
-        style={{ background: HUD.amber, boxShadow: `0 0 5px ${HUD.amber}` }}
-      />
+    <span data-attention className={GLYPH_BOX}>
+      <span className="relative inline-flex h-1.5 w-1.5">
+        <span
+          className="absolute inline-flex h-full w-full animate-ping rounded-full motion-reduce:animate-none"
+          style={{ background: HUD.amber, opacity: 0.6 }}
+        />
+        <span
+          className="relative inline-flex h-1.5 w-1.5 rounded-full"
+          style={{ background: HUD.amber, boxShadow: `0 0 5px ${HUD.amber}` }}
+        />
+      </span>
     </span>
   );
 }
@@ -70,18 +95,20 @@ export function SessionStatusGlyph({ state }: { state: SessionGlyphState }) {
   }
   if (state === 'done') {
     return (
-      <span
-        data-status="done"
-        className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full"
-        style={{ background: HUD.green, boxShadow: `0 0 5px ${HUD.green}` }}
-      />
+      <span data-status="done" className={GLYPH_BOX}>
+        <span
+          className="inline-flex h-1.5 w-1.5 rounded-full"
+          style={{ background: HUD.green, boxShadow: `0 0 5px ${HUD.green}` }}
+        />
+      </span>
     );
   }
   return (
-    <span
-      data-status={state}
-      className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full border opacity-60"
-      style={{ borderColor: HUD.idle }}
-    />
+    <span data-status={state} className={GLYPH_BOX}>
+      <span
+        className="inline-flex h-1.5 w-1.5 rounded-full border opacity-60"
+        style={{ borderColor: HUD.idle }}
+      />
+    </span>
   );
 }

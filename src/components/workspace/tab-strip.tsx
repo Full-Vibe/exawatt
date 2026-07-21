@@ -22,6 +22,8 @@ import {
 } from './session-jump';
 import {
   AttentionDot,
+  SESSION_GLYPH_COPY,
+  SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
   sessionGlyphState,
 } from './status-glyphs';
@@ -477,19 +479,27 @@ export function TabStrip({
                     onDoubleClick={() =>
                       setEditing({ kind: 'tab', id: t.id, value: t.title })
                     }
+                    // a glyph-only tab (hidden default title) would otherwise
+                    // take its accessible name from the tooltip — give it a
+                    // real one: harness, goal, state (D22)
+                    aria-label={
+                      showTitle
+                        ? undefined
+                        : `${t.title}${summary ? ` — ${summary}` : ''} — ${
+                            dead
+                              ? stoppedStatus.toLowerCase()
+                              : needsYou
+                                ? 'needs your attention'
+                                : SESSION_GLYPH_LABEL[glyphState]
+                          }`
+                    }
                     className="flex cursor-pointer items-center gap-1.5 px-2 py-1 font-mono text-xs outline-none transition-transform duration-100 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{ color: on ? HUD.text : HUD.textDim }}
                     title={`${t.cwd}${summary ? `\n${summary}` : ''}${
                       needsYou ? '\nneeds your attention (⌘J jumps here)' : ''
                     }${
                       !dead && !needsYou
-                        ? glyphState === 'working'
-                          ? '\nworking — output streaming'
-                          : glyphState === 'done'
-                            ? '\nturn finished — waiting on you'
-                            : glyphState === 'fresh'
-                              ? '\nnew — not given a task yet'
-                              : '\nquiet — waiting or between turns'
+                        ? `\n${SESSION_GLYPH_COPY[glyphState]}`
                         : ''
                     }${
                       dead ? `\n${t.resumeState.replace('-', ' ')}` : ''

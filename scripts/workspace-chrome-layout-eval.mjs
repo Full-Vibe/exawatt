@@ -382,6 +382,13 @@ try {
   // each render distinctly, and a fresh agent tab stays glyph-only.
   await page.setViewportSize({ width: 1312, height: 700 });
   const strip = page.locator('[data-workspace-tab-strip]');
+  const settle = () =>
+    page.evaluate(
+      () =>
+        new Promise(resolve =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve))
+        )
+    );
   const stripState = async () =>
     strip.evaluate(element => ({
       done: element.querySelectorAll('[data-status="done"]').length,
@@ -407,6 +414,7 @@ try {
   await page.evaluate(() => {
     window.__fireActivity?.({ id: 'fresh-session', working: true });
   });
+  await settle();
   turnState = await stripState();
   if (turnState.working !== 1 || turnState.fresh !== 0) {
     throw new Error(
@@ -420,6 +428,7 @@ try {
   await page.evaluate(() => {
     window.__fireActivity?.({ id: 'fresh-session', working: false });
   });
+  await settle();
   turnState = await stripState();
   if (turnState.fresh !== 1) {
     throw new Error(
@@ -430,6 +439,7 @@ try {
   await page.evaluate(() => {
     window.__fireEngaged?.({ id: 'fresh-session' });
   });
+  await settle();
   turnState = await stripState();
   if (turnState.done !== 3 || turnState.fresh !== 0) {
     throw new Error(

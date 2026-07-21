@@ -14,7 +14,13 @@ import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import { HarnessGlyph } from './harness-icons';
 import { isDefaultHarnessTitle } from './harnesses';
 import { previewLines } from './scrollback-preview';
-import { SessionStatusGlyph, sessionGlyphState } from './status-glyphs';
+import {
+  AttentionDot,
+  SESSION_GLYPH_COPY,
+  SESSION_GLYPH_LABEL,
+  SessionStatusGlyph,
+  sessionGlyphState,
+} from './status-glyphs';
 import { tabIsLive } from './use-workspace-state';
 import type { Project } from './use-workspace-state';
 import type { PtyHarness } from '@/types/electron';
@@ -421,14 +427,7 @@ export function ExposeOverlay({
       agent: tile.harness !== 'shell',
       started: !!(tile.sessionId && engaged[tile.sessionId]) || !!subtitle,
     });
-    const stateCopy =
-      glyphState === 'working'
-        ? 'working — output streaming'
-        : glyphState === 'done'
-          ? 'turn finished — waiting on you'
-          : glyphState === 'fresh'
-            ? 'new — not given a task yet'
-            : 'quiet — waiting or between turns';
+    const stateCopy = SESSION_GLYPH_COPY[glyphState];
     return (
       <button
         key={tile.tabId}
@@ -441,15 +440,7 @@ export function ExposeOverlay({
         data-selected={selected || undefined}
         tabIndex={selected ? 0 : -1}
         aria-label={`${tile.title}, ${tile.projectName}${needsYou ? ', needs attention' : ''}${
-          tile.live && !needsYou
-            ? glyphState === 'working'
-              ? ', working'
-              : glyphState === 'done'
-                ? ', turn finished'
-                : glyphState === 'fresh'
-                  ? ', new'
-                  : ', quiet'
-            : ''
+          tile.live && !needsYou ? `, ${SESSION_GLYPH_LABEL[glyphState]}` : ''
         }${tile.stateLabel ? `, ${tile.stateLabel}` : ''}`}
         onClick={() => onPick(tile.dir, tile.tabId)}
         onMouseEnter={() => {
@@ -523,15 +514,8 @@ export function ExposeOverlay({
             </span>
           )}
           {needsYou ? (
-            <span className="relative ml-1 inline-flex h-1.5 w-1.5 shrink-0">
-              <span
-                className="absolute inline-flex h-full w-full animate-ping rounded-full motion-reduce:animate-none"
-                style={{ background: HUD.amber, opacity: 0.6 }}
-              />
-              <span
-                className="relative inline-flex h-1.5 w-1.5 rounded-full"
-                style={{ background: HUD.amber }}
-              />
+            <span className="ml-1 inline-flex shrink-0">
+              <AttentionDot />
             </span>
           ) : tile.live ? (
             <span className="ml-1 inline-flex shrink-0" title={stateCopy}>

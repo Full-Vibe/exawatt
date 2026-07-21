@@ -97,6 +97,22 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     const { container } = strip({ tabs: [tab({ id: 'a' })] });
     expect(container.querySelector('[data-status="fresh"]')).not.toBeNull();
     expect(screen.queryByText('Claude Code')).toBeNull();
+    // glyph-only tabs still carry a real accessible name
+    expect(
+      screen.getByRole('button', { name: 'Claude Code — new' })
+    ).not.toBeNull();
+  });
+
+  it('a summarized glyph-only tab names itself by harness, goal, and state', () => {
+    strip({
+      tabs: [tab({ id: 'a' })],
+      summaries: { 'durable-a': 'Ship code review fixes' },
+    });
+    expect(
+      screen.getByRole('button', {
+        name: 'Claude Code — Ship code review fixes — turn finished',
+      })
+    ).not.toBeNull();
   });
 
   it('a renamed fresh agent keeps its name', () => {
