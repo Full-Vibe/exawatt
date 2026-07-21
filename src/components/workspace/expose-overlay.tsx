@@ -30,6 +30,8 @@ import {
 interface Tile {
   /** null when the tab has no process (restored, not resumed) */
   sessionId: string | null;
+  /** durable Session identity — the goal subtitle's key (D21) */
+  durableSessionId: string;
   tabId: string;
   dir: string;
   harness: PtyHarness;
@@ -108,6 +110,7 @@ export function ExposeOverlay({
           const live = tabIsLive(t) && !!t.sessionId && t.exitCode === null;
           return {
             sessionId: t.sessionId,
+            durableSessionId: t.durableSessionId,
             tabId: t.id,
             dir: g.dir,
             harness: t.harness,
@@ -221,7 +224,7 @@ export function ExposeOverlay({
           title: t.title,
           harness: t.harness,
           cwd: t.cwd,
-          contextSummary: summaries[t.sessionId as string] ?? null,
+          contextSummary: summaries[t.durableSessionId] ?? null,
           needsAttention: !!attention[t.sessionId as string],
         })),
     [selectedProject, summaries, attention]
@@ -405,7 +408,8 @@ export function ExposeOverlay({
     const selected = index === sel;
     const needsYou = !!(tile.sessionId && attention[tile.sessionId]);
     const working = !!(tile.sessionId && activity[tile.sessionId]);
-    const subtitle = tile.sessionId ? summaries[tile.sessionId] : undefined;
+    // durable-Session goal (D21): stopped tiles keep their subtitle too
+    const subtitle = summaries[tile.durableSessionId];
     return (
       <button
         key={tile.tabId}

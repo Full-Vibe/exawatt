@@ -51,6 +51,13 @@ export interface PtyCreateOptions {
   durableSessionId?: string;
   /** Optional first user task for a newly-created interactive agent. */
   initialPrompt?: string;
+  /** Goal statement carried across a resume for context summaries (D21).
+   *  Metadata only — never written to the process; a fresh create's
+   *  initialPrompt already doubles as the stated task. */
+  statedTask?: string;
+  /** Persisted goal subtitle re-seeded into the summarizer on resume (D21).
+   *  Metadata only — transported to the context summarizer, never here. */
+  restoredSubtitle?: string;
   /** Source-agnostic launch policy translated to provider CLI flags. */
   permissionMode?: AgentPermissionMode;
 }
@@ -268,15 +275,15 @@ export class PtySessionManager extends EventEmitter {
       harnessSessionId,
     };
 
+    const statedTask =
+      options.initialPrompt?.trim() || options.statedTask?.trim();
     this.sessions.set(id, {
       proc,
       info,
       codexTrustAccepted: false,
       codexIdentityStarted: false,
       codexInput: new OrderedWriteBuffer(),
-      ...(options.initialPrompt?.trim()
-        ? { initialTask: options.initialPrompt.trim() }
-        : {}),
+      ...(statedTask ? { initialTask: statedTask } : {}),
     });
 
     if (options.resumeSessionId && options.harness !== 'shell') {

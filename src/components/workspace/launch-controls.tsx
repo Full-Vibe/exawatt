@@ -187,16 +187,34 @@ export function AgentComposer({
     [projectDir, sourcePreferences, usedSafePreferenceFallback]
   );
 
+  /** Choose a source whether or not preferences have resolved yet: the
+   *  pre-resolution pick is remembered and wins over the recommendation. */
+  const chooseSource = useCallback(
+    (next: AgentSourceId) => {
+      if (sourcePreferences) selectSource(next);
+      else {
+        requestedSourceRef.current = next;
+        setSource(next);
+      }
+    },
+    [selectSource, sourcePreferences]
+  );
+
+  // Focus belongs to an effect keyed on `open` (D21): the compact panel's
+  // textarea is conditionally MOUNTED, so a single rAF fired alongside
+  // setOpen(true) races the mount and loses — ⌘T must land in the goal
+  // field every time, from every summon path.
+  useEffect(() => {
+    if (!open) return;
+    const frame = requestAnimationFrame(() => taskRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
+
   useEffect(() => {
     const focus = (sourceOverride?: AgentSourceId | null) => {
-      if (sourceOverride) {
-        if (sourcePreferences) selectSource(sourceOverride);
-        else {
-          requestedSourceRef.current = sourceOverride;
-          setSource(sourceOverride);
-        }
-      }
+      if (sourceOverride) chooseSource(sourceOverride);
       setOpen(true);
+      // already-open case (re-summon): the open-effect will not re-run
       requestAnimationFrame(() => taskRef.current?.focus());
     };
     const onFocus = (event: Event) => {
@@ -208,7 +226,7 @@ export function AgentComposer({
     if (pending !== undefined) focus(pending);
     return () =>
       window.removeEventListener(FOCUS_AGENT_COMPOSER_EVENT, onFocus);
-  }, [selectSource, sourcePreferences]);
+  }, [chooseSource]);
 
   useEffect(() => {
     if (
@@ -319,13 +337,24 @@ export function AgentComposer({
         disabled={controlsDisabled}
         onChange={event => setTask(event.target.value)}
         onKeyDown={event => {
-          if (
-            event.key === 'Enter' &&
-            !event.shiftKey &&
-            !event.nativeEvent.isComposing
-          ) {
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
             void launchAgent();
+            return;
+          }
+          // an empty goal field makes arrows MODE keys (D21): ⌘T ↑/↓ ⏎
+          // picks a harness without the pointer; with text present they
+          // stay caret keys
+          if (
+            (event.key === 'ArrowUp' || event.key === 'ArrowDown') &&
+            task === ''
+          ) {
+            event.preventDefault();
+            const order = AGENT_SOURCE_ORDER;
+            const index = order.indexOf(effectiveSource);
+            const step = event.key === 'ArrowDown' ? 1 : order.length - 1;
+            chooseSource(order[(index + step) % order.length]);
           }
         }}
         placeholder="What should this Agent do?"
@@ -672,6 +701,17 @@ export function AgentComposer({
         )}
       </button>
       </div>
+      {/* the keyboard grammar teaches itself (D21): ⌘T is a complete
+          keyboard path, so its keys are visible where they apply */}
+      <p
+        data-composer-hints
+        aria-hidden="true"
+        className="px-0.5 pt-0.5 font-mono text-[10px] leading-none"
+        style={{ color: HUD.textDim }}
+      >
+        ⏎ start · ↑↓ source · ⇧⏎ newline
+        {variant === 'compact' && ' · esc close'}
+      </p>
       <span className="sr-only" aria-live="polite">
         {launching === 'agent'
           ? `Starting ${sourceMeta.label} with ${permissionMeta.label} permissions.`
@@ -702,12 +742,8 @@ export function AgentComposer({
               : `Launch an Agent in ${projectName}`
           }
           onClick={() => {
-            if (open) {
-              setOpen(false);
-              return;
-            }
-            setOpen(true);
-            requestAnimationFrame(() => taskRef.current?.focus());
+            // the open-effect owns focus — it runs after the panel mounts
+            setOpen(current => !current);
           }}
           className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded border px-2.5 font-mono text-xs outline-none transition-[filter,transform] duration-150 hover:brightness-125 active:scale-[0.97] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
           style={{

@@ -14,7 +14,9 @@ class FakeManager extends EventEmitter {
   tasks = new Map<string, string>();
 
   list() {
-    return [{ id: 'a', exited: false, harness: 'claude' }];
+    return [
+      { id: 'a', durableSessionId: 'da', exited: false, harness: 'claude' },
+    ];
   }
 
   initialTask(id: string) {
@@ -36,6 +38,11 @@ class FakeManager extends EventEmitter {
   data(id: string, value: string) {
     this.text.set(id, this.buffer(id) + value);
     this.emit('data', id, value);
+  }
+
+  /** simulate the bounded buffer trimming away the session start */
+  replace(id: string, value: string) {
+    this.text.set(id, value);
   }
 }
 
@@ -158,18 +165,22 @@ describe('ContextSummarizer re-entry recaps', () => {
 });
 
 describe('goal-oriented subtitles (D18)', () => {
-  it('orders stated task, session start, then tail — all fenced as data', () => {
+  it('orders stated task, current goal, session start, then tail — all fenced as data', () => {
     const input = buildContextInput({
       task: 'Release Apple Silicon support',
+      currentGoal: 'Release Apple Silicon support',
       head: 'claude: what should I do?',
       tail: 'fixing swifty beaver deployment target',
     });
     expect(input).toContain('overall goal');
     const taskAt = input.indexOf('<stated-task>');
+    // the prompt TEXT mentions <current-goal>; the section opener has a newline
+    const goalAt = input.indexOf('<current-goal>\n');
     const headAt = input.indexOf('<session-start>');
     const tailAt = input.indexOf('<untrusted-scrollback>');
     expect(taskAt).toBeGreaterThan(-1);
-    expect(headAt).toBeGreaterThan(taskAt);
+    expect(goalAt).toBeGreaterThan(taskAt);
+    expect(headAt).toBeGreaterThan(goalAt);
     expect(tailAt).toBeGreaterThan(headAt);
     expect(input).toContain('</untrusted-scrollback>');
   });
@@ -177,6 +188,7 @@ describe('goal-oriented subtitles (D18)', () => {
   it('omits empty sections', () => {
     const input = buildContextInput({ task: null, head: '', tail: 'tail' });
     expect(input).not.toContain('<stated-task>');
+    expect(input).not.toContain('<current-goal>\n');
     expect(input).not.toContain('<session-start>');
     expect(input).toContain('<untrusted-scrollback>');
   });
@@ -279,7 +291,7 @@ describe('sweep output guardrails', () => {
   });
 
   it('keeps the previous subtitle on unusable content and refunds bytes for a retry', async () => {
-    service.seedFromTask('a', 'Ship subtitle guardrails');
+    service.seedFromTask('da', 'Ship subtitle guardrails');
     const events: string[] = [];
     service.on('context', (_id: string, summary: string) =>
       events.push(summary)
@@ -288,20 +300,20 @@ describe('sweep output guardrails', () => {
 
     await runSweep();
     expect(summarize).toHaveBeenCalledOnce();
-    expect(service.getSummary('a')).toBe('Ship subtitle guardrails');
+    expect(service.getSummary('da')).toBe('Ship subtitle guardrails');
     expect(events).toEqual([]);
 
     // bytes were refunded: the next sweep retries without fresh output
     summarize.mockResolvedValueOnce('Release Apple Silicon support');
     await runSweep();
     expect(summarize).toHaveBeenCalledTimes(2);
-    expect(service.getSummary('a')).toBe('Release Apple Silicon support');
+    expect(service.getSummary('da')).toBe('Release Apple Silicon support');
     expect(events).toEqual(['Release Apple Silicon support']);
   });
 
   it('treats NO_GOAL as a quiet no-update that waits for fresh output', async () => {
     summarize.mockResolvedValue('NO_GOAL');
-    service.seedFromTask('a', 'Ship subtitle guardrails');
+    service.seedFromTask('da', 'Ship subtitle guardrails');
     const events: string[] = [];
     service.on('context', (_id: string, summary: string) =>
       events.push(summary)
@@ -309,7 +321,7 @@ describe('sweep output guardrails', () => {
     manager.data('a', 'unreadable binary noise '.repeat(20));
 
     await runSweep();
-    expect(service.getSummary('a')).toBe('Ship subtitle guardrails');
+    expect(service.getSummary('da')).toBe('Ship subtitle guardrails');
     expect(events).toEqual([]);
     // no refund: a NO_GOAL verdict is not retried on the same content
     await runSweep();
@@ -326,6 +338,79 @@ describe('sweep output guardrails', () => {
     expect(summarize).toHaveBeenCalledTimes(4);
     summarize.mockResolvedValueOnce('Release Apple Silicon support');
     await runSweep();
-    expect(service.getSummary('a')).toBe('Release Apple Silicon support');
+    expect(service.getSummary('da')).toBe('Release Apple Silicon support');
+  });
+});
+
+describe('durable session goals (D21)', () => {
+  let manager: FakeManager;
+  let summarize: ReturnType<typeof vi.fn>;
+  let service: ContextSummarizer;
+  const runSweep = () =>
+    (service as unknown as { sweep: () => Promise<void> }).sweep();
+
+  beforeEach(() => {
+    manager = new FakeManager();
+    summarize = vi.fn(async () => 'Fix YC intake feature');
+    service = new ContextSummarizer({ summarize });
+    service.attach(manager as unknown as PtySessionManager);
+  });
+
+  it('keys goals by durable Session id and keeps them past process exit', async () => {
+    manager.data('a', 'meaningful terminal output '.repeat(20));
+    await runSweep();
+    expect(service.getSummary('da')).toBe('Fix YC intake feature');
+    manager.emit('exit', 'a');
+    await runSweep();
+    expect(service.getSummary('da')).toBe('Fix YC intake feature');
+  });
+
+  it('shows the model the current goal and holds it on KEEP without a retry refund', async () => {
+    service.seedFromTask('da', 'Fix YC intake feature');
+    summarize.mockResolvedValue('KEEP');
+    const events: string[] = [];
+    service.on('context', (_id: string, summary: string) =>
+      events.push(summary)
+    );
+    manager.data('a', 'now writing gpt tests '.repeat(20));
+
+    await runSweep();
+    const prompt = summarize.mock.calls[0][0] as string;
+    expect(prompt).toContain('<current-goal>\nFix YC intake feature');
+    expect(service.getSummary('da')).toBe('Fix YC intake feature');
+    expect(events).toEqual([]);
+    // KEEP is an affirmation, not a failure: no byte refund, no retry
+    await runSweep();
+    expect(summarize).toHaveBeenCalledOnce();
+  });
+
+  it('restores a persisted subtitle once and never overwrites a live goal', () => {
+    const events: Array<[string, string]> = [];
+    service.on('context', (id: string, summary: string) =>
+      events.push([id, summary])
+    );
+    service.restore('da', 'Fix YC intake feature');
+    service.restore('da', 'A different stale copy');
+    expect(service.getSummary('da')).toBe('Fix YC intake feature');
+    expect(events).toEqual([['da', 'Fix YC intake feature']]);
+
+    service.seedFromTask('other', 'Ship the composer');
+    service.restore('other', 'An older persisted goal');
+    expect(service.getSummary('other')).toBe('Ship the composer');
+  });
+
+  it('keeps the captured session head after the buffer trims it away', async () => {
+    const start = 'GOAL: overhaul the YC intake flow end to end\n';
+    manager.data('a', start + 'x '.repeat(2000));
+    await runSweep();
+    expect(summarize.mock.calls[0][0] as string).toContain('GOAL: overhaul');
+
+    // the bounded buffer drops the start; the captured head still anchors
+    manager.replace('a', 'y '.repeat(2000));
+    manager.data('a', 'recent micro-task output '.repeat(30));
+    await runSweep();
+    const prompt = summarize.mock.calls[1][0] as string;
+    expect(prompt).toContain('<session-start>');
+    expect(prompt).toContain('GOAL: overhaul the YC intake flow');
   });
 });

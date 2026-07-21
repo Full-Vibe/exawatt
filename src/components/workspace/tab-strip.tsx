@@ -14,13 +14,30 @@ import { HUD } from '@/components/hud';
 import { PROJECT_PALETTE } from './project-colors';
 import { HarnessGlyph } from './harness-icons';
 import { isDefaultHarnessTitle } from './harnesses';
+import { useOrdinalHints } from './use-ordinal-hints';
 import { tabIsLive } from './use-workspace-state';
 import {
   RENAME_ACTIVE_EVENT,
   FOCUS_ACTIVE_TERMINAL_EVENT,
 } from './session-jump';
 import type { Project } from './use-workspace-state';
-import type { PtyAttention } from '@/types/electron';
+
+/** Shortcut-ordinal keycap (D21): revealed only while the chord's modifiers
+ *  are held, styled as a key so it reads as "press this", never as data. */
+function OrdinalKeycap({ value, color }: { value: number; color: string }) {
+  return (
+    <span
+      className="inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded-sm border px-0.5 font-mono text-[9px] leading-none"
+      style={{
+        color,
+        borderColor: `${color}55`,
+        background: 'rgba(8,13,22,0.85)',
+      }}
+    >
+      {value}
+    </span>
+  );
+}
 
 /** needs-operator pulse (S1) — amber, small, impossible to miss peripherally */
 function AttentionDot() {
@@ -177,7 +194,8 @@ export function TabStrip({
   activeDir: string | null;
   /** tab pinned in the split view (S2); null = no split */
   pinnedTabId: string | null;
-  /** micro-context subtitles keyed by sessionId */
+  /** goal subtitles keyed by durableSessionId (D21) — stopped tabs keep
+   *  theirs, so a restored tab still says what it was driving toward */
   summaries: Record<string, string>;
   /** needs-operator flags keyed by sessionId (S1; S8 adds
    *  roadmap-derived entries — only presence and recency matter here) */
@@ -204,6 +222,9 @@ export function TabStrip({
   ) => void;
 }) {
   const [editing, setEditing] = useState<Editing | null>(null);
+  // D21: ordinals are shortcut hints — the strip rests clean; holding ⌘
+  // reveals tab keycaps, ⌘⌥ reveals Project keycaps
+  const ordinalHints = useOrdinalHints();
 
   // ⌘E (S2): open the inline rename editor for the ACTIVE tab — the event
   // comes from the workspace key layer; a ref carries the latest props into
@@ -237,7 +258,7 @@ export function TabStrip({
   };
 
   // global ring ordinals for the first nine tabs (⌘1–⌘9 targets, D18):
-  // the shortcut shows itself the same way the project chips show ⌘⌥N
+  // computed always, revealed only while ⌘ is held (D21)
   const ordinalByTabId = new Map<string, number>();
   {
     let ordinal = 0;
@@ -278,6 +299,7 @@ export function TabStrip({
   return (
     <div
       data-workspace-tab-strip
+      data-ordinal-hints={ordinalHints ?? undefined}
       className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5"
     >
       {projects.map((g, gi) => {
@@ -335,7 +357,9 @@ export function TabStrip({
               onDoubleClick={() =>
                 setEditing({ kind: 'group', id: g.dir, value: g.name })
               }
-              title={`${g.dir} · double-click to rename`}
+              title={`${g.dir}${
+                gi < 9 ? ` · ⌘⌥${gi + 1} selects` : ''
+              } · double-click to rename`}
               className="flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-[11px] outline-none transition-[filter,transform] duration-100 hover:brightness-150 active:scale-95 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
               style={{ color: groupActive ? color : HUD.textDim }}
             >
@@ -343,7 +367,11 @@ export function TabStrip({
                 className="inline-block h-2 w-2 rotate-45"
                 style={{ background: color, boxShadow: `0 0 5px ${color}` }}
               />
-              {gi + 1}{' '}
+              {ordinalHints === 'projects' && gi < 9 && (
+                <span data-project-ordinal={gi + 1} className="inline-flex">
+                  <OrdinalKeycap value={gi + 1} color={color} />
+                </span>
+              )}
               {editing?.kind === 'group' && editing.id === g.dir ? (
                 <>
                   <RenameInput
@@ -362,10 +390,19 @@ export function TabStrip({
                 g.name
               )}
               {flaggedCount > 0 && (
+                // a COUNT badge, visually distinct from shortcut ordinals
+                // (D21): pill-shaped, amber like the attention dot it tallies
                 <span
                   data-attention-count={flaggedCount}
-                  className="font-mono text-[10px] leading-none"
-                  style={{ color: HUD.amber }}
+                  title={`${flaggedCount} ${
+                    flaggedCount === 1 ? 'session needs' : 'sessions need'
+                  } you (⌘J jumps there)`}
+                  className="inline-flex min-w-[15px] items-center justify-center rounded-full px-1 py-px font-mono text-[9px] leading-none"
+                  style={{
+                    color: HUD.amber,
+                    background: 'rgba(255,184,77,0.14)',
+                    border: '1px solid rgba(255,184,77,0.4)',
+                  }}
                 >
                   {flaggedCount}
                 </span>
@@ -374,7 +411,7 @@ export function TabStrip({
             {g.tabs.map(t => {
               const on = groupActive && t.id === g.activeTabId;
               const dead = !tabIsLive(t);
-              const summary = t.sessionId ? summaries[t.sessionId] : undefined;
+              const summary = summaries[t.durableSessionId];
               const needsYou =
                 !dead && !!(t.sessionId && attention[t.sessionId]);
               const working =
@@ -465,13 +502,12 @@ export function TabStrip({
                       dead ? `\n${t.resumeState.replace('-', ' ')}` : ''
                     }${ordinal ? `\n⌘${ordinal} selects` : ''}\ndouble-click to rename`}
                   >
-                    {ordinal !== undefined && (
-                      <span
-                        data-tab-ordinal={ordinal}
-                        className="font-mono text-[10px] leading-none opacity-60"
-                        style={{ color: on ? color : HUD.textDim }}
-                      >
-                        {ordinal}
+                    {ordinal !== undefined && ordinalHints === 'tabs' && (
+                      <span data-tab-ordinal={ordinal} className="inline-flex">
+                        <OrdinalKeycap
+                          value={ordinal}
+                          color={on ? color : HUD.textDim}
+                        />
                       </span>
                     )}
                     {needsYou ? (
@@ -512,13 +548,13 @@ export function TabStrip({
                       <span className="flex max-w-60 flex-col items-start">
                         {/* an unrenamed harness title duplicates the glyph —
                             once a goal subtitle exists it carries the tab
-                            (D18 follow-up); renames always show */}
+                            (D18 follow-up); renames always show. The goal is
+                            durable (D21): stopped tabs keep it too. */}
                         {!(
                           summary &&
-                          !dead &&
                           isDefaultHarnessTitle(t.harness, t.title)
                         ) && <span className="leading-tight">{t.title}</span>}
-                        {summary && !dead && (
+                        {summary && (
                           <span
                             data-subtitle
                             className="line-clamp-2 max-w-56 text-left font-sans text-[11px] leading-4"

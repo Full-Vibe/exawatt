@@ -23,6 +23,7 @@ const projects: Project[] = [
         lifecycle: 'running',
         exitCode: null,
         roadmapItemId: null,
+        initialTask: null,
       },
       {
         id: 'tab-b',
@@ -36,6 +37,7 @@ const projects: Project[] = [
         lifecycle: 'running',
         exitCode: null,
         roadmapItemId: null,
+        initialTask: null,
       },
       {
         id: 'tab-c',
@@ -49,6 +51,7 @@ const projects: Project[] = [
         lifecycle: 'stopped-clean',
         exitCode: null,
         roadmapItemId: null,
+        initialTask: null,
       },
     ],
   },

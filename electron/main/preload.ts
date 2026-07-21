@@ -81,7 +81,9 @@ contextBridge.exposeInMainWorld('electron', {
       durableSessionId: string;
       harnessSessionId: string;
     }>('pty:identity'),
-    onContext: subscribe<{ id: string; summary: string }>('pty:context'),
+    onContext: subscribe<{ durableSessionId: string; summary: string }>(
+      'pty:context'
+    ),
     onRecap: subscribe<{
       id: string;
       text: string;

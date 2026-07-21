@@ -193,6 +193,46 @@ describe('workspace persistence v5 (ENG-018)', () => {
       exitCode: 7,
     });
   });
+
+  it('round-trips the durable goal fields and tolerates their absence (D21)', () => {
+    const parsed = parsePersisted({
+      v: 5,
+      lastUsedDir: '/project',
+      activeDir: '/project',
+      projects: [
+        {
+          dir: '/project',
+          name: 'Project',
+          activeTabId: 'tab-1',
+          tabs: [
+            {
+              ...tab('1', '00000001-1111-4111-8111-111111111111'),
+              durableSessionId: 'session-1',
+              roadmapItemId: null,
+              lifecycle: 'stopped-clean',
+              exitCode: null,
+              initialTask: 'Overhaul the YC intake flow',
+              contextSummary: 'Fix YC intake feature',
+            },
+            {
+              // pre-D21 layout: no goal fields
+              ...tab('2'),
+              durableSessionId: 'session-2',
+              roadmapItemId: null,
+              lifecycle: 'stopped-clean',
+              exitCode: null,
+            },
+          ],
+        },
+      ],
+    });
+    expect(parsed?.projects[0].tabs[0]).toMatchObject({
+      initialTask: 'Overhaul the YC intake flow',
+      contextSummary: 'Fix YC intake feature',
+    });
+    expect(parsed?.projects[0].tabs[1].initialTask).toBeUndefined();
+    expect(parsed?.projects[0].tabs[1].contextSummary).toBeUndefined();
+  });
 });
 
 describe('Resume All eligibility', () => {
@@ -208,6 +248,7 @@ describe('Resume All eligibility', () => {
     lifecycle: 'stopped-clean',
     exitCode: null,
     roadmapItemId: null,
+    initialTask: null,
   } satisfies WorkspaceTab;
 
   it('includes stopped exact agents but excludes shells, live, and unidentified tabs', () => {

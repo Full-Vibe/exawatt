@@ -64,9 +64,14 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   // ride along on pty:list so late attaches/pollers see the latest
   contextSummarizer.attach(ptySessions);
   contextSummarizer.start();
-  contextSummarizer.on('context', (id: string, summary: string) => {
-    broadcast('pty:context', { id, summary });
-  });
+  // goal subtitles are durable-Session truth (D21): renderers key by
+  // durableSessionId so a subtitle survives PTY replacement and restarts
+  contextSummarizer.on(
+    'context',
+    (durableSessionId: string, summary: string) => {
+      broadcast('pty:context', { durableSessionId, summary });
+    }
+  );
   contextSummarizer.on('recap', (recap: unknown) => {
     broadcast('pty:recap', recap);
   });
@@ -146,8 +151,16 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   handleTrusted('pty:create', async (_event, options: PtyCreateOptions) => {
     try {
       const session = await ptySessions.create(options);
-      // the composer's task is the goal — show it as the subtitle instantly
-      contextSummarizer.seedFromTask(session.id, options.initialPrompt);
+      // the composer's task is the goal — show it as the subtitle instantly;
+      // a resume re-anchors the goal persisted with the layout (D21)
+      contextSummarizer.seedFromTask(
+        session.durableSessionId,
+        options.initialPrompt
+      );
+      contextSummarizer.restore(
+        session.durableSessionId,
+        options.restoredSubtitle
+      );
       return { ok: true as const, session };
     } catch (err) {
       return {
@@ -223,7 +236,7 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   handleTrusted('pty:list', () =>
     ptySessions.list().map(s => ({
       ...s,
-      contextSummary: contextSummarizer.getSummary(s.id),
+      contextSummary: contextSummarizer.getSummary(s.durableSessionId),
       attention: attentionMonitor.get(s.id),
     }))
   );

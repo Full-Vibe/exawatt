@@ -15,6 +15,11 @@ export interface PtyCreateOptions {
   durableSessionId?: string;
   /** Optional first task for a newly-created interactive agent. */
   initialPrompt?: string;
+  /** Goal statement carried across a resume for context summaries (D21) —
+   *  metadata only, never written to the process. */
+  statedTask?: string;
+  /** Persisted goal subtitle re-seeded into the summarizer on resume (D21). */
+  restoredSubtitle?: string;
   /** Source-agnostic launch policy translated by the harness boundary. */
   permissionMode?: AgentPermissionMode;
 }
@@ -145,7 +150,7 @@ export interface ElectronPtyApi {
     }) => void
   ) => () => void;
   onContext: (
-    handler: (payload: { id: string; summary: string }) => void
+    handler: (payload: { durableSessionId: string; summary: string }) => void
   ) => () => void;
   onRecap: (handler: (payload: PtyReentryRecap) => void) => () => void;
   onAttention: (

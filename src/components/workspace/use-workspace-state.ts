@@ -73,6 +73,9 @@ export interface WorkspaceTab {
   /** roadmap item declared at launch (ENG-017 S4) — a machine-local view
    *  annotation per decision 0010; overrides link inference, never synced */
   roadmapItemId: string | null;
+  /** the composer's goal statement (D21): persists with the layout and
+   *  re-anchors the context summarizer when the Session resumes */
+  initialTask: string | null;
 }
 
 export type SessionLifecycle =
@@ -109,7 +112,8 @@ export function tabCanResumeAsAgent(tab: WorkspaceTab): boolean {
 export function tabFromPtySession(
   session: PtySessionInfo,
   id: string,
-  roadmapItemId: string | null = null
+  roadmapItemId: string | null = null,
+  initialTask: string | null = null
 ): WorkspaceTab {
   return {
     id,
@@ -127,6 +131,7 @@ export function tabFromPtySession(
     lifecycle: session.exited ? 'exited' : 'running',
     exitCode: session.exited ? (session.exitCode ?? 0) : null,
     roadmapItemId,
+    initialTask,
   };
 }
 
@@ -176,6 +181,10 @@ export interface PersistedV5 {
       roadmapItemId: string | null;
       lifecycle: SessionLifecycle;
       exitCode: number | null;
+      /** goal statement + last goal subtitle (D21) — optional: pre-D21
+       *  layouts lack them; both restore the context layer on relaunch */
+      initialTask?: string | null;
+      contextSummary?: string | null;
     }>;
   }>;
 }
@@ -360,8 +369,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const [pinnedTabId, setPinnedTabId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  /** micro-context subtitles keyed by sessionId (ephemeral — main process
-   *  regenerates them; never persisted) */
+  /** goal subtitles keyed by durableSessionId (D21): the goal is durable
+   *  Session truth — live updates stream from main, the persisted layout
+   *  seeds them back after a restart, stopped tabs keep theirs */
   const [summaries, setSummaries] = useState<Record<string, string>>({});
   /** needs-operator flags keyed by sessionId (ENG-015 S1; main is truth) */
   const [attention, setAttention] = useState<Record<string, PtyAttention>>({});
@@ -386,6 +396,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   readyRef.current = ready;
   const attentionRef = useRef(attention);
   attentionRef.current = attention;
+  const summariesRef = useRef(summaries);
+  summariesRef.current = summaries;
   const resumeInFlightRef = useRef<Set<string>>(new Set());
   const shutdownTargetsRef = useRef<Set<string>>(new Set());
 
@@ -423,11 +435,17 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
 
   /** append a PTY incarnation as a live or stopped tab in its Project */
   const addSession = useCallback(
-    (s: PtySessionInfo, tabId?: string, roadmapItemId?: string | null) => {
+    (
+      s: PtySessionInfo,
+      tabId?: string,
+      roadmapItemId?: string | null,
+      initialTask?: string | null
+    ) => {
       const tab = tabFromPtySession(
         s,
         tabId ?? newTabId(),
-        roadmapItemId ?? null
+        roadmapItemId ?? null,
+        initialTask ?? null
       );
       setProjects(prev => {
         const i = prev.findIndex(g => g.dir === s.projectDir);
@@ -499,11 +517,21 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (cancelled) return;
       const persisted = parsePersisted(persistedRaw);
       const liveByDurableId = new Map(live.map(s => [s.durableSessionId, s]));
-      // adopt existing summaries + attention flags (renderer reload)
+      // goal subtitles (D21): the persisted layout restores each Session's
+      // goal first; live truth from main overrides it, all by durable id
       const seeded: Record<string, string> = {};
       const seededAttention: Record<string, PtyAttention> = {};
+      if (persisted) {
+        for (const g of persisted.projects) {
+          for (const t of g.tabs) {
+            if (t.contextSummary) {
+              seeded[t.durableSessionId] = t.contextSummary;
+            }
+          }
+        }
+      }
       for (const s of live) {
-        if (s.contextSummary) seeded[s.id] = s.contextSummary;
+        if (s.contextSummary) seeded[s.durableSessionId] = s.contextSummary;
         if (s.attention && !clearedBeforeSeed.has(s.id)) {
           seededAttention[s.id] = s.attention;
         }
@@ -532,10 +560,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             : (g.tabs[0]?.id ?? null),
           tabs: g.tabs.map(t => {
             const s = liveByDurableId.get(t.durableSessionId);
+            const initialTask = t.initialTask ?? null;
             if (s && !s.exited) {
               liveByDurableId.delete(s.durableSessionId);
               return {
                 ...t,
+                initialTask,
                 sessionId: s.id,
                 harnessSessionId: s.harnessSessionId ?? t.harnessSessionId,
                 resumeState: 'live' as const,
@@ -547,6 +577,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
               liveByDurableId.delete(s.durableSessionId);
               return {
                 ...t,
+                initialTask,
                 sessionId: null,
                 harnessSessionId: s.harnessSessionId ?? t.harnessSessionId,
                 resumeState: s.harnessSessionId
@@ -560,6 +591,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             // never spawn until the operator explicitly resumes.
             return {
               ...t,
+              initialTask,
               sessionId: null,
               exitCode: t.exitCode,
               lifecycle:
@@ -677,8 +709,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         );
       }
     );
-    const offContext = api.onContext?.(({ id, summary }) => {
-      setSummaries(prev => ({ ...prev, [id]: summary }));
+    const offContext = api.onContext?.(({ durableSessionId, summary }) => {
+      setSummaries(prev => ({ ...prev, [durableSessionId]: summary }));
     });
     const offRecap = api.onRecap?.(next => {
       const { projects: groups, activeDir: dir } = stateRef.current;
@@ -766,6 +798,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
               roadmapItemId: tab.roadmapItemId,
               lifecycle: stopped ? ('stopped-clean' as const) : tab.lifecycle,
               exitCode: tab.exitCode,
+              initialTask: tab.initialTask ?? null,
+              contextSummary:
+                summariesRef.current[tab.durableSessionId] ?? null,
             };
           });
           return {
@@ -784,6 +819,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   );
 
   // ---- persistence: debounced; ended tabs remain as explicit resume targets ----
+  // `summaries` is a dependency (D21): goal subtitles persist with the layout
+  // so a relaunch restores them instead of re-deriving from recent scrollback
   useEffect(() => {
     if (!ready) return;
     const ws = window.electron?.workspace;
@@ -799,6 +836,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     activeDir,
     lastUsedDir,
     pinnedTabId,
+    summaries,
     ready,
     serializeWorkspace,
   ]);
@@ -913,7 +951,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         }
         setError(null);
         setLastUsedDir(dir);
-        addSession(res.session, tabId, opts.roadmapItemId ?? null);
+        addSession(
+          res.session,
+          tabId,
+          opts.roadmapItemId ?? null,
+          opts.initialPrompt?.trim() || null
+        );
         // Resolution bridge (ENG-015 S5 P3): register/refresh this directory's
         // Project in the durable, synced registry. Best-effort — a registry
         // failure (offline, not signed in) must NEVER stop the operator opening
@@ -998,6 +1041,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const size = sizeRef.current?.() ?? null;
       let result;
       try {
+        // the goal survives the resume (D21): statedTask re-anchors the
+        // summarizer's strongest signal, restoredSubtitle re-seeds the last
+        // goal — both metadata-only, never sent to the process
+        const restoredSubtitle =
+          summariesRef.current[tab.durableSessionId] ?? undefined;
         result = await api.create({
           harness: tab.harness,
           cwd: tab.cwd,
@@ -1005,6 +1053,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           durableSessionId: tab.durableSessionId,
           ...(permissionMode ? { permissionMode } : {}),
           ...(exactId ? { resumeSessionId: exactId } : {}),
+          ...(tab.initialTask ? { statedTask: tab.initialTask } : {}),
+          ...(restoredSubtitle ? { restoredSubtitle } : {}),
           ...(size ?? {}),
         });
       } catch (cause) {

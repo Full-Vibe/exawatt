@@ -317,7 +317,7 @@ export function WorkspaceClient() {
           title: t.title,
           harness: t.harness,
           cwd: t.cwd,
-          contextSummary: summaries[t.sessionId as string] ?? null,
+          contextSummary: summaries[t.durableSessionId] ?? null,
           needsAttention: !!attention[t.sessionId as string],
         })),
     [activeProject, summaries, attention]
@@ -857,8 +857,9 @@ export function WorkspaceClient() {
                     onExpire={dismissReentryRecap}
                   />
                 ) : (
-                  activeTab.sessionId &&
-                  summaries[activeTab.sessionId] && (
+                  // durable-Session goal (D21): a stopped tab still answers
+                  // "what was this session driving toward?"
+                  summaries[activeTab.durableSessionId] && (
                     <span
                       className="line-clamp-2 min-w-0 flex-1 border-l pl-3 text-sm leading-5"
                       style={{
@@ -866,7 +867,7 @@ export function WorkspaceClient() {
                         borderColor: 'rgba(138,160,190,0.18)',
                       }}
                     >
-                      {summaries[activeTab.sessionId]}
+                      {summaries[activeTab.durableSessionId]}
                     </span>
                   )
                 )}
