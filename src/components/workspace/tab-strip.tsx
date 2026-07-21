@@ -20,6 +20,11 @@ import {
   RENAME_ACTIVE_EVENT,
   FOCUS_ACTIVE_TERMINAL_EVENT,
 } from './session-jump';
+import {
+  AttentionDot,
+  SessionStatusGlyph,
+  sessionGlyphState,
+} from './status-glyphs';
 import type { Project } from './use-workspace-state';
 
 /** Shortcut-ordinal keycap (D21): revealed only while the chord's modifiers
@@ -36,42 +41,6 @@ function OrdinalKeycap({ value, color }: { value: number; color: string }) {
     >
       {value}
     </span>
-  );
-}
-
-/** needs-operator pulse (S1) — amber, small, impossible to miss peripherally */
-function AttentionDot() {
-  return (
-    <span data-attention className="relative inline-flex h-1.5 w-1.5 shrink-0">
-      <span
-        className="absolute inline-flex h-full w-full animate-ping rounded-full"
-        style={{ background: HUD.amber, opacity: 0.6 }}
-      />
-      <span
-        className="relative inline-flex h-1.5 w-1.5 rounded-full"
-        style={{ background: HUD.amber, boxShadow: `0 0 5px ${HUD.amber}` }}
-      />
-    </span>
-  );
-}
-
-/** live-session activity (D18): running vs waiting must read at a glance.
- *  Working = solid breathing teal (output streaming right now); quiet =
- *  hollow neutral (waiting at a prompt or between turns). The amber
- *  AttentionDot replaces this whenever the session needs the operator. */
-function StatusDot({ working }: { working: boolean }) {
-  return working ? (
-    <span
-      data-status="working"
-      className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full motion-safe:animate-pulse"
-      style={{ background: HUD.cyan2, boxShadow: `0 0 4px ${HUD.cyan2}` }}
-    />
-  ) : (
-    <span
-      data-status="quiet"
-      className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full border"
-      style={{ borderColor: HUD.idle }}
-    />
   );
 }
 
@@ -181,6 +150,7 @@ export function TabStrip({
   summaries,
   attention,
   activity = {},
+  engaged = {},
   onReorderTab,
   onReorderProject,
   onSelectProject,
@@ -202,6 +172,8 @@ export function TabStrip({
   attention: Record<string, { since: number }>;
   /** sessions actively producing output, keyed by sessionId (D18) */
   activity?: Record<string, boolean>;
+  /** sessions ever given work, keyed by sessionId (D22) */
+  engaged?: Record<string, boolean>;
   onSelectProject: (index: number) => void;
   onSelectTab: (dir: string, tabId: string) => void;
   onCloseTab: (tabId: string) => void;
@@ -416,6 +388,23 @@ export function TabStrip({
                 !dead && !!(t.sessionId && attention[t.sessionId]);
               const working =
                 !dead && !!(t.sessionId && activity[t.sessionId]);
+              const isAgent = t.harness !== 'shell';
+              // started: main-truth engaged bit; a goal subtitle also
+              // implies it (covers sessions predating the engaged channel)
+              const started =
+                !!(t.sessionId && engaged[t.sessionId]) || !!summary;
+              const glyphState = sessionGlyphState({
+                working,
+                agent: isAgent,
+                started,
+              });
+              // the harness glyph already carries source identity — a
+              // default title ("Claude Code") is pure redundancy, so agent
+              // tabs stay glyph-only until a rename or subtitle (D22);
+              // shells keep theirs (no glyph)
+              const showTitle = !(
+                isAgent && isDefaultHarnessTitle(t.harness, t.title)
+              );
               const ordinal = ordinalByTabId.get(t.id);
               const stoppedStatus =
                 t.lifecycle === 'interrupted'
@@ -494,9 +483,13 @@ export function TabStrip({
                       needsYou ? '\nneeds your attention (⌘J jumps here)' : ''
                     }${
                       !dead && !needsYou
-                        ? working
+                        ? glyphState === 'working'
                           ? '\nworking — output streaming'
-                          : '\nquiet — waiting or between turns'
+                          : glyphState === 'done'
+                            ? '\nturn finished — waiting on you'
+                            : glyphState === 'fresh'
+                              ? '\nnew — not given a task yet'
+                              : '\nquiet — waiting or between turns'
                         : ''
                     }${
                       dead ? `\n${t.resumeState.replace('-', ' ')}` : ''
@@ -513,7 +506,7 @@ export function TabStrip({
                     {needsYou ? (
                       <AttentionDot />
                     ) : !dead ? (
-                      <StatusDot working={working} />
+                      <SessionStatusGlyph state={glyphState} />
                     ) : null}
                     {t.id === pinnedTabId && (
                       <span
@@ -544,16 +537,12 @@ export function TabStrip({
                           onPick={c => onSetProjectColor(g.dir, c)}
                         />
                       </>
-                    ) : (
+                    ) : showTitle || summary ? (
                       <span className="flex max-w-60 flex-col items-start">
-                        {/* an unrenamed harness title duplicates the glyph —
-                            once a goal subtitle exists it carries the tab
-                            (D18 follow-up); renames always show. The goal is
-                            durable (D21): stopped tabs keep it too. */}
-                        {!(
-                          summary &&
-                          isDefaultHarnessTitle(t.harness, t.title)
-                        ) && <span className="leading-tight">{t.title}</span>}
+                        {showTitle && (
+                          <span className="leading-tight">{t.title}</span>
+                        )}
+                        {/* the goal is durable (D21): stopped tabs keep it */}
                         {summary && (
                           <span
                             data-subtitle
@@ -564,7 +553,7 @@ export function TabStrip({
                           </span>
                         )}
                       </span>
-                    )}
+                    ) : null}
                     {dead && (
                       <span
                         aria-label={stoppedStatus}

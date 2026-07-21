@@ -201,6 +201,7 @@ export function WorkspaceClient() {
     summaries,
     attention,
     activity,
+    engaged,
     reentryRecap,
     error,
     setError,
@@ -706,6 +707,7 @@ export function WorkspaceClient() {
             summaries={summaries}
             attention={mergedAttention}
             activity={activity}
+            engaged={engaged}
             onSelectProject={selectProject}
             onSelectTab={selectTab}
             onCloseTab={id => void closeTab(id)}
@@ -1026,6 +1028,7 @@ export function WorkspaceClient() {
           summaries={summaries}
           attention={mergedAttention}
           activity={activity}
+          engaged={engaged}
           activeTabId={activeTab?.id ?? null}
           activeProjectDir={activeProject?.dir ?? null}
           onPick={(dir, tabId) => {

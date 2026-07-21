@@ -62,6 +62,9 @@ export interface PtySessionInfo {
   contextSummary?: string | null;
   /** needs-operator flag (ENG-015 S1); null when clear */
   attention?: PtyAttention | null;
+  /** ever given work — task, resume, or human keystroke (D22); adopt-time
+   *  seed for the started/unstarted glyph truth */
+  engaged?: boolean;
 }
 
 export type WorktreeResult =
@@ -159,6 +162,8 @@ export interface ElectronPtyApi {
   onActivity: (
     handler: (payload: { id: string; working: boolean }) => void
   ) => () => void;
+  /** fires once per session, on the first work it is given (D22) */
+  onEngaged: (handler: (payload: { id: string }) => void) => () => void;
   onNotificationClick: (
     handler: (payload: { id: string }) => void
   ) => () => void;

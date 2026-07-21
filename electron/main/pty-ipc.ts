@@ -97,6 +97,10 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   attentionMonitor.on('activity', (id: string, working: boolean) => {
     broadcast('pty:activity', { id, working });
   });
+  // started/unstarted truth (D22) — fires once per session, first work given
+  attentionMonitor.on('engaged', (id: string) => {
+    broadcast('pty:engaged', { id });
+  });
   attentionMonitor.on('attention', (id: string, attention: unknown) => {
     broadcast('pty:attention', { id, attention });
     const count = attentionMonitor.count();
@@ -161,6 +165,11 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
         session.durableSessionId,
         options.restoredSubtitle
       );
+      // a launch task or an exact resume IS work given: the tab must never
+      // read "unstarted" (D22)
+      if (options.initialPrompt || options.resumeSessionId) {
+        attentionMonitor.noteEngaged(session.id);
+      }
       return { ok: true as const, session };
     } catch (err) {
       return {
@@ -181,6 +190,8 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   // channel instead of overloading pty:write.
   handleTrusted('pty:engage', (_event, id: string) => {
     contextSummarizer.noteInput(id);
+    // the first human keystroke is work given — started truth (D22)
+    attentionMonitor.noteEngaged(id);
   });
   handleTrusted('pty:focus', (_event, id: string | null) => {
     attentionMonitor.setFocus(id);
@@ -238,6 +249,7 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       ...s,
       contextSummary: contextSummarizer.getSummary(s.durableSessionId),
       attention: attentionMonitor.get(s.id),
+      engaged: attentionMonitor.isEngaged(s.id),
     }))
   );
   handleTrusted('pty:buffer', (_event, id: string) => ptySessions.buffer(id));

@@ -14,6 +14,7 @@ import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import { HarnessGlyph } from './harness-icons';
 import { isDefaultHarnessTitle } from './harnesses';
 import { previewLines } from './scrollback-preview';
+import { SessionStatusGlyph, sessionGlyphState } from './status-glyphs';
 import { tabIsLive } from './use-workspace-state';
 import type { Project } from './use-workspace-state';
 import type { PtyHarness } from '@/types/electron';
@@ -75,6 +76,7 @@ export function ExposeOverlay({
   summaries,
   attention,
   activity = {},
+  engaged = {},
   roadmapByTab = {},
   activeTabId,
   activeProjectDir = null,
@@ -88,6 +90,8 @@ export function ExposeOverlay({
   attention: Record<string, { since: number }>;
   /** sessions actively producing output, keyed by sessionId (D18) */
   activity?: Record<string, boolean>;
+  /** sessions ever given work, keyed by sessionId (D22) */
+  engaged?: Record<string, boolean>;
   /** tabId → linked roadmap item (ENG-017 S9 mirror): the exposé is an
    *  AGENT-FIRST view, so each tile says what its agent is executing */
   roadmapByTab?: Record<
@@ -410,6 +414,21 @@ export function ExposeOverlay({
     const working = !!(tile.sessionId && activity[tile.sessionId]);
     // durable-Session goal (D21): stopped tiles keep their subtitle too
     const subtitle = summaries[tile.durableSessionId];
+    // same three-state truth as the tab strip (D22): started = main-truth
+    // engaged bit, or a goal subtitle for sessions predating the channel
+    const glyphState = sessionGlyphState({
+      working,
+      agent: tile.harness !== 'shell',
+      started: !!(tile.sessionId && engaged[tile.sessionId]) || !!subtitle,
+    });
+    const stateCopy =
+      glyphState === 'working'
+        ? 'working — output streaming'
+        : glyphState === 'done'
+          ? 'turn finished — waiting on you'
+          : glyphState === 'fresh'
+            ? 'new — not given a task yet'
+            : 'quiet — waiting or between turns';
     return (
       <button
         key={tile.tabId}
@@ -422,7 +441,15 @@ export function ExposeOverlay({
         data-selected={selected || undefined}
         tabIndex={selected ? 0 : -1}
         aria-label={`${tile.title}, ${tile.projectName}${needsYou ? ', needs attention' : ''}${
-          tile.live && !needsYou ? (working ? ', working' : ', quiet') : ''
+          tile.live && !needsYou
+            ? glyphState === 'working'
+              ? ', working'
+              : glyphState === 'done'
+                ? ', turn finished'
+                : glyphState === 'fresh'
+                  ? ', new'
+                  : ', quiet'
+            : ''
         }${tile.stateLabel ? `, ${tile.stateLabel}` : ''}`}
         onClick={() => onPick(tile.dir, tile.tabId)}
         onMouseEnter={() => {
@@ -457,10 +484,13 @@ export function ExposeOverlay({
               <HarnessGlyph harness={tile.harness} size={11} />
             </span>
           )}
-          {/* an unrenamed harness title duplicates the glyph — with a goal
-              subtitle below it, the tile header keeps only the glyph (D18
-              follow-up); the accessible name retains the full title */}
-          {!(subtitle && isDefaultHarnessTitle(tile.harness, tile.title)) && (
+          {/* an unrenamed harness title duplicates the glyph — agent tiles
+              keep only the glyph until a rename (D22, matches the strip);
+              the accessible name retains the full title */}
+          {!(
+            tile.harness !== 'shell' &&
+            isDefaultHarnessTitle(tile.harness, tile.title)
+          ) && (
             <span className="truncate" style={{ color: HUD.text }}>
               {tile.title}
             </span>
@@ -504,21 +534,9 @@ export function ExposeOverlay({
               />
             </span>
           ) : tile.live ? (
-            working ? (
-              <span
-                data-status="working"
-                title="working — output streaming"
-                className="ml-1 inline-flex h-1.5 w-1.5 shrink-0 rounded-full motion-safe:animate-pulse"
-                style={{ background: HUD.cyan2, boxShadow: `0 0 4px ${HUD.cyan2}` }}
-              />
-            ) : (
-              <span
-                data-status="quiet"
-                title="quiet — waiting or between turns"
-                className="ml-1 inline-flex h-1.5 w-1.5 shrink-0 rounded-full border"
-                style={{ borderColor: HUD.idle }}
-              />
-            )
+            <span className="ml-1 inline-flex shrink-0" title={stateCopy}>
+              <SessionStatusGlyph state={glyphState} />
+            </span>
           ) : null}
         </div>
         {subtitle && (

@@ -36,8 +36,17 @@ function resolveChromium() {
   return null;
 }
 
-function session({ id, harness, title, cwd, projectName, contextSummary }) {
+function session({
+  id,
+  harness,
+  title,
+  cwd,
+  projectName,
+  contextSummary,
+  engaged = false,
+}) {
   return {
+    engaged,
     id,
     durableSessionId: id,
     harness,
@@ -65,6 +74,7 @@ const liveSessions = [
     cwd: '/tmp/gpagent',
     projectName: 'gpagent',
     contextSummary: 'Testing UTC date parsing fix and seeding demo org',
+    engaged: true,
   }),
   session({
     id: 'exawatt-session',
@@ -73,6 +83,16 @@ const liveSessions = [
     cwd: '/tmp/exawatt',
     projectName: 'exawatt',
     contextSummary: 'Updating tests for harness command permission flags',
+    engaged: true,
+  }),
+  // D22: a freshly launched agent — no task, no summary, never engaged.
+  // Must read as "fresh" and render glyph-only (no "Claude Code" text).
+  session({
+    id: 'fresh-session',
+    harness: 'claude',
+    title: 'Claude Code',
+    cwd: '/tmp/exawatt',
+    projectName: 'exawatt',
   }),
 ];
 
@@ -115,6 +135,18 @@ const persistedLayout = {
           title: 'Codex',
           cwd: '/tmp/exawatt',
           sessionId: 'exawatt-session',
+          harnessSessionId: null,
+          roadmapItemId: null,
+          lifecycle: 'running',
+          exitCode: null,
+        },
+        {
+          id: 'fresh-tab',
+          durableSessionId: 'fresh-session',
+          harness: 'claude',
+          title: 'Claude Code',
+          cwd: '/tmp/exawatt',
+          sessionId: 'fresh-session',
           harnessSessionId: null,
           roadmapItemId: null,
           lifecycle: 'running',
@@ -207,6 +239,15 @@ await page.addInitScript(
         onAttention: off,
         onIdentity: off,
         onNotificationClick: off,
+        // captured so the eval can drive turn-state transitions (D22)
+        onActivity: handler => {
+          window.__fireActivity = handler;
+          return () => undefined;
+        },
+        onEngaged: handler => {
+          window.__fireEngaged = handler;
+          return () => undefined;
+        },
       },
     };
   },
@@ -335,6 +376,65 @@ try {
       );
     }
     results.push({ width, metrics });
+  }
+
+  // ── Turn-state legibility (D22): spinning / finished / unstarted must
+  // each render distinctly, and a fresh agent tab stays glyph-only.
+  await page.setViewportSize({ width: 1312, height: 700 });
+  const strip = page.locator('[data-workspace-tab-strip]');
+  const stripState = async () =>
+    strip.evaluate(element => ({
+      done: element.querySelectorAll('[data-status="done"]').length,
+      fresh: element.querySelectorAll('[data-status="fresh"]').length,
+      working: element.querySelectorAll('[data-status="working"]').length,
+      text: element.innerText,
+    }));
+  let turnState = await stripState();
+  if (turnState.done !== 2 || turnState.fresh !== 1) {
+    throw new Error(
+      `Rest state wrong — expected 2 done + 1 fresh: ${JSON.stringify(turnState)}`
+    );
+  }
+  if (turnState.text.includes('Claude Code')) {
+    throw new Error(
+      `Fresh tab leaked its default harness title: ${turnState.text}`
+    );
+  }
+  await page.screenshot({
+    path: join(SCREENSHOT_DIR, 'turn-states-rest.png'),
+  });
+  // the fresh agent starts streaming → its ring becomes the spinner
+  await page.evaluate(() => {
+    window.__fireActivity?.({ id: 'fresh-session', working: true });
+  });
+  turnState = await stripState();
+  if (turnState.working !== 1 || turnState.fresh !== 0) {
+    throw new Error(
+      `Working state did not take over the fresh tab: ${JSON.stringify(turnState)}`
+    );
+  }
+  await page.screenshot({
+    path: join(SCREENSHOT_DIR, 'turn-states-working.png'),
+  });
+  // it goes quiet again without ever being engaged → back to fresh
+  await page.evaluate(() => {
+    window.__fireActivity?.({ id: 'fresh-session', working: false });
+  });
+  turnState = await stripState();
+  if (turnState.fresh !== 1) {
+    throw new Error(
+      `Quiet unstarted session must return to fresh: ${JSON.stringify(turnState)}`
+    );
+  }
+  // first work given (pty:engaged) → it rests as done from now on
+  await page.evaluate(() => {
+    window.__fireEngaged?.({ id: 'fresh-session' });
+  });
+  turnState = await stripState();
+  if (turnState.done !== 3 || turnState.fresh !== 0) {
+    throw new Error(
+      `Engaged session must rest as done: ${JSON.stringify(turnState)}`
+    );
   }
 
   await page.setViewportSize({ width: 800, height: 700 });

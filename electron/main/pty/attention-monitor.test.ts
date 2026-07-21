@@ -323,3 +323,92 @@ describe('AttentionMonitor activity truth (D18)', () => {
     ]);
   });
 });
+
+describe('AttentionMonitor started truth (D22)', () => {
+  let manager: FakeManager;
+  let monitor: AttentionMonitor;
+  let clock: number;
+  let engagedEvents: string[];
+
+  beforeEach(() => {
+    manager = new FakeManager();
+    clock = 100_000;
+    monitor = new AttentionMonitor({
+      quietMs: 4000,
+      minBurstBytes: 100,
+      spawnGraceMs: 20_000,
+      now: () => clock,
+    });
+    monitor.attach(manager as unknown as PtySessionManager);
+    engagedEvents = [];
+    monitor.on('engaged', (id: string) => engagedEvents.push(id));
+  });
+
+  it('starts unengaged; noteEngaged marks and emits exactly once', () => {
+    manager.sessions.push({
+      id: 'a',
+      harness: 'claude',
+      startedAt: 0,
+      exited: false,
+    });
+    expect(monitor.isEngaged('a')).toBe(false);
+    monitor.noteEngaged('a');
+    monitor.noteEngaged('a');
+    expect(monitor.isEngaged('a')).toBe(true);
+    expect(engagedEvents).toEqual(['a']);
+  });
+
+  it('spawn-banner output alone does not mark a session started', () => {
+    manager.sessions.push({
+      id: 'a',
+      harness: 'claude',
+      // just spawned: the welcome banner arrives inside the spawn grace
+      startedAt: 100_000,
+      exited: false,
+    });
+    manager.emit('data', 'a', 'Welcome to Claude Code!\n'.repeat(20));
+    clock += 5000;
+    monitor.sweepNow();
+    expect(monitor.isEngaged('a')).toBe(false);
+  });
+
+  it('a raised turn-end implies the session started', () => {
+    manager.sessions.push({
+      id: 'a',
+      harness: 'claude',
+      startedAt: 100_000 - 30_000, // past spawn grace
+      exited: false,
+    });
+    manager.emit('data', 'a', 'x'.repeat(200)); // real work burst
+    clock += 5000;
+    monitor.sweepNow();
+    expect(monitor.get('a')?.kind).toBe('turn-end');
+    expect(monitor.isEngaged('a')).toBe(true);
+    expect(engagedEvents).toEqual(['a']);
+  });
+
+  it('clearing attention (operator looked) does not clear startedness', () => {
+    manager.sessions.push({
+      id: 'a',
+      harness: 'claude',
+      startedAt: 0,
+      exited: false,
+    });
+    monitor.noteEngaged('a');
+    monitor.setWindowFocused(true);
+    monitor.setFocus('a'); // clears attention, must not clear startedness
+    expect(monitor.isEngaged('a')).toBe(true);
+  });
+
+  it('drops engagement when the session exits', () => {
+    manager.sessions.push({
+      id: 'a',
+      harness: 'claude',
+      startedAt: 0,
+      exited: false,
+    });
+    monitor.noteEngaged('a');
+    manager.emit('exit', 'a', 0);
+    expect(monitor.isEngaged('a')).toBe(false);
+  });
+});

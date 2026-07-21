@@ -378,6 +378,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   /** sessions actively producing output right now, keyed by sessionId
    *  (D18: running vs waiting must read at a glance; main is truth) */
   const [activity, setActivity] = useState<Record<string, boolean>>({});
+  /** sessions ever given work, keyed by sessionId (D22: started vs
+   *  unstarted must read at a glance; main is truth — task/resume at
+   *  create, first human keystroke, or raised attention) */
+  const [engaged, setEngaged] = useState<Record<string, boolean>>({});
   /** quiet, one-shot S4 catch-up for the session currently being revisited */
   const [reentryRecap, setReentryRecap] = useState<PtyReentryRecap | null>(
     null
@@ -518,9 +522,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const persisted = parsePersisted(persistedRaw);
       const liveByDurableId = new Map(live.map(s => [s.durableSessionId, s]));
       // goal subtitles (D21): the persisted layout restores each Session's
-      // goal first; live truth from main overrides it, all by durable id
+      // goal first; live truth from main overrides it, all by durable id.
+      // Attention + started flags adopt from live main truth (D22).
       const seeded: Record<string, string> = {};
       const seededAttention: Record<string, PtyAttention> = {};
+      const seededEngaged: Record<string, boolean> = {};
       if (persisted) {
         for (const g of persisted.projects) {
           for (const t of g.tabs) {
@@ -535,12 +541,16 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         if (s.attention && !clearedBeforeSeed.has(s.id)) {
           seededAttention[s.id] = s.attention;
         }
+        if (s.engaged) seededEngaged[s.id] = true;
       }
       if (Object.keys(seeded).length > 0) {
         setSummaries(prev => ({ ...seeded, ...prev }));
       }
       if (Object.keys(seededAttention).length > 0) {
         setAttention(prev => ({ ...seededAttention, ...prev }));
+      }
+      if (Object.keys(seededEngaged).length > 0) {
+        setEngaged(prev => ({ ...seededEngaged, ...prev }));
       }
       if (persisted) {
         const assigned: Array<string | undefined> = persisted.projects.map(
@@ -729,6 +739,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         return next;
       });
     });
+    const offEngaged = api.onEngaged?.(({ id }) => {
+      setEngaged(prev => (prev[id] ? prev : { ...prev, [id]: true }));
+    });
     const offAttention = api.onAttention?.(({ id, attention: att }) => {
       if (att) clearedBeforeSeed.delete(id);
       else clearedBeforeSeed.add(id);
@@ -747,6 +760,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       offContext?.();
       offRecap?.();
       offActivity?.();
+      offEngaged?.();
       offAttention?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1536,6 +1550,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     summaries,
     attention,
     activity,
+    engaged,
     reentryRecap,
     error,
     setError,

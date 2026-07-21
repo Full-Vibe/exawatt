@@ -76,6 +76,10 @@ export class AttentionMonitor extends EventEmitter {
   private burstBytes = new Map<string, number>();
   /** sessions currently emitting output — the renderer's "working" glyphs */
   private working = new Set<string>();
+  /** sessions ever given work (D22: composer task, exact resume, or a human
+   *  keystroke via pty:engage) or that ever raised attention (a turn-end
+   *  implies a turn happened) — the strip's started/unstarted truth */
+  private engaged = new Set<string>();
   /** output since a flag was raised — substantial resumption clears it */
   private bytesSinceFlag = new Map<string, number>();
   /** unterminated escape-sequence tail carried to the next chunk */
@@ -129,6 +133,20 @@ export class AttentionMonitor extends EventEmitter {
   /** is this session actively producing output right now? */
   isWorking(id: string): boolean {
     return this.working.has(id);
+  }
+
+  /** The operator gave this session work (task, resume, or keystroke).
+   *  Deliberately NOT gated on `disabled`: startedness is explicit fact,
+   *  not stream inference. Emits 'engaged' once per session. */
+  noteEngaged(id: string): void {
+    if (this.engaged.has(id)) return;
+    this.engaged.add(id);
+    this.emit('engaged', id);
+  }
+
+  /** has this session ever been given work? (D22 started/unstarted truth) */
+  isEngaged(id: string): boolean {
+    return this.engaged.has(id);
   }
 
   /** which session's tab is active (null = none) */
@@ -217,6 +235,8 @@ export class AttentionMonitor extends EventEmitter {
 
   private raise(id: string, kind: AttentionKind): void {
     if (this.attention.has(id)) return; // keep the original since (queue order)
+    // a turn-end or bell means a turn happened — the session has started
+    this.noteEngaged(id);
     const att = { kind, since: this.now() };
     this.attention.set(id, att);
     this.bytesSinceFlag.set(id, 0);
@@ -233,6 +253,7 @@ export class AttentionMonitor extends EventEmitter {
     this.lastDataAt.delete(id);
     this.burstBytes.delete(id);
     this.carry.delete(id);
+    this.engaged.delete(id);
     if (this.working.delete(id)) this.emit('activity', id, false);
     this.clear(id);
   }
