@@ -180,3 +180,23 @@ describe('shortcut binding policy', () => {
     ).toMatch(/terminal tab navigation/);
   });
 });
+
+describe('arrangement families (D20)', () => {
+  it('reserves command-option brackets for arranging tabs and Projects', () => {
+    expect(
+      reservedShortcutFamily(
+        event({ code: 'BracketRight', metaKey: true, altKey: true })
+      )
+    ).toMatch(/arranging tabs/);
+    expect(
+      reservedShortcutFamily(
+        event({
+          code: 'BracketLeft',
+          metaKey: true,
+          altKey: true,
+          shiftKey: true,
+        })
+      )
+    ).toMatch(/arranging Projects/);
+  });
+});

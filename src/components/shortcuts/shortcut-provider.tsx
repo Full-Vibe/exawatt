@@ -56,6 +56,7 @@ const MENU_COMMAND_SHORTCUTS: Record<string, string> = {
   'history-back': 'history-back',
   'history-forward': 'history-forward',
   'open-project': 'workspace-new-project',
+  'new-agent': 'workspace-new-agent',
   'launch-shell': 'workspace-new-shell',
   'rename-tab': 'workspace-rename',
   'toggle-split': 'workspace-split',
@@ -249,6 +250,12 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           break;
         case 'launch-codex':
           requestAgentComposer('codex');
+          if (!window.location.pathname.startsWith('/workspace')) {
+            navigateCommandSurface('/workspace');
+          }
+          break;
+        case 'new-agent':
+          requestAgentComposer();
           if (!window.location.pathname.startsWith('/workspace')) {
             navigateCommandSurface('/workspace');
           }

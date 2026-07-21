@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { nextTabInRing, tabAtOrdinal, type RingProject } from './tab-ring';
+import {
+  moveProjectInList,
+  moveTabWithinProject,
+  nextTabInRing,
+  placeProjectBeside,
+  placeTabBeside,
+  tabAtOrdinal,
+  type RingProject,
+} from './tab-ring';
 
 type Tab = { id: string; stopped?: boolean };
 
@@ -144,5 +152,49 @@ describe('tabAtOrdinal', () => {
       dir: '/c',
       tab: { id: 'c1' },
     });
+  });
+});
+
+describe('arrangement (D20)', () => {
+  const projects = () => [
+    project('/a', ['a1', 'a2', 'a3']),
+    project('/b', ['b1']),
+  ];
+
+  it('moves a tab within its project and stops at the edges', () => {
+    const moved = moveTabWithinProject(projects(), 'a2', -1);
+    expect(moved?.[0].tabs.map(t => t.id)).toEqual(['a2', 'a1', 'a3']);
+    expect(moveTabWithinProject(projects(), 'a1', -1)).toBeNull();
+    expect(moveTabWithinProject(projects(), 'a3', 1)).toBeNull();
+    expect(moveTabWithinProject(projects(), 'b1', 1)).toBeNull();
+    expect(moveTabWithinProject(projects(), 'ghost', 1)).toBeNull();
+  });
+
+  it('never lets arrangement cross a Project boundary', () => {
+    expect(placeTabBeside(projects(), 'a1', 'b1', 'before')).toBeNull();
+  });
+
+  it('drops a tab beside a sibling in either direction', () => {
+    const before = placeTabBeside(projects(), 'a3', 'a1', 'before');
+    expect(before?.[0].tabs.map(t => t.id)).toEqual(['a3', 'a1', 'a2']);
+    const after = placeTabBeside(projects(), 'a1', 'a3', 'after');
+    expect(after?.[0].tabs.map(t => t.id)).toEqual(['a2', 'a3', 'a1']);
+    // dropping where it already is = no arrangement
+    expect(placeTabBeside(projects(), 'a1', 'a2', 'before')).toBeNull();
+  });
+
+  it('reorders Projects globally with edge stops', () => {
+    const moved = moveProjectInList(projects(), '/b', -1);
+    expect(moved?.map(p => p.dir)).toEqual(['/b', '/a']);
+    expect(moveProjectInList(projects(), '/a', -1)).toBeNull();
+    const placed = placeProjectBeside(projects(), '/a', '/b', 'after');
+    expect(placed?.map(p => p.dir)).toEqual(['/b', '/a']);
+    expect(placeProjectBeside(projects(), '/a', '/a', 'before')).toBeNull();
+  });
+
+  it('preserves untouched project objects (referential stability)', () => {
+    const input = projects();
+    const moved = moveTabWithinProject(input, 'a2', 1);
+    expect(moved?.[1]).toBe(input[1]);
   });
 });

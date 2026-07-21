@@ -80,3 +80,96 @@ export function tabAtOrdinal<T extends { id: string }>(
   const tabs = projects.flatMap(g => g.tabs.map(tab => ({ dir: g.dir, tab })));
   return tabs[index] ?? null;
 }
+
+// ── Arrangement (ENG-016 D20) ──────────────────────────────────────────
+// With ⌘1–9 and ⌘⌥1–9 as ordinals, ORDER is an interface: tabs arrange
+// within their Project (grouping is directory truth and never changes by
+// drag) and Projects arrange globally. Pure so persistence and every ring
+// consumer inherit the new order for free.
+
+interface ArrangeProject<T extends { id: string }> {
+  dir: string;
+  tabs: T[];
+}
+
+/** Move `tabId` one step within its Project. Returns null when it cannot
+ *  move (unknown id, or already at its Project's edge — arrangement never
+ *  crosses Projects; grouping is directory truth). */
+export function moveTabWithinProject<
+  T extends { id: string },
+  P extends ArrangeProject<T>,
+>(projects: ReadonlyArray<P>, tabId: string, delta: 1 | -1): P[] | null {
+  for (const project of projects) {
+    const from = project.tabs.findIndex(tab => tab.id === tabId);
+    if (from === -1) continue;
+    const to = from + delta;
+    if (to < 0 || to >= project.tabs.length) return null;
+    const tabs = [...project.tabs];
+    const [moved] = tabs.splice(from, 1);
+    tabs.splice(to, 0, moved);
+    return projects.map(p => (p === project ? { ...p, tabs } : p));
+  }
+  return null;
+}
+
+/** Drop `tabId` beside `targetTabId` (same Project only). */
+export function placeTabBeside<
+  T extends { id: string },
+  P extends ArrangeProject<T>,
+>(
+  projects: ReadonlyArray<P>,
+  tabId: string,
+  targetTabId: string,
+  place: 'before' | 'after'
+): P[] | null {
+  if (tabId === targetTabId) return null;
+  for (const project of projects) {
+    const from = project.tabs.findIndex(tab => tab.id === tabId);
+    const targetAt = project.tabs.findIndex(tab => tab.id === targetTabId);
+    if (from === -1 && targetAt === -1) continue;
+    // dragging across Projects is not an arrangement — grouping is truth
+    if (from === -1 || targetAt === -1) return null;
+    const tabs = [...project.tabs];
+    const [moved] = tabs.splice(from, 1);
+    const anchor = tabs.findIndex(tab => tab.id === targetTabId);
+    tabs.splice(place === 'before' ? anchor : anchor + 1, 0, moved);
+    if (tabs.every((tab, i) => tab === project.tabs[i])) return null;
+    return projects.map(p => (p === project ? { ...p, tabs } : p));
+  }
+  return null;
+}
+
+/** Move the Project group `dir` one step in the global order. */
+export function moveProjectInList<P extends { dir: string }>(
+  projects: ReadonlyArray<P>,
+  dir: string,
+  delta: 1 | -1
+): P[] | null {
+  const from = projects.findIndex(project => project.dir === dir);
+  if (from === -1) return null;
+  const to = from + delta;
+  if (to < 0 || to >= projects.length) return null;
+  const next = [...projects];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
+/** Drop Project `dir` beside Project `targetDir`. */
+export function placeProjectBeside<P extends { dir: string }>(
+  projects: ReadonlyArray<P>,
+  dir: string,
+  targetDir: string,
+  place: 'before' | 'after'
+): P[] | null {
+  if (dir === targetDir) return null;
+  const from = projects.findIndex(project => project.dir === dir);
+  const targetAt = projects.findIndex(project => project.dir === targetDir);
+  if (from === -1 || targetAt === -1) return null;
+  const next = [...projects];
+  const [moved] = next.splice(from, 1);
+  const anchor = next.findIndex(project => project.dir === targetDir);
+  next.splice(place === 'before' ? anchor : anchor + 1, 0, moved);
+  if (next.every((project, i) => project === projects[i])) return null;
+  return next;
+}

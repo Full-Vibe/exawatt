@@ -87,6 +87,7 @@ const KEY_HINTS: Array<{ shortcutId: string; label: string }> = [
   { shortcutId: 'command-palette', label: 'commands' },
   { shortcutId: 'command-sessions', label: 'sessions' },
   { shortcutId: 'workspace-new-project', label: 'new project' },
+  { shortcutId: 'workspace-new-agent', label: 'new agent' },
   { shortcutId: 'workspace-new-shell', label: 'shell' },
   { shortcutId: 'workspace-split', label: 'split' },
   { shortcutId: 'workspace-roadmap', label: 'roadmap' },
@@ -216,6 +217,10 @@ export function WorkspaceClient() {
     selectTab,
     cycleTab,
     selectTabByOrdinal,
+    moveActiveTab,
+    moveActiveProject,
+    reorderTab,
+    reorderProject,
     jumpAttention,
     togglePin,
     renameTab,
@@ -546,6 +551,14 @@ export function WorkspaceClient() {
       selectIndex: selectProject,
       selectTabOrdinal: selectTabByOrdinal,
       cycle: cycleTab,
+      moveTab: moveActiveTab,
+      moveProject: moveActiveProject,
+      newAgent: () => {
+        // same summon the palette uses: expands + focuses the composer, or
+        // opens the Project chooser first when nothing is open
+        window.dispatchEvent(new CustomEvent(FOCUS_AGENT_COMPOSER_EVENT));
+        return true;
+      },
       jumpAttention: jumpAttentionLadder,
       activateCommandAltitude: target => {
         activateCommandAltitude(target);
@@ -589,6 +602,8 @@ export function WorkspaceClient() {
     selectProject,
     cycleTab,
     selectTabByOrdinal,
+    moveActiveTab,
+    moveActiveProject,
     jumpAttentionLadder,
     togglePin,
     activateCommandAltitude,
@@ -697,6 +712,12 @@ export function WorkspaceClient() {
             onRenameTab={renameTab}
             onRenameProject={renameProject}
             onSetProjectColor={setProjectColor}
+            onReorderTab={(tabId, targetTabId, place) =>
+              void reorderTab(tabId, targetTabId, place)
+            }
+            onReorderProject={(dir, targetDir, place) =>
+              void reorderProject(dir, targetDir, place)
+            }
           />
           {activeProject && activeProject.tabs.length > 0 ? (
             <div className="ml-auto shrink-0">

@@ -1,12 +1,15 @@
 /**
  * Workspace keyboard layer (ENG-002 — "Spaces-speed switching").
  *
- *   ⌘T (or ⌘⇧T)  open a shell in the active Project
+ *   ⌘T            summon the Agent composer (D20 — Agents are primary)
+ *   ⌘⇧T           open a shell in the active Project
  *   ⌘N            open the Project chooser
  *   ⌘W (or ⌘⇧W)  close the active tab
  *   ⌘1…⌘9        jump to tab N of the global ring (D18, browser-style)
  *   ⌘⌥1…⌘⌥9      jump to Project N
  *   ⌘⇧[ / ⌘⇧]    previous / next tab (wraps)
+ *   ⌘⌥[ / ⌘⌥]    move the active tab within its Project (D20)
+ *   ⌘⌥⇧[ / ⌘⌥⇧]  move the active Project in the strip (D20)
  *   ⌘J           jump to the oldest session needing attention (S1)
  *   ⌃⌘1 / ⌃⌘2 / ⌃⌘3  Terminal / Sessions / Spatial (D19 — off ⌘⇧3,
  *                     which macOS swallows for screenshots)
@@ -66,6 +69,8 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 export interface WorkspaceShortcutActions {
   launchShell: () => boolean;
+  /** ⌘T — summon the Agent composer (the primary launch gesture) */
+  newAgent: () => boolean;
   /** ⌘N — open Exawatt's curated Project chooser */
   newProject: () => boolean;
   closeActive: () => boolean;
@@ -74,6 +79,10 @@ export interface WorkspaceShortcutActions {
   selectTabOrdinal: (index: number) => boolean;
   /** move selection by delta with wraparound */
   cycle: (delta: 1 | -1) => boolean;
+  /** ⌘⌥[/]: nudge the active tab within its Project (D20) */
+  moveTab: (delta: 1 | -1) => boolean;
+  /** ⌘⌥⇧[/]: nudge the active Project in the strip (D20) */
+  moveProject: (delta: 1 | -1) => boolean;
   /** jump to the oldest needs-attention session */
   jumpAttention: () => boolean;
   /** open or refocus one absolute command altitude */
@@ -144,6 +153,13 @@ export function useWorkspaceShortcuts(
         if (actions.cycle(1)) e.preventDefault();
         return;
       }
+      // arrangement (D20): ⌘⌥ nudges the tab, ⌘⌥⇧ nudges the Project
+      if (e.altKey && (e.code === 'BracketLeft' || e.code === 'BracketRight')) {
+        const delta = e.code === 'BracketRight' ? 1 : -1;
+        const apply = e.shiftKey ? actions.moveProject : actions.moveTab;
+        if (apply(delta)) e.preventDefault();
+        return;
+      }
       const ordinal = /^Digit([1-9])$/.exec(e.code);
       if (e.altKey && !e.shiftKey && ordinal) {
         if (actions.selectIndex(Number(ordinal[1]) - 1)) {
@@ -200,7 +216,8 @@ export function useWorkspaceShortcuts(
       const verbs: Array<
         [id: string, apply: () => boolean, shiftAlias?: boolean]
       > = [
-        ['workspace-new-shell', actions.launchShell, true],
+        ['workspace-new-agent', actions.newAgent],
+        ['workspace-new-shell', actions.launchShell],
         ['workspace-new-project', actions.newProject],
         ['workspace-close-tab', actions.closeActive, true],
         ['workspace-jump-attention', actions.jumpAttention],

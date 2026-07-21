@@ -10,11 +10,14 @@ function actions(): WorkspaceShortcutActions {
   const yes = () => vi.fn(() => true);
   return {
     launchShell: yes(),
+    newAgent: yes(),
     newProject: yes(),
     closeActive: yes(),
     selectIndex: yes(),
     selectTabOrdinal: yes(),
     cycle: yes(),
+    moveTab: yes(),
+    moveProject: yes(),
     jumpAttention: yes(),
     activateCommandAltitude: yes(),
     openPalette: yes(),
@@ -201,5 +204,59 @@ describe('workspace focus shortcuts', () => {
     fireEvent.keyDown(button, { key: 'Escape' });
     expect(handlers.focusTerminal).not.toHaveBeenCalled();
     dialog.remove();
+  });
+});
+
+describe('keyboard doctrine + arrangement (D20)', () => {
+  beforeEach(() => {
+    for (const definition of defaultShortcuts) {
+      shortcutRegistry.register({ ...definition, action: vi.fn() });
+    }
+  });
+  afterEach(() => {
+    for (const definition of defaultShortcuts) {
+      shortcutRegistry.unregister(definition.id);
+    }
+  });
+
+  it('routes the primary launch chord to the Agent composer, shifted to shell', () => {
+    const handlers = actions();
+    renderHook(() => useWorkspaceShortcuts(handlers));
+
+    fireEvent.keyDown(window, { key: 't', code: 'KeyT', metaKey: true });
+    expect(handlers.newAgent).toHaveBeenCalledOnce();
+    expect(handlers.launchShell).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, {
+      key: 't',
+      code: 'KeyT',
+      metaKey: true,
+      shiftKey: true,
+    });
+    expect(handlers.launchShell).toHaveBeenCalledOnce();
+    expect(handlers.newAgent).toHaveBeenCalledOnce();
+  });
+
+  it('moves the active tab with command-option brackets, the Project with shift added', () => {
+    const handlers = actions();
+    renderHook(() => useWorkspaceShortcuts(handlers));
+
+    fireEvent.keyDown(window, {
+      key: ']',
+      code: 'BracketRight',
+      metaKey: true,
+      altKey: true,
+    });
+    expect(handlers.moveTab).toHaveBeenLastCalledWith(1);
+
+    fireEvent.keyDown(window, {
+      key: '[',
+      code: 'BracketLeft',
+      metaKey: true,
+      altKey: true,
+      shiftKey: true,
+    });
+    expect(handlers.moveProject).toHaveBeenLastCalledWith(-1);
+    expect(handlers.cycle).not.toHaveBeenCalled();
   });
 });

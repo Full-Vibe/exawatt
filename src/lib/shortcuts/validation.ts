@@ -44,6 +44,15 @@ export function reservedShortcutFamily(
     return '⌘⇧[ / ⌘⇧] is reserved for terminal tab navigation.';
   }
 
+  if (
+    event.altKey &&
+    (event.code === 'BracketLeft' || event.code === 'BracketRight')
+  ) {
+    return event.shiftKey
+      ? '⌘⌥⇧[ / ⌘⌥⇧] is reserved for arranging Projects.'
+      : '⌘⌥[ / ⌘⌥] is reserved for arranging tabs.';
+  }
+
   return null;
 }
 

@@ -164,6 +164,8 @@ export function TabStrip({
   summaries,
   attention,
   activity = {},
+  onReorderTab,
+  onReorderProject,
   onSelectProject,
   onSelectTab,
   onCloseTab,
@@ -188,6 +190,18 @@ export function TabStrip({
   onRenameTab: (tabId: string, title: string) => void;
   onRenameProject: (dir: string, name: string) => void;
   onSetProjectColor: (dir: string, color: string) => void;
+  /** drag arrangement (D20): drop a tab beside a same-Project sibling */
+  onReorderTab?: (
+    tabId: string,
+    targetTabId: string,
+    place: 'before' | 'after'
+  ) => void;
+  /** drag arrangement (D20): drop a Project group beside another */
+  onReorderProject?: (
+    dir: string,
+    targetDir: string,
+    place: 'before' | 'after'
+  ) => void;
 }) {
   const [editing, setEditing] = useState<Editing | null>(null);
 
@@ -237,6 +251,30 @@ export function TabStrip({
     }
   }
 
+  // ── Drag arrangement (D20): order is an interface. Tabs move within
+  // their Project (grouping is directory truth); Project groups move
+  // globally. Keyboard equivalents: ⌘⌥[/] and ⌘⌥⇧[/].
+  const [drag, setDrag] = useState<
+    { kind: 'tab' | 'project'; id: string; dir: string } | null
+  >(null);
+  const [hint, setHint] = useState<
+    { key: string; place: 'before' | 'after' } | null
+  >(null);
+  const endDrag = () => {
+    setDrag(null);
+    setHint(null);
+  };
+  const dropPlace = (e: React.DragEvent): 'before' | 'after' => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+  };
+  const hintShadow = (key: string, color: string): string | undefined =>
+    hint?.key === key
+      ? hint.place === 'before'
+        ? `inset 3px 0 0 0 ${color}`
+        : `inset -3px 0 0 0 ${color}`
+      : undefined;
+
   return (
     <div
       data-workspace-tab-strip
@@ -253,8 +291,38 @@ export function TabStrip({
             key={g.dir}
             data-project={g.name}
             data-active-project={groupActive || undefined}
+            draggable={!editing}
+            onDragStart={e => {
+              // a drag born on a tab wrapper is the TAB's drag
+              if (
+                e.target instanceof Element &&
+                e.target.closest('[data-tab-id]')
+              ) {
+                return;
+              }
+              e.dataTransfer.effectAllowed = 'move';
+              setDrag({ kind: 'project', id: g.dir, dir: g.dir });
+            }}
+            onDragEnd={endDrag}
+            onDragOver={e => {
+              if (drag?.kind !== 'project' || drag.id === g.dir) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              setHint({ key: `p:${g.dir}`, place: dropPlace(e) });
+            }}
+            onDragLeave={() =>
+              setHint(h => (h?.key === `p:${g.dir}` ? null : h))
+            }
+            onDrop={e => {
+              if (drag?.kind !== 'project' || drag.id === g.dir) return;
+              e.preventDefault();
+              onReorderProject?.(drag.id, g.dir, dropPlace(e));
+              endDrag();
+            }}
             className="flex items-center gap-1 rounded border px-1 py-0.5"
             style={{
+              boxShadow: hintShadow(`p:${g.dir}`, color),
+              opacity: drag?.kind === 'project' && drag.id === g.dir ? 0.5 : 1,
               borderColor: groupActive
                 ? `${color}66`
                 : 'rgba(138,160,190,0.12)',
@@ -323,12 +391,58 @@ export function TabStrip({
               return (
                 <div
                   key={t.id}
+                  data-tab-id={t.id}
                   data-active={on || undefined}
+                  draggable={!editing}
+                  onDragStart={e => {
+                    e.stopPropagation();
+                    e.dataTransfer.effectAllowed = 'move';
+                    setDrag({ kind: 'tab', id: t.id, dir: g.dir });
+                  }}
+                  onDragEnd={e => {
+                    e.stopPropagation();
+                    endDrag();
+                  }}
+                  onDragOver={e => {
+                    if (
+                      drag?.kind !== 'tab' ||
+                      drag.dir !== g.dir ||
+                      drag.id === t.id
+                    ) {
+                      return;
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.dataTransfer.dropEffect = 'move';
+                    setHint({ key: `t:${t.id}`, place: dropPlace(e) });
+                  }}
+                  onDragLeave={() =>
+                    setHint(h => (h?.key === `t:${t.id}` ? null : h))
+                  }
+                  onDrop={e => {
+                    if (
+                      drag?.kind !== 'tab' ||
+                      drag.dir !== g.dir ||
+                      drag.id === t.id
+                    ) {
+                      return;
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onReorderTab?.(drag.id, t.id, dropPlace(e));
+                    endDrag();
+                  }}
                   className="group/tab flex items-center overflow-hidden rounded border transition-[border-color,background-color,filter] duration-150 hover:brightness-125 motion-reduce:transition-none"
                   style={{
+                    boxShadow: hintShadow(`t:${t.id}`, color),
                     borderColor: on ? `${color}99` : 'rgba(138,160,190,0.18)',
                     background: on ? `${color}14` : 'rgba(138,160,190,0.04)',
-                    opacity: dead ? 0.72 : 1,
+                    opacity:
+                      drag?.kind === 'tab' && drag.id === t.id
+                        ? 0.5
+                        : dead
+                          ? 0.72
+                          : 1,
                   }}
                 >
                   <EditableChrome

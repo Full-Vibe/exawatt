@@ -18,7 +18,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HARNESS_META } from './harnesses';
 import { pickDistinctColor, projectColor } from './project-colors';
-import { nextTabInRing, tabAtOrdinal } from './tab-ring';
+import {
+  moveProjectInList,
+  moveTabWithinProject,
+  nextTabInRing,
+  placeProjectBeside,
+  placeTabBeside,
+  tabAtOrdinal,
+} from './tab-ring';
 import {
   SESSION_JUMP_EVENT,
   LAUNCH_EVENT,
@@ -38,6 +45,7 @@ import {
   openRepositoryProject,
   listProjects,
   renameProject as registryRenameProject,
+  reorderProjects as registryReorderProjects,
   setProjectColor as registrySetProjectColor,
 } from '@/lib/projects/registry';
 import type {
@@ -1246,6 +1254,68 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
 
   /** ⌘1–⌘9: jump straight to the Nth tab of the global ring (D18 — the
    *  highest-frequency switch gets the cheapest chord, browser-style). */
+  // ── Arrangement (D20): order is an interface once ⌘digit ordinals
+  // exist. Tabs arrange within their Project; Projects arrange globally.
+  // Order persists with the layout; Project order also pushes best-effort
+  // to the registry's sort_order so it syncs across machines.
+  const syncProjectOrder = useCallback((ordered: Project[]) => {
+    const ids = ordered
+      .map(project => project.registryId)
+      .filter((id): id is string => !!id);
+    if (ids.length > 1) void registryReorderProjects(ids).catch(() => {});
+  }, []);
+
+  const applyProjectOrder = useCallback(
+    (next: Project[] | null): boolean => {
+      if (!next) return false;
+      setProjects(next);
+      syncProjectOrder(next);
+      return true;
+    },
+    [syncProjectOrder]
+  );
+
+  /** ⌘⌥[/⌘⌥]: nudge the ACTIVE tab one slot within its Project */
+  const moveActiveTab = useCallback((delta: 1 | -1): boolean => {
+    const { projects: gs, activeDir: ad } = stateRef.current;
+    const active = gs.find(g => g.dir === ad);
+    if (!active?.activeTabId) return false;
+    const next = moveTabWithinProject(gs, active.activeTabId, delta);
+    if (!next) return false;
+    setProjects(next);
+    return true;
+  }, []);
+
+  /** ⌘⌥⇧[/⌘⌥⇧]: nudge the ACTIVE Project one slot in the strip */
+  const moveActiveProject = useCallback(
+    (delta: 1 | -1): boolean => {
+      const { projects: gs, activeDir: ad } = stateRef.current;
+      if (!ad) return false;
+      return applyProjectOrder(moveProjectInList(gs, ad, delta));
+    },
+    [applyProjectOrder]
+  );
+
+  /** drag-and-drop: drop a tab beside a sibling in the same Project */
+  const reorderTab = useCallback(
+    (tabId: string, targetTabId: string, place: 'before' | 'after'): boolean => {
+      const next = placeTabBeside(stateRef.current.projects, tabId, targetTabId, place);
+      if (!next) return false;
+      setProjects(next);
+      return true;
+    },
+    []
+  );
+
+  /** drag-and-drop: drop a Project group beside another */
+  const reorderProject = useCallback(
+    (dir: string, targetDir: string, place: 'before' | 'after'): boolean =>
+      applyProjectOrder(
+        placeProjectBeside(stateRef.current.projects, dir, targetDir, place)
+      ),
+    [applyProjectOrder]
+  );
+
   const selectTabByOrdinal = useCallback((index: number): boolean => {
     const target = tabAtOrdinal(stateRef.current.projects, index);
     if (!target) return false;
@@ -1434,6 +1504,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     activateSession,
     cycleTab,
     selectTabByOrdinal,
+    moveActiveTab,
+    moveActiveProject,
+    reorderTab,
+    reorderProject,
     jumpAttention,
     togglePin,
     renameTab,

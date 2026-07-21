@@ -132,9 +132,20 @@ export const defaultShortcuts: ShortcutDefinition[] = [
   // Settings, conflict-checked, and listed dynamically in the cheat-sheet.
   // ⌘⌥1–9 (project ordinals) and ⌘⇧[ / ⌘⇧] (tab ring) stay fixed
   // key families outside the registry.
+  // ⌘T is the PRIMARY launch gesture and Agents are the primary tool
+  // (D14 hierarchy, D20 inversion): it summons the Agent composer. Shell —
+  // the demoted secondary Project tool — rides the shifted variant.
+  {
+    id: 'workspace-new-agent',
+    keys: { key: 't', modifiers: ['meta'] },
+    label: 'New Agent in the active project',
+    description: 'Summon the Agent composer',
+    category: 'workspace',
+    contexts: ['workspace'],
+  },
   {
     id: 'workspace-new-shell',
-    keys: { key: 't', modifiers: ['meta'] },
+    keys: { key: 't', modifiers: ['meta', 'shift'] },
     label: 'New shell in the active project',
     description: 'Launch a shell session in the active project',
     category: 'workspace',
