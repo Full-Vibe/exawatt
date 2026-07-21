@@ -45,6 +45,37 @@ export const ROADMAP_RAIL_FOCUS_EVENT = 'exawatt:focus-roadmap-rail';
 /** dispatched (detail: item id) to open the rail drilled into one item */
 export const ROADMAP_DRILL_EVENT = 'exawatt:roadmap-drill';
 
+// Cross-surface summons (S12): the rail lives in the Sessions overlay, but
+// ⌘B / the context chip / starving-attention jumps fire from Terminal before
+// the overlay exists. The request is parked here and read on mount. Reads are
+// IDEMPOTENT within a short freshness window instead of consume-once:
+// StrictMode's dev double-mount re-runs the rail's effects (including the
+// [projectDir] reset that clears the drill), so a destructive consume left
+// the second pass with nothing to re-apply.
+const SUMMON_FRESH_MS = 3000;
+let pendingSummon: { drillId: string | null; at: number } | null = null;
+
+export function requestRoadmapRailSummon(drillId?: string): void {
+  pendingSummon = { drillId: drillId ?? null, at: Date.now() };
+}
+
+export function takeRoadmapRailSummon(): { drillId: string | null } | null {
+  if (!pendingSummon) return null;
+  if (Date.now() - pendingSummon.at > SUMMON_FRESH_MS) {
+    pendingSummon = null;
+    return null;
+  }
+  return pendingSummon;
+}
+
+/** non-consuming peek — the Sessions overlay reveals the drawer and holds
+ *  its entrance focus when a summon is in flight */
+export function hasRoadmapRailSummon(): boolean {
+  return (
+    pendingSummon !== null && Date.now() - pendingSummon.at <= SUMMON_FRESH_MS
+  );
+}
+
 export const ROADMAP_RAIL_WIDTH = 320;
 export const ROADMAP_STRIP_WIDTH = 36;
 
@@ -293,6 +324,10 @@ export function RoadmapRail({
   onSelectSession,
   /** dock beside the stage, or float over it on narrow windows */
   overlay,
+  /** Sessions home (S12): the rail is a fixture — no collapse chrome, and
+   *  leaving it moves focus to the overview instead of the terminal */
+  permanent = false,
+  onExitFocus,
 }: {
   view: RoadmapLensView;
   projectDir: string | null;
@@ -303,6 +338,8 @@ export function RoadmapRail({
   /** focus the terminal tab a chip points at */
   onSelectSession: (tabId: string) => void;
   overlay: boolean;
+  permanent?: boolean;
+  onExitFocus?: () => void;
 }) {
   const color = projectColor ?? HUD.cyan;
   const rootRef = useRef<HTMLDivElement>(null);
@@ -336,6 +373,15 @@ export function RoadmapRail({
     const onFocusRail = () => rootRef.current?.focus();
     window.addEventListener(ROADMAP_RAIL_FOCUS_EVENT, onFocusRail);
     return () => window.removeEventListener(ROADMAP_RAIL_FOCUS_EVENT, onFocusRail);
+  }, []);
+
+  // a summon fired before this rail existed (⌘B / chip / starving jump from
+  // Terminal) lands as soon as it mounts (S12)
+  useEffect(() => {
+    const request = takeRoadmapRailSummon();
+    if (!request) return;
+    if (request.drillId) setDrillId(request.drillId);
+    requestAnimationFrame(() => rootRef.current?.focus());
   }, []);
 
   // the context-bar reciprocal chip opens the rail drilled into its item
@@ -432,7 +478,9 @@ export function RoadmapRail({
   const rowRefs = useRef(new Map<string, HTMLDivElement | null>());
   const prevTops = useRef(new Map<string, number>());
   useLayoutEffect(() => {
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduced =
+      typeof window.matchMedia !== 'function' || // jsdom
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const next = new Map<string, number>();
     for (const [key, el] of rowRefs.current) {
       if (!el || !el.isConnected) continue;
@@ -498,9 +546,14 @@ export function RoadmapRail({
       if (drillId) setDrillId(null);
       else if (key === 'Escape') {
         // the lens is scoped to the project, and Escape backs out of it
-        // (operator, 2026-07-12): drill → queue → collapsed strip + terminal
-        onModeChange('strip');
-        focusTerminal();
+        // (operator, 2026-07-12): drill → queue → out. In the Sessions home
+        // (S12) "out" is the overview's tiles, not the terminal.
+        if (permanent) {
+          onExitFocus?.();
+        } else {
+          onModeChange('strip');
+          focusTerminal();
+        }
       }
       return;
     }
@@ -662,19 +715,21 @@ export function RoadmapRail({
           <span className="font-ui text-xs" style={{ color: HUD.textDim }}>
             Roadmap
           </span>
-          <button
-            type="button"
-            aria-label="Collapse roadmap rail"
-            title="Collapse (⌘B)"
-            onClick={() => {
-              onModeChange('strip');
-              focusTerminal();
-            }}
-            className="ml-auto grid h-6 w-6 shrink-0 place-items-center rounded outline-none hover:bg-white/10"
-            style={{ color: HUD.textDim }}
-          >
-            ×
-          </button>
+          {!permanent && (
+            <button
+              type="button"
+              aria-label="Collapse roadmap rail"
+              title="Collapse (⌘B)"
+              onClick={() => {
+                onModeChange('strip');
+                focusTerminal();
+              }}
+              className="ml-auto grid h-6 w-6 shrink-0 place-items-center rounded outline-none hover:bg-white/10"
+              style={{ color: HUD.textDim }}
+            >
+              ×
+            </button>
+          )}
         </div>
         {view.status === 'ok' && view.file && (
           <div className="flex items-center gap-2 font-mono text-[10px]" style={{ color: HUD.textDim }}>
@@ -879,7 +934,11 @@ export function RoadmapRail({
         <span className="font-ui text-[11px]">
           Read-only — Exawatt reads this file, never writes it
         </span>
-        <span>↑↓ move · ⏎ open · esc back · ⌘B close</span>
+        <span>
+          {permanent
+            ? '↑↓ move · ⏎ open · esc to Sessions'
+            : '↑↓ move · ⏎ open · esc back · ⌘B close'}
+        </span>
       </div>
     </div>
   );

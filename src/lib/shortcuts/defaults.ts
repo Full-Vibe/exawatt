@@ -178,8 +178,8 @@ export const defaultShortcuts: ShortcutDefinition[] = [
   {
     id: 'workspace-roadmap',
     keys: { key: 'b', modifiers: ['meta'] },
-    label: 'Roadmap rail (open / focus / collapse)',
-    description: 'Cycle the project roadmap rail',
+    label: 'Roadmap',
+    description: 'Open the Project roadmap in Sessions',
     category: 'workspace',
     contexts: ['workspace'],
   },

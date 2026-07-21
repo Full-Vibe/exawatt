@@ -28,6 +28,8 @@ export const TOGGLE_SPLIT_EVENT = 'exawatt:toggle-split';
 export const JUMP_ATTENTION_EVENT = 'exawatt:jump-attention';
 export const CLOSE_ACTIVE_EVENT = 'exawatt:close-active-tab';
 export const OPEN_OVERVIEW_EVENT = 'exawatt:open-overview';
+/** palette/menu → summon the Project roadmap at the Sessions altitude (S12) */
+export const OPEN_ROADMAP_EVENT = 'exawatt:open-roadmap';
 
 /** a pending request older than this is abandoned, not replayed — a slot
  *  that survived an unmount must not yank the workspace around minutes

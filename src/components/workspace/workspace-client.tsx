@@ -43,6 +43,7 @@ import {
 } from './use-workspace-shortcuts';
 import {
   JUMP_ATTENTION_EVENT,
+  OPEN_ROADMAP_EVENT,
   RENAME_ACTIVE_EVENT,
   CLOSE_ACTIVE_EVENT,
   OPEN_OVERVIEW_EVENT,
@@ -56,12 +57,8 @@ import { useEffectiveShortcut, useShortcuts } from '@/components/shortcuts';
 import { formatShortcutKeys } from '@/lib/shortcuts';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 import {
-  RoadmapRail,
   ROADMAP_RAIL_FOCUS_EVENT,
-  ROADMAP_DRILL_EVENT,
-  loadRailMode,
-  saveRailMode,
-  type RoadmapRailMode,
+  requestRoadmapRailSummon,
 } from '@/components/roadmap/roadmap-rail';
 import {
   useProjectRoadmap,
@@ -286,25 +283,21 @@ export function WorkspaceClient() {
       );
   };
 
-  // roadmap rail (ENG-017 S2): ⌘B cycles open → focused → collapsed strip.
-  // Mode is a machine-local view preference (localStorage); starts as the
-  // ambient strip and re-reads the saved preference after mount (SSR-safe).
-  const [railMode, setRailMode] = useState<RoadmapRailMode>('strip');
-  useEffect(() => setRailMode(loadRailMode()), []);
-  const updateRailMode = useCallback((mode: RoadmapRailMode) => {
-    setRailMode(mode);
-    saveRailMode(mode);
-  }, []);
-  // narrow windows: the rail floats over the stage instead of docking, so
-  // terminals never reflow below a comfortable column width
-  const [railDocks, setRailDocks] = useState(true);
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1180px)');
-    const apply = () => setRailDocks(mq.matches);
-    apply();
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
-  }, []);
+  // roadmap home (ENG-017 S12): the lens lives at the Sessions altitude —
+  // Terminal keeps only per-session mirrors (context chip, tile chips,
+  // roadmap-derived attention) and summons Sessions for the full plan.
+  const summonRoadmap = useCallback(
+    (drillId?: string) => {
+      requestRoadmapRailSummon(drillId);
+      if (searchParams.get('view') === 'sessions') {
+        window.dispatchEvent(new CustomEvent(ROADMAP_RAIL_FOCUS_EVENT));
+      } else {
+        activateCommandAltitude('sessions');
+      }
+      return true;
+    },
+    [activateCommandAltitude, searchParams]
+  );
 
   // the lens data: live sessions of the focused Project, linked to roadmap
   // items by inference (S3); the same view feeds the rail and the
@@ -413,11 +406,7 @@ export function WorkspaceClient() {
       }
     }
     if (starving) {
-      updateRailMode('open');
-      requestAnimationFrame(() =>
-        window.dispatchEvent(new CustomEvent(ROADMAP_RAIL_FOCUS_EVENT))
-      );
-      return true;
+      return summonRoadmap();
     }
     return false;
   }, [
@@ -427,8 +416,15 @@ export function WorkspaceClient() {
     projects,
     selectTab,
     starving,
-    updateRailMode,
+    summonRoadmap,
   ]);
+
+  // the palette row dispatches OPEN_ROADMAP_EVENT; same summon as ⌘B
+  useEffect(() => {
+    const onOpenRoadmap = () => void summonRoadmap();
+    window.addEventListener(OPEN_ROADMAP_EVENT, onOpenRoadmap);
+    return () => window.removeEventListener(OPEN_ROADMAP_EVENT, onOpenRoadmap);
+  }, [summonRoadmap]);
 
   // the menu item and palette row dispatch JUMP_ATTENTION_EVENT; run the
   // same ladder here so they never do less than the ⌘J key they advertise
@@ -576,25 +572,9 @@ export function WorkspaceClient() {
         return !!target;
       },
       togglePin,
-      // ⌘B three-state cycle: collapsed → open+focused → (already focused)
-      // collapse and hand the keyboard back to the terminal
-      toggleRoadmap: () => {
-        const railFocused = !!document.activeElement?.closest(
-          '[data-roadmap-rail]'
-        );
-        if (railMode !== 'open') {
-          updateRailMode('open');
-          requestAnimationFrame(() =>
-            window.dispatchEvent(new CustomEvent(ROADMAP_RAIL_FOCUS_EVENT))
-          );
-        } else if (!railFocused) {
-          window.dispatchEvent(new CustomEvent(ROADMAP_RAIL_FOCUS_EVENT));
-        } else {
-          updateRailMode('strip');
-          window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
-        }
-        return true;
-      },
+      // ⌘B (S12): the roadmap lives at the Sessions altitude — summon it
+      // there focused, from anywhere
+      toggleRoadmap: () => summonRoadmap(),
       renameActive: () => {
         if (!activeTab) return false;
         window.dispatchEvent(new CustomEvent(RENAME_ACTIVE_EVENT));
@@ -603,8 +583,7 @@ export function WorkspaceClient() {
     };
   }, [
     activeTab,
-    railMode,
-    updateRailMode,
+    summonRoadmap,
     launchHere,
     closeTab,
     selectProject,
@@ -836,16 +815,7 @@ export function WorkspaceClient() {
                   <button
                     type="button"
                     title={`working on ${activeItemChip.item.title} — open in roadmap`}
-                    onClick={() => {
-                      updateRailMode('open');
-                      requestAnimationFrame(() =>
-                        window.dispatchEvent(
-                          new CustomEvent(ROADMAP_DRILL_EVENT, {
-                            detail: activeItemChip.item.id,
-                          })
-                        )
-                      );
-                    }}
+                    onClick={() => summonRoadmap(activeItemChip.item.id)}
                     className="shrink-0 rounded border px-1.5 py-px font-mono text-[10px] outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{
                       color: activeProject?.color ?? HUD.textMono,
@@ -1006,23 +976,6 @@ export function WorkspaceClient() {
             </div>
           </div>
 
-          <RoadmapRail
-            view={roadmapView}
-            projectDir={activeProject?.dir ?? null}
-            projectName={activeProject?.name ?? null}
-            projectColor={activeProject?.color ?? null}
-            mode={railMode}
-            onModeChange={updateRailMode}
-            onSelectSession={tabId => {
-              if (activeProject) selectTab(activeProject.dir, tabId);
-              requestAnimationFrame(() =>
-                window.dispatchEvent(
-                  new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT)
-                )
-              );
-            }}
-            overlay={railMode === 'open' && !railDocks}
-          />
         </div>
 
         {/* discoverability (S3): the workspace SHOWS its keys — same pattern

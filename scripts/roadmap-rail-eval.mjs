@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-// ENG-017 S2: drive the roadmap rail end-to-end — strip, ⌘B summon, keyboard
-// walk, drill, empty-queue and no-roadmap states — and screenshot each state.
+// ENG-017 S2, re-homed by S12: the roadmap lens lives at the SESSIONS
+// altitude. Drive it end-to-end — ⌘B summons Sessions with the rail focused,
+// keyboard walk, drill, selection re-scoping across Projects, empty-queue,
+// no-roadmap, declare-at-launch, starving ⌘J — and screenshot each state.
 // Run with EXA_BASE pointing at a dev server serving THIS checkout.
 import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -130,40 +132,52 @@ await withElectronApp(
     page.setDefaultTimeout(20_000);
     const results = {};
 
+    const summonComposer = async () => {
+      const toggle = page.locator(
+        '[data-composer-toggle][aria-expanded="false"]'
+      );
+      if ((await toggle.count()) > 0) await toggle.click();
+      await page.locator('[data-agent-composer]').waitFor();
+    };
+    const railFocused = () =>
+      page.evaluate(
+        () => !!document.activeElement?.closest('[data-roadmap-rail]')
+      );
+    const inSessions = () => page.url().includes('view=sessions');
+    const toTerminal = async () => {
+      for (let i = 0; i < 3 && inSessions(); i++) {
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(400);
+      }
+    };
+
     await page.locator('[data-workspace-chrome]').waitFor();
     await page.waitForTimeout(1200);
-    await shot(page, '0-initial-strip');
+    // S12: the Terminal view carries NO rail and no strip — the lens lives
+    // at the Sessions altitude
+    results.terminalHasNoRail =
+      (await page.locator('[data-roadmap-rail]').count()) === 0;
+    await shot(page, '0-terminal-no-rail');
 
-    // healthy fixture: strip → ⌘B open → keyboard walk → drill → back
+    // healthy fixture
     await openProject(page, healthy);
     await page.waitForTimeout(1800);
+    await summonComposer();
     await page.getByRole('button', { name: /Open shell in / }).click();
     await page.locator('.xterm-helper-textarea').last().waitFor();
-    await shot(page, '1-healthy-strip');
 
-    // S6: the strip is a readable spine — one node per item, exactly one
-    // CURRENT node (attachment, falling back to the now station), and the
-    // blocked item visible even while collapsed
-    results.stripSpineNodes = await page
-      .locator('[data-strip-item]')
-      .count()
-      .then(n => n >= 6);
-    results.stripCurrentNode = await page
-      .locator('[data-strip-node="current"]')
-      .count()
-      .then(n => n === 1);
-    results.stripBlockedVisible = await page
-      .locator('[data-strip-item="ACME-009"]')
-      .count()
-      .then(n => n === 1);
+    // ⌘B from Terminal = Sessions with the rail focused
     await page.keyboard.press('Meta+b');
+    await page.waitForURL('**view=sessions**');
+    await page.locator('[data-roadmap-rail]').waitFor();
     await page.waitForTimeout(700);
-    await shot(page, '2-healthy-open');
+    results.cmdBLandsInSessions = inSessions();
+    results.cmdBFocusesRail = await railFocused();
+    await shot(page, '1-sessions-rail');
+
     // S7: the header sequence bar renders the whole queue as one line
-    results.sequenceBar = await page
-      .locator('[data-roadmap-sequence]')
-      .count()
-      .then(n => n === 1);
+    results.sequenceBar =
+      (await page.locator('[data-roadmap-sequence]').count()) === 1;
     const text = await railText(page);
     results.heroVisible = text.includes('ACME-003');
     results.milestoneReadout = text.includes('Next up:');
@@ -178,41 +192,44 @@ await withElectronApp(
     appendFileSync(join(healthy, 'ROADMAP.md'), '\n### ACME-013 Live probe\n');
     await page.waitForTimeout(2000);
     results.liveUpdate = (await railText(page)).includes('8 items');
-    await shot(page, '2b-live-update');
+    await shot(page, '2-live-update');
 
+    // keyboard walk + drill + milestone roving (S7/R2)
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('ArrowDown');
     await page.waitForTimeout(250);
-    await shot(page, '3-selection-moved');
-    // Drill the item that owns milestones so the detail's roving-milestone
-    // contract is tested deliberately rather than depending on queue order.
     await page.click('[data-roadmap-row="ACME-003"]');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(400);
-    await shot(page, '4-drilled');
+    await shot(page, '3-drilled');
     results.drillShowsDetail = (await railText(page)).includes('Roadmap ·');
-    // S7 (R2): ↑↓ roves the milestone spine inside the drill
     await page.keyboard.press('ArrowDown');
     await page.waitForTimeout(200);
-    results.milestoneRoving = await page
-      .locator('[data-roadmap-milestone][data-selected]')
-      .count()
-      .then(n => n === 1);
+    results.milestoneRoving =
+      (await page
+        .locator('[data-roadmap-milestone][data-selected]')
+        .count()) === 1;
     await page.getByRole('button', { name: 'Back to queue' }).click();
     await page.waitForTimeout(300);
     results.backReturnsToQueue = !(await railText(page)).includes('Roadmap ·');
 
-    // Escape at queue level backs out of the lens entirely (project-scoped):
-    // the rail collapses to the strip and the terminal takes focus
+    // S12: Escape at queue level leaves rail FOCUS but the rail stays — it
+    // is a fixture of the Sessions altitude, not a dismissable panel
     await page.locator('[data-roadmap-rail]').focus();
     await page.keyboard.press('Escape');
     await page.waitForTimeout(400);
-    results.escCollapsesRail = await page
-      .locator('[data-roadmap-rail]')
-      .count()
-      .then(n => n === 0);
+    results.escKeepsRailVisible =
+      (await page.locator('[data-roadmap-rail]').count()) === 1;
+    results.escReturnsToTiles = await page.evaluate(
+      () => !!document.activeElement?.closest('[data-expose-tile]')
+    );
+    results.stillInSessions = inSessions();
+    await shot(page, '4-esc-to-tiles');
+
+    // ⌘B inside Sessions refocuses the rail
     await page.keyboard.press('Meta+b');
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(400);
+    results.cmdBRefocusesRail = await railFocused();
 
     // shipped group expands
     await page.getByRole('button', { name: /shipped/ }).click();
@@ -220,18 +237,11 @@ await withElectronApp(
     results.shippedExpands = (await railText(page)).includes('ACME-001');
     await shot(page, '5-shipped-expanded');
 
-    // The shipped control owns focus inside the rail, so ⌘B should collapse
-    // and hand focus back to the terminal.
-    await page.keyboard.press('Meta+b');
-    await page.waitForTimeout(400);
-    results.cmdBCollapses = !(await page
-      .locator('[data-roadmap-rail]')
-      .count()
-      .then(n => n > 0));
-    await shot(page, '6-collapsed-again');
+    await toTerminal();
 
     // declare-at-launch (S4): link an item through Agent launch options; the
-    // new Agent shows as a SOLID (declared) chip
+    // new Agent shows as a SOLID (declared) chip in the Sessions rail
+    await summonComposer();
     await page.getByLabel('Agent launch options').click();
     await page.selectOption(
       'select[aria-label="Roadmap item this session will work on"]',
@@ -240,23 +250,15 @@ await withElectronApp(
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Start' }).click();
     await page.waitForTimeout(1500);
-    await page
-      .getByRole('button', { name: /Open roadmap rail/ })
-      .click();
+    await page.keyboard.press('Meta+b');
+    await page.waitForURL('**view=sessions**');
+    await page.locator('[data-roadmap-rail]').waitFor();
     await page.waitForTimeout(600);
-    // Collapsing preserves the prior drill address; return to the queue before
-    // inspecting the newly declared item.
-    if ((await page.locator('[data-roadmap-row="ACME-007"]').count()) === 0) {
-      await page.getByRole('button', { name: 'Back to queue' }).click();
-      await page.waitForTimeout(300);
-    }
     results.declaredBadge = (await railText(page)).includes('▸1');
-    // S7: the declared session renders as a focusable chip ROW on its
-    // (next) item, not only a count badge
-    results.chipRowInQueue = await page
-      .locator('[data-roadmap-rail] [data-roadmap-chip]')
-      .count()
-      .then(n => n >= 1);
+    results.chipRowInQueue =
+      (await page
+        .locator('[data-roadmap-rail] [data-roadmap-chip]')
+        .count()) >= 1;
     await page.click('[data-roadmap-row="ACME-007"]');
     await page.waitForTimeout(400);
     results.declaredChipInDetail = (await railText(page)).includes('Sessions');
@@ -266,14 +268,13 @@ await withElectronApp(
       );
       return chip ? getComputedStyle(chip).borderStyle === 'solid' : false;
     });
-    await shot(page, '6b-declared-chip');
-    await page.keyboard.press('Escape');
-    await page.keyboard.press('Meta+b');
-    await page.keyboard.press('Meta+b');
-    await page.waitForTimeout(300);
+    await shot(page, '6-declared-chip');
+    await page.keyboard.press('Escape'); // drill → queue
+    await toTerminal();
 
     // S8: declare a session on the BLOCKED item — its tab badge goes amber
     // through the same needs-you pipeline as terminal bells
+    await summonComposer();
     await page.getByLabel('Agent launch options').click();
     await page.selectOption(
       'select[aria-label="Roadmap item this session will work on"]',
@@ -282,87 +283,98 @@ await withElectronApp(
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Start' }).click();
     await page.waitForTimeout(1500);
-    results.blockedTabBadge = await page
-      .locator('[data-project] [data-attention]')
-      .count()
-      .then(n => n >= 1);
-    await shot(page, '6c-blocked-attention');
+    results.blockedTabBadge =
+      (await page.locator('[data-project] [data-attention]').count()) >= 1;
+    await shot(page, '6b-blocked-attention');
 
     // S9: exposé tiles mirror what each agent is executing
     await page.keyboard.press('Meta+Shift+2');
     await page.waitForTimeout(900);
-    results.exposeMirror = await page
-      .locator('[data-expose-roadmap-item]')
-      .count()
-      .then(n => n >= 2);
-    await shot(page, '6d-expose-mirror');
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(500);
+    results.exposeMirror =
+      (await page.locator('[data-expose-roadmap-item]').count()) >= 2;
+    await shot(page, '6c-expose-mirror');
+    await toTerminal();
 
-    // empty queue — the designed "no food" moment
+    // empty queue — the designed "no food" moment. ⌘J with no PTY attention
+    // pending lands in SESSIONS on the starving rail (S8 + S12)
     await openProject(page, empty);
     await page.waitForTimeout(1500);
-    // S8: launch a live session here so the project is STARVING, then ⌘J
-    // (with no PTY attention pending) opens the rail on the no-food moment
+    await summonComposer();
     await page.getByRole('button', { name: /Open shell in / }).click();
     await page.waitForTimeout(1500);
-    // deterministically collapse first so ⌘J is what opens the rail
-    for (let i = 0; i < 3 && (await page.locator('[data-roadmap-rail]').count()); i++) {
-      await page.keyboard.press('Meta+b');
-      await page.waitForTimeout(350);
-    }
-    results.railCollapsedBeforeJump =
-      (await page.locator('[data-roadmap-rail]').count()) === 0;
     await page.keyboard.press('Meta+j');
-    await page.waitForTimeout(800);
-    results.starvingJumpOpensRail = await page
-      .locator('[data-roadmap-rail]')
-      .count()
-      .then(n => n === 1);
-    const emptyText = await railText(page);
-    results.emptyQueueHero = emptyText.includes('Queue empty');
+    await page.waitForURL('**view=sessions**');
+    await page.locator('[data-roadmap-rail]').waitFor();
+    await page.waitForTimeout(600);
+    results.starvingJumpOpensSessions = inSessions();
+    results.emptyQueueHero = (await railText(page)).includes('Queue empty');
     await shot(page, '7-empty-queue');
-    // rail stays OPEN here — the tail sections read it directly
+
+    // S12: roving the overview selection re-scopes the rail to that tile's
+    // Project — hover a healthy-fixture tile and the plan follows
+    await page.hover(
+      `[data-expose-project="${healthy}"] [data-expose-tile]`
+    );
+    await page.waitForTimeout(900);
+    results.selectionScopesRail = (await railText(page)).includes('ACME-003');
+    await shot(page, '7b-selection-scoped');
+    // park the cursor on neutral background: a stationary mouse over a tile
+    // position must not influence later overlay opens
+    await page.mouse.move(8, 300);
+    await toTerminal();
 
     // no roadmap at all
     await openProject(page, bare);
     await page.waitForTimeout(1500);
-    const noneText = await railText(page);
-    results.noRoadmapState = noneText.includes('No roadmap found');
+    await page.keyboard.press('Meta+b');
+    await page.waitForURL('**view=sessions**');
+    await page.locator('[data-roadmap-rail]').waitFor();
+    await page.waitForTimeout(800);
+    results.noRoadmapState = (await railText(page)).includes(
+      'No roadmap found'
+    );
     await shot(page, '8-no-roadmap');
+    await toTerminal();
 
-    // the real exawatt roadmap still renders (content sanity only — link
-    // inference against the live checkout is history-dependent)
+    // the real exawatt roadmap still renders (content sanity only)
     await openProject(page, process.cwd());
     await page.waitForTimeout(2500);
-    const exaText = await railText(page);
-    results.realRepoRenders = exaText.includes('ENG-');
+    await page.keyboard.press('Meta+b');
+    await page.waitForURL('**view=sessions**');
+    await page.locator('[data-roadmap-rail]').waitFor();
+    await page.waitForTimeout(1200);
+    results.realRepoRenders = (await railText(page)).includes('ENG-');
     await shot(page, '9-exawatt-real');
+    await toTerminal();
 
     // deterministic inference (S3): the git fixture's branch carries the
     // item id → high-confidence link, chip badge, reciprocal context chip
     await openProject(page, gitFix);
     await page.waitForTimeout(2500);
+    await summonComposer();
     await page.getByRole('button', { name: /Open shell in / }).click();
     await page.locator('.xterm-helper-textarea').last().waitFor();
-    await page.waitForTimeout(1000);
-    const fixText = await railText(page);
-    results.inferredChipBadge = fixText.includes('▸1') || fixText.includes('FIX-042');
+    await page.waitForTimeout(1500);
     const contextBar = await page.evaluate(
       () =>
-        document.querySelector('[data-active-session-context]')?.textContent ?? ''
+        document.querySelector('[data-active-session-context]')?.textContent ??
+        ''
     );
     results.reciprocalChip = contextBar.includes('FIX-042');
     await shot(page, '9b-git-fixture');
 
-    // reciprocal chip click opens the rail drilled into the item with the
-    // session chip in the detail panel
+    // the reciprocal chip now SUMMONS Sessions drilled into its item (S12)
     if (results.reciprocalChip) {
-      await page.click('[data-active-session-context] button[title*="open in roadmap"]');
-      await page.waitForTimeout(600);
+      await page.click(
+        '[data-active-session-context] button[title*="open in roadmap"]'
+      );
+      await page.waitForURL('**view=sessions**');
+      await page.locator('[data-roadmap-rail]').waitFor();
+      await page.waitForTimeout(800);
       const drillText = await railText(page);
       results.reciprocalDrill =
         drillText.includes('Roadmap · FIX-042') && drillText.includes('Sessions');
+      results.inferredChipBadge = drillText.includes('FIX-042');
       await shot(page, '10-reciprocal-drill');
     }
 
@@ -375,5 +387,5 @@ await withElectronApp(
       console.log('[rail] all checks passed');
     }
   },
-  { maxMs: 120_000 }
+  { maxMs: 180_000 }
 );

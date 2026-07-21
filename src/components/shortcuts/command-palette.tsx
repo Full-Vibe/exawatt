@@ -21,6 +21,7 @@ import {
   HelpCircle,
   Server,
   LayoutPanelTop,
+  Milestone,
   PenLine,
   Palette,
   Columns2,
@@ -43,6 +44,7 @@ import {
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
   CLOSE_ACTIVE_EVENT,
+  OPEN_ROADMAP_EVENT,
 } from '@/components/workspace/session-jump';
 import {
   buildSessionRows,
@@ -324,6 +326,14 @@ export function CommandPalette({
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-jump-attention'),
         icon: BellRing,
         onSelect: () => dispatch(JUMP_ATTENTION_EVENT),
+      },
+      {
+        id: 'ws-roadmap',
+        label: 'Open the Project roadmap',
+        value: 'roadmap plan queue milestones next up shipped blocked sessions',
+        shortcut: shortcutRegistry.getEffectiveKeys('workspace-roadmap'),
+        icon: Milestone,
+        onSelect: () => dispatch(OPEN_ROADMAP_EVENT),
       },
       {
         id: 'ws-close',

@@ -273,6 +273,29 @@ lab is back to the real strip + rail against fixture states.
 
 ## Progress log (second arc)
 
+- 2026-07-20, S12 landed (operator: "roadmap only visible in Sessions — the
+  zoomed-out view"): the lens re-homed to the Sessions altitude. The rail is
+  a permanent docked panel in the Sessions overlay, scoped to the overview's
+  SELECTED Project — roving across tiles re-scopes the plan (the
+  multi-project answer without a merged queue); below 1100px it becomes a
+  ⌘B-summoned drawer. The Terminal view carries no rail and no collapsed
+  strip; it keeps the per-session context chip (now summoning Sessions
+  drilled to the item), declare-at-launch, and the S8/S9 mirrors. ⌘B is
+  "open Sessions with the roadmap focused" from anywhere and toggles
+  tiles ↔ rail focus inside Sessions; Escape backs out drill → queue →
+  tiles; starving ⌘J lands on the Sessions rail; a palette row ("Open the
+  Project roadmap") makes it ⌘K-discoverable. Implementation notes:
+  cross-surface summons park in a freshness-windowed module store
+  (StrictMode's double-mount broke consume-once), the overlay's entrance
+  and selection-clamp focus yield to a summoned rail, and mouse-enter
+  selection is disarmed during entrance (Chromium re-dispatches synthetic
+  mouse events under a stationary cursor, which let the parked pointer
+  steal the roving selection on mount). Verified by the rewritten
+  `scripts/roadmap-rail-eval.mjs` (28 checks green: summon/focus grammar,
+  content, live update, drill + milestone roving, selection re-scoping,
+  declared chips, blocked attention, starving jump, no-roadmap and
+  real-repo states, reciprocal drill).
+
 - 2026-07-12, round-3 decisions applied (see decisions above): prototypes
   renamed to the ASSIGN vocabulary with plain-language options, per-gesture
   explainers, and concrete would-write toasts (names the milestone it would

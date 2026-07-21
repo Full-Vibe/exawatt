@@ -17,6 +17,15 @@ import { previewLines } from './scrollback-preview';
 import { tabIsLive } from './use-workspace-state';
 import type { Project } from './use-workspace-state';
 import type { PtyHarness } from '@/types/electron';
+import {
+  RoadmapRail,
+  ROADMAP_RAIL_FOCUS_EVENT,
+  hasRoadmapRailSummon,
+} from '@/components/roadmap/roadmap-rail';
+import {
+  useProjectRoadmap,
+  type RoadmapSessionDescriptor,
+} from '@/components/roadmap/use-project-roadmap';
 
 interface Tile {
   /** null when the tab has no process (restored, not resumed) */
@@ -146,6 +155,17 @@ export function ExposeOverlay({
   });
   const [previews, setPreviews] = useState<Record<string, string[]>>({});
   const [entered, setEntered] = useState(false);
+  // Chromium re-dispatches synthetic mouse events when content appears under
+  // a STATIONARY cursor — without this arm window, wherever the mouse
+  // happened to rest would steal the roving selection the moment the
+  // overview (or a re-scoped rail) mounted. Selection follows the mouse only
+  // after the entrance settles.
+  const mouseArmAtRef = useRef(
+    (typeof performance !== 'undefined' ? performance.now() : 0) + 400
+  );
+  const mouseArmed = () =>
+    typeof performance === 'undefined' ||
+    performance.now() > mouseArmAtRef.current;
   const rootRef = useRef<HTMLDivElement>(null);
   const tileRefs = useRef(new Map<string, HTMLButtonElement>());
   const selectedIndexRef = useRef(sel);
@@ -165,11 +185,83 @@ export function ExposeOverlay({
     [items]
   );
 
-  // tiles can shrink while open (a session exits) — selection stays in range
+  // ── Roadmap home (ENG-017 S12) ───────────────────────────────────────
+  // Sessions is the zoomed-out altitude, so the Project roadmap lives HERE:
+  // a permanent rail scoped to the SELECTED Project — roving across tiles
+  // re-scopes the plan. Docked beside the grid when the window affords it;
+  // summoned as a drawer (⌘B) when it doesn't.
+  const [railDocks, setRailDocks] = useState(true);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return; // jsdom
+    const mq = window.matchMedia('(min-width: 1100px)');
+    const apply = () => setRailDocks(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
+  const [railSummoned, setRailSummoned] = useState(() =>
+    hasRoadmapRailSummon()
+  );
+  useEffect(() => {
+    const summon = () => setRailSummoned(true);
+    window.addEventListener(ROADMAP_RAIL_FOCUS_EVENT, summon);
+    return () => window.removeEventListener(ROADMAP_RAIL_FOCUS_EVENT, summon);
+  }, []);
+  const railVisible = projects.length > 0 && (railDocks || railSummoned);
+
+  const selectedDir = items[sel]?.dir ?? activeProjectDir ?? null;
+  const selectedProject = projects.find(p => p.dir === selectedDir) ?? null;
+  const roadmapSessions = useMemo<RoadmapSessionDescriptor[]>(
+    () =>
+      (selectedProject?.tabs ?? [])
+        .filter(t => t.sessionId && tabIsLive(t))
+        .map(t => ({
+          sessionId: t.sessionId as string,
+          tabId: t.id,
+          title: t.title,
+          harness: t.harness,
+          cwd: t.cwd,
+          contextSummary: summaries[t.sessionId as string] ?? null,
+          needsAttention: !!attention[t.sessionId as string],
+        })),
+    [selectedProject, summaries, attention]
+  );
+  const declaredLinks = useMemo(
+    () =>
+      (selectedProject?.tabs ?? [])
+        .filter(t => t.roadmapItemId && t.sessionId && tabIsLive(t))
+        .map(t => ({
+          sessionId: t.sessionId as string,
+          tabId: t.id,
+          projectDir: selectedProject?.dir ?? '',
+          itemId: t.roadmapItemId as string,
+          method: 'declared' as const,
+          confidence: 'high' as const,
+          evidence: [
+            { kind: 'declared' as const, excerpt: 'declared at launch' },
+          ],
+          evaluatedAt: 0,
+        })),
+    [selectedProject]
+  );
+  const { view: roadmapView } = useProjectRoadmap(
+    railVisible ? selectedDir : null,
+    roadmapSessions,
+    declaredLinks
+  );
+  const exitRailFocus = useCallback(() => {
+    if (!railDocks) setRailSummoned(false);
+    focusSelection();
+  }, [railDocks, focusSelection]);
+
+  // tiles can shrink while open (a session exits) — selection stays in range.
+  // Refocus only when the clamp actually MOVES the selection: this effect
+  // also fires on mount, where an unconditional focus stole the keyboard
+  // from a summoned roadmap rail (S12).
   useEffect(() => {
     setSel(s => {
       const next = Math.min(s, Math.max(0, items.length - 1));
-      requestAnimationFrame(() => focusSelection(next));
+      if (next !== s) requestAnimationFrame(() => focusSelection(next));
       return next;
     });
   }, [focusSelection, items.length]);
@@ -225,11 +317,13 @@ export function ExposeOverlay({
   }, [tiles]);
 
   // take the keyboard away from xterm; entrance flag flips post-mount so
-  // tiles transition in (staggered)
+  // tiles transition in (staggered). When a roadmap summon is in flight the
+  // rail owns first focus (S12) — the entrance must not steal it back.
+  const railSummonedAtMountRef = useRef(hasRoadmapRailSummon());
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
       setEntered(true);
-      focusSelection();
+      if (!railSummonedAtMountRef.current) focusSelection();
     });
     return () => cancelAnimationFrame(raf);
   }, [focusSelection]);
@@ -260,6 +354,14 @@ export function ExposeOverlay({
   }, [onClose]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    // keys born inside the roadmap rail belong to it (it stops propagation
+    // for everything it handles; the rest must not move tile selection)
+    if (
+      e.target instanceof Element &&
+      e.target.closest('[data-roadmap-rail]')
+    ) {
+      return;
+    }
     if (e.key === 'Escape' || (e.metaKey && e.key.toLowerCase() === 'o')) {
       e.preventDefault();
       onClose();
@@ -319,7 +421,9 @@ export function ExposeOverlay({
           tile.live && !needsYou ? (working ? ', working' : ', quiet') : ''
         }${tile.stateLabel ? `, ${tile.stateLabel}` : ''}`}
         onClick={() => onPick(tile.dir, tile.tabId)}
-        onMouseEnter={() => setSel(index)}
+        onMouseEnter={() => {
+          if (mouseArmed()) setSel(index);
+        }}
         onFocus={() => setSel(index)}
         className="flex flex-col gap-1.5 rounded border p-3 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
         style={{
@@ -444,13 +548,19 @@ export function ExposeOverlay({
       onMouseDown={event => {
         if (event.target === event.currentTarget) onClose();
       }}
-      className="absolute inset-0 z-20 overflow-y-auto outline-none transition-opacity duration-200 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+      className="absolute inset-0 z-20 flex overflow-hidden outline-none transition-opacity duration-200 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
       style={{
         background: 'rgba(4,6,11,0.84)',
         backdropFilter: 'blur(6px)',
         opacity: entered ? 1 : 0,
       }}
     >
+      <div
+        className="min-w-0 flex-1 overflow-y-auto"
+        onMouseDown={event => {
+          if (event.target === event.currentTarget) onClose();
+        }}
+      >
       <div className="px-6 pb-6 pt-5">
         <div
           className="mb-4 flex items-baseline gap-3 font-mono text-xs"
@@ -531,7 +641,9 @@ export function ExposeOverlay({
                       tabIndex={emptySelected ? 0 : -1}
                       aria-label={`Open ${project.name} in Terminal, no Sessions yet`}
                       onClick={() => onPickProject(project.dir)}
-                      onMouseEnter={() => setSel(emptyIndex)}
+                      onMouseEnter={() => {
+                        if (mouseArmed()) setSel(emptyIndex);
+                      }}
                       onFocus={() => setSel(emptyIndex)}
                       className="flex min-h-32 flex-col justify-center rounded border p-3 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
                       style={{
@@ -571,6 +683,26 @@ export function ExposeOverlay({
           })}
         </div>
       </div>
+      </div>
+      {railVisible && (
+        <RoadmapRail
+          view={roadmapView}
+          projectDir={selectedDir}
+          projectName={selectedProject?.name ?? null}
+          projectColor={selectedProject?.color ?? null}
+          mode="open"
+          onModeChange={() => exitRailFocus()}
+          onSelectSession={tabId => {
+            const dir = projects.find(p =>
+              p.tabs.some(t => t.id === tabId)
+            )?.dir;
+            if (dir) onPick(dir, tabId);
+          }}
+          overlay={!railDocks}
+          permanent
+          onExitFocus={exitRailFocus}
+        />
+      )}
     </div>
   );
 }
