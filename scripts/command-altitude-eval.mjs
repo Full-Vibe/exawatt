@@ -153,19 +153,19 @@ try {
   requireState(
     (await page
       .locator('[data-command-altitude-level="terminal"]')
-      .getAttribute('aria-keyshortcuts')) === 'Meta+Shift+1',
+      .getAttribute('aria-keyshortcuts')) === 'Control+Meta+1',
     'Terminal altitude did not advertise its absolute shortcut'
   );
   requireState(
     (await page
       .locator('[data-command-altitude-level="sessions"]')
-      .getAttribute('aria-keyshortcuts')) === 'Meta+Shift+2',
+      .getAttribute('aria-keyshortcuts')) === 'Control+Meta+2',
     'Sessions altitude did not advertise its absolute shortcut'
   );
   requireState(
     (await page
       .locator('[data-command-altitude-level="spatial"]')
-      .getAttribute('aria-keyshortcuts')) === 'Meta+Shift+3',
+      .getAttribute('aria-keyshortcuts')) === 'Control+Meta+3',
     'Spatial altitude did not advertise its absolute shortcut'
   );
   const initialTabText = await page
@@ -227,22 +227,37 @@ try {
   );
   await page.keyboard.press('Escape');
   await page.waitForURL(url => !url.searchParams.has('view'));
-  await page.keyboard.press('Meta+Shift+2');
+  await page.keyboard.press('Control+Meta+2');
   await page.waitForURL('**/workspace?view=sessions');
   await page.locator('[data-expose]').waitFor();
-  await page.keyboard.press('Meta+Shift+2');
+  await page.keyboard.press('Control+Meta+2');
   requireState(
     await page
       .locator('[data-expose-tile][data-selected="true"]')
       .evaluate(element => element === document.activeElement),
     'Active Sessions click did not restore overview focus'
   );
-  const stageStyle = await page
-    .locator('[data-workspace-stage]')
-    .evaluate(element => ({
-      scale: getComputedStyle(element).scale,
-      opacity: Number(getComputedStyle(element).opacity),
-    }));
+  // The stage recedes via a 300ms CSS transition; a single instantaneous
+  // read races it (D19: the read landed mid-flight and flaked). Poll until
+  // the SETTLED state proves both scale and opacity de-emphasis.
+  let stageStyle = { scale: 'none', opacity: 1 };
+  const stageDeadline = Date.now() + 2000;
+  while (Date.now() < stageDeadline) {
+    stageStyle = await page
+      .locator('[data-workspace-stage]')
+      .evaluate(element => ({
+        scale: getComputedStyle(element).scale,
+        opacity: Number(getComputedStyle(element).opacity),
+      }));
+    if (
+      stageStyle.scale !== 'none' &&
+      stageStyle.scale !== '1' &&
+      stageStyle.opacity < 0.7
+    ) {
+      break;
+    }
+    await page.waitForTimeout(50);
+  }
   requireState(
     stageStyle.scale !== 'none' && stageStyle.scale !== '1',
     'Terminal did not visually recede'
@@ -373,7 +388,7 @@ try {
     new URL(page.url()).pathname + new URL(page.url()).search;
 
   await spatialSearch.focus();
-  await page.keyboard.press('Meta+Shift+1');
+  await page.keyboard.press('Control+Meta+1');
   await page.waitForURL('**/workspace');
   await page
     .locator('[data-command-altitude-level="terminal"][aria-current="page"]')
@@ -382,7 +397,7 @@ try {
     .locator('.xterm-helper-textarea')
     .first()
     .waitFor({ state: 'attached' });
-  await page.keyboard.press('Meta+Shift+1');
+  await page.keyboard.press('Control+Meta+1');
   await page.waitForFunction(() =>
     document.activeElement?.classList.contains('xterm-helper-textarea')
   );
@@ -393,10 +408,10 @@ try {
     'Repeated Terminal shortcut did not restore xterm focus'
   );
 
-  await page.keyboard.press('Meta+Shift+2');
+  await page.keyboard.press('Control+Meta+2');
   await page.waitForURL('**/workspace?view=sessions');
   await page.locator('[data-expose]').waitFor();
-  await page.keyboard.press('Meta+Shift+2');
+  await page.keyboard.press('Control+Meta+2');
   requireState(
     await page
       .locator('[data-expose-tile][data-selected="true"]')
@@ -404,12 +419,12 @@ try {
     'Repeated Sessions shortcut did not restore overview focus'
   );
 
-  await page.keyboard.press('Meta+Shift+3');
+  await page.keyboard.press('Control+Meta+3');
   await page.waitForURL(url => `${url.pathname}${url.search}` === fleetAddress);
   await page
     .locator('[data-command-altitude-level="spatial"][aria-current="page"]')
     .waitFor();
-  await page.keyboard.press('Meta+Shift+3');
+  await page.keyboard.press('Control+Meta+3');
   requireState(
     page.url().includes('/fleet/spatial'),
     'Repeated Spatial shortcut left Spatial instead of recentering it'
@@ -446,9 +461,9 @@ try {
   );
   await page.emulateMedia({ reducedMotion: 'no-preference' });
 
-  await page.keyboard.press('Meta+Shift+1');
+  await page.keyboard.press('Control+Meta+1');
   await page.waitForURL('**/workspace');
-  await page.keyboard.press('Meta+Shift+3');
+  await page.keyboard.press('Control+Meta+3');
   await page.waitForURL(
     url => `${url.pathname}${url.search}` === returnAddress
   );

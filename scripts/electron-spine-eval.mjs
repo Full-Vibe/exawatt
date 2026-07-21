@@ -83,10 +83,12 @@ await withElectronApp(
     'Go>Back displays Command+[ without registering it',
     goMenu.sub.some(s => s.includes('Back|Command+[|reg:false'))
   );
+  // D19: the altitude family rides ⌃⌘digit (⌘digit = Session tabs since
+  // D18; ⌘⇧3 was eaten by macOS screenshots)
   for (const [label, accelerator] of [
-    ['Terminal', 'Command+1'],
-    ['Sessions', 'Command+2'],
-    ['Spatial', 'Command+3'],
+    ['Terminal', 'Control+Command+1'],
+    ['Sessions', 'Control+Command+2'],
+    ['Spatial', 'Control+Command+3'],
   ]) {
     check(
       `Go>${label} displays ${accelerator} without registering it`,
@@ -125,13 +127,21 @@ await withElectronApp(
   );
   await page.screenshot({ path: join(OUT, 'fleet-with-rail.png') });
 
-  // bounded history: ⌘[ answers "where I just was", ⌘] re-advances
+  // bounded history: ⌘[ answers "where I just was", ⌘] re-advances.
+  // Bounded URL waits, not fixed sleeps — under load navigation can take
+  // longer than any chosen sleep and a race here reads as a spine failure.
   await page.keyboard.press('Meta+BracketLeft');
-  await page.waitForTimeout(900);
-  check('cmd+[ goes back to /workspace', page.url().includes('/workspace'));
+  const backOk = await page
+    .waitForURL(url => url.pathname.endsWith('/workspace'), { timeout: 8000 })
+    .then(() => true)
+    .catch(() => false);
+  check('cmd+[ goes back to /workspace', backOk);
   await page.keyboard.press('Meta+BracketRight');
-  await page.waitForTimeout(900);
-  check('cmd+] goes forward to /fleet', page.url().endsWith('/fleet'));
+  const forwardOk = await page
+    .waitForURL(url => url.pathname.endsWith('/fleet'), { timeout: 8000 })
+    .then(() => true)
+    .catch(() => false);
+  check('cmd+] goes forward to /fleet', forwardOk);
 
   // the rail is a live exit from legacy pages
   await page.locator('[data-command-altitude-level="terminal"]').click();
@@ -156,10 +166,10 @@ await withElectronApp(
   // still provide an escape path back to Terminal.
   const spatialSearch = page.getByLabel('Search agents');
   await spatialSearch.fill('operator query');
-  await page.keyboard.press('Meta+Shift+1');
+  await page.keyboard.press('Control+Meta+1');
   await page.waitForURL('**/workspace');
-  check('cmd+1 returns from focused Spatial search', true);
-  await page.keyboard.press('Meta+Shift+3');
+  check('ctrl+cmd+1 returns from focused Spatial search', true);
+  await page.keyboard.press('Control+Meta+3');
   await page.waitForURL('**/fleet/spatial');
 
   // spine affordances never link into legacy: no "← Fleet" on Spatial
@@ -168,7 +178,7 @@ await withElectronApp(
   await page.screenshot({ path: join(OUT, 'spatial-no-backlink.png') });
 
   // project-first ⌘K: spine vocabulary, Legacy group, add-project, signed-out row
-  await page.keyboard.press('Meta+Shift+1');
+  await page.keyboard.press('Control+Meta+1');
   await page.waitForTimeout(800);
   await page.keyboard.press('Meta+KeyK');
   await page.waitForTimeout(700);
@@ -358,11 +368,11 @@ await withElectronApp(
   check('no nested-interactive markup warnings', markupWarnings.length === 0);
   // Leave the app on Terminal so its workspace checkpoint owner can answer the
   // normal coordinated-quit handshake used by ElectronApplication.close().
-  await page.keyboard.press('Meta+Shift+1');
+  await page.keyboard.press('Control+Meta+1');
   await page.waitForURL('**/workspace');
   await page.locator('[data-workspace-underlay]').waitFor();
   await page.waitForTimeout(500);
-  check('cmd+1 returns from legacy Fleet Command', true);
+  check('ctrl+cmd+1 returns from legacy Fleet Command', true);
   },
   // this eval legitimately runs long (33 checks, several navigations)
   { maxMs: 480_000 }

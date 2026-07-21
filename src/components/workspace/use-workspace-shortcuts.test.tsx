@@ -86,7 +86,7 @@ describe('workspace focus shortcuts', () => {
     expect(handlers.cycle).not.toHaveBeenCalled();
   });
 
-  it('owns absolute altitude commands (⌘⇧digit) before xterm and never treats them as ordinals', () => {
+  it('owns absolute altitude commands (⌃⌘digit) before xterm and never treats them as ordinals', () => {
     const handlers = actions();
     renderHook(() => useWorkspaceShortcuts(handlers));
     const terminal = document.createElement('textarea');
@@ -94,19 +94,19 @@ describe('workspace focus shortcuts', () => {
     terminal.addEventListener('keydown', event => event.preventDefault());
     document.body.append(terminal);
 
-    for (const [digit, shifted, target] of [
-      ['1', '!', 'terminal'],
-      ['2', '@', 'sessions'],
-      ['3', '#', 'spatial'],
+    for (const [digit, target] of [
+      ['1', 'terminal'],
+      ['2', 'sessions'],
+      ['3', 'spatial'],
     ] as const) {
-      // event.key is the layout-dependent shifted symbol; matching must ride
-      // the physical Digit code (D18)
+      // matching must ride the physical Digit code (D18); D19 moved the
+      // family to ⌃⌘digit because macOS eats ⇧⌘3 for screenshots
       terminal.dispatchEvent(
         new KeyboardEvent('keydown', {
-          key: shifted,
+          key: digit,
           code: `Digit${digit}`,
           metaKey: true,
-          shiftKey: true,
+          ctrlKey: true,
           bubbles: true,
           cancelable: true,
         })

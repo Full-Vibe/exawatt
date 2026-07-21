@@ -35,7 +35,14 @@ describe('shortcut binding policy', () => {
     expect(
       validateShortcutBinding(
         universal,
-        { key: '4', modifiers: ['meta', 'shift'] },
+        { key: '7', modifiers: ['meta', 'shift'] },
+        'darwin'
+      )
+    ).toBeNull();
+    expect(
+      validateShortcutBinding(
+        universal,
+        { key: '3', modifiers: ['ctrl', 'meta'] },
         'darwin'
       )
     ).toBeNull();
@@ -88,6 +95,50 @@ describe('shortcut binding policy', () => {
     ).toBeNull();
   });
 
+  it('rejects the macOS screenshot combos ⌘⇧3–6 for every shortcut (D19)', () => {
+    // macOS consumes these system-wide before any app sees the keydown —
+    // a binding here can never fire (how ⌘⇧3 Spatial silently died).
+    for (const key of ['3', '4', '5', '6']) {
+      expect(
+        validateShortcutBinding(
+          universal,
+          { key, modifiers: ['meta', 'shift'] },
+          'darwin'
+        )
+      ).toMatch(/screenshots/);
+      expect(
+        validateShortcutBinding(
+          {},
+          { key, modifiers: ['meta', 'shift'] },
+          'darwin'
+        )
+      ).toMatch(/screenshots/);
+    }
+    // ⌘⇧1/2 are not screenshot keys; extra modifiers also escape the trap
+    expect(
+      validateShortcutBinding(
+        universal,
+        { key: '1', modifiers: ['meta', 'shift'] },
+        'darwin'
+      )
+    ).toBeNull();
+    expect(
+      validateShortcutBinding(
+        universal,
+        { key: '3', modifiers: ['ctrl', 'meta', 'shift'] },
+        'darwin'
+      )
+    ).toBeNull();
+    // other platforms do not reserve these combos
+    expect(
+      validateShortcutBinding(
+        universal,
+        { key: '3', modifiers: ['ctrl', 'shift'] },
+        'win32'
+      )
+    ).toBeNull();
+  });
+
   it('reserves Project ordinals by physical digit code', () => {
     expect(
       reservedShortcutFamily(
@@ -96,9 +147,9 @@ describe('shortcut binding policy', () => {
     ).toMatch(/Project switching/);
   });
 
-  it('reserves bare command digits for Session tabs but leaves ⌘⇧digits bindable', () => {
+  it('reserves bare command digits for Session tabs but leaves modified digits bindable', () => {
     // D18: ⌘1–9 is the fixed tab family; the altitude destinations default
-    // to ⌘⇧1/2/3 and stay rebindable universal commands.
+    // to ⌃⌘1/2/3 (D19) and stay rebindable universal commands.
     expect(
       reservedShortcutFamily(
         event({ code: 'Digit4', metaKey: true, altKey: false })

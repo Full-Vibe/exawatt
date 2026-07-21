@@ -69,7 +69,17 @@ try {
 
   await page.locator('[data-command-altitude-level="sessions"]').click();
   await page.waitForURL('**/workspace?view=sessions');
-  await page.locator('[data-expose-tile]').waitFor();
+  // On failure, capture the sessions surface: a missing tile usually means
+  // the PTY spawn failed upstream (e.g. node-pty built for the wrong ABI in
+  // a fresh worktree — run `pnpm electron:rebuild`), and the screenshot
+  // shows the spawn-error banner that explains it.
+  await page.locator('[data-expose-tile]').waitFor().catch(async error => {
+    await page.screenshot({
+      path: join(SCREENSHOT_DIR, 'sessions-failure.png'),
+      fullPage: true,
+    });
+    throw error;
+  });
   console.log('[electron-navigation] session overview ready');
 
   await page.locator('[data-command-altitude-level="spatial"]').click();
@@ -108,7 +118,7 @@ try {
   );
   console.log('[electron-navigation] exact board address restored');
 
-  await page.keyboard.press('Meta+Shift+1');
+  await page.keyboard.press('Control+Meta+1');
   await page.waitForURL('**/workspace');
   await page.locator('[data-project]').waitFor();
   const sessionCount = await page.evaluate(async () => {

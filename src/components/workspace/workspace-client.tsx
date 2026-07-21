@@ -489,7 +489,7 @@ export function WorkspaceClient() {
     [roadmapAttention, attention]
   );
 
-  // Sessions altitude (S3): ⌘⇧2 — sessions fan out as tiles
+  // Sessions altitude (S3): ⌃⌘2 — sessions fan out as tiles
   const requestedOverview = searchParams.get('view') === 'sessions';
   const [overviewOpen, setOverviewOpen] = useState(requestedOverview);
   const updateOverview = useCallback(

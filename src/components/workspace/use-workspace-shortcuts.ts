@@ -8,7 +8,8 @@
  *   ⌘⌥1…⌘⌥9      jump to Project N
  *   ⌘⇧[ / ⌘⇧]    previous / next tab (wraps)
  *   ⌘J           jump to the oldest session needing attention (S1)
- *   ⌘⇧1 / ⌘⇧2 / ⌘⇧3  Terminal / Sessions / Spatial (D18)
+ *   ⌃⌘1 / ⌃⌘2 / ⌃⌘3  Terminal / Sessions / Spatial (D19 — off ⌘⇧3,
+ *                     which macOS swallows for screenshots)
  *   ⌘K           session switcher / command palette (S2)
  *   ⌘D           split: pin the active tab beside whatever you drive (S2)
  *   ⌘B           roadmap rail: open → focus → collapse (ENG-017)

@@ -26,8 +26,10 @@ export function formatKeyBinding(binding: KeyBinding): string {
   const parts: string[] = [];
 
   if (binding.modifiers) {
-    // Sort modifiers consistently: meta, ctrl, alt, shift
-    const order: ModifierKey[] = ['meta', 'ctrl', 'alt', 'shift'];
+    // Sort modifiers consistently. ⌃ precedes ⌘ (macOS renders Control
+    // before Command: ⌃⌘1, ⌃⌘F); ⌘⇧ stays the app's established order
+    // for meta+shift combos (⌘⇧[, hints, docs).
+    const order: ModifierKey[] = ['ctrl', 'meta', 'alt', 'shift'];
     for (const mod of order) {
       if (binding.modifiers.includes(mod)) {
         parts.push(MODIFIER_SYMBOLS[mod]);

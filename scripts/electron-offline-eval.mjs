@@ -2,8 +2,8 @@
 /**
  * Offline-authority eval (ENG-016 D18): with every non-loopback request dead
  * (airplane mode with the local renderer server still alive), the command
- * altitudes must stay fully navigable — ⌘⇧1 Terminal, ⌘⇧2 Sessions,
- * ⌘⇧3 Spatial and back — with no black screen and no hung transition.
+ * altitudes must stay fully navigable — ⌃⌘1 Terminal, ⌃⌘2 Sessions,
+ * ⌃⌘3 Spatial and back — with no black screen and no hung transition.
  *
  * The server-side half of the guarantee (the middleware never touches the
  * network for public paths) is unit-tested in src/proxy.test.ts; this eval
@@ -80,34 +80,34 @@ await withElectronApp(
     check('workspace renders offline', await alive());
     await page.screenshot({ path: join(OUT, '1-terminal.png') });
 
-    // ⌘⇧2 — Sessions. THE flight bug: this navigation black-screened.
-    await page.keyboard.press('Meta+Shift+2');
+    // ⌃⌘2 — Sessions. THE flight bug: this navigation black-screened.
+    await page.keyboard.press('Control+Meta+2');
     await page.waitForURL('**view=sessions**', { timeout: 10000 });
     await page.waitForTimeout(400);
-    check('⌘⇧2 reaches Sessions offline', await alive());
+    check('⌃⌘2 reaches Sessions offline', await alive());
     await page.screenshot({ path: join(OUT, '2-sessions.png') });
 
-    // ⌘⇧3 — Spatial (R3F chunk loads from the local server).
-    await page.keyboard.press('Meta+Shift+3');
+    // ⌃⌘3 — Spatial (R3F chunk loads from the local server).
+    await page.keyboard.press('Control+Meta+3');
     await page.waitForURL('**/fleet/spatial**', { timeout: 10000 });
     await page.waitForTimeout(800);
-    check('⌘⇧3 reaches Spatial offline', await alive());
+    check('⌃⌘3 reaches Spatial offline', await alive());
     await page.screenshot({ path: join(OUT, '3-spatial.png') });
 
-    // ⌘⇧1 — back to Terminal.
-    await page.keyboard.press('Meta+Shift+1');
+    // ⌃⌘1 — back to Terminal.
+    await page.keyboard.press('Control+Meta+1');
     await page.waitForURL(
       url => url.pathname === '/workspace' && !url.href.includes('view='),
       { timeout: 10000 }
     );
     await page.waitForTimeout(400);
-    check('⌘⇧1 returns to Terminal offline', await alive());
+    check('⌃⌘1 returns to Terminal offline', await alive());
     await page.screenshot({ path: join(OUT, '4-terminal-again.png') });
 
     // A second full loop proves the cycle is repeatable, not a one-shot.
-    await page.keyboard.press('Meta+Shift+2');
+    await page.keyboard.press('Control+Meta+2');
     await page.waitForURL('**view=sessions**', { timeout: 10000 });
-    await page.keyboard.press('Meta+Shift+1');
+    await page.keyboard.press('Control+Meta+1');
     await page.waitForURL(
       url => url.pathname === '/workspace' && !url.href.includes('view='),
       { timeout: 10000 }

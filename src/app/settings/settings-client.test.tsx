@@ -71,21 +71,33 @@ describe('shortcut settings policy', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
 
+    // ⌘⇧4 is a macOS screenshot hot key — the system consumes it before the
+    // app; Settings must refuse to save a binding that can never fire (D19)
     fireEvent.keyDown(capture, {
       key: '$',
       code: 'Digit4',
       metaKey: true,
       shiftKey: true,
     });
+    expect(screen.getByText(/screenshots/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+
+    fireEvent.keyDown(capture, {
+      key: '&',
+      code: 'Digit7',
+      metaKey: true,
+      shiftKey: true,
+    });
     expect(screen.queryByText(/must include ⌘/)).not.toBeInTheDocument();
     expect(screen.queryByText(/reserved for/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/screenshots/)).not.toBeInTheDocument();
     const save = screen.getByRole('button', { name: 'Save' });
     expect(save).toBeEnabled();
     fireEvent.click(save);
 
     await waitFor(() => expect(updateKeyboardShortcuts).toHaveBeenCalledOnce());
     expect(shortcutRegistry.getEffectiveKeys('command-terminal')).toEqual({
-      key: '4',
+      key: '7',
       modifiers: ['meta', 'shift'],
     });
   });

@@ -1225,19 +1225,22 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     );
   }, []);
 
-  /** ⌘⇧[/]: rotate through ALL tabs in display order, crossing project
-   *  boundaries (operator, 2026-07-03) — the strip is one global ring.
+  /** ⌘⇧[/]: rotate through every visible section in display order, crossing
+   *  project boundaries (operator, 2026-07-03) — the strip is one global
+   *  ring. Open zero-tab Projects are real stops (D19): landing on one
+   *  activates its empty state (the Agent composer) instead of skipping it.
    *  The ring math is pure and unit-tested in tab-ring.ts (D18). */
   const cycleTab = useCallback((delta: 1 | -1): boolean => {
     const { projects: gs, activeDir: ad } = stateRef.current;
     const next = nextTabInRing(gs, ad, delta);
     if (!next) return false;
     setActiveDir(next.dir);
-    setProjects(prev =>
-      prev.map(x =>
-        x.dir === next.dir ? { ...x, activeTabId: next.tab.id } : x
-      )
-    );
+    const tab = next.tab;
+    if (tab) {
+      setProjects(prev =>
+        prev.map(x => (x.dir === next.dir ? { ...x, activeTabId: tab.id } : x))
+      );
+    }
     return true;
   }, []);
 

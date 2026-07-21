@@ -102,7 +102,7 @@ try {
           )
         );
       }, firstSession.durableSessionId);
-      await page.keyboard.press('Meta+Shift+2');
+      await page.keyboard.press('Control+Meta+2');
       await page.locator('[data-expose-tile]').first().waitFor();
       const selected = page.locator('[data-expose-tile][data-selected="true"]');
       const before = await selected.getAttribute('aria-label');
@@ -130,7 +130,7 @@ try {
           'Stopped Session did not retain a durable workspace tab'
         );
       }
-      await page.keyboard.press('Meta+Shift+3');
+      await page.keyboard.press('Control+Meta+3');
       await page.waitForURL('**/fleet/spatial**');
       await page.waitForFunction(
         () =>
