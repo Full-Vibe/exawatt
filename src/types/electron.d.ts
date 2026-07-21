@@ -347,6 +347,12 @@ declare global {
          *  accelerators (D10) — '' clears a column (chord rebinds) */
         syncAccelerators?: (map: Record<string, string>) => Promise<void>;
       };
+      shortcuts?: {
+        /** the machine's parsed com.apple.symbolichotkeys.plist as JSON
+         *  (D19 amendment): {} = verified untouched prefs, null = could not
+         *  read (renderer falls back to Apple defaults, unverified) */
+        systemHotkeys?: () => Promise<unknown>;
+      };
     };
   }
 }

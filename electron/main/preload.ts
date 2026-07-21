@@ -237,4 +237,7 @@ contextBridge.exposeInMainWorld('electron', {
     syncAccelerators: (map: Record<string, string>) =>
       ipcRenderer.invoke('menu:sync-accelerators', map),
   },
+  shortcuts: {
+    systemHotkeys: () => ipcRenderer.invoke('shortcuts:system-hotkeys'),
+  },
 });

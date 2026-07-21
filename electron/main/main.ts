@@ -16,6 +16,7 @@ import nodeNet from 'net';
 import http from 'http';
 import path from 'path';
 import { handleTrusted, setTrustedRendererOrigin } from './ipc-security';
+import { registerSystemShortcutIPC } from './system-shortcuts';
 import { randomUUID } from 'crypto';
 import { launchScreenUrl, type StartupStage } from './launch-screen';
 import type { PtySessionManager } from './pty/session-manager';
@@ -1045,6 +1046,7 @@ async function bootstrapCommandSurface(): Promise<void> {
   registerDialogIPC();
   registerAppIPC();
   registerMenuIPC();
+  registerSystemShortcutIPC();
   shutdownCoordinator = new runtime.shutdown.ShutdownCoordinator({
     countLive: () => {
       const live = ptySessions.list().filter(session => !session.exited);

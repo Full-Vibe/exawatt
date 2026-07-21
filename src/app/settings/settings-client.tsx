@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useSyncExternalStore } from 'react';
+import { useState, useCallback, useEffect, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -31,8 +31,14 @@ import {
   PermissionsExplainer,
 } from './notifications-settings';
 import { eventToBinding } from '@/lib/shortcuts/format';
+import {
+  effectiveSystemHotkeys,
+  findSystemShortcutConflict,
+  type SymbolicHotkeysPlist,
+  type SystemHotkey,
+} from '@/lib/shortcuts/system-shortcuts';
 import type { ShortcutCategory, ShortcutKeys, KeyBinding } from '@/types/shortcuts';
-import { RotateCcw, AlertCircle } from 'lucide-react';
+import { RotateCcw, AlertCircle, TriangleAlert } from 'lucide-react';
 
 const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
   workspace: 'Terminal Workspace',
@@ -71,11 +77,82 @@ function currentShortcutPlatform(): ShortcutPlatform {
   return 'other';
 }
 
+interface SystemHotkeyTable {
+  hotkeys: SystemHotkey[];
+  /** true = computed from this machine's real prefs (Electron); false =
+   *  Apple-defaults fallback only (web — cannot verify, warn don't block) */
+  verified: boolean;
+}
+
 export function SettingsClient() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [recordedKeys, setRecordedKeys] = useState<KeyBinding[]>([]);
   const [bindingError, setBindingError] = useState<string | null>(null);
+  const [bindingWarning, setBindingWarning] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [systemTable, setSystemTable] = useState<SystemHotkeyTable | null>(
+    null
+  );
+
+  // macOS system-shortcut truth (D19 amendment): read the machine's actual
+  // symbolic-hotkey prefs so a combo the user freed in System Settings is
+  // bindable here, and a combo the system really owns explains itself.
+  useEffect(() => {
+    if (currentShortcutPlatform() !== 'darwin') {
+      setSystemTable({ hotkeys: [], verified: true });
+      return;
+    }
+    let cancelled = false;
+    const read = window.electron?.shortcuts?.systemHotkeys;
+    if (!read) {
+      setSystemTable({
+        hotkeys: effectiveSystemHotkeys(null),
+        verified: false,
+      });
+      return;
+    }
+    read()
+      .then(plist => {
+        if (cancelled) return;
+        setSystemTable(
+          plist === null
+            ? { hotkeys: effectiveSystemHotkeys(null), verified: false }
+            : {
+                hotkeys: effectiveSystemHotkeys(
+                  plist as SymbolicHotkeysPlist
+                ),
+                verified: true,
+              }
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSystemTable({
+          hotkeys: effectiveSystemHotkeys(null),
+          verified: false,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const systemConflictFor = useCallback(
+    (keys: ShortcutKeys): { error: string | null; warning: string | null } => {
+      const table = systemTable ?? {
+        hotkeys: effectiveSystemHotkeys(null),
+        verified: false,
+      };
+      const conflict = findSystemShortcutConflict(keys, table.hotkeys, {
+        verified: table.verified,
+      });
+      if (!conflict) return { error: null, warning: null };
+      return conflict.verified
+        ? { error: conflict.message, warning: null }
+        : { error: null, warning: conflict.message };
+    },
+    [systemTable]
+  );
 
   const subscribe = useCallback((callback: () => void) => {
     return shortcutRegistry.subscribe(callback);
@@ -88,6 +165,7 @@ export function SettingsClient() {
     setEditingId(shortcutId);
     setRecordedKeys([]);
     setBindingError(null);
+    setBindingWarning(null);
   }, []);
 
   const handleKeyDown = useCallback(
@@ -104,6 +182,7 @@ export function SettingsClient() {
       if (reservation) {
         setRecordedKeys([]);
         setBindingError(reservation);
+        setBindingWarning(null);
         return;
       }
 
@@ -121,17 +200,18 @@ export function SettingsClient() {
 
       const nextBinding: ShortcutKeys =
         nextKeys.length === 2 ? [nextKeys[0], nextKeys[1]] : nextKeys[0];
-      setBindingError(
-        shortcut
-          ? validateShortcutBinding(
-              shortcut,
-              nextBinding,
-              currentShortcutPlatform()
-            )
-          : null
-      );
+      const policyError = shortcut
+        ? validateShortcutBinding(
+            shortcut,
+            nextBinding,
+            currentShortcutPlatform()
+          )
+        : null;
+      const system = systemConflictFor(nextBinding);
+      setBindingError(policyError ?? system.error);
+      setBindingWarning(system.warning);
     },
-    [editingId, recordedKeys]
+    [editingId, recordedKeys, systemConflictFor]
   );
 
   const saveShortcut = useCallback(async () => {
@@ -152,6 +232,14 @@ export function SettingsClient() {
       : null;
     if (policyError) {
       setBindingError(policyError);
+      return;
+    }
+
+    // A combo the SYSTEM verifiably owns can never reach the app — refuse
+    // with the actionable message; an unverified (web) hit only warns.
+    const system = systemConflictFor(newKeys);
+    if (system.error) {
+      setBindingError(system.error);
       return;
     }
 
@@ -176,7 +264,7 @@ export function SettingsClient() {
     } finally {
       setSaving(false);
     }
-  }, [editingId, recordedKeys]);
+  }, [editingId, recordedKeys, systemConflictFor]);
 
   const resetToDefault = useCallback(async (shortcutId: string) => {
     shortcutRegistry.removeOverride(shortcutId);
@@ -331,6 +419,15 @@ export function SettingsClient() {
             <div className="flex items-center gap-2 text-destructive text-sm">
               <AlertCircle className="h-4 w-4" />
               {bindingError}
+            </div>
+          )}
+          {!bindingError && bindingWarning && (
+            <div
+              data-binding-warning
+              className="flex items-start gap-2 text-sm text-amber-500"
+            >
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              {bindingWarning}
             </div>
           )}
 

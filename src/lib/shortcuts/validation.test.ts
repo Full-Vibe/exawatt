@@ -95,46 +95,16 @@ describe('shortcut binding policy', () => {
     ).toBeNull();
   });
 
-  it('rejects the macOS screenshot combos ⌘⇧3–6 for every shortcut (D19)', () => {
-    // macOS consumes these system-wide before any app sees the keydown —
-    // a binding here can never fire (how ⌘⇧3 Spatial silently died).
-    for (const key of ['3', '4', '5', '6']) {
-      expect(
-        validateShortcutBinding(
-          universal,
-          { key, modifiers: ['meta', 'shift'] },
-          'darwin'
-        )
-      ).toMatch(/screenshots/);
-      expect(
-        validateShortcutBinding(
-          {},
-          { key, modifiers: ['meta', 'shift'] },
-          'darwin'
-        )
-      ).toMatch(/screenshots/);
-    }
-    // ⌘⇧1/2 are not screenshot keys; extra modifiers also escape the trap
+  it('leaves macOS system combos to the live system-shortcut check', () => {
+    // D19 amendment: system shortcuts (screenshots, Spotlight, …) are
+    // user-configurable in System Settings, so the POLICY layer no longer
+    // hardcodes them — the Settings surface consults the machine's real
+    // symbolic-hotkey table instead (system-shortcuts.test.ts covers it).
     expect(
       validateShortcutBinding(
         universal,
-        { key: '1', modifiers: ['meta', 'shift'] },
+        { key: '3', modifiers: ['meta', 'shift'] },
         'darwin'
-      )
-    ).toBeNull();
-    expect(
-      validateShortcutBinding(
-        universal,
-        { key: '3', modifiers: ['ctrl', 'meta', 'shift'] },
-        'darwin'
-      )
-    ).toBeNull();
-    // other platforms do not reserve these combos
-    expect(
-      validateShortcutBinding(
-        universal,
-        { key: '3', modifiers: ['ctrl', 'shift'] },
-        'win32'
       )
     ).toBeNull();
   });

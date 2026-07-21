@@ -56,37 +56,16 @@ export function reservedShortcutFamily(
   return null;
 }
 
-/** macOS registers ⇧⌘3/4/5/6 as system screenshot hot keys and consumes
- *  them before any app receives the keydown — a binding on one of them can
- *  never fire (D19: ⌘⇧3 Spatial was silently dead on real keyboards). */
-function macScreenshotConflict(keys: ShortcutKeys): string | null {
-  const bindings = isChord(keys) ? keys : [keys];
-  for (const b of bindings) {
-    const mods = new Set(b.modifiers ?? []);
-    if (
-      mods.has('meta') &&
-      mods.has('shift') &&
-      !mods.has('ctrl') &&
-      !mods.has('alt') &&
-      /^[3-6]$/.test(b.key)
-    ) {
-      return `⌘⇧${b.key} is captured by macOS for screenshots before Exawatt can see it.`;
-    }
-  }
-  return null;
-}
-
-/** Validate that customization preserves the command's focus guarantee. */
+/** Validate that customization preserves the command's focus guarantee.
+ *  macOS SYSTEM shortcut collisions (screenshots, Spotlight, …) are NOT
+ *  hardcoded here — they are user-configurable in System Settings, so the
+ *  Settings surface checks the machine's EFFECTIVE hotkey table instead
+ *  (src/lib/shortcuts/system-shortcuts.ts, D19 amendment). */
 export function validateShortcutBinding(
   shortcut: Pick<ShortcutDefinition, 'bindingPolicy'>,
   keys: ShortcutKeys,
   platform: ShortcutPlatform
 ): string | null {
-  if (platform === 'darwin') {
-    const screenshot = macScreenshotConflict(keys);
-    if (screenshot) return screenshot;
-  }
-
   if (shortcut.bindingPolicy !== 'universal-command') return null;
 
   if (isChord(keys)) {
