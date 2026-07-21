@@ -983,6 +983,52 @@ Progress log:
   manually arranged desktop-map feeling remains inspiration for V2.2, not a
   reason to turn the V2.0 visual grid into ownership or movement semantics.
 
+### V2.4 Experience pass — graphics, motion, navigation, transitions
+
+Status: active-build (2026-07-20, operator unpark); executes before V2.1–V2.3
+
+The operator's ask (2026-07-20): "take us past the spatial experience …
+super good graphics, really smooth, navigable, excellent transitions in
+between states in the spatial mode and also between spatial and other
+modes." The V2.0 board is correct but reads as a wireframe: near-invisible
+zone plates, flat status discs, no glow or depth, no pointer pan/zoom, and
+functional-but-unchoreographed altitude cuts.
+
+Scope (all within decision `0007`: restrained board, ortho projections only,
+DOM owns text/interaction, keyboard-first):
+
+- world materiality: lighting so the fixed-angle projection reads depth;
+  Project zone plates with per-project accent edge glow instead of uniform
+  gray outlines; radial-fade grid; Agent pieces get emissive status cores
+  (`toneMapped={false}`) with soft halos; animated selection ring; lazy,
+  low-power-gated Bloom + Vignette postprocessing
+- motion: entrance choreography keyed to MOUNTS (never data ticks);
+  breathing pulses on working/attention pieces; altitude changes become
+  choreographed flights (slower damp for flights than for nudges) with the
+  `<Html>` project/agent controls crossfading instead of popping
+- direct navigation: pointer drag-pan and wheel zoom-to-cursor feeding the
+  same damped camera target model; existing click-vs-drag guards preserved;
+  free orbit stays forbidden
+- transitions: the regime overlay becomes directional (ascending toward
+  Spatial expands, descending toward Terminal contracts); the board plays an
+  arrival dolly on entry; entering a Session keeps the camera dive plus a
+  polished scrim
+
+Gate amendment: V2.0's "at rest, the demand-rendered scene parks" becomes
+"parks under reduced motion, low power, and hidden tabs" — ambient status
+motion is now a deliberate product quality, not an accident. Frame budget,
+instancing (one draw per layer), and the full-route evaluator remain gates.
+
+Acceptance:
+
+- the four operator axes each visibly improved, screenshot-evidenced at
+  fleet/project/agent altitudes, both projections, S/M/L demo scales
+- pointer drag-pan + wheel zoom-to-cursor work without breaking click
+  selection, keyboard glide, or viewport persistence
+- reduced-motion, low-power, and hidden-tab paths verified (static but
+  complete); `pnpm eval:r3f` and the full-route spatial evaluator pass
+- no regression in draw-call counts beyond the added halo/effects budget
+
 ### V2.1 Scale & Truth
 
 Status: planned; gated by V2.0
