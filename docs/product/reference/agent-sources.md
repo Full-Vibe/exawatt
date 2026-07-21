@@ -54,7 +54,51 @@ conversation identity. If personal preferences cannot be read, Exawatt uses
 account cannot use a selected policy, Exawatt surfaces the harness response and
 does not silently broaden access.
 
+These policies are requests to, and enforced by, the selected harness. Exawatt
+does not currently add an independent sandbox around Claude Code, Codex, or the
+tools they invoke. In particular, **YOLO** means the harness receives the broad
+machine authority available to the user's process. The UI must not describe a
+provider-enforced mode as an Exawatt guarantee.
+
 Create, attach, resume, branch, background, and delegation are source
 capabilities. The UI should expose only capabilities an adapter actually
 supports; a unified attach/resume design remains a hypothesis for later
 iteration.
+
+## Activity and assurance contract
+
+Agent Sources differ in more than launch and resume commands. An adapter should
+eventually describe which activity it reports, which controls it enforces, and
+which evidence it can provide. Exawatt can then normalize the parts a source
+supports while leaving unsupported facts unknown.
+
+For example, a source may report that an Agent called a mail tool. That is
+useful activity, but it does not prove that Exawatt authorized the call or that
+the recipient's server accepted the message. Exawatt should keep those claims
+separate through the common Event assurance facets: reported, observed,
+authorized, enforced, and verified.
+
+This contract is intentionally provider-first today:
+
+- harness manufacturers own their sandboxes, prompts, tool policies, and
+  downstream integrations;
+- users bring the security model appropriate to their chosen harness;
+- Exawatt exposes the selected posture and source-reported activity without
+  manufacturing stronger guarantees;
+- Demo Scenario Sources emit the same shapes with clearly simulated provenance.
+
+Future adapters may point to Exawatt-owned or third-party mediators for
+credentials, network access, payments, messages, or other typed actions. The
+adapter contract allows that future without making those integrations current
+scope.
+
+## Managed Workspace ceilings
+
+Personal launch preferences are the current implementation. When managed
+Workspace policy arrives, its ceilings take precedence: a personal Agent
+setting or YOLO preference can request less access but cannot exceed what the
+Workspace permits. An adapter that cannot honor the effective ceiling must fail
+visibly rather than silently start with broader authority.
+
+This is a future governance contract, not a second policy engine in today's
+desktop app.

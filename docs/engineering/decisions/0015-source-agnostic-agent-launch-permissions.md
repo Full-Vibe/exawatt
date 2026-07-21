@@ -3,6 +3,9 @@
 Date: 2026-07-18
 Status: accepted, expected to evolve with harness capabilities
 
+Decision `0016` clarifies that these modes are enforced by the selected harness
+today and must later resolve within non-bypassable managed Workspace ceilings.
+
 ## Context
 
 Exawatt launches Claude Code and Codex as local Agent Sources. Their current

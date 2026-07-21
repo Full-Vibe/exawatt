@@ -60,7 +60,7 @@ export const architectureManifest = {
   title: 'Exawatt Architecture',
   summary:
     'Exawatt is a command interface for managing agent fleets across local, hosted, and third-party harnesses.',
-  lastReviewed: '2026-07-18',
+  lastReviewed: '2026-07-21',
   layers: [
     {
       key: 'ui',
@@ -74,7 +74,7 @@ export const architectureManifest = {
       key: 'coordination',
       label: 'Coordination & Intelligence Layer',
       summary:
-        'Canonical Exawatt objects, memory, translation, governance, and resource context.',
+        'Canonical objects, memory, translation, governance, assurance, and resource context.',
       color: 'rgba(126,87,194,0.08)',
       accent: '#8b5cf6',
     },
@@ -110,7 +110,7 @@ export const architectureManifest = {
           id: 'exawatt',
           label: 'Exawatt',
           summary:
-            'A source-agnostic command interface and coordination layer for agent fleets.',
+            'A source-agnostic command and coordination layer that makes agent authority, activity, and assurance legible.',
           x: 420,
           y: 220,
           width: 280,
@@ -185,7 +185,7 @@ export const architectureManifest = {
           id: 'coordination-layer',
           label: 'Coordination & Intelligence Layer',
           summary:
-            'Canonical objects, translation, decisions, context signals, policy, budgets, consumption, and approvals.',
+            'Canonical objects, translation, decisions, policy, approvals, consumption, and truthful activity assurance.',
           layer: 'coordination',
           x: 115,
           y: 318,
@@ -267,7 +267,7 @@ export const architectureManifest = {
           id: 'review-surfaces',
           label: 'Review Surfaces',
           summary:
-            'Places where people inspect artifacts, decisions, approvals, and outcomes.',
+            'Places where people inspect intent, activity, artifacts, decisions, approvals, evidence, and outcomes.',
           layer: 'ui',
           x: 815,
           y: 92,
@@ -321,7 +321,7 @@ export const architectureManifest = {
           id: 'event',
           label: 'Event',
           summary:
-            'A timestamped observation: message, tool call, state change, blocker, or request.',
+            'A timestamped observation with explicit reported, observed, authorized, enforced, and verified provenance.',
           layer: 'coordination',
           x: 625,
           y: 430,
@@ -365,7 +365,7 @@ export const architectureManifest = {
           id: 'policy-budget',
           label: 'Policy / Budget',
           summary:
-            'Rules and limits governing tools, spend, approvals, and allowed actions.',
+            'Layered rules and limits; managed Workspace ceilings can bound personal and Agent settings.',
           layer: 'coordination',
           x: 490,
           y: 535,
@@ -386,7 +386,8 @@ export const architectureManifest = {
         {
           id: 'approval',
           label: 'Approval',
-          summary: 'A human authorization checkpoint for high-impact work.',
+          summary:
+            'A scoped, time-bounded human authorization checkpoint for high-impact work.',
           layer: 'coordination',
           x: 900,
           y: 535,
@@ -408,7 +409,7 @@ export const architectureManifest = {
           id: 'agent-source',
           label: 'Agent Source / Harness',
           summary:
-            'A provider or runtime boundary that can create, observe, and control agents.',
+            'A provider/runtime boundary describing agent controls, reported activity, evidence, and enforcement ownership.',
           layer: 'infrastructure',
           x: 95,
           y: 705,
@@ -607,7 +608,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Adapters',
           summary:
-            'Capability-described provider boundaries that translate Agent actions and prompt/auto/unrestricted launch policy into source-specific create, observe, resume, and control operations.',
+            'Provider-first boundaries that translate actions and launch policy while describing source activity, evidence, and actual enforcement ownership.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,
@@ -631,7 +632,7 @@ export const architectureManifest = {
           id: 'decision-context-layer',
           label: 'Decision / Context Layer',
           summary:
-            'Scoped decisions, context signals, budgets, and consumption controls.',
+            'Scoped decisions, approvals, context, policy hierarchy, evidence, assurance, and consumption controls.',
           layer: 'coordination',
           status: 'designed',
           x: 342,
@@ -679,7 +680,7 @@ export const architectureManifest = {
           id: 'demo-harness',
           label: 'Demo Harness',
           summary:
-            'A swappable harness that exercises the same UI and coordination layers without live agents.',
+            'A swappable harness that emits the same activity and assurance shapes with simulated provenance.',
           layer: 'infrastructure',
           status: 'active-build',
           x: 535,
@@ -753,7 +754,9 @@ export const architectureManifest = {
     'Open Session identity spans Terminal, Sessions, and Spatial; PTYs add live runtime state but do not define whether a Session-backed Agent exists.',
     'Logical Sessions survive local process death through explicit, deterministic rehydration; local processes do not outlive Exawatt.',
     'Agent sources are replaceable harnesses behind explicit adapters.',
-    'Launch permission policy is source-agnostic; adapters translate visible personal Project defaults into provider controls without silent escalation.',
+    'Launch permission policy is source-agnostic and provider-enforced today; adapters translate visible personal Project defaults without silent escalation.',
+    'Activity assurance is composable: reported, observed, authorized, enforced, and verified are independent claims, and unknowns stay visible.',
+    'Future managed Workspace ceilings cannot be bypassed by personal settings or YOLO; later mediation fits behind existing source and coordination contracts.',
     'Demo behavior is a swappable harness path, not a separate product architecture.',
     'Governance, memory, and resource context live above individual providers.',
   ],

@@ -28,9 +28,12 @@ New Project-and-source combinations start on **YOLO**. Exawatt remembers a
 separate personal choice for each Project and Agent Source, so Claude Code and
 Codex can use different policies in the same Project. Changing the selector
 saves that pair immediately; starting an Agent is not required. YOLO gives the
-Agent full machine access; use Ask first or Auto-review when that is not
-appropriate. If saved preferences cannot be read, Exawatt visibly falls back
-to Ask first instead of silently broadening access.
+Agent the broad machine access available to the harness process; use Ask first
+or Auto-review when that is not appropriate. Exawatt sends this choice to the
+selected harness, which owns the current approval and sandbox behavior. Exawatt
+does not independently inspect or block every downstream tool action today. If
+saved preferences cannot be read, Exawatt visibly falls back to Ask first
+instead of silently broadening access.
 
 ## Quitting and returning
 

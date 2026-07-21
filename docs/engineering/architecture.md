@@ -85,9 +85,63 @@ Canonical product objects:
 
 This layer should hide source-specific plumbing from the UI.
 
-This layer also owns translation, durable decisions, context signals, policies, budgets, approvals, and consumption records.
+This layer also owns translation, durable decisions, context signals, policies,
+budgets, approvals, and consumption records.
 
 This layer also owns UI-facing view models and command contracts that are shared by multiple UI regimes. These presentation models must be source-agnostic, deterministic, pure TypeScript, and testable without React, DOM, Electron, or Three.js.
+
+#### Agency control spine
+
+Visibility, authorization, evidence, and enforcement form a cross-cutting spine
+through the existing Coordination objects. This is not a fourth layer, a
+separate service, or a new integration project. It is the contract that lets
+Events, Decisions, Approvals, Policies, Artifacts, Consumption, and Agent Source
+adapters explain agent activity consistently as Exawatt grows.
+
+Where a source provides the information, the normalized contract distinguishes:
+
+1. the Agent's declared intent or proposed action;
+2. the effective Policy and any human Approval;
+3. the attempted action;
+4. the resulting real-world effect;
+5. evidence or an Artifact supporting that result;
+6. provenance for what was reported, observed, authorized, enforced, and
+   verified.
+
+These are independent assurance facets, not one boolean safety score. Unknown
+or unsupported facets remain visible. A provider-reported tool call, an
+OS-observed network connection, a broker-enforced spend limit, and a
+receipt-verified payment can therefore coexist without Exawatt overstating what
+it knows.
+
+The near-term enforcement boundary remains the Agent Source / Harness and any
+security model the user brings with it. Exawatt may request a provider launch
+policy and normalize source-reported activity, but it does not yet independently
+mediate general network access, email, messages, payments, or other real-world
+actions. Current UI must name the enforcing system and must not turn missing
+telemetry into a claim that an action was safe or did not occur.
+
+The same contracts leave a deliberate future seam for Exawatt to become a
+Harness or compose with policy engines, credential brokers, restricted
+runtimes, network controls, and typed action providers. Those components can
+add enforcement or verification without changing the canonical object model or
+requiring the UI to understand provider-specific mechanics. This is an
+architectural affordance, not authorization to build those integrations now.
+
+Policy resolution is hierarchical. A future managed Workspace can set absolute
+ceilings that personal Agent or Session settings and YOLO mode cannot bypass.
+Until that managed policy layer is built, personal launch policy should
+continue to delegate to the chosen harness rather than conflict with an
+illusory Exawatt policy engine.
+
+Two product defaults remain open and belong to existing roadmap work:
+
+- ENG-006 must decide whether the normal Approval scope is one action, a class
+  of actions, or a bounded Session mandate.
+- ENG-003 must decide whether redacted activity metadata is retained locally by
+  default while detailed arguments/content are opt-in, or whether all durable
+  evidence requires opt-in. Credentials and secret values are never activity
+  evidence.
 
 ### Agent Infrastructure Layer
 
@@ -226,6 +280,9 @@ Planned:
 - scoped Decision model
 - Context Signals
 - Consumption and spend controls
+- provider-reported activity, security posture, and assurance normalization
+  across Agent Sources
+- managed Workspace policy ceilings and Exawatt-enforced action mediation
 - secrets/configuration strategy
 - hosted OpenClaw / remote harnesses
 - multi-source fleet aggregation
