@@ -61,7 +61,7 @@ function session({
     exitCode: null,
     lastDataAt: Date.now(),
     contextSummary,
-    harnessSessionId: null,
+    harnessSessionId: `provider-${id}`,
     attention: null,
   };
 }
@@ -226,14 +226,41 @@ await page.addInitScript(
           cursor: 0,
         }),
         bufferSince: async () => ({ data: '', cursor: 0 }),
+        retainedHistory: async () => ({
+          text: 'Workspace chrome ready.',
+          cursor: 0,
+          updatedAt: 1,
+          corrupt: false,
+        }),
         pasteClipboard: async () => ({ ok: true }),
         copyText: async () => undefined,
         openExternal: async () => undefined,
         openPath: async () => undefined,
         listResumeCandidates: async () => [],
         createWorktree: async () => ({ ok: true, path: '/tmp/worktree' }),
+        // D23 close grammar: the mock parks by firing the captured exit
+        // handler, exactly like main's stop → natural-exit path
+        stopSession: async durableSessionId => {
+          const session = sessions.find(
+            s => s.durableSessionId === durableSessionId
+          );
+          if (session) {
+            window.__fireExit?.({
+              id: session.id,
+              durableSessionId,
+              exitCode: 0,
+            });
+          }
+          return true;
+        },
+        archiveSession: async entry => ({ ...entry, closedAt: 1 }),
+        closedSessions: async () => [],
+        reopenSession: async () => null,
         onData: off,
-        onExit: off,
+        onExit: handler => {
+          window.__fireExit = handler;
+          return () => undefined;
+        },
         onContext: off,
         onRecap: off,
         onAttention: off,
@@ -447,7 +474,72 @@ try {
     );
   }
 
+  // ── Close grammar (D23): idle parks silently → non-active stopped tabs
+  // condense and unfurl on hover → only a WORKING session confirms → the
+  // active parked tab stays unfurled → closing archives with a toast.
+  const stopConfirm = page.locator('[data-stop-confirm]');
+  // 1. idle session parks with NO confirm; its (non-active) tab condenses
+  await page
+    .locator('[data-project="gpagent"]')
+    .getByRole('button', { name: 'Stop Claude Code' })
+    .click();
+  if (await stopConfirm.count()) {
+    throw new Error('idle sessions must park without a confirm');
+  }
+  const condensed = strip.locator('[data-condensed]');
+  await condensed.waitFor();
+  // park the pointer away — hover would unfurl the chip we're capturing
+  // clicking the button left pointer AND focus on the tab — both unfurl by
+  // design, so hand focus to the pane before capturing the folded chip
+  await page.mouse.click(650, 400);
+  await page.waitForTimeout(320); // let the 200ms fold transition finish
+  await page.screenshot({ path: join(SCREENSHOT_DIR, 'parked-condensed.png') });
+  // hover unfurls the frozen chip
+  await page
+    .locator('[data-project="gpagent"]')
+    .getByRole('button', { name: 'Close Claude Code' })
+    .hover();
+  await settle();
+  await page.screenshot({ path: join(SCREENSHOT_DIR, 'parked-unfurled.png') });
+  // 2. a WORKING session is the only close that asks
+  await page.evaluate(() => {
+    window.__fireActivity?.({ id: 'exawatt-session', working: true });
+  });
+  await settle();
+  await page.getByRole('button', { name: 'Stop Codex' }).click();
+  await stopConfirm.waitFor();
+  await page.screenshot({ path: join(SCREENSHOT_DIR, 'close-confirm.png') });
+  await page.keyboard.press('Escape'); // esc keeps it going
+  await stopConfirm.waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Stop Codex' }).click();
+  await stopConfirm.waitFor();
+  await page.keyboard.press('Enter'); // ⏎ stops
+  await stopConfirm.waitFor({ state: 'detached' });
+  // 3. the ACTIVE parked tab stays unfurled — its restore panel is on screen
+  await page.getByRole('button', { name: 'Close Codex' }).waitFor();
+  if ((await condensed.count()) !== 1) {
+    throw new Error('active parked tab must stay unfurled');
+  }
+  // 4. closing the stopped tab archives it and narrates the outcome
+  await page.getByRole('button', { name: 'Close Codex' }).click();
+  const toast = page.locator('[data-close-toast]');
+  await toast.waitFor();
+  const toastText = await toast.innerText();
+  if (
+    !toastText.includes('Recently closed') ||
+    !toastText.includes('reopen')
+  ) {
+    throw new Error(`Close toast does not narrate the outcome: ${toastText}`);
+  }
+  await page.screenshot({ path: join(SCREENSHOT_DIR, 'close-toast.png') });
+
   await page.setViewportSize({ width: 800, height: 700 });
+  // the strip clicks above click-away-collapsed the summoned composer —
+  // reopen it for the permission-menu geometry checks
+  if (!(await page.locator('[data-agent-composer]').count())) {
+    await page.locator('[data-composer-toggle]').click();
+    await page.locator('[data-agent-composer]').waitFor();
+  }
   const permissionTrigger = page.getByLabel('Agent permissions');
   await permissionTrigger.focus();
   await page.keyboard.press('Space');

@@ -89,6 +89,20 @@ export type PtyCreateResult =
   | { ok: true; session: PtySessionInfo }
   | { ok: false; error: string };
 
+/** a soft-closed Session in the Recently-closed ledger (D23) */
+export interface ClosedSessionEntry {
+  durableSessionId: string;
+  title: string;
+  goal: string | null;
+  harness: PtyHarness;
+  cwd: string;
+  projectDir: string;
+  projectName: string;
+  harnessSessionId: string | null;
+  initialTask: string | null;
+  closedAt: number;
+}
+
 export interface ElectronPtyApi {
   create: (options: PtyCreateOptions) => Promise<PtyCreateResult>;
   write: (id: string, data: string) => Promise<void>;
@@ -96,7 +110,17 @@ export interface ElectronPtyApi {
   engage: (id: string) => Promise<void>;
   resize: (id: string, cols: number, rows: number) => Promise<void>;
   kill: (id: string) => Promise<void>;
-  deleteSession: (durableSessionId: string) => Promise<boolean>;
+  /** park (D23): stop the process, RETAIN scrollback/history; the tab
+   *  stays as a stopped, resumable Session. false = not live. */
+  stopSession: (durableSessionId: string) => Promise<boolean>;
+  /** soft-close a STOPPED session into the Recently-closed ledger (D23);
+   *  history survives until the ledger reaps (~14 days) */
+  archiveSession: (
+    entry: Omit<ClosedSessionEntry, 'closedAt'>
+  ) => Promise<ClosedSessionEntry>;
+  closedSessions: () => Promise<ClosedSessionEntry[]>;
+  /** remove and return a ledger entry so the tab can resurrect whole */
+  reopenSession: (durableSessionId: string) => Promise<ClosedSessionEntry | null>;
   rename: (id: string, title: string) => Promise<void>;
   /** the operator is looking at this session (null = none focused) */
   focus: (id: string | null) => Promise<void>;

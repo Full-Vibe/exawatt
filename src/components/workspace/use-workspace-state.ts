@@ -54,6 +54,7 @@ import type {
   PtyHarness,
   PtyReentryRecap,
   PtySessionInfo,
+  ClosedSessionEntry,
 } from '@/types/electron';
 
 export interface WorkspaceTab {
@@ -93,6 +94,13 @@ export type ResumeState =
   | 'resuming'
   | 'resumed'
   | 'failed';
+
+/** what a close attempt did (D23) — the UI narrates each differently */
+export type CloseOutcome =
+  | { kind: 'noop' }
+  | { kind: 'needs-confirm' }
+  | { kind: 'parked' }
+  | { kind: 'closed'; entry: ClosedSessionEntry };
 
 export function tabIsLive(tab: WorkspaceTab): boolean {
   return tab.resumeState === 'live' || tab.resumeState === 'resumed';
@@ -402,7 +410,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   attentionRef.current = attention;
   const summariesRef = useRef(summaries);
   summariesRef.current = summaries;
+  const activityRef = useRef(activity);
+  activityRef.current = activity;
   const resumeInFlightRef = useRef<Set<string>>(new Set());
+  /** durable ids the operator just PARKED (D23): their exit is deliberate,
+   *  so the tab reads Stopped, never the crash-vocabulary Exited */
+  const parkedRef = useRef<Set<string>>(new Set());
   const shutdownTargetsRef = useRef<Set<string>>(new Set());
 
   const syncProjectIdentity = useCallback(
@@ -686,6 +699,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     })();
 
     const offExit = api.onExit(({ id, durableSessionId, exitCode }) => {
+      const parked = parkedRef.current.delete(durableSessionId);
       setProjects(prev =>
         prev.map(g => ({
           ...g,
@@ -698,7 +712,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                   resumeState: t.harnessSessionId
                     ? 'ended-resumable'
                     : 'identity-missing',
-                  lifecycle: 'exited',
+                  // a ⌘W park is a deliberate stop, not a process death
+                  lifecycle: parked ? 'stopped-clean' : 'exited',
                 }
               : t
           ),
@@ -990,27 +1005,136 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     [addSession, syncProjectIdentity]
   );
 
-  const closeTab = useCallback(async (tabId: string) => {
-    const api = window.electron?.pty;
-    if (!api) return;
-    const { projects: gs } = stateRef.current;
-    const g = gs.find(x => x.tabs.some(t => t.id === tabId));
-    const tab = g?.tabs.find(t => t.id === tabId);
-    setPinnedTabId(cur => (cur === tabId ? null : cur));
-    if (tab && !(await api.deleteSession(tab.durableSessionId))) return;
-    setProjects(prev => {
-      const next = prev.map(grp => {
-        if (!grp.tabs.some(t => t.id === tabId)) return grp;
-        const tabs = grp.tabs.filter(t => t.id !== tabId);
-        const activeTabId =
-          grp.activeTabId === tabId
-            ? (tabs[tabs.length - 1]?.id ?? null)
-            : grp.activeTabId;
-        return { ...grp, tabs, activeTabId };
+  /** Close grammar (D23): ⌘W moves a Session DOWN its lifecycle, never off
+   *  a cliff. Live → park (stop process, retain everything, tab stays);
+   *  a mid-turn agent asks first (the caller renders the in-app confirm
+   *  and re-calls with force). Stopped → archive to the Recently-closed
+   *  ledger, where identity + history survive until the reap. */
+  const closeTab = useCallback(
+    async (
+      tabId: string,
+      opts: { force?: boolean } = {}
+    ): Promise<CloseOutcome> => {
+      const api = window.electron?.pty;
+      if (!api) return { kind: 'noop' };
+      const { projects: gs } = stateRef.current;
+      const g = gs.find(x => x.tabs.some(t => t.id === tabId));
+      const tab = g?.tabs.find(t => t.id === tabId);
+      if (!g || !tab || tab.resumeState === 'resuming') {
+        return { kind: 'noop' };
+      }
+      if (tabIsLive(tab)) {
+        // interrupting a turn in flight is the one consequential close
+        if (
+          !opts.force &&
+          tab.sessionId &&
+          activityRef.current[tab.sessionId]
+        ) {
+          return { kind: 'needs-confirm' };
+        }
+        parkedRef.current.add(tab.durableSessionId);
+        await api.stopSession(tab.durableSessionId);
+        // the exit broadcast marks the tab stopped; nothing else changes
+        return { kind: 'parked' };
+      }
+      let entry: ClosedSessionEntry;
+      try {
+        entry = await api.archiveSession({
+          durableSessionId: tab.durableSessionId,
+          title: tab.title,
+          goal: summariesRef.current[tab.durableSessionId] ?? null,
+          harness: tab.harness,
+          cwd: tab.cwd,
+          projectDir: g.dir,
+          projectName: g.name,
+          harnessSessionId: tab.harnessSessionId,
+          initialTask: tab.initialTask,
+        });
+      } catch {
+        setError(`Could not close ${tab.title}.`);
+        return { kind: 'noop' };
+      }
+      setPinnedTabId(cur => (cur === tabId ? null : cur));
+      setProjects(prev =>
+        prev.map(grp => {
+          if (!grp.tabs.some(t => t.id === tabId)) return grp;
+          const tabs = grp.tabs.filter(t => t.id !== tabId);
+          const activeTabId =
+            grp.activeTabId === tabId
+              ? (tabs[tabs.length - 1]?.id ?? null)
+              : grp.activeTabId;
+          return { ...grp, tabs, activeTabId };
+        })
+      );
+      return { kind: 'closed', entry };
+    },
+    []
+  );
+
+  /** resurrect a soft-closed Session whole: tab, goal, provider identity,
+   *  retained history — the ledger's other half (D23) */
+  const reopenClosedSession = useCallback(
+    async (durableSessionId: string): Promise<boolean> => {
+      const api = window.electron?.pty;
+      if (!api?.reopenSession) return false;
+      const entry = await api.reopenSession(durableSessionId);
+      if (!entry) return false;
+      const tab: WorkspaceTab = {
+        id: newTabId(),
+        durableSessionId: entry.durableSessionId,
+        harness: entry.harness,
+        title: entry.title,
+        cwd: entry.cwd,
+        sessionId: null,
+        harnessSessionId: entry.harnessSessionId,
+        resumeState:
+          entry.harnessSessionId || entry.harness === 'shell'
+            ? 'ended-resumable'
+            : 'identity-missing',
+        lifecycle: 'stopped-clean',
+        exitCode: null,
+        roadmapItemId: null,
+        initialTask: entry.initialTask,
+      };
+      if (entry.goal) {
+        setSummaries(prev => ({
+          ...prev,
+          [entry.durableSessionId]: entry.goal as string,
+        }));
+      }
+      setProjects(prev => {
+        const i = prev.findIndex(grp => grp.dir === entry.projectDir);
+        if (i === -1) {
+          return [
+            ...prev,
+            {
+              dir: entry.projectDir,
+              name: entry.projectName,
+              color: pickDistinctColor(prev.map(grp => grp.color)),
+              tabs: [tab],
+              activeTabId: tab.id,
+            },
+          ];
+        }
+        const next = [...prev];
+        next[i] = {
+          ...next[i],
+          tabs: [...next[i].tabs, tab],
+          activeTabId: tab.id,
+        };
+        return next;
       });
-      return next;
-    });
-  }, []);
+      setActiveDir(entry.projectDir);
+      return true;
+    },
+    []
+  );
+
+  const listClosedSessions = useCallback(
+    async (): Promise<ClosedSessionEntry[]> =>
+      (await window.electron?.pty?.closedSessions?.()) ?? [],
+    []
+  );
 
   const resumeTab = useCallback(
     async (tabId: string, selectedHarnessId?: string): Promise<boolean> => {
@@ -1561,6 +1685,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     openProject,
     importProjects,
     closeTab,
+    reopenClosedSession,
+    listClosedSessions,
     resumeTab,
     resumeProject,
     resumeAll,

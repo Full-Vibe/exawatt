@@ -39,8 +39,13 @@ contextBridge.exposeInMainWorld('electron', {
     resize: (id: string, cols: number, rows: number) =>
       ipcRenderer.invoke('pty:resize', id, cols, rows),
     kill: (id: string) => ipcRenderer.invoke('pty:kill', id),
-    deleteSession: (durableSessionId: string) =>
-      ipcRenderer.invoke('pty:delete-session', durableSessionId),
+    stopSession: (durableSessionId: string) =>
+      ipcRenderer.invoke('pty:stop-session', durableSessionId),
+    archiveSession: (entry: unknown) =>
+      ipcRenderer.invoke('pty:archive-session', entry),
+    closedSessions: () => ipcRenderer.invoke('pty:closed-sessions'),
+    reopenSession: (durableSessionId: string) =>
+      ipcRenderer.invoke('pty:reopen-session', durableSessionId),
     rename: (id: string, title: string) =>
       ipcRenderer.invoke('pty:rename', id, title),
     focus: (id: string | null) => ipcRenderer.invoke('pty:focus', id),

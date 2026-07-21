@@ -32,6 +32,7 @@ import {
   LogIn,
   History,
   RotateCw,
+  RotateCcw,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -44,6 +45,7 @@ import {
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
   CLOSE_ACTIVE_EVENT,
+  REOPEN_CLOSED_EVENT,
   OPEN_ROADMAP_EVENT,
 } from '@/components/workspace/session-jump';
 import {
@@ -72,7 +74,10 @@ import type { Project } from '@/lib/projects/registry';
 import { HUD } from '@/components/hud';
 import type { ShortcutKeys } from '@/types/shortcuts';
 import type { CommandAltitude } from '@/components/nav/command-altitude';
-import type { PtyHarness } from '@/types/electron';
+import type {
+  PtyHarness,
+  ClosedSessionEntry,
+} from '@/types/electron';
 import { useShortcutRegistryVersion } from './use-effective-shortcut';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 import {
@@ -148,6 +153,10 @@ export function CommandPalette({
   const [onSpatialRoute, setOnSpatialRoute] = useState(false);
   // frecency-ranked ids for the Recent group (D9)
   const [recentIds, setRecentIds] = useState<string[]>([]);
+  // Recently-closed Sessions (D23): soft-closed tabs stay reopenable here
+  const [closedSessions, setClosedSessions] = useState<ClosedSessionEntry[]>(
+    []
+  );
   const inElectron = typeof window !== 'undefined' && !!window.electron?.pty;
 
   // Reset search AND session rows when closing — stale rows on reopen can
@@ -159,6 +168,7 @@ export function CommandPalette({
       setSessions([]);
       setProjects([]);
       setRecents([]);
+      setClosedSessions([]);
       setRegistryFailed(false);
     }
   }, [open]);
@@ -179,6 +189,8 @@ export function CommandPalette({
       if (cancelled) return;
       setSessions(buildSessionRows(list, layout, Date.now()));
       setRecents(extractRecentProjects(layout));
+      const closed = (await pty.closedSessions?.()) ?? [];
+      if (!cancelled) setClosedSessions(closed.slice(0, 8));
     })();
     // durable Projects (S5) — needs an authed Supabase session; on failure the
     // group falls back to local recents and shows a sign-in row (D8)
@@ -715,6 +727,36 @@ export function CommandPalette({
                       {formatShortcutKeys(item.shortcut)}
                     </CommandShortcut>
                   )}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
+        {inElectron && onWorkspaceRoute && closedSessions.length > 0 && (
+          <>
+            <CommandGroup heading="Recently closed">
+              {closedSessions.map(entry => (
+                <CommandItem
+                  key={entry.durableSessionId}
+                  value={`reopen closed ${entry.projectName} ${entry.goal ?? ''} ${entry.title} ${entry.harness}`}
+                  onSelect={() => {
+                    recordPaletteUse('ws-reopen-closed');
+                    handleSelect(() =>
+                      window.dispatchEvent(
+                        new CustomEvent(REOPEN_CLOSED_EVENT, {
+                          detail: {
+                            durableSessionId: entry.durableSessionId,
+                          },
+                        })
+                      )
+                    );
+                  }}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  <span>
+                    Reopen {entry.projectName} · {entry.goal ?? entry.title}
+                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>

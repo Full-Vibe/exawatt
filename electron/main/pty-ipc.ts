@@ -1,10 +1,14 @@
-import { BrowserWindow, Notification, app, dialog, shell } from 'electron';
+import { BrowserWindow, Notification, app, shell } from 'electron';
 import { handleTrusted } from './ipc-security';
 import { resolveContainedPath, isRepoRelativePath } from './contained-path';
 import { ptySessions } from './pty/session-manager';
 import type { PtyCreateOptions } from './pty/session-manager';
 import { contextSummarizer } from './pty/context-summarizer';
 import { attentionMonitor } from './pty/attention-monitor';
+import {
+  ClosedSessionLedger,
+  type ClosedSessionEntry,
+} from './pty/closed-session-ledger';
 import { createWorktree } from './pty/project-resolve';
 import { loadWorkspace, saveWorkspace } from './workspace-store';
 import {
@@ -204,42 +208,51 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     }
   );
   handleTrusted('pty:kill', (_event, id: string) => ptySessions.kill(id));
+  // ── Close-as-lifecycle (D23). The renderer owns the grammar (park →
+  // archive) and any confirmation; main just executes honest primitives.
+  // The old pty:delete-session native dialog + one-stroke history
+  // destruction are gone — the ledger reap is now the only destroyer.
+  const closedLedger = new ClosedSessionLedger(
+    path.join(app.getPath('userData'), 'closed-sessions.json'),
+    durableSessionId => ptySessions.purgeHistory(durableSessionId)
+  );
+  void closedLedger.reap();
+  const reapTimer = setInterval(
+    () => void closedLedger.reap(),
+    6 * 60 * 60 * 1000
+  );
+  reapTimer.unref?.();
   handleTrusted(
-    'pty:delete-session',
+    'pty:stop-session',
     async (_event, durableSessionId: string) => {
       const session = ptySessions
         .list()
         .find(item => item.durableSessionId === durableSessionId);
-      if (session && !session.exited) {
-        const testMode = process.env.EXAWATT_TEST === '1';
-        if (testMode && process.env.EXAWATT_TEST_CLOSE_RESPONSE === 'cancel') {
-          return false;
-        }
-        let confirmed = testMode;
-        if (!confirmed) {
-          const agent = session.harness !== 'shell';
-          const options: Electron.MessageBoxOptions = {
-            type: 'warning',
-            title: `Close ${session.title} and stop this ${agent ? 'agent' : 'shell'}?`,
-            message: `Close ${session.title} and stop this ${agent ? 'agent' : 'shell'}?`,
-            detail: agent
-              ? 'Its retained terminal history will be deleted. The provider conversation can still be resumed from its source.'
-              : 'Its retained terminal history will be deleted.',
-            buttons: ['Cancel', 'Close and Stop'],
-            cancelId: 0,
-            noLink: true,
-          };
-          const win = BrowserWindow.getFocusedWindow();
-          const result = win
-            ? await dialog.showMessageBox(win, options)
-            : await dialog.showMessageBox(options);
-          confirmed = result.response === 1;
-        }
-        if (!confirmed) return false;
-      }
-      await ptySessions.deleteSession(durableSessionId);
+      if (!session || session.exited) return false;
+      await ptySessions.stop(session.id);
       return true;
     }
+  );
+  handleTrusted(
+    'pty:archive-session',
+    (_event, entry: Omit<ClosedSessionEntry, 'closedAt'>) => {
+      const live = ptySessions
+        .list()
+        .some(
+          item =>
+            item.durableSessionId === entry.durableSessionId && !item.exited
+        );
+      if (live) throw new Error('cannot archive a running session');
+      const stamped = closedLedger.add(entry);
+      // without this, rehydration resurrects the closed tab from the
+      // leftover exited record
+      ptySessions.forgetExited(entry.durableSessionId);
+      return stamped;
+    }
+  );
+  handleTrusted('pty:closed-sessions', () => closedLedger.list());
+  handleTrusted('pty:reopen-session', (_event, durableSessionId: string) =>
+    closedLedger.take(durableSessionId)
   );
   handleTrusted('pty:rename', (_event, id: string, title: string) => {
     ptySessions.rename(id, title);

@@ -138,6 +138,41 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(container.querySelector('[data-status]')).toBeNull();
   });
 
+  it('live tabs offer Stop; stopped tabs condense and offer Close (D23)', () => {
+    const { container } = strip({
+      tabs: [
+        tab({ id: 'a', title: 'alpha' }),
+        tab({
+          id: 'b',
+          title: 'beta',
+          sessionId: null,
+          resumeState: 'ended-resumable',
+          lifecycle: 'stopped-clean',
+        }),
+      ],
+    });
+    expect(screen.getByLabelText('Stop alpha')).not.toBeNull();
+    expect(screen.getByLabelText('Close beta')).not.toBeNull();
+    // the stopped tab's text folds into a condensed chip (hover unfurls)
+    expect(container.querySelector('[data-condensed]')).not.toBeNull();
+  });
+
+  it('the ACTIVE stopped tab stays unfurled — its restore panel is on screen', () => {
+    const { container } = strip({
+      tabs: [
+        tab({
+          id: 'a',
+          title: 'alpha',
+          sessionId: null,
+          resumeState: 'ended-resumable',
+          lifecycle: 'stopped-clean',
+        }),
+      ],
+    });
+    // tabs[0] is the group's activeTabId in the fixture
+    expect(container.querySelector('[data-condensed]')).toBeNull();
+  });
+
   it('dead tabs carry their lifecycle badge, not a turn-state glyph', () => {
     const { container } = strip({
       tabs: [

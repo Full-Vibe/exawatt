@@ -503,7 +503,11 @@ export function TabStrip({
                         : ''
                     }${
                       dead ? `\n${t.resumeState.replace('-', ' ')}` : ''
-                    }${ordinal ? `\n⌘${ordinal} selects` : ''}\ndouble-click to rename`}
+                    }${ordinal ? `\n⌘${ordinal} selects` : ''}\n${
+                      dead
+                        ? '⌘W closes — kept in Recently closed'
+                        : '⌘W stops — the tab stays'
+                    }\ndouble-click to rename`}
                   >
                     {ordinal !== undefined && ordinalHints === 'tabs' && (
                       <span data-tab-ordinal={ordinal} className="inline-flex">
@@ -548,9 +552,23 @@ export function TabStrip({
                         />
                       </>
                     ) : showTitle || summary ? (
-                      <span className="flex max-w-60 flex-col items-start">
+                      // stopped tabs condense to a frozen chip (D23):
+                      // the text folds away until hover/focus unfurls it —
+                      // light collapse, never auto-close (operator design
+                      // pass). Active stopped tabs stay unfurled: their
+                      // restore panel is on screen.
+                      <span
+                        data-condensed={(dead && !on) || undefined}
+                        className={`flex flex-col items-start overflow-hidden transition-[max-width,opacity] duration-200 motion-reduce:transition-none ${
+                          dead && !on
+                            ? 'max-w-0 opacity-0 group-hover/tab:max-w-60 group-hover/tab:opacity-100 group-focus-within/tab:max-w-60 group-focus-within/tab:opacity-100'
+                            : 'max-w-60'
+                        }`}
+                      >
                         {showTitle && (
-                          <span className="leading-tight">{t.title}</span>
+                          <span className="whitespace-nowrap leading-tight">
+                            {t.title}
+                          </span>
                         )}
                         {/* the goal is durable (D21): stopped tabs keep it */}
                         {summary && (
@@ -583,7 +601,14 @@ export function TabStrip({
                   </EditableChrome>
                   <button
                     onClick={() => onCloseTab(t.id)}
-                    aria-label={`Close ${t.title}`}
+                    // D23 grammar: live tabs STOP (park in place); stopped
+                    // tabs CLOSE into the Recently-closed ledger
+                    aria-label={`${dead ? 'Close' : 'Stop'} ${t.title}`}
+                    title={
+                      dead
+                        ? 'Close — kept in Recently closed for 14 days (⌘W)'
+                        : 'Stop — the tab stays, resumable (⌘W)'
+                    }
                     className="cursor-pointer px-1 py-0.5 font-mono text-xs opacity-40 outline-none transition-opacity duration-100 group-hover/tab:opacity-100 hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{ color: HUD.textDim }}
                   >

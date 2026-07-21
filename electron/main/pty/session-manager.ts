@@ -476,6 +476,45 @@ export class PtySessionManager extends EventEmitter {
     }
   }
 
+  /** Stop the process but RETAIN scrollback and history (D23 park) — the
+   *  single-session form of stopAll(). The normal onExit path marks the
+   *  session exited and appends the exit marker, so adopters and the tab
+   *  see honest stopped state; resume works exactly like after app-quit. */
+  async stop(id: string): Promise<void> {
+    const s = this.sessions.get(id);
+    if (!s || s.info.exited) return;
+    await stopProcessGroups([s.proc.pid], (_pid, signal) =>
+      s.proc.kill(signal)
+    );
+    await this.flushHistory();
+  }
+
+  /** Drop an EXITED session's runtime record (D23 archive): without this,
+   *  rehydration would reconstruct the deliberately-closed tab from the
+   *  leftover record. Disk history is untouched — the ledger owns it. */
+  forgetExited(durableSessionId: string): void {
+    const found = Array.from(this.sessions.entries()).find(
+      ([, session]) =>
+        session.info.durableSessionId === durableSessionId &&
+        session.info.exited
+    );
+    if (!found) return;
+    this.sessions.delete(found[0]);
+    this.scrollback.delete(durableSessionId);
+  }
+
+  /** Delete a session's retained data (D23 ledger reap) — never a live one. */
+  async purgeHistory(durableSessionId: string): Promise<void> {
+    const live = Array.from(this.sessions.values()).some(
+      session =>
+        session.info.durableSessionId === durableSessionId &&
+        !session.info.exited
+    );
+    if (live) return;
+    this.scrollback.delete(durableSessionId);
+    await this.history?.delete(durableSessionId);
+  }
+
   async kill(id: string): Promise<void> {
     const s = this.sessions.get(id);
     if (!s) return;

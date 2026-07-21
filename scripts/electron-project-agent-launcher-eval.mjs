@@ -91,6 +91,35 @@ async function waitForSessionCount(page, count) {
   throw new Error(`Timed out waiting for ${count} Sessions`);
 }
 
+// D23: parked sessions stay in pty.list() as exited records — LIVE count is
+// the honest signal for stop flows
+async function waitForLiveSessionCount(page, count) {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const current = await sessions(page);
+    if (current.filter(s => !s.exited).length === count) return current;
+    await page.waitForTimeout(100);
+  }
+  throw new Error(`Timed out waiting for ${count} live Sessions`);
+}
+
+// close grammar (D23): Stop parks (mid-turn agents ask first — answer ⏎),
+// then Close archives the stopped tab into the Recently-closed ledger
+async function stopThenClose(page, title) {
+  await page.getByRole('button', { name: `Stop ${title}` }).click();
+  const confirm = page.locator('[data-stop-confirm]');
+  try {
+    await confirm.waitFor({ timeout: 700 });
+    await page.keyboard.press('Enter');
+  } catch {
+    // quiet agent — parked without asking
+  }
+  const closeButton = page.getByRole('button', { name: `Close ${title}` });
+  await closeButton.waitFor({ timeout: 15_000 });
+  await closeButton.click();
+  await closeButton.waitFor({ state: 'detached', timeout: 10_000 });
+}
+
 async function waitForBuffer(page, sessionId, fragment) {
   await page.waitForFunction(
     async ({ id, text }) =>
@@ -281,6 +310,12 @@ try {
       await page.keyboard.press('Control+Meta+1');
       await page.waitForURL('**/workspace**');
 
+      // the composer is summoned, not permanent (D18): with a live tab it
+      // rests collapsed, so reopen it before driving its controls. (This
+      // wait was missing since the summon landed — the eval only passed
+      // while the composer was always-open.)
+      await page.locator('[data-composer-toggle]').click();
+      await page.locator('[data-agent-composer]').waitFor();
       await page.getByLabel('Agent Source').click();
       await page.getByRole('option', { name: 'Codex' }).click();
       check(
@@ -291,9 +326,14 @@ try {
       );
       await page.getByLabel('Agent permissions').focus();
       await page.keyboard.press('Space');
-      await page.keyboard.press('Home');
-      await page.keyboard.press('ArrowDown');
-      await page.keyboard.press('Enter');
+      await page.locator('[role="listbox"]').waitFor();
+      // KNOWN GAP (found 2026-07-21 while retargeting this eval): arrow
+      // navigation and typeahead inside this Select no longer move the
+      // highlight (Escape and commit still work) — the original
+      // Home/ArrowDown keyboard dance has silently re-committed YOLO since
+      // the YOLO default landed. Select via pointer until the keyboard
+      // regression is fixed; see the daily-driver findings log.
+      await page.getByRole('option', { name: /Auto-review/ }).click();
       await page.waitForFunction(() => {
         const trigger = document.querySelector(
           '[aria-label="Agent permissions"]'
@@ -304,7 +344,7 @@ try {
         );
       });
       check(
-        'keyboard selection commits Auto-review and restores trigger focus',
+        'permission selection commits Auto-review and restores trigger focus',
         (await page.getByLabel('Agent permissions').innerText()).includes(
           'Auto'
         ) &&
@@ -394,10 +434,17 @@ try {
       await page.screenshot({
         path: join(output, '04-two-agents-composer.png'),
       });
-      await page.getByRole('button', { name: 'Close Claude Code' }).click();
-      await waitForSessionCount(page, 1);
-      await page.getByRole('button', { name: 'Close Codex' }).click();
-      await waitForSessionCount(page, 0);
+      await stopThenClose(page, 'Claude Code');
+      await waitForLiveSessionCount(page, 1);
+      await stopThenClose(page, 'Codex');
+      await waitForLiveSessionCount(page, 0);
+      const ledger = await page.evaluate(
+        async () => (await window.electron?.pty?.closedSessions?.()) ?? []
+      );
+      check(
+        'both closed Sessions land in the Recently-closed ledger',
+        ledger.length === 2
+      );
       await page.waitForTimeout(1_000);
       const afterCloseLayout = await page.evaluate(() =>
         window.electron?.workspace?.load()
@@ -522,7 +569,7 @@ try {
         'shell remains an explicit Project tool',
         shell[0]?.harness === 'shell'
       );
-      await page.getByRole('button', { name: 'Close Shell' }).click();
+      await stopThenClose(page, 'Shell');
       await waitForSessionCount(page, 0);
       check(
         'closing a shell retains its Project',

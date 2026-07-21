@@ -27,6 +27,9 @@ export const FOCUS_ACTIVE_TERMINAL_EVENT = 'exawatt:focus-active-terminal';
 export const TOGGLE_SPLIT_EVENT = 'exawatt:toggle-split';
 export const JUMP_ATTENTION_EVENT = 'exawatt:jump-attention';
 export const CLOSE_ACTIVE_EVENT = 'exawatt:close-active-tab';
+/** palette → workspace: resurrect a Recently-closed Session (D23);
+ *  detail = { durableSessionId } */
+export const REOPEN_CLOSED_EVENT = 'exawatt:reopen-closed-session';
 export const OPEN_OVERVIEW_EVENT = 'exawatt:open-overview';
 /** palette/menu → summon the Project roadmap at the Sessions altitude (S12) */
 export const OPEN_ROADMAP_EVENT = 'exawatt:open-roadmap';

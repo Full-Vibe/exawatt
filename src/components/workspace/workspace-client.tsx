@@ -52,7 +52,9 @@ import {
   consumePendingProjectPicker,
   FOCUS_AGENT_COMPOSER_EVENT,
   hasPendingAgentComposer,
+  REOPEN_CLOSED_EVENT,
 } from './session-jump';
+import { StopConfirm } from './stop-confirm';
 import { useEffectiveShortcut, useShortcuts } from '@/components/shortcuts';
 import { formatShortcutKeys } from '@/lib/shortcuts';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
@@ -211,6 +213,7 @@ export function WorkspaceClient() {
     openProject,
     importProjects,
     closeTab,
+    reopenClosedSession,
     resumeTab,
     resumeProject,
     resumeAll,
@@ -515,23 +518,77 @@ export function WorkspaceClient() {
     );
   }, [updateOverview]);
 
+  // ── Close grammar UI (D23): park silently, confirm only mid-turn,
+  // narrate an archive with an ambient toast (auto-fades; no dismissal debt)
+  const [stopConfirmTabId, setStopConfirmTabId] = useState<string | null>(
+    null
+  );
+  const [closeToast, setCloseToast] = useState<string | null>(null);
+  const closeToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (closeToastTimer.current) clearTimeout(closeToastTimer.current);
+    },
+    []
+  );
+  const requestClose = useCallback(
+    async (tabId: string, force = false) => {
+      const outcome = await closeTab(tabId, { force });
+      if (outcome.kind === 'needs-confirm') {
+        setStopConfirmTabId(tabId);
+        return;
+      }
+      if (outcome.kind === 'closed') {
+        if (closeToastTimer.current) clearTimeout(closeToastTimer.current);
+        const what = outcome.entry.goal ?? outcome.entry.title;
+        setCloseToast(
+          `Closed "${what}" — kept in Recently closed for 14 days · reopen from ⌘K`
+        );
+        closeToastTimer.current = setTimeout(() => setCloseToast(null), 6000);
+      }
+    },
+    [closeTab]
+  );
+  const stopConfirmTab = stopConfirmTabId
+    ? (projects
+        .flatMap(project => project.tabs)
+        .find(t => t.id === stopConfirmTabId) ?? null)
+    : null;
+  // the tab stopped or vanished while the confirm was up — question answered
+  useEffect(() => {
+    if (stopConfirmTabId && !stopConfirmTab) setStopConfirmTabId(null);
+  }, [stopConfirmTabId, stopConfirmTab]);
+  const settleStopConfirm = useCallback(() => {
+    setStopConfirmTabId(null);
+    requestAnimationFrame(() =>
+      window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT))
+    );
+  }, []);
+
   // palette-issued workspace verbs (close/overview live here; the rest are
   // handled by the state hook and the tab strip)
   useEffect(() => {
     const onCloseActive = () => {
       const g = projects.find(x => x.tabs.some(t => t.id === activeTab?.id));
-      if (g && activeTab) void closeTab(activeTab.id);
+      if (g && activeTab) void requestClose(activeTab.id);
     };
+    const onReopenClosed = (e: Event) => {
+      const durableSessionId = (e as CustomEvent<{ durableSessionId?: string }>)
+        .detail?.durableSessionId;
+      if (durableSessionId) void reopenClosedSession(durableSessionId);
+    };
+    window.addEventListener(REOPEN_CLOSED_EVENT, onReopenClosed);
     const onOpenOverview = () => {
       updateOverview(true);
     };
     window.addEventListener(CLOSE_ACTIVE_EVENT, onCloseActive);
     window.addEventListener(OPEN_OVERVIEW_EVENT, onOpenOverview);
     return () => {
+      window.removeEventListener(REOPEN_CLOSED_EVENT, onReopenClosed);
       window.removeEventListener(CLOSE_ACTIVE_EVENT, onCloseActive);
       window.removeEventListener(OPEN_OVERVIEW_EVENT, onOpenOverview);
     };
-  }, [projects, activeTab, closeTab, updateOverview]);
+  }, [projects, activeTab, requestClose, reopenClosedSession, updateOverview]);
 
   const shortcutActions = useMemo<WorkspaceShortcutActions>(() => {
     const focusTerminal = () => {
@@ -546,7 +603,7 @@ export function WorkspaceClient() {
       },
       closeActive: () => {
         if (!activeTab) return false;
-        void closeTab(activeTab.id);
+        void requestClose(activeTab.id);
         return true;
       },
       selectIndex: selectProject,
@@ -599,7 +656,7 @@ export function WorkspaceClient() {
     activeTab,
     summonRoadmap,
     launchHere,
-    closeTab,
+    requestClose,
     selectProject,
     cycleTab,
     selectTabByOrdinal,
@@ -710,7 +767,7 @@ export function WorkspaceClient() {
             engaged={engaged}
             onSelectProject={selectProject}
             onSelectTab={selectTab}
-            onCloseTab={id => void closeTab(id)}
+            onCloseTab={id => void requestClose(id)}
             onRenameTab={renameTab}
             onRenameProject={renameProject}
             onSetProjectColor={setProjectColor}
@@ -1050,6 +1107,37 @@ export function WorkspaceClient() {
         onOpenProject={openProject}
         onImportProjects={importProjects}
       />
+      {stopConfirmTab && (
+        <StopConfirm
+          title={stopConfirmTab.title}
+          goal={summaries[stopConfirmTab.durableSessionId] ?? null}
+          color={
+            projects.find(project =>
+              project.tabs.some(t => t.id === stopConfirmTab.id)
+            )?.color ?? HUD.cyan
+          }
+          onStop={() => {
+            const tabId = stopConfirmTab.id;
+            settleStopConfirm();
+            void requestClose(tabId, true);
+          }}
+          onCancel={settleStopConfirm}
+        />
+      )}
+      {closeToast && (
+        <div
+          data-close-toast
+          role="status"
+          className="fixed bottom-10 right-4 z-40 max-w-md rounded border px-3 py-2 font-sans text-xs motion-safe:animate-in motion-safe:fade-in"
+          style={{
+            borderColor: 'rgba(138,160,190,0.25)',
+            background: HUD.bg.panelFill,
+            color: HUD.textDim,
+          }}
+        >
+          {closeToast}
+        </div>
+      )}
     </div>
   );
 }
