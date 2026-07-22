@@ -81,6 +81,7 @@ let rendererOrigin: string | null = null;
 let activeRendererCacheKey: string | null = null;
 let rendererReadyPromise: Promise<string> | null = null;
 let rendererWasWarmAtLaunch = false;
+let bootstrapExitInProgress = false;
 let shutdownCoordinator: ShutdownCoordinator | null = null;
 let runStateStore: RunStateStore | null = null;
 let authCoordinator: ElectronAuthCoordinator | null = null;
@@ -272,6 +273,48 @@ function hasWarmRendererCache(): boolean {
   } catch {
     return false;
   }
+}
+
+async function stopRendererServer(): Promise<void> {
+  const server = rendererServer;
+  rendererServer = null;
+  if (!server || server.exitCode !== null || server.signalCode !== null) return;
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let forceTimer: ReturnType<typeof setTimeout> | undefined;
+    let failureTimer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(forceTimer);
+      clearTimeout(failureTimer);
+      server.off('close', closed);
+      if (error) reject(error);
+      else resolve();
+    };
+    const closed = () => finish();
+    server.once('close', closed);
+
+    // The packaged Next server can still be writing its cache for a short
+    // interval after Electron begins quitting. Wait for the child to close so
+    // app shutdown—and hermetic test cleanup—has one truthful completion edge.
+    server.kill('SIGTERM');
+    if (server.exitCode !== null || server.signalCode !== null) {
+      finish();
+      return;
+    }
+
+    forceTimer = setTimeout(() => {
+      if (server.exitCode === null && server.signalCode === null) {
+        server.kill('SIGKILL');
+      }
+    }, isTest ? 250 : 1_500);
+    failureTimer = setTimeout(
+      () => finish(new Error('Packaged renderer did not stop during shutdown')),
+      isTest ? 2_000 : 5_000
+    );
+  });
 }
 
 // A cached renderer uses only Node APIs and can boot before Electron's ready
@@ -931,8 +974,7 @@ async function checkpointRenderer(
 async function cleanupForExit(): Promise<void> {
   disposeRoadmapWatchers();
   await disposePty();
-  rendererServer?.kill();
-  rendererServer = null;
+  await stopRendererServer();
   fs.unwatchFile(path.join(app.getPath('userData'), 'update-state.json'));
 }
 
@@ -1161,8 +1203,12 @@ app.whenReady().then(() => {
 
 app.on('before-quit', event => {
   if (!shutdownCoordinator) {
-    rendererServer?.kill();
-    rendererServer = null;
+    if (bootstrapExitInProgress) return;
+    event.preventDefault();
+    bootstrapExitInProgress = true;
+    void stopRendererServer()
+      .catch(error => console.error('[shutdown] renderer stop failed', error))
+      .finally(() => app.quit());
     return;
   }
   if (shutdownCoordinator.allowsFinalExit) return;

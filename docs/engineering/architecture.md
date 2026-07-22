@@ -42,8 +42,11 @@ milestones. The packaged Next renderer, PTY/session services, auth, updater, and
 other command modules initialize behind it. A cached renderer server starts
 before Electron's ready event; archive extraction on a version cache miss waits
 until the launch frame exists so disk work cannot delay visible acknowledgement.
-The same window then navigates to the trusted loopback renderer. This is a
-presentation boundary, not a second application or alternate data source.
+The same window then navigates to the trusted loopback renderer. Shutdown owns
+that renderer child process as part of the verified lifecycle: it waits for the
+server to close (with bounded force-stop escalation) before declaring cleanup
+complete. This is a presentation boundary, not a second application or
+alternate data source.
 
 The Electron shell presents Terminal Focus → Session Overview → Spatial Command
 as one command-altitude navigation continuum. That shared navigation does not
