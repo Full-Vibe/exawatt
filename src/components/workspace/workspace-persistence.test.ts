@@ -233,6 +233,44 @@ describe('workspace persistence v5 (ENG-018)', () => {
     expect(parsed?.projects[0].tabs[1].initialTask).toBeUndefined();
     expect(parsed?.projects[0].tabs[1].contextSummary).toBeUndefined();
   });
+
+  it('round-trips a content-bearing draft tab (D28)', () => {
+    const parsed = parsePersisted({
+      v: 5,
+      lastUsedDir: '/project',
+      activeDir: '/project',
+      projects: [
+        {
+          dir: '/project',
+          name: 'Project',
+          activeTabId: 'tab-draft',
+          tabs: [
+            {
+              id: 'tab-draft',
+              durableSessionId: 'session-draft',
+              harness: 'claude',
+              title: 'New tab',
+              cwd: '/project',
+              sessionId: null,
+              harnessSessionId: null,
+              roadmapItemId: null,
+              lifecycle: 'draft',
+              exitCode: null,
+              initialTask: null,
+              contextSummary: null,
+              draftTask: 'Half-written task brief',
+              draftSource: 'codex',
+            },
+          ],
+        },
+      ],
+    });
+    expect(parsed?.projects[0].tabs[0]).toMatchObject({
+      lifecycle: 'draft',
+      draftTask: 'Half-written task brief',
+      draftSource: 'codex',
+    });
+  });
 });
 
 describe('Resume All eligibility', () => {

@@ -194,29 +194,49 @@ export function TerminalPane({
         },
       });
       cleanup.push(() => fileLinks.dispose());
+      // handled shortcuts must CONSUME their key event (D28): on macOS an
+      // unconsumed key equivalent is re-dispatched to the application menu
+      // after the renderer declines it, so ⌘V here PLUS the Edit ▸ Paste
+      // role (registered ⌘V accelerator) once wrote the clipboard to the
+      // PTY twice
       term.attachCustomKeyEventHandler(event => {
         if (event.type !== 'keydown' || !event.metaKey) return true;
         const key = event.key.toLowerCase();
         if (key === 'f') {
+          event.preventDefault();
           setSearchOpen(true);
           requestAnimationFrame(() => searchInput.current?.focus());
           return false;
         }
         if (key === 'c') {
+          event.preventDefault();
           const selection = term.getSelection();
           if (selection) void api.copyText(selection);
           return false;
         }
         if (key === 'v') {
+          event.preventDefault();
           void api.pasteClipboard(sessionId);
           return false;
         }
         if (key === 'a') {
+          event.preventDefault();
           term.selectAll();
           return false;
         }
         return true;
       });
+      // paste is ONE verb with ONE implementation (D28): a menu-driven
+      // Edit ▸ Paste lands as a DOM paste event on xterm's textarea —
+      // capture it before xterm's text-only default and route it through
+      // the same image-aware main-process write as ⌘V
+      const onDomPaste = (event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void api.pasteClipboard(sessionId);
+      };
+      el.addEventListener('paste', onDomPaste, true);
+      cleanup.push(() => el.removeEventListener('paste', onDomPaste, true));
       fit.fit();
       // the ONE fit-then-propagate path (pane resize, activation, resync)
       const syncSize = () => {

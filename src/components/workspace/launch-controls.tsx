@@ -3,7 +3,6 @@ import {
   GitBranch,
   LoaderCircle,
   Play,
-  Plus,
   Settings2,
   ShieldCheck,
   ShieldQuestion,
@@ -49,7 +48,6 @@ import type { AgentPermissionMode } from '@/types/electron';
 import {
   consumePendingAgentComposer,
   FOCUS_AGENT_COMPOSER_EVENT,
-  FOCUS_ACTIVE_TERMINAL_EVENT,
 } from './session-jump';
 
 function defaultBranch(): string {
@@ -82,20 +80,39 @@ export function AgentComposer({
   projectDir,
   projectName,
   initialSource,
+  initialTask,
   roadmapItems = [],
 
   onLaunch,
+  onDraftChange,
 }: {
   projectDir: string;
   projectName: string;
   /** the summon's requested source (palette "Start Agent with X"),
    *  carried on the draft tab (D24) — beats the recommendation */
   initialSource?: AgentSourceId;
+  /** the draft tab's saved task text (D28) — a remounting pane must pick
+   *  the operator's typing back up, never blank it */
+  initialTask?: string;
   roadmapItems?: LaunchRoadmapItem[];
 
   onLaunch: (opts: LaunchOptions) => Promise<boolean>;
+  /** draft tabs (D28): the tab owns the work-in-progress — every task or
+   *  source edit reports up so it survives this pane unmounting */
+  onDraftChange?: (patch: {
+    draftTask?: string;
+    draftSource?: AgentSourceId;
+  }) => void;
 }) {
-  const [task, setTask] = useState('');
+  const [task, setTaskState] = useState(initialTask ?? '');
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
+  const initialTaskRef = useRef(initialTask);
+  initialTaskRef.current = initialTask;
+  const setTask = useCallback((next: string) => {
+    setTaskState(next);
+    onDraftChangeRef.current?.({ draftTask: next });
+  }, []);
   const [source, setSource] = useState<AgentSourceId>('claude');
   const [permissionMode, setPermissionMode] = useState(
     DEFAULT_AGENT_PERMISSION_MODE
@@ -161,7 +178,9 @@ export function AgentComposer({
       );
       requestedSourceRef.current = null;
     });
-    setTask('');
+    // a (re)mount or Project change is not an operator edit: restore the
+    // tab's saved draft directly instead of reporting a blank up (D28)
+    setTaskState(initialTaskRef.current ?? '');
     setRoadmapItemId('');
     return () => {
       cancelled = true;
@@ -177,6 +196,7 @@ export function AgentComposer({
   const selectSource = useCallback(
     (nextSource: AgentSourceId) => {
       setSource(nextSource);
+      onDraftChangeRef.current?.({ draftSource: nextSource });
       setPermissionSaveState('idle');
       setPermissionMode(
         sourcePreferences
@@ -202,6 +222,7 @@ export function AgentComposer({
       else {
         requestedSourceRef.current = next;
         setSource(next);
+        onDraftChangeRef.current?.({ draftSource: next });
       }
     },
     [selectSource, sourcePreferences]
@@ -256,7 +277,7 @@ export function AgentComposer({
         node.setSelectionRange(caret, caret);
       });
     },
-    [task]
+    [task, setTask]
   );
 
   /** ⌘V/⌃V (D24): an image saves to a temp file and its path joins the

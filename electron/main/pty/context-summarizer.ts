@@ -14,6 +14,14 @@ import type { PtySessionManager } from './session-manager';
  * cheap model. One call is allowed globally; a re-entry request waits behind
  * an in-flight subtitle and supersedes an older queued recap.
  *
+ * Resilience (D28): engine failures back off exponentially and RECOVER —
+ * never a permanent self-disable (a sleep/offline blip once silently killed
+ * subtitles until the next app restart). A failed or shape-rejected attempt
+ * puts THAT session on a short cooldown so the sweep moves on to the
+ * runner-up instead of refund-retrying one confused session forever.
+ * Attempts, failures, and accepted subtitles stream to an injectable
+ * diagnostics recorder (main wires a persistent JSONL log).
+ *
  * Env controls:
  *   EXAWATT_SUMMARIES=0             disable summaries and recaps
  *   EXAWATT_SUMMARIZER_CMD=<cmd>    stdin -> summary on stdout
@@ -83,7 +91,14 @@ const MAX_RECAP_INPUT_CHARS = 6000;
 const MAX_SUMMARY_CHARS = 64;
 const MAX_RECAP_CHARS = 240;
 const CALL_TIMEOUT_MS = 45_000;
-const MAX_CONSECUTIVE_FAILURES = 3;
+/** engine-failure backoff: 30s doubling per consecutive failure, capped —
+ *  transient outages recover by themselves, sustained ones stay cheap */
+const FAILURE_BACKOFF_BASE_MS = 30_000;
+const FAILURE_BACKOFF_MAX_MS = 10 * 60_000;
+/** per-session cooldown after a failed or unusable attempt: the refund
+ *  keeps the content eligible LATER, the cooldown stops it from winning
+ *  every sweep NOW and starving every other session's subtitle */
+const SESSION_COOLDOWN_MS = 5 * 60_000;
 
 export interface ReentryRecap {
   id: string;
@@ -99,6 +114,8 @@ export interface ContextSummarizerOptions {
   now?: () => number;
   /** Test seam; production uses the authenticated CLI. */
   summarize?: (prompt: string, maxChars: number) => Promise<string | null>;
+  /** diagnostics sink; production wires a persistent JSONL log (D28) */
+  diagnose?: (event: string, fields?: Record<string, unknown>) => void;
 }
 
 interface VisitCheckpoint {
@@ -234,6 +251,12 @@ export class ContextSummarizer extends EventEmitter {
   private timer: ReturnType<typeof setInterval> | null = null;
   private inFlight = false;
   private failures = 0;
+  /** engine backoff (D28): sweeps and recap drains wait this out; any
+   *  engine success clears it */
+  private pausedUntil = 0;
+  /** per-session cooldowns (D28), keyed by live PTY id */
+  private cooldowns = new Map<string, number>();
+  private diagnoseFn: NonNullable<ContextSummarizerOptions['diagnose']>;
   private disabled = process.env.EXAWATT_SUMMARIES === '0';
   private readonly command =
     process.env.EXAWATT_SUMMARIZER_CMD || 'claude -p --model haiku';
@@ -255,6 +278,19 @@ export class ContextSummarizer extends EventEmitter {
       options.recapMinChars ?? envInt('EXAWATT_RECAP_MIN_CHARS', 200);
     this.now = options.now ?? (() => Date.now());
     this.summarizeOverride = options.summarize;
+    this.diagnoseFn =
+      options.diagnose ??
+      ((event, fields) => {
+        if (event.endsWith('failure')) console.warn('[exawatt]', event, fields);
+      });
+  }
+
+  /** main wires the persistent recorder after app paths exist (D28) —
+   *  unit tests and the constructor default stay Electron-free */
+  setDiagnostics(
+    recorder: NonNullable<ContextSummarizerOptions['diagnose']>
+  ): void {
+    this.diagnoseFn = recorder;
   }
 
   attach(manager: PtySessionManager): void {
@@ -381,6 +417,9 @@ export class ContextSummarizer extends EventEmitter {
 
   private async drainPendingRecap(): Promise<void> {
     if (this.disabled || this.inFlight || !this.pendingRecap) return;
+    // hold the queued recap through an engine backoff; staleness is still
+    // policed by generation, so an old one dies quietly on its own
+    if (this.now() < this.pausedUntil) return;
     const request = this.pendingRecap;
     this.pendingRecap = null;
     if (!this.isCurrent(request)) return;
@@ -389,7 +428,7 @@ export class ContextSummarizer extends EventEmitter {
     this.activeRecap = request;
     try {
       const text = await this.callEngine(request.input, MAX_RECAP_CHARS);
-      this.failures = 0;
+      this.noteEngineSuccess();
       if (text && !this.disabled && this.isCurrent(request)) {
         this.emit('recap', {
           id: request.id,
@@ -409,6 +448,7 @@ export class ContextSummarizer extends EventEmitter {
 
   private async sweep(): Promise<void> {
     if (this.disabled || this.inFlight || !this.manager) return;
+    if (this.now() < this.pausedUntil) return;
     const live = this.manager.list().filter((session) => !session.exited);
     const liveIds = new Set(live.map((session) => session.id));
     // runtime state is keyed by live PTY id; goal subtitles and heads are
@@ -423,7 +463,11 @@ export class ContextSummarizer extends EventEmitter {
     }
 
     const candidate = live
-      .filter((session) => (this.bytesSince.get(session.id) ?? 0) >= MIN_NEW_BYTES)
+      .filter(
+        (session) =>
+          (this.bytesSince.get(session.id) ?? 0) >= MIN_NEW_BYTES &&
+          (this.cooldowns.get(session.id) ?? 0) <= this.now()
+      )
       .sort(
         (a, b) =>
           (this.bytesSince.get(b.id) ?? 0) -
@@ -456,7 +500,7 @@ export class ContextSummarizer extends EventEmitter {
         buildContextInput({ task, currentGoal, head, tail }),
         MAX_SUMMARY_CHARS
       );
-      this.failures = 0;
+      this.noteEngineSuccess();
       if (
         !summary ||
         summary === NO_GOAL ||
@@ -466,24 +510,44 @@ export class ContextSummarizer extends EventEmitter {
         // NO_GOAL: the model affirmatively found no goal. KEEP: it affirmed
         // the established goal still stands (D21). Both are quiet
         // no-updates — keep the previous subtitle, wait for fresh output.
+        this.diagnoseFn('summarizer.no-update', {
+          session: durableId,
+          verdict: summary ?? 'EMPTY',
+        });
       } else if (!acceptableSubtitle(summary)) {
         // The engine call succeeded but the content is unusable (a
         // conversational reply, a question, self-narration). Keep the
-        // previous subtitle, emit nothing, and refund the consumed bytes so
-        // the next sweep retries. Not an engine failure.
+        // previous subtitle, emit nothing, and refund the consumed bytes.
+        // The refund alone once let ONE confused session win every sweep
+        // forever (D28) — a cooldown sends the next sweep to the runner-up
+        // while this content stays eligible for a later retry.
         this.bytesSince.set(
           candidate.id,
           (this.bytesSince.get(candidate.id) ?? 0) + consumed
         );
+        this.cooldowns.set(candidate.id, this.now() + SESSION_COOLDOWN_MS);
+        this.diagnoseFn('summarizer.unusable', {
+          session: durableId,
+          summary,
+          cooldownMs: SESSION_COOLDOWN_MS,
+        });
       } else {
         this.summaries.set(durableId, summary);
         this.emit('context', durableId, summary);
+        this.diagnoseFn('summarizer.subtitle', {
+          session: durableId,
+          summary,
+        });
       }
     } catch (err) {
       this.bytesSince.set(
         candidate.id,
         (this.bytesSince.get(candidate.id) ?? 0) + consumed
       );
+      // the failed session cools down too: after the global backoff the
+      // next attempt goes to a DIFFERENT session, so one poison prompt
+      // cannot pin the whole subtitle system (D28)
+      this.cooldowns.set(candidate.id, this.now() + SESSION_COOLDOWN_MS);
       this.recordFailure(err);
     } finally {
       this.inFlight = false;
@@ -497,6 +561,7 @@ export class ContextSummarizer extends EventEmitter {
     this.bytesSince.delete(id);
     this.checkpoints.delete(id);
     this.inputVersions.delete(id);
+    this.cooldowns.delete(id);
     if (
       this.pendingRecap?.id === id ||
       this.activeRecap?.id === id ||
@@ -507,15 +572,27 @@ export class ContextSummarizer extends EventEmitter {
     if (this.pendingRecap?.id === id) this.pendingRecap = null;
   }
 
+  private noteEngineSuccess(): void {
+    this.failures = 0;
+    this.pausedUntil = 0;
+  }
+
+  /** Engine failures pause the summarizer with exponential backoff and
+   *  ALWAYS recover on the next success (D28). The old behavior — a
+   *  permanent self-disable after three consecutive failures — meant one
+   *  sleep or offline window silently killed subtitles until app restart. */
   private recordFailure(err: unknown): void {
     this.failures += 1;
-    if (this.failures < MAX_CONSECUTIVE_FAILURES) return;
-    this.disabled = true;
-    this.stop();
-    console.warn(
-      '[exawatt] context summarizer disabled after repeated failures:',
-      err instanceof Error ? err.message : err
+    const backoffMs = Math.min(
+      FAILURE_BACKOFF_MAX_MS,
+      FAILURE_BACKOFF_BASE_MS * 2 ** (this.failures - 1)
     );
+    this.pausedUntil = this.now() + backoffMs;
+    this.diagnoseFn('summarizer.engine-failure', {
+      failures: this.failures,
+      backoffMs,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   private callEngine(input: string, maxChars: number): Promise<string | null> {

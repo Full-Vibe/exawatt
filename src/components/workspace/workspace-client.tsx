@@ -216,6 +216,7 @@ export function WorkspaceClient() {
     importProjects,
     closeTab,
     createDraftTab,
+    updateDraft,
     reopenClosedSession,
     resumeTab,
     resumeProject,
@@ -1097,9 +1098,13 @@ export function WorkspaceClient() {
                                 projectDir={project.dir}
                                 projectName={project.name}
                                 initialSource={tab.draftSource ?? undefined}
+                                initialTask={tab.draftTask ?? undefined}
                                 roadmapItems={launchRoadmapItems}
                                 onLaunch={opts =>
                                   launch({ ...opts, reuseTabId: tab.id })
+                                }
+                                onDraftChange={patch =>
+                                  updateDraft(tab.id, patch)
                                 }
                               />
                             </div>

@@ -4,6 +4,7 @@ import { resolveContainedPath, isRepoRelativePath } from './contained-path';
 import { ptySessions } from './pty/session-manager';
 import type { PtyCreateOptions } from './pty/session-manager';
 import { contextSummarizer } from './pty/context-summarizer';
+import { createDiagnosticsLog } from './diagnostics-log';
 import { attentionMonitor } from './pty/attention-monitor';
 import {
   ClosedSessionLedger,
@@ -67,6 +68,14 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   // micro-context subtitles (W0.4): summaries stream as they refresh, and
   // ride along on pty:list so late attaches/pollers see the latest
   contextSummarizer.attach(ptySessions);
+  // packaged-app stdout goes nowhere — the summarizer's attempts, failures,
+  // and backoffs persist to userData/logs so a silent-subtitle dogfood
+  // report is a file read (D28)
+  contextSummarizer.setDiagnostics(
+    createDiagnosticsLog(
+      path.join(app.getPath('userData'), 'logs', 'summarizer.jsonl')
+    )
+  );
   contextSummarizer.start();
   // goal subtitles are durable-Session truth (D21): renderers key by
   // durableSessionId so a subtitle survives PTY replacement and restarts

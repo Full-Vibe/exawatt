@@ -86,6 +86,10 @@ export interface WorkspaceTab {
   /** draft tabs only (D24): the source the summon requested (palette
    *  "Start Agent with X"); null = use the recommendation */
   draftSource?: AgentSourceId | null;
+  /** draft tabs only (D28): the composer's typed task — the draft's
+   *  work-in-progress belongs to the TAB, so it survives the pane
+   *  unmounting on tab/Project switches and (with content) restarts */
+  draftTask?: string | null;
 }
 
 export type SessionLifecycle =
@@ -96,7 +100,9 @@ export type SessionLifecycle =
   | 'resuming'
   | 'failed'
   /** ⌘T new-tab page (D24): a real strip tab whose pane is the composer;
-   *  no process yet, never persisted, discarded by ⌘W without ceremony */
+   *  no process yet, discarded by ⌘W without ceremony. Typed draft work
+   *  rides on the tab and persists with the layout (D28); an EMPTY draft
+   *  still vanishes with the run. */
   | 'draft';
 
 export type ResumeState =
@@ -206,6 +212,10 @@ export interface PersistedV5 {
        *  layouts lack them; both restore the context layer on relaunch */
       initialTask?: string | null;
       contextSummary?: string | null;
+      /** draft new-tab composer state (D28): only a draft WITH typed work
+       *  persists — an empty ⌘T tile still vanishes without ceremony */
+      draftTask?: string | null;
+      draftSource?: string | null;
     }>;
   }>;
 }
@@ -306,6 +316,7 @@ export function parsePersisted(raw: unknown): PersistedV5 | null {
             'exited',
             'resuming',
             'failed',
+            'draft',
           ].includes(tab.lifecycle)
             ? tab.lifecycle
             : 'stopped-clean';
@@ -596,7 +607,26 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           activeTabId: g.tabs.some(t => t.id === g.activeTabId)
             ? g.activeTabId
             : (g.tabs[0]?.id ?? null),
-          tabs: g.tabs.map(t => {
+          tabs: g.tabs.map(raw => {
+            // the persisted draft fields stay OFF non-draft tabs (and the
+            // untyped draftSource string never reaches WorkspaceTab)
+            const { draftTask, draftSource, ...t } = raw;
+            // a persisted draft (D28) restores as a draft: no process, no
+            // resume identity — just the composer with the saved work
+            if (t.lifecycle === 'draft') {
+              return {
+                ...t,
+                initialTask: t.initialTask ?? null,
+                sessionId: null,
+                exitCode: null,
+                lifecycle: 'draft' as const,
+                resumeState: 'identity-missing' as const,
+                draftTask: draftTask ?? null,
+                draftSource: isAgentSourceId(draftSource ?? '')
+                  ? (draftSource as AgentSourceId)
+                  : null,
+              };
+            }
             const s = liveByDurableId.get(t.durableSessionId);
             const initialTask = t.initialTask ?? null;
             if (s && !s.exited) {
@@ -825,9 +855,13 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         pinnedTabId: pinSurvives ? pin : null,
         recentProjects: recents,
         projects: gs.map(g => {
-          // drafts are pre-session UI, not durable Sessions (D24)
+          // an EMPTY draft is pre-session UI and vanishes with the run,
+          // but typed draft work is real work — it persists (D28,
+          // amending D24's blanket "drafts never persist")
           const tabs = g.tabs
-            .filter(tab => tab.lifecycle !== 'draft')
+            .filter(
+              tab => tab.lifecycle !== 'draft' || !!tab.draftTask?.trim()
+            )
             .map(tab => {
               const stopped =
                 cleanShutdown &&
@@ -850,6 +884,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 initialTask: tab.initialTask ?? null,
                 contextSummary:
                   summariesRef.current[tab.durableSessionId] ?? null,
+                ...(tab.lifecycle === 'draft'
+                  ? {
+                      draftTask: tab.draftTask ?? null,
+                      draftSource: tab.draftSource ?? null,
+                    }
+                  : {}),
               };
             });
           return {
@@ -1095,6 +1135,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         roadmapItemId: null,
         initialTask: null,
         draftSource: requested,
+        draftTask: null,
       };
       setProjects(prev =>
         prev.map(grp =>
@@ -1105,6 +1146,48 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       );
       setActiveDir(g.dir);
       return tab.id;
+    },
+    []
+  );
+
+  /** the composer reports its work-in-progress here (D28): the draft tab
+   *  owns the typed task and chosen source, so switching tabs, switching
+   *  Projects, or relaunching the app never loses draft work. No-op edits
+   *  return the same state so per-keystroke calls stay cheap. */
+  const updateDraft = useCallback(
+    (
+      tabId: string,
+      patch: { draftTask?: string; draftSource?: AgentSourceId }
+    ) => {
+      setProjects(prev => {
+        const group = prev.find(g => g.tabs.some(t => t.id === tabId));
+        const tab = group?.tabs.find(t => t.id === tabId);
+        if (!group || !tab || tab.lifecycle !== 'draft') return prev;
+        const draftTask =
+          patch.draftTask === undefined
+            ? (tab.draftTask ?? null)
+            : patch.draftTask;
+        const draftSource =
+          patch.draftSource === undefined
+            ? (tab.draftSource ?? null)
+            : patch.draftSource;
+        if (
+          draftTask === (tab.draftTask ?? null) &&
+          draftSource === (tab.draftSource ?? null)
+        ) {
+          return prev;
+        }
+        return prev.map(g =>
+          g === group
+            ? {
+                ...g,
+                tabs: g.tabs.map(t =>
+                  t.id === tabId ? { ...t, draftTask, draftSource } : t
+                ),
+              }
+            : g
+        );
+      });
     },
     []
   );
@@ -1827,6 +1910,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     importProjects,
     closeTab,
     createDraftTab,
+    updateDraft,
     reopenClosedSession,
     listClosedSessions,
     resumeTab,

@@ -12,11 +12,16 @@ import type { PtySessionManager } from './session-manager';
 class FakeManager extends EventEmitter {
   private text = new Map<string, string>();
   tasks = new Map<string, string>();
+  sessions = [
+    { id: 'a', durableSessionId: 'da', exited: false, harness: 'claude' },
+  ];
 
   list() {
-    return [
-      { id: 'a', durableSessionId: 'da', exited: false, harness: 'claude' },
-    ];
+    return this.sessions;
+  }
+
+  addSession(id: string, durableSessionId: string) {
+    this.sessions.push({ id, durableSessionId, exited: false, harness: 'claude' });
   }
 
   initialTask(id: string) {
@@ -277,20 +282,25 @@ describe('goal-oriented subtitles (D18)', () => {
 describe('sweep output guardrails', () => {
   const junk =
     "I see corrupted session data that I can't interpret. What would";
+  const COOLDOWN = 5 * 60_000;
+  let now: number;
   let manager: FakeManager;
   let summarize: ReturnType<typeof vi.fn>;
+  let diagnose: ReturnType<typeof vi.fn>;
   let service: ContextSummarizer;
   const runSweep = () =>
     (service as unknown as { sweep: () => Promise<void> }).sweep();
 
   beforeEach(() => {
+    now = 1_000_000;
     manager = new FakeManager();
     summarize = vi.fn(async () => junk);
-    service = new ContextSummarizer({ summarize });
+    diagnose = vi.fn();
+    service = new ContextSummarizer({ summarize, diagnose, now: () => now });
     service.attach(manager as unknown as PtySessionManager);
   });
 
-  it('keeps the previous subtitle on unusable content and refunds bytes for a retry', async () => {
+  it('keeps the previous subtitle on unusable content, cools the session down, then retries the refunded bytes', async () => {
     service.seedFromTask('da', 'Ship subtitle guardrails');
     const events: string[] = [];
     service.on('context', (_id: string, summary: string) =>
@@ -303,7 +313,13 @@ describe('sweep output guardrails', () => {
     expect(service.getSummary('da')).toBe('Ship subtitle guardrails');
     expect(events).toEqual([]);
 
-    // bytes were refunded: the next sweep retries without fresh output
+    // the session is cooling down: an immediate sweep must NOT hammer the
+    // same confused content again (D28)
+    await runSweep();
+    expect(summarize).toHaveBeenCalledOnce();
+
+    // after the cooldown the refunded bytes retry without fresh output
+    now += COOLDOWN + 1;
     summarize.mockResolvedValueOnce('Release Apple Silicon support');
     await runSweep();
     expect(summarize).toHaveBeenCalledTimes(2);
@@ -328,17 +344,76 @@ describe('sweep output guardrails', () => {
     expect(summarize).toHaveBeenCalledOnce();
   });
 
-  it('never counts unusable content toward the failure disable threshold', async () => {
+  it('never counts unusable content as an engine failure', async () => {
     manager.data('a', 'meaningful terminal output '.repeat(20));
-    await runSweep();
-    await runSweep();
-    await runSweep();
-    await runSweep();
-    // three real failures would have disabled the summarizer by now
+    for (let round = 0; round < 4; round += 1) {
+      await runSweep();
+      now += COOLDOWN + 1;
+    }
     expect(summarize).toHaveBeenCalledTimes(4);
+    expect(diagnose).not.toHaveBeenCalledWith(
+      'summarizer.engine-failure',
+      expect.anything()
+    );
     summarize.mockResolvedValueOnce('Release Apple Silicon support');
     await runSweep();
     expect(service.getSummary('da')).toBe('Release Apple Silicon support');
+  });
+
+  it('sends the next sweep to the runner-up session while a confused one cools down (D28)', async () => {
+    manager.addSession('b', 'db');
+    manager.data('a', 'the busiest but most confusing session '.repeat(30));
+    manager.data('b', 'a quieter session with a clear release goal '.repeat(12));
+
+    await runSweep();
+    expect(summarize).toHaveBeenCalledOnce();
+    expect((summarize.mock.calls[0][0] as string)).toContain(
+      'most confusing session'
+    );
+
+    // session a is cooling down — b must get its subtitle NOW, not after
+    // a stops being confusing
+    summarize.mockResolvedValueOnce('Ship the release');
+    await runSweep();
+    expect(summarize).toHaveBeenCalledTimes(2);
+    expect((summarize.mock.calls[1][0] as string)).toContain(
+      'clear release goal'
+    );
+    expect(service.getSummary('db')).toBe('Ship the release');
+  });
+
+  it('backs off exponentially on engine failures and recovers on success — never a permanent disable (D28)', async () => {
+    summarize.mockRejectedValue(new Error('engine down'));
+    manager.data('a', 'meaningful terminal output '.repeat(20));
+
+    await runSweep();
+    expect(diagnose).toHaveBeenCalledWith(
+      'summarizer.engine-failure',
+      expect.objectContaining({ failures: 1, backoffMs: 30_000 })
+    );
+
+    // paused: an immediate sweep makes no engine call
+    await runSweep();
+    expect(summarize).toHaveBeenCalledOnce();
+
+    // past the backoff and the failed session's cooldown: it retries and
+    // the backoff GROWS
+    now += COOLDOWN + 1;
+    await runSweep();
+    expect(summarize).toHaveBeenCalledTimes(2);
+    expect(diagnose).toHaveBeenCalledWith(
+      'summarizer.engine-failure',
+      expect.objectContaining({ failures: 2, backoffMs: 60_000 })
+    );
+
+    // recovery: the next success clears the pause and the counter
+    now += COOLDOWN + 1;
+    summarize.mockResolvedValue('Fix release pipeline');
+    await runSweep();
+    expect(service.getSummary('da')).toBe('Fix release pipeline');
+    manager.data('a', 'fresh output after recovery '.repeat(20));
+    await runSweep();
+    expect(summarize).toHaveBeenCalledTimes(4);
   });
 });
 
