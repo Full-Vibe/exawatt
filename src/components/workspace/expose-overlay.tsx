@@ -15,7 +15,7 @@ import { HarnessGlyph } from './harness-icons';
 import { isDefaultHarnessTitle } from './harnesses';
 import { previewLines } from './scrollback-preview';
 import {
-  AttentionDot,
+  AttentionBell,
   SESSION_GLYPH_COPY,
   SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
@@ -466,7 +466,7 @@ export function ExposeOverlay({
       >
         <div className="flex w-full items-center gap-1.5 font-mono text-xs">
           <span
-            className="inline-block h-2 w-2 shrink-0 rotate-45"
+            className="inline-block h-3.5 w-[3px] shrink-0 rounded-full"
             style={{
               background: tile.color,
               boxShadow: `0 0 5px ${tile.color}`,
@@ -517,7 +517,7 @@ export function ExposeOverlay({
           )}
           {needsYou ? (
             <span className="ml-1 inline-flex shrink-0">
-              <AttentionDot />
+              <AttentionBell />
             </span>
           ) : tile.live ? (
             <span className="ml-1 inline-flex shrink-0" title={stateCopy}>
@@ -616,7 +616,7 @@ export function ExposeOverlay({
                   style={{ borderColor: `${project.color}33` }}
                 >
                   <span
-                    className="h-2 w-2 shrink-0 rotate-45"
+                    className="h-3.5 w-[3px] shrink-0 rounded-full"
                     style={{ background: project.color }}
                   />
                   <h3

@@ -19,7 +19,44 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { shortcutRegistry } from '@/lib/shortcuts';
 import { formatShortcutKeys } from '@/lib/shortcuts/format';
 import { ShortcutBadge } from './shortcut-badge';
+import {
+  AttentionBell,
+  SessionStatusGlyph,
+} from '@/components/workspace/status-glyphs';
 import type { KeyBinding, ShortcutCategory } from '@/types/shortcuts';
+
+/** the D30 status icon vocabulary, taught where operators already look */
+const STATUS_LEGEND: Array<{
+  glyph: React.ReactNode;
+  label: string;
+  meaning: string;
+}> = [
+  {
+    glyph: <AttentionBell />,
+    label: 'needs you',
+    meaning: 'waiting on your input — ⌘J jumps there',
+  },
+  {
+    glyph: <SessionStatusGlyph state="working" />,
+    label: 'working',
+    meaning: 'output streaming right now',
+  },
+  {
+    glyph: <SessionStatusGlyph state="done" />,
+    label: 'finished',
+    meaning: 'turn complete, resting',
+  },
+  {
+    glyph: <SessionStatusGlyph state="fresh" />,
+    label: 'new',
+    meaning: 'not given a task yet',
+  },
+  {
+    glyph: <SessionStatusGlyph state="quiet" />,
+    label: 'quiet',
+    meaning: 'shell between output',
+  },
+];
 
 const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
   workspace: 'Terminal Workspace',
@@ -180,6 +217,30 @@ export function ShortcutHelpModal({
               <p className="text-sm text-muted-foreground">
                 No shortcuts match “{query}”.
               </p>
+            )}
+            {/* the status icon vocabulary is learnable, so the cheat
+                sheet TEACHES it (D30) — the text channel Carbon requires */}
+            {(!query ||
+              'agent status'.includes(query.toLowerCase().trim())) && (
+              <div data-help-category="agent-status">
+                <h3 className="text-sm font-semibold text-muted-foreground mb-3">
+                  Agent Status
+                </h3>
+                <div className="space-y-2">
+                  {STATUS_LEGEND.map(entry => (
+                    <div
+                      key={entry.label}
+                      className="flex items-center gap-3 py-1"
+                    >
+                      {entry.glyph}
+                      <span className="text-sm">{entry.label}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {entry.meaning}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
             {sections.map(({ category, rows, fixed }) => (
               <div key={category} data-help-category={category}>

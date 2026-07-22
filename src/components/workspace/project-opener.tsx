@@ -322,7 +322,7 @@ export function ProjectOpener({
                       }}
                     >
                       <span
-                        className="mb-5 block h-3 w-3 rotate-45"
+                        className="mb-5 block h-5 w-[3px] rounded-full"
                         style={{
                           background: project.color ?? HUD.textDim,
                           boxShadow: `0 0 8px ${project.color ?? HUD.textDim}66`,

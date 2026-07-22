@@ -706,8 +706,8 @@ export function RoadmapRail({
         <div className="flex items-center gap-1.5">
           <span
             aria-hidden
-            className="inline-block h-2 w-2 shrink-0 rotate-45"
-            style={{ background: color, boxShadow: `0 0 5px ${color}` }}
+            className="inline-block h-3.5 w-[3px] shrink-0 rounded-full"
+            style={{ background: color, boxShadow: `0 0 4px ${color}88` }}
           />
           <span
             className="min-w-0 truncate font-display text-sm font-semibold"

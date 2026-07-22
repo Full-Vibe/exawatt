@@ -64,7 +64,7 @@ import {
 } from '@/components/nav/surfaces';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import {
-  AttentionDot,
+  AttentionBell,
   SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
 } from '@/components/workspace/status-glyphs';
@@ -541,7 +541,7 @@ export function CommandPalette({
                     </span>
                   ) : row.color ? (
                     <span
-                      className="mr-2 inline-block h-2 w-2 shrink-0 rotate-45"
+                      className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
                       style={{ background: row.color }}
                     />
                   ) : (
@@ -568,7 +568,7 @@ export function CommandPalette({
                     data-session-id={s.id}
                   >
                     <span
-                      className="mr-2 inline-block h-2 w-2 shrink-0 rotate-45"
+                      className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
                       style={{
                         background: s.color,
                         boxShadow: `0 0 5px ${s.color}`,
@@ -596,7 +596,7 @@ export function CommandPalette({
                       style={{ color: status.color }}
                     >
                       {s.status === 'needs-you' ? (
-                        <AttentionDot />
+                        <AttentionBell />
                       ) : s.status !== 'exited' ? (
                         <SessionStatusGlyph state={s.status} />
                       ) : null}
@@ -661,7 +661,7 @@ export function CommandPalette({
                     }}
                   >
                     <span
-                      className="mr-2 inline-block h-2 w-2 shrink-0 rotate-45"
+                      className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
                       style={{ background: p.color ?? HUD.textDim }}
                     />
                     <span className="truncate">{p.name}</span>
@@ -687,7 +687,7 @@ export function CommandPalette({
                     }}
                   >
                     <span
-                      className="mr-2 inline-block h-2 w-2 shrink-0 rotate-45"
+                      className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
                       style={{ background: r.color ?? HUD.textDim }}
                     />
                     <span className="truncate">{r.name}</span>

@@ -22,7 +22,7 @@ import {
   FOCUS_ACTIVE_TERMINAL_EVENT,
 } from './session-jump';
 import {
-  AttentionDot,
+  AttentionBell,
   SESSION_GLYPH_COPY,
   SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
@@ -478,8 +478,9 @@ export function TabStrip({
               style={{ color: groupActive ? color : HUD.textDim }}
             >
               <span
-                className="inline-block h-2 w-2 rotate-45"
-                style={{ background: color, boxShadow: `0 0 5px ${color}` }}
+                aria-hidden
+                className="inline-block h-3.5 w-[3px] shrink-0 rounded-full"
+                style={{ background: color, boxShadow: `0 0 4px ${color}88` }}
               />
               {ordinalHints === 'projects' && gi < 9 && (
                 <span data-project-ordinal={gi + 1} className="contents">
@@ -701,7 +702,7 @@ export function TabStrip({
                       </span>
                     )}
                     {needsYou ? (
-                      <AttentionDot />
+                      <AttentionBell />
                     ) : !dead || isDraft ? (
                       <SessionStatusGlyph
                         state={isDraft ? 'fresh' : glyphState}
