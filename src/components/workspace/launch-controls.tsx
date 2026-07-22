@@ -34,6 +34,7 @@ import {
   DEFAULT_AGENT_PERMISSION_MODE,
   isAgentSourceId,
   isAgentPermissionMode,
+  loadAgentModelCatalog,
   loadAgentSourcePreferences,
   permissionModeFor,
   recommendAgentSource,
@@ -45,8 +46,11 @@ import {
 } from './agent-sources';
 import { HarnessGlyph } from './harness-icons';
 import type { LaunchOptions } from './use-workspace-state';
-import type { AgentPermissionMode } from '@/types/electron';
-import type { RecentConversation } from '@/types/electron';
+import type {
+  AgentModelCatalog,
+  AgentPermissionMode,
+  RecentConversation,
+} from '@/types/electron';
 import {
   consumePendingAgentComposer,
   FOCUS_AGENT_COMPOSER_EVENT,
@@ -56,6 +60,8 @@ import {
   type ConversationOpenMode,
   type RecentConversationsHandle,
 } from './recent-conversations';
+
+const UNRESOLVED_MODEL_VALUE = '__exawatt-unresolved-model__';
 
 function defaultBranch(): string {
   const d = new Date();
@@ -108,6 +114,7 @@ export function AgentComposer({
   projectName,
   initialSource,
   initialTask,
+  initialModel,
   roadmapItems = [],
 
   onLaunch,
@@ -122,6 +129,8 @@ export function AgentComposer({
   /** the draft tab's saved task text (D28) — a remounting pane must pick
    *  the operator's typing back up, never blank it */
   initialTask?: string;
+  /** the draft tab's model snapshot; changing it affects only this launch */
+  initialModel?: string;
   roadmapItems?: LaunchRoadmapItem[];
 
   onLaunch: (opts: LaunchOptions) => Promise<boolean>;
@@ -133,6 +142,7 @@ export function AgentComposer({
   onDraftChange?: (patch: {
     draftTask?: string;
     draftSource?: AgentSourceId;
+    draftModel?: string | null;
   }) => void;
 }) {
   const [task, setTaskState] = useState(initialTask ?? '');
@@ -140,11 +150,19 @@ export function AgentComposer({
   onDraftChangeRef.current = onDraftChange;
   const initialTaskRef = useRef(initialTask);
   initialTaskRef.current = initialTask;
+  const initialModelRef = useRef(initialModel);
+  initialModelRef.current = initialModel;
+  const initialSourceRef = useRef(initialSource);
+  initialSourceRef.current = initialSource;
   const setTask = useCallback((next: string) => {
     setTaskState(next);
     onDraftChangeRef.current?.({ draftTask: next });
   }, []);
   const [source, setSource] = useState<AgentSourceId>('claude');
+  const [modelCatalog, setModelCatalog] = useState<AgentModelCatalog | null>(
+    null
+  );
+  const [model, setModel] = useState<string | null>(initialModel ?? null);
   const [permissionMode, setPermissionMode] = useState(
     DEFAULT_AGENT_PERMISSION_MODE
   );
@@ -165,17 +183,48 @@ export function AgentComposer({
   const permissionSaveSeq = useRef(0);
   const permissionSaveQueue = useRef(Promise.resolve());
   const requestedSourceRef = useRef<AgentSourceId | null>(null);
+  const modelLoadSeq = useRef(0);
+  const initialModelPendingRef = useRef<{
+    model: string;
+    source: AgentSourceId | null;
+  } | null>(
+    initialModel ? { model: initialModel, source: initialSource ?? null } : null
+  );
+  const modelChoicesRef = useRef<Partial<Record<AgentSourceId, string>>>({});
   const taskRef = useRef<HTMLTextAreaElement>(null);
   const recentRef = useRef<RecentConversationsHandle>(null);
   const permissionDescriptionId = useId();
   const branchErrorId = useId();
   const preferencesReady = sourcePreferences !== null;
+  const modelReady = modelCatalog !== null;
   const controlsDisabled = launching !== null;
   const branchReady = !worktree || branch.trim().length > 0;
   const effectiveSource = isAgentSourceId(source)
     ? source
     : AGENT_SOURCE_ORDER[0];
   const sourceMeta = AGENT_SOURCE_META[effectiveSource];
+  const modelOptions = modelCatalog
+    ? model && !modelCatalog.models.some(option => option.id === model)
+      ? [
+          {
+            id: model,
+            label: model,
+            description: 'Previously selected for this draft.',
+          },
+          ...modelCatalog.models,
+        ]
+      : modelCatalog.models
+    : [];
+  const modelMeta = modelOptions.find(option => option.id === model) ?? null;
+  const modelLabel = modelMeta?.label ?? (model ? model : 'Harness default');
+  const modelOriginLabel =
+    modelCatalog?.effectiveModelSource === 'config'
+      ? `${sourceMeta.label} config`
+      : modelCatalog?.effectiveModelSource === 'harness-recommended'
+        ? `${sourceMeta.label} recommendation`
+        : modelCatalog?.effectiveModelSource === 'account-default'
+          ? `${sourceMeta.label} account default`
+          : `${sourceMeta.label} default`;
   const permissionMeta = AGENT_PERMISSION_MODE_META[permissionMode];
   const permissionColor =
     permissionMode === 'unrestricted'
@@ -187,8 +236,19 @@ export function AgentComposer({
   useEffect(() => {
     let cancelled = false;
     permissionSaveSeq.current += 1;
+    modelLoadSeq.current += 1;
     requestedSourceRef.current = null;
+    const savedSource = initialSourceRef.current;
+    initialModelPendingRef.current = initialModelRef.current
+      ? { model: initialModelRef.current, source: savedSource ?? null }
+      : null;
+    modelChoicesRef.current =
+      savedSource && initialModelRef.current
+        ? { [savedSource]: initialModelRef.current }
+        : {};
     setSourcePreferences(null);
+    setModelCatalog(null);
+    setModel(initialModelRef.current ?? null);
     setPermissionMode(DEFAULT_AGENT_PERMISSION_MODE);
     setUsedSafePreferenceFallback(false);
     setPermissionSaveState('idle');
@@ -228,7 +288,12 @@ export function AgentComposer({
   const selectSource = useCallback(
     (nextSource: AgentSourceId) => {
       setSource(nextSource);
-      onDraftChangeRef.current?.({ draftSource: nextSource });
+      setModelCatalog(null);
+      setModel(modelChoicesRef.current[nextSource] ?? null);
+      onDraftChangeRef.current?.({
+        draftSource: nextSource,
+        draftModel: modelChoicesRef.current[nextSource] ?? null,
+      });
       setPermissionSaveState('idle');
       setPermissionMode(
         sourcePreferences
@@ -254,13 +319,56 @@ export function AgentComposer({
       else {
         requestedSourceRef.current = next;
         setSource(next);
-        onDraftChangeRef.current?.({ draftSource: next });
+        setModelCatalog(null);
+        setModel(modelChoicesRef.current[next] ?? null);
+        onDraftChangeRef.current?.({
+          draftSource: next,
+          draftModel: modelChoicesRef.current[next] ?? null,
+        });
       }
     },
     [selectSource, sourcePreferences]
   );
   const chooseSourceRef = useRef<typeof chooseSource | null>(null);
   chooseSourceRef.current = chooseSource;
+
+  useEffect(() => {
+    if (!preferencesReady) return;
+    let cancelled = false;
+    const loadSeq = modelLoadSeq.current + 1;
+    modelLoadSeq.current = loadSeq;
+    setModelCatalog(null);
+    void loadAgentModelCatalog(effectiveSource, projectDir).then(catalog => {
+      if (
+        cancelled ||
+        modelLoadSeq.current !== loadSeq ||
+        catalog.harness !== effectiveSource
+      ) {
+        return;
+      }
+      const pendingInitialModel = initialModelPendingRef.current;
+      const restoredModel =
+        pendingInitialModel &&
+        (pendingInitialModel.source === null ||
+          pendingInitialModel.source === effectiveSource)
+          ? pendingInitialModel.model
+          : null;
+      if (restoredModel) initialModelPendingRef.current = null;
+      const selectedModel =
+        modelChoicesRef.current[effectiveSource] ??
+        restoredModel ??
+        catalog.effectiveModel;
+      if (selectedModel) {
+        modelChoicesRef.current[effectiveSource] = selectedModel;
+      }
+      setModel(selectedModel);
+      setModelCatalog(catalog);
+      onDraftChangeRef.current?.({ draftModel: selectedModel });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveSource, preferencesReady, projectDir]);
 
   // ⌘T must land in the goal field every time (D21): focus after mount —
   // the draft pane mounts fresh on every summon
@@ -344,7 +452,9 @@ export function AgentComposer({
   );
 
   const launchAgent = async () => {
-    if (controlsDisabled || !sourcePreferences || !branchReady) return;
+    if (controlsDisabled || !sourcePreferences || !modelReady || !branchReady) {
+      return;
+    }
     setLaunching('agent');
     const branchSeqAtLaunch = branchEditSeq.current;
     let ok = false;
@@ -353,6 +463,7 @@ export function AgentComposer({
         harness: effectiveSource,
         dir: projectDir,
         permissionMode,
+        model: model ?? undefined,
         initialPrompt: task.trim() || undefined,
         worktreeBranch: worktree ? branch.trim() : undefined,
         roadmapItemId: roadmapItemId || undefined,
@@ -515,353 +626,447 @@ export function AgentComposer({
         }}
       />
 
-      <div className="flex min-w-0 items-center gap-1">
-        <Select
-          value={effectiveSource}
-          disabled={!preferencesReady || controlsDisabled}
-          onValueChange={value => {
-            if (!isAgentSourceId(value)) return;
-            selectSource(value);
-          }}
-        >
-          <SelectTrigger
-            aria-label="Agent Source"
-            title={
-              preferencesReady
-                ? `Agent Source: ${sourceMeta.label}`
-                : 'Loading Agent Source'
-            }
-            className="h-9 w-[148px] shrink-0 rounded border px-2 font-mono text-xs shadow-none transition-[border-color,filter] duration-150 hover:brightness-110 focus:ring-hud-cyan data-[state=open]:brightness-110 motion-reduce:transition-none"
-            style={{
-              color: sourceMeta.color,
-              borderColor: 'rgba(80,230,255,0.24)',
-              background: HUD.bg.deep,
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-1">
+        <div className="flex min-w-0 items-center gap-1">
+          <Select
+            value={effectiveSource}
+            disabled={!preferencesReady || controlsDisabled}
+            onValueChange={value => {
+              if (!isAgentSourceId(value)) return;
+              selectSource(value);
             }}
           >
-            {preferencesReady ? (
-              <span className="flex min-w-0 items-center gap-2">
-                <HarnessGlyph harness={effectiveSource} size={13} />
-                {/* The trigger owns its one brand glyph. An empty SelectValue
+            <SelectTrigger
+              aria-label="Agent Source"
+              title={
+                preferencesReady
+                  ? `Agent Source: ${sourceMeta.label}`
+                  : 'Loading Agent Source'
+              }
+              className="h-9 w-[136px] shrink-0 rounded border px-2 font-mono text-xs shadow-none transition-[border-color,filter] duration-150 hover:brightness-110 focus:ring-hud-cyan data-[state=open]:brightness-110 motion-reduce:transition-none"
+              style={{
+                color: sourceMeta.color,
+                borderColor: 'rgba(80,230,255,0.24)',
+                background: HUD.bg.deep,
+              }}
+            >
+              {preferencesReady ? (
+                <span className="flex min-w-0 items-center gap-2">
+                  <HarnessGlyph harness={effectiveSource} size={13} />
+                  {/* The trigger owns its one brand glyph. An empty SelectValue
                   projects the selected item's decorated children here, which
                   would duplicate the option glyph (D27 correction). */}
-                <SelectValue>{sourceMeta.label}</SelectValue>
-              </span>
-            ) : (
-              <span className="truncate" style={{ color: HUD.textDim }}>
-                Loading…
-              </span>
-            )}
-          </SelectTrigger>
-          <SelectContent>
-            {AGENT_SOURCE_ORDER.map(id => (
-              <SelectItem
-                key={id}
-                value={id}
-                textValue={AGENT_SOURCE_META[id].label}
-                className="font-mono"
-              >
-                {/* Options own their menu presentation independently of the
-                  trigger: glyph + brand color, with no selection flash. */}
-                <span
-                  className="flex items-center gap-2"
-                  style={{ color: AGENT_SOURCE_META[id].color }}
-                >
-                  <HarnessGlyph harness={id} size={12} />
-                  {AGENT_SOURCE_META[id].label}
+                  <SelectValue>{sourceMeta.label}</SelectValue>
                 </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+              ) : (
+                <span className="truncate" style={{ color: HUD.textDim }}>
+                  Loading…
+                </span>
+              )}
+            </SelectTrigger>
+            <SelectContent>
+              {AGENT_SOURCE_ORDER.map(id => (
+                <SelectItem
+                  key={id}
+                  value={id}
+                  textValue={AGENT_SOURCE_META[id].label}
+                  className="font-mono"
+                >
+                  {/* Options own their menu presentation independently of the
+                  trigger: glyph + brand color, with no selection flash. */}
+                  <span
+                    className="flex items-center gap-2"
+                    style={{ color: AGENT_SOURCE_META[id].color }}
+                  >
+                    <HarnessGlyph harness={id} size={12} />
+                    {AGENT_SOURCE_META[id].label}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        <Select
-          value={permissionMode}
-          disabled={!preferencesReady || controlsDisabled}
-          onValueChange={value => {
-            if (
-              !isAgentPermissionMode(value) ||
-              !sourceMeta.capabilities.permissionModes.includes(value)
-            ) {
-              return;
+          <Select
+            value={model ?? UNRESOLVED_MODEL_VALUE}
+            disabled={
+              !modelReady || controlsDisabled || modelOptions.length === 0
             }
-            setPermissionMode(value);
-            setSourcePreferences(current =>
-              current
-                ? recordAgentPermissionMode(
-                    current,
-                    projectDir,
-                    effectiveSource,
-                    value
-                  )
-                : current
-            );
-            void persistPermissionMode(effectiveSource, value);
-          }}
-        >
-          <SelectTrigger
-            aria-label="Agent permissions"
-            aria-describedby={permissionDescriptionId}
-            title={
-              preferencesReady
-                ? `${permissionMeta.label}: ${permissionMeta.description}${
-                    usedSafePreferenceFallback
-                      ? ' Saved preferences were unavailable, so Exawatt used Ask first.'
-                      : permissionSaveState === 'failed'
-                        ? ' This choice applies now but could not be saved.'
-                        : ''
-                  }`
-                : 'Loading launch permissions'
-            }
-            className="h-9 w-[80px] shrink-0 rounded border px-2 font-mono text-xs shadow-none transition-[border-color,filter] duration-150 hover:brightness-110 focus:ring-hud-cyan data-[state=open]:brightness-110 motion-reduce:transition-none"
-            style={{
-              color: permissionColor,
-              borderColor:
-                permissionSaveState === 'failed'
-                  ? `${HUD.red}88`
-                  : permissionMode === 'unrestricted'
-                    ? `${HUD.amber}66`
-                    : 'rgba(80,230,255,0.24)',
-              background: HUD.bg.deep,
+            onValueChange={value => {
+              if (!modelOptions.some(option => option.id === value)) return;
+              modelChoicesRef.current[effectiveSource] = value;
+              setModel(value);
+              onDraftChangeRef.current?.({ draftModel: value });
             }}
           >
-            <span className="flex min-w-0 items-center gap-1.5">
-              {preferencesReady ? (
-                <>
-                  <span
-                    aria-hidden="true"
-                    className="h-1.5 w-1.5 shrink-0 rounded-full"
-                    style={{
-                      background:
-                        permissionSaveState === 'failed'
-                          ? HUD.red
-                          : usedSafePreferenceFallback
-                            ? HUD.amber
-                            : permissionColor,
-                    }}
-                  />
-                  <SelectValue>{permissionMeta.shortLabel}</SelectValue>
-                  <span id={permissionDescriptionId} className="sr-only">
-                    {permissionMeta.description}
-                    {usedSafePreferenceFallback
-                      ? ' Saved preferences could not be loaded. Ask first is the safe fallback.'
-                      : ''}
-                    {permissionSaveState === 'failed'
-                      ? ' This choice applies to the current launch but could not be saved.'
-                      : ''}
-                  </span>
-                </>
+            <SelectTrigger
+              aria-label="Agent model"
+              title={
+                modelReady
+                  ? `Agent model: ${modelLabel}. Default from ${modelOriginLabel}.`
+                  : `Detecting ${sourceMeta.label} model`
+              }
+              className="h-9 w-[168px] shrink-0 rounded border px-2 font-mono text-xs shadow-none transition-[border-color,filter] duration-150 hover:brightness-110 focus:ring-hud-cyan data-[state=open]:brightness-110 motion-reduce:transition-none"
+              style={{
+                color: HUD.text,
+                borderColor: 'rgba(80,230,255,0.24)',
+                background: HUD.bg.deep,
+              }}
+            >
+              {modelReady ? (
+                <span className="min-w-0 truncate">
+                  <SelectValue>{modelLabel}</SelectValue>
+                </span>
               ) : (
-                <>
+                <span
+                  className="flex min-w-0 items-center gap-1.5 truncate"
+                  style={{ color: HUD.textDim }}
+                >
                   <LoaderCircle
                     aria-hidden="true"
-                    className="h-3 w-3 animate-spin motion-reduce:animate-none"
+                    className="h-3 w-3 shrink-0 animate-spin motion-reduce:animate-none"
                   />
-                  <span>···</span>
-                  <span id={permissionDescriptionId} className="sr-only">
-                    Loading saved launch permissions.
-                  </span>
-                </>
+                  Detecting…
+                </span>
               )}
-            </span>
-          </SelectTrigger>
-          <SelectContent
-            align="end"
-            className="w-[min(22rem,calc(100vw-1.5rem))] border-hud-cyan/25 bg-hud-deep shadow-xl"
-          >
-            <SelectGroup>
-              <SelectLabel className="px-2 pb-1 pt-2 font-mono text-[11px] font-medium text-hud-text-dim">
-                {sourceMeta.label} permissions
-              </SelectLabel>
-              {sourceMeta.capabilities.permissionModes
-                .filter(mode => AGENT_PERMISSION_MODE_ORDER.includes(mode))
-                .map(mode => {
-                  const meta = AGENT_PERMISSION_MODE_META[mode];
-                  const color =
-                    mode === 'unrestricted'
-                      ? HUD.amber
-                      : mode === 'auto'
-                        ? HUD.green
-                        : HUD.textDim;
-                  return (
-                    <SelectItem
-                      key={mode}
-                      value={mode}
-                      textValue={meta.label}
-                      className="items-start py-2.5 pl-2 pr-8 font-mono [&>span:first-child]:top-3"
-                    >
-                      <span className="flex items-start gap-2.5">
-                        <PermissionModeIcon
-                          mode={mode}
-                          className="mt-0.5 h-3.5 w-3.5 shrink-0"
-                        />
-                        <span className="flex min-w-0 flex-col gap-0.5">
-                          <span
-                            className="text-xs font-semibold"
-                            style={{ color }}
-                          >
-                            {meta.label}
-                          </span>
-                          <span className="text-[11px] leading-4 text-hud-text-dim">
-                            {meta.description}
-                          </span>
+            </SelectTrigger>
+            <SelectContent className="w-[min(23rem,calc(100vw-1.5rem))] border-hud-cyan/25 bg-hud-deep shadow-xl">
+              <SelectGroup>
+                <SelectLabel className="px-2 pb-1 pt-2 font-mono text-[11px] font-medium text-hud-text-dim">
+                  {sourceMeta.label} model
+                </SelectLabel>
+                {modelOptions.map(option => (
+                  <SelectItem
+                    key={option.id}
+                    value={option.id}
+                    textValue={`${option.label} ${option.description}`}
+                    className="items-start py-2.5 pl-2 pr-8 font-mono [&>span:first-child]:top-3"
+                  >
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="flex items-baseline gap-2">
+                        <span className="text-xs font-semibold text-hud-text">
+                          {option.label}
                         </span>
+                        {option.id === modelCatalog?.effectiveModel && (
+                          <span className="text-[9px] uppercase tracking-[0.12em] text-hud-cyan">
+                            default
+                          </span>
+                        )}
                       </span>
-                    </SelectItem>
-                  );
-                })}
-            </SelectGroup>
-            <SelectSeparator className="bg-hud-cyan/15" />
-            <div
-              aria-live="polite"
-              className="px-2 py-1.5 font-mono text-[11px] leading-4"
-              style={{
-                color:
-                  usedSafePreferenceFallback || permissionSaveState === 'failed'
-                    ? HUD.amber
-                    : HUD.textDim,
-              }}
-            >
-              {usedSafePreferenceFallback
-                ? 'Saved permissions were unavailable. Unsaved pairs use Ask first.'
-                : permissionSaveState === 'failed'
-                  ? 'This choice applies now, but Exawatt could not save it.'
-                  : permissionSaveState === 'saving'
-                    ? `Saving for ${projectName} + ${sourceMeta.label}…`
-                    : `Changes are remembered for ${projectName} + ${sourceMeta.label}.`}
-            </div>
-          </SelectContent>
-        </Select>
+                      <span className="text-[11px] leading-4 text-hud-text-dim">
+                        {option.description}
+                      </span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+              <SelectSeparator className="bg-hud-cyan/15" />
+              <p className="px-2 py-1.5 font-mono text-[11px] leading-4 text-hud-text-dim">
+                {model === modelCatalog?.effectiveModel
+                  ? `Default from ${modelOriginLabel}.`
+                  : `This override applies only to this Agent.`}
+              </p>
+            </SelectContent>
+          </Select>
 
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              disabled={controlsDisabled}
-              aria-label="Agent launch options"
-              title="Agent launch options"
-              className="grid h-9 w-9 shrink-0 place-items-center rounded border outline-none transition-[filter,transform] duration-150 hover:brightness-125 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
-              style={{
-                color: worktree || roadmapItemId ? HUD.cyan : HUD.textDim,
-                borderColor: 'rgba(80,230,255,0.24)',
-              }}
-            >
-              <Settings2 className="h-4 w-4" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent
-            align="end"
-            className="w-80 rounded-md border p-3"
-            style={{
-              background: HUD.bg.deep,
-              borderColor: 'rgba(80,230,255,0.25)',
+          <Select
+            value={permissionMode}
+            disabled={!preferencesReady || controlsDisabled}
+            onValueChange={value => {
+              if (
+                !isAgentPermissionMode(value) ||
+                !sourceMeta.capabilities.permissionModes.includes(value)
+              ) {
+                return;
+              }
+              setPermissionMode(value);
+              setSourcePreferences(current =>
+                current
+                  ? recordAgentPermissionMode(
+                      current,
+                      projectDir,
+                      effectiveSource,
+                      value
+                    )
+                  : current
+              );
+              void persistPermissionMode(effectiveSource, value);
             }}
           >
-            <label
-              className="flex cursor-pointer items-center gap-2 font-mono text-xs"
-              style={{ color: HUD.text }}
+            <SelectTrigger
+              aria-label="Agent permissions"
+              aria-describedby={permissionDescriptionId}
+              title={
+                preferencesReady
+                  ? `${permissionMeta.label}: ${permissionMeta.description}${
+                      usedSafePreferenceFallback
+                        ? ' Saved preferences were unavailable, so Exawatt used Ask first.'
+                        : permissionSaveState === 'failed'
+                          ? ' This choice applies now but could not be saved.'
+                          : ''
+                    }`
+                  : 'Loading launch permissions'
+              }
+              className="h-9 w-[80px] shrink-0 rounded border px-2 font-mono text-xs shadow-none transition-[border-color,filter] duration-150 hover:brightness-110 focus:ring-hud-cyan data-[state=open]:brightness-110 motion-reduce:transition-none"
+              style={{
+                color: permissionColor,
+                borderColor:
+                  permissionSaveState === 'failed'
+                    ? `${HUD.red}88`
+                    : permissionMode === 'unrestricted'
+                      ? `${HUD.amber}66`
+                      : 'rgba(80,230,255,0.24)',
+                background: HUD.bg.deep,
+              }}
             >
-              <input
-                type="checkbox"
-                checked={worktree}
-                onChange={event => setWorktree(event.target.checked)}
-                className="accent-cyan-400"
-              />
-              <GitBranch className="h-3.5 w-3.5" />
-              New git worktree
-            </label>
-            {worktree && (
-              <input
-                value={branch}
-                onChange={event => {
-                  branchEditSeq.current += 1;
-                  setBranch(event.target.value);
+              <span className="flex min-w-0 items-center gap-1.5">
+                {preferencesReady ? (
+                  <>
+                    <span
+                      aria-hidden="true"
+                      className="h-1.5 w-1.5 shrink-0 rounded-full"
+                      style={{
+                        background:
+                          permissionSaveState === 'failed'
+                            ? HUD.red
+                            : usedSafePreferenceFallback
+                              ? HUD.amber
+                              : permissionColor,
+                      }}
+                    />
+                    <SelectValue>{permissionMeta.shortLabel}</SelectValue>
+                    <span id={permissionDescriptionId} className="sr-only">
+                      {permissionMeta.description}
+                      {usedSafePreferenceFallback
+                        ? ' Saved preferences could not be loaded. Ask first is the safe fallback.'
+                        : ''}
+                      {permissionSaveState === 'failed'
+                        ? ' This choice applies to the current launch but could not be saved.'
+                        : ''}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <LoaderCircle
+                      aria-hidden="true"
+                      className="h-3 w-3 animate-spin motion-reduce:animate-none"
+                    />
+                    <span>···</span>
+                    <span id={permissionDescriptionId} className="sr-only">
+                      Loading saved launch permissions.
+                    </span>
+                  </>
+                )}
+              </span>
+            </SelectTrigger>
+            <SelectContent
+              align="end"
+              className="w-[min(22rem,calc(100vw-1.5rem))] border-hud-cyan/25 bg-hud-deep shadow-xl"
+            >
+              <SelectGroup>
+                <SelectLabel className="px-2 pb-1 pt-2 font-mono text-[11px] font-medium text-hud-text-dim">
+                  {sourceMeta.label} permissions
+                </SelectLabel>
+                {sourceMeta.capabilities.permissionModes
+                  .filter(mode => AGENT_PERMISSION_MODE_ORDER.includes(mode))
+                  .map(mode => {
+                    const meta = AGENT_PERMISSION_MODE_META[mode];
+                    const color =
+                      mode === 'unrestricted'
+                        ? HUD.amber
+                        : mode === 'auto'
+                          ? HUD.green
+                          : HUD.textDim;
+                    return (
+                      <SelectItem
+                        key={mode}
+                        value={mode}
+                        textValue={meta.label}
+                        className="items-start py-2.5 pl-2 pr-8 font-mono [&>span:first-child]:top-3"
+                      >
+                        <span className="flex items-start gap-2.5">
+                          <PermissionModeIcon
+                            mode={mode}
+                            className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                          />
+                          <span className="flex min-w-0 flex-col gap-0.5">
+                            <span
+                              className="text-xs font-semibold"
+                              style={{ color }}
+                            >
+                              {meta.label}
+                            </span>
+                            <span className="text-[11px] leading-4 text-hud-text-dim">
+                              {meta.description}
+                            </span>
+                          </span>
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
+              </SelectGroup>
+              <SelectSeparator className="bg-hud-cyan/15" />
+              <div
+                aria-live="polite"
+                className="px-2 py-1.5 font-mono text-[11px] leading-4"
+                style={{
+                  color:
+                    usedSafePreferenceFallback ||
+                    permissionSaveState === 'failed'
+                      ? HUD.amber
+                      : HUD.textDim,
                 }}
-                aria-label="Branch name for the new worktree"
-                aria-invalid={!branchReady}
-                aria-describedby={branchReady ? undefined : branchErrorId}
-                className="mt-2 h-8 w-full rounded border bg-transparent px-2 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                style={{ color: HUD.cyan, borderColor: 'rgba(25,230,255,0.3)' }}
-              />
-            )}
-            {worktree && !branchReady && (
-              <p
-                id={branchErrorId}
-                className="mt-1 font-mono text-[10px]"
-                style={{ color: HUD.red }}
               >
-                Enter a branch name before starting.
-              </p>
-            )}
-            {roadmapItems.length > 0 && (
+                {usedSafePreferenceFallback
+                  ? 'Saved permissions were unavailable. Unsaved pairs use Ask first.'
+                  : permissionSaveState === 'failed'
+                    ? 'This choice applies now, but Exawatt could not save it.'
+                    : permissionSaveState === 'saving'
+                      ? `Saving for ${projectName} + ${sourceMeta.label}…`
+                      : `Changes are remembered for ${projectName} + ${sourceMeta.label}.`}
+              </div>
+            </SelectContent>
+          </Select>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                disabled={controlsDisabled}
+                aria-label="Agent launch options"
+                title="Agent launch options"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded border outline-none transition-[filter,transform] duration-150 hover:brightness-125 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+                style={{
+                  color: worktree || roadmapItemId ? HUD.cyan : HUD.textDim,
+                  borderColor: 'rgba(80,230,255,0.24)',
+                }}
+              >
+                <Settings2 className="h-4 w-4" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              className="w-80 rounded-md border p-3"
+              style={{
+                background: HUD.bg.deep,
+                borderColor: 'rgba(80,230,255,0.25)',
+              }}
+            >
               <label
-                className="mt-3 block font-mono text-[10px]"
-                style={{ color: HUD.textDim }}
+                className="flex cursor-pointer items-center gap-2 font-mono text-xs"
+                style={{ color: HUD.text }}
               >
-                Working on
-                <select
-                  aria-label="Roadmap item this session will work on"
-                  value={roadmapItemId}
-                  onChange={event => setRoadmapItemId(event.target.value)}
-                  className="mt-1 h-8 w-full rounded border bg-transparent px-2 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                  style={{
-                    color: HUD.text,
-                    borderColor: 'rgba(80,230,255,0.2)',
-                    background: HUD.bg.deep,
-                  }}
-                >
-                  <option value="">No roadmap link</option>
-                  {roadmapItems.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
+                <input
+                  type="checkbox"
+                  checked={worktree}
+                  onChange={event => setWorktree(event.target.checked)}
+                  className="accent-cyan-400"
+                />
+                <GitBranch className="h-3.5 w-3.5" />
+                New git worktree
               </label>
-            )}
-          </PopoverContent>
-        </Popover>
+              {worktree && (
+                <input
+                  value={branch}
+                  onChange={event => {
+                    branchEditSeq.current += 1;
+                    setBranch(event.target.value);
+                  }}
+                  aria-label="Branch name for the new worktree"
+                  aria-invalid={!branchReady}
+                  aria-describedby={branchReady ? undefined : branchErrorId}
+                  className="mt-2 h-8 w-full rounded border bg-transparent px-2 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                  style={{
+                    color: HUD.cyan,
+                    borderColor: 'rgba(25,230,255,0.3)',
+                  }}
+                />
+              )}
+              {worktree && !branchReady && (
+                <p
+                  id={branchErrorId}
+                  className="mt-1 font-mono text-[10px]"
+                  style={{ color: HUD.red }}
+                >
+                  Enter a branch name before starting.
+                </p>
+              )}
+              {roadmapItems.length > 0 && (
+                <label
+                  className="mt-3 block font-mono text-[10px]"
+                  style={{ color: HUD.textDim }}
+                >
+                  Working on
+                  <select
+                    aria-label="Roadmap item this session will work on"
+                    value={roadmapItemId}
+                    onChange={event => setRoadmapItemId(event.target.value)}
+                    className="mt-1 h-8 w-full rounded border bg-transparent px-2 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                    style={{
+                      color: HUD.text,
+                      borderColor: 'rgba(80,230,255,0.2)',
+                      background: HUD.bg.deep,
+                    }}
+                  >
+                    <option value="">No roadmap link</option>
+                    {roadmapItems.map(item => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </PopoverContent>
+          </Popover>
+        </div>
 
-        <span className="flex-1" />
-        {/* one button system (D32): the primary action wears the system
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {/* one button system (D32): the primary action wears the system
             accent, never the harness color */}
-        <Button
-          type="submit"
-          size="sm"
-          className="h-9 shrink-0 font-mono"
-          disabled={controlsDisabled || !preferencesReady || !branchReady}
-          title={
-            preferencesReady
-              ? `Start ${sourceMeta.label} with ${permissionMeta.label} permissions`
-              : 'Loading launch preferences'
-          }
-        >
-          {launching === 'agent' ? (
-            <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
-          ) : (
-            <Play className="h-3.5 w-3.5" />
-          )}
-          {launching === 'agent' ? 'Starting…' : 'Start'}
-        </Button>
+          <Button
+            type="submit"
+            size="sm"
+            className="h-9 shrink-0 font-mono"
+            disabled={
+              controlsDisabled ||
+              !preferencesReady ||
+              !modelReady ||
+              !branchReady
+            }
+            title={
+              preferencesReady && modelReady
+                ? `Start ${sourceMeta.label} with ${modelLabel} and ${permissionMeta.label} permissions`
+                : 'Loading launch preferences'
+            }
+          >
+            {launching === 'agent' ? (
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+            ) : (
+              <Play className="h-3.5 w-3.5" />
+            )}
+            {launching === 'agent' ? 'Starting…' : 'Start'}
+          </Button>
 
-        <button
-          type="button"
-          disabled={controlsDisabled}
-          onClick={() => void openShell()}
-          aria-label={
-            launching === 'shell'
-              ? `Opening shell in ${projectName}`
-              : `Open shell in ${projectName}`
-          }
-          title={launching === 'shell' ? 'Opening shell…' : 'Open shell'}
-          className="grid h-9 w-9 shrink-0 place-items-center rounded outline-none transition-[filter,transform] duration-150 hover:brightness-125 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
-          style={{ color: HUD.textDim }}
-        >
-          {launching === 'shell' ? (
-            <LoaderCircle className="h-4 w-4 animate-spin motion-reduce:animate-none" />
-          ) : (
-            <SquareTerminal className="h-4 w-4" />
-          )}
-        </button>
+          <button
+            type="button"
+            disabled={controlsDisabled}
+            onClick={() => void openShell()}
+            aria-label={
+              launching === 'shell'
+                ? `Opening shell in ${projectName}`
+                : `Open shell in ${projectName}`
+            }
+            title={launching === 'shell' ? 'Opening shell…' : 'Open shell'}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded outline-none transition-[filter,transform] duration-150 hover:brightness-125 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+            style={{ color: HUD.textDim }}
+          >
+            {launching === 'shell' ? (
+              <LoaderCircle className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+            ) : (
+              <SquareTerminal className="h-4 w-4" />
+            )}
+          </button>
+        </div>
       </div>
       {/* the keyboard grammar teaches itself (D21): ⌘T is a complete
           keyboard path, so its keys are visible where they apply */}
@@ -875,7 +1080,7 @@ export function AgentComposer({
       </p>
       <span className="sr-only" aria-live="polite">
         {launching === 'agent'
-          ? `Starting ${sourceMeta.label} with ${permissionMeta.label} permissions.`
+          ? `Starting ${sourceMeta.label} with ${modelLabel} and ${permissionMeta.label} permissions.`
           : launching === 'shell'
             ? `Opening a shell in ${projectName}.`
             : permissionSaveState === 'failed'

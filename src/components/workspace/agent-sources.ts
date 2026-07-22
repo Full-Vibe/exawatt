@@ -1,4 +1,8 @@
-import type { AgentPermissionMode, PtyHarness } from '@/types/electron';
+import type {
+  AgentModelCatalog,
+  AgentPermissionMode,
+  PtyHarness,
+} from '@/types/electron';
 
 export type AgentSourceId = Exclude<PtyHarness, 'shell'>;
 
@@ -46,6 +50,7 @@ export interface AgentSourceMeta {
     interactive: boolean;
     initialTask: boolean;
     exactResume: boolean;
+    modelSelection: boolean;
     permissionModes: readonly AgentPermissionMode[];
   };
 }
@@ -58,6 +63,7 @@ export const AGENT_SOURCE_META: Record<AgentSourceId, AgentSourceMeta> = {
       interactive: true,
       initialTask: true,
       exactResume: true,
+      modelSelection: true,
       permissionModes: AGENT_PERMISSION_MODE_ORDER,
     },
   },
@@ -68,6 +74,7 @@ export const AGENT_SOURCE_META: Record<AgentSourceId, AgentSourceMeta> = {
       interactive: true,
       initialTask: true,
       exactResume: true,
+      modelSelection: true,
       permissionModes: AGENT_PERMISSION_MODE_ORDER,
     },
   },
@@ -242,6 +249,38 @@ export async function loadAgentSourcePreferences(): Promise<AgentSourcePreferenc
   } catch {
     return { preferences: emptyPreferences(), usedSafeFallback: true };
   }
+}
+
+export async function loadAgentModelCatalog(
+  source: AgentSourceId,
+  projectDir: string
+): Promise<AgentModelCatalog> {
+  const listModels = window.electron?.pty?.listAgentModels;
+  if (listModels) {
+    try {
+      return await listModels(source, projectDir);
+    } catch {
+      // The launch remains available when an older bridge or CLI cannot
+      // describe its catalog; the UI labels that uncertainty explicitly.
+    }
+  }
+  return {
+    harness: source,
+    effectiveModel: source === 'claude' ? 'default' : null,
+    effectiveModelSource:
+      source === 'claude' ? 'account-default' : 'unavailable',
+    models:
+      source === 'claude'
+        ? [
+            {
+              id: 'default',
+              label: 'Account default',
+              description:
+                'Claude Code chooses the recommended model for your account.',
+            },
+          ]
+        : [],
+  };
 }
 
 export async function rememberAgentSource(

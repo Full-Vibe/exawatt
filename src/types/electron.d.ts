@@ -22,6 +22,25 @@ export interface PtyCreateOptions {
   restoredSubtitle?: string;
   /** Source-agnostic launch policy translated by the harness boundary. */
   permissionMode?: AgentPermissionMode;
+  /** Model choice resolved by the Agent Source and pinned for this launch. */
+  model?: string;
+}
+
+export interface AgentModelOption {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface AgentModelCatalog {
+  harness: Exclude<PtyHarness, 'shell'>;
+  effectiveModel: string | null;
+  effectiveModelSource:
+    | 'config'
+    | 'harness-recommended'
+    | 'account-default'
+    | 'unavailable';
+  models: AgentModelOption[];
 }
 
 export type PtyAttentionKind = 'bell' | 'turn-end';
@@ -109,6 +128,10 @@ export interface ClosedSessionEntry {
 
 export interface ElectronPtyApi {
   create: (options: PtyCreateOptions) => Promise<PtyCreateResult>;
+  listAgentModels: (
+    harness: Exclude<PtyHarness, 'shell'>,
+    cwd: string
+  ) => Promise<AgentModelCatalog>;
   write: (id: string, data: string) => Promise<void>;
   /** Explicit operator keystroke; terminal protocol replies do not call it. */
   engage: (id: string) => Promise<void>;

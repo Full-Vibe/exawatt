@@ -99,6 +99,9 @@ export interface WorkspaceTab {
    *  work-in-progress belongs to the TAB, so it survives the pane
    *  unmounting on tab/Project switches and (with content) restarts */
   draftTask?: string | null;
+  /** draft tabs only: the source model resolved or explicitly selected for
+   * this launch. It travels with the draft, never mutates harness config. */
+  draftModel?: string | null;
 }
 
 export type TabTitleKind = 'default' | 'operator';
@@ -231,6 +234,7 @@ export interface PersistedV6 {
        *  persists — an empty ⌘T tile still vanishes without ceremony */
       draftTask?: string | null;
       draftSource?: string | null;
+      draftModel?: string | null;
     }>;
   }>;
 }
@@ -478,6 +482,8 @@ export interface LaunchOptions {
   harness: PtyHarness;
   dir: string;
   permissionMode?: AgentPermissionMode;
+  /** model pinned for this launch after resolving the source's current default */
+  model?: string;
   /** optional first user task for a new interactive Agent Session */
   initialPrompt?: string;
   /** Resume one provider conversation by its durable harness identity. */
@@ -750,7 +756,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           tabs: g.tabs.map(raw => {
             // the persisted draft fields stay OFF non-draft tabs (and the
             // untyped draftSource string never reaches WorkspaceTab)
-            const { draftTask, draftSource, ...t } = raw;
+            const { draftTask, draftSource, draftModel, ...t } = raw;
             // a persisted draft (D28) restores as a draft: no process, no
             // resume identity — just the composer with the saved work
             if (t.lifecycle === 'draft') {
@@ -765,6 +771,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 draftSource: isAgentSourceId(draftSource ?? '')
                   ? (draftSource as AgentSourceId)
                   : null,
+                draftModel:
+                  typeof draftModel === 'string' &&
+                  draftModel.length <= 512 &&
+                  !/[\s\u0000-\u001f\u007f]/.test(draftModel)
+                    ? draftModel
+                    : null,
               };
             }
             const s = liveByDurableId.get(t.durableSessionId);
@@ -1027,6 +1039,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                   ? {
                       draftTask: tab.draftTask ?? null,
                       draftSource: tab.draftSource ?? null,
+                      draftModel: tab.draftModel ?? null,
                     }
                   : {}),
               };
@@ -1168,6 +1181,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           ...(opts.permissionMode
             ? { permissionMode: opts.permissionMode }
             : {}),
+          ...(opts.model?.trim() ? { model: opts.model.trim() } : {}),
           ...(opts.initialPrompt?.trim()
             ? { initialPrompt: opts.initialPrompt.trim() }
             : {}),
@@ -1257,7 +1271,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                   tabs: requested
                     ? grp.tabs.map(t =>
                         t.id === existing.id
-                          ? { ...t, draftSource: requested }
+                          ? {
+                              ...t,
+                              draftSource: requested,
+                              draftModel:
+                                t.draftSource === requested
+                                  ? (t.draftModel ?? null)
+                                  : null,
+                            }
                           : t
                       )
                     : grp.tabs,
@@ -1284,6 +1305,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         initialTask: null,
         draftSource: requested,
         draftTask: null,
+        draftModel: null,
       };
       setProjects(prev =>
         prev.map(grp =>
@@ -1305,7 +1327,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const updateDraft = useCallback(
     (
       tabId: string,
-      patch: { draftTask?: string; draftSource?: AgentSourceId }
+      patch: {
+        draftTask?: string;
+        draftSource?: AgentSourceId;
+        draftModel?: string | null;
+      }
     ) => {
       setProjects(prev => {
         const group = prev.find(g => g.tabs.some(t => t.id === tabId));
@@ -1319,9 +1345,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           patch.draftSource === undefined
             ? (tab.draftSource ?? null)
             : patch.draftSource;
+        const draftModel =
+          patch.draftModel === undefined
+            ? (tab.draftModel ?? null)
+            : patch.draftModel;
         if (
           draftTask === (tab.draftTask ?? null) &&
-          draftSource === (tab.draftSource ?? null)
+          draftSource === (tab.draftSource ?? null) &&
+          draftModel === (tab.draftModel ?? null)
         ) {
           return prev;
         }
@@ -1330,7 +1361,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             ? {
                 ...g,
                 tabs: g.tabs.map(t =>
-                  t.id === tabId ? { ...t, draftTask, draftSource } : t
+                  t.id === tabId
+                    ? { ...t, draftTask, draftSource, draftModel }
+                    : t
                 ),
               }
             : g

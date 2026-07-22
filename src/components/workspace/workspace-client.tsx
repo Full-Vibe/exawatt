@@ -1129,6 +1129,7 @@ export function WorkspaceClient() {
                                 projectName={project.name}
                                 initialSource={tab.draftSource ?? undefined}
                                 initialTask={tab.draftTask ?? undefined}
+                                initialModel={tab.draftModel ?? undefined}
                                 roadmapItems={launchRoadmapItems}
                                 onLaunch={opts =>
                                   launch({ ...opts, reuseTabId: tab.id })

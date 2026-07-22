@@ -30,6 +30,17 @@ Source recommendations are personal and reversible. Exawatt may remember the
 last source used per Project and fall back to personal recency, but must not
 silently hard-code one provider for every user or Project.
 
+Model choice is also visible and source-owned. Before a new local Agent starts,
+the composer resolves the selected harness's effective model and exposes its
+available choices. Codex supplies its installed model catalog and configured
+default; Claude Code contributes its layered setting, account-default alias,
+and supported aliases/custom entries. Exawatt pins the displayed choice on the
+launch command so the UI and process cannot drift between composition and
+spawn. An override is scoped to that new Agent and does not mutate the user's
+Codex or Claude configuration. If a harness cannot describe an exact model,
+Exawatt labels the harness default honestly and lets the harness remain the
+authority instead of inventing a model name.
+
 Launch permission policy is also visible, personal, and reversible. Exawatt
 uses one source-agnostic three-level contract:
 
@@ -60,7 +71,7 @@ tools they invoke. In particular, **YOLO** means the harness receives the broad
 machine authority available to the user's process. The UI must not describe a
 provider-enforced mode as an Exawatt guarantee.
 
-Create, attach, resume, branch, background, and delegation are source
+Model discovery, create, attach, resume, branch, background, and delegation are source
 capabilities. The UI should expose only capabilities an adapter actually
 supports; a unified attach/resume design remains a hypothesis for later
 iteration.

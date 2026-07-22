@@ -16,6 +16,12 @@ Project, while keeping the choice visible and changeable. A blank task starts an
 interactive Agent Session. Plain shells remain available as a separate Project
 tool.
 
+The adjacent model selector shows the model that will actually be requested for
+the new Agent. Exawatt resolves the current Codex catalog and configured model,
+or the current Claude Code setting/account default, without rewriting either
+harness's configuration. Picking another model overrides only this new Agent;
+the choice stays with a saved draft while you move between tabs.
+
 The adjacent permission selector controls how much autonomy the new Agent
 receives:
 

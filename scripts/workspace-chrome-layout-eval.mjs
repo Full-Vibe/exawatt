@@ -358,6 +358,7 @@ try {
       const sourceElement = document.querySelector(
         '[aria-label="Agent Source"]'
       );
+      const modelElement = document.querySelector('[aria-label="Agent model"]');
       const permissionElement = document.querySelector(
         '[aria-label="Agent permissions"]'
       );
@@ -366,6 +367,7 @@ try {
         !(panelElement instanceof HTMLElement) ||
         !(taskElement instanceof HTMLTextAreaElement) ||
         !(sourceElement instanceof HTMLElement) ||
+        !(modelElement instanceof HTMLElement) ||
         !(permissionElement instanceof HTMLElement)
       ) {
         throw new Error('Workspace chrome fixture did not render');
@@ -388,6 +390,7 @@ try {
           viewportWidth: window.innerWidth,
         },
         sourceWidth: sourceElement.getBoundingClientRect().width,
+        modelWidth: modelElement.getBoundingClientRect().width,
         permissionWidth: permissionElement.getBoundingClientRect().width,
         task: {
           width: taskRect.width,
@@ -428,9 +431,14 @@ try {
         `Agent task placeholder is clipped at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
-    if (metrics.sourceWidth < 147) {
+    if (metrics.sourceWidth < 135) {
       throw new Error(
         `Agent Source collapsed at ${width}px: ${JSON.stringify(metrics)}`
+      );
+    }
+    if (metrics.modelWidth < 167) {
+      throw new Error(
+        `Agent model collapsed at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
     if (metrics.permissionWidth < 79) {

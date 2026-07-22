@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld('electron', {
   },
   pty: {
     create: (options: unknown) => ipcRenderer.invoke('pty:create', options),
+    listAgentModels: (harness: string, cwd: string) =>
+      ipcRenderer.invoke('pty:list-agent-models', harness, cwd),
     write: (id: string, data: string) =>
       ipcRenderer.invoke('pty:write', id, data),
     engage: (id: string) => ipcRenderer.invoke('pty:engage', id),

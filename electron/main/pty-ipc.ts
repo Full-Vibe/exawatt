@@ -2,7 +2,8 @@ import { BrowserWindow, Notification, app, shell } from 'electron';
 import { handleTrusted } from './ipc-security';
 import { resolveContainedPath, isRepoRelativePath } from './contained-path';
 import { ptySessions } from './pty/session-manager';
-import type { PtyCreateOptions } from './pty/session-manager';
+import { defaultShell, type PtyCreateOptions } from './pty/session-manager';
+import { listAgentModels } from './pty/agent-models';
 import { contextSummarizer } from './pty/context-summarizer';
 import { createDiagnosticsLog } from './diagnostics-log';
 import { attentionMonitor } from './pty/attention-monitor';
@@ -209,6 +210,22 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       };
     }
   });
+  handleTrusted(
+    'pty:list-agent-models',
+    async (
+      _event,
+      harness: Exclude<PtyCreateOptions['harness'], 'shell'>,
+      cwd: string
+    ) => {
+      if (harness !== 'claude' && harness !== 'codex') {
+        throw new Error('Unsupported Agent Source');
+      }
+      if (typeof cwd !== 'string' || !cwd.trim() || cwd.includes('\0')) {
+        throw new Error('Invalid Project directory');
+      }
+      return listAgentModels(harness, cwd, await defaultShell());
+    }
+  );
   handleTrusted('pty:write', (_event, id: string, data: string) => {
     ptySessions.write(id, data);
     // engagement clears the flag — but only when the session is actually

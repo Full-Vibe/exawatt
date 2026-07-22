@@ -121,6 +121,46 @@ describe('buildHarnessCommand', () => {
     );
   });
 
+  it('pins a shell-quoted model for fresh and resumed Agents', () => {
+    expect(
+      buildHarnessCommand(
+        'codex',
+        null,
+        false,
+        undefined,
+        undefined,
+        'unrestricted',
+        'gpt-5.6-terra'
+      )
+    ).toBe(
+      "codex --dangerously-bypass-approvals-and-sandbox --model 'gpt-5.6-terra'"
+    );
+    expect(
+      buildHarnessCommand(
+        'claude',
+        '11111111-1111-4111-8111-111111111111',
+        true,
+        undefined,
+        undefined,
+        'prompt',
+        'claude-opus-4-7[1m]'
+      )
+    ).toBe(
+      "claude --permission-mode default --model 'claude-opus-4-7[1m]' --resume 11111111-1111-4111-8111-111111111111"
+    );
+    expect(() =>
+      buildHarnessCommand(
+        'codex',
+        null,
+        false,
+        undefined,
+        undefined,
+        'prompt',
+        'bad model'
+      )
+    ).toThrow('Invalid Agent model');
+  });
+
   it('rejects oversized tasks and tasks on exact resume', () => {
     expect(() =>
       buildHarnessCommand('codex', null, false, undefined, 'x'.repeat(8_001))

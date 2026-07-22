@@ -60,6 +60,8 @@ export interface PtyCreateOptions {
   restoredSubtitle?: string;
   /** Source-agnostic launch policy translated to provider CLI flags. */
   permissionMode?: AgentPermissionMode;
+  /** Model choice resolved by the source catalog and pinned for this launch. */
+  model?: string;
 }
 
 export interface PtySessionInfo {
@@ -240,7 +242,8 @@ export class PtySessionManager extends EventEmitter {
               !!options.resumeSessionId,
               testHarnessExecutable,
               options.initialPrompt,
-              options.permissionMode
+              options.permissionMode,
+              options.model
             ),
           ];
 

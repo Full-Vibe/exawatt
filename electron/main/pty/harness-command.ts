@@ -17,7 +17,8 @@ export function buildHarnessCommand(
   resume: boolean,
   executable?: string,
   initialPrompt?: string,
-  permissionMode: AgentPermissionMode = 'unrestricted'
+  permissionMode: AgentPermissionMode = 'unrestricted',
+  model?: string
 ): string {
   if (harnessSessionId && !SAFE_SESSION_ID.test(harnessSessionId)) {
     throw new Error('Invalid harness session ID');
@@ -35,6 +36,14 @@ export function buildHarnessCommand(
   if (!AGENT_PERMISSION_MODES.has(permissionMode)) {
     throw new Error('Invalid Agent permission mode');
   }
+  const selectedModel = model?.trim() ?? '';
+  if (
+    selectedModel &&
+    (selectedModel.length > 512 ||
+      /[\s\u0000-\u001f\u007f]/.test(selectedModel))
+  ) {
+    throw new Error('Invalid Agent model');
+  }
   const command = executable ? shellQuote(executable) : harness;
   const permissionFlags =
     harness === 'claude'
@@ -50,7 +59,10 @@ export function buildHarnessCommand(
               'approvals_reviewer="auto_review"'
             )}`
           : '--dangerously-bypass-approvals-and-sandbox';
-  const invocation = `${command} ${permissionFlags}`;
+  const modelFlag = selectedModel
+    ? ` --model ${shellQuote(selectedModel)}`
+    : '';
+  const invocation = `${command} ${permissionFlags}${modelFlag}`;
   if (resume) {
     if (!harnessSessionId)
       throw new Error('Exact session ID required to resume');

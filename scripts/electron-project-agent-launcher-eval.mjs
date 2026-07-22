@@ -40,6 +40,10 @@ for (const source of ['claude', 'codex']) {
   writeFileSync(
     executable,
     `#!/bin/sh
+if [ "$1" = "debug" ] && [ "$2" = "models" ]; then
+  printf '%s\\n' '{"models":[{"slug":"eval-codex-sol","display_name":"Eval Codex Sol","description":"Frontier evaluator model.","visibility":"list","priority":1},{"slug":"eval-codex-terra","display_name":"Eval Codex Terra","description":"Balanced evaluator model.","visibility":"list","priority":2}]}'
+  exit 0
+fi
 if [ "$1" = "-p" ]; then printf 'fixture context'; exit 0; fi
 printf 'FAKE_${source.toUpperCase()}_ARGS:'
 printf '<%s>' "$@"
@@ -103,6 +107,18 @@ async function waitForLiveSessionCount(page, count) {
   throw new Error(`Timed out waiting for ${count} live Sessions`);
 }
 
+async function waitForClosedSessionCount(page, count) {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const entries = await page.evaluate(
+      async () => (await window.electron?.pty?.closedSessions?.()) ?? []
+    );
+    if (entries.length === count) return entries;
+    await page.waitForTimeout(50);
+  }
+  throw new Error(`Timed out waiting for ${count} closed Sessions`);
+}
+
 // close grammar (D27): one Close per tab; a STARTED agent pops the in-app
 // confirm, where ⏎ presses the default Close button.
 async function closeTab(page, title) {
@@ -157,9 +173,7 @@ try {
       await page.screenshot({ path: join(output, '01-project-chooser.png') });
 
       await page.getByRole('button', { name: 'Browse Folder' }).click();
-      await page
-        .locator('[data-agent-composer]')
-        .waitFor();
+      await page.locator('[data-agent-composer]').waitFor();
       check(
         'Browse opens an inert Project',
         (await sessions(page)).length === 0
@@ -194,11 +208,13 @@ try {
           board: document
             .querySelector('[data-spatial-board]')
             ?.getAttribute('data-board-projects'),
-          zones: Array.from(
-            document.querySelectorAll('[data-board-zone]')
-          ).map(z => z.getAttribute('data-board-zone')),
+          zones: Array.from(document.querySelectorAll('[data-board-zone]')).map(
+            z => z.getAttribute('data-board-zone')
+          ),
         }));
-        console.log(`[project-launcher] spatial state: ${JSON.stringify(state)}`);
+        console.log(
+          `[project-launcher] spatial state: ${JSON.stringify(state)}`
+        );
         await page.screenshot({ path: join(output, 'debug-spatial.png') });
         throw error;
       }
@@ -233,11 +249,20 @@ try {
 
       await page.keyboard.press('Control+Meta+1');
       await page.waitForURL('**/workspace**');
-      await page
-        .locator('[data-agent-composer]')
-        .waitFor();
+      await page.locator('[data-agent-composer]').waitFor();
 
       const firstTask = "Review the user's auth flow";
+      await page.waitForFunction(() =>
+        document
+          .querySelector('[aria-label="Agent model"]')
+          ?.textContent?.includes('Account default')
+      );
+      check(
+        'the composer shows the effective Claude model before launch',
+        (await page.getByLabel('Agent model').innerText()).includes(
+          'Account default'
+        )
+      );
       check(
         'new Project and source pair visibly defaults to YOLO',
         (await page.getByLabel('Agent permissions').innerText()).includes(
@@ -298,6 +323,8 @@ try {
         '<--dangerously-skip-permissions>'
       );
       check('Claude Code receives the visible YOLO policy', true);
+      await waitForBuffer(page, current[0].id, '<--model><default>');
+      check('Claude Code receives the visible model choice', true);
 
       await page.keyboard.press('Control+Meta+3');
       await page.waitForURL(
@@ -349,6 +376,11 @@ try {
         path: join(output, '04-source-options.png'),
       });
       await codexOption.click();
+      await page.waitForFunction(() =>
+        document
+          .querySelector('[aria-label="Agent model"]')
+          ?.textContent?.includes('Eval Codex Sol')
+      );
       check(
         'changing Agent Source keeps one trigger glyph',
         (await sourceTrigger.locator('[data-slot="harness-glyph"]').count()) ===
@@ -359,6 +391,30 @@ try {
         (await page.getByLabel('Agent permissions').innerText()).includes(
           'YOLO'
         )
+      );
+      const modelTrigger = page.getByLabel('Agent model');
+      check(
+        'Codex exposes the installed catalog default beside Agent Source',
+        (await modelTrigger.innerText()).includes('Eval Codex Sol')
+      );
+      await modelTrigger.click();
+      const modelMenu = page.getByRole('listbox');
+      await modelMenu.waitFor();
+      check(
+        'model choices explain their role and mark the current default',
+        (await modelMenu.innerText()).includes('Frontier evaluator model') &&
+          (await modelMenu.innerText()).includes('Balanced evaluator model') &&
+          (await modelMenu.innerText()).includes('DEFAULT')
+      );
+      await page.screenshot({
+        path: join(output, '04-model-options.png'),
+      });
+      await page
+        .getByRole('option', { name: /Eval Codex Terra.*Balanced evaluator/i })
+        .click();
+      check(
+        'the operator can override the model for one new Agent',
+        (await modelTrigger.innerText()).includes('Eval Codex Terra')
       );
       await page.getByLabel('Agent permissions').focus();
       await page.keyboard.press('Space');
@@ -428,6 +484,8 @@ try {
       check('Codex receives its first task through the launch contract', true);
       await waitForBuffer(page, codex.id, '<approvals_reviewer="auto_review">');
       check('Codex receives the visible Auto-review policy', true);
+      await waitForBuffer(page, codex.id, '<--model><eval-codex-terra>');
+      check('Codex receives the visible model override', true);
 
       await page.keyboard.press('Meta+KeyK');
       const palette = page.locator('[cmdk-list]');
@@ -477,9 +535,9 @@ try {
       await waitForLiveSessionCount(page, 1);
       await closeTab(page, 'Codex');
       await waitForLiveSessionCount(page, 0);
-      const ledger = await page.evaluate(
-        async () => (await window.electron?.pty?.closedSessions?.()) ?? []
-      );
+      // Tab removal is intentionally optimistic; wait for the async archive
+      // transaction instead of racing it after the chrome disappears.
+      const ledger = await waitForClosedSessionCount(page, 2);
       check(
         'both closed Sessions land in the Recently-closed ledger',
         ledger.length === 2
@@ -510,9 +568,7 @@ try {
       );
 
       await page.reload({ waitUntil: 'networkidle' });
-      await page
-        .locator('[data-agent-composer]')
-        .waitFor();
+      await page.locator('[data-agent-composer]').waitFor();
       check(
         'inert Project survives renderer reload',
         (await sessions(page)).length === 0
@@ -564,9 +620,7 @@ try {
     async (_app, page) => {
       page.setDefaultTimeout(20_000);
       await page.locator('[data-command-altitude]').waitFor();
-      await page
-        .locator('[data-agent-composer]')
-        .waitFor();
+      await page.locator('[data-agent-composer]').waitFor();
       check(
         'source recommendation survives a full app restart',
         (await page.getByLabel('Agent Source').innerText()).includes('Codex')
@@ -594,9 +648,7 @@ try {
         (await page.getByRole('checkbox').count()) === 2
       );
       await page.getByRole('button', { name: 'Import 2' }).click();
-      await page
-        .locator('[data-agent-composer]')
-        .waitFor();
+      await page.locator('[data-agent-composer]').waitFor();
       check(
         'importing Projects starts no process',
         (await sessions(page)).length === 0
@@ -613,12 +665,10 @@ try {
       // ⌘T ⏎ then ⌘W (D24): a bare agent never given work DISCARDS — it
       // must not pollute the Recently-closed ledger. (bravo is empty, so
       // its pane composer is already inline.)
-      await page
-        .getByLabel('Initial task for the new Agent')
-        .press('Enter');
-      const bare = (
-        await waitForLiveSessionCount(page, 1)
-      ).find(session => !session.exited);
+      await page.getByLabel('Initial task for the new Agent').press('Enter');
+      const bare = (await waitForLiveSessionCount(page, 1)).find(
+        session => !session.exited
+      );
       await closeTab(page, bare.title);
       await waitForLiveSessionCount(page, 0);
       const ledgerAfterDiscard = await page.evaluate(

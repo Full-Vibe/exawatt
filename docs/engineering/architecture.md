@@ -206,7 +206,10 @@ Built:
   composer whose optional first task and source-agnostic launch-permission
   policy cross the launch boundary as data. Personal permission defaults are
   persisted by Project and harness; the PTY/source boundary translates
-  `prompt`, `auto`, and `unrestricted` into current Claude Code and Codex flags
+  `prompt`, `auto`, and `unrestricted` into current Claude Code and Codex
+  flags. The same boundary discovers each local harness's effective model and
+  catalog, keeps that model visible beside the source, and passes a per-Agent
+  override as launch data without rewriting harness configuration
 - a source-agnostic Project catalog derived from durable workspace state. The
   Electron workspace save broadcasts an authoritative change event through the
   preload boundary; FleetProvider refreshes the catalog and local Session
