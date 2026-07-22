@@ -10,6 +10,13 @@ if (process.platform !== 'darwin') {
   throw new Error('The native navigation evaluator requires macOS.');
 }
 
+if (!process.argv.includes('--allow-focus')) {
+  console.log(
+    'SKIP native navigation: this evaluator foregrounds Exawatt and drives the macOS pointer. Re-run with --allow-focus when interruption is acceptable.'
+  );
+  process.exit(0);
+}
+
 const base = process.env.EXA_BASE || 'http://localhost:7000';
 const userData = mkdtempSync(join(tmpdir(), 'exawatt-native-nav-'));
 const app = await electron.launch({
@@ -19,6 +26,7 @@ const app = await electron.launch({
     ...process.env,
     NODE_ENV: 'development',
     EXAWATT_TEST: '1',
+    EXAWATT_WINDOW_MODE: 'foreground',
     EXAWATT_USER_DATA: userData,
     EXAWATT_DEV_URL: `${base}/workspace`,
   },

@@ -32,9 +32,24 @@ import type {
 } from './auth-coordinator';
 import { createElectronAuthCookies } from './auth-cookies';
 import type { AuthDiagnosticRecorder } from './auth-diagnostics';
+import { resolveWindowLaunchMode } from './window-launch-mode';
 
 const isDev = process.env.NODE_ENV === 'development';
+const isTest = process.env.EXAWATT_TEST === '1';
+const windowLaunchMode = resolveWindowLaunchMode({
+  isDevelopment: isDev,
+  isTest,
+  override: process.env.EXAWATT_WINDOW_MODE,
+});
 const execFileAsync = promisify(execFile);
+
+// Electron's normal macOS activation policy can take keyboard focus before a
+// BrowserWindow exists. Accessory mode prevents that initial app activation;
+// an inactive development window promotes itself back to a normal app only
+// after the operator deliberately clicks it. Hidden test runs never promote.
+if (process.platform === 'darwin' && windowLaunchMode !== 'foreground') {
+  app.setActivationPolicy('accessory');
+}
 
 // Prevent Electron from constructing a default menu while the app is booting.
 // Exawatt installs its real command menu once command services are available.
@@ -85,6 +100,7 @@ let safeElectronAuthError: (error: unknown) => {
   message: error instanceof Error ? error.message : 'Authentication failed.',
 });
 let startupComplete = false;
+let inactiveLaunchPromoted = false;
 let startupStage: StartupStage = {
   progress: 0.08,
   label: 'Opening command surface',
@@ -386,11 +402,9 @@ function updateStartupScreen(stage: StartupStage): void {
     .catch(() => {});
 }
 
-/** Harness-driven runs (evals, agent screenshot loops) open on a NON-primary
- *  display when one exists, so automated UI checks stop popping over the
- *  operator's working screen (operator request, 2026-07-20). Set
- *  EXAWATT_TEST_SCREEN=primary to opt back in; production launches are
- *  unaffected. */
+/** Explicitly visible harness runs open on a NON-primary display when one
+ *  exists. Normal automated runs are hidden; this remains useful with
+ *  EXAWATT_WINDOW_MODE=inactive|foreground. */
 function testWindowPosition(): { x: number; y: number } | undefined {
   if (process.env.EXAWATT_TEST !== '1') return undefined;
   if (process.env.EXAWATT_TEST_SCREEN === 'primary') return undefined;
@@ -410,8 +424,11 @@ function testWindowPosition(): { x: number; y: number } | undefined {
 }
 
 function createWindow(initialUrl: string): void {
+  const showAtCreation =
+    windowLaunchMode === 'foreground' || inactiveLaunchPromoted;
   mainWindow = new BrowserWindow({
     ...(testWindowPosition() ?? {}),
+    show: showAtCreation,
     width: 1400,
     height: 900,
     // Keep the floor BELOW common tiling cells: AX window managers (Divvy,
@@ -432,8 +449,22 @@ function createWindow(initialUrl: string): void {
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
+      // Hidden eval windows still need deterministic timers, PTY rendering,
+      // screenshots, and WebGL frames while Playwright drives them.
+      backgroundThrottling: windowLaunchMode !== 'hidden',
     },
   });
+
+  if (!showAtCreation && windowLaunchMode === 'inactive') {
+    const inactiveWindow = mainWindow;
+    inactiveWindow.once('ready-to-show', () => {
+      if (!inactiveWindow.isDestroyed()) inactiveWindow.showInactive();
+    });
+    inactiveWindow.once('focus', () => {
+      inactiveLaunchPromoted = true;
+      if (process.platform === 'darwin') app.setActivationPolicy('regular');
+    });
+  }
 
   const webContentsId = mainWindow.webContents.id;
   const clearCheckpointOwner = () =>
