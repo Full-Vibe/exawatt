@@ -35,7 +35,10 @@ surfaced in dogfood (ENG-015 S5). In code the concept was also mislabeled
 - Open/browse UX: a native directory picker (⌘N, and a Browse control) opens a
   new Project; a ⌘K Projects group opens known Projects even with no live
   session. A Project whose root_path is absent on the current machine offers
-  "locate on this machine" — re-bind the single root_path via the picker.
+  "locate on this machine" — re-bind the single root_path via the picker. On
+  macOS the picker is a foregrounded standalone panel rather than a sheet:
+  Finder/AppKit delays must not disable the entire command surface. Picker
+  requests are single-flight so repeated gestures cannot stack native panels.
 
 ## Consequences
 

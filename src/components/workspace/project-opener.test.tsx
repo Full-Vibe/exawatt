@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectOpener } from './project-opener';
 
@@ -58,8 +64,67 @@ describe('Project opener', () => {
     expect(window.electron?.pty).toBeUndefined();
   });
 
+  it('releases the in-app modal before opening the native folder picker', async () => {
+    const onOpenChange = vi.fn();
+    vi.mocked(window.electron!.dialog!.openDirectory).mockImplementation(
+      async () => {
+        expect(onOpenChange).toHaveBeenCalledWith(false);
+        return null;
+      }
+    );
+    render(
+      <ProjectOpener
+        open
+        onOpenChange={onOpenChange}
+        workspaceProjects={[]}
+        onOpenProject={vi.fn(async () => true)}
+        onImportProjects={vi.fn(async () => true)}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Browse Folder' }));
+    await waitFor(() =>
+      expect(window.electron!.dialog!.openDirectory).toHaveBeenCalledOnce()
+    );
+    await waitFor(() =>
+      expect(onOpenChange.mock.calls.map(([value]) => value)).toEqual([
+        false,
+        true,
+      ])
+    );
+  });
+
+  it('does not stack native pickers when Browse is clicked repeatedly', async () => {
+    let finish!: (path: string | null) => void;
+    vi.mocked(window.electron!.dialog!.openDirectory).mockImplementation(
+      () =>
+        new Promise(resolve => {
+          finish = resolve;
+        })
+    );
+    render(
+      <ProjectOpener
+        open
+        onOpenChange={vi.fn()}
+        workspaceProjects={[]}
+        onOpenProject={vi.fn(async () => true)}
+        onImportProjects={vi.fn(async () => true)}
+      />
+    );
+
+    const browse = screen.getByRole('button', { name: 'Browse Folder' });
+    fireEvent.click(browse);
+    fireEvent.click(browse);
+    await waitFor(() =>
+      expect(window.electron!.dialog!.openDirectory).toHaveBeenCalledOnce()
+    );
+    await act(async () => finish(null));
+  });
+
   it('scans a parent folder and imports the reviewed selection', async () => {
-    vi.mocked(window.electron!.dialog!.openDirectory).mockResolvedValue('/parent');
+    vi.mocked(window.electron!.dialog!.openDirectory).mockResolvedValue(
+      '/parent'
+    );
     vi.mocked(window.electron!.projects!.scanDirectory).mockResolvedValue({
       ok: true,
       candidates: [

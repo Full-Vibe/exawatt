@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -52,12 +52,21 @@ export function ProjectOpener({
     null
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [nativePicker, setNativePicker] = useState<
+    'browse' | 'import' | 'locate' | null
+  >(null);
+  const nativePickerActive = useRef(false);
 
   useEffect(() => {
     if (!open) {
-      setQuery('');
-      setCandidates(null);
-      setError(null);
+      // A native picker temporarily replaces this modal. Preserve its state
+      // while control belongs to the OS so cancel/error can return the user to
+      // exactly the chooser they left.
+      if (!nativePicker) {
+        setQuery('');
+        setCandidates(null);
+        setError(null);
+      }
       return;
     }
     let cancelled = false;
@@ -78,7 +87,7 @@ export function ProjectOpener({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, nativePicker]);
 
   const projects = useMemo(() => {
     const library = mergeProjectLibrary(synced, workspaceProjects, recents);
@@ -92,56 +101,144 @@ export function ProjectOpener({
       : library;
   }, [synced, workspaceProjects, recents, query]);
 
+  const pickDirectory = async (
+    kind: NonNullable<typeof nativePicker>,
+    title: string
+  ): Promise<{ started: boolean; path: string | null }> => {
+    if (nativePickerActive.current) return { started: false, path: null };
+    nativePickerActive.current = true;
+    setNativePicker(kind);
+    setError(null);
+    onOpenChange(false);
+
+    // Let Radix release its focus lock before AppKit takes keyboard control.
+    // Keeping both modal layers active was the source of the apparent hang.
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    try {
+      return {
+        started: true,
+        path: (await window.electron?.dialog?.openDirectory(title)) ?? null,
+      };
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'The folder picker could not be opened.'
+      );
+      return { started: true, path: null };
+    }
+  };
+
+  const finishDirectoryPick = (reopen: boolean) => {
+    nativePickerActive.current = false;
+    if (reopen) onOpenChange(true);
+    setNativePicker(null);
+  };
+
   const choose = async (project: ProjectLibraryEntry) => {
     let dir = project.dir;
     const exists = await window.electron?.dialog?.pathExists(dir);
     if (exists === false) {
-      const picked = await window.electron?.dialog?.openDirectory(
-        `Locate ${project.name}`
-      );
-      if (!picked) return;
-      const resolved = await window.electron?.projects?.resolve(picked);
-      if (!resolved) return;
-      if (!resolved.ok) {
-        setError(resolved.error);
+      const pick = await pickDirectory('locate', `Locate ${project.name}`);
+      if (!pick.started) return;
+      if (!pick.path) {
+        finishDirectoryPick(true);
         return;
       }
-      dir = resolved.projectDir;
-      if (project.registryId) {
-        await rebindProjectPath(project.registryId, dir).catch(() => {});
+      let opened = false;
+      try {
+        const resolved = await window.electron?.projects?.resolve(pick.path);
+        if (!resolved) return;
+        if (!resolved.ok) {
+          setError(resolved.error);
+          return;
+        }
+        dir = resolved.projectDir;
+        if (project.registryId) {
+          await rebindProjectPath(project.registryId, dir).catch(() => {});
+        }
+        opened = await onOpenProject(dir);
+      } catch (cause) {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : 'The selected Project could not be opened.'
+        );
+      } finally {
+        finishDirectoryPick(!opened);
       }
+      return;
     }
-    if (await onOpenProject(dir)) onOpenChange(false);
+    try {
+      if (await onOpenProject(dir)) onOpenChange(false);
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'The selected Project could not be opened.'
+      );
+    }
   };
 
   const browse = async () => {
-    const picked = await window.electron?.dialog?.openDirectory('Open Project');
-    if (picked && (await onOpenProject(picked))) onOpenChange(false);
+    const pick = await pickDirectory('browse', 'Open Project');
+    if (!pick.started) return;
+    if (!pick.path) {
+      finishDirectoryPick(true);
+      return;
+    }
+    let opened = false;
+    try {
+      opened = await onOpenProject(pick.path);
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'The selected Project could not be opened.'
+      );
+    } finally {
+      finishDirectoryPick(!opened);
+    }
   };
 
   const beginImport = async () => {
-    const root = await window.electron?.dialog?.openDirectory(
+    const pick = await pickDirectory(
+      'import',
       'Choose a folder containing Projects'
     );
-    if (!root) return;
-    setLoading(true);
-    setError(null);
-    const result = await window.electron?.projects?.scanDirectory(root);
-    setLoading(false);
-    if (!result) return;
-    if (!result.ok) {
-      setError(result.error);
+    if (!pick.started) return;
+    if (!pick.path) {
+      finishDirectoryPick(true);
       return;
     }
-    setCandidates(result.candidates);
-    const suggested = result.candidates.filter(item => item.suggested);
-    setSelected(
-      new Set(
-        (suggested.length > 0 ? suggested : result.candidates).map(
-          item => item.projectDir
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await window.electron?.projects?.scanDirectory(pick.path);
+      if (!result) return;
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setCandidates(result.candidates);
+      const suggested = result.candidates.filter(item => item.suggested);
+      setSelected(
+        new Set(
+          (suggested.length > 0 ? suggested : result.candidates).map(
+            item => item.projectDir
+          )
         )
-      )
-    );
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Projects could not be discovered in that folder.'
+      );
+    } finally {
+      setLoading(false);
+      finishDirectoryPick(true);
+    }
   };
 
   const finishImport = async () => {
@@ -360,8 +457,9 @@ export function ProjectOpener({
             >
               <button
                 type="button"
+                disabled={nativePicker !== null}
                 onClick={() => void browse()}
-                className="inline-flex h-8 items-center gap-2 rounded border px-3 font-mono text-xs outline-none hover:bg-white/5 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                className="inline-flex h-8 items-center gap-2 rounded border px-3 font-mono text-xs outline-none hover:bg-white/5 disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan"
                 style={{
                   color: HUD.text,
                   borderColor: 'rgba(80,230,255,0.25)',
@@ -371,8 +469,9 @@ export function ProjectOpener({
               </button>
               <button
                 type="button"
+                disabled={nativePicker !== null}
                 onClick={() => void beginImport()}
-                className="inline-flex h-8 items-center gap-2 rounded px-3 font-mono text-xs outline-none hover:bg-white/5 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                className="inline-flex h-8 items-center gap-2 rounded px-3 font-mono text-xs outline-none hover:bg-white/5 disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan"
                 style={{ color: HUD.textDim }}
               >
                 <FolderInput className="h-3.5 w-3.5" /> Import Folder

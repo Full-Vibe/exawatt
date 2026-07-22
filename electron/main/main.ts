@@ -33,6 +33,7 @@ import type {
 import { createElectronAuthCookies } from './auth-cookies';
 import type { AuthDiagnosticRecorder } from './auth-diagnostics';
 import { resolveWindowLaunchMode } from './window-launch-mode';
+import { createDirectoryPicker } from './directory-picker';
 
 const isDev = process.env.NODE_ENV === 'development';
 const isTest = process.env.EXAWATT_TEST === '1';
@@ -108,6 +109,13 @@ let startupStage: StartupStage = {
 };
 const pendingCheckpoints = new Map<string, (ok: boolean) => void>();
 const workspaceCheckpointOwners = new Set<number>();
+const openDirectoryPicker = createDirectoryPicker({
+  platform: process.platform,
+  showOpenDialog: (parent, options) =>
+    parent
+      ? dialog.showOpenDialog(parent, options)
+      : dialog.showOpenDialog(options),
+});
 
 interface BuildInfo {
   sha: string;
@@ -735,7 +743,7 @@ function registerAuthIPC(): void {
 function registerDialogIPC(): void {
   handleTrusted(
     'dialog:openDirectory',
-    async (_event, requestedTitle?: string) => {
+    async (event, requestedTitle?: string) => {
       // test hook: skip the native modal (which automation can't drive) and
       // return a fixed directory, so ⌘N / Browse can be exercised end-to-end.
       // Double-gated (like the userData redirect) so a stray env var in a normal
@@ -743,18 +751,10 @@ function registerDialogIPC(): void {
       if (process.env.EXAWATT_TEST && process.env.EXAWATT_TEST_DIR) {
         return process.env.EXAWATT_TEST_DIR;
       }
-      const options: Electron.OpenDialogOptions = {
-        title:
-          typeof requestedTitle === 'string' && requestedTitle.length <= 80
-            ? requestedTitle
-            : 'Open project directory',
-        properties: ['openDirectory', 'createDirectory'],
-      };
-      const result = mainWindow
-        ? await dialog.showOpenDialog(mainWindow, options)
-        : await dialog.showOpenDialog(options);
-      if (result.canceled || result.filePaths.length === 0) return null;
-      return result.filePaths[0];
+      return openDirectoryPicker(
+        BrowserWindow.fromWebContents(event.sender),
+        requestedTitle
+      );
     }
   );
   // does a path exist on THIS machine? — detects a synced Project whose
