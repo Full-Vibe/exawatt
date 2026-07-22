@@ -173,3 +173,16 @@ export function placeProjectBeside<P extends { dir: string }>(
   if (next.every((project, i) => project === projects[i])) return null;
   return next;
 }
+
+/** Chrome close policy (D24): closing a tab activates its RIGHT neighbor;
+ *  closing the rightmost activates the new rightmost. Pure. */
+export function nextActiveTabAfterClose(
+  tabs: ReadonlyArray<{ id: string }>,
+  closedId: string
+): string | null {
+  const index = tabs.findIndex(tab => tab.id === closedId);
+  const remaining = tabs.filter(tab => tab.id !== closedId);
+  if (remaining.length === 0) return null;
+  if (index === -1) return remaining[remaining.length - 1].id;
+  return remaining[Math.min(index, remaining.length - 1)].id;
+}

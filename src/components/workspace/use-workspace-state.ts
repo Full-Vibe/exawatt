@@ -21,6 +21,7 @@ import { pickDistinctColor, projectColor } from './project-colors';
 import {
   moveProjectInList,
   moveTabWithinProject,
+  nextActiveTabAfterClose,
   nextTabInRing,
   placeProjectBeside,
   placeTabBeside,
@@ -820,26 +821,28 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           const tabs = g.tabs
             .filter(tab => tab.lifecycle !== 'draft')
             .map(tab => {
-            const stopped =
-              cleanShutdown &&
-              (shutdownTargetsRef.current.has(tab.durableSessionId) ||
-                tabIsLive(tab) ||
-                tab.lifecycle === 'resuming');
-            return {
-              id: tab.id,
-              durableSessionId: tab.durableSessionId,
-              harness: tab.harness,
-              title: tab.title,
-              cwd: tab.cwd,
-              sessionId: stopped ? null : tab.sessionId,
-              harnessSessionId: tab.harnessSessionId,
-              roadmapItemId: tab.roadmapItemId,
-              lifecycle: stopped ? ('stopped-clean' as const) : tab.lifecycle,
-              exitCode: tab.exitCode,
-              initialTask: tab.initialTask ?? null,
-              contextSummary:
-                summariesRef.current[tab.durableSessionId] ?? null,
-            };
+              const stopped =
+                cleanShutdown &&
+                (shutdownTargetsRef.current.has(tab.durableSessionId) ||
+                  tabIsLive(tab) ||
+                  tab.lifecycle === 'resuming');
+              return {
+                id: tab.id,
+                durableSessionId: tab.durableSessionId,
+                harness: tab.harness,
+                title: tab.title,
+                cwd: tab.cwd,
+                sessionId: stopped ? null : tab.sessionId,
+                harnessSessionId: tab.harnessSessionId,
+                roadmapItemId: tab.roadmapItemId,
+                lifecycle: stopped
+                  ? ('stopped-clean' as const)
+                  : tab.lifecycle,
+                exitCode: tab.exitCode,
+                initialTask: tab.initialTask ?? null,
+                contextSummary:
+                  summariesRef.current[tab.durableSessionId] ?? null,
+              };
             });
           return {
             dir: g.dir,
@@ -1098,18 +1101,18 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     []
   );
 
-  /** remove a tab from the layout (shared by every close path) */
+  /** remove a tab from the layout (shared by every close path); closing
+   *  the active tab activates its right neighbor, like Chrome (D24) */
   const removeTabFromLayout = useCallback((tabId: string) => {
     setPinnedTabId(cur => (cur === tabId ? null : cur));
     setProjects(prev =>
       prev.map(grp => {
         if (!grp.tabs.some(t => t.id === tabId)) return grp;
-        const tabs = grp.tabs.filter(t => t.id !== tabId);
         const activeTabId =
           grp.activeTabId === tabId
-            ? (tabs[tabs.length - 1]?.id ?? null)
+            ? nextActiveTabAfterClose(grp.tabs, tabId)
             : grp.activeTabId;
-        return { ...grp, tabs, activeTabId };
+        return { ...grp, tabs: grp.tabs.filter(t => t.id !== tabId), activeTabId };
       })
     );
   }, []);

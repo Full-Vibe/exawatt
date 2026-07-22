@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   moveProjectInList,
   moveTabWithinProject,
+  nextActiveTabAfterClose,
   nextTabInRing,
   placeProjectBeside,
   placeTabBeside,
@@ -196,5 +197,29 @@ describe('arrangement (D20)', () => {
     const input = projects();
     const moved = moveTabWithinProject(input, 'a2', 1);
     expect(moved?.[1]).toBe(input[1]);
+  });
+});
+
+describe('nextActiveTabAfterClose (D24 chrome close policy)', () => {
+  const tabs = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+  it('activates the right neighbor when closing a middle tab', () => {
+    expect(nextActiveTabAfterClose(tabs, 'b')).toBe('c');
+  });
+
+  it('activates the right neighbor when closing the first tab', () => {
+    expect(nextActiveTabAfterClose(tabs, 'a')).toBe('b');
+  });
+
+  it('activates the new rightmost when closing the last tab', () => {
+    expect(nextActiveTabAfterClose(tabs, 'c')).toBe('b');
+  });
+
+  it('returns null when the closed tab was the only one', () => {
+    expect(nextActiveTabAfterClose([{ id: 'a' }], 'a')).toBeNull();
+  });
+
+  it('falls back to the rightmost for an unknown id', () => {
+    expect(nextActiveTabAfterClose(tabs, 'ghost')).toBe('c');
   });
 });

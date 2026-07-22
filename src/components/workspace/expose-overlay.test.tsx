@@ -264,4 +264,41 @@ describe('Sessions overview', () => {
       delete (window as unknown as { electron?: unknown }).electron;
     }
   });
+
+  it('a ⌘T draft tile reads as a draft, never as stopped (D24)', () => {
+    const draftProject: Project = {
+      dir: '/two',
+      name: 'Two',
+      color: '#55EAD4',
+      activeTabId: 'tab-d',
+      tabs: [
+        {
+          id: 'tab-d',
+          durableSessionId: 'durable-d',
+          harness: 'claude',
+          title: 'New tab',
+          cwd: '/two',
+          sessionId: null,
+          harnessSessionId: null,
+          resumeState: 'identity-missing',
+          lifecycle: 'draft',
+          exitCode: null,
+          roadmapItemId: null,
+          initialTask: null,
+        },
+      ],
+    };
+    render(
+      <ExposeOverlay
+        projects={[draftProject]}
+        summaries={{}}
+        attention={{}}
+        activeTabId="tab-d"
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    const tile = screen.getByRole('button', { name: 'New tab, Two, draft' });
+    expect(tile.querySelector('[data-expose-state="draft"]')).not.toBeNull();
+  });
 });

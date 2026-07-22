@@ -68,6 +68,8 @@ function selectionKey(item: SelectionItem): string {
 /** ENG-018 lifecycle → tile state word (overview shows EVERY tab, live or
  *  not — a stopped agent is still a session the operator owns) */
 const TILE_STATE_LABEL: Record<string, string> = {
+  // a ⌘T draft (D24) — no runtime yet, deliberately not 'stopped'
+  draft: 'draft',
   'stopped-clean': 'stopped',
   interrupted: 'interrupted',
   exited: 'exited',

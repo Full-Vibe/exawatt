@@ -515,7 +515,11 @@ try {
     .hover();
   await settle();
   await page.screenshot({ path: join(SCREENSHOT_DIR, 'stopped-unfurled.png') });
-  // 1. keycap hints overlay without shifting layout (D24)
+  // 1. keycap hints overlay without shifting layout (D24). Park the
+  // pointer first — the hover from the unfurl step would hold the frozen
+  // chip open and muddy the screenshot.
+  await page.mouse.move(650, 400);
+  await page.waitForTimeout(320);
   const tabWidthBefore = await page
     .locator('[data-tab-id]')
     .first()
