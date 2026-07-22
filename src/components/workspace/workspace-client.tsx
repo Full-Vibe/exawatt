@@ -13,7 +13,14 @@
  * parallel with the ENG-004 spatial regime — independent skins over the
  * same session system (see docs/product/operator-workflow.md).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { LAYOUT_CLASS, TerminalPane } from './terminal-pane';
 import { resolveStageLayout } from './split-layout';
@@ -126,6 +133,24 @@ function WorkspaceKeyHint({
       </kbd>
       {label}
     </span>
+  );
+}
+
+/**
+ * Owns overflow for every new-Agent surface. Keeping the scroll contract here
+ * prevents a long composer child from escaping its stage pane or painting over
+ * workspace chrome.
+ */
+function ComposerViewport({ children }: { children: ReactNode }) {
+  return (
+    <div
+      data-composer-scroll
+      className="h-full min-h-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
+    >
+      <div className="flex min-h-full items-start justify-center py-6 sm:py-8">
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -791,33 +816,33 @@ export function WorkspaceClient() {
           {/* the strip wraps INSIDE its own flex-1 box (D24): the controls
               stay pinned to the first row instead of dropping below */}
           <div className="min-w-0 flex-1">
-          <TabStrip
-            projects={projects}
-            activeDir={activeProject?.dir ?? null}
-            pinnedTabId={pinnedTabId}
-            summaries={summaries}
-            attention={mergedAttention}
-            activity={activity}
-            engaged={engaged}
-            onTogglePinTab={togglePinTab}
-            onResumeTab={id => void resumeTab(id)}
-            onNewAgent={dir => createDraftTab(dir)}
-            onRevealPath={cwd =>
-              void window.electron?.pty?.openPath(cwd, cwd)
-            }
-            onSelectProject={selectProject}
-            onSelectTab={selectTab}
-            onCloseTab={id => void requestClose(id)}
-            onRenameTab={renameTab}
-            onRenameProject={renameProject}
-            onSetProjectColor={setProjectColor}
-            onReorderTab={(tabId, targetTabId, place) =>
-              void reorderTab(tabId, targetTabId, place)
-            }
-            onReorderProject={(dir, targetDir, place) =>
-              void reorderProject(dir, targetDir, place)
-            }
-          />
+            <TabStrip
+              projects={projects}
+              activeDir={activeProject?.dir ?? null}
+              pinnedTabId={pinnedTabId}
+              summaries={summaries}
+              attention={mergedAttention}
+              activity={activity}
+              engaged={engaged}
+              onTogglePinTab={togglePinTab}
+              onResumeTab={id => void resumeTab(id)}
+              onNewAgent={dir => createDraftTab(dir)}
+              onRevealPath={cwd =>
+                void window.electron?.pty?.openPath(cwd, cwd)
+              }
+              onSelectProject={selectProject}
+              onSelectTab={selectTab}
+              onCloseTab={id => void requestClose(id)}
+              onRenameTab={renameTab}
+              onRenameProject={renameProject}
+              onSetProjectColor={setProjectColor}
+              onReorderTab={(tabId, targetTabId, place) =>
+                void reorderTab(tabId, targetTabId, place)
+              }
+              onReorderProject={(dir, targetDir, place) =>
+                void reorderProject(dir, targetDir, place)
+              }
+            />
           </div>
           {activeProject && activeProject.tabs.length > 0 ? (
             <button
@@ -1085,8 +1110,7 @@ export function WorkspaceClient() {
                           style={
                             layout === 'right'
                               ? {
-                                  borderLeft:
-                                    '1px solid rgba(80,230,255,0.2)',
+                                  borderLeft: '1px solid rgba(80,230,255,0.2)',
                                 }
                               : undefined
                           }
@@ -1098,7 +1122,7 @@ export function WorkspaceClient() {
                         >
                           {tab.lifecycle === 'draft' ? (
                             // the new-tab page (D24): the pane IS the composer
-                            <div className="flex h-full items-center justify-center">
+                            <ComposerViewport>
                               <AgentComposer
                                 projectDir={project.dir}
                                 projectName={project.name}
@@ -1112,7 +1136,7 @@ export function WorkspaceClient() {
                                   updateDraft(tab.id, patch)
                                 }
                               />
-                            </div>
+                            </ComposerViewport>
                           ) : tab.resumeState === 'resuming' ? (
                             <p
                               className="absolute inset-0 flex items-center justify-center text-sm"
@@ -1148,21 +1172,20 @@ export function WorkspaceClient() {
                       data-pane={stage.stagePane}
                       className={LAYOUT_CLASS[stage.stagePane]}
                     >
-                      <div className="flex h-full items-center justify-center">
+                      <ComposerViewport>
                         <AgentComposer
                           projectDir={activeProject.dir}
                           projectName={activeProject.name}
                           roadmapItems={launchRoadmapItems}
                           onLaunch={launch}
                         />
-                      </div>
+                      </ComposerViewport>
                     </div>
                   )}
                 </>
               )}
             </div>
           </div>
-
         </div>
 
         {/* discoverability (S3): the workspace SHOWS its keys — same pattern

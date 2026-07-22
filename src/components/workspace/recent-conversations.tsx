@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
 } from 'react';
 import { ArrowRight, LoaderCircle, Search, Sparkles } from 'lucide-react';
 import { HUD } from '@/components/hud';
@@ -16,7 +17,7 @@ import type { RecentConversation } from '@/types/electron';
 import { AGENT_SOURCE_META } from './agent-sources';
 import { HarnessGlyph } from './harness-icons';
 
-const COLLAPSED_ROWS = 4;
+const FILTER_THRESHOLD = 8;
 
 export type ConversationOpenMode = 'resume' | 'fresh';
 
@@ -56,7 +57,6 @@ export const RecentConversations = forwardRef<
   const [state, setState] = useState<'loading' | 'ready' | 'unavailable'>(
     'loading'
   );
-  const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState('');
   const [opening, setOpening] = useState<string | null>(null);
   const primaryRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -72,7 +72,6 @@ export const RecentConversations = forwardRef<
     setState('loading');
     setRows([]);
     enrichmentAttemptRef.current = null;
-    setExpanded(false);
     setQuery('');
     void api
       .listRecentConversations(projectDir)
@@ -140,13 +139,16 @@ export const RecentConversations = forwardRef<
         .includes(needle)
     );
   }, [query, rows]);
-  const visible = expanded ? filtered : filtered.slice(0, COLLAPSED_ROWS);
+  const visible = filtered;
 
   const focusAt = useCallback(
     (index: number) => {
       if (visible.length === 0) return false;
-      const wrapped = (index + visible.length) % visible.length;
-      primaryRefs.current[wrapped]?.focus();
+      const bounded = Math.max(0, Math.min(index, visible.length - 1));
+      const target = primaryRefs.current[bounded];
+      if (!target) return false;
+      target.focus();
+      target.scrollIntoView?.({ block: 'nearest' });
       return true;
     },
     [visible.length]
@@ -154,6 +156,31 @@ export const RecentConversations = forwardRef<
   useImperativeHandle(forwardedRef, () => ({ focusFirst: () => focusAt(0) }), [
     focusAt,
   ]);
+
+  const handleRowKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+      if (event.key === 'ArrowUp' && index === 0) {
+        event.preventDefault();
+        onReturnToComposer();
+      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        focusAt(index + (event.key === 'ArrowDown' ? 1 : -1));
+      } else if (event.key === 'Home') {
+        event.preventDefault();
+        focusAt(0);
+      } else if (event.key === 'End') {
+        event.preventDefault();
+        focusAt(visible.length - 1);
+      } else if (event.key === 'PageDown' || event.key === 'PageUp') {
+        event.preventDefault();
+        focusAt(index + (event.key === 'PageDown' ? 5 : -5));
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        onReturnToComposer();
+      }
+    },
+    [focusAt, onReturnToComposer, visible.length]
+  );
 
   const open = async (
     conversation: RecentConversation,
@@ -178,7 +205,7 @@ export const RecentConversations = forwardRef<
       className="mt-5 w-full border-t pt-3"
       style={{ borderColor: 'rgba(80,230,255,0.14)' }}
     >
-      <div className="mb-1.5 flex min-h-7 items-center justify-between gap-3 px-0.5">
+      <div className="mb-1.5 flex min-h-7 items-center gap-3 px-0.5">
         <div className="flex min-w-0 items-baseline gap-2">
           <h2
             id="recent-conversations-title"
@@ -196,19 +223,9 @@ export const RecentConversations = forwardRef<
             </span>
           )}
         </div>
-        {rows.length > COLLAPSED_ROWS && (
-          <button
-            type="button"
-            onClick={() => setExpanded(value => !value)}
-            className="rounded px-1.5 py-1 font-mono text-[10px] outline-none transition-colors hover:text-hud-cyan focus-visible:ring-1 focus-visible:ring-hud-cyan"
-            style={{ color: expanded ? HUD.cyan : HUD.textDim }}
-          >
-            {expanded ? 'Show less' : `View all ${rows.length}`}
-          </button>
-        )}
       </div>
 
-      {expanded && rows.length > COLLAPSED_ROWS && (
+      {rows.length > FILTER_THRESHOLD && (
         <label className="relative mb-2 block">
           <Search
             aria-hidden="true"
@@ -219,6 +236,15 @@ export const RecentConversations = forwardRef<
           <input
             value={query}
             onChange={event => setQuery(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'ArrowDown') {
+                if (focusAt(0)) event.preventDefault();
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                if (query) setQuery('');
+                else onReturnToComposer();
+              }
+            }}
             placeholder="Filter title, ID, or source"
             className="h-8 w-full rounded border bg-transparent pl-8 pr-2 font-mono text-[11px] outline-none placeholder:text-hud-text-dim/70 focus-visible:ring-1 focus-visible:ring-hud-cyan"
             style={{
@@ -266,13 +292,20 @@ export const RecentConversations = forwardRef<
         </p>
       )}
 
-      <div className="divide-y" style={{ borderColor: 'rgba(80,230,255,0.1)' }}>
+      <div
+        role="list"
+        className="divide-y"
+        style={{ borderColor: 'rgba(80,230,255,0.1)' }}
+      >
         {visible.map((conversation, index) => {
           const meta = AGENT_SOURCE_META[conversation.harness];
           const exactKey = `${conversation.harness}:${conversation.id}:resume`;
           const freshKey = `${conversation.harness}:${conversation.id}:fresh`;
           return (
             <div
+              role="listitem"
+              aria-posinset={index + 1}
+              aria-setsize={visible.length}
               key={`${conversation.harness}:${conversation.id}`}
               data-conversation-id={conversation.id}
               data-title-source={conversation.titleSource}
@@ -286,15 +319,7 @@ export const RecentConversations = forwardRef<
                 type="button"
                 disabled={disabled || opening !== null}
                 onClick={() => void open(conversation, 'resume')}
-                onKeyDown={event => {
-                  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                    event.preventDefault();
-                    focusAt(index + (event.key === 'ArrowDown' ? 1 : -1));
-                  } else if (event.key === 'Escape') {
-                    event.preventDefault();
-                    onReturnToComposer();
-                  }
-                }}
+                onKeyDown={event => handleRowKeyDown(event, index)}
                 aria-label={`Resume ${conversation.title} in ${meta.label}`}
                 className="flex min-w-0 flex-1 items-start gap-3 rounded-sm px-2 py-2 text-left outline-none transition-colors disabled:opacity-60 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan"
               >
@@ -351,6 +376,7 @@ export const RecentConversations = forwardRef<
                 type="button"
                 disabled={disabled || opening !== null}
                 onClick={() => void open(conversation, 'fresh')}
+                onKeyDown={event => handleRowKeyDown(event, index)}
                 aria-label={`Start fresh from ${conversation.title}`}
                 title="Start a new Agent from this handoff"
                 className="my-2 mr-1.5 inline-flex shrink-0 items-center gap-1 rounded border border-transparent px-2 font-mono text-[10px] opacity-55 outline-none transition-[opacity,border-color,color] hover:border-hud-cyan/20 hover:text-hud-cyan hover:opacity-100 disabled:opacity-30 focus-visible:border-hud-cyan/30 focus-visible:text-hud-cyan focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
@@ -373,7 +399,7 @@ export const RecentConversations = forwardRef<
           className="mt-2 px-0.5 font-mono text-[10px]"
           style={{ color: HUD.textDim }}
         >
-          ↑↓ choose · ⏎ resume exact · esc new task
+          ↑↓ choose · home/end jump · ⏎ resume exact · esc new task
         </p>
       )}
     </section>

@@ -66,7 +66,7 @@ writeFileSync(
         modified: new Date(now - 10_000).toISOString(),
         fileMtime: now + 10_000,
       },
-      ...Array.from({ length: 4 }, (_, index) => ({
+      ...Array.from({ length: 12 }, (_, index) => ({
         sessionId: `00000000-0000-4000-8000-00000000000${index}`,
         projectPath: project,
         summary: `Cortex follow-up ${index + 1}`,
@@ -163,10 +163,34 @@ try {
         'all harnesses share one recent browser',
         (await page
           .locator('[data-recent-conversations] [data-conversation-id]')
-          .count()) >= 4 &&
+          .count()) === 14 &&
           /codex/i.test(
             await page.locator('[data-recent-conversations]').innerText()
           )
+      );
+      const composerScroll = page.locator('[data-composer-scroll]');
+      const scrollMetrics = await composerScroll.evaluate(node => ({
+        clientHeight: node.clientHeight,
+        scrollHeight: node.scrollHeight,
+        scrollTop: node.scrollTop,
+      }));
+      check(
+        'long recents are contained by one scrollable composer pane',
+        scrollMetrics.scrollHeight > scrollMetrics.clientHeight &&
+          scrollMetrics.scrollTop === 0
+      );
+      const overlapsChrome = await page.evaluate(() => {
+        const chrome = document
+          .querySelector('[data-command-altitude]')
+          ?.getBoundingClientRect();
+        if (!chrome) return true;
+        return Array.from(
+          document.querySelectorAll('[data-conversation-id]')
+        ).some(row => row.getBoundingClientRect().top < chrome.bottom);
+      });
+      check(
+        'recent rows never paint over fixed workspace chrome',
+        !overlapsChrome
       );
       await page.screenshot({
         path: join(output, '01-new-agent-recents-800.png'),
@@ -183,6 +207,56 @@ try {
           })
           .evaluate(node => node === document.activeElement)
       );
+
+      await page.keyboard.press('ArrowUp');
+      check(
+        'Up from the first recent returns to the new-task composer',
+        await page
+          .getByLabel('Initial task for the new Agent')
+          .evaluate(node => node === document.activeElement)
+      );
+      await page
+        .getByLabel('Initial task for the new Agent')
+        .press('ArrowDown');
+
+      for (let index = 0; index < 9; index += 1) {
+        await page.keyboard.press('ArrowDown');
+      }
+      const expectedKeyboardId = await page
+        .locator('[data-conversation-id]')
+        .nth(9)
+        .getAttribute('data-conversation-id');
+      const keyboardScroll = await composerScroll.evaluate(node => ({
+        scrollTop: node.scrollTop,
+        activeId: document.activeElement
+          ?.closest('[data-conversation-id]')
+          ?.getAttribute('data-conversation-id'),
+        activeRect: document.activeElement?.getBoundingClientRect().toJSON(),
+        viewportRect: node.getBoundingClientRect().toJSON(),
+      }));
+      check(
+        'Down continues through off-screen results and reveals focus',
+        keyboardScroll.scrollTop > 0 &&
+          keyboardScroll.activeId === expectedKeyboardId &&
+          keyboardScroll.activeRect.top >= keyboardScroll.viewportRect.top &&
+          keyboardScroll.activeRect.bottom <= keyboardScroll.viewportRect.bottom
+      );
+
+      await composerScroll.evaluate(node => {
+        node.scrollTop = 0;
+      });
+      await composerScroll.hover();
+      await page.mouse.wheel(0, 600);
+      await page.waitForFunction(
+        () =>
+          (document.querySelector('[data-composer-scroll]')?.scrollTop ?? 0) > 0
+      );
+      check('mouse and trackpad wheel scroll the same pane', true);
+
+      await page.keyboard.press('Escape');
+      await page
+        .getByLabel('Initial task for the new Agent')
+        .press('ArrowDown');
       await page.keyboard.press('Enter');
       let session;
       const sessionDeadline = Date.now() + 20_000;
