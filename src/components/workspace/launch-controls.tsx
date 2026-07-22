@@ -447,7 +447,10 @@ export function AgentComposer({
           {preferencesReady ? (
             <span className="flex min-w-0 items-center gap-2">
               <HarnessGlyph harness={effectiveSource} size={13} />
-              <SelectValue />
+              {/* The trigger owns its one brand glyph. An empty SelectValue
+                  projects the selected item's decorated children here, which
+                  would duplicate the option glyph (D27 correction). */}
+              <SelectValue>{sourceMeta.label}</SelectValue>
             </span>
           ) : (
             <span className="truncate" style={{ color: HUD.textDim }}>
@@ -463,8 +466,8 @@ export function AgentComposer({
               textValue={AGENT_SOURCE_META[id].label}
               className="font-mono"
             >
-              {/* options wear the harness brand exactly like the trigger
-                  (D27): no white-to-branded flash on selection */}
+              {/* Options own their menu presentation independently of the
+                  trigger: glyph + brand color, with no selection flash. */}
               <span
                 className="flex items-center gap-2"
                 style={{ color: AGENT_SOURCE_META[id].color }}

@@ -329,8 +329,31 @@ try {
       // while the composer was always-open.)
       await page.locator('[data-composer-toggle]').click();
       await page.locator('[data-agent-composer]').waitFor();
-      await page.getByLabel('Agent Source').click();
-      await page.getByRole('option', { name: 'Codex' }).click();
+      const sourceTrigger = page.getByLabel('Agent Source');
+      check(
+        'Agent Source trigger owns exactly one harness glyph',
+        (await sourceTrigger.locator('[data-slot="harness-glyph"]').count()) ===
+          1
+      );
+      await sourceTrigger.click();
+      const claudeOption = page.getByRole('option', { name: 'Claude Code' });
+      const codexOption = page.getByRole('option', { name: 'Codex' });
+      check(
+        'Agent Source options each retain one harness glyph',
+        (await claudeOption.locator('[data-slot="harness-glyph"]').count()) ===
+          1 &&
+          (await codexOption.locator('[data-slot="harness-glyph"]').count()) ===
+            1
+      );
+      await page.screenshot({
+        path: join(output, '04-source-options.png'),
+      });
+      await codexOption.click();
+      check(
+        'changing Agent Source keeps one trigger glyph',
+        (await sourceTrigger.locator('[data-slot="harness-glyph"]').count()) ===
+          1
+      );
       check(
         'a new Codex pair has its own YOLO default',
         (await page.getByLabel('Agent permissions').innerText()).includes(

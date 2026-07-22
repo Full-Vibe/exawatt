@@ -17,6 +17,7 @@ export function ClaudeIcon({
 }) {
   return (
     <svg
+      data-slot="harness-glyph"
       viewBox="0 0 24 24"
       width={size}
       height={size}
@@ -38,6 +39,7 @@ export function OpenAIIcon({
 }) {
   return (
     <svg
+      data-slot="harness-glyph"
       viewBox="0 0 24 24"
       width={size}
       height={size}
