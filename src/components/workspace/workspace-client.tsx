@@ -34,6 +34,7 @@ import {
 import type { EffectiveTerminalFont } from './terminal-font';
 import { TabStrip } from './tab-strip';
 import { AgentComposer } from './launch-controls';
+import { Button } from '@/components/ui/button';
 import { CloseConfirm } from './close-confirm';
 import { navHistory } from '@/components/nav/nav-history';
 import { ProjectOpener } from './project-opener';
@@ -845,31 +846,30 @@ export function WorkspaceClient() {
             />
           </div>
           {activeProject && activeProject.tabs.length > 0 ? (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               data-composer-toggle
               aria-label="New Agent"
               title={`New agent in ${activeProject.name} (⌘T)`}
               onClick={() => newDraftTab()}
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded border px-2.5 font-mono text-xs outline-none transition-[filter,transform] duration-150 hover:brightness-125 active:scale-[0.97] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
-              style={{
-                color: HUD.text,
-                borderColor: 'rgba(80,230,255,0.28)',
-              }}
+              className="shrink-0 font-mono"
             >
               <Plus className="h-3.5 w-3.5" />
               New Agent
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => setProjectOpenerOpen(true)}
-              className="inline-flex h-8 shrink-0 items-center gap-2 rounded border px-3 font-mono text-xs outline-none hover:bg-white/5 focus-visible:ring-1 focus-visible:ring-hud-cyan"
-              style={{ color: HUD.text, borderColor: 'rgba(80,230,255,0.24)' }}
+              className="shrink-0 font-mono"
             >
               <FolderOpen className="h-3.5 w-3.5" />
               Open Project
-            </button>
+            </Button>
           )}
           <button
             type="button"
@@ -916,15 +916,16 @@ export function WorkspaceClient() {
               {readyAgentCount === 1 ? 'agent is' : 'agents are'} ready to
               resume
             </span>
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={resumeAll}
-              className="inline-flex h-7 items-center gap-1.5 border px-2 outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
-              style={{ borderColor: 'rgba(25,230,255,0.3)', color: HUD.text }}
+              className="h-7 font-mono"
             >
               <Play className="h-3.5 w-3.5" />
               Resume All
-            </button>
+            </Button>
             <button
               type="button"
               aria-label="Dismiss resume notice"

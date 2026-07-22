@@ -77,8 +77,10 @@
   --card-foreground: #fafafa;
   --popover: #0a0a0a;
   --popover-foreground: #fafafa;
-  --primary: #fafafa;
-  --primary-foreground: #171717;
+  /* default-action color (D32): overridden at runtime by the macOS
+     highlight color; this is the web/off-macOS fallback */
+  --primary: #19e6ff;
+  --primary-foreground: #04060b;
   --secondary: #262626;
   --secondary-foreground: #fafafa;
   --muted: #262626;

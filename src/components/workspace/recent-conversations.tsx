@@ -209,7 +209,7 @@ export const RecentConversations = forwardRef<
         <div className="flex min-w-0 items-baseline gap-2">
           <h2
             id="recent-conversations-title"
-            className="font-mono text-[11px] font-semibold uppercase tracking-[0.13em]"
+            className="font-mono text-[11px] font-semibold tracking-[0.13em]"
             style={{ color: HUD.textDim }}
           >
             Continue recent
@@ -349,7 +349,7 @@ export const RecentConversations = forwardRef<
                       />
                     )}
                     <span
-                      className="ml-auto shrink-0 font-mono text-[10px] uppercase"
+                      className="ml-auto shrink-0 font-mono text-[10px]"
                       style={{ color: meta.color }}
                     >
                       {meta.label} · {relativeTime(conversation.updatedAt)}

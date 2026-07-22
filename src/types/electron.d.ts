@@ -329,6 +329,9 @@ export interface ProductUpdateStatus {
 
 export interface ElectronAppApi {
   getBuildInfo: () => Promise<ExawattBuildInfo>;
+  /** the operator's OS highlight color, '#RRGGBB' (D32); null when
+   *  unavailable (web, linux) — CSS falls back to the app accent */
+  accentColor?: () => Promise<string | null>;
   getUpdateStatus: () => Promise<ProductUpdateStatus>;
   checkForUpdates: () => Promise<ProductUpdateStatus>;
   restartUpdate: () => Promise<void>;

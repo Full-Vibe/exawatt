@@ -9,6 +9,7 @@ import {
   SquareTerminal,
   TriangleAlert,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { HUD } from '@/components/hud';
 import {
   Popover,
@@ -796,20 +797,18 @@ export function AgentComposer({
         </Popover>
 
         <span className="flex-1" />
-        <button
+        {/* one button system (D32): the primary action wears the system
+            accent, never the harness color */}
+        <Button
           type="submit"
+          size="sm"
+          className="h-9 shrink-0 font-mono"
           disabled={controlsDisabled || !preferencesReady || !branchReady}
           title={
             preferencesReady
               ? `Start ${sourceMeta.label} with ${permissionMeta.label} permissions`
               : 'Loading launch preferences'
           }
-          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded border px-3 font-mono text-xs outline-none transition-[filter,transform] duration-150 hover:brightness-125 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
-          style={{
-            color: HUD.text,
-            borderColor: `${sourceMeta.color}77`,
-            background: `${sourceMeta.color}12`,
-          }}
         >
           {launching === 'agent' ? (
             <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
@@ -817,7 +816,7 @@ export function AgentComposer({
             <Play className="h-3.5 w-3.5" />
           )}
           {launching === 'agent' ? 'Starting…' : 'Start'}
-        </button>
+        </Button>
 
         <button
           type="button"

@@ -12,6 +12,7 @@
  * consequence and the recovery path.
  */
 import { useEffect, useRef } from 'react';
+import { Button } from '@/components/ui/button';
 import { HUD } from '@/components/hud';
 
 export function CloseConfirm({
@@ -103,33 +104,27 @@ export function CloseConfirm({
           days.
         </div>
         <div className="flex items-center justify-end gap-2">
-          <button
+          {/* one button system (D32): neutral outline + the DEFAULT in the
+              operator's system accent — never the project hue */}
+          <Button
             ref={cancelRef}
             type="button"
+            variant="outline"
+            size="sm"
             onClick={onCancel}
-            className="cursor-pointer rounded border px-3 py-1.5 font-mono text-xs outline-none transition-[filter] duration-100 hover:brightness-125 focus-visible:ring-2 focus-visible:ring-hud-cyan"
-            style={{
-              borderColor: 'rgba(138,160,190,0.3)',
-              color: HUD.textDim,
-            }}
+            className="font-mono"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             ref={closeRef}
             type="button"
+            size="sm"
             onClick={onClose}
-            // the DEFAULT: filled, dominant, focused on open, answers ⏎
-            className="cursor-pointer rounded border px-4 py-1.5 font-mono text-xs outline-none transition-[filter] duration-100 hover:brightness-110 focus-visible:ring-2 focus-visible:ring-hud-cyan"
-            style={{
-              borderColor: `${color}88`,
-              background: `${color}2E`,
-              color: HUD.text,
-              boxShadow: `0 0 10px ${color}33`,
-            }}
+            className="font-mono"
           >
             Close ⏎
-          </button>
+          </Button>
         </div>
       </div>
     </div>

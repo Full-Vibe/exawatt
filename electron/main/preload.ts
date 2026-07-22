@@ -168,6 +168,7 @@ contextBridge.exposeInMainWorld('electron', {
   },
   app: {
     getBuildInfo: () => ipcRenderer.invoke('app:get-build-info'),
+    accentColor: () => ipcRenderer.invoke('app:accent-color'),
     getUpdateStatus: () => ipcRenderer.invoke('app:get-update-status'),
     checkForUpdates: () => ipcRenderer.invoke('app:check-for-updates'),
     restartUpdate: () => ipcRenderer.invoke('app:restart-update'),

@@ -7,6 +7,7 @@ import {
   screen,
   session as electronSession,
   net as electronNet,
+  systemPreferences,
 } from 'electron';
 import { spawn, type ChildProcess } from 'child_process';
 import { execFile } from 'child_process';
@@ -770,6 +771,16 @@ function registerDialogIPC(): void {
 
 function registerAppIPC(): void {
   handleTrusted('app:get-build-info', () => buildInfo);
+  // the ONE default-action color (D32): the operator's macOS highlight
+  // color, not a per-project hue. '#RRGGBB' or null off-macOS/Windows.
+  handleTrusted('app:accent-color', () => {
+    try {
+      const accent = systemPreferences.getAccentColor?.();
+      return accent ? `#${accent.slice(0, 6)}` : null;
+    } catch {
+      return null;
+    }
+  });
   handleTrusted(
     'app:set-workspace-checkpoint-owner',
     (event, ownsWorkspaceState: boolean) => {
