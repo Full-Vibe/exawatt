@@ -39,8 +39,10 @@ contextBridge.exposeInMainWorld('electron', {
     resize: (id: string, cols: number, rows: number) =>
       ipcRenderer.invoke('pty:resize', id, cols, rows),
     kill: (id: string) => ipcRenderer.invoke('pty:kill', id),
-    stopSession: (durableSessionId: string) =>
-      ipcRenderer.invoke('pty:stop-session', durableSessionId),
+    confirmClose: (durableSessionId: string) =>
+      ipcRenderer.invoke('pty:confirm-close', durableSessionId),
+    closeSession: (durableSessionId: string, discard = false) =>
+      ipcRenderer.invoke('pty:close-session', durableSessionId, discard),
     archiveSession: (entry: unknown) =>
       ipcRenderer.invoke('pty:archive-session', entry),
     closedSessions: () => ipcRenderer.invoke('pty:closed-sessions'),
@@ -59,6 +61,7 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('pty:retained-history', durableSessionId),
     pasteClipboard: (id: string) =>
       ipcRenderer.invoke('pty:paste-clipboard', id),
+    clipboardRead: () => ipcRenderer.invoke('pty:clipboard-read'),
     copyText: (text: string) => ipcRenderer.invoke('pty:copy-text', text),
     openExternal: (url: string) => ipcRenderer.invoke('pty:open-external', url),
     openPath: (

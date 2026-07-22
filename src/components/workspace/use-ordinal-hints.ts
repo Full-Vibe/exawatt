@@ -7,7 +7,8 @@
  * strip rests clean and the digits reveal only while their chord's
  * modifiers are held: hold ⌘ → tab keycaps, hold ⌘⌥ → Project keycaps.
  * A short hold delay keeps ⌘C-speed chords from flashing; once revealed,
- * the target retargets instantly when ⌥ joins or leaves.
+ * the target retargets instantly when ⌥ joins or leaves. 120ms (D24):
+ * 350ms read as lag — the reveal should feel attached to the keypress.
  */
 import { useEffect, useState } from 'react';
 
@@ -24,7 +25,7 @@ export function ordinalHintTarget(modifiers: {
   return modifiers.altKey ? 'projects' : 'tabs';
 }
 
-export const ORDINAL_HINT_DELAY_MS = 350;
+export const ORDINAL_HINT_DELAY_MS = 120;
 
 export function useOrdinalHints(): OrdinalHintMode {
   const [mode, setMode] = useState<OrdinalHintMode>(null);

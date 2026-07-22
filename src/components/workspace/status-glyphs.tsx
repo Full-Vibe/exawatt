@@ -6,9 +6,11 @@
  * way everywhere. The D18 pair (pulsing dot vs hollow dot) was too subtle to
  * read peripherally and conflated "finished a turn" with "never started";
  * these states differ in shape AND motion:
- *   working — rotating teal arc: output streaming right now. Motion is the
- *             peripheral signal; reduced motion keeps the static arc, which
- *             stays shape-distinct from both dots.
+ *   working — softly breathing teal orb: output streaming right now.
+ *             Motion is the peripheral signal, kept SUBTLE (D24: the
+ *             rotating arc read as annoying) — a slow glow pulse, larger
+ *             and hotter than the rest dot; reduced motion keeps the
+ *             solid orb, still size/hue-distinct from both dots.
  *   done    — solid green rest dot: started, now quiet — a turn finished
  *             and the ball is in the operator's court.
  *   fresh   — dim hollow ring: live but never given work.
@@ -82,15 +84,15 @@ export function AttentionDot() {
 export function SessionStatusGlyph({ state }: { state: SessionGlyphState }) {
   if (state === 'working') {
     return (
-      <span
-        data-status="working"
-        className="inline-flex h-2.5 w-2.5 shrink-0 rounded-full border-[1.5px] motion-safe:animate-spin"
-        style={{
-          borderColor: `${HUD.cyan2}40`,
-          borderTopColor: HUD.cyan2,
-          boxShadow: `0 0 5px ${HUD.cyan2}55`,
-        }}
-      />
+      <span data-status="working" className={GLYPH_BOX}>
+        <span
+          className="inline-flex h-2 w-2 rounded-full motion-safe:animate-pulse"
+          style={{
+            background: HUD.cyan2,
+            boxShadow: `0 0 6px ${HUD.cyan2}, 0 0 12px ${HUD.cyan2}66`,
+          }}
+        />
+      </span>
     );
   }
   if (state === 'done') {

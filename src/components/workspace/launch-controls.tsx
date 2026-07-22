@@ -81,14 +81,18 @@ function PermissionModeIcon({
 export function AgentComposer({
   projectDir,
   projectName,
+  initialSource,
   roadmapItems = [],
-  variant = 'compact',
+
   onLaunch,
 }: {
   projectDir: string;
   projectName: string;
+  /** the summon's requested source (palette "Start Agent with X"),
+   *  carried on the draft tab (D24) — beats the recommendation */
+  initialSource?: AgentSourceId;
   roadmapItems?: LaunchRoadmapItem[];
-  variant?: 'compact' | 'empty';
+
   onLaunch: (opts: LaunchOptions) => Promise<boolean>;
 }) {
   const [task, setTask] = useState('');
@@ -107,11 +111,8 @@ export function AgentComposer({
   const [branch, setBranch] = useState(defaultBranch);
   const [roadmapItemId, setRoadmapItemId] = useState('');
   const [launching, setLaunching] = useState<'agent' | 'shell' | null>(null);
-  // D18: the composer is summoned, not permanent. The empty state keeps it
-  // inline (it IS the primary action there); with tabs open it collapses to
-  // one button and expands into an anchored panel with room to breathe.
-  const [open, setOpen] = useState(variant === 'empty');
-  const rootRef = useRef<HTMLDivElement>(null);
+  // D24: the composer IS the pane of a draft tab (or an empty Project) —
+  // always open; ⌘T creates/selects the draft tab that hosts it.
   const branchEditSeq = useRef(0);
   const permissionSaveSeq = useRef(0);
   const permissionSaveQueue = useRef(Promise.resolve());
@@ -167,6 +168,12 @@ export function AgentComposer({
     };
   }, [projectDir]);
 
+  // the requested source must survive the preferences effect's reset —
+  // declared after it so a strict-mode remount replays them in order
+  useEffect(() => {
+    if (initialSource) chooseSourceRef.current?.(initialSource);
+  }, [initialSource]);
+
   const selectSource = useCallback(
     (nextSource: AgentSourceId) => {
       setSource(nextSource);
@@ -199,22 +206,19 @@ export function AgentComposer({
     },
     [selectSource, sourcePreferences]
   );
+  const chooseSourceRef = useRef<typeof chooseSource | null>(null);
+  chooseSourceRef.current = chooseSource;
 
-  // Focus belongs to an effect keyed on `open` (D21): the compact panel's
-  // textarea is conditionally MOUNTED, so a single rAF fired alongside
-  // setOpen(true) races the mount and loses — ⌘T must land in the goal
-  // field every time, from every summon path.
+  // ⌘T must land in the goal field every time (D21): focus after mount —
+  // the draft pane mounts fresh on every summon
   useEffect(() => {
-    if (!open) return;
     const frame = requestAnimationFrame(() => taskRef.current?.focus());
     return () => cancelAnimationFrame(frame);
-  }, [open]);
+  }, []);
 
   useEffect(() => {
     const focus = (sourceOverride?: AgentSourceId | null) => {
       if (sourceOverride) chooseSource(sourceOverride);
-      setOpen(true);
-      // already-open case (re-summon): the open-effect will not re-run
       requestAnimationFrame(() => taskRef.current?.focus());
     };
     const onFocus = (event: Event) => {
@@ -237,25 +241,35 @@ export function AgentComposer({
     }
   }, [roadmapItems, roadmapItemId]);
 
-  // click-away collapses the anchored panel; Radix portals (select/popover
-  // content mounts on body) are INSIDE the interaction, not outside it
-  useEffect(() => {
-    if (variant !== 'compact' || !open) return;
-    const onDown = (event: MouseEvent) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      if (rootRef.current?.contains(target)) return;
-      if (
-        target.closest(
-          '[data-radix-popper-content-wrapper], [role="listbox"]'
-        )
-      )
-        return;
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [variant, open]);
+  /** insert pasted content at the caret, keeping focus and selection */
+  const insertAtCursor = useCallback(
+    (value: string) => {
+      const el = taskRef.current;
+      const start = el?.selectionStart ?? task.length;
+      const end = el?.selectionEnd ?? task.length;
+      setTask(task.slice(0, start) + value + task.slice(end));
+      requestAnimationFrame(() => {
+        const node = taskRef.current;
+        if (!node) return;
+        node.focus();
+        const caret = start + value.length;
+        node.setSelectionRange(caret, caret);
+      });
+    },
+    [task]
+  );
+
+  /** ⌘V/⌃V (D24): an image saves to a temp file and its path joins the
+   *  task — the same shape the coding harnesses accept in a prompt */
+  const pasteFromClipboard = useCallback(async () => {
+    const clip = await window.electron?.pty?.clipboardRead?.();
+    if (!clip) return;
+    if (clip.kind === 'image' && clip.path) {
+      insertAtCursor(`${clip.path} `);
+    } else if (clip.kind === 'text' && clip.text) {
+      insertAtCursor(clip.text);
+    }
+  }, [insertAtCursor]);
 
   const persistPermissionMode = useCallback(
     async (nextSource: AgentSourceId, nextMode: AgentPermissionMode) => {
@@ -296,7 +310,6 @@ export function AgentComposer({
       setLaunching(null);
     }
     if (!ok) return;
-    if (variant === 'compact') setOpen(false);
     void rememberAgentSource(projectDir, effectiveSource);
     void persistPermissionMode(effectiveSource, permissionMode);
     setTask('');
@@ -320,7 +333,6 @@ export function AgentComposer({
   const controls = (
     <form
       data-agent-composer
-      data-variant={variant}
       data-preferences-ready={preferencesReady}
       aria-busy={launching !== null}
       onSubmit={event => {
@@ -336,8 +348,29 @@ export function AgentComposer({
         maxLength={8_000}
         disabled={controlsDisabled}
         onChange={event => setTask(event.target.value)}
+        // image paste (D24): ⌘V catches images via the paste event; ⌃V is
+        // the coding-harness muscle memory and works the same way
+        onPaste={event => {
+          const hasImage = Array.from(event.clipboardData?.items ?? []).some(
+            item => item.kind === 'file' && item.type.startsWith('image/')
+          );
+          if (hasImage) {
+            event.preventDefault();
+            void pasteFromClipboard();
+          }
+        }}
         onKeyDown={event => {
           if (event.nativeEvent.isComposing) return;
+          if (
+            event.key === 'v' &&
+            event.ctrlKey &&
+            !event.metaKey &&
+            !event.altKey
+          ) {
+            event.preventDefault();
+            void pasteFromClipboard();
+            return;
+          }
           if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
             void launchAgent();
@@ -709,8 +742,7 @@ export function AgentComposer({
         className="px-0.5 pt-0.5 font-mono text-[10px] leading-none"
         style={{ color: HUD.textDim }}
       >
-        ⏎ start · ↑↓ source · ⇧⏎ newline
-        {variant === 'compact' && ' · esc close'}
+        ⏎ start · ↑↓ source · ⌘V image · ⇧⏎ newline
       </p>
       <span className="sr-only" aria-live="polite">
         {launching === 'agent'
@@ -724,64 +756,6 @@ export function AgentComposer({
     </form>
   );
 
-  if (variant === 'compact') {
-    return (
-      // NOT position:relative — the panel anchors to the full-width chrome
-      // bar (nearest positioned ancestor) so it right-aligns inside the
-      // window even when the window is narrower than the panel plus the
-      // controls right of the toggle (Divvy-size windows, D18)
-      <div ref={rootRef} data-agent-composer-root>
-        <button
-          type="button"
-          data-composer-toggle
-          aria-expanded={open}
-          aria-label={open ? 'Close the new Agent composer' : 'New Agent'}
-          title={
-            open
-              ? 'Close the new Agent composer'
-              : `Launch an Agent in ${projectName}`
-          }
-          onClick={() => {
-            // the open-effect owns focus — it runs after the panel mounts
-            setOpen(current => !current);
-          }}
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded border px-2.5 font-mono text-xs outline-none transition-[filter,transform] duration-150 hover:brightness-125 active:scale-[0.97] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
-          style={{
-            color: open ? HUD.cyan : HUD.text,
-            borderColor: open ? `${HUD.cyan}66` : 'rgba(80,230,255,0.28)',
-            background: open ? 'rgba(25,230,255,0.08)' : 'transparent',
-          }}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          New Agent
-        </button>
-        {open && (
-          <div
-            data-agent-composer-panel
-            onKeyDown={event => {
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                event.stopPropagation();
-                setOpen(false);
-                window.dispatchEvent(
-                  new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT)
-                );
-              }
-            }}
-            className="absolute right-0 top-full z-30 mt-2 w-[min(40rem,calc(100vw-2rem))] rounded-md border p-2 shadow-2xl"
-            style={{
-              background: HUD.bg.deep,
-              borderColor: 'rgba(80,230,255,0.28)',
-              boxShadow:
-                '0 18px 48px rgba(0,0,0,0.5), 0 0 24px rgba(25,230,255,0.06)',
-            }}
-          >
-            {controls}
-          </div>
-        )}
-      </div>
-    );
-  }
   return (
     <div className="flex w-full flex-col items-center gap-4 px-6">
       <div className="text-center">
@@ -792,7 +766,7 @@ export function AgentComposer({
           {projectName}
         </p>
         <p className="mt-1 font-mono text-xs" style={{ color: HUD.textDim }}>
-          No Agents running
+          Start an Agent
         </p>
       </div>
       <div className="w-full max-w-2xl">{controls}</div>

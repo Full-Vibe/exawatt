@@ -103,21 +103,12 @@ async function waitForLiveSessionCount(page, count) {
   throw new Error(`Timed out waiting for ${count} live Sessions`);
 }
 
-// close grammar (D23): Stop parks (mid-turn agents ask first — answer ⏎),
-// then Close archives the stopped tab into the Recently-closed ledger
-async function stopThenClose(page, title) {
-  await page.getByRole('button', { name: `Stop ${title}` }).click();
-  const confirm = page.locator('[data-stop-confirm]');
-  try {
-    await confirm.waitFor({ timeout: 700 });
-    await page.keyboard.press('Enter');
-  } catch {
-    // quiet agent — parked without asking
-  }
+// close grammar (D24, chrome model): one Close per tab. The native
+// confirm auto-consents under EXAWATT_TEST=1.
+async function closeTab(page, title) {
   const closeButton = page.getByRole('button', { name: `Close ${title}` });
-  await closeButton.waitFor({ timeout: 15_000 });
   await closeButton.click();
-  await closeButton.waitFor({ state: 'detached', timeout: 10_000 });
+  await closeButton.waitFor({ state: 'detached', timeout: 15_000 });
 }
 
 async function waitForBuffer(page, sessionId, fragment) {
@@ -160,7 +151,7 @@ try {
 
       await page.getByRole('button', { name: 'Browse Folder' }).click();
       await page
-        .locator('[data-agent-composer][data-variant="empty"]')
+        .locator('[data-agent-composer]')
         .waitFor();
       check(
         'Browse opens an inert Project',
@@ -221,7 +212,7 @@ try {
       await page.keyboard.press('Control+Meta+1');
       await page.waitForURL('**/workspace**');
       await page
-        .locator('[data-agent-composer][data-variant="empty"]')
+        .locator('[data-agent-composer]')
         .waitFor();
 
       const firstTask = "Review the user's auth flow";
@@ -327,13 +318,16 @@ try {
       await page.getByLabel('Agent permissions').focus();
       await page.keyboard.press('Space');
       await page.locator('[role="listbox"]').waitFor();
-      // KNOWN GAP (found 2026-07-21 while retargeting this eval): arrow
-      // navigation and typeahead inside this Select no longer move the
-      // highlight (Escape and commit still work) — the original
-      // Home/ArrowDown keyboard dance has silently re-committed YOLO since
-      // the YOLO default landed. Select via pointer until the keyboard
-      // regression is fixed; see the daily-driver findings log.
-      await page.getByRole('option', { name: /Auto-review/ }).click();
+      // keyboard doctrine (D24): from the YOLO default (last option),
+      // ArrowUp must land on Auto-review and ⏎ must commit it — the
+      // Select's keyboard path is a first-class contract
+      await page.keyboard.press('ArrowUp');
+      await page.waitForFunction(() =>
+        document
+          .querySelector('[role="option"][data-highlighted]')
+          ?.textContent?.includes('Auto-review')
+      );
+      await page.keyboard.press('Enter');
       await page.waitForFunction(() => {
         const trigger = document.querySelector(
           '[aria-label="Agent permissions"]'
@@ -344,7 +338,7 @@ try {
         );
       });
       check(
-        'permission selection commits Auto-review and restores trigger focus',
+        'KEYBOARD selection commits Auto-review and restores trigger focus',
         (await page.getByLabel('Agent permissions').innerText()).includes(
           'Auto'
         ) &&
@@ -434,9 +428,9 @@ try {
       await page.screenshot({
         path: join(output, '04-two-agents-composer.png'),
       });
-      await stopThenClose(page, 'Claude Code');
+      await closeTab(page, 'Claude Code');
       await waitForLiveSessionCount(page, 1);
-      await stopThenClose(page, 'Codex');
+      await closeTab(page, 'Codex');
       await waitForLiveSessionCount(page, 0);
       const ledger = await page.evaluate(
         async () => (await window.electron?.pty?.closedSessions?.()) ?? []
@@ -472,7 +466,7 @@ try {
 
       await page.reload({ waitUntil: 'networkidle' });
       await page
-        .locator('[data-agent-composer][data-variant="empty"]')
+        .locator('[data-agent-composer]')
         .waitFor();
       check(
         'inert Project survives renderer reload',
@@ -526,7 +520,7 @@ try {
       page.setDefaultTimeout(20_000);
       await page.locator('[data-command-altitude]').waitFor();
       await page
-        .locator('[data-agent-composer][data-variant="empty"]')
+        .locator('[data-agent-composer]')
         .waitFor();
       check(
         'source recommendation survives a full app restart',
@@ -556,7 +550,7 @@ try {
       );
       await page.getByRole('button', { name: 'Import 2' }).click();
       await page
-        .locator('[data-agent-composer][data-variant="empty"]')
+        .locator('[data-agent-composer]')
         .waitFor();
       check(
         'importing Projects starts no process',
@@ -569,8 +563,28 @@ try {
         'shell remains an explicit Project tool',
         shell[0]?.harness === 'shell'
       );
-      await stopThenClose(page, 'Shell');
+      await closeTab(page, 'Shell');
       await waitForSessionCount(page, 0);
+      // ⌘T ⏎ then ⌘W (D24): a bare agent never given work DISCARDS — it
+      // must not pollute the Recently-closed ledger. (bravo is empty, so
+      // its pane composer is already inline.)
+      await page
+        .getByLabel('Initial task for the new Agent')
+        .press('Enter');
+      const bare = (
+        await waitForLiveSessionCount(page, 1)
+      ).find(session => !session.exited);
+      await closeTab(page, bare.title);
+      await waitForLiveSessionCount(page, 0);
+      const ledgerAfterDiscard = await page.evaluate(
+        async () => (await window.electron?.pty?.closedSessions?.()) ?? []
+      );
+      check(
+        'a never-started agent discards without joining the ledger',
+        !ledgerAfterDiscard.some(
+          entry => entry.durableSessionId === bare?.durableSessionId
+        )
+      );
       check(
         'closing a shell retains its Project',
         await page.locator('[data-project="bravo"]').isVisible()

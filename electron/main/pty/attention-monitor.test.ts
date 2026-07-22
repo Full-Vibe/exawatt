@@ -308,6 +308,23 @@ describe('AttentionMonitor activity truth (D18)', () => {
     expect(monitor.isWorking('a')).toBe(false);
   });
 
+  it('output right after OUR resize is a WINCH redraw, not work (D24)', () => {
+    manager.sessions.push({
+      id: 'a',
+      harness: 'claude',
+      startedAt: 0,
+      exited: false,
+    });
+    monitor.noteResize('a');
+    manager.emit('data', 'a', 'full TUI repaint after WINCH');
+    expect(monitor.isWorking('a')).toBe(false);
+    expect(transitions).toEqual([]);
+    // real output beyond the grace window still reads as working
+    clock += 2500;
+    manager.emit('data', 'a', 'genuine agent output');
+    expect(monitor.isWorking('a')).toBe(true);
+  });
+
   it('drops the working state when the session exits', () => {
     manager.sessions.push({
       id: 'a',

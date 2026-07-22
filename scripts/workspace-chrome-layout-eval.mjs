@@ -120,6 +120,22 @@ const persistedLayout = {
           lifecycle: 'running',
           exitCode: null,
         },
+        // a stopped Session restored from a previous run (D24): renders as
+        // a condensed frozen chip until hover/focus unfurls it
+        {
+          id: 'frozen-tab',
+          durableSessionId: 'frozen-session',
+          harness: 'claude',
+          title: 'billing migration',
+          cwd: '/tmp/gpagent',
+          sessionId: null,
+          harnessSessionId: 'provider-frozen',
+          roadmapItemId: null,
+          lifecycle: 'stopped-clean',
+          exitCode: 0,
+          initialTask: null,
+          contextSummary: 'Migrate billing to usage-based',
+        },
       ],
     },
     {
@@ -238,9 +254,14 @@ await page.addInitScript(
         openPath: async () => undefined,
         listResumeCandidates: async () => [],
         createWorktree: async () => ({ ok: true, path: '/tmp/worktree' }),
-        // D23 close grammar: the mock parks by firing the captured exit
-        // handler, exactly like main's stop → natural-exit path
-        stopSession: async durableSessionId => {
+        // D24 chrome-model close: confirm is native in main — the mock
+        // records calls and consents; closeSession stops via the captured
+        // exit handler, exactly like main's stop → natural-exit path
+        confirmClose: async durableSessionId => {
+          (window.__confirmCalls ??= []).push(durableSessionId);
+          return true;
+        },
+        closeSession: async durableSessionId => {
           const session = sessions.find(
             s => s.durableSessionId === durableSessionId
           );
@@ -253,6 +274,7 @@ await page.addInitScript(
           }
           return true;
         },
+        clipboardRead: async () => ({ kind: 'empty' }),
         archiveSession: async entry => ({ ...entry, closedAt: 1 }),
         closedSessions: async () => [],
         reopenSession: async () => null,
@@ -286,13 +308,16 @@ try {
   const chrome = page.locator('[data-workspace-chrome]');
   await chrome.waitFor();
   await page.locator('[data-project="cortex-ehr"]').waitFor();
-  // D18: the composer is summoned, not permanent — expand it for the panel
-  // geometry checks below
+  // ⌘T pops a REAL tab (D24): the New Agent button creates a draft tab
+  // whose pane hosts the composer — geometry checks run against that pane
   const composerToggle = page.locator('[data-composer-toggle]');
   await composerToggle.waitFor();
   await composerToggle.click();
   const composer = page.locator('[data-agent-composer]');
   await composer.waitFor();
+  if (!(await page.locator('[data-workspace-tab-strip]').innerText()).includes('New tab')) {
+    throw new Error('⌘T must create a visible draft tab in the strip');
+  }
 
   const results = [];
   for (const width of [560, 800, 1024, 1312, 1400, 1600]) {
@@ -306,9 +331,7 @@ try {
 
     const metrics = await page.evaluate(() => {
       const chromeElement = document.querySelector('[data-workspace-chrome]');
-      const panelElement = document.querySelector(
-        '[data-agent-composer-panel]'
-      );
+      const panelElement = document.querySelector('[data-agent-composer]');
       const taskElement = document.querySelector(
         '[aria-label="Initial task for the new Agent"]'
       );
@@ -424,9 +447,10 @@ try {
       text: element.innerText,
     }));
   let turnState = await stripState();
-  if (turnState.done !== 2 || turnState.fresh !== 1) {
+  // fresh = the unstarted agent + the ⌘T draft chip (D24)
+  if (turnState.done !== 2 || turnState.fresh !== 2) {
     throw new Error(
-      `Rest state wrong — expected 2 done + 1 fresh: ${JSON.stringify(turnState)}`
+      `Rest state wrong — expected 2 done + 2 fresh: ${JSON.stringify(turnState)}`
     );
   }
   if (turnState.text.includes('Claude Code')) {
@@ -443,7 +467,7 @@ try {
   });
   await settle();
   turnState = await stripState();
-  if (turnState.working !== 1 || turnState.fresh !== 0) {
+  if (turnState.working !== 1 || turnState.fresh !== 1) {
     throw new Error(
       `Working state did not take over the fresh tab: ${JSON.stringify(turnState)}`
     );
@@ -457,7 +481,7 @@ try {
   });
   await settle();
   turnState = await stripState();
-  if (turnState.fresh !== 1) {
+  if (turnState.fresh !== 2) {
     throw new Error(
       `Quiet unstarted session must return to fresh: ${JSON.stringify(turnState)}`
     );
@@ -468,62 +492,67 @@ try {
   });
   await settle();
   turnState = await stripState();
-  if (turnState.done !== 3 || turnState.fresh !== 0) {
+  if (turnState.done !== 3 || turnState.fresh !== 1) {
     throw new Error(
       `Engaged session must rest as done: ${JSON.stringify(turnState)}`
     );
   }
 
-  // ── Close grammar (D23): idle parks silently → non-active stopped tabs
-  // condense and unfurl on hover → only a WORKING session confirms → the
-  // active parked tab stays unfurled → closing archives with a toast.
-  const stopConfirm = page.locator('[data-stop-confirm]');
-  // 1. idle session parks with NO confirm; its (non-active) tab condenses
-  await page
-    .locator('[data-project="gpagent"]')
-    .getByRole('button', { name: 'Stop Claude Code' })
-    .click();
-  if (await stopConfirm.count()) {
-    throw new Error('idle sessions must park without a confirm');
-  }
+  // ── Close grammar (D24, chrome model): every ⌘W CLOSES. Started live
+  // agents get one native confirm (mocked here, calls recorded); fresh
+  // tabs and drafts discard instantly; a stopped tab condenses at rest,
+  // unfurls on hover, and closes straight to the ledger.
   const condensed = strip.locator('[data-condensed]');
-  await condensed.waitFor();
-  // park the pointer away — hover would unfurl the chip we're capturing
-  // clicking the button left pointer AND focus on the tab — both unfurl by
-  // design, so hand focus to the pane before capturing the folded chip
+  // 0. the persisted stopped tab renders as a condensed frozen chip
+  // (folded = zero-size, so wait for attachment, not visibility)
+  await condensed.waitFor({ state: 'attached' });
   await page.mouse.click(650, 400);
   await page.waitForTimeout(320); // let the 200ms fold transition finish
-  await page.screenshot({ path: join(SCREENSHOT_DIR, 'parked-condensed.png') });
-  // hover unfurls the frozen chip
+  await page.screenshot({ path: join(SCREENSHOT_DIR, 'stopped-condensed.png') });
+  await page
+    .locator('[data-project="gpagent"]')
+    .getByRole('button', { name: 'Close billing migration' })
+    .hover();
+  await settle();
+  await page.screenshot({ path: join(SCREENSHOT_DIR, 'stopped-unfurled.png') });
+  // 1. keycap hints overlay without shifting layout (D24)
+  const tabWidthBefore = await page
+    .locator('[data-tab-id]')
+    .first()
+    .evaluate(el => el.getBoundingClientRect().width);
+  await page.keyboard.down('Meta');
+  await page.waitForTimeout(200); // 120ms reveal + margin
+  await page.locator('[data-tab-ordinal]').first().waitFor();
+  const tabWidthDuring = await page
+    .locator('[data-tab-id]')
+    .first()
+    .evaluate(el => el.getBoundingClientRect().width);
+  await page.screenshot({ path: join(SCREENSHOT_DIR, 'keycap-overlay.png') });
+  await page.keyboard.up('Meta');
+  if (Math.abs(tabWidthBefore - tabWidthDuring) > 0.5) {
+    throw new Error(
+      `Keycap hints must not shift layout: ${tabWidthBefore} → ${tabWidthDuring}`
+    );
+  }
+  // 2. (the live-unstarted discard path is exercised end-to-end in the
+  // launcher eval, where the turn-state section hasn't engaged it first)
+  await page.evaluate(() => {
+    window.__confirmCalls = [];
+  });
+  let confirms;
+  // 3. a STARTED agent gets exactly one native confirm, then archives
   await page
     .locator('[data-project="gpagent"]')
     .getByRole('button', { name: 'Close Claude Code' })
-    .hover();
-  await settle();
-  await page.screenshot({ path: join(SCREENSHOT_DIR, 'parked-unfurled.png') });
-  // 2. a WORKING session is the only close that asks
-  await page.evaluate(() => {
-    window.__fireActivity?.({ id: 'exawatt-session', working: true });
-  });
-  await settle();
-  await page.getByRole('button', { name: 'Stop Codex' }).click();
-  await stopConfirm.waitFor();
-  await page.screenshot({ path: join(SCREENSHOT_DIR, 'close-confirm.png') });
-  await page.keyboard.press('Escape'); // esc keeps it going
-  await stopConfirm.waitFor({ state: 'detached' });
-  await page.getByRole('button', { name: 'Stop Codex' }).click();
-  await stopConfirm.waitFor();
-  await page.keyboard.press('Enter'); // ⏎ stops
-  await stopConfirm.waitFor({ state: 'detached' });
-  // 3. the ACTIVE parked tab stays unfurled — its restore panel is on screen
-  await page.getByRole('button', { name: 'Close Codex' }).waitFor();
-  if ((await condensed.count()) !== 1) {
-    throw new Error('active parked tab must stay unfurled');
-  }
-  // 4. closing the stopped tab archives it and narrates the outcome
-  await page.getByRole('button', { name: 'Close Codex' }).click();
+    .click();
   const toast = page.locator('[data-close-toast]');
   await toast.waitFor();
+  confirms = await page.evaluate(() => window.__confirmCalls ?? []);
+  if (confirms.length !== 1) {
+    throw new Error(
+      `started agents must confirm exactly once: ${JSON.stringify(confirms)}`
+    );
+  }
   const toastText = await toast.innerText();
   if (
     !toastText.includes('Recently closed') ||
@@ -532,6 +561,14 @@ try {
     throw new Error(`Close toast does not narrate the outcome: ${toastText}`);
   }
   await page.screenshot({ path: join(SCREENSHOT_DIR, 'close-toast.png') });
+  // 4. ⌘T ⌘W is a friction-free no-op: the draft discards instantly
+  const draftClose = page.getByRole('button', { name: 'Close New tab' });
+  await draftClose.click();
+  await draftClose.waitFor({ state: 'detached' });
+  confirms = await page.evaluate(() => window.__confirmCalls ?? []);
+  if (confirms.length !== 1) {
+    throw new Error('draft discard must never confirm');
+  }
 
   await page.setViewportSize({ width: 800, height: 700 });
   // the strip clicks above click-away-collapsed the summoned composer —

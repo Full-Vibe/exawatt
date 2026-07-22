@@ -30,15 +30,18 @@ import {
 import type { Project } from './use-workspace-state';
 
 /** Shortcut-ordinal keycap (D21): revealed only while the chord's modifiers
- *  are held, styled as a key so it reads as "press this", never as data. */
+ *  are held, styled as a key so it reads as "press this", never as data.
+ *  OVERLAYS its anchor (D24): revealing a hint must never shift layout —
+ *  the keycap materializes over the chip's left edge instead of inserting
+ *  into the row. */
 function OrdinalKeycap({ value, color }: { value: number; color: string }) {
   return (
     <span
-      className="inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded-sm border px-0.5 font-mono text-[9px] leading-none"
+      className="pointer-events-none absolute left-1 top-1/2 z-10 inline-flex h-3.5 min-w-3.5 -translate-y-1/2 items-center justify-center rounded-sm border px-0.5 font-mono text-[9px] leading-none motion-safe:animate-in motion-safe:fade-in motion-safe:duration-100"
       style={{
         color,
         borderColor: `${color}55`,
-        background: 'rgba(8,13,22,0.85)',
+        background: 'rgba(8,13,22,0.92)',
       }}
     >
       {value}
@@ -334,7 +337,7 @@ export function TabStrip({
               title={`${g.dir}${
                 gi < 9 ? ` · ⌘⌥${gi + 1} selects` : ''
               } · double-click to rename`}
-              className="flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-[11px] outline-none transition-[filter,transform] duration-100 hover:brightness-150 active:scale-95 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+              className="relative flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-[11px] outline-none transition-[filter,transform] duration-100 hover:brightness-150 active:scale-95 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
               style={{ color: groupActive ? color : HUD.textDim }}
             >
               <span
@@ -342,7 +345,7 @@ export function TabStrip({
                 style={{ background: color, boxShadow: `0 0 5px ${color}` }}
               />
               {ordinalHints === 'projects' && gi < 9 && (
-                <span data-project-ordinal={gi + 1} className="inline-flex">
+                <span data-project-ordinal={gi + 1} className="contents">
                   <OrdinalKeycap value={gi + 1} color={color} />
                 </span>
               )}
@@ -391,6 +394,9 @@ export function TabStrip({
               const working =
                 !dead && !!(t.sessionId && activity[t.sessionId]);
               const isAgent = t.harness !== 'shell';
+              // ⌘T draft (D24): a new-tab chip — no process, no badge,
+              // fresh ring, discarded without ceremony
+              const isDraft = t.lifecycle === 'draft';
               // started: main-truth engaged bit; a goal subtitle also
               // implies it (covers sessions predating the engaged channel)
               const started =
@@ -460,7 +466,7 @@ export function TabStrip({
                     onReorderTab?.(drag.id, t.id, dropPlace(e));
                     endDrag();
                   }}
-                  className="group/tab flex items-center overflow-hidden rounded border transition-[border-color,background-color,filter] duration-150 hover:brightness-125 motion-reduce:transition-none"
+                  className="group/tab relative flex items-center overflow-hidden rounded border transition-[border-color,background-color,filter] duration-150 hover:brightness-125 motion-reduce:transition-none"
                   style={{
                     boxShadow: hintShadow(`t:${t.id}`, color),
                     borderColor: on ? `${color}99` : 'rgba(138,160,190,0.18)',
@@ -504,23 +510,22 @@ export function TabStrip({
                     }${
                       dead ? `\n${t.resumeState.replace('-', ' ')}` : ''
                     }${ordinal ? `\n⌘${ordinal} selects` : ''}\n${
-                      dead
-                        ? '⌘W closes — kept in Recently closed'
-                        : '⌘W stops — the tab stays'
+                      isDraft
+                        ? '⏎ starts · ⌘W discards'
+                        : '⌘W closes — kept in Recently closed'
                     }\ndouble-click to rename`}
                   >
                     {ordinal !== undefined && ordinalHints === 'tabs' && (
-                      <span data-tab-ordinal={ordinal} className="inline-flex">
-                        <OrdinalKeycap
-                          value={ordinal}
-                          color={on ? color : HUD.textDim}
-                        />
+                      <span data-tab-ordinal={ordinal} className="contents">
+                        <OrdinalKeycap value={ordinal} color={color} />
                       </span>
                     )}
                     {needsYou ? (
                       <AttentionDot />
-                    ) : !dead ? (
-                      <SessionStatusGlyph state={glyphState} />
+                    ) : !dead || isDraft ? (
+                      <SessionStatusGlyph
+                        state={isDraft ? 'fresh' : glyphState}
+                      />
                     ) : null}
                     {t.id === pinnedTabId && (
                       <span
@@ -532,7 +537,7 @@ export function TabStrip({
                         ◧
                       </span>
                     )}
-                    {t.harness !== 'shell' && (
+                    {t.harness !== 'shell' && !isDraft && (
                       <span style={{ color }}>
                         <HarnessGlyph harness={t.harness} size={11} />
                       </span>
@@ -558,9 +563,9 @@ export function TabStrip({
                       // pass). Active stopped tabs stay unfurled: their
                       // restore panel is on screen.
                       <span
-                        data-condensed={(dead && !on) || undefined}
+                        data-condensed={(dead && !isDraft && !on) || undefined}
                         className={`flex flex-col items-start overflow-hidden transition-[max-width,opacity] duration-200 motion-reduce:transition-none ${
-                          dead && !on
+                          dead && !isDraft && !on
                             ? 'max-w-0 opacity-0 group-hover/tab:max-w-60 group-hover/tab:opacity-100 group-focus-within/tab:max-w-60 group-focus-within/tab:opacity-100'
                             : 'max-w-60'
                         }`}
@@ -582,7 +587,7 @@ export function TabStrip({
                         )}
                       </span>
                     ) : null}
-                    {dead && (
+                    {dead && !isDraft && (
                       <span
                         aria-label={stoppedStatus}
                         className="border border-white/10 px-1 py-0.5 text-[9px] leading-none"
@@ -601,13 +606,13 @@ export function TabStrip({
                   </EditableChrome>
                   <button
                     onClick={() => onCloseTab(t.id)}
-                    // D23 grammar: live tabs STOP (park in place); stopped
-                    // tabs CLOSE into the Recently-closed ledger
-                    aria-label={`${dead ? 'Close' : 'Stop'} ${t.title}`}
+                    // ⌘W closes, like Chrome (D24): started live agents
+                    // get one native confirm; drafts and fresh tabs discard
+                    aria-label={`Close ${t.title}`}
                     title={
-                      dead
-                        ? 'Close — kept in Recently closed for 14 days (⌘W)'
-                        : 'Stop — the tab stays, resumable (⌘W)'
+                      isDraft
+                        ? 'Discard (⌘W)'
+                        : 'Close — kept in Recently closed for 14 days (⌘W)'
                     }
                     className="cursor-pointer px-1 py-0.5 font-mono text-xs opacity-40 outline-none transition-opacity duration-100 group-hover/tab:opacity-100 hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{ color: HUD.textDim }}

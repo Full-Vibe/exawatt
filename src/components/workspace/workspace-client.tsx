@@ -54,7 +54,6 @@ import {
   hasPendingAgentComposer,
   REOPEN_CLOSED_EVENT,
 } from './session-jump';
-import { StopConfirm } from './stop-confirm';
 import { useEffectiveShortcut, useShortcuts } from '@/components/shortcuts';
 import { formatShortcutKeys } from '@/lib/shortcuts';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
@@ -80,6 +79,7 @@ import {
   Play,
   SquareTerminal,
   X,
+  Plus,
 } from 'lucide-react';
 import { middleTruncatePath } from './path-label';
 
@@ -213,6 +213,7 @@ export function WorkspaceClient() {
     openProject,
     importProjects,
     closeTab,
+    createDraftTab,
     reopenClosedSession,
     resumeTab,
     resumeProject,
@@ -246,8 +247,15 @@ export function WorkspaceClient() {
 
   useEffect(() => {
     if (!inElectron) return;
-    const ensureProject = () => {
-      if (!activeProject) setProjectOpenerOpen(true);
+    const ensureProject = (event: Event) => {
+      if (!activeProject) {
+        setProjectOpenerOpen(true);
+        return;
+      }
+      // the summon IS a new tab now (D24): the draft pane hosts the
+      // composer, and a palette source override rides ON the draft
+      const requested = (event as CustomEvent<string | null>).detail ?? null;
+      createDraftTab(undefined, requested);
     };
     window.addEventListener(FOCUS_AGENT_COMPOSER_EVENT, ensureProject);
     if (!activeProject && hasPendingAgentComposer()) {
@@ -255,7 +263,7 @@ export function WorkspaceClient() {
     }
     return () =>
       window.removeEventListener(FOCUS_AGENT_COMPOSER_EVENT, ensureProject);
-  }, [inElectron, activeProject]);
+  }, [inElectron, activeProject, createDraftTab]);
 
   const readyAgentCount = useMemo(
     () =>
@@ -518,11 +526,8 @@ export function WorkspaceClient() {
     );
   }, [updateOverview]);
 
-  // ── Close grammar UI (D23): park silently, confirm only mid-turn,
-  // narrate an archive with an ambient toast (auto-fades; no dismissal debt)
-  const [stopConfirmTabId, setStopConfirmTabId] = useState<string | null>(
-    null
-  );
+  // ── Close grammar UI (D24): ⌘W closes like Chrome — main owns the one
+  // native confirm; an ambient toast narrates archived closes (auto-fades)
   const [closeToast, setCloseToast] = useState<string | null>(null);
   const closeToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -532,12 +537,8 @@ export function WorkspaceClient() {
     []
   );
   const requestClose = useCallback(
-    async (tabId: string, force = false) => {
-      const outcome = await closeTab(tabId, { force });
-      if (outcome.kind === 'needs-confirm') {
-        setStopConfirmTabId(tabId);
-        return;
-      }
+    async (tabId: string) => {
+      const outcome = await closeTab(tabId);
       if (outcome.kind === 'closed') {
         if (closeToastTimer.current) clearTimeout(closeToastTimer.current);
         const what = outcome.entry.goal ?? outcome.entry.title;
@@ -549,21 +550,15 @@ export function WorkspaceClient() {
     },
     [closeTab]
   );
-  const stopConfirmTab = stopConfirmTabId
-    ? (projects
-        .flatMap(project => project.tabs)
-        .find(t => t.id === stopConfirmTabId) ?? null)
-    : null;
-  // the tab stopped or vanished while the confirm was up — question answered
-  useEffect(() => {
-    if (stopConfirmTabId && !stopConfirmTab) setStopConfirmTabId(null);
-  }, [stopConfirmTabId, stopConfirmTab]);
-  const settleStopConfirm = useCallback(() => {
-    setStopConfirmTabId(null);
-    requestAnimationFrame(() =>
-      window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT))
-    );
-  }, []);
+  // ⌘T (D24): a new tab, instantly — draft in the active Project, or the
+  // Project chooser when nothing is open
+  const newDraftTab = useCallback(() => {
+    if (!createDraftTab()) {
+      setProjectOpenerOpen(true);
+      return false;
+    }
+    return true;
+  }, [createDraftTab]);
 
   // palette-issued workspace verbs (close/overview live here; the rest are
   // handled by the state hook and the tab strip)
@@ -751,12 +746,15 @@ export function WorkspaceClient() {
         <div
           ref={chromeRef}
           data-workspace-chrome
-          className="relative flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2"
+          className="relative flex shrink-0 items-start gap-2 border-b px-3 py-2"
           style={{
             borderColor: 'rgba(80,230,255,0.15)',
             background: HUD.bg.deep,
           }}
         >
+          {/* the strip wraps INSIDE its own flex-1 box (D24): the controls
+              stay pinned to the first row instead of dropping below */}
+          <div className="min-w-0 flex-1">
           <TabStrip
             projects={projects}
             activeDir={activeProject?.dir ?? null}
@@ -778,20 +776,28 @@ export function WorkspaceClient() {
               void reorderProject(dir, targetDir, place)
             }
           />
+          </div>
           {activeProject && activeProject.tabs.length > 0 ? (
-            <div className="ml-auto shrink-0">
-              <AgentComposer
-                projectDir={activeProject.dir}
-                projectName={activeProject.name}
-                roadmapItems={launchRoadmapItems}
-                onLaunch={launch}
-              />
-            </div>
+            <button
+              type="button"
+              data-composer-toggle
+              aria-label="New Agent"
+              title={`New tab in ${activeProject.name} (⌘T)`}
+              onClick={() => newDraftTab()}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded border px-2.5 font-mono text-xs outline-none transition-[filter,transform] duration-150 hover:brightness-125 active:scale-[0.97] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+              style={{
+                color: HUD.text,
+                borderColor: 'rgba(80,230,255,0.28)',
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New Agent
+            </button>
           ) : (
             <button
               type="button"
               onClick={() => setProjectOpenerOpen(true)}
-              className="ml-auto inline-flex h-8 items-center gap-2 rounded border px-3 font-mono text-xs outline-none hover:bg-white/5 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+              className="inline-flex h-8 shrink-0 items-center gap-2 rounded border px-3 font-mono text-xs outline-none hover:bg-white/5 focus-visible:ring-1 focus-visible:ring-hud-cyan"
               style={{ color: HUD.text, borderColor: 'rgba(80,230,255,0.24)' }}
             >
               <FolderOpen className="h-3.5 w-3.5" />
@@ -1005,7 +1011,6 @@ export function WorkspaceClient() {
               ) : activeProject.tabs.length === 0 ? (
                 <div className="flex h-full items-center justify-center">
                   <AgentComposer
-                    variant="empty"
                     projectDir={activeProject.dir}
                     projectName={activeProject.name}
                     roadmapItems={launchRoadmapItems}
@@ -1026,7 +1031,20 @@ export function WorkspaceClient() {
                     />
                   ) : tab.id === activeTab?.id && activeProject ? (
                     <div key={tab.id} className="absolute inset-0">
-                      {tab.resumeState === 'resuming' ? (
+                      {tab.lifecycle === 'draft' ? (
+                        // the new-tab page (D24): the pane IS the composer
+                        <div className="flex h-full items-center justify-center">
+                          <AgentComposer
+                            projectDir={activeProject.dir}
+                            projectName={activeProject.name}
+                            initialSource={tab.draftSource ?? undefined}
+                            roadmapItems={launchRoadmapItems}
+                            onLaunch={opts =>
+                              launch({ ...opts, reuseTabId: tab.id })
+                            }
+                          />
+                        </div>
+                      ) : tab.resumeState === 'resuming' ? (
                         <p
                           className="absolute inset-0 flex items-center justify-center text-sm"
                           style={{ color: HUD.textDim }}
@@ -1107,23 +1125,6 @@ export function WorkspaceClient() {
         onOpenProject={openProject}
         onImportProjects={importProjects}
       />
-      {stopConfirmTab && (
-        <StopConfirm
-          title={stopConfirmTab.title}
-          goal={summaries[stopConfirmTab.durableSessionId] ?? null}
-          color={
-            projects.find(project =>
-              project.tabs.some(t => t.id === stopConfirmTab.id)
-            )?.color ?? HUD.cyan
-          }
-          onStop={() => {
-            const tabId = stopConfirmTab.id;
-            settleStopConfirm();
-            void requestClose(tabId, true);
-          }}
-          onCancel={settleStopConfirm}
-        />
-      )}
       {closeToast && (
         <div
           data-close-toast

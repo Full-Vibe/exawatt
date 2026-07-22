@@ -38,8 +38,10 @@ import {
 import { loadTerminalFont } from './terminal-font';
 import {
   DEFAULT_AGENT_PERMISSION_MODE,
+  isAgentSourceId,
   loadAgentSourcePreferences,
   permissionModeFor,
+  type AgentSourceId,
 } from './agent-sources';
 import {
   openRepositoryProject,
@@ -77,6 +79,9 @@ export interface WorkspaceTab {
   /** the composer's goal statement (D21): persists with the layout and
    *  re-anchors the context summarizer when the Session resumes */
   initialTask: string | null;
+  /** draft tabs only (D24): the source the summon requested (palette
+   *  "Start Agent with X"); null = use the recommendation */
+  draftSource?: AgentSourceId | null;
 }
 
 export type SessionLifecycle =
@@ -85,7 +90,10 @@ export type SessionLifecycle =
   | 'interrupted'
   | 'exited'
   | 'resuming'
-  | 'failed';
+  | 'failed'
+  /** ⌘T new-tab page (D24): a real strip tab whose pane is the composer;
+   *  no process yet, never persisted, discarded by ⌘W without ceremony */
+  | 'draft';
 
 export type ResumeState =
   | 'live'
@@ -95,11 +103,11 @@ export type ResumeState =
   | 'resumed'
   | 'failed';
 
-/** what a close attempt did (D23) — the UI narrates each differently */
+/** what a close attempt did (D24) — the UI narrates each differently */
 export type CloseOutcome =
   | { kind: 'noop' }
-  | { kind: 'needs-confirm' }
-  | { kind: 'parked' }
+  | { kind: 'cancelled' }
+  | { kind: 'discarded' }
   | { kind: 'closed'; entry: ClosedSessionEntry };
 
 export function tabIsLive(tab: WorkspaceTab): boolean {
@@ -353,6 +361,9 @@ export interface LaunchOptions {
   worktreeBranch?: string;
   /** roadmap item this session will work on (ENG-017 S4, optional) */
   roadmapItemId?: string;
+  /** launch INTO an existing draft tab (D24 new-tab page), keeping its
+   *  strip position and id */
+  reuseTabId?: string;
 }
 
 export interface WorkspaceStateOptions {
@@ -410,12 +421,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   attentionRef.current = attention;
   const summariesRef = useRef(summaries);
   summariesRef.current = summaries;
-  const activityRef = useRef(activity);
-  activityRef.current = activity;
+  const engagedRef = useRef(engaged);
+  engagedRef.current = engaged;
   const resumeInFlightRef = useRef<Set<string>>(new Set());
-  /** durable ids the operator just PARKED (D23): their exit is deliberate,
-   *  so the tab reads Stopped, never the crash-vocabulary Exited */
-  const parkedRef = useRef<Set<string>>(new Set());
   const shutdownTargetsRef = useRef<Set<string>>(new Set());
 
   const syncProjectIdentity = useCallback(
@@ -699,7 +707,6 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     })();
 
     const offExit = api.onExit(({ id, durableSessionId, exitCode }) => {
-      const parked = parkedRef.current.delete(durableSessionId);
       setProjects(prev =>
         prev.map(g => ({
           ...g,
@@ -712,8 +719,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                   resumeState: t.harnessSessionId
                     ? 'ended-resumable'
                     : 'identity-missing',
-                  // a ⌘W park is a deliberate stop, not a process death
-                  lifecycle: parked ? 'stopped-clean' : 'exited',
+                  lifecycle: 'exited',
                 }
               : t
           ),
@@ -810,7 +816,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         pinnedTabId: pinSurvives ? pin : null,
         recentProjects: recents,
         projects: gs.map(g => {
-          const tabs = g.tabs.map(tab => {
+          // drafts are pre-session UI, not durable Sessions (D24)
+          const tabs = g.tabs
+            .filter(tab => tab.lifecycle !== 'draft')
+            .map(tab => {
             const stopped =
               cleanShutdown &&
               (shutdownTargetsRef.current.has(tab.durableSessionId) ||
@@ -831,7 +840,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
               contextSummary:
                 summariesRef.current[tab.durableSessionId] ?? null,
             };
-          });
+            });
           return {
             dir: g.dir,
             name: g.name,
@@ -959,7 +968,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           cwd = wt.path;
         }
         const size = sizeRef.current?.() ?? null;
-        const tabId = newTabId();
+        const tabId = opts.reuseTabId ?? newTabId();
         const durableSessionId = newDurableSessionId();
         const res = await api.create({
           harness: opts.harness,
@@ -980,12 +989,34 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         }
         setError(null);
         setLastUsedDir(dir);
-        addSession(
-          res.session,
-          tabId,
-          opts.roadmapItemId ?? null,
-          opts.initialPrompt?.trim() || null
-        );
+        if (opts.reuseTabId) {
+          // the draft becomes the live tab in place — same id, same spot
+          const tab = tabFromPtySession(
+            res.session,
+            tabId,
+            opts.roadmapItemId ?? null,
+            opts.initialPrompt?.trim() || null
+          );
+          setProjects(prev =>
+            prev.map(grp =>
+              grp.tabs.some(t => t.id === tabId)
+                ? {
+                    ...grp,
+                    tabs: grp.tabs.map(t => (t.id === tabId ? tab : t)),
+                    activeTabId: tab.id,
+                  }
+                : grp
+            )
+          );
+          setActiveDir(res.session.projectDir);
+        } else {
+          addSession(
+            res.session,
+            tabId,
+            opts.roadmapItemId ?? null,
+            opts.initialPrompt?.trim() || null
+          );
+        }
         // Resolution bridge (ENG-015 S5 P3): register/refresh this directory's
         // Project in the durable, synced registry. Best-effort — a registry
         // failure (offline, not signed in) must NEVER stop the operator opening
@@ -1005,16 +1036,91 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     [addSession, syncProjectIdentity]
   );
 
-  /** Close grammar (D23): ⌘W moves a Session DOWN its lifecycle, never off
-   *  a cliff. Live → park (stop process, retain everything, tab stays);
-   *  a mid-turn agent asks first (the caller renders the in-app confirm
-   *  and re-calls with force). Stopped → archive to the Recently-closed
-   *  ledger, where identity + history survive until the reap. */
+  /** ⌘T (D24): a new tab exists the moment you ask for it — a draft tab
+   *  in the active (or given) Project whose pane is the composer. One
+   *  draft per Project; asking again selects it. Returns null when no
+   *  Project is open (caller falls back to the Project chooser). */
+  const createDraftTab = useCallback(
+    (dirArg?: string, source?: string | null): string | null => {
+      const requested =
+        source && isAgentSourceId(source) ? source : null;
+      const { projects: gs, activeDir: ad } = stateRef.current;
+      const dir = dirArg ?? ad;
+      const g = dir ? gs.find(x => x.dir === dir) : undefined;
+      if (!g) return null;
+      const existing = g.tabs.find(t => t.lifecycle === 'draft');
+      if (existing) {
+        setProjects(prev =>
+          prev.map(grp =>
+            grp.dir === g.dir
+              ? {
+                  ...grp,
+                  activeTabId: existing.id,
+                  tabs: requested
+                    ? grp.tabs.map(t =>
+                        t.id === existing.id
+                          ? { ...t, draftSource: requested }
+                          : t
+                      )
+                    : grp.tabs,
+                }
+              : grp
+          )
+        );
+        setActiveDir(g.dir);
+        return existing.id;
+      }
+      const tab: WorkspaceTab = {
+        id: newTabId(),
+        durableSessionId: newDurableSessionId(),
+        harness: 'claude',
+        title: 'New tab',
+        cwd: g.dir,
+        sessionId: null,
+        harnessSessionId: null,
+        resumeState: 'identity-missing',
+        lifecycle: 'draft',
+        exitCode: null,
+        roadmapItemId: null,
+        initialTask: null,
+        draftSource: requested,
+      };
+      setProjects(prev =>
+        prev.map(grp =>
+          grp.dir === g.dir
+            ? { ...grp, tabs: [...grp.tabs, tab], activeTabId: tab.id }
+            : grp
+        )
+      );
+      setActiveDir(g.dir);
+      return tab.id;
+    },
+    []
+  );
+
+  /** remove a tab from the layout (shared by every close path) */
+  const removeTabFromLayout = useCallback((tabId: string) => {
+    setPinnedTabId(cur => (cur === tabId ? null : cur));
+    setProjects(prev =>
+      prev.map(grp => {
+        if (!grp.tabs.some(t => t.id === tabId)) return grp;
+        const tabs = grp.tabs.filter(t => t.id !== tabId);
+        const activeTabId =
+          grp.activeTabId === tabId
+            ? (tabs[tabs.length - 1]?.id ?? null)
+            : grp.activeTabId;
+        return { ...grp, tabs, activeTabId };
+      })
+    );
+  }, []);
+
+  /** Close grammar (D24): ⌘W CLOSES, like Chrome. A started live agent
+   *  gets ONE native confirm (context is at stake — the ledger softens
+   *  it); unstarted tabs, drafts, and stopped tabs close instantly.
+   *  Close is never "pause" or "clear": the tab leaves the strip, and
+   *  started Sessions land whole in Recently closed. */
   const closeTab = useCallback(
-    async (
-      tabId: string,
-      opts: { force?: boolean } = {}
-    ): Promise<CloseOutcome> => {
+    async (tabId: string): Promise<CloseOutcome> => {
       const api = window.electron?.pty;
       if (!api) return { kind: 'noop' };
       const { projects: gs } = stateRef.current;
@@ -1023,26 +1129,32 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (!g || !tab || tab.resumeState === 'resuming') {
         return { kind: 'noop' };
       }
+      if (tab.lifecycle === 'draft') {
+        // ⌘T ⌘W is a friction-free no-op — nothing exists yet
+        removeTabFromLayout(tabId);
+        return { kind: 'discarded' };
+      }
+      const goal = summariesRef.current[tab.durableSessionId] ?? null;
       if (tabIsLive(tab)) {
-        // interrupting a turn in flight is the one consequential close
-        if (
-          !opts.force &&
-          tab.sessionId &&
-          activityRef.current[tab.sessionId]
-        ) {
-          return { kind: 'needs-confirm' };
+        const started =
+          !!(tab.sessionId && engagedRef.current[tab.sessionId]) || !!goal;
+        if (!started) {
+          // never given work: close instantly, shed the banner history
+          await api.closeSession(tab.durableSessionId, true);
+          removeTabFromLayout(tabId);
+          return { kind: 'discarded' };
         }
-        parkedRef.current.add(tab.durableSessionId);
-        await api.stopSession(tab.durableSessionId);
-        // the exit broadcast marks the tab stopped; nothing else changes
-        return { kind: 'parked' };
+        if (!(await api.confirmClose(tab.durableSessionId))) {
+          return { kind: 'cancelled' };
+        }
+        await api.closeSession(tab.durableSessionId);
       }
       let entry: ClosedSessionEntry;
       try {
         entry = await api.archiveSession({
           durableSessionId: tab.durableSessionId,
           title: tab.title,
-          goal: summariesRef.current[tab.durableSessionId] ?? null,
+          goal,
           harness: tab.harness,
           cwd: tab.cwd,
           projectDir: g.dir,
@@ -1054,21 +1166,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         setError(`Could not close ${tab.title}.`);
         return { kind: 'noop' };
       }
-      setPinnedTabId(cur => (cur === tabId ? null : cur));
-      setProjects(prev =>
-        prev.map(grp => {
-          if (!grp.tabs.some(t => t.id === tabId)) return grp;
-          const tabs = grp.tabs.filter(t => t.id !== tabId);
-          const activeTabId =
-            grp.activeTabId === tabId
-              ? (tabs[tabs.length - 1]?.id ?? null)
-              : grp.activeTabId;
-          return { ...grp, tabs, activeTabId };
-        })
-      );
+      removeTabFromLayout(tabId);
       return { kind: 'closed', entry };
     },
-    []
+    [removeTabFromLayout]
   );
 
   /** resurrect a soft-closed Session whole: tab, goal, provider identity,
@@ -1685,6 +1786,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     openProject,
     importProjects,
     closeTab,
+    createDraftTab,
     reopenClosedSession,
     listClosedSessions,
     resumeTab,

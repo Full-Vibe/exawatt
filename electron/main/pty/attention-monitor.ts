@@ -61,6 +61,12 @@ const DEFAULTS = {
   spawnGraceMs: 20_000,
 };
 
+/** Output arriving this soon after WE resized the PTY is the TUI's WINCH
+ *  redraw, not the agent working (D24: clicking an idle tab attaches the
+ *  pane, resizes, and must not spin the glyph). Covers the pane's 1.5s
+ *  wiggle resync, which renews the window itself. */
+const RESIZE_GRACE_MS = 2000;
+
 /** Output within this window means the session is visibly WORKING (D18:
  *  running vs waiting must read at a glance). Below quietMs so a session
  *  goes visually quiet before a turn-end flag can raise. */
@@ -73,6 +79,7 @@ export class AttentionMonitor extends EventEmitter {
   private manager: PtySessionManager | null = null;
   private attention = new Map<string, SessionAttention>();
   private lastDataAt = new Map<string, number>();
+  private lastResizeAt = new Map<string, number>();
   private burstBytes = new Map<string, number>();
   /** sessions currently emitting output — the renderer's "working" glyphs */
   private working = new Set<string>();
@@ -135,6 +142,11 @@ export class AttentionMonitor extends EventEmitter {
     return this.working.has(id);
   }
 
+  /** we just resized this PTY — its imminent redraw is not work (D24) */
+  noteResize(id: string): void {
+    this.lastResizeAt.set(id, this.now());
+  }
+
   /** The operator gave this session work (task, resume, or keystroke).
    *  Deliberately NOT gated on `disabled`: startedness is explicit fact,
    *  not stream inference. Emits 'engaged' once per session. */
@@ -181,7 +193,8 @@ export class AttentionMonitor extends EventEmitter {
     if (this.disabled) return;
     const { bell } = this.scan(id, data);
     this.lastDataAt.set(id, this.now());
-    if (!this.working.has(id)) {
+    const sinceResize = this.now() - (this.lastResizeAt.get(id) ?? -Infinity);
+    if (!this.working.has(id) && sinceResize >= RESIZE_GRACE_MS) {
       this.working.add(id);
       this.emit('activity', id, true);
     }
@@ -251,6 +264,7 @@ export class AttentionMonitor extends EventEmitter {
 
   private drop(id: string): void {
     this.lastDataAt.delete(id);
+    this.lastResizeAt.delete(id);
     this.burstBytes.delete(id);
     this.carry.delete(id);
     this.engaged.delete(id);

@@ -138,7 +138,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(container.querySelector('[data-status]')).toBeNull();
   });
 
-  it('live tabs offer Stop; stopped tabs condense and offer Close (D23)', () => {
+  it('every tab offers Close (D24 chrome model); stopped tabs condense', () => {
     const { container } = strip({
       tabs: [
         tab({ id: 'a', title: 'alpha' }),
@@ -151,10 +151,31 @@ describe('TabStrip turn-state glyphs (D22)', () => {
         }),
       ],
     });
-    expect(screen.getByLabelText('Stop alpha')).not.toBeNull();
+    expect(screen.getByLabelText('Close alpha')).not.toBeNull();
     expect(screen.getByLabelText('Close beta')).not.toBeNull();
     // the stopped tab's text folds into a condensed chip (hover unfurls)
     expect(container.querySelector('[data-condensed]')).not.toBeNull();
+  });
+
+  it('a ⌘T draft is a real chip — fresh ring, no badge, discardable', () => {
+    const { container } = strip({
+      tabs: [
+        tab({ id: 'a', title: 'alpha' }),
+        tab({
+          id: 'd',
+          title: 'New tab',
+          sessionId: null,
+          resumeState: 'identity-missing',
+          lifecycle: 'draft',
+        }),
+      ],
+    });
+    expect(screen.getByText('New tab')).not.toBeNull();
+    expect(screen.getByLabelText('Close New tab')).not.toBeNull();
+    expect(container.querySelector('[data-status="fresh"]')).not.toBeNull();
+    // drafts carry no lifecycle badge and never condense
+    expect(screen.queryByLabelText('Stopped')).toBeNull();
+    expect(container.querySelector('[data-condensed]')).toBeNull();
   });
 
   it('the ACTIVE stopped tab stays unfurled — its restore panel is on screen', () => {

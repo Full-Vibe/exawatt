@@ -1,4 +1,4 @@
-import { BrowserWindow, Notification, app, shell } from 'electron';
+import { BrowserWindow, Notification, app, dialog, shell } from 'electron';
 import { handleTrusted } from './ipc-security';
 import { resolveContainedPath, isRepoRelativePath } from './contained-path';
 import { ptySessions } from './pty/session-manager';
@@ -205,6 +205,8 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     'pty:resize',
     (_event, id: string, cols: number, rows: number) => {
       ptySessions.resize(id, cols, rows);
+      // the WINCH redraw this triggers is OUR doing, not the agent working
+      attentionMonitor.noteResize(id);
     }
   );
   handleTrusted('pty:kill', (_event, id: string) => ptySessions.kill(id));
@@ -222,14 +224,64 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     6 * 60 * 60 * 1000
   );
   reapTimer.unref?.();
+  // ⌘W closes like Chrome (D24): one native confirm for started live
+  // agents, then a single main-side stop → await death → forget the
+  // runtime record. Copy cites the ledger honestly.
   handleTrusted(
-    'pty:stop-session',
+    'pty:confirm-close',
     async (_event, durableSessionId: string) => {
       const session = ptySessions
         .list()
         .find(item => item.durableSessionId === durableSessionId);
-      if (!session || session.exited) return false;
-      await ptySessions.stop(session.id);
+      if (!session || session.exited) return true;
+      if (process.env.EXAWATT_TEST === '1') {
+        return process.env.EXAWATT_TEST_CLOSE_RESPONSE !== 'cancel';
+      }
+      const agent = session.harness !== 'shell';
+      const working = attentionMonitor.isWorking(session.id);
+      const noun = agent ? 'agent' : 'shell';
+      const options: Electron.MessageBoxOptions = {
+        type: 'warning',
+        title: `Close ${session.title} and stop this ${noun}?`,
+        message: `Close ${session.title} and stop this ${noun}?`,
+        detail: working
+          ? 'It is still working — closing interrupts the turn in flight. The Session moves to Recently closed and can be reopened for 14 days.'
+          : 'The Session moves to Recently closed and can be reopened for 14 days.',
+        buttons: ['Cancel', 'Close'],
+        cancelId: 0,
+        noLink: true,
+      };
+      const win = BrowserWindow.getFocusedWindow();
+      const result = win
+        ? await dialog.showMessageBox(win, options)
+        : await dialog.showMessageBox(options);
+      return result.response === 1;
+    }
+  );
+  handleTrusted(
+    'pty:close-session',
+    async (_event, durableSessionId: string, discard = false) => {
+      const session = ptySessions
+        .list()
+        .find(item => item.durableSessionId === durableSessionId);
+      if (session && !session.exited) {
+        await ptySessions.stop(session.id);
+        // stop() awaits process-group death, but node-pty's exit callback
+        // lands on a later tick — wait for the honest exited flag so the
+        // archive that follows sees a dead session
+        const deadline = Date.now() + 3_000;
+        while (Date.now() < deadline) {
+          const current = ptySessions
+            .list()
+            .find(item => item.durableSessionId === durableSessionId);
+          if (!current || current.exited) break;
+          await new Promise(resolve => setTimeout(resolve, 25));
+        }
+      }
+      // the dead record must not resurrect the closed tab on rehydration;
+      // a discarded (never-started) session also sheds its banner history
+      ptySessions.forgetExited(durableSessionId);
+      if (discard) await ptySessions.purgeHistory(durableSessionId);
       return true;
     }
   );
@@ -276,6 +328,15 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   handleTrusted('pty:retained-history', (_event, durableSessionId: string) =>
     ptySessions.retainedHistory(durableSessionId)
   );
+  // read-only clipboard for the composer (D24 image paste): an image
+  // saves to a temp file (same lifecycle as terminal pastes), text
+  // returns as-is — nothing is written to any PTY
+  handleTrusted('pty:clipboard-read', async () => {
+    const result = await clipboardInput();
+    return result.kind === 'image'
+      ? { kind: 'image' as const, path: result.path ?? null }
+      : { kind: result.kind, text: result.input };
+  });
   handleTrusted('pty:paste-clipboard', async (_event, id: string) => {
     const payload = await clipboardInput();
     if (payload.input) ptySessions.write(id, payload.input);

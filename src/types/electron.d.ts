@@ -110,9 +110,15 @@ export interface ElectronPtyApi {
   engage: (id: string) => Promise<void>;
   resize: (id: string, cols: number, rows: number) => Promise<void>;
   kill: (id: string) => Promise<void>;
-  /** park (D23): stop the process, RETAIN scrollback/history; the tab
-   *  stays as a stopped, resumable Session. false = not live. */
-  stopSession: (durableSessionId: string) => Promise<boolean>;
+  /** native ⌘W interstitial (D24): true = operator confirmed the close.
+   *  Instantly true for sessions that are not live. */
+  confirmClose: (durableSessionId: string) => Promise<boolean>;
+  /** one-stroke close (D24): stop, await death, forget the runtime record.
+   *  discard=true also sheds retained history (never-started sessions). */
+  closeSession: (
+    durableSessionId: string,
+    discard?: boolean
+  ) => Promise<boolean>;
   /** soft-close a STOPPED session into the Recently-closed ledger (D23);
    *  history survives until the ledger reaps (~14 days) */
   archiveSession: (
@@ -140,6 +146,12 @@ export interface ElectronPtyApi {
   pasteClipboard: (
     id: string
   ) => Promise<{ kind: 'image' | 'text' | 'empty'; path?: string }>;
+  /** composer image/text paste (D24): reads the clipboard without touching
+   *  any PTY; images land as temp-file paths */
+  clipboardRead: () => Promise<
+    | { kind: 'image'; path: string | null }
+    | { kind: 'text' | 'empty'; text?: string }
+  >;
   copyText: (text: string) => Promise<void>;
   openExternal: (url: string) => Promise<void>;
   openPath: (
