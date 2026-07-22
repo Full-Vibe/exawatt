@@ -348,6 +348,28 @@ try {
         await page.waitForTimeout(100);
       }
       if (!session) throw new Error('Exact-resume Session did not start');
+      const activeTab = page.locator('[data-tab-id][data-active]').first();
+      await activeTab.waitFor();
+      check(
+        'browser label and raw handoff are not promoted into tab chrome',
+        session.title === 'Claude Code' &&
+          !(await activeTab.innerText()).includes(
+            'client-side-deidentification-mmhc'
+          ) &&
+          !(await activeTab.innerText()).includes('Move patient identifiers')
+      );
+      await page.waitForTimeout(500);
+      const persistedTitleOwnership = await page.evaluate(async id => {
+        const workspace = await window.electron?.workspace?.load();
+        const tabs =
+          workspace?.projects?.flatMap(project => project.tabs) ?? [];
+        return tabs.find(tab => tab.harnessSessionId === id);
+      }, targetId);
+      check(
+        'workspace v6 persists default-versus-operator title ownership',
+        persistedTitleOwnership?.title === 'Claude Code' &&
+          persistedTitleOwnership?.titleKind === 'default'
+      );
       const expectedArgs = `<--resume><${targetId}>`;
       const bufferDeadline = Date.now() + 20_000;
       let resumedExactly = false;

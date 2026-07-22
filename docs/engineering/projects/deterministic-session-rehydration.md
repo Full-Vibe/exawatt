@@ -49,8 +49,9 @@ starting work. The operator resumes agents explicitly.
 
 1. S0 canon (landed 2026-07-11): roadmap, concepts, architecture/manifest, decision `0012`, and this
    implementation contract.
-2. S1 durability (landed 2026-07-11): workspace v5, durable lifecycle model, disk history store,
-   periodic checkpoints, clean-run marker, migration and corruption tests.
+2. S1 durability (landed 2026-07-11): workspace v5 (advanced to v6 by ENG-016 D34 for explicit
+   tab-title ownership), durable lifecycle model, disk history store, periodic checkpoints,
+   clean-run marker, migration and corruption tests.
 3. S2 shutdown (landed 2026-07-11): reentrant main-process coordinator, native quit alert, flush,
    bounded process termination, window-close distinction, and updater routing.
 4. S3 rehydration (landed 2026-07-11): retained-history preload, compact status UI, exact individual

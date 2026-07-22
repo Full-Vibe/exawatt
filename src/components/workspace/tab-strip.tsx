@@ -19,7 +19,6 @@ import {
 import { HUD } from '@/components/hud';
 import { PROJECT_PALETTE } from './project-colors';
 import { HarnessGlyph } from './harness-icons';
-import { isDefaultHarnessTitle } from './harnesses';
 import { tabIsPinnable } from './split-layout';
 import { useOrdinalHints } from './use-ordinal-hints';
 import { tabIsLive } from './use-workspace-state';
@@ -534,13 +533,13 @@ export function TabStrip({
                 agent: isAgent,
                 started,
               });
-              // the harness glyph already carries source identity — a
-              // default title ("Claude Code") is pure redundancy, so agent
-              // tabs stay glyph-only until a rename or subtitle (D22);
-              // shells keep theirs (no glyph)
-              const showTitle = !(
-                isAgent && isDefaultHarnessTitle(t.harness, t.title)
-              );
+              // Catalog labels describe a conversation in the browser; they
+              // are not tab names. The harness glyph owns default identity,
+              // while only an explicit rename earns primary title copy.
+              // Drafts and shells keep their labels because neither has the
+              // normal live-Agent identity treatment.
+              const showTitle =
+                isDraft || !isAgent || t.titleKind === 'operator';
               const ordinal = ordinalByTabId.get(t.id);
               const stoppedStatus =
                 t.lifecycle === 'interrupted'

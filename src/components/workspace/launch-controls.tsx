@@ -409,12 +409,13 @@ export function AgentComposer({
         harness: conversation.harness,
         dir: projectDir,
         permissionMode: permissionToPersist,
-        title: conversation.title,
         ...(mode === 'resume'
           ? {
               resumeSessionId: conversation.id,
               statedTask: conversation.description ?? conversation.title,
-              restoredSubtitle: conversation.description ?? conversation.title,
+              ...(conversation.titleSource === 'generated'
+                ? { restoredSubtitle: conversation.title }
+                : {}),
             }
           : { initialPrompt: freshConversationPrompt(conversation) }),
       };

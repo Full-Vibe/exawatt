@@ -17,6 +17,9 @@ import * as path from 'path';
 export interface ClosedSessionEntry {
   durableSessionId: string;
   title: string;
+  /** Optional for v1 ledger compatibility; current writers preserve whether
+   * the title was the default identity or an explicit operator rename. */
+  titleKind?: 'default' | 'operator';
   /** goal subtitle at close time (D21 durable goal) */
   goal: string | null;
   harness: string;
@@ -44,6 +47,9 @@ function validEntry(e: unknown): e is ClosedSessionEntry {
     typeof entry.durableSessionId === 'string' &&
     entry.durableSessionId.length > 0 &&
     typeof entry.title === 'string' &&
+    (entry.titleKind === undefined ||
+      entry.titleKind === 'default' ||
+      entry.titleKind === 'operator') &&
     typeof entry.harness === 'string' &&
     typeof entry.cwd === 'string' &&
     typeof entry.projectDir === 'string' &&

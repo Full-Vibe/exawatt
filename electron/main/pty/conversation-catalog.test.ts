@@ -228,6 +228,75 @@ describe('RecentConversationCatalog', () => {
     ]);
   });
 
+  it('refuses generated narration and overlong cached labels at the desktop boundary', async () => {
+    const cacheRoot = await temporaryRoot('exawatt-conversation-cache-');
+    const cacheFile = path.join(cacheRoot, 'summaries.json');
+    const draft: ConversationDraft = {
+      id: 'provider-id',
+      harness: 'codex',
+      cwd: '/project',
+      startedAt: 1,
+      updatedAt: 2,
+      title: "I'm going to give you a call transcript…",
+      description: 'Verify E&M codes use AMA guidelines',
+      titleSource: 'fallback',
+      needsSummary: true,
+      continuation: { kind: 'provider' },
+      fingerprint: '2:100',
+      summaryInput: ['Call transcript', 'Verify the E&M guidance'],
+      providerIdentity: 'provider-id',
+      correlationKey: 'codex:call transcript',
+    };
+    const catalog = new RecentConversationCatalog({
+      adapters: [{ list: vi.fn(async () => [draft]) }],
+      cacheFile,
+      fetch: vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              conversations: [
+                {
+                  key: 'codex:provider-id',
+                  title: 'Verify E&M billing guidance',
+                  summary: "Based on my exploration, here's what I found",
+                },
+              ],
+            })
+          )
+      ) as typeof fetch,
+      summaryEndpoint: 'https://example.test/summarize',
+    });
+
+    await expect(
+      catalog.enrich('/project', 'signed-in-token')
+    ).resolves.toEqual([
+      expect.objectContaining({
+        title: draft.title,
+        titleSource: 'fallback',
+        needsSummary: true,
+      }),
+    ]);
+    await expect(fs.promises.readFile(cacheFile, 'utf8')).resolves.toBe('{}');
+
+    await fs.promises.writeFile(
+      cacheFile,
+      JSON.stringify({
+        'codex:provider-id': {
+          fingerprint: draft.fingerprint,
+          title: 'Verify all E&M codes against the AMA guidelines',
+          description: 'Verify E&M codes use AMA guidelines',
+        },
+      })
+    );
+    await expect(catalog.list('/project')).resolves.toEqual([
+      expect.objectContaining({
+        title: draft.title,
+        titleSource: 'fallback',
+        needsSummary: true,
+      }),
+    ]);
+  });
+
   it('merges Project Session history with provider history by exact identity', async () => {
     const providerDraft: ConversationDraft = {
       id: 'provider-id',

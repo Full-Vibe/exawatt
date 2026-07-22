@@ -23,6 +23,7 @@ describe('ClosedSessionLedger (D23)', () => {
   const entry = (id: string) => ({
     durableSessionId: id,
     title: 'Claude Code',
+    titleKind: 'default' as const,
     goal: 'Ship code review fixes',
     harness: 'claude',
     cwd: '/repo',
@@ -54,8 +55,13 @@ describe('ClosedSessionLedger (D23)', () => {
 
     const taken = reloaded.take('a');
     expect(taken?.goal).toBe('Ship code review fixes');
+    expect(taken?.titleKind).toBe('default');
     expect(taken?.closedAt).toBe(100_000);
-    expect(make().list().map(e => e.durableSessionId)).toEqual(['b']);
+    expect(
+      make()
+        .list()
+        .map(e => e.durableSessionId)
+    ).toEqual(['b']);
     // take never purges history — reopen must find it intact
     expect(purged).toEqual([]);
   });

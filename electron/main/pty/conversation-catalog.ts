@@ -58,6 +58,8 @@ const MAX_SUMMARY_TURNS = 8;
 const MAX_SUMMARY_TURN_CHARS = 700;
 const MAX_TITLE_CHARS = 72;
 const MAX_DESCRIPTION_CHARS = 220;
+const MAX_GENERATED_TITLE_WORDS = 6;
+const MAX_GENERATED_DESCRIPTION_WORDS = 18;
 const DEFAULT_SUMMARY_ENDPOINT =
   'https://www.exawatt.ai/api/conversations/summarize';
 
@@ -241,6 +243,42 @@ function usableNativeTitle(value: unknown): string | null {
   const clean = value.replace(/\s+/g, ' ').trim();
   if (!clean || clean.length > MAX_TITLE_CHARS) return null;
   return clean;
+}
+
+const FIRST_PERSON_NARRATION =
+  /\b(?:i(?:'m| am|'ve| have|'ll| will| found)|we(?:'re| are|'ve| have|'ll| will| found))\b/i;
+const MODEL_PREAMBLE =
+  /^(?:based on (?:my|the) (?:analysis|exploration|review|context)|here(?:'s| is)|this (?:conversation|task|request))\b/i;
+
+function usableGeneratedText(
+  value: unknown,
+  maxChars: number,
+  maxWords: number
+): string | null {
+  if (typeof value !== 'string') return null;
+  const clean = value.replace(/\s+/g, ' ').trim();
+  if (
+    !clean ||
+    clean.length > maxChars ||
+    clean.split(/\s+/).length > maxWords ||
+    FIRST_PERSON_NARRATION.test(clean) ||
+    MODEL_PREAMBLE.test(clean)
+  ) {
+    return null;
+  }
+  return clean;
+}
+
+function usableGeneratedTitle(value: unknown): string | null {
+  return usableGeneratedText(value, MAX_TITLE_CHARS, MAX_GENERATED_TITLE_WORDS);
+}
+
+function usableGeneratedDescription(value: unknown): string | null {
+  return usableGeneratedText(
+    value,
+    MAX_DESCRIPTION_CHARS,
+    MAX_GENERATED_DESCRIPTION_WORDS
+  );
 }
 
 export class CodexConversationAdapter implements ConversationCatalogAdapter {
@@ -639,12 +677,9 @@ export class RecentConversationCatalog {
     for (const item of body.conversations ?? []) {
       if (typeof item.key !== 'string') continue;
       const candidate = pendingByKey.get(item.key);
-      const title = usableNativeTitle(item.title);
-      if (!candidate || !title) continue;
-      const description =
-        typeof item.summary === 'string' && item.summary.trim()
-          ? truncate(item.summary, MAX_DESCRIPTION_CHARS)
-          : candidate.description;
+      const title = usableGeneratedTitle(item.title);
+      const description = usableGeneratedDescription(item.summary);
+      if (!candidate || !title || !description) continue;
       cache[item.key] = {
         fingerprint: candidate.fingerprint,
         title,
@@ -676,13 +711,20 @@ export class RecentConversationCatalog {
     return [...deduped.values()]
       .map(candidate => {
         const cached = cache[cacheKey(candidate)];
-        if (!cached || cached.fingerprint !== candidate.fingerprint) {
+        const cachedTitle = usableGeneratedTitle(cached?.title);
+        if (
+          !cached ||
+          cached.fingerprint !== candidate.fingerprint ||
+          !cachedTitle
+        ) {
           return candidate;
         }
         return {
           ...candidate,
-          title: cached.title,
-          description: cached.description,
+          title: cachedTitle,
+          description:
+            usableGeneratedDescription(cached.description) ??
+            candidate.description,
           titleSource: 'generated' as const,
           needsSummary: false,
         };

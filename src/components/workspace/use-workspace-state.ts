@@ -22,7 +22,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { HARNESS_META } from './harnesses';
+import { HARNESS_META, isDefaultHarnessTitle } from './harnesses';
 import { pickDistinctColor, projectColor } from './project-colors';
 import {
   moveProjectInList,
@@ -76,6 +76,9 @@ export interface WorkspaceTab {
   durableSessionId: string;
   harness: PtyHarness;
   title: string;
+  /** Ownership of the strip title. Provider/catalog labels never become
+   * tab titles: only an explicit operator rename earns visible title copy. */
+  titleKind: TabTitleKind;
   cwd: string;
   sessionId: string | null;
   harnessSessionId: string | null;
@@ -97,6 +100,8 @@ export interface WorkspaceTab {
    *  unmounting on tab/Project switches and (with content) restarts */
   draftTask?: string | null;
 }
+
+export type TabTitleKind = 'default' | 'operator';
 
 export type SessionLifecycle =
   | 'running'
@@ -153,6 +158,9 @@ export function tabFromPtySession(
     durableSessionId: session.durableSessionId,
     harness: session.harness,
     title: session.title,
+    titleKind: isDefaultHarnessTitle(session.harness, session.title)
+      ? 'default'
+      : 'operator',
     cwd: session.cwd,
     sessionId: session.exited ? null : session.id,
     harnessSessionId: session.harnessSessionId,
@@ -181,9 +189,9 @@ export interface Project {
   activeTabId: string | null;
 }
 
-/** Current persisted layout (v5). v5 adds durable identity and lifecycle. */
-export interface PersistedV5 {
-  v: 5;
+/** Current persisted layout (v6). v6 makes tab-title ownership explicit. */
+export interface PersistedV6 {
+  v: 6;
   lastUsedDir: string;
   activeDir: string | null;
   /** split view (S2): tab pinned beside the active one; optional (pre-S2
@@ -208,6 +216,7 @@ export interface PersistedV5 {
       durableSessionId: string;
       harness: PtyHarness;
       title: string;
+      titleKind: TabTitleKind;
       cwd: string;
       sessionId: string | null;
       harnessSessionId: string | null;
@@ -225,6 +234,18 @@ export interface PersistedV5 {
     }>;
   }>;
 }
+
+/** v5 layout on disk: v6 before tab-title ownership was explicit. */
+type PersistedV5 = Omit<PersistedV6, 'v' | 'projects'> & {
+  v: 5;
+  projects: Array<
+    Omit<PersistedV6['projects'][number], 'tabs'> & {
+      tabs: Array<
+        Omit<PersistedV6['projects'][number]['tabs'][number], 'titleKind'>
+      >;
+    }
+  >;
+};
 
 /** v4 layout on disk: v5 minus durable identity and lifecycle. */
 type PersistedV4 = Omit<PersistedV5, 'v' | 'projects'> & {
@@ -284,10 +305,61 @@ function newDurableSessionId(): string {
   return `session-${crypto.randomUUID()}`;
 }
 
+const LEGACY_CATALOG_TITLE_MAX_CHARS = 72;
+
+/** D31 briefly leaked a bounded catalog fallback (the first operator prompt)
+ * into a tab title. This shape is deliberately narrow: repair the known
+ * migration artifact once without guessing away ordinary operator renames. */
+function isLegacyCatalogTitleLeak(candidate: {
+  harness: PtyHarness;
+  title: string;
+  harnessSessionId: string | null;
+  initialTask?: string | null;
+  semanticSummary?: string | null;
+  draft?: boolean;
+}): boolean {
+  return (
+    candidate.harness !== 'shell' &&
+    !candidate.draft &&
+    typeof candidate.harnessSessionId === 'string' &&
+    typeof candidate.initialTask === 'string' &&
+    !!candidate.initialTask.trim() &&
+    typeof candidate.semanticSummary === 'string' &&
+    !!candidate.semanticSummary.trim() &&
+    candidate.title.trim().length <= LEGACY_CATALOG_TITLE_MAX_CHARS &&
+    candidate.title.trim().endsWith('…') &&
+    candidate.title.trim().split(/\s+/).length > 6
+  );
+}
+
+function upgradeV5TabTitle(
+  tab: PersistedV5['projects'][number]['tabs'][number]
+): Pick<
+  PersistedV6['projects'][number]['tabs'][number],
+  'title' | 'titleKind'
+> {
+  const isDraft = tab.lifecycle === 'draft';
+  if (
+    isDraft ||
+    isDefaultHarnessTitle(tab.harness, tab.title) ||
+    isLegacyCatalogTitleLeak({
+      ...tab,
+      semanticSummary: tab.contextSummary,
+      draft: isDraft,
+    })
+  ) {
+    return {
+      title: isDraft ? tab.title : HARNESS_META[tab.harness].label,
+      titleKind: 'default',
+    };
+  }
+  return { title: tab.title, titleKind: 'operator' };
+}
+
 /** Read the persisted layout, upgrading older shapes in place: v1 (key
  *  `initiatives`) → v2 (key `projects`) → v3 (exact provider IDs) → v4
- *  (declared roadmap links) → v5 (durable lifecycle). */
-export function parsePersisted(raw: unknown): PersistedV5 | null {
+ *  (declared roadmap links) → v5 (durable lifecycle) → v6 (title ownership). */
+export function parsePersisted(raw: unknown): PersistedV6 | null {
   if (!raw || typeof raw !== 'object') return null;
   const d = raw as { v?: number; projects?: unknown; initiatives?: unknown };
   const toV5 = (p: PersistedV4): PersistedV5 => ({
@@ -303,8 +375,18 @@ export function parsePersisted(raw: unknown): PersistedV5 | null {
       })),
     })),
   });
-  if (d.v === 5 && Array.isArray(d.projects)) {
-    const parsed = raw as PersistedV5;
+  const toV6 = (p: PersistedV5): PersistedV6 => ({
+    ...p,
+    v: 6,
+    projects: p.projects.map(project => ({
+      ...project,
+      tabs: project.tabs.map(tab => ({
+        ...tab,
+        ...upgradeV5TabTitle(tab),
+      })),
+    })),
+  });
+  const normalizeV6 = (parsed: PersistedV6): PersistedV6 => {
     const seen = new Set<string>();
     return {
       ...parsed,
@@ -329,14 +411,26 @@ export function parsePersisted(raw: unknown): PersistedV5 | null {
           return {
             ...tab,
             durableSessionId,
+            titleKind:
+              tab.titleKind === 'default' || tab.titleKind === 'operator'
+                ? tab.titleKind
+                : isDefaultHarnessTitle(tab.harness, tab.title)
+                  ? 'default'
+                  : 'operator',
             lifecycle,
             exitCode: tab.exitCode ?? null,
           };
         }),
       })),
     };
+  };
+  if (d.v === 6 && Array.isArray(d.projects)) {
+    return normalizeV6(raw as PersistedV6);
   }
-  if (d.v === 4 && Array.isArray(d.projects)) return toV5(raw as PersistedV4);
+  if (d.v === 5 && Array.isArray(d.projects))
+    return normalizeV6(toV6(raw as PersistedV5));
+  if (d.v === 4 && Array.isArray(d.projects))
+    return normalizeV6(toV6(toV5(raw as PersistedV4)));
   const toV4 = (p: Omit<PersistedV3, 'v'>): PersistedV4 => ({
     ...p,
     v: 4 as const,
@@ -347,20 +441,27 @@ export function parsePersisted(raw: unknown): PersistedV5 | null {
   });
   if (d.v === 3 && Array.isArray(d.projects)) {
     const { v: _v, ...rest } = raw as PersistedV3;
-    return toV5(toV4(rest));
+    return normalizeV6(toV6(toV5(toV4(rest))));
   }
   const upgrade = (
     projects: PersistedV2['projects'],
     rest: Omit<PersistedV2, 'v' | 'projects'>
   ) =>
-    toV5(
-      toV4({
-        ...rest,
-        projects: projects.map(project => ({
-          ...project,
-          tabs: project.tabs.map(tab => ({ ...tab, harnessSessionId: null })),
-        })),
-      })
+    normalizeV6(
+      toV6(
+        toV5(
+          toV4({
+            ...rest,
+            projects: projects.map(project => ({
+              ...project,
+              tabs: project.tabs.map(tab => ({
+                ...tab,
+                harnessSessionId: null,
+              })),
+            })),
+          })
+        )
+      )
     );
   if (d.v === 2 && Array.isArray(d.projects)) {
     const { projects, v: _v, ...rest } = raw as PersistedV2;
@@ -381,8 +482,6 @@ export interface LaunchOptions {
   initialPrompt?: string;
   /** Resume one provider conversation by its durable harness identity. */
   resumeSessionId?: string;
-  /** Human label discovered from the provider or Exawatt enrichment. */
-  title?: string;
   /** Goal metadata for a resumed conversation; never written to the PTY. */
   statedTask?: string;
   /** Immediate context subtitle while the resumed harness restores. */
@@ -444,7 +543,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const editedDirsRef = useRef<Set<string>>(new Set());
   /** durable Project recency (ENG-016 D8) — loaded from the persisted layout,
    *  re-merged on every save so closed Projects survive */
-  const recentsRef = useRef<NonNullable<PersistedV5['recentProjects']>>([]);
+  const recentsRef = useRef<NonNullable<PersistedV6['recentProjects']>>([]);
   const readyRef = useRef(ready);
   readyRef.current = ready;
   const attentionRef = useRef(attention);
@@ -868,7 +967,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   }, []);
 
   const serializeWorkspace = useCallback(
-    (cleanShutdown = false): PersistedV5 => {
+    (cleanShutdown = false): PersistedV6 => {
       const {
         projects: gs,
         activeDir: ad,
@@ -892,7 +991,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       ].slice(0, 12);
       recentsRef.current = recents;
       return {
-        v: 5,
+        v: 6,
         lastUsedDir: lu,
         activeDir: ad,
         pinnedTabId: pinSurvives ? pin : null,
@@ -914,6 +1013,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 durableSessionId: tab.durableSessionId,
                 harness: tab.harness,
                 title: tab.title,
+                titleKind: tab.titleKind,
                 cwd: tab.cwd,
                 sessionId: stopped ? null : tab.sessionId,
                 harnessSessionId: tab.harnessSessionId,
@@ -1063,7 +1163,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         const res = await api.create({
           harness: opts.harness,
           cwd,
-          title: opts.title?.trim() || HARNESS_META[opts.harness].label,
+          title: HARNESS_META[opts.harness].label,
           durableSessionId,
           ...(opts.permissionMode
             ? { permissionMode: opts.permissionMode }
@@ -1173,6 +1273,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         durableSessionId: newDurableSessionId(),
         harness: 'claude',
         title: 'New agent',
+        titleKind: 'default',
         cwd: g.dir,
         sessionId: null,
         harnessSessionId: null,
@@ -1306,6 +1407,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const entryData = {
         durableSessionId: tab.durableSessionId,
         title: tab.title,
+        titleKind: tab.titleKind,
         goal,
         harness: tab.harness,
         cwd: tab.cwd,
@@ -1336,11 +1438,26 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (!api?.reopenSession) return false;
       const entry = await api.reopenSession(durableSessionId);
       if (!entry) return false;
+      const repairsLegacyCatalogTitle =
+        entry.titleKind === undefined &&
+        isLegacyCatalogTitleLeak({
+          ...entry,
+          semanticSummary: entry.goal,
+        });
       const tab: WorkspaceTab = {
         id: newTabId(),
         durableSessionId: entry.durableSessionId,
         harness: entry.harness,
-        title: entry.title,
+        title: repairsLegacyCatalogTitle
+          ? HARNESS_META[entry.harness].label
+          : entry.title,
+        titleKind: repairsLegacyCatalogTitle
+          ? 'default'
+          : entry.titleKind === 'default' || entry.titleKind === 'operator'
+            ? entry.titleKind
+            : isDefaultHarnessTitle(entry.harness, entry.title)
+              ? 'default'
+              : 'operator',
         cwd: entry.cwd,
         sessionId: null,
         harnessSessionId: entry.harnessSessionId,
@@ -1801,7 +1918,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     (tabId: string, title: string) => {
       const next = title.trim();
       if (!next) return;
-      updateTab(tabId, { title: next });
+      updateTab(tabId, { title: next, titleKind: 'operator' });
       const tab = stateRef.current.projects
         .flatMap(g => g.tabs)
         .find(t => t.id === tabId);

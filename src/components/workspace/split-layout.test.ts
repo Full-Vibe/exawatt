@@ -14,6 +14,7 @@ const tab = (id: string, over: Partial<WorkspaceTab> = {}): WorkspaceTab => ({
   durableSessionId: `${id}-durable`,
   harness: 'claude',
   title: 'Agent',
+  titleKind: 'operator',
   cwd: '/project',
   sessionId: `pty-${id}`,
   harnessSessionId: null,
@@ -49,13 +50,21 @@ describe('tabIsPinnable', () => {
 describe('nextPin (the ⌘D decision table)', () => {
   it('pins the active live tab when nothing is pinned', () => {
     expect(
-      nextPin({ tabs: [tab('a'), tab('b')], activeTabId: 'a', pinnedTabId: null })
+      nextPin({
+        tabs: [tab('a'), tab('b')],
+        activeTabId: 'a',
+        pinnedTabId: null,
+      })
     ).toEqual({ pin: 'a', applied: true });
   });
 
   it('unpins a live pin', () => {
     expect(
-      nextPin({ tabs: [tab('a'), tab('b')], activeTabId: 'b', pinnedTabId: 'a' })
+      nextPin({
+        tabs: [tab('a'), tab('b')],
+        activeTabId: 'b',
+        pinnedTabId: 'a',
+      })
     ).toEqual({ pin: null, applied: true });
   });
 

@@ -73,7 +73,7 @@ describe('workspace persistence v4 (ENG-017 S4)', () => {
         },
       ],
     });
-    expect(parsed?.v).toBe(5);
+    expect(parsed?.v).toBe(6);
     expect(parsed?.pinnedTabId).toBe('tab-1');
     expect(parsed?.projects[0].tabs[0]).toMatchObject({
       harnessSessionId: '00000001-1111-4111-8111-111111111111',
@@ -121,7 +121,7 @@ describe('workspace persistence v4 (ENG-017 S4)', () => {
         },
       ],
     });
-    expect(parsed?.v).toBe(5);
+    expect(parsed?.v).toBe(6);
     expect(parsed?.projects[0].tabs[0]).toMatchObject({
       harnessSessionId: null,
       roadmapItemId: null,
@@ -267,8 +267,98 @@ describe('workspace persistence v5 (ENG-018)', () => {
     });
     expect(parsed?.projects[0].tabs[0]).toMatchObject({
       lifecycle: 'draft',
+      titleKind: 'default',
       draftTask: 'Half-written task brief',
       draftSource: 'codex',
+    });
+  });
+
+  it('repairs the bounded D31 catalog prompt leak without erasing normal renames', () => {
+    const parsed = parsePersisted({
+      v: 5,
+      lastUsedDir: '/project',
+      activeDir: '/project',
+      projects: [
+        {
+          dir: '/project',
+          name: 'Project',
+          activeTabId: 'tab-leaked',
+          tabs: [
+            {
+              id: 'tab-leaked',
+              durableSessionId: 'session-leaked',
+              harness: 'codex',
+              title:
+                "I'm going to give you a call transcript with Dr. Matt Rosenberg, along…",
+              cwd: '/project',
+              sessionId: 'pty-leaked',
+              harnessSessionId: 'provider-leaked',
+              roadmapItemId: null,
+              lifecycle: 'running',
+              exitCode: null,
+              initialTask: 'Are your E&M codes based on AMA guidelines?',
+              contextSummary: 'Verify E&M codes use AMA guidelines',
+            },
+            {
+              id: 'tab-renamed',
+              durableSessionId: 'session-renamed',
+              harness: 'codex',
+              title: 'E&M billing audit',
+              cwd: '/project',
+              sessionId: 'pty-renamed',
+              harnessSessionId: 'provider-renamed',
+              roadmapItemId: null,
+              lifecycle: 'running',
+              exitCode: null,
+              initialTask: 'Audit E&M billing',
+              contextSummary: 'Audit E&M billing',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(parsed?.v).toBe(6);
+    expect(parsed?.projects[0].tabs[0]).toMatchObject({
+      title: 'Codex',
+      titleKind: 'default',
+    });
+    expect(parsed?.projects[0].tabs[1]).toMatchObject({
+      title: 'E&M billing audit',
+      titleKind: 'operator',
+    });
+  });
+});
+
+describe('workspace persistence v6 title ownership', () => {
+  it('preserves an explicit rename even when it matches the source label', () => {
+    const parsed = parsePersisted({
+      v: 6,
+      lastUsedDir: '/project',
+      activeDir: '/project',
+      projects: [
+        {
+          dir: '/project',
+          name: 'Project',
+          activeTabId: 'tab-1',
+          tabs: [
+            {
+              ...tab('1', 'provider-1'),
+              durableSessionId: 'session-1',
+              title: 'Claude Code',
+              titleKind: 'operator',
+              roadmapItemId: null,
+              lifecycle: 'running',
+              exitCode: null,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(parsed?.projects[0].tabs[0]).toMatchObject({
+      title: 'Claude Code',
+      titleKind: 'operator',
     });
   });
 });
@@ -279,6 +369,7 @@ describe('Resume All eligibility', () => {
     durableSessionId: 'durable-1',
     harness: 'claude',
     title: 'Agent',
+    titleKind: 'operator',
     cwd: '/project',
     sessionId: null,
     harnessSessionId: 'provider-1',
@@ -334,6 +425,7 @@ describe('PTY tab adoption', () => {
       resumeState: 'identity-missing',
       lifecycle: 'exited',
       exitCode: 0,
+      titleKind: 'default',
     });
   });
 });

@@ -45,6 +45,11 @@ latest-by-directory guess.
   Project directory.
 - Provider-native titles win. A fingerprinted, mode-0600 machine-local cache is
   second. A deterministic excerpt fallback is always available immediately.
+- Catalog titles are browser labels, not Session tab names. Resume and Fresh
+  carry the bounded handoff into goal metadata but start with the normal Agent
+  Source identity; only an explicit operator rename owns primary tab chrome.
+  Raw/native handoffs remain summarizer input, while only validated generated
+  labels may seed an immediate goal subtitle.
 - The new-tab composer remains a new-task surface first. Empty-composer ↓ moves
   to recents; Option+↑/↓ cycles the Agent Source. A provider-only row's primary
   action resumes its exact ID immediately. A Project-owned row reopens the
@@ -60,6 +65,10 @@ latest-by-directory guess.
   variable. The endpoint does not persist transcript excerpts.
 - Enrichment failure is silent degradation, not launch failure. Native,
   cached, and local fallback copy continues to work offline.
+- Generated labels are accepted only when both the hosted boundary and the
+  desktop cache boundary verify the six-word title / 18-word handoff contract
+  and reject first-person or model-preamble narration. Invalid cache rows are
+  ignored and remain eligible for later enrichment.
 
 References:
 

@@ -9,8 +9,8 @@
  *
  * Each generation asserts:
  *   - confirmed quit leaves no orphan harness process
- *   - workspace.json stays v5 with the SAME tab set (same durable Session
- *     ids, same exact provider conversation ids, no duplicates, no strays)
+ *   - workspace.json stays v6 with the SAME tab set (same durable Session
+ *     ids, exact provider ids, title ownership, no duplicates or strays)
  *   - relaunch spawns nothing; the resume banner counts only agents
  *   - Resume All resumes the exact same conversations as generation 0
  *   - a per-generation history marker written after resume is retained
@@ -168,6 +168,8 @@ function tabFingerprint(workspace) {
       durableSessionId: tab.durableSessionId,
       harness: tab.harness,
       harnessSessionId: tab.harnessSessionId,
+      title: tab.title,
+      titleKind: tab.titleKind,
     }))
   );
 }
@@ -217,11 +219,7 @@ try {
   );
   await summonComposer(page);
   await page.getByRole('button', { name: /Open shell in / }).click();
-  await waitFor(
-    page,
-    async () => (await sessions(page)).length === 4,
-    'shell'
-  );
+  await waitFor(page, async () => (await sessions(page)).length === 4, 'shell');
 
   const initial = await sessions(page);
   for (const [index, session] of initial.entries()) {
@@ -266,12 +264,14 @@ try {
   await quitAndWaitClosed(app, page);
   app = null;
   const baselineWorkspace = readWorkspace();
-  if (baselineWorkspace.v !== 5) {
-    throw new Error(`Workspace is not v5: ${baselineWorkspace.v}`);
+  if (baselineWorkspace.v !== 6) {
+    throw new Error(`Workspace is not v6: ${baselineWorkspace.v}`);
   }
   const baselineTabs = tabFingerprint(baselineWorkspace);
   if (baselineTabs.length !== 4) {
-    throw new Error(`Expected 4 persisted tabs: ${JSON.stringify(baselineTabs)}`);
+    throw new Error(
+      `Expected 4 persisted tabs: ${JSON.stringify(baselineTabs)}`
+    );
   }
   console.log('[idem] baseline persisted:', JSON.stringify(baselineTabs));
 
@@ -298,9 +298,7 @@ try {
     );
 
     const resumed = await sessions(page);
-    const resumedIds = resumed
-      .map(session => session.harnessSessionId)
-      .sort();
+    const resumedIds = resumed.map(session => session.harnessSessionId).sort();
     if (JSON.stringify(resumedIds) !== JSON.stringify(baselineAgents)) {
       throw new Error(
         `g${generation}: resumed ids drifted: ${resumedIds} != ${baselineAgents}`
@@ -343,11 +341,12 @@ try {
     app = null;
 
     const workspace = readWorkspace();
-    if (workspace.v !== 5) {
+    if (workspace.v !== 6) {
       throw new Error(`g${generation}: workspace version drifted`);
     }
     const tabs = tabFingerprint(workspace);
-    const key = tab => `${tab.durableSessionId}:${tab.harness}:${tab.harnessSessionId}`;
+    const key = tab =>
+      `${tab.durableSessionId}:${tab.harness}:${tab.harnessSessionId}:${tab.titleKind}:${tab.title}`;
     const baselineKeys = baselineTabs.map(key).sort();
     const currentKeys = tabs.map(key).sort();
     if (JSON.stringify(currentKeys) !== JSON.stringify(baselineKeys)) {
@@ -363,7 +362,9 @@ try {
         `g${generation}: unexpected lifecycle after clean quit: ${lifecycles}`
       );
     }
-    console.log(`[idem] generation ${generation}: identical tab set, clean stop`);
+    console.log(
+      `[idem] generation ${generation}: identical tab set, clean stop`
+    );
   }
 
   // final relaunch: cumulative history markers from every generation are
@@ -389,9 +390,7 @@ try {
   await quitAndWaitClosed(app, page);
   app = null;
 
-  console.log(
-    `\nREHYDRATION IDEMPOTENCY PASSED (${GENERATIONS} generations)`
-  );
+  console.log(`\nREHYDRATION IDEMPOTENCY PASSED (${GENERATIONS} generations)`);
 } finally {
   if (app) {
     try {

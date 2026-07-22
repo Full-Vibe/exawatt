@@ -96,6 +96,7 @@ export type PtyCreateResult =
 export interface ClosedSessionEntry {
   durableSessionId: string;
   title: string;
+  titleKind?: 'default' | 'operator';
   goal: string | null;
   harness: PtyHarness;
   cwd: string;

@@ -15,6 +15,10 @@ function tab(overrides: Partial<WorkspaceTab> & { id: string }): WorkspaceTab {
     durableSessionId: `durable-${overrides.id}`,
     harness: 'claude',
     title: 'Claude Code',
+    titleKind:
+      overrides.title && overrides.title !== 'Claude Code'
+        ? 'operator'
+        : 'default',
     cwd: '/repo',
     sessionId: `session-${overrides.id}`,
     harnessSessionId: null,
@@ -121,8 +125,36 @@ describe('TabStrip turn-state glyphs (D22)', () => {
   });
 
   it('a renamed fresh agent keeps its name', () => {
-    strip({ tabs: [tab({ id: 'a', title: 'auth refactor' })] });
+    strip({
+      tabs: [tab({ id: 'a', title: 'auth refactor', titleKind: 'operator' })],
+    });
     expect(screen.getByText('auth refactor')).not.toBeNull();
+  });
+
+  it('honors an explicit rename even when it matches the source label', () => {
+    strip({
+      tabs: [tab({ id: 'a', title: 'Claude Code', titleKind: 'operator' })],
+    });
+    expect(screen.getByText('Claude Code')).not.toBeNull();
+  });
+
+  it('keeps a resumed catalog label out of operator-owned tab chrome', () => {
+    strip({
+      tabs: [
+        tab({
+          id: 'a',
+          title: "I'm going to give you a call transcript…",
+          titleKind: 'default',
+        }),
+      ],
+      summaries: { 'durable-a': 'Verify E&M codes use AMA guidelines' },
+    });
+    expect(
+      screen.queryByText("I'm going to give you a call transcript…")
+    ).toBeNull();
+    expect(
+      screen.getByText('Verify E&M codes use AMA guidelines')
+    ).not.toBeNull();
   });
 
   it('idle shells stay quiet and keep their title (no glyph to carry them)', () => {
