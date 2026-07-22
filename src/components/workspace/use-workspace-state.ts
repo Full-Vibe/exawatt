@@ -545,6 +545,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     // flags cleared by events BETWEEN the pty:list snapshot resolving and
     // the seed merge must stay cleared — main won't re-broadcast for them
     const clearedBeforeSeed = new Set<string>();
+    // Same race guard for D29's working ride-along: a quiet transition after
+    // main captured the list must not be overwritten by the stale snapshot.
+    const quietBeforeSeed = new Set<string>();
 
     void (async () => {
       // the font settles here too: the revive loop below reads the spawn
@@ -562,9 +565,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const liveByDurableId = new Map(live.map(s => [s.durableSessionId, s]));
       // goal subtitles (D21): the persisted layout restores each Session's
       // goal first; live truth from main overrides it, all by durable id.
-      // Attention + started flags adopt from live main truth (D22).
+      // Attention, activity, and started flags adopt from live main truth
+      // (D22/D29), so renderer reloads cannot regress any status surface.
       const seeded: Record<string, string> = {};
       const seededAttention: Record<string, PtyAttention> = {};
+      const seededActivity: Record<string, boolean> = {};
       const seededEngaged: Record<string, boolean> = {};
       if (persisted) {
         for (const g of persisted.projects) {
@@ -580,6 +585,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         if (s.attention && !clearedBeforeSeed.has(s.id)) {
           seededAttention[s.id] = s.attention;
         }
+        if (s.working && !quietBeforeSeed.has(s.id)) {
+          seededActivity[s.id] = true;
+        }
         if (s.engaged) seededEngaged[s.id] = true;
       }
       if (Object.keys(seeded).length > 0) {
@@ -587,6 +595,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       }
       if (Object.keys(seededAttention).length > 0) {
         setAttention(prev => ({ ...seededAttention, ...prev }));
+      }
+      if (Object.keys(seededActivity).length > 0) {
+        setActivity(prev => ({ ...seededActivity, ...prev }));
       }
       if (Object.keys(seededEngaged).length > 0) {
         setEngaged(prev => ({ ...seededEngaged, ...prev }));
@@ -789,6 +800,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (tab?.sessionId === next.id) setReentryRecap(next);
     });
     const offActivity = api.onActivity?.(({ id, working }) => {
+      if (working) quietBeforeSeed.delete(id);
+      else quietBeforeSeed.add(id);
       setActivity(prev => {
         if (working) return prev[id] ? prev : { ...prev, [id]: true };
         if (!(id in prev)) return prev;

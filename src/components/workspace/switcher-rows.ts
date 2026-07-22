@@ -6,8 +6,9 @@
  */
 import { projectColor } from './project-colors';
 import type { PtySessionInfo } from '@/types/electron';
+import { sessionGlyphState, type SessionGlyphState } from './session-status';
 
-export type SessionRowStatus = 'needs-you' | 'working' | 'idle' | 'exited';
+export type SessionRowStatus = 'needs-you' | SessionGlyphState | 'exited';
 
 export interface SessionRow {
   id: string;
@@ -24,16 +25,32 @@ export interface SessionRow {
   searchValue: string;
 }
 
-/** output within this window reads as working (matches fleet truth) */
-const WORKING_WINDOW_MS = 15_000;
+/** Compatibility only: older mocks predate the main-owned `working` bit.
+ *  Match AttentionMonitor's 3s transition boundary until those callers are
+ *  upgraded; production pty:list responses never use this heuristic. */
+const LEGACY_WORKING_FALLBACK_MS = 3_000;
 
 export function sessionRowStatus(
-  s: Pick<PtySessionInfo, 'exited' | 'attention' | 'lastDataAt'>,
+  s: Pick<
+    PtySessionInfo,
+    | 'exited'
+    | 'attention'
+    | 'working'
+    | 'lastDataAt'
+    | 'harness'
+    | 'engaged'
+    | 'contextSummary'
+  >,
   now: number
 ): SessionRowStatus {
   if (s.exited) return 'exited';
   if (s.attention) return 'needs-you';
-  return now - s.lastDataAt <= WORKING_WINDOW_MS ? 'working' : 'idle';
+  const working = s.working ?? now - s.lastDataAt < LEGACY_WORKING_FALLBACK_MS;
+  return sessionGlyphState({
+    working,
+    agent: s.harness !== 'shell',
+    started: !!s.engaged || !!s.contextSummary?.trim(),
+  });
 }
 
 /** tolerant read of the persisted layout's dir → color assignments */
@@ -122,11 +139,14 @@ export function extractRoadmapItemIds(layout: unknown): Record<string, string> {
 const STATUS_RANK: Record<SessionRowStatus, number> = {
   'needs-you': 0,
   working: 1,
-  idle: 2,
-  exited: 3,
+  done: 2,
+  fresh: 3,
+  quiet: 4,
+  exited: 5,
 };
 
-/** needs-you first (oldest flag first), then by output recency */
+/** Needs-you first (oldest flag first), then semantic turn state; sessions
+ * within the same state retain output-recency ordering. */
 export function buildSessionRows(
   sessions: PtySessionInfo[],
   layout: unknown,

@@ -2,9 +2,10 @@
 
 /**
  * Session turn-state glyphs (ENG-016 D22, amends the D18 slice) — shared by
- * the tab strip and the Sessions overview so the same truth reads the same
- * way everywhere. The D18 pair (pulsing dot vs hollow dot) was too subtle to
- * read peripherally and conflated "finished a turn" with "never started";
+ * the tab strip, Sessions overview, and command switcher so the same truth
+ * reads the same way everywhere. The D18 pair (pulsing dot vs hollow dot)
+ * was too subtle to read peripherally and conflated "finished a turn" with
+ * "never started";
  * these states differ in shape AND motion:
  *   working — softly breathing teal orb: output streaming right now.
  *             Motion is the peripheral signal, kept SUBTLE (D24: the
@@ -23,41 +24,16 @@
  * state changes must never nudge the tab's layout sideways.
  */
 import { HUD } from '@/components/hud';
+import type { SessionGlyphState } from './session-status';
 
-export type SessionGlyphState = 'working' | 'done' | 'fresh' | 'quiet';
-
-/** One derivation for every surface: working wins; agents split on whether
- *  they were ever given work; shells are just quiet between output. */
-export function sessionGlyphState({
-  working,
-  agent,
-  started,
-}: {
-  working: boolean;
-  /** false for shells — they have no turn state */
-  agent: boolean;
-  started: boolean;
-}): SessionGlyphState {
-  if (working) return 'working';
-  if (!agent) return 'quiet';
-  return started ? 'done' : 'fresh';
-}
-
-/** tooltip copy — one voice across the strip and the overview */
-export const SESSION_GLYPH_COPY: Record<SessionGlyphState, string> = {
-  working: 'working — output streaming',
-  done: 'turn finished — waiting on you',
-  fresh: 'new — not given a task yet',
-  quiet: 'quiet — waiting or between turns',
-};
-
-/** compact state words for accessible names */
-export const SESSION_GLYPH_LABEL: Record<SessionGlyphState, string> = {
-  working: 'working',
-  done: 'turn finished',
-  fresh: 'new',
-  quiet: 'quiet',
-};
+// Keep the established import surface for existing renderers while the
+// state model itself stays usable from render-free mapping code.
+export {
+  SESSION_GLYPH_COPY,
+  SESSION_GLYPH_LABEL,
+  sessionGlyphState,
+} from './session-status';
+export type { SessionGlyphState } from './session-status';
 
 /** constant footprint so working↔rest↔attention swaps never shift the row */
 const GLYPH_BOX =

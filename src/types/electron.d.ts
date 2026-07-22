@@ -54,7 +54,7 @@ export interface PtySessionInfo {
   startedAt: number;
   exited: boolean;
   exitCode: number | null;
-  /** last output timestamp (ENG-015 S2: live status in the switcher) */
+  /** Last output timestamp; retained for recency sorting and legacy mocks. */
   lastDataAt: number;
   /** Durable provider conversation identity; null until explicitly captured. */
   harnessSessionId: string | null;
@@ -65,6 +65,9 @@ export interface PtySessionInfo {
   /** ever given work — task, resume, or human keystroke (D22); adopt-time
    *  seed for the started/unstarted glyph truth */
   engaged?: boolean;
+  /** Main-owned activity truth (D29), including the self-resize redraw grace.
+   *  Optional only for compatibility with older renderer mocks. */
+  working?: boolean;
 }
 
 export type WorktreeResult =

@@ -28,20 +28,67 @@ const session = (over: Partial<PtySessionInfo> = {}): PtySessionInfo => ({
 
 describe('sessionRowStatus', () => {
   const NOW = 100_000;
-  it('maps the four states', () => {
-    expect(sessionRowStatus(session({ exited: true }), NOW)).toBe('exited');
+  it('mirrors the shared five-state turn model plus exited', () => {
     expect(
       sessionRowStatus(
-        session({ attention: { kind: 'bell', since: NOW } }),
+        session({
+          exited: true,
+          attention: { kind: 'bell', since: NOW },
+          working: true,
+        }),
+        NOW
+      )
+    ).toBe('exited');
+    expect(
+      sessionRowStatus(
+        session({
+          attention: { kind: 'bell', since: NOW },
+          working: true,
+        }),
         NOW
       )
     ).toBe('needs-you');
-    expect(sessionRowStatus(session({ lastDataAt: NOW - 5_000 }), NOW)).toBe(
+    expect(sessionRowStatus(session({ working: true }), NOW)).toBe('working');
+    expect(
+      sessionRowStatus(session({ working: false, engaged: true }), NOW)
+    ).toBe('done');
+    expect(
+      sessionRowStatus(
+        session({ working: false, contextSummary: 'Finished auth tests' }),
+        NOW
+      )
+    ).toBe('done');
+    expect(sessionRowStatus(session({ working: false }), NOW)).toBe('fresh');
+    expect(
+      sessionRowStatus(
+        session({ harness: 'shell', working: false, engaged: true }),
+        NOW
+      )
+    ).toBe('quiet');
+  });
+
+  it('trusts an explicit false working bit even when output is recent', () => {
+    expect(
+      sessionRowStatus(session({ working: false, lastDataAt: NOW - 1 }), NOW)
+    ).toBe('fresh');
+  });
+
+  it('uses the monitor-equivalent 3s window only for legacy mocks', () => {
+    expect(sessionRowStatus(session({ lastDataAt: NOW - 2_999 }), NOW)).toBe(
       'working'
     );
-    expect(sessionRowStatus(session({ lastDataAt: NOW - 60_000 }), NOW)).toBe(
-      'idle'
+    expect(sessionRowStatus(session({ lastDataAt: NOW - 3_000 }), NOW)).toBe(
+      'fresh'
     );
+    expect(
+      sessionRowStatus(session({ engaged: true, lastDataAt: NOW - 3_000 }), NOW)
+    ).toBe('done');
+  });
+
+  it('working still outranks shell quiet in the shared model', () => {
+    expect(
+      sessionRowStatus(session({ harness: 'shell', working: true }), NOW)
+    ).toBe('working');
   });
 
   it('exited wins over a stale attention flag', () => {
@@ -82,21 +129,25 @@ describe('extractProjectColors', () => {
 describe('buildSessionRows', () => {
   const NOW = 100_000;
 
-  it('orders needs-you (oldest flag first), then working by recency, then idle, then exited', () => {
+  it('orders the complete attention and turn-state model', () => {
     const rows = buildSessionRows(
       [
-        session({ id: 'idle', lastDataAt: NOW - 60_000 }),
-        session({ id: 'dead', exited: true, exitCode: 0 }),
+        session({ id: 'fresh', working: false }),
+        session({ id: 'quiet', harness: 'shell', working: false }),
+        session({ id: 'done', working: false, engaged: true }),
+        session({ id: 'dead', exited: true, exitCode: 0, working: false }),
         session({
           id: 'flag-new',
           attention: { kind: 'bell', since: NOW - 1_000 },
           lastDataAt: NOW,
+          working: true,
         }),
-        session({ id: 'working', lastDataAt: NOW - 2_000 }),
+        session({ id: 'working', lastDataAt: NOW - 2_000, working: true }),
         session({
           id: 'flag-old',
           attention: { kind: 'turn-end', since: NOW - 9_000 },
           lastDataAt: NOW,
+          working: false,
         }),
       ],
       null,
@@ -106,7 +157,9 @@ describe('buildSessionRows', () => {
       'flag-old',
       'flag-new',
       'working',
-      'idle',
+      'done',
+      'fresh',
+      'quiet',
       'dead',
     ]);
   });

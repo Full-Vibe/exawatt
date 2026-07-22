@@ -293,6 +293,7 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       contextSummary: contextSummarizer.getSummary(s.durableSessionId),
       attention: attentionMonitor.get(s.id),
       engaged: attentionMonitor.isEngaged(s.id),
+      working: attentionMonitor.isWorking(s.id),
     }))
   );
   handleTrusted('pty:buffer', (_event, id: string) => ptySessions.buffer(id));

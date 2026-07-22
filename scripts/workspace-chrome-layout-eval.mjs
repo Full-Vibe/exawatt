@@ -44,9 +44,11 @@ function session({
   projectName,
   contextSummary,
   engaged = false,
+  working = false,
 }) {
   return {
     engaged,
+    working,
     id,
     durableSessionId: id,
     harness,
@@ -207,6 +209,16 @@ page.on('console', message => {
 await page.addInitScript(
   ({ sessions, layout }) => {
     const off = () => () => undefined;
+    // A late eval step reloads while one session is already working. This
+    // exercises D29's pty:list hydration path without weakening the initial
+    // explicit-false fixtures used by the switcher parity assertions.
+    const hydrateWorkingId = window.localStorage.getItem(
+      'exawatt-eval-working-session'
+    );
+    const hydrateWorkingSession = sessions.find(
+      session => session.id === hydrateWorkingId
+    );
+    if (hydrateWorkingSession) hydrateWorkingSession.working = true;
     window.electron = {
       isElectron: true,
       platform: 'darwin',
@@ -457,6 +469,54 @@ try {
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'turn-states-rest.png'),
   });
+  // D29: the empty-query switcher consumes the same turn-state truth and
+  // renders the same glyph vocabulary as the strip and Sessions tiles.
+  await page.keyboard.press('Meta+KeyK');
+  const palette = page.locator('[cmdk-root]');
+  await palette.waitFor();
+  const expectedSwitcherStates = {
+    'gpa-session': 'done',
+    'exawatt-session': 'done',
+    'fresh-session': 'fresh',
+  };
+  await page.waitForFunction(expected => {
+    const rows = Array.from(document.querySelectorAll('[data-session-id]'));
+    return Object.entries(expected).every(([id, status]) =>
+      rows.some(
+        row =>
+          row.getAttribute('data-session-id') === id &&
+          row
+            .querySelector('[data-session-status]')
+            ?.getAttribute('data-session-status') === status
+      )
+    );
+  }, expectedSwitcherStates);
+  const switcherStates = await palette
+    .locator('[data-session-id]')
+    .evaluateAll(rows =>
+      Object.fromEntries(
+        rows.map(row => [
+          row.getAttribute('data-session-id'),
+          row
+            .querySelector('[data-session-status]')
+            ?.getAttribute('data-session-status'),
+        ])
+      )
+    );
+  if (
+    Object.entries(expectedSwitcherStates).some(
+      ([id, status]) => switcherStates[id] !== status
+    )
+  ) {
+    throw new Error(
+      `Switcher turn-state parity failed: ${JSON.stringify(switcherStates)}`
+    );
+  }
+  await page.screenshot({
+    path: join(SCREENSHOT_DIR, 'switcher-turn-states.png'),
+  });
+  await page.keyboard.press('Escape');
+  await palette.waitFor({ state: 'detached' });
   // the fresh agent starts streaming → its ring becomes the spinner
   await page.evaluate(() => {
     window.__fireActivity?.({ id: 'fresh-session', working: true });
@@ -709,6 +769,20 @@ try {
   ) {
     throw new Error('Permission menu did not restore keyboard focus');
   }
+
+  // D29 hydration parity: activity already true before the renderer mounts
+  // must seed the strip from pty:list; main will not repeat the transition.
+  await page.evaluate(() =>
+    window.localStorage.setItem('exawatt-eval-working-session', 'fresh-session')
+  );
+  await page.reload({ waitUntil: 'networkidle' });
+  const hydratedWorkingTab = page.locator(
+    '[data-project="exawatt"] [data-tab-id="fresh-tab"] [data-status="working"]'
+  );
+  await hydratedWorkingTab.waitFor();
+  await page.screenshot({
+    path: join(SCREENSHOT_DIR, 'turn-state-hydrated-working.png'),
+  });
 
   if (errors.length > 0) {
     throw new Error(`Renderer errors:\n${errors.join('\n')}`);

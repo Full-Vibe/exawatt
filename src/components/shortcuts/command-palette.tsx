@@ -63,6 +63,11 @@ import {
   type AppSurface,
 } from '@/components/nav/surfaces';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
+import {
+  AttentionDot,
+  SESSION_GLYPH_LABEL,
+  SessionStatusGlyph,
+} from '@/components/workspace/status-glyphs';
 import { HARNESS_META, HARNESS_ORDER } from '@/components/workspace/harnesses';
 import {
   AGENT_SOURCE_META,
@@ -86,13 +91,18 @@ import {
   recordPaletteUse,
 } from './palette-recents';
 
-/** live status shown on switcher rows — one word, normal case (no all-caps) */
+/** Shared live-status language with palette-specific HUD colors. */
 const STATUS_META: Record<SessionRowStatus, { label: string; color: string }> =
   {
     'needs-you': { label: 'needs you', color: HUD.amber },
-    working: { label: 'working', color: HUD.green },
-    idle: { label: 'idle', color: HUD.textDim },
-    exited: { label: 'exited', color: HUD.red },
+    working: {
+      label: SESSION_GLYPH_LABEL.working,
+      color: HUD.cyan2,
+    },
+    done: { label: SESSION_GLYPH_LABEL.done, color: HUD.green },
+    fresh: { label: SESSION_GLYPH_LABEL.fresh, color: HUD.idle },
+    quiet: { label: SESSION_GLYPH_LABEL.quiet, color: HUD.idle },
+    exited: { label: 'exited', color: HUD.textDim },
   };
 
 interface CommandPaletteProps {
@@ -555,6 +565,7 @@ export function CommandPalette({
                     key={s.id}
                     value={`${s.searchValue} ${s.id}`}
                     onSelect={() => openSession(s.id)}
+                    data-session-id={s.id}
                   >
                     <span
                       className="mr-2 inline-block h-2 w-2 shrink-0 rotate-45"
@@ -580,11 +591,16 @@ export function CommandPalette({
                       </span>
                     </span>
                     <span
-                      className="ml-3 shrink-0 font-mono text-xs"
+                      className="ml-3 inline-flex shrink-0 items-center gap-1.5 font-mono text-xs"
                       data-session-status={s.status}
                       style={{ color: status.color }}
                     >
-                      {status.label}
+                      {s.status === 'needs-you' ? (
+                        <AttentionDot />
+                      ) : s.status !== 'exited' ? (
+                        <SessionStatusGlyph state={s.status} />
+                      ) : null}
+                      <span>{status.label}</span>
                     </span>
                   </CommandItem>
                 );
