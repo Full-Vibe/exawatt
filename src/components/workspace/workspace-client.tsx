@@ -54,6 +54,7 @@ import {
   consumePendingProjectPicker,
   FOCUS_AGENT_COMPOSER_EVENT,
   hasPendingAgentComposer,
+  hasPendingTabSelect,
   REOPEN_CLOSED_EVENT,
 } from './session-jump';
 import { useEffectiveShortcut, useShortcuts } from '@/components/shortcuts';
@@ -529,6 +530,10 @@ export function WorkspaceClient() {
   // ⌘[/⌘] stop. Applying back dedupes in navHistory, never re-records.
   useEffect(() => {
     if (!ready) return;
+    // a ⌘[ application is mid-flight: the restored-layout active tab is a
+    // transient state, not a location — recording it would truncate the
+    // forward stack before the target tab applies (D27 review)
+    if (hasPendingTabSelect()) return;
     navHistory.visit({
       surface: overviewOpen ? '/workspace?view=sessions' : '/workspace',
       tab:

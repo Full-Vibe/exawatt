@@ -613,6 +613,43 @@ try {
     );
     return !!tabs[tabs.length - 1]?.hasAttribute('data-active');
   });
+  // 6. cross-route back (D27 review): Settings → esc returns to the EXACT
+  // tab, not just the workspace — the pending tab-select applies against
+  // the freshly mounted layout
+  await page
+    .locator('[data-project="exawatt"] [data-tab-id]')
+    .first()
+    .locator('button')
+    .first()
+    .click(); // codex active again
+  await page.keyboard.press('Meta+KeyK');
+  await page.locator('[cmdk-root]').waitFor();
+  await page.locator('[cmdk-input]').fill('settings');
+  await page.getByText('Go to Settings').waitFor();
+  // session rows outrank navigation in the list — arrow down to Settings
+  for (let i = 0; i < 8; i += 1) {
+    const selected = await page.evaluate(
+      () =>
+        document.querySelector('[cmdk-item][aria-selected="true"]')
+          ?.textContent ?? ''
+    );
+    if (selected.includes('Go to Settings')) break;
+    await page.keyboard.press('ArrowDown');
+  }
+  await page.keyboard.press('Enter');
+  // SPA pushState: assert the location directly (waitForURL can hang on
+  // same-document navigations here)
+  await page.waitForFunction(() => window.location.pathname === '/settings');
+  await page.locator('[data-workspace-chrome]').waitFor({ state: 'detached' });
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(
+    () => window.location.pathname.startsWith('/workspace')
+  );
+  await page.waitForFunction(() =>
+    document
+      .querySelector('[data-workspace-tab-strip] [data-tab-id][data-active]')
+      ?.textContent?.includes('Updating tests')
+  );
 
   await page.setViewportSize({ width: 800, height: 700 });
   // the strip clicks above click-away-collapsed the summoned composer —

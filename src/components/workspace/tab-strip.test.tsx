@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TabStrip } from './tab-strip';
 import type { Project, WorkspaceTab } from './use-workspace-state';
@@ -57,6 +57,8 @@ function strip({
       attention={attention}
       activity={activity}
       engaged={engaged}
+      onTogglePinTab={vi.fn()}
+      onResumeTab={vi.fn()}
       onSelectProject={vi.fn()}
       onSelectTab={vi.fn()}
       onCloseTab={vi.fn()}
@@ -192,6 +194,28 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     });
     // tabs[0] is the group's activeTabId in the fixture
     expect(container.querySelector('[data-condensed]')).toBeNull();
+  });
+
+  it('a stopped tab right-click offers Pin — the split shows retained history (D26/D27)', () => {
+    const { container } = strip({
+      tabs: [
+        tab({ id: 'a', title: 'alpha' }),
+        tab({
+          id: 'b',
+          title: 'beta',
+          sessionId: null,
+          harnessSessionId: 'provider-b',
+          resumeState: 'ended-resumable',
+          lifecycle: 'stopped-clean',
+        }),
+      ],
+    });
+    const deadTab = container.querySelectorAll('[data-tab-id]')[1];
+    fireEvent.contextMenu(deadTab);
+    const menu = container.querySelector('[data-strip-menu]');
+    expect(menu?.textContent).toContain('Pin in split');
+    expect(menu?.textContent).toContain('Resume');
+    expect(menu?.textContent).toContain('Close');
   });
 
   it('dead tabs carry their lifecycle badge, not a turn-state glyph', () => {

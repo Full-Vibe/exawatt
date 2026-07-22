@@ -9,11 +9,12 @@
  * One of two first-class regimes (the other: sessions as entities on the
  * ENG-004 world map) — parallel skins over the same session system.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { HUD } from '@/components/hud';
 import { PROJECT_PALETTE } from './project-colors';
 import { HarnessGlyph } from './harness-icons';
 import { isDefaultHarnessTitle } from './harnesses';
+import { tabIsPinnable } from './split-layout';
 import { useOrdinalHints } from './use-ordinal-hints';
 import { tabIsLive } from './use-workspace-state';
 import {
@@ -171,6 +172,16 @@ function StripContextMenu({
   onClose: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  // a right-click near the window edge must not spill the menu off-screen
+  const [pos, setPos] = useState({ x, y });
+  useLayoutEffect(() => {
+    const rect = rootRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setPos({
+      x: Math.min(x, Math.max(4, window.innerWidth - rect.width - 4)),
+      y: Math.min(y, Math.max(4, window.innerHeight - rect.height - 4)),
+    });
+  }, [x, y]);
   useEffect(() => {
     rootRef.current?.querySelector('button')?.focus();
     const away = (event: MouseEvent) => {
@@ -187,8 +198,8 @@ function StripContextMenu({
       role="menu"
       className="fixed z-50 flex min-w-44 flex-col rounded border py-1 shadow-2xl motion-safe:animate-in motion-safe:fade-in motion-safe:duration-100"
       style={{
-        left: x,
-        top: y,
+        left: pos.x,
+        top: pos.y,
         borderColor: `${color}44`,
         background: HUD.bg.panelFill,
         boxShadow: `0 12px 32px rgba(0,0,0,0.55), 0 0 10px ${color}22`,
@@ -576,7 +587,10 @@ export function TabStrip({
                                 value: t.title,
                               }),
                           },
-                          ...(!dead && onTogglePinTab
+                          // D26 doctrine: stopped tabs pin fine (the
+                          // split shows retained history); only drafts
+                          // have nothing to watch
+                          ...(tabIsPinnable(t) && onTogglePinTab
                             ? [
                                 {
                                   label:

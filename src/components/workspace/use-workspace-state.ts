@@ -1621,6 +1621,17 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     setPinnedTabId(cur => (cur === tabId ? null : tabId));
   }, []);
 
+  /** back/forward tab application (D27): select only if it still exists */
+  const selectExistingTab = useCallback((dir: string, tabId: string) => {
+    const { projects: gs } = stateRef.current;
+    const g = gs.find(x => x.dir === dir);
+    if (!g || !g.tabs.some(t => t.id === tabId)) return;
+    setActiveDir(dir);
+    setProjects(prev =>
+      prev.map(x => (x.dir === dir ? { ...x, activeTabId: tabId } : x))
+    );
+  }, []);
+
   const selectTab = useCallback((dir: string, tabId: string) => {
     setActiveDir(dir);
     setProjects(prev =>
@@ -1810,13 +1821,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       consumePendingTabSelect();
       const { dir, tabId } =
         (e as CustomEvent<{ dir: string; tabId: string }>).detail ?? {};
-      const { projects: gs } = stateRef.current;
-      const g = gs.find(x => x.dir === dir);
-      if (!g || !g.tabs.some(t => t.id === tabId)) return;
-      setActiveDir(dir);
-      setProjects(prev =>
-        prev.map(x => (x.dir === dir ? { ...x, activeTabId: tabId } : x))
-      );
+      selectExistingTab(dir, tabId);
     };
     const onLaunch = (e: Event) => {
       if (!readyRef.current) return;
@@ -1848,17 +1853,21 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       window.removeEventListener(OPEN_PROJECT_EVENT, onOpenProject);
       window.removeEventListener(TOGGLE_SPLIT_EVENT, onToggleSplit);
     };
-  }, [activateSession, launchHere, openProject, togglePin]);
+  }, [activateSession, selectExistingTab, launchHere, openProject, togglePin]);
 
   useEffect(() => {
     if (!ready) return;
     const jump = consumePendingSessionJump();
     if (jump) activateSession(jump);
+    // ⌘[ from another route (D27): the tab half of the location fired
+    // before this workspace mounted — apply it against the loaded layout
+    const tabSel = consumePendingTabSelect();
+    if (tabSel) selectExistingTab(tabSel.dir, tabSel.tabId);
     const harness = consumePendingLaunch();
     if (harness) launchHere(harness);
     const proj = consumePendingOpenProject();
     if (proj) void openProject(proj);
-  }, [ready, activateSession, launchHere, openProject]);
+  }, [ready, activateSession, selectExistingTab, launchHere, openProject]);
 
   // ---- attention focus contract (S1): tell main which session the operator
   // is looking at — the focused session never flags, and focusing clears.
