@@ -17,6 +17,12 @@ import { stopProcessGroups } from './process-groups';
 import { listResumeCandidates } from './resume-candidates';
 import { ownerOfCodexCandidate } from './codex-identity-match';
 import { OrderedWriteBuffer } from './ordered-write-buffer';
+import {
+  type AgentHarness,
+  type AgentPermissionMode,
+  type PtyHarness,
+} from './harness-types';
+import { harnessDescriptor } from './harness-registry';
 
 const execFileAsync = promisify(execFile);
 
@@ -34,8 +40,7 @@ const execFileAsync = promisify(execFile);
  * changes.
  */
 
-export type PtyHarness = 'shell' | 'claude' | 'codex';
-export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
+export type { AgentHarness, AgentPermissionMode, PtyHarness };
 
 export interface PtyCreateOptions {
   harness: PtyHarness;
@@ -216,7 +221,8 @@ export class PtySessionManager extends EventEmitter {
       : { text: '', cursor: 0, updatedAt: 0, corrupt: false };
     this.scrollback.seed(durableSessionId, retained.text, retained.cursor);
     const harnessSessionId =
-      options.harness === 'claude'
+      options.harness !== 'shell' &&
+      harnessDescriptor(options.harness).allocatesFreshSessionId
         ? (options.resumeSessionId ?? randomUUID())
         : (options.resumeSessionId ?? null);
     const testHarnessExecutable =

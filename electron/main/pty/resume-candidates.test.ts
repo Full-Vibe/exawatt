@@ -38,9 +38,17 @@ async function rollout(id: string, cwd: string, userText: string) {
   return { root, file };
 }
 
+async function projectDirectory() {
+  const root = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'exawatt-resume-project-')
+  );
+  roots.push(root);
+  return fs.promises.realpath(root);
+}
+
 describe('listResumeCandidates', () => {
   it('returns exact Codex IDs for the requested cwd with useful labels', async () => {
-    const cwd = '/projects/exawatt';
+    const cwd = await projectDirectory();
     const { root } = await rollout(
       '22222222-2222-4222-8222-222222222222',
       cwd,
@@ -92,7 +100,7 @@ describe('listResumeCandidates', () => {
   });
 
   it('isolates rollout churn instead of rejecting the whole catalog', async () => {
-    const cwd = '/projects/exawatt';
+    const cwd = await projectDirectory();
     const { root } = await rollout(
       '55555555-5555-4555-8555-555555555555',
       cwd,
@@ -109,7 +117,7 @@ describe('listResumeCandidates', () => {
   });
 
   it('reads a bounded prefix rather than loading a large rollout body', async () => {
-    const cwd = '/projects/exawatt';
+    const cwd = await projectDirectory();
     const { root, file } = await rollout(
       '66666666-6666-4666-8666-666666666666',
       cwd,

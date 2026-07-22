@@ -7,6 +7,7 @@ import {
   CodexConversationAdapter,
   ProjectSessionConversationAdapter,
   RecentConversationCatalog,
+  redactHostedSummaryText,
   type ConversationCatalogAdapter,
   type ConversationDraft,
 } from './conversation-catalog';
@@ -31,7 +32,7 @@ async function temporaryRoot(name: string) {
 describe('RecentConversationCatalog', () => {
   it('filters Codex envelopes and keeps exact IDs with useful short text', async () => {
     const root = await temporaryRoot('exawatt-conversation-codex-');
-    const cwd = '/projects/cortex-ehr';
+    const cwd = await temporaryRoot('exawatt-cortex-ehr-');
     await fs.promises.writeFile(
       path.join(root, 'rollout.jsonl'),
       [
@@ -105,17 +106,18 @@ describe('RecentConversationCatalog', () => {
     );
 
     expect(rows.map(row => row.id)).toEqual(['nested.jsonl']);
-    expect(rows[0].cwd).toBe(projectRoot);
+    expect(rows[0].cwd).toBe(await fs.promises.realpath(nested));
   });
 
   it('uses Claude native titles and preserves the full provider ID', async () => {
     const root = await temporaryRoot('exawatt-conversation-claude-');
-    const cwd = '/projects/cortex-ehr';
-    const worktree = '/projects/cortex-ehr/.worktrees/privacy-pass';
-    const project = path.join(root, '-projects-cortex-ehr');
+    const cwd = await temporaryRoot('exawatt-claude-project-');
+    const worktree = path.join(cwd, '.worktrees', 'privacy-pass');
+    await fs.promises.mkdir(worktree, { recursive: true });
+    const project = path.join(root, cwd.replace(/[^a-zA-Z0-9_-]/g, '-'));
     const worktreeProject = path.join(
       root,
-      '-projects-cortex-ehr--worktrees-privacy-pass'
+      worktree.replace(/[^a-zA-Z0-9_-]/g, '-')
     );
     await fs.promises.mkdir(project);
     await fs.promises.mkdir(worktreeProject);
@@ -154,13 +156,13 @@ describe('RecentConversationCatalog', () => {
       cwd,
       worktree,
     ]).list(cwd);
-    expect(rows[0]).toMatchObject({
+    expect(rows.find(row => row.id.startsWith('6e3a'))).toMatchObject({
       id: '6e3a2161-9d9c-445e-85a4-cca87896b071',
       title: 'client-side-deidentification-mmhc',
       titleSource: 'native',
       needsSummary: false,
     });
-    expect(rows[1]).toMatchObject({
+    expect(rows.find(row => row.id === 'worktree-session-id')).toMatchObject({
       id: 'worktree-session-id',
       title: 'privacy-worktree-follow-up',
     });
@@ -179,6 +181,7 @@ describe('RecentConversationCatalog', () => {
       description: 'Long raw operator prompt',
       titleSource: 'fallback',
       needsSummary: true,
+      providerSessionId: 'provider-id',
       continuation: { kind: 'provider' },
       fingerprint: '2:100',
       summaryInput: ['Long raw operator prompt'],
@@ -186,7 +189,7 @@ describe('RecentConversationCatalog', () => {
       correlationKey: 'codex:long raw operator prompt',
     };
     const adapter: ConversationCatalogAdapter = {
-      harness: 'codex',
+      harnesses: ['codex'],
       list: vi.fn(async () => [draft]),
     };
     const fetchMock = vi.fn(
@@ -297,17 +300,208 @@ describe('RecentConversationCatalog', () => {
     ]);
   });
 
+  it('queries the Codex thread index without walking rollout files', async () => {
+    const sessionsRoot = await temporaryRoot('exawatt-index-sessions-');
+    const projectRoot = await temporaryRoot('exawatt-index-project-');
+    const nested = path.join(projectRoot, 'packages', 'ehr');
+    await fs.promises.mkdir(nested, { recursive: true });
+    const launchDirectory = await fs.promises.realpath(nested);
+    const databaseFile = path.join(
+      await temporaryRoot('exawatt-index-database-'),
+      'state.sqlite'
+    );
+    const { DatabaseSync } =
+      require('node:sqlite') as typeof import('node:sqlite');
+    const database = new DatabaseSync(databaseFile);
+    database.exec(`
+      CREATE TABLE threads (
+        id TEXT PRIMARY KEY, cwd TEXT NOT NULL, rollout_path TEXT NOT NULL,
+        title TEXT NOT NULL, first_user_message TEXT NOT NULL,
+        preview TEXT NOT NULL, created_at_ms INTEGER, updated_at_ms INTEGER,
+        recency_at_ms INTEGER, archived INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+    database
+      .prepare(`INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(
+        'indexed-session-id',
+        launchDirectory,
+        path.join(sessionsRoot, 'missing.jsonl'),
+        'Cortex Privacy Boundary',
+        'Implement client-side de-identification',
+        'Verify the privacy boundary',
+        100,
+        200,
+        300,
+        0
+      );
+    database.close();
+    const readdir = vi.spyOn(fs.promises, 'readdir');
+
+    const rows = await new CodexConversationAdapter(
+      sessionsRoot,
+      databaseFile,
+      async () => [projectRoot]
+    ).list(projectRoot);
+
+    expect(rows).toMatchObject([
+      {
+        id: 'indexed-session-id',
+        cwd: launchDirectory,
+        title: 'Cortex Privacy Boundary',
+        providerSessionId: 'indexed-session-id',
+      },
+    ]);
+    expect(readdir).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates concurrent Project loads and supports explicit invalidation', async () => {
+    const projectDir = await temporaryRoot('exawatt-catalog-cache-');
+    const draft: ConversationDraft = {
+      id: 'cached-provider',
+      harness: 'codex',
+      cwd: projectDir,
+      startedAt: 1,
+      updatedAt: 2,
+      title: 'Cached Project row',
+      description: null,
+      titleSource: 'native',
+      needsSummary: false,
+      providerSessionId: 'cached-provider',
+      continuation: { kind: 'provider' },
+      fingerprint: 'cache-fingerprint',
+      summaryInput: [],
+      providerIdentity: 'cached-provider',
+      correlationKey: null,
+    };
+    const adapter: ConversationCatalogAdapter = {
+      harnesses: ['codex'],
+      list: vi.fn(async () => [draft]),
+    };
+    const catalog = new RecentConversationCatalog({ adapters: [adapter] });
+
+    await Promise.all([catalog.list(projectDir), catalog.list(projectDir)]);
+    expect(adapter.list).toHaveBeenCalledTimes(1);
+    catalog.invalidate(projectDir);
+    await catalog.list(projectDir);
+    expect(adapter.list).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let an invalidated in-flight load repopulate stale rows', async () => {
+    const projectDir = await temporaryRoot('exawatt-catalog-race-');
+    const row = (title: string): ConversationDraft => ({
+      id: 'race-provider',
+      harness: 'codex',
+      cwd: projectDir,
+      startedAt: 1,
+      updatedAt: 2,
+      title,
+      description: null,
+      titleSource: 'native',
+      needsSummary: false,
+      providerSessionId: 'race-provider',
+      continuation: { kind: 'provider' },
+      fingerprint: title,
+      summaryInput: [],
+      providerIdentity: 'race-provider',
+      correlationKey: null,
+    });
+    let resolveStale!: (rows: ConversationDraft[]) => void;
+    const stale = new Promise<ConversationDraft[]>(resolve => {
+      resolveStale = resolve;
+    });
+    const adapter: ConversationCatalogAdapter = {
+      harnesses: ['codex'],
+      list: vi
+        .fn()
+        .mockImplementationOnce(() => stale)
+        .mockResolvedValue([row('Fresh row')]),
+    };
+    const catalog = new RecentConversationCatalog({ adapters: [adapter] });
+
+    const first = catalog.list(projectDir);
+    await vi.waitFor(() => expect(adapter.list).toHaveBeenCalledTimes(1));
+    catalog.invalidate(projectDir);
+    await expect(catalog.list(projectDir)).resolves.toMatchObject([
+      { title: 'Fresh row' },
+    ]);
+    resolveStale([row('Stale row')]);
+    await first;
+    await expect(catalog.list(projectDir)).resolves.toMatchObject([
+      { title: 'Fresh row' },
+    ]);
+  });
+
+  it('never reconciles two retained Sessions onto one provider identity', async () => {
+    const projectDir = await temporaryRoot('exawatt-one-to-one-');
+    const provider: ConversationDraft = {
+      id: 'one-provider',
+      harness: 'claude',
+      cwd: projectDir,
+      startedAt: 1,
+      updatedAt: 1,
+      title: 'Repeat this task',
+      description: null,
+      titleSource: 'fallback',
+      needsSummary: true,
+      providerSessionId: 'one-provider',
+      continuation: { kind: 'provider' },
+      fingerprint: 'provider',
+      summaryInput: ['Repeat this task'],
+      providerIdentity: 'one-provider',
+      correlationKey: 'claude:repeat this task',
+    };
+    const adapters: ConversationCatalogAdapter[] = [
+      { harnesses: ['claude'], list: vi.fn(async () => [provider]) },
+      new ProjectSessionConversationAdapter(() =>
+        ['retained-a', 'retained-b'].map((durableSessionId, index) => ({
+          durableSessionId,
+          title: 'Claude Code',
+          goal: null,
+          harness: 'claude',
+          cwd: projectDir,
+          projectDir,
+          projectName: 'Project',
+          harnessSessionId: null,
+          initialTask: 'Repeat this task',
+          closedAt: 10 + index,
+        }))
+      ),
+    ];
+
+    const rows = await new RecentConversationCatalog({ adapters }).list(
+      projectDir
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows.find(row => row.id === 'one-provider')?.continuation).toEqual({
+      kind: 'provider',
+    });
+  });
+
+  it('redacts common credentials before hosted summary transport', () => {
+    const raw =
+      'authorization: Bearer secret-token-value password=hunter2 sk-ant-api03-longsecrettoken';
+    const redacted = redactHostedSummaryText(raw);
+    expect(redacted).not.toContain('secret-token-value');
+    expect(redacted).not.toContain('hunter2');
+    expect(redacted).not.toContain('longsecrettoken');
+    expect(redacted).toContain('[REDACTED]');
+  });
+
   it('merges Project Session history with provider history by exact identity', async () => {
+    const projectDir = await temporaryRoot('exawatt-merged-project-');
+    const otherProjectDir = await temporaryRoot('exawatt-other-project-');
     const providerDraft: ConversationDraft = {
       id: 'provider-id',
       harness: 'codex',
-      cwd: '/project',
+      cwd: projectDir,
       startedAt: 1,
       updatedAt: 10,
       title: 'Take a look at this project',
       description: 'Okay done',
       titleSource: 'fallback',
       needsSummary: true,
+      providerSessionId: 'provider-id',
       continuation: { kind: 'provider' },
       fingerprint: '10:100',
       summaryInput: ['Take a look at this project', 'Okay done'],
@@ -317,13 +511,14 @@ describe('RecentConversationCatalog', () => {
     const identitylessMatch: ConversationDraft = {
       id: 'provider-recovered-by-task',
       harness: 'claude',
-      cwd: '/project',
+      cwd: projectDir,
       startedAt: 2,
       updatedAt: 11,
       title: 'Restore the retained terminal history.',
       description: null,
       titleSource: 'fallback',
       needsSummary: true,
+      providerSessionId: 'provider-recovered-by-task',
       continuation: { kind: 'provider' },
       fingerprint: '11:100',
       summaryInput: ['Restore the retained terminal history.'],
@@ -331,6 +526,7 @@ describe('RecentConversationCatalog', () => {
       correlationKey: 'claude:restore the retained terminal history.',
     };
     const provider: ConversationCatalogAdapter = {
+      harnesses: ['claude', 'codex'],
       list: vi.fn(async () => [providerDraft, identitylessMatch]),
     };
     const sessions = new ProjectSessionConversationAdapter(() => [
@@ -339,8 +535,8 @@ describe('RecentConversationCatalog', () => {
         title: 'Codex',
         goal: 'Finalize website migration and App resubmit',
         harness: 'codex',
-        cwd: '/project',
-        projectDir: '/project',
+        cwd: projectDir,
+        projectDir,
         projectName: 'Project',
         harnessSessionId: 'provider-id',
         initialTask: null,
@@ -351,8 +547,8 @@ describe('RecentConversationCatalog', () => {
         title: 'Claude Code',
         goal: 'Recover the Project handoff',
         harness: 'claude',
-        cwd: '/project',
-        projectDir: '/project',
+        cwd: projectDir,
+        projectDir,
         projectName: 'Project',
         harnessSessionId: null,
         initialTask: 'Restore the retained terminal history.',
@@ -363,8 +559,8 @@ describe('RecentConversationCatalog', () => {
         title: 'Codex',
         goal: 'Do not include this',
         harness: 'codex',
-        cwd: '/elsewhere',
-        projectDir: '/elsewhere',
+        cwd: otherProjectDir,
+        projectDir: otherProjectDir,
         projectName: 'Elsewhere',
         harnessSessionId: 'other-id',
         initialTask: null,
@@ -374,7 +570,7 @@ describe('RecentConversationCatalog', () => {
 
     const rows = await new RecentConversationCatalog({
       adapters: [provider, sessions],
-    }).list('/project');
+    }).list(projectDir);
 
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({

@@ -608,7 +608,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Adapters',
           summary:
-            'Source-first boundaries that discover models, translate launch choices and policy, reconcile Project Session and provider conversation catalogs, and describe source activity, evidence, and enforcement ownership.',
+            'Registered source-first boundaries that discover models, translate launch choices and policy, query Project-scoped provider indexes, reconcile exact one-to-one Session identity, and describe source activity, evidence, and enforcement ownership.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,
@@ -656,7 +656,7 @@ export const architectureManifest = {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
-            'Immediate launch frame, versioned local renderer with verified child-process shutdown, native-network PKCE, serialized workspace/history, bounded and deduplicated Project conversation discovery with local summary cache, atomic Developer-ID delivery, and signed updates.',
+            'Immediate launch frame, versioned local renderer with retryable verified child-process shutdown, native-network PKCE, serialized workspace/history, indexed and deduplicated Project conversation discovery with validated local summary cache, atomic Developer-ID delivery, and signed updates.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 75,

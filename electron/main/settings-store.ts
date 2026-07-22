@@ -42,6 +42,11 @@ export interface ExawattSettings {
      *  default off — ambient OS-level signals are opt-in. */
     dockBadge?: boolean;
   };
+  conversationSummaries?: {
+    /** Hosted Haiku labels for local conversation excerpts. Defaults on;
+     * excerpts are secret-redacted before they leave the device. */
+    hosted: boolean;
+  };
   agentSources?: {
     projectLastUsed: Record<string, string>;
     sourceRecency: Record<string, number>;
@@ -131,6 +136,14 @@ export function parseSettings(raw: unknown): ExawattSettings {
       typeof candidate.dockBadge === 'boolean'
     )
       settings.notifications = parsed;
+  }
+  const conversationSummaries = (raw as { conversationSummaries?: unknown })
+    .conversationSummaries;
+  if (conversationSummaries && typeof conversationSummaries === 'object') {
+    const hosted = (conversationSummaries as { hosted?: unknown }).hosted;
+    if (typeof hosted === 'boolean') {
+      settings.conversationSummaries = { hosted };
+    }
   }
   const agentSources = (raw as { agentSources?: unknown }).agentSources;
   if (agentSources && typeof agentSources === 'object') {
@@ -249,6 +262,15 @@ export function setDockBadge(enabled: boolean): ExawattSettings {
     attention: settings.notifications?.attention ?? false,
     dockBadge: enabled,
   };
+  writeSettings(settings);
+  return settings;
+}
+
+export function setHostedConversationSummaries(
+  enabled: boolean
+): ExawattSettings {
+  const settings = loadSettings();
+  settings.conversationSummaries = { hosted: enabled };
   writeSettings(settings);
   return settings;
 }

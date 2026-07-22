@@ -29,15 +29,22 @@ working directory.
 
 The new-Agent page lists recent provider conversations for the active Project.
 Each row shows its full Claude Code or Codex conversation ID plus a short title
-and handoff. Selecting the row resumes that exact provider conversation;
-selecting **Fresh** starts a distinct Agent with the short handoff and original
-ID in its initial task.
+and handoff. Selecting the row resumes that exact provider conversation in its
+original nested directory or live worktree. When Exawatt also has saved Session
+history, the current new-tab draft becomes that Session in the same gesture;
+the saved entry remains recoverable if provider launch fails. A saved row with
+no exact provider identity reopens retained history without guessing. Selecting
+**Fresh** starts a distinct Agent with the short handoff and original ID in its
+initial task.
 
 Discovery is local-first. Provider-native titles and machine-local cached
 labels appear without a network request. When a provider has no usable title,
 a signed-in desktop may ask Exawatt to generate one from a bounded set of short,
-operator-authored excerpts. Failure or offline use leaves the local fallback in
-place and never blocks a new Agent or exact resume.
+operator-authored excerpts. Common credentials are redacted on-device first,
+and Settings can disable hosted labels entirely. The hosted boundary applies a
+per-user quota and does not persist the excerpts. Failure, quota exhaustion, or
+offline use leaves the local fallback in place and never blocks a new Agent or
+exact resume.
 
 ## Local data
 

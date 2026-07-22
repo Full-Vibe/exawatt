@@ -1,4 +1,6 @@
-import type { AgentPermissionMode, PtyHarness } from './session-manager';
+import type { AgentPermissionMode } from './session-manager';
+import type { AgentHarness } from './harness-types';
+import { harnessDescriptor } from './harness-registry';
 
 const SAFE_SESSION_ID = /^[a-zA-Z0-9_-]{8,128}$/;
 const AGENT_PERMISSION_MODES = new Set<AgentPermissionMode>([
@@ -12,7 +14,7 @@ function shellQuote(value: string): string {
 }
 
 export function buildHarnessCommand(
-  harness: Exclude<PtyHarness, 'shell'>,
+  harness: AgentHarness,
   harnessSessionId: string | null,
   resume: boolean,
   executable?: string,
@@ -44,35 +46,17 @@ export function buildHarnessCommand(
   ) {
     throw new Error('Invalid Agent model');
   }
-  const command = executable ? shellQuote(executable) : harness;
-  const permissionFlags =
-    harness === 'claude'
-      ? permissionMode === 'prompt'
-        ? '--permission-mode default'
-        : permissionMode === 'auto'
-          ? '--permission-mode auto'
-          : '--dangerously-skip-permissions'
-      : permissionMode === 'prompt'
-        ? '--sandbox workspace-write --ask-for-approval on-request'
-        : permissionMode === 'auto'
-          ? `--sandbox workspace-write --ask-for-approval on-request -c ${shellQuote(
-              'approvals_reviewer="auto_review"'
-            )}`
-          : '--dangerously-bypass-approvals-and-sandbox';
-  const modelFlag = selectedModel
-    ? ` --model ${shellQuote(selectedModel)}`
-    : '';
-  const invocation = `${command} ${permissionFlags}${modelFlag}`;
+  const descriptor = harnessDescriptor(harness);
+  const command = executable ? shellQuote(executable) : descriptor.id;
+  const baseInvocation = `${command} ${descriptor.permissionFlags(permissionMode)}`;
+  const invocation = selectedModel
+    ? descriptor.modelInvocation(baseInvocation, shellQuote(selectedModel))
+    : baseInvocation;
   if (resume) {
     if (!harnessSessionId)
       throw new Error('Exact session ID required to resume');
-    return harness === 'claude'
-      ? `${invocation} --resume ${harnessSessionId}`
-      : `${invocation} resume ${harnessSessionId}`;
+    return descriptor.resumeInvocation(invocation, harnessSessionId);
   }
-  const fresh =
-    harness === 'claude' && harnessSessionId
-      ? `${invocation} --session-id ${harnessSessionId}`
-      : invocation;
+  const fresh = descriptor.freshInvocation(invocation, harnessSessionId);
   return prompt ? `${fresh} ${shellQuote(prompt)}` : fresh;
 }

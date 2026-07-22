@@ -1,10 +1,10 @@
 import type {
+  AgentHarness,
   AgentModelCatalog,
   AgentPermissionMode,
-  PtyHarness,
 } from '@/types/electron';
 
-export type AgentSourceId = Exclude<PtyHarness, 'shell'>;
+export type AgentSourceId = AgentHarness;
 
 export const AGENT_PERMISSION_MODE_ORDER = [
   'prompt',

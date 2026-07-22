@@ -216,7 +216,7 @@ try {
         '[data-conversation-id="11111111-1111-4111-8111-111111111111"]'
       );
       check(
-        'Project Session history merges with provider history without duplication',
+        'Project Session history merges into an exact one-click provider migration',
         (await projectOwned.getAttribute('data-continuation')) ===
           'exawatt-session' &&
           (await projectOwned.innerText()).includes(
@@ -224,7 +224,7 @@ try {
           ) &&
           (await projectOwned
             .getByRole('button', {
-              name: 'Reopen Audit consent state from Project history in Exawatt',
+              name: 'Resume Audit consent state from Project history in Codex',
             })
             .count()) === 1 &&
           (await page
@@ -387,6 +387,116 @@ try {
 
       await page.setViewportSize({ width: 1200, height: 800 });
       await page.screenshot({ path: join(output, '02-exact-resume-1200.png') });
+
+      // Exercise the same browser as the driven half of a real split. This is
+      // the width that exposed title/action overlap in dogfood.
+      await page.keyboard.press('Meta+KeyD');
+      await page.keyboard.press('Meta+KeyT');
+      await page.locator('[data-agent-composer]').waitFor();
+      await page.locator('[data-recent-conversations]').waitFor();
+      const splitTarget = page.locator(
+        '[data-conversation-id="11111111-1111-4111-8111-111111111111"]'
+      );
+      await splitTarget.waitFor({ state: 'attached' });
+      const splitLayout = await splitTarget.evaluate(row => {
+        const buttons = row.querySelectorAll('button');
+        const primary = buttons[0]?.getBoundingClientRect();
+        const fresh = buttons[1]?.getBoundingClientRect();
+        const title = row
+          .querySelector('[id*="-title-"]')
+          ?.getBoundingClientRect();
+        const meta = Array.from(row.querySelectorAll('span'))
+          .find(
+            node =>
+              node.childElementCount === 0 &&
+              node.textContent?.includes('Codex ·')
+          )
+          ?.getBoundingClientRect();
+        return {
+          rowWidth: row.getBoundingClientRect().width,
+          noHorizontalOverflow: row.scrollWidth <= row.clientWidth,
+          freshWrapped: !!primary && !!fresh && fresh.top >= primary.bottom - 1,
+          titleAndMetaSeparate:
+            !!title &&
+            !!meta &&
+            (title.right <= meta.left || title.bottom <= meta.top),
+        };
+      });
+      check(
+        'split-pane recents reflow without title, metadata, or action overlap',
+        splitLayout.rowWidth < 600 &&
+          splitLayout.noHorizontalOverflow &&
+          splitLayout.freshWrapped &&
+          splitLayout.titleAndMetaSeparate
+      );
+      await page.screenshot({
+        path: join(output, '03-split-pane-recents-1200.png'),
+      });
+
+      await splitTarget
+        .getByRole('button', {
+          name: 'Resume Audit consent state from Project history in Codex',
+        })
+        .click();
+      await page.waitForFunction(async () =>
+        ((await window.electron?.pty?.list()) ?? []).some(
+          session =>
+            session.durableSessionId === 'session-project-owned-provider' &&
+            session.harnessSessionId ===
+              '11111111-1111-4111-8111-111111111111' &&
+            !session.exited
+        )
+      );
+      const migrationSamples = [];
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        migrationSamples.push(
+          await page.evaluate(async () => ({
+            closed: ((await window.electron?.pty?.closedSessions()) ?? []).some(
+              entry =>
+                entry.durableSessionId === 'session-project-owned-provider'
+            ),
+            draftCount: Array.from(
+              document.querySelectorAll('[data-tab-id]')
+            ).filter(tab =>
+              tab.textContent?.toLowerCase().includes('new agent')
+            ).length,
+          }))
+        );
+        if (
+          !migrationSamples.at(-1).closed &&
+          migrationSamples.at(-1).draftCount === 0
+        ) {
+          break;
+        }
+        await page.waitForTimeout(100);
+      }
+      const migrationState = await page.evaluate(async () => {
+        const draftTabs = Array.from(
+          document.querySelectorAll('[data-tab-id]')
+        ).filter(tab => tab.textContent?.toLowerCase().includes('new agent'));
+        return {
+          stillClosed: (
+            (await window.electron?.pty?.closedSessions()) ?? []
+          ).some(
+            entry => entry.durableSessionId === 'session-project-owned-provider'
+          ),
+          draftTabs: draftTabs.length,
+          draftDetails: draftTabs.map(tab => ({
+            id: tab.getAttribute('data-tab-id'),
+            active: tab.getAttribute('data-active'),
+            text: tab.textContent,
+          })),
+        };
+      });
+      if (migrationState.stillClosed || migrationState.draftTabs !== 0) {
+        console.log(
+          `[recent-conversations] migration state ${JSON.stringify({ migrationState, migrationSamples })}`
+        );
+      }
+      check(
+        'saved exact Session consumes the draft and ledger only after launch',
+        !migrationState.stillClosed && migrationState.draftTabs === 0
+      );
       completed = true;
     },
     { maxMs: 90_000 }

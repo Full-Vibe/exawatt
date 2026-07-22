@@ -19,6 +19,7 @@ import {
   setAgentPermissionMode,
   setAttentionNotifications,
   setDockBadge,
+  setHostedConversationSummaries,
 } from './settings-store';
 import { listResumeCandidates } from './pty/resume-candidates';
 import { RecentConversationCatalog } from './pty/conversation-catalog';
@@ -57,6 +58,8 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       'conversation-summary-cache.json'
     ),
     projectSessions: () => closedLedger.list(),
+    hostedSummariesEnabled: () =>
+      loadSettings().conversationSummaries?.hosted !== false,
   });
   const nativeNotifications = new Map<string, Notification>();
   const broadcast = (channel: string, payload: unknown) => {
@@ -308,6 +311,7 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
         );
       if (live) throw new Error('cannot archive a running session');
       const stamped = closedLedger.add(entry);
+      conversationCatalog.invalidate();
       // without this, rehydration resurrects the closed tab from the
       // leftover exited record
       ptySessions.forgetExited(entry.durableSessionId);
@@ -315,9 +319,11 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     }
   );
   handleTrusted('pty:closed-sessions', () => closedLedger.list());
-  handleTrusted('pty:reopen-session', (_event, durableSessionId: string) =>
-    closedLedger.take(durableSessionId)
-  );
+  handleTrusted('pty:reopen-session', (_event, durableSessionId: string) => {
+    const entry = closedLedger.take(durableSessionId);
+    if (entry) conversationCatalog.invalidate();
+    return entry;
+  });
   handleTrusted('pty:rename', (_event, id: string, title: string) => {
     ptySessions.rename(id, title);
   });
@@ -479,6 +485,16 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     broadcast('settings:changed', settings);
     return settings;
   });
+  handleTrusted(
+    'settings:set-hosted-conversation-summaries',
+    (_event, enabled: boolean) => {
+      if (typeof enabled !== 'boolean')
+        throw new Error('Invalid conversation summary setting');
+      const settings = setHostedConversationSummaries(enabled);
+      broadcast('settings:changed', settings);
+      return settings;
+    }
+  );
   handleTrusted(
     'settings:record-agent-source-use',
     (_event, projectDir: string, source: string, usedAt: number) => {

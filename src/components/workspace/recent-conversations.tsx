@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -27,6 +28,7 @@ export interface RecentConversationsHandle {
 
 interface RecentConversationsProps {
   projectDir: string;
+  active?: boolean;
   hidden?: boolean;
   disabled?: boolean;
   onOpen: (
@@ -37,6 +39,7 @@ interface RecentConversationsProps {
 }
 
 function relativeTime(timestamp: number): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return 'recently';
   const elapsed = Date.now() - timestamp;
   const minutes = Math.max(1, Math.round(elapsed / 60_000));
   if (minutes < 60) return `${minutes}m`;
@@ -50,7 +53,14 @@ export const RecentConversations = forwardRef<
   RecentConversationsHandle,
   RecentConversationsProps
 >(function RecentConversations(
-  { projectDir, hidden = false, disabled = false, onOpen, onReturnToComposer },
+  {
+    projectDir,
+    active = true,
+    hidden = false,
+    disabled = false,
+    onOpen,
+    onReturnToComposer,
+  },
   forwardedRef
 ) {
   const [rows, setRows] = useState<RecentConversation[]>([]);
@@ -61,8 +71,10 @@ export const RecentConversations = forwardRef<
   const [opening, setOpening] = useState<string | null>(null);
   const primaryRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const enrichmentAttemptRef = useRef<string | null>(null);
+  const sectionId = useId();
 
   useEffect(() => {
+    if (!active || hidden) return;
     let cancelled = false;
     const api = window.electron?.pty;
     if (!api?.listRecentConversations) {
@@ -86,7 +98,7 @@ export const RecentConversations = forwardRef<
     return () => {
       cancelled = true;
     };
-  }, [projectDir]);
+  }, [active, hidden, projectDir]);
 
   // Native and cached titles render first. Missing labels are augmented in
   // the background only for signed-in users; offline/new-task flow is never
@@ -94,6 +106,8 @@ export const RecentConversations = forwardRef<
   useEffect(() => {
     if (
       state !== 'ready' ||
+      !active ||
+      hidden ||
       !rows.some(row => row.needsSummary) ||
       !window.electron?.pty?.enrichRecentConversations ||
       enrichmentAttemptRef.current === projectDir
@@ -108,10 +122,15 @@ export const RecentConversations = forwardRef<
     } catch {
       return;
     }
-    void supabase.auth
-      .getSession()
-      .then(({ data }) => {
-        const token = data.session?.access_token;
+    void window.electron?.settings
+      ?.get()
+      .then(settings => {
+        if (settings.conversationSummaries?.hosted === false) return null;
+        return supabase.auth.getSession();
+      })
+      .then(result => {
+        const data = result?.data;
+        const token = data?.session?.access_token;
         if (!token || cancelled) return null;
         return window.electron!.pty!.enrichRecentConversations(
           projectDir,
@@ -127,7 +146,7 @@ export const RecentConversations = forwardRef<
     return () => {
       cancelled = true;
     };
-  }, [projectDir, rows, state]);
+  }, [active, hidden, projectDir, rows, state]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -202,19 +221,19 @@ export const RecentConversations = forwardRef<
     }
   };
 
-  if (hidden) return null;
+  if (!active || hidden) return null;
 
   return (
     <section
       data-recent-conversations
-      aria-labelledby="recent-conversations-title"
-      className="mt-5 w-full border-t pt-3"
-      style={{ borderColor: 'rgba(80,230,255,0.14)' }}
+      aria-labelledby={`${sectionId}-heading`}
+      className="@container mt-5 w-full border-t pt-3"
+      style={{ borderColor: HUD.strokeFaint }}
     >
       <div className="mb-1.5 flex min-h-7 items-center gap-3 px-0.5">
         <div className="flex min-w-0 items-baseline gap-2">
           <h2
-            id="recent-conversations-title"
+            id={`${sectionId}-heading`}
             className="font-mono text-[11px] font-semibold tracking-[0.13em]"
             style={{ color: HUD.textDim }}
           >
@@ -255,8 +274,8 @@ export const RecentConversations = forwardRef<
             className="h-8 w-full rounded border bg-transparent pl-8 pr-2 font-mono text-[11px] outline-none placeholder:text-hud-text-dim/70 focus-visible:ring-1 focus-visible:ring-hud-cyan"
             style={{
               color: HUD.text,
-              borderColor: 'rgba(80,230,255,0.2)',
-              background: 'rgba(8,13,22,0.6)',
+              borderColor: HUD.strokeSoft,
+              background: HUD.surfaceInputSoft,
             }}
           />
         </label>
@@ -301,7 +320,7 @@ export const RecentConversations = forwardRef<
       <div
         role="list"
         className="divide-y"
-        style={{ borderColor: 'rgba(80,230,255,0.1)' }}
+        style={{ borderColor: HUD.divider }}
       >
         {visible.map((conversation, index) => {
           const meta = AGENT_SOURCE_META[conversation.harness];
@@ -309,6 +328,11 @@ export const RecentConversations = forwardRef<
             conversation.continuation.kind === 'exawatt-session';
           const exactKey = `${conversation.harness}:${conversation.id}:resume`;
           const freshKey = `${conversation.harness}:${conversation.id}:fresh`;
+          const actionId = `${sectionId}-action-${index}`;
+          const targetId = `${sectionId}-target-${index}`;
+          const titleId = `${sectionId}-title-${index}`;
+          const descriptionId = `${sectionId}-description-${index}`;
+          const detailsId = `${sectionId}-details-${index}`;
           return (
             <div
               role="listitem"
@@ -318,8 +342,8 @@ export const RecentConversations = forwardRef<
               data-conversation-id={conversation.id}
               data-continuation={conversation.continuation.kind}
               data-title-source={conversation.titleSource}
-              className="group flex min-w-0 items-stretch gap-1 transition-colors hover:bg-hud-cyan/[0.035] focus-within:bg-hud-cyan/[0.05] motion-reduce:transition-none"
-              style={{ borderColor: 'rgba(80,230,255,0.1)' }}
+              className="group flex min-w-0 items-stretch gap-1 transition-colors hover:bg-hud-cyan/[0.035] focus-within:bg-hud-cyan/[0.05] @max-[560px]:flex-wrap motion-reduce:transition-none"
+              style={{ borderColor: HUD.divider }}
             >
               <button
                 ref={node => {
@@ -329,18 +353,27 @@ export const RecentConversations = forwardRef<
                 disabled={disabled || opening !== null}
                 onClick={() => void open(conversation, 'resume')}
                 onKeyDown={event => handleRowKeyDown(event, index)}
-                aria-label={
-                  reopensExawatt
-                    ? `Reopen ${conversation.title} in Exawatt`
-                    : `Resume ${conversation.title} in ${meta.label}`
-                }
+                aria-labelledby={`${actionId} ${titleId} ${targetId}`}
+                aria-describedby={`${
+                  conversation.description &&
+                  conversation.description !== conversation.title
+                    ? `${descriptionId} `
+                    : ''
+                }${detailsId}`}
                 title={
-                  reopensExawatt
+                  reopensExawatt && !conversation.providerSessionId
                     ? 'Reopen this saved Exawatt Session with its retained history'
-                    : `Resume this exact ${meta.label} conversation`
+                    : reopensExawatt
+                      ? `Resume this exact ${meta.label} conversation and restore its saved Exawatt Session`
+                      : `Resume this exact ${meta.label} conversation`
                 }
-                className="flex min-w-0 flex-1 items-start gap-3 rounded-sm px-2 py-2 text-left outline-none transition-colors disabled:opacity-60 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan"
+                className="flex min-h-14 min-w-0 flex-1 items-start gap-3 rounded-sm px-2 py-2 text-left outline-none transition-colors disabled:opacity-60 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan @max-[560px]:basis-full"
               >
+                <span id={actionId} className="sr-only">
+                  {reopensExawatt && !conversation.providerSessionId
+                    ? 'Reopen'
+                    : 'Resume'}
+                </span>
                 <span
                   className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-sm border"
                   style={{ color: meta.color, borderColor: `${meta.color}44` }}
@@ -352,8 +385,9 @@ export const RecentConversations = forwardRef<
                   )}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex min-w-0 items-center gap-2">
+                  <span className="flex min-w-0 items-center gap-2 @max-[430px]:flex-col @max-[430px]:items-start @max-[430px]:gap-0">
                     <span
+                      id={titleId}
                       className="truncate text-[13px] font-medium leading-5"
                       style={{ color: HUD.text }}
                     >
@@ -367,7 +401,7 @@ export const RecentConversations = forwardRef<
                       />
                     )}
                     <span
-                      className="ml-auto shrink-0 font-mono text-[10px]"
+                      className="ml-auto shrink-0 font-mono text-[10px] @max-[430px]:ml-0"
                       style={{ color: meta.color }}
                     >
                       {reopensExawatt ? 'Exawatt · ' : ''}
@@ -377,6 +411,7 @@ export const RecentConversations = forwardRef<
                   {conversation.description &&
                     conversation.description !== conversation.title && (
                       <span
+                        id={descriptionId}
                         className="mt-0.5 block truncate text-[11px] leading-4"
                         style={{ color: HUD.textDim }}
                       >
@@ -384,10 +419,22 @@ export const RecentConversations = forwardRef<
                       </span>
                     )}
                   <span
+                    id={detailsId}
                     className="mt-0.5 block break-all font-mono text-[10px] leading-4"
-                    style={{ color: 'rgba(167,181,204,0.66)' }}
+                    style={{ color: HUD.textDim }}
                   >
-                    {conversation.id}
+                    <span>{conversation.id}</span>
+                    <span className="sr-only">
+                      . {reopensExawatt ? 'Saved in Exawatt. ' : ''}
+                      {conversation.providerSessionId
+                        ? `Exact ${meta.label} resume available.`
+                        : 'Retained history only.'}
+                    </span>
+                  </span>
+                  <span id={targetId} className="sr-only">
+                    {reopensExawatt && !conversation.providerSessionId
+                      ? 'in Exawatt'
+                      : `in ${meta.label}`}
                   </span>
                 </span>
               </button>
@@ -398,7 +445,7 @@ export const RecentConversations = forwardRef<
                 onKeyDown={event => handleRowKeyDown(event, index)}
                 aria-label={`Start fresh from ${conversation.title}`}
                 title="Start a new Agent from this handoff"
-                className="my-2 mr-1.5 inline-flex shrink-0 items-center gap-1 rounded border border-transparent px-2 font-mono text-[10px] opacity-55 outline-none transition-[opacity,border-color,color] hover:border-hud-cyan/20 hover:text-hud-cyan hover:opacity-100 disabled:opacity-30 focus-visible:border-hud-cyan/30 focus-visible:text-hud-cyan focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+                className="my-1 mr-1.5 inline-flex min-h-11 shrink-0 items-center gap-1 rounded border border-transparent px-2 font-mono text-[10px] outline-none transition-[border-color,color] hover:border-hud-cyan/20 hover:text-hud-cyan disabled:opacity-50 focus-visible:border-hud-cyan/30 focus-visible:text-hud-cyan focus-visible:ring-1 focus-visible:ring-hud-cyan @max-[560px]:mb-2 @max-[560px]:ml-12 motion-reduce:transition-none"
                 style={{ color: HUD.textDim }}
               >
                 {opening === freshKey ? (

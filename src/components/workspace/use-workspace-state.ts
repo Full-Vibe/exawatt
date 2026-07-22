@@ -492,6 +492,9 @@ export interface LaunchOptions {
   statedTask?: string;
   /** Immediate context subtitle while the resumed harness restores. */
   restoredSubtitle?: string;
+  /** Retained Exawatt Session to adopt after a successful provider launch.
+   * The ledger entry is consumed only after create succeeds. */
+  restoreSessionId?: string;
   /** create a git worktree (<repo>-wt/<branch>) and launch inside it */
   worktreeBranch?: string;
   /** roadmap item this session will work on (ENG-017 S4, optional) */
@@ -1172,7 +1175,28 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         }
         const size = sizeRef.current?.() ?? null;
         const tabId = opts.reuseTabId ?? newTabId();
-        const durableSessionId = newDurableSessionId();
+        const restoredEntry = opts.restoreSessionId
+          ? (await api.closedSessions()).find(
+              entry => entry.durableSessionId === opts.restoreSessionId
+            )
+          : undefined;
+        if (
+          restoredEntry &&
+          (restoredEntry.harness !== opts.harness ||
+            (restoredEntry.harnessSessionId &&
+              restoredEntry.harnessSessionId !== opts.resumeSessionId))
+        ) {
+          setError(
+            'The saved Session no longer matches this provider conversation.'
+          );
+          return false;
+        }
+        const durableSessionId =
+          restoredEntry?.durableSessionId ?? newDurableSessionId();
+        const statedTask =
+          restoredEntry?.initialTask ?? opts.statedTask?.trim() ?? null;
+        const restoredSubtitle =
+          restoredEntry?.goal ?? opts.restoredSubtitle?.trim() ?? null;
         const res = await api.create({
           harness: opts.harness,
           cwd,
@@ -1188,17 +1212,25 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           ...(opts.resumeSessionId
             ? { resumeSessionId: opts.resumeSessionId }
             : {}),
-          ...(opts.statedTask?.trim()
-            ? { statedTask: opts.statedTask.trim() }
-            : {}),
-          ...(opts.restoredSubtitle?.trim()
-            ? { restoredSubtitle: opts.restoredSubtitle.trim() }
-            : {}),
+          ...(statedTask ? { statedTask } : {}),
+          ...(restoredSubtitle ? { restoredSubtitle } : {}),
           ...(size ?? {}),
         });
         if (!res.ok) {
           setError(res.error);
           return false;
+        }
+        if (restoredEntry) {
+          // Commit the soft-close migration only after the provider process is
+          // live. A failed create leaves the recoverable ledger entry intact.
+          try {
+            await api.reopenSession(restoredEntry.durableSessionId);
+          } catch (cause) {
+            console.warn(
+              'Could not consume migrated Session ledger entry',
+              cause
+            );
+          }
         }
         setError(null);
         setLastUsedDir(dir);
@@ -1208,7 +1240,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             res.session,
             tabId,
             opts.roadmapItemId ?? null,
-            opts.statedTask?.trim() || opts.initialPrompt?.trim() || null
+            statedTask || opts.initialPrompt?.trim() || null
           );
           setProjects(prev =>
             prev.map(grp =>
@@ -1227,7 +1259,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             res.session,
             tabId,
             opts.roadmapItemId ?? null,
-            opts.statedTask?.trim() || opts.initialPrompt?.trim() || null
+            statedTask || opts.initialPrompt?.trim() || null
           );
         }
         // Resolution bridge (ENG-015 S5 P3): register/refresh this directory's
@@ -1466,7 +1498,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   /** resurrect a soft-closed Session whole: tab, goal, provider identity,
    *  retained history — the ledger's other half (D23) */
   const reopenClosedSession = useCallback(
-    async (durableSessionId: string): Promise<boolean> => {
+    async (durableSessionId: string, reuseTabId?: string): Promise<boolean> => {
       const api = window.electron?.pty;
       if (!api?.reopenSession) return false;
       const entry = await api.reopenSession(durableSessionId);
@@ -1478,7 +1510,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           semanticSummary: entry.goal,
         });
       const tab: WorkspaceTab = {
-        id: newTabId(),
+        id: reuseTabId ?? newTabId(),
         durableSessionId: entry.durableSessionId,
         harness: entry.harness,
         title: repairsLegacyCatalogTitle
@@ -1524,9 +1556,19 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           ];
         }
         const next = [...prev];
+        const replacesDraft =
+          !!reuseTabId &&
+          next[i].tabs.some(
+            candidate =>
+              candidate.id === reuseTabId && candidate.lifecycle === 'draft'
+          );
         next[i] = {
           ...next[i],
-          tabs: [...next[i].tabs, tab],
+          tabs: replacesDraft
+            ? next[i].tabs.map(candidate =>
+                candidate.id === reuseTabId ? tab : candidate
+              )
+            : [...next[i].tabs, tab],
           activeTabId: tab.id,
         };
         return next;

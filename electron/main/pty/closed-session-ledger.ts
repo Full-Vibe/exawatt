@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 
 /**
  * Recently-closed Session ledger (ENG-016 D23).
@@ -94,9 +95,16 @@ export class ClosedSessionLedger {
   private persist(): void {
     const stored: StoredLedgerV1 = { v: 1, entries: this.load() };
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(stored));
-    fs.renameSync(tmp, this.file);
+    const tmp = `${this.file}.tmp-${process.pid}-${randomUUID()}`;
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(stored), {
+        mode: 0o600,
+        flag: 'wx',
+      });
+      fs.renameSync(tmp, this.file);
+    } finally {
+      fs.rmSync(tmp, { force: true });
+    }
   }
 
   /** newest first — the palette's listing order */

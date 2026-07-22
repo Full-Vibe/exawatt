@@ -21,6 +21,17 @@ describe('parseSettings', () => {
     });
   });
 
+  it('parses only an explicit hosted-summary privacy choice', () => {
+    expect(
+      parseSettings({ conversationSummaries: { hosted: false } })
+        .conversationSummaries
+    ).toEqual({ hosted: false });
+    expect(
+      parseSettings({ conversationSummaries: { hosted: 'no' } })
+        .conversationSummaries
+    ).toBeUndefined();
+  });
+
   it('sanitizes Agent Source recommendations while preserving future source ids', () => {
     expect(
       parseSettings({

@@ -132,6 +132,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('settings:set-attention-notifications', enabled),
     setDockBadge: (enabled: boolean) =>
       ipcRenderer.invoke('settings:set-dock-badge', enabled),
+    setHostedConversationSummaries: (enabled: boolean) =>
+      ipcRenderer.invoke('settings:set-hosted-conversation-summaries', enabled),
     recordAgentSourceUse: (
       projectDir: string,
       source: string,
@@ -162,7 +164,8 @@ contextBridge.exposeInMainWorld('electron', {
         letterSpacing?: number;
         fontStrokeWidth?: number;
       };
-      notifications?: { attention: boolean };
+      notifications?: { attention: boolean; dockBadge?: boolean };
+      conversationSummaries?: { hosted: boolean };
       agentSources?: {
         projectLastUsed: Record<string, string>;
         sourceRecency: Record<string, number>;

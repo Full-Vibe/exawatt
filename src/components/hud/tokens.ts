@@ -28,6 +28,10 @@ export const HUD = {
   textMono: '#9FE9F2',
   stroke: 'rgba(80,230,255,0.55)',
   strokeSoft: 'rgba(80,230,255,0.22)',
+  strokeFaint: 'rgba(80,230,255,0.14)',
+  divider: 'rgba(80,230,255,0.1)',
+  surfaceInput: 'rgba(8,13,22,0.78)',
+  surfaceInputSoft: 'rgba(8,13,22,0.6)',
   fill: 'rgba(20,120,160,0.08)',
   fillHi: 'rgba(20,160,200,0.14)',
 } as const;

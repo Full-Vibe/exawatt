@@ -80,15 +80,29 @@ export interface LaunchRoadmapItem {
 export function freshConversationPrompt(
   conversation: Pick<
     RecentConversation,
-    'harness' | 'id' | 'title' | 'description' | 'continuation'
+    | 'harness'
+    | 'id'
+    | 'title'
+    | 'description'
+    | 'continuation'
+    | 'providerSessionId'
   >
 ): string {
   const source = AGENT_SOURCE_META[conversation.harness].label;
   const handoff = conversation.description ?? conversation.title;
-  const priorIdentity =
+  const providerIdentity =
+    conversation.providerSessionId ??
+    (conversation.continuation.kind === 'provider' ? conversation.id : null);
+  const priorIdentity = [
     conversation.continuation.kind === 'exawatt-session'
       ? `Previous Exawatt Session: ${conversation.continuation.durableSessionId}`
-      : `Previous ${source} conversation: ${conversation.id}`;
+      : null,
+    providerIdentity
+      ? `Previous ${source} conversation: ${providerIdentity}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
   return [
     `Continue this work in a fresh Agent session.`,
     priorIdentity,
@@ -503,9 +517,36 @@ export function AgentComposer({
       mode === 'resume' && conversation.continuation.kind === 'exawatt-session'
         ? conversation.continuation.durableSessionId
         : null;
+    const exactProviderId =
+      mode === 'resume'
+        ? (conversation.providerSessionId ??
+          (conversation.continuation.kind === 'provider'
+            ? conversation.id
+            : null))
+        : null;
     let permissionToPersist: AgentPermissionMode | null = null;
     let continueConversation: (() => Promise<boolean>) | null = null;
-    if (reopenSessionId) {
+    if (exactProviderId) {
+      if (!sourcePreferences) return false;
+      permissionToPersist = permissionModeFor(
+        sourcePreferences,
+        projectDir,
+        conversation.harness,
+        usedSafePreferenceFallback ? 'prompt' : DEFAULT_AGENT_PERMISSION_MODE
+      );
+      continueConversation = () =>
+        onLaunch({
+          harness: conversation.harness,
+          dir: conversation.cwd,
+          permissionMode: permissionToPersist!,
+          resumeSessionId: exactProviderId,
+          statedTask: conversation.description ?? conversation.title,
+          ...(conversation.titleSource === 'generated'
+            ? { restoredSubtitle: conversation.title }
+            : {}),
+          ...(reopenSessionId ? { restoreSessionId: reopenSessionId } : {}),
+        });
+    } else if (reopenSessionId) {
       if (!onReopenConversation) return false;
       continueConversation = () => onReopenConversation(reopenSessionId);
     } else {
@@ -518,7 +559,7 @@ export function AgentComposer({
       );
       const launchOptions: LaunchOptions = {
         harness: conversation.harness,
-        dir: projectDir,
+        dir: conversation.cwd,
         permissionMode: permissionToPersist,
         ...(mode === 'resume'
           ? {
@@ -618,16 +659,16 @@ export function AgentComposer({
         }}
         placeholder="What should this Agent do?"
         aria-label="Initial task for the new Agent"
-        className="max-h-40 min-h-9 w-full resize-none rounded border bg-transparent px-3 py-2 font-mono text-xs leading-5 outline-none transition-colors [field-sizing:content] placeholder:text-hud-text-dim/80 hover:border-hud-cyan/40 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+        className="max-h-40 min-h-11 w-full resize-none rounded border bg-transparent px-3 py-2 font-mono text-xs leading-5 outline-none transition-colors [field-sizing:content] placeholder:text-hud-text-dim/80 hover:border-hud-cyan/40 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
         style={{
           color: HUD.text,
-          borderColor: 'rgba(80,230,255,0.24)',
-          background: 'rgba(8,13,22,0.78)',
+          borderColor: HUD.strokeSoft,
+          background: HUD.surfaceInput,
         }}
       />
 
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-1">
-        <div className="flex min-w-0 items-center gap-1">
+        <div className="flex min-w-0 items-center gap-1 @max-[520px]:flex-wrap">
           <Select
             value={effectiveSource}
             disabled={!preferencesReady || controlsDisabled}
@@ -646,7 +687,7 @@ export function AgentComposer({
               className="h-9 w-[136px] shrink-0 rounded border px-2 font-mono text-xs shadow-none transition-[border-color,filter] duration-150 hover:brightness-110 focus:ring-hud-cyan data-[state=open]:brightness-110 motion-reduce:transition-none"
               style={{
                 color: sourceMeta.color,
-                borderColor: 'rgba(80,230,255,0.24)',
+                borderColor: HUD.strokeSoft,
                 background: HUD.bg.deep,
               }}
             >
@@ -708,7 +749,7 @@ export function AgentComposer({
               className="h-9 w-[168px] shrink-0 rounded border px-2 font-mono text-xs shadow-none transition-[border-color,filter] duration-150 hover:brightness-110 focus:ring-hud-cyan data-[state=open]:brightness-110 motion-reduce:transition-none"
               style={{
                 color: HUD.text,
-                borderColor: 'rgba(80,230,255,0.24)',
+                borderColor: HUD.strokeSoft,
                 background: HUD.bg.deep,
               }}
             >
@@ -814,7 +855,7 @@ export function AgentComposer({
                     ? `${HUD.red}88`
                     : permissionMode === 'unrestricted'
                       ? `${HUD.amber}66`
-                      : 'rgba(80,230,255,0.24)',
+                      : HUD.strokeSoft,
                 background: HUD.bg.deep,
               }}
             >
@@ -937,7 +978,7 @@ export function AgentComposer({
                 className="grid h-9 w-9 shrink-0 place-items-center rounded border outline-none transition-[filter,transform] duration-150 hover:brightness-125 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
                 style={{
                   color: worktree || roadmapItemId ? HUD.cyan : HUD.textDim,
-                  borderColor: 'rgba(80,230,255,0.24)',
+                  borderColor: HUD.strokeSoft,
                 }}
               >
                 <Settings2 className="h-4 w-4" />
@@ -948,7 +989,7 @@ export function AgentComposer({
               className="w-80 rounded-md border p-3"
               style={{
                 background: HUD.bg.deep,
-                borderColor: 'rgba(80,230,255,0.25)',
+                borderColor: HUD.strokeSoft,
               }}
             >
               <label
@@ -1003,7 +1044,7 @@ export function AgentComposer({
                     className="mt-1 h-8 w-full rounded border bg-transparent px-2 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{
                       color: HUD.text,
-                      borderColor: 'rgba(80,230,255,0.2)',
+                      borderColor: HUD.strokeSoft,
                       background: HUD.bg.deep,
                     }}
                   >
@@ -1103,7 +1144,7 @@ export function AgentComposer({
           New Agent
         </p>
       </div>
-      <div className="mt-3 w-full max-w-3xl">
+      <div className="@container mt-3 w-full max-w-3xl">
         {controls}
         <RecentConversations
           ref={recentRef}

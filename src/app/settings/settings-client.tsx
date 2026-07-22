@@ -25,8 +25,12 @@ import {
   validateShortcutBinding,
   type ShortcutPlatform,
 } from '@/lib/shortcuts';
-import { updateKeyboardShortcuts, resetKeyboardShortcuts } from '@/app/actions/preferences';
 import {
+  updateKeyboardShortcuts,
+  resetKeyboardShortcuts,
+} from '@/app/actions/preferences';
+import {
+  ConversationPrivacySettings,
   NotificationsSettings,
   PermissionsExplainer,
 } from './notifications-settings';
@@ -37,7 +41,11 @@ import {
   type SymbolicHotkeysPlist,
   type SystemHotkey,
 } from '@/lib/shortcuts/system-shortcuts';
-import type { ShortcutCategory, ShortcutKeys, KeyBinding } from '@/types/shortcuts';
+import type {
+  ShortcutCategory,
+  ShortcutKeys,
+  KeyBinding,
+} from '@/types/shortcuts';
 import { RotateCcw, AlertCircle, TriangleAlert } from 'lucide-react';
 
 const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
@@ -94,7 +102,6 @@ export function SettingsClient() {
     null
   );
 
-
   // macOS system-shortcut truth (D19 amendment): read the machine's actual
   // symbolic-hotkey prefs so a combo the user freed in System Settings is
   // bindable here, and a combo the system really owns explains itself.
@@ -119,9 +126,7 @@ export function SettingsClient() {
           plist === null
             ? { hotkeys: effectiveSystemHotkeys(null), verified: false }
             : {
-                hotkeys: effectiveSystemHotkeys(
-                  plist as SymbolicHotkeysPlist
-                ),
+                hotkeys: effectiveSystemHotkeys(plist as SymbolicHotkeysPlist),
                 verified: true,
               }
         );
@@ -160,7 +165,11 @@ export function SettingsClient() {
   }, []);
 
   // Subscribe to registry changes
-  const shortcuts = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const shortcuts = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot
+  );
 
   const startEditing = useCallback((shortcutId: string) => {
     setEditingId(shortcutId);
@@ -225,11 +234,7 @@ export function SettingsClient() {
 
     const shortcut = shortcutRegistry.get(editingId);
     const policyError = shortcut
-      ? validateShortcutBinding(
-          shortcut,
-          newKeys,
-          currentShortcutPlatform()
-        )
+      ? validateShortcutBinding(shortcut, newKeys, currentShortcutPlatform())
       : null;
     if (policyError) {
       setBindingError(policyError);
@@ -286,7 +291,7 @@ export function SettingsClient() {
   }, []);
 
   const categories = CATEGORY_ORDER.filter(
-    (cat) => shortcuts[cat] && shortcuts[cat].length > 0
+    cat => shortcuts[cat] && shortcuts[cat].length > 0
   );
   const editingShortcut = editingId
     ? shortcutRegistry.get(editingId)
@@ -298,10 +303,13 @@ export function SettingsClient() {
     <div className="container mx-auto py-6 px-4 max-w-3xl">
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">Customize your Exawatt experience</p>
+        <p className="text-muted-foreground">
+          Customize your Exawatt experience
+        </p>
       </div>
 
       <NotificationsSettings />
+      <ConversationPrivacySettings />
       <PermissionsExplainer />
 
       <Card>
@@ -325,17 +333,19 @@ export function SettingsClient() {
         </CardHeader>
         <CardContent>
           <div className="space-y-6">
-            {categories.map((category) => (
+            {categories.map(category => (
               <div key={category}>
                 <h3 className="text-sm font-semibold text-muted-foreground mb-3">
                   {CATEGORY_LABELS[category]}
                 </h3>
                 <div className="space-y-2">
-                  {shortcuts[category].map((shortcut) => {
+                  {shortcuts[category].map(shortcut => {
                     const effectiveKeys = shortcutRegistry.getEffectiveKeys(
                       shortcut.id
                     );
-                    const hasOverride = shortcutRegistry.hasOverride(shortcut.id);
+                    const hasOverride = shortcutRegistry.hasOverride(
+                      shortcut.id
+                    );
 
                     if (!effectiveKeys) return null;
 

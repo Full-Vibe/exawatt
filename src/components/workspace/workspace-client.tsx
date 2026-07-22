@@ -1134,7 +1134,9 @@ export function WorkspaceClient() {
                                 onLaunch={opts =>
                                   launch({ ...opts, reuseTabId: tab.id })
                                 }
-                                onReopenConversation={reopenClosedSession}
+                                onReopenConversation={durableSessionId =>
+                                  reopenClosedSession(durableSessionId, tab.id)
+                                }
                                 onDraftChange={patch =>
                                   updateDraft(tab.id, patch)
                                 }

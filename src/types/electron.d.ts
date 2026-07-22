@@ -1,6 +1,7 @@
 export {};
 
-export type PtyHarness = 'shell' | 'claude' | 'codex';
+export type AgentHarness = 'claude' | 'codex';
+export type PtyHarness = 'shell' | AgentHarness;
 export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
 
 export interface PtyCreateOptions {
@@ -253,7 +254,7 @@ export interface HarnessResumeCandidate {
 
 export interface RecentConversation {
   id: string;
-  harness: Exclude<PtyHarness, 'shell'>;
+  harness: AgentHarness;
   cwd: string;
   startedAt: number;
   updatedAt: number;
@@ -261,6 +262,9 @@ export interface RecentConversation {
   description: string | null;
   titleSource: 'native' | 'generated' | 'fallback';
   needsSummary: boolean;
+  /** Exact provider identity when known; null for retained-only Exawatt
+   * Sessions that cannot safely auto-resume a harness conversation. */
+  providerSessionId: string | null;
   /** Continue the provider identity directly, or restore Exawatt's richer
    * logical Session (including retained history) when the Project ledger owns
    * this conversation. */
@@ -317,6 +321,9 @@ export interface ExawattSettings {
     /** macOS dock badge count + bounce (D18) — default off */
     dockBadge?: boolean;
   };
+  conversationSummaries?: {
+    hosted: boolean;
+  };
   agentSources?: {
     projectLastUsed: Record<string, string>;
     sourceRecency: Record<string, number>;
@@ -328,6 +335,9 @@ export interface ElectronSettingsApi {
   get: () => Promise<ExawattSettings>;
   setAttentionNotifications: (enabled: boolean) => Promise<ExawattSettings>;
   setDockBadge: (enabled: boolean) => Promise<ExawattSettings>;
+  setHostedConversationSummaries: (
+    enabled: boolean
+  ) => Promise<ExawattSettings>;
   recordAgentSourceUse: (
     projectDir: string,
     source: string,

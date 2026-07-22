@@ -1,9 +1,10 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import type { PtyHarness } from './session-manager';
 import type { ClosedSessionEntry } from './closed-session-ledger';
-import { listProjectWorktrees, resolveProject } from './project-resolve';
+import { listProjectWorktrees } from './project-resolve';
 
 export type ConversationHarness = Exclude<PtyHarness, 'shell'>;
 
@@ -17,6 +18,9 @@ export interface RecentConversation {
   description: string | null;
   titleSource: 'native' | 'generated' | 'fallback';
   needsSummary: boolean;
+  /** Exact provider identity when one is known. Kept separate from the row ID
+   * because retained Exawatt Sessions may not have captured it yet. */
+  providerSessionId: string | null;
   continuation:
     | { kind: 'provider' }
     | { kind: 'exawatt-session'; durableSessionId: string };
@@ -33,6 +37,9 @@ export interface ConversationDraft extends RecentConversation {
 }
 
 export interface ConversationCatalogAdapter {
+  /** Sources served by this adapter. This is the registration seam for future
+   * harnesses; Project Session history deliberately serves both. */
+  readonly harnesses: readonly ConversationHarness[];
   list(cwd: string): Promise<ConversationDraft[]>;
 }
 
@@ -40,6 +47,7 @@ interface CachedSummary {
   fingerprint: string;
   title: string;
   description: string | null;
+  storedAt: number;
 }
 
 interface SummaryResponse {
@@ -50,7 +58,11 @@ interface SummaryResponse {
   }>;
 }
 
-const MAX_FILES = 300;
+const MAX_LEGACY_METADATA_FILES = 1_000;
+const MAX_PROJECT_RESULTS = 100;
+const MAX_CACHED_SUMMARIES = 500;
+const LIST_CACHE_TTL_MS = 10_000;
+const MAX_METADATA_BYTES = 64 * 1024;
 const MAX_PREFIX_BYTES = 2 * 1024 * 1024;
 const MAX_SUFFIX_BYTES = 1024 * 1024;
 const MAX_SUMMARY_CONVERSATIONS = 8;
@@ -62,12 +74,61 @@ const MAX_GENERATED_TITLE_WORDS = 6;
 const MAX_GENERATED_DESCRIPTION_WORDS = 18;
 const DEFAULT_SUMMARY_ENDPOINT =
   'https://www.exawatt.ai/api/conversations/summarize';
+const DEFAULT_CODEX_SESSIONS_ROOT = path.join(
+  os.homedir(),
+  '.codex',
+  'sessions'
+);
+const DEFAULT_CODEX_STATE_DATABASE = path.join(
+  os.homedir(),
+  '.codex',
+  'state_5.sqlite'
+);
 
 async function canonicalDirectory(directory: string): Promise<string> {
   try {
     return await fs.promises.realpath(directory);
   } catch {
     return path.resolve(directory);
+  }
+}
+
+function directoryIsWithin(directory: string, root: string): boolean {
+  if (directory === root) return true;
+  const relative = path.relative(root, directory);
+  return !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+/**
+ * One Project membership calculation per catalog load. Provider records can
+ * live under the primary checkout, a nested package, or any live worktree.
+ * Resolving that set up front avoids spawning git once per candidate.
+ */
+class ProjectDirectoryScope {
+  private constructor(readonly roots: readonly string[]) {}
+
+  static async create(
+    projectDirectory: string,
+    worktrees: (projectDir: string) => Promise<string[]> = listProjectWorktrees
+  ): Promise<ProjectDirectoryScope> {
+    const directories = [
+      projectDirectory,
+      ...(await worktrees(projectDirectory)),
+    ];
+    const canonical = await Promise.all(directories.map(canonicalDirectory));
+    return new ProjectDirectoryScope([...new Set(canonical)]);
+  }
+
+  async launchDirectory(directory: string): Promise<string | null> {
+    const candidate = await canonicalDirectory(directory);
+    if (!this.roots.some(root => directoryIsWithin(candidate, root)))
+      return null;
+    try {
+      const stat = await fs.promises.stat(candidate);
+      return stat.isDirectory() ? candidate : null;
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -81,21 +142,8 @@ export async function directoryBelongsToProject(
   directory: string,
   projectDirectory: string
 ): Promise<boolean> {
-  const [candidate, project] = await Promise.all([
-    canonicalDirectory(directory),
-    canonicalDirectory(projectDirectory),
-  ]);
-  if (candidate === project) return true;
-  const relative = path.relative(project, candidate);
-  if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
-    return true;
-  }
-  try {
-    const resolved = await resolveProject(candidate);
-    return (await canonicalDirectory(resolved.projectDir)) === project;
-  } catch {
-    return false;
-  }
+  const scope = await ProjectDirectoryScope.create(projectDirectory);
+  return (await scope.launchDirectory(directory)) !== null;
 }
 
 async function jsonlFiles(directory: string): Promise<string[]> {
@@ -134,7 +182,12 @@ async function recentFiles(directory: string): Promise<
     )
     .map(item => item.value)
     .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs)
-    .slice(0, MAX_FILES);
+    .slice(0, MAX_LEGACY_METADATA_FILES);
+}
+
+async function readFirstLine(file: string, size: number): Promise<string> {
+  const prefix = await readRange(file, 0, Math.min(size, MAX_METADATA_BYTES));
+  return prefix.split('\n', 1)[0] ?? '';
 }
 
 async function readRange(
@@ -226,6 +279,37 @@ function summaryTurns(turns: string[]): string[] {
   );
 }
 
+/** Defense-in-depth before any excerpt crosses the hosted-summary boundary.
+ * The visible Settings control remains the privacy authority; this prevents
+ * common credentials from being disclosed even when the feature is enabled. */
+export function redactHostedSummaryText(value: string): string {
+  return value
+    .replace(
+      /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/gi,
+      '[REDACTED PRIVATE KEY]'
+    )
+    .replace(
+      /\b(?:sk|sk-ant|xox[baprs])-[_A-Za-z0-9-]{12,}\b/g,
+      '[REDACTED TOKEN]'
+    )
+    .replace(
+      /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|npm_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{20,})\b/g,
+      '[REDACTED TOKEN]'
+    )
+    .replace(/\bAKIA[A-Z0-9]{16}\b/g, '[REDACTED AWS KEY]')
+    .replace(
+      /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
+      '[REDACTED JWT]'
+    )
+    .replace(
+      /\b(?:authorization|password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)\s*[:=]\s*(?:Bearer\s+)?(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
+      match => {
+        const separator = match.match(/\s*[:=]\s*/)?.[0] ?? '=';
+        return `${match.slice(0, match.indexOf(separator))}${separator}[REDACTED]`;
+      }
+    );
+}
+
 function conversationCorrelationKey(
   harness: ConversationHarness,
   firstOperatorTurn: string | null | undefined
@@ -282,28 +366,135 @@ function usableGeneratedDescription(value: unknown): string | null {
 }
 
 export class CodexConversationAdapter implements ConversationCatalogAdapter {
-  readonly harness = 'codex' as const;
+  readonly harnesses = ['codex'] as const;
 
   constructor(
     private readonly sessionsRoot = process.env.EXAWATT_CODEX_SESSIONS_ROOT ??
-      path.join(os.homedir(), '.codex', 'sessions')
+      DEFAULT_CODEX_SESSIONS_ROOT,
+    private readonly stateDatabase = process.env.EXAWATT_CODEX_STATE_DB ??
+      (sessionsRoot === DEFAULT_CODEX_SESSIONS_ROOT
+        ? DEFAULT_CODEX_STATE_DATABASE
+        : null),
+    private readonly projectDirectories: (
+      projectDir: string
+    ) => Promise<string[]> = listProjectWorktrees
   ) {}
 
   async list(cwd: string): Promise<ConversationDraft[]> {
-    const requestedDirectory = await canonicalDirectory(cwd);
+    const scope = await ProjectDirectoryScope.create(
+      cwd,
+      this.projectDirectories
+    );
+    const indexed = await this.readIndexed(scope);
+    if (indexed) return indexed;
+    return this.readLegacyTranscripts(scope);
+  }
+
+  /** Codex already maintains an indexed thread catalog. Querying that source
+   * by Project is both faster and more accurate than rediscovering metadata by
+   * walking every rollout file. */
+  private async readIndexed(
+    scope: ProjectDirectoryScope
+  ): Promise<ConversationDraft[] | null> {
+    if (!this.stateDatabase) return null;
+    let database: import('node:sqlite').DatabaseSync | null = null;
+    try {
+      // Runtime require keeps this Electron/Node-only capability out of the
+      // renderer-oriented Vite transform used by the shared test suite.
+      const { DatabaseSync } =
+        require('node:sqlite') as typeof import('node:sqlite');
+      database = new DatabaseSync(this.stateDatabase, { readOnly: true });
+      const predicates = scope.roots.map(
+        () => `(cwd = ? OR cwd LIKE ? ESCAPE '\\')`
+      );
+      const parameters = scope.roots.flatMap(root => [
+        root,
+        `${escapeSqlLike(`${root}${path.sep}`)}%`,
+      ]);
+      const statement = database.prepare(`
+        SELECT id, cwd, rollout_path, title, first_user_message, preview,
+               created_at_ms, updated_at_ms, recency_at_ms
+          FROM threads
+         WHERE archived = 0 AND (${predicates.join(' OR ')})
+         ORDER BY recency_at_ms DESC
+         LIMIT ?
+      `);
+      const records = statement.all(
+        ...parameters,
+        MAX_PROJECT_RESULTS
+      ) as Array<Record<string, unknown>>;
+      const rows: ConversationDraft[] = [];
+      for (const record of records) {
+        if (typeof record.id !== 'string' || typeof record.cwd !== 'string') {
+          continue;
+        }
+        const launchDirectory = await scope.launchDirectory(record.cwd);
+        if (!launchDirectory) continue;
+        const first = meaningfulOperatorText(
+          typeof record.first_user_message === 'string'
+            ? record.first_user_message
+            : ''
+        );
+        const preview = meaningfulOperatorText(
+          typeof record.preview === 'string' ? record.preview : ''
+        );
+        const turns = [
+          first,
+          preview && preview !== first ? preview : null,
+        ].filter((turn): turn is string => !!turn);
+        const nativeTitle = usableNativeTitle(record.title);
+        const startedAt = finiteTimestamp(record.created_at_ms, Date.now());
+        const updatedAt = finiteTimestamp(
+          record.recency_at_ms,
+          finiteTimestamp(record.updated_at_ms, startedAt)
+        );
+        rows.push({
+          id: record.id,
+          harness: 'codex',
+          cwd: launchDirectory,
+          startedAt,
+          updatedAt,
+          title: nativeTitle ?? fallbackTitle(turns, record.id),
+          description: turns[turns.length - 1]
+            ? truncate(turns[turns.length - 1], MAX_DESCRIPTION_CHARS)
+            : null,
+          titleSource: nativeTitle ? 'native' : 'fallback',
+          needsSummary: !nativeTitle && turns.length > 0,
+          providerSessionId: record.id,
+          continuation: { kind: 'provider' },
+          fingerprint: `index:${updatedAt}:${String(record.title ?? '').length}:${turns.join('').length}`,
+          summaryInput: summaryTurns(turns),
+          providerIdentity: record.id,
+          correlationKey: conversationCorrelationKey('codex', turns[0]),
+        });
+      }
+      return rows;
+    } catch {
+      return null;
+    } finally {
+      database?.close();
+    }
+  }
+
+  /** Compatibility path for older Codex installations without state_5.sqlite.
+   * Only the first metadata record is read globally; transcript excerpts are
+   * opened after Project membership is established. */
+  private async readLegacyTranscripts(
+    scope: ProjectDirectoryScope
+  ): Promise<ConversationDraft[]> {
     const files = await recentFiles(this.sessionsRoot);
     const rows: ConversationDraft[] = [];
 
     for (const { file, stat } of files) {
+      if (rows.length >= MAX_PROJECT_RESULTS) break;
       try {
-        const lines = await readBoundedLines(file, stat.size);
-        const first = JSON.parse(lines[0] ?? '{}');
+        const first = JSON.parse(await readFirstLine(file, stat.size));
         const meta = first?.type === 'session_meta' ? first.payload : null;
         const id = meta?.session_id ?? meta?.id;
         if (!id || typeof meta?.cwd !== 'string') continue;
-        if (!(await directoryBelongsToProject(meta.cwd, requestedDirectory))) {
-          continue;
-        }
+        const launchDirectory = await scope.launchDirectory(meta.cwd);
+        if (!launchDirectory) continue;
+        const lines = await readBoundedLines(file, stat.size);
 
         const turns: string[] = [];
         for (const line of lines.slice(1)) {
@@ -323,8 +514,8 @@ export class CodexConversationAdapter implements ConversationCatalogAdapter {
         const startedAt = Date.parse(meta.timestamp ?? first.timestamp ?? '');
         rows.push({
           id,
-          harness: this.harness,
-          cwd,
+          harness: 'codex',
+          cwd: launchDirectory,
           startedAt: Number.isFinite(startedAt)
             ? startedAt
             : stat.birthtimeMs || stat.mtimeMs,
@@ -335,11 +526,12 @@ export class CodexConversationAdapter implements ConversationCatalogAdapter {
             : null,
           titleSource: 'fallback',
           needsSummary: turns.length > 0,
+          providerSessionId: id,
           continuation: { kind: 'provider' },
           fingerprint: `${stat.mtimeMs}:${stat.size}`,
           summaryInput: summaryTurns(turns),
           providerIdentity: id,
-          correlationKey: conversationCorrelationKey(this.harness, turns[0]),
+          correlationKey: conversationCorrelationKey('codex', turns[0]),
         });
       } catch {
         // Harness files can rotate, truncate, or disappear while being read.
@@ -347,6 +539,16 @@ export class CodexConversationAdapter implements ConversationCatalogAdapter {
     }
     return rows;
   }
+}
+
+function escapeSqlLike(value: string): string {
+  return value.replace(/[\\%_]/g, character => `\\${character}`);
+}
+
+function finiteTimestamp(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? value
+    : fallback;
 }
 
 interface ClaudeIndexEntry {
@@ -362,7 +564,7 @@ interface ClaudeIndexEntry {
 }
 
 export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
-  readonly harness = 'claude' as const;
+  readonly harnesses = ['claude'] as const;
 
   constructor(
     private readonly projectsRoot = process.env.EXAWATT_CLAUDE_PROJECTS_ROOT ??
@@ -374,22 +576,37 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
 
   async list(cwd: string): Promise<ConversationDraft[]> {
     const workingDirectories = await this.projectDirectories(cwd);
-    const projectDirectories = [cwd, ...workingDirectories].map(directory =>
-      path.join(this.projectsRoot, directory.replace(/[^a-zA-Z0-9_-]/g, '-'))
+    const scope = await ProjectDirectoryScope.create(
+      cwd,
+      async () => workingDirectories
     );
+    const projectDirectories = [cwd, ...workingDirectories].map(directory => ({
+      launchDirectory: directory,
+      historyDirectory: path.join(
+        this.projectsRoot,
+        directory.replace(/[^a-zA-Z0-9_-]/g, '-')
+      ),
+    }));
     const rows = await Promise.all(
-      [...new Set(projectDirectories)].map(async projectDirectory => {
-        const indexed = await this.readIndex(projectDirectory, cwd);
+      [
+        ...new Map(
+          projectDirectories.map(item => [item.historyDirectory, item])
+        ).values(),
+      ].map(async ({ historyDirectory, launchDirectory }) => {
+        const indexed = await this.readIndex(historyDirectory, scope);
         if (indexed.length > 0) return indexed;
-        return this.readTranscripts(projectDirectory, cwd);
+        return this.readTranscripts(historyDirectory, launchDirectory, scope);
       })
     );
-    return rows.flat();
+    return rows
+      .flat()
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .slice(0, MAX_PROJECT_RESULTS);
   }
 
   private async readIndex(
     projectDirectory: string,
-    cwd: string
+    scope: ProjectDirectoryScope
   ): Promise<ConversationDraft[]> {
     let parsed: { entries?: ClaudeIndexEntry[] };
     try {
@@ -403,28 +620,26 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
       return [];
     }
     if (!Array.isArray(parsed.entries)) return [];
-    const requestedDirectory = await canonicalDirectory(cwd);
     const rows: ConversationDraft[] = [];
     for (const entry of parsed.entries) {
       if (
         typeof entry.sessionId !== 'string' ||
         typeof entry.projectPath !== 'string' ||
-        entry.isSidechain === true ||
-        !(await directoryBelongsToProject(
-          entry.projectPath,
-          requestedDirectory
-        ))
+        entry.isSidechain === true
       ) {
         continue;
       }
+      const launchDirectory = await scope.launchDirectory(entry.projectPath);
+      if (!launchDirectory) continue;
       const first = meaningfulOperatorText(
         typeof entry.firstPrompt === 'string' ? entry.firstPrompt : ''
       );
       const nativeTitle = usableNativeTitle(entry.summary);
-      const updatedAt =
+      const parsedUpdatedAt =
         typeof entry.fileMtime === 'number'
           ? entry.fileMtime
           : Date.parse(String(entry.modified ?? ''));
+      const updatedAt = finiteTimestamp(parsedUpdatedAt, Date.now());
       let size = 0;
       if (typeof entry.fullPath === 'string') {
         try {
@@ -435,20 +650,24 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
       }
       rows.push({
         id: entry.sessionId,
-        harness: this.harness,
-        cwd,
-        startedAt: Date.parse(String(entry.created ?? '')) || updatedAt,
+        harness: 'claude',
+        cwd: launchDirectory,
+        startedAt: finiteTimestamp(
+          Date.parse(String(entry.created ?? '')),
+          updatedAt
+        ),
         updatedAt,
         title:
           nativeTitle ?? fallbackTitle(first ? [first] : [], entry.sessionId),
         description: first ? truncate(first, MAX_DESCRIPTION_CHARS) : null,
         titleSource: nativeTitle ? 'native' : 'fallback',
         needsSummary: !nativeTitle && !!first,
+        providerSessionId: entry.sessionId,
         continuation: { kind: 'provider' },
         fingerprint: `${updatedAt}:${size}`,
         summaryInput: first ? [truncate(first, MAX_SUMMARY_TURN_CHARS)] : [],
         providerIdentity: entry.sessionId,
-        correlationKey: conversationCorrelationKey(this.harness, first),
+        correlationKey: conversationCorrelationKey('claude', first),
       });
     }
     return rows;
@@ -456,8 +675,11 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
 
   private async readTranscripts(
     projectDirectory: string,
-    cwd: string
+    sourceDirectory: string,
+    scope: ProjectDirectoryScope
   ): Promise<ConversationDraft[]> {
+    const launchDirectory = await scope.launchDirectory(sourceDirectory);
+    if (!launchDirectory) return [];
     let entries: fs.Dirent[];
     try {
       entries = await fs.promises.readdir(projectDirectory, {
@@ -477,7 +699,7 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
     files.sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
     const rows: ConversationDraft[] = [];
 
-    for (const { file, stat } of files.slice(0, MAX_FILES)) {
+    for (const { file, stat } of files.slice(0, MAX_PROJECT_RESULTS)) {
       try {
         const lines = await readBoundedLines(file, stat.size);
         const turns: string[] = [];
@@ -513,8 +735,8 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
         }
         rows.push({
           id: sessionId,
-          harness: this.harness,
-          cwd,
+          harness: 'claude',
+          cwd: launchDirectory,
           startedAt,
           updatedAt: stat.mtimeMs,
           title: nativeTitle ?? fallbackTitle(turns, sessionId),
@@ -523,11 +745,12 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
             : null,
           titleSource: nativeTitle ? 'native' : 'fallback',
           needsSummary: !nativeTitle && turns.length > 0,
+          providerSessionId: sessionId,
           continuation: { kind: 'provider' },
           fingerprint: `${stat.mtimeMs}:${stat.size}`,
           summaryInput: summaryTurns(turns),
           providerIdentity: sessionId,
-          correlationKey: conversationCorrelationKey(this.harness, turns[0]),
+          correlationKey: conversationCorrelationKey('claude', turns[0]),
         });
       } catch {
         // One malformed transcript must not hide the rest of the catalog.
@@ -544,17 +767,19 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
  * when known so the catalog can reconcile both records without duplication.
  */
 export class ProjectSessionConversationAdapter implements ConversationCatalogAdapter {
+  readonly harnesses = ['claude', 'codex'] as const;
+
   constructor(private readonly listSessions: () => ClosedSessionEntry[]) {}
 
   async list(projectDir: string): Promise<ConversationDraft[]> {
+    const scope = await ProjectDirectoryScope.create(projectDir);
     const rows: ConversationDraft[] = [];
     for (const entry of this.listSessions()) {
-      if (
-        (entry.harness !== 'claude' && entry.harness !== 'codex') ||
-        !(await directoryBelongsToProject(entry.projectDir, projectDir))
-      ) {
+      if (entry.harness !== 'claude' && entry.harness !== 'codex') {
         continue;
       }
+      const launchDirectory = await scope.launchDirectory(entry.cwd);
+      if (!launchDirectory) continue;
       const initialTask = meaningfulOperatorText(entry.initialTask ?? '');
       const goal = meaningfulOperatorText(entry.goal ?? '');
       const title = goal
@@ -565,7 +790,7 @@ export class ProjectSessionConversationAdapter implements ConversationCatalogAda
       rows.push({
         id: entry.harnessSessionId ?? entry.durableSessionId,
         harness: entry.harness,
-        cwd: entry.cwd,
+        cwd: launchDirectory,
         startedAt: entry.closedAt,
         updatedAt: entry.closedAt,
         title,
@@ -577,6 +802,7 @@ export class ProjectSessionConversationAdapter implements ConversationCatalogAda
               : null,
         titleSource: goal ? 'generated' : 'fallback',
         needsSummary: !goal && !!initialTask,
+        providerSessionId: entry.harnessSessionId,
         continuation: {
           kind: 'exawatt-session',
           durableSessionId: entry.durableSessionId,
@@ -599,6 +825,8 @@ export interface ConversationCatalogOptions {
   cacheFile?: string;
   summaryEndpoint?: string;
   fetch?: typeof fetch;
+  hostedSummariesEnabled?: () => boolean;
+  now?: () => number;
 }
 
 export class RecentConversationCatalog {
@@ -606,6 +834,18 @@ export class RecentConversationCatalog {
   private readonly cacheFile: string | null;
   private readonly summaryEndpoint: string;
   private readonly fetchFn: typeof fetch;
+  private readonly hostedSummariesEnabled: () => boolean;
+  private readonly now: () => number;
+  private cacheGeneration = 0;
+  private cacheMutation = Promise.resolve();
+  private readonly listCache = new Map<
+    string,
+    { expiresAt: number; drafts: ConversationDraft[] }
+  >();
+  private readonly listInFlight = new Map<
+    string,
+    Promise<ConversationDraft[]>
+  >();
 
   constructor(options: ConversationCatalogOptions = {}) {
     this.adapters = options.adapters ?? [
@@ -621,6 +861,9 @@ export class RecentConversationCatalog {
       process.env.EXAWATT_CONVERSATION_SUMMARY_URL ??
       DEFAULT_SUMMARY_ENDPOINT;
     this.fetchFn = options.fetch ?? fetch;
+    this.hostedSummariesEnabled =
+      options.hostedSummariesEnabled ?? (() => true);
+    this.now = options.now ?? Date.now;
   }
 
   async list(cwd: string): Promise<RecentConversation[]> {
@@ -632,9 +875,16 @@ export class RecentConversationCatalog {
     cwd: string
   ): Promise<RecentConversation[]> {
     if (harness === 'shell') return [];
-    return (await this.listDrafts(cwd))
+    return (await this.listDrafts(cwd, harness))
       .filter(candidate => candidate.harness === harness)
       .map(stripPrivateFields);
+  }
+
+  /** Ledger mutations and provider launches invalidate the short-lived shared
+   * Project view. Visible panes still deduplicate concurrent requests. */
+  invalidate(_cwd?: string): void {
+    this.cacheGeneration += 1;
+    this.listCache.clear();
   }
 
   async enrich(
@@ -643,6 +893,11 @@ export class RecentConversationCatalog {
   ): Promise<RecentConversation[]> {
     if (!accessToken || accessToken.length > 8_000) {
       throw new Error('A valid Exawatt session is required for summaries.');
+    }
+    if (!this.hostedSummariesEnabled()) {
+      throw new Error(
+        'Hosted conversation summaries are disabled in Settings.'
+      );
     }
     const drafts = await this.listDrafts(cwd);
     const pending = drafts
@@ -661,7 +916,7 @@ export class RecentConversationCatalog {
       body: JSON.stringify({
         conversations: pending.map(candidate => ({
           key: cacheKey(candidate),
-          turns: candidate.summaryInput,
+          turns: candidate.summaryInput.map(redactHostedSummaryText),
         })),
       }),
       signal: AbortSignal.timeout(15_000),
@@ -672,31 +927,81 @@ export class RecentConversationCatalog {
       );
     }
     const body = (await response.json()) as SummaryResponse;
-    const cache = await this.readCache();
     const pendingByKey = new Map(pending.map(item => [cacheKey(item), item]));
-    for (const item of body.conversations ?? []) {
-      if (typeof item.key !== 'string') continue;
-      const candidate = pendingByKey.get(item.key);
-      const title = usableGeneratedTitle(item.title);
-      const description = usableGeneratedDescription(item.summary);
-      if (!candidate || !title || !description) continue;
-      cache[item.key] = {
-        fingerprint: candidate.fingerprint,
-        title,
-        description,
-      };
-    }
-    await this.writeCache(cache);
+    await this.mutateCache(cache => {
+      for (const item of body.conversations ?? []) {
+        if (typeof item.key !== 'string') continue;
+        const candidate = pendingByKey.get(item.key);
+        const title = usableGeneratedTitle(item.title);
+        const description = usableGeneratedDescription(item.summary);
+        if (!candidate || !title || !description) continue;
+        cache[item.key] = {
+          fingerprint: candidate.fingerprint,
+          title,
+          description,
+          storedAt: this.now(),
+        };
+      }
+    });
+    this.invalidate(cwd);
     return (await this.listDrafts(cwd)).map(stripPrivateFields);
   }
 
-  private async listDrafts(cwd: string): Promise<ConversationDraft[]> {
+  private async listDrafts(
+    cwd: string,
+    harness?: ConversationHarness
+  ): Promise<ConversationDraft[]> {
+    const generation = this.cacheGeneration;
+    const key = `${generation}:${path.resolve(cwd)}:${harness ?? 'all'}`;
+    const cached = this.listCache.get(key);
+    if (cached && cached.expiresAt > this.now()) return cached.drafts;
+    const existing = this.listInFlight.get(key);
+    if (existing) return existing;
+    const request = this.loadDrafts(cwd, harness).finally(() => {
+      this.listInFlight.delete(key);
+    });
+    this.listInFlight.set(key, request);
+    const drafts = await request;
+    if (generation === this.cacheGeneration) {
+      this.listCache.set(key, {
+        expiresAt: this.now() + LIST_CACHE_TTL_MS,
+        drafts,
+      });
+    }
+    return drafts;
+  }
+
+  private async mutateCache(
+    mutation: (cache: Record<string, CachedSummary>) => void
+  ): Promise<void> {
+    const operation = this.cacheMutation.then(async () => {
+      const cache = await this.readCache();
+      mutation(cache);
+      await this.writeCache(cache);
+    });
+    this.cacheMutation = operation.catch(() => undefined);
+    await operation;
+  }
+
+  private async loadDrafts(
+    cwd: string,
+    harness?: ConversationHarness
+  ): Promise<ConversationDraft[]> {
+    const adapters = harness
+      ? this.adapters.filter(adapter => adapter.harnesses.includes(harness))
+      : this.adapters;
     const settled = await Promise.allSettled(
-      this.adapters.map(adapter => adapter.list(cwd))
+      adapters.map(adapter => adapter.list(cwd))
     );
     const deduped = new Map<string, ConversationDraft>();
-    for (const result of settled) {
-      if (result.status !== 'fulfilled') continue;
+    for (const [index, result] of settled.entries()) {
+      if (result.status !== 'fulfilled') {
+        console.warn(
+          `[conversation-catalog] ${adapters[index].constructor.name} failed`,
+          result.reason instanceof Error ? result.reason.message : result.reason
+        );
+        continue;
+      }
       for (const candidate of result.value) {
         const key = cacheKey(candidate);
         const existing = deduped.get(key);
@@ -736,24 +1041,29 @@ export class RecentConversationCatalog {
     conversations: Map<string, ConversationDraft>
   ): void {
     const rows = [...conversations.values()];
-    for (const projectSession of rows) {
-      if (
-        projectSession.providerIdentity ||
-        projectSession.continuation.kind !== 'exawatt-session' ||
-        !projectSession.correlationKey
-      ) {
-        continue;
-      }
-      const matches = rows.filter(
-        candidate =>
-          candidate.providerIdentity &&
-          candidate.harness === projectSession.harness &&
-          candidate.correlationKey === projectSession.correlationKey
-      );
-      // Ambiguity means unmapped. Showing both recoverable records is safer
-      // than attaching the operator to the wrong provider conversation.
-      if (matches.length !== 1) continue;
-      const provider = matches[0];
+    const identitylessGroups = new Map<string, ConversationDraft[]>();
+    const providerGroups = new Map<string, ConversationDraft[]>();
+    for (const row of rows) {
+      if (!row.correlationKey) continue;
+      const target =
+        row.continuation.kind === 'exawatt-session' && !row.providerIdentity
+          ? identitylessGroups
+          : row.providerIdentity
+            ? providerGroups
+            : null;
+      if (!target) continue;
+      target.set(row.correlationKey, [
+        ...(target.get(row.correlationKey) ?? []),
+        row,
+      ]);
+    }
+    for (const [correlationKey, projectSessions] of identitylessGroups) {
+      const providers = providerGroups.get(correlationKey) ?? [];
+      // Reconciliation is one-to-one on both sides. Two retained Sessions with
+      // the same opening task must never claim one provider conversation.
+      if (projectSessions.length !== 1 || providers.length !== 1) continue;
+      const projectSession = projectSessions[0];
+      const provider = providers[0];
       conversations.delete(cacheKey(projectSession));
       conversations.set(
         cacheKey(provider),
@@ -768,7 +1078,42 @@ export class RecentConversationCatalog {
       const parsed = JSON.parse(
         await fs.promises.readFile(this.cacheFile, 'utf8')
       );
-      return parsed && typeof parsed === 'object' ? parsed : {};
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+        return {};
+      const validated: Record<string, CachedSummary> = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        if (!value || typeof value !== 'object') continue;
+        const candidate = value as Partial<CachedSummary>;
+        const title = usableNativeTitle(candidate.title);
+        const description =
+          candidate.description === null
+            ? null
+            : typeof candidate.description === 'string' &&
+                candidate.description.length <= MAX_DESCRIPTION_CHARS
+              ? candidate.description
+              : undefined;
+        if (
+          !title ||
+          description === undefined ||
+          typeof candidate.fingerprint !== 'string' ||
+          !candidate.fingerprint ||
+          typeof candidate.storedAt !== 'number' ||
+          !Number.isFinite(candidate.storedAt)
+        ) {
+          continue;
+        }
+        validated[key] = {
+          title,
+          description,
+          fingerprint: candidate.fingerprint,
+          storedAt: candidate.storedAt,
+        };
+      }
+      return Object.fromEntries(
+        Object.entries(validated)
+          .sort(([, left], [, right]) => right.storedAt - left.storedAt)
+          .slice(0, MAX_CACHED_SUMMARIES)
+      );
     } catch {
       return {};
     }
@@ -779,11 +1124,21 @@ export class RecentConversationCatalog {
   ): Promise<void> {
     if (!this.cacheFile) return;
     await fs.promises.mkdir(path.dirname(this.cacheFile), { recursive: true });
-    const temporary = `${this.cacheFile}.tmp`;
-    await fs.promises.writeFile(temporary, JSON.stringify(cache), {
-      mode: 0o600,
-    });
-    await fs.promises.rename(temporary, this.cacheFile);
+    const pruned = Object.fromEntries(
+      Object.entries(cache)
+        .sort(([, left], [, right]) => right.storedAt - left.storedAt)
+        .slice(0, MAX_CACHED_SUMMARIES)
+    );
+    const temporary = `${this.cacheFile}.tmp-${process.pid}-${randomUUID()}`;
+    try {
+      await fs.promises.writeFile(temporary, JSON.stringify(pruned), {
+        mode: 0o600,
+        flag: 'wx',
+      });
+      await fs.promises.rename(temporary, this.cacheFile);
+    } finally {
+      await fs.promises.rm(temporary, { force: true });
+    }
   }
 }
 
@@ -823,6 +1178,7 @@ function mergeConversationDrafts(
   return {
     ...presentation,
     id: left.providerIdentity ?? right.providerIdentity ?? presentation.id,
+    providerSessionId: left.providerIdentity ?? right.providerIdentity,
     startedAt: Math.min(left.startedAt, right.startedAt),
     updatedAt: Math.max(left.updatedAt, right.updatedAt),
     description: presentation.description ?? other.description,

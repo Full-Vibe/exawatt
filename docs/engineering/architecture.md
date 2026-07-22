@@ -244,10 +244,16 @@ Built:
   rows resume their exact conversation. The new-tab composer
   renders native and machine-local cached labels immediately, supports either
   continuation path or a distinct fresh handoff, and never makes model
-  availability a condition of local launch. Missing labels may be augmented
-  asynchronously through an authenticated hosted boundary that sends only a
-  bounded set of operator-authored excerpts to Anthropic; its credential is
-  never exposed to the desktop renderer (decision `0017`)
+  availability a condition of local launch. Project scope is resolved once;
+  Codex discovery uses its Project-filtered SQLite thread index with a
+  metadata-first legacy fallback, actual nested/worktree launch directories
+  are retained, concurrent visible-pane reads share a bounded TTL cache, and
+  identity-less reconciliation is one-to-one on both sides. Missing labels may
+  be augmented asynchronously through an authenticated hosted boundary only
+  when the visible Settings preference allows it; excerpts are bounded and
+  common credential patterns are redacted locally, Supabase enforces durable per-user hourly/daily
+  quota, and the Anthropic credential is never exposed to the desktop renderer
+  (decision `0017`)
 - serialized workspace persistence and bounded terminal-history snapshots with
   append journals; steady-state disk work scales with new terminal output and
   compacts without exposing partial state

@@ -35,6 +35,7 @@ import { createElectronAuthCookies } from './auth-cookies';
 import type { AuthDiagnosticRecorder } from './auth-diagnostics';
 import { resolveWindowLaunchMode } from './window-launch-mode';
 import { createDirectoryPicker } from './directory-picker';
+import { stopChildProcess } from './child-process-lifecycle';
 
 const isDev = process.env.NODE_ENV === 'development';
 const isTest = process.env.EXAWATT_TEST === '1';
@@ -276,44 +277,15 @@ function hasWarmRendererCache(): boolean {
 
 async function stopRendererServer(): Promise<void> {
   const server = rendererServer;
-  rendererServer = null;
-  if (!server || server.exitCode !== null || server.signalCode !== null) return;
-
-  await new Promise<void>((resolve, reject) => {
-    let settled = false;
-    let forceTimer: ReturnType<typeof setTimeout> | undefined;
-    let failureTimer: ReturnType<typeof setTimeout> | undefined;
-    const finish = (error?: Error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(forceTimer);
-      clearTimeout(failureTimer);
-      server.off('close', closed);
-      if (error) reject(error);
-      else resolve();
-    };
-    const closed = () => finish();
-    server.once('close', closed);
-
-    // The packaged Next server can still be writing its cache for a short
-    // interval after Electron begins quitting. Wait for the child to close so
-    // app shutdown—and hermetic test cleanup—has one truthful completion edge.
-    server.kill('SIGTERM');
-    if (server.exitCode !== null || server.signalCode !== null) {
-      finish();
-      return;
-    }
-
-    forceTimer = setTimeout(() => {
-      if (server.exitCode === null && server.signalCode === null) {
-        server.kill('SIGKILL');
-      }
-    }, isTest ? 250 : 1_500);
-    failureTimer = setTimeout(
-      () => finish(new Error('Packaged renderer did not stop during shutdown')),
-      isTest ? 2_000 : 5_000
-    );
+  if (!server) return;
+  await stopChildProcess(server, {
+    forceAfterMs: isTest ? 250 : 1_500,
+    failAfterMs: isTest ? 2_000 : 5_000,
+    failureMessage: 'Packaged renderer did not stop during shutdown',
   });
+  // Clear ownership only after the process is truthfully stopped. A rejection
+  // leaves the same handle available to the next shutdown attempt.
+  if (rendererServer === server) rendererServer = null;
 }
 
 // A cached renderer uses only Node APIs and can boot before Electron's ready
