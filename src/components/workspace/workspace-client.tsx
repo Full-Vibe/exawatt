@@ -15,8 +15,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { TerminalPane } from './terminal-pane';
-import type { PaneLayout } from './terminal-pane';
+import { LAYOUT_CLASS, TerminalPane } from './terminal-pane';
+import { resolveStageLayout } from './split-layout';
 import {
   acceptTerminalSettings,
   loadTerminalFont,
@@ -696,40 +696,25 @@ export function WorkspaceClient() {
     g.tabs.map(t => ({ tab: t, dir: g.dir }))
   );
 
-  // split view (S2): the pinned tab renders RIGHT beside a companion tab
-  // LEFT. The companion is the last active non-pinned tab — so clicking
-  // into the pinned pane (active = pinned) moves the KEYBOARD there but
-  // keeps both panes up; a click must never collapse the split (you could
+  // split view (S2, reworked D26): the pinned tab renders RIGHT beside the
+  // driven content LEFT. The pin follows the TAB — a pinned pane survives
+  // its session's exit (retained scrollback + restore bar) so the operator
+  // actually sees the watched agent finish. The driven side is whatever
+  // would render full-screen without the pin: a live pane, a stopped tab,
+  // the ⌘T draft page, or the empty-Project composer. The companion (last
+  // active non-pinned tab) keeps the split up while the keyboard sits in
+  // the pinned pane — a click must never collapse the split (you could
   // not even copy text out of the watched pane otherwise).
-  const pinnedEntry =
-    pinnedTabId !== null
-      ? (allTabs.find(
-          e => e.tab.id === pinnedTabId && e.tab.sessionId && tabIsLive(e.tab)
-        ) ?? null)
-      : null;
-  if (activeTab && activeTab.sessionId && activeTab.id !== pinnedTabId) {
+  if (activeTab && activeTab.id !== pinnedTabId) {
     companionRef.current = activeTab.id;
   }
-  const companionEntry = pinnedEntry
-    ? (allTabs.find(
-        e =>
-          e.tab.id === companionRef.current &&
-          e.tab.sessionId &&
-          tabIsLive(e.tab)
-      ) ?? null)
-    : null;
-  const split =
-    !!pinnedEntry &&
-    !!companionEntry &&
-    companionEntry.tab.id !== pinnedEntry.tab.id;
-  const layoutFor = (tabId: string): PaneLayout => {
-    if (split) {
-      if (tabId === companionEntry.tab.id) return 'left';
-      if (tabId === pinnedEntry.tab.id) return 'right';
-      return 'hidden';
-    }
-    return tabId === activeTab?.id ? 'full' : 'hidden';
-  };
+  const stage = resolveStageLayout({
+    entries: allTabs,
+    activeTabId: activeTab?.id ?? null,
+    emptyProjectStage: !!activeProject && activeProject.tabs.length === 0,
+    pinnedTabId,
+    companionTabId: companionRef.current,
+  });
 
   return (
     <div
@@ -1008,69 +993,111 @@ export function WorkspaceClient() {
                     ))}
                   </div>
                 </div>
-              ) : activeProject.tabs.length === 0 ? (
-                <div className="flex h-full items-center justify-center">
-                  <AgentComposer
-                    projectDir={activeProject.dir}
-                    projectName={activeProject.name}
-                    roadmapItems={launchRoadmapItems}
-                    onLaunch={launch}
-                  />
-                </div>
-              ) : font === null ? null : (
-                allTabs.map(({ tab, dir }) =>
-                  tab.sessionId ? (
-                    <TerminalPane
-                      key={tab.sessionId}
-                      sessionId={tab.sessionId}
-                      cwd={tab.cwd}
-                      active={tab.id === activeTab?.id}
-                      layout={layoutFor(tab.id)}
-                      font={font}
-                      onActivate={() => selectTab(dir, tab.id)}
-                    />
-                  ) : tab.id === activeTab?.id && activeProject ? (
-                    <div key={tab.id} className="absolute inset-0">
-                      {tab.lifecycle === 'draft' ? (
-                        // the new-tab page (D24): the pane IS the composer
-                        <div className="flex h-full items-center justify-center">
-                          <AgentComposer
-                            projectDir={activeProject.dir}
-                            projectName={activeProject.name}
-                            initialSource={tab.draftSource ?? undefined}
-                            roadmapItems={launchRoadmapItems}
-                            onLaunch={opts =>
-                              launch({ ...opts, reuseTabId: tab.id })
-                            }
-                          />
-                        </div>
-                      ) : tab.resumeState === 'resuming' ? (
-                        <p
-                          className="absolute inset-0 flex items-center justify-center text-sm"
-                          style={{ color: HUD.textDim }}
-                        >
-                          Starting a new process for the saved conversation...
-                        </p>
-                      ) : (
-                        <>
-                          <RetainedTerminalPane
-                            durableSessionId={tab.durableSessionId}
-                            title={tab.title}
+              ) : (
+                <>
+                  {/* every tab renders through ONE per-state pane path
+                    (D26): live panes stay mounted whatever is active —
+                    including an empty Project's composer — and a stopped,
+                    draft, or resuming tab renders wherever the layout
+                    puts it (full, driven-left, or watched-right), not
+                    only as a full-stage overlay of the active tab. */}
+                  {font !== null &&
+                    allTabs.map(({ tab, dir }) => {
+                      const layout = stage.layoutFor(tab.id);
+                      if (tab.sessionId) {
+                        return (
+                          <TerminalPane
+                            key={tab.sessionId}
+                            sessionId={tab.sessionId}
+                            cwd={tab.cwd}
+                            active={tab.id === activeTab?.id}
+                            layout={layout}
                             font={font}
+                            onActivate={() => selectTab(dir, tab.id)}
                           />
-                          <SessionRestorePanel
-                            tab={tab}
-                            project={activeProject}
-                            resumableCount={readyAgentCount}
-                            onResumeTab={resumeTab}
-                            onResumeProject={resumeProject}
-                            onResumeAll={resumeAll}
-                          />
-                        </>
-                      )}
+                        );
+                      }
+                      if (layout === 'hidden') return null;
+                      const project = projects.find(p => p.dir === dir);
+                      if (!project) return null;
+                      return (
+                        <div
+                          key={tab.id}
+                          data-pane={layout}
+                          className={LAYOUT_CLASS[layout]}
+                          style={
+                            layout === 'right'
+                              ? {
+                                  borderLeft:
+                                    '1px solid rgba(80,230,255,0.2)',
+                                }
+                              : undefined
+                          }
+                          onMouseDown={
+                            tab.id !== activeTab?.id
+                              ? () => selectTab(dir, tab.id)
+                              : undefined
+                          }
+                        >
+                          {tab.lifecycle === 'draft' ? (
+                            // the new-tab page (D24): the pane IS the composer
+                            <div className="flex h-full items-center justify-center">
+                              <AgentComposer
+                                projectDir={project.dir}
+                                projectName={project.name}
+                                initialSource={tab.draftSource ?? undefined}
+                                roadmapItems={launchRoadmapItems}
+                                onLaunch={opts =>
+                                  launch({ ...opts, reuseTabId: tab.id })
+                                }
+                              />
+                            </div>
+                          ) : tab.resumeState === 'resuming' ? (
+                            <p
+                              className="absolute inset-0 flex items-center justify-center text-sm"
+                              style={{ color: HUD.textDim }}
+                            >
+                              Starting a new process for the saved
+                              conversation...
+                            </p>
+                          ) : (
+                            <>
+                              <RetainedTerminalPane
+                                durableSessionId={tab.durableSessionId}
+                                title={tab.title}
+                                font={font}
+                              />
+                              <SessionRestorePanel
+                                tab={tab}
+                                project={project}
+                                resumableCount={readyAgentCount}
+                                onResumeTab={resumeTab}
+                                onResumeProject={resumeProject}
+                                onResumeAll={resumeAll}
+                              />
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  {/* empty-Project composer: the driven side of a split
+                    when something is pinned (D26), full alone otherwise */}
+                  {stage.stagePane !== 'hidden' && (
+                    <div
+                      data-pane={stage.stagePane}
+                      className={LAYOUT_CLASS[stage.stagePane]}
+                    >
+                      <div className="flex h-full items-center justify-center">
+                        <AgentComposer
+                          projectDir={activeProject.dir}
+                          projectName={activeProject.name}
+                          roadmapItems={launchRoadmapItems}
+                          onLaunch={launch}
+                        />
+                      </div>
                     </div>
-                  ) : null
-                )
+                  )}
+                </>
               )}
             </div>
           </div>

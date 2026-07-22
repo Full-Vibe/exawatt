@@ -50,7 +50,7 @@ export const HUD_TERM_THEME = {
  *  ResizeObserver + syncSize path absorbs the width change on (un)split. */
 export type PaneLayout = 'full' | 'left' | 'right' | 'hidden';
 
-const LAYOUT_CLASS: Record<PaneLayout, string> = {
+export const LAYOUT_CLASS: Record<PaneLayout, string> = {
   full: 'absolute inset-0',
   left: 'absolute inset-y-0 left-0 w-1/2',
   right: 'absolute inset-y-0 right-0 w-1/2',

@@ -27,6 +27,7 @@ import {
   placeTabBeside,
   tabAtOrdinal,
 } from './tab-ring';
+import { nextPin, tabIsPinnable } from './split-layout';
 import {
   SESSION_JUMP_EVENT,
   LAUNCH_EVENT,
@@ -796,9 +797,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         lastUsedDir: lu,
         pinnedTabId: pin,
       } = stateRef.current;
+      // the pin follows the tab (D26): it persists with a stopped tab and
+      // reattaches to retained history on relaunch (drafts never persist)
       const pinSurvives =
         pin !== null &&
-        gs.some(g => g.tabs.some(t => t.id === pin && tabIsLive(t)));
+        gs.some(g => g.tabs.some(t => t.id === pin && tabIsPinnable(t)));
       const now = Date.now();
       const recents = [
         ...gs.map(g => ({
@@ -1497,25 +1500,20 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
 
   /** ⌘D: pin the active tab for a split ("watch one, drive one") — the
    *  pinned tab stays visible beside whatever becomes active; ⌘D unpins.
-   *  A pin whose session died is stale, not a real pin — ⌘D then pins the
-   *  active tab directly instead of "unpinning" nothing visible. */
+   *  The pin follows the TAB, not the PTY (D26): a pinned pane survives
+   *  its session's exit (retained scrollback stays watched), so ⌘D on a
+   *  stopped pin still just unpins. The decision table is pure and
+   *  unit-tested in split-layout.ts. */
   const togglePin = useCallback((): boolean => {
     const { projects: gs, activeDir: ad, pinnedTabId: pin } = stateRef.current;
-    const pinAlive =
-      pin !== null &&
-      gs.some(g => g.tabs.some(t => t.id === pin && tabIsLive(t)));
-    if (pinAlive) {
-      setPinnedTabId(null);
-      return true;
-    }
     const active = gs.find(g => g.dir === ad);
-    const tab = active?.tabs.find(t => t.id === active.activeTabId);
-    if (!tab) {
-      setPinnedTabId(null); // still drop a stale pin
-      return pin !== null;
-    }
-    setPinnedTabId(tab.id === pin ? null : tab.id);
-    return true;
+    const { pin: next, applied } = nextPin({
+      tabs: gs.flatMap(g => g.tabs),
+      activeTabId: active?.activeTabId ?? null,
+      pinnedTabId: pin,
+    });
+    setPinnedTabId(next);
+    return applied;
   }, []);
 
   const selectTab = useCallback((dir: string, tabId: string) => {
