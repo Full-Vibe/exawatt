@@ -110,9 +110,6 @@ export interface ElectronPtyApi {
   engage: (id: string) => Promise<void>;
   resize: (id: string, cols: number, rows: number) => Promise<void>;
   kill: (id: string) => Promise<void>;
-  /** native ⌘W interstitial (D24): true = operator confirmed the close.
-   *  Instantly true for sessions that are not live. */
-  confirmClose: (durableSessionId: string) => Promise<boolean>;
   /** one-stroke close (D24): stop, await death, forget the runtime record.
    *  discard=true also sheds retained history (never-started sessions). */
   closeSession: (

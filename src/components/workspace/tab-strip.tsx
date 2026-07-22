@@ -9,7 +9,7 @@
  * One of two first-class regimes (the other: sessions as entities on the
  * ENG-004 world map) — parallel skins over the same session system.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { HUD } from '@/components/hud';
 import { PROJECT_PALETTE } from './project-colors';
 import { HarnessGlyph } from './harness-icons';
@@ -148,6 +148,90 @@ function EditableChrome({
   );
 }
 
+/** right-click menu (D27): HUD-styled, keyboard-navigable (↑↓ ⏎ esc);
+ *  every item is an existing verb — the menu is discovery, not new power */
+export interface StripMenuItem {
+  label: string;
+  onSelect: () => void;
+  /** the destructive item sits last and reads in the project color */
+  danger?: boolean;
+}
+
+function StripContextMenu({
+  x,
+  y,
+  color,
+  items,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  color: string;
+  items: StripMenuItem[];
+  onClose: () => void;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    rootRef.current?.querySelector('button')?.focus();
+    const away = (event: MouseEvent) => {
+      if (!(event.target instanceof Node)) return;
+      if (!rootRef.current?.contains(event.target)) onClose();
+    };
+    document.addEventListener('mousedown', away);
+    return () => document.removeEventListener('mousedown', away);
+  }, [onClose]);
+  return (
+    <div
+      ref={rootRef}
+      data-strip-menu
+      role="menu"
+      className="fixed z-50 flex min-w-44 flex-col rounded border py-1 shadow-2xl motion-safe:animate-in motion-safe:fade-in motion-safe:duration-100"
+      style={{
+        left: x,
+        top: y,
+        borderColor: `${color}44`,
+        background: HUD.bg.panelFill,
+        boxShadow: `0 12px 32px rgba(0,0,0,0.55), 0 0 10px ${color}22`,
+      }}
+      onKeyDown={e => {
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onClose();
+          return;
+        }
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const buttons = Array.from(
+            rootRef.current?.querySelectorAll('button') ?? []
+          );
+          const index = buttons.indexOf(
+            document.activeElement as HTMLButtonElement
+          );
+          const step = e.key === 'ArrowDown' ? 1 : buttons.length - 1;
+          buttons[(index + step) % buttons.length]?.focus();
+        }
+      }}
+    >
+      {items.map(item => (
+        <button
+          key={item.label}
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onClose();
+            item.onSelect();
+          }}
+          className="cursor-pointer px-3 py-1.5 text-left font-mono text-xs outline-none transition-[background-color] duration-75 hover:bg-white/10 focus-visible:bg-white/10"
+          style={{ color: item.danger ? color : HUD.text }}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function TabStrip({
   projects,
   activeDir,
@@ -156,6 +240,10 @@ export function TabStrip({
   attention,
   activity = {},
   engaged = {},
+  onTogglePinTab,
+  onResumeTab,
+  onNewAgent,
+  onRevealPath,
   onReorderTab,
   onReorderProject,
   onSelectProject,
@@ -179,6 +267,11 @@ export function TabStrip({
   activity?: Record<string, boolean>;
   /** sessions ever given work, keyed by sessionId (D22) */
   engaged?: Record<string, boolean>;
+  /** context-menu verbs (D27) — all optional; items appear when wired */
+  onTogglePinTab?: (tabId: string) => void;
+  onResumeTab?: (tabId: string) => void;
+  onNewAgent?: (dir: string) => void;
+  onRevealPath?: (cwd: string) => void;
   onSelectProject: (index: number) => void;
   onSelectTab: (dir: string, tabId: string) => void;
   onCloseTab: (tabId: string) => void;
@@ -199,6 +292,14 @@ export function TabStrip({
   ) => void;
 }) {
   const [editing, setEditing] = useState<Editing | null>(null);
+  // right-click menu (D27)
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    color: string;
+    items: StripMenuItem[];
+  } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
   // D21: ordinals are shortcut hints — the strip rests clean; holding ⌘
   // reveals tab keycaps, ⌘⌥ reveals Project keycaps
   const ordinalHints = useOrdinalHints();
@@ -234,18 +335,15 @@ export function TabStrip({
     settle();
   };
 
-  // global ring ordinals for the first nine tabs (⌘1–⌘9 targets, D18):
-  // computed always, revealed only while ⌘ is held (D21)
+  // global ring ordinals (⌘digit targets): ⌘1–8 are positional and ⌘9 is
+  // the LAST tab, like Chrome (D27) — with more than nine tabs the last
+  // tab wears the 9 keycap. Computed always, revealed while ⌘ held (D21).
   const ordinalByTabId = new Map<string, number>();
   {
-    let ordinal = 0;
-    for (const g of projects) {
-      for (const t of g.tabs) {
-        ordinal += 1;
-        if (ordinal > 9) break;
-        ordinalByTabId.set(t.id, ordinal);
-      }
-      if (ordinal > 9) break;
+    const allTabs = projects.flatMap(g => g.tabs);
+    allTabs.slice(0, 8).forEach((t, i) => ordinalByTabId.set(t.id, i + 1));
+    if (allTabs.length >= 9) {
+      ordinalByTabId.set(allTabs[allTabs.length - 1].id, 9);
     }
   }
 
@@ -282,9 +380,6 @@ export function TabStrip({
       {projects.map((g, gi) => {
         const color = g.color;
         const groupActive = g.dir === activeDir;
-        const flaggedCount = g.tabs.filter(
-          t => t.sessionId && attention[t.sessionId] && tabIsLive(t)
-        ).length;
         return (
           <div
             key={g.dir}
@@ -303,6 +398,37 @@ export function TabStrip({
               setDrag({ kind: 'project', id: g.dir, dir: g.dir });
             }}
             onDragEnd={endDrag}
+            onContextMenu={e => {
+              e.preventDefault();
+              setMenu({
+                x: e.clientX,
+                y: e.clientY,
+                color,
+                items: [
+                  ...(onNewAgent
+                    ? [
+                        {
+                          label: 'New agent',
+                          onSelect: () => onNewAgent(g.dir),
+                        },
+                      ]
+                    : []),
+                  {
+                    label: 'Rename / color…',
+                    onSelect: () =>
+                      setEditing({ kind: 'group', id: g.dir, value: g.name }),
+                  },
+                  ...(onRevealPath
+                    ? [
+                        {
+                          label: 'Reveal in Finder',
+                          onSelect: () => onRevealPath(g.dir),
+                        },
+                      ]
+                    : []),
+                ],
+              });
+            }}
             onDragOver={e => {
               if (drag?.kind !== 'project' || drag.id === g.dir) return;
               e.preventDefault();
@@ -366,24 +492,6 @@ export function TabStrip({
               ) : (
                 g.name
               )}
-              {flaggedCount > 0 && (
-                // a COUNT badge, visually distinct from shortcut ordinals
-                // (D21): pill-shaped, amber like the attention dot it tallies
-                <span
-                  data-attention-count={flaggedCount}
-                  title={`${flaggedCount} ${
-                    flaggedCount === 1 ? 'session needs' : 'sessions need'
-                  } you (⌘J jumps there)`}
-                  className="inline-flex min-w-[15px] items-center justify-center rounded-full px-1 py-px font-mono text-[9px] leading-none"
-                  style={{
-                    color: HUD.amber,
-                    background: 'rgba(255,184,77,0.14)',
-                    border: '1px solid rgba(255,184,77,0.4)',
-                  }}
-                >
-                  {flaggedCount}
-                </span>
-              )}
             </EditableChrome>
             {g.tabs.map(t => {
               const on = groupActive && t.id === g.activeTabId;
@@ -436,6 +544,64 @@ export function TabStrip({
                   onDragEnd={e => {
                     e.stopPropagation();
                     endDrag();
+                  }}
+                  onContextMenu={e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const items: StripMenuItem[] = isDraft
+                      ? [
+                          {
+                            label: 'Discard',
+                            danger: true,
+                            onSelect: () => onCloseTab(t.id),
+                          },
+                        ]
+                      : [
+                          ...(dead &&
+                          onResumeTab &&
+                          (t.harnessSessionId || t.harness === 'shell')
+                            ? [
+                                {
+                                  label: 'Resume',
+                                  onSelect: () => onResumeTab(t.id),
+                                },
+                              ]
+                            : []),
+                          {
+                            label: 'Rename…',
+                            onSelect: () =>
+                              setEditing({
+                                kind: 'tab',
+                                id: t.id,
+                                value: t.title,
+                              }),
+                          },
+                          ...(!dead && onTogglePinTab
+                            ? [
+                                {
+                                  label:
+                                    t.id === pinnedTabId
+                                      ? 'Unpin from split'
+                                      : 'Pin in split',
+                                  onSelect: () => onTogglePinTab(t.id),
+                                },
+                              ]
+                            : []),
+                          ...(onRevealPath
+                            ? [
+                                {
+                                  label: 'Reveal in Finder',
+                                  onSelect: () => onRevealPath(t.cwd),
+                                },
+                              ]
+                            : []),
+                          {
+                            label: 'Close',
+                            danger: true,
+                            onSelect: () => onCloseTab(t.id),
+                          },
+                        ];
+                    setMenu({ x: e.clientX, y: e.clientY, color, items });
                   }}
                   onDragOver={e => {
                     if (
@@ -625,6 +791,7 @@ export function TabStrip({
           </div>
         );
       })}
+      {menu && <StripContextMenu {...menu} onClose={closeMenu} />}
     </div>
   );
 }

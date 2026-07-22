@@ -257,10 +257,6 @@ await page.addInitScript(
         // D24 chrome-model close: confirm is native in main — the mock
         // records calls and consents; closeSession stops via the captured
         // exit handler, exactly like main's stop → natural-exit path
-        confirmClose: async durableSessionId => {
-          (window.__confirmCalls ??= []).push(durableSessionId);
-          return true;
-        },
         closeSession: async durableSessionId => {
           const session = sessions.find(
             s => s.durableSessionId === durableSessionId
@@ -315,7 +311,7 @@ try {
   await composerToggle.click();
   const composer = page.locator('[data-agent-composer]');
   await composer.waitFor();
-  if (!(await page.locator('[data-workspace-tab-strip]').innerText()).includes('New tab')) {
+  if (!(await page.locator('[data-workspace-tab-strip]').innerText()).includes('New agent')) {
     throw new Error('⌘T must create a visible draft tab in the strip');
   }
 
@@ -538,25 +534,46 @@ try {
       `Keycap hints must not shift layout: ${tabWidthBefore} → ${tabWidthDuring}`
     );
   }
-  // 2. (the live-unstarted discard path is exercised end-to-end in the
-  // launcher eval, where the turn-state section hasn't engaged it first)
-  await page.evaluate(() => {
-    window.__confirmCalls = [];
-  });
-  let confirms;
-  // 3. a STARTED agent gets exactly one native confirm, then archives
+  // 2. right-click menus (D27): a tab offers its verbs, esc dismisses
   await page
+    .locator('[data-project="gpagent"] [data-tab-id]')
+    .first()
+    .click({ button: 'right' });
+  const stripMenu = page.locator('[data-strip-menu]');
+  await stripMenu.waitFor();
+  const menuText = await stripMenu.innerText();
+  if (!menuText.includes('Rename') || !menuText.includes('Close')) {
+    throw new Error(`tab context menu incomplete: ${menuText}`);
+  }
+  await page.screenshot({ path: join(SCREENSHOT_DIR, 'context-menu.png') });
+  await page.keyboard.press('Escape');
+  await stripMenu.waitFor({ state: 'detached' });
+  // 3. a STARTED agent pops the in-app confirm: default-highlighted Close,
+  // esc keeps it open the first time, ⏎ presses the default the second
+  const gpaClose = page
     .locator('[data-project="gpagent"]')
-    .getByRole('button', { name: 'Close Claude Code' })
-    .click();
+    .getByRole('button', { name: 'Close Claude Code' });
+  await gpaClose.click();
+  const closeConfirm = page.locator('[data-close-confirm]');
+  await closeConfirm.waitFor();
+  const confirmText = await closeConfirm.innerText();
+  if (
+    !confirmText.includes('Recently closed') ||
+    !confirmText.includes('14 days')
+  ) {
+    throw new Error(`confirm copy misses the recovery path: ${confirmText}`);
+  }
+  await page.screenshot({ path: join(SCREENSHOT_DIR, 'close-confirm.png') });
+  await page.keyboard.press('Escape');
+  await closeConfirm.waitFor({ state: 'detached' });
+  await gpaClose.waitFor(); // still open — esc cancelled
+  await gpaClose.click();
+  await closeConfirm.waitFor();
+  await page.keyboard.press('Enter');
+  await closeConfirm.waitFor({ state: 'detached' });
+  await gpaClose.waitFor({ state: 'detached' }); // optimistic: gone at once
   const toast = page.locator('[data-close-toast]');
   await toast.waitFor();
-  confirms = await page.evaluate(() => window.__confirmCalls ?? []);
-  if (confirms.length !== 1) {
-    throw new Error(
-      `started agents must confirm exactly once: ${JSON.stringify(confirms)}`
-    );
-  }
   const toastText = await toast.innerText();
   if (
     !toastText.includes('Recently closed') ||
@@ -565,14 +582,37 @@ try {
     throw new Error(`Close toast does not narrate the outcome: ${toastText}`);
   }
   await page.screenshot({ path: join(SCREENSHOT_DIR, 'close-toast.png') });
-  // 4. ⌘T ⌘W is a friction-free no-op: the draft discards instantly
-  const draftClose = page.getByRole('button', { name: 'Close New tab' });
+  // 4. ⌘T ⌘W is a friction-free no-op: the draft discards, no dialog
+  const draftClose = page.getByRole('button', { name: 'Close New agent' });
   await draftClose.click();
   await draftClose.waitFor({ state: 'detached' });
-  confirms = await page.evaluate(() => window.__confirmCalls ?? []);
-  if (confirms.length !== 1) {
+  if (await closeConfirm.count()) {
     throw new Error('draft discard must never confirm');
   }
+  // 5. back stack (D27): reselect the codex tab, then ⌘[ returns to the
+  // previously active tab — tab switches are history stops now
+  const codexTab = page
+    .locator('[data-project="exawatt"] [data-tab-id]')
+    .first();
+  const freshTab = page
+    .locator('[data-project="exawatt"] [data-tab-id]')
+    .last();
+  await codexTab.locator('button').first().click();
+  await freshTab.locator('button').first().click();
+  await page.keyboard.press('Meta+BracketLeft');
+  await page.waitForFunction(() => {
+    const active = document.querySelector(
+      '[data-workspace-tab-strip] [data-tab-id][data-active]'
+    );
+    return !!active?.textContent?.includes('Updating tests');
+  });
+  await page.keyboard.press('Meta+BracketRight');
+  await page.waitForFunction(() => {
+    const tabs = document.querySelectorAll(
+      '[data-project="exawatt"] [data-tab-id]'
+    );
+    return !!tabs[tabs.length - 1]?.hasAttribute('data-active');
+  });
 
   await page.setViewportSize({ width: 800, height: 700 });
   // the strip clicks above click-away-collapsed the summoned composer —

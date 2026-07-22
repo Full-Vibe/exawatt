@@ -30,10 +30,12 @@ import {
 import { nextPin, tabIsPinnable } from './split-layout';
 import {
   SESSION_JUMP_EVENT,
+  TAB_SELECT_EVENT,
   LAUNCH_EVENT,
   OPEN_PROJECT_EVENT,
   TOGGLE_SPLIT_EVENT,
   consumePendingSessionJump,
+  consumePendingTabSelect,
   consumePendingLaunch,
   consumePendingOpenProject,
 } from './session-jump';
@@ -105,10 +107,11 @@ export type ResumeState =
   | 'resumed'
   | 'failed';
 
-/** what a close attempt did (D24) — the UI narrates each differently */
+/** what a close attempt did (D27) — the UI narrates each differently */
 export type CloseOutcome =
   | { kind: 'noop' }
-  | { kind: 'cancelled' }
+  /** a started live agent needs the in-app confirm; re-call with force */
+  | { kind: 'needs-confirm'; working: boolean }
   | { kind: 'discarded' }
   | { kind: 'closed'; entry: ClosedSessionEntry };
 
@@ -425,6 +428,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   summariesRef.current = summaries;
   const engagedRef = useRef(engaged);
   engagedRef.current = engaged;
+  const activityRef = useRef(activity);
+  activityRef.current = activity;
   const resumeInFlightRef = useRef<Set<string>>(new Set());
   const shutdownTargetsRef = useRef<Set<string>>(new Set());
 
@@ -1080,7 +1085,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         id: newTabId(),
         durableSessionId: newDurableSessionId(),
         harness: 'claude',
-        title: 'New tab',
+        title: 'New agent',
         cwd: g.dir,
         sessionId: null,
         harnessSessionId: null,
@@ -1120,13 +1125,17 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     );
   }, []);
 
-  /** Close grammar (D24): ⌘W CLOSES, like Chrome. A started live agent
-   *  gets ONE native confirm (context is at stake — the ledger softens
-   *  it); unstarted tabs, drafts, and stopped tabs close instantly.
-   *  Close is never "pause" or "clear": the tab leaves the strip, and
-   *  started Sessions land whole in Recently closed. */
+  /** Close grammar (D27): ⌘W CLOSES, like Chrome. A started live agent
+   *  gets ONE in-app confirm (the caller renders it and re-calls with
+   *  force); drafts, unstarted tabs, and stopped tabs close instantly.
+   *  The removal is OPTIMISTIC — the tab leaves the strip in a single
+   *  transition and the stop/archive runs behind it, so a close never
+   *  flickers through stopped/restore states. */
   const closeTab = useCallback(
-    async (tabId: string): Promise<CloseOutcome> => {
+    async (
+      tabId: string,
+      opts: { force?: boolean } = {}
+    ): Promise<CloseOutcome> => {
       const api = window.electron?.pty;
       if (!api) return { kind: 'noop' };
       const { projects: gs } = stateRef.current;
@@ -1141,39 +1150,46 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         return { kind: 'discarded' };
       }
       const goal = summariesRef.current[tab.durableSessionId] ?? null;
-      if (tabIsLive(tab)) {
+      const live = tabIsLive(tab);
+      if (live) {
         const started =
           !!(tab.sessionId && engagedRef.current[tab.sessionId]) || !!goal;
         if (!started) {
-          // never given work: close instantly, shed the banner history
-          await api.closeSession(tab.durableSessionId, true);
+          // never given work: gone at once, banner history shed behind
           removeTabFromLayout(tabId);
+          void api.closeSession(tab.durableSessionId, true).catch(() => {});
           return { kind: 'discarded' };
         }
-        if (!(await api.confirmClose(tab.durableSessionId))) {
-          return { kind: 'cancelled' };
+        if (!opts.force) {
+          return {
+            kind: 'needs-confirm',
+            working: !!(tab.sessionId && activityRef.current[tab.sessionId]),
+          };
         }
-        await api.closeSession(tab.durableSessionId);
       }
-      let entry: ClosedSessionEntry;
+      // one clean transition, then stop + archive behind the strip
+      removeTabFromLayout(tabId);
+      const entryData = {
+        durableSessionId: tab.durableSessionId,
+        title: tab.title,
+        goal,
+        harness: tab.harness,
+        cwd: tab.cwd,
+        projectDir: g.dir,
+        projectName: g.name,
+        harnessSessionId: tab.harnessSessionId,
+        initialTask: tab.initialTask,
+      };
       try {
-        entry = await api.archiveSession({
-          durableSessionId: tab.durableSessionId,
-          title: tab.title,
-          goal,
-          harness: tab.harness,
-          cwd: tab.cwd,
-          projectDir: g.dir,
-          projectName: g.name,
-          harnessSessionId: tab.harnessSessionId,
-          initialTask: tab.initialTask,
-        });
+        if (live) await api.closeSession(tab.durableSessionId);
+        const entry = await api.archiveSession(entryData);
+        return { kind: 'closed', entry };
       } catch {
-        setError(`Could not close ${tab.title}.`);
+        setError(
+          `Could not archive ${tab.title} — its conversation is still recoverable from its source.`
+        );
         return { kind: 'noop' };
       }
-      removeTabFromLayout(tabId);
-      return { kind: 'closed', entry };
     },
     [removeTabFromLayout]
   );
@@ -1516,6 +1532,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     return applied;
   }, []);
 
+  /** pin/unpin a SPECIFIC tab in the split (D27 context menu); the ⌘D
+   *  toggle for the active tab remains togglePin */
+  const togglePinTab = useCallback((tabId: string) => {
+    setPinnedTabId(cur => (cur === tabId ? null : tabId));
+  }, []);
+
   const selectTab = useCallback((dir: string, tabId: string) => {
     setActiveDir(dir);
     setProjects(prev =>
@@ -1698,6 +1720,21 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       consumePendingSessionJump();
       activateSession((e as CustomEvent<string>).detail);
     };
+    // back/forward (D27): select a tab by identity when it still exists —
+    // a closed tab simply stays a dead stop in the history
+    const onTabSelect = (e: Event) => {
+      if (!readyRef.current) return;
+      consumePendingTabSelect();
+      const { dir, tabId } =
+        (e as CustomEvent<{ dir: string; tabId: string }>).detail ?? {};
+      const { projects: gs } = stateRef.current;
+      const g = gs.find(x => x.dir === dir);
+      if (!g || !g.tabs.some(t => t.id === tabId)) return;
+      setActiveDir(dir);
+      setProjects(prev =>
+        prev.map(x => (x.dir === dir ? { ...x, activeTabId: tabId } : x))
+      );
+    };
     const onLaunch = (e: Event) => {
       if (!readyRef.current) return;
       consumePendingLaunch();
@@ -1717,11 +1754,13 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       void openProject((e as CustomEvent<string>).detail);
     };
     window.addEventListener(SESSION_JUMP_EVENT, onJump);
+    window.addEventListener(TAB_SELECT_EVENT, onTabSelect);
     window.addEventListener(LAUNCH_EVENT, onLaunch);
     window.addEventListener(OPEN_PROJECT_EVENT, onOpenProject);
     window.addEventListener(TOGGLE_SPLIT_EVENT, onToggleSplit);
     return () => {
       window.removeEventListener(SESSION_JUMP_EVENT, onJump);
+      window.removeEventListener(TAB_SELECT_EVENT, onTabSelect);
       window.removeEventListener(LAUNCH_EVENT, onLaunch);
       window.removeEventListener(OPEN_PROJECT_EVENT, onOpenProject);
       window.removeEventListener(TOGGLE_SPLIT_EVENT, onToggleSplit);
@@ -1804,6 +1843,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     reorderProject,
     jumpAttention,
     togglePin,
+    togglePinTab,
     renameTab,
     renameProject,
     setProjectColor,

@@ -39,8 +39,6 @@ contextBridge.exposeInMainWorld('electron', {
     resize: (id: string, cols: number, rows: number) =>
       ipcRenderer.invoke('pty:resize', id, cols, rows),
     kill: (id: string) => ipcRenderer.invoke('pty:kill', id),
-    confirmClose: (durableSessionId: string) =>
-      ipcRenderer.invoke('pty:confirm-close', durableSessionId),
     closeSession: (durableSessionId: string, discard = false) =>
       ipcRenderer.invoke('pty:close-session', durableSessionId, discard),
     archiveSession: (entry: unknown) =>

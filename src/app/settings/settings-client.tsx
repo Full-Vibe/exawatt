@@ -94,6 +94,7 @@ export function SettingsClient() {
     null
   );
 
+
   // macOS system-shortcut truth (D19 amendment): read the machine's actual
   // symbolic-hotkey prefs so a combo the user freed in System Settings is
   // bindable here, and a combo the system really owns explains itself.

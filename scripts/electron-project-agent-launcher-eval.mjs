@@ -103,11 +103,18 @@ async function waitForLiveSessionCount(page, count) {
   throw new Error(`Timed out waiting for ${count} live Sessions`);
 }
 
-// close grammar (D24, chrome model): one Close per tab. The native
-// confirm auto-consents under EXAWATT_TEST=1.
+// close grammar (D27): one Close per tab; a STARTED agent pops the in-app
+// confirm, where ⏎ presses the default Close button.
 async function closeTab(page, title) {
   const closeButton = page.getByRole('button', { name: `Close ${title}` });
   await closeButton.click();
+  const confirm = page.locator('[data-close-confirm]');
+  try {
+    await confirm.waitFor({ timeout: 700 });
+    await page.keyboard.press('Enter');
+  } catch {
+    // unstarted or stopped — closed without ceremony
+  }
   await closeButton.waitFor({ state: 'detached', timeout: 15_000 });
 }
 
@@ -179,7 +186,22 @@ try {
       await page.waitForURL('**/fleet/spatial**');
       const clusterId = `project:${projectA}`;
       const emptyZone = page.locator(`[data-board-zone="${clusterId}"]`);
-      await emptyZone.waitFor();
+      try {
+        await emptyZone.waitFor();
+      } catch (error) {
+        const state = await page.evaluate(() => ({
+          url: window.location.href,
+          board: document
+            .querySelector('[data-spatial-board]')
+            ?.getAttribute('data-board-projects'),
+          zones: Array.from(
+            document.querySelectorAll('[data-board-zone]')
+          ).map(z => z.getAttribute('data-board-zone')),
+        }));
+        console.log(`[project-launcher] spatial state: ${JSON.stringify(state)}`);
+        await page.screenshot({ path: join(output, 'debug-spatial.png') });
+        throw error;
+      }
       check(
         'Spatial keeps the same zero-Agent Project visible',
         (await page

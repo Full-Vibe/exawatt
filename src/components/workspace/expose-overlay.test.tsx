@@ -276,7 +276,7 @@ describe('Sessions overview', () => {
           id: 'tab-d',
           durableSessionId: 'durable-d',
           harness: 'claude',
-          title: 'New tab',
+          title: 'New agent',
           cwd: '/two',
           sessionId: null,
           harnessSessionId: null,
@@ -298,7 +298,7 @@ describe('Sessions overview', () => {
         onClose={vi.fn()}
       />
     );
-    const tile = screen.getByRole('button', { name: 'New tab, Two, draft' });
+    const tile = screen.getByRole('button', { name: 'New agent, Two, draft' });
     expect(tile.querySelector('[data-expose-state="draft"]')).not.toBeNull();
   });
 });

@@ -89,8 +89,12 @@ interface ShortcutProviderProps {
 export function ShortcutProvider({ children }: ShortcutProviderProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const { navigateCommandSurface, activateCommandAltitude } =
-    useCommandNavigation();
+  const {
+    navigateCommandSurface,
+    activateCommandAltitude,
+    navigateBack,
+    navigateForward,
+  } = useCommandNavigation();
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
@@ -132,10 +136,10 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
         }
         switch (def.id) {
           case 'history-back':
-            router.back();
+            navigateBack();
             break;
           case 'history-forward':
-            router.forward();
+            navigateForward();
             break;
           case 'command-terminal':
             activateCommandAltitude('terminal');
@@ -205,7 +209,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     return () => {
       shortcuts.forEach(s => shortcutRegistry.unregister(s.id));
     };
-  }, [activateCommandAltitude, navigateCommandSurface, router]);
+  }, [activateCommandAltitude, navigateBack, navigateForward, navigateCommandSurface, router]);
 
   // Application-menu commands (ENG-016 D8): the macOS menu bar mirrors the
   // app's verbs; every command routes through the same actions the keyboard
@@ -231,10 +235,10 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           activateCommandAltitude('spatial');
           break;
         case 'history-back':
-          router.back();
+          navigateBack();
           break;
         case 'history-forward':
-          router.forward();
+          navigateForward();
           break;
         case 'open-settings':
           router.push('/settings');
@@ -283,7 +287,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           break;
       }
     });
-  }, [activateCommandAltitude, navigateCommandSurface, router]);
+  }, [activateCommandAltitude, navigateBack, navigateForward, navigateCommandSurface, router]);
 
   // Menu accelerator truthfulness (D10): the macOS menus display whatever
   // the registry currently binds — rebinding ⌘E updates the Session menu

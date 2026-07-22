@@ -11,6 +11,8 @@ import {
   type ReactNode,
 } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { navHistory, type NavLocation } from './nav-history';
+import { requestTabSelect } from '@/components/workspace/session-jump';
 import { Grid2X2, Orbit, SquareTerminal } from 'lucide-react';
 import {
   COMMAND_ALTITUDE_SURFACES,
@@ -51,6 +53,9 @@ interface CommandNavigationContextValue {
     options?: { replace?: boolean }
   ) => void;
   activateCommandAltitude: (target: CommandAltitude) => void;
+  /** ⌘[ / ⌘] (D27): walk recorded app locations — surfaces AND tabs */
+  navigateBack: () => boolean;
+  navigateForward: () => boolean;
 }
 
 const CommandNavigationContext =
@@ -150,6 +155,44 @@ export function CommandNavigationProvider({
     [clearScheduled, router]
   );
 
+  // ── App-location back stack (D27). The workspace records its own richer
+  // entries (surface + active tab); this provider records every OTHER
+  // route (settings, spatial, …) so the stack spans the whole app.
+  useEffect(() => {
+    if (pathname.startsWith('/workspace')) return;
+    navHistory.visit({
+      surface: `${window.location.pathname}${window.location.search}`,
+    });
+  }, [pathname]);
+
+  const applyLocation = useCallback(
+    (location: NavLocation) => {
+      const current = `${window.location.pathname}${window.location.search}`;
+      if (location.surface !== current) {
+        // replace: applying history must not manufacture browser history
+        navigateCommandSurface(location.surface, { replace: true });
+      }
+      if (location.tab) {
+        requestTabSelect(location.tab.dir, location.tab.tabId);
+      }
+    },
+    [navigateCommandSurface]
+  );
+
+  const navigateBack = useCallback(() => {
+    const location = navHistory.back();
+    if (!location) return false;
+    applyLocation(location);
+    return true;
+  }, [applyLocation]);
+
+  const navigateForward = useCallback(() => {
+    const location = navHistory.forward();
+    if (!location) return false;
+    applyLocation(location);
+    return true;
+  }, [applyLocation]);
+
   const activateCommandAltitude = useCallback(
     (target: CommandAltitude) => {
       const active = resolveCommandAltitude(
@@ -208,8 +251,18 @@ export function CommandNavigationProvider({
   useEffect(() => clearScheduled, [clearScheduled]);
 
   const value = useMemo(
-    () => ({ navigateCommandSurface, activateCommandAltitude }),
-    [activateCommandAltitude, navigateCommandSurface]
+    () => ({
+      navigateCommandSurface,
+      navigateBack,
+      navigateForward,
+      activateCommandAltitude,
+    }),
+    [
+      activateCommandAltitude,
+      navigateBack,
+      navigateForward,
+      navigateCommandSurface,
+    ]
   );
   const TargetIcon =
     transition?.target === 'spatial'

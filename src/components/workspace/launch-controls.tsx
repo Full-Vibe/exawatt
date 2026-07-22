@@ -436,8 +436,21 @@ export function AgentComposer({
         </SelectTrigger>
         <SelectContent>
           {AGENT_SOURCE_ORDER.map(id => (
-            <SelectItem key={id} value={id}>
-              {AGENT_SOURCE_META[id].label}
+            <SelectItem
+              key={id}
+              value={id}
+              textValue={AGENT_SOURCE_META[id].label}
+              className="font-mono"
+            >
+              {/* options wear the harness brand exactly like the trigger
+                  (D27): no white-to-branded flash on selection */}
+              <span
+                className="flex items-center gap-2"
+                style={{ color: AGENT_SOURCE_META[id].color }}
+              >
+                <HarnessGlyph harness={id} size={12} />
+                {AGENT_SOURCE_META[id].label}
+              </span>
             </SelectItem>
           ))}
         </SelectContent>

@@ -163,15 +163,15 @@ describe('TabStrip turn-state glyphs (D22)', () => {
         tab({ id: 'a', title: 'alpha' }),
         tab({
           id: 'd',
-          title: 'New tab',
+          title: 'New agent',
           sessionId: null,
           resumeState: 'identity-missing',
           lifecycle: 'draft',
         }),
       ],
     });
-    expect(screen.getByText('New tab')).not.toBeNull();
-    expect(screen.getByLabelText('Close New tab')).not.toBeNull();
+    expect(screen.getByText('New agent')).not.toBeNull();
+    expect(screen.getByLabelText('Close New agent')).not.toBeNull();
     expect(container.querySelector('[data-status="fresh"]')).not.toBeNull();
     // drafts carry no lifecycle badge and never condense
     expect(screen.queryByLabelText('Stopped')).toBeNull();

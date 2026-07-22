@@ -1,4 +1,4 @@
-import { BrowserWindow, Notification, app, dialog, shell } from 'electron';
+import { BrowserWindow, Notification, app, shell } from 'electron';
 import { handleTrusted } from './ipc-security';
 import { resolveContainedPath, isRepoRelativePath } from './contained-path';
 import { ptySessions } from './pty/session-manager';
@@ -224,40 +224,9 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     6 * 60 * 60 * 1000
   );
   reapTimer.unref?.();
-  // ⌘W closes like Chrome (D24): one native confirm for started live
-  // agents, then a single main-side stop → await death → forget the
-  // runtime record. Copy cites the ledger honestly.
-  handleTrusted(
-    'pty:confirm-close',
-    async (_event, durableSessionId: string) => {
-      const session = ptySessions
-        .list()
-        .find(item => item.durableSessionId === durableSessionId);
-      if (!session || session.exited) return true;
-      if (process.env.EXAWATT_TEST === '1') {
-        return process.env.EXAWATT_TEST_CLOSE_RESPONSE !== 'cancel';
-      }
-      const agent = session.harness !== 'shell';
-      const working = attentionMonitor.isWorking(session.id);
-      const noun = agent ? 'agent' : 'shell';
-      const options: Electron.MessageBoxOptions = {
-        type: 'warning',
-        title: `Close ${session.title} and stop this ${noun}?`,
-        message: `Close ${session.title} and stop this ${noun}?`,
-        detail: working
-          ? 'It is still working — closing interrupts the turn in flight. The Session moves to Recently closed and can be reopened for 14 days.'
-          : 'The Session moves to Recently closed and can be reopened for 14 days.',
-        buttons: ['Cancel', 'Close'],
-        cancelId: 0,
-        noLink: true,
-      };
-      const win = BrowserWindow.getFocusedWindow();
-      const result = win
-        ? await dialog.showMessageBox(win, options)
-        : await dialog.showMessageBox(options);
-      return result.response === 1;
-    }
-  );
+  // ⌘W closes like Chrome (D24/D25): the renderer owns the in-app
+  // confirm; main executes one stop → await death → forget the runtime
+  // record.
   handleTrusted(
     'pty:close-session',
     async (_event, durableSessionId: string, discard = false) => {

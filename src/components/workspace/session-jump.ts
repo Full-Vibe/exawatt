@@ -56,6 +56,25 @@ function take<T>(slot: Pending<T> | null): T | null {
   return Date.now() - slot.at <= PENDING_TTL_MS ? slot.value : null;
 }
 
+/** back/forward (D27): select a workspace TAB by identity — works for
+ *  stopped tabs and drafts, which have no live session id */
+export const TAB_SELECT_EVENT = 'exawatt:select-tab';
+let pendingTabSelect: Pending<{ dir: string; tabId: string }> | null = null;
+export function requestTabSelect(dir: string, tabId: string): void {
+  pendingTabSelect = { value: { dir, tabId }, at: Date.now() };
+  window.dispatchEvent(
+    new CustomEvent(TAB_SELECT_EVENT, { detail: { dir, tabId } })
+  );
+}
+export function consumePendingTabSelect(): {
+  dir: string;
+  tabId: string;
+} | null {
+  const value = take(pendingTabSelect);
+  pendingTabSelect = null;
+  return value;
+}
+
 export function requestSessionJump(sessionId: string): void {
   pendingSession = { value: sessionId, at: Date.now() };
   window.dispatchEvent(

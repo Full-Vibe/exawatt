@@ -78,7 +78,9 @@ export function tabAtOrdinal<T extends { id: string }>(
   index: number
 ): { dir: string; tab: T } | null {
   const tabs = projects.flatMap(g => g.tabs.map(tab => ({ dir: g.dir, tab })));
-  return tabs[index] ?? null;
+  // ⌘9 is LAST-tab, like Chrome (D27); ⌘1–8 stay positional
+  if (index === 8) return tabs[tabs.length - 1] ?? null;
+  return index < 8 ? (tabs[index] ?? null) : null;
 }
 
 // ── Arrangement (ENG-016 D20) ──────────────────────────────────────────

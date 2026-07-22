@@ -675,7 +675,10 @@ export function RoadmapRail({
       aria-label="Project roadmap"
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className={`flex shrink-0 flex-col border-l outline-none motion-reduce:[&_*]:!transition-none ${
+      // keyboard ownership must be VISIBLE (D27): while the rail holds
+      // focus it wears an accent ring + an esc hint, so the drill →
+      // rail-blur → out ladder gives feedback at every rung
+      className={`group/rail flex shrink-0 flex-col border-l outline-none transition-shadow duration-150 focus-within:ring-1 focus-within:ring-inset focus-within:ring-hud-cyan/60 motion-reduce:transition-none motion-reduce:[&_*]:!transition-none ${
         overlay ? 'absolute inset-y-0 right-0 z-10 shadow-[-12px_0_32px_rgba(0,0,0,0.55)]' : ''
       }`}
       style={{
@@ -714,6 +717,13 @@ export function RoadmapRail({
           </span>
           <span className="font-ui text-xs" style={{ color: HUD.textDim }}>
             Roadmap
+          </span>
+          <span
+            data-rail-focus-hint
+            className="hidden shrink-0 font-mono text-[10px] group-focus-within/rail:inline"
+            style={{ color: HUD.textMono }}
+          >
+            esc · {permanent ? 'back to tiles' : 'back to terminal'}
           </span>
           {!permanent && (
             <button

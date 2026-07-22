@@ -27,6 +27,8 @@ import {
 import type { EffectiveTerminalFont } from './terminal-font';
 import { TabStrip } from './tab-strip';
 import { AgentComposer } from './launch-controls';
+import { CloseConfirm } from './close-confirm';
+import { navHistory } from '@/components/nav/nav-history';
 import { ProjectOpener } from './project-opener';
 import { ExposeOverlay } from './expose-overlay';
 import { ReentryRecapLine } from './reentry-recap';
@@ -228,9 +230,11 @@ export function WorkspaceClient() {
     reorderProject,
     jumpAttention,
     togglePin,
+    togglePinTab,
     renameTab,
     renameProject,
     setProjectColor,
+    ready,
   } = useWorkspaceState({ getInitialSize });
 
   useEffect(() => {
@@ -519,6 +523,20 @@ export function WorkspaceClient() {
     [router]
   );
   useEffect(() => setOverviewOpen(requestedOverview), [requestedOverview]);
+  // back stack recorder (D27): every location the operator lands on in the
+  // workspace — surface (Terminal vs Sessions) + the active tab — becomes a
+  // ⌘[/⌘] stop. Applying back dedupes in navHistory, never re-records.
+  useEffect(() => {
+    if (!ready) return;
+    navHistory.visit({
+      surface: overviewOpen ? '/workspace?view=sessions' : '/workspace',
+      tab:
+        activeProject && activeTab
+          ? { dir: activeProject.dir, tabId: activeTab.id }
+          : null,
+    });
+  }, [ready, overviewOpen, activeProject, activeTab]);
+
   const closeOverview = useCallback(() => {
     updateOverview(false);
     requestAnimationFrame(() =>
@@ -526,10 +544,18 @@ export function WorkspaceClient() {
     );
   }, [updateOverview]);
 
-  // ── Close grammar UI (D24): ⌘W closes like Chrome — main owns the one
-  // native confirm; an ambient toast narrates archived closes (auto-fades)
+  // ── Close grammar UI (D27): ⌘W closes like Chrome — the one confirm is
+  // OUR modal (default-highlighted Close, tab/space/⏎ macOS semantics);
+  // an ambient toast narrates archived closes (auto-fades)
   const [closeToast, setCloseToast] = useState<string | null>(null);
   const closeToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [closeConfirm, setCloseConfirm] = useState<{
+    tabId: string;
+    title: string;
+    goal: string | null;
+    working: boolean;
+    color: string;
+  } | null>(null);
   useEffect(
     () => () => {
       if (closeToastTimer.current) clearTimeout(closeToastTimer.current);
@@ -537,8 +563,21 @@ export function WorkspaceClient() {
     []
   );
   const requestClose = useCallback(
-    async (tabId: string) => {
-      const outcome = await closeTab(tabId);
+    async (tabId: string, force = false) => {
+      const outcome = await closeTab(tabId, { force });
+      if (outcome.kind === 'needs-confirm') {
+        const project = projects.find(g => g.tabs.some(t => t.id === tabId));
+        const tab = project?.tabs.find(t => t.id === tabId);
+        if (!project || !tab) return;
+        setCloseConfirm({
+          tabId,
+          title: tab.title,
+          goal: summaries[tab.durableSessionId] ?? null,
+          working: outcome.working,
+          color: project.color,
+        });
+        return;
+      }
       if (outcome.kind === 'closed') {
         if (closeToastTimer.current) clearTimeout(closeToastTimer.current);
         const what = outcome.entry.goal ?? outcome.entry.title;
@@ -548,8 +587,14 @@ export function WorkspaceClient() {
         closeToastTimer.current = setTimeout(() => setCloseToast(null), 6000);
       }
     },
-    [closeTab]
+    [closeTab, projects, summaries]
   );
+  const settleCloseConfirm = useCallback(() => {
+    setCloseConfirm(null);
+    requestAnimationFrame(() =>
+      window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT))
+    );
+  }, []);
   // ⌘T (D24): a new tab, instantly — draft in the active Project, or the
   // Project chooser when nothing is open
   const newDraftTab = useCallback(() => {
@@ -748,6 +793,12 @@ export function WorkspaceClient() {
             attention={mergedAttention}
             activity={activity}
             engaged={engaged}
+            onTogglePinTab={togglePinTab}
+            onResumeTab={id => void resumeTab(id)}
+            onNewAgent={dir => createDraftTab(dir)}
+            onRevealPath={cwd =>
+              void window.electron?.pty?.openPath(cwd, cwd)
+            }
             onSelectProject={selectProject}
             onSelectTab={selectTab}
             onCloseTab={id => void requestClose(id)}
@@ -767,7 +818,7 @@ export function WorkspaceClient() {
               type="button"
               data-composer-toggle
               aria-label="New Agent"
-              title={`New tab in ${activeProject.name} (⌘T)`}
+              title={`New agent in ${activeProject.name} (⌘T)`}
               onClick={() => newDraftTab()}
               className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded border px-2.5 font-mono text-xs outline-none transition-[filter,transform] duration-150 hover:brightness-125 active:scale-[0.97] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
               style={{
@@ -1152,6 +1203,20 @@ export function WorkspaceClient() {
         onOpenProject={openProject}
         onImportProjects={importProjects}
       />
+      {closeConfirm && (
+        <CloseConfirm
+          title={closeConfirm.title}
+          goal={closeConfirm.goal}
+          working={closeConfirm.working}
+          color={closeConfirm.color}
+          onClose={() => {
+            const { tabId } = closeConfirm;
+            settleCloseConfirm();
+            void requestClose(tabId, true);
+          }}
+          onCancel={settleCloseConfirm}
+        />
+      )}
       {closeToast && (
         <div
           data-close-toast

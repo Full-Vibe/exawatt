@@ -142,6 +142,21 @@ describe('tabAtOrdinal', () => {
     expect(tabAtOrdinal(projects, 3)).toBeNull();
   });
 
+  it('⌘9 (index 8) selects the LAST tab, like Chrome (D27)', () => {
+    const many = [
+      project(
+        '/a',
+        Array.from({ length: 12 }, (_, i) => `t${i + 1}`)
+      ),
+    ];
+    expect(tabAtOrdinal(many, 8)?.tab?.id).toBe('t12');
+    // positional ⌘1–8 unchanged; middle tabs are unaddressed
+    expect(tabAtOrdinal(many, 7)?.tab?.id).toBe('t8');
+    // with three tabs, ⌘9 still lands on the last
+    const few = [project('/a', ['a1', 'a2', 'a3'])];
+    expect(tabAtOrdinal(few, 8)?.tab?.id).toBe('a3');
+  });
+
   it('skips zero-tab projects — ⌘digit ordinals number real tabs only', () => {
     // an open empty Project must not shift every later tab's ⌘digit
     const projects = [
