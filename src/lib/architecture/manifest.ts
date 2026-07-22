@@ -608,7 +608,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Adapters',
           summary:
-            'Registered source-first boundaries that discover model/effort capabilities, translate launch choices and policy, query Project-scoped provider indexes, reconcile exact one-to-one Session identity, and describe source activity, evidence, and enforcement ownership.',
+            'Registered source-first boundaries that discover models, effort, and runtime capabilities, represent advertised-but-unavailable tools, translate launch choices and policy, reconcile exact Session identity, and describe activity, evidence, and enforcement ownership.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,

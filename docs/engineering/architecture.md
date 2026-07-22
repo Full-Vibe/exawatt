@@ -124,6 +124,26 @@ mediate general network access, email, messages, payments, or other real-world
 actions. Current UI must name the enforcing system and must not turn missing
 telemetry into a claim that an action was safe or did not occur.
 
+#### Runtime capability discovery
+
+An installed plugin, listed skill, or exposed tool description is advertised
+capability metadata, not proof that the active Agent Session has a connected
+runtime backend. Agent Source adapters must keep advertised, runtime-available,
+authorized, and verified capability states distinct. A failed discovery must
+remain explicitly unavailable rather than being inferred as working from the
+presence of instructions or a tool launcher.
+
+This distinction is already observable in the current Codex path. Exawatt
+launches Codex CLI inside a PTY. OpenAI's built-in Browser is supplied by the
+ChatGPT desktop/web host and is not available to Codex CLI. A CLI Session can
+therefore receive the installed Browser plugin's skill and Node execution tool
+while browser discovery returns zero backends. Direct page retrieval may still
+be a valid lower-fidelity fallback for public semantic content, but it is not
+evidence of rendered layout, interaction, authenticated state, hover behavior,
+or responsive behavior. The verified 2026-07-22 trace and supported alternatives
+are recorded in the
+[Agent Terminal Workspace project history](projects/agent-terminal-workspace.md#dogfood-investigation-codex-browser-capability-boundary-2026-07-22).
+
 The same contracts leave a deliberate future seam for Exawatt to become a
 Harness or compose with policy engines, credential brokers, restricted
 runtimes, network controls, and typed action providers. Those components can

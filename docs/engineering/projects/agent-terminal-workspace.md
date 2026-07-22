@@ -326,6 +326,83 @@ ENG-002's remaining exit is adoption evidence owned by ENG-016: accumulated
 operator use establishes Exawatt as the normal coding-agent surface while
 implementation continues. There is no fixed week-long engineering wait.
 
+## Dogfood investigation: Codex browser capability boundary (2026-07-22)
+
+### Trigger
+
+A Codex Session launched from Exawatt was asked to inspect two public Carta
+pages visually. It reported:
+
+> The interactive browser isn't available in this session, so I'm falling back
+> to direct page retrieval.
+
+The investigation asked whether Exawatt had failed to pass through an existing
+browser capability, whether Carta had rejected automation, or whether the
+Session never had an interactive browser backend.
+
+### Verified trace
+
+- Exawatt's installed production process launched the Agent through the normal
+  `Exawatt -> login shell -> codex` PTY path. The Codex rollout identified its
+  origin as `codex-tui`, source `cli`, running CLI `0.145.0`. This matches
+  `electron/main/pty/session-manager.ts` and `harness-registry.ts`: the current
+  Codex adapter invokes the local `codex` executable and does not attach the
+  Session to a ChatGPT desktop conversation host.
+- The globally installed `browser@openai-bundled` plugin did contribute its
+  Browser skill. Its Node execution MCP was also enabled and callable. The
+  Agent therefore did not skip an advertised browser workflow.
+- Browser runtime setup completed, but
+  `agent.browsers.getForUrl("https://carta.com/...")` returned
+  `No browser is available`. The prescribed troubleshooting check then returned
+  `agent.browsers.list() === []`.
+- The ChatGPT desktop process happened to be running, but there was no
+  session-associated in-app-browser backend for the CLI Session. Merely running
+  ChatGPT beside Exawatt does not attach an Exawatt-hosted Codex TUI to the
+  desktop app's built-in Browser.
+- No supported Chrome backend was available either. The machine had Brave and
+  Arc, but no Google Chrome profile, ChatGPT Chrome extension, or native host
+  manifest. OpenAI's Chrome guidance states that other Chromium-based browsers
+  are not currently supported.
+- Only after backend discovery and the required troubleshooting check failed
+  did the Agent use direct page retrieval. It explicitly limited its claims to
+  hierarchy, content, metadata, and article structure and did not claim to have
+  inspected hover or responsive behavior.
+
+### Root cause and classification
+
+This was not a Carta failure, a network-policy denial, or a broken Exawatt PTY.
+It was a host capability mismatch:
+
+1. the installed plugin advertised browser instructions and a launcher;
+2. the active Agent ran in Codex CLI inside Exawatt;
+3. OpenAI's built-in Browser is a ChatGPT desktop/web host capability and is
+   [not available in Codex CLI](https://learn.chatgpt.com/docs/browser);
+4. runtime discovery therefore found no browser backend.
+
+The confusing user experience comes from advertised plugin metadata being
+visible in a surface where its required runtime backend is absent. The Agent's
+fallback was honest and appropriate for the public-content portion of the task,
+but direct retrieval is not interchangeable with interactive inspection.
+
+### Product and architecture implications
+
+- Exawatt must not infer a source capability from an installed plugin, skill,
+  MCP launcher, or model prompt alone. ENG-003 owns an explicit
+  advertised-versus-runtime-available capability distinction.
+- A source may truthfully expose `browser: unavailable` while still exposing
+  direct web retrieval. The UI and Agent should preserve that fidelity
+  distinction instead of collapsing both into a generic "web access" claim.
+- Today, the supported built-in-browser path is to run Codex inside the ChatGPT
+  desktop app and invoke `@Browser`. For browser automation that remains inside
+  a CLI-hosted Exawatt Session, OpenAI documents MCP as the extension boundary
+  for external tools and lists
+  [Playwright and Chrome DevTools MCP servers](https://learn.chatgpt.com/docs/extend/mcp)
+  as browser examples.
+- This investigation does not select an Exawatt browser implementation. A
+  future implementation could use a source-agnostic browser MCP/Gateway or an
+  Exawatt-owned browser surface and adapter. The discovered private host socket
+  is not a documented integration contract and should not be assumed to be one.
+
 ## Resolved adoption follow-up
 
 The day-one parity questions are resolved. Installation, exact-ID relaunch,
