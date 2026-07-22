@@ -44,6 +44,31 @@ export async function resolveProject(cwd: string): Promise<ProjectRef> {
 }
 
 /**
+ * Every live working directory for one git Project. Provider histories are
+ * keyed by the directory they launched in, so Project-scoped discovery needs
+ * these paths even though Exawatt groups them under the common repository.
+ */
+export async function listProjectWorktrees(
+  projectDir: string
+): Promise<string[]> {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['-C', projectDir, 'worktree', 'list', '--porcelain', '-z'],
+      { timeout: 5000 }
+    );
+    const directories = stdout
+      .split('\0')
+      .filter(field => field.startsWith('worktree '))
+      .map(field => field.slice('worktree '.length))
+      .filter(Boolean);
+    return directories.length > 0 ? directories : [projectDir];
+  } catch {
+    return [projectDir];
+  }
+}
+
+/**
  * One-gesture worktree creation (operator convention, 2026-07-02):
  * worktrees live in a sibling container `<repo>-wt/<branch-dirname>/`.
  * Returns the new worktree path.

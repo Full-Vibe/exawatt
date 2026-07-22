@@ -237,6 +237,12 @@ export interface RecentConversation {
   description: string | null;
   titleSource: 'native' | 'generated' | 'fallback';
   needsSummary: boolean;
+  /** Continue the provider identity directly, or restore Exawatt's richer
+   * logical Session (including retained history) when the Project ledger owns
+   * this conversation. */
+  continuation:
+    | { kind: 'provider' }
+    | { kind: 'exawatt-session'; durableSessionId: string };
 }
 
 export interface ElectronWorkspaceApi {

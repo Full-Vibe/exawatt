@@ -74,14 +74,18 @@ export interface LaunchRoadmapItem {
 export function freshConversationPrompt(
   conversation: Pick<
     RecentConversation,
-    'harness' | 'id' | 'title' | 'description'
+    'harness' | 'id' | 'title' | 'description' | 'continuation'
   >
 ): string {
   const source = AGENT_SOURCE_META[conversation.harness].label;
   const handoff = conversation.description ?? conversation.title;
+  const priorIdentity =
+    conversation.continuation.kind === 'exawatt-session'
+      ? `Previous Exawatt Session: ${conversation.continuation.durableSessionId}`
+      : `Previous ${source} conversation: ${conversation.id}`;
   return [
     `Continue this work in a fresh Agent session.`,
-    `Previous ${source} conversation: ${conversation.id}`,
+    priorIdentity,
     `Handoff: ${handoff}`,
     `Inspect the current Project state, then pick up the work from this handoff.`,
   ].join('\n\n');
@@ -107,6 +111,7 @@ export function AgentComposer({
   roadmapItems = [],
 
   onLaunch,
+  onReopenConversation,
   onDraftChange,
 }: {
   projectDir: string;
@@ -120,6 +125,9 @@ export function AgentComposer({
   roadmapItems?: LaunchRoadmapItem[];
 
   onLaunch: (opts: LaunchOptions) => Promise<boolean>;
+  /** Project-ledger recents restore their logical Session and retained
+   * terminal history instead of spawning a second provider process. */
+  onReopenConversation?: (durableSessionId: string) => Promise<boolean>;
   /** draft tabs (D28): the tab owns the work-in-progress — every task or
    *  source edit reports up so it survives this pane unmounting */
   onDraftChange?: (patch: {
@@ -379,20 +387,28 @@ export function AgentComposer({
     conversation: RecentConversation,
     mode: ConversationOpenMode
   ): Promise<boolean> => {
-    if (controlsDisabled || !sourcePreferences) return false;
-    setLaunching('agent');
-    const sourcePermission = permissionModeFor(
-      sourcePreferences,
-      projectDir,
-      conversation.harness,
-      usedSafePreferenceFallback ? 'prompt' : DEFAULT_AGENT_PERMISSION_MODE
-    );
-    let ok = false;
-    try {
-      ok = await onLaunch({
+    if (controlsDisabled) return false;
+    const reopenSessionId =
+      mode === 'resume' && conversation.continuation.kind === 'exawatt-session'
+        ? conversation.continuation.durableSessionId
+        : null;
+    let permissionToPersist: AgentPermissionMode | null = null;
+    let continueConversation: (() => Promise<boolean>) | null = null;
+    if (reopenSessionId) {
+      if (!onReopenConversation) return false;
+      continueConversation = () => onReopenConversation(reopenSessionId);
+    } else {
+      if (!sourcePreferences) return false;
+      permissionToPersist = permissionModeFor(
+        sourcePreferences,
+        projectDir,
+        conversation.harness,
+        usedSafePreferenceFallback ? 'prompt' : DEFAULT_AGENT_PERMISSION_MODE
+      );
+      const launchOptions: LaunchOptions = {
         harness: conversation.harness,
         dir: projectDir,
-        permissionMode: sourcePermission,
+        permissionMode: permissionToPersist,
         title: conversation.title,
         ...(mode === 'resume'
           ? {
@@ -401,7 +417,13 @@ export function AgentComposer({
               restoredSubtitle: conversation.description ?? conversation.title,
             }
           : { initialPrompt: freshConversationPrompt(conversation) }),
-      });
+      };
+      continueConversation = () => onLaunch(launchOptions);
+    }
+    setLaunching('agent');
+    let ok = false;
+    try {
+      ok = await continueConversation();
     } catch {
       ok = false;
     } finally {
@@ -409,7 +431,9 @@ export function AgentComposer({
     }
     if (ok) {
       void rememberAgentSource(projectDir, conversation.harness);
-      void persistPermissionMode(conversation.harness, sourcePermission);
+      if (permissionToPersist) {
+        void persistPermissionMode(conversation.harness, permissionToPersist);
+      }
       setTask('');
     }
     return ok;

@@ -40,11 +40,22 @@ import {
  * (single-window app today; cheap to scope per-window later).
  */
 export function registerPtyIPC(previousRunInterrupted = false): void {
+  const closedLedger = new ClosedSessionLedger(
+    path.join(app.getPath('userData'), 'closed-sessions.json'),
+    durableSessionId => ptySessions.purgeHistory(durableSessionId)
+  );
+  void closedLedger.reap();
+  const reapTimer = setInterval(
+    () => void closedLedger.reap(),
+    6 * 60 * 60 * 1000
+  );
+  reapTimer.unref?.();
   const conversationCatalog = new RecentConversationCatalog({
     cacheFile: path.join(
       app.getPath('userData'),
       'conversation-summary-cache.json'
     ),
+    projectSessions: () => closedLedger.list(),
   });
   const nativeNotifications = new Map<string, Notification>();
   const broadcast = (channel: string, payload: unknown) => {
@@ -239,16 +250,6 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   // archive) and any confirmation; main just executes honest primitives.
   // The old pty:delete-session native dialog + one-stroke history
   // destruction are gone — the ledger reap is now the only destroyer.
-  const closedLedger = new ClosedSessionLedger(
-    path.join(app.getPath('userData'), 'closed-sessions.json'),
-    durableSessionId => ptySessions.purgeHistory(durableSessionId)
-  );
-  void closedLedger.reap();
-  const reapTimer = setInterval(
-    () => void closedLedger.reap(),
-    6 * 60 * 60 * 1000
-  );
-  reapTimer.unref?.();
   // ⌘W closes like Chrome (D24/D25): the renderer owns the in-app
   // confirm; main executes one stop → await death → forget the runtime
   // record.

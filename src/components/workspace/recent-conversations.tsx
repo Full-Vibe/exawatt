@@ -133,7 +133,13 @@ export const RecentConversations = forwardRef<
     const needle = query.trim().toLowerCase();
     if (!needle) return rows;
     return rows.filter(row =>
-      [row.title, row.description ?? '', row.id, row.harness]
+      [
+        row.title,
+        row.description ?? '',
+        row.id,
+        row.harness,
+        row.continuation.kind === 'exawatt-session' ? 'exawatt session' : '',
+      ]
         .join(' ')
         .toLowerCase()
         .includes(needle)
@@ -299,6 +305,8 @@ export const RecentConversations = forwardRef<
       >
         {visible.map((conversation, index) => {
           const meta = AGENT_SOURCE_META[conversation.harness];
+          const reopensExawatt =
+            conversation.continuation.kind === 'exawatt-session';
           const exactKey = `${conversation.harness}:${conversation.id}:resume`;
           const freshKey = `${conversation.harness}:${conversation.id}:fresh`;
           return (
@@ -308,6 +316,7 @@ export const RecentConversations = forwardRef<
               aria-setsize={visible.length}
               key={`${conversation.harness}:${conversation.id}`}
               data-conversation-id={conversation.id}
+              data-continuation={conversation.continuation.kind}
               data-title-source={conversation.titleSource}
               className="group flex min-w-0 items-stretch gap-1 transition-colors hover:bg-hud-cyan/[0.035] focus-within:bg-hud-cyan/[0.05] motion-reduce:transition-none"
               style={{ borderColor: 'rgba(80,230,255,0.1)' }}
@@ -320,7 +329,16 @@ export const RecentConversations = forwardRef<
                 disabled={disabled || opening !== null}
                 onClick={() => void open(conversation, 'resume')}
                 onKeyDown={event => handleRowKeyDown(event, index)}
-                aria-label={`Resume ${conversation.title} in ${meta.label}`}
+                aria-label={
+                  reopensExawatt
+                    ? `Reopen ${conversation.title} in Exawatt`
+                    : `Resume ${conversation.title} in ${meta.label}`
+                }
+                title={
+                  reopensExawatt
+                    ? 'Reopen this saved Exawatt Session with its retained history'
+                    : `Resume this exact ${meta.label} conversation`
+                }
                 className="flex min-w-0 flex-1 items-start gap-3 rounded-sm px-2 py-2 text-left outline-none transition-colors disabled:opacity-60 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan"
               >
                 <span
@@ -352,6 +370,7 @@ export const RecentConversations = forwardRef<
                       className="ml-auto shrink-0 font-mono text-[10px]"
                       style={{ color: meta.color }}
                     >
+                      {reopensExawatt ? 'Exawatt · ' : ''}
                       {meta.label} · {relativeTime(conversation.updatedAt)}
                     </span>
                   </span>
@@ -399,7 +418,7 @@ export const RecentConversations = forwardRef<
           className="mt-2 px-0.5 font-mono text-[10px]"
           style={{ color: HUD.textDim }}
         >
-          ↑↓ choose · home/end jump · ⏎ resume exact · esc new task
+          ↑↓ choose · home/end jump · ⏎ continue · esc new task
         </p>
       )}
     </section>

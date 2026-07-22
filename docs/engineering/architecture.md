@@ -229,14 +229,19 @@ Built:
   parallel agents, explicit selection fallback, and no-spawn relaunch with
   exact tab/Project/all resume actions
 - a source-neutral recent-conversation catalog in Electron main. Replaceable
-  Claude Code and Codex adapters read bounded provider-owned metadata for the
-  active Project and normalize exact identity, title, handoff text, and
-  recency. The new-tab composer renders native and machine-local cached labels
-  immediately, supports exact resume or a distinct fresh handoff, and never
-  makes model availability a condition of local launch. Missing labels may be
-  augmented asynchronously through an authenticated hosted boundary that sends
-  only a bounded set of operator-authored excerpts to Anthropic; its credential
-  is never exposed to the desktop renderer (decision `0017`)
+  Claude Code, Codex, and Exawatt Project-Session adapters normalize exact
+  identity, Project ownership, title, handoff text, continuation capability,
+  and recency. Exact provider identity reconciles duplicate source records;
+  one unambiguous same-harness initial-task match can recover identity-less
+  legacy ownership, while ambiguity stays visibly unmapped. Exawatt's ledger
+  contributes semantic goals and whole-Session reopening while provider-only
+  rows resume their exact conversation. The new-tab composer
+  renders native and machine-local cached labels immediately, supports either
+  continuation path or a distinct fresh handoff, and never makes model
+  availability a condition of local launch. Missing labels may be augmented
+  asynchronously through an authenticated hosted boundary that sends only a
+  bounded set of operator-authored excerpts to Anthropic; its credential is
+  never exposed to the desktop renderer (decision `0017`)
 - serialized workspace persistence and bounded terminal-history snapshots with
   append journals; steady-state disk work scales with new terminal output and
   compacts without exposing partial state

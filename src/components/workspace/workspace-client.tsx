@@ -1133,6 +1133,7 @@ export function WorkspaceClient() {
                                 onLaunch={opts =>
                                   launch({ ...opts, reuseTabId: tab.id })
                                 }
+                                onReopenConversation={reopenClosedSession}
                                 onDraftChange={patch =>
                                   updateDraft(tab.id, patch)
                                 }
@@ -1179,6 +1180,7 @@ export function WorkspaceClient() {
                           projectName={activeProject.name}
                           roadmapItems={launchRoadmapItems}
                           onLaunch={launch}
+                          onReopenConversation={reopenClosedSession}
                         />
                       </ComposerViewport>
                     </div>

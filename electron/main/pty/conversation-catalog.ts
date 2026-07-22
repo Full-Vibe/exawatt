@@ -2,6 +2,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { PtyHarness } from './session-manager';
+import type { ClosedSessionEntry } from './closed-session-ledger';
+import { listProjectWorktrees, resolveProject } from './project-resolve';
 
 export type ConversationHarness = Exclude<PtyHarness, 'shell'>;
 
@@ -15,15 +17,22 @@ export interface RecentConversation {
   description: string | null;
   titleSource: 'native' | 'generated' | 'fallback';
   needsSummary: boolean;
+  continuation:
+    | { kind: 'provider' }
+    | { kind: 'exawatt-session'; durableSessionId: string };
 }
 
 export interface ConversationDraft extends RecentConversation {
   fingerprint: string;
   summaryInput: string[];
+  /** Exact provider identity when this adapter has one. Project Session rows
+   * can be temporarily identity-less even when a matching harness file exists. */
+  providerIdentity: string | null;
+  /** Conservative secondary reconciliation key within one Project+harness. */
+  correlationKey: string | null;
 }
 
 export interface ConversationCatalogAdapter {
-  harness: ConversationHarness;
   list(cwd: string): Promise<ConversationDraft[]>;
 }
 
@@ -57,6 +66,33 @@ async function canonicalDirectory(directory: string): Promise<string> {
     return await fs.promises.realpath(directory);
   } catch {
     return path.resolve(directory);
+  }
+}
+
+/**
+ * Project membership is wider than cwd equality: commands can begin in a
+ * nested package or linked worktree while still belonging to one canonical
+ * Project. Path containment handles ordinary folders; resolveProject handles
+ * live git worktrees through their common git directory.
+ */
+export async function directoryBelongsToProject(
+  directory: string,
+  projectDirectory: string
+): Promise<boolean> {
+  const [candidate, project] = await Promise.all([
+    canonicalDirectory(directory),
+    canonicalDirectory(projectDirectory),
+  ]);
+  if (candidate === project) return true;
+  const relative = path.relative(project, candidate);
+  if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
+    return true;
+  }
+  try {
+    const resolved = await resolveProject(candidate);
+    return (await canonicalDirectory(resolved.projectDir)) === project;
+  } catch {
+    return false;
   }
 }
 
@@ -188,6 +224,18 @@ function summaryTurns(turns: string[]): string[] {
   );
 }
 
+function conversationCorrelationKey(
+  harness: ConversationHarness,
+  firstOperatorTurn: string | null | undefined
+): string | null {
+  if (!firstOperatorTurn) return null;
+  const normalized = firstOperatorTurn
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  return normalized ? `${harness}:${normalized}` : null;
+}
+
 function usableNativeTitle(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const clean = value.replace(/\s+/g, ' ').trim();
@@ -215,8 +263,9 @@ export class CodexConversationAdapter implements ConversationCatalogAdapter {
         const meta = first?.type === 'session_meta' ? first.payload : null;
         const id = meta?.session_id ?? meta?.id;
         if (!id || typeof meta?.cwd !== 'string') continue;
-        if ((await canonicalDirectory(meta.cwd)) !== requestedDirectory)
+        if (!(await directoryBelongsToProject(meta.cwd, requestedDirectory))) {
           continue;
+        }
 
         const turns: string[] = [];
         for (const line of lines.slice(1)) {
@@ -248,8 +297,11 @@ export class CodexConversationAdapter implements ConversationCatalogAdapter {
             : null,
           titleSource: 'fallback',
           needsSummary: turns.length > 0,
+          continuation: { kind: 'provider' },
           fingerprint: `${stat.mtimeMs}:${stat.size}`,
           summaryInput: summaryTurns(turns),
+          providerIdentity: id,
+          correlationKey: conversationCorrelationKey(this.harness, turns[0]),
         });
       } catch {
         // Harness files can rotate, truncate, or disappear while being read.
@@ -276,17 +328,25 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
 
   constructor(
     private readonly projectsRoot = process.env.EXAWATT_CLAUDE_PROJECTS_ROOT ??
-      path.join(os.homedir(), '.claude', 'projects')
+      path.join(os.homedir(), '.claude', 'projects'),
+    private readonly projectDirectories: (
+      projectDir: string
+    ) => Promise<string[]> = listProjectWorktrees
   ) {}
 
   async list(cwd: string): Promise<ConversationDraft[]> {
-    const projectDirectory = path.join(
-      this.projectsRoot,
-      cwd.replace(/[^a-zA-Z0-9_-]/g, '-')
+    const workingDirectories = await this.projectDirectories(cwd);
+    const projectDirectories = [cwd, ...workingDirectories].map(directory =>
+      path.join(this.projectsRoot, directory.replace(/[^a-zA-Z0-9_-]/g, '-'))
     );
-    const indexed = await this.readIndex(projectDirectory, cwd);
-    if (indexed.length > 0) return indexed;
-    return this.readTranscripts(projectDirectory, cwd);
+    const rows = await Promise.all(
+      [...new Set(projectDirectories)].map(async projectDirectory => {
+        const indexed = await this.readIndex(projectDirectory, cwd);
+        if (indexed.length > 0) return indexed;
+        return this.readTranscripts(projectDirectory, cwd);
+      })
+    );
+    return rows.flat();
   }
 
   private async readIndex(
@@ -312,7 +372,10 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
         typeof entry.sessionId !== 'string' ||
         typeof entry.projectPath !== 'string' ||
         entry.isSidechain === true ||
-        (await canonicalDirectory(entry.projectPath)) !== requestedDirectory
+        !(await directoryBelongsToProject(
+          entry.projectPath,
+          requestedDirectory
+        ))
       ) {
         continue;
       }
@@ -343,8 +406,11 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
         description: first ? truncate(first, MAX_DESCRIPTION_CHARS) : null,
         titleSource: nativeTitle ? 'native' : 'fallback',
         needsSummary: !nativeTitle && !!first,
+        continuation: { kind: 'provider' },
         fingerprint: `${updatedAt}:${size}`,
         summaryInput: first ? [truncate(first, MAX_SUMMARY_TURN_CHARS)] : [],
+        providerIdentity: entry.sessionId,
+        correlationKey: conversationCorrelationKey(this.harness, first),
       });
     }
     return rows;
@@ -419,8 +485,11 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
             : null,
           titleSource: nativeTitle ? 'native' : 'fallback',
           needsSummary: !nativeTitle && turns.length > 0,
+          continuation: { kind: 'provider' },
           fingerprint: `${stat.mtimeMs}:${stat.size}`,
           summaryInput: summaryTurns(turns),
+          providerIdentity: sessionId,
+          correlationKey: conversationCorrelationKey(this.harness, turns[0]),
         });
       } catch {
         // One malformed transcript must not hide the rest of the catalog.
@@ -430,8 +499,65 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
   }
 }
 
+/**
+ * Exawatt's Recently-closed ledger is itself a source of conversation truth.
+ * It supplies Project ownership, semantic goals, and the ability to restore a
+ * logical Session with retained history. Provider identity remains the row ID
+ * when known so the catalog can reconcile both records without duplication.
+ */
+export class ProjectSessionConversationAdapter implements ConversationCatalogAdapter {
+  constructor(private readonly listSessions: () => ClosedSessionEntry[]) {}
+
+  async list(projectDir: string): Promise<ConversationDraft[]> {
+    const rows: ConversationDraft[] = [];
+    for (const entry of this.listSessions()) {
+      if (
+        (entry.harness !== 'claude' && entry.harness !== 'codex') ||
+        !(await directoryBelongsToProject(entry.projectDir, projectDir))
+      ) {
+        continue;
+      }
+      const initialTask = meaningfulOperatorText(entry.initialTask ?? '');
+      const goal = meaningfulOperatorText(entry.goal ?? '');
+      const title = goal
+        ? truncate(goal, MAX_TITLE_CHARS)
+        : initialTask
+          ? truncate(initialTask, MAX_TITLE_CHARS)
+          : entry.title;
+      rows.push({
+        id: entry.harnessSessionId ?? entry.durableSessionId,
+        harness: entry.harness,
+        cwd: entry.cwd,
+        startedAt: entry.closedAt,
+        updatedAt: entry.closedAt,
+        title,
+        description:
+          initialTask && initialTask !== title
+            ? truncate(initialTask, MAX_DESCRIPTION_CHARS)
+            : goal && goal !== title
+              ? truncate(goal, MAX_DESCRIPTION_CHARS)
+              : null,
+        titleSource: goal ? 'generated' : 'fallback',
+        needsSummary: !goal && !!initialTask,
+        continuation: {
+          kind: 'exawatt-session',
+          durableSessionId: entry.durableSessionId,
+        },
+        fingerprint: `closed:${entry.closedAt}:${entry.initialTask?.length ?? 0}:${entry.goal?.length ?? 0}`,
+        summaryInput: initialTask
+          ? [truncate(initialTask, MAX_SUMMARY_TURN_CHARS)]
+          : [],
+        providerIdentity: entry.harnessSessionId,
+        correlationKey: conversationCorrelationKey(entry.harness, initialTask),
+      });
+    }
+    return rows;
+  }
+}
+
 export interface ConversationCatalogOptions {
   adapters?: ConversationCatalogAdapter[];
+  projectSessions?: () => ClosedSessionEntry[];
   cacheFile?: string;
   summaryEndpoint?: string;
   fetch?: typeof fetch;
@@ -447,6 +573,9 @@ export class RecentConversationCatalog {
     this.adapters = options.adapters ?? [
       new ClaudeConversationAdapter(),
       new CodexConversationAdapter(),
+      ...(options.projectSessions
+        ? [new ProjectSessionConversationAdapter(options.projectSessions)]
+        : []),
     ];
     this.cacheFile = options.cacheFile ?? null;
     this.summaryEndpoint =
@@ -536,11 +665,13 @@ export class RecentConversationCatalog {
       for (const candidate of result.value) {
         const key = cacheKey(candidate);
         const existing = deduped.get(key);
-        if (!existing || candidate.updatedAt > existing.updatedAt) {
-          deduped.set(key, candidate);
-        }
+        deduped.set(
+          key,
+          existing ? mergeConversationDrafts(existing, candidate) : candidate
+        );
       }
     }
+    this.reconcileIdentitylessProjectSessions(deduped);
     const cache = await this.readCache();
     return [...deduped.values()]
       .map(candidate => {
@@ -557,6 +688,36 @@ export class RecentConversationCatalog {
         };
       })
       .sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  private reconcileIdentitylessProjectSessions(
+    conversations: Map<string, ConversationDraft>
+  ): void {
+    const rows = [...conversations.values()];
+    for (const projectSession of rows) {
+      if (
+        projectSession.providerIdentity ||
+        projectSession.continuation.kind !== 'exawatt-session' ||
+        !projectSession.correlationKey
+      ) {
+        continue;
+      }
+      const matches = rows.filter(
+        candidate =>
+          candidate.providerIdentity &&
+          candidate.harness === projectSession.harness &&
+          candidate.correlationKey === projectSession.correlationKey
+      );
+      // Ambiguity means unmapped. Showing both recoverable records is safer
+      // than attaching the operator to the wrong provider conversation.
+      if (matches.length !== 1) continue;
+      const provider = matches[0];
+      conversations.delete(cacheKey(projectSession));
+      conversations.set(
+        cacheKey(provider),
+        mergeConversationDrafts(provider, projectSession)
+      );
+    }
   }
 
   private async readCache(): Promise<Record<string, CachedSummary>> {
@@ -590,10 +751,51 @@ function cacheKey(
   return `${candidate.harness}:${candidate.id}`;
 }
 
+const TITLE_SOURCE_RANK: Record<RecentConversation['titleSource'], number> = {
+  fallback: 0,
+  generated: 1,
+  native: 2,
+};
+
+/**
+ * Reconcile two adapters describing the same exact provider identity. The
+ * strongest label provenance owns the presentation, while Exawatt Session
+ * continuation wins independently because it restores more state than a bare
+ * provider process.
+ */
+function mergeConversationDrafts(
+  left: ConversationDraft,
+  right: ConversationDraft
+): ConversationDraft {
+  const leftRank = TITLE_SOURCE_RANK[left.titleSource];
+  const rightRank = TITLE_SOURCE_RANK[right.titleSource];
+  const presentation =
+    rightRank > leftRank ||
+    (rightRank === leftRank && right.updatedAt > left.updatedAt)
+      ? right
+      : left;
+  const other = presentation === left ? right : left;
+  const exawattContinuation = [left.continuation, right.continuation].find(
+    continuation => continuation.kind === 'exawatt-session'
+  );
+  return {
+    ...presentation,
+    id: left.providerIdentity ?? right.providerIdentity ?? presentation.id,
+    startedAt: Math.min(left.startedAt, right.startedAt),
+    updatedAt: Math.max(left.updatedAt, right.updatedAt),
+    description: presentation.description ?? other.description,
+    continuation: exawattContinuation ?? presentation.continuation,
+    providerIdentity: left.providerIdentity ?? right.providerIdentity,
+    correlationKey: presentation.correlationKey ?? other.correlationKey,
+  };
+}
+
 function stripPrivateFields(candidate: ConversationDraft): RecentConversation {
   const {
     fingerprint: _fingerprint,
     summaryInput: _summaryInput,
+    providerIdentity: _providerIdentity,
+    correlationKey: _correlationKey,
     ...publicRow
   } = candidate;
   return publicRow;

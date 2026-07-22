@@ -98,6 +98,50 @@ writeFileSync(
     }),
   ].join('\n')
 );
+writeFileSync(
+  join(userData, 'closed-sessions.json'),
+  JSON.stringify({
+    v: 1,
+    entries: [
+      {
+        durableSessionId: 'session-project-owned-provider',
+        title: 'Codex',
+        goal: 'Audit consent state from Project history',
+        harness: 'codex',
+        cwd: project,
+        projectDir: project,
+        projectName: 'cortex-ehr',
+        harnessSessionId: '11111111-1111-4111-8111-111111111111',
+        initialTask: 'Audit the client consent-state reducer',
+        closedAt: now - 30_000,
+      },
+      {
+        durableSessionId: 'session-project-only',
+        title: 'Claude Code',
+        goal: 'Restore a saved Project-only Session',
+        harness: 'claude',
+        cwd: project,
+        projectDir: project,
+        projectName: 'cortex-ehr',
+        harnessSessionId: null,
+        initialTask: 'Continue from retained terminal history.',
+        closedAt: now - 40_000,
+      },
+      {
+        durableSessionId: 'session-legacy-without-provider-id',
+        title: 'Claude Code',
+        goal: 'Reconcile identity-less Project Session',
+        harness: 'claude',
+        cwd: project,
+        projectDir: project,
+        projectName: 'cortex-ehr',
+        harnessSessionId: null,
+        initialTask: 'Continue Cortex follow-up 1.',
+        closedAt: now - 50_000,
+      },
+    ],
+  })
+);
 
 const failures = [];
 const check = (name, ok) => {
@@ -163,10 +207,42 @@ try {
         'all harnesses share one recent browser',
         (await page
           .locator('[data-recent-conversations] [data-conversation-id]')
-          .count()) === 14 &&
+          .count()) === 15 &&
           /codex/i.test(
             await page.locator('[data-recent-conversations]').innerText()
           )
+      );
+      const projectOwned = page.locator(
+        '[data-conversation-id="11111111-1111-4111-8111-111111111111"]'
+      );
+      check(
+        'Project Session history merges with provider history without duplication',
+        (await projectOwned.getAttribute('data-continuation')) ===
+          'exawatt-session' &&
+          (await projectOwned.innerText()).includes(
+            'Audit consent state from Project history'
+          ) &&
+          (await projectOwned
+            .getByRole('button', {
+              name: 'Reopen Audit consent state from Project history in Exawatt',
+            })
+            .count()) === 1 &&
+          (await page
+            .locator('[data-conversation-id="session-project-only"]')
+            .count()) === 1
+      );
+      const reconciledLegacy = page.locator(
+        '[data-conversation-id="00000000-0000-4000-8000-000000000000"]'
+      );
+      check(
+        'one unambiguous initial task reconciles legacy identity-less history',
+        (await reconciledLegacy.getAttribute('data-continuation')) ===
+          'exawatt-session' &&
+          (await page
+            .locator(
+              '[data-conversation-id="session-legacy-without-provider-id"]'
+            )
+            .count()) === 0
       );
       const composerScroll = page.locator('[data-composer-scroll]');
       const scrollMetrics = await composerScroll.evaluate(node => ({

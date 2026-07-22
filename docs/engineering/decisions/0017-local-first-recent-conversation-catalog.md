@@ -24,10 +24,21 @@ latest-by-directory guess.
 
 - Electron main owns a `RecentConversationCatalog` that normalizes exact
   provider ID, Agent Source, Project directory, timestamps, title, short
-  handoff, provenance, and whether enrichment would help.
-- Each Agent Source contributes a replaceable adapter. The first adapters are
-  Claude Code and Codex; future local, hosted, custom, and Demo sources join the
-  same contract instead of adding renderer branches.
+  handoff, provenance, continuation capability, and whether enrichment would
+  help.
+- Each conversation source contributes a replaceable adapter. Claude Code and
+  Codex provide provider history; Exawatt's Recently-closed ledger provides
+  Project-owned logical Sessions, semantic goals, and retained-history reopen.
+  Future local, hosted, custom, and Demo sources join the same contract instead
+  of adding renderer branches.
+- The active Project is the sole scope, but cwd equality is not the ownership
+  model: nested directories and live git worktrees resolve to their canonical
+  Project. Exact provider identity deduplicates records found in both Exawatt
+  and a harness; the strongest title provenance owns presentation while the
+  richer Exawatt whole-Session continuation remains available. When an older
+  Exawatt Session did not capture its provider ID, a normalized initial task
+  may reconcile it only to one unique same-harness Project candidate;
+  ambiguity means unmapped and both recoverable records remain visible.
 - Discovery is bounded and local-first. Adapters inspect at most the newest 300
   JSONL files and bounded prefix/suffix ranges, isolate malformed or rotating
   files, filter known harness envelopes, and scope results to the canonical
@@ -35,9 +46,11 @@ latest-by-directory guess.
 - Provider-native titles win. A fingerprinted, mode-0600 machine-local cache is
   second. A deterministic excerpt fallback is always available immediately.
 - The new-tab composer remains a new-task surface first. Empty-composer ↓ moves
-  to recents; Option+↑/↓ cycles the Agent Source. A recent row's primary action
-  resumes its exact ID immediately. **Fresh** creates a new Session with only
-  the compact handoff and source ID as the initial task.
+  to recents; Option+↑/↓ cycles the Agent Source. A provider-only row's primary
+  action resumes its exact ID immediately. A Project-owned row reopens the
+  logical Exawatt Session with its retained terminal history. **Fresh** creates
+  a new Session with only the compact handoff and source identity as the
+  initial task.
 - Missing labels may be augmented asynchronously only after Exawatt
   authentication. Electron sends at most eight conversations with at most
   eight bounded operator-authored excerpts each to a hosted Exawatt endpoint.
@@ -58,6 +71,8 @@ References:
 
 - The renderer sees normalized conversation rows and never parses provider
   files or receives an Anthropic credential.
+- Project Session history and harness history form one ranked feed rather than
+  competing “recent” surfaces; current open Sessions stay in the tab strip.
 - Adding an Agent Source requires one catalog adapter plus its launch adapter,
   not a parallel recent-conversations UI.
 - Titles can improve after first paint, but row identity and action never
