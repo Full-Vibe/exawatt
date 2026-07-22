@@ -126,7 +126,9 @@ export interface ElectronPtyApi {
   ) => Promise<ClosedSessionEntry>;
   closedSessions: () => Promise<ClosedSessionEntry[]>;
   /** remove and return a ledger entry so the tab can resurrect whole */
-  reopenSession: (durableSessionId: string) => Promise<ClosedSessionEntry | null>;
+  reopenSession: (
+    durableSessionId: string
+  ) => Promise<ClosedSessionEntry | null>;
   rename: (id: string, title: string) => Promise<void>;
   /** the operator is looking at this session (null = none focused) */
   focus: (id: string | null) => Promise<void>;
@@ -166,6 +168,13 @@ export interface ElectronPtyApi {
     harness: PtyHarness,
     cwd: string
   ) => Promise<HarnessResumeCandidate[]>;
+  /** Source-neutral local catalog. Enrichment is a separate authenticated,
+   * non-blocking pass so this list never waits on a model. */
+  listRecentConversations: (cwd: string) => Promise<RecentConversation[]>;
+  enrichRecentConversations: (
+    cwd: string,
+    accessToken: string
+  ) => Promise<RecentConversation[]>;
   onData: (
     handler: (payload: {
       id: string;
@@ -210,6 +219,18 @@ export interface HarnessResumeCandidate {
   cwd: string;
   updatedAt: number;
   label: string;
+}
+
+export interface RecentConversation {
+  id: string;
+  harness: Exclude<PtyHarness, 'shell'>;
+  cwd: string;
+  startedAt: number;
+  updatedAt: number;
+  title: string;
+  description: string | null;
+  titleSource: 'native' | 'generated' | 'fallback';
+  needsSummary: boolean;
 }
 
 export interface ElectronWorkspaceApi {

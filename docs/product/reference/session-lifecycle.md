@@ -25,6 +25,20 @@ Claude Code and Codex resume only by the exact provider conversation identity
 saved for that Session. Exawatt does not guess from the latest conversation or
 working directory.
 
+## Starting from a recent conversation
+
+The new-Agent page lists recent provider conversations for the active Project.
+Each row shows its full Claude Code or Codex conversation ID plus a short title
+and handoff. Selecting the row resumes that exact provider conversation;
+selecting **Fresh** starts a distinct Agent with the short handoff and original
+ID in its initial task.
+
+Discovery is local-first. Provider-native titles and machine-local cached
+labels appear without a network request. When a provider has no usable title,
+a signed-in desktop may ask Exawatt to generate one from a bounded set of short,
+operator-authored excerpts. Failure or offline use leaves the local fallback in
+place and never blocks a new Agent or exact resume.
+
 ## Local data
 
 Retained terminal history is machine-local, private to the current OS account,

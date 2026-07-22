@@ -20,6 +20,7 @@ import {
   setDockBadge,
 } from './settings-store';
 import { listResumeCandidates } from './pty/resume-candidates';
+import { RecentConversationCatalog } from './pty/conversation-catalog';
 import {
   clipboardInput,
   cleanupClipboardImages,
@@ -39,6 +40,12 @@ import {
  * (single-window app today; cheap to scope per-window later).
  */
 export function registerPtyIPC(previousRunInterrupted = false): void {
+  const conversationCatalog = new RecentConversationCatalog({
+    cacheFile: path.join(
+      app.getPath('userData'),
+      'conversation-summary-cache.json'
+    ),
+  });
   const nativeNotifications = new Map<string, Notification>();
   const broadcast = (channel: string, payload: unknown) => {
     for (const win of BrowserWindow.getAllWindows()) {
@@ -384,6 +391,14 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     'pty:list-resume-candidates',
     (_event, harness: PtyCreateOptions['harness'], cwd: string) =>
       listResumeCandidates(harness, cwd)
+  );
+  handleTrusted('pty:list-recent-conversations', (_event, cwd: string) =>
+    conversationCatalog.list(cwd)
+  );
+  handleTrusted(
+    'pty:enrich-recent-conversations',
+    (_event, cwd: string, accessToken: string) =>
+      conversationCatalog.enrich(cwd, accessToken)
   );
 
   // one-gesture worktrees: <repo>-wt/<branch> sibling container

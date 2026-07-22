@@ -228,6 +228,15 @@ Built:
   bounded/cached Codex rollout discovery with launch-time association for
   parallel agents, explicit selection fallback, and no-spawn relaunch with
   exact tab/Project/all resume actions
+- a source-neutral recent-conversation catalog in Electron main. Replaceable
+  Claude Code and Codex adapters read bounded provider-owned metadata for the
+  active Project and normalize exact identity, title, handoff text, and
+  recency. The new-tab composer renders native and machine-local cached labels
+  immediately, supports exact resume or a distinct fresh handoff, and never
+  makes model availability a condition of local launch. Missing labels may be
+  augmented asynchronously through an authenticated hosted boundary that sends
+  only a bounded set of operator-authored excerpts to Anthropic; its credential
+  is never exposed to the desktop renderer (decision `0017`)
 - serialized workspace persistence and bounded terminal-history snapshots with
   append journals; steady-state disk work scales with new terminal output and
   compacts without exposing partial state

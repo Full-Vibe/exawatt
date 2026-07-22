@@ -373,6 +373,14 @@ export interface LaunchOptions {
   permissionMode?: AgentPermissionMode;
   /** optional first user task for a new interactive Agent Session */
   initialPrompt?: string;
+  /** Resume one provider conversation by its durable harness identity. */
+  resumeSessionId?: string;
+  /** Human label discovered from the provider or Exawatt enrichment. */
+  title?: string;
+  /** Goal metadata for a resumed conversation; never written to the PTY. */
+  statedTask?: string;
+  /** Immediate context subtitle while the resumed harness restores. */
+  restoredSubtitle?: string;
   /** create a git worktree (<repo>-wt/<branch>) and launch inside it */
   worktreeBranch?: string;
   /** roadmap item this session will work on (ENG-017 S4, optional) */
@@ -872,9 +880,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           // but typed draft work is real work — it persists (D28,
           // amending D24's blanket "drafts never persist")
           const tabs = g.tabs
-            .filter(
-              tab => tab.lifecycle !== 'draft' || !!tab.draftTask?.trim()
-            )
+            .filter(tab => tab.lifecycle !== 'draft' || !!tab.draftTask?.trim())
             .map(tab => {
               const stopped =
                 cleanShutdown &&
@@ -890,9 +896,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 sessionId: stopped ? null : tab.sessionId,
                 harnessSessionId: tab.harnessSessionId,
                 roadmapItemId: tab.roadmapItemId,
-                lifecycle: stopped
-                  ? ('stopped-clean' as const)
-                  : tab.lifecycle,
+                lifecycle: stopped ? ('stopped-clean' as const) : tab.lifecycle,
                 exitCode: tab.exitCode,
                 initialTask: tab.initialTask ?? null,
                 contextSummary:
@@ -1037,13 +1041,22 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         const res = await api.create({
           harness: opts.harness,
           cwd,
-          title: HARNESS_META[opts.harness].label,
+          title: opts.title?.trim() || HARNESS_META[opts.harness].label,
           durableSessionId,
           ...(opts.permissionMode
             ? { permissionMode: opts.permissionMode }
             : {}),
           ...(opts.initialPrompt?.trim()
             ? { initialPrompt: opts.initialPrompt.trim() }
+            : {}),
+          ...(opts.resumeSessionId
+            ? { resumeSessionId: opts.resumeSessionId }
+            : {}),
+          ...(opts.statedTask?.trim()
+            ? { statedTask: opts.statedTask.trim() }
+            : {}),
+          ...(opts.restoredSubtitle?.trim()
+            ? { restoredSubtitle: opts.restoredSubtitle.trim() }
             : {}),
           ...(size ?? {}),
         });
@@ -1059,7 +1072,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             res.session,
             tabId,
             opts.roadmapItemId ?? null,
-            opts.initialPrompt?.trim() || null
+            opts.statedTask?.trim() || opts.initialPrompt?.trim() || null
           );
           setProjects(prev =>
             prev.map(grp =>
@@ -1078,7 +1091,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             res.session,
             tabId,
             opts.roadmapItemId ?? null,
-            opts.initialPrompt?.trim() || null
+            opts.statedTask?.trim() || opts.initialPrompt?.trim() || null
           );
         }
         // Resolution bridge (ENG-015 S5 P3): register/refresh this directory's
@@ -1106,8 +1119,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  Project is open (caller falls back to the Project chooser). */
   const createDraftTab = useCallback(
     (dirArg?: string, source?: string | null): string | null => {
-      const requested =
-        source && isAgentSourceId(source) ? source : null;
+      const requested = source && isAgentSourceId(source) ? source : null;
       const { projects: gs, activeDir: ad } = stateRef.current;
       const dir = dirArg ?? ad;
       const g = dir ? gs.find(x => x.dir === dir) : undefined;
@@ -1216,7 +1228,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           grp.activeTabId === tabId
             ? nextActiveTabAfterClose(grp.tabs, tabId)
             : grp.activeTabId;
-        return { ...grp, tabs: grp.tabs.filter(t => t.id !== tabId), activeTabId };
+        return {
+          ...grp,
+          tabs: grp.tabs.filter(t => t.id !== tabId),
+          activeTabId,
+        };
       })
     );
   }, []);
@@ -1717,8 +1733,17 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
 
   /** drag-and-drop: drop a tab beside a sibling in the same Project */
   const reorderTab = useCallback(
-    (tabId: string, targetTabId: string, place: 'before' | 'after'): boolean => {
-      const next = placeTabBeside(stateRef.current.projects, tabId, targetTabId, place);
+    (
+      tabId: string,
+      targetTabId: string,
+      place: 'before' | 'after'
+    ): boolean => {
+      const next = placeTabBeside(
+        stateRef.current.projects,
+        tabId,
+        targetTabId,
+        place
+      );
       if (!next) return false;
       setProjects(next);
       return true;

@@ -71,6 +71,10 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('pty:worktree', repoDir, branch),
     listResumeCandidates: (harness: string, cwd: string) =>
       ipcRenderer.invoke('pty:list-resume-candidates', harness, cwd),
+    listRecentConversations: (cwd: string) =>
+      ipcRenderer.invoke('pty:list-recent-conversations', cwd),
+    enrichRecentConversations: (cwd: string, accessToken: string) =>
+      ipcRenderer.invoke('pty:enrich-recent-conversations', cwd, accessToken),
     onData: subscribe<{
       id: string;
       durableSessionId: string;

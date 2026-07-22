@@ -9,6 +9,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 // round-trip whose result is discarded.
 const PUBLIC_PREFIXES = [
   '/api/dev-identity',
+  // Electron authenticates this bounded metadata endpoint with a bearer
+  // token. The route validates it directly; cookie middleware would reject
+  // the desktop request before that validation can happen.
+  '/api/conversations',
   '/api/oc',
   '/sign-in',
   '/sign-up',
@@ -26,7 +30,7 @@ const PUBLIC_PREFIXES = [
 function isPublicPath(pathname: string): boolean {
   return (
     pathname === '/' ||
-    PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+    PUBLIC_PREFIXES.some(prefix => pathname.startsWith(prefix))
   );
 }
 
@@ -34,7 +38,7 @@ function hasAuthCookie(request: NextRequest): boolean {
   // Supabase stores the session in `sb-<ref>-auth-token` (possibly chunked).
   return request.cookies
     .getAll()
-    .some((cookie) => cookie.name.startsWith('sb-') && cookie.value !== '');
+    .some(cookie => cookie.name.startsWith('sb-') && cookie.value !== '');
 }
 
 export async function proxy(request: NextRequest) {

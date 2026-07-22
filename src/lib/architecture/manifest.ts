@@ -60,7 +60,7 @@ export const architectureManifest = {
   title: 'Exawatt Architecture',
   summary:
     'Exawatt is a command interface for managing agent fleets across local, hosted, and third-party harnesses.',
-  lastReviewed: '2026-07-21',
+  lastReviewed: '2026-07-22',
   layers: [
     {
       key: 'ui',
@@ -512,7 +512,7 @@ export const architectureManifest = {
           id: 'terminal-workspace',
           label: 'Terminal + Session Overview',
           summary:
-            'Inert Project selection, source-aware Agent composition with visible per-Project permission defaults, and grouped exposé over every open Project, including zero-Session state, plus direct live-or-stopped Session control.',
+            'Inert Project selection, source-aware Agent composition, and an exact-ID recent-conversation browser with fresh-handoff migration, plus grouped exposé and direct live-or-stopped Session control.',
           layer: 'ui',
           status: 'implemented',
           x: 205,
@@ -608,7 +608,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Adapters',
           summary:
-            'Provider-first boundaries that translate actions and launch policy while describing source activity, evidence, and actual enforcement ownership.',
+            'Provider-first boundaries that translate actions and launch policy, normalize provider conversation catalogs, and describe source activity, evidence, and enforcement ownership.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,
@@ -656,7 +656,7 @@ export const architectureManifest = {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
-            'Immediate launch frame, versioned local renderer with warm prestart, native-network PKCE, serialized workspace/history, bounded provider discovery, verified two-commit Session shutdown, immutable Developer-ID-gated local delivery with atomic rollback, and signed automatic updates.',
+            'Immediate launch frame, versioned local renderer, native-network PKCE, serialized workspace/history, bounded source-adapter conversation discovery with local summary cache, verified shutdown, atomic Developer-ID delivery, and signed updates.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 75,
@@ -754,6 +754,7 @@ export const architectureManifest = {
     'Open Session identity spans Terminal, Sessions, and Spatial; PTYs add live runtime state but do not define whether a Session-backed Agent exists.',
     'Logical Sessions survive local process death through explicit, deterministic rehydration; local processes do not outlive Exawatt.',
     'Agent sources are replaceable harnesses behind explicit adapters.',
+    'Recent conversation discovery is local-first and source-neutral; hosted title augmentation is bounded, authenticated, optional, and never carries a desktop-embedded provider key.',
     'Launch permission policy is source-agnostic and provider-enforced today; adapters translate visible personal Project defaults without silent escalation.',
     'Activity assurance is composable: reported, observed, authorized, enforced, and verified are independent claims, and unknowns stay visible.',
     'Future managed Workspace ceilings cannot be bypassed by personal settings or YOLO; later mediation fits behind existing source and coordination contracts.',
