@@ -1,8 +1,23 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
+import {
+  fireEvent,
+  render as testingRender,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { ExposeOverlay } from './expose-overlay';
 import type { Project } from './use-workspace-state';
+
+function render(ui: ReactElement) {
+  return testingRender(ui, {
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <TooltipProvider>{children}</TooltipProvider>
+    ),
+  });
+}
 
 const projects: Project[] = [
   {

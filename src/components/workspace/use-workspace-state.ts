@@ -15,7 +15,13 @@
  *   an exact saved provider ID after an explicit operator action; a renderer
  *   reload re-adopts still-live PTYs.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { HARNESS_META } from './harnesses';
 import { pickDistinctColor, projectColor } from './project-colors';
 import {
@@ -580,12 +586,28 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const seededActivity: Record<string, boolean> = {};
       const seededEngaged: Record<string, boolean> = {};
       if (persisted) {
-        for (const g of persisted.projects) {
-          for (const t of g.tabs) {
-            if (t.contextSummary) {
-              seeded[t.durableSessionId] = t.contextSummary;
-            }
-          }
+        const persistedSummaries = persisted.projects.flatMap(g =>
+          g.tabs.flatMap(t =>
+            t.contextSummary
+              ? [[t.durableSessionId, t.contextSummary] as const]
+              : []
+          )
+        );
+        const restoreContext = api.restoreContext;
+        const restoredSummaries = restoreContext
+          ? await Promise.all(
+              persistedSummaries.map(
+                async ([durableSessionId, summary]) =>
+                  [
+                    durableSessionId,
+                    await restoreContext(durableSessionId, summary),
+                  ] as const
+              )
+            )
+          : persistedSummaries;
+        if (cancelled) return;
+        for (const [durableSessionId, summary] of restoredSummaries) {
+          if (summary) seeded[durableSessionId] = summary;
         }
       }
       for (const s of live) {
@@ -1917,13 +1939,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     );
   }, [activeSessionId]);
 
-  useEffect(() => {
-    const api = window.electron?.pty;
-    if (!api?.focus) return;
-    void api.focus(activeSessionId);
-    // optimistic clear ONLY when the operator is really looking (app window
-    // focused) — main keeps flags alive for a backgrounded window and is
-    // the source of truth; it clears + broadcasts on window refocus
+  // A selected, visible tab is acknowledged before paint. A passive effect
+  // used to leave one rendered frame where the newly active tab still wore
+  // its old attention marker; main then confirmed the clear over IPC.
+  useLayoutEffect(() => {
     if (activeSessionId && document.hasFocus()) {
       setAttention(prev => {
         if (!(activeSessionId in prev)) return prev;
@@ -1932,6 +1951,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         return next;
       });
     }
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    const api = window.electron?.pty;
+    if (!api?.focus) return;
+    void api.focus(activeSessionId);
+    // Main remains authoritative for background-window attention and
+    // broadcasts the confirmed clear to every renderer on focus.
     // leaving the workspace (unmount) unfocuses — flags accumulate again
     return () => void api.focus(null);
   }, [activeSessionId]);

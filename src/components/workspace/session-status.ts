@@ -32,6 +32,10 @@ export const SESSION_GLYPH_COPY: Record<SessionGlyphState, string> = {
   quiet: 'quiet — waiting or between turns',
 };
 
+/** Attention is intentionally calm: it means unseen, not necessarily bad. */
+export const ATTENTION_GLYPH_COPY =
+  'Unseen update — Agent finished or requested input. Open this tab to acknowledge.';
+
 /** Compact state words for visible labels and accessible names. */
 export const SESSION_GLYPH_LABEL: Record<SessionGlyphState, string> = {
   working: 'working',

@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld('electron', {
     rename: (id: string, title: string) =>
       ipcRenderer.invoke('pty:rename', id, title),
     focus: (id: string | null) => ipcRenderer.invoke('pty:focus', id),
+    restoreContext: (durableSessionId: string, subtitle: string) =>
+      ipcRenderer.invoke('pty:restore-context', durableSessionId, subtitle),
     list: () => ipcRenderer.invoke('pty:list'),
     buffer: (id: string) => ipcRenderer.invoke('pty:buffer', id),
     bufferSnapshot: (id: string) =>

@@ -169,6 +169,9 @@ const persistedLayout = {
           roadmapItemId: null,
           lifecycle: 'running',
           exitCode: null,
+          // D33: a persisted model preamble must be rejected during
+          // hydration, not shown or allowed to imply this tab was started.
+          contextSummary: "Based on my exploration, here's what I found:",
         },
       ],
     },
@@ -247,6 +250,8 @@ await page.addInitScript(
         kill: async () => undefined,
         rename: async () => undefined,
         focus: async () => undefined,
+        restoreContext: async (_durableSessionId, summary) =>
+          summary.startsWith('Based on my exploration') ? null : summary,
         list: async () => sessions,
         buffer: async () => '$ exawatt\nWorkspace chrome ready.\n',
         bufferSnapshot: async () => ({
@@ -293,7 +298,10 @@ await page.addInitScript(
         },
         onContext: off,
         onRecap: off,
-        onAttention: off,
+        onAttention: handler => {
+          window.__fireAttention = handler;
+          return () => undefined;
+        },
         onIdentity: off,
         onNotificationClick: off,
         // captured so the eval can drive turn-state transitions (D22)
@@ -323,7 +331,11 @@ try {
   await composerToggle.click();
   const composer = page.locator('[data-agent-composer]');
   await composer.waitFor();
-  if (!(await page.locator('[data-workspace-tab-strip]').innerText()).includes('New agent')) {
+  if (
+    !(await page.locator('[data-workspace-tab-strip]').innerText()).includes(
+      'New agent'
+    )
+  ) {
     throw new Error('⌘T must create a visible draft tab in the strip');
   }
 
@@ -466,9 +478,79 @@ try {
       `Fresh tab leaked its default harness title: ${turnState.text}`
     );
   }
+  if (turnState.text.includes('Based on my exploration')) {
+    throw new Error(`Rejected persisted subtitle leaked: ${turnState.text}`);
+  }
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'turn-states-rest.png'),
   });
+  // D33: attention is a quiet unread marker. It must explain itself on
+  // hover, carry no alarm animation, and disappear before the selected tab
+  // can paint — never flash bell → working → done during one click.
+  await page.evaluate(() => {
+    window.__fireAttention?.({
+      id: 'gpa-session',
+      attention: { kind: 'turn-end', since: Date.now() },
+    });
+  });
+  const gpaTab = page.locator(
+    '[data-project="gpagent"] [data-tab-id="gpa-tab"]'
+  );
+  const attentionMarker = gpaTab.locator('[data-attention]');
+  await attentionMarker.waitFor();
+  if (
+    (await attentionMarker.locator('.animate-ping, .lucide-bell').count()) > 0
+  ) {
+    throw new Error('Attention marker must be static and bell-free');
+  }
+  await attentionMarker.hover();
+  const statusTooltip = page.getByRole('tooltip');
+  await statusTooltip.waitFor();
+  if (
+    !(await statusTooltip.innerText()).includes(
+      'Unseen update — Agent finished or requested input. Open this tab to acknowledge.'
+    )
+  ) {
+    throw new Error(
+      `Attention tooltip is unclear: ${await statusTooltip.innerText()}`
+    );
+  }
+  await page.screenshot({
+    path: join(SCREENSHOT_DIR, 'attention-tooltip.png'),
+  });
+  await page.mouse.move(650, 400);
+  await page.evaluate(() => {
+    window.__activeAttentionPaints = 0;
+    window.__sampleActiveAttention = true;
+    const sample = () => {
+      const active = document.querySelector(
+        '[data-workspace-tab-strip] [data-tab-id][data-active]'
+      );
+      if (active?.querySelector('[data-attention]')) {
+        window.__activeAttentionPaints += 1;
+      }
+      if (window.__sampleActiveAttention) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  await gpaTab.locator('button').first().click();
+  await settle();
+  const activeAttentionPaints = await page.evaluate(() => {
+    window.__sampleActiveAttention = false;
+    return window.__activeAttentionPaints;
+  });
+  if (activeAttentionPaints !== 0 || (await attentionMarker.count()) !== 0) {
+    throw new Error(
+      `Selecting a tab painted stale attention ${activeAttentionPaints} time(s)`
+    );
+  }
+  // Return to the original fixture state for the remaining parity checks.
+  await page
+    .locator('[data-project="exawatt"] [data-tab-id="exawatt-tab"]')
+    .locator('button')
+    .first()
+    .click();
+  await settle();
   // D29: the empty-query switcher consumes the same turn-state truth and
   // renders the same glyph vocabulary as the strip and Sessions tiles.
   await page.keyboard.press('Meta+KeyK');
@@ -564,7 +646,9 @@ try {
   await condensed.waitFor({ state: 'attached' });
   await page.mouse.click(650, 400);
   await page.waitForTimeout(320); // let the 200ms fold transition finish
-  await page.screenshot({ path: join(SCREENSHOT_DIR, 'stopped-condensed.png') });
+  await page.screenshot({
+    path: join(SCREENSHOT_DIR, 'stopped-condensed.png'),
+  });
   await page
     .locator('[data-project="gpagent"]')
     .getByRole('button', { name: 'Close billing migration' })
@@ -635,10 +719,7 @@ try {
   const toast = page.locator('[data-close-toast]');
   await toast.waitFor();
   const toastText = await toast.innerText();
-  if (
-    !toastText.includes('Recently closed') ||
-    !toastText.includes('reopen')
-  ) {
+  if (!toastText.includes('Recently closed') || !toastText.includes('reopen')) {
     throw new Error(`Close toast does not narrate the outcome: ${toastText}`);
   }
   await page.screenshot({ path: join(SCREENSHOT_DIR, 'close-toast.png') });
@@ -702,8 +783,8 @@ try {
   await page.waitForFunction(() => window.location.pathname === '/settings');
   await page.locator('[data-workspace-chrome]').waitFor({ state: 'detached' });
   await page.keyboard.press('Escape');
-  await page.waitForFunction(
-    () => window.location.pathname.startsWith('/workspace')
+  await page.waitForFunction(() =>
+    window.location.pathname.startsWith('/workspace')
   );
   await page.waitForFunction(() =>
     document

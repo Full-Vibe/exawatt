@@ -217,13 +217,22 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     attentionMonitor.setFocus(id);
     contextSummarizer.setFocus(id);
   });
+  // Persisted subtitles re-enter through main so the same validator owns
+  // both generated and restored goal text. The accepted value returns to
+  // hydration; null actively sheds stale model preambles.
+  handleTrusted(
+    'pty:restore-context',
+    (_event, durableSessionId: string, subtitle: string) =>
+      contextSummarizer.restore(durableSessionId, subtitle)
+  );
   handleTrusted(
     'pty:resize',
-    (_event, id: string, cols: number, rows: number) => {
-      ptySessions.resize(id, cols, rows);
-      // the WINCH redraw this triggers is OUR doing, not the agent working
-      attentionMonitor.noteResize(id);
-    }
+    (_event, id: string, cols: number, rows: number) =>
+      // node-pty can synchronously emit the WINCH redraw from resize(), so
+      // the monitor owns the ordering boundary and guards before the call.
+      attentionMonitor.runWithResizeGuard(id, () =>
+        ptySessions.resize(id, cols, rows)
+      )
   );
   handleTrusted('pty:kill', (_event, id: string) => ptySessions.kill(id));
   // ── Close-as-lifecycle (D23). The renderer owns the grammar (park →

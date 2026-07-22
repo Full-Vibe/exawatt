@@ -142,9 +142,12 @@ export class AttentionMonitor extends EventEmitter {
     return this.working.has(id);
   }
 
-  /** we just resized this PTY — its imminent redraw is not work (D24) */
-  noteResize(id: string): void {
+  /** Install the redraw guard BEFORE resize() can synchronously emit PTY
+   *  output. Keeping the side effect inside this boundary makes that order
+   *  impossible for callers to accidentally reverse (D24/D33). */
+  runWithResizeGuard<T>(id: string, resize: () => T): T {
     this.lastResizeAt.set(id, this.now());
+    return resize();
   }
 
   /** The operator gave this session work (task, resume, or keystroke).
@@ -194,15 +197,20 @@ export class AttentionMonitor extends EventEmitter {
     const { bell } = this.scan(id, data);
     this.lastDataAt.set(id, this.now());
     const sinceResize = this.now() - (this.lastResizeAt.get(id) ?? -Infinity);
-    if (!this.working.has(id) && sinceResize >= RESIZE_GRACE_MS) {
-      this.working.add(id);
-      this.emit('activity', id, true);
+    if (bell) {
+      // BEL is an explicit turn boundary: the agent is now waiting, not
+      // working. Consume the burst too, otherwise acknowledging the bell
+      // can reveal stale working state or re-flag the same turn as quiet.
+      this.setWorking(id, false);
+      this.burstBytes.set(id, 0);
+    } else {
+      if (sinceResize >= RESIZE_GRACE_MS) this.setWorking(id, true);
+      this.burstBytes.set(id, (this.burstBytes.get(id) ?? 0) + data.length);
     }
-    this.burstBytes.set(id, (this.burstBytes.get(id) ?? 0) + data.length);
     // a flagged session that RESUMES real work was not actually waiting —
     // clear once post-flag output is substantial (repaint noise stays under
     // the burst bar; a true prompt-wait produces ~nothing)
-    if (this.attention.has(id)) {
+    if (!bell && this.attention.has(id)) {
       const since = (this.bytesSinceFlag.get(id) ?? 0) + data.length;
       if (since >= Math.max(1, this.opts.minBurstBytes)) {
         this.clear(id);
@@ -224,8 +232,7 @@ export class AttentionMonitor extends EventEmitter {
       if (this.working.has(s.id)) {
         const last = this.lastDataAt.get(s.id);
         if (s.exited || last === undefined || now - last >= WORKING_WINDOW_MS) {
-          this.working.delete(s.id);
-          this.emit('activity', s.id, false);
+          this.setWorking(s.id, false);
         }
       }
       if (s.exited || s.harness === 'shell') continue;
@@ -262,13 +269,23 @@ export class AttentionMonitor extends EventEmitter {
     this.emit('attention', id, null);
   }
 
+  private setWorking(id: string, working: boolean): void {
+    if (working) {
+      if (this.working.has(id)) return;
+      this.working.add(id);
+    } else if (!this.working.delete(id)) {
+      return;
+    }
+    this.emit('activity', id, working);
+  }
+
   private drop(id: string): void {
     this.lastDataAt.delete(id);
     this.lastResizeAt.delete(id);
     this.burstBytes.delete(id);
     this.carry.delete(id);
     this.engaged.delete(id);
-    if (this.working.delete(id)) this.emit('activity', id, false);
+    this.setWorking(id, false);
     this.clear(id);
   }
 

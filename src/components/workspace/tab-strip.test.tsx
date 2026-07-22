@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { TabStrip } from './tab-strip';
 import type { Project, WorkspaceTab } from './use-workspace-state';
 
@@ -49,23 +50,25 @@ function strip({
     },
   ];
   return render(
-    <TabStrip
-      projects={projects}
-      activeDir="/repo"
-      pinnedTabId={null}
-      summaries={summaries}
-      attention={attention}
-      activity={activity}
-      engaged={engaged}
-      onTogglePinTab={vi.fn()}
-      onResumeTab={vi.fn()}
-      onSelectProject={vi.fn()}
-      onSelectTab={vi.fn()}
-      onCloseTab={vi.fn()}
-      onRenameTab={vi.fn()}
-      onRenameProject={vi.fn()}
-      onSetProjectColor={vi.fn()}
-    />
+    <TooltipProvider>
+      <TabStrip
+        projects={projects}
+        activeDir="/repo"
+        pinnedTabId={null}
+        summaries={summaries}
+        attention={attention}
+        activity={activity}
+        engaged={engaged}
+        onTogglePinTab={vi.fn()}
+        onResumeTab={vi.fn()}
+        onSelectProject={vi.fn()}
+        onSelectTab={vi.fn()}
+        onCloseTab={vi.fn()}
+        onRenameTab={vi.fn()}
+        onRenameProject={vi.fn()}
+        onSetProjectColor={vi.fn()}
+      />
+    </TooltipProvider>
   );
 }
 
@@ -130,14 +133,22 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(screen.getByText('Shell')).not.toBeNull();
   });
 
-  it('attention outranks every turn-state glyph', () => {
+  it('attention is a calm static marker with a clear hover explanation', async () => {
     const { container } = strip({
       tabs: [tab({ id: 'a' })],
       attention: { 'session-a': { since: 1 } },
       activity: { 'session-a': true },
     });
-    expect(container.querySelector('[data-attention]')).not.toBeNull();
+    const marker = container.querySelector('[data-attention]');
+    expect(marker).not.toBeNull();
     expect(container.querySelector('[data-status]')).toBeNull();
+    expect(marker?.querySelector('.animate-ping')).toBeNull();
+    expect(marker?.querySelector('.lucide-bell')).toBeNull();
+
+    fireEvent.pointerMove(marker!, { pointerType: 'mouse' });
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Unseen update — Agent finished or requested input. Open this tab to acknowledge.'
+    );
   });
 
   it('every tab offers Close (D24 chrome model); stopped tabs condense', () => {

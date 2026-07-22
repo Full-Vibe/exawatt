@@ -9,7 +9,13 @@
  * One of two first-class regimes (the other: sessions as entities on the
  * ENG-004 world map) — parallel skins over the same session system.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { HUD } from '@/components/hud';
 import { PROJECT_PALETTE } from './project-colors';
 import { HarnessGlyph } from './harness-icons';
@@ -22,7 +28,7 @@ import {
   FOCUS_ACTIVE_TERMINAL_EVENT,
 } from './session-jump';
 import {
-  AttentionBell,
+  AttentionMarker,
   SESSION_GLYPH_COPY,
   SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
@@ -361,12 +367,15 @@ export function TabStrip({
   // ── Drag arrangement (D20): order is an interface. Tabs move within
   // their Project (grouping is directory truth); Project groups move
   // globally. Keyboard equivalents: ⌘⌥[/] and ⌘⌥⇧[/].
-  const [drag, setDrag] = useState<
-    { kind: 'tab' | 'project'; id: string; dir: string } | null
-  >(null);
-  const [hint, setHint] = useState<
-    { key: string; place: 'before' | 'after' } | null
-  >(null);
+  const [drag, setDrag] = useState<{
+    kind: 'tab' | 'project';
+    id: string;
+    dir: string;
+  } | null>(null);
+  const [hint, setHint] = useState<{
+    key: string;
+    place: 'before' | 'after';
+  } | null>(null);
   const endDrag = () => {
     setDrag(null);
     setHint(null);
@@ -511,8 +520,7 @@ export function TabStrip({
               const summary = summaries[t.durableSessionId];
               const needsYou =
                 !dead && !!(t.sessionId && attention[t.sessionId]);
-              const working =
-                !dead && !!(t.sessionId && activity[t.sessionId]);
+              const working = !dead && !!(t.sessionId && activity[t.sessionId]);
               const isAgent = t.harness !== 'shell';
               // ⌘T draft (D24): a new-tab chip — no process, no badge,
               // fresh ring, discarded without ceremony
@@ -702,7 +710,7 @@ export function TabStrip({
                       </span>
                     )}
                     {needsYou ? (
-                      <AttentionBell />
+                      <AttentionMarker />
                     ) : !dead || isDraft ? (
                       <SessionStatusGlyph
                         state={isDraft ? 'fresh' : glyphState}

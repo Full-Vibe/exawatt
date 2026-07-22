@@ -15,8 +15,7 @@ import { HarnessGlyph } from './harness-icons';
 import { isDefaultHarnessTitle } from './harnesses';
 import { previewLines } from './scrollback-preview';
 import {
-  AttentionBell,
-  SESSION_GLYPH_COPY,
+  AttentionMarker,
   SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
   sessionGlyphState,
@@ -429,7 +428,6 @@ export function ExposeOverlay({
       agent: tile.harness !== 'shell',
       started: !!(tile.sessionId && engaged[tile.sessionId]) || !!subtitle,
     });
-    const stateCopy = SESSION_GLYPH_COPY[glyphState];
     return (
       <button
         key={tile.tabId}
@@ -517,10 +515,10 @@ export function ExposeOverlay({
           )}
           {needsYou ? (
             <span className="ml-1 inline-flex shrink-0">
-              <AttentionBell />
+              <AttentionMarker />
             </span>
           ) : tile.live ? (
-            <span className="ml-1 inline-flex shrink-0" title={stateCopy}>
+            <span className="ml-1 inline-flex shrink-0">
               <SessionStatusGlyph state={glyphState} />
             </span>
           ) : null}
@@ -569,128 +567,130 @@ export function ExposeOverlay({
           if (event.target === event.currentTarget) onClose();
         }}
       >
-      <div className="px-6 pb-6 pt-5">
-        <div
-          className="mb-4 flex items-baseline gap-3 font-mono text-xs"
-          style={{ color: HUD.textDim }}
-        >
-          <h2
-            className="font-display text-sm font-semibold"
-            style={{ color: HUD.text }}
-          >
-            Projects &amp; Sessions
-          </h2>
-          <span>arrows or J/K move · enter opens · esc returns</span>
-        </div>
-        {projects.length === 0 && (
+        <div className="px-6 pb-6 pt-5">
           <div
-            className="flex min-h-48 max-w-lg flex-col justify-center gap-2 border-y py-8"
-            style={{ borderColor: 'rgba(80,230,255,0.12)' }}
+            className="mb-4 flex items-baseline gap-3 font-mono text-xs"
+            style={{ color: HUD.textDim }}
           >
-            <p
-              className="font-display text-base font-semibold"
+            <h2
+              className="font-display text-sm font-semibold"
               style={{ color: HUD.text }}
             >
-              No Projects open
-            </p>
-            <p className="font-mono text-xs" style={{ color: HUD.textDim }}>
-              Return to Terminal and open a Project.
-            </p>
+              Projects &amp; Sessions
+            </h2>
+            <span>arrows or J/K move · enter opens · esc returns</span>
           </div>
-        )}
-        <div className="flex flex-col gap-5">
-          {projects.map(project => {
-            const projectTiles = tiles.filter(tile => tile.dir === project.dir);
-            const emptyIndex = items.findIndex(
-              item => item.tabId === null && item.dir === project.dir
-            );
-            const emptySelected = emptyIndex === sel;
-            return (
-              <section
-                key={project.dir}
-                data-expose-project={project.dir}
-                aria-label={`${project.name}, ${projectTiles.length} Sessions`}
+          {projects.length === 0 && (
+            <div
+              className="flex min-h-48 max-w-lg flex-col justify-center gap-2 border-y py-8"
+              style={{ borderColor: 'rgba(80,230,255,0.12)' }}
+            >
+              <p
+                className="font-display text-base font-semibold"
+                style={{ color: HUD.text }}
               >
-                <div
-                  className="mb-2 flex items-center gap-2 border-b pb-2"
-                  style={{ borderColor: `${project.color}33` }}
+                No Projects open
+              </p>
+              <p className="font-mono text-xs" style={{ color: HUD.textDim }}>
+                Return to Terminal and open a Project.
+              </p>
+            </div>
+          )}
+          <div className="flex flex-col gap-5">
+            {projects.map(project => {
+              const projectTiles = tiles.filter(
+                tile => tile.dir === project.dir
+              );
+              const emptyIndex = items.findIndex(
+                item => item.tabId === null && item.dir === project.dir
+              );
+              const emptySelected = emptyIndex === sel;
+              return (
+                <section
+                  key={project.dir}
+                  data-expose-project={project.dir}
+                  aria-label={`${project.name}, ${projectTiles.length} Sessions`}
                 >
-                  <span
-                    className="h-3.5 w-[3px] shrink-0 rounded-full"
-                    style={{ background: project.color }}
-                  />
-                  <h3
-                    className="truncate font-display text-xs font-semibold"
-                    style={{ color: HUD.text }}
+                  <div
+                    className="mb-2 flex items-center gap-2 border-b pb-2"
+                    style={{ borderColor: `${project.color}33` }}
                   >
-                    {project.name}
-                  </h3>
-                  <span
-                    className="font-mono text-[10px] tabular-nums"
-                    style={{ color: HUD.textDim }}
-                  >
-                    {projectTiles.length}{' '}
-                    {projectTiles.length === 1 ? 'Session' : 'Sessions'}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  {projectTiles.length > 0 ? (
-                    projectTiles.map(sessionTile)
-                  ) : (
-                    <button
-                      ref={node => {
-                        const key = `project:${project.dir}`;
-                        if (node) tileRefs.current.set(key, node);
-                        else tileRefs.current.delete(key);
-                      }}
-                      type="button"
-                      data-expose-empty-project={project.dir}
-                      data-selected={emptySelected || undefined}
-                      tabIndex={emptySelected ? 0 : -1}
-                      aria-label={`Open ${project.name} in Terminal, no Sessions yet`}
-                      onClick={() => onPickProject(project.dir)}
-                      onMouseEnter={() => {
-                        if (mouseArmed()) setSel(emptyIndex);
-                      }}
-                      onFocus={() => setSel(emptyIndex)}
-                      className="flex min-h-32 flex-col justify-center rounded border p-3 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
-                      style={{
-                        width: TILE_W,
-                        borderColor: emptySelected
-                          ? project.color
-                          : `${project.color}44`,
-                        background: 'rgba(7,12,20,0.94)',
-                        boxShadow: emptySelected
-                          ? `0 0 14px ${project.color}44`
-                          : 'none',
-                        opacity: entered ? 1 : 0,
-                        transform: entered
-                          ? emptySelected
-                            ? 'scale(1.02)'
-                            : 'none'
-                          : 'translateY(10px) scale(0.97)',
-                      }}
+                    <span
+                      className="h-3.5 w-[3px] shrink-0 rounded-full"
+                      style={{ background: project.color }}
+                    />
+                    <h3
+                      className="truncate font-display text-xs font-semibold"
+                      style={{ color: HUD.text }}
                     >
-                      <span
-                        className="font-display text-sm font-semibold"
-                        style={{ color: HUD.text }}
+                      {project.name}
+                    </h3>
+                    <span
+                      className="font-mono text-[10px] tabular-nums"
+                      style={{ color: HUD.textDim }}
+                    >
+                      {projectTiles.length}{' '}
+                      {projectTiles.length === 1 ? 'Session' : 'Sessions'}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    {projectTiles.length > 0 ? (
+                      projectTiles.map(sessionTile)
+                    ) : (
+                      <button
+                        ref={node => {
+                          const key = `project:${project.dir}`;
+                          if (node) tileRefs.current.set(key, node);
+                          else tileRefs.current.delete(key);
+                        }}
+                        type="button"
+                        data-expose-empty-project={project.dir}
+                        data-selected={emptySelected || undefined}
+                        tabIndex={emptySelected ? 0 : -1}
+                        aria-label={`Open ${project.name} in Terminal, no Sessions yet`}
+                        onClick={() => onPickProject(project.dir)}
+                        onMouseEnter={() => {
+                          if (mouseArmed()) setSel(emptyIndex);
+                        }}
+                        onFocus={() => setSel(emptyIndex)}
+                        className="flex min-h-32 flex-col justify-center rounded border p-3 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
+                        style={{
+                          width: TILE_W,
+                          borderColor: emptySelected
+                            ? project.color
+                            : `${project.color}44`,
+                          background: 'rgba(7,12,20,0.94)',
+                          boxShadow: emptySelected
+                            ? `0 0 14px ${project.color}44`
+                            : 'none',
+                          opacity: entered ? 1 : 0,
+                          transform: entered
+                            ? emptySelected
+                              ? 'scale(1.02)'
+                              : 'none'
+                            : 'translateY(10px) scale(0.97)',
+                        }}
                       >
-                        No Sessions yet
-                      </span>
-                      <span
-                        className="mt-1 font-mono text-[10px]"
-                        style={{ color: project.color }}
-                      >
-                        Open in Terminal
-                      </span>
-                    </button>
-                  )}
-                </div>
-              </section>
-            );
-          })}
+                        <span
+                          className="font-display text-sm font-semibold"
+                          style={{ color: HUD.text }}
+                        >
+                          No Sessions yet
+                        </span>
+                        <span
+                          className="mt-1 font-mono text-[10px]"
+                          style={{ color: project.color }}
+                        >
+                          Open in Terminal
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
         </div>
-      </div>
       </div>
       {railVisible && (
         <RoadmapRail

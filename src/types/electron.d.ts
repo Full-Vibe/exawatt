@@ -132,6 +132,12 @@ export interface ElectronPtyApi {
   rename: (id: string, title: string) => Promise<void>;
   /** the operator is looking at this session (null = none focused) */
   focus: (id: string | null) => Promise<void>;
+  /** Revalidate a persisted goal through main before renderer hydration.
+   *  Optional only for compatibility with older mocks. */
+  restoreContext?: (
+    durableSessionId: string,
+    subtitle: string
+  ) => Promise<string | null>;
   list: () => Promise<PtySessionInfo[]>;
   buffer: (id: string) => Promise<string>;
   bufferSnapshot: (id: string) => Promise<{ text: string; cursor: number }>;

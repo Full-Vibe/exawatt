@@ -21,7 +21,12 @@ class FakeManager extends EventEmitter {
   }
 
   addSession(id: string, durableSessionId: string) {
-    this.sessions.push({ id, durableSessionId, exited: false, harness: 'claude' });
+    this.sessions.push({
+      id,
+      durableSessionId,
+      exited: false,
+      harness: 'claude',
+    });
   }
 
   initialTask(id: string) {
@@ -60,7 +65,9 @@ describe('ContextSummarizer re-entry recaps', () => {
   beforeEach(() => {
     now = 100_000;
     manager = new FakeManager();
-    summarize = vi.fn(async () => 'Tests passed; migration order needs approval.');
+    summarize = vi.fn(
+      async () => 'Tests passed; migration order needs approval.'
+    );
     service = new ContextSummarizer({
       recapAwayMs: 10_000,
       recapMinChars: 20,
@@ -85,9 +92,12 @@ describe('ContextSummarizer re-entry recaps', () => {
     manager.data('a', 'old output that was already seen\n');
     service.setWindowFocused(false);
     now += 12_000;
-    manager.data('a', '\x1b[32mnew tests passed and now a decision is waiting\x1b[0m');
+    manager.data(
+      'a',
+      '\x1b[32mnew tests passed and now a decision is waiting\x1b[0m'
+    );
 
-    const recap = new Promise((resolve) => service.once('recap', resolve));
+    const recap = new Promise(resolve => service.once('recap', resolve));
     service.setWindowFocused(true);
     await expect(recap).resolves.toMatchObject({
       id: 'a',
@@ -102,7 +112,7 @@ describe('ContextSummarizer re-entry recaps', () => {
 
   it('stays silent for short absences or insignificant output', async () => {
     const events: unknown[] = [];
-    service.on('recap', (event) => events.push(event));
+    service.on('recap', event => events.push(event));
     service.setWindowFocused(false);
     now += 5_000;
     manager.data('a', 'substantial output that arrived too soon');
@@ -122,10 +132,10 @@ describe('ContextSummarizer re-entry recaps', () => {
   it('drops a generated recap when the operator engages first', async () => {
     let resolveSummary: (value: string) => void = () => {};
     summarize.mockImplementation(
-      () => new Promise<string>((resolve) => (resolveSummary = resolve))
+      () => new Promise<string>(resolve => (resolveSummary = resolve))
     );
     const events: unknown[] = [];
-    service.on('recap', (event) => events.push(event));
+    service.on('recap', event => events.push(event));
     service.setWindowFocused(false);
     now += 20_000;
     manager.data('a', 'enough meaningful output arrived while away');
@@ -152,10 +162,10 @@ describe('ContextSummarizer re-entry recaps', () => {
   it('drops an in-flight recap when its session exits', async () => {
     let resolveSummary: (value: string) => void = () => {};
     summarize.mockImplementation(
-      () => new Promise<string>((resolve) => (resolveSummary = resolve))
+      () => new Promise<string>(resolve => (resolveSummary = resolve))
     );
     const events: unknown[] = [];
-    service.on('recap', (event) => events.push(event));
+    service.on('recap', event => events.push(event));
     service.setWindowFocused(false);
     now += 20_000;
     manager.data('a', 'enough meaningful output arrived while away');
@@ -246,8 +256,17 @@ describe('goal-oriented subtitles (D18)', () => {
     expect(acceptableSubtitle('It looks like a build session')).toBe(false);
     expect(acceptableSubtitle('As an AI I lack context')).toBe(false);
     expect(acceptableSubtitle('Summarize the scrollback contents')).toBe(false);
-    expect(acceptableSubtitle('Summarizing recent terminal output')).toBe(false);
+    expect(acceptableSubtitle('Summarizing recent terminal output')).toBe(
+      false
+    );
     expect(acceptableSubtitle('Fix build\x07pipeline')).toBe(false);
+    expect(
+      acceptableSubtitle("Based on my exploration, here's what I found:")
+    ).toBe(false);
+    expect(acceptableSubtitle('Auth migration based on my investigation')).toBe(
+      false
+    );
+    expect(acceptableSubtitle('one two three four five six seven')).toBe(false);
   });
 
   it('truncates at a word boundary with an ellipsis, never mid-word', () => {
@@ -363,11 +382,14 @@ describe('sweep output guardrails', () => {
   it('sends the next sweep to the runner-up session while a confused one cools down (D28)', async () => {
     manager.addSession('b', 'db');
     manager.data('a', 'the busiest but most confusing session '.repeat(30));
-    manager.data('b', 'a quieter session with a clear release goal '.repeat(12));
+    manager.data(
+      'b',
+      'a quieter session with a clear release goal '.repeat(12)
+    );
 
     await runSweep();
     expect(summarize).toHaveBeenCalledOnce();
-    expect((summarize.mock.calls[0][0] as string)).toContain(
+    expect(summarize.mock.calls[0][0] as string).toContain(
       'most confusing session'
     );
 
@@ -376,7 +398,7 @@ describe('sweep output guardrails', () => {
     summarize.mockResolvedValueOnce('Ship the release');
     await runSweep();
     expect(summarize).toHaveBeenCalledTimes(2);
-    expect((summarize.mock.calls[1][0] as string)).toContain(
+    expect(summarize.mock.calls[1][0] as string).toContain(
       'clear release goal'
     );
     expect(service.getSummary('db')).toBe('Ship the release');
@@ -464,14 +486,32 @@ describe('durable session goals (D21)', () => {
     service.on('context', (id: string, summary: string) =>
       events.push([id, summary])
     );
-    service.restore('da', 'Fix YC intake feature');
-    service.restore('da', 'A different stale copy');
+    expect(service.restore('da', 'Fix YC intake feature')).toBe(
+      'Fix YC intake feature'
+    );
+    expect(service.restore('da', 'A different stale copy')).toBe(
+      'Fix YC intake feature'
+    );
     expect(service.getSummary('da')).toBe('Fix YC intake feature');
     expect(events).toEqual([['da', 'Fix YC intake feature']]);
 
     service.seedFromTask('other', 'Ship the composer');
     service.restore('other', 'An older persisted goal');
     expect(service.getSummary('other')).toBe('Ship the composer');
+  });
+
+  it('rejects persisted model preambles so they cannot anchor KEEP forever', () => {
+    const events: Array<[string, string]> = [];
+    service.on('context', (id: string, summary: string) =>
+      events.push([id, summary])
+    );
+
+    expect(
+      service.restore('da', "Based on my exploration, here's what I found:")
+    ).toBeNull();
+
+    expect(service.getSummary('da')).toBeNull();
+    expect(events).toEqual([]);
   });
 
   it('keeps the captured session head after the buffer trims it away', async () => {

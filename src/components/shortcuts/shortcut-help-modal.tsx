@@ -20,7 +20,7 @@ import { shortcutRegistry } from '@/lib/shortcuts';
 import { formatShortcutKeys } from '@/lib/shortcuts/format';
 import { ShortcutBadge } from './shortcut-badge';
 import {
-  AttentionBell,
+  AttentionMarker,
   SessionStatusGlyph,
 } from '@/components/workspace/status-glyphs';
 import type { KeyBinding, ShortcutCategory } from '@/types/shortcuts';
@@ -32,9 +32,9 @@ const STATUS_LEGEND: Array<{
   meaning: string;
 }> = [
   {
-    glyph: <AttentionBell />,
-    label: 'needs you',
-    meaning: 'waiting on your input — ⌘J jumps there',
+    glyph: <AttentionMarker />,
+    label: 'unseen',
+    meaning: 'finished or requested input — ⌘J jumps there',
   },
   {
     glyph: <SessionStatusGlyph state="working" />,

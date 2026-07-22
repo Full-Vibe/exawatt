@@ -64,7 +64,7 @@ import {
 } from '@/components/nav/surfaces';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import {
-  AttentionBell,
+  AttentionMarker,
   SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
 } from '@/components/workspace/status-glyphs';
@@ -79,10 +79,7 @@ import type { Project } from '@/lib/projects/registry';
 import { HUD } from '@/components/hud';
 import type { ShortcutKeys } from '@/types/shortcuts';
 import type { CommandAltitude } from '@/components/nav/command-altitude';
-import type {
-  PtyHarness,
-  ClosedSessionEntry,
-} from '@/types/electron';
+import type { PtyHarness, ClosedSessionEntry } from '@/types/electron';
 import { useShortcutRegistryVersion } from './use-effective-shortcut';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 import {
@@ -596,7 +593,7 @@ export function CommandPalette({
                       style={{ color: status.color }}
                     >
                       {s.status === 'needs-you' ? (
-                        <AttentionBell />
+                        <AttentionMarker />
                       ) : s.status !== 'exited' ? (
                         <SessionStatusGlyph state={s.status} />
                       ) : null}
@@ -628,7 +625,9 @@ export function CommandPalette({
                   >
                     <HarnessGlyph harness={source} size={13} />
                   </span>
-                  <span>Start Agent with {AGENT_SOURCE_META[source].label}</span>
+                  <span>
+                    Start Agent with {AGENT_SOURCE_META[source].label}
+                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>

@@ -1,4 +1,4 @@
-// No 'use client' directive: only imported by client workspace components.
+'use client';
 
 /**
  * Session turn-state icons (ENG-016 D30, amends D22/D24) — shared by the
@@ -14,9 +14,8 @@
  * redundant, and the ⌘/ cheat sheet carries the text legend:
  *   working  — teal half-fill pie, breathing softly (subtle motion
  *              doctrine: no spinners)
- *   needs-you— amber BELL with the ping halo — the attention monitor's own
- *              vocabulary (it detects terminal bells); deliberately not an
- *              alarm triangle (operator: less alarming)
+ *   unseen   — static amber dot-in-circle: a calm unread marker, never an
+ *              alarm and never ambient motion
  *   done     — green circled check: a turn finished, ball in your court
  *   fresh    — dashed hollow circle: live but never given work
  *   quiet    — plain hollow circle: shells between output
@@ -25,13 +24,21 @@
  * evals, and every consumer keep working. All glyphs render in the same
  * GLYPH_BOX footprint: state changes never nudge the row.
  */
-import { Bell, Circle, CircleCheck, CircleDashed } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Circle, CircleCheck, CircleDashed, CircleDot } from 'lucide-react';
 import { HUD } from '@/components/hud';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { ATTENTION_GLYPH_COPY, SESSION_GLYPH_COPY } from './session-status';
 import type { SessionGlyphState } from './session-status';
 
 // Keep the established import surface for existing renderers while the
 // state model itself stays usable from render-free mapping code.
 export {
+  ATTENTION_GLYPH_COPY,
   SESSION_GLYPH_COPY,
   SESSION_GLYPH_LABEL,
   sessionGlyphState,
@@ -43,6 +50,35 @@ const GLYPH_BOX =
   'inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center';
 
 const ICON = 13;
+
+/** One shared explanation surface keeps strip, overview, and ⌘K semantics
+ *  in lockstep. The trigger is the fixed glyph footprint, so hover never
+ *  changes row geometry. */
+function StatusTooltip({
+  copy,
+  children,
+}: {
+  copy: string;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip delayDuration={250}>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent
+        side="bottom"
+        sideOffset={7}
+        className="max-w-64 border px-2.5 py-1.5 font-mono text-[11px] leading-4 shadow-xl"
+        style={{
+          color: HUD.text,
+          background: HUD.bg.panel,
+          borderColor: HUD.strokeSoft,
+        }}
+      >
+        {copy}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 /** working — half-fill pie: in-progress by SHAPE (Linear's language), with
  *  a soft breathing pulse as the motion channel */
@@ -72,72 +108,72 @@ function WorkingPie() {
   );
 }
 
-/** needs-operator (S1/D30) — the bell rings until you look */
-export function AttentionBell() {
+/** unseen operator update (S1/D33) — calm at rest, explicit on hover */
+export function AttentionMarker() {
   return (
-    <span data-attention className={GLYPH_BOX}>
-      <span className="relative inline-flex items-center justify-center">
-        <span
-          className="absolute inline-flex h-2.5 w-2.5 animate-ping rounded-full motion-reduce:animate-none"
-          style={{ background: HUD.amber, opacity: 0.45 }}
-        />
-        <Bell
+    <StatusTooltip copy={ATTENTION_GLYPH_COPY}>
+      <span data-attention className={GLYPH_BOX}>
+        <CircleDot
           size={ICON}
           aria-hidden="true"
-          className="relative"
-          style={{
-            color: HUD.amber,
-            fill: HUD.amber,
-            filter: `drop-shadow(0 0 3px ${HUD.amber}88)`,
-          }}
+          strokeWidth={1.8}
+          style={{ color: HUD.amber }}
         />
       </span>
-    </span>
+    </StatusTooltip>
   );
 }
 
 export function SessionStatusGlyph({ state }: { state: SessionGlyphState }) {
   if (state === 'working') {
     return (
-      <span data-status="working" className={GLYPH_BOX}>
-        <WorkingPie />
-      </span>
+      <StatusTooltip copy={SESSION_GLYPH_COPY.working}>
+        <span data-status="working" className={GLYPH_BOX}>
+          <WorkingPie />
+        </span>
+      </StatusTooltip>
     );
   }
   if (state === 'done') {
     return (
-      <span data-status="done" className={GLYPH_BOX}>
-        <CircleCheck
-          size={ICON}
-          aria-hidden="true"
-          style={{
-            color: HUD.green,
-            filter: `drop-shadow(0 0 3px ${HUD.green}55)`,
-          }}
-        />
-      </span>
+      <StatusTooltip copy={SESSION_GLYPH_COPY.done}>
+        <span data-status="done" className={GLYPH_BOX}>
+          <CircleCheck
+            size={ICON}
+            aria-hidden="true"
+            style={{
+              color: HUD.green,
+              filter: `drop-shadow(0 0 3px ${HUD.green}55)`,
+            }}
+          />
+        </span>
+      </StatusTooltip>
     );
   }
   if (state === 'fresh') {
     return (
-      <span data-status="fresh" className={GLYPH_BOX}>
-        <CircleDashed
-          size={ICON}
-          aria-hidden="true"
-          className="opacity-70"
-          style={{ color: HUD.idle }}
-        />
-      </span>
+      <StatusTooltip copy={SESSION_GLYPH_COPY.fresh}>
+        <span data-status="fresh" className={GLYPH_BOX}>
+          <CircleDashed
+            size={ICON}
+            aria-hidden="true"
+            className="opacity-70"
+            style={{ color: HUD.idle }}
+          />
+        </span>
+      </StatusTooltip>
     );
   }
   return (
-    <span data-status={state} className={GLYPH_BOX}>
-      <Circle
-        size={ICON}
-        aria-hidden="true"
-        className="opacity-60"
-        style={{ color: HUD.idle }}
-      />
-    </span>
+    <StatusTooltip copy={SESSION_GLYPH_COPY.quiet}>
+      <span data-status={state} className={GLYPH_BOX}>
+        <Circle
+          size={ICON}
+          aria-hidden="true"
+          className="opacity-60"
+          style={{ color: HUD.idle }}
+        />
+      </span>
+    </StatusTooltip>
   );
 }

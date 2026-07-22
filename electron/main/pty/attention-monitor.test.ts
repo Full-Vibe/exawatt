@@ -19,7 +19,7 @@ interface FakeSession {
 class FakeManager extends EventEmitter {
   sessions: FakeSession[] = [];
   list() {
-    return this.sessions.map((s) => ({ ...s }));
+    return this.sessions.map(s => ({ ...s }));
   }
 }
 
@@ -308,21 +308,50 @@ describe('AttentionMonitor activity truth (D18)', () => {
     expect(monitor.isWorking('a')).toBe(false);
   });
 
-  it('output right after OUR resize is a WINCH redraw, not work (D24)', () => {
+  it('guards synchronous WINCH output before resizing the PTY (D24)', () => {
     manager.sessions.push({
       id: 'a',
       harness: 'claude',
       startedAt: 0,
       exited: false,
     });
-    monitor.noteResize('a');
-    manager.emit('data', 'a', 'full TUI repaint after WINCH');
+    monitor.runWithResizeGuard('a', () => {
+      // node-pty may emit this synchronously from resize(); the guard must
+      // exist before the side effect begins, not after resize returns.
+      manager.emit('data', 'a', 'full TUI repaint after WINCH');
+    });
     expect(monitor.isWorking('a')).toBe(false);
     expect(transitions).toEqual([]);
     // real output beyond the grace window still reads as working
     clock += 2500;
     manager.emit('data', 'a', 'genuine agent output');
     expect(monitor.isWorking('a')).toBe(true);
+  });
+
+  it('treats BEL as a turn boundary, never as stale working output', () => {
+    manager.sessions.push({
+      id: 'a',
+      harness: 'claude',
+      startedAt: 0,
+      exited: false,
+    });
+    manager.emit('data', 'a', 'streaming output');
+    expect(monitor.isWorking('a')).toBe(true);
+
+    manager.emit('data', 'a', `waiting for the operator${BELL}`);
+
+    expect(monitor.get('a')?.kind).toBe('bell');
+    expect(monitor.isWorking('a')).toBe(false);
+    expect(transitions).toEqual([
+      { id: 'a', working: true },
+      { id: 'a', working: false },
+    ]);
+
+    monitor.setWindowFocused(true);
+    monitor.setFocus('a');
+    clock += 5000;
+    monitor.sweepNow();
+    expect(monitor.get('a')).toBeNull();
   });
 
   it('drops the working state when the session exits', () => {
