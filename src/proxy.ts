@@ -8,6 +8,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 // public paths skip auth entirely instead of blocking on a Supabase
 // round-trip whose result is discarded.
 const PUBLIC_PREFIXES = [
+  '/api/dev-identity',
   '/api/oc',
   '/sign-in',
   '/sign-up',

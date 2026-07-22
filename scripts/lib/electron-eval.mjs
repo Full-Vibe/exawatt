@@ -16,6 +16,8 @@
 
 import { _electron as electron } from 'playwright-core';
 import { execSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
+import { assertNodePtyBuilt } from './native-preflight.mjs';
 
 /** Kill any orphaned exawatt/playwright Electron left by a prior SIGKILLed run,
  *  so a stale orphan can't poison this launch. Scoped to playwright-launched
@@ -40,13 +42,86 @@ export function sweepOrphans() {
  * @param {(app: any, page: any) => Promise<any>} body
  * @param {{ maxMs?: number, firstWindowMs?: number }} [opts]
  */
+/** With parallel agent worktrees, the port an eval points at may serve a
+ *  DIFFERENT checkout — the eval then silently exercises the wrong code.
+ *  Every dev-server-backed launch verifies /api/dev-identity (dev-only
+ *  route) against the tree under test and refuses a mismatch. */
+export async function assertDevServerServesTree(devUrl, evalRoot) {
+  let origin;
+  try {
+    origin = new URL(devUrl).origin;
+  } catch {
+    return; // not a URL (packaged-app eval) — nothing to verify
+  }
+  let response;
+  try {
+    // generous timeout: next dev compiles the route on first hit
+    response = await fetch(`${origin}/api/dev-identity`, {
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new Error(
+      `No dev server is answering at ${origin} — start one from ` +
+        `${evalRoot} (pnpm dev -p <port>) and point EXA_BASE at it.`
+    );
+  }
+  if (response.status === 404) {
+    // an older tree without the identity route (or a prod server): the
+    // one legitimately unverifiable case — tolerate with a warning
+    console.warn(
+      `[harness] ${origin}/api/dev-identity returned 404 — ` +
+        'cannot verify which checkout this dev server serves'
+    );
+    return;
+  }
+  if (!response.ok) {
+    throw new Error(
+      `The dev server at ${origin} is unhealthy ` +
+        `(/api/dev-identity returned ${response.status}) — often a stale ` +
+        `server whose worktree was deleted. Kill the listener on that ` +
+        `port and start pnpm dev from ${evalRoot}.`
+    );
+  }
+  const { repoRoot } = await response.json();
+  const served = realpathSync(repoRoot);
+  const expected = realpathSync(evalRoot);
+  if (served !== expected) {
+    throw new Error(
+      `WRONG TREE: the dev server at ${origin} serves\n  ${served}\n` +
+        `but this eval is testing\n  ${expected}\n` +
+        `Start pnpm dev from the tree under test on a free port and set EXA_BASE.`
+    );
+  }
+}
+
 export async function withElectronApp(launchOpts, body, opts = {}) {
   const maxMs = opts.maxMs ?? 90_000;
   const firstWindowMs = opts.firstWindowMs ?? 25_000;
   const gracefulMs = opts.gracefulMs ?? 8_000;
+  const evalRoot = launchOpts.cwd ?? process.cwd();
+  // fail BEFORE launch with the real cause, not a per-spawn
+  // "posix_spawnp failed." banner deep inside the app
+  assertNodePtyBuilt(evalRoot);
+  const devUrl = launchOpts.env?.EXAWATT_DEV_URL;
+  if (devUrl) await assertDevServerServesTree(devUrl, evalRoot);
   sweepOrphans();
 
-  const app = await electron.launch({ timeout: 30_000, ...launchOpts });
+  let app;
+  try {
+    app = await electron.launch({ timeout: 30_000, ...launchOpts });
+  } catch (error) {
+    if (!String(error?.message ?? error).includes('Process failed to launch')) {
+      throw error;
+    }
+    // a prior SIGKILLed run's orphans can poison the next launch even
+    // after one sweep — sweep again and retry ONCE before failing
+    console.error(
+      '[harness] Electron failed to launch — sweeping orphans and retrying once'
+    );
+    sweepOrphans();
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    app = await electron.launch({ timeout: 30_000, ...launchOpts });
+  }
   const pid = app.process().pid;
   let done = false;
 
