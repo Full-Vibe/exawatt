@@ -1,7 +1,6 @@
 import type { BrowserWindow } from 'electron';
 
 interface DirectoryPickerDependencies {
-  platform: NodeJS.Platform;
   showOpenDialog: (
     parent: BrowserWindow | null,
     options: Electron.OpenDialogOptions
@@ -11,17 +10,16 @@ interface DirectoryPickerDependencies {
 /**
  * Owns the native directory-panel lifecycle.
  *
- * macOS sheets disable their parent BrowserWindow until AppKit finishes the
- * panel request. If Finder is slow to resolve a location (or the panel lands
- * on another display), Exawatt therefore looks hung even though its event loop
- * is healthy. A standalone panel keeps the command surface responsive. Other
- * platforms retain normal parent-window modality.
+ * Keep the panel owned by the requesting BrowserWindow whenever it is alive.
+ * On macOS that makes the picker a sheet attached to Exawatt instead of an
+ * independent panel that can open behind the app or on another display/Space.
+ * The renderer releases its Radix modal before invoking this boundary, so the
+ * native sheet is the only active modal layer while the operator is browsing.
  *
  * The single-flight guard also prevents a double click or two renderer verbs
  * from stacking native panels over the same window.
  */
 export function createDirectoryPicker({
-  platform,
   showOpenDialog,
 }: DirectoryPickerDependencies) {
   let pending: Promise<string | null> | null = null;
@@ -45,9 +43,7 @@ export function createDirectoryPicker({
     };
 
     const request = Promise.resolve()
-      .then(() =>
-        showOpenDialog(platform === 'darwin' ? null : usableParent, options)
-      )
+      .then(() => showOpenDialog(usableParent, options))
       .then(result =>
         result.canceled || result.filePaths.length === 0
           ? null

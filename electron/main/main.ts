@@ -112,7 +112,6 @@ let startupStage: StartupStage = {
 const pendingCheckpoints = new Map<string, (ok: boolean) => void>();
 const workspaceCheckpointOwners = new Set<number>();
 const openDirectoryPicker = createDirectoryPicker({
-  platform: process.platform,
   showOpenDialog: (parent, options) =>
     parent
       ? dialog.showOpenDialog(parent, options)

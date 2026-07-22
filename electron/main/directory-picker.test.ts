@@ -10,7 +10,7 @@ function parentWindow() {
 }
 
 describe('native directory picker', () => {
-  it('uses a standalone panel on macOS so the command window stays enabled', async () => {
+  it('attaches the panel to the requesting window on macOS', async () => {
     const parent = parentWindow();
     const showOpenDialog = vi.fn().mockResolvedValue({
       canceled: false,
@@ -18,7 +18,6 @@ describe('native directory picker', () => {
       bookmarks: [],
     });
     const openDirectory = createDirectoryPicker({
-      platform: 'darwin',
       showOpenDialog,
     });
 
@@ -26,26 +25,27 @@ describe('native directory picker', () => {
       '/project'
     );
     expect(parent.focus).toHaveBeenCalledOnce();
-    expect(showOpenDialog).toHaveBeenCalledWith(null, {
+    expect(showOpenDialog).toHaveBeenCalledWith(parent, {
       title: 'Open Project',
       properties: ['openDirectory', 'createDirectory'],
     });
   });
 
-  it('keeps parent-window modality on other platforms', async () => {
+  it('falls back to a standalone panel when the requesting window is gone', async () => {
     const parent = parentWindow();
+    vi.mocked(parent.isDestroyed).mockReturnValue(true);
     const showOpenDialog = vi.fn().mockResolvedValue({
       canceled: true,
       filePaths: [],
       bookmarks: [],
     });
     const openDirectory = createDirectoryPicker({
-      platform: 'win32',
       showOpenDialog,
     });
 
     await expect(openDirectory(parent)).resolves.toBeNull();
-    expect(showOpenDialog).toHaveBeenCalledWith(parent, {
+    expect(parent.focus).not.toHaveBeenCalled();
+    expect(showOpenDialog).toHaveBeenCalledWith(null, {
       title: 'Open project directory',
       properties: ['openDirectory', 'createDirectory'],
     });
@@ -60,7 +60,6 @@ describe('native directory picker', () => {
         })
     );
     const openDirectory = createDirectoryPicker({
-      platform: 'darwin',
       showOpenDialog,
     });
 
