@@ -102,6 +102,8 @@ export interface WorkspaceTab {
   /** draft tabs only: the source model resolved or explicitly selected for
    * this launch. It travels with the draft, never mutates harness config. */
   draftModel?: string | null;
+  /** draft tabs only: the reasoning effort paired with the selected model. */
+  draftEffort?: string | null;
 }
 
 export type TabTitleKind = 'default' | 'operator';
@@ -235,6 +237,7 @@ export interface PersistedV6 {
       draftTask?: string | null;
       draftSource?: string | null;
       draftModel?: string | null;
+      draftEffort?: string | null;
     }>;
   }>;
 }
@@ -484,6 +487,8 @@ export interface LaunchOptions {
   permissionMode?: AgentPermissionMode;
   /** model pinned for this launch after resolving the source's current default */
   model?: string;
+  /** reasoning effort pinned for this launch; omitted for a harness default */
+  effort?: string;
   /** optional first user task for a new interactive Agent Session */
   initialPrompt?: string;
   /** Resume one provider conversation by its durable harness identity. */
@@ -759,7 +764,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           tabs: g.tabs.map(raw => {
             // the persisted draft fields stay OFF non-draft tabs (and the
             // untyped draftSource string never reaches WorkspaceTab)
-            const { draftTask, draftSource, draftModel, ...t } = raw;
+            const { draftTask, draftSource, draftModel, draftEffort, ...t } =
+              raw;
             // a persisted draft (D28) restores as a draft: no process, no
             // resume identity — just the composer with the saved work
             if (t.lifecycle === 'draft') {
@@ -779,6 +785,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                   draftModel.length <= 512 &&
                   !/[\s\u0000-\u001f\u007f]/.test(draftModel)
                     ? draftModel
+                    : null,
+                draftEffort:
+                  typeof draftEffort === 'string' &&
+                  draftEffort.length <= 32 &&
+                  /^[a-z][a-z0-9_-]*$/.test(draftEffort)
+                    ? draftEffort
                     : null,
               };
             }
@@ -1043,6 +1055,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                       draftTask: tab.draftTask ?? null,
                       draftSource: tab.draftSource ?? null,
                       draftModel: tab.draftModel ?? null,
+                      draftEffort: tab.draftEffort ?? null,
                     }
                   : {}),
               };
@@ -1206,6 +1219,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             ? { permissionMode: opts.permissionMode }
             : {}),
           ...(opts.model?.trim() ? { model: opts.model.trim() } : {}),
+          ...(opts.effort?.trim() ? { effort: opts.effort.trim() } : {}),
           ...(opts.initialPrompt?.trim()
             ? { initialPrompt: opts.initialPrompt.trim() }
             : {}),
@@ -1310,6 +1324,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                                 t.draftSource === requested
                                   ? (t.draftModel ?? null)
                                   : null,
+                              draftEffort:
+                                t.draftSource === requested
+                                  ? (t.draftEffort ?? null)
+                                  : null,
                             }
                           : t
                       )
@@ -1338,6 +1356,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         draftSource: requested,
         draftTask: null,
         draftModel: null,
+        draftEffort: null,
       };
       setProjects(prev =>
         prev.map(grp =>
@@ -1363,6 +1382,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         draftTask?: string;
         draftSource?: AgentSourceId;
         draftModel?: string | null;
+        draftEffort?: string | null;
       }
     ) => {
       setProjects(prev => {
@@ -1381,10 +1401,15 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           patch.draftModel === undefined
             ? (tab.draftModel ?? null)
             : patch.draftModel;
+        const draftEffort =
+          patch.draftEffort === undefined
+            ? (tab.draftEffort ?? null)
+            : patch.draftEffort;
         if (
           draftTask === (tab.draftTask ?? null) &&
           draftSource === (tab.draftSource ?? null) &&
-          draftModel === (tab.draftModel ?? null)
+          draftModel === (tab.draftModel ?? null) &&
+          draftEffort === (tab.draftEffort ?? null)
         ) {
           return prev;
         }
@@ -1394,7 +1419,13 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 ...g,
                 tabs: g.tabs.map(t =>
                   t.id === tabId
-                    ? { ...t, draftTask, draftSource, draftModel }
+                    ? {
+                        ...t,
+                        draftTask,
+                        draftSource,
+                        draftModel,
+                        draftEffort,
+                      }
                     : t
                 ),
               }

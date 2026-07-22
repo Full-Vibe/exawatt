@@ -25,12 +25,22 @@ export interface PtyCreateOptions {
   permissionMode?: AgentPermissionMode;
   /** Model choice resolved by the Agent Source and pinned for this launch. */
   model?: string;
+  /** Reasoning effort pinned for this launch; omitted for a harness default. */
+  effort?: string;
+}
+
+export interface AgentEffortOption {
+  id: string;
+  label: string;
+  description: string;
 }
 
 export interface AgentModelOption {
   id: string;
   label: string;
   description: string;
+  defaultEffort: string | null;
+  efforts: AgentEffortOption[];
 }
 
 export interface AgentModelCatalog {
@@ -41,6 +51,15 @@ export interface AgentModelCatalog {
     | 'harness-recommended'
     | 'account-default'
     | 'unavailable';
+  effectiveEffort: string | null;
+  effectiveEffortSource:
+    | 'config'
+    | 'model-default'
+    | 'environment'
+    | 'unavailable';
+  /** An environment override outranks CLI flags, so the UI must not promise a
+   * change that the harness would ignore. */
+  effortLocked: boolean;
   models: AgentModelOption[];
 }
 

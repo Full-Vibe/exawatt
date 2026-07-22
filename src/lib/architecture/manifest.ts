@@ -608,7 +608,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Adapters',
           summary:
-            'Registered source-first boundaries that discover models, translate launch choices and policy, query Project-scoped provider indexes, reconcile exact one-to-one Session identity, and describe source activity, evidence, and enforcement ownership.',
+            'Registered source-first boundaries that discover model/effort capabilities, translate launch choices and policy, query Project-scoped provider indexes, reconcile exact one-to-one Session identity, and describe source activity, evidence, and enforcement ownership.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,
@@ -754,7 +754,7 @@ export const architectureManifest = {
     'Open Session identity spans Terminal, Sessions, and Spatial; PTYs add live runtime state but do not define whether a Session-backed Agent exists.',
     'Logical Sessions survive local process death through explicit, deterministic rehydration; local processes do not outlive Exawatt.',
     'Agent sources are replaceable harnesses behind explicit adapters.',
-    'A new Agent launch shows and pins the source-resolved model; per-Agent overrides do not rewrite harness configuration.',
+    'A new Agent launch shows and pins the source-resolved model/effort pair; per-Agent overrides do not rewrite harness configuration, and dominant environment constraints stay explicit.',
     'Recent conversation discovery is Project-scoped, local-first, and source-neutral; exact identity reconciles Exawatt Session history with harness history before optional hosted title augmentation.',
     'Launch permission policy is source-agnostic and provider-enforced today; adapters translate visible personal Project defaults without silent escalation.',
     'Activity assurance is composable: reported, observed, authorized, enforced, and verified are independent claims, and unknowns stay visible.',

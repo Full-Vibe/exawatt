@@ -121,7 +121,7 @@ describe('buildHarnessCommand', () => {
     );
   });
 
-  it('pins a shell-quoted model for fresh and resumed Agents', () => {
+  it('pins shell-quoted model and effort choices for fresh and resumed Agents', () => {
     expect(
       buildHarnessCommand(
         'codex',
@@ -130,10 +130,11 @@ describe('buildHarnessCommand', () => {
         undefined,
         undefined,
         'unrestricted',
-        'gpt-5.6-terra'
+        'gpt-5.6-terra',
+        'max'
       )
     ).toBe(
-      "codex --dangerously-bypass-approvals-and-sandbox --model 'gpt-5.6-terra'"
+      `codex --dangerously-bypass-approvals-and-sandbox --model 'gpt-5.6-terra' -c 'model_reasoning_effort="max"'`
     );
     expect(
       buildHarnessCommand(
@@ -143,10 +144,11 @@ describe('buildHarnessCommand', () => {
         undefined,
         undefined,
         'prompt',
-        'claude-opus-4-7[1m]'
+        'claude-opus-4-7[1m]',
+        'xhigh'
       )
     ).toBe(
-      "claude --permission-mode default --model 'claude-opus-4-7[1m]' --resume 11111111-1111-4111-8111-111111111111"
+      "claude --permission-mode default --model 'claude-opus-4-7[1m]' --effort 'xhigh' --resume 11111111-1111-4111-8111-111111111111"
     );
     expect(() =>
       buildHarnessCommand(
@@ -159,6 +161,30 @@ describe('buildHarnessCommand', () => {
         'bad model'
       )
     ).toThrow('Invalid Agent model');
+    expect(() =>
+      buildHarnessCommand(
+        'claude',
+        null,
+        false,
+        undefined,
+        undefined,
+        'prompt',
+        'opus',
+        'extra high'
+      )
+    ).toThrow('Invalid Agent effort');
+    expect(
+      buildHarnessCommand(
+        'claude',
+        null,
+        false,
+        undefined,
+        undefined,
+        'prompt',
+        'opus',
+        'auto'
+      )
+    ).toBe("claude --permission-mode default --model 'opus'");
   });
 
   it('rejects oversized tasks and tasks on exact resume', () => {

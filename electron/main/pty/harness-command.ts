@@ -20,7 +20,8 @@ export function buildHarnessCommand(
   executable?: string,
   initialPrompt?: string,
   permissionMode: AgentPermissionMode = 'unrestricted',
-  model?: string
+  model?: string,
+  effort?: string
 ): string {
   if (harnessSessionId && !SAFE_SESSION_ID.test(harnessSessionId)) {
     throw new Error('Invalid harness session ID');
@@ -46,12 +47,23 @@ export function buildHarnessCommand(
   ) {
     throw new Error('Invalid Agent model');
   }
+  const selectedEffort = effort?.trim() ?? '';
+  if (
+    selectedEffort &&
+    (selectedEffort.length > 32 || !/^[a-z][a-z0-9_-]*$/.test(selectedEffort))
+  ) {
+    throw new Error('Invalid Agent effort');
+  }
   const descriptor = harnessDescriptor(harness);
   const command = executable ? shellQuote(executable) : descriptor.id;
   const baseInvocation = `${command} ${descriptor.permissionFlags(permissionMode)}`;
-  const invocation = selectedModel
+  const modelInvocation = selectedModel
     ? descriptor.modelInvocation(baseInvocation, shellQuote(selectedModel))
     : baseInvocation;
+  const invocation =
+    selectedEffort && selectedEffort !== 'auto'
+      ? descriptor.effortInvocation(modelInvocation, selectedEffort)
+      : modelInvocation;
   if (resume) {
     if (!harnessSessionId)
       throw new Error('Exact session ID required to resume');

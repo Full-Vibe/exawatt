@@ -6,8 +6,13 @@ interface HarnessLaunchDescriptor {
   allocatesFreshSessionId: boolean;
   permissionFlags: (mode: AgentPermissionMode) => string;
   modelInvocation: (invocation: string, quotedModel: string) => string;
+  effortInvocation: (invocation: string, effort: string) => string;
   resumeInvocation: (invocation: string, sessionId: string) => string;
   freshInvocation: (invocation: string, sessionId: string | null) => string;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
 const workspaceReviewFlags = (mode: AgentPermissionMode): string =>
@@ -29,6 +34,8 @@ const descriptors = {
           : '--dangerously-skip-permissions',
     modelInvocation: (invocation, quotedModel) =>
       `${invocation} --model ${quotedModel}`,
+    effortInvocation: (invocation, effort) =>
+      `${invocation} --effort ${shellQuote(effort)}`,
     resumeInvocation: (invocation, sessionId) =>
       `${invocation} --resume ${sessionId}`,
     freshInvocation: (invocation, sessionId) =>
@@ -40,6 +47,8 @@ const descriptors = {
     permissionFlags: workspaceReviewFlags,
     modelInvocation: (invocation, quotedModel) =>
       `${invocation} --model ${quotedModel}`,
+    effortInvocation: (invocation, effort) =>
+      `${invocation} -c ${shellQuote(`model_reasoning_effort="${effort}"`)}`,
     resumeInvocation: (invocation, sessionId) =>
       `${invocation} resume ${sessionId}`,
     freshInvocation: invocation => invocation,

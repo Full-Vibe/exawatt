@@ -359,8 +359,14 @@ try {
         '[aria-label="Agent Source"]'
       );
       const modelElement = document.querySelector('[aria-label="Agent model"]');
+      const effortElement = document.querySelector(
+        '[aria-label="Agent effort"]'
+      );
       const permissionElement = document.querySelector(
         '[aria-label="Agent permissions"]'
+      );
+      const optionsElement = document.querySelector(
+        '[aria-label="Agent launch options"]'
       );
       if (
         !(chromeElement instanceof HTMLElement) ||
@@ -368,7 +374,9 @@ try {
         !(taskElement instanceof HTMLTextAreaElement) ||
         !(sourceElement instanceof HTMLElement) ||
         !(modelElement instanceof HTMLElement) ||
-        !(permissionElement instanceof HTMLElement)
+        !(effortElement instanceof HTMLElement) ||
+        !(permissionElement instanceof HTMLElement) ||
+        !(optionsElement instanceof HTMLElement)
       ) {
         throw new Error('Workspace chrome fixture did not render');
       }
@@ -391,7 +399,12 @@ try {
         },
         sourceWidth: sourceElement.getBoundingClientRect().width,
         modelWidth: modelElement.getBoundingClientRect().width,
+        effortWidth: effortElement.getBoundingClientRect().width,
         permissionWidth: permissionElement.getBoundingClientRect().width,
+        options: {
+          left: optionsElement.getBoundingClientRect().left,
+          right: optionsElement.getBoundingClientRect().right,
+        },
         task: {
           width: taskRect.width,
           clientHeight: taskElement.clientHeight,
@@ -436,14 +449,27 @@ try {
         `Agent Source collapsed at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
-    if (metrics.modelWidth < 167) {
+    if (metrics.modelWidth < (width === 560 ? 151 : 167)) {
       throw new Error(
         `Agent model collapsed at ${width}px: ${JSON.stringify(metrics)}`
+      );
+    }
+    if (metrics.effortWidth < (width === 560 ? 95 : 111)) {
+      throw new Error(
+        `Agent effort collapsed at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
     if (metrics.permissionWidth < 79) {
       throw new Error(
         `Agent permission policy collapsed at ${width}px: ${JSON.stringify(metrics)}`
+      );
+    }
+    if (
+      metrics.options.left < metrics.panel.left - 1 ||
+      metrics.options.right > metrics.panel.right + 1
+    ) {
+      throw new Error(
+        `Agent launch options are clipped at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
     // subtitles no longer yield to the composer: the strip owns its row and

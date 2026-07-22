@@ -67,6 +67,8 @@ export interface PtyCreateOptions {
   permissionMode?: AgentPermissionMode;
   /** Model choice resolved by the source catalog and pinned for this launch. */
   model?: string;
+  /** Reasoning effort resolved beside the model and pinned for this launch. */
+  effort?: string;
 }
 
 export interface PtySessionInfo {
@@ -249,7 +251,8 @@ export class PtySessionManager extends EventEmitter {
               testHarnessExecutable,
               options.initialPrompt,
               options.permissionMode,
-              options.model
+              options.model,
+              options.effort
             ),
           ];
 

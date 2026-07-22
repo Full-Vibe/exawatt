@@ -41,7 +41,7 @@ for (const source of ['claude', 'codex']) {
     executable,
     `#!/bin/sh
 if [ "$1" = "debug" ] && [ "$2" = "models" ]; then
-  printf '%s\\n' '{"models":[{"slug":"eval-codex-sol","display_name":"Eval Codex Sol","description":"Frontier evaluator model.","visibility":"list","priority":1},{"slug":"eval-codex-terra","display_name":"Eval Codex Terra","description":"Balanced evaluator model.","visibility":"list","priority":2}]}'
+  printf '%s\\n' '{"models":[{"slug":"eval-codex-sol","display_name":"Eval Codex Sol","description":"Frontier evaluator model.","visibility":"list","priority":1,"default_reasoning_level":"low","supported_reasoning_levels":[{"effort":"low","description":"Fast evaluator reasoning."},{"effort":"high","description":"Deep evaluator reasoning."},{"effort":"max","description":"Maximum evaluator reasoning."}]},{"slug":"eval-codex-terra","display_name":"Eval Codex Terra","description":"Balanced evaluator model.","visibility":"list","priority":2,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low","description":"Fast evaluator reasoning."},{"effort":"medium","description":"Balanced evaluator reasoning."},{"effort":"high","description":"Deep evaluator reasoning."},{"effort":"max","description":"Maximum evaluator reasoning."}]}]}'
   exit 0
 fi
 if [ "$1" = "-p" ]; then printf 'fixture context'; exit 0; fi
@@ -263,6 +263,30 @@ try {
           'Account default'
         )
       );
+      const claudeEffortTrigger = page.getByLabel('Agent effort');
+      await page.waitForFunction(() =>
+        document
+          .querySelector('[aria-label="Agent effort"]')
+          ?.textContent?.includes('Auto')
+      );
+      check(
+        'the composer shows Claude effort beside its model',
+        (await claudeEffortTrigger.innerText()).includes('Auto')
+      );
+      await claudeEffortTrigger.click();
+      const claudeEffortMenu = page.getByRole('listbox');
+      await claudeEffortMenu.waitFor();
+      check(
+        'Claude effort choices explain the speed-depth tradeoff',
+        (await claudeEffortMenu.innerText()).includes('Fastest for short') &&
+          (await claudeEffortMenu.innerText()).includes('Extra high') &&
+          (await claudeEffortMenu.innerText()).includes('DEFAULT')
+      );
+      await page.getByRole('option', { name: /High.*Strong balance/i }).click();
+      check(
+        'the operator can override Claude effort for one new Agent',
+        (await claudeEffortTrigger.innerText()).includes('High')
+      );
       check(
         'new Project and source pair visibly defaults to YOLO',
         (await page.getByLabel('Agent permissions').innerText()).includes(
@@ -325,6 +349,8 @@ try {
       check('Claude Code receives the visible YOLO policy', true);
       await waitForBuffer(page, current[0].id, '<--model><default>');
       check('Claude Code receives the visible model choice', true);
+      await waitForBuffer(page, current[0].id, '<--effort><high>');
+      check('Claude Code receives the visible effort override', true);
 
       await page.keyboard.press('Control+Meta+3');
       await page.waitForURL(
@@ -416,6 +442,34 @@ try {
         'the operator can override the model for one new Agent',
         (await modelTrigger.innerText()).includes('Eval Codex Terra')
       );
+      const effortTrigger = page.getByLabel('Agent effort');
+      check(
+        'changing models reveals that model’s default effort',
+        (await effortTrigger.innerText()).includes('Medium')
+      );
+      await effortTrigger.click();
+      const effortMenu = page.getByRole('listbox');
+      await effortMenu.waitFor();
+      check(
+        'Codex effort choices come from the selected model catalog',
+        (await effortMenu.innerText()).includes(
+          'Balanced evaluator reasoning'
+        ) &&
+          (await effortMenu.innerText()).includes(
+            'Maximum evaluator reasoning'
+          ) &&
+          (await effortMenu.innerText()).includes('DEFAULT')
+      );
+      await page.screenshot({
+        path: join(output, '04-effort-options.png'),
+      });
+      await page
+        .getByRole('option', { name: /Max.*Maximum evaluator reasoning/i })
+        .click();
+      check(
+        'the operator can override Codex effort for one new Agent',
+        (await effortTrigger.innerText()).includes('Max')
+      );
       await page.getByLabel('Agent permissions').focus();
       await page.keyboard.press('Space');
       await page.locator('[role="listbox"]').waitFor();
@@ -486,6 +540,8 @@ try {
       check('Codex receives the visible Auto-review policy', true);
       await waitForBuffer(page, codex.id, '<--model><eval-codex-terra>');
       check('Codex receives the visible model override', true);
+      await waitForBuffer(page, codex.id, '<-c><model_reasoning_effort="max">');
+      check('Codex receives the visible effort override', true);
 
       await page.keyboard.press('Meta+KeyK');
       const palette = page.locator('[cmdk-list]');

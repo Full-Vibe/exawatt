@@ -51,6 +51,7 @@ export interface AgentSourceMeta {
     initialTask: boolean;
     exactResume: boolean;
     modelSelection: boolean;
+    effortSelection: boolean;
     permissionModes: readonly AgentPermissionMode[];
   };
 }
@@ -64,6 +65,7 @@ export const AGENT_SOURCE_META: Record<AgentSourceId, AgentSourceMeta> = {
       initialTask: true,
       exactResume: true,
       modelSelection: true,
+      effortSelection: true,
       permissionModes: AGENT_PERMISSION_MODE_ORDER,
     },
   },
@@ -75,6 +77,7 @@ export const AGENT_SOURCE_META: Record<AgentSourceId, AgentSourceMeta> = {
       initialTask: true,
       exactResume: true,
       modelSelection: true,
+      effortSelection: true,
       permissionModes: AGENT_PERMISSION_MODE_ORDER,
     },
   },
@@ -269,6 +272,10 @@ export async function loadAgentModelCatalog(
     effectiveModel: source === 'claude' ? 'default' : null,
     effectiveModelSource:
       source === 'claude' ? 'account-default' : 'unavailable',
+    effectiveEffort: source === 'claude' ? 'auto' : null,
+    effectiveEffortSource:
+      source === 'claude' ? 'model-default' : 'unavailable',
+    effortLocked: false,
     models:
       source === 'claude'
         ? [
@@ -277,6 +284,15 @@ export async function loadAgentModelCatalog(
               label: 'Account default',
               description:
                 'Claude Code chooses the recommended model for your account.',
+              defaultEffort: 'auto',
+              efforts: [
+                {
+                  id: 'auto',
+                  label: 'Auto',
+                  description:
+                    "Use the selected Claude model's default effort.",
+                },
+              ],
             },
           ]
         : [],

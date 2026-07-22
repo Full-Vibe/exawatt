@@ -261,6 +261,7 @@ describe('workspace persistence v5 (ENG-018)', () => {
               draftTask: 'Half-written task brief',
               draftSource: 'codex',
               draftModel: 'gpt-5.6-terra',
+              draftEffort: 'high',
             },
           ],
         },
@@ -272,6 +273,7 @@ describe('workspace persistence v5 (ENG-018)', () => {
       draftTask: 'Half-written task brief',
       draftSource: 'codex',
       draftModel: 'gpt-5.6-terra',
+      draftEffort: 'high',
     });
   });
 

@@ -63,6 +63,15 @@ import {
 
 const UNRESOLVED_MODEL_VALUE = '__exawatt-unresolved-model__';
 
+function effortChoiceKey(source: AgentSourceId, model: string): string {
+  return `${source}:${model}`;
+}
+
+function displayEffortLabel(value: string): string {
+  if (value === 'xhigh') return 'Extra high';
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 function defaultBranch(): string {
   const d = new Date();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -129,6 +138,7 @@ export function AgentComposer({
   initialSource,
   initialTask,
   initialModel,
+  initialEffort,
   roadmapItems = [],
 
   onLaunch,
@@ -145,6 +155,8 @@ export function AgentComposer({
   initialTask?: string;
   /** the draft tab's model snapshot; changing it affects only this launch */
   initialModel?: string;
+  /** the draft tab's effort snapshot; changing it affects only this launch */
+  initialEffort?: string;
   roadmapItems?: LaunchRoadmapItem[];
 
   onLaunch: (opts: LaunchOptions) => Promise<boolean>;
@@ -157,6 +169,7 @@ export function AgentComposer({
     draftTask?: string;
     draftSource?: AgentSourceId;
     draftModel?: string | null;
+    draftEffort?: string | null;
   }) => void;
 }) {
   const [task, setTaskState] = useState(initialTask ?? '');
@@ -166,6 +179,8 @@ export function AgentComposer({
   initialTaskRef.current = initialTask;
   const initialModelRef = useRef(initialModel);
   initialModelRef.current = initialModel;
+  const initialEffortRef = useRef(initialEffort);
+  initialEffortRef.current = initialEffort;
   const initialSourceRef = useRef(initialSource);
   initialSourceRef.current = initialSource;
   const setTask = useCallback((next: string) => {
@@ -177,6 +192,7 @@ export function AgentComposer({
     null
   );
   const [model, setModel] = useState<string | null>(initialModel ?? null);
+  const [effort, setEffort] = useState<string | null>(initialEffort ?? null);
   const [permissionMode, setPermissionMode] = useState(
     DEFAULT_AGENT_PERMISSION_MODE
   );
@@ -199,12 +215,20 @@ export function AgentComposer({
   const requestedSourceRef = useRef<AgentSourceId | null>(null);
   const modelLoadSeq = useRef(0);
   const initialModelPendingRef = useRef<{
-    model: string;
+    model: string | null;
+    effort: string | null;
     source: AgentSourceId | null;
   } | null>(
-    initialModel ? { model: initialModel, source: initialSource ?? null } : null
+    initialModel || initialEffort
+      ? {
+          model: initialModel ?? null,
+          effort: initialEffort ?? null,
+          source: initialSource ?? null,
+        }
+      : null
   );
   const modelChoicesRef = useRef<Partial<Record<AgentSourceId, string>>>({});
+  const effortChoicesRef = useRef<Record<string, string>>({});
   const taskRef = useRef<HTMLTextAreaElement>(null);
   const recentRef = useRef<RecentConversationsHandle>(null);
   const permissionDescriptionId = useId();
@@ -224,6 +248,8 @@ export function AgentComposer({
             id: model,
             label: model,
             description: 'Previously selected for this draft.',
+            defaultEffort: null,
+            efforts: [],
           },
           ...modelCatalog.models,
         ]
@@ -231,6 +257,26 @@ export function AgentComposer({
     : [];
   const modelMeta = modelOptions.find(option => option.id === model) ?? null;
   const modelLabel = modelMeta?.label ?? (model ? model : 'Harness default');
+  const effortOptions = modelMeta
+    ? effort && !modelMeta.efforts.some(option => option.id === effort)
+      ? [
+          {
+            id: effort,
+            label: displayEffortLabel(effort),
+            description: 'Previously selected for this draft.',
+          },
+          ...modelMeta.efforts,
+        ]
+      : modelMeta.efforts
+    : [];
+  const effortMeta = effortOptions.find(option => option.id === effort) ?? null;
+  const effortLabel =
+    effortMeta?.label ??
+    (effort ? displayEffortLabel(effort) : 'Model default');
+  const defaultEffort =
+    model === modelCatalog?.effectiveModel
+      ? modelCatalog.effectiveEffort
+      : (modelMeta?.defaultEffort ?? null);
   const modelOriginLabel =
     modelCatalog?.effectiveModelSource === 'config'
       ? `${sourceMeta.label} config`
@@ -239,6 +285,16 @@ export function AgentComposer({
         : modelCatalog?.effectiveModelSource === 'account-default'
           ? `${sourceMeta.label} account default`
           : `${sourceMeta.label} default`;
+  const effortOriginLabel =
+    modelCatalog?.effectiveEffortSource === 'environment'
+      ? 'environment override'
+      : model !== modelCatalog?.effectiveModel
+        ? `${modelLabel} default`
+        : modelCatalog?.effectiveEffortSource === 'config'
+          ? `${sourceMeta.label} config`
+          : modelCatalog?.effectiveEffortSource === 'model-default'
+            ? `${modelLabel} default`
+            : `${sourceMeta.label} default`;
   const permissionMeta = AGENT_PERMISSION_MODE_META[permissionMode];
   const permissionColor =
     permissionMode === 'unrestricted'
@@ -253,16 +309,29 @@ export function AgentComposer({
     modelLoadSeq.current += 1;
     requestedSourceRef.current = null;
     const savedSource = initialSourceRef.current;
-    initialModelPendingRef.current = initialModelRef.current
-      ? { model: initialModelRef.current, source: savedSource ?? null }
-      : null;
+    initialModelPendingRef.current =
+      initialModelRef.current || initialEffortRef.current
+        ? {
+            model: initialModelRef.current ?? null,
+            effort: initialEffortRef.current ?? null,
+            source: savedSource ?? null,
+          }
+        : null;
     modelChoicesRef.current =
       savedSource && initialModelRef.current
         ? { [savedSource]: initialModelRef.current }
         : {};
+    effortChoicesRef.current =
+      savedSource && initialModelRef.current && initialEffortRef.current
+        ? {
+            [effortChoiceKey(savedSource, initialModelRef.current)]:
+              initialEffortRef.current,
+          }
+        : {};
     setSourcePreferences(null);
     setModelCatalog(null);
     setModel(initialModelRef.current ?? null);
+    setEffort(initialEffortRef.current ?? null);
     setPermissionMode(DEFAULT_AGENT_PERMISSION_MODE);
     setUsedSafePreferenceFallback(false);
     setPermissionSaveState('idle');
@@ -301,12 +370,19 @@ export function AgentComposer({
 
   const selectSource = useCallback(
     (nextSource: AgentSourceId) => {
+      const nextModel = modelChoicesRef.current[nextSource] ?? null;
+      const nextEffort = nextModel
+        ? (effortChoicesRef.current[effortChoiceKey(nextSource, nextModel)] ??
+          null)
+        : null;
       setSource(nextSource);
       setModelCatalog(null);
-      setModel(modelChoicesRef.current[nextSource] ?? null);
+      setModel(nextModel);
+      setEffort(nextEffort);
       onDraftChangeRef.current?.({
         draftSource: nextSource,
-        draftModel: modelChoicesRef.current[nextSource] ?? null,
+        draftModel: nextModel,
+        draftEffort: nextEffort,
       });
       setPermissionSaveState('idle');
       setPermissionMode(
@@ -331,13 +407,19 @@ export function AgentComposer({
     (next: AgentSourceId) => {
       if (sourcePreferences) selectSource(next);
       else {
+        const nextModel = modelChoicesRef.current[next] ?? null;
+        const nextEffort = nextModel
+          ? (effortChoicesRef.current[effortChoiceKey(next, nextModel)] ?? null)
+          : null;
         requestedSourceRef.current = next;
         setSource(next);
         setModelCatalog(null);
-        setModel(modelChoicesRef.current[next] ?? null);
+        setModel(nextModel);
+        setEffort(nextEffort);
         onDraftChangeRef.current?.({
           draftSource: next,
-          draftModel: modelChoicesRef.current[next] ?? null,
+          draftModel: nextModel,
+          draftEffort: nextEffort,
         });
       }
     },
@@ -361,23 +443,51 @@ export function AgentComposer({
         return;
       }
       const pendingInitialModel = initialModelPendingRef.current;
-      const restoredModel =
+      const pendingMatchesSource =
         pendingInitialModel &&
         (pendingInitialModel.source === null ||
-          pendingInitialModel.source === effectiveSource)
-          ? pendingInitialModel.model
-          : null;
-      if (restoredModel) initialModelPendingRef.current = null;
+          pendingInitialModel.source === effectiveSource);
+      const restoredModel = pendingMatchesSource
+        ? pendingInitialModel.model
+        : null;
       const selectedModel =
         modelChoicesRef.current[effectiveSource] ??
         restoredModel ??
         catalog.effectiveModel;
+      const selectedModelMeta = catalog.models.find(
+        option => option.id === selectedModel
+      );
+      const restoredEffort =
+        pendingMatchesSource &&
+        (!pendingInitialModel.model ||
+          pendingInitialModel.model === selectedModel)
+          ? pendingInitialModel.effort
+          : null;
+      if (pendingMatchesSource) initialModelPendingRef.current = null;
+      const effortKey = selectedModel
+        ? effortChoiceKey(effectiveSource, selectedModel)
+        : null;
+      const selectedEffort = catalog.effortLocked
+        ? catalog.effectiveEffort
+        : ((effortKey ? effortChoicesRef.current[effortKey] : null) ??
+          restoredEffort ??
+          (selectedModel === catalog.effectiveModel
+            ? catalog.effectiveEffort
+            : selectedModelMeta?.defaultEffort) ??
+          null);
       if (selectedModel) {
         modelChoicesRef.current[effectiveSource] = selectedModel;
       }
+      if (effortKey && selectedEffort) {
+        effortChoicesRef.current[effortKey] = selectedEffort;
+      }
       setModel(selectedModel);
+      setEffort(selectedEffort);
       setModelCatalog(catalog);
-      onDraftChangeRef.current?.({ draftModel: selectedModel });
+      onDraftChangeRef.current?.({
+        draftModel: selectedModel,
+        draftEffort: selectedEffort,
+      });
     });
     return () => {
       cancelled = true;
@@ -478,6 +588,7 @@ export function AgentComposer({
         dir: projectDir,
         permissionMode,
         model: model ?? undefined,
+        effort: effort && effort !== 'auto' ? effort : undefined,
         initialPrompt: task.trim() || undefined,
         worktreeBranch: worktree ? branch.trim() : undefined,
         roadmapItemId: roadmapItemId || undefined,
@@ -733,10 +844,29 @@ export function AgentComposer({
               !modelReady || controlsDisabled || modelOptions.length === 0
             }
             onValueChange={value => {
-              if (!modelOptions.some(option => option.id === value)) return;
+              const nextModel = modelOptions.find(
+                option => option.id === value
+              );
+              if (!nextModel) return;
+              const nextEffortKey = effortChoiceKey(effectiveSource, value);
+              const nextEffort = modelCatalog?.effortLocked
+                ? (modelCatalog.effectiveEffort ?? null)
+                : (effortChoicesRef.current[nextEffortKey] ??
+                  (value === modelCatalog?.effectiveModel
+                    ? modelCatalog.effectiveEffort
+                    : null) ??
+                  nextModel.defaultEffort ??
+                  null);
               modelChoicesRef.current[effectiveSource] = value;
+              if (nextEffort) {
+                effortChoicesRef.current[nextEffortKey] = nextEffort;
+              }
               setModel(value);
-              onDraftChangeRef.current?.({ draftModel: value });
+              setEffort(nextEffort);
+              onDraftChangeRef.current?.({
+                draftModel: value,
+                draftEffort: nextEffort,
+              });
             }}
           >
             <SelectTrigger
@@ -746,7 +876,7 @@ export function AgentComposer({
                   ? `Agent model: ${modelLabel}. Default from ${modelOriginLabel}.`
                   : `Detecting ${sourceMeta.label} model`
               }
-              className="h-9 w-[168px] shrink-0 rounded border px-2 font-mono text-xs shadow-none transition-[border-color,filter] duration-150 hover:brightness-110 focus:ring-hud-cyan data-[state=open]:brightness-110 motion-reduce:transition-none"
+              className="h-9 w-[168px] shrink-0 rounded border px-2 font-mono text-xs shadow-none transition-[border-color,filter] duration-150 hover:brightness-110 focus:ring-hud-cyan data-[state=open]:brightness-110 @max-[560px]:w-[152px] motion-reduce:transition-none"
               style={{
                 color: HUD.text,
                 borderColor: HUD.strokeSoft,
@@ -804,6 +934,100 @@ export function AgentComposer({
               <p className="px-2 py-1.5 font-mono text-[11px] leading-4 text-hud-text-dim">
                 {model === modelCatalog?.effectiveModel
                   ? `Default from ${modelOriginLabel}.`
+                  : `This override applies only to this Agent.`}
+              </p>
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={effort ?? UNRESOLVED_MODEL_VALUE}
+            disabled={
+              !modelReady ||
+              controlsDisabled ||
+              effortOptions.length === 0 ||
+              modelCatalog?.effortLocked
+            }
+            onValueChange={value => {
+              if (
+                !model ||
+                !effortOptions.some(option => option.id === value)
+              ) {
+                return;
+              }
+              effortChoicesRef.current[
+                effortChoiceKey(effectiveSource, model)
+              ] = value;
+              setEffort(value);
+              onDraftChangeRef.current?.({ draftEffort: value });
+            }}
+          >
+            <SelectTrigger
+              aria-label="Agent effort"
+              title={
+                modelCatalog?.effortLocked
+                  ? `Agent effort: ${effortLabel}. Fixed by ${effortOriginLabel}.`
+                  : modelReady
+                    ? `Agent effort: ${effortLabel}. Default from ${effortOriginLabel}.`
+                    : `Detecting ${sourceMeta.label} effort`
+              }
+              className="h-9 w-[112px] shrink-0 rounded border px-2 font-mono text-xs shadow-none transition-[border-color,filter] duration-150 hover:brightness-110 focus:ring-hud-cyan data-[state=open]:brightness-110 @max-[560px]:w-[96px] motion-reduce:transition-none"
+              style={{
+                color: HUD.text,
+                borderColor: HUD.strokeSoft,
+                background: HUD.bg.deep,
+              }}
+            >
+              {modelReady ? (
+                <span className="min-w-0 truncate">
+                  <SelectValue>{effortLabel}</SelectValue>
+                </span>
+              ) : (
+                <span
+                  className="flex min-w-0 items-center gap-1.5 truncate"
+                  style={{ color: HUD.textDim }}
+                >
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="h-3 w-3 shrink-0 animate-spin motion-reduce:animate-none"
+                  />
+                  Detecting…
+                </span>
+              )}
+            </SelectTrigger>
+            <SelectContent className="w-[min(21rem,calc(100vw-1.5rem))] border-hud-cyan/25 bg-hud-deep shadow-xl">
+              <SelectGroup>
+                <SelectLabel className="px-2 pb-1 pt-2 font-mono text-[11px] font-medium text-hud-text-dim">
+                  {modelLabel} effort
+                </SelectLabel>
+                {effortOptions.map(option => (
+                  <SelectItem
+                    key={option.id}
+                    value={option.id}
+                    textValue={`${option.label} ${option.description}`}
+                    className="items-start py-2.5 pl-2 pr-8 font-mono [&>span:first-child]:top-3"
+                  >
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="flex items-baseline gap-2">
+                        <span className="text-xs font-semibold text-hud-text">
+                          {option.label}
+                        </span>
+                        {option.id === defaultEffort && (
+                          <span className="text-[9px] uppercase tracking-[0.12em] text-hud-cyan">
+                            default
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-[11px] leading-4 text-hud-text-dim">
+                        {option.description}
+                      </span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+              <SelectSeparator className="bg-hud-cyan/15" />
+              <p className="px-2 py-1.5 font-mono text-[11px] leading-4 text-hud-text-dim">
+                {effort === defaultEffort
+                  ? `Default from ${effortOriginLabel}.`
                   : `This override applies only to this Agent.`}
               </p>
             </SelectContent>
