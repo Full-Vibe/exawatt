@@ -257,7 +257,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     fireEvent.contextMenu(deadTab);
     const menu = container.querySelector('[data-strip-menu]');
     expect(menu?.textContent).toContain('Pin in split');
-    expect(menu?.textContent).toContain('Resume');
+    expect(menu?.textContent).toContain('Resume This Agent');
     expect(menu?.textContent).toContain('Close');
   });
 

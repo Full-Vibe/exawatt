@@ -58,22 +58,23 @@ const fakeCodex = join(fakeBin, 'codex');
 writeFileSync(
   fakeCodex,
   `#!/bin/sh
-if [ "$1" = "resume" ]; then
-  id="$2"
-  fresh=0
-else
-  id="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
-  fresh=1
-fi
+if [ "$1" = "debug" ] && [ "$2" = "models" ]; then exit 0; fi
+id="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
+fresh=1
+previous=""
+for arg in "$@"; do
+  if [ "$previous" = "resume" ]; then id="$arg"; fresh=0; break; fi
+  previous="$arg"
+done
 printf '%s\n' "$$" > "$EXAWATT_TEST_PID_DIR/codex-$id-$$.pid"
 printf 'FAKE_CODEX:%s\n' "$*"
+if [ "$fresh" = "1" ]; then
+  dir="$HOME/.codex/sessions/fixture"
+  /bin/mkdir -p "$dir"
+  printf '{"type":"session_meta","payload":{"id":"%s","cwd":"%s"}}\n' "$id" "$PWD" > "$dir/rollout-$id.jsonl"
+  fresh=0
+fi
 while IFS= read -r line; do
-  if [ "$fresh" = "1" ]; then
-    dir="$HOME/.codex/sessions/fixture"
-    /bin/mkdir -p "$dir"
-    printf '{"type":"session_meta","payload":{"id":"%s","cwd":"%s"}}\n' "$id" "$PWD" > "$dir/rollout-$id.jsonl"
-    fresh=0
-  fi
   printf '%s\n' "$line"
 done
 `
@@ -100,6 +101,22 @@ async function pageFor(app) {
   const page = await app.firstWindow({ timeout: 45_000 });
   page.setDefaultTimeout(25_000);
   await page.locator('[data-command-altitude]').waitFor();
+  await page.waitForFunction(
+    () => !document.body.innerText.includes('Loading…')
+  );
+  if (!new URL(page.url()).pathname.startsWith('/workspace')) {
+    await page.locator('[data-command-altitude-level="terminal"]').click();
+    await page.waitForURL('**/workspace*');
+    await page.waitForFunction(
+      () => !document.body.innerText.includes('Loading…')
+    );
+  }
+  await page
+    .locator(
+      '[data-agent-composer], [data-composer-toggle], button:has-text("Open Project")'
+    )
+    .first()
+    .waitFor();
   return page;
 }
 
@@ -135,16 +152,14 @@ async function openProject(page, dir) {
 
 /** the composer is summoned, not permanent (D18) — expand it if collapsed */
 async function summonComposer(page) {
+  if ((await page.locator('[data-agent-composer]').count()) > 0) return;
   const toggle = page.locator('[data-composer-toggle][aria-expanded="false"]');
   if ((await toggle.count()) > 0) {
     await toggle.click();
+  } else {
+    await page.getByRole('button', { name: 'New Agent' }).click();
   }
-  // empty projects render the inline composer; projects with restored tabs
-  // render the collapsed summon button (D18)
-  await page
-    .locator('[data-agent-composer], [data-composer-toggle]')
-    .first()
-    .waitFor();
+  await page.locator('[data-agent-composer]').waitFor();
 }
 
 async function startAgent(page, source) {
@@ -230,6 +245,7 @@ try {
   }
   await openShell(page);
   await waitForSessions(page, 5);
+  await waitForAgentIdentities(page, 4);
   let original = await sessions(page);
   console.log('[eng-018] five sessions launched');
 
@@ -242,7 +258,6 @@ try {
     );
     await waitForBuffer(page, session.id, marker);
   }
-  await waitForAgentIdentities(page, 4);
   original = await sessions(page);
   const agents = original.filter(session => session.harness !== 'shell');
   if (agents.some(session => !session.harnessSessionId)) {
@@ -273,8 +288,8 @@ try {
     readFileSync(join(userData, 'workspace.json'), 'utf8')
   );
   const tabs = persisted.projects.flatMap(project => project.tabs);
-  if (persisted.v !== 5 || tabs.length !== 5)
-    throw new Error('Workspace v5 checkpoint missing');
+  if (persisted.v !== 6 || tabs.length !== 5)
+    throw new Error('Workspace v6 checkpoint missing');
   if (
     tabs.some(
       tab => tab.lifecycle !== 'stopped-clean' || tab.sessionId !== null
@@ -327,9 +342,7 @@ try {
   console.log('[eng-018] clean restore ready');
   if ((await sessions(page)).length !== 0)
     throw new Error('Relaunch spawned work silently');
-  const ready = page
-    .getByRole('status')
-    .filter({ hasText: '4 agents are ready to resume' });
+  const ready = page.getByRole('region', { name: 'Saved Agent recovery' });
   await ready.waitFor();
   await page.getByText('Shell', { exact: true }).last().click();
   await page
@@ -338,11 +351,11 @@ try {
   await page.screenshot({ path: join(screenshots, 'restored-1400x900.png') });
   await page.setViewportSize({ width: 800, height: 600 });
   await page.screenshot({ path: join(screenshots, 'restored-800x600.png') });
-  await page.getByRole('button', { name: 'New Shell Here' }).click();
+  await page.getByRole('button', { name: 'Start New Shell' }).click();
   await waitForSessions(page, 1);
-  await ready.getByRole('button', { name: 'Resume All' }).click();
+  await ready.getByRole('button', { name: 'Resume 4 Agents' }).click();
   await waitForSessions(page, 5);
-  console.log('[eng-018] Resume All completed');
+  console.log('[eng-018] workspace Agent recovery completed');
   const resumed = await sessions(page);
   const resumedAgents = resumed.filter(session => session.harness !== 'shell');
   if (resumed.filter(session => session.harness === 'shell').length !== 1) {
@@ -355,7 +368,7 @@ try {
     JSON.stringify([...exactIds].sort())
   ) {
     throw new Error(
-      `Resume All identity mismatch: expected ${JSON.stringify(exactIds)}, got ${JSON.stringify(resumedAgents.map(item => item.harnessSessionId))}`
+      `Workspace recovery identity mismatch: expected ${JSON.stringify(exactIds)}, got ${JSON.stringify(resumedAgents.map(item => item.harnessSessionId))}`
     );
   }
   const cleanClose = waitForClose(app);

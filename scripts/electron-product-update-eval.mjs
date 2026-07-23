@@ -206,14 +206,20 @@ function matchingPids() {
 }
 
 async function sessions(page) {
-  return (await page.evaluate(async () => (await window.electron?.pty?.list()) ?? []));
+  return await page.evaluate(
+    async () => (await window.electron?.pty?.list()) ?? []
+  );
 }
 
 async function waitForSessions(page, count) {
-  return await waitFor(async () => {
-    const current = await sessions(page);
-    return current.length === count ? current : null;
-  }, `Timed out waiting for ${count} live sessions`, 45_000);
+  return await waitFor(
+    async () => {
+      const current = await sessions(page);
+      return current.length === count ? current : null;
+    },
+    `Timed out waiting for ${count} live sessions`,
+    45_000
+  );
 }
 
 async function openProject(page, dir) {
@@ -236,14 +242,19 @@ async function openShell(page) {
 }
 
 async function waitForAgentIdentities(page, count) {
-  return await waitFor(async () => {
-    const agents = (await sessions(page)).filter(
-      session => session.harness !== 'shell'
-    );
-    return agents.length === count && agents.every(session => session.harnessSessionId)
-      ? agents
-      : null;
-  }, `Timed out waiting for ${count} provider identities`, 45_000);
+  return await waitFor(
+    async () => {
+      const agents = (await sessions(page)).filter(
+        session => session.harness !== 'shell'
+      );
+      return agents.length === count &&
+        agents.every(session => session.harnessSessionId)
+        ? agents
+        : null;
+    },
+    `Timed out waiting for ${count} provider identities`,
+    45_000
+  );
 }
 
 function harnessPids() {
@@ -296,7 +307,9 @@ try {
     );
   }
   const originalAgents = await waitForAgentIdentities(page, 4);
-  const exactIds = originalAgents.map(session => session.harnessSessionId).sort();
+  const exactIds = originalAgents
+    .map(session => session.harnessSessionId)
+    .sort();
   await page.evaluate(() => window.electron?.app?.checkForUpdates());
 
   let transientRetries = 0;
@@ -393,7 +406,9 @@ try {
     name.endsWith('.json')
   );
   if (histories.length !== 5) {
-    throw new Error(`Expected five retained histories; got ${histories.length}`);
+    throw new Error(
+      `Expected five retained histories; got ${histories.length}`
+    );
   }
   for (let index = 1; index <= 5; index++) {
     const marker = `ENG018_UPDATE_HISTORY_${index}`;
@@ -410,13 +425,12 @@ try {
     throw new Error('Updated relaunch spawned work without operator action');
   }
   const resumeBanner = page
-    .getByRole('status')
-    .filter({ hasText: '4 agents are ready to resume' });
+    .getByRole('region', { name: 'Saved Agent recovery' });
   await resumeBanner.waitFor({ timeout: 20_000 });
-  await resumeBanner.getByRole('button', { name: 'Resume All' }).click();
+  await resumeBanner.getByRole('button', { name: 'Resume 4 Agents' }).click();
   const resumed = await waitForSessions(page, 4);
   if (resumed.some(session => session.harness === 'shell')) {
-    throw new Error('Resume All restarted the shell');
+    throw new Error('Workspace recovery restarted the shell');
   }
   const resumedIds = resumed.map(session => session.harnessSessionId).sort();
   if (JSON.stringify(resumedIds) !== JSON.stringify(exactIds)) {

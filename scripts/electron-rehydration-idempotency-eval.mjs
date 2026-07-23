@@ -12,7 +12,7 @@
  *   - workspace.json stays v6 with the SAME tab set (same durable Session
  *     ids, exact provider ids, title ownership, no duplicates or strays)
  *   - relaunch spawns nothing; the resume banner counts only agents
- *   - Resume All resumes the exact same conversations as generation 0
+ *   - workspace recovery resumes the exact same conversations as generation 0
  *   - a per-generation history marker written after resume is retained
  *     across the NEXT quit (journal/compaction stability over generations)
  *   - the stopped shell tab persists as a tab but is never auto-resumed
@@ -70,22 +70,23 @@ const fakeCodex = join(fakeBin, 'codex');
 writeFileSync(
   fakeCodex,
   `#!/bin/sh
-if [ "$1" = "resume" ]; then
-  id="$2"
-  fresh=0
-else
-  id="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
-  fresh=1
-fi
+if [ "$1" = "debug" ] && [ "$2" = "models" ]; then exit 0; fi
+id="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
+fresh=1
+previous=""
+for arg in "$@"; do
+  if [ "$previous" = "resume" ]; then id="$arg"; fresh=0; break; fi
+  previous="$arg"
+done
 printf '%s\n' "$$" > "$EXAWATT_TEST_PID_DIR/codex-$id-$$.pid"
 printf 'FAKE_CODEX:%s\n' "$*"
+if [ "$fresh" = "1" ]; then
+  dir="$HOME/.codex/sessions/fixture"
+  /bin/mkdir -p "$dir"
+  printf '{"type":"session_meta","payload":{"id":"%s","cwd":"%s"}}\n' "$id" "$PWD" > "$dir/rollout-$id.jsonl"
+  fresh=0
+fi
 while IFS= read -r line; do
-  if [ "$fresh" = "1" ]; then
-    dir="$HOME/.codex/sessions/fixture"
-    /bin/mkdir -p "$dir"
-    printf '{"type":"session_meta","payload":{"id":"%s","cwd":"%s"}}\n' "$id" "$PWD" > "$dir/rollout-$id.jsonl"
-    fresh=0
-  fi
   printf '%s\n' "$line"
 done
 `
@@ -113,6 +114,20 @@ async function pageFor(app) {
   const page = await app.firstWindow({ timeout: 45_000 });
   page.setDefaultTimeout(25_000);
   await page.locator('[data-command-altitude]').waitFor();
+  await page.waitForFunction(
+    () => !document.body.innerText.includes('Loading…'),
+    undefined,
+    { timeout: 25_000 }
+  );
+  if (!new URL(page.url()).pathname.startsWith('/workspace')) {
+    await page.locator('[data-command-altitude-level="terminal"]').click();
+    await page.waitForURL('**/workspace*');
+    await page.waitForFunction(
+      () => !document.body.innerText.includes('Loading…'),
+      undefined,
+      { timeout: 25_000 }
+    );
+  }
   return page;
 }
 
@@ -130,15 +145,18 @@ async function waitFor(page, predicate, label, timeoutMs = 25_000) {
 }
 
 async function summonComposer(page) {
+  if ((await page.locator('[data-agent-composer]').count()) > 0) return;
   const toggle = page.locator('[data-composer-toggle][aria-expanded="false"]');
   if ((await toggle.count()) > 0) await toggle.click();
+  else await page.getByRole('button', { name: 'New Agent' }).click();
   await page.locator('[data-agent-composer]').waitFor();
 }
 
-async function startAgent(page, source) {
+async function startAgent(page, source, task = '') {
   await summonComposer(page);
   await page.getByLabel('Agent Source').click();
   await page.getByRole('option', { name: source }).click();
+  if (task) await page.getByLabel('Initial task for the new Agent').fill(task);
   await page.getByRole('button', { name: 'Start' }).click();
 }
 
@@ -192,12 +210,18 @@ try {
   console.log(`[idem] generation 0: build the fixture workspace`);
   app = await launch();
   let page = await pageFor(app);
+  await page.getByRole('button', { name: 'Open Project' }).first().waitFor();
   await page.evaluate(dir => {
     window.dispatchEvent(
       new CustomEvent('exawatt:open-project', { detail: dir })
     );
   }, projectDir);
-  await page.locator('[data-agent-composer]').waitFor();
+  await page
+    .locator(
+      '[data-agent-composer], [data-composer-toggle], button:has-text("New Agent")'
+    )
+    .first()
+    .waitFor();
 
   await startAgent(page, 'Claude Code');
   await waitFor(
@@ -211,7 +235,11 @@ try {
     async () => (await sessions(page)).length === 2,
     'second agent'
   );
-  await startAgent(page, 'Codex');
+  await startAgent(
+    page,
+    'Codex',
+    'Verify launch-time identity survives repeated relaunches'
+  );
   await waitFor(
     page,
     async () => (await sessions(page)).length === 3,
@@ -220,6 +248,37 @@ try {
   await summonComposer(page);
   await page.getByRole('button', { name: /Open shell in / }).click();
   await waitFor(page, async () => (await sessions(page)).length === 4, 'shell');
+
+  // The Codex task was submitted through the composer/CLI argument. Identity
+  // must exist before any later terminal write; this is the production path
+  // that used to persist a convincing history pane with no resumable identity.
+  try {
+    await waitFor(
+      page,
+      async () =>
+        (await sessions(page))
+          .filter(session => session.harness !== 'shell')
+          .every(session => Boolean(session.harnessSessionId)),
+      'launch-time provider identities'
+    );
+  } catch (error) {
+    console.error(
+      '[idem] identity capture debug',
+      JSON.stringify(
+        {
+          sessions: await sessions(page),
+          candidates: await page.evaluate(
+            async cwd =>
+              window.electron?.pty?.listResumeCandidates('codex', cwd),
+            projectDir
+          ),
+        },
+        null,
+        2
+      )
+    );
+    throw error;
+  }
 
   const initial = await sessions(page);
   for (const [index, session] of initial.entries()) {
@@ -241,16 +300,6 @@ try {
       `marker ${marker}`
     );
   }
-  // codex mints its identity only once real input reaches it, so the wait
-  // comes AFTER the history markers primed each session
-  await waitFor(
-    page,
-    async () =>
-      (await sessions(page))
-        .filter(session => session.harness !== 'shell')
-        .every(session => Boolean(session.harnessSessionId)),
-    'provider identities'
-  );
   await page.waitForTimeout(700);
 
   const baselineAgents = (await sessions(page))
@@ -286,11 +335,9 @@ try {
         `g${generation}: relaunch spawned ${spawned.length} sessions`
       );
     }
-    const banner = page
-      .getByRole('status')
-      .filter({ hasText: '3 agents are ready to resume' });
+    const banner = page.getByRole('region', { name: 'Saved Agent recovery' });
     await banner.waitFor();
-    await banner.getByRole('button', { name: 'Resume All' }).click();
+    await banner.getByRole('button', { name: 'Resume 3 Agents' }).click();
     await waitFor(
       page,
       async () => (await sessions(page)).length === 3,
@@ -305,7 +352,7 @@ try {
       );
     }
     if (resumed.some(session => session.harness === 'shell')) {
-      throw new Error(`g${generation}: Resume All started a shell`);
+      throw new Error(`g${generation}: workspace recovery started a shell`);
     }
 
     // prior generations' history must have survived the round trip, and this

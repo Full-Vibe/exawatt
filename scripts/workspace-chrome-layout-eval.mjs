@@ -899,6 +899,20 @@ try {
     path: join(SCREENSHOT_DIR, 'turn-state-hydrated-working.png'),
   });
 
+  // The stopped pane must not impersonate an interactive terminal. Its action
+  // is scoped to this Agent and retained output is explicitly read-only. Keep
+  // this navigation last so it cannot perturb the back-stack assertions above.
+  await page.locator('[data-tab-id="frozen-tab"]').click();
+  const stoppedPane = page.locator('[data-session-restore="frozen-tab"]');
+  await stoppedPane.waitFor();
+  await stoppedPane
+    .getByRole('button', { name: 'Resume This Agent' })
+    .waitFor();
+  await page.getByText('Saved terminal history · read-only').waitFor();
+  await page.screenshot({
+    path: join(SCREENSHOT_DIR, 'stopped-pane-read-only.png'),
+  });
+
   if (errors.length > 0) {
     throw new Error(`Renderer errors:\n${errors.join('\n')}`);
   }

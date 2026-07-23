@@ -310,7 +310,7 @@ export function redactHostedSummaryText(value: string): string {
     );
 }
 
-function conversationCorrelationKey(
+export function conversationCorrelationKey(
   harness: ConversationHarness,
   firstOperatorTurn: string | null | undefined
 ): string | null {
@@ -322,17 +322,32 @@ function conversationCorrelationKey(
   return normalized ? `${harness}:${normalized}` : null;
 }
 
+const FIRST_PERSON_NARRATION =
+  /\b(?:i(?:'m| am|'ve| have|'ll| will| found)|we(?:'re| are|'ve| have|'ll| will| found))\b/i;
+const LEADING_FIRST_PERSON_NARRATION =
+  /^(?:i(?:'m| am|'ve| have|'ll| will| found)|we(?:'re| are|'ve| have|'ll| will| found))\b/i;
+const MODEL_PREAMBLE =
+  /^(?:based on (?:my|the) (?:analysis|exploration|review|context)|here(?:'s| is)|this (?:conversation|task|request))\b/i;
+
+function looksLikeModelNarration(value: string): boolean {
+  const clean = value.replace(/\s+/g, ' ').trim();
+  return (
+    LEADING_FIRST_PERSON_NARRATION.test(clean) || MODEL_PREAMBLE.test(clean)
+  );
+}
+
 function usableNativeTitle(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const clean = value.replace(/\s+/g, ' ').trim();
-  if (!clean || clean.length > MAX_TITLE_CHARS) return null;
+  if (
+    !clean ||
+    clean.length > MAX_TITLE_CHARS ||
+    looksLikeModelNarration(clean)
+  ) {
+    return null;
+  }
   return clean;
 }
-
-const FIRST_PERSON_NARRATION =
-  /\b(?:i(?:'m| am|'ve| have|'ll| will| found)|we(?:'re| are|'ve| have|'ll| will| found))\b/i;
-const MODEL_PREAMBLE =
-  /^(?:based on (?:my|the) (?:analysis|exploration|review|context)|here(?:'s| is)|this (?:conversation|task|request))\b/i;
 
 function usableGeneratedText(
   value: unknown,
@@ -363,6 +378,39 @@ function usableGeneratedDescription(value: unknown): string | null {
     MAX_DESCRIPTION_CHARS,
     MAX_GENERATED_DESCRIPTION_WORDS
   );
+}
+
+/** Provider indexes can expose a model preview as though it were a title or
+ * operator turn. Normalize those records before cache/enrichment so rejected
+ * narration never remains visible as the fallback presentation. */
+function normalizeDraftPresentation(
+  candidate: ConversationDraft
+): ConversationDraft {
+  const summaryInput = candidate.summaryInput.filter(
+    turn => !looksLikeModelNarration(turn)
+  );
+  const description =
+    candidate.description && !looksLikeModelNarration(candidate.description)
+      ? candidate.description
+      : summaryInput[summaryInput.length - 1]
+        ? truncate(summaryInput[summaryInput.length - 1], MAX_DESCRIPTION_CHARS)
+        : null;
+  if (!looksLikeModelNarration(candidate.title)) {
+    return { ...candidate, description, summaryInput };
+  }
+  const titleSource = description
+    ? [description]
+    : summaryInput.length > 0
+      ? summaryInput
+      : [];
+  return {
+    ...candidate,
+    title: fallbackTitle(titleSource, candidate.id),
+    description,
+    titleSource: 'fallback',
+    needsSummary: summaryInput.length > 0,
+    summaryInput,
+  };
 }
 
 export class CodexConversationAdapter implements ConversationCatalogAdapter {
@@ -880,6 +928,31 @@ export class RecentConversationCatalog {
       .map(stripPrivateFields);
   }
 
+  /**
+   * Return every provider identity whose first meaningful operator turn is an
+   * exact semantic match for the supplied task. Callers must still enforce a
+   * one-to-one match across logical Sessions before adopting any identity.
+   */
+  async providerIdentityCandidates(
+    harness: ConversationHarness,
+    cwd: string,
+    initialTask: string
+  ): Promise<string[]> {
+    const correlationKey = conversationCorrelationKey(
+      harness,
+      meaningfulOperatorText(initialTask)
+    );
+    if (!correlationKey) return [];
+    const identities = (await this.listDrafts(cwd, harness))
+      .filter(
+        candidate =>
+          candidate.correlationKey === correlationKey &&
+          !!candidate.providerIdentity
+      )
+      .map(candidate => candidate.providerIdentity!);
+    return [...new Set(identities)];
+  }
+
   /** Ledger mutations and provider launches invalidate the short-lived shared
    * Project view. Visible panes still deduplicate concurrent requests. */
   invalidate(_cwd?: string): void {
@@ -1003,11 +1076,12 @@ export class RecentConversationCatalog {
         continue;
       }
       for (const candidate of result.value) {
-        const key = cacheKey(candidate);
+        const normalized = normalizeDraftPresentation(candidate);
+        const key = cacheKey(normalized);
         const existing = deduped.get(key);
         deduped.set(
           key,
-          existing ? mergeConversationDrafts(existing, candidate) : candidate
+          existing ? mergeConversationDrafts(existing, normalized) : normalized
         );
       }
     }

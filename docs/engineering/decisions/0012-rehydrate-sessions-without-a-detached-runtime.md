@@ -3,6 +3,10 @@
 Date: 2026-07-11
 Status: accepted
 
+Amended: 2026-07-22 — provider identity is now persisted immediately by the
+Electron-main owner, independently of renderer layout debounce. Legacy missing
+identities repair only through one-to-one opening-task correlation.
+
 ## Context
 
 Decision `0005` chose Electron-main-owned PTYs for v0 and left tmux or a daemon
@@ -19,6 +23,9 @@ cost without serving that requirement.
 - Treat a Session as durable and a local PTY process as one incarnation of it.
 - Persist exact provider identity, lifecycle metadata, and bounded terminal
   history under the app's machine-local data directory.
+- Persist the durable Session → provider conversation mapping in a small atomic
+  main-process index as soon as identity is allocated or discovered. Renderer
+  workspace persistence remains layout truth, not the sole identity record.
 - Serialize durable writes. Terminal history uses an append journal with
   bounded snapshot compaction rather than repeatedly rewriting full scrollback.
 - Explicit quit and update restart use one coordinated path with a pre-stop
@@ -28,6 +35,10 @@ cost without serving that requirement.
 - Relaunch restores state without spawning. Operators resume agents explicitly;
   shells start fresh in the same directory.
 - Resume is deterministic: exact provider identity or no automatic resume.
+- An older identity-less Session may adopt a provider identity only when its
+  saved first task and the provider's first operator turn form a unique
+  one-to-one match within the same Project and harness. Ambiguous matches remain
+  unresolved and require an explicit operator choice.
 - A persisted open tab remains a Session-backed Agent in fleet views even when
   it has no PTY incarnation. Fleet adapters mark that state explicitly as
   stopped; Spatial uses a dotted outline and opens the exact stopped tab's
@@ -40,6 +51,8 @@ cost without serving that requirement.
   process death changes lifecycle and presentation, not product identity.
 - Crash and update recovery can be reliable without a privileged background
   component, but work in flight after the last checkpoint can still be lost.
+- A renderer crash or save-debounce race cannot by itself discard a provider
+  identity already learned by Electron main.
 - A future requirement for uninterrupted background agents must be justified
   and designed as a new source/runtime capability; it is not ENG-018.
 - This decision supersedes only the designated-detachable-upgrade assumption in

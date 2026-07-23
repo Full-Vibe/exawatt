@@ -581,7 +581,10 @@ export function TabStrip({
                           (t.harnessSessionId || t.harness === 'shell')
                             ? [
                                 {
-                                  label: 'Resume',
+                                  label:
+                                    t.harness === 'shell'
+                                      ? 'Start New Shell'
+                                      : 'Resume This Agent',
                                   onSelect: () => onResumeTab(t.id),
                                 },
                               ]

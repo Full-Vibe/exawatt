@@ -22,6 +22,7 @@ import {
   setHostedConversationSummaries,
 } from './settings-store';
 import { listResumeCandidates } from './pty/resume-candidates';
+import type { ResumeIdentityHint } from './pty/resume-candidates';
 import { RecentConversationCatalog } from './pty/conversation-catalog';
 import {
   clipboardInput,
@@ -424,6 +425,38 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     'pty:list-resume-candidates',
     (_event, harness: PtyCreateOptions['harness'], cwd: string) =>
       listResumeCandidates(harness, cwd)
+  );
+  handleTrusted(
+    'pty:reconcile-resume-identities',
+    (_event, candidates: unknown) => {
+      if (!Array.isArray(candidates) || candidates.length > 200) {
+        throw new Error('Invalid Session identity reconciliation request');
+      }
+      const hints = candidates.map(candidate => {
+        if (!candidate || typeof candidate !== 'object') {
+          throw new Error('Invalid Session identity hint');
+        }
+        const hint = candidate as Partial<ResumeIdentityHint>;
+        if (
+          typeof hint.durableSessionId !== 'string' ||
+          !/^[A-Za-z0-9._-]{1,200}$/.test(hint.durableSessionId) ||
+          (hint.harness !== 'claude' && hint.harness !== 'codex') ||
+          typeof hint.cwd !== 'string' ||
+          !hint.cwd ||
+          hint.cwd.includes('\0') ||
+          (hint.initialTask !== null &&
+            (typeof hint.initialTask !== 'string' ||
+              hint.initialTask.length > 8_000)) ||
+          (hint.harnessSessionId !== null &&
+            (typeof hint.harnessSessionId !== 'string' ||
+              !/^[A-Za-z0-9_-]{8,128}$/.test(hint.harnessSessionId)))
+        ) {
+          throw new Error('Invalid Session identity hint');
+        }
+        return hint as ResumeIdentityHint;
+      });
+      return ptySessions.reconcileResumeIdentities(hints);
+    }
   );
   handleTrusted('pty:list-recent-conversations', (_event, cwd: string) =>
     conversationCatalog.list(cwd)

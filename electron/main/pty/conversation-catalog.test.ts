@@ -274,7 +274,8 @@ describe('RecentConversationCatalog', () => {
       catalog.enrich('/project', 'signed-in-token')
     ).resolves.toEqual([
       expect.objectContaining({
-        title: draft.title,
+        title: 'Verify E&M codes use AMA guidelines',
+        description: 'Verify E&M codes use AMA guidelines',
         titleSource: 'fallback',
         needsSummary: true,
       }),
@@ -293,9 +294,43 @@ describe('RecentConversationCatalog', () => {
     );
     await expect(catalog.list('/project')).resolves.toEqual([
       expect.objectContaining({
-        title: draft.title,
+        title: 'Verify E&M codes use AMA guidelines',
+        description: 'Verify E&M codes use AMA guidelines',
         titleSource: 'fallback',
         needsSummary: true,
+      }),
+    ]);
+  });
+
+  it('replaces provider narration previews with the durable operator goal', async () => {
+    const draft: ConversationDraft = {
+      id: 'provider-id',
+      harness: 'codex',
+      cwd: '/project',
+      startedAt: 1,
+      updatedAt: 2,
+      title: 'Voting shipped to production',
+      description: "Based on my exploration, here's what I found:",
+      titleSource: 'native',
+      needsSummary: false,
+      continuation: { kind: 'provider' },
+      fingerprint: '2:100',
+      summaryInput: [
+        'Implement the voting project. Make it look subtle and tasteful.',
+        "Based on my exploration, here's what I found:",
+      ],
+      providerIdentity: 'provider-id',
+      correlationKey: 'codex:implement the voting project',
+    };
+    const catalog = new RecentConversationCatalog({
+      adapters: [{ list: vi.fn(async () => [draft]) }],
+    });
+
+    await expect(catalog.list('/project')).resolves.toEqual([
+      expect.objectContaining({
+        title: 'Voting shipped to production',
+        description:
+          'Implement the voting project. Make it look subtle and tasteful.',
       }),
     ]);
   });

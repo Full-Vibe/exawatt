@@ -313,8 +313,10 @@ Built:
 Implemented:
 
 - deterministic local Session rehydration (ENG-018): durable logical identity,
-  crash-safe bounded journaled terminal history, two-commit quit/update
-  shutdown, and explicit exact-provider resume without a detached runtime
+  a main-owned atomic provider-identity index, crash-safe bounded journaled
+  terminal history, two-commit quit/update shutdown, conservative one-to-one
+  repair for legacy identity-less Sessions, and explicit exact-provider resume
+  without a detached runtime
 
 Partial:
 

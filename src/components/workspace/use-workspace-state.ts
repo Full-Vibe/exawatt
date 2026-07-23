@@ -129,6 +129,11 @@ export type ResumeState =
   | 'resumed'
   | 'failed';
 
+export interface ResumeBatchProgress {
+  completed: number;
+  total: number;
+}
+
 /** what a close attempt did (D27) — the UI narrates each differently */
 export type CloseOutcome =
   | { kind: 'noop' }
@@ -530,6 +535,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  drive one"); null = no split */
   const [pinnedTabId, setPinnedTabId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resumeBatchProgress, setResumeBatchProgress] =
+    useState<ResumeBatchProgress | null>(null);
   const [ready, setReady] = useState(false);
   /** goal subtitles keyed by durableSessionId (D21): the goal is durable
    *  Session truth — live updates stream from main, the persisted layout
@@ -570,6 +577,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   activityRef.current = activity;
   const resumeInFlightRef = useRef<Set<string>>(new Set());
   const shutdownTargetsRef = useRef<Set<string>>(new Set());
+  /** Identity can arrive before React has committed a newly launched/restored
+   * tab. Retain that event by durable Session id instead of dropping it. */
+  const observedIdentitiesRef = useRef<Map<string, string>>(new Map());
 
   const syncProjectIdentity = useCallback(
     (ref: { rootPath: string; name: string }) => {
@@ -689,6 +699,43 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       ]);
       if (cancelled) return;
       const persisted = parsePersisted(persistedRaw);
+      if (persisted && api.reconcileResumeIdentities) {
+        const agentTabs = persisted.projects.flatMap(project =>
+          project.tabs.flatMap(tab =>
+            tab.harness === 'shell' || tab.lifecycle === 'draft'
+              ? []
+              : [
+                  {
+                    durableSessionId: tab.durableSessionId,
+                    harness: tab.harness,
+                    cwd: tab.cwd,
+                    initialTask: tab.initialTask ?? null,
+                    harnessSessionId: tab.harnessSessionId,
+                  },
+                ]
+          )
+        );
+        if (agentTabs.some(tab => !tab.harnessSessionId)) {
+          try {
+            const reconciled = await api.reconcileResumeIdentities(agentTabs);
+            if (cancelled) return;
+            const byDurableId = new Map(
+              reconciled.map(identity => [
+                identity.durableSessionId,
+                identity.harnessSessionId,
+              ])
+            );
+            for (const project of persisted.projects) {
+              for (const tab of project.tabs) {
+                tab.harnessSessionId =
+                  byDurableId.get(tab.durableSessionId) ?? tab.harnessSessionId;
+              }
+            }
+          } catch (cause) {
+            console.warn('Session identity reconciliation failed', cause);
+          }
+        }
+      }
       const liveByDurableId = new Map(live.map(s => [s.durableSessionId, s]));
       // goal subtitles (D21): the persisted layout restores each Session's
       // goal first; live truth from main overrides it, all by durable id.
@@ -796,13 +843,16 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             }
             const s = liveByDurableId.get(t.durableSessionId);
             const initialTask = t.initialTask ?? null;
+            const observedIdentity =
+              observedIdentitiesRef.current.get(t.durableSessionId) ?? null;
             if (s && !s.exited) {
               liveByDurableId.delete(s.durableSessionId);
               return {
                 ...t,
                 initialTask,
                 sessionId: s.id,
-                harnessSessionId: s.harnessSessionId ?? t.harnessSessionId,
+                harnessSessionId:
+                  s.harnessSessionId ?? observedIdentity ?? t.harnessSessionId,
                 resumeState: 'live' as const,
                 lifecycle: 'running' as const,
                 exitCode: s.exited ? (s.exitCode ?? 0) : null,
@@ -814,10 +864,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 ...t,
                 initialTask,
                 sessionId: null,
-                harnessSessionId: s.harnessSessionId ?? t.harnessSessionId,
-                resumeState: s.harnessSessionId
-                  ? ('ended-resumable' as const)
-                  : ('identity-missing' as const),
+                harnessSessionId:
+                  s.harnessSessionId ?? observedIdentity ?? t.harnessSessionId,
+                resumeState:
+                  s.harnessSessionId || observedIdentity || t.harnessSessionId
+                    ? ('ended-resumable' as const)
+                    : ('identity-missing' as const),
                 lifecycle: 'exited' as const,
                 exitCode: s.exitCode ?? t.exitCode,
               };
@@ -827,6 +879,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             return {
               ...t,
               initialTask,
+              harnessSessionId: observedIdentity ?? t.harnessSessionId,
               sessionId: null,
               exitCode: t.exitCode,
               lifecycle:
@@ -836,9 +889,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                   : t.lifecycle === 'running' || t.lifecycle === 'resuming'
                     ? ('stopped-clean' as const)
                     : t.lifecycle,
-              resumeState: t.harnessSessionId
-                ? ('ended-resumable' as const)
-                : ('identity-missing' as const),
+              resumeState:
+                observedIdentity || t.harnessSessionId
+                  ? ('ended-resumable' as const)
+                  : ('identity-missing' as const),
             };
           }),
         }));
@@ -932,12 +986,19 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     });
     const offIdentity = api.onIdentity?.(
       ({ id, durableSessionId, harnessSessionId }) => {
+        observedIdentitiesRef.current.set(durableSessionId, harnessSessionId);
         setProjects(prev =>
           prev.map(g => ({
             ...g,
             tabs: g.tabs.map(t =>
               t.sessionId === id || t.durableSessionId === durableSessionId
-                ? { ...t, harnessSessionId }
+                ? {
+                    ...t,
+                    harnessSessionId,
+                    resumeState: t.sessionId
+                      ? t.resumeState
+                      : 'ended-resumable',
+                  }
                 : t
             ),
           }))
@@ -1234,6 +1295,13 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           setError(res.error);
           return false;
         }
+        const observedIdentity =
+          observedIdentitiesRef.current.get(res.session.durableSessionId) ??
+          null;
+        const launchedSession =
+          observedIdentity && !res.session.harnessSessionId
+            ? { ...res.session, harnessSessionId: observedIdentity }
+            : res.session;
         if (restoredEntry) {
           // Commit the soft-close migration only after the provider process is
           // live. A failed create leaves the recoverable ledger entry intact.
@@ -1251,7 +1319,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         if (opts.reuseTabId) {
           // the draft becomes the live tab in place — same id, same spot
           const tab = tabFromPtySession(
-            res.session,
+            launchedSession,
             tabId,
             opts.roadmapItemId ?? null,
             statedTask || opts.initialPrompt?.trim() || null
@@ -1267,10 +1335,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 : grp
             )
           );
-          setActiveDir(res.session.projectDir);
+          setActiveDir(launchedSession.projectDir);
         } else {
           addSession(
-            res.session,
+            launchedSession,
             tabId,
             opts.roadmapItemId ?? null,
             statedTask || opts.initialPrompt?.trim() || null
@@ -1281,8 +1349,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         // failure (offline, not signed in) must NEVER stop the operator opening
         // a session, so it runs detached and swallows its own errors.
         syncProjectIdentity({
-          rootPath: res.session.projectDir,
-          name: res.session.projectName,
+          rootPath: launchedSession.projectDir,
+          name: launchedSession.projectName,
         });
         return true;
       } catch (cause) {
@@ -1713,23 +1781,29 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
 
   const resumeTabs = useCallback(
     async (tabs: WorkspaceTab[]) => {
-      for (const tab of tabs) {
-        if (tabCanResumeAsAgent(tab)) {
-          await resumeTab(tab.id);
+      const eligible = tabs.filter(tabCanResumeAsAgent);
+      if (eligible.length === 0) return;
+      setResumeBatchProgress({ completed: 0, total: eligible.length });
+      let resumed = 0;
+      try {
+        for (const [index, tab] of eligible.entries()) {
+          if (await resumeTab(tab.id)) resumed += 1;
+          setResumeBatchProgress({
+            completed: index + 1,
+            total: eligible.length,
+          });
         }
+      } finally {
+        setResumeBatchProgress(null);
+      }
+      const failed = eligible.length - resumed;
+      if (failed > 0) {
+        setError(
+          `${resumed} ${resumed === 1 ? 'agent' : 'agents'} resumed; ${failed} ${failed === 1 ? 'agent needs' : 'agents need'} review.`
+        );
       }
     },
     [resumeTab]
-  );
-
-  const resumeProject = useCallback(
-    (dir: string) => {
-      const project = stateRef.current.projects.find(
-        group => group.dir === dir
-      );
-      if (project) void resumeTabs(project.tabs);
-    },
-    [resumeTabs]
   );
 
   const resumeAll = useCallback(() => {
@@ -2198,6 +2272,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     engaged,
     reentryRecap,
     error,
+    resumeBatchProgress,
     setError,
     dismissReentryRecap,
     ready,
@@ -2211,7 +2286,6 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     reopenClosedSession,
     listClosedSessions,
     resumeTab,
-    resumeProject,
     resumeAll,
     selectProject,
     selectTab,

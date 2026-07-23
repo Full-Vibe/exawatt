@@ -48,8 +48,11 @@ instead of silently broadening access.
 
 When local Sessions are running, quitting Exawatt asks before stopping them.
 Their layout, exact agent conversation identity, and retained terminal history
-return on the next launch, but nothing resumes automatically. Use **Resume All**
-for agents or **New Shell Here** for an individual stopped shell.
+return on the next launch, but nothing resumes automatically. Use the workspace
+recovery action, such as **Resume 4 Agents**, or **Resume This Agent** in one
+stopped pane. A stopped shell offers **Start New Shell**. If an older Session is
+missing its exact provider identity, Exawatt labels it **Reconnect needed**
+instead of guessing.
 
 See the [Session lifecycle reference](../reference/session-lifecycle.md) for the
 state and persistence contract.

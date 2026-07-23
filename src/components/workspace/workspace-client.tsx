@@ -235,6 +235,7 @@ export function WorkspaceClient() {
     engaged,
     reentryRecap,
     error,
+    resumeBatchProgress,
     setError,
     dismissReentryRecap,
     launch,
@@ -246,7 +247,6 @@ export function WorkspaceClient() {
     updateDraft,
     reopenClosedSession,
     resumeTab,
-    resumeProject,
     resumeAll,
     selectProject,
     selectTab,
@@ -303,6 +303,22 @@ export function WorkspaceClient() {
         .length,
     [projects]
   );
+  const reconnectableAgents = useMemo(
+    () =>
+      projects.flatMap(project =>
+        project.tabs.flatMap(tab =>
+          tab.harness !== 'shell' &&
+          !tabIsLive(tab) &&
+          tab.resumeState !== 'resuming' &&
+          !tab.harnessSessionId &&
+          tab.lifecycle !== 'draft'
+            ? [{ projectDir: project.dir, tab }]
+            : []
+        )
+      ),
+    [projects]
+  );
+  const stoppedAgentCount = readyAgentCount + reconnectableAgents.length;
 
   useEffect(() => {
     const off = window.electron?.pty?.onNotificationClick(({ id }) => {
@@ -901,9 +917,10 @@ export function WorkspaceClient() {
           </button>
         </div>
 
-        {readyAgentCount > 0 && !resumeNoticeDismissed && (
+        {stoppedAgentCount > 0 && !resumeNoticeDismissed && (
           <div
-            role="status"
+            role="region"
+            aria-label="Saved Agent recovery"
             className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 font-mono text-xs"
             style={{
               borderColor: 'rgba(25,230,255,0.18)',
@@ -911,21 +928,28 @@ export function WorkspaceClient() {
               color: HUD.textDim,
             }}
           >
-            <span className="min-w-0 flex-1">
-              {readyAgentCount}{' '}
-              {readyAgentCount === 1 ? 'agent is' : 'agents are'} ready to
-              resume
+            <span role="status" className="min-w-0 flex-1">
+              {resumeBatchProgress
+                ? `Resuming ${resumeBatchProgress.completed} of ${resumeBatchProgress.total} saved agents…`
+                : readyAgentCount > 0
+                  ? `${readyAgentCount} saved ${readyAgentCount === 1 ? 'agent is' : 'agents are'} ready to resume${reconnectableAgents.length > 0 ? ` · ${reconnectableAgents.length} ${reconnectableAgents.length === 1 ? 'needs' : 'need'} reconnection` : ''}`
+                  : `${reconnectableAgents.length} saved ${reconnectableAgents.length === 1 ? 'agent needs its' : 'agents need their'} conversation reconnected`}
             </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={resumeAll}
-              className="h-7 font-mono"
-            >
-              <Play className="h-3.5 w-3.5" />
-              Resume All
-            </Button>
+            {readyAgentCount > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!!resumeBatchProgress}
+                onClick={resumeAll}
+                className="h-7 font-mono"
+              >
+                <Play className="h-3.5 w-3.5" />
+                {resumeBatchProgress
+                  ? 'Resuming…'
+                  : `Resume ${readyAgentCount} ${readyAgentCount === 1 ? 'Agent' : 'Agents'}`}
+              </Button>
+            )}
             <button
               type="button"
               aria-label="Dismiss resume notice"
@@ -1152,21 +1176,17 @@ export function WorkspaceClient() {
                               conversation...
                             </p>
                           ) : (
-                            <>
+                            <div className="absolute inset-0 flex min-h-0 flex-col">
+                              <SessionRestorePanel
+                                tab={tab}
+                                onResumeTab={resumeTab}
+                              />
                               <RetainedTerminalPane
                                 durableSessionId={tab.durableSessionId}
                                 title={tab.title}
                                 font={font}
                               />
-                              <SessionRestorePanel
-                                tab={tab}
-                                project={project}
-                                resumableCount={readyAgentCount}
-                                onResumeTab={resumeTab}
-                                onResumeProject={resumeProject}
-                                onResumeAll={resumeAll}
-                              />
-                            </>
+                            </div>
                           )}
                         </div>
                       );

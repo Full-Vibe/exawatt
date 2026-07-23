@@ -367,7 +367,7 @@ describe('workspace persistence v6 title ownership', () => {
   });
 });
 
-describe('Resume All eligibility', () => {
+describe('workspace Agent recovery eligibility', () => {
   const stopped = {
     id: 'tab-1',
     durableSessionId: 'durable-1',

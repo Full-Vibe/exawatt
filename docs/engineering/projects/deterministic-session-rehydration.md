@@ -25,11 +25,19 @@ starting work. The operator resumes agents explicitly.
 - Workspace saves are serialized in invocation order. Shutdown first persists
   Sessions as running, verifies process death, then commits stopped-clean; an
   incomplete shutdown remains conservatively interrupted.
+- Electron main persists the durable Session → provider identity mapping
+  immediately in an atomic machine-local index. Composer-launched Codex work
+  takes its discovery baseline before spawn, so an initial task passed on the
+  CLI cannot bypass identity capture.
 - Codex discovery reads bounded rollout prefixes, tolerates provider file churn,
   and associates parallel launches by provider launch time while preserving PTY
   input order.
-- Resume All is explicit, sequential, and agents-only. It never starts shells.
+- Workspace recovery is explicit, sequential, and agents-only. Its one action
+  names the exact count (for example, **Resume 4 Agents**) and never starts
+  shells.
 - Exact resume never guesses from latest conversation or cwd.
+- Legacy identity-less Sessions repair automatically only through a one-to-one
+  exact opening-task match. Ambiguous matches remain operator-selected.
 
 ## User interaction
 
@@ -39,8 +47,12 @@ starting work. The operator resumes agents explicitly.
   stop N agents?” with a one-sentence persistence/resume explanation and Cancel
   / Quit and Stop actions. Shell counts appear when relevant.
 - No-process quit has no prompt. Cancel changes nothing.
-- Relaunch has no modal. A contextual “N agents ready to resume” notice offers
-  Resume All. Individual agents offer Resume; shells offer New Shell Here.
+- Relaunch has no modal. One contextual recovery notice offers **Resume N
+  Agents** and reports any Sessions that still need reconnection. Individual
+  panes offer **Resume This Agent**; shells offer **Start New Shell**.
+- A stopped pane labels retained terminal output as saved, read-only history.
+  Missing identity is a first-class **Reconnect needed** state, never a
+  live-looking terminal with only an exit marker as explanation.
 - Restart to Update uses the same coordinator with restart-specific copy.
 - Corrupt or failed Sessions remain isolated and actionable without blocking
   other restores.
@@ -55,7 +67,8 @@ starting work. The operator resumes agents explicitly.
 3. S2 shutdown (landed 2026-07-11): reentrant main-process coordinator, native quit alert, flush,
    bounded process termination, window-close distinction, and updater routing.
 4. S3 rehydration (landed 2026-07-11): retained-history preload, compact status UI, exact individual
-   resume, sequential agents-only Resume All, locking, and localized failures.
+   resume, sequential agents-only workspace recovery, locking, and localized
+   failures.
 5. S4 proof (landed 2026-07-11): packaged UI checks, process/orphan checks, crash recovery,
    authenticated provider round trips, and a signed multi-agent version-to-version update.
 
@@ -66,16 +79,17 @@ integrated before the next packet proceeds.
 
 Automated tests cover migrations, atomic storage, caps/permissions, corrupt
 records, lifecycle transitions, shutdown reentrancy, cancel/confirm behavior,
-resume locking, exact-ID commands, no-spawn restore, agents-only Resume All,
-update routing, keyboard/focus, accessibility names, and compact/large layouts.
+resume locking, exact-ID commands, no-spawn restore, agents-only workspace
+recovery, update routing, keyboard/focus, accessibility names, and compact/large
+layouts.
 
 Literal acceptance uses an isolated fixture repo with two Claude Sessions, two
 Codex Sessions, and one shell. It proves cancel keeps all work alive; confirmed
-quit leaves no orphan; relaunch restores layout and history; Resume All restores
-the four exact conversations but not the shell; forced termination marks
-interrupted work; one corrupt checkpoint does not block the others; and a signed
-update checkpoints, stops, installs, relaunches, and resumes exactly. Mock tests
-are necessary but not sufficient.
+quit leaves no orphan; relaunch restores layout and history; workspace recovery
+restores the four exact conversations but not the shell; forced termination
+marks interrupted work; one corrupt checkpoint does not block the others; and a
+signed update checkpoints, stops, installs, relaunches, and resumes exactly.
+Mock tests are necessary but not sufficient.
 
 Recorded 2026-07-11 evidence:
 
@@ -99,8 +113,8 @@ Recorded 2026-07-11 evidence:
   notarized, stapled, verified, and published `v0.1.4` and `v0.1.5`. The downloaded
   `v0.1.4` baseline independently passed `codesign`, Gatekeeper, and notarization
   assessment.
-- `EXAWATT_BASE_APP_PATH=… EXAWATT_EXPECTED_UPDATE=0.1.5 pnpm
-  eval:electron:update` passed the public Supabase feed from signed `0.1.4` to
+- `EXAWATT_BASE_APP_PATH=… EXAWATT_EXPECTED_UPDATE=0.1.5 pnpm eval:electron:update`
+  passed the public Supabase feed from signed `0.1.4` to
   signed `0.1.5`: five live Sessions were checkpointed and stopped, the bundle
   replaced and relaunched automatically, all five histories restored without
   spawning, four exact agents resumed, the shell remained stopped, and no agent

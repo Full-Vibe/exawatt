@@ -14,7 +14,13 @@ import {
   type SessionHistorySnapshot,
 } from './session-history-store';
 import { stopProcessGroups } from './process-groups';
-import { listResumeCandidates } from './resume-candidates';
+import {
+  invalidateResumeCandidates,
+  listResumeCandidates,
+  reconcileResumeIdentities as reconcilePersistedResumeIdentities,
+  type ReconciledResumeIdentity,
+  type ResumeIdentityHint,
+} from './resume-candidates';
 import { ownerOfCodexCandidate } from './codex-identity-match';
 import { OrderedWriteBuffer } from './ordered-write-buffer';
 import {
@@ -23,6 +29,7 @@ import {
   type PtyHarness,
 } from './harness-types';
 import { harnessDescriptor } from './harness-registry';
+import { SessionIdentityStore } from './session-identity-store';
 
 const execFileAsync = promisify(execFile);
 
@@ -138,8 +145,18 @@ export async function defaultShell(): Promise<string> {
 interface Session {
   proc: pty.IPty;
   info: PtySessionInfo;
+  /** Real path used only for provider identity matching. Keep info.cwd as the
+   * operator-entered path for display/persistence, but do not let macOS's
+   * /var → /private/var alias make one launch look like two directories. */
+  codexIdentityCwd: string;
   codexTrustAccepted: boolean;
   codexIdentityStarted: boolean;
+  /** Provider catalog snapshot taken before Codex starts. Reusing this
+   * launch boundary is what makes later identity attachment deterministic. */
+  codexIdentityBaseline: Set<string> | null;
+  /** When the provider was asked to establish this conversation. A delayed
+   * first prompt must not be compared with the older PTY process timestamp. */
+  codexIdentityBoundaryAt: number;
   codexInput: OrderedWriteBuffer;
   /** The composer's first task, kept for goal-oriented context summaries
    *  (D18): the operator's own words are the best statement of the goal. */
@@ -151,6 +168,7 @@ export class PtySessionManager extends EventEmitter {
   /** Bounded 4 MB per session; late panes replay text and S4 reads visit deltas. */
   private scrollback = new ScrollbackStore();
   private history: SessionHistoryStore | null = null;
+  private identities: SessionIdentityStore | null = null;
   private nextId = 1;
   private acceptingCreates = true;
   private creating = 0;
@@ -160,7 +178,13 @@ export class PtySessionManager extends EventEmitter {
 
   async configurePersistence(root: string): Promise<void> {
     this.history = new SessionHistoryStore(root);
-    await this.history.initialize();
+    this.identities = new SessionIdentityStore(
+      path.join(path.dirname(root), 'session-identities.json')
+    );
+    await Promise.all([
+      this.history.initialize(),
+      this.identities.initialize(),
+    ]);
   }
 
   pauseCreates(): void {
@@ -206,10 +230,31 @@ export class PtySessionManager extends EventEmitter {
     if (!stat.isDirectory()) {
       throw new Error(`Not a directory: ${cwd}`);
     }
+    const canonicalCwd = await fs.promises
+      .realpath(cwd)
+      .catch(() => path.resolve(cwd));
     const cols = options.cols ?? 80;
     const rows = options.rows ?? 24;
     const shell = await defaultShell();
     const project = await resolveProject(cwd);
+    let codexIdentityBaseline: Set<string> | null = null;
+    if (options.harness === 'codex' && !options.resumeSessionId) {
+      try {
+        invalidateResumeCandidates('codex', cwd);
+        codexIdentityBaseline = new Set(
+          (await listResumeCandidates('codex', cwd)).map(
+            candidate => candidate.id
+          )
+        );
+      } catch (error) {
+        console.warn('Codex pre-launch identity baseline unavailable', error);
+        // The launch-time and nearest-owner constraints below still provide a
+        // conservative boundary if the preflight scan was temporarily
+        // unavailable. An empty baseline is safer than abandoning identity
+        // capture for a composer-launched task that may receive no later input.
+        codexIdentityBaseline = new Set();
+      }
+    }
     const id = `pty-${this.nextId++}`;
     const existing = Array.from(this.sessions.entries()).find(
       ([, session]) => session.info.durableSessionId === durableSessionId
@@ -292,8 +337,11 @@ export class PtySessionManager extends EventEmitter {
     this.sessions.set(id, {
       proc,
       info,
+      codexIdentityCwd: canonicalCwd,
       codexTrustAccepted: false,
       codexIdentityStarted: false,
+      codexIdentityBaseline,
+      codexIdentityBoundaryAt: info.startedAt,
       codexInput: new OrderedWriteBuffer(),
       ...(statedTask ? { initialTask: statedTask } : {}),
     });
@@ -338,7 +386,36 @@ export class PtySessionManager extends EventEmitter {
       this.emit('exit', id, exitCode, durableSessionId);
     });
 
+    const session = this.sessions.get(id)!;
+    if (harnessSessionId && options.harness !== 'shell') {
+      await this.rememberIdentity(info);
+    } else if (options.harness === 'codex') {
+      // Codex creates its provider identity at launch. Capture from the
+      // pre-spawn catalog boundary even when the composer supplied the first
+      // task as a CLI argument and no later terminal write ever occurs.
+      session.codexIdentityStarted = true;
+      invalidateResumeCandidates('codex', cwd);
+      this.beginCodexIdentityCapture(session);
+    }
+
     return { ...info };
+  }
+
+  private async rememberIdentity(info: PtySessionInfo): Promise<void> {
+    if (info.harness === 'shell' || !info.harnessSessionId) return;
+    try {
+      await this.identities?.remember({
+        durableSessionId: info.durableSessionId,
+        harness: info.harness,
+        harnessSessionId: info.harnessSessionId,
+        cwd: info.cwd,
+      });
+    } catch (error) {
+      // The provider process is already live. Do not turn a transient disk
+      // error into a false launch failure (and an orphaned, invisible Agent);
+      // the identity store remains dirty and the shutdown checkpoint retries.
+      console.error('Session identity checkpoint failed', error);
+    }
   }
 
   private async captureCodexIdentity(
@@ -347,20 +424,25 @@ export class PtySessionManager extends EventEmitter {
     submittedAt = info.startedAt
   ): Promise<void> {
     const deadline = Date.now() + 15_000;
-    while (Date.now() < deadline && !info.exited && !info.harnessSessionId) {
+    let retryDelayMs = 100;
+    while (
+      Date.now() < deadline &&
+      this.sessions.has(info.id) &&
+      !info.harnessSessionId
+    ) {
+      invalidateResumeCandidates('codex', info.cwd);
       const candidates = await listResumeCandidates('codex', info.cwd);
       const pending = Array.from(this.sessions.values())
         .filter(
           session =>
             session.info.harness === 'codex' &&
             session.codexIdentityStarted &&
-            !session.info.harnessSessionId &&
-            !session.info.exited
+            !session.info.harnessSessionId
         )
         .map(session => ({
           id: session.info.id,
-          cwd: session.info.cwd,
-          startedAt: session.info.startedAt,
+          cwd: session.codexIdentityCwd,
+          startedAt: session.codexIdentityBoundaryAt,
         }));
       const match = candidates
         .filter(
@@ -380,6 +462,7 @@ export class PtySessionManager extends EventEmitter {
       if (match) {
         this.claimedCodexIds.add(match.id);
         info.harnessSessionId = match.id;
+        await this.rememberIdentity(info);
         this.emit(
           'identity',
           info.id,
@@ -388,7 +471,8 @@ export class PtySessionManager extends EventEmitter {
         );
         return;
       }
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+      retryDelayMs = Math.min(1_600, retryDelayMs * 2);
     }
   }
 
@@ -415,6 +499,7 @@ export class PtySessionManager extends EventEmitter {
         return;
       }
       s.codexIdentityStarted = true;
+      s.codexIdentityBoundaryAt = Date.now();
       s.codexInput.begin(data);
       this.beginCodexIdentityCapture(s);
       return;
@@ -425,13 +510,17 @@ export class PtySessionManager extends EventEmitter {
   private beginCodexIdentityCapture(session: Session): void {
     let task!: Promise<void>;
     task = (async () => {
-      let before = new Set<string>();
+      let before = session.codexIdentityBaseline;
       try {
-        before = new Set(
-          (await listResumeCandidates('codex', session.info.cwd)).map(
-            candidate => candidate.id
-          )
-        );
+        if (!before) {
+          invalidateResumeCandidates('codex', session.info.cwd);
+          before = new Set(
+            (await listResumeCandidates('codex', session.info.cwd)).map(
+              candidate => candidate.id
+            )
+          );
+          session.codexIdentityBaseline = before;
+        }
       } catch (error) {
         console.warn('Codex identity baseline unavailable', error);
       } finally {
@@ -442,15 +531,17 @@ export class PtySessionManager extends EventEmitter {
         });
       }
       if (
-        session.info.exited ||
         !this.sessions.has(session.info.id) ||
         session.info.harnessSessionId
       ) {
         return;
       }
       try {
-        const submittedAt = Date.now();
-        await this.captureCodexIdentity(session.info, before, submittedAt);
+        await this.captureCodexIdentity(
+          session.info,
+          before ?? new Set<string>(),
+          session.codexIdentityBoundaryAt
+        );
       } catch (error) {
         console.warn('Codex identity capture failed', error);
       }
@@ -524,7 +615,10 @@ export class PtySessionManager extends EventEmitter {
     );
     if (live) return;
     this.scrollback.delete(durableSessionId);
-    await this.history?.delete(durableSessionId);
+    await Promise.all([
+      this.history?.delete(durableSessionId),
+      this.identities?.delete(durableSessionId),
+    ]);
   }
 
   async kill(id: string): Promise<void> {
@@ -537,7 +631,10 @@ export class PtySessionManager extends EventEmitter {
     }
     this.sessions.delete(id);
     this.scrollback.delete(s.info.durableSessionId);
-    await this.history?.delete(s.info.durableSessionId);
+    await Promise.all([
+      this.history?.delete(s.info.durableSessionId),
+      this.identities?.delete(s.info.durableSessionId),
+    ]);
   }
 
   async deleteSession(durableSessionId: string): Promise<void> {
@@ -549,7 +646,10 @@ export class PtySessionManager extends EventEmitter {
       return;
     }
     this.scrollback.delete(durableSessionId);
-    await this.history?.delete(durableSessionId);
+    await Promise.all([
+      this.history?.delete(durableSessionId),
+      this.identities?.delete(durableSessionId),
+    ]);
   }
 
   /** replayable scrollback for a session (empty string if unknown) */
@@ -636,7 +736,35 @@ export class PtySessionManager extends EventEmitter {
   }
 
   async flushHistory(): Promise<void> {
-    await this.history?.flush();
+    await Promise.all([this.history?.flush(), this.identities?.flush()]);
+  }
+
+  async reconcileResumeIdentities(
+    hints: ResumeIdentityHint[]
+  ): Promise<ReconciledResumeIdentity[]> {
+    const durable = new Map(
+      (this.identities?.list() ?? []).map(record => [
+        record.durableSessionId,
+        record,
+      ])
+    );
+    const repaired = await reconcilePersistedResumeIdentities(hints, durable);
+    for (const identity of repaired) {
+      try {
+        await this.identities?.remember({
+          durableSessionId: identity.durableSessionId,
+          harness: identity.harness,
+          harnessSessionId: identity.harnessSessionId,
+          cwd: identity.cwd,
+        });
+      } catch (error) {
+        // The repaired identity is still returned to the renderer and its
+        // normal workspace checkpoint. Keep the main-owned copy dirty for the
+        // coordinated shutdown retry rather than losing a valid repair.
+        console.error('Reconciled Session identity checkpoint failed', error);
+      }
+    }
+    return repaired;
   }
 
   async settleProviderIdentities(timeoutMs = 2_000): Promise<void> {

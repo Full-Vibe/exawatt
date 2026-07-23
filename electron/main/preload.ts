@@ -75,6 +75,15 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('pty:worktree', repoDir, branch),
     listResumeCandidates: (harness: string, cwd: string) =>
       ipcRenderer.invoke('pty:list-resume-candidates', harness, cwd),
+    reconcileResumeIdentities: (
+      hints: Array<{
+        durableSessionId: string;
+        harness: 'claude' | 'codex';
+        cwd: string;
+        initialTask: string | null;
+        harnessSessionId: string | null;
+      }>
+    ) => ipcRenderer.invoke('pty:reconcile-resume-identities', hints),
     listRecentConversations: (cwd: string) =>
       ipcRenderer.invoke('pty:list-recent-conversations', cwd),
     enrichRecentConversations: (cwd: string, accessToken: string) =>

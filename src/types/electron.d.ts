@@ -218,6 +218,9 @@ export interface ElectronPtyApi {
     harness: PtyHarness,
     cwd: string
   ) => Promise<HarnessResumeCandidate[]>;
+  reconcileResumeIdentities: (
+    hints: ResumeIdentityHint[]
+  ) => Promise<ReconciledResumeIdentity[]>;
   /** Source-neutral local catalog. Enrichment is a separate authenticated,
    * non-blocking pass so this list never waits on a model. */
   listRecentConversations: (cwd: string) => Promise<RecentConversation[]>;
@@ -267,8 +270,26 @@ export interface ElectronPtyApi {
 export interface HarnessResumeCandidate {
   id: string;
   cwd: string;
+  startedAt: number;
   updatedAt: number;
   label: string;
+  description: string | null;
+}
+
+export interface ResumeIdentityHint {
+  durableSessionId: string;
+  harness: AgentHarness;
+  cwd: string;
+  initialTask: string | null;
+  harnessSessionId: string | null;
+}
+
+export interface ReconciledResumeIdentity {
+  durableSessionId: string;
+  harness: AgentHarness;
+  cwd: string;
+  harnessSessionId: string;
+  source: 'durable-index' | 'task-correlation';
 }
 
 export interface RecentConversation {

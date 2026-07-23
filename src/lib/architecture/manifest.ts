@@ -656,7 +656,7 @@ export const architectureManifest = {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
-            'Immediate launch frame, versioned local renderer with retryable verified child-process shutdown, native-network PKCE, serialized workspace/history, indexed and deduplicated Project conversation discovery with validated local summary cache, atomic Developer-ID delivery, and signed updates.',
+            'Immediate launch frame, versioned local renderer with retryable verified child-process shutdown, native-network PKCE, serialized workspace/history plus a main-owned durable provider-identity index, indexed and deduplicated Project conversation discovery with validated local summary cache, atomic Developer-ID delivery, and signed updates.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 75,

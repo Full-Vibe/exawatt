@@ -55,13 +55,21 @@ async function launch() {
 async function waitForSessionCount(page, expected) {
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
-    const sessions = await page.evaluate(async () =>
-      (await window.electron?.pty?.list()) ?? []
+    const sessions = await page.evaluate(
+      async () => (await window.electron?.pty?.list()) ?? []
     );
     if (sessions.length === expected) return sessions;
     await new Promise(resolve => setTimeout(resolve, 50));
   }
   throw new Error(`Timed out waiting for ${expected} PTY sessions`);
+}
+
+async function summonComposer(page) {
+  if ((await page.locator('[data-agent-composer]').count()) > 0) return;
+  const toggle = page.locator('[data-composer-toggle][aria-expanded="false"]');
+  if ((await toggle.count()) > 0) await toggle.click();
+  else await page.getByRole('button', { name: 'New Agent' }).click();
+  await page.locator('[data-agent-composer]').waitFor();
 }
 
 let app = null;
@@ -70,6 +78,17 @@ try {
   let page = await app.firstWindow({ timeout: 45_000 });
   page.setDefaultTimeout(20_000);
   await page.locator('[data-command-altitude]').waitFor();
+  await page.waitForFunction(
+    () => !document.body.innerText.includes('Loading…')
+  );
+  if (!new URL(page.url()).pathname.startsWith('/workspace')) {
+    await page.locator('[data-command-altitude-level="terminal"]').click();
+    await page.waitForURL('**/workspace*');
+    await page.waitForFunction(
+      () => !document.body.innerText.includes('Loading…')
+    );
+  }
+  await page.getByRole('button', { name: 'Open Project' }).first().waitFor();
   await page.evaluate(dir => {
     window.dispatchEvent(
       new CustomEvent('exawatt:open-project', { detail: dir })
@@ -78,14 +97,9 @@ try {
   await page.locator('[data-agent-composer]').waitFor();
 
   for (let count = 1; count <= 4; count++) {
-    // the composer is summoned, not permanent (D18) — expand it if collapsed
-    const toggle = page.locator(
-      '[data-composer-toggle][aria-expanded="false"]'
-    );
-    if ((await toggle.count()) > 0) {
-      await toggle.click();
-      await page.locator('[data-agent-composer]').waitFor();
-    }
+    // D24 uses a new-Agent tab once a Project already has Sessions; older
+    // layouts expose an inline toggle. Exercise either supported summon path.
+    await summonComposer(page);
     await page.getByRole('button', { name: 'Start' }).click();
     const snapshot = await waitForSessionCount(page, count);
     console.log(
@@ -98,30 +112,39 @@ try {
     return sessions?.map(session => session.harnessSessionId) ?? [];
   });
   if (originalIds.length !== 4 || new Set(originalIds).size !== 4) {
-    throw new Error(`Expected four distinct Claude IDs; got ${originalIds.join(', ')}`);
+    throw new Error(
+      `Expected four distinct Claude IDs; got ${originalIds.join(', ')}`
+    );
   }
   await page.waitForTimeout(700);
   await app.close();
   app = null;
 
-  const persisted = JSON.parse(readFileSync(join(userData, 'workspace.json'), 'utf8'));
-  const persistedIds = persisted.projects[0].tabs.map(tab => tab.harnessSessionId);
+  const persisted = JSON.parse(
+    readFileSync(join(userData, 'workspace.json'), 'utf8')
+  );
+  const persistedIds = persisted.projects[0].tabs.map(
+    tab => tab.harnessSessionId
+  );
   if (JSON.stringify(persistedIds) !== JSON.stringify(originalIds)) {
-    throw new Error('Workspace did not persist the four exact Claude identities');
+    throw new Error(
+      'Workspace did not persist the four exact Claude identities'
+    );
   }
 
   app = await launch();
   page = await app.firstWindow({ timeout: 45_000 });
   page.setDefaultTimeout(20_000);
-  const resumeBanner = page
-    .getByRole('status')
-    .filter({ hasText: '4 agents are ready to resume' });
+  const resumeBanner = page.getByRole('region', {
+    name: 'Saved Agent recovery',
+  });
   await resumeBanner.waitFor();
-  const before = await page.evaluate(async () =>
-    (await window.electron?.pty?.list())?.length
+  const before = await page.evaluate(
+    async () => (await window.electron?.pty?.list())?.length
   );
-  if (before !== 0) throw new Error(`Relaunch silently spawned ${before} sessions`);
-  await resumeBanner.getByRole('button', { name: 'Resume All' }).click();
+  if (before !== 0)
+    throw new Error(`Relaunch silently spawned ${before} sessions`);
+  await resumeBanner.getByRole('button', { name: 'Resume 4 Agents' }).click();
   await waitForSessionCount(page, 4);
 
   const resumed = await page.evaluate(async () => {
@@ -148,7 +171,9 @@ try {
   }
   await app.close();
   app = null;
-  console.log('PASS exact resume: four tabs -> four saved IDs -> four exact resumes');
+  console.log(
+    'PASS exact resume: four tabs -> four saved IDs -> four exact resumes'
+  );
 } finally {
   await app?.close().catch(() => undefined);
   for (let attempt = 0; attempt < 5; attempt++) {
