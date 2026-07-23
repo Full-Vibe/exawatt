@@ -40,8 +40,9 @@ export default function Home() {
             Exawatt
           </h1>
           <p className="max-w-md text-lg text-white/80 drop-shadow-md">
-            The economy is refactoring. Exawatt is the command interface for
-            billions of agents.
+            The economy is refactoring.
+            <br />
+            Exawatt is the command interface for billions of agents.
           </p>
           <div className="flex gap-4">
             <Button
