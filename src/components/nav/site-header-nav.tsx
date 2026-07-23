@@ -126,15 +126,19 @@ export function SiteHeaderNav({
             </Link>
           </Button>
         )}
-        {/* web only — in Electron the altitude rail owns this destination */}
-        {!inElectron && isAuthenticated && !isHome && !isWorkspace && (
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/workspace">
-              <SquareTerminal className="h-3.5 w-3.5" />
-              Workspace
-            </Link>
-          </Button>
-        )}
+        {/* authenticated web app surfaces only — in Electron the altitude
+            rail owns this destination */}
+        {!inElectron &&
+          isAuthenticated &&
+          isAppRoute(pathname) &&
+          !isWorkspace && (
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/workspace">
+                <SquareTerminal className="h-3.5 w-3.5" />
+                Workspace
+              </Link>
+            </Button>
+          )}
         {!isAuthenticated && isAppRoute(pathname) && (
           <Button variant="ghost" size="sm" asChild>
             <Link href="/sign-in">Sign In</Link>

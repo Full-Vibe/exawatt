@@ -1,14 +1,8 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { createClient } from '@/lib/supabase/server';
 import { HeroBg } from './_hero-bg';
 
-export default async function Home() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+export default function Home() {
   return (
     <>
       <style>{`
@@ -50,19 +44,10 @@ export default async function Home() {
             billions of agents.
           </p>
           <div className="flex gap-4">
-            {user && (
-              <Button asChild>
-                <Link href="/dashboard">Go to Lattice</Link>
-              </Button>
-            )}
             <Button
               asChild
-              variant={user ? 'outline' : 'ghost'}
-              className={
-                user
-                  ? 'bg-transparent border-white/30 text-white hover:bg-white/10'
-                  : 'text-white hover:bg-white/10 hover:text-white'
-              }
+              variant="ghost"
+              className="text-white hover:bg-white/10 hover:text-white"
             >
               <Link href="/architecture">Architecture</Link>
             </Button>
