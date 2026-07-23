@@ -125,9 +125,19 @@ export function resolveSurfaceHref(surface: AppSurface): string {
   return surface.id === 'spatial' ? spatialReturnHref() : surface.href;
 }
 
-/** Routes that are the public website rather than the app: the marketing
- *  footer renders only here. Everything else is an app surface (fixed,
- *  full-viewport, no page scroll). */
+const APP_ROUTE_PREFIXES = Array.from(
+  new Set(APP_SURFACES.map(surface => surface.href.split('?')[0]))
+);
+
+/** True only for registered product surfaces, including their nested routes. */
+export function isAppRoute(pathname: string): boolean {
+  return APP_ROUTE_PREFIXES.some(
+    prefix => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+}
+
+/** Public website routes that render the marketing footer. Internal previews
+ *  and eval routes are intentionally footerless without becoming app routes. */
 const MARKETING_ROUTES = [
   '/privacy',
   '/terms',

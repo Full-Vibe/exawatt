@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { signOut } from '@/app/actions/projects';
 import { CommandAltitudeNav } from './command-altitude-nav';
-import { surfacesByTier, type AppSurface } from './surfaces';
+import { isAppRoute, surfacesByTier, type AppSurface } from './surfaces';
 
 const LEGACY_ICONS: Partial<Record<AppSurface['id'], LucideIcon>> = {
   dashboard: LayoutDashboard,
@@ -135,7 +135,7 @@ export function SiteHeaderNav({
             </Link>
           </Button>
         )}
-        {!isAuthenticated && !isHome && (
+        {!isAuthenticated && isAppRoute(pathname) && (
           <Button variant="ghost" size="sm" asChild>
             <Link href="/sign-in">Sign In</Link>
           </Button>

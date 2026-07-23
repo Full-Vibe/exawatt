@@ -46,44 +46,26 @@ export default async function Home() {
             Exawatt
           </h1>
           <p className="max-w-md text-lg text-white/80 drop-shadow-md">
-            Mission control for your AI agents. Monitor, manage, and unblock
-            your fleet of autonomous workers.
+            The economy is refactoring. Exawatt is the command interface for
+            billions of agents.
           </p>
           <div className="flex gap-4">
-            {user ? (
-              <>
-                <Button asChild>
-                  <Link href="/dashboard">Go to Lattice</Link>
-                </Button>
-                <Button
-                  asChild
-                  variant="outline"
-                  className="bg-transparent border-white/30 text-white hover:bg-white/10"
-                >
-                  <Link href="/architecture">Architecture</Link>
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button asChild>
-                  <Link href="/sign-in">Sign In</Link>
-                </Button>
-                <Button
-                  asChild
-                  variant="outline"
-                  className="bg-transparent border-white/30 text-white hover:bg-white/10"
-                >
-                  <Link href="/sign-up">Sign Up</Link>
-                </Button>
-                <Button
-                  asChild
-                  variant="ghost"
-                  className="text-white hover:bg-white/10 hover:text-white"
-                >
-                  <Link href="/architecture">Architecture</Link>
-                </Button>
-              </>
+            {user && (
+              <Button asChild>
+                <Link href="/dashboard">Go to Lattice</Link>
+              </Button>
             )}
+            <Button
+              asChild
+              variant={user ? 'outline' : 'ghost'}
+              className={
+                user
+                  ? 'bg-transparent border-white/30 text-white hover:bg-white/10'
+                  : 'text-white hover:bg-white/10 hover:text-white'
+              }
+            >
+              <Link href="/architecture">Architecture</Link>
+            </Button>
           </div>
         </main>
       </div>
