@@ -17,10 +17,10 @@ import type { PtySessionManager } from './session-manager';
  * "Looked at" means the session's tab is active AND the app window has OS
  * focus — an active tab behind another app still flags (that's the single-
  * tab case this system exists for). Attention clears when the operator
- * looks (focus), answers (input while looking), or the session demonstrably
- * resumes working on its own (substantial output after the flag — a bell
- * mid-run must not read 'blocked' forever). A spawn grace period keeps
- * auto-revived tabs from all lighting up at app start.
+ * looks (focus) or answers (input while looking). Once a turn crosses a
+ * finished boundary, passive provider output cannot silently reopen it; a
+ * guaranteed-human engagement begins the next turn. A spawn grace period
+ * keeps auto-revived tabs from all lighting up at app start.
  *
  * Pure Node (no Electron imports) so it unit-tests directly. Env knobs:
  *   EXAWATT_ATTENTION=0               disable entirely
@@ -83,12 +83,15 @@ export class AttentionMonitor extends EventEmitter {
   private burstBytes = new Map<string, number>();
   /** sessions currently emitting output — the renderer's "working" glyphs */
   private working = new Set<string>();
+  /** Agent turns that have crossed a visible quiet/BEL boundary. This latch
+   *  prevents an idle TUI repaint from reopening a finished turn; only the
+   *  guaranteed-human engagement channel can begin the next one. Shells do
+   *  not have turns and therefore never enter this set. */
+  private settled = new Set<string>();
   /** sessions ever given work (D22: composer task, exact resume, or a human
    *  keystroke via pty:engage) or that ever raised attention (a turn-end
    *  implies a turn happened) — the strip's started/unstarted truth */
   private engaged = new Set<string>();
-  /** output since a flag was raised — substantial resumption clears it */
-  private bytesSinceFlag = new Map<string, number>();
   /** unterminated escape-sequence tail carried to the next chunk */
   private carry = new Map<string, string>();
   private focusedId: string | null = null;
@@ -154,6 +157,27 @@ export class AttentionMonitor extends EventEmitter {
    *  Deliberately NOT gated on `disabled`: startedness is explicit fact,
    *  not stream inference. Emits 'engaged' once per session. */
   noteEngaged(id: string): void {
+    // A finished Agent turn is sticky across passive PTY output. Explicit
+    // operator engagement is the sole boundary that opens the next turn.
+    // Mark it working from that semantic fact instead of waiting for echo:
+    // a guarded resize can overlap the first prompt bytes, and some TUIs do
+    // not echo input at all.
+    this.settled.delete(id);
+    this.burstBytes.set(id, 0);
+    this.markEngaged(id);
+    const session = this.manager?.list().find(item => item.id === id);
+    if (
+      !this.disabled &&
+      session &&
+      !session.exited &&
+      session.harness !== 'shell'
+    ) {
+      this.lastDataAt.set(id, this.now());
+      this.setWorking(id, true);
+    }
+  }
+
+  private markEngaged(id: string): void {
     if (this.engaged.has(id)) return;
     this.engaged.add(id);
     this.emit('engaged', id);
@@ -195,28 +219,23 @@ export class AttentionMonitor extends EventEmitter {
   private onData(id: string, data: string): void {
     if (this.disabled) return;
     const { bell } = this.scan(id, data);
+    // Once the UI has truthfully shown "turn finished," provider-owned idle
+    // redraws, title updates, and terminal protocol chatter cannot turn it
+    // back into "working." They are observable bytes, not a new operator
+    // command. A real next turn arrives through noteEngaged().
+    if (!bell && this.settled.has(id)) return;
     this.lastDataAt.set(id, this.now());
     const sinceResize = this.now() - (this.lastResizeAt.get(id) ?? -Infinity);
     if (bell) {
       // BEL is an explicit turn boundary: the agent is now waiting, not
       // working. Consume the burst too, otherwise acknowledging the bell
       // can reveal stale working state or re-flag the same turn as quiet.
+      this.settleAgent(id);
       this.setWorking(id, false);
       this.burstBytes.set(id, 0);
     } else {
       if (sinceResize >= RESIZE_GRACE_MS) this.setWorking(id, true);
       this.burstBytes.set(id, (this.burstBytes.get(id) ?? 0) + data.length);
-    }
-    // a flagged session that RESUMES real work was not actually waiting —
-    // clear once post-flag output is substantial (repaint noise stays under
-    // the burst bar; a true prompt-wait produces ~nothing)
-    if (!bell && this.attention.has(id)) {
-      const since = (this.bytesSinceFlag.get(id) ?? 0) + data.length;
-      if (since >= Math.max(1, this.opts.minBurstBytes)) {
-        this.clear(id);
-      } else {
-        this.bytesSinceFlag.set(id, since);
-      }
     }
     if (bell && !this.isWatched(id)) this.raise(id, 'bell');
   }
@@ -232,6 +251,7 @@ export class AttentionMonitor extends EventEmitter {
       if (this.working.has(s.id)) {
         const last = this.lastDataAt.get(s.id);
         if (s.exited || last === undefined || now - last >= WORKING_WINDOW_MS) {
+          if (!s.exited && s.harness !== 'shell') this.settled.add(s.id);
           this.setWorking(s.id, false);
         }
       }
@@ -256,15 +276,13 @@ export class AttentionMonitor extends EventEmitter {
   private raise(id: string, kind: AttentionKind): void {
     if (this.attention.has(id)) return; // keep the original since (queue order)
     // a turn-end or bell means a turn happened — the session has started
-    this.noteEngaged(id);
+    this.markEngaged(id);
     const att = { kind, since: this.now() };
     this.attention.set(id, att);
-    this.bytesSinceFlag.set(id, 0);
     this.emit('attention', id, att);
   }
 
   private clear(id: string): void {
-    this.bytesSinceFlag.delete(id);
     if (!this.attention.delete(id)) return;
     this.emit('attention', id, null);
   }
@@ -279,12 +297,18 @@ export class AttentionMonitor extends EventEmitter {
     this.emit('activity', id, working);
   }
 
+  private settleAgent(id: string): void {
+    const session = this.manager?.list().find(item => item.id === id);
+    if (session && session.harness !== 'shell') this.settled.add(id);
+  }
+
   private drop(id: string): void {
     this.lastDataAt.delete(id);
     this.lastResizeAt.delete(id);
     this.burstBytes.delete(id);
     this.carry.delete(id);
     this.engaged.delete(id);
+    this.settled.delete(id);
     this.setWorking(id, false);
     this.clear(id);
   }

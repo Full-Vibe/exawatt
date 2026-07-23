@@ -35,8 +35,8 @@ contextBridge.exposeInMainWorld('electron', {
     create: (options: unknown) => ipcRenderer.invoke('pty:create', options),
     listAgentModels: (harness: string, cwd: string) =>
       ipcRenderer.invoke('pty:list-agent-models', harness, cwd),
-    write: (id: string, data: string) =>
-      ipcRenderer.invoke('pty:write', id, data),
+    write: (id: string, data: string, operatorEngaged = false) =>
+      ipcRenderer.invoke('pty:write', id, data, operatorEngaged),
     engage: (id: string) => ipcRenderer.invoke('pty:engage', id),
     resize: (id: string, cols: number, rows: number) =>
       ipcRenderer.invoke('pty:resize', id, cols, rows),

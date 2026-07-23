@@ -352,6 +352,31 @@ try {
       await waitForBuffer(page, current[0].id, '<--effort><high>');
       check('Claude Code receives the visible effort override', true);
 
+      const activeTab = page.locator('[data-tab-id][data-active]');
+      await activeTab.locator('[data-status="done"]').waitFor({
+        timeout: 8_000,
+      });
+      await page.evaluate(
+        async ({ id }) =>
+          window.electron?.pty?.write(id, 'PASSIVE_IDLE_REPAINT\n'),
+        { id: current[0].id }
+      );
+      await waitForBuffer(page, current[0].id, 'PASSIVE_IDLE_REPAINT');
+      await page.waitForTimeout(250);
+      current = await sessions(page);
+      check(
+        'passive PTY repaint cannot reopen a finished Agent turn',
+        current[0].working === false &&
+          (await activeTab.locator('[data-status="done"]').count()) === 1 &&
+          (await activeTab.locator('[data-status="working"]').count()) === 0
+      );
+      await page.locator('.terminal-pane[data-pane="full"]').click();
+      await page.keyboard.type('NEXT_OPERATOR_TURN');
+      await page.keyboard.press('Enter');
+      await waitForBuffer(page, current[0].id, 'NEXT_OPERATOR_TURN');
+      await activeTab.locator('[data-status="working"]').waitFor();
+      check('operator input explicitly opens the next Agent turn', true);
+
       await page.keyboard.press('Control+Meta+3');
       await page.waitForURL(
         url =>

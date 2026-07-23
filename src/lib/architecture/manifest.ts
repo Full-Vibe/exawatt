@@ -753,6 +753,7 @@ export const architectureManifest = {
     'Open Project identity spans Terminal, Sessions, and Spatial even before an Agent or Session exists; Agents join catalog-backed groups by stable source identity.',
     'Open Session identity spans Terminal, Sessions, and Spatial; PTYs add live runtime state but do not define whether a Session-backed Agent exists.',
     'Logical Sessions survive local process death through explicit, deterministic rehydration; local processes do not outlive Exawatt.',
+    'Agent turn state is semantic main-process truth: finished is sticky across passive PTY redraws and only explicit operator engagement opens the next turn; shell activity remains output-driven.',
     'Agent sources are replaceable harnesses behind explicit adapters.',
     'A new Agent launch shows and pins the source-resolved model/effort pair; per-Agent overrides do not rewrite harness configuration, and dominant environment constraints stay explicit.',
     'Recent conversation discovery is Project-scoped, local-first, and source-neutral; exact identity reconciles Exawatt Session history with harness history before optional hosted title augmentation.',

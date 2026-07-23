@@ -152,7 +152,9 @@ export interface ElectronPtyApi {
     harness: Exclude<PtyHarness, 'shell'>,
     cwd: string
   ) => Promise<AgentModelCatalog>;
-  write: (id: string, data: string) => Promise<void>;
+  /** Write terminal data; operatorEngaged is true only when a real key event
+   * preceded it, allowing main to open the Agent turn before the PTY write. */
+  write: (id: string, data: string, operatorEngaged?: boolean) => Promise<void>;
   /** Explicit operator keystroke; terminal protocol replies do not call it. */
   engage: (id: string) => Promise<void>;
   resize: (id: string, cols: number, rows: number) => Promise<void>;

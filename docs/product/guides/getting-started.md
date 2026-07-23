@@ -49,6 +49,12 @@ does not independently inspect or block every downstream tool action today. If
 saved preferences cannot be read, Exawatt visibly falls back to Ask first
 instead of silently broadening access.
 
+In the Session strip, the teal half-circle means the Agent is working and the
+green circled check means its turn finished. Finished is stable: an idle TUI
+redraw cannot change the check back to working. Typing the next instruction
+opens the next turn. The dashed circle means a new Agent has not received work
+yet; a plain hollow circle is a quiet shell.
+
 ## Quitting and returning
 
 When local Sessions are running, quitting Exawatt asks before stopping them.

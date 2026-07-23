@@ -199,8 +199,40 @@ export function TerminalPane({
       // after the renderer declines it, so ⌘V here PLUS the Edit ▸ Paste
       // role (registered ⌘V accelerator) once wrote the clipboard to the
       // PTY twice
+      let operatorInputPending = false;
+      let operatorInputTimer: ReturnType<typeof setTimeout> | null = null;
+      const markOperatorInput = () => {
+        operatorInputPending = true;
+        if (operatorInputTimer) clearTimeout(operatorInputTimer);
+        // A dead/non-producing key or pointer event must not label unrelated
+        // terminal protocol data forever. xterm emits interactive data well
+        // inside this bound.
+        operatorInputTimer = setTimeout(() => {
+          operatorInputPending = false;
+          operatorInputTimer = null;
+        }, 250);
+      };
+      // Capture the browser event before xterm translates it into onData.
+      // attachCustomKeyEventHandler is a shortcut filter, not a dependable
+      // provenance hook: xterm may emit data before invoking that filter.
+      const onTerminalKeyDown = (event: KeyboardEvent) => {
+        if (event.metaKey) return;
+        if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(event.key))
+          return;
+        markOperatorInput();
+      };
+      const onTerminalPointerDown = () => markOperatorInput();
+      el.addEventListener('keydown', onTerminalKeyDown, true);
+      el.addEventListener('pointerdown', onTerminalPointerDown, true);
+      cleanup.push(() => {
+        el.removeEventListener('keydown', onTerminalKeyDown, true);
+        el.removeEventListener('pointerdown', onTerminalPointerDown, true);
+      });
       term.attachCustomKeyEventHandler(event => {
-        if (event.type !== 'keydown' || !event.metaKey) return true;
+        if (event.type !== 'keydown') return true;
+        if (!event.metaKey) {
+          return true;
+        }
         const key = event.key.toLowerCase();
         if (key === 'f') {
           event.preventDefault();
@@ -318,14 +350,17 @@ export function TerminalPane({
 
       // the exit marker arrives through the data stream (the session manager
       // appends it to the buffer too, so replays after a fast death show it)
-      const input = term.onData((data) => {
-        void api.write(sessionId, data);
+      const input = term.onData(data => {
+        const operatorEngaged = operatorInputPending;
+        operatorInputPending = false;
+        if (operatorInputTimer) clearTimeout(operatorInputTimer);
+        operatorInputTimer = null;
+        void api.write(sessionId, data, operatorEngaged);
       });
       cleanup.push(() => input.dispose());
-      const engagement = term.onKey(() => {
-        void api.engage(sessionId);
+      cleanup.push(() => {
+        if (operatorInputTimer) clearTimeout(operatorInputTimer);
       });
-      cleanup.push(() => engagement.dispose());
       const ro = new ResizeObserver(syncSize);
       ro.observe(el);
       cleanup.push(() => ro.disconnect());

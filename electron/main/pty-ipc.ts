@@ -230,16 +230,24 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       return listAgentModels(harness, cwd, await defaultShell());
     }
   );
-  handleTrusted('pty:write', (_event, id: string, data: string) => {
-    ptySessions.write(id, data);
-    // engagement clears the flag — but only when the session is actually
-    // being watched: writes ALSO carry xterm auto-replies from hidden panes
-    // (cursor/device queries, backlog replay), which the monitor ignores
-    attentionMonitor.noteInput(id);
-  });
-  // xterm's onData also carries terminal protocol replies. Only onKey is
-  // guaranteed human engagement, so it has a separate recap-cancellation
-  // channel instead of overloading pty:write.
+  handleTrusted(
+    'pty:write',
+    (_event, id: string, data: string, operatorEngaged = false) => {
+      // Engagement and write are ONE ordered main-process operation. Keeping
+      // these as separate renderer invokes let a fast PTY echo arrive while a
+      // finished turn was still latched, hiding the legitimate next turn.
+      if (operatorEngaged) {
+        contextSummarizer.noteInput(id);
+        attentionMonitor.noteEngaged(id);
+      }
+      ptySessions.write(id, data);
+      // Input clears attention only when the session is actually watched:
+      // writes also carry xterm auto-replies from hidden panes.
+      attentionMonitor.noteInput(id);
+    }
+  );
+  // Compatibility path for clients that signal engagement separately. The
+  // workspace sends its human marker atomically on pty:write to avoid races.
   handleTrusted('pty:engage', (_event, id: string) => {
     contextSummarizer.noteInput(id);
     // the first human keystroke is work given — started truth (D22)
@@ -359,7 +367,14 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   });
   handleTrusted('pty:paste-clipboard', async (_event, id: string) => {
     const payload = await clipboardInput();
-    if (payload.input) ptySessions.write(id, payload.input);
+    if (payload.input) {
+      // Paste is operator input too. Open a finished turn before writing so
+      // even a synchronous echo cannot be mistaken for passive redraw data.
+      contextSummarizer.noteInput(id);
+      attentionMonitor.noteEngaged(id);
+      ptySessions.write(id, payload.input);
+      attentionMonitor.noteInput(id);
+    }
     return { kind: payload.kind, path: payload.path };
   });
   handleTrusted('pty:copy-text', (_event, text: string) => {

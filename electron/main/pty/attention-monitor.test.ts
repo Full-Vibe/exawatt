@@ -218,22 +218,26 @@ describe('AttentionMonitor', () => {
     expect(monitor.get('a')).toBeNull(); // focusing cleared it
   });
 
-  it('a flagged session that RESUMES real work clears itself', () => {
+  it('keeps a finished turn stable until explicit operator engagement', () => {
     add('a', 'claude', clock - 60_000);
     data('a', 'x'.repeat(500));
     clock += 5000;
     monitor.sweepNow();
     expect(monitor.get('a')?.kind).toBe('turn-end');
-    // small repaint noise does not clear...
+    // Repaint noise cannot reopen a finished turn, regardless of size.
     data('a', 'y'.repeat(50));
     expect(monitor.get('a')?.kind).toBe('turn-end');
-    // ...but substantial resumed output does (it was not actually waiting)
     data('a', 'z'.repeat(600));
-    expect(monitor.get('a')).toBeNull();
-    // and the resumed burst re-flags at its own quiet boundary
-    clock += 5000;
-    monitor.sweepNow();
     expect(monitor.get('a')?.kind).toBe('turn-end');
+    expect(monitor.isWorking('a')).toBe(false);
+
+    // Looking/answering clears attention and explicitly opens the next turn.
+    monitor.setWindowFocused(true);
+    monitor.setFocus('a');
+    monitor.noteEngaged('a');
+    data('a', 'real next-turn output');
+    expect(monitor.get('a')).toBeNull();
+    expect(monitor.isWorking('a')).toBe(true);
   });
 
   it('keeps the ORIGINAL since when signals repeat (stable queue order)', () => {
@@ -306,6 +310,36 @@ describe('AttentionMonitor activity truth (D18)', () => {
       { id: 'a', working: false },
     ]);
     expect(monitor.isWorking('a')).toBe(false);
+
+    // A late idle repaint is not a new turn and cannot replace the check
+    // with the working pie.
+    manager.emit('data', 'a', 'passive TUI repaint'.repeat(100));
+    expect(monitor.isWorking('a')).toBe(false);
+    expect(transitions).toHaveLength(2);
+
+    // Explicit human engagement opens the next turn immediately; it does not
+    // depend on prompt echo, which can be absent or resize-guarded.
+    monitor.noteEngaged('a');
+    expect(monitor.isWorking('a')).toBe(true);
+    manager.emit('data', 'a', 'next turn output');
+    expect(monitor.isWorking('a')).toBe(true);
+    expect(transitions.at(-1)).toEqual({ id: 'a', working: true });
+  });
+
+  it('keeps shell activity output-driven because shells have no turns', () => {
+    manager.sessions.push({
+      id: 'shell',
+      harness: 'shell',
+      startedAt: 0,
+      exited: false,
+    });
+    manager.emit('data', 'shell', 'first command');
+    clock += 3500;
+    monitor.sweepNow();
+    expect(monitor.isWorking('shell')).toBe(false);
+
+    manager.emit('data', 'shell', 'later command');
+    expect(monitor.isWorking('shell')).toBe(true);
   });
 
   it('guards synchronous WINCH output before resizing the PTY (D24)', () => {
@@ -349,6 +383,8 @@ describe('AttentionMonitor activity truth (D18)', () => {
 
     monitor.setWindowFocused(true);
     monitor.setFocus('a');
+    manager.emit('data', 'a', 'late prompt repaint'.repeat(100));
+    expect(monitor.isWorking('a')).toBe(false);
     clock += 5000;
     monitor.sweepNow();
     expect(monitor.get('a')).toBeNull();
@@ -401,6 +437,25 @@ describe('AttentionMonitor started truth (D22)', () => {
     monitor.noteEngaged('a');
     monitor.noteEngaged('a');
     expect(monitor.isEngaged('a')).toBe(true);
+    expect(engagedEvents).toEqual(['a']);
+  });
+
+  it('repeated engagement reopens a settled turn without re-emitting startedness', () => {
+    manager.sessions.push({
+      id: 'a',
+      harness: 'claude',
+      startedAt: 0,
+      exited: false,
+    });
+    monitor.noteEngaged('a');
+    manager.emit('data', 'a', 'first turn');
+    clock += 3500;
+    monitor.sweepNow();
+    expect(monitor.isWorking('a')).toBe(false);
+
+    monitor.noteEngaged('a');
+    manager.emit('data', 'a', 'second turn');
+    expect(monitor.isWorking('a')).toBe(true);
     expect(engagedEvents).toEqual(['a']);
   });
 

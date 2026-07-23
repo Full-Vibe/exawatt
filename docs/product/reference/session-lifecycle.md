@@ -15,6 +15,13 @@ install a daemon, LaunchAgent, or other background process to keep them alive.
   provider conversation.
 - **Failed** — that replacement process could not start.
 
+These process states are separate from an Agent's turn state. A teal
+half-circle means the current turn is working; a green circled check means the
+turn finished. Electron main latches a finished Agent turn so later provider
+redraws, title changes, or terminal protocol replies cannot reopen it. Only a
+guaranteed operator interaction begins the next turn. Shells have no turn
+boundary and continue to derive working/quiet from output.
+
 ## Relaunch
 
 Relaunch restores Projects, tabs, status, and retained terminal history without
