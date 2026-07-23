@@ -37,12 +37,16 @@ function strip({
   attention = {},
   activity = {},
   engaged = {},
+  onCloseProject,
+  exitingProjectDirs,
 }: {
   tabs: WorkspaceTab[];
   summaries?: Record<string, string>;
   attention?: Record<string, { since: number }>;
   activity?: Record<string, boolean>;
   engaged?: Record<string, boolean>;
+  onCloseProject?: (dir: string) => void;
+  exitingProjectDirs?: ReadonlySet<string>;
 }) {
   const projects: Project[] = [
     {
@@ -65,12 +69,14 @@ function strip({
         engaged={engaged}
         onTogglePinTab={vi.fn()}
         onResumeTab={vi.fn()}
+        onCloseProject={onCloseProject}
         onSelectProject={vi.fn()}
         onSelectTab={vi.fn()}
         onCloseTab={vi.fn()}
         onRenameTab={vi.fn()}
         onRenameProject={vi.fn()}
         onSetProjectColor={vi.fn()}
+        exitingProjectDirs={exitingProjectDirs}
       />
     </TooltipProvider>
   );
@@ -259,6 +265,25 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(menu?.textContent).toContain('Pin in split');
     expect(menu?.textContent).toContain('Resume This Agent');
     expect(menu?.textContent).toContain('Close');
+  });
+
+  it('the Project right-click menu exposes Close project', () => {
+    const onCloseProject = vi.fn();
+    const { container } = strip({ tabs: [], onCloseProject });
+    fireEvent.contextMenu(container.querySelector('[data-project]')!);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Close project' }));
+    expect(onCloseProject).toHaveBeenCalledWith('/repo');
+  });
+
+  it('retracts an exiting Project from right to left', () => {
+    const { container } = strip({
+      tabs: [],
+      exitingProjectDirs: new Set(['/repo']),
+    });
+    const project = container.querySelector('[data-project-exiting="true"]');
+    expect(project).not.toBeNull();
+    expect(project).toHaveClass('origin-left', 'scale-x-0');
+    expect(project).toHaveStyle({ opacity: '0' });
   });
 
   it('dead tabs carry their lifecycle badge, not a turn-state glyph', () => {

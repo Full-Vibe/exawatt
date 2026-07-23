@@ -259,6 +259,7 @@ export function TabStrip({
   onTogglePinTab,
   onResumeTab,
   onNewAgent,
+  onCloseProject,
   onRevealPath,
   onReorderTab,
   onReorderProject,
@@ -268,6 +269,7 @@ export function TabStrip({
   onRenameTab,
   onRenameProject,
   onSetProjectColor,
+  exitingProjectDirs,
 }: {
   projects: Project[];
   activeDir: string | null;
@@ -287,6 +289,7 @@ export function TabStrip({
   onTogglePinTab?: (tabId: string) => void;
   onResumeTab?: (tabId: string) => void;
   onNewAgent?: (dir: string) => void;
+  onCloseProject?: (dir: string) => void;
   onRevealPath?: (cwd: string) => void;
   onSelectProject: (index: number) => void;
   onSelectTab: (dir: string, tabId: string) => void;
@@ -306,6 +309,8 @@ export function TabStrip({
     targetDir: string,
     place: 'before' | 'after'
   ) => void;
+  /** Projects retract right-to-left before leaving the open workspace. */
+  exitingProjectDirs?: ReadonlySet<string>;
 }) {
   const [editing, setEditing] = useState<Editing | null>(null);
   // right-click menu (D27)
@@ -399,12 +404,14 @@ export function TabStrip({
       {projects.map((g, gi) => {
         const color = g.color;
         const groupActive = g.dir === activeDir;
+        const projectExiting = exitingProjectDirs?.has(g.dir) ?? false;
         return (
           <div
             key={g.dir}
             data-project={g.name}
             data-active-project={groupActive || undefined}
-            draggable={!editing}
+            data-project-exiting={projectExiting || undefined}
+            draggable={!editing && !projectExiting}
             onDragStart={e => {
               // a drag born on a tab wrapper is the TAB's drag
               if (
@@ -445,6 +452,15 @@ export function TabStrip({
                         },
                       ]
                     : []),
+                  ...(onCloseProject
+                    ? [
+                        {
+                          label: 'Close project',
+                          danger: true,
+                          onSelect: () => onCloseProject(g.dir),
+                        },
+                      ]
+                    : []),
                 ],
               });
             }}
@@ -463,10 +479,16 @@ export function TabStrip({
               onReorderProject?.(drag.id, g.dir, dropPlace(e));
               endDrag();
             }}
-            className="flex items-center gap-1 rounded border px-1 py-0.5"
+            className={`flex origin-left items-center gap-1 rounded border px-1 py-0.5 transition-[transform,opacity,filter] duration-[240ms] [transition-timing-function:cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none ${
+              projectExiting ? 'pointer-events-none scale-x-0' : ''
+            }`}
             style={{
               boxShadow: hintShadow(`p:${g.dir}`, color),
-              opacity: drag?.kind === 'project' && drag.id === g.dir ? 0.5 : 1,
+              opacity: projectExiting
+                ? 0
+                : drag?.kind === 'project' && drag.id === g.dir
+                  ? 0.5
+                  : 1,
               borderColor: groupActive
                 ? `${color}66`
                 : 'rgba(138,160,190,0.12)',

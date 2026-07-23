@@ -43,8 +43,11 @@ can grow beyond coding CLIs without committing Exawatt to one provider.
 
 ## Consequences
 
-- Project state must persist with zero Session tabs and survive closing its last
-  tab.
+- Project state must support zero Session tabs without implicitly launching
+  work. AMENDED 2026-07-22: a Project opened empty remains open, while closing
+  its last Agent leaves a short empty-state confirmation and then closes the
+  open group. Its registry and recency identity survive so `Command-N` can
+  reopen it; close is not delete.
 - An open Project must remain the same addressable object in Terminal, Sessions,
   and Spatial even with zero Agents or Sessions. Agent-derived grouping alone is
   insufficient; sources expose a Project catalog, and later Agents join its
@@ -58,3 +61,14 @@ can grow beyond coding CLIs without committing Exawatt to one provider.
 - The chooser, recommendation policy, and composer are malleable hypotheses.
   Dogfood evidence may change ranking, density, terminology, or attach/resume
   presentation without reversing the object boundaries above.
+
+## 2026-07-22 amendment: close the exhausted open group
+
+Dogfood showed that retaining a Project chip forever after its last Agent
+closed turned the open workspace into a second Project library. The durable
+chooser already owns library membership. Terminal now acknowledges the final
+Agent close by showing the existing empty composer for three seconds, retracts
+the Project right-to-left, and removes only the open group. A right-click
+**Close project** action uses the same transition and confirms before stopping
+remaining tabs. Explicitly opening an empty Project is still inert and stable;
+only the close-last-Agent transition auto-closes it.

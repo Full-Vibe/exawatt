@@ -591,6 +591,10 @@ try {
       await waitForLiveSessionCount(page, 1);
       await closeTab(page, 'Codex');
       await waitForLiveSessionCount(page, 0);
+      // The palette policy check above deliberately opened an unlaunched
+      // draft. It is still an Agent tab, so discard it before asserting the
+      // true close-last-Agent Project transition.
+      await closeTab(page, 'New agent');
       // Tab removal is intentionally optimistic; wait for the async archive
       // transaction instead of racing it after the chrome disappears.
       const ledger = await waitForClosedSessionCount(page, 2);
@@ -598,43 +602,68 @@ try {
         'both closed Sessions land in the Recently-closed ledger',
         ledger.length === 2
       );
-      await page.waitForTimeout(1_000);
-      const afterCloseLayout = await page.evaluate(() =>
-        window.electron?.workspace?.load()
-      );
+      await page.locator('[data-agent-composer]').waitFor();
       check(
-        'zero-Session Project is durably checkpointed',
-        afterCloseLayout?.projects?.some(
-          project => project.name === 'alpha' && project.tabs.length === 0
-        )
-      );
-      check(
-        'closing the last Session retains the Project',
+        'closing the last Agent briefly shows the empty Project',
         await page.locator('[data-project="alpha"]').isVisible()
       );
       check(
-        'last source recommendation survives close-last-tab',
+        'last source recommendation survives during the empty grace state',
         (await page.getByLabel('Agent Source').innerText()).includes('Codex')
       );
       check(
-        'Project and harness permission survives close-last-tab',
+        'Project and harness permission survive during the empty grace state',
         (await page.getByLabel('Agent permissions').innerText()).includes(
           'Auto'
         )
       );
-
-      await page.reload({ waitUntil: 'networkidle' });
-      await page.locator('[data-agent-composer]').waitFor();
+      const alphaProject = page.locator('[data-project="alpha"]');
+      await page
+        .locator('[data-project="alpha"][data-project-exiting="true"]')
+        .waitFor({ state: 'attached', timeout: 6_000 });
       check(
-        'inert Project survives renderer reload',
-        (await sessions(page)).length === 0
+        'the exhausted Project enters the horizontal exit state',
+        (await page
+          .locator('[data-workspace-stage]')
+          .getAttribute('data-project-exiting')) === 'true'
+      );
+      await page.screenshot({
+        path: join(output, '05-project-retracting.png'),
+      });
+      await alphaProject.waitFor({ state: 'detached', timeout: 6_000 });
+      await page.waitForTimeout(600);
+      const afterCloseLayout = await page.evaluate(() =>
+        window.electron?.workspace?.load()
       );
       check(
-        'source recommendation survives reload',
+        'the exhausted Project leaves the open workspace',
+        !afterCloseLayout?.projects?.some(project => project.name === 'alpha')
+      );
+      check(
+        'the closed Project remains durable in recents',
+        afterCloseLayout?.recentProjects?.some(
+          project => project.name === 'alpha'
+        )
+      );
+
+      await page.keyboard.press('Meta+KeyN');
+      await page.locator('[data-project-opener]').waitFor();
+      const reopenAlpha = page
+        .locator('[data-project-opener] button')
+        .filter({ hasText: 'alpha' });
+      await reopenAlpha.waitFor();
+      check(
+        'Command-N can reopen the automatically closed Project',
+        await reopenAlpha.isVisible()
+      );
+      await reopenAlpha.click();
+      await page.locator('[data-agent-composer]').waitFor();
+      check(
+        'source recommendation survives Project close and reopen',
         (await page.getByLabel('Agent Source').innerText()).includes('Codex')
       );
       check(
-        'permission recommendation survives reload',
+        'permission recommendation survives Project close and reopen',
         (await page.getByLabel('Agent permissions').innerText()).includes(
           'Auto'
         )
@@ -665,8 +694,23 @@ try {
         composerBounds.left >= 0 && composerBounds.right <= composerBounds.width
       );
       await page.screenshot({
-        path: join(output, '05-empty-project-800x600.png'),
+        path: join(output, '06-empty-project-800x600.png'),
       });
+
+      // The explicit context-menu verb is the immediate counterpart to the
+      // close-last-Agent grace path. Leave the app with alpha closed so the
+      // next launch proves durable library reentry rather than open-layout
+      // persistence.
+      await page.locator('[data-project="alpha"]').click({ button: 'right' });
+      await page.getByRole('menuitem', { name: 'Close project' }).click();
+      await page
+        .locator('[data-project="alpha"][data-project-exiting="true"]')
+        .waitFor({ state: 'attached' });
+      await page
+        .locator('[data-project="alpha"]')
+        .waitFor({ state: 'detached' });
+      check('Project context menu closes an empty Project', true);
+      await page.waitForTimeout(600);
     },
     { maxMs: 120_000 }
   );
@@ -676,6 +720,17 @@ try {
     async (_app, page) => {
       page.setDefaultTimeout(20_000);
       await page.locator('[data-command-altitude]').waitFor();
+      await page.keyboard.press('Meta+KeyN');
+      await page.locator('[data-project-opener]').waitFor();
+      const alphaTile = page
+        .locator('[data-project-opener] button')
+        .filter({ hasText: 'alpha' });
+      await alphaTile.waitFor();
+      check(
+        'curated library includes the previously closed Project',
+        await alphaTile.isVisible()
+      );
+      await alphaTile.click();
       await page.locator('[data-agent-composer]').waitFor();
       check(
         'source recommendation survives a full app restart',
@@ -689,14 +744,6 @@ try {
       );
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();
-      const alphaTile = page
-        .locator('[data-project-opener] button')
-        .filter({ hasText: 'alpha' });
-      await alphaTile.waitFor();
-      check(
-        'curated library includes the previously opened inert Project',
-        await alphaTile.isVisible()
-      );
       await page.getByRole('button', { name: 'Import Folder' }).click();
       await page.getByText('Import Projects', { exact: true }).waitFor();
       check(

@@ -35,7 +35,7 @@ import type { EffectiveTerminalFont } from './terminal-font';
 import { TabStrip } from './tab-strip';
 import { AgentComposer } from './launch-controls';
 import { Button } from '@/components/ui/button';
-import { CloseConfirm } from './close-confirm';
+import { CloseConfirm, CloseProjectConfirm } from './close-confirm';
 import { navHistory } from '@/components/nav/nav-history';
 import { ProjectOpener } from './project-opener';
 import { ExposeOverlay } from './expose-overlay';
@@ -93,6 +93,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { middleTruncatePath } from './path-label';
+import { useProjectCloseLifecycle } from './use-project-close-lifecycle';
 
 /** the discoverability layer (S3): the workspace SHOWS its keys, exactly
  *  like the spatial map's bottom legend — normal case, dim, always there */
@@ -242,6 +243,7 @@ export function WorkspaceClient() {
     launchHere,
     openProject,
     importProjects,
+    closeProject,
     closeTab,
     createDraftTab,
     updateDraft,
@@ -264,6 +266,12 @@ export function WorkspaceClient() {
     setProjectColor,
     ready,
   } = useWorkspaceState({ getInitialSize });
+
+  const { exitingProjectDirs, requestProjectExit } = useProjectCloseLifecycle({
+    projects,
+    ready,
+    onCloseProject: closeProject,
+  });
 
   useEffect(() => {
     if (!inElectron) return;
@@ -637,6 +645,45 @@ export function WorkspaceClient() {
     },
     [closeTab, projects, summaries]
   );
+  const [projectCloseConfirm, setProjectCloseConfirm] = useState<{
+    dir: string;
+    name: string;
+    color: string;
+    tabCount: number;
+    workingCount: number;
+  } | null>(null);
+  const requestProjectClose = useCallback(
+    (dir: string) => {
+      const project = projects.find(candidate => candidate.dir === dir);
+      if (!project) return;
+      if (project.tabs.length === 0) {
+        requestProjectExit(dir);
+        return;
+      }
+      setProjectCloseConfirm({
+        dir,
+        name: project.name,
+        color: project.color,
+        tabCount: project.tabs.length,
+        workingCount: project.tabs.filter(
+          tab => !!(tab.sessionId && activity[tab.sessionId])
+        ).length,
+      });
+    },
+    [activity, projects, requestProjectExit]
+  );
+  const confirmProjectClose = useCallback(() => {
+    if (!projectCloseConfirm) return;
+    const project = projects.find(
+      candidate => candidate.dir === projectCloseConfirm.dir
+    );
+    setProjectCloseConfirm(null);
+    if (!project) return;
+    // Mark the group first: once the optimistic tab removals make it empty,
+    // the Project exits immediately instead of entering the auto-close grace.
+    requestProjectExit(project.dir);
+    for (const tab of project.tabs) void requestClose(tab.id, true);
+  }, [projectCloseConfirm, projects, requestClose, requestProjectExit]);
   const settleCloseConfirm = useCallback(() => {
     setCloseConfirm(null);
     requestAnimationFrame(() =>
@@ -808,6 +855,9 @@ export function WorkspaceClient() {
     pinnedTabId,
     companionTabId: companionRef.current,
   });
+  const activeProjectExiting = !!(
+    activeProject && exitingProjectDirs.has(activeProject.dir)
+  );
 
   return (
     <div
@@ -844,6 +894,7 @@ export function WorkspaceClient() {
               onTogglePinTab={togglePinTab}
               onResumeTab={id => void resumeTab(id)}
               onNewAgent={dir => createDraftTab(dir)}
+              onCloseProject={requestProjectClose}
               onRevealPath={cwd =>
                 void window.electron?.pty?.openPath(cwd, cwd)
               }
@@ -859,6 +910,7 @@ export function WorkspaceClient() {
               onReorderProject={(dir, targetDir, place) =>
                 void reorderProject(dir, targetDir, place)
               }
+              exitingProjectDirs={exitingProjectDirs}
             />
           </div>
           {activeProject && activeProject.tabs.length > 0 ? (
@@ -1074,6 +1126,7 @@ export function WorkspaceClient() {
             <div
               ref={panesRef}
               data-workspace-stage
+              data-project-exiting={activeProjectExiting || undefined}
               className={`relative min-h-0 flex-1 origin-center transition-[transform,opacity] duration-300 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:scale-100 motion-reduce:transition-opacity ${
                 overviewOpen ? 'scale-[0.975] opacity-35' : ''
               }`}
@@ -1196,7 +1249,14 @@ export function WorkspaceClient() {
                   {stage.stagePane !== 'hidden' && (
                     <div
                       data-pane={stage.stagePane}
-                      className={LAYOUT_CLASS[stage.stagePane]}
+                      data-empty-project-exiting={
+                        activeProjectExiting || undefined
+                      }
+                      className={`${LAYOUT_CLASS[stage.stagePane]} origin-left transition-[transform,opacity] duration-[240ms] [transition-timing-function:cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none ${
+                        activeProjectExiting
+                          ? 'pointer-events-none scale-x-0 opacity-0'
+                          : ''
+                      }`}
                     >
                       <ComposerViewport>
                         <AgentComposer
@@ -1275,6 +1335,16 @@ export function WorkspaceClient() {
             void requestClose(tabId, true);
           }}
           onCancel={settleCloseConfirm}
+        />
+      )}
+      {projectCloseConfirm && (
+        <CloseProjectConfirm
+          title={projectCloseConfirm.name}
+          tabCount={projectCloseConfirm.tabCount}
+          workingCount={projectCloseConfirm.workingCount}
+          color={projectCloseConfirm.color}
+          onClose={confirmProjectClose}
+          onCancel={() => setProjectCloseConfirm(null)}
         />
       )}
       {closeToast && (

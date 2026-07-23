@@ -1917,6 +1917,42 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     [syncProjectIdentity]
   );
 
+  /**
+   * Remove an EMPTY Project from the open workspace without deleting its
+   * durable registry/library identity. Callers own any Agent close flow first;
+   * this guard prevents a Project close from orphaning a live PTY off-screen.
+   */
+  const closeProject = useCallback((dir: string): boolean => {
+    const { projects: groups, activeDir: currentDir } = stateRef.current;
+    const index = groups.findIndex(project => project.dir === dir);
+    const project = groups[index];
+    if (!project || project.tabs.length > 0) return false;
+
+    // A just-opened Project may not have reached the debounced layout save.
+    // Seed recency synchronously so ⌘N can always bring a closed group back.
+    recentsRef.current = [
+      {
+        dir: project.dir,
+        name: project.name,
+        ...(project.color ? { color: project.color } : {}),
+        lastOpenedAt: Date.now(),
+      },
+      ...recentsRef.current.filter(recent => recent.dir !== project.dir),
+    ].slice(0, 12);
+
+    setProjects(previous =>
+      previous.some(
+        candidate => candidate.dir === dir && candidate.tabs.length > 0
+      )
+        ? previous
+        : previous.filter(candidate => candidate.dir !== dir)
+    );
+    if (currentDir === dir) {
+      setActiveDir(groups[index + 1]?.dir ?? groups[index - 1]?.dir ?? null);
+    }
+    return true;
+  }, []);
+
   const selectProject = useCallback((index: number): boolean => {
     const g = stateRef.current.projects[index];
     if (!g) return false;
@@ -2280,6 +2316,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     launchHere,
     openProject,
     importProjects,
+    closeProject,
     closeTab,
     createDraftTab,
     updateDraft,

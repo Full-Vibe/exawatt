@@ -95,13 +95,10 @@ export function CloseConfirm({
           style={{ color: HUD.textDim }}
         >
           {working && (
-            <>
-              It is still working — closing interrupts the turn in flight.{' '}
-            </>
+            <>It is still working — closing interrupts the turn in flight. </>
           )}
-          The agent stops, and the Session — conversation, goal, and
-          scrollback — moves to Recently closed. Reopen it from ⌘K within 14
-          days.
+          The agent stops, and the Session — conversation, goal, and scrollback
+          — moves to Recently closed. Reopen it from ⌘K within 14 days.
         </div>
         <div className="flex items-center justify-end gap-2">
           {/* one button system (D32): neutral outline + the DEFAULT in the
@@ -124,6 +121,111 @@ export function CloseConfirm({
             className="font-mono"
           >
             Close ⏎
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Group-close guard: one confirmation owns the batch, then every tab uses
+ * the normal stop/archive path before the empty Project retracts. */
+export function CloseProjectConfirm({
+  title,
+  tabCount,
+  workingCount,
+  color,
+  onClose,
+  onCancel,
+}: {
+  title: string;
+  tabCount: number;
+  workingCount: number;
+  color: string;
+  onClose: () => void;
+  onCancel: () => void;
+}) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => closeRef.current?.focus(), []);
+  return (
+    <div
+      data-project-close-confirm
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Close ${title}?`}
+      onKeyDown={e => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onClose();
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onCancel();
+          return;
+        }
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          const other =
+            document.activeElement === closeRef.current
+              ? cancelRef.current
+              : closeRef.current;
+          other?.focus();
+        }
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150"
+      style={{ background: 'rgba(4,6,11,0.55)' }}
+      onClick={onCancel}
+    >
+      <div
+        className="flex w-[26rem] max-w-[calc(100%-2rem)] flex-col gap-3 rounded border p-4"
+        style={{
+          borderColor: `${color}55`,
+          background: HUD.bg.panelFill,
+          boxShadow: `0 0 28px rgba(0,0,0,0.55), 0 0 12px ${color}22`,
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="font-mono text-sm" style={{ color: HUD.text }}>
+          Close Project <span style={{ color }}>{title}</span>?
+        </div>
+        <div
+          className="font-sans text-xs leading-5"
+          style={{ color: HUD.textDim }}
+        >
+          {tabCount} open {tabCount === 1 ? 'tab' : 'tabs'} will close.
+          {workingCount > 0 && (
+            <>
+              {' '}
+              {workingCount === 1
+                ? 'One Agent is still working; its turn will be interrupted.'
+                : `${workingCount} Agents are still working; their turns will be interrupted.`}
+            </>
+          )}{' '}
+          Sessions move to Recently closed for 14 days. The Project stays in
+          your library and can be reopened with ⌘N.
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            ref={cancelRef}
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onCancel}
+            className="font-mono"
+          >
+            Cancel
+          </Button>
+          <Button
+            ref={closeRef}
+            type="button"
+            size="sm"
+            onClick={onClose}
+            className="font-mono"
+          >
+            Close Project ⏎
           </Button>
         </div>
       </div>

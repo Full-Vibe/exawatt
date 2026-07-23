@@ -22,6 +22,10 @@ have zero Sessions. Starting an Agent may include an optional initial task and a
 visible source choice; the source adapter decides how that request maps to a
 local process, remote Agent, or provider Session.
 
+Closing a Project does not delete its source-agnostic identity. After the last
+Agent closes, the open zero-Session state lingers briefly and then leaves the
+workspace; the durable Project library remains the `⌘N` reopen boundary.
+
 Near-term Claude Code and Codex Sessions are PTY-backed. That transport is an
 implementation detail, not a requirement for future sources. Shells remain
 secondary Project tools.
