@@ -358,8 +358,9 @@ lab is back to the real strip + rail against fixture states.
   the ⌘J roadmap-blocked walk no longer dead-ends on the active tab
   (`orderedRoadmapJumpTargets`, tested) and the Session-menu + palette rows
   run the SAME ladder as the key (JUMP_ATTENTION_EVENT ownership moved to
-  WorkspaceClient); workspace-verb shift-aliases (⌘⇧T/⌘⇧W) now match only
-  after explicit bindings so a rebind can't be shadowed; a modifier-less
+  WorkspaceClient); the then-current workspace-verb shift aliases (⌘⇧T/⌘⇧W)
+  now matched only after explicit bindings so a rebind couldn't be shadowed
+  (D39 later assigned ⌘⇧T explicitly to closed-tab recovery); a modifier-less
   keystroke in a text surface can never trigger a mis-rebound verb; the strip
   budget honestly caps node count (unmapped counted, no negative budget);
   duplicate roadmap ids no longer collide React keys; corrupt

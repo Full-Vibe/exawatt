@@ -14,7 +14,7 @@ Inside a Project, the Agent composer accepts an optional first task and shows th
 Agent Source that will run it. Exawatt remembers the last source used in each
 Project, while keeping the choice visible and changeable. A blank task starts an
 interactive Agent Session. Plain shells remain available as a separate Project
-tool.
+tool. **⌘T** opens a new Agent tab; **⌘⌥T** opens a shell directly.
 
 Closing the last Agent leaves the empty Project composer visible for a few
 seconds, then retracts the Project from the open workspace. Reopen it from the
@@ -22,6 +22,12 @@ Project chooser with **⌘N**. **⌘W** closes the active Agent tab, or closes t
 active Project when it is already empty. A Project's right-click menu also
 offers **Close project**; Exawatt confirms first when that would close remaining
 Agent tabs.
+
+Closing a meaningful Session keeps it in **Recently closed** for 14 days.
+**⌘⇧T** restores the newest one as a stopped tab without starting its Agent or
+shell process; press it repeatedly to restore older closed Sessions. The same
+entries remain individually selectable from **⌘K**. Empty drafts and Agents
+that never received work are discarded instead of entering recovery history.
 
 The adjacent model and effort selectors show the capability pair that will be
 requested for the new Agent. Exawatt resolves the current Codex catalog,

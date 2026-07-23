@@ -13,6 +13,7 @@ function actions(): WorkspaceShortcutActions {
     newAgent: yes(),
     newProject: yes(),
     closeActive: yes(),
+    reopenClosed: yes(),
     selectIndex: yes(),
     selectTabOrdinal: yes(),
     cycle: yes(),
@@ -219,7 +220,7 @@ describe('keyboard doctrine + arrangement (D20)', () => {
     }
   });
 
-  it('routes the primary launch chord to the Agent composer, shifted to shell', () => {
+  it('routes new, reopen, and shell through distinct browser-style chords', () => {
     const handlers = actions();
     renderHook(() => useWorkspaceShortcuts(handlers));
 
@@ -233,8 +234,38 @@ describe('keyboard doctrine + arrangement (D20)', () => {
       metaKey: true,
       shiftKey: true,
     });
+    expect(handlers.reopenClosed).toHaveBeenCalledOnce();
+    expect(handlers.launchShell).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, {
+      key: 't',
+      code: 'KeyT',
+      metaKey: true,
+      altKey: true,
+    });
     expect(handlers.launchShell).toHaveBeenCalledOnce();
+    expect(handlers.reopenClosed).toHaveBeenCalledOnce();
     expect(handlers.newAgent).toHaveBeenCalledOnce();
+  });
+
+  it('does not consume reopen when the action is unavailable', () => {
+    const handlers = actions();
+    vi.mocked(handlers.reopenClosed).mockReturnValue(false);
+    renderHook(() => useWorkspaceShortcuts(handlers));
+    const reopen = new KeyboardEvent('keydown', {
+      key: 't',
+      code: 'KeyT',
+      metaKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    window.dispatchEvent(reopen);
+
+    expect(handlers.reopenClosed).toHaveBeenCalledOnce();
+    expect(reopen.defaultPrevented).toBe(false);
+    expect(handlers.launchShell).not.toHaveBeenCalled();
   });
 
   it('routes command-W through the shared active close action', () => {

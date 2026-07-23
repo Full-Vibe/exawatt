@@ -42,6 +42,7 @@ import {
   CLOSE_ACTIVE_EVENT,
   requestProjectPicker,
   requestAgentComposer,
+  requestReopenLastClosed,
 } from '@/components/workspace/session-jump';
 import type { PtyHarness } from '@/types/electron';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
@@ -58,6 +59,7 @@ const MENU_COMMAND_SHORTCUTS: Record<string, string> = {
   'open-project': 'workspace-new-project',
   'new-agent': 'workspace-new-agent',
   'launch-shell': 'workspace-new-shell',
+  'reopen-closed-tab': 'workspace-reopen-closed-tab',
   'rename-tab': 'workspace-rename',
   'toggle-split': 'workspace-split',
   'close-tab': 'workspace-close-tab',
@@ -266,6 +268,12 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           break;
         case 'launch-shell':
           launch('shell');
+          break;
+        case 'reopen-closed-tab':
+          requestReopenLastClosed();
+          if (!window.location.pathname.startsWith('/workspace')) {
+            navigateCommandSurface('/workspace');
+          }
           break;
         case 'open-project':
           requestProjectPicker();

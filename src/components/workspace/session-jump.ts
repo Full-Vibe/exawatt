@@ -30,6 +30,8 @@ export const CLOSE_ACTIVE_EVENT = 'exawatt:close-active-tab';
 /** palette → workspace: resurrect a Recently-closed Session (D23);
  *  detail = { durableSessionId } */
 export const REOPEN_CLOSED_EVENT = 'exawatt:reopen-closed-session';
+/** native menu → workspace: reopen the ledger's newest recoverable Session */
+export const REOPEN_LAST_CLOSED_EVENT = 'exawatt:reopen-last-closed-session';
 export const OPEN_OVERVIEW_EVENT = 'exawatt:open-overview';
 /** palette/menu → summon the Project roadmap at the Sessions altitude (S12) */
 export const OPEN_ROADMAP_EVENT = 'exawatt:open-roadmap';
@@ -50,10 +52,22 @@ let pendingLaunch: Pending<PtyHarness> | null = null;
 let pendingOpenProject: Pending<string> | null = null;
 let pendingProjectPicker: Pending<true> | null = null;
 let pendingAgentComposer: Pending<AgentSourceId | null> | null = null;
+let pendingReopenLastClosed: Pending<true> | null = null;
 
 function take<T>(slot: Pending<T> | null): T | null {
   if (!slot) return null;
   return Date.now() - slot.at <= PENDING_TTL_MS ? slot.value : null;
+}
+
+export function requestReopenLastClosed(): void {
+  pendingReopenLastClosed = { value: true, at: Date.now() };
+  window.dispatchEvent(new CustomEvent(REOPEN_LAST_CLOSED_EVENT));
+}
+
+export function consumePendingReopenLastClosed(): boolean {
+  const pending = take(pendingReopenLastClosed);
+  pendingReopenLastClosed = null;
+  return pending === true;
 }
 
 /** back/forward (D27): select a workspace TAB by identity — works for

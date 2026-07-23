@@ -576,6 +576,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const activityRef = useRef(activity);
   activityRef.current = activity;
   const resumeInFlightRef = useRef<Set<string>>(new Set());
+  /** Close/archive work is tracked so browser-style reopen cannot race the
+   * optimistic strip removal and read the ledger before the entry lands. */
+  const closeInFlightRef = useRef<Set<Promise<CloseOutcome>>>(new Set());
+  /** Repeated ⌘⇧T requests are a FIFO queue over a LIFO ledger: each request
+   * waits for the previous take, then restores the next-newest entry. */
+  const reopenLastClosedQueueRef = useRef<Promise<void>>(Promise.resolve());
   const shutdownTargetsRef = useRef<Set<string>>(new Set());
   /** Identity can arrive before React has committed a newly launched/restored
    * tab. Retain that event by durable Session id instead of dropping it. */
@@ -1531,65 +1537,70 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  transition and the stop/archive runs behind it, so a close never
    *  flickers through stopped/restore states. */
   const closeTab = useCallback(
-    async (
-      tabId: string,
-      opts: { force?: boolean } = {}
-    ): Promise<CloseOutcome> => {
-      const api = window.electron?.pty;
-      if (!api) return { kind: 'noop' };
-      const { projects: gs } = stateRef.current;
-      const g = gs.find(x => x.tabs.some(t => t.id === tabId));
-      const tab = g?.tabs.find(t => t.id === tabId);
-      if (!g || !tab || tab.resumeState === 'resuming') {
-        return { kind: 'noop' };
-      }
-      if (tab.lifecycle === 'draft') {
-        // ⌘T ⌘W is a friction-free no-op — nothing exists yet
-        removeTabFromLayout(tabId);
-        return { kind: 'discarded' };
-      }
-      const goal = summariesRef.current[tab.durableSessionId] ?? null;
-      const live = tabIsLive(tab);
-      if (live) {
-        const started =
-          !!(tab.sessionId && engagedRef.current[tab.sessionId]) || !!goal;
-        if (!started) {
-          // never given work: gone at once, banner history shed behind
+    (tabId: string, opts: { force?: boolean } = {}): Promise<CloseOutcome> => {
+      const operation = (async (): Promise<CloseOutcome> => {
+        const api = window.electron?.pty;
+        if (!api) return { kind: 'noop' };
+        const { projects: gs } = stateRef.current;
+        const g = gs.find(x => x.tabs.some(t => t.id === tabId));
+        const tab = g?.tabs.find(t => t.id === tabId);
+        if (!g || !tab || tab.resumeState === 'resuming') {
+          return { kind: 'noop' };
+        }
+        if (tab.lifecycle === 'draft') {
+          // ⌘T ⌘W is a friction-free no-op — nothing exists yet
           removeTabFromLayout(tabId);
-          void api.closeSession(tab.durableSessionId, true).catch(() => {});
           return { kind: 'discarded' };
         }
-        if (!opts.force) {
-          return {
-            kind: 'needs-confirm',
-            working: !!(tab.sessionId && activityRef.current[tab.sessionId]),
-          };
+        const goal = summariesRef.current[tab.durableSessionId] ?? null;
+        const live = tabIsLive(tab);
+        if (live) {
+          const started =
+            !!(tab.sessionId && engagedRef.current[tab.sessionId]) || !!goal;
+          if (!started) {
+            // never given work: gone at once, banner history shed behind
+            removeTabFromLayout(tabId);
+            void api.closeSession(tab.durableSessionId, true).catch(() => {});
+            return { kind: 'discarded' };
+          }
+          if (!opts.force) {
+            return {
+              kind: 'needs-confirm',
+              working: !!(tab.sessionId && activityRef.current[tab.sessionId]),
+            };
+          }
         }
-      }
-      // one clean transition, then stop + archive behind the strip
-      removeTabFromLayout(tabId);
-      const entryData = {
-        durableSessionId: tab.durableSessionId,
-        title: tab.title,
-        titleKind: tab.titleKind,
-        goal,
-        harness: tab.harness,
-        cwd: tab.cwd,
-        projectDir: g.dir,
-        projectName: g.name,
-        harnessSessionId: tab.harnessSessionId,
-        initialTask: tab.initialTask,
-      };
-      try {
-        if (live) await api.closeSession(tab.durableSessionId);
-        const entry = await api.archiveSession(entryData);
-        return { kind: 'closed', entry };
-      } catch {
-        setError(
-          `Could not archive ${tab.title} — its conversation is still recoverable from its source.`
-        );
-        return { kind: 'noop' };
-      }
+        // one clean transition, then stop + archive behind the strip
+        removeTabFromLayout(tabId);
+        const entryData = {
+          durableSessionId: tab.durableSessionId,
+          title: tab.title,
+          titleKind: tab.titleKind,
+          goal,
+          harness: tab.harness,
+          cwd: tab.cwd,
+          projectDir: g.dir,
+          projectName: g.name,
+          harnessSessionId: tab.harnessSessionId,
+          initialTask: tab.initialTask,
+        };
+        try {
+          if (live) await api.closeSession(tab.durableSessionId);
+          const entry = await api.archiveSession(entryData);
+          return { kind: 'closed', entry };
+        } catch {
+          setError(
+            `Could not archive ${tab.title} — its conversation is still recoverable from its source.`
+          );
+          return { kind: 'noop' };
+        }
+      })();
+      closeInFlightRef.current.add(operation);
+      void operation.then(
+        () => closeInFlightRef.current.delete(operation),
+        () => closeInFlightRef.current.delete(operation)
+      );
+      return operation;
     },
     [removeTabFromLayout]
   );
@@ -1683,6 +1694,30 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       (await window.electron?.pty?.closedSessions?.()) ?? [],
     []
   );
+
+  /** Browser-style reopen (D39): each request runs after any earlier request
+   * and after all close operations already in flight, then takes the ledger's
+   * newest entry. Reopen restores a stopped tab; it never starts a process. */
+  const reopenLastClosedSession = useCallback((): boolean => {
+    const api = window.electron?.pty;
+    if (!readyRef.current || !api?.closedSessions || !api.reopenSession) {
+      return false;
+    }
+    const run = reopenLastClosedQueueRef.current.then(async () => {
+      const closing = [...closeInFlightRef.current];
+      if (closing.length > 0) await Promise.allSettled(closing);
+      const [latest] = await listClosedSessions();
+      if (!latest) return;
+      const reopened = await reopenClosedSession(latest.durableSessionId);
+      if (!reopened) {
+        setError(`Could not reopen ${latest.title}.`);
+      }
+    });
+    reopenLastClosedQueueRef.current = run.catch(() => {
+      setError('Could not reopen the last closed tab.');
+    });
+    return true;
+  }, [listClosedSessions, reopenClosedSession]);
 
   const resumeTab = useCallback(
     async (tabId: string, selectedHarnessId?: string): Promise<boolean> => {
@@ -2321,6 +2356,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     createDraftTab,
     updateDraft,
     reopenClosedSession,
+    reopenLastClosedSession,
     listClosedSessions,
     resumeTab,
     resumeAll,

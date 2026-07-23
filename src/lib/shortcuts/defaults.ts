@@ -133,8 +133,9 @@ export const defaultShortcuts: ShortcutDefinition[] = [
   // ⌘⌥1–9 (project ordinals) and ⌘⇧[ / ⌘⇧] (tab ring) stay fixed
   // key families outside the registry.
   // ⌘T is the PRIMARY launch gesture and Agents are the primary tool
-  // (D14 hierarchy, D20 inversion): it summons the Agent composer. Shell —
-  // the demoted secondary Project tool — rides the shifted variant.
+  // (D14 hierarchy, D20 inversion): it summons the Agent composer. D39 pairs
+  // that browser-style new-tab gesture with ⌘⇧T restore; shell remains a
+  // direct but secondary Project tool on the non-conflicting ⌘⌥T.
   {
     id: 'workspace-new-agent',
     keys: { key: 't', modifiers: ['meta'] },
@@ -145,7 +146,7 @@ export const defaultShortcuts: ShortcutDefinition[] = [
   },
   {
     id: 'workspace-new-shell',
-    keys: { key: 't', modifiers: ['meta', 'shift'] },
+    keys: { key: 't', modifiers: ['meta', 'alt'] },
     label: 'New shell in the active project',
     description: 'Launch a shell session in the active project',
     category: 'workspace',
@@ -164,6 +165,14 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     keys: { key: 'w', modifiers: ['meta'] },
     label: 'Close the active tab or empty Project',
     description: 'Close the active tab, or its Project when no tabs remain',
+    category: 'workspace',
+    contexts: ['workspace'],
+  },
+  {
+    id: 'workspace-reopen-closed-tab',
+    keys: { key: 't', modifiers: ['meta', 'shift'] },
+    label: 'Reopen the last closed tab',
+    description: 'Restore the newest recoverable Session without starting it',
     category: 'workspace',
     contexts: ['workspace'],
   },

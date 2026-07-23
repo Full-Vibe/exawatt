@@ -41,6 +41,20 @@ conversation.
 Retained terminal output is labeled **Saved terminal history · read-only** so a
 stopped Session cannot be mistaken for an interactive terminal.
 
+## Closing and reopening
+
+Closing a meaningful tab archives its Session identity, Project, goal, provider
+conversation ID, and retained terminal history for 14 days. **⌘⇧T** takes the
+newest entry from that ledger and restores it as the active stopped tab; repeated
+presses walk backward through the close order. If its Project group is no longer
+open, restore recreates the group. Restore never starts a provider or shell
+process. **⌘K** also exposes each recoverable Session by name.
+
+Draft tabs and never-started Agents contain no durable conversation and keep the
+fast discard behavior. Once a recoverable entry expires, Exawatt reaps its
+retained terminal history; provider-owned history remains governed by the
+provider.
+
 ## Starting from a recent conversation
 
 The new-Agent page lists recent provider conversations for the active Project.
@@ -67,6 +81,6 @@ operator goal.
 ## Local data
 
 Retained terminal history is machine-local, private to the current OS account,
-and bounded to the latest 4 MB per Session. Permanently closing a Session removes
-that retained history. Provider-owned conversation history remains governed by
-the provider.
+and bounded to the latest 4 MB per Session. Closing keeps that history through
+the 14-day recovery window; expiry removes it. Provider-owned conversation
+history remains governed by the provider.

@@ -2,7 +2,8 @@
  * Workspace keyboard layer (ENG-002 — "Spaces-speed switching").
  *
  *   ⌘T            summon the Agent composer (D20 — Agents are primary)
- *   ⌘⇧T           open a shell in the active Project
+ *   ⌘⇧T           reopen the most recently closed recoverable tab
+ *   ⌘⌥T           open a shell in the active Project
  *   ⌘N            open the Project chooser
  *   ⌘W (or ⌘⇧W)  close the active tab, or the active empty Project
  *   ⌘1…⌘9        jump to tab N of the global ring (D18, browser-style)
@@ -45,7 +46,7 @@ function matchesRegistry(e: KeyboardEvent, id: string): boolean {
   return bindingsMatch(keys, eventToBinding(e));
 }
 
-/** the shifted variant of a binding (⌘⇧T for ⌘T) — an ALIAS only, matched
+/** the shifted variant of a binding (for example ⌘⇧W for ⌘W) — an ALIAS only, matched
  *  after every explicit binding so a verb's implicit alias never shadows a
  *  different verb the user explicitly bound to that combo (review P1-2) */
 function matchesShiftAliasOnly(e: KeyboardEvent, id: string): boolean {
@@ -75,6 +76,8 @@ export interface WorkspaceShortcutActions {
   newProject: () => boolean;
   /** close the active tab, or the active Project when it is empty */
   closeActive: () => boolean;
+  /** ⌘⇧T — restore the newest recoverable Session from the close ledger */
+  reopenClosed: () => boolean;
   selectIndex: (index: number) => boolean;
   /** ⌘1–⌘9 — jump to the Nth tab of the global ring */
   selectTabOrdinal: (index: number) => boolean;
@@ -211,7 +214,8 @@ export function useWorkspaceShortcuts(
 
       // every workspace verb resolves its combo from the registry (D9):
       // rebinding it in Settings changes what the workspace responds to.
-      // `shiftAlias` verbs (⌘T/⌘W) also answer ⌘⇧T/⌘⇧W — but ONLY after
+      // `shiftAlias` verbs (currently ⌘W) also answer the shifted combo —
+      // but ONLY after
       // every explicit binding is checked, so an alias never shadows a verb
       // the user bound to that exact combo (review P1-2).
       const verbs: Array<
@@ -221,6 +225,7 @@ export function useWorkspaceShortcuts(
         ['workspace-new-shell', actions.launchShell],
         ['workspace-new-project', actions.newProject],
         ['workspace-close-tab', actions.closeActive, true],
+        ['workspace-reopen-closed-tab', actions.reopenClosed],
         ['workspace-jump-attention', actions.jumpAttention],
         ['workspace-split', actions.togglePin],
         ['workspace-roadmap', actions.toggleRoadmap],

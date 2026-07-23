@@ -171,6 +171,11 @@ try {
         'native Session menu describes the contextual close target',
         sessionMenu?.includes('Close Tab or Empty Project|Command+W')
       );
+      check(
+        'native Session menu shows distinct shell and reopen chords',
+        sessionMenu?.includes('Open Shell|Command+Alt+T') &&
+          sessionMenu?.includes('Reopen Closed Tab|Command+Shift+T')
+      );
 
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();
@@ -679,6 +684,74 @@ try {
           project => project.name === 'alpha'
         )
       );
+
+      // Browser-style restore is ledger-backed, not a fresh launch. Two rapid
+      // presses must pop newest then next-newest even after the Project group
+      // itself has closed, and neither restore may spawn a process.
+      await page.keyboard.press('Meta+Shift+KeyT');
+      await page.keyboard.press('Meta+Shift+KeyT');
+      await page.waitForFunction(async () => {
+        const closed = (await window.electron?.pty?.closedSessions?.()) ?? [];
+        return closed.length === 0;
+      });
+      await page.getByRole('button', { name: 'Close Codex' }).waitFor();
+      await page.getByRole('button', { name: 'Close Claude Code' }).waitFor();
+      const secondRestoredIsActive = await page
+        .getByRole('button', { name: `Close ${ledger[1].title}` })
+        .evaluate(
+          button =>
+            button.closest('[data-tab-id]')?.getAttribute('data-active') ===
+            'true'
+        );
+      check(
+        'Command-Shift-T walks Recently closed in LIFO order',
+        secondRestoredIsActive
+      );
+      check(
+        'reopen revives the closed Project without starting a process',
+        (await page.locator('[data-project="alpha"]').count()) === 1 &&
+          (await sessions(page)).length === 0
+      );
+
+      // The close is optimistic and its archive is asynchronous. Reopen must
+      // wait behind that exact in-flight close rather than observing an empty
+      // ledger and losing the user's immediate undo.
+      const closingTabId = await page
+        .locator('[data-tab-id][data-active="true"]')
+        .getAttribute('data-tab-id');
+      await page.keyboard.press('Meta+KeyW');
+      await page.keyboard.press('Meta+Shift+KeyT');
+      await page.waitForFunction(
+        ({ previousId, title }) => {
+          const close = Array.from(
+            document.querySelectorAll('button[aria-label]')
+          ).find(button => button.getAttribute('aria-label') === `Close ${title}`);
+          const active = close?.closest('[data-tab-id]');
+          return (
+            active?.getAttribute('data-tab-id') !== previousId &&
+            active?.getAttribute('data-active') === 'true'
+          );
+        },
+        { previousId: closingTabId, title: ledger[1].title }
+      );
+      const ledgerAfterImmediateUndo = await page.evaluate(
+        async () => (await window.electron?.pty?.closedSessions?.()) ?? []
+      );
+      check(
+        'immediate Command-W then Command-Shift-T waits for archive and restores',
+        ledgerAfterImmediateUndo.length === 0
+      );
+
+      // Put both stopped Sessions back in the ledger so the remaining Project
+      // recency/empty-state checks continue against their original fixture.
+      await closeTab(page, 'Claude Code');
+      await closeTab(page, 'Codex');
+      await waitForClosedSessionCount(page, 2);
+      await page.locator('[data-agent-composer]').waitFor();
+      await page
+        .locator('[data-project="alpha"]')
+        .waitFor({ state: 'detached', timeout: 6_000 });
+      await page.waitForTimeout(600);
 
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();

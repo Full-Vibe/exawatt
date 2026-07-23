@@ -85,8 +85,8 @@ await withElectronApp(
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('[data-workspace-stage]').waitFor();
 
-    // real shell in Alpha (⌘⇧T)
-    await page.keyboard.press('Meta+Shift+KeyT');
+    // real shell in Alpha (⌘⌥T; ⌘⇧T is browser-style reopen)
+    await page.keyboard.press('Meta+Alt+KeyT');
     await page.locator('.terminal-pane .xterm').waitFor();
     const sessionId = await page.evaluate(async () => {
       const sessions = await window.electron?.pty?.list();

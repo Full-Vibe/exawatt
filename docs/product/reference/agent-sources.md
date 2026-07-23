@@ -26,7 +26,8 @@ Closing a Project does not delete its source-agnostic identity. After the last
 Agent closes, the open zero-Session state lingers briefly and then leaves the
 workspace; the durable Project library remains the `⌘N` reopen boundary. The
 close command is context-sensitive: `⌘W` closes the active Agent tab, or the
-active Project when it has no tabs.
+active Project when it has no tabs. `⌘⇧T` restores the newest recoverable
+Session without starting it; direct shell launch uses `⌘⌥T`.
 
 Near-term Claude Code and Codex Sessions are PTY-backed. That transport is an
 implementation detail, not a requirement for future sources. Shells remain

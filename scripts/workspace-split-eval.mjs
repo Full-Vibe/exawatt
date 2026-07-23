@@ -49,7 +49,7 @@ await withElectronApp(
     await page.locator('[data-workspace-stage]').waitFor();
 
     // Seed: Project A (/tmp) empty, Project B (fresh dir) empty. The live
-    // tab is launched through the real ⌘⇧T path below, not seeded.
+    // tab is launched through the real ⌘⌥T path below, not seeded.
     await page.evaluate(
       ({ emptyDir }) =>
         window.electron.workspace.save({
@@ -80,8 +80,8 @@ await withElectronApp(
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('[data-workspace-stage]').waitFor();
 
-    // launch a real shell in Alpha (⌘⇧T), then pin it (⌘D)
-    await page.keyboard.press('Meta+Shift+KeyT');
+    // launch a real shell in Alpha (⌘⌥T), then pin it (⌘D)
+    await page.keyboard.press('Meta+Alt+KeyT');
     await page.locator('.terminal-pane .xterm').waitFor();
     await page.keyboard.press('Meta+KeyD');
     await page.locator('[data-pinned]').waitFor();

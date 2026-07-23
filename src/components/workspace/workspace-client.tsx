@@ -4,8 +4,9 @@
  * Agent Terminal Workspace (ENG-002) — orchestration surface.
  *
  * W0.2 model: ONE window; projects are directory-keyed groups inside it
- * (⌘⌥1..9 switches project, ⌘⇧[/] rotates the global tab ring across projects, ⌘T launchs a
- * shell in the active project). Layout persists across app restarts and
+ * (⌘⌥1..9 switches project, ⌘⇧[/] rotates the global tab ring across projects,
+ * ⌘T opens an Agent draft, and ⌘⇧T reopens a closed Session). Layout persists
+ * across app restarts and
  * ended tabs restore without spawning and resume only an exact provider ID.
  * State/verbs live in use-workspace-state; this file is composition only.
  *
@@ -64,6 +65,8 @@ import {
   hasPendingAgentComposer,
   hasPendingTabSelect,
   REOPEN_CLOSED_EVENT,
+  REOPEN_LAST_CLOSED_EVENT,
+  consumePendingReopenLastClosed,
 } from './session-jump';
 import { useEffectiveShortcut, useShortcuts } from '@/components/shortcuts';
 import { formatShortcutKeys } from '@/lib/shortcuts';
@@ -248,6 +251,7 @@ export function WorkspaceClient() {
     createDraftTab,
     updateDraft,
     reopenClosedSession,
+    reopenLastClosedSession,
     resumeTab,
     resumeAll,
     selectProject,
@@ -637,9 +641,7 @@ export function WorkspaceClient() {
       if (outcome.kind === 'closed') {
         if (closeToastTimer.current) clearTimeout(closeToastTimer.current);
         const what = outcome.entry.goal ?? outcome.entry.title;
-        setCloseToast(
-          `Closed "${what}" — kept in Recently closed for 14 days · reopen from ⌘K`
-        );
+        setCloseToast(`Closed "${what}" — kept for 14 days · ⌘⇧T to reopen`);
         closeToastTimer.current = setTimeout(() => setCloseToast(null), 6000);
       }
     },
@@ -739,6 +741,21 @@ export function WorkspaceClient() {
     };
   }, [closeActiveItem, reopenClosedSession, updateOverview]);
 
+  // Native Session menu requests survive a route transition; the shortcut
+  // itself calls the same action directly below. Wait for restored workspace
+  // state before consuming the pending request so startup cannot overwrite it.
+  useEffect(() => {
+    if (!ready) return;
+    const onReopenLastClosed = () => {
+      consumePendingReopenLastClosed();
+      reopenLastClosedSession();
+    };
+    window.addEventListener(REOPEN_LAST_CLOSED_EVENT, onReopenLastClosed);
+    if (consumePendingReopenLastClosed()) reopenLastClosedSession();
+    return () =>
+      window.removeEventListener(REOPEN_LAST_CLOSED_EVENT, onReopenLastClosed);
+  }, [ready, reopenLastClosedSession]);
+
   const shortcutActions = useMemo<WorkspaceShortcutActions>(() => {
     const focusTerminal = () => {
       window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
@@ -753,6 +770,7 @@ export function WorkspaceClient() {
       closeActive: () => {
         return closeActiveItem();
       },
+      reopenClosed: reopenLastClosedSession,
       selectIndex: selectProject,
       selectTabOrdinal: selectTabByOrdinal,
       cycle: cycleTab,
@@ -804,6 +822,7 @@ export function WorkspaceClient() {
     summonRoadmap,
     launchHere,
     closeActiveItem,
+    reopenLastClosedSession,
     selectProject,
     cycleTab,
     selectTabByOrdinal,
