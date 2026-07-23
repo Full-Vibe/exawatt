@@ -672,6 +672,23 @@ export function WorkspaceClient() {
     },
     [activity, projects, requestProjectExit]
   );
+  /**
+   * Browser-style close target: the active Agent tab wins; when the active
+   * Project has no tabs, the same verb closes that empty Project. Keep this
+   * shared by the key layer and menu/palette event so ⌘W never becomes an
+   * entry-point-specific contract again.
+   */
+  const closeActiveItem = useCallback((): boolean => {
+    if (activeTab) {
+      void requestClose(activeTab.id);
+      return true;
+    }
+    if (activeProject && activeProject.tabs.length === 0) {
+      requestProjectClose(activeProject.dir);
+      return true;
+    }
+    return false;
+  }, [activeProject, activeTab, requestClose, requestProjectClose]);
   const confirmProjectClose = useCallback(() => {
     if (!projectCloseConfirm) return;
     const project = projects.find(
@@ -703,10 +720,7 @@ export function WorkspaceClient() {
   // palette-issued workspace verbs (close/overview live here; the rest are
   // handled by the state hook and the tab strip)
   useEffect(() => {
-    const onCloseActive = () => {
-      const g = projects.find(x => x.tabs.some(t => t.id === activeTab?.id));
-      if (g && activeTab) void requestClose(activeTab.id);
-    };
+    const onCloseActive = () => void closeActiveItem();
     const onReopenClosed = (e: Event) => {
       const durableSessionId = (e as CustomEvent<{ durableSessionId?: string }>)
         .detail?.durableSessionId;
@@ -723,7 +737,7 @@ export function WorkspaceClient() {
       window.removeEventListener(CLOSE_ACTIVE_EVENT, onCloseActive);
       window.removeEventListener(OPEN_OVERVIEW_EVENT, onOpenOverview);
     };
-  }, [projects, activeTab, requestClose, reopenClosedSession, updateOverview]);
+  }, [closeActiveItem, reopenClosedSession, updateOverview]);
 
   const shortcutActions = useMemo<WorkspaceShortcutActions>(() => {
     const focusTerminal = () => {
@@ -737,9 +751,7 @@ export function WorkspaceClient() {
         return true;
       },
       closeActive: () => {
-        if (!activeTab) return false;
-        void requestClose(activeTab.id);
-        return true;
+        return closeActiveItem();
       },
       selectIndex: selectProject,
       selectTabOrdinal: selectTabByOrdinal,
@@ -791,7 +803,7 @@ export function WorkspaceClient() {
     activeTab,
     summonRoadmap,
     launchHere,
-    requestClose,
+    closeActiveItem,
     selectProject,
     cycleTab,
     selectTabByOrdinal,

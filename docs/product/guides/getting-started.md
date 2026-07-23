@@ -18,8 +18,10 @@ tool.
 
 Closing the last Agent leaves the empty Project composer visible for a few
 seconds, then retracts the Project from the open workspace. Reopen it from the
-Project chooser with **⌘N**. A Project's right-click menu also offers **Close
-project**; Exawatt confirms first when that would close remaining Agent tabs.
+Project chooser with **⌘N**. **⌘W** closes the active Agent tab, or closes the
+active Project when it is already empty. A Project's right-click menu also
+offers **Close project**; Exawatt confirms first when that would close remaining
+Agent tabs.
 
 The adjacent model and effort selectors show the capability pair that will be
 requested for the new Agent. Exawatt resolves the current Codex catalog,

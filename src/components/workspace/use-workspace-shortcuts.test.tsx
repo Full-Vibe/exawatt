@@ -237,6 +237,23 @@ describe('keyboard doctrine + arrangement (D20)', () => {
     expect(handlers.newAgent).toHaveBeenCalledOnce();
   });
 
+  it('routes command-W through the shared active close action', () => {
+    const handlers = actions();
+    renderHook(() => useWorkspaceShortcuts(handlers));
+    const close = new KeyboardEvent('keydown', {
+      key: 'w',
+      code: 'KeyW',
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    window.dispatchEvent(close);
+
+    expect(handlers.closeActive).toHaveBeenCalledOnce();
+    expect(close.defaultPrevented).toBe(true);
+  });
+
   it('moves the active tab with command-option brackets, the Project with shift added', () => {
     const handlers = actions();
     renderHook(() => useWorkspaceShortcuts(handlers));

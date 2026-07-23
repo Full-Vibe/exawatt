@@ -356,8 +356,8 @@ export function CommandPalette({
       },
       {
         id: 'ws-close',
-        label: 'Close the active tab',
-        value: 'close tab kill session end',
+        label: 'Close the active tab or empty Project',
+        value: 'close tab agent empty project kill session end',
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-close-tab'),
         icon: XCircle,
         onSelect: () => dispatch(CLOSE_ACTIVE_EVENT),

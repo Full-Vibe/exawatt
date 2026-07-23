@@ -71,4 +71,7 @@ Agent close by showing the existing empty composer for three seconds, retracts
 the Project right-to-left, and removes only the open group. A right-click
 **Close project** action uses the same transition and confirms before stopping
 remaining tabs. Explicitly opening an empty Project is still inert and stable;
-only the close-last-Agent transition auto-closes it.
+only the close-last-Agent transition auto-closes it. AMENDED by D39: the shared
+close verb follows the active object. `Command-W`, the command palette, and the
+native Session menu close the active tab when present and close an active empty
+Project otherwise.

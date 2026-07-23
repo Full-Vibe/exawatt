@@ -162,8 +162,8 @@ export const defaultShortcuts: ShortcutDefinition[] = [
   {
     id: 'workspace-close-tab',
     keys: { key: 'w', modifiers: ['meta'] },
-    label: 'Close the active tab',
-    description: 'End the active session tab',
+    label: 'Close the active tab or empty Project',
+    description: 'Close the active tab, or its Project when no tabs remain',
     category: 'workspace',
     contexts: ['workspace'],
   },

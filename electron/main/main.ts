@@ -699,7 +699,7 @@ function createMenu(): void {
         { type: 'separator' },
         menuCommand('Rename Session', 'rename-tab'),
         menuCommand('Split: Pin / Unpin', 'toggle-split'),
-        menuCommand('Close Tab', 'close-tab'),
+        menuCommand('Close Tab or Empty Project', 'close-tab'),
         { type: 'separator' },
         menuCommand('Jump to Session Needing You', 'jump-attention'),
       ],

@@ -24,7 +24,9 @@ local process, remote Agent, or provider Session.
 
 Closing a Project does not delete its source-agnostic identity. After the last
 Agent closes, the open zero-Session state lingers briefly and then leaves the
-workspace; the durable Project library remains the `⌘N` reopen boundary.
+workspace; the durable Project library remains the `⌘N` reopen boundary. The
+close command is context-sensitive: `⌘W` closes the active Agent tab, or the
+active Project when it has no tabs.
 
 Near-term Claude Code and Codex Sessions are PTY-backed. That transport is an
 implementation detail, not a requirement for future sources. Shells remain

@@ -4,7 +4,7 @@
  *   ⌘T            summon the Agent composer (D20 — Agents are primary)
  *   ⌘⇧T           open a shell in the active Project
  *   ⌘N            open the Project chooser
- *   ⌘W (or ⌘⇧W)  close the active tab
+ *   ⌘W (or ⌘⇧W)  close the active tab, or the active empty Project
  *   ⌘1…⌘9        jump to tab N of the global ring (D18, browser-style)
  *   ⌘⌥1…⌘⌥9      jump to Project N
  *   ⌘⇧[ / ⌘⇧]    previous / next tab (wraps)
@@ -73,6 +73,7 @@ export interface WorkspaceShortcutActions {
   newAgent: () => boolean;
   /** ⌘N — open Exawatt's curated Project chooser */
   newProject: () => boolean;
+  /** close the active tab, or the active Project when it is empty */
   closeActive: () => boolean;
   selectIndex: (index: number) => boolean;
   /** ⌘1–⌘9 — jump to the Nth tab of the global ring */

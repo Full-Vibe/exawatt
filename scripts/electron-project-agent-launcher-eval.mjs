@@ -162,6 +162,15 @@ try {
         'native File menu exposes the Project chooser',
         fileMenu?.includes('Open Project…|Command+N')
       );
+      const sessionMenu = await app.evaluate(({ Menu }) =>
+        Menu.getApplicationMenu()
+          .items.find(item => item.label === 'Session')
+          ?.submenu?.items.map(item => `${item.label}|${item.accelerator}`)
+      );
+      check(
+        'native Session menu describes the contextual close target',
+        sessionMenu?.includes('Close Tab or Empty Project|Command+W')
+      );
 
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();
@@ -721,6 +730,35 @@ try {
       await page.screenshot({
         path: join(output, '06-empty-project-800x600.png'),
       });
+
+      await page.keyboard.press('Meta+KeyK');
+      await page
+        .getByText('Close the active tab or empty Project', { exact: true })
+        .waitFor();
+      check('command palette describes the contextual close target', true);
+      await page.keyboard.press('Escape');
+
+      // The close verb follows the active UI object. With no Agent tab left,
+      // Command-W closes the explicitly reopened empty Project immediately.
+      await page.keyboard.press('Meta+KeyW');
+      await page
+        .locator('[data-project="alpha"][data-project-exiting="true"]')
+        .waitFor({ state: 'attached' });
+      await page
+        .locator('[data-project="alpha"]')
+        .waitFor({ state: 'detached' });
+      check('Command-W closes an explicitly opened empty Project', true);
+      await page.waitForTimeout(600);
+
+      // Reopen once more so the explicit context-menu entry remains covered
+      // independently of the keyboard path.
+      await page.keyboard.press('Meta+KeyN');
+      await page.locator('[data-project-opener]').waitFor();
+      await page
+        .locator('[data-project-opener] button')
+        .filter({ hasText: 'alpha' })
+        .click();
+      await page.locator('[data-agent-composer]').waitFor();
 
       // The explicit context-menu verb is the immediate counterpart to the
       // close-last-Agent grace path. Leave the app with alpha closed so the
