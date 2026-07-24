@@ -26,7 +26,22 @@ export const STATUS_LIGHT_STATES = [
 ] as const satisfies readonly StatusLightState[];
 
 /** One measured revolution for the Active half-fill in every rendering regime. */
-export const STATUS_LIGHT_ACTIVE_ROTATION_SECONDS = 1.6;
+export const STATUS_LIGHT_ACTIVE_ROTATION_SECONDS = 2.4;
+
+export const AGENT_STATUS_LIGHT_STATE = {
+  idle: 'off',
+  working: 'active',
+  reviewing: 'active',
+  complete: 'result',
+  blocked: 'needs-you',
+  error: 'fault',
+} as const satisfies Record<AgentStatus, StatusLightState>;
+
+export function statusLightStateForAgentStatus(
+  status: AgentStatus
+): StatusLightState {
+  return AGENT_STATUS_LIGHT_STATE[status];
+}
 
 export const STATUS_LIGHT_META = {
   off: {
@@ -96,3 +111,4 @@ export function deriveStatusLightState(
   if (signals.active) return 'active';
   return 'off';
 }
+import type { AgentStatus } from '@exawatt/core';

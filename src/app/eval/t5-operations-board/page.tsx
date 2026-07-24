@@ -6,8 +6,8 @@ import { OperationsBoardSurface } from '@/components/fleet/spatial/operations-bo
 
 const metrics: FleetMetrics = {
   activeCount: 2,
-  blockedCount: 1,
-  idleCount: 2,
+  blockedCount: 2,
+  idleCount: 3,
   totalCost: 4.82,
   totalTokens: 18_420,
   totalCostRate: 1.38,
@@ -47,8 +47,10 @@ const agents = [
   agent('atlas-build', 'Build Pipeline', 'Atlas', 'working'),
   agent('atlas-review', 'Release Review', 'Atlas', 'reviewing'),
   agent('atlas-docs', 'Launch Notes', 'Atlas', 'idle'),
+  agent('atlas-result', 'Build Result', 'Atlas', 'complete'),
   agent('relay-auth', 'Auth Repair', 'Relay', 'blocked'),
   agent('relay-tests', 'Regression Tests', 'Relay', 'working'),
+  agent('relay-fault', 'Deploy Fault', 'Relay', 'error'),
 ];
 
 const state: FleetState = {

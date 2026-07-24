@@ -25,6 +25,12 @@ import type {
   SpatialBoardProjectZone,
   SpatialBoardRect,
 } from '@exawatt/ui-model';
+import {
+  STATUS_LIGHT_ACTIVE_ROTATION_SECONDS,
+  STATUS_LIGHT_META,
+  statusLightStateForAgentStatus,
+  type StatusLightState,
+} from '@/components/status-light/protocol';
 
 const OperationsBoardEffects = lazy(() => import('./operations-board-effects'));
 
@@ -36,25 +42,9 @@ const BOARD_COLOR = {
   zoneHover: '#232d33',
   border: '#43515a',
   borderSelected: '#75c8bd',
-  working: '#67b88a',
-  blocked: '#e46e64',
-  reviewing: '#d5ad63',
-  idle: '#727c84',
-  complete: '#7194a8',
-  error: '#e46e64',
 } as const;
 
-/** Brighter emissive twins of the status colors (toneMapped={false} cores —
- *  the only piece geometry that crosses the bloom threshold). Red stays
- *  reserved for blocked/error; project accents deliberately avoid it. */
-const STATUS_CORE = {
-  working: '#8ff0b6',
-  blocked: '#ff958a',
-  reviewing: '#ffd489',
-  idle: '#8d99a3',
-  complete: '#9fc6de',
-  error: '#ff958a',
-} as const;
+const PIECE_BODY = '#263139';
 
 /** Per-project accent hues for zone edges — muted neon, no reds. */
 const PROJECT_ACCENTS = [
@@ -67,11 +57,7 @@ const PROJECT_ACCENTS = [
 ] as const;
 
 function statusColor(status: SpatialBoardPiece['status']): string {
-  return BOARD_COLOR[status];
-}
-
-function statusCore(status: SpatialBoardPiece['status']): string {
-  return STATUS_CORE[status];
+  return STATUS_LIGHT_META[statusLightStateForAgentStatus(status)].color;
 }
 
 function hashId(id: string): number {
@@ -740,12 +726,13 @@ function ZoneLayer({
 
 function ProjectHealthRail({ zone }: { zone: SpatialBoardProjectZone }) {
   const total = Math.max(zone.agentCount, 1);
-  const segments = [
-    ['working', zone.statusCounts.working],
-    ['reviewing', zone.statusCounts.reviewing],
-    ['blocked', zone.statusCounts.blocked + zone.statusCounts.error],
-    ['idle', zone.statusCounts.idle + zone.statusCounts.complete],
-  ] as const;
+  const segments: Array<[StatusLightState, number]> = [
+    ['active', zone.statusCounts.working + zone.statusCounts.reviewing],
+    ['needs-you', zone.statusCounts.blocked],
+    ['fault', zone.statusCounts.error],
+    ['result', zone.statusCounts.complete],
+    ['off', zone.statusCounts.idle],
+  ];
   return (
     <span className="mt-1 flex h-[3px] w-full overflow-hidden bg-[oklch(0.22_0.008_220)]">
       {segments.map(([status, count]) =>
@@ -754,7 +741,7 @@ function ProjectHealthRail({ zone }: { zone: SpatialBoardProjectZone }) {
             key={status}
             style={{
               width: `${(count / total) * 100}%`,
-              background: BOARD_COLOR[status],
+              background: STATUS_LIGHT_META[status].color,
             }}
           />
         ) : null
@@ -830,94 +817,267 @@ function ProjectControls({
   });
 }
 
-/** Ambient status motion (V2.4): halos under working pieces breathe slowly,
- *  attention halos pulse harder. One material mutation per class per frame —
- *  parks under reduced motion, low power, and hidden tabs. */
-function StatusHalos({
+function checkGeometry(): THREE.ShapeGeometry {
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.15, 0.01);
+  shape.lineTo(-0.06, -0.08);
+  shape.lineTo(0.16, 0.14);
+  shape.lineTo(0.11, 0.18);
+  shape.lineTo(-0.06, 0.02);
+  shape.lineTo(-0.11, 0.06);
+  shape.closePath();
+  return new THREE.ShapeGeometry(shape);
+}
+
+function crossGeometry(): THREE.ShapeGeometry {
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.16, -0.11);
+  shape.lineTo(-0.11, -0.16);
+  shape.lineTo(0, -0.05);
+  shape.lineTo(0.11, -0.16);
+  shape.lineTo(0.16, -0.11);
+  shape.lineTo(0.05, 0);
+  shape.lineTo(0.16, 0.11);
+  shape.lineTo(0.11, 0.16);
+  shape.lineTo(0, 0.05);
+  shape.lineTo(-0.11, 0.16);
+  shape.lineTo(-0.16, 0.11);
+  shape.lineTo(-0.05, 0);
+  shape.closePath();
+  return new THREE.ShapeGeometry(shape);
+}
+
+/**
+ * Batched spatial sibling of the DOM StatusLight. Project identity stays on
+ * zone edges; every Agent piece carries one exact protocol color and shape.
+ * Only Active rotors invalidate the demand loop, at the shared DOM cadence.
+ */
+function StatusMarkLayer({
   pieces,
   active,
 }: {
   pieces: SpatialBoardPiece[];
   active: boolean;
 }) {
-  const workingMat = useRef<THREE.MeshBasicMaterial>(null);
-  const attentionMat = useRef<THREE.MeshBasicMaterial>(null);
-  const phase = useRef(0);
-  const working = pieces.filter(
-    piece => piece.status === 'working' && !piece.needsAttention
-  );
-  const attention = pieces.filter(
-    piece =>
-      piece.needsAttention ||
-      piece.status === 'blocked' ||
-      piece.status === 'error'
-  );
-  const haloGeometry = useMemo(
-    () => new THREE.RingGeometry(0.66, 0.735, 40),
+  const rotorRefs = useRef(new Map<string, THREE.Object3D>());
+  const agentPieces = pieces.filter(piece => piece.kind === 'agent');
+  const byState = (state: StatusLightState) =>
+    agentPieces.filter(
+      piece => statusLightStateForAgentStatus(piece.status) === state
+    );
+  const off = byState('off');
+  const rotating = byState('active');
+  const result = byState('result');
+  const needsYou = byState('needs-you');
+  const fault = byState('fault');
+  const signalDisks = [...result, ...needsYou, ...fault];
+  const geometries = useMemo(
+    () => ({
+      ring: new THREE.RingGeometry(0.18, 0.28, 32),
+      offSegment: new THREE.RingGeometry(0.21, 0.27, 8, 1, 0, Math.PI / 4),
+      rotor: new THREE.CircleGeometry(0.2, 24, -Math.PI / 2, Math.PI),
+      signal: new THREE.CircleGeometry(0.28, 28),
+      check: checkGeometry(),
+      dot: new THREE.CircleGeometry(0.07, 16),
+      cross: crossGeometry(),
+    }),
     []
   );
-  useEffect(() => () => haloGeometry.dispose(), [haloGeometry]);
+  useEffect(
+    () => () => {
+      for (const geometry of Object.values(geometries)) geometry.dispose();
+    },
+    [geometries]
+  );
+
   useFrame((state, delta) => {
-    if (!workingMat.current && !attentionMat.current) return;
+    if (rotorRefs.current.size === 0) return;
     if (!active) {
-      if (workingMat.current) workingMat.current.opacity = 0.1;
-      if (attentionMat.current) attentionMat.current.opacity = 0.22;
+      for (const rotor of rotorRefs.current.values()) rotor.rotation.z = 0;
       return;
     }
-    phase.current += Math.min(delta, 0.05);
-    if (workingMat.current) {
-      workingMat.current.opacity =
-        0.09 + Math.sin(phase.current * Math.PI * 2 * 0.16) * 0.05;
-    }
-    if (attentionMat.current) {
-      attentionMat.current.opacity =
-        0.2 + Math.sin(phase.current * Math.PI * 2 * 0.5) * 0.12;
+    const step =
+      (Math.min(delta, 0.05) * Math.PI * 2) /
+      STATUS_LIGHT_ACTIVE_ROTATION_SECONDS;
+    for (const rotor of rotorRefs.current.values()) {
+      rotor.rotation.z = (rotor.rotation.z - step) % (Math.PI * 2);
     }
     state.invalidate();
   });
+
+  const instance = (piece: SpatialBoardPiece) => ({
+    position: [piece.x, -piece.y, 0.94] as [number, number, number],
+    scale: [piece.size, piece.size, 1] as [number, number, number],
+    color: statusColor(piece.status),
+  });
+
   return (
     <>
-      {working.length > 0 && (
-        <Instances geometry={haloGeometry} limit={256} range={working.length}>
+      {rotating.length > 0 && (
+        <Instances
+          geometry={geometries.ring}
+          limit={256}
+          range={rotating.length}
+          renderOrder={2}
+        >
           <meshBasicMaterial
-            ref={workingMat}
-            transparent
-            opacity={0.16}
             toneMapped={false}
+            transparent
+            opacity={0.98}
             depthWrite={false}
-            blending={THREE.AdditiveBlending}
           />
-          {working.map(piece => (
+          {rotating.map(piece => (
             <Instance
-              key={`halo:${piece.id}`}
-              position={[piece.x, -piece.y, 0.5]}
-              scale={[piece.size * 1.22, piece.size * 1.22, 1]}
-              color={statusCore(piece.status)}
+              {...instance(piece)}
+              key={`status-ring:${piece.id}`}
               raycast={() => null}
             />
           ))}
         </Instances>
       )}
-      {attention.length > 0 && (
+      {signalDisks.length > 0 && (
         <Instances
-          geometry={haloGeometry}
+          geometry={geometries.signal}
           limit={256}
-          range={attention.length}
+          range={signalDisks.length}
+          renderOrder={2}
         >
           <meshBasicMaterial
-            ref={attentionMat}
-            transparent
-            opacity={0.34}
             toneMapped={false}
+            transparent
+            opacity={0.98}
             depthWrite={false}
-            blending={THREE.AdditiveBlending}
           />
-          {attention.map(piece => (
+          {signalDisks.map(piece => (
             <Instance
-              key={`halo:${piece.id}`}
-              position={[piece.x, -piece.y, 0.5]}
-              scale={[piece.size * 1.34, piece.size * 1.34, 1]}
-              color={statusCore(piece.status)}
+              {...instance(piece)}
+              key={`status-signal:${piece.id}`}
+              raycast={() => null}
+            />
+          ))}
+        </Instances>
+      )}
+      {off.length > 0 && (
+        <Instances
+          geometry={geometries.offSegment}
+          limit={1024}
+          range={off.length * 4}
+          renderOrder={2}
+        >
+          <meshBasicMaterial
+            toneMapped={false}
+            transparent
+            opacity={0.48}
+            depthWrite={false}
+          />
+          {off.flatMap(piece =>
+            [0, 1, 2, 3].map(segment => (
+              <Instance
+                {...instance(piece)}
+                key={`status-off-${segment}:${piece.id}`}
+                rotation={[0, 0, segment * (Math.PI / 2)]}
+                raycast={() => null}
+              />
+            ))
+          )}
+        </Instances>
+      )}
+      {rotating.length > 0 && (
+        <Instances
+          geometry={geometries.rotor}
+          limit={256}
+          range={rotating.length}
+          renderOrder={2}
+        >
+          <meshBasicMaterial
+            toneMapped={false}
+            transparent
+            opacity={0.84}
+            depthWrite={false}
+          />
+          {rotating.map(piece => (
+            <Instance
+              {...instance(piece)}
+              key={`status-rotor:${piece.id}`}
+              ref={(target: THREE.Object3D | null) => {
+                if (target) rotorRefs.current.set(piece.id, target);
+                else rotorRefs.current.delete(piece.id);
+              }}
+              raycast={() => null}
+            />
+          ))}
+        </Instances>
+      )}
+      {result.length > 0 && (
+        <Instances
+          geometry={geometries.check}
+          limit={256}
+          range={result.length}
+          renderOrder={3}
+        >
+          <meshBasicMaterial
+            color={PIECE_BODY}
+            toneMapped={false}
+            transparent
+            opacity={0.98}
+            depthWrite={false}
+          />
+          {result.map(piece => (
+            <Instance
+              {...instance(piece)}
+              color={PIECE_BODY}
+              key={`status-check:${piece.id}`}
+              position={[piece.x, -piece.y, 0.97]}
+              raycast={() => null}
+            />
+          ))}
+        </Instances>
+      )}
+      {needsYou.length > 0 && (
+        <Instances
+          geometry={geometries.dot}
+          limit={256}
+          range={needsYou.length}
+          renderOrder={3}
+        >
+          <meshBasicMaterial
+            color={PIECE_BODY}
+            toneMapped={false}
+            transparent
+            opacity={0.98}
+            depthWrite={false}
+          />
+          {needsYou.map(piece => (
+            <Instance
+              {...instance(piece)}
+              color={PIECE_BODY}
+              key={`status-dot:${piece.id}`}
+              position={[piece.x, -piece.y, 0.97]}
+              raycast={() => null}
+            />
+          ))}
+        </Instances>
+      )}
+      {fault.length > 0 && (
+        <Instances
+          geometry={geometries.cross}
+          limit={256}
+          range={fault.length}
+          renderOrder={3}
+        >
+          <meshBasicMaterial
+            color={PIECE_BODY}
+            toneMapped={false}
+            transparent
+            opacity={0.98}
+            depthWrite={false}
+          />
+          {fault.map(piece => (
+            <Instance
+              {...instance(piece)}
+              color={PIECE_BODY}
+              key={`status-cross:${piece.id}`}
+              position={[piece.x, -piece.y, 0.97]}
               raycast={() => null}
             />
           ))}
@@ -1003,26 +1163,18 @@ function AgentPieceLayer({
   const solid = visible.filter(piece => piece.sessionState !== 'stopped');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const bodyMat = useRef<THREE.MeshLambertMaterial>(null);
-  const coreMat = useRef<THREE.MeshBasicMaterial>(null);
   const bodyRefs = useRef(new Map<string, THREE.Object3D>());
-  const coreRefs = useRef(new Map<string, THREE.Object3D>());
   const entranceClock = useRef<number | null>(reduced ? null : 0);
   const pieceGeometry = useMemo(() => {
     const geometry = new THREE.CylinderGeometry(0.5, 0.56, 0.34, 8);
     geometry.rotateX(Math.PI / 2);
     return geometry;
   }, []);
-  const coreGeometry = useMemo(() => {
-    const geometry = new THREE.CylinderGeometry(0.3, 0.3, 0.1, 8);
-    geometry.rotateX(Math.PI / 2);
-    return geometry;
-  }, []);
   useEffect(
     () => () => {
       pieceGeometry.dispose();
-      coreGeometry.dispose();
     },
-    [coreGeometry, pieceGeometry]
+    [pieceGeometry]
   );
   useCursor(hoveredId != null);
 
@@ -1032,7 +1184,6 @@ function AgentPieceLayer({
   useFrame((state, delta) => {
     if (entranceClock.current === null) {
       if (bodyMat.current) bodyMat.current.opacity = 1;
-      if (coreMat.current) coreMat.current.opacity = 1;
       return;
     }
     entranceClock.current += Math.min(delta, 0.05);
@@ -1047,14 +1198,10 @@ function AgentPieceLayer({
       const eased = 1 - Math.pow(1 - local, 3);
       const bodyScale = piece.size * (0.4 + 0.6 * eased);
       bodyRefs.current.get(piece.id)?.scale.set(bodyScale, bodyScale, 1);
-      coreRefs.current
-        .get(piece.id)
-        ?.scale.set(piece.size * eased, piece.size * eased, 1);
       if (local < 1) settled = false;
     }
     const fade = THREE.MathUtils.clamp(elapsed / 0.3, 0, 1);
     if (bodyMat.current) bodyMat.current.opacity = fade;
-    if (coreMat.current) coreMat.current.opacity = fade;
     if (settled && fade >= 1) {
       entranceClock.current = null;
       return;
@@ -1082,7 +1229,7 @@ function AgentPieceLayer({
               }}
               position={[piece.x, -piece.y, 0.65]}
               scale={[piece.size, piece.size, 1]}
-              color={statusColor(piece.status)}
+              color={PIECE_BODY}
               onPointerOver={event => {
                 if (!interactive) return;
                 event.stopPropagation();
@@ -1098,29 +1245,7 @@ function AgentPieceLayer({
           );
         })}
       </Instances>
-      {/* Emissive status cores — the only piece geometry that blooms. */}
-      <Instances geometry={coreGeometry} limit={256} range={solid.length}>
-        <meshBasicMaterial
-          ref={coreMat}
-          transparent
-          opacity={reduced ? 1 : 0}
-          toneMapped={false}
-        />
-        {solid.map(piece => (
-          <Instance
-            key={`core:${piece.id}`}
-            ref={(instance: THREE.Object3D | null) => {
-              if (instance) coreRefs.current.set(piece.id, instance);
-              else coreRefs.current.delete(piece.id);
-            }}
-            position={[piece.x, -piece.y, 0.84]}
-            scale={[piece.size, piece.size, 1]}
-            color={statusCore(piece.status)}
-            raycast={() => null}
-          />
-        ))}
-      </Instances>
-      <StatusHalos pieces={solid} active={ambient} />
+      <StatusMarkLayer pieces={solid} active={ambient} />
       <StoppedAgentOutlines pieces={visible} />
       {selected && (
         <SelectionRing
@@ -1211,6 +1336,7 @@ function AgentControls({
     .filter(piece => piece.kind === 'agent' && piece.visible && piece.agentId)
     .map(piece => {
       const always = piece.labelVisibility === 'always';
+      const lightState = statusLightStateForAgentStatus(piece.status);
       return (
         <Html
           key={`control:${piece.id}`}
@@ -1222,7 +1348,8 @@ function AgentControls({
             type="button"
             data-board-agent={piece.agentId}
             data-board-session-state={piece.sessionState}
-            aria-label={`${piece.label}, ${piece.status}${piece.sessionState === 'stopped' ? ', stopped session' : ''}`}
+            data-board-status-light={lightState}
+            aria-label={`${piece.label}, ${STATUS_LIGHT_META[lightState].label}${piece.sessionState === 'stopped' ? ', stopped session' : ''}`}
             onClick={() => onSelectAgent(piece.agentId!)}
             className="board-control-enter group relative grid h-11 w-11 place-items-center border border-transparent bg-transparent outline-none transition-[border-color,transform] duration-150 active:translate-y-px focus-visible:border-[oklch(0.72_0.1_185)] focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.1_185/0.4)]"
           >

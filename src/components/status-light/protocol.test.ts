@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { deriveStatusLightState } from './protocol';
+import {
+  deriveStatusLightState,
+  statusLightStateForAgentStatus,
+} from './protocol';
 
 describe('deriveStatusLightState', () => {
   it('keeps a quiet Agent off', () => {
@@ -32,5 +35,16 @@ describe('deriveStatusLightState', () => {
     expect(deriveStatusLightState({ active: true, hasResult: true })).toBe(
       'result'
     );
+  });
+});
+
+describe('statusLightStateForAgentStatus', () => {
+  it('projects Fleet lifecycle states into the five-light protocol', () => {
+    expect(statusLightStateForAgentStatus('idle')).toBe('off');
+    expect(statusLightStateForAgentStatus('working')).toBe('active');
+    expect(statusLightStateForAgentStatus('reviewing')).toBe('active');
+    expect(statusLightStateForAgentStatus('complete')).toBe('result');
+    expect(statusLightStateForAgentStatus('blocked')).toBe('needs-you');
+    expect(statusLightStateForAgentStatus('error')).toBe('fault');
   });
 });

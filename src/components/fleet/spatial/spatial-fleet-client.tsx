@@ -44,6 +44,11 @@ import {
   spatialViewportStorageKey,
   writeSpatialFilters,
 } from './spatial-navigation-state';
+import {
+  STATUS_LIGHT_META,
+  StatusLight,
+  statusLightStateForAgentStatus,
+} from '@/components/status-light';
 
 // The Spatial Operations Board is route-scoped. ssr:false keeps Three.js out of
 // the DOM fleet bundle and lets the Electron/web shells share the same model.
@@ -352,6 +357,9 @@ export function SpatialFleetClient() {
   const inspectedGoal = inspectedAgent
     ? agentGoalDisplay(inspectedAgent.goal)
     : null;
+  const inspectedLightState = inspectedAgent
+    ? statusLightStateForAgentStatus(inspectedAgent.status)
+    : null;
 
   const openInspectedSession = useCallback(async () => {
     if (!inspectedAgent || sessionHandoffAgentId) return;
@@ -615,10 +623,19 @@ export function SpatialFleetClient() {
                       {inspectedAgent.name}
                     </h2>
                   </div>
-                  <span className="rounded-full border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs capitalize text-zinc-300">
+                  <span className="inline-flex items-center gap-1.5 rounded border border-zinc-700 bg-zinc-950 px-2 py-1 font-mono text-xs text-zinc-300">
+                    {inspectedLightState && (
+                      <StatusLight
+                        decorative
+                        size="compact"
+                        state={inspectedLightState}
+                      />
+                    )}
                     {inspectedAgent.sessionState === 'stopped'
                       ? 'stopped'
-                      : inspectedAgent.status}
+                      : inspectedLightState
+                        ? STATUS_LIGHT_META[inspectedLightState].label
+                        : inspectedAgent.status}
                   </span>
                 </div>
 

@@ -7,6 +7,7 @@ afterEach(cleanup);
 
 describe('StatusLight Active motion', () => {
   it('rotates only the Active half-fill at the shared protocol cadence', () => {
+    expect(STATUS_LIGHT_ACTIVE_ROTATION_SECONDS).toBe(2.4);
     const { container, rerender } = render(<StatusLight state="active" />);
     const rotor = container.querySelector('.status-light-active-rotor');
 

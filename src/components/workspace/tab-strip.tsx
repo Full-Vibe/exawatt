@@ -27,12 +27,12 @@ import {
   FOCUS_ACTIVE_TERMINAL_EVENT,
 } from './session-jump';
 import {
-  AttentionMarker,
   SESSION_GLYPH_COPY,
   SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
   sessionGlyphState,
 } from './status-glyphs';
+import type { SessionAttentionSignal } from './status-glyphs';
 import type { Project } from './use-workspace-state';
 
 /** Shortcut-ordinal keycap (D21): revealed only while the chord's modifiers
@@ -280,7 +280,7 @@ export function TabStrip({
   summaries: Record<string, string>;
   /** needs-operator flags keyed by sessionId (S1; S8 adds
    *  roadmap-derived entries — only presence and recency matter here) */
-  attention: Record<string, { since: number }>;
+  attention: Record<string, SessionAttentionSignal>;
   /** sessions actively producing output, keyed by sessionId (D18) */
   activity?: Record<string, boolean>;
   /** sessions ever given work, keyed by sessionId (D22) */
@@ -540,13 +540,16 @@ export function TabStrip({
               const on = groupActive && t.id === g.activeTabId;
               const dead = !tabIsLive(t);
               const summary = summaries[t.durableSessionId];
+              const attentionSignal =
+                !dead && t.sessionId ? attention[t.sessionId] : undefined;
               const needsYou =
-                !dead && !!(t.sessionId && attention[t.sessionId]);
+                !!attentionSignal && attentionSignal.kind !== 'turn-end';
               const working = !dead && !!(t.sessionId && activity[t.sessionId]);
               const isAgent = t.harness !== 'shell';
               // ⌘T draft (D24): a new-tab chip — no process, no badge,
               // fresh ring, discarded without ceremony
               const isDraft = t.lifecycle === 'draft';
+              const fault = t.lifecycle === 'failed';
               // started: main-truth engaged bit; a goal subtitle also
               // implies it (covers sessions predating the engaged channel)
               const started =
@@ -735,11 +738,11 @@ export function TabStrip({
                         <OrdinalKeycap value={ordinal} color={color} />
                       </span>
                     )}
-                    {needsYou ? (
-                      <AttentionMarker />
-                    ) : !dead || isDraft ? (
+                    {!dead || isDraft || fault ? (
                       <SessionStatusGlyph
                         state={isDraft ? 'fresh' : glyphState}
+                        attention={attentionSignal}
+                        fault={fault}
                       />
                     ) : null}
                     {t.id === pinnedTabId && (

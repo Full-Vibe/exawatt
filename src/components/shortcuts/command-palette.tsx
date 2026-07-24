@@ -68,6 +68,10 @@ import {
   SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
 } from '@/components/workspace/status-glyphs';
+import {
+  STATUS_LIGHT_META,
+  StatusLight,
+} from '@/components/status-light';
 import { HARNESS_META, HARNESS_ORDER } from '@/components/workspace/harnesses';
 import {
   AGENT_SOURCE_META,
@@ -91,14 +95,27 @@ import {
 /** Shared live-status language with palette-specific HUD colors. */
 const STATUS_META: Record<SessionRowStatus, { label: string; color: string }> =
   {
-    'needs-you': { label: 'needs you', color: HUD.amber },
+    fault: { label: 'error', color: STATUS_LIGHT_META.fault.color },
+    'needs-you': {
+      label: 'needs you',
+      color: STATUS_LIGHT_META['needs-you'].color,
+    },
     working: {
       label: SESSION_GLYPH_LABEL.working,
-      color: HUD.cyan2,
+      color: STATUS_LIGHT_META.active.color,
     },
-    done: { label: SESSION_GLYPH_LABEL.done, color: HUD.green },
-    fresh: { label: SESSION_GLYPH_LABEL.fresh, color: HUD.idle },
-    quiet: { label: SESSION_GLYPH_LABEL.quiet, color: HUD.idle },
+    done: {
+      label: SESSION_GLYPH_LABEL.done,
+      color: STATUS_LIGHT_META.result.color,
+    },
+    fresh: {
+      label: SESSION_GLYPH_LABEL.fresh,
+      color: STATUS_LIGHT_META.off.color,
+    },
+    quiet: {
+      label: SESSION_GLYPH_LABEL.quiet,
+      color: STATUS_LIGHT_META.off.color,
+    },
     exited: { label: 'exited', color: HUD.textDim },
   };
 
@@ -594,6 +611,8 @@ export function CommandPalette({
                     >
                       {s.status === 'needs-you' ? (
                         <AttentionMarker />
+                      ) : s.status === 'fault' ? (
+                        <StatusLight decorative size="compact" state="fault" />
                       ) : s.status !== 'exited' ? (
                         <SessionStatusGlyph state={s.status} />
                       ) : null}

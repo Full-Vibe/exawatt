@@ -8,7 +8,11 @@ import { projectColor } from './project-colors';
 import type { PtySessionInfo } from '@/types/electron';
 import { sessionGlyphState, type SessionGlyphState } from './session-status';
 
-export type SessionRowStatus = 'needs-you' | SessionGlyphState | 'exited';
+export type SessionRowStatus =
+  | 'needs-you'
+  | 'fault'
+  | SessionGlyphState
+  | 'exited';
 
 export interface SessionRow {
   id: string;
@@ -34,6 +38,7 @@ export function sessionRowStatus(
   s: Pick<
     PtySessionInfo,
     | 'exited'
+    | 'exitCode'
     | 'attention'
     | 'working'
     | 'lastDataAt'
@@ -43,7 +48,9 @@ export function sessionRowStatus(
   >,
   now: number
 ): SessionRowStatus {
-  if (s.exited) return 'exited';
+  if (s.exited)
+    return s.exitCode != null && s.exitCode !== 0 ? 'fault' : 'exited';
+  if (s.attention?.kind === 'turn-end') return 'done';
   if (s.attention) return 'needs-you';
   const working = s.working ?? now - s.lastDataAt < LEGACY_WORKING_FALLBACK_MS;
   return sessionGlyphState({
@@ -137,12 +144,13 @@ export function extractRoadmapItemIds(layout: unknown): Record<string, string> {
 }
 
 const STATUS_RANK: Record<SessionRowStatus, number> = {
-  'needs-you': 0,
-  working: 1,
-  done: 2,
-  fresh: 3,
-  quiet: 4,
-  exited: 5,
+  fault: 0,
+  'needs-you': 1,
+  working: 2,
+  done: 3,
+  fresh: 4,
+  quiet: 5,
+  exited: 6,
 };
 
 /** Needs-you first (oldest flag first), then semantic turn state; sessions

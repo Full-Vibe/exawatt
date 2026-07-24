@@ -47,7 +47,7 @@ describe('sessionStatus', () => {
     ).toBe('idle');
   });
 
-  it('attention flags an alive session blocked (needs the operator)', () => {
+  it('separates an explicit human gate from a quiet result boundary', () => {
     const attention = { kind: 'bell', since: 9_500 };
     expect(
       sessionStatus(
@@ -61,6 +61,18 @@ describe('sessionStatus', () => {
     expect(
       sessionStatus(
         { exited: true, exitCode: 0, attention },
+        9_000,
+        10_000,
+        15_000
+      )
+    ).toBe('complete');
+    expect(
+      sessionStatus(
+        {
+          exited: false,
+          exitCode: null,
+          attention: { kind: 'turn-end', since: 9_500 },
+        },
         9_000,
         10_000,
         15_000
@@ -119,15 +131,23 @@ describe('sessionToAgent', () => {
     expect(b.goal).toContain('Interactive');
   });
 
-  it('attention produces blockerInfo (fleet surfaces show the same truth)', () => {
-    const a = sessionToAgent(
+  it('only a human gate produces blockerInfo; quiet completion is a result', () => {
+    const result = sessionToAgent(
       snap({ attention: { kind: 'turn-end', since: 2_500 } }),
       2_000,
       3_000,
       15_000
     );
-    expect(a.status).toBe('blocked');
-    expect(a.blockerInfo).toMatchObject({
+    expect(result.status).toBe('complete');
+    expect(result.blockerInfo).toBeUndefined();
+    const gated = sessionToAgent(
+      snap({ attention: { kind: 'bell', since: 2_500 } }),
+      2_000,
+      3_000,
+      15_000
+    );
+    expect(gated.status).toBe('blocked');
+    expect(gated.blockerInfo).toMatchObject({
       type: 'input_needed',
       createdAt: 2_500,
     });
@@ -261,6 +281,22 @@ describe('LocalSessionsTransport', () => {
     now += 20_000; // long past the working window
     await vi.advanceTimersByTimeAsync(20_000);
     expect(manager.getFleetState().agents['pty-1'].status).toBe('idle');
+  });
+
+  it('a quiet turn boundary becomes a ready result without entering the blocker queue', async () => {
+    transport.start();
+    await flush();
+
+    sessions[0] = {
+      ...sessions[0],
+      attention: { kind: 'turn-end', since: now },
+    };
+    now += 5_000;
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    const result = manager.getFleetState().agents['pty-1'];
+    expect(result.status).toBe('complete');
+    expect(result.blockerInfo).toBeUndefined();
   });
 
   it('ignores an older reconciliation that completes after a manual refresh', async () => {

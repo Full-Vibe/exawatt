@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { TabStrip } from './tab-strip';
+import type { SessionAttentionSignal } from './status-glyphs';
 import type { Project, WorkspaceTab } from './use-workspace-state';
 
 /**
@@ -42,7 +43,7 @@ function strip({
 }: {
   tabs: WorkspaceTab[];
   summaries?: Record<string, string>;
-  attention?: Record<string, { since: number }>;
+  attention?: Record<string, SessionAttentionSignal>;
   activity?: Record<string, boolean>;
   engaged?: Record<string, boolean>;
   onCloseProject?: (dir: string) => void;
@@ -125,7 +126,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     });
     expect(
       screen.getByRole('button', {
-        name: 'Claude Code — Ship code review fixes — turn finished',
+        name: 'Claude Code — Ship code review fixes — result ready',
       })
     ).not.toBeNull();
   });
@@ -185,8 +186,53 @@ describe('TabStrip turn-state glyphs (D22)', () => {
 
     fireEvent.pointerMove(marker!, { pointerType: 'mouse' });
     expect(await screen.findByRole('tooltip')).toHaveTextContent(
-      'Unseen update — Agent finished or requested input. Open this tab to acknowledge.'
+      'Needs you — Agent requested input or hit a roadmap block. Open this Session to respond.'
     );
+  });
+
+  it('distinguishes a quiet result from a human gate and shows faults', () => {
+    const { container, rerender } = strip({
+      tabs: [tab({ id: 'a' })],
+      attention: { 'session-a': { kind: 'turn-end', since: 1 } },
+      engaged: { 'session-a': true },
+    });
+    expect(
+      container.querySelector('[data-status-light="result"]')
+    ).not.toBeNull();
+    expect(container.querySelector('[data-attention]')).toBeNull();
+
+    rerender(
+      <TooltipProvider>
+        <TabStrip
+          projects={[
+            {
+              dir: '/repo',
+              name: 'repo',
+              color: '#19E6FF',
+              activeTabId: 'a',
+              tabs: [tab({ id: 'a', lifecycle: 'failed', exitCode: 1 })],
+            },
+          ]}
+          activeDir="/repo"
+          pinnedTabId={null}
+          summaries={{}}
+          attention={{}}
+          activity={{}}
+          engaged={{}}
+          onTogglePinTab={vi.fn()}
+          onResumeTab={vi.fn()}
+          onSelectProject={vi.fn()}
+          onSelectTab={vi.fn()}
+          onCloseTab={vi.fn()}
+          onRenameTab={vi.fn()}
+          onRenameProject={vi.fn()}
+          onSetProjectColor={vi.fn()}
+        />
+      </TooltipProvider>
+    );
+    expect(
+      container.querySelector('[data-status-light="fault"]')
+    ).not.toBeNull();
   });
 
   it('every tab offers Close (D24 chrome model); stopped tabs condense', () => {

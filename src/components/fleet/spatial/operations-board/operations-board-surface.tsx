@@ -21,6 +21,7 @@ import {
 } from './operations-board-canvas';
 import { RECENTER_SPATIAL_EVENT } from '@/components/nav/command-altitude-events';
 import { parseStoredViewport } from '../spatial-navigation-state';
+import { statusLightStateForAgentStatus } from '@/components/status-light/protocol';
 
 class BoardErrorBoundary extends Component<
   { children: ReactNode },
@@ -175,6 +176,19 @@ export function OperationsBoardSurface({
         .map(piece => piece.agentId!),
     [layout.pieces]
   );
+  const visibleLightStates = useMemo(
+    () =>
+      [
+        ...new Set(
+          layout.pieces
+            .filter(piece => piece.visible && piece.kind === 'agent')
+            .map(piece => statusLightStateForAgentStatus(piece.status))
+        ),
+      ]
+        .sort()
+        .join(','),
+    [layout.pieces]
+  );
 
   useAgentFieldGlide(controller);
 
@@ -320,6 +334,7 @@ export function OperationsBoardSurface({
       data-board-projection={projection}
       data-board-projects={visibleZones.length}
       data-board-pieces={layout.stats.visiblePieceCount}
+      data-board-status-lights={visibleLightStates}
       data-session-handoff={sessionTransitionAgentId ?? undefined}
       className="relative h-full w-full overflow-hidden bg-[oklch(0.135_0.009_220)]"
     >

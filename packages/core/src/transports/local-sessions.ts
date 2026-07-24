@@ -10,13 +10,13 @@
  *
  * Status model:
  *   exited        -> 'complete' (code 0) or 'error'
- *   alive, needs-operator flag (ENG-015 S1 attention) -> 'blocked'
+ *   alive, explicit bell / human gate -> 'blocked'
+ *   alive, quiet turn boundary -> 'complete' (result ready)
  *   alive, output within workingWindowMs -> 'working'
  *   alive, quiet  -> 'idle'
  * The attention flag comes from the source (main-process bell/turn-boundary
- * detection) — the fleet surfaces show the SAME "needs you" truth the tab
- * strip does. This closes the W0.3 honesty note (no more guessing: quiet-
- * but-waiting sessions read 'blocked' only when the detector says so).
+ * detection) — the fleet surfaces show the SAME result-vs-needs-you truth the
+ * tab strip does. Quiet completion is not promoted into the blocker queue.
  */
 import type { ExawattAgent, AgentStatus, AgentBlocker } from '../types/index';
 import { INITIAL_AGENT_METRICS } from '../types/index';
@@ -88,6 +88,7 @@ export function sessionStatus(
     return session.exitCode == null || session.exitCode === 0
       ? 'complete'
       : 'error';
+  if (session.attention?.kind === 'turn-end') return 'complete';
   if (session.attention) return 'blocked';
   return now - lastActivityAt <= workingWindowMs ? 'working' : 'idle';
 }
@@ -95,13 +96,15 @@ export function sessionStatus(
 function sessionBlocker(
   session: LocalSessionSnapshot
 ): AgentBlocker | undefined {
-  if (session.exited || !session.attention) return undefined;
+  if (
+    session.exited ||
+    !session.attention ||
+    session.attention.kind === 'turn-end'
+  )
+    return undefined;
   return {
     type: 'input_needed',
-    title:
-      session.attention.kind === 'bell'
-        ? 'Session rang the bell'
-        : 'Turn ended — waiting on you',
+    title: 'Session rang the bell',
     description: `${session.title} in ${basename(session.cwd)} needs the operator.`,
     createdAt: session.attention.since,
   };
@@ -241,7 +244,7 @@ export class LocalSessionsTransport {
       this.now(),
       this.opts.workingWindowMs
     );
-    const key = `${agent.status}:${agent.sessionState}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${agent.projectId ?? ''}:${agent.project}:${session.attention?.since ?? ''}`;
+    const key = `${agent.status}:${agent.sessionState}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${agent.projectId ?? ''}:${agent.project}:${session.attention?.kind ?? ''}:${session.attention?.since ?? ''}`;
     if (this.emitted.get(session.id) === key) return; // nothing changed
     this.emitted.set(session.id, key);
     this.manager.upsertAgent(agent);

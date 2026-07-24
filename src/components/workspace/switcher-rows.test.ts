@@ -28,7 +28,7 @@ const session = (over: Partial<PtySessionInfo> = {}): PtySessionInfo => ({
 
 describe('sessionRowStatus', () => {
   const NOW = 100_000;
-  it('mirrors the shared five-state turn model plus exited', () => {
+  it('mirrors the approved light projection plus exited lifecycle', () => {
     expect(
       sessionRowStatus(
         session({
@@ -48,6 +48,15 @@ describe('sessionRowStatus', () => {
         NOW
       )
     ).toBe('needs-you');
+    expect(
+      sessionRowStatus(
+        session({
+          attention: { kind: 'turn-end', since: NOW },
+          working: false,
+        }),
+        NOW
+      )
+    ).toBe('done');
     expect(sessionRowStatus(session({ working: true }), NOW)).toBe('working');
     expect(
       sessionRowStatus(session({ working: false, engaged: true }), NOW)
@@ -98,6 +107,12 @@ describe('sessionRowStatus', () => {
         NOW
       )
     ).toBe('exited');
+    expect(
+      sessionRowStatus(
+        session({ exited: true, exitCode: 1, attention: null }),
+        NOW
+      )
+    ).toBe('fault');
   });
 });
 
@@ -154,9 +169,9 @@ describe('buildSessionRows', () => {
       NOW
     );
     expect(rows.map(r => r.id)).toEqual([
-      'flag-old',
       'flag-new',
       'working',
+      'flag-old',
       'done',
       'fresh',
       'quiet',

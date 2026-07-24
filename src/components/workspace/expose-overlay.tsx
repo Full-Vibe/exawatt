@@ -15,11 +15,11 @@ import { HarnessGlyph } from './harness-icons';
 import { isDefaultHarnessTitle } from './harnesses';
 import { previewLines } from './scrollback-preview';
 import {
-  AttentionMarker,
   SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
   sessionGlyphState,
 } from './status-glyphs';
+import type { SessionAttentionSignal } from './status-glyphs';
 import { tabIsLive } from './use-workspace-state';
 import type { Project } from './use-workspace-state';
 import type { PtyHarness } from '@/types/electron';
@@ -94,7 +94,7 @@ export function ExposeOverlay({
   projects: Project[];
   summaries: Record<string, string>;
   /** presence-only (S8 merges roadmap-derived entries) */
-  attention: Record<string, { since: number }>;
+  attention: Record<string, SessionAttentionSignal>;
   /** sessions actively producing output, keyed by sessionId (D18) */
   activity?: Record<string, boolean>;
   /** sessions ever given work, keyed by sessionId (D22) */
@@ -417,8 +417,13 @@ export function ExposeOverlay({
   const sessionTile = (tile: Tile) => {
     const index = items.findIndex(item => item.tabId === tile.tabId);
     const selected = index === sel;
-    const needsYou = !!(tile.sessionId && attention[tile.sessionId]);
+    const attentionSignal = tile.sessionId
+      ? attention[tile.sessionId]
+      : undefined;
+    const needsYou =
+      !!attentionSignal && attentionSignal.kind !== 'turn-end';
     const working = !!(tile.sessionId && activity[tile.sessionId]);
+    const fault = tile.stateLabel === 'failed';
     // durable-Session goal (D21): stopped tiles keep their subtitle too
     const subtitle = summaries[tile.durableSessionId];
     // same three-state truth as the tab strip (D22): started = main-truth
@@ -513,13 +518,13 @@ export function ExposeOverlay({
                 : ''}
             </span>
           )}
-          {needsYou ? (
+          {tile.live || fault ? (
             <span className="ml-1 inline-flex shrink-0">
-              <AttentionMarker />
-            </span>
-          ) : tile.live ? (
-            <span className="ml-1 inline-flex shrink-0">
-              <SessionStatusGlyph state={glyphState} />
+              <SessionStatusGlyph
+                state={glyphState}
+                attention={attentionSignal}
+                fault={fault}
+              />
             </span>
           ) : null}
         </div>
