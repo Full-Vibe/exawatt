@@ -51,7 +51,7 @@ export function ReentryRecapLine({
         style={{ color: HUD.cyan }}
       />
       <span
-        className="shrink-0 font-mono text-[11px]"
+        className="shrink-0 font-mono text-chrome-label"
         style={{ color: HUD.cyan }}
       >
         since you left

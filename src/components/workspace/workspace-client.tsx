@@ -128,7 +128,7 @@ function WorkspaceKeyHint({
   return (
     <span className={`flex items-center ${roomy ? 'gap-1.5' : 'gap-1'}`}>
       <kbd
-        className={`rounded border px-1 ${roomy ? 'py-0.5 text-[10px]' : 'leading-4'}`}
+        className={`rounded border px-1 ${roomy ? 'py-0.5 text-chrome-micro' : 'leading-4'}`}
         style={{
           borderColor: roomy ? 'rgba(80,230,255,0.3)' : 'rgba(80,230,255,0.25)',
           color: HUD.textMono,
@@ -953,7 +953,7 @@ export function WorkspaceClient() {
               aria-label="New Agent"
               title={`New agent in ${activeProject.name} (⌘T)`}
               onClick={() => newDraftTab()}
-              className="shrink-0 font-mono"
+              className="shrink-0 font-mono text-chrome-title!"
             >
               <Plus className="h-3.5 w-3.5" />
               New Agent
@@ -964,7 +964,7 @@ export function WorkspaceClient() {
               variant="outline"
               size="sm"
               onClick={() => setProjectOpenerOpen(true)}
-              className="shrink-0 font-mono"
+              className="shrink-0 font-mono text-chrome-title!"
             >
               <FolderOpen className="h-3.5 w-3.5" />
               Open Project
@@ -1065,7 +1065,8 @@ export function WorkspaceClient() {
                   style={{ color: HUD.textDim }}
                 />
                 <span
-                  className="min-w-0 shrink truncate font-mono text-[11px]"
+                  data-active-session-path
+                  className="min-w-0 shrink truncate font-mono text-chrome-label"
                   title={activeTab.cwd}
                   tabIndex={0}
                   style={{ color: HUD.textMono }}
@@ -1077,7 +1078,7 @@ export function WorkspaceClient() {
                     type="button"
                     title={`working on ${activeItemChip.item.title} — open in roadmap`}
                     onClick={() => summonRoadmap(activeItemChip.item.id)}
-                    className="shrink-0 rounded border px-1.5 py-px font-mono text-[10px] outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                    className="shrink-0 rounded border px-1.5 py-px font-mono text-chrome-meta outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{
                       color: activeProject?.color ?? HUD.textMono,
                       borderColor: `${activeProject?.color ?? HUD.cyan}55`,
@@ -1310,7 +1311,7 @@ export function WorkspaceClient() {
           as the spatial map's bottom legend */}
         <div
           data-key-hints
-          className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t px-3 py-1 font-mono text-[10px]"
+          className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t px-3 py-1 font-mono text-chrome-meta"
           style={{
             color: HUD.textDim,
             borderColor: 'rgba(80,230,255,0.12)',

@@ -340,8 +340,16 @@ try {
   }
 
   const results = [];
-  for (const width of [560, 800, 1024, 1312, 1400, 1600]) {
-    await page.setViewportSize({ width, height: 700 });
+  const viewports = [
+    { width: 560, height: 400 },
+    { width: 800, height: 600 },
+    { width: 1024, height: 700 },
+    { width: 1312, height: 700 },
+    { width: 1400, height: 900 },
+    { width: 1600, height: 900 },
+  ];
+  for (const { width, height } of viewports) {
+    await page.setViewportSize({ width, height });
     await page.evaluate(
       () =>
         new Promise(resolve =>
@@ -384,6 +392,13 @@ try {
       const panelRect = panelElement.getBoundingClientRect();
       const taskRect = taskElement.getBoundingClientRect();
       const subtitleElement = document.querySelector('[data-subtitle]');
+      const readFontSize = selector => {
+        const element = document.querySelector(selector);
+        if (!(element instanceof HTMLElement)) {
+          throw new Error(`Missing chrome type fixture: ${selector}`);
+        }
+        return Number.parseFloat(getComputedStyle(element).fontSize);
+      };
       return {
         chrome: {
           left: chromeRect.left,
@@ -414,11 +429,21 @@ try {
           subtitleElement instanceof HTMLElement
             ? getComputedStyle(subtitleElement).display
             : null,
+        fontSizes: {
+          brand: readFontSize('[data-chrome-brand]'),
+          altitude: readFontSize('[data-command-altitude-level="terminal"]'),
+          project: readFontSize('[data-project-chrome]'),
+          tab: readFontSize('[data-tab-chrome]'),
+          subtitle: readFontSize('[data-subtitle]'),
+          path: readFontSize('[data-active-session-path]'),
+          lifecycle: readFontSize('[aria-label="Stopped"]'),
+          footer: readFontSize('[data-key-hints]'),
+        },
       };
     });
 
     await page.screenshot({
-      path: join(SCREENSHOT_DIR, `workspace-${width}x700.png`),
+      path: join(SCREENSHOT_DIR, `workspace-${width}x${height}.png`),
     });
 
     if (metrics.chrome.scrollWidth > metrics.chrome.width + 1) {
@@ -479,7 +504,24 @@ try {
         `Session subtitle hidden at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
-    results.push({ width, metrics });
+    const minimumFontSizes = {
+      brand: 13,
+      altitude: 12,
+      project: 12,
+      tab: 13,
+      subtitle: 12,
+      path: 12,
+      lifecycle: 11,
+      footer: 11,
+    };
+    for (const [role, minimum] of Object.entries(minimumFontSizes)) {
+      if (metrics.fontSizes[role] < minimum) {
+        throw new Error(
+          `Chrome ${role} text fell below ${minimum}px at ${width}x${height}: ${JSON.stringify(metrics.fontSizes)}`
+        );
+      }
+    }
+    results.push({ width, height, metrics });
   }
 
   // ── Turn-state legibility (D22): spinning / finished / unstarted must
@@ -701,6 +743,12 @@ try {
   await page.keyboard.down('Meta');
   await page.waitForTimeout(200); // 120ms reveal + margin
   await page.locator('[data-tab-ordinal]').first().waitFor();
+  const ordinalFontSize = await page
+    .locator('[data-tab-ordinal]')
+    .first()
+    .evaluate(element =>
+      Number.parseFloat(getComputedStyle(element.firstElementChild).fontSize)
+    );
   const tabWidthDuring = await page
     .locator('[data-tab-id]')
     .first()
@@ -710,6 +758,11 @@ try {
   if (Math.abs(tabWidthBefore - tabWidthDuring) > 0.5) {
     throw new Error(
       `Keycap hints must not shift layout: ${tabWidthBefore} → ${tabWidthDuring}`
+    );
+  }
+  if (ordinalFontSize !== 10) {
+    throw new Error(
+      `Shortcut ordinals alone should use the 10px micro role: ${ordinalFontSize}px`
     );
   }
   // 2. right-click menus (D27): a tab offers its verbs, esc dismisses
@@ -753,7 +806,11 @@ try {
   const toast = page.locator('[data-close-toast]');
   await toast.waitFor();
   const toastText = await toast.innerText();
-  if (!toastText.includes('Recently closed') || !toastText.includes('reopen')) {
+  if (
+    (!toastText.includes('Recently closed') &&
+      !toastText.includes('kept for 14 days')) ||
+    !toastText.includes('reopen')
+  ) {
     throw new Error(`Close toast does not narrate the outcome: ${toastText}`);
   }
   await page.screenshot({ path: join(SCREENSHOT_DIR, 'close-toast.png') });

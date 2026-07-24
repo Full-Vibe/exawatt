@@ -43,7 +43,7 @@ import type { Project } from './use-workspace-state';
 function OrdinalKeycap({ value, color }: { value: number; color: string }) {
   return (
     <span
-      className="pointer-events-none absolute left-1 top-1/2 z-10 inline-flex h-3.5 min-w-3.5 -translate-y-1/2 items-center justify-center rounded-sm border px-0.5 font-mono text-[9px] leading-none motion-safe:animate-in motion-safe:fade-in motion-safe:duration-100"
+      className="pointer-events-none absolute left-1 top-1/2 z-10 inline-flex h-3.5 min-w-3.5 -translate-y-1/2 items-center justify-center rounded-sm border px-0.5 font-mono text-chrome-micro leading-none motion-safe:animate-in motion-safe:fade-in motion-safe:duration-100"
       style={{
         color,
         borderColor: `${color}55`,
@@ -101,7 +101,7 @@ function RenameInput({
         }
       }}
       onClick={e => e.stopPropagation()}
-      className="w-28 bg-transparent font-mono text-xs outline-none"
+      className="w-28 bg-transparent font-mono text-chrome-title font-medium outline-none"
       style={{ color, borderBottom: `1px solid ${color}99` }}
     />
   );
@@ -238,7 +238,7 @@ function StripContextMenu({
             onClose();
             item.onSelect();
           }}
-          className="cursor-pointer px-3 py-1.5 text-left font-mono text-xs outline-none transition-[background-color] duration-75 hover:bg-white/10 focus-visible:bg-white/10"
+          className="cursor-pointer px-3 py-1.5 text-left font-mono text-chrome-label outline-none transition-[background-color] duration-75 hover:bg-white/10 focus-visible:bg-white/10"
           style={{ color: item.danger ? color : HUD.text }}
         >
           {item.label}
@@ -496,6 +496,7 @@ export function TabStrip({
             }}
           >
             <EditableChrome
+              data-project-chrome
               editing={editing?.kind === 'group' && editing.id === g.dir}
               onClick={() => onSelectProject(gi)}
               onDoubleClick={() =>
@@ -504,7 +505,7 @@ export function TabStrip({
               title={`${g.dir}${
                 gi < 9 ? ` · ⌘⌥${gi + 1} selects` : ''
               } · double-click to rename`}
-              className="relative flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-[11px] outline-none transition-[filter,transform] duration-100 hover:brightness-150 active:scale-95 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+              className="relative flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-chrome-label font-medium outline-none transition-[filter,transform] duration-100 hover:brightness-150 active:scale-95 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
               style={{ color: groupActive ? color : HUD.textDim }}
             >
               <span
@@ -532,7 +533,7 @@ export function TabStrip({
                   />
                 </>
               ) : (
-                g.name
+                <span data-project-label>{g.name}</span>
               )}
             </EditableChrome>
             {g.tabs.map(t => {
@@ -693,6 +694,7 @@ export function TabStrip({
                   }}
                 >
                   <EditableChrome
+                    data-tab-chrome
                     editing={editing?.kind === 'tab' && editing.id === t.id}
                     onClick={() => onSelectTab(g.dir, t.id)}
                     onDoubleClick={() =>
@@ -712,7 +714,7 @@ export function TabStrip({
                                 : SESSION_GLYPH_LABEL[glyphState]
                           }`
                     }
-                    className="flex cursor-pointer items-center gap-1.5 px-2 py-1 font-mono text-xs outline-none transition-transform duration-100 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                    className="flex cursor-pointer items-center gap-1.5 px-2 py-1 font-mono text-chrome-title font-medium outline-none transition-transform duration-100 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{ color: on ? HUD.text : HUD.textDim }}
                     title={`${t.cwd}${summary ? `\n${summary}` : ''}${
                       needsYou ? '\nneeds your attention (⌘J jumps here)' : ''
@@ -792,7 +794,7 @@ export function TabStrip({
                         {summary && (
                           <span
                             data-subtitle
-                            className="line-clamp-2 max-w-56 text-left font-sans text-[11px] leading-4"
+                            className="line-clamp-2 max-w-56 text-left font-sans text-chrome-label font-normal"
                             style={{ color: `${color}B0` }}
                           >
                             {summary}
@@ -803,7 +805,7 @@ export function TabStrip({
                     {dead && !isDraft && (
                       <span
                         aria-label={stoppedStatus}
-                        className="border border-white/10 px-1 py-0.5 text-[9px] leading-none"
+                        className="border border-white/10 px-1 py-0.5 text-chrome-meta font-medium leading-none"
                         style={{
                           color:
                             t.lifecycle === 'interrupted'
@@ -827,7 +829,7 @@ export function TabStrip({
                         ? 'Discard (⌘W)'
                         : 'Close — kept in Recently closed for 14 days (⌘W)'
                     }
-                    className="cursor-pointer px-1 py-0.5 font-mono text-xs opacity-40 outline-none transition-opacity duration-100 group-hover/tab:opacity-100 hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                    className="cursor-pointer px-1 py-0.5 font-mono text-chrome-label font-normal opacity-50 outline-none transition-opacity duration-100 group-hover/tab:opacity-100 hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{ color: HUD.textDim }}
                   >
                     ×

@@ -71,7 +71,10 @@ export function SiteHeaderNav({
     >
       {/* Left: Logo → Home */}
       {isHome ? (
-        <span className="inline-flex items-center gap-2 rounded-md px-3 text-xs font-semibold h-8">
+        <span
+          data-chrome-brand
+          className="inline-flex h-8 items-center gap-2 rounded-md px-3 text-chrome-title! font-semibold"
+        >
           <Image
             src="/icon.png"
             alt=""
@@ -92,7 +95,11 @@ export function SiteHeaderNav({
               : undefined
           }
         >
-          <Link href="/" className="gap-2 font-semibold">
+          <Link
+            href="/"
+            data-chrome-brand
+            className="gap-2 text-chrome-title! font-semibold"
+          >
             <Image
               src="/icon.png"
               alt=""
@@ -120,7 +127,7 @@ export function SiteHeaderNav({
       >
         {!isArchitecture && (
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/architecture">
+            <Link href="/architecture" className="text-chrome-title!">
               <Network className="h-3.5 w-3.5" />
               Architecture
             </Link>

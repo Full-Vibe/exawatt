@@ -24,6 +24,17 @@
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-geist-sans);
   --font-ui: var(--font-geist-sans);
+  /* Application chrome type roles (ENG-016 D39). Keep operational copy on a
+     compact but readable scale; the micro role is only for nonessential
+     shortcut ordinals and symbolic marks, never the primary reading path. */
+  --text-chrome-micro: 0.625rem;
+  --text-chrome-micro--line-height: 0.875rem;
+  --text-chrome-meta: 0.6875rem;
+  --text-chrome-meta--line-height: 1rem;
+  --text-chrome-label: 0.75rem;
+  --text-chrome-label--line-height: 1rem;
+  --text-chrome-title: 0.8125rem;
+  --text-chrome-title--line-height: 1.125rem;
   /* HUD palette utilities: text-hud-cyan, bg-hud-void, border-hud-stroke, ... */
   --color-hud-void: #04060b;
   --color-hud-deep: #070b14;

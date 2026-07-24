@@ -67,7 +67,7 @@ function StatusTooltip({
       <TooltipContent
         side="bottom"
         sideOffset={7}
-        className="max-w-64 border px-2.5 py-1.5 font-mono text-[11px] leading-4 shadow-xl"
+        className="max-w-64 border px-2.5 py-1.5 font-mono text-chrome-label shadow-xl"
         style={{
           color: HUD.text,
           background: HUD.bg.panel,
