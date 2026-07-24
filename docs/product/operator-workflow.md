@@ -30,14 +30,14 @@ absence of Exawatt, this workflow IS "Exawatt v0."
 
 ## Mapping to canonical concepts
 
-| Today (macOS)                        | Exawatt concept                    |
-| ------------------------------------ | ---------------------------------- |
-| Space (one per company/project)      | Initiative (within a Workspace)    |
-| Terminal window (one per Space)      | The Initiative's working surface   |
-| Terminal tab                         | Session (interactive)              |
-| Coding agent in a tab + worktree     | Agent + Session (Claude Code)      |
-| Browser window / ambient Space state | Context Signals (future)           |
-| Switching Spaces                     | Context switching between groups   |
+| Today (macOS)                        | Exawatt concept                  |
+| ------------------------------------ | -------------------------------- |
+| Space (one per company/project)      | Initiative (within a Workspace)  |
+| Terminal window (one per Space)      | The Initiative's working surface |
+| Terminal tab                         | Session (interactive)            |
+| Coding agent in a tab + worktree     | Agent + Session (Claude Code)    |
+| Browser window / ambient Space state | Context Signals (future)         |
+| Switching Spaces                     | Context switching between groups |
 
 ## The dogfood arc (operator-stated)
 
@@ -140,3 +140,17 @@ bigger phases are executed. Every roadmap decision about near-term scope
 should be checked against: "does this get the operator running their real
 daily work inside Exawatt sooner, without conflicting with the long-term
 model?"
+
+## Session context cues
+
+The small tab subtitle is a re-entry cue: **why does this Session exist, what
+was I working on, and what is the reason for that work?** It should let the
+operator page the Session's world back into memory. It is not a transcription
+of the last command or a live activity indicator.
+
+Sessions are used both for deep work and as convenient scratchpads. Related
+subtasks keep the established cue; a genuinely unrelated instruction changes
+it; returning to an earlier topic may restore the earlier cue. The product
+always shows its best current guess, with **New agent** as the honest fallback
+for an attachment-only or otherwise non-semantic launch. It never presents a
+temp-file path, `KEEP`, `NO_GOAL`, or model narration as user-facing context.

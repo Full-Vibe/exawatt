@@ -3,72 +3,285 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ContextSummarizer,
   acceptableSubtitle,
-  buildContextInput,
+  consumeOperatorInput,
   provisionalSubtitle,
-  truncateAtWord,
+  redactContextEvidence,
 } from './context-summarizer';
 import type { PtySessionManager } from './session-manager';
 
 class FakeManager extends EventEmitter {
   private text = new Map<string, string>();
-  tasks = new Map<string, string>();
   sessions = [
-    { id: 'a', durableSessionId: 'da', exited: false, harness: 'claude' },
+    {
+      id: 'live-1',
+      durableSessionId: 'session-1',
+      exited: false,
+      harness: 'codex',
+      projectName: 'Exawatt',
+    },
   ];
-
   list() {
     return this.sessions;
   }
-
-  addSession(id: string, durableSessionId: string) {
-    this.sessions.push({
-      id,
-      durableSessionId,
-      exited: false,
-      harness: 'claude',
-    });
-  }
-
-  initialTask(id: string) {
-    return this.tasks.get(id) ?? null;
-  }
-
-  buffer(id: string) {
-    return this.text.get(id) ?? '';
-  }
-
   bufferCursor(id: string) {
-    return this.buffer(id).length;
+    return (this.text.get(id) ?? '').length;
   }
-
   bufferSince(id: string, cursor: number) {
-    return { text: this.buffer(id).slice(cursor), truncated: false };
+    return { text: (this.text.get(id) ?? '').slice(cursor), truncated: false };
   }
-
   data(id: string, value: string) {
-    this.text.set(id, this.buffer(id) + value);
+    this.text.set(id, (this.text.get(id) ?? '') + value);
     this.emit('data', id, value);
-  }
-
-  /** simulate the bounded buffer trimming away the session start */
-  replace(id: string, value: string) {
-    this.text.set(id, value);
   }
 }
 
-describe('ContextSummarizer re-entry recaps', () => {
-  let now: number;
+async function flush() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+describe('operator instruction capture', () => {
+  it('accumulates keystrokes, edits with backspace, and commits only on Enter', () => {
+    let state = consumeOperatorInput('', 'Improve titels');
+    expect(state.submissions).toEqual([]);
+    state = consumeOperatorInput(state.buffer, '\x7f\x7f\x7fles\r');
+    expect(state).toEqual({ buffer: '', submissions: ['Improve titles'] });
+  });
+
+  it('handles bracketed multiline paste and ignores terminal escape sequences', () => {
+    const state = consumeOperatorInput(
+      '',
+      '\x1b[200~First instruction\nSecond instruction\x1b[201~\x1b[A'
+    );
+    expect(state.submissions).toEqual(['First instruction']);
+    expect(state.buffer).toBe('Second instruction');
+  });
+
+  it('redacts secrets and local attachment paths before upload', () => {
+    const value = redactContextEvidence(
+      'Review /var/folders/xy/T/exawatt-clipboard/a.png with sk-ant-abcdefghijklmnop'
+    );
+    expect(value).toBe('Review [Attachment] with [REDACTED TOKEN]');
+  });
+});
+
+describe('provisional and accepted context labels', () => {
+  it('uses New agent for image-only tasks instead of a text URI', () => {
+    expect(
+      provisionalSubtitle('/var/folders/xy/T/exawatt-clipboard/a.png')
+    ).toBe('New agent');
+    expect(provisionalSubtitle("'/private/var/folders/xy/a.png' ")).toBe(
+      'New agent'
+    );
+    expect(provisionalSubtitle('[Image #1]')).toBe('New agent');
+  });
+
+  it('keeps meaningful launch copy and rejects unsafe model shapes', () => {
+    expect(provisionalSubtitle('Improve text legibility.')).toBe(
+      'Improve text legibility'
+    );
+    expect(acceptableSubtitle('Improve agent context summaries')).toBe(true);
+    for (const value of [
+      'KEEP',
+      'NO_GOAL',
+      "I'm fixing summaries",
+      '/tmp/a.png',
+      '**Fix summaries**',
+    ]) {
+      expect(acceptableSubtitle(value), value).toBe(false);
+    }
+  });
+});
+
+describe('hosted Session context ownership', () => {
   let manager: FakeManager;
-  let summarize: ReturnType<typeof vi.fn>;
+  let generateLabel: ReturnType<typeof vi.fn>;
   let service: ContextSummarizer;
 
   beforeEach(() => {
-    now = 100_000;
     manager = new FakeManager();
-    summarize = vi.fn(
-      async () => 'Tests passed; migration order needs approval.'
+    generateLabel = vi.fn(async () => ({
+      label: 'Improve agent context summaries',
+      relationship: 'new_context' as const,
+      confidence: 0.95,
+    }));
+    service = new ContextSummarizer({ generateLabel, retryBaseMs: 1 });
+    service.attach(manager as unknown as PtySessionManager);
+  });
+
+  it('shows a provisional launch label, then refreshes after authentication', async () => {
+    const events: string[] = [];
+    service.on('context', (_id, label) => events.push(label));
+    service.seedFromTask('session-1', 'Implement cmd+shift+t to reopen tabs');
+    expect(generateLabel).not.toHaveBeenCalled();
+    service.setAccessToken('jwt');
+    await flush();
+    expect(generateLabel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentLabel: 'Implement cmd+shift+t to reopen tabs',
+        recentInstructions: [
+          expect.objectContaining({
+            text: 'Implement cmd+shift+t to reopen tabs',
+          }),
+        ],
+      }),
+      'jwt'
     );
-    service = new ContextSummarizer({
+    expect(events.at(-1)).toBe('Improve agent context summaries');
+  });
+
+  it('refreshes on submitted operator instructions, never PTY output', async () => {
+    service.setAccessToken('jwt');
+    manager.data('live-1', 'lots of provider output '.repeat(100));
+    await flush();
+    expect(generateLabel).not.toHaveBeenCalled();
+    for (const char of 'Improve the stale tab summary')
+      service.noteInput('live-1', char);
+    expect(generateLabel).not.toHaveBeenCalled();
+    service.noteInput('live-1', '\r');
+    await flush();
+    expect(generateLabel).toHaveBeenCalledOnce();
+  });
+
+  it('forces same-context responses to retain the exact current label', async () => {
+    generateLabel.mockResolvedValue({
+      label: 'Fix postal validation',
+      relationship: 'same_context',
+      confidence: 0.9,
+    });
+    service.restore('session-1', 'MVP of Widget Checkout');
+    service.noteInput('live-1', 'Fix postal validation\r');
+    service.setAccessToken('jwt');
+    await flush();
+    expect(service.getSummary('session-1')).toBe('MVP of Widget Checkout');
+  });
+
+  it('lets hosted inference sharpen a provisional launch instruction', async () => {
+    generateLabel.mockResolvedValue({
+      label: 'Improve agent context summaries',
+      relationship: 'same_context',
+      confidence: 0.95,
+    });
+    service.seedFromTask(
+      'session-1',
+      'Please investigate and improve our stale agent title summarization system'
+    );
+    service.setAccessToken('jwt');
+    await flush();
+    expect(generateLabel).toHaveBeenCalledWith(
+      expect.objectContaining({ currentLabelSource: 'provisional' }),
+      'jwt'
+    );
+    expect(service.getSummary('session-1')).toBe(
+      'Improve agent context summaries'
+    );
+  });
+
+  it('discards an older response when a new instruction arrives in flight', async () => {
+    let resolveFirst!: (value: {
+      label: string;
+      relationship: 'new_context';
+      confidence: number;
+    }) => void;
+    generateLabel.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveFirst = resolve;
+        })
+    );
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'First topic\r');
+    await Promise.resolve();
+    service.noteInput('live-1', 'Improve agent context summaries\r');
+    resolveFirst({
+      label: 'Stale first topic',
+      relationship: 'new_context',
+      confidence: 1,
+    });
+    await vi.waitFor(() => expect(generateLabel).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(service.getSummary('session-1')).toBe(
+        'Improve agent context summaries'
+      )
+    );
+  });
+
+  it('retains the last good label through endpoint failure and retries', async () => {
+    vi.useFakeTimers();
+    generateLabel
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({
+        label: 'Improve agent context summaries',
+        relationship: 'new_context',
+        confidence: 0.8,
+      });
+    service.restore('session-1', 'Implement cmd+shift+t to reopen tabs');
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'Improve summaries\r');
+    await flush();
+    expect(service.getSummary('session-1')).toBe(
+      'Implement cmd+shift+t to reopen tabs'
+    );
+    await vi.advanceTimersByTimeAsync(1);
+    await flush();
+    expect(service.getSummary('session-1')).toBe(
+      'Improve agent context summaries'
+    );
+    vi.useRealTimers();
+  });
+
+  it('applies an operator correction immediately and invalidates in-flight output', async () => {
+    let resolve!: (value: {
+      label: string;
+      relationship: 'new_context';
+      confidence: number;
+    }) => void;
+    generateLabel.mockImplementationOnce(
+      () =>
+        new Promise(done => {
+          resolve = done;
+        })
+    );
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'Topic\r');
+    await Promise.resolve();
+    expect(
+      service.correct('session-1', 'Improve agent context summaries')
+    ).toBe('Improve agent context summaries');
+    resolve({
+      label: 'Stale model label',
+      relationship: 'new_context',
+      confidence: 1,
+    });
+    await flush();
+    expect(service.getSummary('session-1')).toBe(
+      'Improve agent context summaries'
+    );
+    expect(service.correct('session-1', '/tmp/bad.png')).toBeNull();
+  });
+
+  it('cancels a failed request retry after an authoritative correction', async () => {
+    vi.useFakeTimers();
+    generateLabel.mockRejectedValueOnce(new Error('offline'));
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'Old evidence\r');
+    await flush();
+    expect(generateLabel).toHaveBeenCalledOnce();
+    service.correct('session-1', 'Corrected human label');
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(generateLabel).toHaveBeenCalledOnce();
+    expect(service.getSummary('session-1')).toBe('Corrected human label');
+    vi.useRealTimers();
+  });
+});
+
+describe('re-entry recap remains a separate delta feature', () => {
+  it('summarizes only output produced while away', async () => {
+    let now = 100_000;
+    const manager = new FakeManager();
+    const summarize = vi.fn(async () => 'Tests passed; approval is waiting.');
+    const service = new ContextSummarizer({
       recapAwayMs: 10_000,
       recapMinChars: 20,
       now: () => now,
@@ -76,456 +289,22 @@ describe('ContextSummarizer re-entry recaps', () => {
     });
     service.attach(manager as unknown as PtySessionManager);
     service.setWindowFocused(true);
-    service.setFocus('a');
-  });
-
-  it('clamps a zero summary sweep to a non-hot interval', () => {
-    const interval = vi.spyOn(globalThis, 'setInterval');
-    const clamped = new ContextSummarizer({ sweepMs: 0 });
-    clamped.start();
-    expect(interval).toHaveBeenCalledWith(expect.any(Function), 1000);
-    clamped.stop();
-    interval.mockRestore();
-  });
-
-  it('summarizes only output produced while away', async () => {
-    manager.data('a', 'old output that was already seen\n');
+    service.setFocus('live-1');
+    manager.data('live-1', 'old output already seen\n');
     service.setWindowFocused(false);
     now += 12_000;
     manager.data(
-      'a',
-      '\x1b[32mnew tests passed and now a decision is waiting\x1b[0m'
+      'live-1',
+      '\x1b[32mnew tests passed and approval is waiting\x1b[0m'
     );
-
     const recap = new Promise(resolve => service.once('recap', resolve));
     service.setWindowFocused(true);
     await expect(recap).resolves.toMatchObject({
-      id: 'a',
-      text: 'Tests passed; migration order needs approval.',
+      id: 'live-1',
       awayMs: 12_000,
     });
-    expect(summarize).toHaveBeenCalledOnce();
     const prompt = summarize.mock.calls[0][0] as string;
     expect(prompt).toContain('new tests passed');
     expect(prompt).not.toContain('old output');
-  });
-
-  it('stays silent for short absences or insignificant output', async () => {
-    const events: unknown[] = [];
-    service.on('recap', event => events.push(event));
-    service.setWindowFocused(false);
-    now += 5_000;
-    manager.data('a', 'substantial output that arrived too soon');
-    service.setWindowFocused(true);
-    await Promise.resolve();
-
-    service.setWindowFocused(false);
-    now += 20_000;
-    manager.data('a', 'tiny');
-    service.setWindowFocused(true);
-    await Promise.resolve();
-
-    expect(events).toEqual([]);
-    expect(summarize).not.toHaveBeenCalled();
-  });
-
-  it('drops a generated recap when the operator engages first', async () => {
-    let resolveSummary: (value: string) => void = () => {};
-    summarize.mockImplementation(
-      () => new Promise<string>(resolve => (resolveSummary = resolve))
-    );
-    const events: unknown[] = [];
-    service.on('recap', event => events.push(event));
-    service.setWindowFocused(false);
-    now += 20_000;
-    manager.data('a', 'enough meaningful output arrived while away');
-    service.setWindowFocused(true);
-    service.noteInput('a');
-    resolveSummary('This result is already stale.');
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(events).toEqual([]);
-  });
-
-  it('suppresses a recap when input beats the return-focus IPC', async () => {
-    service.setWindowFocused(false);
-    now += 20_000;
-    manager.data('a', 'enough meaningful output arrived while away');
-    service.noteInput('a');
-    service.setWindowFocused(true);
-    await Promise.resolve();
-
-    expect(summarize).not.toHaveBeenCalled();
-  });
-
-  it('drops an in-flight recap when its session exits', async () => {
-    let resolveSummary: (value: string) => void = () => {};
-    summarize.mockImplementation(
-      () => new Promise<string>(resolve => (resolveSummary = resolve))
-    );
-    const events: unknown[] = [];
-    service.on('recap', event => events.push(event));
-    service.setWindowFocused(false);
-    now += 20_000;
-    manager.data('a', 'enough meaningful output arrived while away');
-    service.setWindowFocused(true);
-    manager.emit('exit', 'a');
-    resolveSummary('This session no longer exists.');
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(events).toEqual([]);
-  });
-});
-
-describe('goal-oriented subtitles (D18)', () => {
-  it('orders stated task, current goal, session start, then tail — all fenced as data', () => {
-    const input = buildContextInput({
-      task: 'Release Apple Silicon support',
-      currentGoal: 'Release Apple Silicon support',
-      head: 'claude: what should I do?',
-      tail: 'fixing swifty beaver deployment target',
-    });
-    expect(input).toContain('overall goal');
-    const taskAt = input.indexOf('<stated-task>');
-    // the prompt TEXT mentions <current-goal>; the section opener has a newline
-    const goalAt = input.indexOf('<current-goal>\n');
-    const headAt = input.indexOf('<session-start>');
-    const tailAt = input.indexOf('<untrusted-scrollback>');
-    expect(taskAt).toBeGreaterThan(-1);
-    expect(goalAt).toBeGreaterThan(taskAt);
-    expect(headAt).toBeGreaterThan(goalAt);
-    expect(tailAt).toBeGreaterThan(headAt);
-    expect(input).toContain('</untrusted-scrollback>');
-  });
-
-  it('omits empty sections', () => {
-    const input = buildContextInput({ task: null, head: '', tail: 'tail' });
-    expect(input).not.toContain('<stated-task>');
-    expect(input).not.toContain('<current-goal>\n');
-    expect(input).not.toContain('<session-start>');
-    expect(input).toContain('<untrusted-scrollback>');
-  });
-
-  it('derives an instant provisional subtitle from the composer task', () => {
-    expect(provisionalSubtitle('Get Switcheroo ready for Apple Silicon.')).toBe(
-      'Get Switcheroo ready for Apple Silicon'
-    );
-    expect(provisionalSubtitle('  \n')).toBeNull();
-    const long = provisionalSubtitle(
-      'Please investigate why the SwiftyBeaver dependency fails to build on arm64 and land a durable fix'
-    );
-    expect(long).not.toBeNull();
-    expect(long!.length).toBeLessThanOrEqual(64);
-    expect(long!.endsWith('…')).toBe(true);
-    expect(long).not.toContain('  ');
-  });
-
-  it('accepts goal-shaped phrases', () => {
-    expect(acceptableSubtitle('Release Apple Silicon support')).toBe(true);
-    expect(acceptableSubtitle('Ship subtitle guardrails for tabs')).toBe(true);
-    expect(acceptableSubtitle('Terminal session context layer')).toBe(true);
-  });
-
-  it('rejects the corrupted-session reply from the dogfood screenshot', () => {
-    expect(
-      acceptableSubtitle(
-        "I see corrupted session data that I can't interpret. What would"
-      )
-    ).toBe(false);
-  });
-
-  it('rejects conversational, interrogative, and self-narrating output', () => {
-    expect(acceptableSubtitle('')).toBe(false);
-    expect(acceptableSubtitle('   ')).toBe(false);
-    expect(
-      acceptableSubtitle(
-        'one two three four five six seven eight nine ten eleven'
-      )
-    ).toBe(false);
-    expect(acceptableSubtitle('Fix the build?')).toBe(false);
-    expect(acceptableSubtitle("I'm analyzing the terminal output")).toBe(false);
-    expect(acceptableSubtitle('I cannot determine a goal here')).toBe(false);
-    expect(acceptableSubtitle('Sorry, no clear goal found')).toBe(false);
-    expect(acceptableSubtitle('What would you like next')).toBe(false);
-    expect(acceptableSubtitle("Here's the session goal")).toBe(false);
-    expect(acceptableSubtitle('Here is the subtitle')).toBe(false);
-    expect(acceptableSubtitle('Sure, releasing Apple Silicon now')).toBe(false);
-    expect(acceptableSubtitle('Unfortunately the data is garbled')).toBe(false);
-    expect(acceptableSubtitle('It looks like a build session')).toBe(false);
-    expect(acceptableSubtitle('As an AI I lack context')).toBe(false);
-    expect(acceptableSubtitle('Summarize the scrollback contents')).toBe(false);
-    expect(acceptableSubtitle('Summarizing recent terminal output')).toBe(
-      false
-    );
-    expect(acceptableSubtitle('Fix build\x07pipeline')).toBe(false);
-    expect(
-      acceptableSubtitle("Based on my exploration, here's what I found:")
-    ).toBe(false);
-    expect(acceptableSubtitle('Auth migration based on my investigation')).toBe(
-      false
-    );
-    expect(acceptableSubtitle('one two three four five six seven')).toBe(false);
-  });
-
-  it('truncates at a word boundary with an ellipsis, never mid-word', () => {
-    expect(truncateAtWord('Short goal', 64)).toBe('Short goal');
-    const long =
-      'Guard the summarizer output so corrupted replies never reach a tab title';
-    const cut = truncateAtWord(long, 64);
-    expect(cut.length).toBeLessThanOrEqual(64);
-    expect(cut.endsWith('…')).toBe(true);
-    // everything kept is a whole-word prefix of the source
-    expect(long.startsWith(cut.slice(0, -1))).toBe(true);
-    expect(long[cut.length - 1]).toBe(' ');
-    // wordless input falls back to a hard cut
-    expect(truncateAtWord('x'.repeat(80), 64)).toHaveLength(64);
-    // recap-length caps use the same path
-    expect(truncateAtWord(`${long} `.repeat(5), 240).endsWith('…')).toBe(true);
-  });
-
-  it('seeds the subtitle from the task once, never overwriting a model summary', () => {
-    const service = new ContextSummarizer({ summarize: async () => null });
-    const events: Array<[string, string]> = [];
-    service.on('context', (id: string, summary: string) =>
-      events.push([id, summary])
-    );
-    service.seedFromTask('a', 'Adopt Apple Silicon');
-    service.seedFromTask('a', 'Different later task');
-    expect(events).toEqual([['a', 'Adopt Apple Silicon']]);
-    expect(service.getSummary('a')).toBe('Adopt Apple Silicon');
-  });
-});
-
-describe('sweep output guardrails', () => {
-  const junk =
-    "I see corrupted session data that I can't interpret. What would";
-  const COOLDOWN = 5 * 60_000;
-  let now: number;
-  let manager: FakeManager;
-  let summarize: ReturnType<typeof vi.fn>;
-  let diagnose: ReturnType<typeof vi.fn>;
-  let service: ContextSummarizer;
-  const runSweep = () =>
-    (service as unknown as { sweep: () => Promise<void> }).sweep();
-
-  beforeEach(() => {
-    now = 1_000_000;
-    manager = new FakeManager();
-    summarize = vi.fn(async () => junk);
-    diagnose = vi.fn();
-    service = new ContextSummarizer({ summarize, diagnose, now: () => now });
-    service.attach(manager as unknown as PtySessionManager);
-  });
-
-  it('keeps the previous subtitle on unusable content, cools the session down, then retries the refunded bytes', async () => {
-    service.seedFromTask('da', 'Ship subtitle guardrails');
-    const events: string[] = [];
-    service.on('context', (_id: string, summary: string) =>
-      events.push(summary)
-    );
-    manager.data('a', 'meaningful terminal output '.repeat(20));
-
-    await runSweep();
-    expect(summarize).toHaveBeenCalledOnce();
-    expect(service.getSummary('da')).toBe('Ship subtitle guardrails');
-    expect(events).toEqual([]);
-
-    // the session is cooling down: an immediate sweep must NOT hammer the
-    // same confused content again (D28)
-    await runSweep();
-    expect(summarize).toHaveBeenCalledOnce();
-
-    // after the cooldown the refunded bytes retry without fresh output
-    now += COOLDOWN + 1;
-    summarize.mockResolvedValueOnce('Release Apple Silicon support');
-    await runSweep();
-    expect(summarize).toHaveBeenCalledTimes(2);
-    expect(service.getSummary('da')).toBe('Release Apple Silicon support');
-    expect(events).toEqual(['Release Apple Silicon support']);
-  });
-
-  it('treats NO_GOAL as a quiet no-update that waits for fresh output', async () => {
-    summarize.mockResolvedValue('NO_GOAL');
-    service.seedFromTask('da', 'Ship subtitle guardrails');
-    const events: string[] = [];
-    service.on('context', (_id: string, summary: string) =>
-      events.push(summary)
-    );
-    manager.data('a', 'unreadable binary noise '.repeat(20));
-
-    await runSweep();
-    expect(service.getSummary('da')).toBe('Ship subtitle guardrails');
-    expect(events).toEqual([]);
-    // no refund: a NO_GOAL verdict is not retried on the same content
-    await runSweep();
-    expect(summarize).toHaveBeenCalledOnce();
-  });
-
-  it('never counts unusable content as an engine failure', async () => {
-    manager.data('a', 'meaningful terminal output '.repeat(20));
-    for (let round = 0; round < 4; round += 1) {
-      await runSweep();
-      now += COOLDOWN + 1;
-    }
-    expect(summarize).toHaveBeenCalledTimes(4);
-    expect(diagnose).not.toHaveBeenCalledWith(
-      'summarizer.engine-failure',
-      expect.anything()
-    );
-    summarize.mockResolvedValueOnce('Release Apple Silicon support');
-    await runSweep();
-    expect(service.getSummary('da')).toBe('Release Apple Silicon support');
-  });
-
-  it('sends the next sweep to the runner-up session while a confused one cools down (D28)', async () => {
-    manager.addSession('b', 'db');
-    manager.data('a', 'the busiest but most confusing session '.repeat(30));
-    manager.data(
-      'b',
-      'a quieter session with a clear release goal '.repeat(12)
-    );
-
-    await runSweep();
-    expect(summarize).toHaveBeenCalledOnce();
-    expect(summarize.mock.calls[0][0] as string).toContain(
-      'most confusing session'
-    );
-
-    // session a is cooling down — b must get its subtitle NOW, not after
-    // a stops being confusing
-    summarize.mockResolvedValueOnce('Ship the release');
-    await runSweep();
-    expect(summarize).toHaveBeenCalledTimes(2);
-    expect(summarize.mock.calls[1][0] as string).toContain(
-      'clear release goal'
-    );
-    expect(service.getSummary('db')).toBe('Ship the release');
-  });
-
-  it('backs off exponentially on engine failures and recovers on success — never a permanent disable (D28)', async () => {
-    summarize.mockRejectedValue(new Error('engine down'));
-    manager.data('a', 'meaningful terminal output '.repeat(20));
-
-    await runSweep();
-    expect(diagnose).toHaveBeenCalledWith(
-      'summarizer.engine-failure',
-      expect.objectContaining({ failures: 1, backoffMs: 30_000 })
-    );
-
-    // paused: an immediate sweep makes no engine call
-    await runSweep();
-    expect(summarize).toHaveBeenCalledOnce();
-
-    // past the backoff and the failed session's cooldown: it retries and
-    // the backoff GROWS
-    now += COOLDOWN + 1;
-    await runSweep();
-    expect(summarize).toHaveBeenCalledTimes(2);
-    expect(diagnose).toHaveBeenCalledWith(
-      'summarizer.engine-failure',
-      expect.objectContaining({ failures: 2, backoffMs: 60_000 })
-    );
-
-    // recovery: the next success clears the pause and the counter
-    now += COOLDOWN + 1;
-    summarize.mockResolvedValue('Fix release pipeline');
-    await runSweep();
-    expect(service.getSummary('da')).toBe('Fix release pipeline');
-    manager.data('a', 'fresh output after recovery '.repeat(20));
-    await runSweep();
-    expect(summarize).toHaveBeenCalledTimes(4);
-  });
-});
-
-describe('durable session goals (D21)', () => {
-  let manager: FakeManager;
-  let summarize: ReturnType<typeof vi.fn>;
-  let service: ContextSummarizer;
-  const runSweep = () =>
-    (service as unknown as { sweep: () => Promise<void> }).sweep();
-
-  beforeEach(() => {
-    manager = new FakeManager();
-    summarize = vi.fn(async () => 'Fix YC intake feature');
-    service = new ContextSummarizer({ summarize });
-    service.attach(manager as unknown as PtySessionManager);
-  });
-
-  it('keys goals by durable Session id and keeps them past process exit', async () => {
-    manager.data('a', 'meaningful terminal output '.repeat(20));
-    await runSweep();
-    expect(service.getSummary('da')).toBe('Fix YC intake feature');
-    manager.emit('exit', 'a');
-    await runSweep();
-    expect(service.getSummary('da')).toBe('Fix YC intake feature');
-  });
-
-  it('shows the model the current goal and holds it on KEEP without a retry refund', async () => {
-    service.seedFromTask('da', 'Fix YC intake feature');
-    summarize.mockResolvedValue('KEEP');
-    const events: string[] = [];
-    service.on('context', (_id: string, summary: string) =>
-      events.push(summary)
-    );
-    manager.data('a', 'now writing gpt tests '.repeat(20));
-
-    await runSweep();
-    const prompt = summarize.mock.calls[0][0] as string;
-    expect(prompt).toContain('<current-goal>\nFix YC intake feature');
-    expect(service.getSummary('da')).toBe('Fix YC intake feature');
-    expect(events).toEqual([]);
-    // KEEP is an affirmation, not a failure: no byte refund, no retry
-    await runSweep();
-    expect(summarize).toHaveBeenCalledOnce();
-  });
-
-  it('restores a persisted subtitle once and never overwrites a live goal', () => {
-    const events: Array<[string, string]> = [];
-    service.on('context', (id: string, summary: string) =>
-      events.push([id, summary])
-    );
-    expect(service.restore('da', 'Fix YC intake feature')).toBe(
-      'Fix YC intake feature'
-    );
-    expect(service.restore('da', 'A different stale copy')).toBe(
-      'Fix YC intake feature'
-    );
-    expect(service.getSummary('da')).toBe('Fix YC intake feature');
-    expect(events).toEqual([['da', 'Fix YC intake feature']]);
-
-    service.seedFromTask('other', 'Ship the composer');
-    service.restore('other', 'An older persisted goal');
-    expect(service.getSummary('other')).toBe('Ship the composer');
-  });
-
-  it('rejects persisted model preambles so they cannot anchor KEEP forever', () => {
-    const events: Array<[string, string]> = [];
-    service.on('context', (id: string, summary: string) =>
-      events.push([id, summary])
-    );
-
-    expect(
-      service.restore('da', "Based on my exploration, here's what I found:")
-    ).toBeNull();
-
-    expect(service.getSummary('da')).toBeNull();
-    expect(events).toEqual([]);
-  });
-
-  it('keeps the captured session head after the buffer trims it away', async () => {
-    const start = 'GOAL: overhaul the YC intake flow end to end\n';
-    manager.data('a', start + 'x '.repeat(2000));
-    await runSweep();
-    expect(summarize.mock.calls[0][0] as string).toContain('GOAL: overhaul');
-
-    // the bounded buffer drops the start; the captured head still anchors
-    manager.replace('a', 'y '.repeat(2000));
-    manager.data('a', 'recent micro-task output '.repeat(30));
-    await runSweep();
-    const prompt = summarize.mock.calls[1][0] as string;
-    expect(prompt).toContain('<session-start>');
-    expect(prompt).toContain('GOAL: overhaul the YC intake flow');
   });
 });

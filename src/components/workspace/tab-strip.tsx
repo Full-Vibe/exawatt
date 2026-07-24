@@ -34,6 +34,7 @@ import {
 } from './status-glyphs';
 import type { SessionAttentionSignal } from './status-glyphs';
 import type { Project } from './use-workspace-state';
+import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
 
 /** Shortcut-ordinal keycap (D21): revealed only while the chord's modifiers
  *  are held, styled as a key so it reads as "press this", never as data.
@@ -269,6 +270,8 @@ export function TabStrip({
   onRenameTab,
   onRenameProject,
   onSetProjectColor,
+  feedbackEnabled = false,
+  onRateContext,
   exitingProjectDirs,
 }: {
   projects: Project[];
@@ -297,6 +300,14 @@ export function TabStrip({
   onRenameTab: (tabId: string, title: string) => void;
   onRenameProject: (dir: string, name: string) => void;
   onSetProjectColor: (dir: string, color: string) => void;
+  feedbackEnabled?: boolean;
+  onRateContext?: (input: {
+    durableSessionId: string;
+    label: string;
+    sentiment: -1 | 1;
+    betterLabel?: string | null;
+    projectName: string;
+  }) => Promise<boolean>;
   /** drag arrangement (D20): drop a tab beside a same-Project sibling */
   onReorderTab?: (
     tabId: string,
@@ -822,6 +833,21 @@ export function TabStrip({
                       </span>
                     )}
                   </EditableChrome>
+                  {summary && isAgent && !isDraft && onRateContext && (
+                    <ContextLabelFeedback
+                      label={summary}
+                      enabled={feedbackEnabled}
+                      onRate={(sentiment, betterLabel) =>
+                        onRateContext({
+                          durableSessionId: t.durableSessionId,
+                          label: summary,
+                          sentiment,
+                          betterLabel,
+                          projectName: g.name,
+                        })
+                      }
+                    />
+                  )}
                   <button
                     onClick={() => onCloseTab(t.id)}
                     // ⌘W closes, like Chrome (D24): started live agents

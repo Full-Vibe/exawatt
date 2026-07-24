@@ -93,6 +93,16 @@ budgets, approvals, and consumption records.
 
 This layer also owns UI-facing view models and command contracts that are shared by multiple UI regimes. These presentation models must be source-agnostic, deterministic, pure TypeScript, and testable without React, DOM, Electron, or Three.js.
 
+Session context inference follows one source-agnostic evidence contract. The
+desktop supplies bounded, redacted operator instructions through trusted IPC;
+an authenticated hosted endpoint applies quota and server-held model
+credentials; Electron main accepts only validated structured results and owns
+the last-good durable label. PTY output is not label evidence. Hosted failure
+retains existing state rather than invoking a competing local summarizer
+(decision `0019`). Explicit label votes/corrections and general product reports
+use an authenticated Supabase-backed feedback intake with private optional
+attachments; inference excerpts themselves are not persisted.
+
 #### Agency control spine
 
 Visibility, authorization, evidence, and enforcement form a cross-cutting spine
@@ -313,6 +323,10 @@ Built:
 - roadmap lens (ENG-017): a read-only workspace rail rendering each Project's
   repo-canonical roadmap per the published convention (`@exawatt/core` parser,
   `@exawatt/ui-model` lens view, validated `roadmap:read` IPC in Electron main)
+- ENG-021 E1 Session-context inference: operator-submission-triggered evidence,
+  authenticated server-owned structured labeling, durable last-good failure
+  behavior, immediate correction, a repository gold corpus, and a reusable
+  authenticated product-feedback intake with private optional screenshots
 
 Implemented:
 

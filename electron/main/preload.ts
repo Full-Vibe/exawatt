@@ -51,6 +51,10 @@ contextBridge.exposeInMainWorld('electron', {
     rename: (id: string, title: string) =>
       ipcRenderer.invoke('pty:rename', id, title),
     focus: (id: string | null) => ipcRenderer.invoke('pty:focus', id),
+    setContextAuth: (accessToken: string | null) =>
+      ipcRenderer.invoke('pty:set-context-auth', accessToken),
+    correctContext: (durableSessionId: string, label: string) =>
+      ipcRenderer.invoke('pty:correct-context', durableSessionId, label),
     restoreContext: (durableSessionId: string, subtitle: string) =>
       ipcRenderer.invoke('pty:restore-context', durableSessionId, subtitle),
     list: () => ipcRenderer.invoke('pty:list'),
@@ -266,6 +270,12 @@ contextBridge.exposeInMainWorld('electron', {
     onCommand: subscribe<string>('menu:command'),
     syncAccelerators: (map: Record<string, string>) =>
       ipcRenderer.invoke('menu:sync-accelerators', map),
+  },
+  feedback: {
+    setAuthenticated: (authenticated: boolean) =>
+      ipcRenderer.invoke('feedback:set-authenticated', authenticated),
+    captureScreenshot: () => ipcRenderer.invoke('feedback:capture-screenshot'),
+    ...(process.env.EXAWATT_TEST === '1' ? { testMode: true } : {}),
   },
   shortcuts: {
     systemHotkeys: () => ipcRenderer.invoke('shortcuts:system-hotkeys'),

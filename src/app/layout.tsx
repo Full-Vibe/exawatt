@@ -9,6 +9,7 @@ import { FleetProvider } from '@/lib/fleet/fleet-provider';
 import { UpdateReadyNotice } from '@/components/nav/update-ready-notice';
 import { CommandNavigationProvider } from '@/components/nav/command-navigation-provider';
 import { SystemAccent } from '@/components/nav/system-accent';
+import { ProductFeedbackProvider } from '@/components/feedback/product-feedback-provider';
 
 const exo2 = Exo_2({
   variable: '--font-exo2',
@@ -53,9 +54,11 @@ export default function RootLayout({
           <CommandNavigationProvider>
             <ShortcutProvider>
               <FleetProvider>
-                <SiteHeader />
-                <UpdateReadyNotice />
-                {children}
+                <ProductFeedbackProvider>
+                  <SiteHeader />
+                  <UpdateReadyNotice />
+                  {children}
+                </ProductFeedbackProvider>
               </FleetProvider>
             </ShortcutProvider>
           </CommandNavigationProvider>

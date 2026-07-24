@@ -1,0 +1,476 @@
+'use client';
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
+import {
+  Camera,
+  Check,
+  ImagePlus,
+  LoaderCircle,
+  MessageSquareWarning,
+  X,
+} from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import type {
+  FeedbackKind,
+  ProductFeedbackRequest,
+} from '@/lib/feedback/contract';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+
+interface ContextRating {
+  durableSessionId: string;
+  label: string;
+  sentiment: -1 | 1;
+  betterLabel?: string | null;
+  projectName?: string | null;
+}
+
+interface FeedbackContextValue {
+  isAuthenticated: boolean;
+  openFeedback: () => void;
+  submitContextRating: (rating: ContextRating) => Promise<boolean>;
+}
+
+const ProductFeedbackContext = createContext<FeedbackContextValue | null>(null);
+
+function wait(milliseconds: number) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
+function dataUrlFromFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read that image.'));
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsDataURL(file);
+  });
+}
+
+export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [kind, setKind] =
+    useState<Exclude<FeedbackKind, 'context_label'>>('general');
+  const [message, setMessage] = useState('');
+  const [attachment, setAttachment] = useState<string | null>(null);
+  const [captureAvailable, setCaptureAvailable] = useState(false);
+  const [status, setStatus] = useState<
+    'idle' | 'capturing' | 'submitting' | 'sent' | 'error'
+  >('idle');
+  const [error, setError] = useState<string | null>(null);
+  const tokenRef = useRef<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => setCaptureAvailable(!!window.electron?.feedback), []);
+
+  const syncSession = useCallback((session: Session | null) => {
+    // The Electron evaluator installs an explicit fake token after load. A
+    // slower cached-session read must not race in afterward and undo that
+    // test-only state; production preload never exposes this capability.
+    if (
+      !session &&
+      window.electron?.feedback?.testMode &&
+      tokenRef.current?.startsWith('test-')
+    ) {
+      return;
+    }
+    const token = session?.access_token ?? null;
+    tokenRef.current = token;
+    const authenticated = !!session?.user && !!token;
+    setIsAuthenticated(authenticated);
+    void window.electron?.pty?.setContextAuth?.(token);
+    void window.electron?.feedback?.setAuthenticated(authenticated);
+    if (!authenticated) setOpen(false);
+  }, []);
+
+  useEffect(() => {
+    let supabase: ReturnType<typeof createClient>;
+    try {
+      supabase = createClient();
+    } catch {
+      syncSession(null);
+      return;
+    }
+    void supabase.auth
+      .getSession()
+      .then(({ data }) => syncSession(data.session));
+    const { data: subscription } = supabase.auth.onAuthStateChange(
+      (_event: AuthChangeEvent, session: Session | null) => syncSession(session)
+    );
+    return () => subscription.subscription.unsubscribe();
+  }, [syncSession]);
+
+  useEffect(
+    () =>
+      window.electron?.menu?.onCommand(command => {
+        if (command === 'submit-feedback' && tokenRef.current) {
+          setError(null);
+          setStatus('idle');
+          setOpen(true);
+        }
+      }),
+    []
+  );
+
+  useEffect(() => {
+    if (!window.electron?.feedback?.testMode) return;
+    const install = (event: Event) => {
+      const token = (event as CustomEvent<{ accessToken?: unknown }>).detail
+        ?.accessToken;
+      if (typeof token !== 'string' || !token) return;
+      tokenRef.current = token;
+      setIsAuthenticated(true);
+      void window.electron?.pty?.setContextAuth?.(token);
+      void window.electron?.feedback?.setAuthenticated(true);
+    };
+    window.addEventListener('exawatt:test-feedback-auth', install);
+    return () =>
+      window.removeEventListener('exawatt:test-feedback-auth', install);
+  }, []);
+
+  const submit = useCallback(
+    async (
+      request: Omit<ProductFeedbackRequest, 'idempotencyKey'>
+    ): Promise<boolean> => {
+      const token = tokenRef.current;
+      if (!token) return false;
+      let buildSha: string | null = request.buildSha ?? null;
+      try {
+        buildSha =
+          buildSha ??
+          (await window.electron?.app?.getBuildInfo?.())?.sha ??
+          null;
+      } catch {
+        // Build metadata is useful context, never a condition of feedback.
+      }
+      try {
+        const response = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${token}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            ...request,
+            buildSha,
+            platform:
+              request.platform ??
+              window.electron?.platform ??
+              navigator.platform,
+            idempotencyKey: crypto.randomUUID(),
+          } satisfies ProductFeedbackRequest),
+        });
+        return response.ok;
+      } catch {
+        return false;
+      }
+    },
+    []
+  );
+
+  const openFeedback = useCallback(() => {
+    if (!tokenRef.current) return;
+    setError(null);
+    setStatus('idle');
+    setOpen(true);
+  }, []);
+
+  const submitContextRating = useCallback(
+    async (rating: ContextRating) => {
+      if (!tokenRef.current) return false;
+      const correction =
+        rating.betterLabel?.replace(/\s+/g, ' ').trim() || null;
+      if (correction) {
+        const accepted = await window.electron?.pty?.correctContext?.(
+          rating.durableSessionId,
+          correction
+        );
+        if (!accepted) return false;
+      }
+      return submit({
+        kind: 'context_label',
+        sentiment: rating.sentiment,
+        message: correction,
+        surface: 'workspace-tab-strip',
+        context: {
+          schemaVersion: 1,
+          durableSessionId: rating.durableSessionId,
+          shownLabel: rating.label,
+          betterLabel: correction,
+          projectName: rating.projectName ?? null,
+        },
+      });
+    },
+    [submit]
+  );
+
+  const capture = useCallback(async () => {
+    const captureScreenshot = window.electron?.feedback?.captureScreenshot;
+    if (!captureScreenshot) {
+      fileRef.current?.click();
+      return;
+    }
+    setStatus('capturing');
+    setError(null);
+    setOpen(false);
+    await wait(180);
+    try {
+      setAttachment(await captureScreenshot());
+      setStatus('idle');
+    } catch {
+      setError(
+        'Could not capture this window. You can attach an image instead.'
+      );
+      setStatus('error');
+    } finally {
+      setOpen(true);
+    }
+  }, []);
+
+  const sendGeneral = useCallback(async () => {
+    const clean = message.trim();
+    if (!clean) {
+      setError('Tell us what happened or what you would like to improve.');
+      return;
+    }
+    setStatus('submitting');
+    setError(null);
+    const sent = await submit({
+      kind,
+      message: clean,
+      surface: window.location.pathname || 'unknown',
+      context: {
+        schemaVersion: 1,
+        url: window.location.href,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+      },
+      attachment: attachment
+        ? { dataUrl: attachment, name: 'screenshot' }
+        : null,
+    });
+    if (!sent) {
+      setStatus('error');
+      setError(
+        'Feedback could not be sent. Your text is still here—try again.'
+      );
+      return;
+    }
+    setStatus('sent');
+    await wait(700);
+    setOpen(false);
+    setMessage('');
+    setAttachment(null);
+    setKind('general');
+    setStatus('idle');
+  }, [attachment, kind, message, submit]);
+
+  const contextValue = useMemo<FeedbackContextValue>(
+    () => ({
+      isAuthenticated,
+      openFeedback,
+      submitContextRating,
+    }),
+    [isAuthenticated, openFeedback, submitContextRating]
+  );
+
+  return (
+    <ProductFeedbackContext.Provider value={contextValue}>
+      {children}
+      <Dialog
+        open={open}
+        onOpenChange={next => status !== 'submitting' && setOpen(next)}
+      >
+        <DialogContent className="max-w-xl border-[color:var(--hud-line)] bg-[color:var(--hud-panel)] p-0 text-foreground shadow-2xl">
+          <div className="border-b border-[color:var(--hud-line)] px-6 py-5">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <MessageSquareWarning className="size-4 text-[color:var(--hud-cyan)]" />
+                Submit feedback
+              </DialogTitle>
+              <DialogDescription>
+                Bugs, rough edges, and ideas all land in the same review queue.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="grid gap-5 px-6 py-1">
+            <div className="grid gap-2">
+              <Label htmlFor="feedback-kind">Type</Label>
+              <Select
+                value={kind}
+                onValueChange={value => setKind(value as typeof kind)}
+              >
+                <SelectTrigger id="feedback-kind" className="bg-black/20">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="general">General feedback</SelectItem>
+                  <SelectItem value="bug">Bug report</SelectItem>
+                  <SelectItem value="idea">Product idea</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="feedback-message">What should we know?</Label>
+              <Textarea
+                id="feedback-message"
+                autoFocus
+                value={message}
+                maxLength={12_000}
+                rows={6}
+                onChange={event => setMessage(event.target.value)}
+                placeholder="What happened, what did you expect, or what would make this better?"
+                className="min-h-32 resize-y bg-black/20"
+              />
+              <div className="text-right font-mono text-[10px] text-muted-foreground">
+                {message.length.toLocaleString()} / 12,000
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>
+                Screenshot{' '}
+                <span className="font-normal text-muted-foreground">
+                  (optional)
+                </span>
+              </Label>
+              {attachment ? (
+                <div className="flex items-center gap-3 rounded-md border border-[color:var(--hud-line)] bg-black/20 p-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={attachment}
+                    alt="Feedback attachment preview"
+                    className="h-14 w-24 rounded object-cover"
+                  />
+                  <div className="min-w-0 flex-1 text-xs text-muted-foreground">
+                    Window capture attached
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Remove screenshot"
+                    onClick={() => setAttachment(null)}
+                  >
+                    <X className="size-4" />
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="justify-start gap-2 bg-black/20"
+                  onClick={() => void capture()}
+                  disabled={status === 'capturing'}
+                >
+                  {status === 'capturing' ? (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  ) : captureAvailable ? (
+                    <Camera className="size-4" />
+                  ) : (
+                    <ImagePlus className="size-4" />
+                  )}
+                  {captureAvailable ? 'Capture this window' : 'Attach an image'}
+                </Button>
+              )}
+              <input
+                ref={fileRef}
+                className="sr-only"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={async event => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  if (file.size > 5 * 1024 * 1024) {
+                    setError('Screenshots must be 5 MB or smaller.');
+                    setStatus('error');
+                    return;
+                  }
+                  try {
+                    setAttachment(await dataUrlFromFile(file));
+                    setError(null);
+                    setStatus('idle');
+                  } catch (cause) {
+                    setError(
+                      cause instanceof Error
+                        ? cause.message
+                        : 'Could not read that image.'
+                    );
+                    setStatus('error');
+                  }
+                }}
+              />
+            </div>
+            <div aria-live="polite" className="min-h-5 text-xs">
+              {error && <span className="text-destructive">{error}</span>}
+              {status === 'sent' && (
+                <span className="inline-flex items-center gap-1.5 text-emerald-400">
+                  <Check className="size-3.5" /> Feedback sent
+                </span>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="border-t border-[color:var(--hud-line)] px-6 py-4">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setOpen(false)}
+              disabled={status === 'submitting'}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void sendGeneral()}
+              disabled={status === 'submitting' || status === 'sent'}
+            >
+              {status === 'submitting' && (
+                <LoaderCircle className="size-4 animate-spin" />
+              )}
+              Send feedback
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </ProductFeedbackContext.Provider>
+  );
+}
+
+export function useProductFeedback(): FeedbackContextValue {
+  const value = useContext(ProductFeedbackContext);
+  if (!value)
+    throw new Error(
+      'useProductFeedback must be used inside ProductFeedbackProvider'
+    );
+  return value;
+}
+
+/** Chrome atoms are also rendered in isolation by the component workbench and
+ * unit tests; those callers can omit the application-level provider. */
+export function useOptionalProductFeedback(): FeedbackContextValue | null {
+  return useContext(ProductFeedbackContext);
+}

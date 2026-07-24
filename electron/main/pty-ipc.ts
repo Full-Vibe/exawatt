@@ -193,13 +193,16 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       const session = await ptySessions.create(options);
       // the composer's task is the goal — show it as the subtitle instantly;
       // a resume re-anchors the goal persisted with the layout (D21)
-      contextSummarizer.seedFromTask(
-        session.durableSessionId,
-        options.initialPrompt
-      );
+      // Restore durable truth before considering zero-network launch copy. A
+      // resume must not let an incidental launch prompt replace the last good
+      // context label.
       contextSummarizer.restore(
         session.durableSessionId,
         options.restoredSubtitle
+      );
+      contextSummarizer.seedFromTask(
+        session.durableSessionId,
+        options.initialPrompt
       );
       // a launch task or an exact resume IS work given: the tab must never
       // read "unstarted" (D22)
@@ -237,7 +240,7 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       // these as separate renderer invokes let a fast PTY echo arrive while a
       // finished turn was still latched, hiding the legitimate next turn.
       if (operatorEngaged) {
-        contextSummarizer.noteInput(id);
+        contextSummarizer.noteInput(id, data);
         attentionMonitor.noteEngaged(id);
       }
       ptySessions.write(id, data);
@@ -253,6 +256,32 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     // the first human keystroke is work given — started truth (D22)
     attentionMonitor.noteEngaged(id);
   });
+  handleTrusted(
+    'pty:set-context-auth',
+    (_event, accessToken: string | null) => {
+      if (
+        accessToken !== null &&
+        (typeof accessToken !== 'string' || accessToken.length > 16_384)
+      ) {
+        throw new Error('Invalid context-label authentication');
+      }
+      contextSummarizer.setAccessToken(accessToken);
+    }
+  );
+  handleTrusted(
+    'pty:correct-context',
+    (_event, durableSessionId: string, label: string) => {
+      if (
+        typeof durableSessionId !== 'string' ||
+        !durableSessionId ||
+        durableSessionId.length > 240 ||
+        typeof label !== 'string'
+      ) {
+        throw new Error('Invalid context-label correction');
+      }
+      return contextSummarizer.correct(durableSessionId, label);
+    }
+  );
   handleTrusted('pty:focus', (_event, id: string | null) => {
     attentionMonitor.setFocus(id);
     contextSummarizer.setFocus(id);
@@ -370,7 +399,7 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     if (payload.input) {
       // Paste is operator input too. Open a finished turn before writing so
       // even a synchronous echo cannot be mistaken for passive redraw data.
-      contextSummarizer.noteInput(id);
+      contextSummarizer.noteInput(id, payload.input);
       attentionMonitor.noteEngaged(id);
       ptySessions.write(id, payload.input);
       attentionMonitor.noteInput(id);

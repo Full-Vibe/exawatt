@@ -178,6 +178,14 @@ export interface ElectronPtyApi {
   rename: (id: string, title: string) => Promise<void>;
   /** the operator is looking at this session (null = none focused) */
   focus: (id: string | null) => Promise<void>;
+  /** Sync the current signed-in token to Electron main. Main never exposes it
+   * back to the renderer and uses it only for hosted context-label requests. */
+  setContextAuth?: (accessToken: string | null) => Promise<void>;
+  /** Apply an explicit human correction before feedback upload completes. */
+  correctContext?: (
+    durableSessionId: string,
+    label: string
+  ) => Promise<string | null>;
   /** Revalidate a persisted goal through main before renderer hydration.
    *  Optional only for compatibility with older mocks. */
   restoreContext?: (
@@ -504,6 +512,14 @@ declare global {
         /** sync effective registry bindings into the menus' display
          *  accelerators (D10) — '' clears a column (chord rebinds) */
         syncAccelerators?: (map: Record<string, string>) => Promise<void>;
+      };
+      feedback?: {
+        /** Keeps the native Help menu honest without exposing auth data. */
+        setAuthenticated: (authenticated: boolean) => Promise<void>;
+        /** Explicit user action only; returns a bounded JPEG data URL. */
+        captureScreenshot: () => Promise<string>;
+        /** Dev-evaluator capability marker; absent from production preload. */
+        testMode?: true;
       };
       shortcuts?: {
         /** the machine's parsed com.apple.symbolichotkeys.plist as JSON

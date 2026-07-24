@@ -23,12 +23,14 @@ import {
   Server,
   SquareTerminal,
   Blocks,
+  MessageSquareWarning,
   type LucideIcon,
 } from 'lucide-react';
 import { signOut } from '@/app/actions/projects';
 import { isAdminEmail } from '@/lib/auth/admin';
 import { CommandAltitudeNav } from './command-altitude-nav';
 import { isAppRoute, surfacesByTier, type AppSurface } from './surfaces';
+import { useOptionalProductFeedback } from '@/components/feedback/product-feedback-provider';
 
 const LEGACY_ICONS: Partial<Record<AppSurface['id'], LucideIcon>> = {
   dashboard: LayoutDashboard,
@@ -53,6 +55,7 @@ export function SiteHeaderNav({
   const isComponentLibrary = pathname?.startsWith('/hud-gallery');
   const isWorkspace = pathname?.startsWith('/workspace');
   const isAdmin = isAdminEmail(userEmail);
+  const feedback = useOptionalProductFeedback();
   // in the desktop app the Workspace (terminal) link is always relevant,
   // signed in or not; detected post-mount for hydration safety
   const [inElectron, setInElectron] = useState(false);
@@ -195,6 +198,10 @@ export function SiteHeaderNav({
                   <Settings className="mr-2 h-4 w-4" />
                   Settings
                 </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => feedback?.openFeedback()}>
+                <MessageSquareWarning className="mr-2 h-4 w-4" />
+                Submit feedback
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="text-xs text-muted-foreground">

@@ -86,6 +86,7 @@ import {
   orderedRoadmapJumpTargets,
 } from '@exawatt/ui-model';
 import { HUD } from '@/components/hud';
+import { useProductFeedback } from '@/components/feedback/product-feedback-provider';
 import {
   Bell,
   BellOff,
@@ -228,6 +229,8 @@ export function WorkspaceClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { openCommandPalette, openHelpModal } = useShortcuts();
+  const { isAuthenticated: feedbackEnabled, submitContextRating } =
+    useProductFeedback();
   const {
     projects,
     activeProject,
@@ -935,6 +938,8 @@ export function WorkspaceClient() {
               onRenameTab={renameTab}
               onRenameProject={renameProject}
               onSetProjectColor={setProjectColor}
+              feedbackEnabled={feedbackEnabled}
+              onRateContext={submitContextRating}
               onReorderTab={(tabId, targetTabId, place) =>
                 void reorderTab(tabId, targetTabId, place)
               }

@@ -589,6 +589,8 @@ const menuAccelerators: Record<string, string> = {
   'jump-attention': 'Command+J',
 };
 
+let feedbackAuthenticated = false;
+
 const ACCELERATOR_PATTERN =
   /^((Command|Control|Alt|Shift)\+)*([A-Z0-9]|F([1-9]|1[0-9]|2[0-4])|[\[\]\\;',./`=-]|Enter|Escape|Tab|Space|Backspace|Delete|Up|Down|Left|Right|Home|End|PageUp|PageDown)$/;
 
@@ -605,6 +607,30 @@ function registerMenuIPC(): void {
       }
     }
     createMenu();
+  });
+  handleTrusted(
+    'feedback:set-authenticated',
+    async (_event, value: boolean) => {
+      if (typeof value !== 'boolean') throw new Error('Invalid auth state');
+      if (feedbackAuthenticated === value) return;
+      feedbackAuthenticated = value;
+      createMenu();
+    }
+  );
+  handleTrusted('feedback:capture-screenshot', async event => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) throw new Error('Window unavailable');
+    const image = await win.capturePage();
+    const size = image.getSize();
+    const bounded =
+      size.width > 1600
+        ? image.resize({
+            width: 1600,
+            height: Math.max(1, Math.round((size.height * 1600) / size.width)),
+            quality: 'better',
+          })
+        : image;
+    return `data:image/jpeg;base64,${bounded.toJPEG(78).toString('base64')}`;
   });
 }
 
@@ -713,6 +739,18 @@ function createMenu(): void {
         { role: 'zoom' },
         { type: 'separator' },
         { role: 'front' },
+      ],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: feedbackAuthenticated
+            ? 'Submit Feedback…'
+            : 'Submit Feedback… (Sign in required)',
+          enabled: feedbackAuthenticated,
+          click: () => sendMenuCommand('submit-feedback'),
+        },
       ],
     },
   ];

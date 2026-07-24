@@ -33,6 +33,53 @@ import {
   FIXTURE_AGENTS,
   FIXTURE_METRICS,
 } from '@/components/hud/gallery-fixtures';
+import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
+
+function ContextLabelFeedbackStudy() {
+  const [label, setLabel] = useState('Implement cmd+shift+t to reopen tabs');
+  return (
+    <div className="flex max-w-3xl flex-col gap-4">
+      <p
+        className="max-w-[68ch] text-xs leading-relaxed"
+        style={{ color: HUD.textDim }}
+      >
+        Votes appear on hover or keyboard focus in production. A correction is
+        optimistic: the tab changes immediately while the authenticated report
+        joins the general feedback queue.
+      </p>
+      <div className="group/tab flex w-fit items-center gap-1 rounded border border-fuchsia-400/50 bg-fuchsia-400/10 px-2 py-1">
+        <span className="size-3 rounded-full border border-emerald-300 text-center text-[8px] leading-[10px] text-emerald-300">
+          ✓
+        </span>
+        <span className="text-fuchsia-300">◉</span>
+        <span data-subtitle className="max-w-72 text-sm text-fuchsia-200">
+          {label}
+        </span>
+        <ContextLabelFeedback
+          label={label}
+          enabled
+          alwaysVisible
+          onRate={async (_sentiment, betterLabel) => {
+            if (betterLabel) setLabel(betterLabel);
+            return true;
+          }}
+        />
+        <span className="px-1 text-muted-foreground">×</span>
+      </div>
+      <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+        <span className="rounded border border-white/10 px-2 py-1">
+          Signed out: controls hidden
+        </span>
+        <span className="rounded border border-white/10 px-2 py-1">
+          Failure: last good label retained
+        </span>
+        <span className="rounded border border-white/10 px-2 py-1">
+          Image only: New agent
+        </span>
+      </div>
+    </div>
+  );
+}
 
 const TONES: HudTone[] = ['cyan', 'magenta', 'amber', 'red', 'green', 'idle'];
 const STATUSES: AgentStatus[] = [
@@ -56,6 +103,12 @@ interface Section {
 }
 
 const SECTIONS: Section[] = [
+  {
+    id: 'context-label-feedback',
+    title: 'Session context label feedback',
+    meta: 'review candidate · fast vote + exact correction',
+    dom: <ContextLabelFeedbackStudy />,
+  },
   {
     id: 'status-lights',
     title: 'Agent status lights',

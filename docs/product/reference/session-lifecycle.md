@@ -22,6 +22,14 @@ redraws, title changes, or terminal protocol replies cannot reopen it. Only a
 guaranteed operator interaction begins the next turn. Shells have no turn
 boundary and continue to derive working/quiet from output.
 
+The context subtitle is separate from both process and turn state. It is a
+durable re-entry cue for the Session's reason for existing. Submitted operator
+instructions—not PTY output volume—may refresh it. Related instructions keep
+the current cue; a genuine topic pivot replaces it. Hosted inference failure
+retains the last good cue. A meaningful launch instruction may appear
+immediately while inference is pending; attachment-only launches use **New
+agent** rather than exposing an image or temporary-file URI.
+
 ## Relaunch
 
 Relaunch restores Projects, tabs, status, and retained terminal history without
