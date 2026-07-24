@@ -338,7 +338,7 @@ async function runTask(browser, task) {
           Math.abs(
             (window.__EVAL_SCENE__?.getObjectByName(
               'keyswitch-cap-reference-frost'
-            )?.position.y ?? 1) + 0.18
+            )?.position.y ?? 1) + 0.24
           ) < 0.0001,
         { timeout: 2_000 }
       );
@@ -461,8 +461,8 @@ async function runTask(browser, task) {
             shell.innerScale[1] <= 0.82 &&
             shell.innerScale[2] <= 0.9
         ) &&
-        pressedTravel < -0.16 &&
-        Math.abs(reducedTravel + 0.18) < 0.0001 &&
+        pressedTravel < -0.22 &&
+        Math.abs(reducedTravel + 0.24) < 0.0001 &&
         movedDistance > 0.05 &&
         resetDistance < 0.05;
       result.notes.push(

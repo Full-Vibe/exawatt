@@ -473,14 +473,14 @@ body {
     inset -2px -3px 7px oklch(0.25 0.04 220 / 0.24),
     0 1px 0 color-mix(in oklch, var(--tk-accent) 16%, oklch(0.36 0.025 224)),
     0 2px 4px oklch(0.03 0.012 225 / 0.38);
-  transform: translate3d(0, 1px, 0) rotateX(0deg) scale(0.992);
+  transform: translate3d(0, 3px, 0) rotateX(0deg) scale(0.99);
   transition-duration: 70ms;
 }
 
 .tactile-key[data-pressed='true'] .tactile-key__shadow,
 .tactile-key:active:not(:disabled) .tactile-key__shadow {
-  opacity: 0.3;
-  transform: translateY(-1px) scaleX(0.72);
+  opacity: 0.2;
+  transform: translateY(-2px) scaleX(0.62);
   transition-duration: 70ms;
 }
 

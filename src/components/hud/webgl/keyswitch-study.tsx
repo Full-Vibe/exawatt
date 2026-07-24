@@ -469,7 +469,7 @@ function Spring({ pressed, reduced }: { pressed: boolean; reduced: boolean }) {
 
   useFrame((state, delta) => {
     if (!spring.current) return;
-    const target = pressed ? 0.72 : 1;
+    const target = pressed ? 0.62 : 1;
     if (reduced) {
       spring.current.scale.y = target;
       return;
@@ -699,7 +699,7 @@ function SwitchMechanism({
 
   useFrame((state, delta) => {
     if (!stem.current) return;
-    const target = pressed ? -0.12 : 0;
+    const target = pressed ? -0.18 : 0;
     if (reduced) {
       stem.current.position.y = target;
       return;
@@ -826,7 +826,7 @@ function KeySwitchAssembly({
 
   useFrame((state, delta) => {
     if (!cap.current) return;
-    const target = pressed ? -0.18 : 0;
+    const target = pressed ? -0.24 : 0;
     if (reduced) {
       cap.current.position.y = target;
       return;

@@ -1,5 +1,5 @@
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';
+import { Network } from 'lucide-react';
+import { TactileActionLink } from '@/components/hud';
 import { HeroBg } from './_hero-bg';
 
 export default function Home() {
@@ -46,13 +46,15 @@ export default function Home() {
             </span>
           </p>
           <div className="flex gap-4">
-            <Button
-              asChild
-              variant="ghost"
-              className="text-white hover:bg-white/10 hover:text-white"
+            <TactileActionLink
+              aria-label="Open Exawatt architecture"
+              href="/architecture"
+              keySize="wide"
+              tone="smoke"
             >
-              <Link href="/architecture">Architecture</Link>
-            </Button>
+              <Network />
+              Architecture
+            </TactileActionLink>
           </div>
         </main>
       </div>
