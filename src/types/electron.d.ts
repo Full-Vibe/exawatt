@@ -512,6 +512,9 @@ declare global {
         /** sync effective registry bindings into the menus' display
          *  accelerators (D10) — '' clears a column (chord rebinds) */
         syncAccelerators?: (map: Record<string, string>) => Promise<void>;
+        /** Keep native menu enablement aligned with the renderer's current
+         *  Project, Session, recovery, split, and attention targets. */
+        syncAvailability?: (map: Record<string, boolean>) => Promise<void>;
       };
       feedback?: {
         /** Keeps the native Help menu honest without exposing auth data. */

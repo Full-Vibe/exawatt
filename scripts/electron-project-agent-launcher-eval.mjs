@@ -116,6 +116,18 @@ async function sessions(page) {
   );
 }
 
+async function nativeSessionMenu(app) {
+  return await app.evaluate(({ Menu }) =>
+    Menu.getApplicationMenu()
+      .items.find(item => item.label === 'Session')
+      ?.submenu?.items.map(item => ({
+        label: item.label,
+        accelerator: item.accelerator,
+        enabled: item.enabled,
+      }))
+  );
+}
+
 async function waitForSessionCount(page, count) {
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
@@ -184,6 +196,7 @@ try {
       );
       await page.locator('[data-command-altitude]').waitFor();
       await stubDirectoryPicker(app, projectA);
+      await page.waitForTimeout(250);
 
       const fileMenu = await app.evaluate(({ Menu }) =>
         Menu.getApplicationMenu()
@@ -194,20 +207,61 @@ try {
         'native File menu exposes the Project chooser',
         fileMenu?.includes('Open Project…|Command+N')
       );
-      const sessionMenu = await app.evaluate(({ Menu }) =>
-        Menu.getApplicationMenu()
-          .items.find(item => item.label === 'Session')
-          ?.submenu?.items.map(item => `${item.label}|${item.accelerator}`)
-      );
+      const sessionMenu = await nativeSessionMenu(app);
       check(
         'native Session menu describes the contextual close target',
-        sessionMenu?.includes('Close Tab or Empty Project|Command+W')
+        sessionMenu?.some(
+          item =>
+            item.label === 'Close Tab or Empty Project' &&
+            item.accelerator === 'Command+W'
+        )
       );
       check(
         'native Session menu shows distinct shell and reopen chords',
-        sessionMenu?.includes('Open Shell|Command+Alt+T') &&
-          sessionMenu?.includes('Reopen Closed Tab|Command+Shift+T')
+        sessionMenu?.some(
+          item =>
+            item.label === 'Open Shell' && item.accelerator === 'Command+Alt+T'
+        ) &&
+          sessionMenu?.some(
+            item =>
+              item.label === 'Reopen Closed Tab' &&
+              item.accelerator === 'Command+Shift+T'
+          )
       );
+      check(
+        'native Session menu disables commands without a current target',
+        [
+          'Open Shell',
+          'Reopen Closed Tab',
+          'Rename Session',
+          'Split: Pin / Unpin',
+          'Close Tab or Empty Project',
+          'Jump to Session Needing You',
+        ].every(
+          label =>
+            sessionMenu?.find(item => item.label === label)?.enabled === false
+        )
+      );
+
+      await page.keyboard.press('Meta+KeyK');
+      const unavailableShell = page.locator('[cmdk-item]').filter({
+        hasText: 'Open shell in the active Project',
+      });
+      await unavailableShell.waitFor();
+      check(
+        'palette explains why shell is unavailable without a Project',
+        (await unavailableShell.getAttribute('data-disabled')) === 'true' &&
+          (await unavailableShell.innerText()).includes('Open a Project first')
+      );
+      const unavailableJump = page.locator('[cmdk-item]').filter({
+        hasText: 'Jump to the Session needing you',
+      });
+      check(
+        'palette explains that no Session currently needs attention',
+        (await unavailableJump.getAttribute('data-disabled')) === 'true' &&
+          (await unavailableJump.innerText()).includes('No Sessions need you')
+      );
+      await page.keyboard.press('Escape');
 
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();
@@ -253,6 +307,51 @@ try {
         'Browse opens an inert Project',
         (await sessions(page)).length === 0
       );
+
+      await page.keyboard.press('Meta+KeyJ');
+      await page.waitForTimeout(300);
+      check(
+        'Command-J stays in Terminal when no visible Session needs attention',
+        await page
+          .locator(
+            '[data-command-altitude-level="terminal"][aria-current="page"]'
+          )
+          .isVisible()
+      );
+
+      await page.waitForTimeout(100);
+      const emptyProjectMenu = await nativeSessionMenu(app);
+      check(
+        'native Session menu enables only valid empty-Project commands',
+        emptyProjectMenu?.find(item => item.label === 'Open Shell')?.enabled ===
+          true &&
+          emptyProjectMenu?.find(
+            item => item.label === 'Close Tab or Empty Project'
+          )?.enabled === true &&
+          emptyProjectMenu?.find(item => item.label === 'Rename Session')
+            ?.enabled === false &&
+          emptyProjectMenu?.find(item => item.label === 'Split: Pin / Unpin')
+            ?.enabled === false &&
+          emptyProjectMenu?.find(
+            item => item.label === 'Jump to Session Needing You'
+          )?.enabled === false
+      );
+
+      await page.keyboard.press('Meta+KeyK');
+      const availableShell = page.locator('[cmdk-item]').filter({
+        hasText: 'Open shell in the active Project',
+      });
+      await availableShell.waitFor();
+      const projectEdit = page.locator('[cmdk-item]').filter({
+        hasText: 'Rename or recolor the active Project',
+      });
+      check(
+        'palette follows empty-Project command availability',
+        (await availableShell.getAttribute('data-disabled')) !== 'true' &&
+          (await projectEdit.getAttribute('data-disabled')) !== 'true' &&
+          (await unavailableJump.getAttribute('data-disabled')) === 'true'
+      );
+      await page.keyboard.press('Escape');
 
       await page.keyboard.press('Control+Meta+2');
       const emptyProject = page.locator('[data-expose-empty-project]').filter({
@@ -428,6 +527,60 @@ try {
       check('Claude Code receives the visible effort override', true);
 
       const activeTab = page.locator('[data-tab-id][data-active]');
+      const activeTabChrome = activeTab.locator('[data-tab-chrome]');
+      await activeTabChrome.focus();
+      await page.keyboard.press('Shift+F10');
+      const sessionActions = page.getByRole('menu', {
+        name: 'Claude Code Session actions',
+      });
+      await sessionActions.waitFor();
+      check(
+        'Shift-F10 opens every active Session action',
+        (await sessionActions.innerText()).includes('Rename…') &&
+          (await sessionActions.innerText()).includes('Pin in split') &&
+          (await sessionActions.innerText()).includes('Close')
+      );
+      await page.keyboard.press('Escape');
+      check(
+        'dismissing Session actions returns focus to the invoking tab',
+        await activeTabChrome.evaluate(
+          element => document.activeElement === element
+        )
+      );
+
+      await page.waitForTimeout(100);
+      const activeSessionMenu = await nativeSessionMenu(app);
+      check(
+        'native Session menu enables tab commands but not attention without a target',
+        activeSessionMenu?.find(item => item.label === 'Rename Session')
+          ?.enabled === true &&
+          activeSessionMenu?.find(item => item.label === 'Split: Pin / Unpin')
+            ?.enabled === true &&
+          activeSessionMenu?.find(
+            item => item.label === 'Jump to Session Needing You'
+          )?.enabled === false
+      );
+
+      await page.keyboard.press('Control+Meta+3');
+      await page.waitForURL(url => url.pathname === '/fleet/spatial');
+      await page.waitForTimeout(100);
+      const spatialSessionMenu = await nativeSessionMenu(app);
+      check(
+        'native Session menu disables workspace-local commands in Spatial',
+        [
+          'Rename Session',
+          'Split: Pin / Unpin',
+          'Close Tab or Empty Project',
+          'Jump to Session Needing You',
+        ].every(
+          label =>
+            spatialSessionMenu?.find(item => item.label === label)?.enabled ===
+            false
+        )
+      );
+      await page.keyboard.press('Control+Meta+1');
+      await page.waitForURL(url => url.pathname === '/workspace');
+
       await activeTab.locator('[data-status="done"]').waitFor({
         timeout: 8_000,
       });
@@ -895,6 +1048,28 @@ try {
         .filter({ hasText: 'alpha' })
         .click();
       await page.locator('[data-agent-composer]').waitFor();
+
+      const projectChrome = page.locator(
+        '[data-project="alpha"] [data-project-chrome]'
+      );
+      await projectChrome.focus();
+      await page.keyboard.press('Shift+F10');
+      const projectActions = page.getByRole('menu', {
+        name: 'alpha Project actions',
+      });
+      await projectActions.waitFor();
+      check(
+        'Shift-F10 exposes empty-Project rename, color, and close actions',
+        (await projectActions.innerText()).includes('Rename / color…') &&
+          (await projectActions.innerText()).includes('Close project')
+      );
+      await page.keyboard.press('Escape');
+      check(
+        'dismissing Project actions returns focus to the Project chip',
+        await projectChrome.evaluate(
+          element => document.activeElement === element
+        )
+      );
 
       // The explicit context-menu verb is the immediate counterpart to the
       // close-last-Agent grace path. Leave the app with alpha closed so the

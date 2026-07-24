@@ -16,6 +16,7 @@ import { isDefaultHarnessTitle } from './harnesses';
 import { previewLines } from './scrollback-preview';
 import { readTerminalPreview } from './terminal-preview-registry';
 import {
+  attentionNeedsOperator,
   SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
   sessionGlyphState,
@@ -237,7 +238,9 @@ export function ExposeOverlay({
           harness: t.harness,
           cwd: t.cwd,
           contextSummary: summaries[t.durableSessionId] ?? null,
-          needsAttention: !!attention[t.sessionId as string],
+          needsAttention: attentionNeedsOperator(
+            attention[t.sessionId as string]
+          ),
         })),
     [selectedProject, summaries, attention]
   );
@@ -425,7 +428,7 @@ export function ExposeOverlay({
     const attentionSignal = tile.sessionId
       ? attention[tile.sessionId]
       : undefined;
-    const needsYou = !!attentionSignal && attentionSignal.kind !== 'turn-end';
+    const needsYou = attentionNeedsOperator(attentionSignal);
     const working = !!(tile.sessionId && activity[tile.sessionId]);
     const fault = tile.stateLabel === 'failed';
     // durable-Session goal (D21): stopped tiles keep their subtitle too

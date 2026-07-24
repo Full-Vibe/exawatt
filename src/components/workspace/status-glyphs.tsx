@@ -36,6 +36,7 @@ import type {
 // Keep the established import surface for existing renderers while the
 // state model itself stays usable from render-free mapping code.
 export {
+  attentionNeedsOperator,
   ATTENTION_GLYPH_COPY,
   SESSION_GLYPH_COPY,
   SESSION_GLYPH_LABEL,
@@ -48,8 +49,7 @@ export type {
 } from './session-status';
 
 /** constant footprint so working↔rest↔attention swaps never shift the row */
-const GLYPH_BOX =
-  'inline-flex h-4 w-4 shrink-0 items-center justify-center';
+const GLYPH_BOX = 'inline-flex h-4 w-4 shrink-0 items-center justify-center';
 
 /** One shared explanation surface keeps strip, overview, and ⌘K semantics
  *  in lockstep. The trigger is the fixed glyph footprint, so hover never

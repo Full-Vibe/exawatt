@@ -42,12 +42,17 @@ import {
   requestProjectPicker,
   requestAgentComposer,
   RENAME_ACTIVE_EVENT,
+  EDIT_ACTIVE_PROJECT_EVENT,
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
   CLOSE_ACTIVE_EVENT,
   REOPEN_CLOSED_EVENT,
   OPEN_ROADMAP_EVENT,
 } from '@/components/workspace/session-jump';
+import {
+  useWorkspaceCommandAvailability,
+  type CommandAvailability,
+} from '@/components/workspace/workspace-command-availability';
 import {
   buildSessionRows,
   extractRecentProjects,
@@ -132,6 +137,7 @@ interface CommandItem {
   shortcut?: ShortcutKeys;
   icon: React.ComponentType<{ className?: string }>;
   onSelect: () => void;
+  availability?: CommandAvailability;
 }
 
 /** palette icon per manifest surface — the manifest stays render-free */
@@ -154,6 +160,7 @@ export function CommandPalette({
   const { navigateCommandSurface, activateCommandAltitude } =
     useCommandNavigation();
   const shortcutVersion = useShortcutRegistryVersion();
+  const workspaceAvailability = useWorkspaceCommandAvailability();
   const newProjectShortcut = shortcutRegistry.getEffectiveKeys(
     'workspace-new-project'
   );
@@ -337,15 +344,17 @@ export function CommandPalette({
         value: 'rename tab title active',
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-rename'),
         icon: PenLine,
+        availability: workspaceAvailability.commands['rename-tab'],
         onSelect: () => dispatch(RENAME_ACTIVE_EVENT),
       },
       {
         id: 'ws-color',
-        label: 'Change the project color',
-        value: 'color project swatch recolor palette hue',
+        label: 'Rename or recolor the active Project',
+        value: 'rename color project swatch recolor palette hue',
         icon: Palette,
-        // the inline rename editor carries the swatch row — same surface
-        onSelect: () => dispatch(RENAME_ACTIVE_EVENT),
+        availability: workspaceAvailability.commands['rename-project'],
+        // the Project editor owns both its name and identity color
+        onSelect: () => dispatch(EDIT_ACTIVE_PROJECT_EVENT),
       },
       {
         id: 'ws-split',
@@ -353,14 +362,16 @@ export function CommandPalette({
         value: 'split pane pin unpin side by side watch',
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-split'),
         icon: Columns2,
+        availability: workspaceAvailability.commands['toggle-split'],
         onSelect: () => dispatch(TOGGLE_SPLIT_EVENT),
       },
       {
         id: 'ws-jump',
-        label: 'Jump to the session needing you',
+        label: 'Jump to the Session needing you',
         value: 'jump attention needs you blocked waiting',
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-jump-attention'),
         icon: BellRing,
+        availability: workspaceAvailability.commands['jump-attention'],
         onSelect: () => dispatch(JUMP_ATTENTION_EVENT),
       },
       {
@@ -369,6 +380,7 @@ export function CommandPalette({
         value: 'roadmap plan queue milestones next up shipped blocked sessions',
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-roadmap'),
         icon: Milestone,
+        availability: workspaceAvailability.commands['open-roadmap'],
         onSelect: () => dispatch(OPEN_ROADMAP_EVENT),
       },
       {
@@ -377,10 +389,11 @@ export function CommandPalette({
         value: 'close tab agent empty project kill session end',
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-close-tab'),
         icon: XCircle,
+        availability: workspaceAvailability.commands['close-tab'],
         onSelect: () => dispatch(CLOSE_ACTIVE_EVENT),
       },
     ];
-  }, [dispatch, shortcutVersion]);
+  }, [dispatch, shortcutVersion, workspaceAvailability]);
 
   // Navigation rows derive from the manifest (ENG-016 D8): the palette, the
   // go-chords, and the header must always agree on names and targets. Legacy
@@ -457,6 +470,12 @@ export function CommandPalette({
     }
     if (inElectron) {
       for (const h of HARNESS_ORDER) {
+        if (
+          h === 'shell' &&
+          !workspaceAvailability.commands['launch-shell'].available
+        ) {
+          continue;
+        }
         candidates.set(`launch:${h}`, {
           label:
             h === 'shell'
@@ -485,6 +504,7 @@ export function CommandPalette({
       }
       if (onWorkspaceRoute) {
         for (const w of workspaceItems) {
+          if (w.availability && !w.availability.available) continue;
           candidates.set(w.id, {
             label: w.label,
             icon: w.icon,
@@ -520,6 +540,7 @@ export function CommandPalette({
     openRecentProject,
     toggleProjection,
     recentIds,
+    workspaceAvailability,
   ]);
 
   return (
@@ -653,11 +674,23 @@ export function CommandPalette({
             <CommandSeparator />
             <CommandGroup heading="Tools">
               <CommandItem
-                value="open shell terminal active project"
+                value={`open shell terminal active project ${workspaceAvailability.commands['launch-shell'].reason ?? ''}`}
                 onSelect={() => launchHarness('shell')}
+                disabled={
+                  !workspaceAvailability.commands['launch-shell'].available
+                }
+                title={
+                  workspaceAvailability.commands['launch-shell'].reason ??
+                  undefined
+                }
               >
                 <SquareTerminal className="mr-2 h-3.5 w-3.5 shrink-0" />
                 <span>Open shell in the active Project</span>
+                {!workspaceAvailability.commands['launch-shell'].available && (
+                  <CommandShortcut>
+                    {workspaceAvailability.commands['launch-shell'].reason}
+                  </CommandShortcut>
+                )}
               </CommandItem>
             </CommandGroup>
             <CommandSeparator />
@@ -748,7 +781,13 @@ export function CommandPalette({
               {workspaceItems.map(item => (
                 <CommandItem
                   key={item.id}
-                  value={item.value}
+                  value={`${item.value} ${item.availability?.reason ?? ''}`}
+                  disabled={
+                    item.availability
+                      ? !item.availability.available
+                      : undefined
+                  }
+                  title={item.availability?.reason ?? undefined}
                   onSelect={() => {
                     recordPaletteUse(item.id);
                     item.onSelect();
@@ -756,11 +795,15 @@ export function CommandPalette({
                 >
                   <item.icon className="mr-2 h-4 w-4" />
                   <span>{item.label}</span>
-                  {item.shortcut && (
+                  {item.availability && !item.availability.available ? (
+                    <CommandShortcut>
+                      {item.availability.reason}
+                    </CommandShortcut>
+                  ) : item.shortcut ? (
                     <CommandShortcut>
                       {formatShortcutKeys(item.shortcut)}
                     </CommandShortcut>
-                  )}
+                  ) : null}
                 </CommandItem>
               ))}
             </CommandGroup>

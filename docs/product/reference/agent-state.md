@@ -121,6 +121,21 @@ must not collapse them into one lossy status. Demo Mode and every live Agent
 Source should feed the same projection contract, with explicit unknowns for
 capabilities a source does not expose.
 
+## Attention navigation uses visible state
+
+The needs-you projection is also the navigation contract. `⌘J` walks the
+oldest visible needs-you Session and repeated presses continue through that
+queue. With no visible target, the command is unavailable and navigation stays
+where it is. A completed turn's Result light is not a needs-you target. Roadmap
+starvation, empty queues, and other useful but non-urgent states remain
+discoverable through their owning surface instead of silently borrowing the
+attention command.
+
+The persistent hint bar, command palette, and native Session menu project the
+same target availability. Passive hints omit inapplicable commands; interactive
+menus retain useful discoverability by disabling the command and naming the
+missing prerequisite.
+
 ## Research basis
 
 The model generalizes patterns found across agent products and durable workflow

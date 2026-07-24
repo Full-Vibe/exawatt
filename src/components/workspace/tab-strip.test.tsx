@@ -1,9 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { TabStrip } from './tab-strip';
 import type { SessionAttentionSignal } from './status-glyphs';
 import type { Project, WorkspaceTab } from './use-workspace-state';
+import { EDIT_ACTIVE_PROJECT_EVENT } from './session-jump';
 
 /**
  * Turn-state legibility (ENG-016 D22): the strip must answer "who's
@@ -319,6 +320,47 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     fireEvent.contextMenu(container.querySelector('[data-project]')!);
     fireEvent.click(screen.getByRole('menuitem', { name: 'Close project' }));
     expect(onCloseProject).toHaveBeenCalledWith('/repo');
+  });
+
+  it('opens Project actions with Shift-F10 and restores focus on Escape', async () => {
+    const { container } = strip({ tabs: [], onCloseProject: vi.fn() });
+    const trigger = screen.getByRole('button', { name: 'repo' });
+    trigger.focus();
+
+    fireEvent.keyDown(trigger, { key: 'F10', shiftKey: true });
+    const menu = screen.getByRole('menu', { name: 'repo Project actions' });
+    expect(menu).toHaveTextContent('Rename / color…');
+    expect(menu).toHaveTextContent('Close project');
+
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(container.querySelector('[data-strip-menu]')).toBeNull();
+  });
+
+  it('opens Session actions with the Context Menu key', () => {
+    strip({ tabs: [tab({ id: 'a' })] });
+    const trigger = screen.getByRole('button', {
+      name: 'Claude Code — new',
+    });
+
+    fireEvent.keyDown(trigger, { key: 'ContextMenu' });
+    const menu = screen.getByRole('menu', {
+      name: 'Claude Code Session actions',
+    });
+    expect(menu).toHaveTextContent('Rename…');
+    expect(menu).toHaveTextContent('Pin in split');
+    expect(menu).toHaveTextContent('Close');
+  });
+
+  it('opens the active Project editor from the shared command event', () => {
+    strip({ tabs: [] });
+    fireEvent(
+      window,
+      new CustomEvent(EDIT_ACTIVE_PROJECT_EVENT, { bubbles: true })
+    );
+    expect(screen.getByRole('textbox', { name: 'Rename' })).toHaveValue(
+      'repo'
+    );
   });
 
   it('retracts an exiting Project from right to left', () => {

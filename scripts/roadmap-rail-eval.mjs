@@ -2,7 +2,8 @@
 // ENG-017 S2, re-homed by S12: the roadmap lens lives at the SESSIONS
 // altitude. Drive it end-to-end — ⌘B summons Sessions with the rail focused,
 // keyboard walk, drill, selection re-scoping across Projects, empty-queue,
-// no-roadmap, declare-at-launch, starving ⌘J — and screenshot each state.
+// no-roadmap, declare-at-launch, and empty-attention ⌘J — and screenshot each
+// state.
 // Run with EXA_BASE pointing at a dev server serving THIS checkout.
 import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -133,11 +134,12 @@ await withElectronApp(
     const results = {};
 
     const summonComposer = async () => {
-      const toggle = page.locator(
-        '[data-composer-toggle][aria-expanded="false"]'
-      );
-      if ((await toggle.count()) > 0) await toggle.click();
-      await page.locator('[data-agent-composer]').waitFor();
+      const composer = page.locator('[data-agent-composer]');
+      if (!(await composer.isVisible().catch(() => false))) {
+        const toggle = page.locator('[data-composer-toggle]');
+        if ((await toggle.count()) > 0) await toggle.click();
+      }
+      await composer.waitFor();
     };
     const railFocused = () =>
       page.evaluate(
@@ -148,6 +150,15 @@ await withElectronApp(
       for (let i = 0; i < 3 && inSessions(); i++) {
         await page.keyboard.press('Escape');
         await page.waitForTimeout(400);
+      }
+      // Expanded rail groups add another local Escape depth. The evaluator's
+      // intent is to start the next case from Terminal, so finish through the
+      // explicit altitude control instead of depending on incidental depth.
+      if (inSessions()) {
+        await page
+          .locator('[data-command-altitude-level="terminal"]')
+          .click();
+        await page.waitForURL(url => url.pathname === '/workspace');
       }
     };
 
@@ -295,18 +306,21 @@ await withElectronApp(
     await shot(page, '6c-expose-mirror');
     await toTerminal();
 
-    // empty queue — the designed "no food" moment. ⌘J with no PTY attention
-    // pending lands in SESSIONS on the starving rail (S8 + S12)
+    // Empty queue is roadmap state, not an invisible attention target. ⌘J
+    // stays in Terminal unless a visible needs-you marker exists; ⌘B remains
+    // the explicit route to inspect the queue.
     await openProject(page, empty);
     await page.waitForTimeout(1500);
     await summonComposer();
     await page.getByRole('button', { name: /Open shell in / }).click();
     await page.waitForTimeout(1500);
     await page.keyboard.press('Meta+j');
+    await page.waitForTimeout(500);
+    results.starvingJumpStaysTerminal = !inSessions();
+    await page.keyboard.press('Meta+b');
     await page.waitForURL('**view=sessions**');
     await page.locator('[data-roadmap-rail]').waitFor();
     await page.waitForTimeout(600);
-    results.starvingJumpOpensSessions = inSessions();
     results.emptyQueueHero = (await railText(page)).includes('Queue empty');
     await shot(page, '7-empty-queue');
 

@@ -196,14 +196,16 @@ screenshot; drill reaches an individual milestone by keyboard.
 
 ### S8 Attention integration
 
-Work: two new attention sources — item-blocked (a linked session on a
-blocked item, or a `blocked` item with no session) and project-starving
-(queue empty while sessions are live in that Project) — emitted into the
-existing attention system (⌘J queue, tab badges, FleetState mirror,
-default-off native notifications). No new notification machinery.
+Work: linked Sessions on blocked items enter the existing visible attention
+system (`⌘J` queue and tab badges). Project starvation (queue empty while
+Sessions are live in that Project) remains a roadmap-owned state reached
+explicitly with `⌘B`; it does not borrow the needs-you command or marker. No
+new notification machinery.
 
-Acceptance: emptying a fixture roadmap while a session runs produces a
-needs-you event that ⌘J reaches; clearing it clears the event.
+Acceptance: a linked blocked Session produces a visible needs-you state that
+`⌘J` reaches and clearing it clears the state. Emptying a fixture roadmap while
+a Session runs leaves `⌘J` in Terminal; `⌘B` opens Sessions and shows the empty
+queue state.
 
 ### S9 Agent-first mirrors
 
@@ -283,8 +285,9 @@ lab is back to the real strip + rail against fixture states.
   drilled to the item), declare-at-launch, and the S8/S9 mirrors. ⌘B is
   "open Sessions with the roadmap focused" from anywhere and toggles
   tiles ↔ rail focus inside Sessions; Escape backs out drill → queue →
-  tiles; starving ⌘J lands on the Sessions rail; a palette row ("Open the
-  Project roadmap") makes it ⌘K-discoverable. Implementation notes:
+  tiles; a palette row ("Open the Project roadmap") makes it
+  ⌘K-discoverable. D39 later removed the hidden starving-`⌘J` route so the
+  attention shortcut now follows visible needs-you state only. Implementation notes:
   cross-surface summons park in a freshness-windowed module store
   (StrictMode's double-mount broke consume-once), the overlay's entrance
   and selection-clamp focus yield to a summoned rail, and mouse-enter
@@ -380,8 +383,9 @@ lab is back to the real strip + rail against fixture states.
 
 - 2026-07-11, S8+S9 landed; arc verified end-to-end: roadmap-derived
   attention (`packages/ui-model/src/roadmap-attention.ts`, 3 tests) merges
-  into the workspace needs-you map — blocked-with-agent badges the tab, ⌘J
-  walks PTY attention → roadmap-blocked → starving-opens-the-rail; native
+  into the workspace needs-you map — blocked-with-agent badges the tab, and
+  ⌘J walks PTY attention → roadmap-blocked. The original
+  starving-opens-the-rail fallback was retired by D39/decision `0020`; native
   notifications stay PTY-only for now (roadmap parse is renderer-side;
   main-side parse is the noted follow-up if dogfood wants toasts for
   starvation). S9 mirrors: exposé tiles and ⌘K switcher rows show the

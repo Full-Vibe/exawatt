@@ -24,9 +24,11 @@ import { useOrdinalHints } from './use-ordinal-hints';
 import { tabIsLive } from './use-workspace-state';
 import {
   RENAME_ACTIVE_EVENT,
+  EDIT_ACTIVE_PROJECT_EVENT,
   FOCUS_ACTIVE_TERMINAL_EVENT,
 } from './session-jump';
 import {
+  attentionNeedsOperator,
   SESSION_GLYPH_COPY,
   SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
@@ -156,6 +158,15 @@ function EditableChrome({
   );
 }
 
+function isContextMenuKey(event: React.KeyboardEvent): boolean {
+  return event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey);
+}
+
+function keyboardMenuPoint(element: HTMLElement): { x: number; y: number } {
+  const rect = element.getBoundingClientRect();
+  return { x: rect.left + Math.min(24, rect.width / 2), y: rect.bottom + 2 };
+}
+
 /** right-click menu (D27): HUD-styled, keyboard-navigable (↑↓ ⏎ esc);
  *  every item is an existing verb — the menu is discovery, not new power */
 export interface StripMenuItem {
@@ -169,14 +180,16 @@ function StripContextMenu({
   x,
   y,
   color,
+  label,
   items,
   onClose,
 }: {
   x: number;
   y: number;
   color: string;
+  label: string;
   items: StripMenuItem[];
-  onClose: () => void;
+  onClose: (restoreFocus?: boolean) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   // a right-click near the window edge must not spill the menu off-screen
@@ -193,7 +206,7 @@ function StripContextMenu({
     rootRef.current?.querySelector('button')?.focus();
     const away = (event: MouseEvent) => {
       if (!(event.target instanceof Node)) return;
-      if (!rootRef.current?.contains(event.target)) onClose();
+      if (!rootRef.current?.contains(event.target)) onClose(false);
     };
     document.addEventListener('mousedown', away);
     return () => document.removeEventListener('mousedown', away);
@@ -203,6 +216,7 @@ function StripContextMenu({
       ref={rootRef}
       data-strip-menu
       role="menu"
+      aria-label={label}
       className="fixed z-50 flex min-w-44 flex-col rounded border py-1 shadow-2xl motion-safe:animate-in motion-safe:fade-in motion-safe:duration-100"
       style={{
         left: pos.x,
@@ -215,7 +229,7 @@ function StripContextMenu({
         e.stopPropagation();
         if (e.key === 'Escape') {
           e.preventDefault();
-          onClose();
+          onClose(true);
           return;
         }
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -237,7 +251,7 @@ function StripContextMenu({
           type="button"
           role="menuitem"
           onClick={() => {
-            onClose();
+            onClose(false);
             item.onSelect();
           }}
           className="cursor-pointer px-3 py-1.5 text-left font-mono text-chrome-label outline-none transition-[background-color] duration-75 hover:bg-white/10 focus-visible:bg-white/10"
@@ -330,16 +344,47 @@ export function TabStrip({
     x: number;
     y: number;
     color: string;
+    label: string;
     items: StripMenuItem[];
   } | null>(null);
-  const closeMenu = useCallback(() => setMenu(null), []);
+  const menuTriggerRef = useRef<HTMLElement | null>(null);
+  const openMenu = useCallback(
+    ({
+      trigger,
+      x,
+      y,
+      color,
+      label,
+      items,
+    }: {
+      trigger: HTMLElement;
+      x: number;
+      y: number;
+      color: string;
+      label: string;
+      items: StripMenuItem[];
+    }) => {
+      menuTriggerRef.current = trigger;
+      setMenu({ x, y, color, label, items });
+    },
+    []
+  );
+  const closeMenu = useCallback((restoreFocus = false) => {
+    const trigger = menuTriggerRef.current;
+    menuTriggerRef.current = null;
+    setMenu(null);
+    if (restoreFocus && trigger) {
+      queueMicrotask(() => {
+        if (trigger.isConnected) trigger.focus();
+      });
+    }
+  }, []);
   // D21: ordinals are shortcut hints — the strip rests clean; holding ⌘
   // reveals tab keycaps, ⌘⌥ reveals Project keycaps
   const ordinalHints = useOrdinalHints();
 
-  // ⌘E (S2): open the inline rename editor for the ACTIVE tab — the event
-  // comes from the workspace key layer; a ref carries the latest props into
-  // the stable listener
+  // ⌘E edits the active tab; the palette's Project verb opens the same
+  // Project name/color editor exposed by its context menu.
   const activeRef = useRef({ projects, activeDir });
   activeRef.current = { projects, activeDir };
   useEffect(() => {
@@ -349,9 +394,19 @@ export function TabStrip({
       const tab = g?.tabs.find(t => t.id === g.activeTabId);
       if (tab) setEditing({ kind: 'tab', id: tab.id, value: tab.title });
     };
+    const onEditProject = () => {
+      const { projects: gs, activeDir: ad } = activeRef.current;
+      const group = gs.find(project => project.dir === ad);
+      if (group) {
+        setEditing({ kind: 'group', id: group.dir, value: group.name });
+      }
+    };
     window.addEventListener(RENAME_ACTIVE_EVENT, onRenameActive);
-    return () =>
+    window.addEventListener(EDIT_ACTIVE_PROJECT_EVENT, onEditProject);
+    return () => {
       window.removeEventListener(RENAME_ACTIVE_EVENT, onRenameActive);
+      window.removeEventListener(EDIT_ACTIVE_PROJECT_EVENT, onEditProject);
+    };
   }, []);
 
   /** editor closed (commit or cancel) — hand the keyboard back to the
@@ -417,6 +472,49 @@ export function TabStrip({
         const color = g.color;
         const groupActive = g.dir === activeDir;
         const projectExiting = exitingProjectDirs?.has(g.dir) ?? false;
+        const projectMenuItems: StripMenuItem[] = [
+          ...(onNewAgent
+            ? [
+                {
+                  label: 'New agent',
+                  onSelect: () => onNewAgent(g.dir),
+                },
+              ]
+            : []),
+          {
+            label: 'Rename / color…',
+            onSelect: () =>
+              setEditing({ kind: 'group', id: g.dir, value: g.name }),
+          },
+          ...(onRevealPath
+            ? [
+                {
+                  label: 'Reveal in Finder',
+                  onSelect: () => onRevealPath(g.dir),
+                },
+              ]
+            : []),
+          ...(onCloseProject
+            ? [
+                {
+                  label: 'Close project',
+                  danger: true,
+                  onSelect: () => onCloseProject(g.dir),
+                },
+              ]
+            : []),
+        ];
+        const openProjectMenu = (
+          trigger: HTMLElement,
+          point: { x: number; y: number }
+        ) =>
+          openMenu({
+            trigger,
+            ...point,
+            color,
+            label: `${g.name} Project actions`,
+            items: projectMenuItems,
+          });
         return (
           <div
             key={g.dir}
@@ -438,43 +536,12 @@ export function TabStrip({
             onDragEnd={endDrag}
             onContextMenu={e => {
               e.preventDefault();
-              setMenu({
-                x: e.clientX,
-                y: e.clientY,
-                color,
-                items: [
-                  ...(onNewAgent
-                    ? [
-                        {
-                          label: 'New agent',
-                          onSelect: () => onNewAgent(g.dir),
-                        },
-                      ]
-                    : []),
-                  {
-                    label: 'Rename / color…',
-                    onSelect: () =>
-                      setEditing({ kind: 'group', id: g.dir, value: g.name }),
-                  },
-                  ...(onRevealPath
-                    ? [
-                        {
-                          label: 'Reveal in Finder',
-                          onSelect: () => onRevealPath(g.dir),
-                        },
-                      ]
-                    : []),
-                  ...(onCloseProject
-                    ? [
-                        {
-                          label: 'Close project',
-                          danger: true,
-                          onSelect: () => onCloseProject(g.dir),
-                        },
-                      ]
-                    : []),
-                ],
-              });
+              const trigger = e.currentTarget.querySelector<HTMLElement>(
+                '[data-project-chrome]'
+              );
+              if (trigger) {
+                openProjectMenu(trigger, { x: e.clientX, y: e.clientY });
+              }
             }}
             onDragOver={e => {
               if (drag?.kind !== 'project' || drag.id === g.dir) return;
@@ -514,6 +581,15 @@ export function TabStrip({
               onDoubleClick={() =>
                 setEditing({ kind: 'group', id: g.dir, value: g.name })
               }
+              onKeyDown={event => {
+                if (!isContextMenuKey(event)) return;
+                event.preventDefault();
+                event.stopPropagation();
+                openProjectMenu(
+                  event.currentTarget,
+                  keyboardMenuPoint(event.currentTarget)
+                );
+              }}
               title={`${g.dir}${
                 gi < 9 ? ` · ⌘⌥${gi + 1} selects` : ''
               } · double-click to rename`}
@@ -554,8 +630,7 @@ export function TabStrip({
               const summary = summaries[t.durableSessionId];
               const attentionSignal =
                 !dead && t.sessionId ? attention[t.sessionId] : undefined;
-              const needsYou =
-                !!attentionSignal && attentionSignal.kind !== 'turn-end';
+              const needsYou = attentionNeedsOperator(attentionSignal);
               const working = !dead && !!(t.sessionId && activity[t.sessionId]);
               const isAgent = t.harness !== 'shell';
               // ⌘T draft (D24): a new-tab chip — no process, no badge,
@@ -587,6 +662,75 @@ export function TabStrip({
                     : t.lifecycle === 'exited'
                       ? 'Exited'
                       : 'Stopped';
+              const tabMenuItems: StripMenuItem[] = isDraft
+                ? [
+                    {
+                      label: 'Discard',
+                      danger: true,
+                      onSelect: () => onCloseTab(t.id),
+                    },
+                  ]
+                : [
+                    ...(dead &&
+                    onResumeTab &&
+                    (t.harnessSessionId || t.harness === 'shell')
+                      ? [
+                          {
+                            label:
+                              t.harness === 'shell'
+                                ? 'Start New Shell'
+                                : 'Resume This Agent',
+                            onSelect: () => onResumeTab(t.id),
+                          },
+                        ]
+                      : []),
+                    {
+                      label: 'Rename…',
+                      onSelect: () =>
+                        setEditing({
+                          kind: 'tab',
+                          id: t.id,
+                          value: t.title,
+                        }),
+                    },
+                    // D26 doctrine: stopped tabs pin fine (the split shows
+                    // retained history); only drafts have nothing to watch.
+                    ...(tabIsPinnable(t) && onTogglePinTab
+                      ? [
+                          {
+                            label:
+                              t.id === pinnedTabId
+                                ? 'Unpin from split'
+                                : 'Pin in split',
+                            onSelect: () => onTogglePinTab(t.id),
+                          },
+                        ]
+                      : []),
+                    ...(onRevealPath
+                      ? [
+                          {
+                            label: 'Reveal in Finder',
+                            onSelect: () => onRevealPath(t.cwd),
+                          },
+                        ]
+                      : []),
+                    {
+                      label: 'Close',
+                      danger: true,
+                      onSelect: () => onCloseTab(t.id),
+                    },
+                  ];
+              const openTabMenu = (
+                trigger: HTMLElement,
+                point: { x: number; y: number }
+              ) =>
+                openMenu({
+                  trigger,
+                  ...point,
+                  color,
+                  label: `${t.title} Session actions`,
+                  items: tabMenuItems,
+                });
               return (
                 <div
                   key={t.id}
@@ -605,66 +749,13 @@ export function TabStrip({
                   onContextMenu={e => {
                     e.preventDefault();
                     e.stopPropagation();
-                    const items: StripMenuItem[] = isDraft
-                      ? [
-                          {
-                            label: 'Discard',
-                            danger: true,
-                            onSelect: () => onCloseTab(t.id),
-                          },
-                        ]
-                      : [
-                          ...(dead &&
-                          onResumeTab &&
-                          (t.harnessSessionId || t.harness === 'shell')
-                            ? [
-                                {
-                                  label:
-                                    t.harness === 'shell'
-                                      ? 'Start New Shell'
-                                      : 'Resume This Agent',
-                                  onSelect: () => onResumeTab(t.id),
-                                },
-                              ]
-                            : []),
-                          {
-                            label: 'Rename…',
-                            onSelect: () =>
-                              setEditing({
-                                kind: 'tab',
-                                id: t.id,
-                                value: t.title,
-                              }),
-                          },
-                          // D26 doctrine: stopped tabs pin fine (the
-                          // split shows retained history); only drafts
-                          // have nothing to watch
-                          ...(tabIsPinnable(t) && onTogglePinTab
-                            ? [
-                                {
-                                  label:
-                                    t.id === pinnedTabId
-                                      ? 'Unpin from split'
-                                      : 'Pin in split',
-                                  onSelect: () => onTogglePinTab(t.id),
-                                },
-                              ]
-                            : []),
-                          ...(onRevealPath
-                            ? [
-                                {
-                                  label: 'Reveal in Finder',
-                                  onSelect: () => onRevealPath(t.cwd),
-                                },
-                              ]
-                            : []),
-                          {
-                            label: 'Close',
-                            danger: true,
-                            onSelect: () => onCloseTab(t.id),
-                          },
-                        ];
-                    setMenu({ x: e.clientX, y: e.clientY, color, items });
+                    const trigger =
+                      e.currentTarget.querySelector<HTMLElement>(
+                        '[data-tab-chrome]'
+                      );
+                    if (trigger) {
+                      openTabMenu(trigger, { x: e.clientX, y: e.clientY });
+                    }
                   }}
                   onDragOver={e => {
                     if (
@@ -715,6 +806,15 @@ export function TabStrip({
                     onDoubleClick={() =>
                       setEditing({ kind: 'tab', id: t.id, value: t.title })
                     }
+                    onKeyDown={event => {
+                      if (!isContextMenuKey(event)) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openTabMenu(
+                        event.currentTarget,
+                        keyboardMenuPoint(event.currentTarget)
+                      );
+                    }}
                     // a glyph-only tab (hidden default title) would otherwise
                     // take its accessible name from the tooltip — give it a
                     // real one: harness, goal, state (D22)

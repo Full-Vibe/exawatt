@@ -46,6 +46,7 @@ import {
 } from '@/components/workspace/session-jump';
 import type { PtyHarness } from '@/types/electron';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
+import { useWorkspaceCommandAvailability } from '@/components/workspace/workspace-command-availability';
 
 /** application-menu command → the registry id whose binding it displays
  *  (D10): rebinding a verb updates the menu's accelerator column */
@@ -102,6 +103,8 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [pendingChord, setPendingChord] = useState<KeyBinding | null>(null);
   const [initialized, setInitialized] = useState(false);
+  const workspaceAvailability = useWorkspaceCommandAvailability();
+  const onWorkspaceRoute = pathname?.startsWith('/workspace') ?? false;
 
   // Track when modals close to prevent Enter key from double-triggering
   const modalClosedAtRef = useRef<number>(0);
@@ -211,7 +214,13 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     return () => {
       shortcuts.forEach(s => shortcutRegistry.unregister(s.id));
     };
-  }, [activateCommandAltitude, navigateBack, navigateForward, navigateCommandSurface, router]);
+  }, [
+    activateCommandAltitude,
+    navigateBack,
+    navigateForward,
+    navigateCommandSurface,
+    router,
+  ]);
 
   // Application-menu commands (ENG-016 D8): the macOS menu bar mirrors the
   // app's verbs; every command routes through the same actions the keyboard
@@ -267,12 +276,16 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           }
           break;
         case 'launch-shell':
-          launch('shell');
+          if (workspaceAvailability.commands['launch-shell'].available) {
+            launch('shell');
+          }
           break;
         case 'reopen-closed-tab':
-          requestReopenLastClosed();
-          if (!window.location.pathname.startsWith('/workspace')) {
-            navigateCommandSurface('/workspace');
+          if (workspaceAvailability.commands['reopen-closed-tab'].available) {
+            requestReopenLastClosed();
+            if (!window.location.pathname.startsWith('/workspace')) {
+              navigateCommandSurface('/workspace');
+            }
           }
           break;
         case 'open-project':
@@ -282,20 +295,48 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           }
           break;
         case 'rename-tab':
-          dispatch(RENAME_ACTIVE_EVENT);
+          if (
+            onWorkspaceRoute &&
+            workspaceAvailability.commands['rename-tab'].available
+          ) {
+            dispatch(RENAME_ACTIVE_EVENT);
+          }
           break;
         case 'toggle-split':
-          dispatch(TOGGLE_SPLIT_EVENT);
+          if (
+            onWorkspaceRoute &&
+            workspaceAvailability.commands['toggle-split'].available
+          ) {
+            dispatch(TOGGLE_SPLIT_EVENT);
+          }
           break;
         case 'close-tab':
-          dispatch(CLOSE_ACTIVE_EVENT);
+          if (
+            onWorkspaceRoute &&
+            workspaceAvailability.commands['close-tab'].available
+          ) {
+            dispatch(CLOSE_ACTIVE_EVENT);
+          }
           break;
         case 'jump-attention':
-          dispatch(JUMP_ATTENTION_EVENT);
+          if (
+            onWorkspaceRoute &&
+            workspaceAvailability.commands['jump-attention'].available
+          ) {
+            dispatch(JUMP_ATTENTION_EVENT);
+          }
           break;
       }
     });
-  }, [activateCommandAltitude, navigateBack, navigateForward, navigateCommandSurface, router]);
+  }, [
+    activateCommandAltitude,
+    navigateBack,
+    navigateForward,
+    navigateCommandSurface,
+    onWorkspaceRoute,
+    router,
+    workspaceAvailability,
+  ]);
 
   // Menu accelerator truthfulness (D10): the macOS menus display whatever
   // the registry currently binds — rebinding ⌘E updates the Session menu
@@ -318,6 +359,21 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     sync();
     return shortcutRegistry.subscribe(sync);
   }, []);
+
+  useEffect(() => {
+    const api = window.electron?.menu?.syncAvailability;
+    if (!api) return;
+    const commands = workspaceAvailability.commands;
+    void api({
+      'launch-shell': commands['launch-shell'].available,
+      'reopen-closed-tab': commands['reopen-closed-tab'].available,
+      'rename-tab': onWorkspaceRoute && commands['rename-tab'].available,
+      'toggle-split': onWorkspaceRoute && commands['toggle-split'].available,
+      'close-tab': onWorkspaceRoute && commands['close-tab'].available,
+      'jump-attention':
+        onWorkspaceRoute && commands['jump-attention'].available,
+    });
+  }, [onWorkspaceRoute, workspaceAvailability]);
 
   // Determine current contexts based on route
   useEffect(() => {

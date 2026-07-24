@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { sessionStatusLightState } from './session-status';
+import {
+  attentionNeedsOperator,
+  sessionStatusLightState,
+} from './session-status';
 
 describe('sessionStatusLightState', () => {
   it('distinguishes results from human gates without replacing Session truth', () => {
@@ -28,5 +31,13 @@ describe('sessionStatusLightState', () => {
     expect(sessionStatusLightState({ state: 'working', fault: true })).toBe(
       'fault'
     );
+  });
+
+  it('puts only visible human gates into the attention queue', () => {
+    expect(attentionNeedsOperator(null)).toBe(false);
+    expect(attentionNeedsOperator({ kind: 'turn-end' })).toBe(false);
+    expect(attentionNeedsOperator({ kind: 'bell' })).toBe(true);
+    expect(attentionNeedsOperator({ kind: 'roadmap-blocked' })).toBe(true);
+    expect(attentionNeedsOperator({})).toBe(true);
   });
 });

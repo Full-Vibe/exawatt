@@ -19,6 +19,8 @@ export const OPEN_PROJECT_PICKER_EVENT = 'exawatt:open-project-picker';
 export const FOCUS_AGENT_COMPOSER_EVENT = 'exawatt:focus-agent-composer';
 /** tab-strip listens: open the inline rename editor for the active tab */
 export const RENAME_ACTIVE_EVENT = 'exawatt:rename-active';
+/** Open the active Project's combined rename/color editor. */
+export const EDIT_ACTIVE_PROJECT_EVENT = 'exawatt:edit-active-project';
 /** the active terminal pane refocuses itself (rename editors steal focus —
  *  the keyboard flow must land back in the terminal) */
 export const FOCUS_ACTIVE_TERMINAL_EVENT = 'exawatt:focus-active-terminal';
@@ -138,20 +140,23 @@ export function consumePendingProjectPicker(): boolean {
   return pending === true;
 }
 
-export function requestAgentComposer(source: AgentSourceId | null = null): void {
+export function requestAgentComposer(
+  source: AgentSourceId | null = null
+): void {
   pendingAgentComposer = { value: source, at: Date.now() };
   window.dispatchEvent(
     new CustomEvent(FOCUS_AGENT_COMPOSER_EVENT, { detail: source })
   );
 }
 
-export function consumePendingAgentComposer(): AgentSourceId | null | undefined {
+export function consumePendingAgentComposer():
+  | AgentSourceId
+  | null
+  | undefined {
   if (!pendingAgentComposer) return undefined;
   const slot = pendingAgentComposer;
   pendingAgentComposer = null;
-  return Date.now() - slot.at <= AGENT_COMPOSER_TTL_MS
-    ? slot.value
-    : undefined;
+  return Date.now() - slot.at <= AGENT_COMPOSER_TTL_MS ? slot.value : undefined;
 }
 
 export function hasPendingAgentComposer(): boolean {

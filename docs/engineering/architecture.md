@@ -65,6 +65,20 @@ The surface manifest owns route identity, the shortcut registry owns effective
 keys, Spatial owns URL filters plus session-local camera return, and the
 workspace owns terminal/Sessions focus.
 
+Contextual workspace verbs add one deliberately small cross-process projection.
+The renderer derives command availability from restored Project, Session,
+split, recovery-ledger, and visible attention state. That snapshot gates the
+workspace key layer and passive hints, supplies disabled reasons to the command
+palette, and sends validated booleans through preload so Electron main can
+enable the same native Session-menu items. The projection never owns or mutates
+the underlying state; each command still validates its target in the workspace
+or Electron-main lifecycle authority. The application-global native menu also
+disables workspace-local rename, split, close, and attention verbs while
+another route such as Spatial owns the renderer; route-safe Project opening,
+shell launch, and closed-Session recovery retain their explicit navigation
+paths. Decision `0020` records the visible-target rule, including `⌘J`'s strict
+needs-you semantics.
+
 ### Coordination and Intelligence Layer
 
 Canonical product objects:

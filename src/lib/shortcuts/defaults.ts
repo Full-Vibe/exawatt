@@ -179,8 +179,8 @@ export const defaultShortcuts: ShortcutDefinition[] = [
   {
     id: 'workspace-jump-attention',
     keys: { key: 'j', modifiers: ['meta'] },
-    label: 'Jump to the session needing you',
-    description: 'Focus the oldest needs-attention session',
+    label: 'Jump to the Session needing you',
+    description: 'Focus the oldest visible needs-you Session',
     category: 'workspace',
     contexts: ['workspace'],
   },

@@ -24,7 +24,7 @@ import {
 } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { LAYOUT_CLASS, TerminalPane } from './terminal-pane';
-import { resolveStageLayout } from './split-layout';
+import { resolveStageLayout, tabIsPinnable } from './split-layout';
 import {
   acceptTerminalSettings,
   loadTerminalFont,
@@ -82,7 +82,6 @@ import {
 import {
   findRoadmapSessionChip,
   deriveRoadmapBlockedSessions,
-  isProjectStarving,
   orderedRoadmapJumpTargets,
 } from '@exawatt/ui-model';
 import { HUD } from '@/components/hud';
@@ -98,19 +97,49 @@ import {
 } from 'lucide-react';
 import { middleTruncatePath } from './path-label';
 import { useProjectCloseLifecycle } from './use-project-close-lifecycle';
+import { attentionNeedsOperator } from './session-status';
+import {
+  deriveWorkspaceCommandAvailability,
+  publishWorkspaceCommandAvailability,
+  type WorkspaceContextCommand,
+} from './workspace-command-availability';
 
 /** the discoverability layer (S3): the workspace SHOWS its keys, exactly
  *  like the spatial map's bottom legend — normal case, dim, always there */
-const KEY_HINTS: Array<{ shortcutId: string; label: string }> = [
+const KEY_HINTS: Array<{
+  shortcutId: string;
+  label: string;
+  command?: WorkspaceContextCommand;
+}> = [
   { shortcutId: 'command-palette', label: 'commands' },
   { shortcutId: 'command-sessions', label: 'sessions' },
   { shortcutId: 'workspace-new-project', label: 'new project' },
   { shortcutId: 'workspace-new-agent', label: 'new agent' },
-  { shortcutId: 'workspace-new-shell', label: 'shell' },
-  { shortcutId: 'workspace-split', label: 'split' },
-  { shortcutId: 'workspace-roadmap', label: 'roadmap' },
-  { shortcutId: 'workspace-jump-attention', label: 'needs you' },
-  { shortcutId: 'workspace-rename', label: 'rename' },
+  {
+    shortcutId: 'workspace-new-shell',
+    label: 'shell',
+    command: 'launch-shell',
+  },
+  {
+    shortcutId: 'workspace-split',
+    label: 'split',
+    command: 'toggle-split',
+  },
+  {
+    shortcutId: 'workspace-roadmap',
+    label: 'roadmap',
+    command: 'open-roadmap',
+  },
+  {
+    shortcutId: 'workspace-jump-attention',
+    label: 'needs you',
+    command: 'jump-attention',
+  },
+  {
+    shortcutId: 'workspace-rename',
+    label: 'rename',
+    command: 'rename-tab',
+  },
   { shortcutId: 'command-spatial', label: 'spatial' },
   { shortcutId: 'help-modal-slash', label: 'all keys' },
 ];
@@ -118,20 +147,18 @@ const KEY_HINTS: Array<{ shortcutId: string; label: string }> = [
 function WorkspaceKeyHint({
   shortcutId,
   label,
-  roomy = false,
 }: {
   shortcutId: string;
   label: string;
-  roomy?: boolean;
 }) {
   const keys = useEffectiveShortcut(shortcutId);
   if (!keys) return null;
   return (
-    <span className={`flex items-center ${roomy ? 'gap-1.5' : 'gap-1'}`}>
+    <span className="flex items-center gap-1">
       <kbd
-        className={`rounded border px-1 ${roomy ? 'py-0.5 text-chrome-micro' : 'leading-4'}`}
+        className="rounded border px-1 leading-4"
         style={{
-          borderColor: roomy ? 'rgba(80,230,255,0.3)' : 'rgba(80,230,255,0.25)',
+          borderColor: 'rgba(80,230,255,0.25)',
           color: HUD.textMono,
         }}
       >
@@ -243,6 +270,7 @@ export function WorkspaceClient() {
     reentryRecap,
     error,
     resumeBatchProgress,
+    closedSessionCount,
     setError,
     dismissReentryRecap,
     launch,
@@ -393,7 +421,9 @@ export function WorkspaceClient() {
           harness: t.harness,
           cwd: t.cwd,
           contextSummary: summaries[t.durableSessionId] ?? null,
-          needsAttention: !!attention[t.sessionId as string],
+          needsAttention: attentionNeedsOperator(
+            attention[t.sessionId as string]
+          ),
         })),
     [activeProject, summaries, attention]
   );
@@ -463,20 +493,34 @@ export function WorkspaceClient() {
     }
     return out;
   }, [roadmapView]);
-  const starving = isProjectStarving(roadmapView, roadmapSessions.length);
-
-  // the ⌘J ladder (S8), shared by the key, the Session menu item, and the
-  // palette row so all three behave identically: PTY needs-you first (bells
-  // clear on focus so repeat ⌘J walks the queue), then roadmap-blocked
-  // sessions (which never self-clear — skip the active tab so the walk
-  // advances), then starvation opens the rail on the no-food moment.
-  const jumpAttentionLadder = useCallback((): boolean => {
-    if (jumpAttention()) return true;
-    const targets = orderedRoadmapJumpTargets(
-      roadmapAttention,
-      activeTab?.sessionId ?? null
+  const roadmapJumpTargets = useMemo(
+    () =>
+      orderedRoadmapJumpTargets(roadmapAttention, activeTab?.sessionId ?? null),
+    [activeTab?.sessionId, roadmapAttention]
+  );
+  const hasPtyAttentionTarget = useMemo(() => {
+    const flagged = new Set(
+      Object.entries(attention)
+        .filter(([, signal]) => attentionNeedsOperator(signal))
+        .map(([sessionId]) => sessionId)
     );
-    for (const sessionId of targets) {
+    return projects.some(project =>
+      project.tabs.some(
+        tab =>
+          !!tab.sessionId && tab.exitCode === null && flagged.has(tab.sessionId)
+      )
+    );
+  }, [attention, projects]);
+  const hasAttentionTarget =
+    hasPtyAttentionTarget || roadmapJumpTargets.length > 0;
+
+  // ⌘J is a strict attention queue: every target has a visible needs-you
+  // marker. Empty-roadmap starvation remains visible in the roadmap itself,
+  // but must never surprise-navigate Terminal → Sessions without an amber
+  // target in the workspace.
+  const jumpAttentionQueue = useCallback((): boolean => {
+    if (jumpAttention()) return true;
+    for (const sessionId of roadmapJumpTargets) {
       for (const g of projects) {
         const tab = g.tabs.find(t => t.sessionId === sessionId);
         if (tab) {
@@ -485,19 +529,8 @@ export function WorkspaceClient() {
         }
       }
     }
-    if (starving) {
-      return summonRoadmap();
-    }
     return false;
-  }, [
-    jumpAttention,
-    roadmapAttention,
-    activeTab,
-    projects,
-    selectTab,
-    starving,
-    summonRoadmap,
-  ]);
+  }, [jumpAttention, roadmapJumpTargets, projects, selectTab]);
 
   // the palette row dispatches OPEN_ROADMAP_EVENT; same summon as ⌘B
   useEffect(() => {
@@ -509,10 +542,10 @@ export function WorkspaceClient() {
   // the menu item and palette row dispatch JUMP_ATTENTION_EVENT; run the
   // same ladder here so they never do less than the ⌘J key they advertise
   useEffect(() => {
-    const onJump = () => jumpAttentionLadder();
+    const onJump = () => jumpAttentionQueue();
     window.addEventListener(JUMP_ATTENTION_EVENT, onJump);
     return () => window.removeEventListener(JUMP_ATTENTION_EVENT, onJump);
-  }, [jumpAttentionLadder]);
+  }, [jumpAttentionQueue]);
 
   // agent-first mirror (S9): tabId → what that agent is executing. Declared
   // ids cover every project (machine-local layout truth); the active
@@ -694,6 +727,36 @@ export function WorkspaceClient() {
     }
     return false;
   }, [activeProject, activeTab, requestClose, requestProjectClose]);
+
+  const commandAvailability = useMemo(
+    () =>
+      deriveWorkspaceCommandAvailability({
+        activeProjectName: activeProject?.name ?? null,
+        hasActiveTab: activeTab !== null,
+        canToggleSplit:
+          pinnedTabId !== null ||
+          (activeTab !== null && tabIsPinnable(activeTab)),
+        canClose:
+          activeTab !== null ||
+          (!!activeProject && activeProject.tabs.length === 0),
+        hasAttentionTarget,
+        closedSessionCount,
+      }),
+    [
+      activeProject,
+      activeTab,
+      closedSessionCount,
+      hasAttentionTarget,
+      pinnedTabId,
+    ]
+  );
+  useEffect(() => {
+    if (ready) publishWorkspaceCommandAvailability(commandAvailability);
+  }, [commandAvailability, ready]);
+  const visibleKeyHints = KEY_HINTS.filter(
+    hint =>
+      !hint.command || commandAvailability.commands[hint.command].available
+  );
   const confirmProjectClose = useCallback(() => {
     if (!projectCloseConfirm) return;
     const project = projects.find(
@@ -765,7 +828,10 @@ export function WorkspaceClient() {
       return !!activeTab?.sessionId;
     };
     return {
-      launchShell: () => launchHere('shell'),
+      launchShell: () =>
+        commandAvailability.commands['launch-shell'].available
+          ? launchHere('shell')
+          : false,
       newProject: () => {
         setProjectOpenerOpen(true);
         return true;
@@ -773,7 +839,10 @@ export function WorkspaceClient() {
       closeActive: () => {
         return closeActiveItem();
       },
-      reopenClosed: reopenLastClosedSession,
+      reopenClosed: () =>
+        commandAvailability.commands['reopen-closed-tab'].available
+          ? reopenLastClosedSession()
+          : false,
       selectIndex: selectProject,
       selectTabOrdinal: selectTabByOrdinal,
       cycle: cycleTab,
@@ -785,7 +854,7 @@ export function WorkspaceClient() {
         window.dispatchEvent(new CustomEvent(FOCUS_AGENT_COMPOSER_EVENT));
         return true;
       },
-      jumpAttention: jumpAttentionLadder,
+      jumpAttention: jumpAttentionQueue,
       activateCommandAltitude: target => {
         activateCommandAltitude(target);
         return true;
@@ -813,7 +882,10 @@ export function WorkspaceClient() {
       togglePin,
       // ⌘B (S12): the roadmap lives at the Sessions altitude — summon it
       // there focused, from anywhere
-      toggleRoadmap: () => summonRoadmap(),
+      toggleRoadmap: () =>
+        commandAvailability.commands['open-roadmap'].available
+          ? summonRoadmap()
+          : false,
       renameActive: () => {
         if (!activeTab) return false;
         window.dispatchEvent(new CustomEvent(RENAME_ACTIVE_EVENT));
@@ -822,6 +894,7 @@ export function WorkspaceClient() {
     };
   }, [
     activeTab,
+    commandAvailability,
     summonRoadmap,
     launchHere,
     closeActiveItem,
@@ -831,7 +904,7 @@ export function WorkspaceClient() {
     selectTabByOrdinal,
     moveActiveTab,
     moveActiveProject,
-    jumpAttentionLadder,
+    jumpAttentionQueue,
     togglePin,
     activateCommandAltitude,
     openCommandPalette,
@@ -1181,14 +1254,12 @@ export function WorkspaceClient() {
                   >
                     <FolderOpen className="h-4 w-4" /> Open Project
                   </button>
-                  <div
-                    className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 font-mono text-xs"
+                  <p
+                    className="max-w-sm text-center font-mono text-chrome-label"
                     style={{ color: HUD.textDim }}
                   >
-                    {KEY_HINTS.map(hint => (
-                      <WorkspaceKeyHint key={hint.shortcutId} {...hint} roomy />
-                    ))}
-                  </div>
+                    Choose the Project where you want to start or resume work.
+                  </p>
                 </div>
               ) : (
                 <>
@@ -1323,7 +1394,7 @@ export function WorkspaceClient() {
             background: HUD.bg.deep,
           }}
         >
-          {KEY_HINTS.map(hint => (
+          {visibleKeyHints.map(hint => (
             <WorkspaceKeyHint key={hint.shortcutId} {...hint} />
           ))}
         </div>

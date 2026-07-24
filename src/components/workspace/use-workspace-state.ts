@@ -34,6 +34,7 @@ import {
   tabAtOrdinal,
 } from './tab-ring';
 import { nextPin, tabIsPinnable } from './split-layout';
+import { attentionNeedsOperator } from './session-status';
 import {
   SESSION_JUMP_EVENT,
   TAB_SELECT_EVENT,
@@ -538,6 +539,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const [resumeBatchProgress, setResumeBatchProgress] =
     useState<ResumeBatchProgress | null>(null);
   const [ready, setReady] = useState(false);
+  /** Durable Recently-closed ledger size. This keeps reopen affordances in
+   *  the palette/native menu honest without making those surfaces query IPC. */
+  const [closedSessionCount, setClosedSessionCount] = useState(0);
   /** goal subtitles keyed by durableSessionId (D21): the goal is durable
    *  Session truth — live updates stream from main, the persisted layout
    *  seeds them back after a restart, stopped tabs keep theirs */
@@ -586,6 +590,17 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   /** Identity can arrive before React has committed a newly launched/restored
    * tab. Retain that event by durable Session id instead of dropping it. */
   const observedIdentitiesRef = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    void window.electron?.pty?.closedSessions?.().then(entries => {
+      if (!cancelled) setClosedSessionCount(entries.length);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready]);
 
   const syncProjectIdentity = useCallback(
     (ref: { rootPath: string; name: string }) => {
@@ -1312,7 +1327,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           // Commit the soft-close migration only after the provider process is
           // live. A failed create leaves the recoverable ledger entry intact.
           try {
-            await api.reopenSession(restoredEntry.durableSessionId);
+            const consumed = await api.reopenSession(
+              restoredEntry.durableSessionId
+            );
+            if (consumed) {
+              setClosedSessionCount(current => Math.max(0, current - 1));
+            }
           } catch (cause) {
             console.warn(
               'Could not consume migrated Session ledger entry',
@@ -1572,6 +1592,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         }
         // one clean transition, then stop + archive behind the strip
         removeTabFromLayout(tabId);
+        // Recovery availability follows the same optimistic boundary as the
+        // disappearing tab. This lets immediate ⌘W → ⌘⇧T enqueue behind the
+        // in-flight archive instead of spending one render falsely disabled.
+        setClosedSessionCount(current => current + 1);
         const entryData = {
           durableSessionId: tab.durableSessionId,
           title: tab.title,
@@ -1589,6 +1613,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           const entry = await api.archiveSession(entryData);
           return { kind: 'closed', entry };
         } catch {
+          setClosedSessionCount(current => Math.max(0, current - 1));
           setError(
             `Could not archive ${tab.title} — its conversation is still recoverable from its source.`
           );
@@ -1613,6 +1638,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (!api?.reopenSession) return false;
       const entry = await api.reopenSession(durableSessionId);
       if (!entry) return false;
+      setClosedSessionCount(current => Math.max(0, current - 1));
       const repairsLegacyCatalogTitle =
         entry.titleKind === undefined &&
         isLegacyCatalogTitleLeak({
@@ -2211,9 +2237,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  queue — focusing each one clears it, surfacing the next-oldest) */
   const jumpAttention = useCallback((): boolean => {
     const { projects: gs } = stateRef.current;
-    const flagged = Object.entries(attentionRef.current).sort(
-      (a, b) => a[1].since - b[1].since
-    );
+    const flagged = Object.entries(attentionRef.current)
+      .filter(([, signal]) => attentionNeedsOperator(signal))
+      .sort((a, b) => a[1].since - b[1].since);
     for (const [sessionId] of flagged) {
       for (const g of gs) {
         const tab = g.tabs.find(
@@ -2344,6 +2370,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     reentryRecap,
     error,
     resumeBatchProgress,
+    closedSessionCount,
     setError,
     dismissReentryRecap,
     ready,

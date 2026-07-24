@@ -12,6 +12,15 @@ export interface SessionAttentionSignal {
   since: number;
 }
 
+/** Turn completion is a ready result, not an operator gate. Presence-only
+ *  legacy signals remain conservative needs-you state. Every consumer that
+ *  exposes or navigates attention must use this same predicate. */
+export function attentionNeedsOperator(
+  attention?: Pick<SessionAttentionSignal, 'kind'> | null
+): boolean {
+  return Boolean(attention && attention.kind !== 'turn-end');
+}
+
 /** Working wins; agents split on whether they were ever given work; shells
  * are simply quiet between output because they do not have turns. */
 export function sessionGlyphState({
@@ -46,7 +55,7 @@ export function sessionStatusLightState({
   if (fault) return 'fault';
   if (attention?.kind === 'turn-end') return 'result';
   return deriveStatusLightState({
-    needsOperator: Boolean(attention),
+    needsOperator: attentionNeedsOperator(attention),
     hasResult: state === 'done',
     active: state === 'working',
   });

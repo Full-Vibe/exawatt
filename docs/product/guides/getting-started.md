@@ -21,7 +21,8 @@ seconds, then retracts the Project from the open workspace. Reopen it from the
 Project chooser with **⌘N**. **⌘W** closes the active Agent tab, or closes the
 active Project when it is already empty. A Project's right-click menu also
 offers **Close project**; Exawatt confirms first when that would close remaining
-Agent tabs.
+Agent tabs. With the Project or Session chip focused, **Shift+F10** opens the
+same action menu without a pointer; Escape returns focus to that chip.
 
 Closing a meaningful Session keeps it in **Recently closed** for 14 days.
 **⌘⇧T** restores the newest one as a stopped tab without starting its Agent or
@@ -62,6 +63,12 @@ green circled check means its turn finished. Finished is stable: an idle TUI
 redraw cannot change the check back to working. Typing the next instruction
 opens the next turn. The dashed circle means a new Agent has not received work
 yet; a plain hollow circle is a quiet shell.
+
+**⌘J** jumps to the oldest Session with a visible needs-you marker. If no
+Session needs you, it leaves the current Terminal in place. Commands that need
+a Project, Session, split target, or recovery entry are hidden from the passive
+key legend or shown disabled with a short reason in the command palette and
+macOS Session menu.
 
 ## Quitting and returning
 

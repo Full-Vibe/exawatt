@@ -270,6 +270,8 @@ contextBridge.exposeInMainWorld('electron', {
     onCommand: subscribe<string>('menu:command'),
     syncAccelerators: (map: Record<string, string>) =>
       ipcRenderer.invoke('menu:sync-accelerators', map),
+    syncAvailability: (map: Record<string, boolean>) =>
+      ipcRenderer.invoke('menu:sync-availability', map),
   },
   feedback: {
     setAuthenticated: (authenticated: boolean) =>

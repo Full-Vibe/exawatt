@@ -560,13 +560,15 @@ try {
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'turn-states-rest.png'),
   });
-  // D33: attention is a quiet unread marker. It must explain itself on
+  // D33/D40: explicit input attention is a quiet needs-you marker. Ordinary
+  // turn completion is a Result light and must not enter the ⌘J queue. The
+  // needs-you marker must explain itself on
   // hover, carry no alarm animation, and disappear before the selected tab
   // can paint — never flash bell → working → done during one click.
   await page.evaluate(() => {
     window.__fireAttention?.({
       id: 'gpa-session',
-      attention: { kind: 'turn-end', since: Date.now() },
+      attention: { kind: 'bell', since: Date.now() },
     });
   });
   const gpaTab = page.locator(
@@ -584,7 +586,7 @@ try {
   await statusTooltip.waitFor();
   if (
     !(await statusTooltip.innerText()).includes(
-      'Unseen update — Agent finished or requested input. Open this tab to acknowledge.'
+      'Needs you — Agent requested input or hit a roadmap block. Open this Session to respond.'
     )
   ) {
     throw new Error(

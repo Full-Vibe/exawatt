@@ -60,7 +60,7 @@ export const architectureManifest = {
   title: 'Exawatt Architecture',
   summary:
     'Exawatt is a command interface for managing agent fleets across local, hosted, and third-party harnesses.',
-  lastReviewed: '2026-07-22',
+  lastReviewed: '2026-07-24',
   layers: [
     {
       key: 'ui',
@@ -512,7 +512,7 @@ export const architectureManifest = {
           id: 'terminal-workspace',
           label: 'Terminal + Session Overview',
           summary:
-            'Inert Project selection, source-aware Agent composition, durable intent-triggered context labels with inline feedback, a Project-scoped exact-identity recent browser, grouped exposé, and direct live-or-stopped Session control.',
+            'Inert Project selection, source-aware Agent composition, contextual command availability, keyboard-complete Project/Session actions, grouped exposé, and direct live-or-stopped Session control.',
           layer: 'ui',
           status: 'implemented',
           x: 205,
@@ -680,7 +680,7 @@ export const architectureManifest = {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
-            'Immediate launch frame, trusted operator-input/context IPC, native-network PKCE, serialized workspace/history, durable provider identity, Project conversation discovery, native feedback capture/menu state, atomic delivery, and signed updates.',
+            'Immediate launch frame, trusted operator-input/context IPC, renderer-projected native menu availability with route ownership, native-network PKCE, serialized workspace/history, durable provider identity, atomic delivery, and signed updates.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 75,

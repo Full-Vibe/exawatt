@@ -11,7 +11,7 @@
  *   ⌘⇧[ / ⌘⇧]    previous / next tab (wraps)
  *   ⌘⌥[ / ⌘⌥]    move the active tab within its Project (D20)
  *   ⌘⌥⇧[ / ⌘⌥⇧]  move the active Project in the strip (D20)
- *   ⌘J           jump to the oldest session needing attention (S1)
+ *   ⌘J           jump to the oldest visibly needs-you Session; no-op if none
  *   ⌃⌘1 / ⌃⌘2 / ⌃⌘3  Terminal / Sessions / Spatial (D19 — off ⌘⇧3,
  *                     which macOS swallows for screenshots)
  *   ⌘K           session switcher / command palette (S2)
@@ -87,7 +87,7 @@ export interface WorkspaceShortcutActions {
   moveTab: (delta: 1 | -1) => boolean;
   /** ⌘⌥⇧[/]: nudge the active Project in the strip (D20) */
   moveProject: (delta: 1 | -1) => boolean;
-  /** jump to the oldest needs-attention session */
+  /** jump to the oldest visible needs-attention Session */
   jumpAttention: () => boolean;
   /** open or refocus one absolute command altitude */
   activateCommandAltitude: (target: CommandAltitude) => boolean;

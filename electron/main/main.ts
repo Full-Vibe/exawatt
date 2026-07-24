@@ -589,6 +589,17 @@ const menuAccelerators: Record<string, string> = {
   'jump-attention': 'Command+J',
 };
 
+/** Renderer-owned context projected into native menu enablement. Commands
+ *  start unavailable until the restored workspace publishes real targets. */
+const menuAvailability: Record<string, boolean> = {
+  'launch-shell': false,
+  'reopen-closed-tab': false,
+  'rename-tab': false,
+  'toggle-split': false,
+  'close-tab': false,
+  'jump-attention': false,
+};
+
 let feedbackAuthenticated = false;
 
 const ACCELERATOR_PATTERN =
@@ -607,6 +618,21 @@ function registerMenuIPC(): void {
       }
     }
     createMenu();
+  });
+  handleTrusted('menu:sync-availability', async (_event, map: unknown) => {
+    if (!map || typeof map !== 'object') return;
+    let changed = false;
+    for (const [command, value] of Object.entries(map)) {
+      if (!Object.prototype.hasOwnProperty.call(menuAvailability, command)) {
+        continue;
+      }
+      if (typeof value !== 'boolean') continue;
+      if (menuAvailability[command] !== value) {
+        menuAvailability[command] = value;
+        changed = true;
+      }
+    }
+    if (changed) createMenu();
   });
   handleTrusted(
     'feedback:set-authenticated',
@@ -643,6 +669,7 @@ function menuCommand(
     command === 'open-settings' ? 'Command+,' : menuAccelerators[command];
   return {
     label,
+    enabled: menuAvailability[command] ?? true,
     ...(accelerator ? { accelerator, registerAccelerator } : {}),
     click: () => sendMenuCommand(command),
   };
