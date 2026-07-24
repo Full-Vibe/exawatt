@@ -1,5 +1,4 @@
-import { Network } from 'lucide-react';
-import { TactileActionLink } from '@/components/hud';
+import { ArchitectureKeySwitchLink } from '@/components/hud/webgl/keyswitch-study';
 import { HeroBg } from './_hero-bg';
 
 export default function Home() {
@@ -45,17 +44,7 @@ export default function Home() {
               Exawatt is the command interface for billions of agents.
             </span>
           </p>
-          <div className="flex gap-4">
-            <TactileActionLink
-              aria-label="Open Exawatt architecture"
-              href="/architecture"
-              keySize="wide"
-              tone="smoke"
-            >
-              <Network />
-              Architecture
-            </TactileActionLink>
-          </div>
+          <ArchitectureKeySwitchLink />
         </main>
       </div>
     </>

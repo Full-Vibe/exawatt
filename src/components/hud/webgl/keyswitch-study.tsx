@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentRef } from 'react';
+import Link from 'next/link';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import {
   ContactShadows,
@@ -359,6 +360,13 @@ const KEYSWITCH_VARIANTS: readonly KeySwitchVariant[] = [
   },
 ];
 
+const SMOKE_LOW_VARIANT =
+  KEYSWITCH_VARIANTS.find(variant => variant.id === 'smoke-low') ??
+  KEYSWITCH_VARIANTS[0];
+const HOME_ORBIT_TARGET = new THREE.Vector3(...SMOKE_LOW_VARIANT.target);
+const HOME_ORBIT_PERIOD_SECONDS = 14;
+const HOME_ORBIT_AMPLITUDE = Math.PI * 0.16;
+
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
   useEffect(() => {
@@ -459,6 +467,42 @@ function OrbitCamera({
       zoomSpeed={0.74}
     />
   );
+}
+
+function HomeOrbitCamera({ reduced }: { reduced: boolean }) {
+  const camera = useThree(state => state.camera);
+  const invalidate = useThree(state => state.invalidate);
+  const size = useThree(state => state.size);
+  const phase = useRef(-Math.PI / 2);
+
+  useEffect(() => invalidate(), [invalidate, reduced, size.height, size.width]);
+
+  useFrame((state, delta) => {
+    const aspect = size.width / Math.max(size.height, 1);
+    const radius = aspect < 1.12 ? 7.15 : 6.45;
+    let angle = -HOME_ORBIT_AMPLITUDE * 0.72;
+
+    if (!reduced) {
+      phase.current +=
+        Math.min(delta, 0.05) *
+        ((Math.PI * 2) / HOME_ORBIT_PERIOD_SECONDS);
+      angle = Math.sin(phase.current) * HOME_ORBIT_AMPLITUDE;
+    }
+
+    const centerLift =
+      Math.cos((angle / HOME_ORBIT_AMPLITUDE) * (Math.PI / 2)) * 0.08;
+    camera.position.set(
+      Math.sin(angle) * radius,
+      3.02 + centerLift,
+      Math.cos(angle) * radius
+    );
+    camera.lookAt(HOME_ORBIT_TARGET);
+    camera.updateMatrixWorld();
+
+    if (!reduced) state.invalidate();
+  });
+
+  return null;
 }
 
 function Spring({ pressed, reduced }: { pressed: boolean; reduced: boolean }) {
@@ -928,26 +972,9 @@ function KeySwitchAssembly({
   );
 }
 
-function ProductScene({
-  variant,
-  resetToken,
-  pressed,
-  onPressedChange,
-}: {
-  variant: KeySwitchVariant;
-  resetToken: number;
-  pressed: boolean;
-  onPressedChange: (pressed: boolean) => void;
-}) {
-  const reduced = useReducedMotion();
-
+function KeySwitchLighting({ variant }: { variant: KeySwitchVariant }) {
   return (
     <>
-      <OrbitCamera
-        reduced={reduced}
-        resetToken={resetToken}
-        variant={variant}
-      />
       <ambientLight intensity={variant.ambientIntensity} />
       <directionalLight
         color={variant.keyLight}
@@ -991,6 +1018,31 @@ function ProductScene({
           scale={[3, 2, 1]}
         />
       </Environment>
+    </>
+  );
+}
+
+function ProductScene({
+  variant,
+  resetToken,
+  pressed,
+  onPressedChange,
+}: {
+  variant: KeySwitchVariant;
+  resetToken: number;
+  pressed: boolean;
+  onPressedChange: (pressed: boolean) => void;
+}) {
+  const reduced = useReducedMotion();
+
+  return (
+    <>
+      <OrbitCamera
+        reduced={reduced}
+        resetToken={resetToken}
+        variant={variant}
+      />
+      <KeySwitchLighting variant={variant} />
 
       <KeySwitchAssembly
         onPressedChange={onPressedChange}
@@ -1021,6 +1073,108 @@ function ProductScene({
         />
       </mesh>
     </>
+  );
+}
+
+function HomeArchitectureKeyScene({
+  pressed,
+  onPressedChange,
+}: {
+  pressed: boolean;
+  onPressedChange: (pressed: boolean) => void;
+}) {
+  const reduced = useReducedMotion();
+
+  return (
+    <>
+      <HomeOrbitCamera reduced={reduced} />
+      <KeySwitchLighting variant={SMOKE_LOW_VARIANT} />
+      <KeySwitchAssembly
+        onPressedChange={onPressedChange}
+        pressed={pressed}
+        reduced={reduced}
+        variant={SMOKE_LOW_VARIANT}
+      />
+      <ContactShadows
+        color="#00070b"
+        far={4}
+        frames={1}
+        opacity={0.68}
+        position={[0, -0.28, 0]}
+        resolution={512}
+        scale={[5.2, 4.5]}
+        blur={2.5}
+      />
+    </>
+  );
+}
+
+export function ArchitectureKeySwitchLink({
+  evalMode = false,
+}: {
+  evalMode?: boolean;
+}) {
+  const [pressed, setPressed] = useState(false);
+
+  return (
+    <div
+      className="relative isolate h-[clamp(230px,30vw,320px)] w-[clamp(280px,38vw,410px)]"
+      data-home-architecture-keyswitch
+      data-pressed={pressed ? 'true' : 'false'}
+    >
+      <Canvas
+        aria-hidden="true"
+        camera={{
+          fov: 29,
+          near: 0.1,
+          far: 100,
+          position: [-3.2, 3.05, 5.7],
+        }}
+        dpr={[1, 2]}
+        frameloop="demand"
+        gl={{
+          alpha: true,
+          antialias: true,
+          powerPreference: 'high-performance',
+          preserveDrawingBuffer: evalMode,
+        }}
+      >
+        {evalMode && <ExposeEvalRenderer />}
+        <HomeArchitectureKeyScene
+          onPressedChange={setPressed}
+          pressed={pressed}
+        />
+      </Canvas>
+
+      <Link
+        aria-label="Open Exawatt architecture"
+        className="group absolute inset-[3%] z-10 cursor-pointer rounded-[20%] outline-none focus-visible:ring-2 focus-visible:ring-sky-200/90 focus-visible:ring-offset-4 focus-visible:ring-offset-black/80"
+        data-architecture-key-link
+        href="/architecture"
+        onBlur={() => setPressed(false)}
+        onKeyDown={event => {
+          if (!event.repeat && event.key === 'Enter') setPressed(true);
+        }}
+        onKeyUp={event => {
+          if (event.key === 'Enter') setPressed(false);
+        }}
+        onPointerCancel={() => setPressed(false)}
+        onPointerDown={event => {
+          if (event.button === 0) setPressed(true);
+        }}
+        onPointerLeave={() => setPressed(false)}
+        onPointerUp={() => setPressed(false)}
+      >
+        <span className="sr-only">Architecture</span>
+        <span
+          aria-hidden="true"
+          className="absolute bottom-0 left-1/2 inline-flex -translate-x-1/2 items-center gap-2 border border-sky-100/20 bg-slate-950/55 px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.18em] text-sky-100/75 backdrop-blur-md transition-[border-color,color,transform] duration-200 group-hover:-translate-y-0.5 group-hover:border-sky-100/40 group-hover:text-sky-50 group-focus-visible:-translate-y-0.5 group-focus-visible:border-sky-100/50 group-focus-visible:text-sky-50"
+        >
+          Architecture
+          <span className="text-sky-300/70">↗</span>
+        </span>
+      </Link>
+    </div>
   );
 }
 

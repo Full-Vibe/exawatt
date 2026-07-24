@@ -26,7 +26,10 @@ import {
   WebglComposedScene,
   WebglStatusLightsScene,
 } from '@/components/hud/webgl/scenes';
-import { KeySwitchStudy } from '@/components/hud/webgl/keyswitch-study';
+import {
+  ArchitectureKeySwitchLink,
+  KeySwitchStudy,
+} from '@/components/hud/webgl/keyswitch-study';
 import {
   StatusLightDomSpecimens,
   StatusLightProtocolLegend,
@@ -255,6 +258,16 @@ const SECTIONS: Section[] = [
     title: 'Tactile action keys',
     meta: 'review candidate · native DOM control + physical travel',
     showcase: <TactileActionKeyStudy />,
+  },
+  {
+    id: 'architecture-orbit-key',
+    title: 'Homepage architecture key',
+    meta: 'production component · Smoke Low R3F assembly + pendulum camera',
+    showcase: (
+      <div className="flex min-h-[360px] items-center justify-center overflow-hidden bg-[#05090c] px-4 py-6">
+        <ArchitectureKeySwitchLink />
+      </div>
+    ),
   },
   {
     id: 'keyswitch-material-studies',

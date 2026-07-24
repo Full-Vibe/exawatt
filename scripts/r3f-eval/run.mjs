@@ -55,6 +55,13 @@ const TASKS = [
     drawCallMax: 60,
     settleMs: 1_200,
   },
+  {
+    id: 't8-home-keyswitch',
+    name: 'Homepage Smoke Low architecture keyswitch',
+    // Same complete mechanism as T7, with a continuously moving camera.
+    drawCallMax: 60,
+    settleMs: 1_200,
+  },
 ];
 
 // Substrings that mean a real WebGL/shader failure -> hard gate.
@@ -477,6 +484,94 @@ async function runTask(browser, task) {
       );
       if (!result.semanticOk)
         result.errors.push('Keyswitch material-study semantics failed');
+    }
+
+    if (task.id === 't8-home-keyswitch') {
+      const link = page.locator('[data-architecture-key-link]');
+      const cameraPosition = () =>
+        page.evaluate(() =>
+          window.__EVAL_KEYSWITCH_CAMERA__?.position.toArray()
+        );
+      const distance = (a, b) =>
+        Array.isArray(a) && Array.isArray(b)
+          ? Math.hypot(...a.map((value, index) => value - b[index]))
+          : Number.POSITIVE_INFINITY;
+
+      const orbitStart = await cameraPosition();
+      await page.waitForTimeout(900);
+      const orbitEnd = await cameraPosition();
+      const orbitDistance = distance(orbitStart, orbitEnd);
+
+      await link.dispatchEvent('pointerdown', { button: 0, pointerId: 1 });
+      await page.waitForFunction(
+        () =>
+          window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-smoke-low')
+            ?.position.y < -0.22,
+        { timeout: 2_000 }
+      );
+      const pressedTravel = await page.evaluate(
+        () =>
+          window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-smoke-low')
+            ?.position.y
+      );
+      await link.dispatchEvent('pointerup', { button: 0, pointerId: 1 });
+      await page.waitForFunction(
+        () =>
+          Math.abs(
+            window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-smoke-low')
+              ?.position.y ?? 1
+          ) < 0.01,
+        { timeout: 2_000 }
+      );
+
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await page.waitForTimeout(250);
+      const reducedStart = await cameraPosition();
+      await page.waitForTimeout(700);
+      const reducedEnd = await cameraPosition();
+      const reducedDistance = distance(reducedStart, reducedEnd);
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+      const semantics = await page.evaluate(() => {
+        const root = document.querySelector(
+          '[data-home-architecture-keyswitch]'
+        );
+        const anchor = document.querySelector('[data-architecture-key-link]');
+        return {
+          rootCount: document.querySelectorAll(
+            '[data-home-architecture-keyswitch]'
+          ).length,
+          href: anchor?.getAttribute('href'),
+          label: anchor?.getAttribute('aria-label'),
+          pressed: root?.getAttribute('data-pressed'),
+          assemblyCount: window.__EVAL_SCENE__
+            ? window.__EVAL_SCENE__.getObjectsByProperty(
+                'name',
+                'keyswitch-assembly'
+              ).length
+            : 0,
+        };
+      });
+
+      result.semanticOk =
+        semantics.rootCount === 1 &&
+        semantics.href === '/architecture' &&
+        semantics.label === 'Open Exawatt architecture' &&
+        semantics.pressed === 'false' &&
+        semantics.assemblyCount === 1 &&
+        pressedTravel < -0.22 &&
+        orbitDistance > 0.05 &&
+        reducedDistance < 0.002;
+      result.notes.push(
+        `home-keyswitch: ${JSON.stringify({
+          ...semantics,
+          pressedTravel,
+          orbitDistance,
+          reducedDistance,
+        })}`
+      );
+      if (!result.semanticOk)
+        result.errors.push('Homepage architecture keyswitch semantics failed');
     }
 
     await page
