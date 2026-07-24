@@ -36,6 +36,7 @@ import {
   FIXTURE_METRICS,
 } from '@/components/hud/gallery-fixtures';
 import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
+import { SessionStateTableStudy } from '@/components/hud/session-state-table-study';
 
 function TactileActionKeyStudy() {
   const [lastAction, setLastAction] = useState('Ready for input');
@@ -205,6 +206,12 @@ interface Section {
 }
 
 const SECTIONS: Section[] = [
+  {
+    id: 'session-state-table',
+    title: 'Session state table',
+    meta: 'review candidate · region / question projection',
+    showcase: <SessionStateTableStudy />,
+  },
   {
     id: 'context-label-feedback',
     title: 'Session context label feedback',

@@ -8,6 +8,7 @@ Use `docs/product/reference/` for deeper explanations of concepts that may becom
 
 Current references:
 
+- [Agent state at a glance](./agent-state.md)
 - [Agent Sources](./agent-sources.md)
 - [Context Signals](./context-signals.md)
 - [Initiatives](./initiatives.md)

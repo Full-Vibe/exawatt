@@ -1,6 +1,6 @@
 # 0006 — Present terminal, session overview, and Spatial as one command altitude
 
-Date: 2026-07-10; amended 2026-07-12
+Date: 2026-07-10; amended 2026-07-12 and 2026-07-24
 Status: accepted
 
 ## Context
@@ -41,6 +41,13 @@ originating Session, uses arrows/J/K for selection, Enter to open, and Escape to
 return. Obscured workspace chrome is inert, but the shell-level altitude
 control remains reachable. Escape remains owned by the running TUI while xterm
 has focus; Spatial uses Escape only to clear its own Agent/Project selection.
+
+Refinement (operator, 2026-07-24): Sessions remains one fleet-comparison state.
+Selecting a row may establish focus, but activating it zooms to the exact
+Terminal Session; Sessions does not expand a second Agent-detail pane or inline
+history. The overview may evolve from tiles toward the region/question state
+projection in [Agent state at a glance](../../product/reference/agent-state.md),
+but that presentation change does not alter the altitude or renderer boundary.
 
 Direct cross-regime destinations route through one finite transition owner.
 This shared motion/command contract is the extension point for making
