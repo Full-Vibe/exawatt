@@ -8,10 +8,12 @@ import { cn } from '@/lib/utils';
 export function SessionGoalSummary({
   summary,
   color,
+  size = 'chrome',
   className,
 }: {
   summary: string;
   color: string;
+  size?: 'chrome' | 'comparison';
   className?: string;
 }) {
   return (
@@ -19,7 +21,8 @@ export function SessionGoalSummary({
       data-subtitle
       data-session-goal-summary
       className={cn(
-        'line-clamp-2 text-left font-sans text-chrome-label font-normal',
+        'line-clamp-2 text-left font-sans font-normal',
+        size === 'comparison' ? 'text-base leading-6' : 'text-chrome-label',
         className
       )}
       style={{ color: `${color}B0` }}

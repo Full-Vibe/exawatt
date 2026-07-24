@@ -84,10 +84,12 @@ their shared glyphs when hover tooltips and accessible names preserve meaning.
 
 ## Plans are mutable named steps
 
-Plan state should use a current named step plus an ordinal such as `Decide
-ownership · 3/5`. It may show completed, current, and pending steps as a compact
-spine. It should not imply a stable percentage because Agents revise plans,
-discover new work, and remove invalid steps.
+Plan state should use a current named step plus an explicit ordinal such as
+`Decide ownership` and `Step 3 of 5`. A visual spine is optional, but only when
+the surface has room to label what it represents; compact Sessions tiles must
+not use unexplained bars as shorthand for plan position. Plan state should not
+imply a stable percentage because Agents revise plans, discover new work, and
+remove invalid steps.
 
 When a plan changes materially, **Revised** becomes a meaningful Event. When a
 source exposes no plan, the UI says so instead of inferring one from files,
@@ -106,7 +108,13 @@ freshness are separate channels:
 - freshness answers when Exawatt last received meaningful evidence.
 
 Compact relative ages include the explicit `ago` suffix and expose the fully
-formatted observation time on hover.
+formatted observation time on hover. Freshness belongs with the observed
+current-state evidence, not beside a future-facing `Next` label.
+
+Sessions typography must remain legible at comparison distance. Operational
+sentences and goals use the readable body tiers; micro type is reserved for
+short labels and secondary metadata rather than the information an operator is
+expected to scan.
 
 Views can compose these channels into a concise signal, but data and adapters
 must not collapse them into one lossy status. Demo Mode and every live Agent

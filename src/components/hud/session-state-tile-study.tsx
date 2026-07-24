@@ -164,56 +164,32 @@ function SegmentedControl<T extends string>({
   );
 }
 
-function PlanSpine({ tile }: { tile: SessionStateFixture }) {
+function PlanStep({ tile }: { tile: SessionStateFixture }) {
   if (!tile.planStep || !tile.planIndex || !tile.planTotal) {
     return (
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <span className="truncate text-[11px]" style={{ color: HUD.textDim }}>
-          No plan reported
-        </span>
-        <span
-          className="shrink-0 font-mono text-[9px] uppercase tracking-[0.1em]"
-          style={{ color: 'rgba(138,160,190,0.55)' }}
-        >
-          Source truth
-        </span>
-      </div>
+      <span
+        className="block truncate text-sm leading-5"
+        style={{ color: HUD.textDim }}
+      >
+        No next step reported
+      </span>
     );
   }
 
   return (
-    <div className="min-w-0">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="truncate text-[11px]" style={{ color: HUD.text }}>
-          {tile.planStep}
-        </span>
-        <span
-          className="shrink-0 font-mono text-[10px] tabular-nums"
-          style={{ color: HUD.textMono }}
-        >
-          {tile.planIndex}/{tile.planTotal}
-        </span>
-      </div>
-      <div aria-hidden="true" className="mt-1.5 flex gap-1">
-        {Array.from({ length: tile.planTotal }, (_, index) => {
-          const step = index + 1;
-          const complete = step < tile.planIndex!;
-          const current = step === tile.planIndex;
-          return (
-            <span
-              key={step}
-              className="h-px flex-1"
-              style={{
-                background: complete
-                  ? HUD.green
-                  : current
-                    ? HUD.cyan
-                    : 'rgba(138,160,190,0.22)',
-              }}
-            />
-          );
-        })}
-      </div>
+    <div className="flex min-w-0 items-baseline justify-between gap-3">
+      <span
+        className="min-w-0 truncate text-sm leading-5"
+        style={{ color: HUD.text }}
+      >
+        {tile.planStep}
+      </span>
+      <span
+        className="shrink-0 font-mono text-xs tabular-nums"
+        style={{ color: HUD.textMono }}
+      >
+        Step {tile.planIndex} of {tile.planTotal}
+      </span>
     </div>
   );
 }
@@ -261,7 +237,7 @@ function SessionTile({
           onMove(-1);
         }
       }}
-      className="relative flex h-[238px] w-[300px] max-w-full flex-col overflow-hidden rounded border p-3 text-left outline-none transition-[background-color,border-color,transform] duration-150 active:scale-[0.985] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+      className="relative flex h-[304px] w-[300px] max-w-full flex-col overflow-hidden rounded border p-3 text-left outline-none transition-[background-color,border-color,transform] duration-150 active:scale-[0.985] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
       style={{
         color: HUD.text,
         borderColor: selected ? tile.projectColor : `${tile.projectColor}4d`,
@@ -269,22 +245,16 @@ function SessionTile({
         boxShadow: selected ? `inset 0 0 0 1px ${tile.projectColor}1f` : 'none',
       }}
     >
-      <span
-        aria-hidden="true"
-        className="absolute inset-y-3 left-0 w-[3px] rounded-r-full"
-        style={{ background: tile.projectColor }}
-      />
-
-      <span className="flex min-w-0 items-center justify-between pl-1">
+      <span className="flex min-w-0 items-center justify-between">
         <TileTooltip
           label={tile.harness === 'claude' ? 'Claude Code' : 'Codex'}
         >
           <span
             aria-label={tile.harness === 'claude' ? 'Claude Code' : 'Codex'}
-            className="inline-flex h-4 w-4 items-center justify-center"
+            className="inline-flex h-5 w-5 items-center justify-center"
             style={{ color: tile.projectColor }}
           >
-            <HarnessGlyph harness={tile.harness} size={11} />
+            <HarnessGlyph harness={tile.harness} size={13} />
           </span>
         </TileTooltip>
         <span className="shrink-0">
@@ -295,57 +265,55 @@ function SessionTile({
         </span>
       </span>
 
-      <span className="mt-2 block min-h-8 pl-1">
+      <span className="mt-2 block min-h-12">
         <SessionGoalSummary
           summary={tile.goal}
           color={tile.projectColor}
-          className="max-w-56"
+          size="comparison"
+          className="max-w-64"
         />
       </span>
 
-      <span className="mt-3 min-w-0 pl-1">
+      <span data-session-now className="mt-3 min-w-0">
         <span
-          className="block font-mono text-[8px] uppercase tracking-[0.16em]"
+          className="block font-mono text-chrome-meta uppercase tracking-[0.14em]"
           style={{ color: HUD.textDim }}
         >
           Now
         </span>
-        <span className="mt-1 line-clamp-2 block min-h-8 text-[11px] leading-4">
+        <span className="mt-1 line-clamp-2 block min-h-10 text-sm leading-5">
           {tile.activity}
         </span>
-      </span>
-
-      <span className="mt-1 min-w-0 pl-1">
         <span
-          className="line-clamp-2 block text-[10px] leading-4"
+          className="mt-1 line-clamp-2 block text-[13px] leading-5"
           style={{ color: HUD.textDim }}
         >
           {tile.meaningfulChange}
         </span>
+        <TileTooltip label={tile.observedAt}>
+          <span
+            data-session-freshness
+            className="mt-1.5 inline-flex font-mono text-xs tabular-nums"
+            style={{ color: HUD.textDim }}
+          >
+            Updated {tile.age} ago
+          </span>
+        </TileTooltip>
       </span>
 
       <span
-        className="mt-auto border-t pl-1 pt-2"
+        data-session-next
+        className="mt-auto border-t pt-2"
         style={{ borderColor: HUD.divider }}
       >
-        <span className="flex items-center justify-between gap-3">
-          <span
-            className="font-mono text-[8px] uppercase tracking-[0.16em]"
-            style={{ color: HUD.textDim }}
-          >
-            Next
-          </span>
-          <TileTooltip label={tile.observedAt}>
-            <span
-              className="font-mono text-[9px] tabular-nums"
-              style={{ color: HUD.textDim }}
-            >
-              {tile.age} ago
-            </span>
-          </TileTooltip>
+        <span
+          className="font-mono text-chrome-meta uppercase tracking-[0.14em]"
+          style={{ color: HUD.textDim }}
+        >
+          Next
         </span>
         <span className="mt-1 block">
-          <PlanSpine tile={tile} />
+          <PlanStep tile={tile} />
         </span>
       </span>
     </button>
@@ -356,7 +324,7 @@ function LoadingTile() {
   return (
     <div
       aria-hidden="true"
-      className="flex h-[238px] w-[300px] max-w-full animate-pulse flex-col rounded border border-white/10 p-3 motion-reduce:animate-none"
+      className="flex h-[304px] w-[300px] max-w-full animate-pulse flex-col rounded border border-white/10 p-3 motion-reduce:animate-none"
       style={{ background: 'rgba(7,12,20,0.94)' }}
     >
       <div className="h-3 w-28 rounded-sm bg-white/10" />
@@ -524,11 +492,11 @@ export function SessionStateTileStudy() {
                       className="h-3.5 w-[3px] rounded-full"
                       style={{ background: projectColor }}
                     />
-                    <h4 className="font-display text-xs font-semibold">
+                    <h4 className="font-display text-sm font-semibold">
                       {project}
                     </h4>
                     <span
-                      className="font-mono text-[9px] uppercase tracking-[0.1em]"
+                      className="font-mono text-chrome-meta uppercase tracking-[0.1em]"
                       style={{ color: HUD.textDim }}
                     >
                       {projectTiles.length}{' '}

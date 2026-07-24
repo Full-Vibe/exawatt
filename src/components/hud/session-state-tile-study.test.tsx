@@ -41,8 +41,26 @@ describe('SessionStateTileStudy', () => {
     ).not.toBeInTheDocument();
     expect(
       workingTile.querySelector('[data-session-goal-summary]')
-    ).toHaveClass('font-sans', 'text-chrome-label', 'font-normal');
-    expect(within(workingTile).getByText('42s ago')).toBeInTheDocument();
+    ).toHaveClass('font-sans', 'font-normal', 'text-base', 'leading-6');
+
+    const nowRegion = workingTile.querySelector('[data-session-now]');
+    const nextRegion = workingTile.querySelector('[data-session-next]');
+    expect(nowRegion).not.toBeNull();
+    expect(nextRegion).not.toBeNull();
+    expect(
+      within(nowRegion as HTMLElement).getByText('Updated 42s ago')
+    ).toBeInTheDocument();
+    expect(
+      within(nextRegion as HTMLElement).queryByText(/ago$/)
+    ).not.toBeInTheDocument();
+    expect(
+      within(nextRegion as HTMLElement).getByText('Step 2 of 4')
+    ).toBeInTheDocument();
+    expect(
+      within(nextRegion as HTMLElement).queryByText('2/4')
+    ).not.toBeInTheDocument();
+    expect(nextRegion?.querySelector('[aria-hidden="true"]')).toBeNull();
+    expect(workingTile).toHaveClass('h-[304px]', 'w-[300px]');
     expect(screen.getByText('2 Agents')).toBeInTheDocument();
     expect(screen.queryByText('Recovered')).not.toBeInTheDocument();
   });
