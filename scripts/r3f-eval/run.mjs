@@ -419,6 +419,42 @@ async function runTask(browser, task) {
         path: join(REPORT_DIR, `${task.id}-reference-frost.png`),
       });
 
+      const idleHintControl = page.locator(
+        '[data-keyswitch-idle-hint-control]'
+      );
+      const idleHintInitiallyEnabled =
+        (await idleHintControl.getAttribute('aria-pressed')) === 'true';
+      await idleHintControl.click();
+      const idleHintDisabled =
+        (await page
+          .locator('[data-keyswitch-study]')
+          .getAttribute('data-idle-hint-enabled')) === 'false';
+      await idleHintControl.click();
+      await page.waitForFunction(
+        () =>
+          (window.__EVAL_SCENE__?.getObjectByName(
+            'keyswitch-cap-reference-frost'
+          )?.position.y ?? 0) < -0.012,
+        undefined,
+        { timeout: 4_000 }
+      );
+      const galleryHintTravel = await page.evaluate(
+        () =>
+          window.__EVAL_SCENE__?.getObjectByName(
+            'keyswitch-cap-reference-frost'
+          )?.position.y
+      );
+      await page.waitForFunction(
+        () =>
+          Math.abs(
+            window.__EVAL_SCENE__?.getObjectByName(
+              'keyswitch-cap-reference-frost'
+            )?.position.y ?? 1
+          ) < 0.008,
+        undefined,
+        { timeout: 2_000 }
+      );
+
       const distance = (a, b) =>
         Array.isArray(a) && Array.isArray(b)
           ? Math.hypot(...a.map((value, index) => value - b[index]))
@@ -438,12 +474,16 @@ async function runTask(browser, task) {
             variant.getAttribute('data-keyswitch-variant')
           ),
           pressedVariant: surface?.getAttribute('data-pressed-variant'),
+          idleHintEnabled: surface?.getAttribute('data-idle-hint-enabled'),
           assemblyCount: window.__EVAL_SCENE__
             ? window.__EVAL_SCENE__.getObjectsByProperty(
                 'name',
                 'keyswitch-assembly'
               ).length
             : 0,
+          platformScale:
+            window.__EVAL_SCENE__?.getObjectByName('keyswitch-platform')?.scale
+              .x,
         };
       });
       result.semanticOk =
@@ -460,6 +500,12 @@ async function runTask(browser, task) {
         study.active === 'reference-frost' &&
         study.assemblyCount === 1 &&
         study.pressedVariant === 'none' &&
+        study.idleHintEnabled === 'true' &&
+        study.platformScale === 1 &&
+        idleHintInitiallyEnabled &&
+        idleHintDisabled &&
+        galleryHintTravel < -0.012 &&
+        galleryHintTravel > -0.08 &&
         sculptedShellChecks.length === 2 &&
         sculptedShellChecks.every(
           shell =>
@@ -479,6 +525,9 @@ async function runTask(browser, task) {
           reducedTravel,
           movedDistance,
           resetDistance,
+          galleryHintTravel,
+          idleHintInitiallyEnabled,
+          idleHintDisabled,
           sculptedShellChecks,
         })}`
       );
@@ -498,9 +547,82 @@ async function runTask(browser, task) {
           : Number.POSITIVE_INFINITY;
 
       const orbitStart = await cameraPosition();
-      await page.waitForTimeout(900);
+      await page.waitForFunction(
+        start => {
+          const current = window.__EVAL_KEYSWITCH_CAMERA__?.position.toArray();
+          return (
+            Array.isArray(current) &&
+            Math.hypot(...current.map((value, index) => value - start[index])) >
+              0.02
+          );
+        },
+        orbitStart,
+        { timeout: 4_000 }
+      );
       const orbitEnd = await cameraPosition();
       const orbitDistance = distance(orbitStart, orbitEnd);
+
+      const interactionPage = await browser.newPage({
+        viewport: { width: 900, height: 700 },
+      });
+      await interactionPage.goto(url, {
+        waitUntil: 'load',
+        timeout: 30_000,
+      });
+      await interactionPage.waitForFunction(
+        () =>
+          !!window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-smoke-low'),
+        undefined,
+        { timeout: 15_000 }
+      );
+      await interactionPage.waitForFunction(
+        () => {
+          const y = window.__EVAL_SCENE__?.getObjectByName(
+            'keyswitch-cap-smoke-low'
+          )?.position.y;
+          return typeof y === 'number' && y < -0.012 && y > -0.08;
+        },
+        undefined,
+        { timeout: 3_000 }
+      );
+      const firstHintTravel = await interactionPage.evaluate(
+        () =>
+          window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-smoke-low')
+            ?.position.y
+      );
+      await interactionPage.waitForFunction(
+        () =>
+          Math.abs(
+            window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-smoke-low')
+              ?.position.y ?? 1
+          ) < 0.008,
+        undefined,
+        { timeout: 2_000 }
+      );
+      await interactionPage.waitForFunction(
+        () => {
+          const y = window.__EVAL_SCENE__?.getObjectByName(
+            'keyswitch-cap-smoke-low'
+          )?.position.y;
+          return typeof y === 'number' && y < -0.012 && y > -0.08;
+        },
+        undefined,
+        { timeout: 2_000 }
+      );
+      const secondHintTravel = await interactionPage.evaluate(
+        () =>
+          window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-smoke-low')
+            ?.position.y
+      );
+      await interactionPage.waitForFunction(
+        () =>
+          Math.abs(
+            window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-smoke-low')
+              ?.position.y ?? 1
+          ) < 0.008,
+        undefined,
+        { timeout: 2_000 }
+      );
 
       await link.dispatchEvent('pointerdown', { button: 0, pointerId: 1 });
       await page.waitForFunction(
@@ -525,7 +647,16 @@ async function runTask(browser, task) {
       );
 
       await page.emulateMedia({ reducedMotion: 'reduce' });
-      await page.waitForTimeout(250);
+      await page.waitForFunction(
+        () => {
+          const camera = window.__EVAL_KEYSWITCH_CAMERA__;
+          if (!camera) return false;
+          const azimuth = Math.atan2(camera.position.x, camera.position.z);
+          return Math.abs(azimuth + Math.PI * 0.105 * 0.72) < 0.002;
+        },
+        undefined,
+        { timeout: 2_000 }
+      );
       const reducedStart = await cameraPosition();
       await page.waitForTimeout(700);
       const reducedEnd = await cameraPosition();
@@ -544,6 +675,8 @@ async function runTask(browser, task) {
           href: anchor?.getAttribute('href'),
           label: anchor?.getAttribute('aria-label'),
           pressed: root?.getAttribute('data-pressed'),
+          idleHintEnabled: root?.getAttribute('data-idle-hint-enabled'),
+          rootWidth: root?.getBoundingClientRect().width,
           assemblyCount: window.__EVAL_SCENE__
             ? window.__EVAL_SCENE__.getObjectsByProperty(
                 'name',
@@ -556,6 +689,9 @@ async function runTask(browser, task) {
                 'keyswitch-legend-architecture'
               ).length
             : 0,
+          platformScale:
+            window.__EVAL_SCENE__?.getObjectByName('keyswitch-platform')?.scale
+              .x,
           cameraElevation: window.__EVAL_KEYSWITCH_CAMERA__
             ? Math.atan2(
                 window.__EVAL_KEYSWITCH_CAMERA__.position.y - 0.83,
@@ -574,25 +710,100 @@ async function runTask(browser, task) {
         };
       });
 
+      const navigationLink = interactionPage.locator(
+        '[data-architecture-key-link]'
+      );
+      const navigationBox = await navigationLink.boundingBox();
+      if (!navigationBox) throw new Error('Architecture link has no bounds');
+      await interactionPage.mouse.move(
+        navigationBox.x + navigationBox.width / 2,
+        navigationBox.y + navigationBox.height / 2
+      );
+      await interactionPage.mouse.down();
+      await interactionPage.waitForTimeout(100);
+      const heldUrl = interactionPage.url();
+      await interactionPage.evaluate(() => {
+        const root = document.querySelector(
+          '[data-home-architecture-keyswitch]'
+        );
+        window.__EVAL_NAV_BOUNDARY__ = null;
+        window.__EVAL_RELEASE_START__ = performance.now();
+        const observer = new MutationObserver(() => {
+          if (root?.getAttribute('data-navigation-state') !== 'navigating') {
+            return;
+          }
+          window.__EVAL_NAV_BOUNDARY__ = {
+            delayMs: performance.now() - window.__EVAL_RELEASE_START__,
+            position: Number(root.getAttribute('data-release-position')),
+          };
+          observer.disconnect();
+        });
+        if (root) observer.observe(root, { attributes: true });
+      });
+      await interactionPage.mouse.up();
+      const releaseRequestedUrl = interactionPage.url();
+      const releaseRequestedState = await interactionPage.evaluate(() => ({
+        position: window.__EVAL_SCENE__?.getObjectByName(
+          'keyswitch-cap-smoke-low'
+        )?.position.y,
+        navigation: document
+          .querySelector('[data-home-architecture-keyswitch]')
+          ?.getAttribute('data-navigation-state'),
+      }));
+      await interactionPage.waitForFunction(
+        () => window.__EVAL_NAV_BOUNDARY__ !== null,
+        undefined,
+        { timeout: 3_000 }
+      );
+      const navigationBoundary = await interactionPage.evaluate(
+        () => window.__EVAL_NAV_BOUNDARY__
+      );
+      await interactionPage.waitForURL('**/architecture', { timeout: 5_000 });
+      const navigatedUrl = interactionPage.url();
+      await interactionPage.close();
+
       result.semanticOk =
         semantics.rootCount === 1 &&
         semantics.href === '/architecture' &&
         semantics.label === 'Open Exawatt architecture' &&
         semantics.pressed === 'false' &&
+        semantics.idleHintEnabled === 'true' &&
+        semantics.rootWidth <= 350.5 &&
         semantics.assemblyCount === 1 &&
         semantics.architectureLegendCount === 1 &&
-        semantics.cameraElevation > 0.48 &&
-        semantics.cameraElevation < 0.62 &&
+        Math.abs(semantics.platformScale - 0.84) < 0.0001 &&
+        semantics.cameraElevation > 0.63 &&
+        semantics.cameraElevation < 0.69 &&
         Math.abs(semantics.cameraAzimuth) < 0.34 &&
+        firstHintTravel < -0.012 &&
+        firstHintTravel > -0.08 &&
+        secondHintTravel < -0.012 &&
+        secondHintTravel > -0.08 &&
         pressedTravel < -0.22 &&
-        orbitDistance > 0.05 &&
-        reducedDistance < 0.002;
+        orbitDistance > 0.02 &&
+        reducedDistance < 0.002 &&
+        heldUrl.endsWith('/eval/t8-home-keyswitch') &&
+        releaseRequestedUrl.endsWith('/eval/t8-home-keyswitch') &&
+        ['releasing', 'navigating'].includes(
+          releaseRequestedState.navigation
+        ) &&
+        Math.abs(navigationBoundary.position) < 0.008 &&
+        navigationBoundary.delayMs > 0 &&
+        navigatedUrl.endsWith('/architecture') &&
+        navigationBoundary.delayMs < 3_000;
       result.notes.push(
         `home-keyswitch: ${JSON.stringify({
           ...semantics,
           pressedTravel,
+          firstHintTravel,
+          secondHintTravel,
           orbitDistance,
           reducedDistance,
+          heldUrl,
+          releaseRequestedUrl,
+          releaseRequestedState,
+          navigationBoundary,
+          navigatedUrl,
         })}`
       );
       if (!result.semanticOk)
@@ -619,6 +830,7 @@ async function runTask(browser, task) {
   if (result.hardFail) pts = Math.min(pts, 15); // gate 1: no GL/shader error
   if (!result.nonBlank) pts = Math.min(pts, 15); // gate 2: actually painted
   if (!result.semanticOk) pts = Math.min(pts, 15); // gate 3: semantic fixture
+  if (result.errors.length > 0) pts = Math.min(pts, 15); // gate 4: run completed
   result.score = pts;
 
   await page.close();

@@ -1,8 +1,16 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ComponentRef } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import type { ComponentRef, RefObject } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import {
   ContactShadows,
@@ -364,8 +372,39 @@ const SMOKE_LOW_VARIANT =
   KEYSWITCH_VARIANTS.find(variant => variant.id === 'smoke-low') ??
   KEYSWITCH_VARIANTS[0];
 const HOME_ORBIT_TARGET = new THREE.Vector3(...SMOKE_LOW_VARIANT.target);
-const HOME_ORBIT_PERIOD_SECONDS = 16;
+const HOME_ORBIT_PERIOD_SECONDS = 26;
 const HOME_ORBIT_AMPLITUDE = Math.PI * 0.105;
+const HOME_ORBIT_ELEVATION = Math.PI * 0.21;
+const IDLE_HINT_DELAY_MS = 2400;
+const IDLE_HINT_DEPTH = 0.18;
+const IDLE_HINT_DURATION_SECONDS = 0.72;
+
+type IdleHintPhase = 'waiting' | 'running' | 'done';
+
+interface IdleHintTimeline {
+  elapsed: number;
+  phase: IdleHintPhase;
+}
+
+function smoothStep(progress: number) {
+  const clamped = THREE.MathUtils.clamp(progress, 0, 1);
+  return clamped * clamped * (3 - 2 * clamped);
+}
+
+function sampleIdleHint(elapsed: number) {
+  if (elapsed < 0.13) return IDLE_HINT_DEPTH * smoothStep(elapsed / 0.13);
+  if (elapsed < 0.29) {
+    return IDLE_HINT_DEPTH * (1 - smoothStep((elapsed - 0.13) / 0.16));
+  }
+  if (elapsed < 0.4) return 0;
+  if (elapsed < 0.53) {
+    return IDLE_HINT_DEPTH * smoothStep((elapsed - 0.4) / 0.13);
+  }
+  if (elapsed < IDLE_HINT_DURATION_SECONDS) {
+    return IDLE_HINT_DEPTH * (1 - smoothStep((elapsed - 0.53) / 0.19));
+  }
+  return 0;
+}
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -479,19 +518,21 @@ function HomeOrbitCamera({ reduced }: { reduced: boolean }) {
 
   useFrame((state, delta) => {
     const aspect = size.width / Math.max(size.height, 1);
-    const radius = aspect < 1.12 ? 6.2 : 5.65;
+    const distance = aspect < 1.12 ? 7.1 : 6.65;
+    const radius = Math.cos(HOME_ORBIT_ELEVATION) * distance;
+    const cameraY =
+      HOME_ORBIT_TARGET.y + Math.sin(HOME_ORBIT_ELEVATION) * distance;
     let angle = -HOME_ORBIT_AMPLITUDE * 0.72;
 
     if (!reduced) {
       phase.current +=
-        Math.min(delta, 0.05) *
-        ((Math.PI * 2) / HOME_ORBIT_PERIOD_SECONDS);
+        Math.min(delta, 0.05) * ((Math.PI * 2) / HOME_ORBIT_PERIOD_SECONDS);
       angle = Math.sin(phase.current) * HOME_ORBIT_AMPLITUDE;
     }
 
     camera.position.set(
       Math.sin(angle) * radius,
-      4.2,
+      cameraY,
       Math.cos(angle) * radius
     );
     camera.lookAt(HOME_ORBIT_TARGET);
@@ -503,7 +544,13 @@ function HomeOrbitCamera({ reduced }: { reduced: boolean }) {
   return null;
 }
 
-function Spring({ pressed, reduced }: { pressed: boolean; reduced: boolean }) {
+function Spring({
+  actuation,
+  reduced,
+}: {
+  actuation: RefObject<number>;
+  reduced: boolean;
+}) {
   const spring = useRef<THREE.Group>(null);
   const geometry = useMemo(() => createSpringGeometry(), []);
 
@@ -511,7 +558,7 @@ function Spring({ pressed, reduced }: { pressed: boolean; reduced: boolean }) {
 
   useFrame((state, delta) => {
     if (!spring.current) return;
-    const target = pressed ? 0.62 : 1;
+    const target = 1 - actuation.current * 0.38;
     if (reduced) {
       spring.current.scale.y = target;
       return;
@@ -791,18 +838,18 @@ function Keycap({
 
 function SwitchMechanism({
   variant,
-  pressed,
+  actuation,
   reduced,
 }: {
   variant: KeySwitchVariant;
-  pressed: boolean;
+  actuation: RefObject<number>;
   reduced: boolean;
 }) {
   const stem = useRef<THREE.Group>(null);
 
   useFrame((state, delta) => {
     if (!stem.current) return;
-    const target = pressed ? -0.18 : 0;
+    const target = -0.18 * actuation.current;
     if (reduced) {
       stem.current.position.y = target;
       return;
@@ -866,7 +913,7 @@ function SwitchMechanism({
         </mesh>
       ))}
 
-      <Spring pressed={pressed} reduced={reduced} />
+      <Spring actuation={actuation} reduced={reduced} />
 
       <group ref={stem}>
         <RoundedBox
@@ -918,85 +965,184 @@ function KeySwitchAssembly({
   reduced,
   onPressedChange,
   legend = 'status',
+  idleHint = true,
+  idleHintDelayMs = IDLE_HINT_DELAY_MS,
+  idleHintKey = 0,
+  platformScale = 1,
+  awaitRelease = false,
+  onReleaseSettled,
 }: {
   variant: KeySwitchVariant;
   pressed: boolean;
   reduced: boolean;
   onPressedChange: (pressed: boolean) => void;
   legend?: 'status' | 'architecture';
+  idleHint?: boolean;
+  idleHintDelayMs?: number;
+  idleHintKey?: number | string;
+  platformScale?: number;
+  awaitRelease?: boolean;
+  onReleaseSettled?: (position: number) => void;
 }) {
   const cap = useRef<THREE.Group>(null);
+  const actuation = useRef(0);
+  const hintTimeline = useRef<IdleHintTimeline>({
+    elapsed: 0,
+    phase: 'done',
+  });
+  const hintTimeout = useRef<number | null>(null);
+  const releasePosition = useRef(0);
+  const releaseReported = useRef(false);
   const [hovered, setHovered] = useState(false);
+  const invalidate = useThree(state => state.invalidate);
   useCursor(hovered);
+
+  const dispatchReleaseSettled = useCallback(() => {
+    onReleaseSettled?.(releasePosition.current);
+  }, [onReleaseSettled]);
+
+  useEffect(() => {
+    const timeline = hintTimeline.current;
+    timeline.elapsed = 0;
+    timeline.phase = 'done';
+
+    if (!idleHint || reduced) return;
+    timeline.phase = 'waiting';
+    hintTimeout.current = window.setTimeout(() => {
+      if (timeline.phase !== 'waiting') return;
+      timeline.elapsed = 0;
+      timeline.phase = 'running';
+      invalidate();
+    }, idleHintDelayMs);
+
+    return () => {
+      if (hintTimeout.current !== null) {
+        window.clearTimeout(hintTimeout.current);
+        hintTimeout.current = null;
+      }
+      timeline.phase = 'done';
+    };
+  }, [idleHint, idleHintDelayMs, idleHintKey, invalidate, reduced]);
+
+  useEffect(() => {
+    if (!pressed) return;
+    hintTimeline.current.phase = 'done';
+    if (hintTimeout.current !== null) {
+      window.clearTimeout(hintTimeout.current);
+      hintTimeout.current = null;
+    }
+  }, [pressed]);
+
+  useEffect(() => {
+    if (!awaitRelease) return;
+    releaseReported.current = false;
+    invalidate();
+  }, [awaitRelease, invalidate]);
 
   useFrame((state, delta) => {
     if (!cap.current) return;
-    const target = pressed ? -0.24 : 0;
+    const timeline = hintTimeline.current;
+    let hintedActuation = 0;
+
+    if (!pressed && timeline.phase === 'running') {
+      timeline.elapsed += Math.min(delta, 0.05);
+      hintedActuation = sampleIdleHint(timeline.elapsed);
+      if (timeline.elapsed >= IDLE_HINT_DURATION_SECONDS) {
+        timeline.phase = 'done';
+      } else {
+        state.invalidate();
+      }
+    }
+
+    actuation.current = pressed ? 1 : hintedActuation;
+    const target = -0.24 * actuation.current;
     if (reduced) {
       cap.current.position.y = target;
-      return;
+    } else {
+      cap.current.position.y = THREE.MathUtils.damp(
+        cap.current.position.y,
+        target,
+        18,
+        delta
+      );
+      if (Math.abs(cap.current.position.y - target) > 0.001) {
+        state.invalidate();
+      }
     }
-    cap.current.position.y = THREE.MathUtils.damp(
-      cap.current.position.y,
-      target,
-      18,
-      delta
-    );
-    if (Math.abs(cap.current.position.y - target) > 0.001) state.invalidate();
+
+    if (
+      awaitRelease &&
+      !pressed &&
+      !releaseReported.current &&
+      Math.abs(cap.current.position.y) < 0.008
+    ) {
+      releaseReported.current = true;
+      releasePosition.current = cap.current.position.y;
+      window.setTimeout(dispatchReleaseSettled, 0);
+    }
   });
 
   return (
     <group name="keyswitch-assembly" rotation={[0, variant.objectRotation, 0]}>
-      <RoundedBox
-        args={[2.62, 0.23, 2.62]}
-        position={[0, 0.13, 0]}
-        radius={variant.id === 'opal-pillow' ? 0.29 : 0.18}
-        smoothness={7}
-        castShadow
-        receiveShadow
+      <group
+        name="keyswitch-platform"
+        scale={[platformScale, 1, platformScale]}
       >
-        <meshPhysicalMaterial
-          anisotropy={0.3}
-          clearcoat={0.32}
-          clearcoatRoughness={0.17}
-          color={variant.plateColor}
-          metalness={variant.plateMetalness}
-          roughness={variant.plateRoughness}
-        />
-      </RoundedBox>
-      <RoundedBox
-        args={[2.4, 0.36, 2.4]}
-        position={[0, -0.08, 0]}
-        radius={variant.id === 'smoke-low' ? 0.12 : 0.17}
-        smoothness={6}
-        castShadow
-        receiveShadow
-      >
-        <meshStandardMaterial
-          color={variant.frameColor}
-          metalness={variant.frameMetalness}
-          roughness={0.33}
-        />
-      </RoundedBox>
-      <RoundedBox
-        args={[1.76, 0.055, 1.76]}
-        position={[0, 0.255, 0]}
-        radius={0.1}
-        smoothness={4}
-      >
-        <meshStandardMaterial
-          color={variant.hardwareColor}
-          metalness={0.62}
-          roughness={0.29}
-        />
-      </RoundedBox>
+        <RoundedBox
+          args={[2.62, 0.23, 2.62]}
+          position={[0, 0.13, 0]}
+          radius={variant.id === 'opal-pillow' ? 0.29 : 0.18}
+          smoothness={7}
+          castShadow
+          receiveShadow
+        >
+          <meshPhysicalMaterial
+            anisotropy={0.3}
+            clearcoat={0.32}
+            clearcoatRoughness={0.17}
+            color={variant.plateColor}
+            metalness={variant.plateMetalness}
+            roughness={variant.plateRoughness}
+          />
+        </RoundedBox>
+        <RoundedBox
+          args={[2.4, 0.36, 2.4]}
+          position={[0, -0.08, 0]}
+          radius={variant.id === 'smoke-low' ? 0.12 : 0.17}
+          smoothness={6}
+          castShadow
+          receiveShadow
+        >
+          <meshStandardMaterial
+            color={variant.frameColor}
+            metalness={variant.frameMetalness}
+            roughness={0.33}
+          />
+        </RoundedBox>
+        <RoundedBox
+          args={[1.76, 0.055, 1.76]}
+          position={[0, 0.255, 0]}
+          radius={0.1}
+          smoothness={4}
+        >
+          <meshStandardMaterial
+            color={variant.hardwareColor}
+            metalness={0.62}
+            roughness={0.29}
+          />
+        </RoundedBox>
 
-      <Fastener color={variant.hardwareColor} x={-1.04} z={-1.04} />
-      <Fastener color={variant.hardwareColor} x={1.04} z={-1.04} />
-      <Fastener color={variant.hardwareColor} x={-1.04} z={1.04} />
-      <Fastener color={variant.hardwareColor} x={1.04} z={1.04} />
+        <Fastener color={variant.hardwareColor} x={-1.04} z={-1.04} />
+        <Fastener color={variant.hardwareColor} x={1.04} z={-1.04} />
+        <Fastener color={variant.hardwareColor} x={-1.04} z={1.04} />
+        <Fastener color={variant.hardwareColor} x={1.04} z={1.04} />
+      </group>
 
-      <SwitchMechanism pressed={pressed} reduced={reduced} variant={variant} />
+      <SwitchMechanism
+        actuation={actuation}
+        reduced={reduced}
+        variant={variant}
+      />
 
       <group ref={cap} name={`keyswitch-cap-${variant.id}`}>
         <Keycap legend={legend} variant={variant} />
@@ -1088,11 +1234,15 @@ function ProductScene({
   resetToken,
   pressed,
   onPressedChange,
+  idleHint,
+  idleHintKey,
 }: {
   variant: KeySwitchVariant;
   resetToken: number;
   pressed: boolean;
   onPressedChange: (pressed: boolean) => void;
+  idleHint: boolean;
+  idleHintKey: number;
 }) {
   const reduced = useReducedMotion();
 
@@ -1106,6 +1256,8 @@ function ProductScene({
       <KeySwitchLighting variant={variant} />
 
       <KeySwitchAssembly
+        idleHint={idleHint}
+        idleHintKey={`${variant.id}-${idleHintKey}`}
         onPressedChange={onPressedChange}
         pressed={pressed}
         reduced={reduced}
@@ -1140,9 +1292,15 @@ function ProductScene({
 function HomeArchitectureKeyScene({
   pressed,
   onPressedChange,
+  idleHint,
+  awaitRelease,
+  onReleaseSettled,
 }: {
   pressed: boolean;
   onPressedChange: (pressed: boolean) => void;
+  idleHint: boolean;
+  awaitRelease: boolean;
+  onReleaseSettled: (position: number) => void;
 }) {
   const reduced = useReducedMotion();
 
@@ -1151,8 +1309,12 @@ function HomeArchitectureKeyScene({
       <HomeOrbitCamera reduced={reduced} />
       <KeySwitchLighting variant={SMOKE_LOW_VARIANT} />
       <KeySwitchAssembly
+        awaitRelease={awaitRelease}
+        idleHint={idleHint}
         legend="architecture"
+        onReleaseSettled={onReleaseSettled}
         onPressedChange={onPressedChange}
+        platformScale={0.84}
         pressed={pressed}
         reduced={reduced}
         variant={SMOKE_LOW_VARIANT}
@@ -1173,15 +1335,46 @@ function HomeArchitectureKeyScene({
 
 export function ArchitectureKeySwitchLink({
   evalMode = false,
+  idleHint = true,
 }: {
   evalMode?: boolean;
+  idleHint?: boolean;
 }) {
+  const router = useRouter();
   const [pressed, setPressed] = useState(false);
+  const [awaitingRelease, setAwaitingRelease] = useState(false);
+  const [navigationState, setNavigationState] = useState<
+    'idle' | 'releasing' | 'navigating'
+  >('idle');
+  const root = useRef<HTMLDivElement>(null);
+  const keyboardPressed = useRef(false);
+  const keyboardNavigationPending = useRef(false);
+
+  const navigateAfterRelease = useCallback(() => {
+    setPressed(false);
+    root.current?.setAttribute('data-navigation-state', 'releasing');
+    setNavigationState('releasing');
+    setAwaitingRelease(true);
+  }, []);
+
+  const finishNavigation = useCallback(
+    (position: number) => {
+      root.current?.setAttribute('data-release-position', String(position));
+      root.current?.setAttribute('data-navigation-state', 'navigating');
+      setNavigationState('navigating');
+      setAwaitingRelease(false);
+      router.push('/architecture');
+    },
+    [router]
+  );
 
   return (
     <div
-      className="relative isolate h-[clamp(230px,30vw,320px)] w-[clamp(280px,38vw,410px)]"
+      ref={root}
+      className="relative isolate h-[clamp(200px,24vw,270px)] w-[clamp(250px,31vw,350px)]"
       data-home-architecture-keyswitch
+      data-idle-hint-enabled={idleHint ? 'true' : 'false'}
+      data-navigation-state={navigationState}
       data-pressed={pressed ? 'true' : 'false'}
     >
       <Canvas
@@ -1203,6 +1396,9 @@ export function ArchitectureKeySwitchLink({
       >
         {evalMode && <ExposeEvalRenderer />}
         <HomeArchitectureKeyScene
+          awaitRelease={awaitingRelease}
+          idleHint={idleHint}
+          onReleaseSettled={finishNavigation}
           onPressedChange={setPressed}
           pressed={pressed}
         />
@@ -1213,12 +1409,42 @@ export function ArchitectureKeySwitchLink({
         className="group absolute inset-[3%] z-10 cursor-pointer rounded-[20%] outline-none focus-visible:ring-2 focus-visible:ring-sky-200/90 focus-visible:ring-offset-4 focus-visible:ring-offset-black/80"
         data-architecture-key-link
         href="/architecture"
-        onBlur={() => setPressed(false)}
+        onBlur={() => {
+          keyboardPressed.current = false;
+          keyboardNavigationPending.current = false;
+          setPressed(false);
+        }}
+        onClick={event => {
+          if (
+            event.button !== 0 ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.altKey
+          ) {
+            return;
+          }
+          event.preventDefault();
+          if (event.detail === 0 && keyboardPressed.current) {
+            keyboardNavigationPending.current = true;
+            return;
+          }
+          navigateAfterRelease();
+        }}
         onKeyDown={event => {
-          if (!event.repeat && event.key === 'Enter') setPressed(true);
+          if (!event.repeat && event.key === 'Enter') {
+            keyboardPressed.current = true;
+            setPressed(true);
+          }
         }}
         onKeyUp={event => {
-          if (event.key === 'Enter') setPressed(false);
+          if (event.key !== 'Enter') return;
+          keyboardPressed.current = false;
+          setPressed(false);
+          if (keyboardNavigationPending.current) {
+            keyboardNavigationPending.current = false;
+            navigateAfterRelease();
+          }
         }}
         onPointerCancel={() => setPressed(false)}
         onPointerDown={event => {
@@ -1233,10 +1459,18 @@ export function ArchitectureKeySwitchLink({
   );
 }
 
-export function KeySwitchStudy({ evalMode = false }: { evalMode?: boolean }) {
+export function KeySwitchStudy({
+  evalMode = false,
+  idleHint = true,
+}: {
+  evalMode?: boolean;
+  idleHint?: boolean;
+}) {
   const [variantId, setVariantId] = useState(KEYSWITCH_VARIANTS[0].id);
   const [pressed, setPressed] = useState(false);
   const [resetToken, setResetToken] = useState(0);
+  const [idleHintEnabled, setIdleHintEnabled] = useState(idleHint);
+  const [idleHintKey, setIdleHintKey] = useState(0);
   const variant =
     KEYSWITCH_VARIANTS.find(candidate => candidate.id === variantId) ??
     KEYSWITCH_VARIANTS[0];
@@ -1251,6 +1485,7 @@ export function KeySwitchStudy({ evalMode = false }: { evalMode?: boolean }) {
       className="overflow-hidden rounded-[2px] border"
       data-active-keyswitch-variant={variant.id}
       data-keyswitch-study
+      data-idle-hint-enabled={idleHintEnabled ? 'true' : 'false'}
       data-material-count={KEYSWITCH_VARIANTS.length}
       data-pressed-variant={pressed ? variant.id : 'none'}
       style={{
@@ -1281,6 +1516,8 @@ export function KeySwitchStudy({ evalMode = false }: { evalMode?: boolean }) {
           <color attach="background" args={[variant.background]} />
           {evalMode && <ExposeEvalRenderer />}
           <ProductScene
+            idleHint={idleHintEnabled}
+            idleHintKey={idleHintKey}
             onPressedChange={setPressed}
             pressed={pressed}
             resetToken={resetToken}
@@ -1317,6 +1554,20 @@ export function KeySwitchStudy({ evalMode = false }: { evalMode?: boolean }) {
           type="button"
         >
           Reset view
+        </button>
+
+        <button
+          aria-pressed={idleHintEnabled}
+          className="absolute right-5 top-16 rounded-sm border bg-slate-950/55 px-3 py-2 font-mono text-[9px] uppercase tracking-[0.16em] text-slate-100 outline-none backdrop-blur-sm transition-colors hover:bg-slate-950/70 focus-visible:ring-2 focus-visible:ring-sky-200 sm:right-7 sm:top-[4.25rem]"
+          data-keyswitch-idle-hint-control
+          onClick={() => {
+            setIdleHintEnabled(enabled => !enabled);
+            setIdleHintKey(key => key + 1);
+          }}
+          style={{ borderColor: 'rgba(226, 240, 246, 0.32)' }}
+          type="button"
+        >
+          Idle cue · {idleHintEnabled ? 'on' : 'off'}
         </button>
 
         <button
