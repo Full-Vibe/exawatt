@@ -49,10 +49,10 @@ const TASKS = [
   },
   {
     id: 't7-keyswitch',
-    name: 'Translucent keyswitch material studies',
-    // Three full mechanisms + one-shot Drei environment/contact-shadow bake.
-    // This demand-loop product study parks after load; it is not a fleet field.
-    drawCallMax: 160,
+    name: 'Interactive individual keyswitch studies',
+    // One complete mechanism + one-shot Drei environment/contact-shadow bake.
+    // The viewer swaps the specimen in place and parks after interaction.
+    drawCallMax: 60,
     settleMs: 1_200,
   },
 ];
@@ -275,47 +275,108 @@ async function runTask(browser, task) {
     }
 
     if (task.id === 't7-keyswitch') {
-      const optic = page.locator('[data-keyswitch-variant="optic"]');
-      await optic.dispatchEvent('pointerdown');
+      const canvas = page.locator('canvas');
+      const box = await canvas.boundingBox();
+      if (!box) throw new Error('Keyswitch Canvas has no bounding box');
+
+      const initialCamera = await page.evaluate(() =>
+        window.__EVAL_KEYSWITCH_CAMERA__?.position.toArray()
+      );
+      await page.mouse.move(
+        box.x + box.width * 0.12,
+        box.y + box.height * 0.46
+      );
+      await page.mouse.down();
+      await page.mouse.move(
+        box.x + box.width * 0.24,
+        box.y + box.height * 0.56,
+        { steps: 10 }
+      );
+      await page.mouse.up();
+      await page.waitForTimeout(250);
+      const movedCamera = await page.evaluate(() =>
+        window.__EVAL_KEYSWITCH_CAMERA__?.position.toArray()
+      );
+
+      await page.locator('[data-keyswitch-camera-reset]').click();
+      await page.waitForTimeout(120);
+      const resetCamera = await page.evaluate(() =>
+        window.__EVAL_KEYSWITCH_CAMERA__?.position.toArray()
+      );
+
+      const travel = page.locator('[data-keyswitch-travel-control]');
+      await travel.dispatchEvent('pointerdown');
       await page.waitForFunction(
         () =>
-          window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-optic')
-            ?.position.y < -0.16,
+          window.__EVAL_SCENE__?.getObjectByName(
+            'keyswitch-cap-reference-frost'
+          )?.position.y < -0.16,
         { timeout: 2_000 }
       );
       const pressedTravel = await page.evaluate(
         () =>
-          window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-optic')
-            ?.position.y
+          window.__EVAL_SCENE__?.getObjectByName(
+            'keyswitch-cap-reference-frost'
+          )?.position.y
       );
-      await optic.dispatchEvent('pointerup');
+      await travel.dispatchEvent('pointerup');
       await page.waitForFunction(
         () =>
           Math.abs(
-            window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-optic')
-              ?.position.y ?? 1
+            window.__EVAL_SCENE__?.getObjectByName(
+              'keyswitch-cap-reference-frost'
+            )?.position.y ?? 1
           ) < 0.01,
         { timeout: 2_000 }
       );
 
       await page.emulateMedia({ reducedMotion: 'reduce' });
       await page.waitForTimeout(60);
-      await optic.dispatchEvent('pointerdown');
+      await travel.dispatchEvent('pointerdown');
       await page.waitForFunction(
         () =>
           Math.abs(
-            (window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-optic')
-              ?.position.y ?? 1) + 0.18
+            (window.__EVAL_SCENE__?.getObjectByName(
+              'keyswitch-cap-reference-frost'
+            )?.position.y ?? 1) + 0.18
           ) < 0.0001,
         { timeout: 2_000 }
       );
       const reducedTravel = await page.evaluate(
         () =>
-          window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-optic')
-            ?.position.y
+          window.__EVAL_SCENE__?.getObjectByName(
+            'keyswitch-cap-reference-frost'
+          )?.position.y
       );
-      await optic.dispatchEvent('pointerup');
+      await travel.dispatchEvent('pointerup');
       await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+      for (const variant of ['optic-clear', 'smoke-low', 'opal-pillow']) {
+        await page.locator(`[data-keyswitch-variant="${variant}"]`).click();
+        await page.waitForFunction(
+          expected =>
+            document
+              .querySelector('[data-keyswitch-study]')
+              ?.getAttribute('data-active-keyswitch-variant') === expected,
+          variant
+        );
+        await page.waitForTimeout(350);
+        await canvas.screenshot({
+          path: join(REPORT_DIR, `${task.id}-${variant}.png`),
+        });
+      }
+      await page.locator('[data-keyswitch-variant="reference-frost"]').click();
+      await page.waitForTimeout(350);
+      await canvas.screenshot({
+        path: join(REPORT_DIR, `${task.id}-reference-frost.png`),
+      });
+
+      const distance = (a, b) =>
+        Array.isArray(a) && Array.isArray(b)
+          ? Math.hypot(...a.map((value, index) => value - b[index]))
+          : Number.POSITIVE_INFINITY;
+      const movedDistance = distance(initialCamera, movedCamera);
+      const resetDistance = distance(initialCamera, resetCamera);
 
       const study = await page.evaluate(() => {
         const surface = document.querySelector('[data-keyswitch-study]');
@@ -324,19 +385,39 @@ async function runTask(browser, task) {
         );
         return {
           materialCount: surface?.getAttribute('data-material-count'),
+          active: surface?.getAttribute('data-active-keyswitch-variant'),
           variants: variants.map(variant =>
             variant.getAttribute('data-keyswitch-variant')
           ),
           pressedVariant: surface?.getAttribute('data-pressed-variant'),
+          assemblyCount: window.__EVAL_SCENE__
+            ? window.__EVAL_SCENE__.getObjectsByProperty(
+                'name',
+                'keyswitch-assembly'
+              ).length
+            : 0,
         };
       });
       result.semanticOk =
-        study.materialCount === '3' &&
-        ['optic', 'satin', 'smoke'].every(id => study.variants.includes(id)) &&
+        study.materialCount === '4' &&
+        ['reference-frost', 'optic-clear', 'smoke-low', 'opal-pillow'].every(
+          id => study.variants.includes(id)
+        ) &&
+        study.active === 'reference-frost' &&
+        study.assemblyCount === 1 &&
+        study.pressedVariant === 'none' &&
         pressedTravel < -0.16 &&
-        Math.abs(reducedTravel + 0.18) < 0.0001;
+        Math.abs(reducedTravel + 0.18) < 0.0001 &&
+        movedDistance > 0.05 &&
+        resetDistance < 0.05;
       result.notes.push(
-        `keyswitch-study: ${JSON.stringify({ ...study, pressedTravel, reducedTravel })}`
+        `keyswitch-study: ${JSON.stringify({
+          ...study,
+          pressedTravel,
+          reducedTravel,
+          movedDistance,
+          resetDistance,
+        })}`
       );
       if (!result.semanticOk)
         result.errors.push('Keyswitch material-study semantics failed');

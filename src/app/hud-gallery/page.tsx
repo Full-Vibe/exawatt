@@ -91,7 +91,7 @@ const SECTIONS: Section[] = [
   {
     id: 'keyswitch-material-studies',
     title: 'Translucent agent key / keyswitch',
-    meta: 'physical study · three comparable polycarbonate treatments',
+    meta: 'interactive physical study · four material and geometry treatments',
     showcase: <KeySwitchStudy />,
   },
   {
@@ -459,7 +459,7 @@ export default function HudGallery() {
                 ref={el => {
                   sectionRefs.current[s.id] = el;
                 }}
-                className={`hud-reveal scroll-mt-10 outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan/40 ${
+                className={`hud-reveal scroll-mt-20 outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan/40 ${
                   revealed.has(s.id) ? 'is-in' : ''
                 }`}
               >
