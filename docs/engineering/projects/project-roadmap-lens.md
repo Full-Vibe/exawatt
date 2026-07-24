@@ -429,3 +429,59 @@ lab is back to the real strip + rail against fixture states.
   opening any repo doc.
 - The v3→v4 `workspace.json` upgrade is covered by
   `workspace-persistence.test.ts` and a manual restore.
+
+## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
+
+On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —
+status, concise scope, exit criteria, a one-line milestone list, and links —
+so the top-level sequence is readable in one screen. The milestone narratives
+and status history that lived in the roadmap until that date are preserved
+verbatim below, exactly as written, including their dates. The roadmap remains
+canonical for sequence and status; this log is the durable execution detail it
+points to. Nothing here is new material: it is the ENG-017 roadmap entry as it
+stood on 2026-07-24.
+
+<!-- Verbatim: docs/engineering/roadmap.md ENG-017 entry, 2026-07-24. Do not reword. -->
+
+### ENG-017 Project roadmap lens
+
+Status: active-build — S0-S11 landed through 2026-07-12; RE-HOMED 2026-07-20 (operator, landed same day): the lens's home moved from the Terminal view to the Sessions altitude (S12) — Sessions is the zoomed-out view and the roadmap is zoomed-out context; Terminal keeps only per-session mirrors. Earlier framing: INFLATED 2026-07-11 (operator UX interview + external research pass) with a second arc S6-S10: the built rail is correct but not yet FELT — it rests as a low-signal sliver, linking rarely engages, and it only reads. The second arc makes the lens ambient, sequence-first, attention-integrated, and mirrored into the agent-first surfaces. Design resolved 2026-07-11 (operator design interview; created 2026-07-10, operator dogfood interview). The operator's stated goal for parallel agents is that each one "has enough food to eat" — a well-defined roadmap it can execute autonomously for hours, eventually days. That state stays canonical, durable, and malleable **in each project's repo** (roadmap docs exactly like this file); Exawatt does not own it. What Exawatt adds is a really good visualization of it: the roadmap sequence within each Project and what each agent is currently chewing through, as part of context-at-a-glance. Design resolution: a keyboard-first, read-only roadmap rail in the workspace, scoped to the focused Project, built on a shared view-model that a future spatial/GPU expression consumes unchanged.
+
+Scope:
+
+- publish the Exawatt roadmap convention (`docs/product/reference/roadmap-convention.md`) and read it with a tolerant, diagnostic-honest parser; repos adapt to the published convention, and the parser reports unrecognized structure instead of guessing (amended 2026-07-11 from "stay format-tolerant rather than inventing a proprietary format" — the operator wants a published markdown convention as the definition API compatible repos target)
+- linear single queue per Project in v1 — deliberately enforces canon sequential execution; parallel/multi-track roadmaps recorded as future
+- visualize sequence, status, and what each live session is executing; link sessions to items by inference (branch, worktree, title, context summary, commit subjects — with visible confidence and evidence) plus optional declare-at-launch; unmapped sessions stay visibly unmapped, never guessed
+- read-only first: no editing, no assignment from Exawatt; declared links are machine-local view annotations (`workspace.json`), never repo writes
+- operator decisions (2026-07-11 UX interview): the resting posture stays COLLAPSED but the strip must carry real signal (a readable per-item spine, not a count); the lens is WORK-FIRST — always a sequence answering "where are we, what's next, what's shipped, what's active, what's blocked" (no dates, no gantt precision — position is the schedule); Sessions overview and Spatial are the AGENT-FIRST views and should mirror item context rather than the rail inverting to agents; blocked items and empty queues ("starving") join the existing needs-you attention pipeline — one attention truth
+- current-vs-next semantics (research-backed): "current" is whatever has a live session ATTACHED; "next" is position in the queue; progress renders as honest n/m milestone fractions, never blended percentages; nominal states stay visually quiet — color is reserved for blocked/starving/parse trouble
+- the manipulable lens (feed an item to an agent from the rail, reorder, status transitions) is DESIRED but gated on design play: explore as disposable prototypes first, ship nothing until the operator accepts a top-notch interaction design; the repo file stays the only truth either way
+- future arc, recorded for direction and explicitly not built now: Exawatt manages the queue and assigns agents to it (bridges toward ENG-013), and non-code work classes (marketing, customer outreach, email inboxes — today the operator's work is 80–95% coding agents) flow through the same queue
+
+Exit criteria:
+
+- from the workspace, "what is this agent working on, and what's next in this Project" answers itself without opening the repo's docs
+- the visualization reads from repo state; deleting Exawatt loses no project state
+- the collapsed strip alone answers "roughly where are we, and is anything blocked or starving" from peripheral vision
+- a blocked item or an empty queue reaches the operator through the same attention system as terminal bells (⌘J, badges, optional notifications)
+- linked-session context (item id + milestone fraction) is visible on the agent-first surfaces (Sessions overview tiles; Spatial when unparked)
+
+Milestones:
+
+- S0 Canon (landed 2026-07-11): this entry updated from the shaped design pass; project doc created.
+- S1 Convention + parser (landed 2026-07-11): published convention spec, decision `0011`, `@exawatt/core` roadmap parser with fixture tests; exawatt's own roadmap parses conformant with zero edits.
+- S2 Read-only rail (landed 2026-07-11): validated main-process read IPC, ui-model lens, workspace rail (⌘B summon cycle, keyboard-first queue walk, drill-down, designed empty/none/error states, trust strip), verified by an Electron eval (`scripts/roadmap-rail-eval.mjs`) across fixture and real repos.
+- S3 Inference linking (landed 2026-07-11): closed-vocabulary matcher with id-boundary matching and ambiguity-means-unmapped, per-cwd git evidence IPC (branch/worktree/commit subjects), confidence-encoded session chips (dashed = inferred, evidence tooltips), unmapped shelf, context-bar reciprocal chip that opens the rail drilled to the item.
+- S4 Declare-at-launch (landed 2026-07-11): optional "working on" picker in launch controls (only while the dir follows the active Project), `workspace.json` v3→v4 tab annotation with chained v1→v4 migration tests, declared-overrides-inferred; a declared id the roadmap no longer contains falls to the visible unmapped shelf.
+- S6 Signal-rich strip (landed 2026-07-11): redesign the 36px collapsed strip from a count into a readable spine — one node per queue item in sequence (shipped/now/next glyphs), the current-item node marked by session ATTACHMENT with a subtle activity pulse, blocked/starving as the loudest pixel, hover/keyboard peek; the strip is the resting posture, so it carries the whole "where are we / anything wrong" answer.
+- S7 Sequence-first rail (landed 2026-07-11): the open rail answers the five questions at a glance — agent chips with elapsed time on EVERY attached row (not just the hero), n/m fraction pills throughout, a compact sequence bar in the header (shipped ▰ now ● next ○), suppressed nominal color per the status-discipline rule, and drill-in milestone expansion (the deferred R2 level).
+- S8 Attention integration (landed 2026-07-11, renderer-side): blocked items and queue-empty starvation become first-class needs-you events flowing through the existing attention pipeline (⌘J queue, tab badges, FleetState mirror, default-off native notifications) — no second notification machine.
+- S9 Agent-first mirrors (landed 2026-07-11): Sessions overview tiles and the ⌘K switcher rows carry the linked item id + milestone fraction; Spatial agent pieces adopt the same chip when ENG-004 unparks — the lens's data reaches every surface that answers "what is this agent doing".
+- S10 Manipulable-lens design play (visual-language question RESOLVED 2026-07-12 — round 1 rejected the shipped presentation as dense/mono/unclear dots; round 2's three replacement directions were also rejected: operator chose "keep the shipped version, refine it"; the directions module is retired; the manipulable GESTURES remain gated on a future play session): read-only stays canon until an interaction design is accepted (bridges toward ENG-013).
+- S12 Sessions-altitude home (operator, 2026-07-20; landed 2026-07-20): the roadmap lens re-homes to the Sessions overview — the zoomed-out altitude is where "where are we, what's next" belongs — and leaves the Terminal view entirely (no rail, no collapsed strip; Terminal keeps only the per-session context-bar chip, declare-at-launch, and the S8/S9 attention + tile mirrors). The rail docks as a permanent panel in the Sessions overlay, scoped to the overview's SELECTED Project (roving between tiles re-scopes the plan — the multi-project answer without a merged queue). `⌘B` becomes "open Sessions with the roadmap focused" from anywhere, toggling focus between tiles and rail inside Sessions; the context chip and starving-attention jumps land in Sessions drilled to their item. Read-only posture, keyboard grammar, and repo-file truth are unchanged.
+- S11 Legibility refinement of the shipped rail (landed 2026-07-12): plain-language group headings (Now / Up next / Later), hero progress bar + "Next up:" milestone line + amber "Blocked — reason" line, checkmark milestone checklist with retired strikethrough, capitalized sans pills and section labels, status-token jargon stripped from prose, honest read-only footer, ▰→✓ shipped glyphs; selection scrollIntoView now requires rail focus (was scrolling the page on re-render). Same-day round 3: the manipulable verb is ASSIGN (not feed), progress gestures relabeled in plain language, and Escape backs out of the project-scoped lens (drill → queue → strip + terminal); multi-project roadmap truth explicitly deferred by the operator pending direction refinement.
+- S5 Live watch + polish (landed 2026-07-11): dir-level file watch with debounced change broadcast (survives atomic saves and git rewrites), header sweep + FLIP row motion on reparse, workmusic and compliance-intel adapted to the convention (both parse declared-conformant with zero warnings), honest degradation verified on unadapted ucp-list (none-conformance, counted unparsed lines).
+
+Project doc:
+
+- `docs/engineering/projects/project-roadmap-lens.md`

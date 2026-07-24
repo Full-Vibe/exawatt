@@ -90,3 +90,51 @@ Status: implemented and verified 2026-07-24
 - The production Supabase migration was applied; an authenticated database
   evaluator passed owner-only rows, idempotency, anonymous denial, private
   attachment ownership, wrong-folder denial, and cleanup.
+
+## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
+
+On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —
+status, concise scope, exit criteria, a one-line milestone list, and links —
+so the top-level sequence is readable in one screen. The milestone narratives
+and status history that lived in the roadmap until that date are preserved
+verbatim below, exactly as written, including their dates. The roadmap remains
+canonical for sequence and status; this log is the durable execution detail it
+points to. Nothing here is new material: it is the ENG-021 roadmap entry as it
+stood on 2026-07-24.
+
+<!-- Verbatim: docs/engineering/roadmap.md ENG-021 entry, 2026-07-24. Do not reword. -->
+
+### ENG-021 Objective engine — context at every granularity
+
+Status: active-build — design pass, E1 Session-context labels, and the reusable
+authenticated feedback intake were implemented and verified on 2026-07-24;
+later Objective Engine granularities remain planned
+
+Direction (operator framing): context text should answer “why does this
+Session exist / what was I working on / why was I doing it?” quickly enough to
+page the work-world back into memory. It is not a live activity ticker. A
+related follow-up keeps the established label; a genuinely unrelated operator
+instruction establishes a new work-world; returning to an earlier work-world
+may restore its label. Sessions used as a scratchpad still receive the best
+current topic guess rather than a blank or model control token.
+
+The first executable slice replaces W0.4's periodic, output-volume-driven local
+CLI subtitle guess with an authenticated, server-owned inference path triggered
+by submitted operator instructions. Electron retains and persists the last good
+label across offline/provider failures. A new Session may temporarily show a
+meaningful launch instruction; an attachment-only launch shows **New agent**,
+never a temporary file path. The server uses bounded, redacted operator evidence
+and structured output; it does not persist inference excerpts. See the
+[Objective Engine project](projects/objective-engine.md) and decision `0019`.
+
+The same slice adds authenticated product feedback available to every signed-in
+user. Fast label votes and exact-label corrections write through the general
+feedback intake; **Help → Submit Feedback…** accepts broader bugs, ideas, text,
+and optional screenshots. Production feedback is evidence. A sanitized,
+versioned gold corpus in the repository remains the reproducible tuning and
+regression gate.
+
+Builds on ENG-015 S4 context paging and ENG-016 D21's durable-Session storage,
+but explicitly supersedes the `KEEP` / `NO_GOAL` control-token prompt and PTY
+output sweep as the Session-label decision mechanism. Recap generation remains
+a separate “what changed while away?” concern.

@@ -143,3 +143,61 @@ ENG-019 follows ENG-003. It adds source-aware atomic-turn completion and
 versioned repo handoffs under `.exawatt/sessions/`, with user/shared/local policy
 precedence. Exawatt reports repository-instruction compliance but does not run
 git for agents.
+
+## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
+
+On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —
+status, concise scope, exit criteria, a one-line milestone list, and links —
+so the top-level sequence is readable in one screen. The milestone narratives
+and status history that lived in the roadmap until that date are preserved
+verbatim below, exactly as written, including their dates. The roadmap remains
+canonical for sequence and status; this log is the durable execution detail it
+points to. Nothing here is new material: it is the ENG-018 roadmap entry as it
+stood on 2026-07-24.
+
+<!-- Verbatim: docs/engineering/roadmap.md ENG-018 entry, 2026-07-24. Do not reword. -->
+
+### ENG-018 Deterministic session rehydration
+
+Status: done — shipped and accepted 2026-07-11 in signed `v0.1.4` → `v0.1.5`.
+Exawatt does not keep local agent processes alive after explicit quit and does
+not install a companion
+daemon, tmux backend, or LaunchAgent. Instead, the logical Session survives:
+workspace placement, exact provider conversation identity, lifecycle state, and
+bounded terminal history restore without spawning. The operator explicitly
+resumes agents after relaunch. This is the near-term reliability contract;
+uninterrupted background execution remains a future, separately justified
+capability rather than an assumed requirement.
+
+Scope:
+
+- durable Session identity distinct from ephemeral PTY process identity and
+  exact provider conversation identity; migrate workspace persistence v4→v5
+- crash-safe, machine-local, bounded terminal history with atomic writes,
+  restrictive permissions, serialized append journals with bounded compaction,
+  periodic checkpoints, and corruption isolation
+- one shutdown coordinator for explicit quit and update restart: concise native
+  warning when processes are live, a pre-stop checkpoint, process termination,
+  a verified-stopped commit, and no orphan background runtime
+- quiet rehydration: restore workspace, history, and honest lifecycle status
+  without auto-starting; exact per-agent resume and count-named agents-only
+  workspace recovery;
+  shells remain stopped and can start a new shell in place
+- literal acceptance with multiple real Claude and Codex sessions, a shell,
+  cancel/confirm quit, crash recovery, and a signed version-to-version update
+- bounded, churn-tolerant Codex discovery and pre-spawn/launch-time identity
+  association plus an atomic main-owned durable identity index; parallel agents
+  never use latest/cwd guessing or reorder terminal input
+
+Exit criteria:
+
+- confirmed quit leaves no agent, shell, daemon, or launchd process behind
+- relaunch reconstructs each logical Session and its retained history without
+  starting work; exact resume never falls back to latest/cwd guessing
+- the quit and restored states are obvious from compact status and contextual
+  actions, without persistent explanatory copy or a startup modal
+- automated coverage and the literal multi-agent/update exercise both pass
+
+Project doc:
+
+- `docs/engineering/projects/deterministic-session-rehydration.md`

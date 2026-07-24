@@ -409,3 +409,55 @@ The day-one parity questions are resolved. Installation, exact-ID relaunch,
 terminal fundamentals, and chrome trust now execute under ENG-016. Codex exact
 session-ID capture remains a named D3 implementation requirement with an
 explicit-picker fallback; recency-based inference is not allowed.
+
+## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
+
+On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —
+status, concise scope, exit criteria, a one-line milestone list, and links —
+so the top-level sequence is readable in one screen. The milestone narratives
+and status history that lived in the roadmap until that date are preserved
+verbatim below, exactly as written, including their dates. The roadmap remains
+canonical for sequence and status; this log is the durable execution detail it
+points to. Nothing here is new material: it is the ENG-002 roadmap entry as it
+stood on 2026-07-24.
+
+<!-- Verbatim: docs/engineering/roadmap.md ENG-002 entry, 2026-07-24. Do not reword. -->
+
+### ENG-002 Agent Terminal Workspace (dogfood parity)
+
+Status: active-build — RESHAPED 2026-07-02 (was "Electron local OpenClaw pseudo-parity") to target the canonical operator workflow (`docs/product/operator-workflow.md`): replicate the operator's real daily setup — Projects → terminal tabs → parallel coding agents in git worktrees — inside Exawatt, then improve it incrementally. W0.1-W0.4 landed and parity is real; excellence moved to ENG-015. ENG-016 now owns adoption blockers and continuous dogfood evidence. ENG-002 closes when accumulated use establishes Exawatt as the operator's normal coding-agent surface; agents do not wait for a fixed dogfood week.
+
+Scope:
+
+- agent-first terminal hosting in the Electron app: real PTY sessions (node-pty, Electron main) rendered with xterm.js — but the product gesture is "launch an agent" (pick a harness: Claude Code, Codex, plain shell; pick or create a git worktree), NOT generic terminal multiplexing (decision `0005`)
+- tmux-like session view: talk to agent harness TUIs directly inside Exawatt — a FIRST-CLASS UI REGIME in its own right (operator, 2026-07-03: "a dressed-up, augmented, way-better TMUX interface that's AI-native"), developed IN PARALLEL with the spatial regime per the modular-UI-regimes architecture (ENG-004): independent skins over the same session/fleet system, not a stepping stone the map replaces
+- launch always requires a project directory (no silent home-dir default — home is meaningless as an initiative and harness trust doesn't stick there); the last-used directory is remembered and prefilled
+- the working directory (repo root / worktree) is the GROUPING KEY mapping sessions to a Project/Initiative (a resolvable Project / Context Group lens per `concepts.md`): same-project tabs share a color and cluster adjacently, different projects get distinct colors
+- workspace structure mirrors the operator workflow: Initiative-labeled windows containing session tabs (a thin slice of ENG-005 — labels and grouping only, not the full Initiative primitive)
+- restart persistence of layout, names, worktrees, and working dirs (running
+  processes do not survive restarts; ENG-018 adds deterministic rehydration,
+  not a detached backend, per decision `0012`)
+- per-session status normalized into the SAME FleetState the DOM board and spatial surface consume — real sessions become the live data source (feeds ENG-004 V1.3)
+- fast keyboard driving end to end (initiative/window/tab switching at Spaces speed)
+- incremental context layer per the operator arc: naming, auto-summarized micro-context subtitles ("what was I working on here?"), then context augmentation
+- hybrid rendering rule stands: terminal text and controls remain DOM (decision `0003`). AMENDED 2026-07-06 (operator): the spatial surface is NO LONGER framed as this workspace's overview/switcher — the regimes deliberately diverge (see ENG-015 and ENG-004); game-feel investment in the terminal regime itself happens under ENG-015
+- Live Mode and Demo Mode using the same UI architecture
+
+Exit criteria:
+
+- accumulated operator use establishes Exawatt as the normal surface for real daily coding-agent work (1–6 agents across 2+ Projects); ENG-016 records fallbacks while implementation continues rather than waiting on a fixed week
+- launching a new Claude Code or Codex agent in a fresh worktree is one gesture
+- live sessions appear in `/fleet` and `/fleet/spatial` with truthful status
+- Demo Mode demonstrates the same flows without live agents
+
+Milestones:
+
+- W0.1 PTY foundation (landed): node-pty + xterm.js in the Electron shell; spawn a real shell and an interactive Claude Code session in a chosen cwd; full TUI fidelity.
+- W0.2 Workspace parity (landed): directory-required launch (harness picker, worktree create/pick, last-used-dir memory) + directory-keyed project clustering with per-project tab colors and adjacency + restart persistence with auto-revive + fast keyboard switching.
+- W0.3 Fleet truth (landed): live PTY sessions normalize into FleetState via LocalSessionsTransport (core, injected-source boundary); the board and the spatial map show real sessions with truthful status (working/idle by output recency, complete/error by exit code); closed tabs leave the fleet. Desktop app = local truth, web keeps Demo/OC.
+- W0.4 Context layer (landed): double-click rename for tabs/initiatives (persisted, propagated to the PTY so fleet/spatial share the identity); auto-summarized micro-context subtitles (main-process summarizer over recent scrollback via the operator's authenticated `claude` CLI, haiku, hard cost caps) rendered in tabs AND as the agent's goal on the fleet/spatial surfaces; the summarizer module is the context-augmentation seam.
+- W0.5 Spatial cockpit — RESCOPED 2026-07-06 (operator): retired as an ENG-002 milestone. The regimes deliberately DIVERGE rather than converge: the terminal regime's excellence arc is ENG-015 (attention, speed, exposé/motion, context paging), and the map's evolution toward an RTS-style at-scale command surface lives in ENG-004. Live sessions already render on the map (W0.3); driving sessions from the map returns as ENG-004 work when that regime's identity firms up.
+
+Project doc:
+
+- `docs/engineering/projects/agent-terminal-workspace.md`

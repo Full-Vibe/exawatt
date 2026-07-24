@@ -665,3 +665,54 @@ Review round (high, workflow, 10 findings — all fixed same day):
   into one generic `subscribe<T>(channel)` factory.
 - Re-verified after fixes: 214 unit tests (20 monitor — 4 new regression
   cases), type-check, electron compile, 13/13 live smoke re-run.
+
+## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
+
+On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —
+status, concise scope, exit criteria, a one-line milestone list, and links —
+so the top-level sequence is readable in one screen. The milestone narratives
+and status history that lived in the roadmap until that date are preserved
+verbatim below, exactly as written, including their dates. The roadmap remains
+canonical for sequence and status; this log is the durable execution detail it
+points to. Nothing here is new material: it is the ENG-015 roadmap entry as it
+stood on 2026-07-24.
+
+<!-- Verbatim: docs/engineering/roadmap.md ENG-015 entry, 2026-07-24. Do not reword. -->
+
+### ENG-015 Stellar small-fleet command (1–10 agents)
+
+Status: active-build — created 2026-07-06 (operator): before any long-arc work, the UI for operating one to ten agents must be stellar, top-notch. Grows directly out of ENG-002 parity; the investment target is the TERMINAL regime as the approachable daily driver.
+
+Divergence direction (operator, 2026-07-06; navigation amended 2026-07-10): the two UI regimes deliberately keep distinct jobs and visual identities. The terminal workspace stays a "solid, robust, approachable" AI-native tmux++ sized for 1–10 agents; AgentField evolves separately toward an RTS-style command map at fleet scale. They are now one **command-altitude continuum for navigation**: Terminal Focus is near, Session Overview / exposé is the middle altitude, and Spatial Command is far. This joins orientation and movement, not rendering architecture—the terminal remains DOM/xterm, the field remains R3F, and both remain long-lived regimes over the same session system.
+
+Scope (the four excellence phases):
+
+- attention: harness-aware "this agent needs you" detection (bell/notify sequences + turn-boundary quiescence), badges, an attention queue with a jump key, macOS dock signals — and the same truth mirrored into FleetState so every surface agrees
+- command-altitude navigation: a persistent, visible Terminal → Sessions → Spatial control in the Electron shell; each altitude is one click or one absolute shortcut away (`⌃⌘1`, `⌃⌘2`, `⌃⌘3` since ENG-016 D19) from terminal focus, Sessions, Spatial search, and xterm input
+- command velocity: keyboard-first everything — global fuzzy session switcher, split panes, complete no-mouse coverage of daily actions, shortcut discoverability
+- exposé & motion: game-feel in the terminal regime — a zoomable live-tile overview of all sessions, animated switching, depth/motion in the chrome (reduced-motion respected)
+- context paging: research-backed support for swapping human working memory between dramatically different contexts — visual identity anchors (per-initiative generated emblems), re-entry recaps, "while you were away" delta digests, stable spatial addresses, boundary-batched interruptions; idea bank in the project doc
+- generic for any user (no operator-bespoke tuning); personal taste routes to future settings
+
+Exit criteria:
+
+- running 5–10 parallel agents daily, no stalled or asking agent goes unnoticed for more than a few seconds
+- every daily action is keyboard-reachable; reaching any session takes ≲2 keystrokes via the switcher
+- the overview → focus → overview loop feels game-quality (motion, depth, zero jank)
+- after switching initiatives, "where was I here?" answers itself in ~2 seconds without reading scrollback
+- the operator judges the daily-driver experience stellar (subjective bar is the real bar)
+
+Milestones:
+
+- S1 Attention system (landed 2026-07-06): needs-you detection in the PTY layer (BEL / OSC 9 / OSC 777 + work-burst-then-quiescence state machine for harness sessions, env-tunable thresholds), pulsing tab badges + initiative counts, oldest-first ⌘J attention queue, dock badge/bounce when the app is unfocused, attention mapped into FleetState as 'blocked' + blockerInfo, and ⌘⇧M two-way regime switching. Turn-boundary thresholds expect dogfood tuning.
+- S2 Command velocity (landed 2026-07-09): ⌘K session switcher (fuzzy over name/project/micro-context, live status rows, needs-you first, works from inside terminals), palette launch commands, ⌘D split panes (pin one, drive the other, persisted), ⌘E inline rename, ⌘/ cheat-sheet incl. the workspace chords, no-mouse coverage of every daily verb.
+- S3 Exposé, motion & discoverability (landed 2026-07-10 — reshaped same day from operator dogfood round 4): the workspace must SHOW its powers — "how is this better than tmux" must answer itself on first look. ⌘O exposé overview (sessions as rich tiles: project color, harness mark, micro-context, needs-you pulse, live scrollback preview; keyboard-driven, staggered entrance, reduced-motion respected), a persistent bottom key-hint bar (mirrors the spatial map's legend, also in the empty state), workspace verbs (overview / rename / color / split / jump / close / map) in the ⌘K palette with their chords, hover/pressed states on tabs, app-wide forced dark theme (palette/dialogs no longer follow OS light mode), clearer action language ("+ Claude Code" buttons, "launch" tooltips — "launch" stays internal), Next devIndicators off, and terminal typography settings (userData settings.json → xterm + spawn estimates; family, size, line height, cell spacing, and raster weight correction; operator's Meslo 14 configured locally; the DEFAULT stays the native stack per the genericize rule). Normal terminal text is neutral near-white rather than HUD-tinted; accents stay in chrome and semantic colors. Pane-content switch animation deliberately skipped: terminals + motion = reflow jank; motion lives in the chrome.
+- S3.1 Command-altitude continuum (landed 2026-07-10; absolute-key refinement landed 2026-07-12): promoted the prior exposé/AgentField question into a navigation decision. The Electron title bar persistently exposes Terminal → Sessions → Spatial on both `/workspace` and `/fleet/spatial`; D12 replaces the contextual `⌘O` / `⌘⇧M` toggles with absolute `⌘1` / `⌘2` / `⌘3` destinations. `/workspace?view=sessions` deep-links the middle altitude without restarting PTYs; terminal content visibly recedes into exposé with reduced-motion crossfade parity; and automated browser plus real-Electron round trips prove a live shell survives the route/shortcut cycle. DOM/xterm and R3F runtime boundaries remain distinct.
+- S4 Context paging (active-build): start with a quiet re-entry experience — re-entry recap card and delta digests (summarizer evolves from "what is happening" to "what changed since you last looked") — then evaluate per-initiative generated emblems and stable spatial addresses. Notification delivery starts less noisy: ordinary progress and successful completion stay ambient or wait for a natural pause; stopped work that needs input or hit an error may signal without stealing focus. Treat this policy as a dogfood hypothesis, not a permanent rule. First slice landed 2026-07-10: main-process last-visit checkpoints and delta-only recap generation feed a non-modal active-session card; dogfood tuning determines the next slice. AMENDED 2026-07-20 (operator dogfood): the floating recap card failed its hypothesis — it lands seconds after the operator has already started reading and demands a dismissal. The popup is retired; recap delivery moves ambient (inline in the context bar, no dismissal debt) under ENG-016 D18. The summarizer seam and the context-paging direction remain canonical.
+- S5 Durable Projects (landed 2026-07-10; interaction model amended 2026-07-12 by ENG-016 D14 and decision `0013`): rename, Supabase registry + `projects` reclaim migration applied to prod, resolution bridge, missing-dir locate, and synced identity/color remain the durable base. D14 completes the missing lifecycle boundary: `⌘N` opens a curated Exawatt chooser, opening a Project is inert, zero-Session Projects persist, closing the last tab no longer forgets the Project, and optional one-level parent-folder import is explicitly reviewed. The registry remains shared truth; local workspace state remains the offline fallback.
+
+Sequencing: precedes ENG-003 and all long-arc items (operator, 2026-07-06: excellence at 1–10 before the long arc).
+
+Project doc:
+
+- `docs/engineering/projects/stellar-small-fleet.md`

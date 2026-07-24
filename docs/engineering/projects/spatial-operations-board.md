@@ -1088,3 +1088,84 @@ Scope:
 - command-palette integration and durable projection preference
 - keep the DOM `/fleet` board as the accessible dense-text sibling
 - keep `/hud-gallery` as a development workbench only
+
+## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
+
+On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —
+status, concise scope, exit criteria, a one-line milestone list, and links —
+so the top-level sequence is readable in one screen. The milestone narratives
+and status history that lived in the roadmap until that date are preserved
+verbatim below, exactly as written, including their dates. The roadmap remains
+canonical for sequence and status; this log is the durable execution detail it
+points to. Nothing here is new material: it is the ENG-004 roadmap entry as it
+stood on 2026-07-24.
+
+<!-- Verbatim: docs/engineering/roadmap.md ENG-004 entry, 2026-07-24. Do not reword. -->
+
+### ENG-004 Modular UI regimes and Spatial Operations Board
+
+Status: active-build — EXPERIENCE PASS UNPARKED 2026-07-20 (operator): "take us past the spatial experience… super good graphics, really smooth, navigable, excellent transitions between states in spatial mode and between spatial and other modes." V2.4 owns that pass and executes now; V2.1–V2.3 stay gated on dogfood evidence. (History: PARKED 2026-07-10 at the operator dogfood interview while the daily-driver arc landed.) V2.0 **Spatial Operations Board** landed 2026-07-10; V2.1–V2.3 remain planned follow-on work. V0.1–V1.3.1 remain implementation history and evidence, but their immersive 3D composition is superseded. The operator rejected free-camera 3D, floating islands, oversized world objects, and decorative depth after repeated Live Mode review. The replacement is a restrained R3F-rendered 2D/2.5D tactical board: stable automatic Project zones, anchored Agents, semantic zoom, top-down and fixed-angle projections, and a visible transition into the Session workspace. Decision `0007` records the reversal while preserving decision `0003`'s R3F and DOM/WebGL boundaries. Dogfood may reopen visual or interaction hypotheses without reopening the retired motif by default.
+
+Identity note (operator, 2026-07-06; superseded and clarified 2026-07-10): this regime remains distinct from the terminal workspace, but its character is now a **solid operations map**, not an immersive world. Draw from RTS command maps, desktop spatial organization, and restrained dense-canvas tools: stable coordinates, compact pieces, strong selection, a minimap, and useful zoom-level simplification. R3F remains the rendering technology for scale and future visual range; three-dimensionality is optional presentation depth, not the interaction model.
+
+Navigation decision (operator, 2026-07-10): exposé is the middle command
+altitude between terminal focus and AgentField. A persistent Electron-shell
+control exposes Terminal, Sessions, and Spatial as one continuum with direct
+click targets and visible shortcuts. This does not merge the routes or renderers:
+xterm/DOM and R3F remain separate regimes over shared session/fleet truth.
+
+Scope:
+
+- keep `/fleet` as the DOM operations UI for dense text, forms, chat, and accessible controls
+- keep `/fleet/spatial` as the Three.js / React Three Fiber Spatial Operations Board over the same fleet state
+- introduce a pure `@exawatt/ui-model` boundary for shared selectors, view models, spatial layout data, and typed command contracts
+- keep the spatial surface in the UI layer; do not let it import provider-specific protocol types or replace Agent Source abstractions
+- prepare the spatial surface for later extraction into an independently packageable surface or Electron entrypoint
+- make the spatial surface a durable command regime, with the DOM board as a sibling and fallback
+- render a stable tactical substrate grouped by Project / Context Group; tiles are visual texture in V2.0, not movement, capacity, or territory semantics
+- ship one consolidated spatial route and command model with altitude-specific render regimes: Fleet aggregates Initiatives/Projects and health, Project reveals anchored Agent pieces, and Agent provides orientation before entering the Session workspace
+- provide top-down orthographic and shallow fixed-angle projections over the same layout and selection state; do not support free orbit
+- preserve automatic deterministic layout now and reserve user-authored placement, drawing, resizing, and persistence for a later named phase
+- use depth, lighting, and material effects only when they improve hierarchy and interaction feedback
+- introduce Attention Scheduling as a product and UI-model concern for routing scarce human cognition to high-leverage blocker, approval, and decision moments
+
+Exit criteria:
+
+- DOM and spatial fleet surfaces render from the same UI-facing model
+- Demo Mode and Live Mode use the same UI-model contracts
+- spatial route can select Agents, surface blockers, and enter the existing Session workspace through a quick visible spatial transition
+- `/fleet` does not load the Three.js bundle unless the user opens spatial mode
+- the first serious demo shows 5–8 Agents across a few Projects as a composed board without planets, floating islands, decorative rooms, or excessive empty world space
+- zoom changes information resolution: Fleet summarizes Initiatives/Projects, Project exposes compact named Agent units, and Agent exposes Session orientation rather than scaling the same glyphs
+- fleets with tens of thousands of Agents remain navigable through aggregation, instancing, culling, and label budgets rather than one React component or DOM label per Agent
+- top-down and fixed-angle views preserve the same stable spatial addresses and command semantics
+- pointer, keyboard, and programmatic camera motion share one damped input model with immediate (<80ms) visual acknowledgment and no discontinuous tap kick or free orbit
+- every Project and Agent that is selectable in WebGL has a focusable DOM equivalent; reduced-motion and low-power modes preserve the complete command path
+- at rest, the demand-rendered scene parks; postprocessing is lazy and low-power gated; performance is measured on the full spatial route, not inferred from isolated draw-call tests
+- the roadmap milestones in `docs/engineering/projects/spatial-operations-board.md` are kept current as work lands
+
+Milestones:
+
+- V0.1 Correct the Metaphor (landed): readable 2.5D Project surfaces, agent tiles, and an operator attention lane.
+- V0.2 Gorgeous 2.5D Command Surface (landed): liquid glass / metal / crystal material system with tasteful state motion.
+- V0.3 Zoom-Resolution Model (landed): fleet, Project, and Agent altitude states with increasing information density.
+- V0.4 Attention Scheduling (landed): leverage-aware UI-model selectors for hero attention, secondary attention, and ambient work.
+- V0.5 Fleet-Scale Readiness (landed): semantic clustering and progressive disclosure for dozens to hundreds of agents, preparing for thousands.
+- V1.0 AgentField Command Surface (landed): live fleet state rendered as the canonical AgentField world (instanced cluster map, hero-sector red, blocked-triage circuit, full keyboard); altitude moves the camera; Console 3D removed.
+- V1.1 Feel Pass (landed): camera tuning (framing minimums, gentler flights), held-key glide panning/zoom/orbit, sectors as first-class click/hover targets (generous pick disc + clickable sector labels), drag-guarded clicks, label/tooltip polish.
+- V1.2 Meaning Pass (landed): the world shows _why and what to do_ — the hero blocker renders an in-world callout with its Attention Schedule reason (click = select, opening the panel's clear/focus flows), sector labels carry the zone statLine (agents/blocked/$rate), and nodes blip when live activity lands on their agent.
+- V1.3 Semantic Regimes & Feel Recovery (landed 2026-07-10): restored the Fleet → Project → Agent information-resolution model; added stable tactile Project/Agent regimes with screen-aligned DOM controls; corrected camera, tooltip, identity, finite-motion, selection, and postprocessing behavior; made narrow layouts scroll to the inspector with compact touch controls; and added a repeatable full-route spatial evaluator covering S/M/L, keyboard descent/ascent, desktop/mobile, reduced motion, low power, WebGL errors, and idle-frame parking. The same pass fixed authoritative Demo fleet replacement so scaling 150 → 8 cannot leave stale agents in shared state.
+- V1.3.1 Live Sparse-Fleet Composition Recovery (superseded 2026-07-10): implementation and verification evidence remain useful, but operator review rejected the underlying 3D motif. Its failed sparse fixture remains a permanent regression input for V2.0.
+- V2.0 Spatial Operations Board (landed 2026-07-10; B0–B5): canonical reversal and research archive; deterministic board layout; orthographic tactical renderer; semantic aggregation; anchored Agent pieces; projection switcher; minimap and robust controls; visible board-to-Session transition with exact semantic-address return; full S/M/L/XL, accessibility, performance, Electron-navigation, and visual acceptance gates. Detailed phase contracts and evidence live in the project doc.
+- V2.1 Scale & Truth (planned): verify density and interaction budgets at 1k, 10k, and representative higher synthetic counts; Initiative-level aggregation; aggregate Project drill; viewport culling; label budgets; frame/memory instrumentation. Live-data truth already enters through ENG-002 W0.3.
+- V2.2 User-authored spatial organization (planned): opt-in drag/reposition, selection groups, drawn/resized Project or team zones, layout persistence, automatic-layout reset, conflict-safe layout versioning, and keyboard equivalents. Draw inspiration from RTS piece manipulation and desktop icon organization without turning layout into source-of-truth ownership semantics.
+- V2.3 Consolidation (planned): decide from dogfood evidence whether spatial becomes the default fleet view; integrate command palette actions; retain `/fleet` as the accessible dense-text sibling and `/hud-gallery` as a development workbench.
+- V2.4 Experience pass — graphics, motion, navigation, transitions (landed 2026-07-20, same day as the unpark; operator visual acceptance pending as dogfood evidence): the V2.0 board is correct but visually flat and mouse-blind; the operator asked for a top-notch experience. Scope: (a) world materiality — lit Project zone plates with per-project accent edges, depth-reading fixed-angle projection, radial-fade grid, emissive status cores on Agent pieces, animated selection, lazy low-power-gated Bloom/Vignette; (b) motion — mount-keyed entrance choreography, breathing status pulses, choreographed altitude flights with crossfading DOM controls; (c) direct navigation — pointer drag-pan and wheel zoom-to-cursor joining the same damped camera model (click guards preserved; still no free orbit); (d) transitions — directional regime overlay (ascending zooms out, descending zooms in), arrival dolly into the board, polished enter-session dive. AMENDS the V2.0 parked-at-rest gate: the visible scene may carry ambient status motion; it parks under reduced motion, low power, and hidden tabs. Decision `0007` constraints (restrained board, ortho projections, DOM chrome ownership, keyboard-first) all hold.
+
+Sequencing note (amended 2026-07-10): V2.0 replaces the V1.3.1 acceptance gate. Execute it in pushed, independently verified phases: canon/research/decision; pure layout model; top-down board; projection/minimap/interaction; Session transition; full release reconciliation. Do not start V2.1 scale optimization or V2.2 manipulation before V2.0 passes its real sparse Live Mode and Demo acceptance fixtures. Do not overinvest in cinematic transition machinery: prove a fast, reversible continuity cue using existing route and terminal lifecycles first.
+
+Per-milestone acceptance detail and progress logs live in the project doc; keep both in sync as work lands.
+
+Project doc:
+
+- `docs/engineering/projects/spatial-operations-board.md`
