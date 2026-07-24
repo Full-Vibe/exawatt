@@ -475,6 +475,9 @@ async function runTask(browser, task) {
           ),
           pressedVariant: surface?.getAttribute('data-pressed-variant'),
           idleHintEnabled: surface?.getAttribute('data-idle-hint-enabled'),
+          idleHintIntervalMs: surface?.getAttribute(
+            'data-idle-hint-interval-ms'
+          ),
           assemblyCount: window.__EVAL_SCENE__
             ? window.__EVAL_SCENE__.getObjectsByProperty(
                 'name',
@@ -501,6 +504,7 @@ async function runTask(browser, task) {
         study.assemblyCount === 1 &&
         study.pressedVariant === 'none' &&
         study.idleHintEnabled === 'true' &&
+        study.idleHintIntervalMs === '10000' &&
         study.platformScale === 1 &&
         idleHintInitiallyEnabled &&
         idleHintDisabled &&
@@ -623,6 +627,27 @@ async function runTask(browser, task) {
         undefined,
         { timeout: 2_000 }
       );
+      const repeatWaitStartedAt = Date.now();
+      await interactionPage.waitForFunction(
+        () => {
+          const y = window.__EVAL_SCENE__?.getObjectByName(
+            'keyswitch-cap-smoke-low'
+          )?.position.y;
+          return typeof y === 'number' && y < -0.012 && y > -0.08;
+        },
+        undefined,
+        { timeout: 12_500 }
+      );
+      const repeatedHintDelayMs = Date.now() - repeatWaitStartedAt;
+      await interactionPage.waitForFunction(
+        () =>
+          Math.abs(
+            window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-smoke-low')
+              ?.position.y ?? 1
+          ) < 0.008,
+        undefined,
+        { timeout: 2_000 }
+      );
 
       await link.dispatchEvent('pointerdown', { button: 0, pointerId: 1 });
       await page.waitForFunction(
@@ -652,7 +677,7 @@ async function runTask(browser, task) {
           const camera = window.__EVAL_KEYSWITCH_CAMERA__;
           if (!camera) return false;
           const azimuth = Math.atan2(camera.position.x, camera.position.z);
-          return Math.abs(azimuth + Math.PI * 0.105 * 0.72) < 0.002;
+          return Math.abs(azimuth + Math.PI * 0.06 * 0.72) < 0.002;
         },
         undefined,
         { timeout: 2_000 }
@@ -676,6 +701,7 @@ async function runTask(browser, task) {
           label: anchor?.getAttribute('aria-label'),
           pressed: root?.getAttribute('data-pressed'),
           idleHintEnabled: root?.getAttribute('data-idle-hint-enabled'),
+          idleHintIntervalMs: root?.getAttribute('data-idle-hint-interval-ms'),
           rootWidth: root?.getBoundingClientRect().width,
           assemblyCount: window.__EVAL_SCENE__
             ? window.__EVAL_SCENE__.getObjectsByProperty(
@@ -709,6 +735,35 @@ async function runTask(browser, task) {
             : Number.POSITIVE_INFINITY,
         };
       });
+
+      await page.setViewportSize({ width: 320, height: 568 });
+      await page.waitForFunction(
+        () => {
+          const root = document.querySelector(
+            '[data-home-architecture-keyswitch]'
+          );
+          return !!root && root.getBoundingClientRect().width <= 190.5;
+        },
+        undefined,
+        { timeout: 2_000 }
+      );
+      const mobileSemantics = await page.evaluate(() => {
+        const root = document.querySelector(
+          '[data-home-architecture-keyswitch]'
+        );
+        const anchor = document.querySelector('[data-architecture-key-link]');
+        const rootRect = root?.getBoundingClientRect();
+        const anchorRect = anchor?.getBoundingClientRect();
+        return {
+          rootWidth: rootRect?.width,
+          rootHeight: rootRect?.height,
+          withinViewport:
+            !!rootRect && rootRect.left >= 0 && rootRect.right <= innerWidth,
+          targetWidth: anchorRect?.width,
+          targetHeight: anchorRect?.height,
+        };
+      });
+      await page.setViewportSize({ width: 900, height: 700 });
 
       const navigationLink = interactionPage.locator(
         '[data-architecture-key-link]'
@@ -762,23 +817,98 @@ async function runTask(browser, task) {
       const navigatedUrl = interactionPage.url();
       await interactionPage.close();
 
+      const homePage = await browser.newPage({
+        viewport: { width: 844, height: 390 },
+      });
+      homePage.on('pageerror', error =>
+        errors.push(String(error.message || error))
+      );
+      homePage.on('console', message => {
+        if (message.type() === 'error') errors.push(message.text());
+      });
+      await homePage.goto(EXA_BASE, {
+        waitUntil: 'load',
+        timeout: 30_000,
+      });
+      await homePage.waitForSelector(
+        '[data-home-hero] [data-home-architecture-keyswitch] canvas',
+        { timeout: 15_000 }
+      );
+      const readHomeLayout = () =>
+        homePage.evaluate(() => {
+          const header = document.querySelector('#site-header');
+          const content = document.querySelector('[data-home-hero-content]');
+          const key = document.querySelector(
+            '[data-home-hero] [data-home-architecture-keyswitch]'
+          );
+          const headerRect = header?.getBoundingClientRect();
+          const contentRect = content?.getBoundingClientRect();
+          const keyRect = key?.getBoundingClientRect();
+          return {
+            viewportWidth: innerWidth,
+            viewportHeight: innerHeight,
+            headerBottom: headerRect?.bottom,
+            contentTop: contentRect?.top,
+            contentBottom: contentRect?.bottom,
+            keyWidth: keyRect?.width,
+            keyHeight: keyRect?.height,
+            keyWithinViewport:
+              !!keyRect &&
+              keyRect.left >= 0 &&
+              keyRect.right <= innerWidth &&
+              keyRect.bottom <= innerHeight,
+          };
+        });
+      const landscapeHomeLayout = await readHomeLayout();
+      await homePage.setViewportSize({ width: 390, height: 844 });
+      await homePage.waitForFunction(
+        () =>
+          document
+            .querySelector('[data-home-hero-content]')
+            ?.getBoundingClientRect().bottom <= innerHeight,
+        undefined,
+        { timeout: 2_000 }
+      );
+      const portraitHomeLayout = await readHomeLayout();
+      await homePage.close();
+
       result.semanticOk =
         semantics.rootCount === 1 &&
         semantics.href === '/architecture' &&
         semantics.label === 'Open Exawatt architecture' &&
         semantics.pressed === 'false' &&
         semantics.idleHintEnabled === 'true' &&
-        semantics.rootWidth <= 350.5 &&
+        semantics.idleHintIntervalMs === '10000' &&
+        semantics.rootWidth <= 290.5 &&
         semantics.assemblyCount === 1 &&
         semantics.architectureLegendCount === 1 &&
         Math.abs(semantics.platformScale - 0.84) < 0.0001 &&
         semantics.cameraElevation > 0.63 &&
         semantics.cameraElevation < 0.69 &&
-        Math.abs(semantics.cameraAzimuth) < 0.34 &&
+        Math.abs(semantics.cameraAzimuth) < 0.21 &&
+        mobileSemantics.rootWidth <= 190.5 &&
+        mobileSemantics.rootHeight <= 150.5 &&
+        mobileSemantics.withinViewport &&
+        mobileSemantics.targetWidth >= 44 &&
+        mobileSemantics.targetHeight >= 44 &&
+        landscapeHomeLayout.contentTop >=
+          landscapeHomeLayout.headerBottom + 8 &&
+        landscapeHomeLayout.contentBottom <=
+          landscapeHomeLayout.viewportHeight &&
+        landscapeHomeLayout.keyWidth <= 212 &&
+        landscapeHomeLayout.keyHeight <= 161 &&
+        landscapeHomeLayout.keyWithinViewport &&
+        portraitHomeLayout.contentTop >= portraitHomeLayout.headerBottom + 8 &&
+        portraitHomeLayout.contentBottom <= portraitHomeLayout.viewportHeight &&
+        portraitHomeLayout.keyWidth <= 190.5 &&
+        portraitHomeLayout.keyHeight <= 150.5 &&
+        portraitHomeLayout.keyWithinViewport &&
         firstHintTravel < -0.012 &&
         firstHintTravel > -0.08 &&
         secondHintTravel < -0.012 &&
         secondHintTravel > -0.08 &&
+        repeatedHintDelayMs >= 8_000 &&
+        repeatedHintDelayMs <= 12_500 &&
         pressedTravel < -0.22 &&
         orbitDistance > 0.02 &&
         reducedDistance < 0.002 &&
@@ -797,8 +927,12 @@ async function runTask(browser, task) {
           pressedTravel,
           firstHintTravel,
           secondHintTravel,
+          repeatedHintDelayMs,
           orbitDistance,
           reducedDistance,
+          mobileSemantics,
+          landscapeHomeLayout,
+          portraitHomeLayout,
           heldUrl,
           releaseRequestedUrl,
           releaseRequestedState,

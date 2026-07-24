@@ -373,9 +373,10 @@ const SMOKE_LOW_VARIANT =
   KEYSWITCH_VARIANTS[0];
 const HOME_ORBIT_TARGET = new THREE.Vector3(...SMOKE_LOW_VARIANT.target);
 const HOME_ORBIT_PERIOD_SECONDS = 26;
-const HOME_ORBIT_AMPLITUDE = Math.PI * 0.105;
+const HOME_ORBIT_AMPLITUDE = Math.PI * 0.06;
 const HOME_ORBIT_ELEVATION = Math.PI * 0.21;
 const IDLE_HINT_DELAY_MS = 2400;
+const IDLE_HINT_REPEAT_INTERVAL_MS = 10_000;
 const IDLE_HINT_DEPTH = 0.18;
 const IDLE_HINT_DURATION_SECONDS = 0.72;
 
@@ -991,6 +992,7 @@ function KeySwitchAssembly({
     phase: 'done',
   });
   const hintTimeout = useRef<number | null>(null);
+  const wasPressed = useRef(false);
   const releasePosition = useRef(0);
   const releaseReported = useRef(false);
   const [hovered, setHovered] = useState(false);
@@ -1001,37 +1003,62 @@ function KeySwitchAssembly({
     onReleaseSettled?.(releasePosition.current);
   }, [onReleaseSettled]);
 
-  useEffect(() => {
+  const startIdleHint = useCallback(() => {
     const timeline = hintTimeline.current;
+    hintTimeout.current = null;
+    if (timeline.phase !== 'waiting') return;
     timeline.elapsed = 0;
-    timeline.phase = 'done';
+    timeline.phase = 'running';
+    invalidate();
+  }, [invalidate]);
 
-    if (!idleHint || reduced) return;
-    timeline.phase = 'waiting';
-    hintTimeout.current = window.setTimeout(() => {
-      if (timeline.phase !== 'waiting') return;
-      timeline.elapsed = 0;
-      timeline.phase = 'running';
-      invalidate();
-    }, idleHintDelayMs);
-
-    return () => {
-      if (hintTimeout.current !== null) {
-        window.clearTimeout(hintTimeout.current);
-        hintTimeout.current = null;
-      }
-      timeline.phase = 'done';
-    };
-  }, [idleHint, idleHintDelayMs, idleHintKey, invalidate, reduced]);
-
-  useEffect(() => {
-    if (!pressed) return;
-    hintTimeline.current.phase = 'done';
+  const stopIdleHint = useCallback(() => {
     if (hintTimeout.current !== null) {
       window.clearTimeout(hintTimeout.current);
       hintTimeout.current = null;
     }
-  }, [pressed]);
+    hintTimeline.current.elapsed = 0;
+    hintTimeline.current.phase = 'done';
+  }, []);
+
+  const queueIdleHint = useCallback(
+    (delayMs: number) => {
+      if (hintTimeout.current !== null) {
+        window.clearTimeout(hintTimeout.current);
+      }
+      hintTimeline.current.elapsed = 0;
+      hintTimeline.current.phase = 'waiting';
+      hintTimeout.current = window.setTimeout(startIdleHint, delayMs);
+    },
+    [startIdleHint]
+  );
+
+  useEffect(() => {
+    stopIdleHint();
+    if (!idleHint || reduced) return;
+    queueIdleHint(idleHintDelayMs);
+    return stopIdleHint;
+  }, [
+    idleHint,
+    idleHintDelayMs,
+    idleHintKey,
+    queueIdleHint,
+    reduced,
+    stopIdleHint,
+  ]);
+
+  useEffect(() => {
+    if (pressed) {
+      wasPressed.current = true;
+      stopIdleHint();
+      return;
+    }
+    if (!wasPressed.current) return;
+    wasPressed.current = false;
+    if (idleHint && !reduced) {
+      queueIdleHint(IDLE_HINT_REPEAT_INTERVAL_MS);
+    }
+  }, [idleHint, pressed, queueIdleHint, reduced, stopIdleHint]);
 
   useEffect(() => {
     if (!awaitRelease) return;
@@ -1049,6 +1076,11 @@ function KeySwitchAssembly({
       hintedActuation = sampleIdleHint(timeline.elapsed);
       if (timeline.elapsed >= IDLE_HINT_DURATION_SECONDS) {
         timeline.phase = 'done';
+        if (idleHint && !reduced) {
+          queueIdleHint(
+            IDLE_HINT_REPEAT_INTERVAL_MS - IDLE_HINT_DURATION_SECONDS * 1000
+          );
+        }
       } else {
         state.invalidate();
       }
@@ -1371,9 +1403,10 @@ export function ArchitectureKeySwitchLink({
   return (
     <div
       ref={root}
-      className="relative isolate h-[clamp(200px,24vw,270px)] w-[clamp(250px,31vw,350px)]"
+      className="relative isolate h-[clamp(150px,19vw,220px)] w-[clamp(190px,25vw,290px)]"
       data-home-architecture-keyswitch
       data-idle-hint-enabled={idleHint ? 'true' : 'false'}
+      data-idle-hint-interval-ms={IDLE_HINT_REPEAT_INTERVAL_MS}
       data-navigation-state={navigationState}
       data-pressed={pressed ? 'true' : 'false'}
     >
@@ -1486,6 +1519,7 @@ export function KeySwitchStudy({
       data-active-keyswitch-variant={variant.id}
       data-keyswitch-study
       data-idle-hint-enabled={idleHintEnabled ? 'true' : 'false'}
+      data-idle-hint-interval-ms={IDLE_HINT_REPEAT_INTERVAL_MS}
       data-material-count={KEYSWITCH_VARIANTS.length}
       data-pressed-variant={pressed ? variant.id : 'none'}
       style={{
