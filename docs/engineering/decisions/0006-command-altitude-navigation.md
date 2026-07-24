@@ -43,7 +43,7 @@ control remains reachable. Escape remains owned by the running TUI while xterm
 has focus; Spatial uses Escape only to clear its own Agent/Project selection.
 
 Refinement (operator, 2026-07-24): Sessions remains one fleet-comparison state.
-Selecting a row may establish focus, but activating it zooms to the exact
+Selecting an item may establish focus, but activating it zooms to the exact
 Terminal Session; Sessions does not expand a second Agent-detail pane or inline
 history. The overview may evolve from tiles toward the region/question state
 projection in [Agent state at a glance](../../product/reference/agent-state.md),

@@ -34,14 +34,15 @@ The same underlying truth should be projected differently by command altitude:
 
 - **Terminal** explains one Session. It owns transcript, commands, evidence,
   retries, tool detail, steering, and the complete Event history.
-- **Sessions** compares open Sessions. It should be a dense, stable list that
-  lets an operator find attention, reorient, and choose where to zoom in.
+- **Sessions** compares open Sessions. It should be a dense, stable set of
+  comparable tiles or rows that lets an operator find attention, reorient, and
+  choose where to zoom in.
 - **Spatial** allocates attention across Projects and larger fleets. It should
   emphasize pressure, topology, delegation, and leverage rather than repeat the
   Sessions table.
 
 Sessions does not contain a second, expanded Agent-detail state. Focus or hover
-may select a row, but activating it navigates to that exact Session in Terminal.
+may select an item, but activating it navigates to that exact Session in Terminal.
 Returning to Sessions should restore the prior Project, ordering, and row
 position so the zoom-out/zoom-in loop preserves orientation.
 

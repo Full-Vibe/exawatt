@@ -39,7 +39,7 @@ import {
   FIXTURE_METRICS,
 } from '@/components/hud/gallery-fixtures';
 import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
-import { SessionStateTableStudy } from '@/components/hud/session-state-table-study';
+import { SessionStateTileStudy } from '@/components/hud/session-state-tile-study';
 
 function TactileActionKeyStudy() {
   const [lastAction, setLastAction] = useState('Ready for input');
@@ -210,10 +210,10 @@ interface Section {
 
 const SECTIONS: Section[] = [
   {
-    id: 'session-state-table',
-    title: 'Session state table',
-    meta: 'review candidate · region / question projection',
-    showcase: <SessionStateTableStudy />,
+    id: 'session-state-tiles',
+    title: 'Session state tiles',
+    meta: 'review candidate · region / question projection in production geometry',
+    showcase: <SessionStateTileStudy />,
   },
   {
     id: 'context-label-feedback',
