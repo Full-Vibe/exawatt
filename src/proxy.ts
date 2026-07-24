@@ -13,6 +13,8 @@ const PUBLIC_PREFIXES = [
   // token. The route validates it directly; cookie middleware would reject
   // the desktop request before that validation can happen.
   '/api/conversations',
+  '/api/context-labels',
+  '/api/feedback',
   '/api/oc',
   '/sign-in',
   '/sign-up',

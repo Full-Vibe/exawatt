@@ -74,6 +74,8 @@ describe('proxy offline authority', () => {
     '/fleet/spatial',
     '/settings',
     '/architecture',
+    '/api/context-labels',
+    '/api/feedback',
     '/',
   ])('never performs network I/O for public path %s', async (path) => {
     const fetchSpy = vi.fn(() => {
