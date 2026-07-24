@@ -883,8 +883,8 @@ async function runTask(browser, task) {
         semantics.assemblyCount === 1 &&
         semantics.architectureLegendCount === 1 &&
         Math.abs(semantics.platformScale - 0.84) < 0.0001 &&
-        semantics.cameraElevation > 0.63 &&
-        semantics.cameraElevation < 0.69 &&
+        semantics.cameraElevation > 0.72 &&
+        semantics.cameraElevation < 0.76 &&
         Math.abs(semantics.cameraAzimuth) < 0.21 &&
         mobileSemantics.rootWidth <= 190.5 &&
         mobileSemantics.rootHeight <= 150.5 &&
