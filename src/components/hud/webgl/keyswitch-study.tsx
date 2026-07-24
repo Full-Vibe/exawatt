@@ -13,11 +13,20 @@ import {
 } from '@react-three/drei';
 import * as THREE from 'three';
 import { STATUS_LIGHT_META } from '@/components/status-light/protocol';
-import { createKeycapGeometry } from './keyswitch-geometry';
+import {
+  createFloatingKeycapGeometry,
+  createKeycapGeometry,
+  floatingKeycapDishDepth,
+} from './keyswitch-geometry';
 
 const ACTIVE_BLUE = STATUS_LIGHT_META.active.color;
 
-type CapShape = 'soft-square' | 'sculpted' | 'low-profile' | 'pillow';
+type CapShape =
+  | 'floating'
+  | 'soft-square'
+  | 'sculpted'
+  | 'low-profile'
+  | 'pillow';
 
 interface KeySwitchVariant {
   id: string;
@@ -69,7 +78,7 @@ const KEYSWITCH_VARIANTS: readonly KeySwitchVariant[] = [
     description:
       'Low frosted PC with a soft square edge, white plate, and visible clear switch shell.',
     materials: 'Frosted PC · white aluminum · POM / POK',
-    capShape: 'soft-square',
+    capShape: 'floating',
     capSize: [1.98, 0.68, 1.98],
     capY: 1.82,
     capRadius: 0.21,
@@ -110,7 +119,7 @@ const KEYSWITCH_VARIANTS: readonly KeySwitchVariant[] = [
     description:
       'A tall dished optical cap that exposes the spring, active stem, and copper contacts.',
     materials: 'Optic PC · bead-blast silver · blue POK',
-    capShape: 'sculpted',
+    capShape: 'floating',
     capSize: [1.92, 0.86, 1.92],
     capY: 1.86,
     capRadius: 0.16,
@@ -151,7 +160,7 @@ const KEYSWITCH_VARIANTS: readonly KeySwitchVariant[] = [
     description:
       'A short smoked cap on graphite hardware, cut by cool edge light and a warm metal rim.',
     materials: 'Smoke PC · graphite aluminum · black POM',
-    capShape: 'low-profile',
+    capShape: 'floating',
     capSize: [2.04, 0.48, 1.92],
     capY: 1.75,
     capRadius: 0.14,
@@ -192,7 +201,7 @@ const KEYSWITCH_VARIANTS: readonly KeySwitchVariant[] = [
     description:
       'Milky opal geometry with a broad pillow radius and champagne-finished mounting plate.',
     materials: 'Opal PC · champagne aluminum · ivory POM',
-    capShape: 'pillow',
+    capShape: 'floating',
     capSize: [2.02, 0.62, 2.02],
     capY: 1.8,
     capRadius: 0.26,
@@ -568,22 +577,44 @@ function InnerCapMaterial({ variant }: { variant: KeySwitchVariant }) {
 }
 
 function Keycap({ variant }: { variant: KeySwitchVariant }) {
-  const geometry = useMemo(() => createKeycapGeometry(), []);
-  useEffect(() => () => geometry.dispose(), [geometry]);
+  const sculptedGeometry = useMemo(() => createKeycapGeometry(), []);
+  const floatingGeometry = useMemo(
+    () =>
+      createFloatingKeycapGeometry({
+        width: variant.capSize[0],
+        height: variant.capSize[1],
+        depth: variant.capSize[2],
+      }),
+    [variant.capSize]
+  );
+  useEffect(() => () => sculptedGeometry.dispose(), [sculptedGeometry]);
+  useEffect(() => () => floatingGeometry.dispose(), [floatingGeometry]);
 
-  const legendY = variant.capY + variant.capSize[1] / 2 + 0.012;
+  const legendY =
+    variant.capY +
+    variant.capSize[1] / 2 -
+    (variant.capShape === 'floating'
+      ? floatingKeycapDishDepth(variant.capSize[1])
+      : 0) +
+    0.012;
   const socketY = variant.capY - variant.capSize[1] / 2 + 0.17;
   const innerSize: [number, number, number] = [
     variant.capSize[0] - 0.2,
     Math.max(0.28, variant.capSize[1] - 0.16),
     variant.capSize[2] - 0.2,
   ];
+  const conformalGeometry =
+    variant.capShape === 'floating'
+      ? floatingGeometry
+      : variant.capShape === 'sculpted'
+        ? sculptedGeometry
+        : null;
 
   return (
     <group>
-      {variant.capShape === 'sculpted' ? (
+      {conformalGeometry ? (
         <mesh
-          geometry={geometry}
+          geometry={conformalGeometry}
           name="keyswitch-cap-outer-shell"
           position={[0, variant.capY, 0]}
           castShadow
@@ -602,14 +633,18 @@ function Keycap({ variant }: { variant: KeySwitchVariant }) {
         </RoundedBox>
       )}
 
-      {/* A generic rounded-box liner can escape the sculpted cap's tapered
-          upper corners. Reuse its exact loft so every cross-section nests. */}
-      {variant.capShape === 'sculpted' ? (
+      {/* A generic rounded-box liner can escape a lofted cap's side profile.
+          Reuse its exact geometry so every cross-section nests. */}
+      {conformalGeometry ? (
         <mesh
-          geometry={geometry}
+          geometry={conformalGeometry}
           name="keyswitch-cap-inner-shell"
           position={[0, variant.capY - 0.035, 0]}
-          scale={[0.9, 0.82, 0.9]}
+          scale={
+            variant.capShape === 'floating'
+              ? [0.88, 0.78, 0.88]
+              : [0.9, 0.82, 0.9]
+          }
         >
           <InnerCapMaterial variant={variant} />
         </mesh>

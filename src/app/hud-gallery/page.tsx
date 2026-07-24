@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { AgentStatus } from '@exawatt/core';
+import { Check, Play, ShieldCheck, Sparkles } from 'lucide-react';
 import {
   CornerBrackets,
   HudFrame,
@@ -11,6 +12,7 @@ import {
   RingGauge,
   StatBar,
   StatusPill,
+  TactileActionKey,
   HUD,
   type HudTone,
 } from '@/components/hud';
@@ -34,6 +36,106 @@ import {
   FIXTURE_METRICS,
 } from '@/components/hud/gallery-fixtures';
 import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
+
+function TactileActionKeyStudy() {
+  const [lastAction, setLastAction] = useState('Ready for input');
+
+  return (
+    <div className="overflow-hidden rounded-[2px] border border-sky-100/15 bg-[#080d12]">
+      <div
+        className="relative flex min-h-[250px] items-center overflow-hidden px-6 py-9 sm:px-10"
+        style={{
+          background:
+            'radial-gradient(80% 110% at 50% 0%, oklch(0.92 0.055 225), transparent 74%), oklch(0.8 0.055 225)',
+        }}
+      >
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/15 to-transparent" />
+        <div className="relative mx-auto flex max-w-3xl flex-wrap items-end justify-center gap-x-7 gap-y-10 sm:justify-between">
+          <div className="flex flex-col items-center gap-3">
+            <TactileActionKey
+              aria-label="Inspect Agent"
+              keySize="square"
+              onClick={() => setLastAction('Agent inspected')}
+              tone="frost"
+            >
+              <Sparkles />
+            </TactileActionKey>
+            <span className="font-mono text-[9px] uppercase tracking-[0.15em] text-slate-700/70">
+              Frost
+            </span>
+          </div>
+
+          <div className="flex flex-col items-center gap-3 sm:-translate-y-3">
+            <TactileActionKey
+              aria-label="Start Agent"
+              keySize="wide"
+              onClick={() => setLastAction('Agent start actuated')}
+              tone="active"
+            >
+              <Play />
+              Start Agent
+            </TactileActionKey>
+            <span className="font-mono text-[9px] uppercase tracking-[0.15em] text-slate-700/70">
+              Active
+            </span>
+          </div>
+
+          <div className="flex flex-col items-center gap-3">
+            <TactileActionKey
+              aria-label="Approve action"
+              keySize="square"
+              onClick={() => setLastAction('Action approved')}
+              tone="opal"
+            >
+              <Check />
+            </TactileActionKey>
+            <span className="font-mono text-[9px] uppercase tracking-[0.15em] text-slate-700/70">
+              Opal
+            </span>
+          </div>
+
+          <div className="flex flex-col items-center gap-3">
+            <TactileActionKey
+              aria-label="Open policy"
+              keySize="square"
+              onClick={() => setLastAction('Policy opened')}
+              tone="smoke"
+            >
+              <ShieldCheck />
+            </TactileActionKey>
+            <span className="font-mono text-[9px] uppercase tracking-[0.15em] text-slate-700/70">
+              Smoke
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-5 border-t border-sky-100/15 px-5 py-4 sm:px-7">
+        <div className="flex items-center gap-4">
+          <TactileActionKey
+            aria-label="Compact Start specimen"
+            onClick={() => setLastAction('Compact Start actuated')}
+            tone="active"
+          >
+            <Play className="size-3.5" />
+            Start
+          </TactileActionKey>
+          <TactileActionKey disabled aria-label="Disabled Start specimen">
+            <Play className="size-3.5" />
+            Start
+          </TactileActionKey>
+        </div>
+        <p
+          aria-live="polite"
+          className="font-mono text-[9px] uppercase tracking-[0.14em]"
+          style={{ color: HUD.textDim }}
+        >
+          {lastAction}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function ContextLabelFeedbackStudy() {
   const [label, setLabel] = useState('Implement cmd+shift+t to reopen tabs');
@@ -140,6 +242,12 @@ const SECTIONS: Section[] = [
         <StatusLightProtocolLegend compact />
       </div>
     ),
+  },
+  {
+    id: 'tactile-action-keys',
+    title: 'Tactile action keys',
+    meta: 'review candidate · native DOM control + physical travel',
+    showcase: <TactileActionKeyStudy />,
   },
   {
     id: 'keyswitch-material-studies',

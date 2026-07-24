@@ -9,8 +9,7 @@ import {
   SquareTerminal,
   TriangleAlert,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { HUD } from '@/components/hud';
+import { HUD, TactileActionKey } from '@/components/hud';
 import {
   Popover,
   PopoverContent,
@@ -1288,10 +1287,11 @@ export function AgentComposer({
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {/* one button system (D32): the primary action wears the system
             accent, never the harness color */}
-          <Button
+          <TactileActionKey
             type="submit"
-            size="sm"
-            className="h-9 shrink-0 font-mono"
+            aria-busy={launching === 'agent'}
+            className="shrink-0"
+            data-agent-start-key
             disabled={
               controlsDisabled ||
               !preferencesReady ||
@@ -1310,7 +1310,7 @@ export function AgentComposer({
               <Play className="h-3.5 w-3.5" />
             )}
             {launching === 'agent' ? 'Starting…' : 'Start'}
-          </Button>
+          </TactileActionKey>
 
           <button
             type="button"
