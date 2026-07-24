@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ExposeOverlay } from './expose-overlay';
+import { registerTerminalPreviewReader } from './terminal-preview-registry';
 import type { Project } from './use-workspace-state';
 
 function render(ui: ReactElement) {
@@ -279,6 +280,41 @@ describe('Sessions overview', () => {
         expect(screen.getAllByText(/all green/).length).toBeGreaterThan(0)
       );
     } finally {
+      delete (window as unknown as { electron?: unknown }).electron;
+    }
+  });
+
+  it('uses xterm screen projections instead of reparsing raw VT streams', async () => {
+    const buffer = vi.fn(async () => '\x1b[45;38Hcorrupt\x1b[0 q');
+    (window as unknown as { electron: unknown }).electron = {
+      pty: { buffer },
+    };
+    const unregister = projects[0].tabs
+      .filter(tab => tab.sessionId)
+      .map(tab =>
+        registerTerminalPreviewReader(tab.sessionId as string, () => [
+          `${tab.title} current screen`,
+        ])
+      );
+    try {
+      render(
+        <ExposeOverlay
+          projects={projects}
+          summaries={{}}
+          attention={{}}
+          activeTabId="tab-a"
+          onPick={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      await waitFor(() =>
+        expect(screen.getByText('Alpha current screen')).toBeInTheDocument()
+      );
+      expect(screen.queryByText(/corrupt/)).not.toBeInTheDocument();
+      expect(buffer).not.toHaveBeenCalled();
+    } finally {
+      unregister.forEach(dispose => dispose());
       delete (window as unknown as { electron?: unknown }).electron;
     }
   });

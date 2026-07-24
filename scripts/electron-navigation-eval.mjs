@@ -29,7 +29,10 @@ try {
   const errors = [];
   page.on('pageerror', error => errors.push(String(error.message || error)));
   page.on('console', message => {
-    if (message.type() === 'error' && !message.text().includes('eval() is not supported')) {
+    if (
+      message.type() === 'error' &&
+      !message.text().includes('eval() is not supported')
+    ) {
       errors.push(message.text());
     }
   });
@@ -48,20 +51,46 @@ try {
     return sessions?.length === 1;
   });
   console.log('[electron-navigation] PTY launched');
+  const sessionId = await page.evaluate(async () => {
+    const [session] = (await window.electron?.pty?.list()) ?? [];
+    if (!session) throw new Error('Launched PTY was not available');
+    await window.electron?.pty?.write(
+      session.id,
+      "printf '\\033[2J\\033[HSESSION_PREVIEW_READY\\033[0 q\\n'\r"
+    );
+    return session.id;
+  });
+  await page.waitForFunction(id => {
+    const terminal = window.__XTERMS__?.[id];
+    if (!terminal) return false;
+    const buffer = terminal.buffer.active;
+    for (let i = 0; i < buffer.length; i += 1) {
+      if (
+        buffer.getLine(i)?.translateToString(true).trim() ===
+        'SESSION_PREVIEW_READY'
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }, sessionId);
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'after-launch.png'),
     fullPage: true,
   });
-  await page.locator('[data-project]').waitFor().catch(async error => {
-    console.error(
-      '[electron-navigation] terminal launch debug',
-      JSON.stringify({
-        errors,
-        sessions: await page.evaluate(() => window.electron?.pty?.list()),
-      })
-    );
-    throw error;
-  });
+  await page
+    .locator('[data-project]')
+    .waitFor()
+    .catch(async error => {
+      console.error(
+        '[electron-navigation] terminal launch debug',
+        JSON.stringify({
+          errors,
+          sessions: await page.evaluate(() => window.electron?.pty?.list()),
+        })
+      );
+      throw error;
+    });
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'terminal.png'),
     fullPage: true,
@@ -73,14 +102,31 @@ try {
   // the PTY spawn failed upstream (e.g. node-pty built for the wrong ABI in
   // a fresh worktree — run `pnpm electron:rebuild`), and the screenshot
   // shows the spawn-error banner that explains it.
-  await page.locator('[data-expose-tile]').waitFor().catch(async error => {
-    await page.screenshot({
-      path: join(SCREENSHOT_DIR, 'sessions-failure.png'),
-      fullPage: true,
+  await page
+    .locator('[data-expose-tile]')
+    .waitFor()
+    .catch(async error => {
+      await page.screenshot({
+        path: join(SCREENSHOT_DIR, 'sessions-failure.png'),
+        fullPage: true,
+      });
+      throw error;
     });
-    throw error;
-  });
   console.log('[electron-navigation] session overview ready');
+  const previewText = await page
+    .locator('[data-expose-tile]')
+    .first()
+    .innerText();
+  if (!previewText.includes('SESSION_PREVIEW_READY')) {
+    throw new Error('Sessions did not read the current emulated xterm screen');
+  }
+  if (previewText.includes('[0 q') || previewText.includes('[2J')) {
+    throw new Error(`Sessions leaked terminal protocol: ${previewText}`);
+  }
+  await page.screenshot({
+    path: join(SCREENSHOT_DIR, 'sessions.png'),
+    fullPage: true,
+  });
 
   await page.locator('[data-command-altitude-level="spatial"]').click();
   await page.waitForURL('**/fleet/spatial');

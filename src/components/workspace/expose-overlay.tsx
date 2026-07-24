@@ -14,6 +14,7 @@ import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import { HarnessGlyph } from './harness-icons';
 import { isDefaultHarnessTitle } from './harnesses';
 import { previewLines } from './scrollback-preview';
+import { readTerminalPreview } from './terminal-preview-registry';
 import {
   SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
@@ -316,6 +317,10 @@ export function ExposeOverlay({
     void (async () => {
       const entries = await Promise.all(
         missing.map(async t => {
+          const terminalPreview = readTerminalPreview(t.sessionId, 5, 90);
+          if (terminalPreview !== null) {
+            return [t.sessionId, terminalPreview] as const;
+          }
           const buf = await api.buffer(t.sessionId).catch(() => '');
           return [t.sessionId, previewLines(buf, 5, 90)] as const;
         })
@@ -420,8 +425,7 @@ export function ExposeOverlay({
     const attentionSignal = tile.sessionId
       ? attention[tile.sessionId]
       : undefined;
-    const needsYou =
-      !!attentionSignal && attentionSignal.kind !== 'turn-end';
+    const needsYou = !!attentionSignal && attentionSignal.kind !== 'turn-end';
     const working = !!(tile.sessionId && activity[tile.sessionId]);
     const fault = tile.stateLabel === 'failed';
     // durable-Session goal (D21): stopped tiles keep their subtitle too
@@ -540,9 +544,13 @@ export function ExposeOverlay({
           className="w-full whitespace-pre font-mono text-[9px] leading-[1.5]"
           style={{ color: HUD.textDim, minHeight: 54, overflow: 'hidden' }}
         >
-          {(tile.sessionId ? previews[tile.sessionId] : undefined)?.join(
-            '\n'
-          ) ?? (tile.live ? '…' : 'process ended — enter opens the tab')}
+          {tile.sessionId && previews[tile.sessionId]
+            ? previews[tile.sessionId].length > 0
+              ? previews[tile.sessionId].join('\n')
+              : 'No visible output — enter opens the terminal'
+            : tile.live
+              ? '…'
+              : 'process ended — enter opens the tab'}
         </div>
       </button>
     );

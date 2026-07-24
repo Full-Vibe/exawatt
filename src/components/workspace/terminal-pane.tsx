@@ -15,6 +15,8 @@ import { FOCUS_ACTIVE_TERMINAL_EVENT } from './session-jump';
 import { TERMINAL_FONT } from './terminal-font';
 import type { EffectiveTerminalFont } from './terminal-font';
 import { findFileLinks } from './terminal-links';
+import { previewTerminalScreen } from './scrollback-preview';
+import { registerTerminalPreviewReader } from './terminal-preview-registry';
 
 export { TERMINAL_FONT, resolveTerminalFont } from './terminal-font';
 export type { EffectiveTerminalFont } from './terminal-font';
@@ -42,7 +44,6 @@ export const HUD_TERM_THEME = {
   brightCyan: '#55EAD4',
   brightWhite: '#FFFFFF',
 };
-
 
 /** where this pane sits (S2 split view): full when alone, left/right when
  *  the active tab shares the surface with the pinned tab, hidden otherwise.
@@ -79,9 +80,10 @@ export function TerminalPane({
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResult, setSearchResult] = useState('0/0');
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(
-    null
-  );
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const searchRef = useRef<{
     findNext(term: string, options?: object): boolean;
@@ -152,6 +154,11 @@ export function TerminalPane({
         theme: HUD_TERM_THEME,
       });
       cleanup.push(() => term.dispose());
+      cleanup.push(
+        registerTerminalPreviewReader(sessionId, (count, maxChars) =>
+          previewTerminalScreen(term.buffer.active, term.rows, count, maxChars)
+        )
+      );
       const fit = new FitAddon();
       term.loadAddon(fit);
       const search = new SearchAddon({ highlightLimit: 2_000 });
@@ -285,7 +292,7 @@ export function TerminalPane({
           if (selection) void api.copyText(selection);
         },
         selectAll: () => term.selectAll(),
-        applyFont: (next) => {
+        applyFont: next => {
           term.options.fontFamily = next.family;
           term.options.fontSize = next.size;
           term.options.lineHeight = next.lineHeight;
