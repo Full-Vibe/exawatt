@@ -22,9 +22,11 @@ import {
   Settings,
   Server,
   SquareTerminal,
+  Blocks,
   type LucideIcon,
 } from 'lucide-react';
 import { signOut } from '@/app/actions/projects';
+import { isAdminEmail } from '@/lib/auth/admin';
 import { CommandAltitudeNav } from './command-altitude-nav';
 import { isAppRoute, surfacesByTier, type AppSurface } from './surfaces';
 
@@ -48,7 +50,9 @@ export function SiteHeaderNav({
   const pathname = usePathname();
   const isHome = pathname === '/';
   const isArchitecture = pathname?.startsWith('/architecture');
+  const isComponentLibrary = pathname?.startsWith('/hud-gallery');
   const isWorkspace = pathname?.startsWith('/workspace');
+  const isAdmin = isAdminEmail(userEmail);
   // in the desktop app the Workspace (terminal) link is always relevant,
   // signed in or not; detected post-mount for hydration safety
   const [inElectron, setInElectron] = useState(false);
@@ -130,6 +134,14 @@ export function SiteHeaderNav({
             <Link href="/architecture" className="text-chrome-title!">
               <Network className="h-3.5 w-3.5" />
               Architecture
+            </Link>
+          </Button>
+        )}
+        {isAdmin && !isComponentLibrary && (
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/hud-gallery">
+              <Blocks className="h-3.5 w-3.5" />
+              Components
             </Link>
           </Button>
         )}

@@ -17,6 +17,11 @@ import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import type { AgentStatus } from '@exawatt/core';
 import {
+  STATUS_LIGHT_META,
+  STATUS_LIGHT_STATES,
+  type StatusLightState,
+} from '@/components/status-light/protocol';
+import {
   HUD,
   TONE_COLOR,
   HUD_STATUS_COLOR,
@@ -117,11 +122,13 @@ function WebglStage({
   w,
   h,
   bloom = true,
+  exposeEval = false,
   children,
 }: {
   w: number;
   h: number;
   bloom?: boolean;
+  exposeEval?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -133,12 +140,14 @@ function WebglStage({
       }}
     >
       <Canvas
+        aria-hidden="true"
         orthographic
         dpr={[1, 2]}
         camera={{ zoom: 1, position: [0, 0, 100], near: 0.1, far: 1000 }}
-        gl={{ antialias: true }}
+        gl={{ antialias: true, preserveDrawingBuffer: exposeEval }}
       >
         <color attach="background" args={[HUD.bg.deep]} />
+        {exposeEval && <ExposeEvalRenderer />}
         <Suspense fallback={null}>
           <FitToWidth width={w}>{children}</FitToWidth>
         </Suspense>
@@ -156,6 +165,20 @@ function WebglStage({
       </Canvas>
     </div>
   );
+}
+
+function ExposeEvalRenderer() {
+  const gl = useThree((state) => state.gl);
+  useEffect(() => {
+    const target = window as unknown as {
+      __EVAL_GL__?: THREE.WebGLRenderer;
+    };
+    target.__EVAL_GL__ = gl;
+    return () => {
+      if (target.__EVAL_GL__ === gl) delete target.__EVAL_GL__;
+    };
+  }, [gl]);
+  return null;
 }
 
 /** Chamfered panel outline (px-space, centered, +y up). TR + BL cut by default. */
@@ -568,6 +591,209 @@ export function WebglPillsScene() {
           </group>
         );
       })}
+    </WebglStage>
+  );
+}
+
+function ActiveSpatialFill({ color }: { color: string }) {
+  const material = useRef<THREE.MeshBasicMaterial>(null);
+  const phase = useRef(0);
+  const reduced = useReducedMotion();
+
+  useFrame((_, delta) => {
+    if (!material.current) return;
+    if (reduced) {
+      material.current.opacity = 0.78;
+      return;
+    }
+    phase.current += Math.min(delta, 0.05) * 2.1;
+    material.current.opacity = 0.7 + Math.sin(phase.current) * 0.12;
+  });
+
+  return (
+    <mesh position={[0, 0, 0.35]}>
+      <circleGeometry args={[7, 32, Math.PI / 2, Math.PI]} />
+      <meshBasicMaterial
+        ref={material}
+        color={color}
+        opacity={0.78}
+        toneMapped={false}
+        transparent
+      />
+    </mesh>
+  );
+}
+
+function SpatialStateMark({ state }: { state: StatusLightState }) {
+  const { color } = STATUS_LIGHT_META[state];
+  const lineProps = {
+    color,
+    lineWidth: 2,
+    raycast: () => null,
+    toneMapped: false,
+  } as const;
+
+  if (state === 'result') {
+    return (
+      <>
+        <mesh>
+          <ringGeometry args={[6.2, 7.5, 32]} />
+          <meshBasicMaterial color={color} toneMapped={false} />
+        </mesh>
+        <Line
+          {...lineProps}
+          points={[
+            [-4.2, 0, 0.4],
+            [-1, -3.2, 0.4],
+            [5.2, 3.6, 0.4],
+          ]}
+        />
+      </>
+    );
+  }
+
+  if (state === 'needs-you') {
+    return (
+      <>
+        <mesh>
+          <ringGeometry args={[6.2, 7.5, 32]} />
+          <meshBasicMaterial color={color} toneMapped={false} />
+        </mesh>
+        <mesh position={[0, 0, 0.4]}>
+          <circleGeometry args={[2.5, 20]} />
+          <meshBasicMaterial color={color} toneMapped={false} />
+        </mesh>
+      </>
+    );
+  }
+
+  if (state === 'fault') {
+    return (
+      <>
+        <mesh>
+          <ringGeometry args={[6.2, 7.5, 32]} />
+          <meshBasicMaterial color={color} toneMapped={false} />
+        </mesh>
+        <Line
+          {...lineProps}
+          points={[
+            [-3.8, -3.8, 0.4],
+            [3.8, 3.8, 0.4],
+          ]}
+        />
+        <Line
+          {...lineProps}
+          points={[
+            [-3.8, 3.8, 0.4],
+            [3.8, -3.8, 0.4],
+          ]}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <mesh>
+        <ringGeometry args={[6.2, 7.5, 32]} />
+        <meshBasicMaterial
+          color={color}
+          opacity={state === 'off' ? 0.38 : 0.9}
+          toneMapped={false}
+          transparent={state === 'off'}
+        />
+      </mesh>
+      {state === 'active' && <ActiveSpatialFill color={color} />}
+    </>
+  );
+}
+
+function SpatialStatusPiece({
+  state,
+  x,
+}: {
+  state: StatusLightState;
+  x: number;
+}) {
+  const { color } = STATUS_LIGHT_META[state];
+  const off = state === 'off';
+  return (
+    <group position={[x, 0, 0]} rotation={[0.08, -0.1, 0]}>
+      <mesh position={[0, -3, -2]} raycast={() => null}>
+        <boxGeometry args={[80, 56, 8]} />
+        <meshStandardMaterial
+          color="#121a20"
+          metalness={0.35}
+          roughness={0.52}
+        />
+      </mesh>
+      <mesh position={[0, -3, 2.2]} raycast={() => null}>
+        <planeGeometry args={[72, 48]} />
+        <meshBasicMaterial color="#172128" />
+      </mesh>
+      <mesh position={[0, -3, 2.5]} raycast={() => null}>
+        <planeGeometry args={[72, 48]} />
+        <meshBasicMaterial
+          color={color}
+          opacity={off ? 0.015 : 0.055}
+          toneMapped={false}
+          transparent
+        />
+      </mesh>
+      <group position={[0, 1, 3.2]}>
+        <mesh position={[0, 0, -0.2]} raycast={() => null}>
+          <circleGeometry args={[14, 32]} />
+          <meshBasicMaterial
+            color={color}
+            opacity={off ? 0.025 : 0.1}
+            toneMapped={false}
+            transparent
+          />
+        </mesh>
+        <SpatialStateMark state={state} />
+      </group>
+      <Line
+        color={off ? '#5F6B75' : color}
+        lineWidth={off ? 1 : 1.4}
+        opacity={off ? 0.35 : 0.72}
+        points={[
+          [-40, 25, 3],
+          [40, 25, 3],
+          [40, -31, 3],
+          [-40, -31, 3],
+          [-40, 25, 3],
+        ]}
+        raycast={() => null}
+        toneMapped={false}
+        transparent
+      />
+    </group>
+  );
+}
+
+/** Review-only spatial siblings for the five-state status-light protocol. */
+export function WebglStatusLightsScene({
+  evalMode = false,
+}: {
+  evalMode?: boolean;
+}) {
+  const step = 100;
+  const startX = -((STATUS_LIGHT_STATES.length - 1) * step) / 2;
+  return (
+    <WebglStage
+      exposeEval={evalMode}
+      h={126}
+      w={STATUS_LIGHT_STATES.length * step + 16}
+    >
+      <ambientLight intensity={1.35} />
+      <directionalLight intensity={2.2} position={[80, 90, 120]} />
+      {STATUS_LIGHT_STATES.map((state, index) => (
+        <SpatialStatusPiece
+          key={state}
+          state={state}
+          x={startX + index * step}
+        />
+      ))}
     </WebglStage>
   );
 }

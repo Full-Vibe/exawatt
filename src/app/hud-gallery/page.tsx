@@ -22,7 +22,12 @@ import {
   WebglGaugesScene,
   WebglPillsScene,
   WebglComposedScene,
+  WebglStatusLightsScene,
 } from '@/components/hud/webgl/scenes';
+import {
+  StatusLightDomSpecimens,
+  StatusLightProtocolLegend,
+} from '@/components/status-light';
 import {
   FIXTURE_AGENTS,
   FIXTURE_METRICS,
@@ -50,6 +55,38 @@ interface Section {
 
 const SECTIONS: Section[] = [
   {
+    id: 'status-lights',
+    title: 'Agent status lights',
+    meta: 'review candidate · five-state priority protocol',
+    dom: <StatusLightDomSpecimens />,
+    webgl: (
+      <div className="flex max-w-3xl flex-col gap-5">
+        <WebglStatusLightsScene />
+        <div className="flex items-start justify-between gap-5">
+          <div>
+            <p className="font-display text-sm font-semibold">
+              Spatial Agent pieces
+            </p>
+            <p
+              className="mt-1 max-w-[55ch] text-xs leading-relaxed"
+              style={{ color: HUD.textDim }}
+            >
+              Status stays in the emissive core. Project zones and identity
+              marks keep their own color channel.
+            </p>
+          </div>
+          <span
+            className="shrink-0 rounded border px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em]"
+            style={{ color: HUD.amber, borderColor: HUD.strokeSoft }}
+          >
+            Not wired
+          </span>
+        </div>
+        <StatusLightProtocolLegend compact />
+      </div>
+    ),
+  },
+  {
     id: 'frames',
     title: 'Frames',
     meta: 'HudFrame — chamfered glass + neon edge',
@@ -71,7 +108,11 @@ const SECTIONS: Section[] = [
             <p className="mt-2 font-display text-lg">Merge open PRs</p>
           </div>
         </HudFrame>
-        <HudFrame className="hud-lift h-[150px] w-48" tone="magenta" intensity={1.2}>
+        <HudFrame
+          className="hud-lift h-[150px] w-48"
+          tone="magenta"
+          intensity={1.2}
+        >
           <CornerBrackets tone="magenta" active corners={['tl', 'br']} />
           <div className="p-4">
             <Label tone="magenta">Selected</Label>
@@ -103,7 +144,7 @@ const SECTIONS: Section[] = [
     dom: (
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-2">
-          {TONES.map((t) => (
+          {TONES.map(t => (
             <Label key={t} tone={t}>
               {t} label
             </Label>
@@ -155,7 +196,7 @@ const SECTIONS: Section[] = [
     meta: 'agent status chip · all six',
     dom: (
       <div className="flex max-w-[320px] flex-wrap gap-2">
-        {STATUSES.map((s) => (
+        {STATUSES.map(s => (
           <StatusPill key={s} status={s} />
         ))}
       </div>
@@ -177,7 +218,12 @@ const SECTIONS: Section[] = [
           <p className="text-sm" style={{ color: HUD.textDim }}>
             {agent.blockerTitle}
           </p>
-          <StatBar label="Cost rate" value={agent.costRate} max={2} tone="amber" />
+          <StatBar
+            label="Cost rate"
+            value={agent.costRate}
+            max={2}
+            tone="amber"
+          />
           <div className="flex gap-6">
             <Readout label="Cost" value={`$${agent.cost.toFixed(2)}`} />
             <Readout label="Turns" value={agent.turnCount} />
@@ -222,9 +268,9 @@ export default function HudGallery() {
   // Highlight the nav for the section nearest the top of the viewport.
   useEffect(() => {
     const io = new IntersectionObserver(
-      (entries) => {
+      entries => {
         const visible = entries
-          .filter((e) => e.isIntersecting)
+          .filter(e => e.isIntersecting)
           .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
         if (visible) setActive(visible.target.id);
       },
@@ -240,8 +286,8 @@ export default function HudGallery() {
   // Reveal each section once as it scrolls into view (fade + rise).
   useEffect(() => {
     const io = new IntersectionObserver(
-      (entries) => {
-        setRevealed((prev) => {
+      entries => {
+        setRevealed(prev => {
           let next = prev;
           for (const e of entries) {
             if (e.isIntersecting && !prev.has(e.target.id)) {
@@ -283,11 +329,12 @@ export default function HudGallery() {
       ) {
         return;
       }
-      const idx = SECTIONS.findIndex((s) => s.id === active);
+      const idx = SECTIONS.findIndex(s => s.id === active);
       let next = -1;
       if (e.key === 'j' || e.key === 'ArrowDown')
         next = Math.min(SECTIONS.length - 1, idx + 1);
-      else if (e.key === 'k' || e.key === 'ArrowUp') next = Math.max(0, idx - 1);
+      else if (e.key === 'k' || e.key === 'ArrowUp')
+        next = Math.max(0, idx - 1);
       else if (e.key === 'Home') next = 0;
       else if (e.key === 'End') next = SECTIONS.length - 1;
       if (next >= 0) {
@@ -326,24 +373,29 @@ export default function HudGallery() {
             HUD library
           </p>
           <ul className="mt-3 flex flex-col gap-0.5">
-            {SECTIONS.map((s) => {
+            {SECTIONS.map(s => {
               const on = s.id === active;
               return (
                 <li key={s.id}>
                   <a
                     href={`#${s.id}`}
-                    onClick={(e) => {
+                    onClick={e => {
                       e.preventDefault();
                       focusSection(s.id);
                     }}
                     aria-current={on ? 'true' : undefined}
-                    className="block rounded-sm border-l-2 px-3 py-1.5 font-ui text-sm outline-none transition-all duration-200 hover:translate-x-0.5 focus-visible:ring-2 focus-visible:ring-hud-cyan"
+                    className="flex items-center gap-2 rounded-sm border px-2.5 py-1.5 font-ui text-sm outline-none transition-[background-color,color,border-color] duration-200 focus-visible:ring-2 focus-visible:ring-hud-cyan"
                     style={{
-                      borderColor: on ? HUD.cyan : 'transparent',
+                      borderColor: on ? HUD.strokeSoft : 'transparent',
                       color: on ? HUD.cyan : HUD.textDim,
                       background: on ? 'rgba(25,230,255,0.06)' : 'transparent',
                     }}
                   >
+                    <span
+                      aria-hidden="true"
+                      className="h-1.5 w-1.5 shrink-0 rounded-full"
+                      style={{ background: on ? HUD.cyan : HUD.strokeSoft }}
+                    />
                     {s.title}
                   </a>
                 </li>
@@ -390,13 +442,13 @@ export default function HudGallery() {
           </header>
 
           <div className="flex flex-col gap-14">
-            {SECTIONS.map((s) => (
+            {SECTIONS.map(s => (
               <section
                 key={s.id}
                 id={s.id}
                 tabIndex={-1}
                 aria-labelledby={`${s.id}-h`}
-                ref={(el) => {
+                ref={el => {
                   sectionRefs.current[s.id] = el;
                 }}
                 className={`hud-reveal scroll-mt-10 outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan/40 ${

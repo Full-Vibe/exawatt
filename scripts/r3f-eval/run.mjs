@@ -41,6 +41,12 @@ const TASKS = [
     drawCallMax: 12,
     settleMs: 800,
   },
+  {
+    id: 't6-status-lights',
+    name: 'Agent status-light protocol',
+    drawCallMax: null,
+    settleMs: 500,
+  },
 ];
 
 // Substrings that mean a real WebGL/shader failure -> hard gate.
