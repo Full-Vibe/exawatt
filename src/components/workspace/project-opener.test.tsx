@@ -5,6 +5,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react';
+import { type ComponentProps, useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectOpener } from './project-opener';
 
@@ -17,6 +18,29 @@ vi.mock('@/lib/projects/registry', () => ({
   listProjects,
   rebindProjectPath,
 }));
+
+function renderControlledProjectOpener({
+  onOpenChange = vi.fn(),
+  ...props
+}: Omit<ComponentProps<typeof ProjectOpener>, 'open' | 'onOpenChange'> & {
+  onOpenChange?: (open: boolean) => void;
+}) {
+  function ControlledProjectOpener() {
+    const [open, setOpen] = useState(true);
+    return (
+      <ProjectOpener
+        {...props}
+        open={open}
+        onOpenChange={next => {
+          onOpenChange(next);
+          setOpen(next);
+        }}
+      />
+    );
+  }
+
+  return render(<ControlledProjectOpener />);
+}
 
 describe('Project opener', () => {
   beforeEach(() => {
@@ -46,17 +70,14 @@ describe('Project opener', () => {
   it('opens a curated Project without creating a Session', async () => {
     const onOpenProject = vi.fn(async () => true);
     const onOpenChange = vi.fn();
-    render(
-      <ProjectOpener
-        open
-        onOpenChange={onOpenChange}
-        workspaceProjects={[
-          { dir: '/project', name: 'Project', color: '#19E6FF' },
-        ]}
-        onOpenProject={onOpenProject}
-        onImportProjects={vi.fn(async () => true)}
-      />
-    );
+    renderControlledProjectOpener({
+      onOpenChange,
+      workspaceProjects: [
+        { dir: '/project', name: 'Project', color: '#19E6FF' },
+      ],
+      onOpenProject,
+      onImportProjects: vi.fn(async () => true),
+    });
 
     fireEvent.click(await screen.findByRole('button', { name: /Project/ }));
     await waitFor(() => expect(onOpenProject).toHaveBeenCalledWith('/project'));
@@ -69,18 +90,16 @@ describe('Project opener', () => {
     vi.mocked(window.electron!.dialog!.openDirectory).mockImplementation(
       async () => {
         expect(onOpenChange).toHaveBeenCalledWith(false);
+        expect(document.querySelector('[data-project-opener]')).toBeNull();
         return null;
       }
     );
-    render(
-      <ProjectOpener
-        open
-        onOpenChange={onOpenChange}
-        workspaceProjects={[]}
-        onOpenProject={vi.fn(async () => true)}
-        onImportProjects={vi.fn(async () => true)}
-      />
-    );
+    renderControlledProjectOpener({
+      onOpenChange,
+      workspaceProjects: [],
+      onOpenProject: vi.fn(async () => true),
+      onImportProjects: vi.fn(async () => true),
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'Browse Folder' }));
     await waitFor(() =>
@@ -102,15 +121,11 @@ describe('Project opener', () => {
           finish = resolve;
         })
     );
-    render(
-      <ProjectOpener
-        open
-        onOpenChange={vi.fn()}
-        workspaceProjects={[]}
-        onOpenProject={vi.fn(async () => true)}
-        onImportProjects={vi.fn(async () => true)}
-      />
-    );
+    renderControlledProjectOpener({
+      workspaceProjects: [],
+      onOpenProject: vi.fn(async () => true),
+      onImportProjects: vi.fn(async () => true),
+    });
 
     const browse = screen.getByRole('button', { name: 'Browse Folder' });
     fireEvent.click(browse);
@@ -133,15 +148,11 @@ describe('Project opener', () => {
       ],
     });
     const onImportProjects = vi.fn(async () => true);
-    render(
-      <ProjectOpener
-        open
-        onOpenChange={vi.fn()}
-        workspaceProjects={[]}
-        onOpenProject={vi.fn(async () => true)}
-        onImportProjects={onImportProjects}
-      />
-    );
+    renderControlledProjectOpener({
+      workspaceProjects: [],
+      onOpenProject: vi.fn(async () => true),
+      onImportProjects,
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'Import Folder' }));
     await screen.findByText('Import Projects');
@@ -171,15 +182,11 @@ describe('Project opener', () => {
       projectName: 'Moved Project',
     });
     const onOpenProject = vi.fn(async () => true);
-    render(
-      <ProjectOpener
-        open
-        onOpenChange={vi.fn()}
-        workspaceProjects={[]}
-        onOpenProject={onOpenProject}
-        onImportProjects={vi.fn(async () => true)}
-      />
-    );
+    renderControlledProjectOpener({
+      workspaceProjects: [],
+      onOpenProject,
+      onImportProjects: vi.fn(async () => true),
+    });
 
     fireEvent.click(
       await screen.findByRole('button', { name: /Moved Project/ })

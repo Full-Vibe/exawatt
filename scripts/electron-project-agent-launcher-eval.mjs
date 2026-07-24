@@ -62,7 +62,7 @@ const check = (name, ok) => {
   if (!ok) failures.push(name);
 };
 
-const launch = testDirectory => ({
+const launch = () => ({
   args: ['.'],
   cwd: process.cwd(),
   env: {
@@ -72,12 +72,43 @@ const launch = testDirectory => ({
     NODE_ENV: 'development',
     EXAWATT_TEST: '1',
     EXAWATT_USER_DATA: userData,
-    EXAWATT_TEST_DIR: testDirectory,
     EXAWATT_TEST_HARNESS_BIN: fakeBin,
     EXAWATT_TEST_QUIT_RESPONSES: 'confirm,confirm,confirm',
     EXAWATT_DEV_URL: `${process.env.EXA_BASE ?? 'http://localhost:7011'}/workspace`,
   },
 });
+
+async function stubDirectoryPicker(app, selectedDirectory) {
+  await app.evaluate(({ dialog }, directory) => {
+    globalThis.__EXAWATT_DIRECTORY_PICKER_CALLS = [];
+    dialog.showOpenDialog = async (...args) => {
+      const attached = args.length === 2;
+      const parent = attached ? args[0] : null;
+      const options = attached ? args[1] : args[0];
+      const webModalMounted = parent
+        ? await parent.webContents.executeJavaScript(
+            "document.querySelector('[data-project-opener]') !== null"
+          )
+        : null;
+      globalThis.__EXAWATT_DIRECTORY_PICKER_CALLS.push({
+        attached,
+        options,
+        webModalMounted,
+      });
+      return {
+        canceled: false,
+        filePaths: [directory],
+        bookmarks: [],
+      };
+    };
+  }, selectedDirectory);
+}
+
+async function directoryPickerCalls(app) {
+  return await app.evaluate(
+    () => globalThis.__EXAWATT_DIRECTORY_PICKER_CALLS ?? []
+  );
+}
 
 async function sessions(page) {
   return await page.evaluate(
@@ -145,13 +176,14 @@ async function waitForBuffer(page, sessionId, fragment) {
 let completed = false;
 try {
   await withElectronApp(
-    launch(projectA),
+    launch(),
     async (app, page) => {
       page.setDefaultTimeout(20_000);
       page.on('pageerror', error =>
         console.log(`[project-launcher] pageerror: ${error.message}`)
       );
       await page.locator('[data-command-altitude]').waitFor();
+      await stubDirectoryPicker(app, projectA);
 
       const fileMenu = await app.evaluate(({ Menu }) =>
         Menu.getApplicationMenu()
@@ -184,10 +216,39 @@ try {
         'opening the chooser creates no process',
         (await sessions(page)).length === 0
       );
+      await page.waitForFunction(
+        () =>
+          document.activeElement?.getAttribute('aria-label') ===
+          'Search Projects'
+      );
+      await page.keyboard.press('Tab');
+      check(
+        'Browse Folder participates in the Project chooser tab cycle',
+        await page
+          .getByRole('button', { name: 'Browse Folder' })
+          .evaluate(
+            button =>
+              document.activeElement === button &&
+              button.tabIndex === 0 &&
+              !button.disabled
+          )
+      );
+      await page.keyboard.press('Shift+Tab');
       await page.screenshot({ path: join(output, '01-project-chooser.png') });
 
       await page.getByRole('button', { name: 'Browse Folder' }).click();
       await page.locator('[data-agent-composer]').waitFor();
+      const [pickerCall] = await directoryPickerCalls(app);
+      check(
+        'Browse releases the web modal before requesting the native picker',
+        pickerCall?.webModalMounted === false
+      );
+      check(
+        'Browse invokes a window-owned native directory picker',
+        pickerCall?.attached === true &&
+          pickerCall?.options?.title === 'Open Project' &&
+          pickerCall?.options?.properties?.includes('openDirectory')
+      );
       check(
         'Browse opens an inert Project',
         (await sessions(page)).length === 0
@@ -725,7 +786,9 @@ try {
         ({ previousId, title }) => {
           const close = Array.from(
             document.querySelectorAll('button[aria-label]')
-          ).find(button => button.getAttribute('aria-label') === `Close ${title}`);
+          ).find(
+            button => button.getAttribute('aria-label') === `Close ${title}`
+          );
           const active = close?.closest('[data-tab-id]');
           return (
             active?.getAttribute('data-tab-id') !== previousId &&
@@ -852,10 +915,11 @@ try {
   );
 
   await withElectronApp(
-    launch(importRoot),
-    async (_app, page) => {
+    launch(),
+    async (app, page) => {
       page.setDefaultTimeout(20_000);
       await page.locator('[data-command-altitude]').waitFor();
+      await stubDirectoryPicker(app, importRoot);
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();
       const alphaTile = page

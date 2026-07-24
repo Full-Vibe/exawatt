@@ -56,6 +56,7 @@ export function ProjectOpener({
     'browse' | 'import' | 'locate' | null
   >(null);
   const nativePickerActive = useRef(false);
+  const releaseNativePicker = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -109,11 +110,18 @@ export function ProjectOpener({
     nativePickerActive.current = true;
     setNativePicker(kind);
     setError(null);
+
+    const dialogReleased = new Promise<void>(resolve => {
+      releaseNativePicker.current = resolve;
+    });
     onOpenChange(false);
 
-    // Let Radix release its focus lock before AppKit takes keyboard control.
-    // Keeping both modal layers active was the source of the apparent hang.
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    // Radix keeps its FocusScope mounted through the close animation. A frame
+    // is not a lifecycle boundary: AppKit can receive the sheet request while
+    // the web modal still owns focus, leaving the native picker invisible and
+    // this control permanently disabled. Wait for Radix's close-auto-focus
+    // phase, which runs only after the modal focus scope has been released.
+    await dialogReleased;
     try {
       return {
         started: true,
@@ -131,6 +139,7 @@ export function ProjectOpener({
 
   const finishDirectoryPick = (reopen: boolean) => {
     nativePickerActive.current = false;
+    releaseNativePicker.current = null;
     if (reopen) onOpenChange(true);
     setNativePicker(null);
   };
@@ -250,6 +259,13 @@ export function ProjectOpener({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-project-opener
+        onCloseAutoFocus={event => {
+          if (!nativePickerActive.current) return;
+          event.preventDefault();
+          const release = releaseNativePicker.current;
+          releaseNativePicker.current = null;
+          release?.();
+        }}
         className="max-h-[min(760px,calc(100vh-3rem))] w-[min(820px,calc(100vw-2rem))] max-w-none overflow-hidden rounded-md border p-0"
         style={{
           background: HUD.bg.deep,
