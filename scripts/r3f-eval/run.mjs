@@ -351,7 +351,14 @@ async function runTask(browser, task) {
       await travel.dispatchEvent('pointerup');
       await page.emulateMedia({ reducedMotion: 'no-preference' });
 
-      for (const variant of ['optic-clear', 'smoke-low', 'opal-pillow']) {
+      for (const variant of [
+        'optic-clear',
+        'smoke-low',
+        'opal-pillow',
+        'original-optic',
+        'original-satin',
+        'original-smoke',
+      ]) {
         await page.locator(`[data-keyswitch-variant="${variant}"]`).click();
         await page.waitForFunction(
           expected =>
@@ -399,10 +406,16 @@ async function runTask(browser, task) {
         };
       });
       result.semanticOk =
-        study.materialCount === '4' &&
-        ['reference-frost', 'optic-clear', 'smoke-low', 'opal-pillow'].every(
-          id => study.variants.includes(id)
-        ) &&
+        study.materialCount === '7' &&
+        [
+          'reference-frost',
+          'optic-clear',
+          'smoke-low',
+          'opal-pillow',
+          'original-optic',
+          'original-satin',
+          'original-smoke',
+        ].every(id => study.variants.includes(id)) &&
         study.active === 'reference-frost' &&
         study.assemblyCount === 1 &&
         study.pressedVariant === 'none' &&

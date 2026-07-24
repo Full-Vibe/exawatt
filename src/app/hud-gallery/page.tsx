@@ -91,7 +91,7 @@ const SECTIONS: Section[] = [
   {
     id: 'keyswitch-material-studies',
     title: 'Translucent agent key / keyswitch',
-    meta: 'interactive physical study · four material and geometry treatments',
+    meta: 'interactive physical study · cumulative material and geometry library',
     showcase: <KeySwitchStudy />,
   },
   {
