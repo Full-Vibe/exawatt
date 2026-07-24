@@ -351,6 +351,7 @@ async function runTask(browser, task) {
       await travel.dispatchEvent('pointerup');
       await page.emulateMedia({ reducedMotion: 'no-preference' });
 
+      const sculptedShellChecks = [];
       for (const variant of [
         'optic-clear',
         'smoke-low',
@@ -371,6 +372,39 @@ async function runTask(browser, task) {
         await canvas.screenshot({
           path: join(REPORT_DIR, `${task.id}-${variant}.png`),
         });
+
+        if (variant === 'original-satin' || variant === 'original-smoke') {
+          sculptedShellChecks.push(
+            await page.evaluate(expectedVariant => {
+              const outer = window.__EVAL_SCENE__?.getObjectByName(
+                'keyswitch-cap-outer-shell'
+              );
+              const inner = window.__EVAL_SCENE__?.getObjectByName(
+                'keyswitch-cap-inner-shell'
+              );
+              return {
+                variant: expectedVariant,
+                sharedGeometry:
+                  !!outer && !!inner && outer.geometry === inner.geometry,
+                innerScale: inner?.scale.toArray() ?? [],
+              };
+            }, variant)
+          );
+
+          await page.evaluate(() => {
+            const camera = window.__EVAL_KEYSWITCH_CAMERA__;
+            const gl = window.__EVAL_GL__;
+            const scene = window.__EVAL_SCENE__;
+            if (!camera || !gl || !scene) return;
+            camera.position.set(2.25, 2.05, 2.6);
+            camera.lookAt(0, 1.72, 0);
+            camera.updateProjectionMatrix();
+            gl.render(scene, camera);
+          });
+          await canvas.screenshot({
+            path: join(REPORT_DIR, `${task.id}-${variant}-corner.png`),
+          });
+        }
       }
       await page.locator('[data-keyswitch-variant="reference-frost"]').click();
       await page.waitForTimeout(350);
@@ -419,6 +453,14 @@ async function runTask(browser, task) {
         study.active === 'reference-frost' &&
         study.assemblyCount === 1 &&
         study.pressedVariant === 'none' &&
+        sculptedShellChecks.length === 2 &&
+        sculptedShellChecks.every(
+          shell =>
+            shell.sharedGeometry &&
+            shell.innerScale[0] <= 0.9 &&
+            shell.innerScale[1] <= 0.82 &&
+            shell.innerScale[2] <= 0.9
+        ) &&
         pressedTravel < -0.16 &&
         Math.abs(reducedTravel + 0.18) < 0.0001 &&
         movedDistance > 0.05 &&
@@ -430,6 +472,7 @@ async function runTask(browser, task) {
           reducedTravel,
           movedDistance,
           resetDistance,
+          sculptedShellChecks,
         })}`
       );
       if (!result.semanticOk)

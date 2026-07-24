@@ -553,6 +553,20 @@ function CapMaterial({ variant }: { variant: KeySwitchVariant }) {
   );
 }
 
+function InnerCapMaterial({ variant }: { variant: KeySwitchVariant }) {
+  return (
+    <meshPhysicalMaterial
+      color={variant.capColor}
+      depthWrite={false}
+      opacity={variant.innerOpacity}
+      roughness={Math.min(0.5, variant.roughness + 0.12)}
+      side={THREE.BackSide}
+      transparent
+      transmission={0.14}
+    />
+  );
+}
+
 function Keycap({ variant }: { variant: KeySwitchVariant }) {
   const geometry = useMemo(() => createKeycapGeometry(), []);
   useEffect(() => () => geometry.dispose(), [geometry]);
@@ -568,7 +582,12 @@ function Keycap({ variant }: { variant: KeySwitchVariant }) {
   return (
     <group>
       {variant.capShape === 'sculpted' ? (
-        <mesh geometry={geometry} position={[0, variant.capY, 0]} castShadow>
+        <mesh
+          geometry={geometry}
+          name="keyswitch-cap-outer-shell"
+          position={[0, variant.capY, 0]}
+          castShadow
+        >
           <CapMaterial variant={variant} />
         </mesh>
       ) : (
@@ -583,22 +602,28 @@ function Keycap({ variant }: { variant: KeySwitchVariant }) {
         </RoundedBox>
       )}
 
-      <RoundedBox
-        args={innerSize}
-        position={[0, variant.capY - 0.035, 0]}
-        radius={Math.max(0.08, variant.capRadius - 0.055)}
-        smoothness={5}
-      >
-        <meshPhysicalMaterial
-          color={variant.capColor}
-          depthWrite={false}
-          opacity={variant.innerOpacity}
-          roughness={Math.min(0.5, variant.roughness + 0.12)}
-          side={THREE.BackSide}
-          transparent
-          transmission={0.14}
-        />
-      </RoundedBox>
+      {/* A generic rounded-box liner can escape the sculpted cap's tapered
+          upper corners. Reuse its exact loft so every cross-section nests. */}
+      {variant.capShape === 'sculpted' ? (
+        <mesh
+          geometry={geometry}
+          name="keyswitch-cap-inner-shell"
+          position={[0, variant.capY - 0.035, 0]}
+          scale={[0.9, 0.82, 0.9]}
+        >
+          <InnerCapMaterial variant={variant} />
+        </mesh>
+      ) : (
+        <RoundedBox
+          args={innerSize}
+          name="keyswitch-cap-inner-shell"
+          position={[0, variant.capY - 0.035, 0]}
+          radius={Math.max(0.08, variant.capRadius - 0.055)}
+          smoothness={5}
+        >
+          <InnerCapMaterial variant={variant} />
+        </RoundedBox>
+      )}
 
       <group position={[0, socketY, 0]}>
         <RoundedBox args={[0.45, 0.3, 0.13]} radius={0.035} smoothness={3}>
