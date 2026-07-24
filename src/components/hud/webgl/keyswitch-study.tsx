@@ -364,8 +364,8 @@ const SMOKE_LOW_VARIANT =
   KEYSWITCH_VARIANTS.find(variant => variant.id === 'smoke-low') ??
   KEYSWITCH_VARIANTS[0];
 const HOME_ORBIT_TARGET = new THREE.Vector3(...SMOKE_LOW_VARIANT.target);
-const HOME_ORBIT_PERIOD_SECONDS = 14;
-const HOME_ORBIT_AMPLITUDE = Math.PI * 0.16;
+const HOME_ORBIT_PERIOD_SECONDS = 16;
+const HOME_ORBIT_AMPLITUDE = Math.PI * 0.105;
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -479,7 +479,7 @@ function HomeOrbitCamera({ reduced }: { reduced: boolean }) {
 
   useFrame((state, delta) => {
     const aspect = size.width / Math.max(size.height, 1);
-    const radius = aspect < 1.12 ? 7.15 : 6.45;
+    const radius = aspect < 1.12 ? 6.2 : 5.65;
     let angle = -HOME_ORBIT_AMPLITUDE * 0.72;
 
     if (!reduced) {
@@ -489,11 +489,9 @@ function HomeOrbitCamera({ reduced }: { reduced: boolean }) {
       angle = Math.sin(phase.current) * HOME_ORBIT_AMPLITUDE;
     }
 
-    const centerLift =
-      Math.cos((angle / HOME_ORBIT_AMPLITUDE) * (Math.PI / 2)) * 0.08;
     camera.position.set(
       Math.sin(angle) * radius,
-      3.02 + centerLift,
+      4.2,
       Math.cos(angle) * radius
     );
     camera.lookAt(HOME_ORBIT_TARGET);
@@ -586,6 +584,57 @@ function StatusLegend({ y }: { y: number }) {
   );
 }
 
+function ArchitectureLegend({ y }: { y: number }) {
+  const [texture, setTexture] = useState<THREE.CanvasTexture | null>(null);
+
+  useEffect(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 192;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#daf2fa';
+    context.font = '600 92px "Helvetica Neue", Arial, sans-serif';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.shadowColor = 'rgba(166, 225, 244, 0.32)';
+    context.shadowBlur = 10;
+    context.fillText('ARCHITECTURE', canvas.width / 2, canvas.height / 2 + 3);
+
+    const nextTexture = new THREE.CanvasTexture(canvas);
+    nextTexture.colorSpace = THREE.SRGBColorSpace;
+    nextTexture.minFilter = THREE.LinearMipmapLinearFilter;
+    nextTexture.magFilter = THREE.LinearFilter;
+    nextTexture.needsUpdate = true;
+    setTexture(nextTexture);
+
+    return () => nextTexture.dispose();
+  }, []);
+
+  if (!texture) return null;
+
+  return (
+    <mesh
+      name="keyswitch-legend-architecture"
+      position={[0, y + 0.012, 0]}
+      raycast={() => null}
+      renderOrder={5}
+      rotation={[-Math.PI / 2, 0, 0]}
+    >
+      <planeGeometry args={[1.62, 0.304]} />
+      <meshBasicMaterial
+        alphaTest={0.08}
+        depthWrite={false}
+        map={texture}
+        toneMapped={false}
+        transparent
+      />
+    </mesh>
+  );
+}
+
 function CapMaterial({ variant }: { variant: KeySwitchVariant }) {
   return (
     <meshPhysicalMaterial
@@ -620,7 +669,13 @@ function InnerCapMaterial({ variant }: { variant: KeySwitchVariant }) {
   );
 }
 
-function Keycap({ variant }: { variant: KeySwitchVariant }) {
+function Keycap({
+  variant,
+  legend = 'status',
+}: {
+  variant: KeySwitchVariant;
+  legend?: 'status' | 'architecture';
+}) {
   const sculptedGeometry = useMemo(() => createKeycapGeometry(), []);
   const floatingGeometry = useMemo(
     () =>
@@ -725,7 +780,11 @@ function Keycap({ variant }: { variant: KeySwitchVariant }) {
         </RoundedBox>
       </group>
 
-      <StatusLegend y={legendY} />
+      {legend === 'architecture' ? (
+        <ArchitectureLegend y={legendY} />
+      ) : (
+        <StatusLegend y={legendY} />
+      )}
     </group>
   );
 }
@@ -858,11 +917,13 @@ function KeySwitchAssembly({
   pressed,
   reduced,
   onPressedChange,
+  legend = 'status',
 }: {
   variant: KeySwitchVariant;
   pressed: boolean;
   reduced: boolean;
   onPressedChange: (pressed: boolean) => void;
+  legend?: 'status' | 'architecture';
 }) {
   const cap = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
@@ -938,7 +999,7 @@ function KeySwitchAssembly({
       <SwitchMechanism pressed={pressed} reduced={reduced} variant={variant} />
 
       <group ref={cap} name={`keyswitch-cap-${variant.id}`}>
-        <Keycap variant={variant} />
+        <Keycap legend={legend} variant={variant} />
       </group>
 
       <mesh
@@ -1090,6 +1151,7 @@ function HomeArchitectureKeyScene({
       <HomeOrbitCamera reduced={reduced} />
       <KeySwitchLighting variant={SMOKE_LOW_VARIANT} />
       <KeySwitchAssembly
+        legend="architecture"
         onPressedChange={onPressedChange}
         pressed={pressed}
         reduced={reduced}
@@ -1166,13 +1228,6 @@ export function ArchitectureKeySwitchLink({
         onPointerUp={() => setPressed(false)}
       >
         <span className="sr-only">Architecture</span>
-        <span
-          aria-hidden="true"
-          className="absolute bottom-0 left-1/2 inline-flex -translate-x-1/2 items-center gap-2 border border-sky-100/20 bg-slate-950/55 px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.18em] text-sky-100/75 backdrop-blur-md transition-[border-color,color,transform] duration-200 group-hover:-translate-y-0.5 group-hover:border-sky-100/40 group-hover:text-sky-50 group-focus-visible:-translate-y-0.5 group-focus-visible:border-sky-100/50 group-focus-visible:text-sky-50"
-        >
-          Architecture
-          <span className="text-sky-300/70">↗</span>
-        </span>
       </Link>
     </div>
   );

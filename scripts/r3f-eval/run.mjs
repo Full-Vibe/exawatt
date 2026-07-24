@@ -550,6 +550,27 @@ async function runTask(browser, task) {
                 'keyswitch-assembly'
               ).length
             : 0,
+          architectureLegendCount: window.__EVAL_SCENE__
+            ? window.__EVAL_SCENE__.getObjectsByProperty(
+                'name',
+                'keyswitch-legend-architecture'
+              ).length
+            : 0,
+          cameraElevation: window.__EVAL_KEYSWITCH_CAMERA__
+            ? Math.atan2(
+                window.__EVAL_KEYSWITCH_CAMERA__.position.y - 0.83,
+                Math.hypot(
+                  window.__EVAL_KEYSWITCH_CAMERA__.position.x,
+                  window.__EVAL_KEYSWITCH_CAMERA__.position.z
+                )
+              )
+            : 0,
+          cameraAzimuth: window.__EVAL_KEYSWITCH_CAMERA__
+            ? Math.atan2(
+                window.__EVAL_KEYSWITCH_CAMERA__.position.x,
+                window.__EVAL_KEYSWITCH_CAMERA__.position.z
+              )
+            : Number.POSITIVE_INFINITY,
         };
       });
 
@@ -559,6 +580,10 @@ async function runTask(browser, task) {
         semantics.label === 'Open Exawatt architecture' &&
         semantics.pressed === 'false' &&
         semantics.assemblyCount === 1 &&
+        semantics.architectureLegendCount === 1 &&
+        semantics.cameraElevation > 0.48 &&
+        semantics.cameraElevation < 0.62 &&
+        Math.abs(semantics.cameraAzimuth) < 0.34 &&
         pressedTravel < -0.22 &&
         orbitDistance > 0.05 &&
         reducedDistance < 0.002;
