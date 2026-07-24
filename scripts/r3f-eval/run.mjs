@@ -47,6 +47,14 @@ const TASKS = [
     drawCallMax: null,
     settleMs: 500,
   },
+  {
+    id: 't7-keyswitch',
+    name: 'Translucent keyswitch material studies',
+    // Three full mechanisms + one-shot Drei environment/contact-shadow bake.
+    // This demand-loop product study parks after load; it is not a fleet field.
+    drawCallMax: 160,
+    settleMs: 1_200,
+  },
 ];
 
 // Substrings that mean a real WebGL/shader failure -> hard gate.
@@ -264,6 +272,74 @@ async function runTask(browser, task) {
       result.notes.push(`operations-board: ${JSON.stringify(board)}`);
       if (!result.semanticOk)
         result.errors.push('Spatial Operations Board semantics failed');
+    }
+
+    if (task.id === 't7-keyswitch') {
+      const optic = page.locator('[data-keyswitch-variant="optic"]');
+      await optic.dispatchEvent('pointerdown');
+      await page.waitForFunction(
+        () =>
+          window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-optic')
+            ?.position.y < -0.16,
+        { timeout: 2_000 }
+      );
+      const pressedTravel = await page.evaluate(
+        () =>
+          window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-optic')
+            ?.position.y
+      );
+      await optic.dispatchEvent('pointerup');
+      await page.waitForFunction(
+        () =>
+          Math.abs(
+            window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-optic')
+              ?.position.y ?? 1
+          ) < 0.01,
+        { timeout: 2_000 }
+      );
+
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await page.waitForTimeout(60);
+      await optic.dispatchEvent('pointerdown');
+      await page.waitForFunction(
+        () =>
+          Math.abs(
+            (window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-optic')
+              ?.position.y ?? 1) + 0.18
+          ) < 0.0001,
+        { timeout: 2_000 }
+      );
+      const reducedTravel = await page.evaluate(
+        () =>
+          window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-optic')
+            ?.position.y
+      );
+      await optic.dispatchEvent('pointerup');
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+      const study = await page.evaluate(() => {
+        const surface = document.querySelector('[data-keyswitch-study]');
+        const variants = Array.from(
+          document.querySelectorAll('[data-keyswitch-variant]')
+        );
+        return {
+          materialCount: surface?.getAttribute('data-material-count'),
+          variants: variants.map(variant =>
+            variant.getAttribute('data-keyswitch-variant')
+          ),
+          pressedVariant: surface?.getAttribute('data-pressed-variant'),
+        };
+      });
+      result.semanticOk =
+        study.materialCount === '3' &&
+        ['optic', 'satin', 'smoke'].every(id => study.variants.includes(id)) &&
+        pressedTravel < -0.16 &&
+        Math.abs(reducedTravel + 0.18) < 0.0001;
+      result.notes.push(
+        `keyswitch-study: ${JSON.stringify({ ...study, pressedTravel, reducedTravel })}`
+      );
+      if (!result.semanticOk)
+        result.errors.push('Keyswitch material-study semantics failed');
     }
 
     await page

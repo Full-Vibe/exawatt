@@ -24,6 +24,7 @@ import {
   WebglComposedScene,
   WebglStatusLightsScene,
 } from '@/components/hud/webgl/scenes';
+import { KeySwitchStudy } from '@/components/hud/webgl/keyswitch-study';
 import {
   StatusLightDomSpecimens,
   StatusLightProtocolLegend,
@@ -49,8 +50,9 @@ interface Section {
   id: string;
   title: string;
   meta: string;
-  dom: ReactNode;
-  webgl: ReactNode;
+  dom?: ReactNode;
+  webgl?: ReactNode;
+  showcase?: ReactNode;
 }
 
 const SECTIONS: Section[] = [
@@ -85,6 +87,12 @@ const SECTIONS: Section[] = [
         <StatusLightProtocolLegend compact />
       </div>
     ),
+  },
+  {
+    id: 'keyswitch-material-studies',
+    title: 'Translucent agent key / keyswitch',
+    meta: 'physical study · three comparable polycarbonate treatments',
+    showcase: <KeySwitchStudy />,
   },
   {
     id: 'frames',
@@ -428,9 +436,9 @@ export default function HudGallery() {
               </span>
             </div>
             <p className="mt-1 text-sm" style={{ color: HUD.textDim }}>
-              Each block beside its WebGL sibling — DOM (left) vs Three.js
-              (right). DOM wins for crisp, keyboard-accessible chrome; WebGL is
-              reserved for the scalable agent world.{' '}
+              Canonical component specimens and physical WebGL studies. DOM wins
+              for crisp, keyboard-accessible chrome; WebGL is reserved for the
+              scalable agent world and reviewable material work.{' '}
               <a
                 href="/hud-gallery/agent-field"
                 className="underline underline-offset-2"
@@ -469,16 +477,20 @@ export default function HudGallery() {
                     {s.meta}
                   </span>
                 </div>
-                <div className="grid grid-cols-1 gap-8 2xl:grid-cols-2">
-                  <div className="flex min-w-0 flex-col gap-3">
-                    <ColumnLabel>DOM / SVG</ColumnLabel>
-                    <div>{s.dom}</div>
+                {s.showcase ? (
+                  <div>{s.showcase}</div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-8 2xl:grid-cols-2">
+                    <div className="flex min-w-0 flex-col gap-3">
+                      <ColumnLabel>DOM / SVG</ColumnLabel>
+                      <div>{s.dom}</div>
+                    </div>
+                    <div className="flex min-w-0 flex-col gap-3">
+                      <ColumnLabel>WebGL · Three.js</ColumnLabel>
+                      <div>{s.webgl}</div>
+                    </div>
                   </div>
-                  <div className="flex min-w-0 flex-col gap-3">
-                    <ColumnLabel>WebGL · Three.js</ColumnLabel>
-                    <div>{s.webgl}</div>
-                  </div>
-                </div>
+                )}
               </section>
             ))}
           </div>
