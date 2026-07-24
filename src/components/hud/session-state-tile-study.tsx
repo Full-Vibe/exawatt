@@ -1,9 +1,16 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { useMemo, useRef, useState } from 'react';
-import { ChevronRightIcon, ReloadIcon } from '@radix-ui/react-icons';
+import { ReloadIcon } from '@radix-ui/react-icons';
 import { HUD } from '@/components/hud';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
+import { SessionGoalSummary } from '@/components/workspace/session-goal-summary';
 import {
   SessionStatusGlyph,
   type SessionAttentionSignal,
@@ -11,7 +18,6 @@ import {
 } from '@/components/workspace/status-glyphs';
 import type { PtyHarness } from '@/types/electron';
 
-type EventKind = 'Asked' | 'Recovered' | 'Decided' | 'Found';
 type FixtureMode = 'populated' | 'loading' | 'empty' | 'error';
 type Filter = 'all' | 'attention' | 'working';
 
@@ -19,18 +25,17 @@ interface SessionStateFixture {
   id: string;
   project: string;
   projectColor: string;
-  title: string;
+  goal: string;
   harness: Exclude<PtyHarness, 'shell'>;
   glyphState: SessionGlyphState;
   attention?: SessionAttentionSignal;
-  stateLabel: string;
   activity: string;
-  eventKind: EventKind;
-  event: string;
+  meaningfulChange: string;
   planStep: string | null;
   planIndex: number | null;
   planTotal: number | null;
   age: string;
+  observedAt: string;
 }
 
 const SESSION_FIXTURES: SessionStateFixture[] = [
@@ -38,75 +43,90 @@ const SESSION_FIXTURES: SessionStateFixture[] = [
     id: 'auth-redirect',
     project: 'cortex-ehr',
     projectColor: '#54c9ba',
-    title: 'Fix auth redirect loop',
+    goal: 'Fix auth redirect loop',
     harness: 'codex',
     glyphState: 'done',
     attention: { kind: 'roadmap-blocked', since: 0 },
-    stateLabel: 'Needs you',
     activity: 'Waiting on the ownership boundary for return-path state',
-    eventKind: 'Asked',
-    event: 'Compared callback and middleware ownership',
+    meaningfulChange: 'Compared callback and middleware ownership',
     planStep: 'Decide ownership',
     planIndex: 3,
     planTotal: 5,
     age: '2m',
+    observedAt: 'July 24, 2026 at 3:56:18 PM PDT',
   },
   {
     id: 'mmhc-baa',
     project: 'cortex-ehr',
     projectColor: '#54c9ba',
-    title: 'Complete MMHC conversion, secure BAA',
+    goal: 'Complete MMHC conversion and secure BAA',
     harness: 'claude',
     glyphState: 'working',
-    stateLabel: 'Working',
     activity: 'Preparing the scoped agreement execution checklist',
-    eventKind: 'Recovered',
-    event: 'Restored the exact prior Session and context',
+    meaningfulChange: 'Restored the exact prior Session and context',
     planStep: 'Secure agreement',
     planIndex: 2,
     planTotal: 4,
     age: '42s',
+    observedAt: 'July 24, 2026 at 3:57:36 PM PDT',
   },
   {
     id: 'raf-lens',
     project: 'Lens',
     projectColor: '#c8a55c',
-    title: 'Plan RAF feature for Lens',
+    goal: 'Shape the RAF feature proposal for Lens',
     harness: 'codex',
     glyphState: 'done',
-    stateLabel: 'Result ready',
     activity: 'A design tradeoff is ready for review',
-    eventKind: 'Decided',
-    event: 'Narrowed scheduling to two viable boundaries',
+    meaningfulChange: 'Narrowed scheduling to two viable boundaries',
     planStep: 'Shape proposal',
     planIndex: 3,
     planTotal: 4,
     age: '8m',
+    observedAt: 'July 24, 2026 at 3:50:18 PM PDT',
   },
   {
     id: 'patty-thread',
     project: 'Workmusic',
     projectColor: '#7fa98f',
-    title: 'Find the recent conversation with Patty',
+    goal: 'Find the recent conversation with Patty',
     harness: 'claude',
     glyphState: 'quiet',
-    stateLabel: 'Stopped',
     activity: 'Durable state is saved; no process is running',
-    eventKind: 'Found',
-    event: 'Located two conversations matching the context',
+    meaningfulChange: 'Located two conversations matching the context',
     planStep: null,
     planIndex: null,
     planTotal: null,
     age: '1d',
+    observedAt: 'July 23, 2026 at 4:01:05 PM PDT',
   },
 ];
 
-const EVENT_COLOR: Record<EventKind, string> = {
-  Asked: HUD.amber,
-  Recovered: HUD.cyan2,
-  Decided: HUD.green,
-  Found: HUD.textMono,
-};
+function TileTooltip({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip delayDuration={250}>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent
+        side="bottom"
+        sideOffset={7}
+        className="max-w-64 border px-2.5 py-1.5 font-mono text-chrome-label shadow-xl"
+        style={{
+          color: HUD.text,
+          background: HUD.bg.panel,
+          borderColor: HUD.strokeSoft,
+        }}
+      >
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 function SegmentedControl<T extends string>({
   label,
@@ -217,7 +237,7 @@ function SessionTile({
     <button
       ref={tileRef}
       type="button"
-      aria-label={`Open ${tile.title} in Terminal`}
+      aria-label={`Open ${tile.goal} in Terminal`}
       data-session-state-tile
       data-selected={selected || undefined}
       onClick={onOpen}
@@ -241,7 +261,7 @@ function SessionTile({
           onMove(-1);
         }
       }}
-      className="group/tile relative flex h-[238px] w-[300px] max-w-full flex-col overflow-hidden rounded border p-3 text-left outline-none transition-[background-color,border-color,transform] duration-150 active:scale-[0.985] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+      className="relative flex h-[238px] w-[300px] max-w-full flex-col overflow-hidden rounded border p-3 text-left outline-none transition-[background-color,border-color,transform] duration-150 active:scale-[0.985] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
       style={{
         color: HUD.text,
         borderColor: selected ? tile.projectColor : `${tile.projectColor}4d`,
@@ -255,23 +275,19 @@ function SessionTile({
         style={{ background: tile.projectColor }}
       />
 
-      <span className="flex min-w-0 items-center gap-1.5 pl-1">
-        <span style={{ color: tile.projectColor }}>
-          <HarnessGlyph harness={tile.harness} size={11} />
-        </span>
-        <span
-          className="truncate font-mono text-[9px] uppercase tracking-[0.12em]"
-          style={{ color: HUD.textDim }}
+      <span className="flex min-w-0 items-center justify-between pl-1">
+        <TileTooltip
+          label={tile.harness === 'claude' ? 'Claude Code' : 'Codex'}
         >
-          {tile.harness === 'claude' ? 'Claude Code' : 'Codex'}
-        </span>
-        <span className="ml-auto flex shrink-0 items-center gap-1.5">
           <span
-            className="font-mono text-[9px] uppercase tracking-[0.08em]"
-            style={{ color: HUD.textDim }}
+            aria-label={tile.harness === 'claude' ? 'Claude Code' : 'Codex'}
+            className="inline-flex h-4 w-4 items-center justify-center"
+            style={{ color: tile.projectColor }}
           >
-            {tile.stateLabel}
+            <HarnessGlyph harness={tile.harness} size={11} />
           </span>
+        </TileTooltip>
+        <span className="shrink-0">
           <SessionStatusGlyph
             state={tile.glyphState}
             attention={tile.attention}
@@ -279,8 +295,12 @@ function SessionTile({
         </span>
       </span>
 
-      <span className="mt-2 line-clamp-2 min-h-10 pl-1 font-display text-sm font-semibold leading-5">
-        {tile.title}
+      <span className="mt-2 block min-h-8 pl-1">
+        <SessionGoalSummary
+          summary={tile.goal}
+          color={tile.projectColor}
+          className="max-w-56"
+        />
       </span>
 
       <span className="mt-3 min-w-0 pl-1">
@@ -295,21 +315,12 @@ function SessionTile({
         </span>
       </span>
 
-      <span
-        className="mt-2 flex min-w-0 items-start gap-1.5 border-t pl-1 pt-2 text-[10px] leading-4"
-        style={{ borderColor: HUD.divider }}
-      >
+      <span className="mt-1 min-w-0 pl-1">
         <span
-          className="shrink-0 font-mono uppercase tracking-[0.08em]"
-          style={{ color: EVENT_COLOR[tile.eventKind] }}
+          className="line-clamp-2 block text-[10px] leading-4"
+          style={{ color: HUD.textDim }}
         >
-          {tile.eventKind}
-        </span>
-        <span aria-hidden="true" className="text-white/20">
-          ·
-        </span>
-        <span className="line-clamp-2" style={{ color: HUD.textDim }}>
-          {tile.event}
+          {tile.meaningfulChange}
         </span>
       </span>
 
@@ -324,22 +335,19 @@ function SessionTile({
           >
             Next
           </span>
-          <span
-            className="font-mono text-[9px] tabular-nums"
-            style={{ color: HUD.textDim }}
-          >
-            {tile.age}
-          </span>
+          <TileTooltip label={tile.observedAt}>
+            <span
+              className="font-mono text-[9px] tabular-nums"
+              style={{ color: HUD.textDim }}
+            >
+              {tile.age} ago
+            </span>
+          </TileTooltip>
         </span>
         <span className="mt-1 block">
           <PlanSpine tile={tile} />
         </span>
       </span>
-
-      <ChevronRightIcon
-        aria-hidden="true"
-        className="absolute bottom-3 right-2.5 translate-x-1 text-white/0 transition-[color,transform] group-hover/tile:translate-x-0 group-hover/tile:text-white/50 group-focus-visible/tile:translate-x-0 group-focus-visible/tile:text-white/50 motion-reduce:transition-none"
-      />
     </button>
   );
 }
@@ -393,15 +401,7 @@ export function SessionStateTileStudy() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p
-          className="max-w-[72ch] text-xs leading-relaxed"
-          style={{ color: HUD.textDim }}
-        >
-          The five operator questions now live inside the existing Session tile
-          geometry. Status is the production Session glyph; activating a tile
-          zooms to Terminal and never opens inline detail.
-        </p>
+      <div className="flex justify-end">
         <SegmentedControl
           label="Fixture state"
           value={mode}
@@ -514,7 +514,7 @@ export function SessionStateTileStudy() {
               );
               const projectColor = projectTiles[0]?.projectColor ?? HUD.idle;
               return (
-                <section key={project} aria-label={`${project} Sessions`}>
+                <section key={project} aria-label={`${project} Agents`}>
                   <div
                     className="mb-2 flex items-center gap-2 border-b pb-2"
                     style={{ borderColor: `${projectColor}33` }}
@@ -532,7 +532,7 @@ export function SessionStateTileStudy() {
                       style={{ color: HUD.textDim }}
                     >
                       {projectTiles.length}{' '}
-                      {projectTiles.length === 1 ? 'Session' : 'Sessions'}
+                      {projectTiles.length === 1 ? 'Agent' : 'Agents'}
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-3">
@@ -553,7 +553,7 @@ export function SessionStateTileStudy() {
                           onOpen={() => {
                             setSelectedId(tile.id);
                             setLastOpened(
-                              `Terminal · ${tile.project} / ${tile.title}`
+                              `Terminal · ${tile.project} / ${tile.goal}`
                             );
                           }}
                         />
@@ -574,15 +574,17 @@ export function SessionStateTileStudy() {
             className="font-mono text-[9px] uppercase tracking-[0.12em]"
             style={{ color: HUD.textDim }}
           >
-            arrows or j/k move · Enter opens Terminal · no inline expansion
+            arrows or j/k move · Enter opens Terminal
           </p>
-          <p
-            aria-live="polite"
-            className="truncate font-mono text-[9px]"
-            style={{ color: lastOpened ? HUD.cyan2 : HUD.textDim }}
-          >
-            {lastOpened ?? 'Navigation target appears here'}
-          </p>
+          {lastOpened && (
+            <p
+              aria-live="polite"
+              className="truncate font-mono text-[9px]"
+              style={{ color: HUD.cyan2 }}
+            >
+              {lastOpened}
+            </p>
+          )}
         </div>
       </div>
     </div>

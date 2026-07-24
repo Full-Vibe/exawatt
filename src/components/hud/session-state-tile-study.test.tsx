@@ -1,5 +1,11 @@
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SessionStateTileStudy } from './session-state-tile-study';
@@ -15,10 +21,9 @@ function renderStudy() {
 }
 
 describe('SessionStateTileStudy', () => {
-  it('uses the shared Session status vocabulary inside fixed tile geometry', () => {
+  it('uses the shared goal and status treatments without visible eyebrow copy', () => {
     renderStudy();
 
-    expect(screen.getAllByText('Working')).toHaveLength(2);
     expect(
       document.querySelector(
         '[data-status="working"] [data-status-light="active"]'
@@ -27,6 +32,19 @@ describe('SessionStateTileStudy', () => {
     expect(document.querySelectorAll('[data-session-state-tile]')).toHaveLength(
       4
     );
+    const workingTile = screen.getByRole('button', {
+      name: 'Open Complete MMHC conversion and secure BAA in Terminal',
+    });
+    expect(within(workingTile).queryByText('Working')).not.toBeInTheDocument();
+    expect(
+      within(workingTile).queryByText('Claude Code')
+    ).not.toBeInTheDocument();
+    expect(
+      workingTile.querySelector('[data-session-goal-summary]')
+    ).toHaveClass('font-sans', 'text-chrome-label', 'font-normal');
+    expect(within(workingTile).getByText('42s ago')).toBeInTheDocument();
+    expect(screen.getByText('2 Agents')).toBeInTheDocument();
+    expect(screen.queryByText('Recovered')).not.toBeInTheDocument();
   });
 
   it('hands an activated tile to Terminal without creating inline detail', () => {

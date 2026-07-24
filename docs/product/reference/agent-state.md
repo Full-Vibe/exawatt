@@ -73,6 +73,15 @@ One present-tense activity sentence and one latest meaningful Event are enough
 at Sessions altitude. Unknown activity must remain unknown; Exawatt should not
 manufacture a narrative from terminal byte volume.
 
+Event kinds are domain vocabulary, not operator-facing eyebrow copy. A compact
+surface should present the meaningful change in plain language instead of
+exposing unexplained labels such as `ASKED`, `RECOVERED`, or `DECIDED`.
+
+The Session's why/goal is the same durable context summary shown in Terminal.
+Sessions must reuse that content and quiet, Project-tinted typographic treatment
+rather than invent a second summary. Agent Source and turn state may condense to
+their shared glyphs when hover tooltips and accessible names preserve meaning.
+
 ## Plans are mutable named steps
 
 Plan state should use a current named step plus an ordinal such as `Decide
@@ -95,6 +104,9 @@ freshness are separate channels:
   interrupted, exited, resuming, or failed;
 - plan position answers what named boundary comes next;
 - freshness answers when Exawatt last received meaningful evidence.
+
+Compact relative ages include the explicit `ago` suffix and expose the fully
+formatted observation time on hover.
 
 Views can compose these channels into a concise signal, but data and adapters
 must not collapse them into one lossy status. Demo Mode and every live Agent

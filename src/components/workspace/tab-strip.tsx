@@ -35,6 +35,7 @@ import {
 import type { SessionAttentionSignal } from './status-glyphs';
 import type { Project } from './use-workspace-state';
 import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
+import { SessionGoalSummary } from './session-goal-summary';
 
 /** Shortcut-ordinal keycap (D21): revealed only while the chord's modifiers
  *  are held, styled as a key so it reads as "press this", never as data.
@@ -806,13 +807,11 @@ export function TabStrip({
                         )}
                         {/* the goal is durable (D21): stopped tabs keep it */}
                         {summary && (
-                          <span
-                            data-subtitle
-                            className="line-clamp-2 max-w-56 text-left font-sans text-chrome-label font-normal"
-                            style={{ color: `${color}B0` }}
-                          >
-                            {summary}
-                          </span>
+                          <SessionGoalSummary
+                            summary={summary}
+                            color={color}
+                            className="max-w-56"
+                          />
                         )}
                       </span>
                     ) : null}
