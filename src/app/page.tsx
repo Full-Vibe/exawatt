@@ -39,10 +39,11 @@ export default function Home() {
           <h1 className="text-4xl font-bold tracking-tight text-white sm:text-6xl drop-shadow-lg">
             Exawatt
           </h1>
-          <p className="max-w-md text-lg text-white/80 drop-shadow-md">
-            The economy is refactoring.
-            <br />
-            Exawatt is the command interface for billions of agents.
+          <p className="w-full max-w-3xl text-xs leading-relaxed text-white/80 drop-shadow-md sm:text-lg">
+            <span className="block">The economy is refactoring.</span>
+            <span className="block">
+              Exawatt is the command interface for billions of agents.
+            </span>
           </p>
           <div className="flex gap-4">
             <Button
