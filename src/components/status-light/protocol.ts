@@ -25,6 +25,9 @@ export const STATUS_LIGHT_STATES = [
   'fault',
 ] as const satisfies readonly StatusLightState[];
 
+/** One measured revolution for the Active half-fill in every rendering regime. */
+export const STATUS_LIGHT_ACTIVE_ROTATION_SECONDS = 1.6;
+
 export const STATUS_LIGHT_META = {
   off: {
     label: 'Idle',

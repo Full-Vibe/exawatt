@@ -17,6 +17,7 @@ import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import type { AgentStatus } from '@exawatt/core';
 import {
+  STATUS_LIGHT_ACTIVE_ROTATION_SECONDS,
   STATUS_LIGHT_META,
   STATUS_LIGHT_STATES,
   type StatusLightState,
@@ -596,27 +597,26 @@ export function WebglPillsScene() {
 }
 
 function ActiveSpatialFill({ color }: { color: string }) {
-  const material = useRef<THREE.MeshBasicMaterial>(null);
-  const phase = useRef(0);
+  const rotor = useRef<THREE.Mesh>(null);
   const reduced = useReducedMotion();
+  const radiansPerSecond =
+    (Math.PI * 2) / STATUS_LIGHT_ACTIVE_ROTATION_SECONDS;
 
   useFrame((_, delta) => {
-    if (!material.current) return;
+    if (!rotor.current) return;
     if (reduced) {
-      material.current.opacity = 0.78;
+      rotor.current.rotation.z = 0;
       return;
     }
-    phase.current += Math.min(delta, 0.05) * 2.1;
-    material.current.opacity = 0.7 + Math.sin(phase.current) * 0.12;
+    rotor.current.rotation.z -= Math.min(delta, 0.05) * radiansPerSecond;
   });
 
   return (
-    <mesh position={[0, 0, 0.35]}>
+    <mesh ref={rotor} position={[0, 0, 0.35]}>
       <circleGeometry args={[7, 32, Math.PI / 2, Math.PI]} />
       <meshBasicMaterial
-        ref={material}
         color={color}
-        opacity={0.78}
+        opacity={0.82}
         toneMapped={false}
         transparent
       />

@@ -1,5 +1,9 @@
 import { CircleCheck, CircleDashed, CircleDot, CircleX } from 'lucide-react';
-import { STATUS_LIGHT_META, type StatusLightState } from './protocol';
+import {
+  STATUS_LIGHT_ACTIVE_ROTATION_SECONDS,
+  STATUS_LIGHT_META,
+  type StatusLightState,
+} from './protocol';
 
 const SIZE = {
   compact: 13,
@@ -13,7 +17,6 @@ function ActiveMark({ size }: { size: number }) {
   return (
     <svg
       aria-hidden="true"
-      className="motion-safe:animate-pulse"
       height={size}
       viewBox="0 0 16 16"
       width={size}
@@ -26,7 +29,14 @@ function ActiveMark({ size }: { size: number }) {
         stroke="currentColor"
         strokeWidth="1.6"
       />
-      <path d="M8 8V1.6a6.4 6.4 0 0 1 0 12.8Z" fill="currentColor" />
+      <g
+        className="status-light-active-rotor"
+        style={{
+          animationDuration: `${STATUS_LIGHT_ACTIVE_ROTATION_SECONDS}s`,
+        }}
+      >
+        <path d="M8 8V1.6a6.4 6.4 0 0 1 0 12.8Z" fill="currentColor" />
+      </g>
     </svg>
   );
 }
@@ -54,8 +64,8 @@ function StateMark({ state, size }: { state: StatusLightState; size: number }) {
 
 /**
  * The review-stage status-light atom. Shape is always redundant with color;
- * only active work moves, and reduced-motion users receive the same half-fill
- * mark without the breath.
+ * only active work moves, and reduced-motion users receive the same static
+ * half-fill mark instead of the rotating rotor.
  */
 export function StatusLight({
   state,

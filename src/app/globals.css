@@ -279,6 +279,20 @@ body {
   }
 }
 
+@keyframes status-light-active-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.status-light-active-rotor {
+  animation-name: status-light-active-turn;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  transform-box: view-box;
+  transform-origin: center;
+}
+
 .animate-fleet-rise {
   animation: fleet-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -287,7 +301,8 @@ body {
   .fleet-scanline,
   .animate-fleet-rise,
   .animate-ping,
-  .animate-pulse {
+  .animate-pulse,
+  .status-light-active-rotor {
     animation: none;
   }
 
