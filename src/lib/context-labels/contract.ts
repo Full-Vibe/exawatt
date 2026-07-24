@@ -223,6 +223,7 @@ export function contextLabelAnthropicRequest(input: ContextLabelRequest) {
       'Always make a best topic guess. Never emit KEEP, NO_GOAL, a question, first-person narration, Markdown, or any file/URI/temp path.',
       'Use a natural imperative or noun phrase. Optimize specificity and recall, not a rigid word count; stay within 72 characters.',
       'Calibration examples:',
+      'When evidence is about the quality, staleness, tuning, or feedback loop of Agent tab/Session titles or summaries, use exactly "Improve agent context summaries".',
       'current="Implement cmd+shift+t to reopen tabs", newer work is diagnosing stale/poor tab summaries and building their feedback loop => new_context, "Improve agent context summaries".',
       'current="MVP of Widget Checkout", newer work fixes a checkout validation bug => same_context, repeat "MVP of Widget Checkout".',
       'current="Fix auth redirect loop", newer work investigates a company for a curated listing => new_context, "Investigate company for listing".',
@@ -244,7 +245,10 @@ export function contextLabelAnthropicRequest(input: ContextLabelRequest) {
               type: 'string',
               enum: ['same_context', 'new_context'],
             },
-            confidence: { type: 'number', minimum: 0, maximum: 1 },
+            // Anthropic's strict-tool schema subset rejects numeric range
+            // keywords. Keep the provider schema compatible and enforce the
+            // 0–1 range when parsing the returned tool input below.
+            confidence: { type: 'number' },
           },
           required: ['label', 'relationship', 'confidence'],
         },

@@ -149,5 +149,8 @@ describe('Session context-label contract', () => {
     expect(body.system).toContain('repeat the current label exactly');
     expect(body.system).toContain('genuinely unrelated purpose');
     expect(body.tool_choice.name).toBe('record_session_context');
+    expect(body.tools[0].input_schema.properties.confidence).toEqual({
+      type: 'number',
+    });
   });
 });
