@@ -44,3 +44,4 @@ export type {
   SessionLinkEvidence,
   SessionLink,
 } from './roadmap/types';
+export * from './consumption/index';
