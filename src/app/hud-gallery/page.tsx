@@ -626,6 +626,13 @@ export default function HudGallery() {
                 style={{ color: HUD.cyan }}
               >
                 Open the AgentField world →
+              </a>{' '}
+              <a
+                href="/hud-gallery/consumption-lab"
+                className="underline underline-offset-2"
+                style={{ color: HUD.cyan }}
+              >
+                Open the Consumption lab →
               </a>
             </p>
           </header>
