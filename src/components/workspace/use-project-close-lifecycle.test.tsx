@@ -98,6 +98,29 @@ describe('empty Project close lifecycle', () => {
     expect(onCloseProject).not.toHaveBeenCalled();
   });
 
+  it('keeps an empty Project when the operator engages with its composer', () => {
+    const onCloseProject = vi.fn(() => true);
+    const { result, rerender } = renderHook(
+      ({ projects }) =>
+        useProjectCloseLifecycle({
+          projects,
+          ready: true,
+          onCloseProject,
+        }),
+      { initialProps: { projects: [project([tab()])] } }
+    );
+
+    rerender({ projects: [project([])] });
+    act(() => vi.advanceTimersByTime(EMPTY_PROJECT_LINGER_MS - 1));
+    act(() => expect(result.current.retainProject('/repo')).toBe(true));
+    act(() =>
+      vi.advanceTimersByTime(EMPTY_PROJECT_LINGER_MS + PROJECT_EXIT_MS)
+    );
+
+    expect(result.current.exitingProjectDirs.has('/repo')).toBe(false);
+    expect(onCloseProject).not.toHaveBeenCalled();
+  });
+
   it('manual close skips the grace period but keeps the exit transition', () => {
     const onCloseProject = vi.fn(() => true);
     const { result } = renderHook(() =>

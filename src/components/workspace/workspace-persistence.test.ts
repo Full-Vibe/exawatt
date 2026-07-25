@@ -262,6 +262,10 @@ describe('workspace persistence v5 (ENG-018)', () => {
               draftSource: 'codex',
               draftModel: 'gpt-5.6-terra',
               draftEffort: 'high',
+              draftTouched: true,
+              draftWorktree: true,
+              draftBranch: 'agent/finish-intake',
+              draftRoadmapItemId: 'ENG-017',
             },
           ],
         },
@@ -274,6 +278,10 @@ describe('workspace persistence v5 (ENG-018)', () => {
       draftSource: 'codex',
       draftModel: 'gpt-5.6-terra',
       draftEffort: 'high',
+      draftTouched: true,
+      draftWorktree: true,
+      draftBranch: 'agent/finish-intake',
+      draftRoadmapItemId: 'ENG-017',
     });
   });
 

@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('electron', {
     archiveSession: (entry: unknown) =>
       ipcRenderer.invoke('pty:archive-session', entry),
     closedSessions: () => ipcRenderer.invoke('pty:closed-sessions'),
+    onClosedSessionsChanged: subscribe<number>('pty:closed-sessions-changed'),
     reopenSession: (durableSessionId: string) =>
       ipcRenderer.invoke('pty:reopen-session', durableSessionId),
     rename: (id: string, title: string) =>

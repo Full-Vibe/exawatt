@@ -114,6 +114,20 @@ export function useProjectCloseLifecycle({
     [beginExit]
   );
 
+  /** Any operator interaction with the empty Project converts the transient
+   * grace state into an intentional workspace. Its next non-empty -> empty
+   * transition can still arm the lifecycle again. */
+  const retainProject = useCallback(
+    (dir: string): boolean => {
+      if (!projectsRef.current.some(project => project.dir === dir)) {
+        return false;
+      }
+      cancelProjectClose(dir);
+      return true;
+    },
+    [cancelProjectClose]
+  );
+
   useEffect(() => {
     const currentCounts = new Map(
       projects.map(project => [project.dir, project.tabs.length] as const)
@@ -157,5 +171,5 @@ export function useProjectCloseLifecycle({
     []
   );
 
-  return { exitingProjectDirs, requestProjectExit };
+  return { exitingProjectDirs, requestProjectExit, retainProject };
 }

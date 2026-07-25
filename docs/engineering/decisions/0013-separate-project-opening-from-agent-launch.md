@@ -75,3 +75,11 @@ only the close-last-Agent transition auto-closes it. AMENDED by D39: the shared
 close verb follows the active object. `Command-W`, the command palette, and the
 native Session menu close the active tab when present and close an active empty
 Project otherwise.
+
+AMENDED 2026-07-24 after lifecycle review: the three-second grace state yields
+to new operator intent. Pointer or keyboard engagement cancels its pending
+close, and the first composer edit atomically creates a draft Agent tab carrying
+the complete launch configuration. Background source/model discovery cannot
+make an untouched empty Project durable. The Project strip retracts from the
+right; surviving flex groups use a bounded layout transition so removal does
+not end in a lateral snap.

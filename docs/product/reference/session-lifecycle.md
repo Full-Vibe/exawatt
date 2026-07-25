@@ -59,7 +59,9 @@ open, restore recreates the group. Restore never starts a provider or shell
 process. **⌘K** also exposes each recoverable Session by name.
 
 Draft tabs and never-started Agents contain no durable conversation and keep the
-fast discard behavior. Once a recoverable entry expires, Exawatt reaps its
+fast discard behavior. A draft becomes durable UI state after any explicit
+composer choice, not only non-blank task text; its complete launch configuration
+survives tab switches and restarts. Once a recoverable entry expires, Exawatt reaps its
 retained terminal history; provider-owned history remains governed by the
 provider.
 

@@ -512,7 +512,7 @@ export const architectureManifest = {
           id: 'terminal-workspace',
           label: 'Terminal + Session Overview',
           summary:
-            'Inert Project selection, source-aware Agent composition, contextual command availability, keyboard-complete Project/Session actions, grouped exposé, and direct live-or-stopped Session control.',
+            'Inert Project selection, intent-safe Agent drafts, semantically merged attention, contextual command availability, keyboard-complete Project/Session actions, grouped exposé, and direct live-or-stopped Session control.',
           layer: 'ui',
           status: 'implemented',
           x: 205,
@@ -680,7 +680,7 @@ export const architectureManifest = {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
-            'Immediate launch frame, trusted operator-input/context IPC, renderer-projected native menu availability with route ownership, native-network PKCE, serialized workspace/history, durable provider identity, atomic delivery, and signed updates.',
+            'Immediate launch frame, trusted operator-input/context IPC, reload-safe renderer-projected menu availability, authoritative recovery-ledger events, native-network PKCE, serialized workspace/history, durable provider identity, atomic delivery, and signed updates.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 75,
@@ -783,6 +783,7 @@ export const architectureManifest = {
     'Open Session identity spans Terminal, Sessions, and Spatial; PTYs add live runtime state but do not define whether a Session-backed Agent exists.',
     'Logical Sessions survive local process death through explicit, deterministic rehydration; local processes do not outlive Exawatt.',
     'Agent turn state is semantic main-process truth: finished is sticky across passive PTY redraws and only explicit operator engagement opens the next turn; shell activity remains output-driven.',
+    'Independent attention sources compose semantically: human gates outrank quiet results, and one merged projection drives markers, availability, and navigation.',
     'Session context labels follow submitted operator intent, never PTY output volume; one hosted inference path improves a durable last-good label while failures retain it.',
     'Product feedback is explicit authenticated evidence with row ownership and private attachments; inference evidence is not persisted as feedback automatically.',
     'Agent sources are replaceable harnesses behind explicit adapters.',

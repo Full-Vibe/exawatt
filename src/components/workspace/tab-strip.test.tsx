@@ -50,38 +50,45 @@ function strip({
   onCloseProject?: (dir: string) => void;
   exitingProjectDirs?: ReadonlySet<string>;
 }) {
-  const projects: Project[] = [
-    {
-      dir: '/repo',
-      name: 'repo',
-      color: '#19E6FF',
-      activeTabId: tabs[0]?.id ?? null,
-      tabs,
-    },
-  ];
-  return render(
-    <TooltipProvider>
-      <TabStrip
-        projects={projects}
-        activeDir="/repo"
-        pinnedTabId={null}
-        summaries={summaries}
-        attention={attention}
-        activity={activity}
-        engaged={engaged}
-        onTogglePinTab={vi.fn()}
-        onResumeTab={vi.fn()}
-        onCloseProject={onCloseProject}
-        onSelectProject={vi.fn()}
-        onSelectTab={vi.fn()}
-        onCloseTab={vi.fn()}
-        onRenameTab={vi.fn()}
-        onRenameProject={vi.fn()}
-        onSetProjectColor={vi.fn()}
-        exitingProjectDirs={exitingProjectDirs}
-      />
-    </TooltipProvider>
-  );
+  const view = (nextTabs: WorkspaceTab[]) => {
+    const projects: Project[] = [
+      {
+        dir: '/repo',
+        name: 'repo',
+        color: '#19E6FF',
+        activeTabId: nextTabs[0]?.id ?? null,
+        tabs: nextTabs,
+      },
+    ];
+    return (
+      <TooltipProvider>
+        <TabStrip
+          projects={projects}
+          activeDir="/repo"
+          pinnedTabId={null}
+          summaries={summaries}
+          attention={attention}
+          activity={activity}
+          engaged={engaged}
+          onTogglePinTab={vi.fn()}
+          onResumeTab={vi.fn()}
+          onCloseProject={onCloseProject}
+          onSelectProject={vi.fn()}
+          onSelectTab={vi.fn()}
+          onCloseTab={vi.fn()}
+          onRenameTab={vi.fn()}
+          onRenameProject={vi.fn()}
+          onSetProjectColor={vi.fn()}
+          exitingProjectDirs={exitingProjectDirs}
+        />
+      </TooltipProvider>
+    );
+  };
+  const result = render(view(tabs));
+  return {
+    ...result,
+    rerenderTabs: (nextTabs: WorkspaceTab[]) => result.rerender(view(nextTabs)),
+  };
 }
 
 describe('TabStrip turn-state glyphs (D22)', () => {
@@ -337,6 +344,50 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(container.querySelector('[data-strip-menu]')).toBeNull();
   });
 
+  it('uses roving focus with Home, End, and Tab exit semantics', async () => {
+    strip({ tabs: [tab({ id: 'a' })], onCloseProject: vi.fn() });
+    const projectTrigger = screen.getByRole('button', { name: 'repo' });
+    const sessionTrigger = screen.getByRole('button', {
+      name: 'Claude Code — new',
+    });
+
+    fireEvent.keyDown(projectTrigger, { key: 'F10', shiftKey: true });
+    const menu = screen.getByRole('menu', { name: 'repo Project actions' });
+    const items = screen.getAllByRole('menuitem');
+    await waitFor(() => expect(items[0]).toHaveFocus());
+    expect(items.filter(item => item.tabIndex === 0)).toHaveLength(1);
+
+    fireEvent.keyDown(menu, { key: 'End' });
+    expect(items.at(-1)).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'Home' });
+    expect(items[0]).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'Tab' });
+    await waitFor(() => expect(sessionTrigger).toHaveFocus());
+  });
+
+  it('hands focus to rename and closes a menu whose target disappears', async () => {
+    const rendered = strip({ tabs: [tab({ id: 'a' })] });
+    const trigger = screen.getByRole('button', {
+      name: 'Claude Code — new',
+    });
+    fireEvent.keyDown(trigger, { key: 'ContextMenu' });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename…' }));
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Rename' })).toHaveFocus()
+    );
+
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Rename' }), {
+      key: 'Escape',
+    });
+    fireEvent.keyDown(
+      screen.getByRole('button', { name: 'Claude Code — new' }),
+      { key: 'ContextMenu' }
+    );
+    expect(screen.getByRole('menu')).not.toBeNull();
+    rendered.rerenderTabs([]);
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+
   it('opens Session actions with the Context Menu key', () => {
     strip({ tabs: [tab({ id: 'a' })] });
     const trigger = screen.getByRole('button', {
@@ -358,9 +409,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
       window,
       new CustomEvent(EDIT_ACTIVE_PROJECT_EVENT, { bubbles: true })
     );
-    expect(screen.getByRole('textbox', { name: 'Rename' })).toHaveValue(
-      'repo'
-    );
+    expect(screen.getByRole('textbox', { name: 'Rename' })).toHaveValue('repo');
   });
 
   it('retracts an exiting Project from right to left', () => {

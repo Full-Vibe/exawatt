@@ -171,6 +171,8 @@ export interface ElectronPtyApi {
     entry: Omit<ClosedSessionEntry, 'closedAt'>
   ) => Promise<ClosedSessionEntry>;
   closedSessions: () => Promise<ClosedSessionEntry[]>;
+  /** Main-owned ledger cardinality after archive, reopen, or retention reap. */
+  onClosedSessionsChanged: (handler: (count: number) => void) => () => void;
   /** remove and return a ledger entry so the tab can resurrect whole */
   reopenSession: (
     durableSessionId: string

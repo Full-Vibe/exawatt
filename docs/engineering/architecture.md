@@ -77,7 +77,10 @@ disables workspace-local rename, split, close, and attention verbs while
 another route such as Spatial owns the renderer; route-safe Project opening,
 shell launch, and closed-Session recovery retain their explicit navigation
 paths. Decision `0020` records the visible-target rule, including `⌘J`'s strict
-needs-you semantics.
+needs-you semantics. Electron invalidates the projection when document loading
+starts, on main-frame navigation, and at renderer-process-loss boundaries;
+restored renderer state must republish before native contextual commands become
+available again.
 
 ### Coordination and Intelligence Layer
 
@@ -259,7 +262,11 @@ Built:
   model-specific reasoning efforts, keeps the resolved pair visible beside the
   source, and passes per-Agent overrides as launch data without rewriting
   harness configuration. Environment-owned effort constraints remain visible
-  and non-editable because they outrank session flags
+  and non-editable because they outrank session flags. Empty-Project grace
+  handling distinguishes operator intent from background hydration: engagement
+  retains the Project, while the first authored change promotes task, source,
+  model, effort, worktree/branch, and roadmap link into one persisted draft-tab
+  record
 - a source-agnostic Project catalog derived from durable workspace state. The
   Electron workspace save broadcasts an authoritative change event through the
   preload boundary; FleetProvider refreshes the catalog and local Session
@@ -307,6 +314,11 @@ Built:
 - serialized workspace persistence and bounded terminal-history snapshots with
   append journals; steady-state disk work scales with new terminal output and
   compacts without exposing partial state
+- an Electron-main Recently-closed ledger that publishes authoritative count
+  changes for archive, reopen, and expiry/reap. The renderer subscribes before
+  its initial snapshot and treats in-flight close state only as a temporary
+  availability overlay, preventing stale hydration and periodic cleanup from
+  drifting command enablement
 - self-contained Electron packaging and transactional local delivery. Dogfood
   builds run from a detached snapshot of one committed clean-`master` SHA while
   a repository-scoped delivery lock prevents another agent from advancing the

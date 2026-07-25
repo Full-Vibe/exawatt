@@ -457,6 +457,11 @@ try {
           (await claudeEffortMenu.innerText()).includes('DEFAULT')
       );
       await page.getByRole('option', { name: /High.*Strong balance/i }).click();
+      await page.waitForFunction(() =>
+        document
+          .querySelector('[aria-label="Agent effort"]')
+          ?.textContent?.includes('High')
+      );
       check(
         'the operator can override Claude effort for one new Agent',
         (await claudeEffortTrigger.innerText()).includes('High')
@@ -559,6 +564,41 @@ try {
           activeSessionMenu?.find(
             item => item.label === 'Jump to Session Needing You'
           )?.enabled === false
+      );
+
+      const menuDuringReload = await app.evaluate(
+        ({ BrowserWindow, Menu }) =>
+          new Promise(resolve => {
+            const win = BrowserWindow.getAllWindows()[0];
+            win.webContents.once('did-start-loading', () => {
+              resolve(
+                ['close-tab', 'rename-tab', 'toggle-split'].map(id => ({
+                  id,
+                  enabled:
+                    Menu.getApplicationMenu().getMenuItemById(id)?.enabled ??
+                    null,
+                }))
+              );
+            });
+            win.webContents.reload();
+          })
+      );
+      check(
+        'native Session commands reset while renderer truth reloads',
+        menuDuringReload.every(item => item.enabled === false)
+      );
+      await page.locator('[data-command-altitude]').waitFor();
+      await page.waitForFunction(async () => {
+        const api = window.electron?.pty;
+        return ((await api?.list()) ?? []).length > 0;
+      });
+      await page.waitForTimeout(100);
+      const menuAfterReload = await nativeSessionMenu(app);
+      check(
+        'native Session commands republish after workspace hydration',
+        menuAfterReload?.find(
+          item => item.label === 'Close Tab or Empty Project'
+        )?.enabled === true
       );
 
       await page.keyboard.press('Control+Meta+3');
@@ -870,6 +910,19 @@ try {
           'Auto'
         )
       );
+      const guardedTask = 'Keep this launch intent during the grace period';
+      await page.getByLabel('Initial task for the new Agent').fill(guardedTask);
+      await page.getByRole('button', { name: 'Close New agent' }).waitFor();
+      await page.waitForTimeout(3_400);
+      check(
+        'typing during the empty grace period promotes a durable draft and cancels auto-close',
+        (await page.locator('[data-project="alpha"]').count()) === 1 &&
+          (await page
+            .getByLabel('Initial task for the new Agent')
+            .inputValue()) === guardedTask
+      );
+      await closeTab(page, 'New agent');
+      await page.locator('[data-agent-composer]').waitFor();
       const alphaProject = page.locator('[data-project="alpha"]');
       await page
         .locator('[data-project="alpha"][data-project-exiting="true"]')
@@ -1029,14 +1082,41 @@ try {
 
       // The close verb follows the active UI object. With no Agent tab left,
       // Command-W closes the explicitly reopened empty Project immediately.
+      await page.evaluate(() => {
+        globalThis.__EXAWATT_SAW_PROJECT_EXIT = false;
+        const observer = new MutationObserver(records => {
+          for (const record of records) {
+            if (
+              record.type === 'attributes' &&
+              record.target instanceof Element &&
+              record.target.matches(
+                '[data-project="alpha"][data-project-exiting="true"]'
+              )
+            ) {
+              globalThis.__EXAWATT_SAW_PROJECT_EXIT = true;
+            }
+          }
+        });
+        observer.observe(document.body, {
+          attributes: true,
+          attributeFilter: ['data-project-exiting'],
+          childList: true,
+          subtree: true,
+        });
+        globalThis.__EXAWATT_PROJECT_EXIT_OBSERVER = observer;
+      });
       await page.keyboard.press('Meta+KeyW');
-      await page
-        .locator('[data-project="alpha"][data-project-exiting="true"]')
-        .waitFor({ state: 'attached' });
       await page
         .locator('[data-project="alpha"]')
         .waitFor({ state: 'detached' });
-      check('Command-W closes an explicitly opened empty Project', true);
+      const sawCommandExit = await page.evaluate(() => {
+        globalThis.__EXAWATT_PROJECT_EXIT_OBSERVER?.disconnect();
+        return globalThis.__EXAWATT_SAW_PROJECT_EXIT === true;
+      });
+      check(
+        'Command-W closes an explicitly opened empty Project through its exit state',
+        sawCommandExit
+      );
       await page.waitForTimeout(600);
 
       // Reopen once more so the explicit context-menu entry remains covered

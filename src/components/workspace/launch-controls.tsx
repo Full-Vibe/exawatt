@@ -44,7 +44,7 @@ import {
   type AgentSourceId,
 } from './agent-sources';
 import { HarnessGlyph } from './harness-icons';
-import type { LaunchOptions } from './use-workspace-state';
+import type { LaunchOptions, WorkspaceDraftPatch } from './use-workspace-state';
 import type {
   AgentModelCatalog,
   AgentPermissionMode,
@@ -138,11 +138,16 @@ export function AgentComposer({
   initialTask,
   initialModel,
   initialEffort,
+  initialWorktree,
+  initialBranch,
+  initialRoadmapItemId,
   roadmapItems = [],
 
   onLaunch,
   onReopenConversation,
   onDraftChange,
+  onDraftIntent,
+  onUserInteraction,
 }: {
   projectDir: string;
   projectName: string;
@@ -156,6 +161,9 @@ export function AgentComposer({
   initialModel?: string;
   /** the draft tab's effort snapshot; changing it affects only this launch */
   initialEffort?: string;
+  initialWorktree?: boolean;
+  initialBranch?: string;
+  initialRoadmapItemId?: string;
   roadmapItems?: LaunchRoadmapItem[];
 
   onLaunch: (opts: LaunchOptions) => Promise<boolean>;
@@ -164,16 +172,21 @@ export function AgentComposer({
   onReopenConversation?: (durableSessionId: string) => Promise<boolean>;
   /** draft tabs (D28): the tab owns the work-in-progress — every task or
    *  source edit reports up so it survives this pane unmounting */
-  onDraftChange?: (patch: {
-    draftTask?: string;
-    draftSource?: AgentSourceId;
-    draftModel?: string | null;
-    draftEffort?: string | null;
-  }) => void;
+  onDraftChange?: (patch: WorkspaceDraftPatch) => void;
+  /** Called only for an operator-authored change, never catalog hydration.
+   * Empty Projects use this boundary to become durable draft tabs before any
+   * launch intent can be lost to the delayed Project close. */
+  onDraftIntent?: (patch: WorkspaceDraftPatch) => void;
+  /** Pointer/key engagement retains an otherwise transient empty Project. */
+  onUserInteraction?: () => void;
 }) {
   const [task, setTaskState] = useState(initialTask ?? '');
   const onDraftChangeRef = useRef(onDraftChange);
   onDraftChangeRef.current = onDraftChange;
+  const onDraftIntentRef = useRef(onDraftIntent);
+  onDraftIntentRef.current = onDraftIntent;
+  const onUserInteractionRef = useRef(onUserInteraction);
+  onUserInteractionRef.current = onUserInteraction;
   const initialTaskRef = useRef(initialTask);
   initialTaskRef.current = initialTask;
   const initialModelRef = useRef(initialModel);
@@ -182,9 +195,18 @@ export function AgentComposer({
   initialEffortRef.current = initialEffort;
   const initialSourceRef = useRef(initialSource);
   initialSourceRef.current = initialSource;
+  const initialWorktreeRef = useRef(initialWorktree);
+  initialWorktreeRef.current = initialWorktree;
+  const initialBranchRef = useRef(initialBranch);
+  initialBranchRef.current = initialBranch;
+  const initialRoadmapItemIdRef = useRef(initialRoadmapItemId);
+  initialRoadmapItemIdRef.current = initialRoadmapItemId;
   const setTask = useCallback((next: string) => {
     setTaskState(next);
     onDraftChangeRef.current?.({ draftTask: next });
+  }, []);
+  const reportDraftIntent = useCallback((patch: WorkspaceDraftPatch) => {
+    onDraftIntentRef.current?.({ ...patch, draftTouched: true });
   }, []);
   const [source, setSource] = useState<AgentSourceId>('claude');
   const [modelCatalog, setModelCatalog] = useState<AgentModelCatalog | null>(
@@ -202,9 +224,11 @@ export function AgentComposer({
   const [permissionSaveState, setPermissionSaveState] = useState<
     'idle' | 'saving' | 'saved' | 'failed'
   >('idle');
-  const [worktree, setWorktree] = useState(false);
-  const [branch, setBranch] = useState(defaultBranch);
-  const [roadmapItemId, setRoadmapItemId] = useState('');
+  const [worktree, setWorktree] = useState(initialWorktree ?? false);
+  const [branch, setBranch] = useState(() => initialBranch ?? defaultBranch());
+  const [roadmapItemId, setRoadmapItemId] = useState(
+    initialRoadmapItemId ?? ''
+  );
   const [launching, setLaunching] = useState<'agent' | 'shell' | null>(null);
   // D24: the composer IS the pane of a draft tab (or an empty Project) —
   // always open; ⌘T creates/selects the draft tab that hosts it.
@@ -355,7 +379,9 @@ export function AgentComposer({
     // a (re)mount or Project change is not an operator edit: restore the
     // tab's saved draft directly instead of reporting a blank up (D28)
     setTaskState(initialTaskRef.current ?? '');
-    setRoadmapItemId('');
+    setWorktree(initialWorktreeRef.current ?? false);
+    setBranch(initialBranchRef.current ?? defaultBranch());
+    setRoadmapItemId(initialRoadmapItemIdRef.current ?? '');
     return () => {
       cancelled = true;
     };
@@ -531,7 +557,9 @@ export function AgentComposer({
       const el = taskRef.current;
       const start = el?.selectionStart ?? task.length;
       const end = el?.selectionEnd ?? task.length;
-      setTask(task.slice(0, start) + value + task.slice(end));
+      const nextTask = task.slice(0, start) + value + task.slice(end);
+      setTask(nextTask);
+      reportDraftIntent({ draftTask: nextTask });
       requestAnimationFrame(() => {
         const node = taskRef.current;
         if (!node) return;
@@ -540,7 +568,7 @@ export function AgentComposer({
         node.setSelectionRange(caret, caret);
       });
     },
-    [task, setTask]
+    [reportDraftIntent, task, setTask]
   );
 
   /** ⌘V/⌃V (D24): an image saves to a temp file and its path joins the
@@ -707,6 +735,8 @@ export function AgentComposer({
       data-agent-composer
       data-preferences-ready={preferencesReady}
       aria-busy={launching !== null}
+      onPointerDownCapture={() => onUserInteractionRef.current?.()}
+      onKeyDownCapture={() => onUserInteractionRef.current?.()}
       onSubmit={event => {
         event.preventDefault();
         void launchAgent();
@@ -719,7 +749,11 @@ export function AgentComposer({
         value={task}
         maxLength={8_000}
         disabled={controlsDisabled}
-        onChange={event => setTask(event.target.value)}
+        onChange={event => {
+          const nextTask = event.target.value;
+          setTask(nextTask);
+          reportDraftIntent({ draftTask: nextTask });
+        }}
         // image paste (D24): ⌘V catches images via the paste event; ⌃V is
         // the coding-harness muscle memory and works the same way
         onPaste={event => {
@@ -760,7 +794,9 @@ export function AgentComposer({
             const order = AGENT_SOURCE_ORDER;
             const index = order.indexOf(effectiveSource);
             const step = event.key === 'ArrowDown' ? 1 : order.length - 1;
-            chooseSource(order[(index + step) % order.length]);
+            const nextSource = order[(index + step) % order.length];
+            reportDraftIntent({ draftSource: nextSource });
+            chooseSource(nextSource);
             return;
           }
           if (event.key === 'ArrowDown' && task === '') {
@@ -784,6 +820,7 @@ export function AgentComposer({
             disabled={!preferencesReady || controlsDisabled}
             onValueChange={value => {
               if (!isAgentSourceId(value)) return;
+              reportDraftIntent({ draftSource: value });
               selectSource(value);
             }}
           >
@@ -863,6 +900,10 @@ export function AgentComposer({
               setModel(value);
               setEffort(nextEffort);
               onDraftChangeRef.current?.({
+                draftModel: value,
+                draftEffort: nextEffort,
+              });
+              reportDraftIntent({
                 draftModel: value,
                 draftEffort: nextEffort,
               });
@@ -958,6 +999,7 @@ export function AgentComposer({
               ] = value;
               setEffort(value);
               onDraftChangeRef.current?.({ draftEffort: value });
+              reportDraftIntent({ draftEffort: value });
             }}
           >
             <SelectTrigger
@@ -1222,7 +1264,18 @@ export function AgentComposer({
                 <input
                   type="checkbox"
                   checked={worktree}
-                  onChange={event => setWorktree(event.target.checked)}
+                  onChange={event => {
+                    const nextWorktree = event.target.checked;
+                    setWorktree(nextWorktree);
+                    onDraftChangeRef.current?.({
+                      draftWorktree: nextWorktree,
+                      draftBranch: branch,
+                    });
+                    reportDraftIntent({
+                      draftWorktree: nextWorktree,
+                      draftBranch: branch,
+                    });
+                  }}
                   className="accent-cyan-400"
                 />
                 <GitBranch className="h-3.5 w-3.5" />
@@ -1233,7 +1286,10 @@ export function AgentComposer({
                   value={branch}
                   onChange={event => {
                     branchEditSeq.current += 1;
-                    setBranch(event.target.value);
+                    const nextBranch = event.target.value;
+                    setBranch(nextBranch);
+                    onDraftChangeRef.current?.({ draftBranch: nextBranch });
+                    reportDraftIntent({ draftBranch: nextBranch });
                   }}
                   aria-label="Branch name for the new worktree"
                   aria-invalid={!branchReady}
@@ -1263,7 +1319,16 @@ export function AgentComposer({
                   <select
                     aria-label="Roadmap item this session will work on"
                     value={roadmapItemId}
-                    onChange={event => setRoadmapItemId(event.target.value)}
+                    onChange={event => {
+                      const nextRoadmapItemId = event.target.value;
+                      setRoadmapItemId(nextRoadmapItemId);
+                      onDraftChangeRef.current?.({
+                        draftRoadmapItemId: nextRoadmapItemId,
+                      });
+                      reportDraftIntent({
+                        draftRoadmapItemId: nextRoadmapItemId,
+                      });
+                    }}
                     className="mt-1 h-8 w-full rounded border bg-transparent px-2 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{
                       color: HUD.text,

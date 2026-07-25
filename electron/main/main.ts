@@ -477,6 +477,11 @@ function createWindow(initialUrl: string): void {
       backgroundThrottling: windowLaunchMode !== 'hidden',
     },
   });
+  // Renderer-owned command truth is invalid as soon as a document starts
+  // loading or its process is gone. The main-frame navigation boundary below
+  // repeats this idempotently alongside checkpoint ownership.
+  mainWindow.webContents.on('did-start-loading', resetMenuAvailability);
+  mainWindow.webContents.on('render-process-gone', resetMenuAvailability);
 
   if (!showAtCreation && windowLaunchMode === 'inactive') {
     const inactiveWindow = mainWindow;
@@ -495,7 +500,12 @@ function createWindow(initialUrl: string): void {
   mainWindow.webContents.on(
     'did-start-navigation',
     (_event, _target, isInPlace, isMainFrame) => {
-      if (isMainFrame && !isInPlace) clearCheckpointOwner();
+      if (isMainFrame && !isInPlace) {
+        clearCheckpointOwner();
+        // Disable first; the restored workspace republishes after hydration
+        // instead of leaving stale native actions clickable during reload.
+        resetMenuAvailability();
+      }
     }
   );
   mainWindow.webContents.on(
@@ -552,6 +562,7 @@ function createWindow(initialUrl: string): void {
   }
 
   mainWindow.on('closed', () => {
+    resetMenuAvailability();
     clearCheckpointOwner();
     mainWindow = null;
   });
@@ -599,6 +610,17 @@ const menuAvailability: Record<string, boolean> = {
   'close-tab': false,
   'jump-attention': false,
 };
+
+function resetMenuAvailability(): void {
+  let changed = false;
+  for (const command of Object.keys(menuAvailability)) {
+    if (menuAvailability[command]) {
+      menuAvailability[command] = false;
+      changed = true;
+    }
+  }
+  if (changed) createMenu();
+}
 
 let feedbackAuthenticated = false;
 
@@ -668,6 +690,7 @@ function menuCommand(
   const accelerator =
     command === 'open-settings' ? 'Command+,' : menuAccelerators[command];
   return {
+    id: command,
     label,
     enabled: menuAvailability[command] ?? true,
     ...(accelerator ? { accelerator, registerAccelerator } : {}),

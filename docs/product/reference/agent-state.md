@@ -131,6 +131,12 @@ starvation, empty queues, and other useful but non-urgent states remain
 discoverable through their owning surface instead of silently borrowing the
 attention command.
 
+When sources collide for one Session, semantic precedence applies before
+navigation or rendering: a bell or roadmap block remains needs-you even if a
+turn-end result arrives later. Within the winning class, the oldest timestamp
+sets queue order. The marker, command availability, and jump target all consume
+that merged projection.
+
 The persistent hint bar, command palette, and native Session menu project the
 same target availability. Passive hints omit inapplicable commands; interactive
 menus retain useful discoverability by disabling the command and naming the

@@ -82,7 +82,6 @@ import {
 import {
   findRoadmapSessionChip,
   deriveRoadmapBlockedSessions,
-  orderedRoadmapJumpTargets,
 } from '@exawatt/ui-model';
 import { HUD } from '@/components/hud';
 import { useProductFeedback } from '@/components/feedback/product-feedback-provider';
@@ -97,7 +96,12 @@ import {
 } from 'lucide-react';
 import { middleTruncatePath } from './path-label';
 import { useProjectCloseLifecycle } from './use-project-close-lifecycle';
-import { attentionNeedsOperator } from './session-status';
+import { isAgentSourceId } from './agent-sources';
+import {
+  attentionNeedsOperator,
+  mergeSessionAttentionMaps,
+  orderedAttentionTargets,
+} from './session-status';
 import {
   deriveWorkspaceCommandAvailability,
   publishWorkspaceCommandAvailability,
@@ -293,7 +297,6 @@ export function WorkspaceClient() {
     moveActiveProject,
     reorderTab,
     reorderProject,
-    jumpAttention,
     togglePin,
     togglePinTab,
     renameTab,
@@ -302,11 +305,12 @@ export function WorkspaceClient() {
     ready,
   } = useWorkspaceState({ getInitialSize });
 
-  const { exitingProjectDirs, requestProjectExit } = useProjectCloseLifecycle({
-    projects,
-    ready,
-    onCloseProject: closeProject,
-  });
+  const { exitingProjectDirs, requestProjectExit, retainProject } =
+    useProjectCloseLifecycle({
+      projects,
+      ready,
+      onCloseProject: closeProject,
+    });
 
   useEffect(() => {
     if (!inElectron) return;
@@ -330,7 +334,12 @@ export function WorkspaceClient() {
       // the summon IS a new tab now (D24): the draft pane hosts the
       // composer, and a palette source override rides ON the draft
       const requested = (event as CustomEvent<string | null>).detail ?? null;
-      createDraftTab(undefined, requested);
+      createDraftTab(
+        undefined,
+        requested && isAgentSourceId(requested)
+          ? { draftSource: requested, draftTouched: true }
+          : undefined
+      );
     };
     window.addEventListener(FOCUS_AGENT_COMPOSER_EVENT, ensureProject);
     if (!activeProject && hasPendingAgentComposer()) {
@@ -493,34 +502,33 @@ export function WorkspaceClient() {
     }
     return out;
   }, [roadmapView]);
-  const roadmapJumpTargets = useMemo(
-    () =>
-      orderedRoadmapJumpTargets(roadmapAttention, activeTab?.sessionId ?? null),
-    [activeTab?.sessionId, roadmapAttention]
+  // Attention sources compose. A quiet harness result must never mask an
+  // independent roadmap block for the same Session.
+  const mergedAttention = useMemo(
+    () => mergeSessionAttentionMaps(attention, roadmapAttention),
+    [attention, roadmapAttention]
   );
-  const hasPtyAttentionTarget = useMemo(() => {
-    const flagged = new Set(
-      Object.entries(attention)
-        .filter(([, signal]) => attentionNeedsOperator(signal))
-        .map(([sessionId]) => sessionId)
-    );
-    return projects.some(project =>
-      project.tabs.some(
-        tab =>
-          !!tab.sessionId && tab.exitCode === null && flagged.has(tab.sessionId)
+  const attentionJumpTargets = useMemo(() => {
+    const liveSessionIds = new Set(
+      projects.flatMap(project =>
+        project.tabs.flatMap(tab =>
+          tab.sessionId && tab.exitCode === null ? [tab.sessionId] : []
+        )
       )
     );
-  }, [attention, projects]);
-  const hasAttentionTarget =
-    hasPtyAttentionTarget || roadmapJumpTargets.length > 0;
+    return orderedAttentionTargets(
+      mergedAttention,
+      activeTab?.sessionId ?? null
+    ).filter(sessionId => liveSessionIds.has(sessionId));
+  }, [activeTab?.sessionId, mergedAttention, projects]);
+  const hasAttentionTarget = attentionJumpTargets.length > 0;
 
   // ⌘J is a strict attention queue: every target has a visible needs-you
   // marker. Empty-roadmap starvation remains visible in the roadmap itself,
   // but must never surprise-navigate Terminal → Sessions without an amber
   // target in the workspace.
   const jumpAttentionQueue = useCallback((): boolean => {
-    if (jumpAttention()) return true;
-    for (const sessionId of roadmapJumpTargets) {
+    for (const sessionId of attentionJumpTargets) {
       for (const g of projects) {
         const tab = g.tabs.find(t => t.sessionId === sessionId);
         if (tab) {
@@ -530,7 +538,7 @@ export function WorkspaceClient() {
       }
     }
     return false;
-  }, [jumpAttention, roadmapJumpTargets, projects, selectTab]);
+  }, [attentionJumpTargets, projects, selectTab]);
 
   // the palette row dispatches OPEN_ROADMAP_EVENT; same summon as ⌘B
   useEffect(() => {
@@ -595,13 +603,6 @@ export function WorkspaceClient() {
     }
     return out;
   }, [projects, roadmapView]);
-  // PTY attention (bell/turn-end from main) wins on collision — it is the
-  // richer, harness-observed signal
-  const mergedAttention = useMemo(
-    () => ({ ...roadmapAttention, ...attention }),
-    [roadmapAttention, attention]
-  );
-
   // Sessions altitude (S3): ⌃⌘2 — sessions fan out as tiles
   const requestedOverview = searchParams.get('view') === 'sessions';
   const [overviewOpen, setOverviewOpen] = useState(requestedOverview);
@@ -854,7 +855,13 @@ export function WorkspaceClient() {
         window.dispatchEvent(new CustomEvent(FOCUS_AGENT_COMPOSER_EVENT));
         return true;
       },
-      jumpAttention: jumpAttentionQueue,
+      jumpAttention: () => {
+        // The chord belongs to the workspace even when the strict visible
+        // queue is empty. Consume it as a deliberate no-op so Chromium or a
+        // parent navigation layer cannot reinterpret ⌘J.
+        jumpAttentionQueue();
+        return true;
+      },
       activateCommandAltitude: target => {
         activateCommandAltitude(target);
         return true;
@@ -1316,6 +1323,11 @@ export function WorkspaceClient() {
                                 initialTask={tab.draftTask ?? undefined}
                                 initialModel={tab.draftModel ?? undefined}
                                 initialEffort={tab.draftEffort ?? undefined}
+                                initialWorktree={tab.draftWorktree}
+                                initialBranch={tab.draftBranch ?? undefined}
+                                initialRoadmapItemId={
+                                  tab.draftRoadmapItemId ?? undefined
+                                }
                                 roadmapItems={launchRoadmapItems}
                                 onLaunch={opts =>
                                   launch({ ...opts, reuseTabId: tab.id })
@@ -1324,6 +1336,9 @@ export function WorkspaceClient() {
                                   reopenClosedSession(durableSessionId, tab.id)
                                 }
                                 onDraftChange={patch =>
+                                  updateDraft(tab.id, patch)
+                                }
+                                onDraftIntent={patch =>
                                   updateDraft(tab.id, patch)
                                 }
                               />
@@ -1373,6 +1388,12 @@ export function WorkspaceClient() {
                           roadmapItems={launchRoadmapItems}
                           onLaunch={launch}
                           onReopenConversation={reopenClosedSession}
+                          onUserInteraction={() =>
+                            retainProject(activeProject.dir)
+                          }
+                          onDraftIntent={patch =>
+                            createDraftTab(activeProject.dir, patch)
+                          }
                         />
                       </ComposerViewport>
                     </div>

@@ -43,13 +43,24 @@ import {
  * (single-window app today; cheap to scope per-window later).
  */
 export function registerPtyIPC(previousRunInterrupted = false): void {
+  const broadcast = (channel: string, payload: unknown) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(channel, payload);
+    }
+  };
   const closedLedger = new ClosedSessionLedger(
     path.join(app.getPath('userData'), 'closed-sessions.json'),
     durableSessionId => ptySessions.purgeHistory(durableSessionId)
   );
-  void closedLedger.reap();
+  const publishClosedSessionCount = () =>
+    broadcast('pty:closed-sessions-changed', closedLedger.list().length);
+  const reapClosedSessions = async () => {
+    const reaped = await closedLedger.reap();
+    if (reaped > 0) publishClosedSessionCount();
+  };
+  void reapClosedSessions();
   const reapTimer = setInterval(
-    () => void closedLedger.reap(),
+    () => void reapClosedSessions(),
     6 * 60 * 60 * 1000
   );
   reapTimer.unref?.();
@@ -63,11 +74,6 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       loadSettings().conversationSummaries?.hosted !== false,
   });
   const nativeNotifications = new Map<string, Notification>();
-  const broadcast = (channel: string, payload: unknown) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send(channel, payload);
-    }
-  };
 
   ptySessions.on(
     'data',
@@ -353,13 +359,17 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       // without this, rehydration resurrects the closed tab from the
       // leftover exited record
       ptySessions.forgetExited(entry.durableSessionId);
+      publishClosedSessionCount();
       return stamped;
     }
   );
   handleTrusted('pty:closed-sessions', () => closedLedger.list());
   handleTrusted('pty:reopen-session', (_event, durableSessionId: string) => {
     const entry = closedLedger.take(durableSessionId);
-    if (entry) conversationCatalog.invalidate();
+    if (entry) {
+      conversationCatalog.invalidate();
+      publishClosedSessionCount();
+    }
     return entry;
   });
   handleTrusted('pty:rename', (_event, id: string, title: string) => {

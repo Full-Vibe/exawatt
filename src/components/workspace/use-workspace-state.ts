@@ -34,7 +34,6 @@ import {
   tabAtOrdinal,
 } from './tab-ring';
 import { nextPin, tabIsPinnable } from './split-layout';
-import { attentionNeedsOperator } from './session-status';
 import {
   SESSION_JUMP_EVENT,
   TAB_SELECT_EVENT,
@@ -47,6 +46,7 @@ import {
   consumePendingOpenProject,
 } from './session-jump';
 import { loadTerminalFont } from './terminal-font';
+import { useClosedSessionCount } from './use-closed-session-count';
 import {
   DEFAULT_AGENT_PERMISSION_MODE,
   isAgentSourceId,
@@ -105,6 +105,70 @@ export interface WorkspaceTab {
   draftModel?: string | null;
   /** draft tabs only: the reasoning effort paired with the selected model. */
   draftEffort?: string | null;
+  /** True only after an operator changes the composer. Background catalog
+   * hydration must not make an untouched new-tab page durable. */
+  draftTouched?: boolean;
+  /** Draft launch options travel with the tab just like task/model choices. */
+  draftWorktree?: boolean;
+  draftBranch?: string | null;
+  draftRoadmapItemId?: string | null;
+}
+
+export interface WorkspaceDraftPatch {
+  draftTask?: string;
+  draftSource?: AgentSourceId;
+  draftModel?: string | null;
+  draftEffort?: string | null;
+  draftTouched?: boolean;
+  draftWorktree?: boolean;
+  draftBranch?: string | null;
+  draftRoadmapItemId?: string | null;
+}
+
+export function applyWorkspaceDraftPatch(
+  tab: WorkspaceTab,
+  patch: WorkspaceDraftPatch
+): WorkspaceTab {
+  const sourceChanged =
+    patch.draftSource !== undefined &&
+    patch.draftSource !== (tab.draftSource ?? null);
+  return {
+    ...tab,
+    draftTask:
+      patch.draftTask === undefined ? (tab.draftTask ?? null) : patch.draftTask,
+    draftSource:
+      patch.draftSource === undefined
+        ? (tab.draftSource ?? null)
+        : patch.draftSource,
+    draftModel:
+      patch.draftModel === undefined
+        ? sourceChanged
+          ? null
+          : (tab.draftModel ?? null)
+        : patch.draftModel,
+    draftEffort:
+      patch.draftEffort === undefined
+        ? sourceChanged
+          ? null
+          : (tab.draftEffort ?? null)
+        : patch.draftEffort,
+    draftTouched:
+      patch.draftTouched === undefined
+        ? (tab.draftTouched ?? false)
+        : patch.draftTouched,
+    draftWorktree:
+      patch.draftWorktree === undefined
+        ? (tab.draftWorktree ?? false)
+        : patch.draftWorktree,
+    draftBranch:
+      patch.draftBranch === undefined
+        ? (tab.draftBranch ?? null)
+        : patch.draftBranch,
+    draftRoadmapItemId:
+      patch.draftRoadmapItemId === undefined
+        ? (tab.draftRoadmapItemId ?? null)
+        : patch.draftRoadmapItemId,
+  };
 }
 
 export type TabTitleKind = 'default' | 'operator';
@@ -238,12 +302,16 @@ export interface PersistedV6 {
        *  layouts lack them; both restore the context layer on relaunch */
       initialTask?: string | null;
       contextSummary?: string | null;
-      /** draft new-tab composer state (D28): only a draft WITH typed work
-       *  persists — an empty ⌘T tile still vanishes without ceremony */
+      /** Draft new-tab composer state: any operator-authored launch choice
+       * persists; an untouched ⌘T tile still vanishes without ceremony. */
       draftTask?: string | null;
       draftSource?: string | null;
       draftModel?: string | null;
       draftEffort?: string | null;
+      draftTouched?: boolean;
+      draftWorktree?: boolean;
+      draftBranch?: string | null;
+      draftRoadmapItemId?: string | null;
     }>;
   }>;
 }
@@ -539,9 +607,6 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const [resumeBatchProgress, setResumeBatchProgress] =
     useState<ResumeBatchProgress | null>(null);
   const [ready, setReady] = useState(false);
-  /** Durable Recently-closed ledger size. This keeps reopen affordances in
-   *  the palette/native menu honest without making those surfaces query IPC. */
-  const [closedSessionCount, setClosedSessionCount] = useState(0);
   /** goal subtitles keyed by durableSessionId (D21): the goal is durable
    *  Session truth — live updates stream from main, the persisted layout
    *  seeds them back after a restart, stopped tabs keep theirs */
@@ -571,8 +636,6 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const recentsRef = useRef<NonNullable<PersistedV6['recentProjects']>>([]);
   const readyRef = useRef(ready);
   readyRef.current = ready;
-  const attentionRef = useRef(attention);
-  attentionRef.current = attention;
   const summariesRef = useRef(summaries);
   summariesRef.current = summaries;
   const engagedRef = useRef(engaged);
@@ -590,17 +653,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   /** Identity can arrive before React has committed a newly launched/restored
    * tab. Retain that event by durable Session id instead of dropping it. */
   const observedIdentitiesRef = useRef<Map<string, string>>(new Map());
-
-  useEffect(() => {
-    if (!ready) return;
-    let cancelled = false;
-    void window.electron?.pty?.closedSessions?.().then(entries => {
-      if (!cancelled) setClosedSessionCount(entries.length);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [ready]);
+  const { closedSessionCount, beginPendingClose } =
+    useClosedSessionCount(ready);
 
   const syncProjectIdentity = useCallback(
     (ref: { rootPath: string; name: string }) => {
@@ -832,8 +886,17 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           tabs: g.tabs.map(raw => {
             // the persisted draft fields stay OFF non-draft tabs (and the
             // untyped draftSource string never reaches WorkspaceTab)
-            const { draftTask, draftSource, draftModel, draftEffort, ...t } =
-              raw;
+            const {
+              draftTask,
+              draftSource,
+              draftModel,
+              draftEffort,
+              draftTouched,
+              draftWorktree,
+              draftBranch,
+              draftRoadmapItemId,
+              ...t
+            } = raw;
             // a persisted draft (D28) restores as a draft: no process, no
             // resume identity — just the composer with the saved work
             if (t.lifecycle === 'draft') {
@@ -859,6 +922,20 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                   draftEffort.length <= 32 &&
                   /^[a-z][a-z0-9_-]*$/.test(draftEffort)
                     ? draftEffort
+                    : null,
+                draftTouched: draftTouched === true,
+                draftWorktree: draftWorktree === true,
+                draftBranch:
+                  typeof draftBranch === 'string' &&
+                  draftBranch.length <= 512 &&
+                  !/[\u0000-\u001f\u007f]/.test(draftBranch)
+                    ? draftBranch
+                    : null,
+                draftRoadmapItemId:
+                  typeof draftRoadmapItemId === 'string' &&
+                  draftRoadmapItemId.length <= 256 &&
+                  !/[\u0000-\u001f\u007f]/.test(draftRoadmapItemId)
+                    ? draftRoadmapItemId
                     : null,
               };
             }
@@ -1106,11 +1183,16 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         pinnedTabId: pinSurvives ? pin : null,
         recentProjects: recents,
         projects: gs.map(g => {
-          // an EMPTY draft is pre-session UI and vanishes with the run,
-          // but typed draft work is real work — it persists (D28,
-          // amending D24's blanket "drafts never persist")
+          // An untouched draft is pre-session UI and vanishes with the run.
+          // Any explicit composer choice is operator work, even when its task
+          // is blank, and persists with the rest of the launch intent.
           const tabs = g.tabs
-            .filter(tab => tab.lifecycle !== 'draft' || !!tab.draftTask?.trim())
+            .filter(
+              tab =>
+                tab.lifecycle !== 'draft' ||
+                tab.draftTouched === true ||
+                !!tab.draftTask?.trim()
+            )
             .map(tab => {
               const stopped =
                 cleanShutdown &&
@@ -1138,6 +1220,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                       draftSource: tab.draftSource ?? null,
                       draftModel: tab.draftModel ?? null,
                       draftEffort: tab.draftEffort ?? null,
+                      draftTouched: tab.draftTouched ?? false,
+                      draftWorktree: tab.draftWorktree ?? false,
+                      draftBranch: tab.draftBranch ?? null,
+                      draftRoadmapItemId: tab.draftRoadmapItemId ?? null,
                     }
                   : {}),
               };
@@ -1327,12 +1413,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           // Commit the soft-close migration only after the provider process is
           // live. A failed create leaves the recoverable ledger entry intact.
           try {
-            const consumed = await api.reopenSession(
-              restoredEntry.durableSessionId
-            );
-            if (consumed) {
-              setClosedSessionCount(current => Math.max(0, current - 1));
-            }
+            await api.reopenSession(restoredEntry.durableSessionId);
           } catch (cause) {
             console.warn(
               'Could not consume migrated Session ledger entry',
@@ -1394,8 +1475,15 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  draft per Project; asking again selects it. Returns null when no
    *  Project is open (caller falls back to the Project chooser). */
   const createDraftTab = useCallback(
-    (dirArg?: string, source?: string | null): string | null => {
-      const requested = source && isAgentSourceId(source) ? source : null;
+    (dirArg?: string, seed: WorkspaceDraftPatch = {}): string | null => {
+      const requestedSource =
+        seed.draftSource && isAgentSourceId(seed.draftSource)
+          ? seed.draftSource
+          : undefined;
+      const requested: WorkspaceDraftPatch = {
+        ...seed,
+        ...(requestedSource ? { draftSource: requestedSource } : {}),
+      };
       const { projects: gs, activeDir: ad } = stateRef.current;
       const dir = dirArg ?? ad;
       const g = dir ? gs.find(x => x.dir === dir) : undefined;
@@ -1408,24 +1496,14 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
               ? {
                   ...grp,
                   activeTabId: existing.id,
-                  tabs: requested
-                    ? grp.tabs.map(t =>
-                        t.id === existing.id
-                          ? {
-                              ...t,
-                              draftSource: requested,
-                              draftModel:
-                                t.draftSource === requested
-                                  ? (t.draftModel ?? null)
-                                  : null,
-                              draftEffort:
-                                t.draftSource === requested
-                                  ? (t.draftEffort ?? null)
-                                  : null,
-                            }
-                          : t
-                      )
-                    : grp.tabs,
+                  tabs:
+                    Object.keys(requested).length > 0
+                      ? grp.tabs.map(t =>
+                          t.id === existing.id
+                            ? applyWorkspaceDraftPatch(t, requested)
+                            : t
+                        )
+                      : grp.tabs,
                 }
               : grp
           )
@@ -1447,20 +1525,29 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         exitCode: null,
         roadmapItemId: null,
         initialTask: null,
-        draftSource: requested,
+        draftSource: requestedSource ?? null,
         draftTask: null,
         draftModel: null,
         draftEffort: null,
+        draftTouched: false,
+        draftWorktree: false,
+        draftBranch: null,
+        draftRoadmapItemId: null,
       };
+      const seededTab = applyWorkspaceDraftPatch(tab, requested);
       setProjects(prev =>
         prev.map(grp =>
           grp.dir === g.dir
-            ? { ...grp, tabs: [...grp.tabs, tab], activeTabId: tab.id }
+            ? {
+                ...grp,
+                tabs: [...grp.tabs, seededTab],
+                activeTabId: seededTab.id,
+              }
             : grp
         )
       );
       setActiveDir(g.dir);
-      return tab.id;
+      return seededTab.id;
     },
     []
   );
@@ -1470,58 +1557,24 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  Projects, or relaunching the app never loses draft work. No-op edits
    *  return the same state so per-keystroke calls stay cheap. */
   const updateDraft = useCallback(
-    (
-      tabId: string,
-      patch: {
-        draftTask?: string;
-        draftSource?: AgentSourceId;
-        draftModel?: string | null;
-        draftEffort?: string | null;
-      }
-    ) => {
+    (tabId: string, patch: WorkspaceDraftPatch) => {
       setProjects(prev => {
         const group = prev.find(g => g.tabs.some(t => t.id === tabId));
         const tab = group?.tabs.find(t => t.id === tabId);
         if (!group || !tab || tab.lifecycle !== 'draft') return prev;
-        const draftTask =
-          patch.draftTask === undefined
-            ? (tab.draftTask ?? null)
-            : patch.draftTask;
-        const draftSource =
-          patch.draftSource === undefined
-            ? (tab.draftSource ?? null)
-            : patch.draftSource;
-        const draftModel =
-          patch.draftModel === undefined
-            ? (tab.draftModel ?? null)
-            : patch.draftModel;
-        const draftEffort =
-          patch.draftEffort === undefined
-            ? (tab.draftEffort ?? null)
-            : patch.draftEffort;
+        const nextTab = applyWorkspaceDraftPatch(tab, patch);
         if (
-          draftTask === (tab.draftTask ?? null) &&
-          draftSource === (tab.draftSource ?? null) &&
-          draftModel === (tab.draftModel ?? null) &&
-          draftEffort === (tab.draftEffort ?? null)
-        ) {
+          Object.keys(patch).every(key => {
+            const field = key as keyof WorkspaceDraftPatch;
+            return nextTab[field] === tab[field];
+          })
+        )
           return prev;
-        }
         return prev.map(g =>
           g === group
             ? {
                 ...g,
-                tabs: g.tabs.map(t =>
-                  t.id === tabId
-                    ? {
-                        ...t,
-                        draftTask,
-                        draftSource,
-                        draftModel,
-                        draftEffort,
-                      }
-                    : t
-                ),
+                tabs: g.tabs.map(t => (t.id === tabId ? nextTab : t)),
               }
             : g
         );
@@ -1593,9 +1646,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         // one clean transition, then stop + archive behind the strip
         removeTabFromLayout(tabId);
         // Recovery availability follows the same optimistic boundary as the
-        // disappearing tab. This lets immediate ⌘W → ⌘⇧T enqueue behind the
-        // in-flight archive instead of spending one render falsely disabled.
-        setClosedSessionCount(current => current + 1);
+        // disappearing tab. Main remains authoritative for the durable count;
+        // this pending overlay covers immediate ⌘W → ⌘⇧T.
+        const settlePendingClose = beginPendingClose();
         const entryData = {
           durableSessionId: tab.durableSessionId,
           title: tab.title,
@@ -1613,11 +1666,12 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           const entry = await api.archiveSession(entryData);
           return { kind: 'closed', entry };
         } catch {
-          setClosedSessionCount(current => Math.max(0, current - 1));
           setError(
             `Could not archive ${tab.title} — its conversation is still recoverable from its source.`
           );
           return { kind: 'noop' };
+        } finally {
+          settlePendingClose();
         }
       })();
       closeInFlightRef.current.add(operation);
@@ -1627,7 +1681,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       );
       return operation;
     },
-    [removeTabFromLayout]
+    [beginPendingClose, removeTabFromLayout]
   );
 
   /** resurrect a soft-closed Session whole: tab, goal, provider identity,
@@ -1638,7 +1692,6 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       if (!api?.reopenSession) return false;
       const entry = await api.reopenSession(durableSessionId);
       if (!entry) return false;
-      setClosedSessionCount(current => Math.max(0, current - 1));
       const repairsLegacyCatalogTitle =
         entry.titleKind === undefined &&
         isLegacyCatalogTitleLeak({
@@ -2233,30 +2286,6 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const activeTab =
     activeProject?.tabs.find(t => t.id === activeProject.activeTabId) ?? null;
 
-  /** ⌘J: jump to the OLDEST session needing the operator (repeat = walk the
-   *  queue — focusing each one clears it, surfacing the next-oldest) */
-  const jumpAttention = useCallback((): boolean => {
-    const { projects: gs } = stateRef.current;
-    const flagged = Object.entries(attentionRef.current)
-      .filter(([, signal]) => attentionNeedsOperator(signal))
-      .sort((a, b) => a[1].since - b[1].since);
-    for (const [sessionId] of flagged) {
-      for (const g of gs) {
-        const tab = g.tabs.find(
-          t => t.sessionId === sessionId && t.exitCode === null
-        );
-        if (tab) {
-          setActiveDir(g.dir);
-          setProjects(prev =>
-            prev.map(x => (x.dir === g.dir ? { ...x, activeTabId: tab.id } : x))
-          );
-          return true;
-        }
-      }
-    }
-    return false;
-  }, []);
-
   // ---- palette requests (S2): the ⌘K switcher lives at the app root and
   // asks the workspace to activate a session / launch a harness. Live events
   // handle the mounted-and-ready case; before ready the pending slot is left
@@ -2285,11 +2314,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const onToggleSplit = () => {
       if (readyRef.current) togglePin();
     };
-    // JUMP_ATTENTION_EVENT is owned by WorkspaceClient (ENG-017 S8): it runs
-    // the full ladder — PTY needs-you, then roadmap-blocked, then starving —
-    // so the ⌘J key, the Session menu item, and the palette row all behave
-    // identically. The bare state-level jumpAttention() is still called from
-    // inside that ladder.
+    // JUMP_ATTENTION_EVENT is owned by WorkspaceClient: it composes PTY and
+    // roadmap signals before deriving both the visible marker and jump queue.
     const onOpenProject = (e: Event) => {
       if (!readyRef.current) return;
       consumePendingOpenProject();
@@ -2396,7 +2422,6 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     moveActiveProject,
     reorderTab,
     reorderProject,
-    jumpAttention,
     togglePin,
     togglePinTab,
     renameTab,

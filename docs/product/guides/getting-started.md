@@ -21,8 +21,11 @@ seconds, then retracts the Project from the open workspace. Reopen it from the
 Project chooser with **⌘N**. **⌘W** closes the active Agent tab, or closes the
 active Project when it is already empty. A Project's right-click menu also
 offers **Close project**; Exawatt confirms first when that would close remaining
-Agent tabs. With the Project or Session chip focused, **Shift+F10** opens the
-same action menu without a pointer; Escape returns focus to that chip.
+Agent tabs. Clicking or typing in the empty composer keeps the Project open;
+the first edit becomes a draft Agent tab, so the delayed close cannot discard
+new launch work. With the Project or Session chip focused, **Shift+F10** opens
+the same action menu without a pointer. Arrow keys, Home/End, and Tab move
+through or out of it; Escape returns focus to that chip.
 
 Closing a meaningful Session keeps it in **Recently closed** for 14 days.
 **⌘⇧T** restores the newest one as a stopped tab without starting its Agent or
@@ -37,7 +40,8 @@ Code settings/account defaults, without rewriting either harness's
 configuration. Changing either value overrides only this new Agent; both
 choices stay with a saved draft while you move between tabs. Effort trades
 speed and spend for reasoning depth, and changing models updates its valid
-choices and default.
+choices and default. Worktree/branch and roadmap-link choices are part of the
+same saved draft rather than transient popover state.
 
 The adjacent permission selector controls how much autonomy the new Agent
 receives:

@@ -21,6 +21,58 @@ export function attentionNeedsOperator(
   return Boolean(attention && attention.kind !== 'turn-end');
 }
 
+/**
+ * Attention sources are independent facts, not last-writer-wins state. A
+ * harness result can arrive while the same Session remains roadmap-blocked;
+ * in that collision the operator gate must stay visible. Within the winning
+ * class, retain the oldest signal so the jump queue remains stable.
+ */
+export function mergeSessionAttentionSignals(
+  ...signals: Array<SessionAttentionSignal | null | undefined>
+): SessionAttentionSignal | undefined {
+  const present = signals.filter(
+    (signal): signal is SessionAttentionSignal =>
+      signal !== null && signal !== undefined
+  );
+  if (present.length === 0) return undefined;
+  const operatorGates = present.filter(attentionNeedsOperator);
+  const candidates = operatorGates.length > 0 ? operatorGates : present;
+  return candidates.reduce((oldest, signal) =>
+    signal.since < oldest.since ? signal : oldest
+  );
+}
+
+/** Compose independent attention producers by Session identity. Keeping this
+ * next to signal precedence prevents render and navigation surfaces from
+ * accidentally reintroducing object-spread/last-writer semantics. */
+export function mergeSessionAttentionMaps(
+  ...sources: Array<Readonly<Record<string, SessionAttentionSignal>>>
+): Record<string, SessionAttentionSignal> {
+  const sessionIds = new Set(sources.flatMap(source => Object.keys(source)));
+  const merged: Record<string, SessionAttentionSignal> = {};
+  for (const sessionId of sessionIds) {
+    const signal = mergeSessionAttentionSignals(
+      ...sources.map(source => source[sessionId])
+    );
+    if (signal) merged[sessionId] = signal;
+  }
+  return merged;
+}
+
+/** One ordering function feeds both command availability and navigation. */
+export function orderedAttentionTargets(
+  attention: Record<string, SessionAttentionSignal>,
+  activeSessionId: string | null
+): string[] {
+  return Object.entries(attention)
+    .filter(
+      ([sessionId, signal]) =>
+        sessionId !== activeSessionId && attentionNeedsOperator(signal)
+    )
+    .sort((a, b) => a[1].since - b[1].since)
+    .map(([sessionId]) => sessionId);
+}
+
 /** Working wins; agents split on whether they were ever given work; shells
  * are simply quiet between output because they do not have turns. */
 export function sessionGlyphState({

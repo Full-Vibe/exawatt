@@ -174,7 +174,12 @@ export interface StripMenuItem {
   onSelect: () => void;
   /** the destructive item sits last and reads in the project color */
   danger?: boolean;
+  /** Most commands return focus to their trigger. Commands that replace or
+   * remove it hand focus to their destination instead. */
+  focusAfterSelect?: 'trigger' | 'none';
 }
+
+type MenuCloseFocus = 'none' | 'trigger' | 'next' | 'previous';
 
 function StripContextMenu({
   x,
@@ -189,9 +194,10 @@ function StripContextMenu({
   color: string;
   label: string;
   items: StripMenuItem[];
-  onClose: (restoreFocus?: boolean) => void;
+  onClose: (focus?: MenuCloseFocus) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
   // a right-click near the window edge must not spill the menu off-screen
   const [pos, setPos] = useState({ x, y });
   useLayoutEffect(() => {
@@ -203,10 +209,10 @@ function StripContextMenu({
     });
   }, [x, y]);
   useEffect(() => {
-    rootRef.current?.querySelector('button')?.focus();
+    rootRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
     const away = (event: MouseEvent) => {
       if (!(event.target instanceof Node)) return;
-      if (!rootRef.current?.contains(event.target)) onClose(false);
+      if (!rootRef.current?.contains(event.target)) onClose('none');
     };
     document.addEventListener('mousedown', away);
     return () => document.removeEventListener('mousedown', away);
@@ -229,29 +235,52 @@ function StripContextMenu({
         e.stopPropagation();
         if (e.key === 'Escape') {
           e.preventDefault();
-          onClose(true);
+          onClose('trigger');
           return;
         }
-        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const buttons = Array.from(
+          rootRef.current?.querySelectorAll<HTMLButtonElement>(
+            '[role="menuitem"]'
+          ) ?? []
+        );
+        if (e.key === 'Tab') {
           e.preventDefault();
-          const buttons = Array.from(
-            rootRef.current?.querySelectorAll('button') ?? []
-          );
+          onClose(e.shiftKey ? 'previous' : 'next');
+          return;
+        }
+        if (
+          e.key === 'ArrowDown' ||
+          e.key === 'ArrowUp' ||
+          e.key === 'Home' ||
+          e.key === 'End'
+        ) {
+          e.preventDefault();
           const index = buttons.indexOf(
             document.activeElement as HTMLButtonElement
           );
-          const step = e.key === 'ArrowDown' ? 1 : buttons.length - 1;
-          buttons[(index + step) % buttons.length]?.focus();
+          const nextIndex =
+            e.key === 'Home'
+              ? 0
+              : e.key === 'End'
+                ? buttons.length - 1
+                : (Math.max(0, index) +
+                    (e.key === 'ArrowDown' ? 1 : buttons.length - 1)) %
+                  buttons.length;
+          setActiveIndex(nextIndex);
+          buttons[nextIndex]?.focus();
         }
       }}
     >
-      {items.map(item => (
+      {items.map((item, index) => (
         <button
           key={item.label}
           type="button"
           role="menuitem"
+          tabIndex={index === activeIndex ? 0 : -1}
+          onFocus={() => setActiveIndex(index)}
+          onPointerMove={() => setActiveIndex(index)}
           onClick={() => {
-            onClose(false);
+            onClose(item.focusAfterSelect ?? 'trigger');
             item.onSelect();
           }}
           className="cursor-pointer px-3 py-1.5 text-left font-mono text-chrome-label outline-none transition-[background-color] duration-75 hover:bg-white/10 focus-visible:bg-white/10"
@@ -346,8 +375,19 @@ export function TabStrip({
     color: string;
     label: string;
     items: StripMenuItem[];
+    target: { kind: 'project' | 'tab'; id: string };
   } | null>(null);
   const menuTriggerRef = useRef<HTMLElement | null>(null);
+  const projectNodesRef = useRef(new Map<string, HTMLDivElement>());
+  const projectPositionsRef = useRef(new Map<string, DOMRect>());
+  const projectAnimationsRef = useRef(new Map<string, Animation>());
+  const setProjectNode = useCallback(
+    (dir: string, node: HTMLDivElement | null) => {
+      if (node) projectNodesRef.current.set(dir, node);
+      else projectNodesRef.current.delete(dir);
+    },
+    []
+  );
   const openMenu = useCallback(
     ({
       trigger,
@@ -356,6 +396,7 @@ export function TabStrip({
       color,
       label,
       items,
+      target,
     }: {
       trigger: HTMLElement;
       x: number;
@@ -363,25 +404,115 @@ export function TabStrip({
       color: string;
       label: string;
       items: StripMenuItem[];
+      target: { kind: 'project' | 'tab'; id: string };
     }) => {
       menuTriggerRef.current = trigger;
-      setMenu({ x, y, color, label, items });
+      setMenu({ x, y, color, label, items, target });
     },
     []
   );
-  const closeMenu = useCallback((restoreFocus = false) => {
+  const closeMenu = useCallback((focus: MenuCloseFocus = 'none') => {
     const trigger = menuTriggerRef.current;
     menuTriggerRef.current = null;
     setMenu(null);
-    if (restoreFocus && trigger) {
+    if (focus !== 'none' && trigger) {
       queueMicrotask(() => {
-        if (trigger.isConnected) trigger.focus();
+        if (focus === 'trigger') {
+          if (trigger.isConnected) trigger.focus();
+          return;
+        }
+        const candidates = Array.from(
+          document.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter(
+          element =>
+            element.isConnected &&
+            !element.closest('[data-strip-menu]') &&
+            !element.closest('[inert]')
+        );
+        const index = candidates.indexOf(trigger);
+        const offset = focus === 'next' ? 1 : -1;
+        const target = candidates[index + offset];
+        (target ?? (trigger.isConnected ? trigger : null))?.focus();
       });
     }
   }, []);
+
+  useEffect(() => {
+    if (!menu) return;
+    const targetExists =
+      menu.target.kind === 'project'
+        ? projects.some(
+            project =>
+              project.dir === menu.target.id &&
+              !exitingProjectDirs?.has(project.dir)
+          )
+        : projects.some(project =>
+            project.tabs.some(tab => tab.id === menu.target.id)
+          );
+    if (!targetExists) closeMenu('none');
+  }, [closeMenu, exitingProjectDirs, menu, projects]);
   // D21: ordinals are shortcut hints — the strip rests clean; holding ⌘
   // reveals tab keycaps, ⌘⌥ reveals Project keycaps
   const ordinalHints = useOrdinalHints();
+
+  /** FLIP the surviving groups after an exited Project leaves flex layout.
+   * The exiting group can visually condense without forcing a reflow on every
+   * frame; once removed, siblings glide into their new positions instead of
+   * snapping across the temporary flex gap. */
+  useLayoutEffect(() => {
+    const reduced = window.matchMedia?.(
+      '(prefers-reduced-motion: reduce)'
+    ).matches;
+    const nextPositions = new Map<string, DOMRect>();
+    for (const [dir, node] of projectNodesRef.current) {
+      const next = node.getBoundingClientRect();
+      nextPositions.set(dir, next);
+      if (exitingProjectDirs?.has(dir)) {
+        projectAnimationsRef.current.get(dir)?.cancel();
+        projectAnimationsRef.current.delete(dir);
+        continue;
+      }
+      const previous = projectPositionsRef.current.get(dir);
+      const deltaX = previous ? previous.left - next.left : 0;
+      const deltaY = previous ? previous.top - next.top : 0;
+      if (
+        reduced ||
+        (!deltaX && !deltaY) ||
+        typeof node.animate !== 'function'
+      ) {
+        continue;
+      }
+      projectAnimationsRef.current.get(dir)?.cancel();
+      const animation = node.animate(
+        [
+          { transform: `translate3d(${deltaX}px, ${deltaY}px, 0)` },
+          { transform: 'translate3d(0, 0, 0)' },
+        ],
+        {
+          duration: 180,
+          easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
+        }
+      );
+      projectAnimationsRef.current.set(dir, animation);
+      animation.addEventListener(
+        'finish',
+        () => projectAnimationsRef.current.delete(dir),
+        { once: true }
+      );
+    }
+    projectPositionsRef.current = nextPositions;
+  }, [exitingProjectDirs, projects]);
+
+  useEffect(
+    () => () => {
+      for (const animation of projectAnimationsRef.current.values()) {
+        animation.cancel();
+      }
+    },
+    []
+  );
 
   // ⌘E edits the active tab; the palette's Project verb opens the same
   // Project name/color editor exposed by its context menu.
@@ -477,12 +608,14 @@ export function TabStrip({
             ? [
                 {
                   label: 'New agent',
+                  focusAfterSelect: 'none' as const,
                   onSelect: () => onNewAgent(g.dir),
                 },
               ]
             : []),
           {
             label: 'Rename / color…',
+            focusAfterSelect: 'none',
             onSelect: () =>
               setEditing({ kind: 'group', id: g.dir, value: g.name }),
           },
@@ -499,6 +632,7 @@ export function TabStrip({
                 {
                   label: 'Close project',
                   danger: true,
+                  focusAfterSelect: 'none' as const,
                   onSelect: () => onCloseProject(g.dir),
                 },
               ]
@@ -514,13 +648,17 @@ export function TabStrip({
             color,
             label: `${g.name} Project actions`,
             items: projectMenuItems,
+            target: { kind: 'project', id: g.dir },
           });
         return (
           <div
+            ref={node => setProjectNode(g.dir, node)}
             key={g.dir}
             data-project={g.name}
             data-active-project={groupActive || undefined}
             data-project-exiting={projectExiting || undefined}
+            inert={projectExiting}
+            aria-hidden={projectExiting || undefined}
             draggable={!editing && !projectExiting}
             onDragStart={e => {
               // a drag born on a tab wrapper is the TAB's drag
@@ -686,6 +824,7 @@ export function TabStrip({
                       : []),
                     {
                       label: 'Rename…',
+                      focusAfterSelect: 'none',
                       onSelect: () =>
                         setEditing({
                           kind: 'tab',
@@ -717,6 +856,7 @@ export function TabStrip({
                     {
                       label: 'Close',
                       danger: true,
+                      focusAfterSelect: 'none',
                       onSelect: () => onCloseTab(t.id),
                     },
                   ];
@@ -730,6 +870,7 @@ export function TabStrip({
                   color,
                   label: `${t.title} Session actions`,
                   items: tabMenuItems,
+                  target: { kind: 'tab', id: t.id },
                 });
               return (
                 <div
@@ -968,7 +1109,13 @@ export function TabStrip({
           </div>
         );
       })}
-      {menu && <StripContextMenu {...menu} onClose={closeMenu} />}
+      {menu && (
+        <StripContextMenu
+          key={`${menu.target.kind}:${menu.target.id}`}
+          {...menu}
+          onClose={closeMenu}
+        />
+      )}
     </div>
   );
 }
