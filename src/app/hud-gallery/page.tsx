@@ -261,8 +261,8 @@ const SECTIONS: Section[] = [
   },
   {
     id: 'architecture-orbit-key',
-    title: 'Homepage architecture key',
-    meta: 'production component · Smoke Low R3F assembly + pendulum camera',
+    title: 'Homepage command key',
+    meta: 'production component · Smoke Low R3F assembly + deliberate route transition',
     showcase: (
       <div className="flex min-h-[360px] items-center justify-center overflow-hidden bg-[#05090c] px-4 py-6">
         <ArchitectureKeySwitchLink />

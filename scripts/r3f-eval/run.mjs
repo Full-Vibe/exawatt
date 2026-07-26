@@ -57,7 +57,7 @@ const TASKS = [
   },
   {
     id: 't8-home-keyswitch',
-    name: 'Homepage Smoke Low architecture keyswitch',
+    name: 'Homepage Smoke Low command keyswitch',
     // Same complete mechanism as T7, with a continuously moving camera.
     drawCallMax: 60,
     settleMs: 1_200,
@@ -677,7 +677,7 @@ async function runTask(browser, task) {
           const camera = window.__EVAL_KEYSWITCH_CAMERA__;
           if (!camera) return false;
           const azimuth = Math.atan2(camera.position.x, camera.position.z);
-          return Math.abs(azimuth + Math.PI * 0.06 * 0.72) < 0.002;
+          return Math.abs(azimuth + Math.PI * 0.04 * 0.72) < 0.002;
         },
         undefined,
         { timeout: 2_000 }
@@ -709,10 +709,10 @@ async function runTask(browser, task) {
                 'keyswitch-assembly'
               ).length
             : 0,
-          architectureLegendCount: window.__EVAL_SCENE__
+          commandLegendCount: window.__EVAL_SCENE__
             ? window.__EVAL_SCENE__.getObjectsByProperty(
                 'name',
-                'keyswitch-legend-architecture'
+                'keyswitch-legend-command'
               ).length
             : 0,
           platformScale:
@@ -797,14 +797,22 @@ async function runTask(browser, task) {
       });
       await interactionPage.mouse.up();
       const releaseRequestedUrl = interactionPage.url();
-      const releaseRequestedState = await interactionPage.evaluate(() => ({
-        position: window.__EVAL_SCENE__?.getObjectByName(
-          'keyswitch-cap-smoke-low'
-        )?.position.y,
-        navigation: document
-          .querySelector('[data-home-architecture-keyswitch]')
-          ?.getAttribute('data-navigation-state'),
-      }));
+      const releaseRequestedState = await interactionPage.evaluate(() => {
+        const curtain = document.querySelector(
+          '[data-architecture-transition-curtain="exit"]'
+        );
+        return {
+          position: window.__EVAL_SCENE__?.getObjectByName(
+            'keyswitch-cap-smoke-low'
+          )?.position.y,
+          navigation: document
+            .querySelector('[data-home-architecture-keyswitch]')
+            ?.getAttribute('data-navigation-state'),
+          curtainOpacity: curtain
+            ? Number(getComputedStyle(curtain).opacity)
+            : 0,
+        };
+      });
       await interactionPage.waitForFunction(
         () => window.__EVAL_NAV_BOUNDARY__ !== null,
         undefined,
@@ -813,19 +821,55 @@ async function runTask(browser, task) {
       const navigationBoundary = await interactionPage.evaluate(
         () => window.__EVAL_NAV_BOUNDARY__
       );
+      await interactionPage.waitForTimeout(500);
+      const outgoingCurtain = await interactionPage.evaluate(() => {
+        const curtain = document.querySelector(
+          '[data-architecture-transition-curtain="exit"]'
+        );
+        return {
+          state: curtain?.getAttribute('data-state'),
+          opacity: curtain ? Number(getComputedStyle(curtain).opacity) : 0,
+        };
+      });
       await interactionPage.waitForURL('**/architecture', { timeout: 5_000 });
       const navigatedUrl = interactionPage.url();
+      await interactionPage.waitForSelector(
+        '[data-architecture-transition-curtain="entry"]',
+        { timeout: 2_000 }
+      );
+      const incomingCurtain = await interactionPage.evaluate(() => {
+        const curtain = document.querySelector(
+          '[data-architecture-transition-curtain="entry"]'
+        );
+        return {
+          state: curtain?.getAttribute('data-state'),
+          opacity: curtain ? Number(getComputedStyle(curtain).opacity) : 0,
+        };
+      });
+      await interactionPage.waitForFunction(
+        () => {
+          const curtain = document.querySelector(
+            '[data-architecture-transition-curtain="entry"]'
+          );
+          return !!curtain && Number(getComputedStyle(curtain).opacity) < 0.05;
+        },
+        undefined,
+        { timeout: 2_000 }
+      );
+      const incomingCurtainSettledOpacity = await interactionPage.evaluate(
+        () => {
+          const curtain = document.querySelector(
+            '[data-architecture-transition-curtain="entry"]'
+          );
+          return curtain ? Number(getComputedStyle(curtain).opacity) : 1;
+        }
+      );
       await interactionPage.close();
 
-      const homePage = await browser.newPage({
-        viewport: { width: 844, height: 390 },
-      });
-      homePage.on('pageerror', error =>
-        errors.push(String(error.message || error))
-      );
-      homePage.on('console', message => {
-        if (message.type() === 'error') errors.push(message.text());
-      });
+      const homePage = page;
+      await homePage.bringToFront();
+      await homePage.setViewportSize({ width: 1440, height: 900 });
+      await homePage.emulateMedia({ reducedMotion: 'reduce' });
       await homePage.goto(EXA_BASE, {
         waitUntil: 'load',
         timeout: 30_000,
@@ -834,12 +878,58 @@ async function runTask(browser, task) {
         '[data-home-hero] [data-home-architecture-keyswitch] canvas',
         { timeout: 15_000 }
       );
+      try {
+        await homePage.waitForFunction(
+          () =>
+            document
+              .querySelector('[data-home-command-key-reveal]')
+              ?.getAttribute('data-reveal-state') === 'ready',
+          undefined,
+          { timeout: 7_000 }
+        );
+      } catch {
+        const revealDebug = await homePage.evaluate(() => {
+          const hero = document.querySelector('[data-home-hero]');
+          const background = document.querySelector(
+            '[data-home-hero-background]'
+          );
+          const reveal = document.querySelector(
+            '[data-home-command-key-reveal]'
+          );
+          return {
+            backgroundReady: hero?.getAttribute('data-background-ready'),
+            backgroundFadeState: background?.getAttribute('data-fade-state'),
+            revealState: reveal?.getAttribute('data-reveal-state'),
+            revealInlineOpacity: reveal?.style.opacity,
+            revealOpacity: reveal
+              ? getComputedStyle(reveal).opacity
+              : 'missing',
+          };
+        });
+        throw new Error(
+          `Homepage command-key reveal timed out: ${JSON.stringify(revealDebug)}`
+        );
+      }
+      await homePage
+        .locator('[data-home-hero-background]')
+        .evaluate(image => image.decode());
+      await homePage.waitForTimeout(1_200);
+      await homePage.screenshot({
+        path: join(REPORT_DIR, 't8-home-desktop.png'),
+      });
+      await homePage.setViewportSize({ width: 844, height: 390 });
+      await homePage
+        .locator('[data-home-hero-background]')
+        .evaluate(image => image.decode());
       const readHomeLayout = () =>
         homePage.evaluate(() => {
           const header = document.querySelector('#site-header');
           const content = document.querySelector('[data-home-hero-content]');
           const key = document.querySelector(
             '[data-home-hero] [data-home-architecture-keyswitch]'
+          );
+          const keyReveal = document.querySelector(
+            '[data-home-command-key-reveal]'
           );
           const headerRect = header?.getBoundingClientRect();
           const contentRect = content?.getBoundingClientRect();
@@ -852,6 +942,14 @@ async function runTask(browser, task) {
             contentBottom: contentRect?.bottom,
             keyWidth: keyRect?.width,
             keyHeight: keyRect?.height,
+            keyRevealState: keyReveal?.getAttribute('data-reveal-state'),
+            keyRevealDelayMs: keyReveal?.getAttribute('data-reveal-delay-ms'),
+            keyRevealDurationMs: keyReveal?.getAttribute(
+              'data-reveal-duration-ms'
+            ),
+            keyRevealOpacity: keyReveal
+              ? Number(getComputedStyle(keyReveal).opacity)
+              : 0,
             keyWithinViewport:
               !!keyRect &&
               keyRect.left >= 0 &&
@@ -860,32 +958,40 @@ async function runTask(browser, task) {
           };
         });
       const landscapeHomeLayout = await readHomeLayout();
+      await homePage.screenshot({
+        path: join(REPORT_DIR, 't8-home-landscape.png'),
+      });
       await homePage.setViewportSize({ width: 390, height: 844 });
+      await homePage
+        .locator('[data-home-hero-background]')
+        .evaluate(image => image.decode());
       await homePage.waitForFunction(
         () =>
           document
             .querySelector('[data-home-hero-content]')
             ?.getBoundingClientRect().bottom <= innerHeight,
         undefined,
-        { timeout: 2_000 }
+        { timeout: 4_000 }
       );
       const portraitHomeLayout = await readHomeLayout();
-      await homePage.close();
+      await homePage.screenshot({
+        path: join(REPORT_DIR, 't8-home-portrait.png'),
+      });
 
       result.semanticOk =
         semantics.rootCount === 1 &&
         semantics.href === '/architecture' &&
-        semantics.label === 'Open Exawatt architecture' &&
+        semantics.label === 'Command — open Exawatt architecture' &&
         semantics.pressed === 'false' &&
         semantics.idleHintEnabled === 'true' &&
         semantics.idleHintIntervalMs === '10000' &&
         semantics.rootWidth <= 290.5 &&
         semantics.assemblyCount === 1 &&
-        semantics.architectureLegendCount === 1 &&
+        semantics.commandLegendCount === 1 &&
         Math.abs(semantics.platformScale - 0.84) < 0.0001 &&
-        semantics.cameraElevation > 0.72 &&
-        semantics.cameraElevation < 0.76 &&
-        Math.abs(semantics.cameraAzimuth) < 0.21 &&
+        semantics.cameraElevation > 0.83 &&
+        semantics.cameraElevation < 0.87 &&
+        Math.abs(semantics.cameraAzimuth) < 0.15 &&
         mobileSemantics.rootWidth <= 190.5 &&
         mobileSemantics.rootHeight <= 150.5 &&
         mobileSemantics.withinViewport &&
@@ -897,11 +1003,17 @@ async function runTask(browser, task) {
           landscapeHomeLayout.viewportHeight &&
         landscapeHomeLayout.keyWidth <= 212 &&
         landscapeHomeLayout.keyHeight <= 161 &&
+        landscapeHomeLayout.keyRevealState === 'ready' &&
+        landscapeHomeLayout.keyRevealDelayMs === '1000' &&
+        landscapeHomeLayout.keyRevealDurationMs === '2000' &&
+        landscapeHomeLayout.keyRevealOpacity > 0.99 &&
         landscapeHomeLayout.keyWithinViewport &&
         portraitHomeLayout.contentTop >= portraitHomeLayout.headerBottom + 8 &&
         portraitHomeLayout.contentBottom <= portraitHomeLayout.viewportHeight &&
         portraitHomeLayout.keyWidth <= 190.5 &&
         portraitHomeLayout.keyHeight <= 150.5 &&
+        portraitHomeLayout.keyRevealState === 'ready' &&
+        portraitHomeLayout.keyRevealOpacity > 0.99 &&
         portraitHomeLayout.keyWithinViewport &&
         firstHintTravel < -0.012 &&
         firstHintTravel > -0.08 &&
@@ -917,6 +1029,11 @@ async function runTask(browser, task) {
         ['releasing', 'navigating'].includes(
           releaseRequestedState.navigation
         ) &&
+        releaseRequestedState.curtainOpacity < 0.25 &&
+        outgoingCurtain.state === 'covering' &&
+        outgoingCurtain.opacity > 0.8 &&
+        incomingCurtain.opacity > 0.35 &&
+        incomingCurtainSettledOpacity < 0.05 &&
         Math.abs(navigationBoundary.position) < 0.008 &&
         navigationBoundary.delayMs > 0 &&
         navigatedUrl.endsWith('/architecture') &&
@@ -936,12 +1053,15 @@ async function runTask(browser, task) {
           heldUrl,
           releaseRequestedUrl,
           releaseRequestedState,
+          outgoingCurtain,
+          incomingCurtain,
+          incomingCurtainSettledOpacity,
           navigationBoundary,
           navigatedUrl,
         })}`
       );
       if (!result.semanticOk)
-        result.errors.push('Homepage architecture keyswitch semantics failed');
+        result.errors.push('Homepage command keyswitch semantics failed');
     }
 
     await page

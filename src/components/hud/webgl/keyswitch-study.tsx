@@ -21,7 +21,13 @@ import {
   useCursor,
 } from '@react-three/drei';
 import * as THREE from 'three';
+import {
+  ARCHITECTURE_EXIT_DURATION_MS,
+  ARCHITECTURE_EXIT_HOLD_MS,
+  ArchitectureExitCurtain,
+} from '@/components/nav/architecture-transition';
 import { STATUS_LIGHT_META } from '@/components/status-light/protocol';
+import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import {
   createFloatingKeycapGeometry,
   createKeycapGeometry,
@@ -373,8 +379,8 @@ const SMOKE_LOW_VARIANT =
   KEYSWITCH_VARIANTS[0];
 const HOME_ORBIT_TARGET = new THREE.Vector3(...SMOKE_LOW_VARIANT.target);
 const HOME_ORBIT_PERIOD_SECONDS = 26;
-const HOME_ORBIT_AMPLITUDE = Math.PI * 0.06;
-const HOME_ORBIT_ELEVATION = Math.PI * 0.235;
+const HOME_ORBIT_AMPLITUDE = Math.PI * 0.04;
+const HOME_ORBIT_ELEVATION = Math.PI * 0.27;
 const IDLE_HINT_DELAY_MS = 2400;
 const IDLE_HINT_REPEAT_INTERVAL_MS = 10_000;
 const IDLE_HINT_DEPTH = 0.18;
@@ -405,18 +411,6 @@ function sampleIdleHint(elapsed: number) {
     return IDLE_HINT_DEPTH * (1 - smoothStep((elapsed - 0.53) / 0.19));
   }
   return 0;
-}
-
-function useReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setReduced(query.matches);
-    const update = () => setReduced(query.matches);
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
-  }, []);
-  return reduced;
 }
 
 function createSpringGeometry() {
@@ -632,7 +626,7 @@ function StatusLegend({ y }: { y: number }) {
   );
 }
 
-function ArchitectureLegend({ y }: { y: number }) {
+function CommandLegend({ y }: { y: number }) {
   const [texture, setTexture] = useState<THREE.CanvasTexture | null>(null);
 
   useEffect(() => {
@@ -644,12 +638,12 @@ function ArchitectureLegend({ y }: { y: number }) {
 
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = '#daf2fa';
-    context.font = '600 92px "Helvetica Neue", Arial, sans-serif';
+    context.font = '600 128px "Helvetica Neue", Arial, sans-serif';
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     context.shadowColor = 'rgba(166, 225, 244, 0.32)';
     context.shadowBlur = 10;
-    context.fillText('ARCHITECTURE', canvas.width / 2, canvas.height / 2 + 3);
+    context.fillText('COMMAND', canvas.width / 2, canvas.height / 2 + 3);
 
     const nextTexture = new THREE.CanvasTexture(canvas);
     nextTexture.colorSpace = THREE.SRGBColorSpace;
@@ -665,13 +659,13 @@ function ArchitectureLegend({ y }: { y: number }) {
 
   return (
     <mesh
-      name="keyswitch-legend-architecture"
+      name="keyswitch-legend-command"
       position={[0, y + 0.012, 0]}
       raycast={() => null}
       renderOrder={5}
       rotation={[-Math.PI / 2, 0, 0]}
     >
-      <planeGeometry args={[1.62, 0.304]} />
+      <planeGeometry args={[1.52, 0.36]} />
       <meshBasicMaterial
         alphaTest={0.08}
         depthWrite={false}
@@ -722,7 +716,7 @@ function Keycap({
   legend = 'status',
 }: {
   variant: KeySwitchVariant;
-  legend?: 'status' | 'architecture';
+  legend?: 'status' | 'command';
 }) {
   const sculptedGeometry = useMemo(() => createKeycapGeometry(), []);
   const floatingGeometry = useMemo(
@@ -828,8 +822,8 @@ function Keycap({
         </RoundedBox>
       </group>
 
-      {legend === 'architecture' ? (
-        <ArchitectureLegend y={legendY} />
+      {legend === 'command' ? (
+        <CommandLegend y={legendY} />
       ) : (
         <StatusLegend y={legendY} />
       )}
@@ -977,7 +971,7 @@ function KeySwitchAssembly({
   pressed: boolean;
   reduced: boolean;
   onPressedChange: (pressed: boolean) => void;
-  legend?: 'status' | 'architecture';
+  legend?: 'status' | 'command';
   idleHint?: boolean;
   idleHintDelayMs?: number;
   idleHintKey?: number | string;
@@ -1276,7 +1270,7 @@ function ProductScene({
   idleHint: boolean;
   idleHintKey: number;
 }) {
-  const reduced = useReducedMotion();
+  const reduced = usePrefersReducedMotion();
 
   return (
     <>
@@ -1334,7 +1328,7 @@ function HomeArchitectureKeyScene({
   awaitRelease: boolean;
   onReleaseSettled: (position: number) => void;
 }) {
-  const reduced = useReducedMotion();
+  const reduced = usePrefersReducedMotion();
 
   return (
     <>
@@ -1343,7 +1337,7 @@ function HomeArchitectureKeyScene({
       <KeySwitchAssembly
         awaitRelease={awaitRelease}
         idleHint={idleHint}
-        legend="architecture"
+        legend="command"
         onReleaseSettled={onReleaseSettled}
         onPressedChange={onPressedChange}
         platformScale={0.84}
@@ -1368,19 +1362,34 @@ function HomeArchitectureKeyScene({
 export function ArchitectureKeySwitchLink({
   evalMode = false,
   idleHint = true,
+  interactive = true,
 }: {
   evalMode?: boolean;
   idleHint?: boolean;
+  interactive?: boolean;
 }) {
   const router = useRouter();
+  const reducedMotion = usePrefersReducedMotion();
   const [pressed, setPressed] = useState(false);
   const [awaitingRelease, setAwaitingRelease] = useState(false);
+  const [curtainActive, setCurtainActive] = useState(false);
   const [navigationState, setNavigationState] = useState<
     'idle' | 'releasing' | 'navigating'
   >('idle');
   const root = useRef<HTMLDivElement>(null);
   const keyboardPressed = useRef(false);
   const keyboardNavigationPending = useRef(false);
+  const navigationTimer = useRef<number | null>(null);
+  const navigationInteractive = interactive && navigationState === 'idle';
+
+  useEffect(
+    () => () => {
+      if (navigationTimer.current !== null) {
+        window.clearTimeout(navigationTimer.current);
+      }
+    },
+    []
+  );
 
   const navigateAfterRelease = useCallback(() => {
     setPressed(false);
@@ -1395,9 +1404,15 @@ export function ArchitectureKeySwitchLink({
       root.current?.setAttribute('data-navigation-state', 'navigating');
       setNavigationState('navigating');
       setAwaitingRelease(false);
-      router.push('/architecture');
+      setCurtainActive(true);
+      navigationTimer.current = window.setTimeout(
+        () => router.push('/architecture'),
+        reducedMotion
+          ? 0
+          : ARCHITECTURE_EXIT_DURATION_MS + ARCHITECTURE_EXIT_HOLD_MS
+      );
     },
-    [router]
+    [reducedMotion, router]
   );
 
   return (
@@ -1438,16 +1453,25 @@ export function ArchitectureKeySwitchLink({
       </Canvas>
 
       <Link
-        aria-label="Open Exawatt architecture"
-        className="group absolute inset-[3%] z-10 cursor-pointer rounded-[20%] outline-none focus-visible:ring-2 focus-visible:ring-sky-200/90 focus-visible:ring-offset-4 focus-visible:ring-offset-black/80"
+        aria-label="Command — open Exawatt architecture"
+        aria-disabled={!navigationInteractive}
+        className={`group absolute inset-[3%] z-10 rounded-[20%] outline-none focus-visible:ring-2 focus-visible:ring-sky-200/90 focus-visible:ring-offset-4 focus-visible:ring-offset-black/80 ${
+          navigationInteractive ? 'cursor-pointer' : 'pointer-events-none'
+        }`}
         data-architecture-key-link
+        data-command-key-link
         href="/architecture"
+        tabIndex={navigationInteractive ? undefined : -1}
         onBlur={() => {
           keyboardPressed.current = false;
           keyboardNavigationPending.current = false;
           setPressed(false);
         }}
         onClick={event => {
+          if (!navigationInteractive) {
+            event.preventDefault();
+            return;
+          }
           if (
             event.button !== 0 ||
             event.metaKey ||
@@ -1465,6 +1489,7 @@ export function ArchitectureKeySwitchLink({
           navigateAfterRelease();
         }}
         onKeyDown={event => {
+          if (!navigationInteractive) return;
           if (!event.repeat && event.key === 'Enter') {
             keyboardPressed.current = true;
             setPressed(true);
@@ -1481,13 +1506,17 @@ export function ArchitectureKeySwitchLink({
         }}
         onPointerCancel={() => setPressed(false)}
         onPointerDown={event => {
-          if (event.button === 0) setPressed(true);
+          if (navigationInteractive && event.button === 0) setPressed(true);
         }}
         onPointerLeave={() => setPressed(false)}
         onPointerUp={() => setPressed(false)}
       >
-        <span className="sr-only">Architecture</span>
+        <span className="sr-only">Command</span>
       </Link>
+      <ArchitectureExitCurtain
+        active={curtainActive}
+        reducedMotion={reducedMotion}
+      />
     </div>
   );
 }

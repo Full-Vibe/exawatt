@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { ArchitectureEntryCurtain } from '@/components/nav/architecture-transition';
 import {
   architectureManifest,
   type ArchitectureConnection,
@@ -407,6 +408,7 @@ export default function ArchitecturePage() {
 
   return (
     <main className="min-h-screen bg-[#08090a] text-neutral-100">
+      <ArchitectureEntryCurtain />
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <header className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div>
