@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArchitectureKeySwitchLink } from '@/components/hud/webgl/keyswitch-study';
+import { CommandKeySwitchButton } from '@/components/hud/webgl/keyswitch-study';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import { HeroBg } from './_hero-bg';
 
@@ -83,7 +83,7 @@ export function HomeHero() {
             willChange: keyPhase === 'revealing' ? 'opacity' : undefined,
           }}
         >
-          <ArchitectureKeySwitchLink
+          <CommandKeySwitchButton
             idleHint={keyInteractive}
             interactive={keyInteractive}
           />

@@ -8,8 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { ComponentRef, RefObject } from 'react';
-import Link from 'next/link';
+import type { ComponentRef, CSSProperties, RefObject } from 'react';
 import { useRouter } from 'next/navigation';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import {
@@ -33,6 +32,10 @@ import {
   createKeycapGeometry,
   floatingKeycapDishDepth,
 } from './keyswitch-geometry';
+import {
+  BROWN_SWITCH_PRESS_DURATION_SECONDS,
+  sampleBrownSwitchPress,
+} from './keyswitch-motion';
 
 const ACTIVE_BLUE = STATUS_LIGHT_META.active.color;
 
@@ -385,6 +388,13 @@ const IDLE_HINT_DELAY_MS = 2400;
 const IDLE_HINT_REPEAT_INTERVAL_MS = 10_000;
 const IDLE_HINT_DEPTH = 0.18;
 const IDLE_HINT_DURATION_SECONDS = 0.72;
+
+const COMMAND_BUTTON_TOUCH_STYLE = {
+  WebkitTouchCallout: 'none',
+  WebkitUserSelect: 'none',
+  userSelect: 'none',
+  touchAction: 'manipulation',
+} satisfies CSSProperties & { WebkitTouchCallout: 'none' };
 
 type IdleHintPhase = 'waiting' | 'running' | 'done';
 
@@ -985,6 +995,8 @@ function KeySwitchAssembly({
     elapsed: 0,
     phase: 'done',
   });
+  const pressElapsed = useRef(0);
+  const pressWasActive = useRef(false);
   const hintTimeout = useRef<number | null>(null);
   const wasPressed = useRef(false);
   const releasePosition = useRef(0);
@@ -1045,6 +1057,7 @@ function KeySwitchAssembly({
     if (pressed) {
       wasPressed.current = true;
       stopIdleHint();
+      invalidate();
       return;
     }
     if (!wasPressed.current) return;
@@ -1052,7 +1065,7 @@ function KeySwitchAssembly({
     if (idleHint && !reduced) {
       queueIdleHint(IDLE_HINT_REPEAT_INTERVAL_MS);
     }
-  }, [idleHint, pressed, queueIdleHint, reduced, stopIdleHint]);
+  }, [idleHint, invalidate, pressed, queueIdleHint, reduced, stopIdleHint]);
 
   useEffect(() => {
     if (!awaitRelease) return;
@@ -1080,7 +1093,26 @@ function KeySwitchAssembly({
       }
     }
 
-    actuation.current = pressed ? 1 : hintedActuation;
+    let pressedActuation = 0;
+    if (pressed) {
+      if (!pressWasActive.current) {
+        pressElapsed.current = 0;
+        pressWasActive.current = true;
+      }
+      if (reduced) {
+        pressedActuation = 1;
+      } else {
+        pressElapsed.current += Math.min(delta, 0.05);
+        pressedActuation = sampleBrownSwitchPress(pressElapsed.current);
+        if (pressElapsed.current < BROWN_SWITCH_PRESS_DURATION_SECONDS) {
+          state.invalidate();
+        }
+      }
+    } else if (pressWasActive.current) {
+      pressWasActive.current = false;
+    }
+
+    actuation.current = pressed ? pressedActuation : hintedActuation;
     const target = -0.24 * actuation.current;
     if (reduced) {
       cap.current.position.y = target;
@@ -1088,7 +1120,7 @@ function KeySwitchAssembly({
       cap.current.position.y = THREE.MathUtils.damp(
         cap.current.position.y,
         target,
-        18,
+        pressed ? 38 : 18,
         delta
       );
       if (Math.abs(cap.current.position.y - target) > 0.001) {
@@ -1359,7 +1391,7 @@ function HomeArchitectureKeyScene({
   );
 }
 
-export function ArchitectureKeySwitchLink({
+export function CommandKeySwitchButton({
   evalMode = false,
   idleHint = true,
   interactive = true,
@@ -1424,6 +1456,8 @@ export function ArchitectureKeySwitchLink({
       data-idle-hint-interval-ms={IDLE_HINT_REPEAT_INTERVAL_MS}
       data-navigation-state={navigationState}
       data-pressed={pressed ? 'true' : 'false'}
+      data-tactile-duration-ms={BROWN_SWITCH_PRESS_DURATION_SECONDS * 1000}
+      data-tactile-profile="brown"
     >
       <Canvas
         aria-hidden="true"
@@ -1452,16 +1486,19 @@ export function ArchitectureKeySwitchLink({
         />
       </Canvas>
 
-      <Link
+      <button
         aria-label="Command — open Exawatt architecture"
-        aria-disabled={!navigationInteractive}
         className={`group absolute inset-[3%] z-10 rounded-[20%] outline-none focus-visible:ring-2 focus-visible:ring-sky-200/90 focus-visible:ring-offset-4 focus-visible:ring-offset-black/80 ${
           navigationInteractive ? 'cursor-pointer' : 'pointer-events-none'
         }`}
-        data-architecture-key-link
-        data-command-key-link
-        href="/architecture"
+        data-architecture-key-button
+        data-command-key-button
+        data-safari-touch-callout="none"
+        disabled={!navigationInteractive}
+        draggable={false}
+        style={COMMAND_BUTTON_TOUCH_STYLE}
         tabIndex={navigationInteractive ? undefined : -1}
+        type="button"
         onBlur={() => {
           keyboardPressed.current = false;
           keyboardNavigationPending.current = false;
@@ -1470,15 +1507,6 @@ export function ArchitectureKeySwitchLink({
         onClick={event => {
           if (!navigationInteractive) {
             event.preventDefault();
-            return;
-          }
-          if (
-            event.button !== 0 ||
-            event.metaKey ||
-            event.ctrlKey ||
-            event.shiftKey ||
-            event.altKey
-          ) {
             return;
           }
           event.preventDefault();
@@ -1490,13 +1518,16 @@ export function ArchitectureKeySwitchLink({
         }}
         onKeyDown={event => {
           if (!navigationInteractive) return;
-          if (!event.repeat && event.key === 'Enter') {
+          if (
+            !event.repeat &&
+            (event.key === 'Enter' || event.key === ' ')
+          ) {
             keyboardPressed.current = true;
             setPressed(true);
           }
         }}
         onKeyUp={event => {
-          if (event.key !== 'Enter') return;
+          if (event.key !== 'Enter' && event.key !== ' ') return;
           keyboardPressed.current = false;
           setPressed(false);
           if (keyboardNavigationPending.current) {
@@ -1504,15 +1535,38 @@ export function ArchitectureKeySwitchLink({
             navigateAfterRelease();
           }
         }}
-        onPointerCancel={() => setPressed(false)}
-        onPointerDown={event => {
-          if (navigationInteractive && event.button === 0) setPressed(true);
+        onContextMenu={event => event.preventDefault()}
+        onDragStart={event => event.preventDefault()}
+        onPointerCancel={event => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+          setPressed(false);
         }}
-        onPointerLeave={() => setPressed(false)}
-        onPointerUp={() => setPressed(false)}
+        onPointerDown={event => {
+          if (!navigationInteractive || event.button !== 0) return;
+          if (event.pointerType !== 'mouse') {
+            try {
+              event.currentTarget.setPointerCapture(event.pointerId);
+            } catch {
+              // Synthetic pointer events do not register an active pointer.
+            }
+          }
+          setPressed(true);
+        }}
+        onPointerLeave={event => {
+          if (event.pointerType === 'mouse') setPressed(false);
+        }}
+        onLostPointerCapture={() => setPressed(false)}
+        onPointerUp={event => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+          setPressed(false);
+        }}
       >
         <span className="sr-only">Command</span>
-      </Link>
+      </button>
       <ArchitectureExitCurtain
         active={curtainActive}
         reducedMotion={reducedMotion}
@@ -1551,6 +1605,8 @@ export function KeySwitchStudy({
       data-idle-hint-interval-ms={IDLE_HINT_REPEAT_INTERVAL_MS}
       data-material-count={KEYSWITCH_VARIANTS.length}
       data-pressed-variant={pressed ? variant.id : 'none'}
+      data-tactile-duration-ms={BROWN_SWITCH_PRESS_DURATION_SECONDS * 1000}
+      data-tactile-profile="brown"
       style={{
         borderColor: 'rgba(173, 211, 224, 0.18)',
         background: '#070a0c',
@@ -1636,17 +1692,47 @@ export function KeySwitchStudy({
         <button
           className="absolute bottom-5 left-5 rounded-sm border bg-slate-950/55 px-3 py-2 font-mono text-[9px] uppercase tracking-[0.16em] text-slate-100 outline-none backdrop-blur-sm transition-colors hover:bg-slate-950/70 focus-visible:ring-2 focus-visible:ring-sky-200 sm:bottom-7 sm:left-7"
           data-keyswitch-travel-control
+          data-safari-touch-callout="none"
+          draggable={false}
           onBlur={() => setPressed(false)}
+          onContextMenu={event => event.preventDefault()}
+          onDragStart={event => event.preventDefault()}
           onKeyDown={event => {
             if (event.key === 'Enter' || event.key === ' ') setPressed(true);
           }}
           onKeyUp={event => {
             if (event.key === 'Enter' || event.key === ' ') setPressed(false);
           }}
-          onPointerDown={() => setPressed(true)}
-          onPointerLeave={() => setPressed(false)}
-          onPointerUp={() => setPressed(false)}
-          style={{ borderColor: 'rgba(226, 240, 246, 0.32)' }}
+          onPointerCancel={event => {
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+            setPressed(false);
+          }}
+          onPointerDown={event => {
+            if (event.pointerType !== 'mouse') {
+              try {
+                event.currentTarget.setPointerCapture(event.pointerId);
+              } catch {
+                // Synthetic pointer events do not register an active pointer.
+              }
+            }
+            setPressed(true);
+          }}
+          onPointerLeave={event => {
+            if (event.pointerType === 'mouse') setPressed(false);
+          }}
+          onLostPointerCapture={() => setPressed(false)}
+          onPointerUp={event => {
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+            setPressed(false);
+          }}
+          style={{
+            ...COMMAND_BUTTON_TOUCH_STYLE,
+            borderColor: 'rgba(226, 240, 246, 0.32)',
+          }}
           type="button"
         >
           Hold to actuate

@@ -312,12 +312,30 @@ async function runTask(browser, task) {
       );
 
       const travel = page.locator('[data-keyswitch-travel-control]');
-      await travel.dispatchEvent('pointerdown');
+      await travel.dispatchEvent('pointerdown', {
+        button: 0,
+        isPrimary: true,
+        pointerId: 12,
+        pointerType: 'touch',
+      });
       await page.waitForFunction(
         () =>
           window.__EVAL_SCENE__?.getObjectByName(
             'keyswitch-cap-reference-frost'
-          )?.position.y < -0.16,
+          )?.position.y < -0.055,
+        { timeout: 2_000 }
+      );
+      await travel.dispatchEvent('pointerleave', {
+        button: 0,
+        isPrimary: true,
+        pointerId: 12,
+        pointerType: 'touch',
+      });
+      await page.waitForFunction(
+        () =>
+          window.__EVAL_SCENE__?.getObjectByName(
+            'keyswitch-cap-reference-frost'
+          )?.position.y < -0.22,
         { timeout: 2_000 }
       );
       const pressedTravel = await page.evaluate(
@@ -326,7 +344,12 @@ async function runTask(browser, task) {
             'keyswitch-cap-reference-frost'
           )?.position.y
       );
-      await travel.dispatchEvent('pointerup');
+      await travel.dispatchEvent('pointerup', {
+        button: 0,
+        isPrimary: true,
+        pointerId: 12,
+        pointerType: 'touch',
+      });
       await page.waitForFunction(
         () =>
           Math.abs(
@@ -474,6 +497,11 @@ async function runTask(browser, task) {
             variant.getAttribute('data-keyswitch-variant')
           ),
           pressedVariant: surface?.getAttribute('data-pressed-variant'),
+          tactileDurationMs: surface?.getAttribute('data-tactile-duration-ms'),
+          tactileProfile: surface?.getAttribute('data-tactile-profile'),
+          travelTouchAction: getComputedStyle(
+            document.querySelector('[data-keyswitch-travel-control]')
+          ).touchAction,
           idleHintEnabled: surface?.getAttribute('data-idle-hint-enabled'),
           idleHintIntervalMs: surface?.getAttribute(
             'data-idle-hint-interval-ms'
@@ -503,6 +531,9 @@ async function runTask(browser, task) {
         study.active === 'reference-frost' &&
         study.assemblyCount === 1 &&
         study.pressedVariant === 'none' &&
+        study.tactileDurationMs === '190' &&
+        study.tactileProfile === 'brown' &&
+        study.travelTouchAction === 'manipulation' &&
         study.idleHintEnabled === 'true' &&
         study.idleHintIntervalMs === '10000' &&
         study.platformScale === 1 &&
@@ -540,7 +571,7 @@ async function runTask(browser, task) {
     }
 
     if (task.id === 't8-home-keyswitch') {
-      const link = page.locator('[data-architecture-key-link]');
+      const button = page.locator('[data-architecture-key-button]');
       const cameraPosition = () =>
         page.evaluate(() =>
           window.__EVAL_KEYSWITCH_CAMERA__?.position.toArray()
@@ -649,7 +680,36 @@ async function runTask(browser, task) {
         { timeout: 2_000 }
       );
 
-      await link.dispatchEvent('pointerdown', { button: 0, pointerId: 1 });
+      const tactilePressStartedAt = Date.now();
+      await button.dispatchEvent('pointerdown', {
+        button: 0,
+        isPrimary: true,
+        pointerId: 11,
+        pointerType: 'touch',
+      });
+      await page.waitForFunction(
+        () => {
+          const y = window.__EVAL_SCENE__?.getObjectByName(
+            'keyswitch-cap-smoke-low'
+          )?.position.y;
+          return typeof y === 'number' && y < -0.055 && y > -0.14;
+        },
+        undefined,
+        { timeout: 2_000 }
+      );
+      const tactileShoulderReachedMs = Date.now() - tactilePressStartedAt;
+      await page.waitForTimeout(45);
+      const tactileShoulderTravel = await page.evaluate(
+        () =>
+          window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-smoke-low')
+            ?.position.y
+      );
+      await button.dispatchEvent('pointerleave', {
+        button: 0,
+        isPrimary: true,
+        pointerId: 11,
+        pointerType: 'touch',
+      });
       await page.waitForFunction(
         () =>
           window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-smoke-low')
@@ -661,7 +721,26 @@ async function runTask(browser, task) {
           window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-smoke-low')
             ?.position.y
       );
-      await link.dispatchEvent('pointerup', { button: 0, pointerId: 1 });
+      const tactileFullTravelMs = Date.now() - tactilePressStartedAt;
+      const touchHeldState = await page.evaluate(() => ({
+        pressed: document
+          .querySelector('[data-home-architecture-keyswitch]')
+          ?.getAttribute('data-pressed'),
+        url: location.href,
+      }));
+      const contextMenuPrevented = await button.evaluate(element => {
+        const contextMenu = new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+        });
+        return !element.dispatchEvent(contextMenu);
+      });
+      await button.dispatchEvent('pointerup', {
+        button: 0,
+        isPrimary: true,
+        pointerId: 11,
+        pointerType: 'touch',
+      });
       await page.waitForFunction(
         () =>
           Math.abs(
@@ -692,14 +771,23 @@ async function runTask(browser, task) {
         const root = document.querySelector(
           '[data-home-architecture-keyswitch]'
         );
-        const anchor = document.querySelector('[data-architecture-key-link]');
+        const button = document.querySelector(
+          '[data-architecture-key-button]'
+        );
         return {
           rootCount: document.querySelectorAll(
             '[data-home-architecture-keyswitch]'
           ).length,
-          href: anchor?.getAttribute('href'),
-          label: anchor?.getAttribute('aria-label'),
+          buttonType: button?.getAttribute('type'),
+          draggable: button?.getAttribute('draggable'),
+          href: button?.getAttribute('href'),
+          label: button?.getAttribute('aria-label'),
           pressed: root?.getAttribute('data-pressed'),
+          tactileDurationMs: root?.getAttribute('data-tactile-duration-ms'),
+          tactileProfile: root?.getAttribute('data-tactile-profile'),
+          tagName: button?.tagName,
+          touchAction: button ? getComputedStyle(button).touchAction : '',
+          touchCallout: button?.getAttribute('data-safari-touch-callout'),
           idleHintEnabled: root?.getAttribute('data-idle-hint-enabled'),
           idleHintIntervalMs: root?.getAttribute('data-idle-hint-interval-ms'),
           rootWidth: root?.getBoundingClientRect().width,
@@ -751,25 +839,27 @@ async function runTask(browser, task) {
         const root = document.querySelector(
           '[data-home-architecture-keyswitch]'
         );
-        const anchor = document.querySelector('[data-architecture-key-link]');
+        const button = document.querySelector(
+          '[data-architecture-key-button]'
+        );
         const rootRect = root?.getBoundingClientRect();
-        const anchorRect = anchor?.getBoundingClientRect();
+        const buttonRect = button?.getBoundingClientRect();
         return {
           rootWidth: rootRect?.width,
           rootHeight: rootRect?.height,
           withinViewport:
             !!rootRect && rootRect.left >= 0 && rootRect.right <= innerWidth,
-          targetWidth: anchorRect?.width,
-          targetHeight: anchorRect?.height,
+          targetWidth: buttonRect?.width,
+          targetHeight: buttonRect?.height,
         };
       });
       await page.setViewportSize({ width: 900, height: 700 });
 
-      const navigationLink = interactionPage.locator(
-        '[data-architecture-key-link]'
+      const navigationButton = interactionPage.locator(
+        '[data-architecture-key-button]'
       );
-      const navigationBox = await navigationLink.boundingBox();
-      if (!navigationBox) throw new Error('Architecture link has no bounds');
+      const navigationBox = await navigationButton.boundingBox();
+      if (!navigationBox) throw new Error('Command button has no bounds');
       await interactionPage.mouse.move(
         navigationBox.x + navigationBox.width / 2,
         navigationBox.y + navigationBox.height / 2
@@ -980,9 +1070,16 @@ async function runTask(browser, task) {
 
       result.semanticOk =
         semantics.rootCount === 1 &&
-        semantics.href === '/architecture' &&
+        semantics.tagName === 'BUTTON' &&
+        semantics.buttonType === 'button' &&
+        semantics.href === null &&
+        semantics.draggable === 'false' &&
         semantics.label === 'Command — open Exawatt architecture' &&
         semantics.pressed === 'false' &&
+        semantics.tactileDurationMs === '190' &&
+        semantics.tactileProfile === 'brown' &&
+        semantics.touchAction === 'manipulation' &&
+        semantics.touchCallout === 'none' &&
         semantics.idleHintEnabled === 'true' &&
         semantics.idleHintIntervalMs === '10000' &&
         semantics.rootWidth <= 290.5 &&
@@ -1021,7 +1118,14 @@ async function runTask(browser, task) {
         secondHintTravel > -0.08 &&
         repeatedHintDelayMs >= 8_000 &&
         repeatedHintDelayMs <= 12_500 &&
+        tactileShoulderReachedMs < 1_500 &&
+        tactileShoulderTravel < -0.055 &&
+        tactileShoulderTravel > -0.17 &&
+        tactileFullTravelMs > tactileShoulderReachedMs &&
         pressedTravel < -0.22 &&
+        touchHeldState.pressed === 'true' &&
+        touchHeldState.url.endsWith('/eval/t8-home-keyswitch') &&
+        contextMenuPrevented &&
         orbitDistance > 0.02 &&
         reducedDistance < 0.002 &&
         heldUrl.endsWith('/eval/t8-home-keyswitch') &&
@@ -1042,6 +1146,11 @@ async function runTask(browser, task) {
         `home-keyswitch: ${JSON.stringify({
           ...semantics,
           pressedTravel,
+          tactileShoulderReachedMs,
+          tactileShoulderTravel,
+          tactileFullTravelMs,
+          touchHeldState,
+          contextMenuPrevented,
           firstHintTravel,
           secondHintTravel,
           repeatedHintDelayMs,

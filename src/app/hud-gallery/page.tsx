@@ -27,7 +27,7 @@ import {
   WebglStatusLightsScene,
 } from '@/components/hud/webgl/scenes';
 import {
-  ArchitectureKeySwitchLink,
+  CommandKeySwitchButton,
   KeySwitchStudy,
 } from '@/components/hud/webgl/keyswitch-study';
 import {
@@ -262,10 +262,10 @@ const SECTIONS: Section[] = [
   {
     id: 'architecture-orbit-key',
     title: 'Homepage command key',
-    meta: 'production component · Smoke Low R3F assembly + deliberate route transition',
+    meta: 'production component · Smoke Low R3F assembly + Brown-style tactile break + deliberate route transition',
     showcase: (
       <div className="flex min-h-[360px] items-center justify-center overflow-hidden bg-[#05090c] px-4 py-6">
-        <ArchitectureKeySwitchLink />
+        <CommandKeySwitchButton />
       </div>
     ),
   },

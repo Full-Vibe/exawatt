@@ -17,7 +17,7 @@ vi.mock('./_hero-bg', () => ({
 }));
 
 vi.mock('@/components/hud/webgl/keyswitch-study', () => ({
-  ArchitectureKeySwitchLink: ({
+  CommandKeySwitchButton: ({
     idleHint,
     interactive,
   }: {
