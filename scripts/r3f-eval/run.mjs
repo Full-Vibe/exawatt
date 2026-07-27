@@ -478,6 +478,16 @@ async function runTask(browser, task) {
         { timeout: 2_000 }
       );
 
+      const soundControl = page.locator('[data-keyswitch-sound-control]');
+      const soundInitiallyEnabled =
+        (await soundControl.getAttribute('aria-pressed')) === 'true';
+      await soundControl.click();
+      const soundDisabled =
+        (await page
+          .locator('[data-keyswitch-study]')
+          .getAttribute('data-sound-enabled')) === 'false';
+      await soundControl.click();
+
       const distance = (a, b) =>
         Array.isArray(a) && Array.isArray(b)
           ? Math.hypot(...a.map((value, index) => value - b[index]))
@@ -493,9 +503,18 @@ async function runTask(browser, task) {
         return {
           materialCount: surface?.getAttribute('data-material-count'),
           active: surface?.getAttribute('data-active-keyswitch-variant'),
+          activeSoundProfile: surface?.getAttribute(
+            'data-active-sound-profile'
+          ),
           variants: variants.map(variant =>
             variant.getAttribute('data-keyswitch-variant')
           ),
+          soundProfiles: variants.map(variant =>
+            variant.getAttribute('data-keyswitch-sound-profile')
+          ),
+          soundProfileCount: surface?.getAttribute('data-sound-profile-count'),
+          soundEnabled: surface?.getAttribute('data-sound-enabled'),
+          lastSoundEvent: surface?.getAttribute('data-last-sound-event'),
           pressedVariant: surface?.getAttribute('data-pressed-variant'),
           tactileDurationMs: surface?.getAttribute('data-tactile-duration-ms'),
           tactileProfile: surface?.getAttribute('data-tactile-profile'),
@@ -519,6 +538,7 @@ async function runTask(browser, task) {
       });
       result.semanticOk =
         study.materialCount === '7' &&
+        study.soundProfileCount === '7' &&
         [
           'reference-frost',
           'optic-clear',
@@ -528,7 +548,10 @@ async function runTask(browser, task) {
           'original-satin',
           'original-smoke',
         ].every(id => study.variants.includes(id)) &&
+        new Set(study.soundProfiles).size === 7 &&
+        study.soundProfiles.every(Boolean) &&
         study.active === 'reference-frost' &&
+        study.activeSoundProfile === 'frosted-thock' &&
         study.assemblyCount === 1 &&
         study.pressedVariant === 'none' &&
         study.tactileDurationMs === '190' &&
@@ -536,9 +559,13 @@ async function runTask(browser, task) {
         study.travelTouchAction === 'manipulation' &&
         study.idleHintEnabled === 'true' &&
         study.idleHintIntervalMs === '10000' &&
+        study.soundEnabled === 'true' &&
+        study.lastSoundEvent === 'frosted-thock:release' &&
         study.platformScale === 1 &&
         idleHintInitiallyEnabled &&
         idleHintDisabled &&
+        soundInitiallyEnabled &&
+        soundDisabled &&
         galleryHintTravel < -0.012 &&
         galleryHintTravel > -0.08 &&
         sculptedShellChecks.length === 2 &&
@@ -563,6 +590,8 @@ async function runTask(browser, task) {
           galleryHintTravel,
           idleHintInitiallyEnabled,
           idleHintDisabled,
+          soundInitiallyEnabled,
+          soundDisabled,
           sculptedShellChecks,
         })}`
       );
@@ -771,9 +800,7 @@ async function runTask(browser, task) {
         const root = document.querySelector(
           '[data-home-architecture-keyswitch]'
         );
-        const button = document.querySelector(
-          '[data-architecture-key-button]'
-        );
+        const button = document.querySelector('[data-architecture-key-button]');
         return {
           rootCount: document.querySelectorAll(
             '[data-home-architecture-keyswitch]'
@@ -839,9 +866,7 @@ async function runTask(browser, task) {
         const root = document.querySelector(
           '[data-home-architecture-keyswitch]'
         );
-        const button = document.querySelector(
-          '[data-architecture-key-button]'
-        );
+        const button = document.querySelector('[data-architecture-key-button]');
         const rootRect = root?.getBoundingClientRect();
         const buttonRect = button?.getBoundingClientRect();
         return {
@@ -865,8 +890,30 @@ async function runTask(browser, task) {
         navigationBox.y + navigationBox.height / 2
       );
       await interactionPage.mouse.down();
-      await interactionPage.waitForTimeout(100);
+      await interactionPage.waitForTimeout(500);
+      await interactionPage.mouse.move(10, 10, { steps: 6 });
+      await interactionPage.waitForTimeout(1_100);
+      const longHeldState = await interactionPage.evaluate(() => {
+        const root = document.querySelector(
+          '[data-home-architecture-keyswitch]'
+        );
+        const button = document.querySelector('[data-architecture-key-button]');
+        return {
+          pressed: root?.getAttribute('data-pressed'),
+          position: window.__EVAL_SCENE__?.getObjectByName(
+            'keyswitch-cap-smoke-low'
+          )?.position.y,
+          pointerCaptured:
+            button instanceof Element && button.hasPointerCapture(1),
+          navigation: root?.getAttribute('data-navigation-state'),
+        };
+      });
       const heldUrl = interactionPage.url();
+      await interactionPage.mouse.move(
+        navigationBox.x + navigationBox.width / 2,
+        navigationBox.y + navigationBox.height / 2,
+        { steps: 6 }
+      );
       await interactionPage.evaluate(() => {
         const root = document.querySelector(
           '[data-home-architecture-keyswitch]'
@@ -911,7 +958,16 @@ async function runTask(browser, task) {
       const navigationBoundary = await interactionPage.evaluate(
         () => window.__EVAL_NAV_BOUNDARY__
       );
-      await interactionPage.waitForTimeout(500);
+      await interactionPage.waitForFunction(
+        () => {
+          const curtain = document.querySelector(
+            '[data-architecture-transition-curtain="exit"]'
+          );
+          return !!curtain && Number(getComputedStyle(curtain).opacity) > 0.8;
+        },
+        undefined,
+        { timeout: 2_000 }
+      );
       const outgoingCurtain = await interactionPage.evaluate(() => {
         const curtain = document.querySelector(
           '[data-architecture-transition-curtain="exit"]'
@@ -1129,6 +1185,10 @@ async function runTask(browser, task) {
         orbitDistance > 0.02 &&
         reducedDistance < 0.002 &&
         heldUrl.endsWith('/eval/t8-home-keyswitch') &&
+        longHeldState.pressed === 'true' &&
+        longHeldState.position < -0.22 &&
+        longHeldState.pointerCaptured &&
+        longHeldState.navigation === 'idle' &&
         releaseRequestedUrl.endsWith('/eval/t8-home-keyswitch') &&
         ['releasing', 'navigating'].includes(
           releaseRequestedState.navigation
@@ -1160,6 +1220,7 @@ async function runTask(browser, task) {
           landscapeHomeLayout,
           portraitHomeLayout,
           heldUrl,
+          longHeldState,
           releaseRequestedUrl,
           releaseRequestedState,
           outgoingCurtain,

@@ -36,6 +36,15 @@ import {
   BROWN_SWITCH_PRESS_DURATION_SECONDS,
   sampleBrownSwitchPress,
 } from './keyswitch-motion';
+import {
+  KEYSWITCH_SOUND_PROFILES,
+  KEYSWITCH_VARIANT_SOUND_PROFILES,
+  playKeySwitchSound,
+} from './keyswitch-audio';
+import type {
+  KeySwitchSoundPhase,
+  KeySwitchSoundProfileId,
+} from './keyswitch-audio';
 
 const ACTIVE_BLUE = STATUS_LIGHT_META.active.color;
 
@@ -48,6 +57,7 @@ type CapShape =
 
 interface KeySwitchVariant {
   id: string;
+  soundProfile: KeySwitchSoundProfileId;
   index: string;
   name: string;
   short: string;
@@ -90,6 +100,7 @@ interface KeySwitchVariant {
 const KEYSWITCH_VARIANTS: readonly KeySwitchVariant[] = [
   {
     id: 'reference-frost',
+    soundProfile: KEYSWITCH_VARIANT_SOUND_PROFILES['reference-frost'],
     index: '01',
     name: 'Reference Frost',
     short: 'Closest match',
@@ -131,6 +142,7 @@ const KEYSWITCH_VARIANTS: readonly KeySwitchVariant[] = [
   },
   {
     id: 'optic-clear',
+    soundProfile: KEYSWITCH_VARIANT_SOUND_PROFILES['optic-clear'],
     index: '02',
     name: 'Optic Clear',
     short: 'Sculpted',
@@ -172,6 +184,7 @@ const KEYSWITCH_VARIANTS: readonly KeySwitchVariant[] = [
   },
   {
     id: 'smoke-low',
+    soundProfile: KEYSWITCH_VARIANT_SOUND_PROFILES['smoke-low'],
     index: '03',
     name: 'Smoke Low',
     short: 'Low profile',
@@ -213,6 +226,7 @@ const KEYSWITCH_VARIANTS: readonly KeySwitchVariant[] = [
   },
   {
     id: 'opal-pillow',
+    soundProfile: KEYSWITCH_VARIANT_SOUND_PROFILES['opal-pillow'],
     index: '04',
     name: 'Opal Pillow',
     short: 'Soft radius',
@@ -254,6 +268,7 @@ const KEYSWITCH_VARIANTS: readonly KeySwitchVariant[] = [
   },
   {
     id: 'original-optic',
+    soundProfile: KEYSWITCH_VARIANT_SOUND_PROFILES['original-optic'],
     index: '05',
     name: 'Optic PC',
     short: 'Original clear',
@@ -295,6 +310,7 @@ const KEYSWITCH_VARIANTS: readonly KeySwitchVariant[] = [
   },
   {
     id: 'original-satin',
+    soundProfile: KEYSWITCH_VARIANT_SOUND_PROFILES['original-satin'],
     index: '06',
     name: 'Satin PC',
     short: 'Original frost',
@@ -336,6 +352,7 @@ const KEYSWITCH_VARIANTS: readonly KeySwitchVariant[] = [
   },
   {
     id: 'original-smoke',
+    soundProfile: KEYSWITCH_VARIANT_SOUND_PROFILES['original-smoke'],
     index: '07',
     name: 'Smoke PC',
     short: 'Original tint',
@@ -395,6 +412,52 @@ const COMMAND_BUTTON_TOUCH_STYLE = {
   userSelect: 'none',
   touchAction: 'manipulation',
 } satisfies CSSProperties & { WebkitTouchCallout: 'none' };
+
+type AudioWindow = Window &
+  typeof globalThis & {
+    webkitAudioContext?: typeof AudioContext;
+  };
+
+function useKeySwitchAudio(enabled: boolean) {
+  const context = useRef<AudioContext | null>(null);
+
+  useEffect(
+    () => () => {
+      const activeContext = context.current;
+      context.current = null;
+      if (activeContext && activeContext.state !== 'closed') {
+        void activeContext.close().catch(() => undefined);
+      }
+    },
+    []
+  );
+
+  return useCallback(
+    (profile: KeySwitchSoundProfileId, phase: KeySwitchSoundPhase) => {
+      if (!enabled || typeof window === 'undefined') return false;
+
+      const audioWindow = window as AudioWindow;
+      const AudioContextConstructor =
+        audioWindow.AudioContext ?? audioWindow.webkitAudioContext;
+      if (!AudioContextConstructor) return false;
+
+      try {
+        const activeContext =
+          context.current ??
+          new AudioContextConstructor({ latencyHint: 'interactive' });
+        context.current = activeContext;
+        if (activeContext.state === 'suspended') {
+          void activeContext.resume().catch(() => undefined);
+        }
+        playKeySwitchSound(activeContext, profile, phase);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [enabled]
+  );
+}
 
 type IdleHintPhase = 'waiting' | 'running' | 'done';
 
@@ -1409,6 +1472,8 @@ export function CommandKeySwitchButton({
     'idle' | 'releasing' | 'navigating'
   >('idle');
   const root = useRef<HTMLDivElement>(null);
+  const activePointerId = useRef<number | null>(null);
+  const pointerReleaseInside = useRef(true);
   const keyboardPressed = useRef(false);
   const keyboardNavigationPending = useRef(false);
   const navigationTimer = useRef<number | null>(null);
@@ -1424,6 +1489,8 @@ export function CommandKeySwitchButton({
   );
 
   const navigateAfterRelease = useCallback(() => {
+    activePointerId.current = null;
+    pointerReleaseInside.current = true;
     setPressed(false);
     root.current?.setAttribute('data-navigation-state', 'releasing');
     setNavigationState('releasing');
@@ -1500,6 +1567,8 @@ export function CommandKeySwitchButton({
         tabIndex={navigationInteractive ? undefined : -1}
         type="button"
         onBlur={() => {
+          activePointerId.current = null;
+          pointerReleaseInside.current = false;
           keyboardPressed.current = false;
           keyboardNavigationPending.current = false;
           setPressed(false);
@@ -1510,6 +1579,10 @@ export function CommandKeySwitchButton({
             return;
           }
           event.preventDefault();
+          if (event.detail > 0 && !pointerReleaseInside.current) {
+            pointerReleaseInside.current = true;
+            return;
+          }
           if (event.detail === 0 && keyboardPressed.current) {
             keyboardNavigationPending.current = true;
             return;
@@ -1518,10 +1591,7 @@ export function CommandKeySwitchButton({
         }}
         onKeyDown={event => {
           if (!navigationInteractive) return;
-          if (
-            !event.repeat &&
-            (event.key === 'Enter' || event.key === ' ')
-          ) {
+          if (!event.repeat && (event.key === 'Enter' || event.key === ' ')) {
             keyboardPressed.current = true;
             setPressed(true);
           }
@@ -1541,28 +1611,41 @@ export function CommandKeySwitchButton({
           if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId);
           }
+          if (activePointerId.current !== event.pointerId) return;
+          activePointerId.current = null;
+          pointerReleaseInside.current = false;
           setPressed(false);
         }}
         onPointerDown={event => {
           if (!navigationInteractive || event.button !== 0) return;
-          if (event.pointerType !== 'mouse') {
-            try {
-              event.currentTarget.setPointerCapture(event.pointerId);
-            } catch {
-              // Synthetic pointer events do not register an active pointer.
-            }
+          activePointerId.current = event.pointerId;
+          pointerReleaseInside.current = false;
+          try {
+            event.currentTarget.setPointerCapture(event.pointerId);
+          } catch {
+            // Synthetic pointer events do not register an active pointer.
           }
           setPressed(true);
         }}
-        onPointerLeave={event => {
-          if (event.pointerType === 'mouse') setPressed(false);
+        onLostPointerCapture={event => {
+          if (activePointerId.current !== event.pointerId) return;
+          activePointerId.current = null;
+          pointerReleaseInside.current = false;
+          setPressed(false);
         }}
-        onLostPointerCapture={() => setPressed(false)}
         onPointerUp={event => {
+          if (activePointerId.current !== event.pointerId) return;
+          const bounds = event.currentTarget.getBoundingClientRect();
+          pointerReleaseInside.current =
+            event.clientX >= bounds.left &&
+            event.clientX <= bounds.right &&
+            event.clientY >= bounds.top &&
+            event.clientY <= bounds.bottom;
+          activePointerId.current = null;
+          setPressed(false);
           if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId);
           }
-          setPressed(false);
         }}
       >
         <span className="sr-only">Command</span>
@@ -1587,11 +1670,32 @@ export function KeySwitchStudy({
   const [resetToken, setResetToken] = useState(0);
   const [idleHintEnabled, setIdleHintEnabled] = useState(idleHint);
   const [idleHintKey, setIdleHintKey] = useState(0);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [lastSoundEvent, setLastSoundEvent] = useState('none');
+  const pressedRef = useRef(false);
+  const activePointerId = useRef<number | null>(null);
   const variant =
     KEYSWITCH_VARIANTS.find(candidate => candidate.id === variantId) ??
     KEYSWITCH_VARIANTS[0];
+  const playSound = useKeySwitchAudio(soundEnabled);
+
+  const setPhysicalPressed = useCallback(
+    (nextPressed: boolean) => {
+      if (pressedRef.current === nextPressed) return;
+      pressedRef.current = nextPressed;
+      setPressed(nextPressed);
+
+      const phase = nextPressed ? 'press' : 'release';
+      if (playSound(variant.soundProfile, phase)) {
+        setLastSoundEvent(`${variant.soundProfile}:${phase}`);
+      }
+    },
+    [playSound, variant.soundProfile]
+  );
 
   const selectVariant = (id: string) => {
+    activePointerId.current = null;
+    pressedRef.current = false;
     setPressed(false);
     setVariantId(id);
   };
@@ -1600,11 +1704,15 @@ export function KeySwitchStudy({
     <div
       className="overflow-hidden rounded-[2px] border"
       data-active-keyswitch-variant={variant.id}
+      data-active-sound-profile={variant.soundProfile}
       data-keyswitch-study
       data-idle-hint-enabled={idleHintEnabled ? 'true' : 'false'}
       data-idle-hint-interval-ms={IDLE_HINT_REPEAT_INTERVAL_MS}
+      data-last-sound-event={lastSoundEvent}
       data-material-count={KEYSWITCH_VARIANTS.length}
       data-pressed-variant={pressed ? variant.id : 'none'}
+      data-sound-enabled={soundEnabled ? 'true' : 'false'}
+      data-sound-profile-count={Object.keys(KEYSWITCH_SOUND_PROFILES).length}
       data-tactile-duration-ms={BROWN_SWITCH_PRESS_DURATION_SECONDS * 1000}
       data-tactile-profile="brown"
       style={{
@@ -1629,7 +1737,7 @@ export function KeySwitchStudy({
             powerPreference: 'high-performance',
             preserveDrawingBuffer: evalMode,
           }}
-          onPointerMissed={() => setPressed(false)}
+          onPointerMissed={() => setPhysicalPressed(false)}
           style={{ touchAction: 'none' }}
         >
           <color attach="background" args={[variant.background]} />
@@ -1637,7 +1745,7 @@ export function KeySwitchStudy({
           <ProductScene
             idleHint={idleHintEnabled}
             idleHintKey={idleHintKey}
-            onPressedChange={setPressed}
+            onPressedChange={setPhysicalPressed}
             pressed={pressed}
             resetToken={resetToken}
             variant={variant}
@@ -1690,44 +1798,72 @@ export function KeySwitchStudy({
         </button>
 
         <button
+          aria-pressed={soundEnabled}
+          className="absolute right-5 top-[6.75rem] rounded-sm border bg-slate-950/55 px-3 py-2 font-mono text-[9px] uppercase tracking-[0.16em] text-slate-100 outline-none backdrop-blur-sm transition-colors hover:bg-slate-950/70 focus-visible:ring-2 focus-visible:ring-sky-200 sm:right-7 sm:top-[7.5rem]"
+          data-keyswitch-sound-control
+          onClick={() => {
+            activePointerId.current = null;
+            pressedRef.current = false;
+            setPressed(false);
+            setSoundEnabled(enabled => !enabled);
+          }}
+          style={{ borderColor: 'rgba(226, 240, 246, 0.32)' }}
+          type="button"
+        >
+          Sound · {soundEnabled ? 'on' : 'off'}
+        </button>
+
+        <button
           className="absolute bottom-5 left-5 rounded-sm border bg-slate-950/55 px-3 py-2 font-mono text-[9px] uppercase tracking-[0.16em] text-slate-100 outline-none backdrop-blur-sm transition-colors hover:bg-slate-950/70 focus-visible:ring-2 focus-visible:ring-sky-200 sm:bottom-7 sm:left-7"
           data-keyswitch-travel-control
           data-safari-touch-callout="none"
           draggable={false}
-          onBlur={() => setPressed(false)}
+          onBlur={() => {
+            activePointerId.current = null;
+            setPhysicalPressed(false);
+          }}
           onContextMenu={event => event.preventDefault()}
           onDragStart={event => event.preventDefault()}
           onKeyDown={event => {
-            if (event.key === 'Enter' || event.key === ' ') setPressed(true);
+            if (event.key === 'Enter' || event.key === ' ') {
+              setPhysicalPressed(true);
+            }
           }}
           onKeyUp={event => {
-            if (event.key === 'Enter' || event.key === ' ') setPressed(false);
+            if (event.key === 'Enter' || event.key === ' ') {
+              setPhysicalPressed(false);
+            }
           }}
           onPointerCancel={event => {
             if (event.currentTarget.hasPointerCapture(event.pointerId)) {
               event.currentTarget.releasePointerCapture(event.pointerId);
             }
-            setPressed(false);
+            if (activePointerId.current !== event.pointerId) return;
+            activePointerId.current = null;
+            setPhysicalPressed(false);
           }}
           onPointerDown={event => {
-            if (event.pointerType !== 'mouse') {
-              try {
-                event.currentTarget.setPointerCapture(event.pointerId);
-              } catch {
-                // Synthetic pointer events do not register an active pointer.
-              }
+            if (event.button !== 0) return;
+            activePointerId.current = event.pointerId;
+            try {
+              event.currentTarget.setPointerCapture(event.pointerId);
+            } catch {
+              // Synthetic pointer events do not register an active pointer.
             }
-            setPressed(true);
+            setPhysicalPressed(true);
           }}
-          onPointerLeave={event => {
-            if (event.pointerType === 'mouse') setPressed(false);
+          onLostPointerCapture={event => {
+            if (activePointerId.current !== event.pointerId) return;
+            activePointerId.current = null;
+            setPhysicalPressed(false);
           }}
-          onLostPointerCapture={() => setPressed(false)}
           onPointerUp={event => {
             if (event.currentTarget.hasPointerCapture(event.pointerId)) {
               event.currentTarget.releasePointerCapture(event.pointerId);
             }
-            setPressed(false);
+            if (activePointerId.current !== event.pointerId) return;
+            activePointerId.current = null;
+            setPhysicalPressed(false);
           }}
           style={{
             ...COMMAND_BUTTON_TOUCH_STYLE,
@@ -1760,6 +1896,7 @@ export function KeySwitchStudy({
               aria-pressed={active}
               className="flex min-h-[142px] items-start gap-4 border-b px-5 py-5 text-left outline-none transition-[background-color] duration-200 last:border-b-0 focus-visible:bg-sky-100/[0.07] md:odd:border-r 2xl:border-b-0 2xl:border-r 2xl:last:border-r-0"
               data-keyswitch-variant={candidate.id}
+              data-keyswitch-sound-profile={candidate.soundProfile}
               onClick={() => selectVariant(candidate.id)}
               style={{
                 background: active
@@ -1786,6 +1923,10 @@ export function KeySwitchStudy({
                 </span>
                 <span className="mt-1 font-mono text-[8px] uppercase tracking-[0.1em] text-slate-500">
                   {candidate.materials}
+                </span>
+                <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-sky-200/45">
+                  Sound ·{' '}
+                  {KEYSWITCH_SOUND_PROFILES[candidate.soundProfile].label}
                 </span>
               </span>
             </button>
