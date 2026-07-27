@@ -85,6 +85,7 @@ import {
 } from '@exawatt/ui-model';
 import { HUD } from '@/components/hud';
 import { useProductFeedback } from '@/components/feedback/product-feedback-provider';
+import { setQuickFeedbackAttribution } from '@/components/feedback/quick-feedback-events';
 import {
   Bell,
   BellOff,
@@ -633,6 +634,16 @@ export function WorkspaceClient() {
           : null,
     });
   }, [ready, overviewOpen, activeProject, activeTab]);
+
+  // ENG-025 F1: quick feedback submitted from the workspace attributes to the
+  // active Project and durable Session without the provider knowing any
+  // workspace state.
+  useEffect(() => {
+    const projectName = activeProject?.name ?? null;
+    const durableSessionId = activeTab?.durableSessionId ?? null;
+    setQuickFeedbackAttribution(() => ({ projectName, durableSessionId }));
+    return () => setQuickFeedbackAttribution(null);
+  }, [activeProject?.name, activeTab?.durableSessionId]);
 
   const closeOverview = useCallback(() => {
     updateOverview(false);

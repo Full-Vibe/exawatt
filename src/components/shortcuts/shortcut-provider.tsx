@@ -45,6 +45,7 @@ import {
   requestReopenLastClosed,
 } from '@/components/workspace/session-jump';
 import type { PtyHarness } from '@/types/electron';
+import { requestQuickFeedback } from '@/components/feedback/quick-feedback-events';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 import { useWorkspaceCommandAvailability } from '@/components/workspace/workspace-command-availability';
 
@@ -157,6 +158,9 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             break;
           case 'command-palette':
             setCommandPaletteOpen(true);
+            break;
+          case 'quick-feedback':
+            requestQuickFeedback();
             break;
           case 'help-modal':
           case 'help-modal-slash':

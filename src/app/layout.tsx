@@ -52,15 +52,17 @@ export default function RootLayout({
         <TooltipProvider>
           <SystemAccent />
           <CommandNavigationProvider>
-            <ShortcutProvider>
-              <FleetProvider>
-                <ProductFeedbackProvider>
+            {/* Feedback sits above ShortcutProvider so the ⌘K palette can
+                read auth state for its quick-feedback verbs (ENG-025 F1) */}
+            <ProductFeedbackProvider>
+              <ShortcutProvider>
+                <FleetProvider>
                   <SiteHeader />
                   <UpdateReadyNotice />
                   {children}
-                </ProductFeedbackProvider>
-              </FleetProvider>
-            </ShortcutProvider>
+                </FleetProvider>
+              </ShortcutProvider>
+            </ProductFeedbackProvider>
           </CommandNavigationProvider>
         </TooltipProvider>
         <SiteFooter />

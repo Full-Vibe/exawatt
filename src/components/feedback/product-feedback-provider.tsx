@@ -42,6 +42,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { QuickCaptureBar } from './quick-capture-bar';
+import {
+  OPEN_QUICK_FEEDBACK_EVENT,
+  sampleQuickFeedbackAttribution,
+  type QuickFeedbackDetail,
+  type QuickFeedbackKind,
+} from './quick-feedback-events';
 
 interface ContextRating {
   durableSessionId: string;
@@ -54,6 +61,8 @@ interface ContextRating {
 interface FeedbackContextValue {
   isAuthenticated: boolean;
   openFeedback: () => void;
+  /** ENG-025 F1: the keyboard-first capture bar; no-op when signed out */
+  openQuickCapture: (kind?: QuickFeedbackKind) => void;
   submitContextRating: (rating: ContextRating) => Promise<boolean>;
 }
 
@@ -106,7 +115,10 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     setIsAuthenticated(authenticated);
     void window.electron?.pty?.setContextAuth?.(token);
     void window.electron?.feedback?.setAuthenticated(authenticated);
-    if (!authenticated) setOpen(false);
+    if (!authenticated) {
+      setOpen(false);
+      setQuickOpen(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -201,6 +213,98 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     setOpen(true);
   }, []);
 
+  // ENG-025 F1 quick capture. The draft survives dismissal and failed sends;
+  // the screenshot is captured BEFORE the bar renders so it never contains
+  // the capture UI itself.
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quickKind, setQuickKind] = useState<QuickFeedbackKind>('general');
+  const [quickMessage, setQuickMessage] = useState('');
+  const [quickShot, setQuickShot] = useState<string | null>(null);
+  const [quickAttach, setQuickAttach] = useState(false);
+  const [quickError, setQuickError] = useState<string | null>(null);
+  const [sentPulse, setSentPulse] = useState(false);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+
+  const closeQuick = useCallback(() => {
+    setQuickOpen(false);
+    restoreFocusRef.current?.focus?.();
+    restoreFocusRef.current = null;
+  }, []);
+
+  const openQuickCapture = useCallback((kind: QuickFeedbackKind = 'general') => {
+    if (!tokenRef.current) return;
+    void (async () => {
+      setQuickError(null);
+      setQuickKind(kind);
+      let shot: string | null = null;
+      try {
+        shot =
+          (await window.electron?.feedback?.captureScreenshot?.()) ?? null;
+      } catch {
+        shot = null;
+      }
+      setQuickShot(shot);
+      // A bug report usually wants the evidence; other kinds opt in.
+      setQuickAttach(kind === 'bug' && !!shot);
+      restoreFocusRef.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      setQuickOpen(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const kind = (event as CustomEvent<QuickFeedbackDetail>).detail?.kind;
+      openQuickCapture(kind ?? 'general');
+    };
+    window.addEventListener(OPEN_QUICK_FEEDBACK_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_QUICK_FEEDBACK_EVENT, onOpen);
+  }, [openQuickCapture]);
+
+  useEffect(() => {
+    if (!sentPulse) return;
+    const timer = setTimeout(() => setSentPulse(false), 1600);
+    return () => clearTimeout(timer);
+  }, [sentPulse]);
+
+  const submitQuick = useCallback(async () => {
+    const clean = quickMessage.trim();
+    if (!clean) return;
+    const kind = quickKind;
+    const attachment =
+      quickAttach && quickShot
+        ? { dataUrl: quickShot, name: 'screenshot' }
+        : null;
+    const attribution = sampleQuickFeedbackAttribution();
+    // Optimistic: the bar closes on Enter; a failed send reopens it with the
+    // draft intact.
+    closeQuick();
+    const sent = await submit({
+      kind,
+      message: clean,
+      surface: 'quick-capture',
+      context: {
+        schemaVersion: 1,
+        url: window.location.href,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        projectName: attribution?.projectName ?? null,
+        durableSessionId: attribution?.durableSessionId ?? null,
+      },
+      attachment,
+    });
+    if (sent) {
+      setQuickMessage('');
+      setQuickShot(null);
+      setQuickAttach(false);
+      setSentPulse(true);
+      return;
+    }
+    setQuickError('Send failed — draft kept');
+    setQuickOpen(true);
+  }, [closeQuick, quickAttach, quickKind, quickMessage, quickShot, submit]);
+
   const submitContextRating = useCallback(
     async (rating: ContextRating) => {
       if (!tokenRef.current) return false;
@@ -294,9 +398,10 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     () => ({
       isAuthenticated,
       openFeedback,
+      openQuickCapture,
       submitContextRating,
     }),
-    [isAuthenticated, openFeedback, submitContextRating]
+    [isAuthenticated, openFeedback, openQuickCapture, submitContextRating]
   );
 
   return (
@@ -456,6 +561,39 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {quickOpen && (
+        <>
+          {/* transparent backdrop: click-away dismisses but keeps the draft */}
+          <div
+            className="fixed inset-0 z-50"
+            onMouseDown={closeQuick}
+            aria-hidden
+          />
+          <div className="pointer-events-none fixed inset-x-0 top-24 z-50 flex justify-center px-4">
+            <div className="pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-150">
+              <QuickCaptureBar
+                kind={quickKind}
+                onKindChange={setQuickKind}
+                message={quickMessage}
+                onMessageChange={setQuickMessage}
+                screenshot={quickShot}
+                attachScreenshot={quickAttach}
+                onAttachScreenshotChange={setQuickAttach}
+                error={quickError}
+                onSubmit={() => void submitQuick()}
+                onDismiss={closeQuick}
+              />
+            </div>
+          </div>
+        </>
+      )}
+      {sentPulse && (
+        <div className="pointer-events-none fixed inset-x-0 top-6 z-50 flex justify-center">
+          <div className="animate-in fade-in slide-in-from-top-1 flex items-center gap-1.5 rounded-full border border-[color:var(--hud-line)] bg-[color:var(--hud-panel)] px-3 py-1 text-xs text-muted-foreground shadow-lg duration-200">
+            <Check className="size-3.5 text-emerald-400" /> Feedback sent
+          </div>
+        </div>
+      )}
     </ProductFeedbackContext.Provider>
   );
 }

@@ -35,6 +35,7 @@ import { useEffect } from 'react';
 import { shortcutRegistry } from '@/lib/shortcuts';
 import { eventToBinding } from '@/lib/shortcuts/format';
 import { bindingsMatch, isChord } from '@/types/shortcuts';
+import { requestQuickFeedback } from '@/components/feedback/quick-feedback-events';
 import type { CommandAltitude } from '@/components/nav/command-altitude';
 
 /** does this event match the registry's CURRENT binding for a shortcut id?
@@ -209,6 +210,13 @@ export function useWorkspaceShortcuts(
       }
       if (matchesRegistry(e, 'help-modal-slash')) {
         if (actions.openHelp()) e.preventDefault();
+        return;
+      }
+      // quick feedback capture (ENG-025 F1): same reach as the palette; the
+      // feedback provider owns the bar, so this layer only fires the event
+      if (matchesRegistry(e, 'quick-feedback')) {
+        requestQuickFeedback();
+        e.preventDefault();
         return;
       }
 

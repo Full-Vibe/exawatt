@@ -219,6 +219,17 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     contexts: ['global'],
   },
 
+  // Quick feedback capture (ENG-025 F1): reachable from anywhere, including
+  // inside xterm — the workspace key layer resolves this id like the palette.
+  {
+    id: 'quick-feedback',
+    keys: { key: 'f', modifiers: ['meta', 'shift'] },
+    label: 'Send feedback',
+    description: 'Capture feedback from anywhere and keep moving',
+    category: 'actions',
+    contexts: ['global'],
+  },
+
   // Help
   {
     id: 'help-modal',

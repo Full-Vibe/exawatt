@@ -668,7 +668,7 @@ export const architectureManifest = {
           id: 'feedback-intake',
           label: 'Product Feedback Intake',
           summary:
-            'Authenticated general reports and label votes/corrections with private optional image evidence.',
+            'Authenticated general reports, label votes/corrections, the ⌘⇧F quick-capture bar with pre-captured screenshots, and the operator reinflation triage loop draining rows into canonical repo state.',
           layer: 'coordination',
           status: 'implemented',
           x: 365,

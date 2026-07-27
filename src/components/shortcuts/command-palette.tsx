@@ -33,6 +33,9 @@ import {
   History,
   RotateCw,
   RotateCcw,
+  MessageSquarePlus,
+  Bug,
+  Lightbulb,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -83,6 +86,11 @@ import {
   AGENT_SOURCE_ORDER,
   type AgentSourceId,
 } from '@/components/workspace/agent-sources';
+import { useOptionalProductFeedback } from '@/components/feedback/product-feedback-provider';
+import {
+  requestQuickFeedback,
+  type QuickFeedbackKind,
+} from '@/components/feedback/quick-feedback-events';
 import { listProjects, rebindProjectPath } from '@/lib/projects/registry';
 import type { Project } from '@/lib/projects/registry';
 import { HUD } from '@/components/hud';
@@ -435,9 +443,58 @@ export function CommandPalette({
     () => surfacesByTier('legacy').map(surfaceItem),
     [surfaceItem]
   );
+  // Quick feedback (ENG-025 F1): the palette is the discoverable face of
+  // ⌘⇧F; each kind-specific verb opens the same capture bar pre-set.
+  const feedback = useOptionalProductFeedback();
+  const feedbackAuthed = feedback?.isAuthenticated ?? false;
   const actionItems = useMemo<CommandItem[]>(() => {
     void shortcutVersion;
+    const feedbackAvailability: CommandAvailability | undefined = feedbackAuthed
+      ? undefined
+      : { available: false, reason: 'Sign in required' };
+    const feedbackVerb = (
+      id: string,
+      label: string,
+      value: string,
+      icon: LucideIcon,
+      kind: QuickFeedbackKind,
+      withShortcut: boolean
+    ): CommandItem => ({
+      id,
+      label,
+      value,
+      icon,
+      shortcut: withShortcut
+        ? shortcutRegistry.getEffectiveKeys('quick-feedback')
+        : undefined,
+      availability: feedbackAvailability,
+      onSelect: () => handleSelect(() => requestQuickFeedback(kind)),
+    });
     return [
+      feedbackVerb(
+        'action-feedback',
+        'Send feedback',
+        'send feedback comment note tell us',
+        MessageSquarePlus,
+        'general',
+        true
+      ),
+      feedbackVerb(
+        'action-feedback-bug',
+        'Report a bug',
+        'report bug broken issue problem wrong crash',
+        Bug,
+        'bug',
+        false
+      ),
+      feedbackVerb(
+        'action-feedback-idea',
+        'Suggest an idea',
+        'suggest idea feature request enhancement improve wish',
+        Lightbulb,
+        'idea',
+        false
+      ),
       {
         id: 'action-help',
         label: 'Keyboard Shortcuts',
@@ -447,7 +504,7 @@ export function CommandPalette({
         onSelect: () => handleSelect(onOpenHelpModal),
       },
     ];
-  }, [handleSelect, onOpenHelpModal, shortcutVersion]);
+  }, [feedbackAuthed, handleSelect, onOpenHelpModal, shortcutVersion]);
 
   // Recent group (D9): resolve frecency ids against everything currently
   // offerable. Live sessions are excluded on purpose — the Sessions group

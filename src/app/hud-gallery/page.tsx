@@ -34,7 +34,58 @@ import {
   FIXTURE_METRICS,
 } from '@/components/hud/gallery-fixtures';
 import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
+import { QuickCaptureBar } from '@/components/feedback/quick-capture-bar';
+import type { QuickFeedbackKind } from '@/components/feedback/quick-feedback-events';
 import { SessionStateTileStudy } from '@/components/hud/session-state-tile-study';
+
+const STUDY_SCREENSHOT =
+  'data:image/svg+xml,' +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="40"><rect width="64" height="40" fill="#0b1220"/><rect x="4" y="4" width="56" height="6" fill="#164e63"/><rect x="4" y="14" width="40" height="4" fill="#1e293b"/><rect x="4" y="22" width="48" height="4" fill="#1e293b"/></svg>`
+  );
+
+function QuickCaptureStudy() {
+  const [kind, setKind] = useState<QuickFeedbackKind>('general');
+  const [message, setMessage] = useState('');
+  const [attach, setAttach] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="flex max-w-3xl flex-col gap-4">
+      <p
+        className="max-w-[68ch] text-xs leading-relaxed"
+        style={{ color: HUD.textDim }}
+      >
+        ⌘⇧F from anywhere, including inside a terminal. Enter sends and the
+        bar closes optimistically; Esc dismisses but keeps the draft. The
+        screenshot is captured before the bar renders, so it never contains
+        the capture UI. ⌘1/⌘2/⌘3 switch kind, ⌘S toggles the screenshot.
+      </p>
+      <QuickCaptureBar
+        kind={kind}
+        onKindChange={setKind}
+        message={message}
+        onMessageChange={setMessage}
+        screenshot={STUDY_SCREENSHOT}
+        attachScreenshot={attach}
+        onAttachScreenshotChange={setAttach}
+        error={error}
+        onSubmit={() => {
+          setMessage('');
+          setError(null);
+        }}
+        onDismiss={() => setError('Send failed — draft kept')}
+      />
+      <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+        <span className="rounded border border-white/10 px-2 py-1">
+          Enter in the study clears (sends); Esc previews the failure state
+        </span>
+        <span className="rounded border border-white/10 px-2 py-1">
+          Signed out: verb disabled in ⌘K
+        </span>
+      </div>
+    </div>
+  );
+}
 
 function ContextLabelFeedbackStudy() {
   const [label, setLabel] = useState('Implement cmd+shift+t to reopen tabs');
@@ -109,6 +160,12 @@ const SECTIONS: Section[] = [
     title: 'Session state tiles',
     meta: 'review candidate · region / question projection in production geometry',
     showcase: <SessionStateTileStudy />,
+  },
+  {
+    id: 'quick-capture',
+    title: 'Quick feedback capture',
+    meta: 'review candidate · ⌘⇧F keyboard-first capture bar',
+    dom: <QuickCaptureStudy />,
   },
   {
     id: 'context-label-feedback',
