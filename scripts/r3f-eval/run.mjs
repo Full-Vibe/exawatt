@@ -116,6 +116,9 @@ async function launch() {
 
 async function runTask(browser, task) {
   const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+  await page.addInitScript(() => {
+    window.__EXA_DISABLE_KEYSWITCH_AUDIO__ = true;
+  });
   const errors = [];
   const warnings = [];
   page.on('pageerror', e => errors.push(String(e.message || e)));
@@ -447,12 +450,12 @@ async function runTask(browser, task) {
       );
       const idleHintInitiallyEnabled =
         (await idleHintControl.getAttribute('aria-pressed')) === 'true';
-      await idleHintControl.click();
+      await idleHintControl.dispatchEvent('click');
       const idleHintDisabled =
         (await page
           .locator('[data-keyswitch-study]')
           .getAttribute('data-idle-hint-enabled')) === 'false';
-      await idleHintControl.click();
+      await idleHintControl.dispatchEvent('click');
       await page.waitForFunction(
         () =>
           (window.__EVAL_SCENE__?.getObjectByName(
@@ -481,12 +484,12 @@ async function runTask(browser, task) {
       const soundControl = page.locator('[data-keyswitch-sound-control]');
       const soundInitiallyEnabled =
         (await soundControl.getAttribute('aria-pressed')) === 'true';
-      await soundControl.click();
+      await soundControl.dispatchEvent('click');
       const soundDisabled =
         (await page
           .locator('[data-keyswitch-study]')
           .getAttribute('data-sound-enabled')) === 'false';
-      await soundControl.click();
+      await soundControl.dispatchEvent('click');
 
       const distance = (a, b) =>
         Array.isArray(a) && Array.isArray(b)
@@ -531,6 +534,12 @@ async function runTask(browser, task) {
                 'keyswitch-assembly'
               ).length
             : 0,
+          sceneInteractionTargetCount: window.__EVAL_SCENE__
+            ? window.__EVAL_SCENE__.getObjectsByProperty(
+                'name',
+                'keyswitch-interaction-target'
+              ).length
+            : 0,
           platformScale:
             window.__EVAL_SCENE__?.getObjectByName('keyswitch-platform')?.scale
               .x,
@@ -553,6 +562,7 @@ async function runTask(browser, task) {
         study.active === 'reference-frost' &&
         study.activeSoundProfile === 'frosted-thock' &&
         study.assemblyCount === 1 &&
+        study.sceneInteractionTargetCount === 1 &&
         study.pressedVariant === 'none' &&
         study.tactileDurationMs === '190' &&
         study.tactileProfile === 'brown' &&
@@ -628,6 +638,9 @@ async function runTask(browser, task) {
 
       const interactionPage = await browser.newPage({
         viewport: { width: 900, height: 700 },
+      });
+      await interactionPage.addInitScript(() => {
+        window.__EXA_DISABLE_KEYSWITCH_AUDIO__ = true;
       });
       await interactionPage.goto(url, {
         waitUntil: 'load',
@@ -817,6 +830,9 @@ async function runTask(browser, task) {
           touchCallout: button?.getAttribute('data-safari-touch-callout'),
           idleHintEnabled: root?.getAttribute('data-idle-hint-enabled'),
           idleHintIntervalMs: root?.getAttribute('data-idle-hint-interval-ms'),
+          hintPressGuard: root?.getAttribute('data-hint-press-guard'),
+          activeSoundProfile: root?.getAttribute('data-active-sound-profile'),
+          lastSoundEvent: root?.getAttribute('data-last-sound-event'),
           pointerHoldPolicy: root?.getAttribute('data-pointer-hold-policy'),
           rootWidth: root?.getBoundingClientRect().width,
           assemblyCount: window.__EVAL_SCENE__
@@ -829,6 +845,12 @@ async function runTask(browser, task) {
             ? window.__EVAL_SCENE__.getObjectsByProperty(
                 'name',
                 'keyswitch-legend-command'
+              ).length
+            : 0,
+          sceneInteractionTargetCount: window.__EVAL_SCENE__
+            ? window.__EVAL_SCENE__.getObjectsByProperty(
+                'name',
+                'keyswitch-interaction-target'
               ).length
             : 0,
           platformScale:
@@ -1065,6 +1087,12 @@ async function runTask(browser, task) {
         path: join(REPORT_DIR, 't8-home-desktop.png'),
       });
 
+      // Rearm the invitation cue with motion enabled, then begin a physical
+      // hold just before its 2.4s deadline. The autonomous cue must never take
+      // ownership from the real pointer, even before React effects can flush.
+      await homePage.emulateMedia({ reducedMotion: 'no-preference' });
+      await homePage.waitForTimeout(2_100);
+
       const homepageButton = homePage.locator(
         '[data-home-hero] [data-architecture-key-button]'
       );
@@ -1075,11 +1103,18 @@ async function runTask(browser, task) {
       if (!homepageButtonBox) {
         throw new Error('Homepage Command button has no bounds');
       }
-      await homePage.mouse.move(
-        homepageButtonBox.x + homepageButtonBox.width / 2,
-        homepageButtonBox.y + homepageButtonBox.height / 2
-      );
+      await homepageButton.hover();
       await homePage.mouse.down();
+      await homePage.waitForFunction(
+        () =>
+          document
+            .querySelector(
+              '[data-home-hero] [data-home-architecture-keyswitch]'
+            )
+            ?.getAttribute('data-pressed') === 'true',
+        undefined,
+        { timeout: 1_500 }
+      );
       await homePage.waitForTimeout(350);
       const homepagePressBeforeBlur =
         await homepageRoot.getAttribute('data-pressed');
@@ -1091,6 +1126,7 @@ async function runTask(browser, task) {
         );
         return {
           pressed: root?.getAttribute('data-pressed'),
+          lastSoundEvent: root?.getAttribute('data-last-sound-event'),
           navigation: root?.getAttribute('data-navigation-state'),
           url: location.href,
         };
@@ -1104,10 +1140,14 @@ async function runTask(browser, task) {
         );
         return {
           pressed: root?.getAttribute('data-pressed'),
+          lastSoundEvent: root?.getAttribute('data-last-sound-event'),
           navigation: root?.getAttribute('data-navigation-state'),
           url: location.href,
         };
       });
+
+      await homePage.emulateMedia({ reducedMotion: 'reduce' });
+      await homePage.evaluate(() => window.scrollTo(0, 0));
 
       await homePage.setViewportSize({ width: 844, height: 390 });
       await homePage
@@ -1184,10 +1224,14 @@ async function runTask(browser, task) {
         semantics.touchCallout === 'none' &&
         semantics.idleHintEnabled === 'true' &&
         semantics.idleHintIntervalMs === '10000' &&
+        semantics.hintPressGuard === 'synchronous' &&
+        semantics.activeSoundProfile === 'frosted-thock' &&
+        semantics.lastSoundEvent === 'frosted-thock:release' &&
         semantics.pointerHoldPolicy === 'physical-release' &&
         semantics.rootWidth <= 290.5 &&
         semantics.assemblyCount === 1 &&
         semantics.commandLegendCount === 1 &&
+        semantics.sceneInteractionTargetCount === 0 &&
         Math.abs(semantics.platformScale - 0.84) < 0.0001 &&
         semantics.cameraElevation > 0.83 &&
         semantics.cameraElevation < 0.87 &&
@@ -1217,9 +1261,11 @@ async function runTask(browser, task) {
         portraitHomeLayout.keyWithinViewport &&
         homepagePressBeforeBlur === 'true' &&
         homepageHoldAfterBlur.pressed === 'true' &&
+        homepageHoldAfterBlur.lastSoundEvent === 'frosted-thock:press' &&
         homepageHoldAfterBlur.navigation === 'idle' &&
         homepageHoldAfterBlur.url === `${EXA_BASE}/` &&
         homepageOutsideRelease.pressed === 'false' &&
+        homepageOutsideRelease.lastSoundEvent === 'frosted-thock:release' &&
         homepageOutsideRelease.navigation === 'idle' &&
         homepageOutsideRelease.url === `${EXA_BASE}/` &&
         firstHintTravel < -0.012 &&

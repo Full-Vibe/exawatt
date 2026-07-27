@@ -397,6 +397,8 @@ const KEYSWITCH_VARIANTS: readonly KeySwitchVariant[] = [
 const SMOKE_LOW_VARIANT =
   KEYSWITCH_VARIANTS.find(variant => variant.id === 'smoke-low') ??
   KEYSWITCH_VARIANTS[0];
+const HOME_COMMAND_SOUND_PROFILE =
+  KEYSWITCH_VARIANT_SOUND_PROFILES['reference-frost'];
 const HOME_ORBIT_TARGET = new THREE.Vector3(...SMOKE_LOW_VARIANT.target);
 const HOME_ORBIT_PERIOD_SECONDS = 26;
 const HOME_ORBIT_AMPLITUDE = Math.PI * 0.04;
@@ -416,6 +418,7 @@ const COMMAND_BUTTON_TOUCH_STYLE = {
 type AudioWindow = Window &
   typeof globalThis & {
     webkitAudioContext?: typeof AudioContext;
+    __EXA_DISABLE_KEYSWITCH_AUDIO__?: boolean;
   };
 
 function useKeySwitchAudio(enabled: boolean) {
@@ -437,6 +440,7 @@ function useKeySwitchAudio(enabled: boolean) {
       if (!enabled || typeof window === 'undefined') return false;
 
       const audioWindow = window as AudioWindow;
+      if (audioWindow.__EXA_DISABLE_KEYSWITCH_AUDIO__) return true;
       const AudioContextConstructor =
         audioWindow.AudioContext ?? audioWindow.webkitAudioContext;
       if (!AudioContextConstructor) return false;
@@ -1032,6 +1036,8 @@ function KeySwitchAssembly({
   pressed,
   reduced,
   onPressedChange,
+  pressActiveRef,
+  interactive = true,
   legend = 'status',
   idleHint = true,
   idleHintDelayMs = IDLE_HINT_DELAY_MS,
@@ -1043,7 +1049,9 @@ function KeySwitchAssembly({
   variant: KeySwitchVariant;
   pressed: boolean;
   reduced: boolean;
-  onPressedChange: (pressed: boolean) => void;
+  onPressedChange?: (pressed: boolean) => void;
+  pressActiveRef?: RefObject<boolean>;
+  interactive?: boolean;
   legend?: 'status' | 'command';
   idleHint?: boolean;
   idleHintDelayMs?: number;
@@ -1060,6 +1068,7 @@ function KeySwitchAssembly({
   });
   const pressElapsed = useRef(0);
   const pressWasActive = useRef(false);
+  const pressedSnapshot = useRef(pressed);
   const hintTimeout = useRef<number | null>(null);
   const wasPressed = useRef(false);
   const releasePosition = useRef(0);
@@ -1067,6 +1076,7 @@ function KeySwitchAssembly({
   const [hovered, setHovered] = useState(false);
   const invalidate = useThree(state => state.invalidate);
   useCursor(hovered);
+  pressedSnapshot.current = pressed;
 
   const dispatchReleaseSettled = useCallback(() => {
     onReleaseSettled?.(releasePosition.current);
@@ -1076,10 +1086,15 @@ function KeySwitchAssembly({
     const timeline = hintTimeline.current;
     hintTimeout.current = null;
     if (timeline.phase !== 'waiting') return;
+    if (pressedSnapshot.current || pressActiveRef?.current) {
+      timeline.elapsed = 0;
+      timeline.phase = 'done';
+      return;
+    }
     timeline.elapsed = 0;
     timeline.phase = 'running';
     invalidate();
-  }, [invalidate]);
+  }, [invalidate, pressActiveRef]);
 
   const stopIdleHint = useCallback(() => {
     if (hintTimeout.current !== null) {
@@ -1096,10 +1111,15 @@ function KeySwitchAssembly({
         window.clearTimeout(hintTimeout.current);
       }
       hintTimeline.current.elapsed = 0;
+      if (pressedSnapshot.current || pressActiveRef?.current) {
+        hintTimeline.current.phase = 'done';
+        hintTimeout.current = null;
+        return;
+      }
       hintTimeline.current.phase = 'waiting';
       hintTimeout.current = window.setTimeout(startIdleHint, delayMs);
     },
-    [startIdleHint]
+    [pressActiveRef, startIdleHint]
   );
 
   useEffect(() => {
@@ -1139,9 +1159,17 @@ function KeySwitchAssembly({
   useFrame((state, delta) => {
     if (!cap.current) return;
     const timeline = hintTimeline.current;
+    const pressActive = pressed || pressActiveRef?.current === true;
     let hintedActuation = 0;
 
-    if (!pressed && timeline.phase === 'running') {
+    if (
+      pressActive &&
+      (hintTimeout.current !== null || timeline.phase !== 'done')
+    ) {
+      stopIdleHint();
+    }
+
+    if (!pressActive && timeline.phase === 'running') {
       timeline.elapsed += Math.min(delta, 0.05);
       hintedActuation = sampleIdleHint(timeline.elapsed);
       if (timeline.elapsed >= IDLE_HINT_DURATION_SECONDS) {
@@ -1157,7 +1185,7 @@ function KeySwitchAssembly({
     }
 
     let pressedActuation = 0;
-    if (pressed) {
+    if (pressActive) {
       if (!pressWasActive.current) {
         pressElapsed.current = 0;
         pressWasActive.current = true;
@@ -1175,7 +1203,7 @@ function KeySwitchAssembly({
       pressWasActive.current = false;
     }
 
-    actuation.current = pressed ? pressedActuation : hintedActuation;
+    actuation.current = pressActive ? pressedActuation : hintedActuation;
     const target = -0.24 * actuation.current;
     if (reduced) {
       cap.current.position.y = target;
@@ -1183,7 +1211,7 @@ function KeySwitchAssembly({
       cap.current.position.y = THREE.MathUtils.damp(
         cap.current.position.y,
         target,
-        pressed ? 38 : 18,
+        pressActive ? 38 : 18,
         delta
       );
       if (Math.abs(cap.current.position.y - target) > 0.001) {
@@ -1193,7 +1221,7 @@ function KeySwitchAssembly({
 
     if (
       awaitRelease &&
-      !pressed &&
+      !pressActive &&
       !releaseReported.current &&
       Math.abs(cap.current.position.y) < 0.008
     ) {
@@ -1269,33 +1297,36 @@ function KeySwitchAssembly({
         <Keycap legend={legend} variant={variant} />
       </group>
 
-      <mesh
-        position={[0, 1.2, 0]}
-        onPointerDown={event => {
-          event.stopPropagation();
-          onPressedChange(true);
-        }}
-        onPointerEnter={event => {
-          event.stopPropagation();
-          setHovered(true);
-        }}
-        onPointerLeave={() => {
-          setHovered(false);
-          onPressedChange(false);
-        }}
-        onPointerUp={event => {
-          event.stopPropagation();
-          onPressedChange(false);
-        }}
-      >
-        <boxGeometry args={[2.18, 2.42, 2.18]} />
-        <meshBasicMaterial
-          color="#000000"
-          depthWrite={false}
-          opacity={0}
-          transparent
-        />
-      </mesh>
+      {interactive && onPressedChange && (
+        <mesh
+          name="keyswitch-interaction-target"
+          position={[0, 1.2, 0]}
+          onPointerDown={event => {
+            event.stopPropagation();
+            onPressedChange(true);
+          }}
+          onPointerEnter={event => {
+            event.stopPropagation();
+            setHovered(true);
+          }}
+          onPointerLeave={() => {
+            setHovered(false);
+            onPressedChange(false);
+          }}
+          onPointerUp={event => {
+            event.stopPropagation();
+            onPressedChange(false);
+          }}
+        >
+          <boxGeometry args={[2.18, 2.42, 2.18]} />
+          <meshBasicMaterial
+            color="#000000"
+            depthWrite={false}
+            opacity={0}
+            transparent
+          />
+        </mesh>
+      )}
     </group>
   );
 }
@@ -1354,6 +1385,7 @@ function ProductScene({
   variant,
   resetToken,
   pressed,
+  pressActiveRef,
   onPressedChange,
   idleHint,
   idleHintKey,
@@ -1361,6 +1393,7 @@ function ProductScene({
   variant: KeySwitchVariant;
   resetToken: number;
   pressed: boolean;
+  pressActiveRef: RefObject<boolean>;
   onPressedChange: (pressed: boolean) => void;
   idleHint: boolean;
   idleHintKey: number;
@@ -1380,6 +1413,7 @@ function ProductScene({
         idleHint={idleHint}
         idleHintKey={`${variant.id}-${idleHintKey}`}
         onPressedChange={onPressedChange}
+        pressActiveRef={pressActiveRef}
         pressed={pressed}
         reduced={reduced}
         variant={variant}
@@ -1412,13 +1446,13 @@ function ProductScene({
 
 function HomeArchitectureKeyScene({
   pressed,
-  onPressedChange,
+  pressActiveRef,
   idleHint,
   awaitRelease,
   onReleaseSettled,
 }: {
   pressed: boolean;
-  onPressedChange: (pressed: boolean) => void;
+  pressActiveRef: RefObject<boolean>;
   idleHint: boolean;
   awaitRelease: boolean;
   onReleaseSettled: (position: number) => void;
@@ -1432,10 +1466,11 @@ function HomeArchitectureKeyScene({
       <KeySwitchAssembly
         awaitRelease={awaitRelease}
         idleHint={idleHint}
+        interactive={false}
         legend="command"
         onReleaseSettled={onReleaseSettled}
-        onPressedChange={onPressedChange}
         platformScale={0.84}
+        pressActiveRef={pressActiveRef}
         pressed={pressed}
         reduced={reduced}
         variant={SMOKE_LOW_VARIANT}
@@ -1471,14 +1506,17 @@ export function CommandKeySwitchButton({
   const [navigationState, setNavigationState] = useState<
     'idle' | 'releasing' | 'navigating'
   >('idle');
+  const [lastSoundEvent, setLastSoundEvent] = useState('none');
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
+  const physicalPressActive = useRef(false);
   const activePointerId = useRef<number | null>(null);
   const pointerReleaseInside = useRef(true);
   const keyboardPressed = useRef(false);
   const keyboardNavigationPending = useRef(false);
   const navigationTimer = useRef<number | null>(null);
   const navigationInteractive = interactive && navigationState === 'idle';
+  const playSound = useKeySwitchAudio(true);
 
   useEffect(
     () => () => {
@@ -1489,20 +1527,34 @@ export function CommandKeySwitchButton({
     []
   );
 
+  const setPhysicalPressed = useCallback(
+    (nextPressed: boolean) => {
+      if (physicalPressActive.current === nextPressed) return;
+      physicalPressActive.current = nextPressed;
+      setPressed(nextPressed);
+
+      const phase = nextPressed ? 'press' : 'release';
+      if (playSound(HOME_COMMAND_SOUND_PROFILE, phase)) {
+        setLastSoundEvent(`${HOME_COMMAND_SOUND_PROFILE}:${phase}`);
+      }
+    },
+    [playSound]
+  );
+
   const navigateAfterRelease = useCallback(() => {
     activePointerId.current = null;
     pointerReleaseInside.current = true;
-    setPressed(false);
+    setPhysicalPressed(false);
     root.current?.setAttribute('data-navigation-state', 'releasing');
     setNavigationState('releasing');
     setAwaitingRelease(true);
-  }, []);
+  }, [setPhysicalPressed]);
 
   const cancelPointerPress = useCallback(() => {
     activePointerId.current = null;
     pointerReleaseInside.current = false;
-    setPressed(false);
-  }, []);
+    setPhysicalPressed(false);
+  }, [setPhysicalPressed]);
 
   useEffect(() => {
     const finishUncapturedPointer = (event: PointerEvent) => {
@@ -1518,7 +1570,7 @@ export function CommandKeySwitchButton({
 
       activePointerId.current = null;
       pointerReleaseInside.current = releasedInside;
-      setPressed(false);
+      setPhysicalPressed(false);
       if (releasedInside) navigateAfterRelease();
     };
     const handleVisibilityChange = () => {
@@ -1536,7 +1588,7 @@ export function CommandKeySwitchButton({
       window.removeEventListener('blur', cancelPointerPress);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [cancelPointerPress, navigateAfterRelease]);
+  }, [cancelPointerPress, navigateAfterRelease, setPhysicalPressed]);
 
   const finishNavigation = useCallback(
     (position: number) => {
@@ -1560,8 +1612,11 @@ export function CommandKeySwitchButton({
       ref={root}
       className="relative isolate h-[clamp(150px,19vw,220px)] w-[clamp(190px,25vw,290px)]"
       data-home-architecture-keyswitch
+      data-active-sound-profile={HOME_COMMAND_SOUND_PROFILE}
+      data-hint-press-guard="synchronous"
       data-idle-hint-enabled={idleHint ? 'true' : 'false'}
       data-idle-hint-interval-ms={IDLE_HINT_REPEAT_INTERVAL_MS}
+      data-last-sound-event={lastSoundEvent}
       data-navigation-state={navigationState}
       data-pointer-hold-policy="physical-release"
       data-pressed={pressed ? 'true' : 'false'}
@@ -1590,7 +1645,7 @@ export function CommandKeySwitchButton({
           awaitRelease={awaitingRelease}
           idleHint={idleHint}
           onReleaseSettled={finishNavigation}
-          onPressedChange={setPressed}
+          pressActiveRef={physicalPressActive}
           pressed={pressed}
         />
       </Canvas>
@@ -1614,7 +1669,7 @@ export function CommandKeySwitchButton({
           keyboardNavigationPending.current = false;
           if (activePointerId.current === null) {
             pointerReleaseInside.current = false;
-            setPressed(false);
+            setPhysicalPressed(false);
           }
         }}
         onClick={event => {
@@ -1637,13 +1692,13 @@ export function CommandKeySwitchButton({
           if (!navigationInteractive) return;
           if (!event.repeat && (event.key === 'Enter' || event.key === ' ')) {
             keyboardPressed.current = true;
-            setPressed(true);
+            setPhysicalPressed(true);
           }
         }}
         onKeyUp={event => {
           if (event.key !== 'Enter' && event.key !== ' ') return;
           keyboardPressed.current = false;
-          setPressed(false);
+          setPhysicalPressed(false);
           if (keyboardNavigationPending.current) {
             keyboardNavigationPending.current = false;
             navigateAfterRelease();
@@ -1667,7 +1722,7 @@ export function CommandKeySwitchButton({
           } catch {
             // Synthetic pointer events do not register an active pointer.
           }
-          setPressed(true);
+          setPhysicalPressed(true);
         }}
         onPointerUp={event => {
           if (activePointerId.current !== event.pointerId) return;
@@ -1678,7 +1733,7 @@ export function CommandKeySwitchButton({
             event.clientY >= bounds.top &&
             event.clientY <= bounds.bottom;
           activePointerId.current = null;
-          setPressed(false);
+          setPhysicalPressed(false);
           if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId);
           }
@@ -1782,6 +1837,7 @@ export function KeySwitchStudy({
             idleHint={idleHintEnabled}
             idleHintKey={idleHintKey}
             onPressedChange={setPhysicalPressed}
+            pressActiveRef={pressedRef}
             pressed={pressed}
             resetToken={resetToken}
             variant={variant}
