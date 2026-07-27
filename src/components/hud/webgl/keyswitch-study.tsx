@@ -1472,6 +1472,7 @@ export function CommandKeySwitchButton({
     'idle' | 'releasing' | 'navigating'
   >('idle');
   const root = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
   const activePointerId = useRef<number | null>(null);
   const pointerReleaseInside = useRef(true);
   const keyboardPressed = useRef(false);
@@ -1496,6 +1497,46 @@ export function CommandKeySwitchButton({
     setNavigationState('releasing');
     setAwaitingRelease(true);
   }, []);
+
+  const cancelPointerPress = useCallback(() => {
+    activePointerId.current = null;
+    pointerReleaseInside.current = false;
+    setPressed(false);
+  }, []);
+
+  useEffect(() => {
+    const finishUncapturedPointer = (event: PointerEvent) => {
+      if (activePointerId.current !== event.pointerId) return;
+
+      const bounds = button.current?.getBoundingClientRect();
+      const releasedInside =
+        !!bounds &&
+        event.clientX >= bounds.left &&
+        event.clientX <= bounds.right &&
+        event.clientY >= bounds.top &&
+        event.clientY <= bounds.bottom;
+
+      activePointerId.current = null;
+      pointerReleaseInside.current = releasedInside;
+      setPressed(false);
+      if (releasedInside) navigateAfterRelease();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') cancelPointerPress();
+    };
+
+    window.addEventListener('pointerup', finishUncapturedPointer);
+    window.addEventListener('pointercancel', cancelPointerPress);
+    window.addEventListener('blur', cancelPointerPress);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('pointerup', finishUncapturedPointer);
+      window.removeEventListener('pointercancel', cancelPointerPress);
+      window.removeEventListener('blur', cancelPointerPress);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [cancelPointerPress, navigateAfterRelease]);
 
   const finishNavigation = useCallback(
     (position: number) => {
@@ -1522,6 +1563,7 @@ export function CommandKeySwitchButton({
       data-idle-hint-enabled={idleHint ? 'true' : 'false'}
       data-idle-hint-interval-ms={IDLE_HINT_REPEAT_INTERVAL_MS}
       data-navigation-state={navigationState}
+      data-pointer-hold-policy="physical-release"
       data-pressed={pressed ? 'true' : 'false'}
       data-tactile-duration-ms={BROWN_SWITCH_PRESS_DURATION_SECONDS * 1000}
       data-tactile-profile="brown"
@@ -1554,6 +1596,7 @@ export function CommandKeySwitchButton({
       </Canvas>
 
       <button
+        ref={button}
         aria-label="Command — open Exawatt architecture"
         className={`group absolute inset-[3%] z-10 rounded-[20%] outline-none focus-visible:ring-2 focus-visible:ring-sky-200/90 focus-visible:ring-offset-4 focus-visible:ring-offset-black/80 ${
           navigationInteractive ? 'cursor-pointer' : 'pointer-events-none'
@@ -1567,11 +1610,12 @@ export function CommandKeySwitchButton({
         tabIndex={navigationInteractive ? undefined : -1}
         type="button"
         onBlur={() => {
-          activePointerId.current = null;
-          pointerReleaseInside.current = false;
           keyboardPressed.current = false;
           keyboardNavigationPending.current = false;
-          setPressed(false);
+          if (activePointerId.current === null) {
+            pointerReleaseInside.current = false;
+            setPressed(false);
+          }
         }}
         onClick={event => {
           if (!navigationInteractive) {
@@ -1608,13 +1652,11 @@ export function CommandKeySwitchButton({
         onContextMenu={event => event.preventDefault()}
         onDragStart={event => event.preventDefault()}
         onPointerCancel={event => {
+          if (activePointerId.current !== event.pointerId) return;
+          cancelPointerPress();
           if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId);
           }
-          if (activePointerId.current !== event.pointerId) return;
-          activePointerId.current = null;
-          pointerReleaseInside.current = false;
-          setPressed(false);
         }}
         onPointerDown={event => {
           if (!navigationInteractive || event.button !== 0) return;
@@ -1626,12 +1668,6 @@ export function CommandKeySwitchButton({
             // Synthetic pointer events do not register an active pointer.
           }
           setPressed(true);
-        }}
-        onLostPointerCapture={event => {
-          if (activePointerId.current !== event.pointerId) return;
-          activePointerId.current = null;
-          pointerReleaseInside.current = false;
-          setPressed(false);
         }}
         onPointerUp={event => {
           if (activePointerId.current !== event.pointerId) return;

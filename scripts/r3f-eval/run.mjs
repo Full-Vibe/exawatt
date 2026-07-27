@@ -817,6 +817,7 @@ async function runTask(browser, task) {
           touchCallout: button?.getAttribute('data-safari-touch-callout'),
           idleHintEnabled: root?.getAttribute('data-idle-hint-enabled'),
           idleHintIntervalMs: root?.getAttribute('data-idle-hint-interval-ms'),
+          pointerHoldPolicy: root?.getAttribute('data-pointer-hold-policy'),
           rootWidth: root?.getBoundingClientRect().width,
           assemblyCount: window.__EVAL_SCENE__
             ? window.__EVAL_SCENE__.getObjectsByProperty(
@@ -1063,6 +1064,51 @@ async function runTask(browser, task) {
       await homePage.screenshot({
         path: join(REPORT_DIR, 't8-home-desktop.png'),
       });
+
+      const homepageButton = homePage.locator(
+        '[data-home-hero] [data-architecture-key-button]'
+      );
+      const homepageRoot = homePage.locator(
+        '[data-home-hero] [data-home-architecture-keyswitch]'
+      );
+      const homepageButtonBox = await homepageButton.boundingBox();
+      if (!homepageButtonBox) {
+        throw new Error('Homepage Command button has no bounds');
+      }
+      await homePage.mouse.move(
+        homepageButtonBox.x + homepageButtonBox.width / 2,
+        homepageButtonBox.y + homepageButtonBox.height / 2
+      );
+      await homePage.mouse.down();
+      await homePage.waitForTimeout(350);
+      const homepagePressBeforeBlur =
+        await homepageRoot.getAttribute('data-pressed');
+      await homepageButton.evaluate(element => element.blur());
+      await homePage.waitForTimeout(1_200);
+      const homepageHoldAfterBlur = await homePage.evaluate(() => {
+        const root = document.querySelector(
+          '[data-home-hero] [data-home-architecture-keyswitch]'
+        );
+        return {
+          pressed: root?.getAttribute('data-pressed'),
+          navigation: root?.getAttribute('data-navigation-state'),
+          url: location.href,
+        };
+      });
+      await homePage.mouse.move(10, 10, { steps: 5 });
+      await homePage.mouse.up();
+      await homePage.waitForTimeout(150);
+      const homepageOutsideRelease = await homePage.evaluate(() => {
+        const root = document.querySelector(
+          '[data-home-hero] [data-home-architecture-keyswitch]'
+        );
+        return {
+          pressed: root?.getAttribute('data-pressed'),
+          navigation: root?.getAttribute('data-navigation-state'),
+          url: location.href,
+        };
+      });
+
       await homePage.setViewportSize({ width: 844, height: 390 });
       await homePage
         .locator('[data-home-hero-background]')
@@ -1138,6 +1184,7 @@ async function runTask(browser, task) {
         semantics.touchCallout === 'none' &&
         semantics.idleHintEnabled === 'true' &&
         semantics.idleHintIntervalMs === '10000' &&
+        semantics.pointerHoldPolicy === 'physical-release' &&
         semantics.rootWidth <= 290.5 &&
         semantics.assemblyCount === 1 &&
         semantics.commandLegendCount === 1 &&
@@ -1168,6 +1215,13 @@ async function runTask(browser, task) {
         portraitHomeLayout.keyRevealState === 'ready' &&
         portraitHomeLayout.keyRevealOpacity > 0.99 &&
         portraitHomeLayout.keyWithinViewport &&
+        homepagePressBeforeBlur === 'true' &&
+        homepageHoldAfterBlur.pressed === 'true' &&
+        homepageHoldAfterBlur.navigation === 'idle' &&
+        homepageHoldAfterBlur.url === `${EXA_BASE}/` &&
+        homepageOutsideRelease.pressed === 'false' &&
+        homepageOutsideRelease.navigation === 'idle' &&
+        homepageOutsideRelease.url === `${EXA_BASE}/` &&
         firstHintTravel < -0.012 &&
         firstHintTravel > -0.08 &&
         secondHintTravel < -0.012 &&
@@ -1219,6 +1273,9 @@ async function runTask(browser, task) {
           mobileSemantics,
           landscapeHomeLayout,
           portraitHomeLayout,
+          homepagePressBeforeBlur,
+          homepageHoldAfterBlur,
+          homepageOutsideRelease,
           heldUrl,
           longHeldState,
           releaseRequestedUrl,
