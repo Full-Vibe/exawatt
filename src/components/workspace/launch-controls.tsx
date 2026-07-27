@@ -2,14 +2,14 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   GitBranch,
   LoaderCircle,
-  Play,
   Settings2,
   ShieldCheck,
   ShieldQuestion,
   SquareTerminal,
   TriangleAlert,
 } from 'lucide-react';
-import { HUD, TactileActionKey } from '@/components/hud';
+import { HUD } from '@/components/hud';
+import { AgentStartKeySwitchButton } from '@/components/hud/webgl/keyswitch-study';
 import {
   Popover,
   PopoverContent,
@@ -1350,32 +1350,21 @@ export function AgentComposer({
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          {/* one button system (D32): the primary action wears the system
-            accent, never the harness color */}
-          <TactileActionKey
-            type="submit"
-            aria-busy={launching === 'agent'}
-            className="shrink-0"
-            data-agent-start-key
+          <AgentStartKeySwitchButton
+            busy={launching === 'agent'}
             disabled={
               controlsDisabled ||
               !preferencesReady ||
               !modelReady ||
               !branchReady
             }
+            onActivate={() => void launchAgent()}
             title={
               preferencesReady && modelReady
                 ? `Start ${sourceMeta.label} with ${modelLabel} and ${permissionMeta.label} permissions`
                 : 'Loading launch preferences'
             }
-          >
-            {launching === 'agent' ? (
-              <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
-            ) : (
-              <Play className="h-3.5 w-3.5" />
-            )}
-            {launching === 'agent' ? 'Starting…' : 'Start'}
-          </TactileActionKey>
+          />
 
           <button
             type="button"

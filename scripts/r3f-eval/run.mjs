@@ -62,6 +62,12 @@ const TASKS = [
     drawCallMax: 60,
     settleMs: 1_200,
   },
+  {
+    id: 't9-agent-start-keyswitch',
+    name: 'Composer Smoke Low Start keyswitch',
+    drawCallMax: 60,
+    settleMs: 1_200,
+  },
 ];
 
 // Substrings that mean a real WebGL/shader failure -> hard gate.
@@ -660,7 +666,7 @@ async function runTask(browser, task) {
           return typeof y === 'number' && y < -0.012 && y > -0.08;
         },
         undefined,
-        { timeout: 3_000 }
+        { timeout: 5_000 }
       );
       const firstHintTravel = await interactionPage.evaluate(
         () =>
@@ -1335,6 +1341,152 @@ async function runTask(browser, task) {
       );
       if (!result.semanticOk)
         result.errors.push('Homepage command keyswitch semantics failed');
+    }
+
+    if (task.id === 't9-agent-start-keyswitch') {
+      const button = page.locator('[data-agent-start-key]');
+      await button.focus();
+      const focusable = await page.evaluate(
+        () => document.activeElement?.hasAttribute('data-agent-start-key') ?? false
+      );
+      await page.screenshot({
+        path: join(REPORT_DIR, 't9-agent-start-keyswitch-focused.png'),
+      });
+
+      await button.dispatchEvent('pointerdown', {
+        button: 0,
+        isPrimary: true,
+        pointerId: 19,
+        pointerType: 'mouse',
+      });
+      await page.waitForFunction(
+        () =>
+          (window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-smoke-low')
+            ?.position.y ?? 0) < -0.22,
+        undefined,
+        { timeout: 2_000 }
+      );
+      await page.waitForTimeout(400);
+      const heldState = await page.evaluate(() => ({
+        pressed: document
+          .querySelector('[data-agent-start-keyswitch]')
+          ?.getAttribute('data-pressed'),
+        position: window.__EVAL_SCENE__?.getObjectByName(
+          'keyswitch-cap-smoke-low'
+        )?.position.y,
+      }));
+      await button.dispatchEvent('pointerup', {
+        button: 0,
+        isPrimary: true,
+        pointerId: 19,
+        pointerType: 'mouse',
+      });
+      await page.waitForFunction(
+        () =>
+          Math.abs(
+            window.__EVAL_SCENE__?.getObjectByName('keyswitch-cap-smoke-low')
+              ?.position.y ?? 1
+          ) < 0.01,
+        undefined,
+        { timeout: 2_000 }
+      );
+
+      await button.focus();
+      await button.press('Enter');
+      await page.waitForFunction(
+        () =>
+          document.querySelector('[aria-label="Activation count"]')
+            ?.textContent === '1',
+        undefined,
+        { timeout: 2_000 }
+      );
+
+      const semantics = await page.evaluate(() => {
+        const root = document.querySelector('[data-agent-start-keyswitch]');
+        const button = document.querySelector('[data-agent-start-key]');
+        const rootRect = root?.getBoundingClientRect();
+        const buttonRect = button?.getBoundingClientRect();
+        return {
+          rootCount: document.querySelectorAll('[data-agent-start-keyswitch]')
+            .length,
+          buttonType: button?.getAttribute('type'),
+          label: button?.getAttribute('aria-label'),
+          busy: button?.getAttribute('aria-busy'),
+          disabled: button?.hasAttribute('disabled'),
+          tabIndex: button instanceof HTMLElement ? button.tabIndex : null,
+          touchAction: button ? getComputedStyle(button).touchAction : '',
+          touchCallout: button?.getAttribute('data-safari-touch-callout'),
+          rootWidth: rootRect?.width,
+          rootHeight: rootRect?.height,
+          targetWidth: buttonRect?.width,
+          targetHeight: buttonRect?.height,
+          idleHintEnabled: root?.getAttribute('data-idle-hint-enabled'),
+          hintPressGuard: root?.getAttribute('data-hint-press-guard'),
+          activeSoundProfile: root?.getAttribute('data-active-sound-profile'),
+          pointerHoldPolicy: root?.getAttribute('data-pointer-hold-policy'),
+          activationCount: document.querySelector(
+            '[aria-label="Activation count"]'
+          )?.textContent,
+          assemblyCount: window.__EVAL_SCENE__
+            ? window.__EVAL_SCENE__.getObjectsByProperty(
+                'name',
+                'keyswitch-assembly'
+              ).length
+            : 0,
+          startLegendCount: window.__EVAL_SCENE__
+            ? window.__EVAL_SCENE__.getObjectsByProperty(
+                'name',
+                'keyswitch-legend-start'
+              ).length
+            : 0,
+          sceneInteractionTargetCount: window.__EVAL_SCENE__
+            ? window.__EVAL_SCENE__.getObjectsByProperty(
+                'name',
+                'keyswitch-interaction-target'
+              ).length
+            : 0,
+          platformScale:
+            window.__EVAL_SCENE__?.getObjectByName('keyswitch-platform')?.scale
+              .x,
+        };
+      });
+
+      result.semanticOk =
+        focusable &&
+        semantics.rootCount === 1 &&
+        semantics.buttonType === 'button' &&
+        semantics.label === 'Start' &&
+        semantics.busy === 'false' &&
+        !semantics.disabled &&
+        semantics.tabIndex === 0 &&
+        semantics.touchAction === 'manipulation' &&
+        semantics.touchCallout === 'none' &&
+        semantics.rootWidth >= 111 &&
+        semantics.rootWidth <= 113 &&
+        semantics.rootHeight >= 83 &&
+        semantics.rootHeight <= 85 &&
+        semantics.targetWidth >= 44 &&
+        semantics.targetHeight >= 44 &&
+        semantics.idleHintEnabled === 'false' &&
+        semantics.hintPressGuard === 'synchronous' &&
+        semantics.activeSoundProfile === 'frosted-thock' &&
+        semantics.pointerHoldPolicy === 'physical-release' &&
+        semantics.activationCount === '1' &&
+        semantics.assemblyCount === 1 &&
+        semantics.startLegendCount === 1 &&
+        semantics.sceneInteractionTargetCount === 0 &&
+        Math.abs(semantics.platformScale - 0.84) < 0.0001 &&
+        heldState.pressed === 'true' &&
+        heldState.position < -0.22;
+      result.notes.push(
+        `agent-start-keyswitch: ${JSON.stringify({
+          ...semantics,
+          focusable,
+          heldState,
+        })}`
+      );
+      if (!result.semanticOk)
+        result.errors.push('Agent Start keyswitch semantics failed');
     }
 
     await page

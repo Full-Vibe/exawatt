@@ -703,7 +703,15 @@ function StatusLegend({ y }: { y: number }) {
   );
 }
 
-function CommandLegend({ y }: { y: number }) {
+type ActionKeyLegend = 'command' | 'start';
+
+function ActionKeyTextLegend({
+  legend,
+  y,
+}: {
+  legend: ActionKeyLegend;
+  y: number;
+}) {
   const [texture, setTexture] = useState<THREE.CanvasTexture | null>(null);
 
   useEffect(() => {
@@ -715,12 +723,14 @@ function CommandLegend({ y }: { y: number }) {
 
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = '#daf2fa';
-    context.font = '600 128px "Helvetica Neue", Arial, sans-serif';
+    context.font = `${legend === 'start' ? 700 : 600} ${
+      legend === 'start' ? 152 : 128
+    }px "Helvetica Neue", Arial, sans-serif`;
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     context.shadowColor = 'rgba(166, 225, 244, 0.32)';
     context.shadowBlur = 10;
-    context.fillText('COMMAND', canvas.width / 2, canvas.height / 2 + 3);
+    context.fillText(legend.toUpperCase(), canvas.width / 2, canvas.height / 2 + 3);
 
     const nextTexture = new THREE.CanvasTexture(canvas);
     nextTexture.colorSpace = THREE.SRGBColorSpace;
@@ -730,13 +740,13 @@ function CommandLegend({ y }: { y: number }) {
     setTexture(nextTexture);
 
     return () => nextTexture.dispose();
-  }, []);
+  }, [legend]);
 
   if (!texture) return null;
 
   return (
     <mesh
-      name="keyswitch-legend-command"
+      name={`keyswitch-legend-${legend}`}
       position={[0, y + 0.012, 0]}
       raycast={() => null}
       renderOrder={5}
@@ -793,7 +803,7 @@ function Keycap({
   legend = 'status',
 }: {
   variant: KeySwitchVariant;
-  legend?: 'status' | 'command';
+  legend?: 'status' | ActionKeyLegend;
 }) {
   const sculptedGeometry = useMemo(() => createKeycapGeometry(), []);
   const floatingGeometry = useMemo(
@@ -899,8 +909,8 @@ function Keycap({
         </RoundedBox>
       </group>
 
-      {legend === 'command' ? (
-        <CommandLegend y={legendY} />
+      {legend === 'command' || legend === 'start' ? (
+        <ActionKeyTextLegend legend={legend} y={legendY} />
       ) : (
         <StatusLegend y={legendY} />
       )}
@@ -1052,7 +1062,7 @@ function KeySwitchAssembly({
   onPressedChange?: (pressed: boolean) => void;
   pressActiveRef?: RefObject<boolean>;
   interactive?: boolean;
-  legend?: 'status' | 'command';
+  legend?: 'status' | ActionKeyLegend;
   idleHint?: boolean;
   idleHintDelayMs?: number;
   idleHintKey?: number | string;
@@ -1450,12 +1460,14 @@ function HomeArchitectureKeyScene({
   idleHint,
   awaitRelease,
   onReleaseSettled,
+  legend = 'command',
 }: {
   pressed: boolean;
   pressActiveRef: RefObject<boolean>;
   idleHint: boolean;
   awaitRelease: boolean;
   onReleaseSettled: (position: number) => void;
+  legend?: ActionKeyLegend;
 }) {
   const reduced = usePrefersReducedMotion();
 
@@ -1467,7 +1479,7 @@ function HomeArchitectureKeyScene({
         awaitRelease={awaitRelease}
         idleHint={idleHint}
         interactive={false}
-        legend="command"
+        legend={legend}
         onReleaseSettled={onReleaseSettled}
         platformScale={0.84}
         pressActiveRef={pressActiveRef}
@@ -1745,6 +1757,191 @@ export function CommandKeySwitchButton({
         active={curtainActive}
         reducedMotion={reducedMotion}
       />
+    </div>
+  );
+}
+
+export function AgentStartKeySwitchButton({
+  onActivate,
+  busy = false,
+  disabled = false,
+  evalMode = false,
+  idleHint = true,
+  className = '',
+  title,
+}: {
+  onActivate: () => void;
+  busy?: boolean;
+  disabled?: boolean;
+  evalMode?: boolean;
+  idleHint?: boolean;
+  className?: string;
+  title?: string;
+}) {
+  const [pressed, setPressed] = useState(false);
+  const [lastSoundEvent, setLastSoundEvent] = useState('none');
+  const button = useRef<HTMLButtonElement>(null);
+  const physicalPressActive = useRef(false);
+  const activePointerId = useRef<number | null>(null);
+  const keyboardPressed = useRef(false);
+  const playSound = useKeySwitchAudio(true);
+  const interactive = !disabled && !busy;
+  const effectivePressed = pressed || busy;
+
+  const setPhysicalPressed = useCallback(
+    (nextPressed: boolean) => {
+      if (physicalPressActive.current === nextPressed) return;
+      physicalPressActive.current = nextPressed;
+      setPressed(nextPressed);
+
+      const phase = nextPressed ? 'press' : 'release';
+      if (playSound(HOME_COMMAND_SOUND_PROFILE, phase)) {
+        setLastSoundEvent(`${HOME_COMMAND_SOUND_PROFILE}:${phase}`);
+      }
+    },
+    [playSound]
+  );
+
+  const cancelPress = useCallback(() => {
+    activePointerId.current = null;
+    keyboardPressed.current = false;
+    setPhysicalPressed(false);
+  }, [setPhysicalPressed]);
+
+  useEffect(() => {
+    const finishUncapturedPointer = (event: PointerEvent) => {
+      if (activePointerId.current !== event.pointerId) return;
+      activePointerId.current = null;
+      setPhysicalPressed(false);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') cancelPress();
+    };
+
+    window.addEventListener('pointerup', finishUncapturedPointer);
+    window.addEventListener('pointercancel', cancelPress);
+    window.addEventListener('blur', cancelPress);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('pointerup', finishUncapturedPointer);
+      window.removeEventListener('pointercancel', cancelPress);
+      window.removeEventListener('blur', cancelPress);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [cancelPress, setPhysicalPressed]);
+
+  useEffect(() => {
+    if (!interactive && physicalPressActive.current) cancelPress();
+  }, [cancelPress, interactive]);
+
+  return (
+    <div
+      className={`relative isolate h-[84px] w-[112px] shrink-0 ${className}`}
+      data-active-sound-profile={HOME_COMMAND_SOUND_PROFILE}
+      data-agent-start-keyswitch
+      data-hint-press-guard="synchronous"
+      data-idle-hint-enabled={idleHint ? 'true' : 'false'}
+      data-idle-hint-interval-ms={IDLE_HINT_REPEAT_INTERVAL_MS}
+      data-last-sound-event={lastSoundEvent}
+      data-pointer-hold-policy="physical-release"
+      data-pressed={effectivePressed ? 'true' : 'false'}
+      data-tactile-duration-ms={BROWN_SWITCH_PRESS_DURATION_SECONDS * 1000}
+      data-tactile-profile="brown"
+    >
+      <Canvas
+        aria-hidden="true"
+        camera={{
+          fov: 29,
+          near: 0.1,
+          far: 100,
+          position: [-3.2, 3.05, 5.7],
+        }}
+        dpr={[1, 2]}
+        frameloop="demand"
+        gl={{
+          alpha: true,
+          antialias: true,
+          powerPreference: 'high-performance',
+          preserveDrawingBuffer: evalMode,
+        }}
+      >
+        {evalMode && <ExposeEvalRenderer />}
+        <HomeArchitectureKeyScene
+          awaitRelease={false}
+          idleHint={idleHint}
+          legend="start"
+          onReleaseSettled={() => undefined}
+          pressActiveRef={physicalPressActive}
+          pressed={effectivePressed}
+        />
+      </Canvas>
+
+      <button
+        ref={button}
+        aria-busy={busy}
+        aria-label={busy ? 'Starting…' : 'Start'}
+        className={`absolute inset-[3%] z-10 rounded-[20%] outline-none focus-visible:ring-2 focus-visible:ring-sky-200/90 focus-visible:ring-offset-2 focus-visible:ring-offset-black/80 ${
+          interactive ? 'cursor-pointer' : 'cursor-not-allowed'
+        }`}
+        data-agent-start-key
+        data-pressed={effectivePressed ? 'true' : 'false'}
+        data-r3f-keyswitch-control
+        data-safari-touch-callout="none"
+        disabled={!interactive}
+        draggable={false}
+        style={COMMAND_BUTTON_TOUCH_STYLE}
+        title={title}
+        type="button"
+        onBlur={() => {
+          keyboardPressed.current = false;
+          if (activePointerId.current === null) setPhysicalPressed(false);
+        }}
+        onClick={() => {
+          if (interactive) onActivate();
+        }}
+        onContextMenu={event => event.preventDefault()}
+        onDragStart={event => event.preventDefault()}
+        onKeyDown={event => {
+          if (!interactive || event.repeat) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            keyboardPressed.current = true;
+            setPhysicalPressed(true);
+          }
+        }}
+        onKeyUp={event => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          keyboardPressed.current = false;
+          setPhysicalPressed(false);
+        }}
+        onPointerCancel={event => {
+          if (activePointerId.current !== event.pointerId) return;
+          cancelPress();
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+        }}
+        onPointerDown={event => {
+          if (!interactive || event.button !== 0) return;
+          activePointerId.current = event.pointerId;
+          try {
+            event.currentTarget.setPointerCapture(event.pointerId);
+          } catch {
+            // Synthetic pointer events do not register an active pointer.
+          }
+          setPhysicalPressed(true);
+        }}
+        onPointerUp={event => {
+          if (activePointerId.current !== event.pointerId) return;
+          activePointerId.current = null;
+          setPhysicalPressed(false);
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+        }}
+      >
+        <span className="sr-only">{busy ? 'Starting…' : 'Start'}</span>
+      </button>
     </div>
   );
 }
