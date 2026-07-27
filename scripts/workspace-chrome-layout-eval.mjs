@@ -87,8 +87,8 @@ const liveSessions = [
     contextSummary: 'Updating tests for harness command permission flags',
     engaged: true,
   }),
-  // D22: a freshly launched agent — no task, no summary, never engaged.
-  // Must read as "fresh" and render glyph-only (no "Claude Code" text).
+  // A freshly launched agent — no task, no summary, never engaged. It keeps
+  // fresh turn truth while visible identity falls back to "New agent".
   session({
     id: 'fresh-session',
     harness: 'claude',
@@ -524,8 +524,8 @@ try {
     results.push({ width, height, metrics });
   }
 
-  // ── Turn-state legibility (D22): spinning / finished / unstarted must
-  // each render distinctly, and a fresh agent tab stays glyph-only.
+  // ── Turn-state legibility: spinning / finished / unstarted render
+  // distinctly, and even the unstarted Agent retains a visible title.
   await page.setViewportSize({ width: 1312, height: 700 });
   const strip = page.locator('[data-workspace-tab-strip]');
   const settle = () =>
@@ -552,6 +552,14 @@ try {
   if (turnState.text.includes('Claude Code')) {
     throw new Error(
       `Fresh tab leaked its default harness title: ${turnState.text}`
+    );
+  }
+  const freshTabCopy = await page
+    .locator('[data-tab-id="fresh-tab"] [data-tab-chrome]')
+    .innerText();
+  if (!freshTabCopy.includes('New agent')) {
+    throw new Error(
+      `Fresh tab collapsed to icons instead of New agent: ${freshTabCopy}`
     );
   }
   if (turnState.text.includes('Based on my exploration')) {
@@ -785,7 +793,9 @@ try {
   // esc keeps it open the first time, ⏎ presses the default the second
   const gpaClose = page
     .locator('[data-project="gpagent"]')
-    .getByRole('button', { name: 'Close Claude Code' });
+    .getByRole('button', {
+      name: 'Close Testing UTC date parsing fix and seeding demo org',
+    });
   await gpaClose.click();
   const closeConfirm = page.locator('[data-close-confirm]');
   await closeConfirm.waitFor();
@@ -817,7 +827,7 @@ try {
   }
   await page.screenshot({ path: join(SCREENSHOT_DIR, 'close-toast.png') });
   // 4. ⌘T ⌘W is a friction-free no-op: the draft discards, no dialog
-  const draftClose = page.getByRole('button', { name: 'Close New agent' });
+  const draftClose = page.getByTitle('Discard (⌘W)');
   await draftClose.click();
   await draftClose.waitFor({ state: 'detached' });
   if (await closeConfirm.count()) {
@@ -957,6 +967,72 @@ try {
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'turn-state-hydrated-working.png'),
   });
+
+  // E1.1 Sessions comparison projection: default Agents always keep visible
+  // identity, operational copy uses the readable sans tier, and raw terminal
+  // buffers never become card content.
+  await page.setViewportSize({ width: 1312, height: 800 });
+  await page.locator('[data-command-altitude-level="sessions"]').click();
+  await page.locator('[data-expose]').waitFor();
+  await page.waitForTimeout(650); // entrance stagger + opacity transition
+  const freshSessionTile = page.locator('[data-expose-tab="fresh-tab"]');
+  const contextSessionTile = page.locator('[data-expose-tab="exawatt-tab"]');
+  await freshSessionTile.waitFor();
+  const freshSessionText = await freshSessionTile.innerText();
+  const contextSessionText = await contextSessionTile.innerText();
+  if (!freshSessionText.includes('New agent')) {
+    throw new Error(`Sessions lost the fallback title: ${freshSessionText}`);
+  }
+  if (!contextSessionText.includes('Updating tests for harness command')) {
+    throw new Error(
+      `Sessions lost durable context identity: ${contextSessionText}`
+    );
+  }
+  if (
+    freshSessionText.includes('Workspace chrome ready') ||
+    contextSessionText.includes('$ exawatt')
+  ) {
+    throw new Error(
+      `Sessions leaked terminal buffer content: ${freshSessionText} | ${contextSessionText}`
+    );
+  }
+  const sessionsType = await contextSessionTile.evaluate(element => {
+    const title = element.querySelector('[data-session-goal-summary]');
+    const current = element.querySelector('[data-session-current]');
+    const next = element.querySelector('[data-session-next-copy]');
+    if (
+      !(title instanceof HTMLElement) ||
+      !(current instanceof HTMLElement) ||
+      !(next instanceof HTMLElement)
+    ) {
+      throw new Error('Sessions type fixtures are missing');
+    }
+    const read = node => {
+      const style = getComputedStyle(node);
+      return {
+        family: style.fontFamily,
+        size: Number.parseFloat(style.fontSize),
+        lineHeight: Number.parseFloat(style.lineHeight),
+      };
+    };
+    return { title: read(title), current: read(current), next: read(next) };
+  });
+  if (
+    sessionsType.title.size < 16 ||
+    sessionsType.current.size < 15 ||
+    sessionsType.next.size < 14 ||
+    sessionsType.current.lineHeight < 24 ||
+    /mono/i.test(sessionsType.current.family)
+  ) {
+    throw new Error(
+      `Sessions readable type contract regressed: ${JSON.stringify(sessionsType)}`
+    );
+  }
+  await page.screenshot({
+    path: join(SCREENSHOT_DIR, 'sessions-readable-cards.png'),
+  });
+  await page.locator('[data-command-altitude-level="terminal"]').click();
+  await page.locator('[data-workspace-chrome]').waitFor();
 
   // The stopped pane must not impersonate an interactive terminal. Its action
   // is scoped to this Agent and retained output is explicitly read-only. Keep

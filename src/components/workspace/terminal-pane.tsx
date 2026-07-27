@@ -15,8 +15,6 @@ import { FOCUS_ACTIVE_TERMINAL_EVENT } from './session-jump';
 import { TERMINAL_FONT } from './terminal-font';
 import type { EffectiveTerminalFont } from './terminal-font';
 import { findFileLinks } from './terminal-links';
-import { previewTerminalScreen } from './scrollback-preview';
-import { registerTerminalPreviewReader } from './terminal-preview-registry';
 
 export { TERMINAL_FONT, resolveTerminalFont } from './terminal-font';
 export type { EffectiveTerminalFont } from './terminal-font';
@@ -154,11 +152,6 @@ export function TerminalPane({
         theme: HUD_TERM_THEME,
       });
       cleanup.push(() => term.dispose());
-      cleanup.push(
-        registerTerminalPreviewReader(sessionId, (count, maxChars) =>
-          previewTerminalScreen(term.buffer.active, term.rows, count, maxChars)
-        )
-      );
       const fit = new FitAddon();
       term.loadAddon(fit);
       const search = new SearchAddon({ highlightLimit: 2_000 });

@@ -81,6 +81,17 @@ The Session's why/goal is the same durable context summary shown in Terminal.
 Sessions must reuse that content and quiet, Project-tinted typographic treatment
 rather than invent a second summary. Agent Source and turn state may condense to
 their shared glyphs when hover tooltips and accessible names preserve meaning.
+Visible Session identity is total: a durable context label wins, an explicit
+operator rename stays primary, and **New agent** is the final Agent fallback.
+Source and status glyphs may support that text but may never become an
+icon-only tab or card.
+
+Raw terminal lines are inspection evidence, not Session meaning. Model/context
+meters, permission modes, prompts, branch state, command output, and transcript
+tails stay in Terminal; they must not be copied into Sessions cards. Until a
+source exposes structured activity or meaningful Events, Sessions presents
+only the current state it actually knows and says **No plan reported** when the
+plan channel is absent.
 
 ## Plans are mutable named steps
 

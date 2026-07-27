@@ -25,7 +25,7 @@ export function SessionGoalSummary({
         size === 'comparison' ? 'text-base leading-6' : 'text-chrome-label',
         className
       )}
-      style={{ color: `${color}B0` }}
+      style={{ color: `${color}${size === 'comparison' ? 'E6' : 'B0'}` }}
     >
       {summary}
     </span>

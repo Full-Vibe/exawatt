@@ -48,19 +48,18 @@ describe('SessionStateTileStudy', () => {
     expect(nowRegion).not.toBeNull();
     expect(nextRegion).not.toBeNull();
     expect(
-      within(nowRegion as HTMLElement).getByText('Updated 42s ago')
-    ).toBeInTheDocument();
-    expect(
-      within(nextRegion as HTMLElement).queryByText(/ago$/)
-    ).not.toBeInTheDocument();
-    expect(
       within(nextRegion as HTMLElement).getByText('Step 2 of 4')
     ).toBeInTheDocument();
     expect(
       within(nextRegion as HTMLElement).queryByText('2/4')
     ).not.toBeInTheDocument();
     expect(nextRegion?.querySelector('[aria-hidden="true"]')).toBeNull();
-    expect(workingTile).toHaveClass('h-[304px]', 'w-[300px]');
+    expect(
+      within(nowRegion as HTMLElement).getByText(
+        'Preparing the scoped agreement execution checklist'
+      )
+    ).toHaveClass('font-sans', 'text-[15px]', 'leading-6');
+    expect(workingTile).toHaveClass('h-[248px]', 'w-[300px]');
     expect(screen.getByText('2 Agents')).toBeInTheDocument();
     expect(screen.queryByText('Recovered')).not.toBeInTheDocument();
   });

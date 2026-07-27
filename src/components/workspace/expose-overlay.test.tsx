@@ -9,7 +9,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ExposeOverlay } from './expose-overlay';
-import { registerTerminalPreviewReader } from './terminal-preview-registry';
 import type { Project } from './use-workspace-state';
 
 function render(ui: ReactElement) {
@@ -248,54 +247,17 @@ describe('Sessions overview', () => {
     expect(alpha).toHaveFocus();
   });
 
-  it('applies scrollback previews even when tiles re-render mid-fetch', async () => {
-    // the fetch outliving ONE workspace re-render used to drop the batch
-    // forever (sessions were already marked fetched) — tiles froze on "…"
-    const resolvers: Array<(v: string) => void> = [];
-    const buffer = vi.fn(() => new Promise<string>(res => resolvers.push(res)));
+  it('keeps raw terminal output out of the comparison surface', () => {
+    const buffer = vi.fn(async () =>
+      [
+        'Model: Opus 5 · Ctx: 142k · Ctx Used: 14%',
+        'bypass permissions on (shift+tab to cycle)',
+        'SESSION_PREVIEW_MUST_STAY_IN_TERMINAL',
+      ].join('\n')
+    );
     (window as unknown as { electron: unknown }).electron = {
       pty: { buffer },
     };
-    try {
-      const props = {
-        summaries: {},
-        attention: {},
-        activeTabId: 'tab-a',
-        onPick: vi.fn(),
-        onClose: vi.fn(),
-      };
-      const { rerender } = render(
-        <ExposeOverlay projects={projects} {...props} />
-      );
-      await waitFor(() => expect(buffer).toHaveBeenCalled());
-      // new projects identity while the fetch is still in flight
-      rerender(
-        <ExposeOverlay
-          projects={projects.map(p => ({ ...p, tabs: [...p.tabs] }))}
-          {...props}
-        />
-      );
-      resolvers.forEach(res => res('$ pnpm test\nall green\n'));
-      await waitFor(() =>
-        expect(screen.getAllByText(/all green/).length).toBeGreaterThan(0)
-      );
-    } finally {
-      delete (window as unknown as { electron?: unknown }).electron;
-    }
-  });
-
-  it('uses xterm screen projections instead of reparsing raw VT streams', async () => {
-    const buffer = vi.fn(async () => '\x1b[45;38Hcorrupt\x1b[0 q');
-    (window as unknown as { electron: unknown }).electron = {
-      pty: { buffer },
-    };
-    const unregister = projects[0].tabs
-      .filter(tab => tab.sessionId)
-      .map(tab =>
-        registerTerminalPreviewReader(tab.sessionId as string, () => [
-          `${tab.title} current screen`,
-        ])
-      );
     try {
       render(
         <ExposeOverlay
@@ -307,16 +269,61 @@ describe('Sessions overview', () => {
           onClose={vi.fn()}
         />
       );
-
-      await waitFor(() =>
-        expect(screen.getByText('Alpha current screen')).toBeInTheDocument()
-      );
-      expect(screen.queryByText(/corrupt/)).not.toBeInTheDocument();
       expect(buffer).not.toHaveBeenCalled();
+      expect(
+        screen.queryByText('SESSION_PREVIEW_MUST_STAY_IN_TERMINAL')
+      ).not.toBeInTheDocument();
+      expect(screen.getAllByText('Shell is idle').length).toBeGreaterThan(0);
     } finally {
-      unregister.forEach(dispose => dispose());
       delete (window as unknown as { electron?: unknown }).electron;
     }
+  });
+
+  it('renders readable sans state copy and a total New agent fallback', () => {
+    const untitled: Project = {
+      ...projects[0],
+      tabs: [
+        {
+          ...projects[0].tabs[1],
+          id: 'tab-untitled',
+          durableSessionId: 'durable-untitled',
+          title: 'Claude Code',
+          titleKind: 'default',
+          harness: 'claude',
+          sessionId: 'session-untitled',
+        },
+      ],
+      activeTabId: 'tab-untitled',
+    };
+    render(
+      <ExposeOverlay
+        projects={[untitled]}
+        summaries={{}}
+        attention={{}}
+        activeTabId="tab-untitled"
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    const tile = screen.getByRole('button', {
+      name: 'New agent, One, new',
+    });
+    expect(screen.getByText('New agent')).toHaveClass(
+      'font-sans',
+      'text-base',
+      'leading-6'
+    );
+    expect(screen.getByText('Ready for instructions')).toHaveClass(
+      'font-sans',
+      'text-[15px]',
+      'leading-6'
+    );
+    expect(screen.getByText('No plan reported')).toHaveClass(
+      'font-sans',
+      'text-sm'
+    );
+    expect(tile).toHaveClass('h-[248px]');
   });
 
   it('a ⌘T draft tile reads as a draft, never as stopped (D24)', () => {

@@ -165,7 +165,24 @@ async function waitForClosedSessionCount(page, count) {
 // close grammar (D27): one Close per tab; a STARTED agent pops the in-app
 // confirm, where ⏎ presses the default Close button.
 async function closeTab(page, title) {
-  const closeButton = page.getByRole('button', { name: `Close ${title}` });
+  const source =
+    title === 'Claude Code'
+      ? 'claude'
+      : title === 'Codex'
+        ? 'codex'
+        : title === 'Shell'
+          ? 'shell'
+          : null;
+  const closeButton = source
+    ? page
+        .locator(`[data-tab-harness="${source}"]`)
+        .getByRole('button', { name: /^Close / })
+        .first()
+    : page.getByRole('button', { name: `Close ${title}` });
+  const closingTabId = await closeButton.evaluate(button =>
+    button.closest('[data-tab-id]')?.getAttribute('data-tab-id')
+  );
+  if (!closingTabId) throw new Error(`Could not resolve tab for ${title}`);
   await closeButton.click();
   const confirm = page.locator('[data-close-confirm]');
   try {
@@ -174,7 +191,9 @@ async function closeTab(page, title) {
   } catch {
     // unstarted or stopped — closed without ceremony
   }
-  await closeButton.waitFor({ state: 'detached', timeout: 15_000 });
+  await page
+    .locator(`[data-tab-id="${closingTabId}"]`)
+    .waitFor({ state: 'detached', timeout: 15_000 });
 }
 
 async function waitForBuffer(page, sessionId, fragment) {
@@ -535,9 +554,7 @@ try {
       const activeTabChrome = activeTab.locator('[data-tab-chrome]');
       await activeTabChrome.focus();
       await page.keyboard.press('Shift+F10');
-      const sessionActions = page.getByRole('menu', {
-        name: 'Claude Code Session actions',
-      });
+      const sessionActions = page.getByRole('menu');
       await sessionActions.waitFor();
       check(
         'Shift-F10 opens every active Session action',
@@ -961,15 +978,13 @@ try {
         const closed = (await window.electron?.pty?.closedSessions?.()) ?? [];
         return closed.length === 0;
       });
-      await page.getByRole('button', { name: 'Close Codex' }).waitFor();
-      await page.getByRole('button', { name: 'Close Claude Code' }).waitFor();
+      await page.locator('[data-tab-harness="codex"]').waitFor();
+      await page.locator('[data-tab-harness="claude"]').waitFor();
       const secondRestoredIsActive = await page
-        .getByRole('button', { name: `Close ${ledger[1].title}` })
-        .evaluate(
-          button =>
-            button.closest('[data-tab-id]')?.getAttribute('data-active') ===
-            'true'
-        );
+        .locator(
+          `[data-durable-session-id="${ledger[1].durableSessionId}"][data-active="true"]`
+        )
+        .isVisible();
       check(
         'Command-Shift-T walks Recently closed in LIFO order',
         secondRestoredIsActive
@@ -989,19 +1004,16 @@ try {
       await page.keyboard.press('Meta+KeyW');
       await page.keyboard.press('Meta+Shift+KeyT');
       await page.waitForFunction(
-        ({ previousId, title }) => {
-          const close = Array.from(
-            document.querySelectorAll('button[aria-label]')
-          ).find(
-            button => button.getAttribute('aria-label') === `Close ${title}`
+        ({ previousId, durableSessionId }) => {
+          const active = document.querySelector(
+            `[data-durable-session-id="${durableSessionId}"][data-active="true"]`
           );
-          const active = close?.closest('[data-tab-id]');
-          return (
-            active?.getAttribute('data-tab-id') !== previousId &&
-            active?.getAttribute('data-active') === 'true'
-          );
+          return active?.getAttribute('data-tab-id') !== previousId;
         },
-        { previousId: closingTabId, title: ledger[1].title }
+        {
+          previousId: closingTabId,
+          durableSessionId: ledger[1].durableSessionId,
+        }
       );
       const ledgerAfterImmediateUndo = await page.evaluate(
         async () => (await window.electron?.pty?.closedSessions?.()) ?? []

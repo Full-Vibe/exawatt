@@ -9,7 +9,8 @@ import { EDIT_ACTIVE_PROJECT_EVENT } from './session-jump';
 /**
  * Turn-state legibility (ENG-016 D22): the strip must answer "who's
  * spinning, who's finished, who hasn't started" at a glance — and a fresh
- * agent tab stays glyph-only (no redundant "Claude Code" next to the mark).
+ * every tab also retains visible identity, using "New agent" as the final
+ * context-label fallback instead of collapsing to icons alone.
  */
 
 function tab(overrides: Partial<WorkspaceTab> & { id: string }): WorkspaceTab {
@@ -117,24 +118,24 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(container.querySelector('[data-status="done"]')).not.toBeNull();
   });
 
-  it('an agent never given work shows fresh — and no default title text', () => {
+  it('an agent never given work shows fresh with a visible fallback title', () => {
     const { container } = strip({ tabs: [tab({ id: 'a' })] });
     expect(container.querySelector('[data-status="fresh"]')).not.toBeNull();
     expect(screen.queryByText('Claude Code')).toBeNull();
-    // glyph-only tabs still carry a real accessible name
+    expect(screen.getByText('New agent')).not.toBeNull();
     expect(
-      screen.getByRole('button', { name: 'Claude Code — new' })
+      screen.getByRole('button', { name: 'New agent — new' })
     ).not.toBeNull();
   });
 
-  it('a summarized glyph-only tab names itself by harness, goal, and state', () => {
+  it('a summarized default tab uses context as its visible identity', () => {
     strip({
       tabs: [tab({ id: 'a' })],
       summaries: { 'durable-a': 'Ship code review fixes' },
     });
     expect(
       screen.getByRole('button', {
-        name: 'Claude Code — Ship code review fixes — result ready',
+        name: 'Ship code review fixes — result ready',
       })
     ).not.toBeNull();
   });
@@ -348,7 +349,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     strip({ tabs: [tab({ id: 'a' })], onCloseProject: vi.fn() });
     const projectTrigger = screen.getByRole('button', { name: 'repo' });
     const sessionTrigger = screen.getByRole('button', {
-      name: 'Claude Code — new',
+      name: 'New agent — new',
     });
 
     fireEvent.keyDown(projectTrigger, { key: 'F10', shiftKey: true });
@@ -368,7 +369,7 @@ describe('TabStrip turn-state glyphs (D22)', () => {
   it('hands focus to rename and closes a menu whose target disappears', async () => {
     const rendered = strip({ tabs: [tab({ id: 'a' })] });
     const trigger = screen.getByRole('button', {
-      name: 'Claude Code — new',
+      name: 'New agent — new',
     });
     fireEvent.keyDown(trigger, { key: 'ContextMenu' });
     fireEvent.click(screen.getByRole('menuitem', { name: 'Rename…' }));
@@ -379,10 +380,9 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'Rename' }), {
       key: 'Escape',
     });
-    fireEvent.keyDown(
-      screen.getByRole('button', { name: 'Claude Code — new' }),
-      { key: 'ContextMenu' }
-    );
+    fireEvent.keyDown(screen.getByRole('button', { name: 'New agent — new' }), {
+      key: 'ContextMenu',
+    });
     expect(screen.getByRole('menu')).not.toBeNull();
     rendered.rerenderTabs([]);
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
@@ -391,12 +391,12 @@ describe('TabStrip turn-state glyphs (D22)', () => {
   it('opens Session actions with the Context Menu key', () => {
     strip({ tabs: [tab({ id: 'a' })] });
     const trigger = screen.getByRole('button', {
-      name: 'Claude Code — new',
+      name: 'New agent — new',
     });
 
     fireEvent.keyDown(trigger, { key: 'ContextMenu' });
     const menu = screen.getByRole('menu', {
-      name: 'Claude Code Session actions',
+      name: 'New agent Session actions',
     });
     expect(menu).toHaveTextContent('Rename…');
     expect(menu).toHaveTextContent('Pin in split');

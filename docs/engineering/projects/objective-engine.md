@@ -10,7 +10,8 @@ changing the Session-label contract.
 
 ## E1 — Session context labels and feedback loop
 
-Status: implemented and verified 2026-07-24
+Status: E1 implemented and verified 2026-07-24; E1.1 Session comparison
+projection implemented and verified 2026-07-26
 
 ### Product contract
 
@@ -91,7 +92,55 @@ Status: implemented and verified 2026-07-24
   evaluator passed owner-only rows, idempotency, anonymous denial, private
   attachment ownership, wrong-folder denial, and cleanup.
 
-## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
+## Roadmap milestone log
+
+### 2026-07-26 — E1.1 Session comparison and titleless-tab incident
+
+Operator report: the production Sessions cards were visually hard to read and
+their body content consisted of raw terminal chrome (model/context meters,
+branch state, permission hints, and prompt suggestions). A neighboring Agent
+tab rendered only its source and status icons with no title.
+
+The titleless tab was reproduced against the live persisted workspace. The
+Session itself was intact: its title was the default `Claude Code`, its
+`titleKind` was `default`, and its initial task remained present. Its prior
+markdown-formatted context label had been rejected by the current label-hygiene
+contract during restore, leaving `contextSummary` empty. D22 then deliberately
+suppressed the default source title. Each subsystem behaved as designed, but
+their composition had no visible text fallback. This is a product-policy
+failure, not missing Session identity.
+
+Resolution:
+
+- supersede D22's glyph-only default-Agent rule with one total display
+  projection shared by Terminal tabs and Sessions cards: durable context label,
+  then explicit operator title, then **New agent**;
+- percolate the reviewed `/hud-gallery` region/question tile treatment into the
+  production Sessions overview with readable sans body tiers;
+- retire raw xterm/scrollback previews from Sessions. Cards show only known
+  turn/lifecycle/attention truth and declared or inferred roadmap plan state;
+  when no plan source exists they say **No plan reported**;
+- keep provider identity and compact state metadata in glyph/mono roles while
+  all operational sentences and goals use the readable sans roles.
+
+Verification completed 2026-07-26:
+
+- the bounded full suite passed 120 files / 870 tests, including the exact
+  live-state shape (`default` Agent title + missing context), blank/corrupt
+  title strings, drafts, stopped Sessions, operator renames, roadmap links,
+  and raw-terminal exclusion;
+- lint, renderer type-check, Electron-main compilation, and the production
+  Next.js build passed;
+- the six-viewport workspace chrome evaluator passed, asserting visible **New
+  agent** fallback, durable context identity, 16/15/14px title/current/plan
+  tiers, 24px operational line height, sans body copy, and zero terminal-buffer
+  leakage, with production screenshots;
+- the real Electron Terminal → Sessions → Spatial → exact Session-return
+  evaluator passed with the same computed typography and content assertions;
+- the Project/Agent launcher and lifecycle evaluator passed its full close,
+  archive, immediate `⌘⇧T`, LIFO restore, relaunch, and Project-retraction flow.
+
+## Prior roadmap milestone log (moved from roadmap.md, 2026-07-24)
 
 On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —
 status, concise scope, exit criteria, a one-line milestone list, and links —

@@ -112,16 +112,63 @@ try {
       });
       throw error;
     });
+  await page.waitForTimeout(650); // entrance stagger + opacity transition
   console.log('[electron-navigation] session overview ready');
-  const previewText = await page
-    .locator('[data-expose-tile]')
-    .first()
-    .innerText();
-  if (!previewText.includes('SESSION_PREVIEW_READY')) {
-    throw new Error('Sessions did not read the current emulated xterm screen');
+  const card = page.locator('[data-expose-tile]').first();
+  const previewText = await card.innerText();
+  if (
+    previewText.includes('SESSION_PREVIEW_READY') ||
+    previewText.includes('[0 q') ||
+    previewText.includes('[2J')
+  ) {
+    throw new Error(`Sessions leaked terminal output: ${previewText}`);
   }
-  if (previewText.includes('[0 q') || previewText.includes('[2J')) {
-    throw new Error(`Sessions leaked terminal protocol: ${previewText}`);
+  if (
+    !previewText.includes('Shell is active') &&
+    !previewText.includes('Shell is idle')
+  ) {
+    throw new Error(`Sessions omitted truthful current state: ${previewText}`);
+  }
+  const cardType = await card.evaluate(element => {
+    const title = element.querySelector('[data-session-overview-title]');
+    const current = element.querySelector('[data-session-current]');
+    const next = element.querySelector('[data-session-next-copy]');
+    if (
+      !(title instanceof HTMLElement) ||
+      !(current instanceof HTMLElement) ||
+      !(next instanceof HTMLElement)
+    ) {
+      throw new Error('Sessions card typography hooks did not render');
+    }
+    const metrics = node => {
+      const style = getComputedStyle(node);
+      return {
+        size: Number.parseFloat(style.fontSize),
+        family: style.fontFamily,
+      };
+    };
+    return {
+      title: metrics(title),
+      current: metrics(current),
+      next: metrics(next),
+    };
+  });
+  if (
+    cardType.title.size < 16 ||
+    cardType.current.size < 15 ||
+    cardType.next.size < 14
+  ) {
+    throw new Error(
+      `Sessions card copy is too small: ${JSON.stringify(cardType)}`
+    );
+  }
+  if (
+    cardType.current.family === cardType.next.family &&
+    /mono/i.test(cardType.current.family)
+  ) {
+    throw new Error(
+      `Sessions operational copy still uses mono: ${JSON.stringify(cardType)}`
+    );
   }
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'sessions.png'),

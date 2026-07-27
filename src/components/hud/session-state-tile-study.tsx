@@ -1,18 +1,10 @@
 'use client';
 
-import type { ReactNode } from 'react';
 import { useMemo, useRef, useState } from 'react';
 import { ReloadIcon } from '@radix-ui/react-icons';
 import { HUD } from '@/components/hud';
+import { SessionOverviewCardContent } from '@/components/workspace/session-overview-card';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { HarnessGlyph } from '@/components/workspace/harness-icons';
-import { SessionGoalSummary } from '@/components/workspace/session-goal-summary';
-import {
-  SessionStatusGlyph,
   type SessionAttentionSignal,
   type SessionGlyphState,
 } from '@/components/workspace/status-glyphs';
@@ -34,8 +26,6 @@ interface SessionStateFixture {
   planStep: string | null;
   planIndex: number | null;
   planTotal: number | null;
-  age: string;
-  observedAt: string;
 }
 
 const SESSION_FIXTURES: SessionStateFixture[] = [
@@ -52,8 +42,6 @@ const SESSION_FIXTURES: SessionStateFixture[] = [
     planStep: 'Decide ownership',
     planIndex: 3,
     planTotal: 5,
-    age: '2m',
-    observedAt: 'July 24, 2026 at 3:56:18 PM PDT',
   },
   {
     id: 'mmhc-baa',
@@ -67,8 +55,6 @@ const SESSION_FIXTURES: SessionStateFixture[] = [
     planStep: 'Secure agreement',
     planIndex: 2,
     planTotal: 4,
-    age: '42s',
-    observedAt: 'July 24, 2026 at 3:57:36 PM PDT',
   },
   {
     id: 'raf-lens',
@@ -82,8 +68,6 @@ const SESSION_FIXTURES: SessionStateFixture[] = [
     planStep: 'Shape proposal',
     planIndex: 3,
     planTotal: 4,
-    age: '8m',
-    observedAt: 'July 24, 2026 at 3:50:18 PM PDT',
   },
   {
     id: 'patty-thread',
@@ -97,36 +81,8 @@ const SESSION_FIXTURES: SessionStateFixture[] = [
     planStep: null,
     planIndex: null,
     planTotal: null,
-    age: '1d',
-    observedAt: 'July 23, 2026 at 4:01:05 PM PDT',
   },
 ];
-
-function TileTooltip({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <Tooltip delayDuration={250}>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent
-        side="bottom"
-        sideOffset={7}
-        className="max-w-64 border px-2.5 py-1.5 font-mono text-chrome-label shadow-xl"
-        style={{
-          color: HUD.text,
-          background: HUD.bg.panel,
-          borderColor: HUD.strokeSoft,
-        }}
-      >
-        {label}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
 
 function SegmentedControl<T extends string>({
   label,
@@ -160,36 +116,6 @@ function SegmentedControl<T extends string>({
           </button>
         );
       })}
-    </div>
-  );
-}
-
-function PlanStep({ tile }: { tile: SessionStateFixture }) {
-  if (!tile.planStep || !tile.planIndex || !tile.planTotal) {
-    return (
-      <span
-        className="block truncate text-sm leading-5"
-        style={{ color: HUD.textDim }}
-      >
-        No next step reported
-      </span>
-    );
-  }
-
-  return (
-    <div className="flex min-w-0 items-baseline justify-between gap-3">
-      <span
-        className="min-w-0 truncate text-sm leading-5"
-        style={{ color: HUD.text }}
-      >
-        {tile.planStep}
-      </span>
-      <span
-        className="shrink-0 font-mono text-xs tabular-nums"
-        style={{ color: HUD.textMono }}
-      >
-        Step {tile.planIndex} of {tile.planTotal}
-      </span>
     </div>
   );
 }
@@ -237,7 +163,7 @@ function SessionTile({
           onMove(-1);
         }
       }}
-      className="relative flex h-[304px] w-[300px] max-w-full flex-col overflow-hidden rounded border p-3 text-left outline-none transition-[background-color,border-color,transform] duration-150 active:scale-[0.985] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+      className="relative flex h-[248px] w-[300px] max-w-full flex-col overflow-hidden rounded border p-3 text-left outline-none transition-[background-color,border-color,transform] duration-150 active:scale-[0.985] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
       style={{
         color: HUD.text,
         borderColor: selected ? tile.projectColor : `${tile.projectColor}4d`,
@@ -245,77 +171,22 @@ function SessionTile({
         boxShadow: selected ? `inset 0 0 0 1px ${tile.projectColor}1f` : 'none',
       }}
     >
-      <span className="flex min-w-0 items-center justify-between">
-        <TileTooltip
-          label={tile.harness === 'claude' ? 'Claude Code' : 'Codex'}
-        >
-          <span
-            aria-label={tile.harness === 'claude' ? 'Claude Code' : 'Codex'}
-            className="inline-flex h-5 w-5 items-center justify-center"
-            style={{ color: tile.projectColor }}
-          >
-            <HarnessGlyph harness={tile.harness} size={13} />
-          </span>
-        </TileTooltip>
-        <span className="shrink-0">
-          <SessionStatusGlyph
-            state={tile.glyphState}
-            attention={tile.attention}
-          />
-        </span>
-      </span>
-
-      <span className="mt-2 block min-h-12">
-        <SessionGoalSummary
-          summary={tile.goal}
-          color={tile.projectColor}
-          size="comparison"
-          className="max-w-64"
-        />
-      </span>
-
-      <span data-session-now className="mt-3 min-w-0">
-        <span
-          className="block font-mono text-chrome-meta uppercase tracking-[0.14em]"
-          style={{ color: HUD.textDim }}
-        >
-          Now
-        </span>
-        <span className="mt-1 line-clamp-2 block min-h-10 text-sm leading-5">
-          {tile.activity}
-        </span>
-        <span
-          className="mt-1 line-clamp-2 block text-[13px] leading-5"
-          style={{ color: HUD.textDim }}
-        >
-          {tile.meaningfulChange}
-        </span>
-        <TileTooltip label={tile.observedAt}>
-          <span
-            data-session-freshness
-            className="mt-1.5 inline-flex font-mono text-xs tabular-nums"
-            style={{ color: HUD.textDim }}
-          >
-            Updated {tile.age} ago
-          </span>
-        </TileTooltip>
-      </span>
-
-      <span
-        data-session-next
-        className="mt-auto border-t pt-2"
-        style={{ borderColor: HUD.divider }}
-      >
-        <span
-          className="font-mono text-chrome-meta uppercase tracking-[0.14em]"
-          style={{ color: HUD.textDim }}
-        >
-          Next
-        </span>
-        <span className="mt-1 block">
-          <PlanStep tile={tile} />
-        </span>
-      </span>
+      <SessionOverviewCardContent
+        title={tile.goal}
+        titleIsContext
+        color={tile.projectColor}
+        harness={tile.harness}
+        glyphState={tile.glyphState}
+        attention={tile.attention}
+        current={tile.activity}
+        meaningfulChange={tile.meaningfulChange}
+        next={tile.planStep ?? 'No plan reported'}
+        nextProgress={
+          tile.planIndex && tile.planTotal
+            ? `Step ${tile.planIndex} of ${tile.planTotal}`
+            : null
+        }
+      />
     </button>
   );
 }
@@ -324,7 +195,7 @@ function LoadingTile() {
   return (
     <div
       aria-hidden="true"
-      className="flex h-[304px] w-[300px] max-w-full animate-pulse flex-col rounded border border-white/10 p-3 motion-reduce:animate-none"
+      className="flex h-[248px] w-[300px] max-w-full animate-pulse flex-col rounded border border-white/10 p-3 motion-reduce:animate-none"
       style={{ background: 'rgba(7,12,20,0.94)' }}
     >
       <div className="h-3 w-28 rounded-sm bg-white/10" />

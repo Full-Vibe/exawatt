@@ -2,26 +2,27 @@
 
 /**
  * Exposé overview (ENG-015 S3): ⌃⌘2 fans every live session out as a rich
- * tile — project color, harness mark, title, micro-context, needs-you
- * pulse, and the last lines of scrollback — so "where is everything?"
- * answers itself in one glance. Fully keyboard-driven: arrows move,
+ * tile — project color, source, durable context, current state, and plan —
+ * so "where is everything?" answers itself in one glance. Terminal output
+ * stays in Terminal; Sessions only presents source-agnostic state truth.
+ * Fully keyboard-driven: arrows move,
  * Enter/click drops into the session, Escape closes. DOM-rendered per the
  * decision `0003` hybrid rule; motion respects prefers-reduced-motion.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HUD } from '@/components/hud';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
-import { HarnessGlyph } from './harness-icons';
-import { isDefaultHarnessTitle } from './harnesses';
-import { previewLines } from './scrollback-preview';
-import { readTerminalPreview } from './terminal-preview-registry';
 import {
   attentionNeedsOperator,
   SESSION_GLYPH_LABEL,
-  SessionStatusGlyph,
   sessionGlyphState,
 } from './status-glyphs';
 import type { SessionAttentionSignal } from './status-glyphs';
+import {
+  sessionCurrentStateCopy,
+  sessionDisplayCopy,
+} from './session-display-copy';
+import { SessionOverviewCardContent } from './session-overview-card';
 import { tabIsLive } from './use-workspace-state';
 import type { Project } from './use-workspace-state';
 import type { PtyHarness } from '@/types/electron';
@@ -44,6 +45,8 @@ interface Tile {
   dir: string;
   harness: PtyHarness;
   title: string;
+  titleKind: 'default' | 'operator';
+  lifecycle: string;
   projectName: string;
   color: string;
   /** running/resumed process behind the tab */
@@ -128,6 +131,8 @@ export function ExposeOverlay({
             dir: g.dir,
             harness: t.harness,
             title: t.title,
+            titleKind: t.titleKind,
+            lifecycle: t.lifecycle,
             projectName: g.name,
             color: g.color,
             live,
@@ -169,7 +174,6 @@ export function ExposeOverlay({
     );
     return i === -1 ? 0 : i;
   });
-  const [previews, setPreviews] = useState<Record<string, string[]>>({});
   const [entered, setEntered] = useState(false);
   // Chromium re-dispatches synthetic mouse events when content appears under
   // a STATIONARY cursor — without this arm window, wherever the mouse
@@ -298,46 +302,6 @@ export function ExposeOverlay({
     requestAnimationFrame(() => focusSelection(next));
   }, [activeProjectDir, activeTabId, focusSelection, items]);
 
-  // fetch scrollback for tiles we haven't covered yet (tiles can also GROW
-  // while open, e.g. a tab finishing auto-revive)
-  const fetchedRef = useRef(new Set<string>());
-  const unmountedRef = useRef(false);
-  useEffect(() => {
-    unmountedRef.current = false; // strict-mode remount resets the latch
-    return () => {
-      unmountedRef.current = true;
-    };
-  }, []);
-  useEffect(() => {
-    const api = window.electron?.pty;
-    if (!api) return;
-    const missing = tiles.filter(
-      (t): t is Tile & { sessionId: string } =>
-        !!t.sessionId && !fetchedRef.current.has(t.sessionId)
-    );
-    if (missing.length === 0) return;
-    for (const t of missing) fetchedRef.current.add(t.sessionId);
-    void (async () => {
-      const entries = await Promise.all(
-        missing.map(async t => {
-          const terminalPreview = readTerminalPreview(t.sessionId, 5, 90);
-          if (terminalPreview !== null) {
-            return [t.sessionId, terminalPreview] as const;
-          }
-          const buf = await api.buffer(t.sessionId).catch(() => '');
-          return [t.sessionId, previewLines(buf, 5, 90)] as const;
-        })
-      );
-      // results are keyed by sessionId, so they stay valid across tile
-      // re-renders — a per-effect cancel here silently dropped every batch
-      // whose fetch outlived one workspace re-render, leaving tiles on "…"
-      // forever (sessions were already marked fetched). Guard only unmount.
-      if (!unmountedRef.current) {
-        setPreviews(prev => ({ ...prev, ...Object.fromEntries(entries) }));
-      }
-    })();
-  }, [tiles]);
-
   // take the keyboard away from xterm; entrance flag flips post-mount so
   // tiles transition in (staggered). When a roadmap summon is in flight the
   // rail owns first focus (S12) — the entrance must not steal it back.
@@ -431,14 +395,31 @@ export function ExposeOverlay({
     const needsYou = attentionNeedsOperator(attentionSignal);
     const working = !!(tile.sessionId && activity[tile.sessionId]);
     const fault = tile.stateLabel === 'failed';
-    // durable-Session goal (D21): stopped tiles keep their subtitle too
+    // Durable Session context survives process replacement. The display
+    // projection is total: rejected/missing labels become "New agent", never
+    // an icon-only card.
     const subtitle = summaries[tile.durableSessionId];
+    const display = sessionDisplayCopy({
+      harness: tile.harness,
+      title: tile.title,
+      titleKind: tile.titleKind,
+      lifecycle: tile.lifecycle,
+      summary: subtitle,
+    });
     // same three-state truth as the tab strip (D22): started = main-truth
     // engaged bit, or a goal subtitle for sessions predating the channel
     const glyphState = sessionGlyphState({
       working,
       agent: tile.harness !== 'shell',
       started: !!(tile.sessionId && engaged[tile.sessionId]) || !!subtitle,
+    });
+    const roadmap = roadmapByTab[tile.tabId];
+    const current = sessionCurrentStateCopy({
+      harness: tile.harness,
+      live: tile.live,
+      lifecycle: tile.lifecycle,
+      glyphState,
+      attention: attentionSignal,
     });
     return (
       <button
@@ -451,7 +432,7 @@ export function ExposeOverlay({
         data-expose-tab={tile.tabId}
         data-selected={selected || undefined}
         tabIndex={selected ? 0 : -1}
-        aria-label={`${tile.title}, ${tile.projectName}${needsYou ? ', needs attention' : ''}${
+        aria-label={`${display.primary}, ${tile.projectName}${needsYou ? ', needs attention' : ''}${
           tile.live && !needsYou ? `, ${SESSION_GLYPH_LABEL[glyphState]}` : ''
         }${tile.stateLabel ? `, ${tile.stateLabel}` : ''}`}
         onClick={() => onPick(tile.dir, tile.tabId)}
@@ -459,7 +440,7 @@ export function ExposeOverlay({
           if (mouseArmed()) setSel(index);
         }}
         onFocus={() => setSel(index)}
-        className="flex flex-col gap-1.5 rounded border p-3 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
+        className="flex h-[248px] flex-col rounded border p-3 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
         style={{
           width: TILE_W,
           borderColor: selected ? tile.color : `${tile.color}44`,
@@ -474,87 +455,29 @@ export function ExposeOverlay({
           transitionDelay: entered ? `${Math.min(index * 18, 300)}ms` : '0ms',
         }}
       >
-        <div className="flex w-full items-center gap-1.5 font-mono text-xs">
+        <SessionOverviewCardContent
+          title={display.primary}
+          context={display.context}
+          titleIsContext={display.primaryKind === 'context'}
+          color={tile.color}
+          harness={tile.harness}
+          glyphState={glyphState}
+          attention={attentionSignal}
+          fault={fault}
+          lifecycleLabel={tile.stateLabel}
+          current={current}
+          next={roadmap?.label ?? 'No plan reported'}
+          nextProgress={roadmap?.fraction ?? null}
+        />
+        {roadmap && (
           <span
-            className="inline-block h-3.5 w-[3px] shrink-0 rounded-full"
-            style={{
-              background: tile.color,
-              boxShadow: `0 0 5px ${tile.color}`,
-            }}
-          />
-          {tile.harness !== 'shell' && (
-            <span style={{ color: tile.color }}>
-              <HarnessGlyph harness={tile.harness} size={11} />
-            </span>
-          )}
-          {/* an unrenamed harness title duplicates the glyph — agent tiles
-              keep only the glyph until a rename (D22, matches the strip);
-              the accessible name retains the full title */}
-          {!(
-            tile.harness !== 'shell' &&
-            isDefaultHarnessTitle(tile.harness, tile.title)
-          ) && (
-            <span className="truncate" style={{ color: HUD.text }}>
-              {tile.title}
-            </span>
-          )}
-          {tile.stateLabel && (
-            <span
-              data-expose-state={tile.stateLabel}
-              className="ml-auto shrink-0 pl-1.5 font-mono text-[10px]"
-              style={{ color: HUD.textDim }}
-            >
-              {tile.stateLabel}
-            </span>
-          )}
-          {roadmapByTab[tile.tabId] && (
-            <span
-              data-expose-roadmap-item
-              title={
-                roadmapByTab[tile.tabId].inferred
-                  ? 'inferred link'
-                  : 'declared at launch'
-              }
-              className="max-w-[45%] shrink truncate pl-1.5 font-mono text-[10px]"
-              style={{ color: HUD.textMono }}
-            >
-              {roadmapByTab[tile.tabId].inferred ? '▹' : '▸'}{' '}
-              {roadmapByTab[tile.tabId].label}
-              {roadmapByTab[tile.tabId].fraction
-                ? ` ${roadmapByTab[tile.tabId].fraction}`
-                : ''}
-            </span>
-          )}
-          {tile.live || fault ? (
-            <span className="ml-1 inline-flex shrink-0">
-              <SessionStatusGlyph
-                state={glyphState}
-                attention={attentionSignal}
-                fault={fault}
-              />
-            </span>
-          ) : null}
-        </div>
-        {subtitle && (
-          <div
-            className="line-clamp-2 min-h-10 w-full text-sm leading-5"
-            style={{ color: `${tile.color}B0` }}
+            data-expose-roadmap-item
+            data-link-method={roadmap.inferred ? 'inferred' : 'declared'}
+            className="sr-only"
           >
-            {subtitle}
-          </div>
+            {roadmap.label}
+          </span>
         )}
-        <div
-          className="w-full whitespace-pre font-mono text-[9px] leading-[1.5]"
-          style={{ color: HUD.textDim, minHeight: 54, overflow: 'hidden' }}
-        >
-          {tile.sessionId && previews[tile.sessionId]
-            ? previews[tile.sessionId].length > 0
-              ? previews[tile.sessionId].join('\n')
-              : 'No visible output — enter opens the terminal'
-            : tile.live
-              ? '…'
-              : 'process ended — enter opens the tab'}
-        </div>
       </button>
     );
   };
@@ -585,11 +508,11 @@ export function ExposeOverlay({
       >
         <div className="px-6 pb-6 pt-5">
           <div
-            className="mb-4 flex items-baseline gap-3 font-mono text-xs"
+            className="mb-4 flex items-baseline gap-3 font-sans text-sm"
             style={{ color: HUD.textDim }}
           >
             <h2
-              className="font-display text-sm font-semibold"
+              className="font-display text-base font-semibold"
               style={{ color: HUD.text }}
             >
               Projects &amp; Sessions
@@ -636,13 +559,13 @@ export function ExposeOverlay({
                       style={{ background: project.color }}
                     />
                     <h3
-                      className="truncate font-display text-xs font-semibold"
+                      className="truncate font-sans text-sm font-semibold"
                       style={{ color: HUD.text }}
                     >
                       {project.name}
                     </h3>
                     <span
-                      className="font-mono text-[10px] tabular-nums"
+                      className="font-mono text-xs tabular-nums"
                       style={{ color: HUD.textDim }}
                     >
                       {projectTiles.length}{' '}

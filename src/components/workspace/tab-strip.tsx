@@ -38,6 +38,7 @@ import type { SessionAttentionSignal } from './status-glyphs';
 import type { Project } from './use-workspace-state';
 import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
 import { SessionGoalSummary } from './session-goal-summary';
+import { sessionDisplayCopy } from './session-display-copy';
 
 /** Shortcut-ordinal keycap (D21): revealed only while the chord's modifiers
  *  are held, styled as a key so it reads as "press this", never as data.
@@ -784,13 +785,13 @@ export function TabStrip({
                 agent: isAgent,
                 started,
               });
-              // Catalog labels describe a conversation in the browser; they
-              // are not tab names. The harness glyph owns default identity,
-              // while only an explicit rename earns primary title copy.
-              // Drafts and shells keep their labels because neither has the
-              // normal live-Agent identity treatment.
-              const showTitle =
-                isDraft || !isAgent || t.titleKind === 'operator';
+              const display = sessionDisplayCopy({
+                harness: t.harness,
+                title: t.title,
+                titleKind: t.titleKind,
+                lifecycle: t.lifecycle,
+                summary,
+              });
               const ordinal = ordinalByTabId.get(t.id);
               const stoppedStatus =
                 t.lifecycle === 'interrupted'
@@ -868,7 +869,7 @@ export function TabStrip({
                   trigger,
                   ...point,
                   color,
-                  label: `${t.title} Session actions`,
+                  label: `${display.primary} Session actions`,
                   items: tabMenuItems,
                   target: { kind: 'tab', id: t.id },
                 });
@@ -876,6 +877,8 @@ export function TabStrip({
                 <div
                   key={t.id}
                   data-tab-id={t.id}
+                  data-tab-harness={t.harness}
+                  data-durable-session-id={t.durableSessionId}
                   data-active={on || undefined}
                   draggable={!editing}
                   onDragStart={e => {
@@ -956,20 +959,15 @@ export function TabStrip({
                         keyboardMenuPoint(event.currentTarget)
                       );
                     }}
-                    // a glyph-only tab (hidden default title) would otherwise
-                    // take its accessible name from the tooltip — give it a
-                    // real one: harness, goal, state (D22)
-                    aria-label={
-                      showTitle
-                        ? undefined
-                        : `${t.title}${summary ? ` — ${summary}` : ''} — ${
-                            dead
-                              ? stoppedStatus.toLowerCase()
-                              : needsYou
-                                ? 'needs your attention'
-                                : SESSION_GLYPH_LABEL[glyphState]
-                          }`
-                    }
+                    aria-label={`${display.primary}${
+                      display.context ? ` — ${display.context}` : ''
+                    } — ${
+                      dead
+                        ? stoppedStatus.toLowerCase()
+                        : needsYou
+                          ? 'needs your attention'
+                          : SESSION_GLYPH_LABEL[glyphState]
+                    }`}
                     className="flex cursor-pointer items-center gap-1.5 px-2 py-1 font-mono text-chrome-title font-medium outline-none transition-transform duration-100 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{ color: on ? HUD.text : HUD.textDim }}
                     title={`${t.cwd}${summary ? `\n${summary}` : ''}${
@@ -1027,7 +1025,7 @@ export function TabStrip({
                           onPick={c => onSetProjectColor(g.dir, c)}
                         />
                       </>
-                    ) : showTitle || summary ? (
+                    ) : (
                       // stopped tabs condense to a frozen chip (D23):
                       // the text folds away until hover/focus unfurls it —
                       // light collapse, never auto-close (operator design
@@ -1041,21 +1039,26 @@ export function TabStrip({
                             : 'max-w-60'
                         }`}
                       >
-                        {showTitle && (
-                          <span className="whitespace-nowrap leading-tight">
-                            {t.title}
+                        {display.primaryKind === 'context' ? (
+                          <SessionGoalSummary
+                            summary={display.primary}
+                            color={color}
+                            className="max-w-56"
+                          />
+                        ) : (
+                          <span className="whitespace-nowrap font-sans leading-tight">
+                            {display.primary}
                           </span>
                         )}
-                        {/* the goal is durable (D21): stopped tabs keep it */}
-                        {summary && (
+                        {display.context && (
                           <SessionGoalSummary
-                            summary={summary}
+                            summary={display.context}
                             color={color}
                             className="max-w-56"
                           />
                         )}
                       </span>
-                    ) : null}
+                    )}
                     {dead && !isDraft && (
                       <span
                         aria-label={stoppedStatus}
@@ -1092,7 +1095,7 @@ export function TabStrip({
                     onClick={() => onCloseTab(t.id)}
                     // ⌘W closes, like Chrome (D24): started live agents
                     // get one native confirm; drafts and fresh tabs discard
-                    aria-label={`Close ${t.title}`}
+                    aria-label={`Close ${display.primary}`}
                     title={
                       isDraft
                         ? 'Discard (⌘W)'
