@@ -54,6 +54,24 @@ describe('ShutdownCoordinator', () => {
     expect(coordinator.allowsFinalExit).toBe(true);
   });
 
+  it('runs an operator restart through the same checkpoint-and-stop path', async () => {
+    const { deps, order } = dependencies();
+    const coordinator = new ShutdownCoordinator(deps);
+    await expect(coordinator.request('restart')).resolves.toBe(true);
+    expect(order).toEqual([
+      'confirm',
+      'checkpoint:pre-stop',
+      'flush',
+      'stop',
+      'flush',
+      'checkpoint:stopped',
+      'clean',
+      'cleanup',
+      'final:restart',
+    ]);
+    expect(coordinator.allowsFinalExit).toBe(true);
+  });
+
   it('deduplicates concurrent quit requests', async () => {
     let release!: () => void;
     const waiting = new Promise<void>(resolve => {
@@ -132,6 +150,12 @@ describe('shutdownCopy', () => {
     });
     expect(shutdownCopy('update', { agents: 0, shells: 2 }).title).toBe(
       'Restart Exawatt and stop 2 shells?'
+    );
+  });
+
+  it('speaks of restarting, not quitting, for an operator restart', () => {
+    expect(shutdownCopy('restart', { agents: 3, shells: 0 }).title).toBe(
+      'Restart Exawatt and stop 3 agents?'
     );
   });
 });

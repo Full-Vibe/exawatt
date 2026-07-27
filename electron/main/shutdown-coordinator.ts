@@ -1,4 +1,8 @@
-export type ShutdownIntent = 'quit' | 'update';
+/** `restart` is an operator-initiated relaunch that is not carrying an update
+ *  — today the remedy for incident 0001, where macOS stops vending Exawatt's
+ *  accessibility element and window managers can no longer move the window.
+ *  It takes the same checkpoint-and-rehydrate path as quit and update. */
+export type ShutdownIntent = 'quit' | 'update' | 'restart';
 export type ShutdownPhase =
   | 'idle'
   | 'confirming'
@@ -107,7 +111,7 @@ export function shutdownCopy(
   counts: LiveProcessCounts
 ): { title: string; detail: string } {
   const action =
-    intent === 'update' ? 'Restart Exawatt and stop' : 'Quit Exawatt and stop';
+    intent === 'quit' ? 'Quit Exawatt and stop' : 'Restart Exawatt and stop';
   const subject =
     counts.agents > 0
       ? `${counts.agents} ${counts.agents === 1 ? 'agent' : 'agents'}`

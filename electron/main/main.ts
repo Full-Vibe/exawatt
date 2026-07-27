@@ -801,6 +801,13 @@ function createMenu(): void {
           enabled: feedbackAuthenticated,
           click: () => sendMenuCommand('submit-feedback'),
         },
+        { type: 'separator' },
+        {
+          label: "Window Management Isn't Working…",
+          click: () => {
+            void promptWindowManagementRestart();
+          },
+        },
       ],
     },
   ];
@@ -961,10 +968,12 @@ async function confirmShutdown(
     detail:
       intent === 'update'
         ? `${copy.detail} The downloaded update will then install and reopen Exawatt.`
-        : copy.detail,
+        : intent === 'restart'
+          ? `${copy.detail} Exawatt reopens automatically.`
+          : copy.detail,
     buttons: [
       'Cancel',
-      intent === 'update' ? 'Restart and Stop' : 'Quit and Stop',
+      intent === 'quit' ? 'Quit and Stop' : 'Restart and Stop',
     ],
     cancelId: 0,
     noLink: true,
@@ -974,6 +983,36 @@ async function confirmShutdown(
       ? await dialog.showMessageBox(mainWindow, options)
       : await dialog.showMessageBox(options);
   return result.response === 1;
+}
+
+/**
+ * Operator-initiated explanation for incident 0001: after long uptime macOS can
+ * stop vending Exawatt's accessibility element, and every AX-driven window
+ * manager (Divvy, Rectangle, Hammerspoon) then resolves the app to zero windows
+ * and silently does nothing. Exawatt CANNOT detect this — self-inspection
+ * returns kAXErrorAPIDisabled without Accessibility permission, and asking the
+ * operator to grant that for one degraded case is not worth it. So the remedy
+ * is named here rather than detected, and routed through the normal shutdown
+ * coordinator so Sessions and history checkpoint and rehydrate.
+ */
+async function promptWindowManagementRestart(): Promise<void> {
+  const message = "Window management isn't working?";
+  const options: Electron.MessageBoxOptions = {
+    type: 'info',
+    title: message,
+    message,
+    detail:
+      'After Exawatt has been open a long time, macOS can stop sharing its window with tools like Divvy, Rectangle, and Hammerspoon, so their shortcuts do nothing and you hear an error sound. This is a known macOS issue with Electron apps that Exawatt cannot detect or repair on its own.\n\nRestarting fixes it. Projects, Sessions, and terminal history are saved and restored; running agents stop and can be resumed afterwards.',
+    buttons: ['Cancel', 'Restart Exawatt'],
+    defaultId: 1,
+    cancelId: 0,
+    noLink: true,
+  };
+  const result =
+    mainWindow && !mainWindow.isDestroyed()
+      ? await dialog.showMessageBox(mainWindow, options)
+      : await dialog.showMessageBox(options);
+  if (result.response === 1) await shutdownCoordinator?.request('restart');
 }
 
 async function confirmWithoutCheckpoint(
@@ -991,7 +1030,7 @@ async function confirmWithoutCheckpoint(
     message: "Exawatt couldn't save the latest Session state",
     detail:
       'Quitting now may lose recent layout changes. Terminal history already checkpointed by the main process will remain.',
-    buttons: ['Cancel', intent === 'update' ? 'Restart Anyway' : 'Quit Anyway'],
+    buttons: ['Cancel', intent === 'quit' ? 'Quit Anyway' : 'Restart Anyway'],
     cancelId: 0,
     noLink: true,
   };
@@ -1212,7 +1251,11 @@ async function bootstrapCommandSurface(): Promise<void> {
     failure: reportShutdownFailure,
     finalize: intent => {
       if (intent === 'update') installProductUpdate();
-      else app.quit();
+      else {
+        // A restart must come back on its own; a quit must not.
+        if (intent === 'restart') app.relaunch();
+        app.quit();
+      }
     },
     status: broadcastShutdown,
   });
