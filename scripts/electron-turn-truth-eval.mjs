@@ -173,6 +173,16 @@ try {
         'the child to finish'
       );
       check('the Session settles once its last child finishes', true);
+      // The withheld result must arrive HERE, at the last child's end. A
+      // Session that fans out and finishes has to reach the attention queue.
+      await until(
+        async () => (await attentionOf()) === 'turn-end',
+        'the withheld result once delegation completes'
+      );
+      check(
+        'a delegating Session reaches the attention queue when its team finishes',
+        true
+      );
 
       // 8. Inference is untouched for a source that reports nothing. Driving
       //    the Codex Session directly is the control for the reported path:
@@ -185,6 +195,13 @@ try {
       const codexAttention = async () =>
         (await sessions()).find(s => s.id === codex.id)?.attention?.kind ??
         'none';
+      // Inference deliberately ignores a Session inside its 20s spawn grace —
+      // a fresh tab printing its banner and going quiet is not news. Wait that
+      // out, or this measures the grace rather than the inference.
+      const graceEndsAt = codex.startedAt + 21_000;
+      if (Date.now() < graceEndsAt) {
+        await page.waitForTimeout(graceEndsAt - Date.now());
+      }
       // A burst that clears the DEFAULT 600-byte threshold, so this proves
       // inference itself rather than an env override reaching the main process.
       await sendCodex(`say ${'inferred-work-then-quiet '.repeat(40)}`);

@@ -133,6 +133,19 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     // nothing else would reopen the turn.
     if (event.kind === 'turn-start') attentionMonitor.noteHarnessTurnStart(id);
     if (event.kind === 'turn-end') attentionMonitor.noteHarnessTurnEnd(id);
+    // The result of a DELEGATING Session arrives when its last child stops,
+    // not when its own turn ended — that boundary was deliberately withheld
+    // while the team was still working. Without this, a Session that fans out
+    // and finishes never enters the attention queue at all, which is exactly
+    // the Session most likely to be worth returning to. The delegation monitor
+    // subscribes first, so its state is already current here.
+    if (
+      event.kind === 'child-end' &&
+      !delegationMonitor.isBusy(id) &&
+      delegationMonitor.get(id)?.ownTurn === 'available'
+    ) {
+      attentionMonitor.noteHarnessTurnEnd(id);
+    }
   });
   delegationMonitor.on('delegation', (id: string, delegation: unknown) => {
     broadcast('pty:delegation', { id, delegation });

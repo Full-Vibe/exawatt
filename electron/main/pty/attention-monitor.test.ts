@@ -481,6 +481,23 @@ describe('AttentionMonitor', () => {
       }
     });
 
+    it('raises the withheld result once the last child finishes', () => {
+      // The delegating Session's result arrives at its LAST CHILD's end, not
+      // at its own turn end — that boundary was withheld on purpose. Without
+      // re-raising, a Session that fans out and finishes never enters the
+      // attention queue, which is the Session most worth returning to.
+      const busy = new Set(['a']);
+      monitor.setDelegationSource(id => busy.has(id));
+      add('a', 'claude', clock - 60_000);
+      data('a', 'x'.repeat(500));
+      monitor.noteHarnessTurnEnd('a');
+      expect(monitor.get('a')).toBeNull();
+
+      busy.clear();
+      monitor.noteHarnessTurnEnd('a'); // what the last child-end triggers
+      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+    });
+
     it('defaults to reporting nothing delegated', () => {
       // A source with no delegation capability never calls the setter; the
       // monitor must behave exactly as it did before ENG-023.
