@@ -1,3 +1,4 @@
+import path from 'path';
 import type { AgentPermissionMode } from './session-manager';
 import type { AgentHarness } from './harness-types';
 import { harnessDescriptor } from './harness-registry';
@@ -13,6 +14,15 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
+/** Optional launch wiring that is not part of the Agent request itself.
+ *  An options bag rather than yet another positional: this is the seam future
+ *  source-side plumbing extends. */
+export interface HarnessLaunchWiring {
+  /** Settings document subscribing this launch to the harness event channel
+   *  (ENG-023). Absent for sources with no push mechanism. */
+  eventChannelSettingsPath?: string;
+}
+
 export function buildHarnessCommand(
   harness: AgentHarness,
   harnessSessionId: string | null,
@@ -21,7 +31,8 @@ export function buildHarnessCommand(
   initialPrompt?: string,
   permissionMode: AgentPermissionMode = 'unrestricted',
   model?: string,
-  effort?: string
+  effort?: string,
+  wiring: HarnessLaunchWiring = {}
 ): string {
   if (harnessSessionId && !SAFE_SESSION_ID.test(harnessSessionId)) {
     throw new Error('Invalid harness session ID');
@@ -54,9 +65,19 @@ export function buildHarnessCommand(
   ) {
     throw new Error('Invalid Agent effort');
   }
+  const settingsPath = wiring.eventChannelSettingsPath;
+  if (settingsPath && !path.isAbsolute(settingsPath)) {
+    throw new Error('Event channel settings path must be absolute');
+  }
   const descriptor = harnessDescriptor(harness);
   const command = executable ? shellQuote(executable) : descriptor.id;
-  const baseInvocation = `${command} ${descriptor.permissionFlags(permissionMode)}`;
+  const permissionInvocation = `${command} ${descriptor.permissionFlags(permissionMode)}`;
+  // Subscribe BEFORE the Agent-shaped flags so the launch reads as
+  // "this harness, wired to Exawatt, then asked to do X".
+  const baseInvocation =
+    settingsPath && descriptor.eventChannelInvocation
+      ? descriptor.eventChannelInvocation(permissionInvocation, settingsPath)
+      : permissionInvocation;
   const modelInvocation = selectedModel
     ? descriptor.modelInvocation(baseInvocation, shellQuote(selectedModel))
     : baseInvocation;

@@ -64,6 +64,7 @@ import {
 import type {
   AgentPermissionMode,
   PtyAttention,
+  SessionDelegation,
   PtyHarness,
   PtyReentryRecap,
   PtySessionInfo,
@@ -620,6 +621,13 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  unstarted must read at a glance; main is truth — task/resume at
    *  create, first human keystroke, or raised attention) */
   const [engaged, setEngaged] = useState<Record<string, boolean>>({});
+  /** harness-reported delegated work, keyed by sessionId (ENG-023). Only
+   *  Sessions with children outstanding appear; a missing key means "no
+   *  delegated work reported", which covers both a Session with none and a
+   *  source that cannot report it. */
+  const [delegation, setDelegation] = useState<
+    Record<string, SessionDelegation>
+  >({});
   /** quiet, one-shot S4 catch-up for the session currently being revisited */
   const [reentryRecap, setReentryRecap] = useState<PtyReentryRecap | null>(
     null
@@ -820,6 +828,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const seededAttention: Record<string, PtyAttention> = {};
       const seededActivity: Record<string, boolean> = {};
       const seededEngaged: Record<string, boolean> = {};
+      const seededDelegation: Record<string, SessionDelegation> = {};
       if (persisted) {
         const persistedSummaries = persisted.projects.flatMap(g =>
           g.tabs.flatMap(t =>
@@ -854,6 +863,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
           seededActivity[s.id] = true;
         }
         if (s.engaged) seededEngaged[s.id] = true;
+        // Reload and late-attach adopt live delegation immediately (ENG-023);
+        // otherwise the dots would wait for the next child to start or stop.
+        if (s.delegation && s.delegation.children.length > 0) {
+          seededDelegation[s.id] = s.delegation;
+        }
       }
       if (Object.keys(seeded).length > 0) {
         setSummaries(prev => ({ ...seeded, ...prev }));
@@ -866,6 +880,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       }
       if (Object.keys(seededEngaged).length > 0) {
         setEngaged(prev => ({ ...seededEngaged, ...prev }));
+      }
+      if (Object.keys(seededDelegation).length > 0) {
+        setDelegation(prev => ({ ...seededDelegation, ...prev }));
       }
       if (persisted) {
         const assigned: Array<string | undefined> = persisted.projects.map(
@@ -1128,6 +1145,20 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const offEngaged = api.onEngaged?.(({ id }) => {
       setEngaged(prev => (prev[id] ? prev : { ...prev, [id]: true }));
     });
+    // Harness-reported delegation (ENG-023). A Session that finishes its last
+    // child drops out of the record entirely, so surfaces read "no delegated
+    // work" rather than "zero children" — absent is not the same as none.
+    const offDelegation = api.onDelegation?.(({ id, delegation: next }) => {
+      setDelegation(prev => {
+        if (!next || next.children.length === 0) {
+          if (!(id in prev)) return prev;
+          const cleared = { ...prev };
+          delete cleared[id];
+          return cleared;
+        }
+        return { ...prev, [id]: next };
+      });
+    });
     const offAttention = api.onAttention?.(({ id, attention: att }) => {
       if (att) clearedBeforeSeed.delete(id);
       else clearedBeforeSeed.add(id);
@@ -1147,6 +1178,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       offRecap?.();
       offActivity?.();
       offEngaged?.();
+      offDelegation?.();
       offAttention?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2392,6 +2424,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     summaries,
     attention,
     activity,
+    delegation,
     engaged,
     reentryRecap,
     error,

@@ -24,22 +24,29 @@ import {
 } from '@/components/ui/tooltip';
 import {
   ATTENTION_GLYPH_COPY,
+  DELEGATION_DOT_CAP,
   FAULT_GLYPH_COPY,
-  SESSION_GLYPH_COPY,
+  delegationCopy,
+  sessionGlyphCopy,
   sessionStatusLightState,
 } from './session-status';
 import type {
   SessionAttentionSignal,
   SessionGlyphState,
 } from './session-status';
+import type { SessionDelegation } from '@/types/electron';
 
 // Keep the established import surface for existing renderers while the
 // state model itself stays usable from render-free mapping code.
 export {
   attentionNeedsOperator,
   ATTENTION_GLYPH_COPY,
+  DELEGATION_DOT_CAP,
+  delegationCopy,
   SESSION_GLYPH_COPY,
   SESSION_GLYPH_LABEL,
+  sessionDelegationBusy,
+  sessionGlyphCopy,
   sessionGlyphState,
   sessionStatusLightState,
 } from './session-status';
@@ -91,13 +98,72 @@ export function AttentionMarker() {
   );
 }
 
+/**
+ * Delegated children (ENG-023) — a presence channel beside the status light,
+ * never a replacement for it.
+ *
+ * Dots, not a count: the exact number belongs in the tooltip and the
+ * accessible name, and a cluster should read as "this agent has help" at a
+ * glance. The cluster is a FIXED width for its cap, so children arriving and
+ * finishing — the whole point of the thing — never resize the row they sit in.
+ * It appears when the first child starts and leaves when the last one ends,
+ * which is the same conditional footprint the harness and pinned marks use.
+ *
+ * The row is deliberately more than D1 draws. D2 hangs the per-child rail off
+ * this same trigger rather than replacing it.
+ */
+export function DelegationDots({
+  delegation,
+}: {
+  delegation?: SessionDelegation | null;
+}) {
+  const running = delegation?.children.length ?? 0;
+  const copy = delegationCopy(delegation);
+  if (running === 0 || !copy) return null;
+  const lit = Math.min(running, DELEGATION_DOT_CAP);
+  return (
+    <StatusTooltip copy={copy}>
+      <span
+        aria-label={copy}
+        className="inline-flex shrink-0 items-center gap-[3px]"
+        data-delegation={running}
+        role="img"
+        // Gap wider than the dot so a cluster reads as separate workers rather
+        // than as an ellipsis after the title. Width is the cap, always, so
+        // children arriving and finishing never resize the row.
+        style={{ width: DELEGATION_DOT_CAP * 3 + (DELEGATION_DOT_CAP - 1) * 3 }}
+      >
+        {Array.from({ length: DELEGATION_DOT_CAP }, (_, index) => (
+          <span
+            aria-hidden="true"
+            className={index < lit ? 'delegation-dot' : undefined}
+            key={index}
+            style={{
+              width: 3,
+              height: 3,
+              borderRadius: 9999,
+              // Unlit slots hold the width without implying spare capacity.
+              background: index < lit ? 'currentColor' : 'transparent',
+              // stagger so a cluster breathes as separate workers
+              animationDelay: `${index * 320}ms`,
+            }}
+          />
+        ))}
+      </span>
+    </StatusTooltip>
+  );
+}
+
 export function SessionStatusGlyph({
   state,
   attention,
+  delegation,
   fault = false,
 }: {
   state: SessionGlyphState;
   attention?: SessionAttentionSignal | null;
+  /** corrects the tooltip: a delegating Session is quiet, not streaming */
+  delegation?: SessionDelegation | null;
   fault?: boolean;
 }) {
   const lightState = sessionStatusLightState({ state, attention, fault });
@@ -106,7 +172,7 @@ export function SessionStatusGlyph({
       ? FAULT_GLYPH_COPY
       : lightState === 'needs-you'
         ? ATTENTION_GLYPH_COPY
-        : SESSION_GLYPH_COPY[state];
+        : sessionGlyphCopy(state, delegation);
 
   if (lightState === 'needs-you') {
     return (

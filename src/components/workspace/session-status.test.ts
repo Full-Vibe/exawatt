@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   attentionNeedsOperator,
+  delegationCopy,
   mergeSessionAttentionMaps,
   mergeSessionAttentionSignals,
   orderedAttentionTargets,
+  SESSION_GLYPH_COPY,
+  sessionDelegationBusy,
+  sessionGlyphCopy,
+  sessionGlyphState,
   sessionStatusLightState,
 } from './session-status';
 
@@ -77,5 +82,104 @@ describe('sessionStatusLightState', () => {
         'active'
       )
     ).toEqual(['earlier', 'later']);
+  });
+});
+
+/**
+ * Delegation in the shared derivation (ENG-023 D1). Every Session surface
+ * reads this, so the rule lands in the strip, the overview, and the switcher
+ * from one place.
+ */
+describe('delegated work', () => {
+  const busyChild = {
+    ownTurn: 'available' as const,
+    children: [{ id: 'a1', agentType: 'Explore', startedAt: 1 }],
+  };
+
+  it('reads as working while children run, even with the parent quiet', () => {
+    expect(
+      sessionGlyphState({ working: false, agent: true, started: true })
+    ).toBe('done');
+    expect(
+      sessionGlyphState({
+        working: false,
+        agent: true,
+        started: true,
+        delegatedBusy: true,
+      })
+    ).toBe('working');
+  });
+
+  it('never manufactures a ready result from a delegating Session', () => {
+    const state = sessionGlyphState({
+      working: false,
+      agent: true,
+      started: true,
+      delegatedBusy: true,
+    });
+    expect(sessionStatusLightState({ state, attention: null })).toBe('active');
+  });
+
+  it('leaves needs-you and fault untouched — delegation is not an escalation', () => {
+    const state = sessionGlyphState({
+      working: false,
+      agent: true,
+      started: true,
+      delegatedBusy: true,
+    });
+    expect(
+      sessionStatusLightState({ state, attention: { kind: 'bell', since: 1 } })
+    ).toBe('needs-you');
+    expect(sessionStatusLightState({ state, fault: true })).toBe('fault');
+  });
+
+  it('defaults to unreported, so a source without the capability is unchanged', () => {
+    expect(
+      sessionGlyphState({ working: false, agent: true, started: true })
+    ).toBe('done');
+    expect(sessionDelegationBusy(null)).toBe(false);
+    expect(sessionDelegationBusy(undefined)).toBe(false);
+    expect(sessionDelegationBusy({ ownTurn: 'available', children: [] })).toBe(
+      false
+    );
+  });
+
+  it('explains a quiet delegating Session honestly', () => {
+    // "output streaming" is the wrong reason for a Session that is quiet
+    // precisely because it handed the work to someone else.
+    expect(sessionGlyphCopy('working', busyChild)).toBe(
+      'working — delegated agents running'
+    );
+    expect(sessionGlyphCopy('working', null)).toBe(
+      'working — output streaming'
+    );
+    expect(sessionGlyphCopy('done', busyChild)).toBe(SESSION_GLYPH_COPY.done);
+  });
+
+  it('names the work, deduplicating kinds and pluralizing', () => {
+    expect(delegationCopy(busyChild)).toBe(
+      '1 delegated agent working — Explore'
+    );
+    expect(
+      delegationCopy({
+        ownTurn: 'available',
+        children: [
+          { id: 'a', agentType: 'Explore', startedAt: 1 },
+          { id: 'b', agentType: 'Explore', startedAt: 2 },
+          { id: 'c', agentType: 'general-purpose', startedAt: 3 },
+        ],
+      })
+    ).toBe('3 delegated agents working — Explore, general-purpose');
+  });
+
+  it('still names the count when a source reports no kind', () => {
+    expect(
+      delegationCopy({
+        ownTurn: 'available',
+        children: [{ id: 'a', agentType: null, startedAt: 1 }],
+      })
+    ).toBe('1 delegated agent working');
+    expect(delegationCopy(null)).toBeNull();
+    expect(delegationCopy({ ownTurn: 'available', children: [] })).toBeNull();
   });
 });

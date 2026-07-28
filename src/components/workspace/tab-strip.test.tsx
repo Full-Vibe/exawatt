@@ -4,6 +4,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { TabStrip } from './tab-strip';
 import type { SessionAttentionSignal } from './status-glyphs';
 import type { Project, WorkspaceTab } from './use-workspace-state';
+import type { SessionDelegation } from '@/types/electron';
 import { EDIT_ACTIVE_PROJECT_EVENT } from './session-jump';
 
 /**
@@ -40,6 +41,7 @@ function strip({
   attention = {},
   activity = {},
   engaged = {},
+  delegation = {},
   onCloseProject,
   exitingProjectDirs,
 }: {
@@ -48,10 +50,14 @@ function strip({
   attention?: Record<string, SessionAttentionSignal>;
   activity?: Record<string, boolean>;
   engaged?: Record<string, boolean>;
+  delegation?: Record<string, SessionDelegation>;
   onCloseProject?: (dir: string) => void;
   exitingProjectDirs?: ReadonlySet<string>;
 }) {
-  const view = (nextTabs: WorkspaceTab[]) => {
+  const view = (
+    nextTabs: WorkspaceTab[],
+    nextDelegation: Record<string, SessionDelegation> = delegation
+  ) => {
     const projects: Project[] = [
       {
         dir: '/repo',
@@ -71,6 +77,7 @@ function strip({
           attention={attention}
           activity={activity}
           engaged={engaged}
+          delegation={nextDelegation}
           onTogglePinTab={vi.fn()}
           onResumeTab={vi.fn()}
           onCloseProject={onCloseProject}
@@ -89,6 +96,9 @@ function strip({
   return {
     ...result,
     rerenderTabs: (nextTabs: WorkspaceTab[]) => result.rerender(view(nextTabs)),
+    /** re-render with different harness-reported delegation (ENG-023) */
+    rerenderDelegation: (next: Record<string, SessionDelegation>) =>
+      result.rerender(view(tabs, next)),
   };
 }
 
@@ -436,5 +446,99 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     });
     expect(container.querySelector('[data-status]')).toBeNull();
     expect(screen.getByLabelText('Exited')).not.toBeNull();
+  });
+});
+
+/**
+ * Delegated-child dots (ENG-023 D1). The strip is where the operator decides
+ * whether anything needs them, so a tab that handed work off must not read as
+ * finished, and the dots must not make the strip jump while children churn.
+ */
+describe('TabStrip delegated work (ENG-023)', () => {
+  const children = (count: number, kind = 'Explore') =>
+    Array.from({ length: count }, (_, index) => ({
+      id: `a${index}`,
+      agentType: kind,
+      startedAt: index,
+    }));
+  const delegating = (count: number, kind?: string): SessionDelegation => ({
+    ownTurn: 'available',
+    children: children(count, kind),
+  });
+
+  it('a quiet parent with children reads as working, not as a ready result', () => {
+    const { container } = strip({
+      tabs: [tab({ id: 'a' })],
+      engaged: { 'session-a': true },
+      delegation: { 'session-a': delegating(2) },
+    });
+    expect(container.querySelector('[data-status="done"]')).toBeNull();
+    expect(container.querySelector('[data-status="working"]')).not.toBeNull();
+  });
+
+  it('shows one dot per child and names the exact count for a screen reader', () => {
+    const { container } = strip({
+      tabs: [tab({ id: 'a' })],
+      delegation: { 'session-a': delegating(3) },
+    });
+    const cluster = container.querySelector('[data-delegation]');
+    expect(cluster?.getAttribute('data-delegation')).toBe('3');
+    expect(cluster?.getAttribute('aria-label')).toBe(
+      '3 delegated agents working — Explore'
+    );
+  });
+
+  it('caps the dots but keeps the true number in the accessible name', () => {
+    const { container } = strip({
+      tabs: [tab({ id: 'a' })],
+      delegation: { 'session-a': delegating(16) },
+    });
+    const cluster = container.querySelector('[data-delegation]');
+    // a workflow fan-out reads as "lots", and the readout stays exact
+    expect(cluster?.getAttribute('data-delegation')).toBe('16');
+    expect(cluster?.getAttribute('aria-label')).toContain(
+      '16 delegated agents'
+    );
+  });
+
+  it('keeps a constant width as children come and go', () => {
+    // The cluster exists precisely because children start and finish. If its
+    // width tracked the count, every spawn would resize the tab and shove the
+    // rest of the strip sideways.
+    const { container, rerenderDelegation } = strip({
+      tabs: [tab({ id: 'a' })],
+      delegation: { 'session-a': delegating(1) },
+    });
+    const measure = () =>
+      (container.querySelector('[data-delegation]') as HTMLElement).style.width;
+    const oneChild = measure();
+    expect(oneChild).toBeTruthy();
+    rerenderDelegation({ 'session-a': delegating(4) });
+    expect(measure()).toBe(oneChild);
+    rerenderDelegation({ 'session-a': delegating(19) });
+    expect(measure()).toBe(oneChild);
+  });
+
+  it('renders nothing at all when no delegation is reported', () => {
+    // Codex reports none: absent must read as absent, never as an empty
+    // cluster or a zero.
+    const { container } = strip({
+      tabs: [tab({ id: 'a', harness: 'codex' })],
+      engaged: { 'session-a': true },
+    });
+    expect(container.querySelector('[data-delegation]')).toBeNull();
+    expect(container.querySelector('[data-status="done"]')).not.toBeNull();
+  });
+
+  it('clears the dots and settles the light when the last child finishes', () => {
+    const { container, rerenderDelegation } = strip({
+      tabs: [tab({ id: 'a' })],
+      engaged: { 'session-a': true },
+      delegation: { 'session-a': delegating(2) },
+    });
+    expect(container.querySelector('[data-delegation]')).not.toBeNull();
+    rerenderDelegation({});
+    expect(container.querySelector('[data-delegation]')).toBeNull();
+    expect(container.querySelector('[data-status="done"]')).not.toBeNull();
   });
 });

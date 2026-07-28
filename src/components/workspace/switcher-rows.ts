@@ -6,7 +6,11 @@
  */
 import { projectColor } from './project-colors';
 import type { PtySessionInfo } from '@/types/electron';
-import { sessionGlyphState, type SessionGlyphState } from './session-status';
+import {
+  sessionDelegationBusy,
+  sessionGlyphState,
+  type SessionGlyphState,
+} from './session-status';
 
 export type SessionRowStatus =
   | 'needs-you'
@@ -45,18 +49,23 @@ export function sessionRowStatus(
     | 'harness'
     | 'engaged'
     | 'contextSummary'
+    | 'delegation'
   >,
   now: number
 ): SessionRowStatus {
   if (s.exited)
     return s.exitCode != null && s.exitCode !== 0 ? 'fault' : 'exited';
-  if (s.attention?.kind === 'turn-end') return 'done';
-  if (s.attention) return 'needs-you';
+  // Delegated work outranks a finished own-turn (ENG-023): the switcher must
+  // not offer a Session as a ready result while its children are running.
+  const delegatedBusy = sessionDelegationBusy(s.delegation);
+  if (s.attention?.kind === 'turn-end' && !delegatedBusy) return 'done';
+  if (s.attention && s.attention.kind !== 'turn-end') return 'needs-you';
   const working = s.working ?? now - s.lastDataAt < LEGACY_WORKING_FALLBACK_MS;
   return sessionGlyphState({
     working,
     agent: s.harness !== 'shell',
     started: !!s.engaged || !!s.contextSummary?.trim(),
+    delegatedBusy,
   });
 }
 

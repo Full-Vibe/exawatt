@@ -264,6 +264,96 @@ describe('AttentionMonitor', () => {
     monitor.sweepNow();
     expect(monitor.count()).toBe(0);
   });
+
+  /**
+   * Delegation (ENG-023). Byte quiescence cannot see a Session's children, so
+   * a parent that handed work off and went quiet looked exactly like one that
+   * finished. The harness reports the difference.
+   */
+  describe('delegated work', () => {
+    const goQuietAfterWork = (id: string) => {
+      data(id, 'x'.repeat(500));
+      clock += 5000;
+      monitor.sweepNow();
+    };
+
+    it('raises turn-end when nothing was delegated', () => {
+      add('a');
+      goQuietAfterWork('a');
+      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+    });
+
+    it('withholds turn-end while children are still running', () => {
+      const busy = new Set(['a']);
+      monitor.setDelegationSource(id => busy.has(id));
+      add('a');
+      goQuietAfterWork('a');
+      // the Session's OWN turn ended, but there is no result to read yet
+      expect(monitor.get('a')).toBeNull();
+    });
+
+    it('raises turn-end normally once the last child finishes', () => {
+      const busy = new Set(['a']);
+      monitor.setDelegationSource(id => busy.has(id));
+      add('a');
+      goQuietAfterWork('a');
+      expect(monitor.get('a')).toBeNull();
+
+      busy.clear();
+      // a returning child reopens the turn, the parent works, then settles
+      monitor.noteHarnessTurnStart('a');
+      goQuietAfterWork('a');
+      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+    });
+
+    it('only withholds for the delegating Session', () => {
+      monitor.setDelegationSource(id => id === 'a');
+      add('a');
+      add('b');
+      data('a', 'x'.repeat(500));
+      data('b', 'x'.repeat(500));
+      clock += 5000;
+      monitor.sweepNow();
+      expect(monitor.get('a')).toBeNull();
+      expect(monitor.get('b')).toEqual({ kind: 'turn-end', since: clock });
+    });
+
+    it('reopens a settled turn on a reported turn start', () => {
+      // The turn a returning child opens is preceded by no keystroke, so the
+      // settled latch would otherwise hold the Session visually quiet while
+      // it works through the result.
+      add('a');
+      goQuietAfterWork('a');
+      expect(monitor.isWorking('a')).toBe(false);
+
+      monitor.noteHarnessTurnStart('a');
+      expect(monitor.isWorking('a')).toBe(true);
+      expect(monitor.isEngaged('a')).toBe(true);
+      // and ordinary output now counts again rather than being latched out
+      data('a', 'y'.repeat(500));
+      expect(monitor.isWorking('a')).toBe(true);
+    });
+
+    it('ignores a reported turn start for a shell or a dead session', () => {
+      add('s', 'shell');
+      monitor.noteHarnessTurnStart('s');
+      expect(monitor.isWorking('s')).toBe(false);
+
+      add('a');
+      manager.sessions[1].exited = true;
+      monitor.noteHarnessTurnStart('a');
+      expect(monitor.isWorking('a')).toBe(false);
+      expect(monitor.isEngaged('a')).toBe(false);
+    });
+
+    it('defaults to reporting nothing delegated', () => {
+      // A source with no delegation capability never calls the setter; the
+      // monitor must behave exactly as it did before ENG-023.
+      add('a');
+      goQuietAfterWork('a');
+      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+    });
+  });
 });
 
 describe('AttentionMonitor activity truth (D18)', () => {

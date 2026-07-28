@@ -74,18 +74,27 @@ export function orderedAttentionTargets(
 }
 
 /** Working wins; agents split on whether they were ever given work; shells
- * are simply quiet between output because they do not have turns. */
+ * are simply quiet between output because they do not have turns.
+ *
+ * Delegated work counts as working (ENG-023). A Session whose own turn ended
+ * while its children keep going has produced no result to read, and reporting
+ * one is the specific lie this rule exists to stop — measured at 74 seconds of
+ * "result ready" while a child was mid-flight. The operator's framing: if the
+ * team is working, they're working. */
 export function sessionGlyphState({
   working,
   agent,
   started,
+  delegatedBusy = false,
 }: {
   working: boolean;
   /** false for shells — they have no turn state */
   agent: boolean;
   started: boolean;
+  /** harness-reported outstanding children; false when unreported (ENG-023) */
+  delegatedBusy?: boolean;
 }): SessionGlyphState {
-  if (working) return 'working';
+  if (working || delegatedBusy) return 'working';
   if (!agent) return 'quiet';
   return started ? 'done' : 'fresh';
 }
@@ -135,7 +144,63 @@ export const SESSION_GLYPH_LABEL: Record<SessionGlyphState, string> = {
   fresh: 'new',
   quiet: 'quiet',
 };
+
+/**
+ * How many dots a delegation cluster draws before it stops counting up
+ * (ENG-023). Dots are a presence channel, not a readout — a workflow fanning
+ * out sixteen children should read as "lots", and the exact number lives in
+ * the tooltip and the accessible name where a number belongs.
+ */
+export const DELEGATION_DOT_CAP = 5;
+
+/** Whether a Session has delegated work outstanding. `null`/absent delegation
+ *  means the source does not report it — absent, never zero. */
+export function sessionDelegationBusy(
+  delegation?: SessionDelegation | null
+): boolean {
+  return !!delegation && delegation.children.length > 0;
+}
+
+/**
+ * One sentence naming the delegated work. Kinds are the source's own agent
+ * names, deduplicated and in first-seen order, because three Explores read as
+ * one kind of help rather than three unrelated facts.
+ */
+export function delegationCopy(
+  delegation?: SessionDelegation | null
+): string | null {
+  const children = delegation?.children ?? [];
+  if (children.length === 0) return null;
+  const kinds = [
+    ...new Set(
+      children
+        .map(child => child.agentType?.trim())
+        .filter((kind): kind is string => !!kind)
+    ),
+  ];
+  const count = `${children.length} delegated ${
+    children.length === 1 ? 'agent' : 'agents'
+  } working`;
+  return kinds.length > 0 ? `${count} — ${kinds.join(', ')}` : count;
+}
+
+/**
+ * Tooltip for the status light, corrected for delegation.
+ *
+ * "output streaming" is the wrong explanation for a Session that is quiet
+ * precisely because it handed the work to someone else.
+ */
+export function sessionGlyphCopy(
+  state: SessionGlyphState,
+  delegation?: SessionDelegation | null
+): string {
+  if (state === 'working' && sessionDelegationBusy(delegation)) {
+    return 'working — delegated agents running';
+  }
+  return SESSION_GLYPH_COPY[state];
+}
 import {
   deriveStatusLightState,
   type StatusLightState,
 } from '@/components/status-light/protocol';
+import type { SessionDelegation } from '@/types/electron';

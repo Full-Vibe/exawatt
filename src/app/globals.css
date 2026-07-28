@@ -598,12 +598,31 @@ body {
   animation: fleet-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* Delegated-child dots (ENG-023): one slow breath, staggered per dot so a
+   cluster reads as several separate workers rather than one blinking group.
+   Deliberately gentler than the active rotor — delegation is context for the
+   status light, never a competing signal. */
+@keyframes delegation-dot-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.delegation-dot {
+  animation: delegation-dot-breathe 2600ms ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fleet-scanline,
   .animate-fleet-rise,
   .animate-ping,
   .animate-pulse,
-  .status-light-active-rotor {
+  .status-light-active-rotor,
+  .delegation-dot {
     animation: none;
   }
 

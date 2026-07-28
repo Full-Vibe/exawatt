@@ -15,6 +15,7 @@ import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import {
   attentionNeedsOperator,
   SESSION_GLYPH_LABEL,
+  sessionDelegationBusy,
   sessionGlyphState,
 } from './status-glyphs';
 import type { SessionAttentionSignal } from './status-glyphs';
@@ -25,7 +26,7 @@ import {
 import { SessionOverviewCardContent } from './session-overview-card';
 import { tabIsLive } from './use-workspace-state';
 import type { Project } from './use-workspace-state';
-import type { PtyHarness } from '@/types/electron';
+import type { PtyHarness, SessionDelegation } from '@/types/electron';
 import {
   RoadmapRail,
   ROADMAP_RAIL_FOCUS_EVENT,
@@ -89,6 +90,7 @@ export function ExposeOverlay({
   attention,
   activity = {},
   engaged = {},
+  delegation = {},
   roadmapByTab = {},
   activeTabId,
   activeProjectDir = null,
@@ -104,6 +106,8 @@ export function ExposeOverlay({
   activity?: Record<string, boolean>;
   /** sessions ever given work, keyed by sessionId (D22) */
   engaged?: Record<string, boolean>;
+  /** harness-reported delegated work by sessionId (ENG-023) */
+  delegation?: Record<string, SessionDelegation>;
   /** tabId → linked roadmap item (ENG-017 S9 mirror): the exposé is an
    *  AGENT-FIRST view, so each tile says what its agent is executing */
   roadmapByTab?: Record<
@@ -408,10 +412,16 @@ export function ExposeOverlay({
     });
     // same three-state truth as the tab strip (D22): started = main-truth
     // engaged bit, or a goal subtitle for sessions predating the channel
+    // Sessions altitude answers "is this work moving?" (ENG-023), so a tile
+    // with delegated children reads as working rather than finished.
+    const tileDelegation = tile.sessionId
+      ? delegation[tile.sessionId]
+      : undefined;
     const glyphState = sessionGlyphState({
       working,
       agent: tile.harness !== 'shell',
       started: !!(tile.sessionId && engaged[tile.sessionId]) || !!subtitle,
+      delegatedBusy: sessionDelegationBusy(tileDelegation),
     });
     const roadmap = roadmapByTab[tile.tabId];
     const current = sessionCurrentStateCopy({
@@ -463,6 +473,7 @@ export function ExposeOverlay({
           harness={tile.harness}
           glyphState={glyphState}
           attention={attentionSignal}
+          delegation={tileDelegation}
           fault={fault}
           lifecycleLabel={tile.stateLabel}
           current={current}

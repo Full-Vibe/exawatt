@@ -9,6 +9,13 @@ import { expandTilde, resolveProject } from './project-resolve';
 import { ScrollbackStore } from './scrollback-store';
 import { randomUUID } from 'crypto';
 import { buildHarnessCommand } from './harness-command';
+import type { HarnessLaunchWiring } from './harness-command';
+import { harnessEventChannel } from '../harness-events/channel';
+import { HookSettingsStore } from '../harness-events/hook-settings-store';
+import {
+  claudeHookEvent,
+  claudeHookSettings,
+} from '../harness-events/claude-hooks';
 import {
   SessionHistoryStore,
   type SessionHistorySnapshot,
@@ -169,6 +176,7 @@ export class PtySessionManager extends EventEmitter {
   private scrollback = new ScrollbackStore();
   private history: SessionHistoryStore | null = null;
   private identities: SessionIdentityStore | null = null;
+  private hookSettings: HookSettingsStore | null = null;
   private nextId = 1;
   private acceptingCreates = true;
   private creating = 0;
@@ -181,10 +189,51 @@ export class PtySessionManager extends EventEmitter {
     this.identities = new SessionIdentityStore(
       path.join(path.dirname(root), 'session-identities.json')
     );
+    this.hookSettings = new HookSettingsStore(
+      path.join(path.dirname(root), 'harness-events')
+    );
     await Promise.all([
       this.history.initialize(),
       this.identities.initialize(),
+      this.hookSettings.initialize(),
     ]);
+  }
+
+  /**
+   * Subscribe one launch to the harness event channel (ENG-023).
+   *
+   * Every failure here is silent by design: an unbindable port, an unwritable
+   * settings file, or a source with no push mechanism all mean the Session
+   * launches normally and simply reports no delegation. A Session must never
+   * fail to start because Exawatt wanted to watch it.
+   */
+  private async subscribeToEventChannel(
+    id: string,
+    harness: PtyHarness
+  ): Promise<HarnessLaunchWiring> {
+    if (harness === 'shell') return {};
+    const descriptor = harnessDescriptor(harness);
+    if (!descriptor.delegation.observable || !descriptor.eventChannelInvocation)
+      return {};
+    if (!this.hookSettings) return {};
+    if (!(await harnessEventChannel.start())) return {};
+    const registration = harnessEventChannel.register(id, claudeHookEvent);
+    if (!registration) return {};
+    const settingsPath = await this.hookSettings.write(
+      id,
+      claudeHookSettings(registration.port, registration.token)
+    );
+    if (!settingsPath) {
+      harnessEventChannel.release(id);
+      return {};
+    }
+    return { eventChannelSettingsPath: settingsPath };
+  }
+
+  /** Drop a Session's channel subscription and its token file. */
+  private unsubscribeFromEventChannel(id: string): void {
+    harnessEventChannel.release(id);
+    void this.hookSettings?.remove(id);
   }
 
   pauseCreates(): void {
@@ -283,6 +332,9 @@ export class PtySessionManager extends EventEmitter {
     // login shell so PATH (homebrew, nvm, ...) resolves like the user's
     // terminal; when the CLI exits the session ends. A resume command always
     // names one exact provider conversation; recency is never identity.
+    // Subscribing before spawn is what makes the very first delegated child
+    // observable; a channel joined after launch would miss it.
+    const wiring = await this.subscribeToEventChannel(id, options.harness);
     const args =
       options.harness === 'shell'
         ? ['-l']
@@ -297,7 +349,8 @@ export class PtySessionManager extends EventEmitter {
               options.initialPrompt,
               options.permissionMode,
               options.model,
-              options.effort
+              options.effort,
+              wiring
             ),
           ];
 
@@ -383,6 +436,9 @@ export class PtySessionManager extends EventEmitter {
         this.scrollback.cursor(durableSessionId),
         durableSessionId
       );
+      // A dead process cannot report anything else, and its token is now
+      // worthless — retire both before anyone can reuse the id.
+      this.unsubscribeFromEventChannel(id);
       this.emit('exit', id, exitCode, durableSessionId);
     });
 
@@ -630,6 +686,7 @@ export class PtySessionManager extends EventEmitter {
       );
     }
     this.sessions.delete(id);
+    this.unsubscribeFromEventChannel(id);
     this.scrollback.delete(s.info.durableSessionId);
     await Promise.all([
       this.history?.delete(s.info.durableSessionId),

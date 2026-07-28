@@ -211,4 +211,109 @@ describe('buildHarnessCommand', () => {
       )
     ).toThrow('Invalid Agent permission mode');
   });
+
+  /** Harness event channel subscription (ENG-023 D1). */
+  describe('event channel wiring', () => {
+    const settings =
+      '/Users/x/Library/Application Support/Exawatt/e/pty-1.json';
+
+    it('subscribes a Claude launch without disturbing the Agent request', () => {
+      expect(
+        buildHarnessCommand(
+          'claude',
+          '11111111-1111-4111-8111-111111111111',
+          false,
+          undefined,
+          undefined,
+          'unrestricted',
+          undefined,
+          undefined,
+          { eventChannelSettingsPath: settings }
+        )
+      ).toBe(
+        `claude --dangerously-skip-permissions --settings '${settings}' --session-id 11111111-1111-4111-8111-111111111111`
+      );
+    });
+
+    it('subscribes an exact resume too', () => {
+      // A resumed Session delegates exactly like a fresh one, so it must not
+      // silently lose its subscription.
+      expect(
+        buildHarnessCommand(
+          'claude',
+          '11111111-1111-4111-8111-111111111111',
+          true,
+          undefined,
+          undefined,
+          'unrestricted',
+          undefined,
+          undefined,
+          { eventChannelSettingsPath: settings }
+        )
+      ).toContain(`--settings '${settings}' `);
+    });
+
+    it('quotes a path containing spaces or a quote', () => {
+      const nasty = "/tmp/a b/it's/pty-1.json";
+      const command = buildHarnessCommand(
+        'claude',
+        null,
+        false,
+        undefined,
+        undefined,
+        'unrestricted',
+        undefined,
+        undefined,
+        { eventChannelSettingsPath: nasty }
+      );
+      expect(command).toContain(`--settings '/tmp/a b/it'"'"'s/pty-1.json'`);
+    });
+
+    it('leaves Codex unsubscribed — it reports no delegation', () => {
+      const command = buildHarnessCommand(
+        'codex',
+        null,
+        false,
+        undefined,
+        undefined,
+        'unrestricted',
+        undefined,
+        undefined,
+        { eventChannelSettingsPath: settings }
+      );
+      expect(command).not.toContain('--settings');
+    });
+
+    it('launches unchanged when no channel is available', () => {
+      expect(buildHarnessCommand('claude', null, false, undefined)).toBe(
+        buildHarnessCommand(
+          'claude',
+          null,
+          false,
+          undefined,
+          undefined,
+          'unrestricted',
+          undefined,
+          undefined,
+          {}
+        )
+      );
+    });
+
+    it('rejects a relative settings path', () => {
+      expect(() =>
+        buildHarnessCommand(
+          'claude',
+          null,
+          false,
+          undefined,
+          undefined,
+          'unrestricted',
+          undefined,
+          undefined,
+          { eventChannelSettingsPath: 'relative/pty-1.json' }
+        )
+      ).toThrow('must be absolute');
+    });
+  });
 });

@@ -29,12 +29,15 @@ import {
 } from './session-jump';
 import {
   attentionNeedsOperator,
+  DelegationDots,
   SESSION_GLYPH_COPY,
   SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
+  sessionDelegationBusy,
   sessionGlyphState,
 } from './status-glyphs';
 import type { SessionAttentionSignal } from './status-glyphs';
+import type { SessionDelegation } from '@/types/electron';
 import type { Project } from './use-workspace-state';
 import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
 import { SessionGoalSummary } from './session-goal-summary';
@@ -302,6 +305,7 @@ export function TabStrip({
   attention,
   activity = {},
   engaged = {},
+  delegation = {},
   onTogglePinTab,
   onResumeTab,
   onNewAgent,
@@ -333,6 +337,8 @@ export function TabStrip({
   activity?: Record<string, boolean>;
   /** sessions ever given work, keyed by sessionId (D22) */
   engaged?: Record<string, boolean>;
+  /** harness-reported delegated work by sessionId (ENG-023) */
+  delegation?: Record<string, SessionDelegation>;
   /** context-menu verbs (D27) — all optional; items appear when wired */
   onTogglePinTab?: (tabId: string) => void;
   onResumeTab?: (tabId: string) => void;
@@ -780,10 +786,17 @@ export function TabStrip({
               // implies it (covers sessions predating the engaged channel)
               const started =
                 !!(t.sessionId && engaged[t.sessionId]) || !!summary;
+              // Harness-reported delegated work (ENG-023). A Session whose own
+              // turn ended while its children run is still working — the strip
+              // must not report a result the operator cannot read yet.
+              const tabDelegation = t.sessionId
+                ? delegation[t.sessionId]
+                : undefined;
               const glyphState = sessionGlyphState({
                 working,
                 agent: isAgent,
                 started,
+                delegatedBusy: sessionDelegationBusy(tabDelegation),
               });
               const display = sessionDisplayCopy({
                 harness: t.harness,
@@ -993,9 +1006,15 @@ export function TabStrip({
                       <SessionStatusGlyph
                         state={isDraft ? 'fresh' : glyphState}
                         attention={attentionSignal}
+                        delegation={tabDelegation}
                         fault={fault}
                       />
                     ) : null}
+                    {!dead && !isDraft && (
+                      <span style={{ color }}>
+                        <DelegationDots delegation={tabDelegation} />
+                      </span>
+                    )}
                     {t.id === pinnedTabId && (
                       <span
                         data-pinned

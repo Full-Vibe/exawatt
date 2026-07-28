@@ -107,6 +107,29 @@ export interface PtySessionInfo {
   /** Main-owned activity truth (D29), including the self-resize redraw grace.
    *  Optional only for compatibility with older renderer mocks. */
   working?: boolean;
+  /** Harness-reported delegated work (ENG-023). `null` or absent means the
+   *  source does not report delegation — read as unknown, never as zero. */
+  delegation?: SessionDelegation | null;
+}
+
+/** One live delegated child (ENG-023). */
+export interface DelegatedChild {
+  id: string;
+  agentType: string | null;
+  startedAt: number;
+}
+
+/**
+ * Harness-reported delegation for one Session (ENG-023).
+ *
+ * Two facts, deliberately kept apart: `ownTurn` answers "is this Session itself
+ * generating?" and `children` answers "is its team still working?". A parent
+ * can be `available` with children mid-flight — that is the common case, and
+ * collapsing it is what made a delegating tab read as finished.
+ */
+export interface SessionDelegation {
+  ownTurn: 'generating' | 'available';
+  children: DelegatedChild[];
 }
 
 export type WorktreeResult =
@@ -274,6 +297,10 @@ export interface ElectronPtyApi {
   ) => () => void;
   /** fires once per session, on the first work it is given (D22) */
   onEngaged: (handler: (payload: { id: string }) => void) => () => void;
+  /** harness-reported delegation changes (ENG-023); absent on older preloads */
+  onDelegation?: (
+    handler: (payload: { id: string; delegation: SessionDelegation }) => void
+  ) => () => void;
   onNotificationClick: (
     handler: (payload: { id: string }) => void
   ) => () => void;

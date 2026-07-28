@@ -4,11 +4,12 @@ import { HUD } from '@/components/hud';
 import { HarnessGlyph } from './harness-icons';
 import { SessionGoalSummary } from './session-goal-summary';
 import {
+  DelegationDots,
   SessionStatusGlyph,
   type SessionAttentionSignal,
   type SessionGlyphState,
 } from './status-glyphs';
-import type { PtyHarness } from '@/types/electron';
+import type { PtyHarness, SessionDelegation } from '@/types/electron';
 
 export interface SessionOverviewCardContentProps {
   title: string;
@@ -18,6 +19,8 @@ export interface SessionOverviewCardContentProps {
   harness: PtyHarness;
   glyphState: SessionGlyphState;
   attention?: SessionAttentionSignal;
+  /** harness-reported delegated work (ENG-023); absent when unreported */
+  delegation?: SessionDelegation | null;
   fault?: boolean;
   lifecycleLabel?: string | null;
   current: string;
@@ -39,6 +42,7 @@ export function SessionOverviewCardContent({
   harness,
   glyphState,
   attention,
+  delegation,
   fault = false,
   lifecycleLabel,
   current,
@@ -73,11 +77,17 @@ export function SessionOverviewCardContent({
             </span>
           )}
         </span>
-        <SessionStatusGlyph
-          state={glyphState}
-          attention={attention}
-          fault={fault}
-        />
+        <span className="inline-flex items-center gap-1.5">
+          <span style={{ color }}>
+            <DelegationDots delegation={delegation} />
+          </span>
+          <SessionStatusGlyph
+            state={glyphState}
+            attention={attention}
+            delegation={delegation}
+            fault={fault}
+          />
+        </span>
       </div>
 
       <div className="mt-2 min-h-12 min-w-0">

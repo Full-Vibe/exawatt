@@ -31,16 +31,16 @@ looking for it.
 
 Verified during the pass (Claude Code 2.1.206):
 
-| Property | Result |
-| --- | --- |
-| Hooks injected via `claude --settings <file>` fire | yes — `SessionStart`, `SubagentStart`, `SubagentStop` all delivered |
-| `SubagentStart` payload | `agent_id`, `agent_type`, parent `session_id`, `prompt_id`, `cwd`, `transcript_path` |
-| `SubagentStop` payload | the above plus **`agent_transcript_path`**, `last_assistant_message`, `permission_mode`, `background_tasks`, `session_crons` |
-| `PreToolUse` with matcher `Agent\|Task` | fires in the PARENT carrying `tool_input.description` — the operator-legible child label, at spawn |
-| `PostToolUse` inside a child | carries `agent_id` + `agent_type` — live per-child activity is available as push |
-| `type: "http"` hooks | POST the payload with custom headers to a loopback listener; no helper binary needed |
-| Injected settings vs the user's own project hooks | **merge additively** — a project `.claude/settings.local.json` hook and the injected hook both fired |
-| Dead listener (Exawatt closed or crashed) | **fails open** — the Session completed normally in 9.7 s |
+| Property                                           | Result                                                                                                                       |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Hooks injected via `claude --settings <file>` fire | yes — `SessionStart`, `SubagentStart`, `SubagentStop` all delivered                                                          |
+| `SubagentStart` payload                            | `agent_id`, `agent_type`, parent `session_id`, `prompt_id`, `cwd`, `transcript_path`                                         |
+| `SubagentStop` payload                             | the above plus **`agent_transcript_path`**, `last_assistant_message`, `permission_mode`, `background_tasks`, `session_crons` |
+| `PreToolUse` with matcher `Agent\|Task`            | fires in the PARENT carrying `tool_input.description` — the operator-legible child label, at spawn                           |
+| `PostToolUse` inside a child                       | carries `agent_id` + `agent_type` — live per-child activity is available as push                                             |
+| `type: "http"` hooks                               | POST the payload with custom headers to a loopback listener; no helper binary needed                                         |
+| Injected settings vs the user's own project hooks  | **merge additively** — a project `.claude/settings.local.json` hook and the injected hook both fired                         |
+| Dead listener (Exawatt closed or crashed)          | **fails open** — the Session completed normally in 9.7 s                                                                     |
 
 Two consequences:
 
@@ -63,12 +63,12 @@ Two consequences:
 Three mechanisms exist across the harnesses Exawatt targets. The contract
 describes which one a source supports; the UI never assumes.
 
-| Source | Delegation today | Observation mechanism |
-| --- | --- | --- |
-| Claude Code | yes | **push** — injected `--settings` hooks (verified) |
-| Codex | **none** — no Agent/Task tool; ENG-008 E0 measured 0 delegated records across 356 files | hooks exist and use the same JSON shape, but are **trust-gated**: Codex persists a `trusted_hash` per hook file in `config.toml` and needs `--dangerously-bypass-hook-trust` to skip. Exawatt must not silently inject. Future: `codex app-server` |
-| OpenClaw | unknown | **protocol** — gateway events (`packages/core/src/oc`), a third mechanism under the same contract |
-| Demo Scenario Source | simulated | same view model, clearly simulated provenance |
+| Source               | Delegation today                                                                        | Observation mechanism                                                                                                                                                                                                                              |
+| -------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code          | yes                                                                                     | **push** — injected `--settings` hooks (verified)                                                                                                                                                                                                  |
+| Codex                | **none** — no Agent/Task tool; ENG-008 E0 measured 0 delegated records across 356 files | hooks exist and use the same JSON shape, but are **trust-gated**: Codex persists a `trusted_hash` per hook file in `config.toml` and needs `--dangerously-bypass-hook-trust` to skip. Exawatt must not silently inject. Future: `codex app-server` |
+| OpenClaw             | unknown                                                                                 | **protocol** — gateway events (`packages/core/src/oc`), a third mechanism under the same contract                                                                                                                                                  |
+| Demo Scenario Source | simulated                                                                               | same view model, clearly simulated provenance                                                                                                                                                                                                      |
 
 A source therefore declares delegation as `observable: false` (Codex today),
 not as zero children. Absent capability reads as absent — confirmed by the
@@ -90,8 +90,8 @@ one `Active` light. Measured event ordering from a real delegating Session:
 ```
 
 For 74 seconds the parent was **idle and available** while its child worked.
-Operator framing: *"'Active but you can talk to me because my subordinates are
-busy' is different from 'Active and you can only enqueue a message.'"*
+Operator framing: _"'Active but you can talk to me because my subordinates are
+busy' is different from 'Active and you can only enqueue a message.'"_
 
 Both facts are independently push-observable and must stay independent, exactly
 as `reference/agent-state.md` requires ("Attention, Agent turn state, Session
@@ -102,19 +102,19 @@ when a view composes them into one row"):
   after `Stop`.
 - **Delegated work** — outstanding `SubagentStart` minus `SubagentStop`.
 
-Resolution, per the operator's explicit choice of *behavior only, no new light*:
+Resolution, per the operator's explicit choice of _behavior only, no new light_:
 
 - The **five-light protocol is unchanged**. No new state is added to the reviewed
   Off / Active / Result / Needs You / Fault vocabulary. Existing states receive
   more correct inputs; the vocabulary does not grow.
-- **Terminal** answers *"can I talk to it?"*. The light continues to describe the
+- **Terminal** answers _"can I talk to it?"_. The light continues to describe the
   Session's own turn. The composer simply behaves correctly: input while
   `available` sends immediately even with children running; input while
   `generating` enqueues, as today. The affordance lives in the input, not in a
   new glyph.
-- **Sessions and Spatial** answer *"is this work moving?"*. A Session with running
-  children never reads as finished. Operator framing: *"if the team is working
-  they're working."*
+- **Sessions and Spatial** answer _"is this work moving?"_. A Session with running
+  children never reads as finished. Operator framing: _"if the team is working
+  they're working."_
 - Delegation renders as a **separate additive channel** — child **dots, not
   counts**, per the established UI preference — in a constant footprint, so a
   child appearing or finishing never shifts a row (the D24 rule).
@@ -124,9 +124,9 @@ Resolution, per the operator's explicit choice of *behavior only, no new light*:
 
 ### D-C Altitude sequence
 
-The operator ranked the jobs: *"1 primarily. But all broadly. I don't care about
+The operator ranked the jobs: _"1 primarily. But all broadly. I don't care about
 4 so much (but I suppose there should be a way to zoom into a child agent as
-well in the future)."*
+well in the future)."_
 
 - **D1 — "Is that quiet tab done, or waiting on children?"** The first slice.
   Event channel, capability contract, the two-fact state model, the attention fix,
@@ -145,9 +145,9 @@ well in the future)."*
 Delegated labels and results are message content, which the ENG-008 consumption
 parse deliberately never reads. Measured on the operator's own corpus:
 
-| | Example | Size |
-| --- | --- | --- |
-| label | `Find project open/switch in Exawatt` | 29–36 characters |
+|        | Example                                          | Size                    |
+| ------ | ------------------------------------------------ | ----------------------- |
+| label  | `Find project open/switch in Exawatt`            | 29–36 characters        |
 | result | a full markdown report naming files and findings | 7,148–10,401 characters |
 
 Decision: **labels everywhere, result readable in Terminal only, nothing sent
@@ -177,6 +177,92 @@ deliberate next step past this line, taken knowingly rather than by drift.
 - **Unverified.** Whether `--settings` applies on `--resume`, and the behavior of
   `background_tasks` / `session_crons` (reported by `SubagentStop`, out of scope
   here but the same channel would carry them).
+
+## D1 implementation — landed 2026-07-27
+
+### What runs
+
+`electron/main/harness-events/` is the new seam, all of it pure Node and unit
+tested without Electron:
+
+| Module                   | Role                                                                                                                                                                                                                        |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `channel.ts`             | one loopback listener for the app; one opaque token per launch. The token — not a session id, path, or provider identity — maps an event back to a Session, which is why nothing here knows where a harness keeps its state |
+| `claude-hooks.ts`        | builds the injected settings document and normalizes payloads into the shared vocabulary                                                                                                                                    |
+| `delegation-state.ts`    | the two-fact reducer; returns the same reference on a no-op so a broadcast can be skipped                                                                                                                                   |
+| `delegation-monitor.ts`  | per-Session truth, published as `pty:delegation`                                                                                                                                                                            |
+| `hook-settings-store.ts` | per-launch settings files, `0600`, in Exawatt state, swept on startup                                                                                                                                                       |
+
+Integration is deliberately thin. `harness-registry.ts` gained a `delegation`
+capability and an `eventChannelInvocation`; `buildHarnessCommand` gained a
+`wiring` options bag rather than a ninth positional; `session-manager`
+subscribes before spawn and releases on exit and kill; `pty-ipc` broadcasts
+changes and rides delegation along on `pty:list` so a reload adopts live
+children instead of waiting for the next one to start or finish.
+
+### The correctness fix
+
+Two places, because suppressing the attention signal alone was not enough:
+
+- `attention-monitor` withholds `turn-end` while children are outstanding, and
+  gains `noteHarnessTurnStart` so a REPORTED turn boundary reopens the settled
+  latch. This matters most for the turn a returning child opens — no keystroke
+  precedes it, so nothing else would have reopened it.
+- `sessionGlyphState` treats delegated work as working. Without this the light
+  still derived `done` from a quiet parent, and every surface reads this one
+  function, so Terminal, Sessions, and the ⌘K switcher were corrected together
+  rather than one at a time.
+
+### Correction to the design pass
+
+The pass listed "typing into a parent whose own turn has ended sends
+immediately" as an exit criterion. **Exawatt never gated input.**
+`terminal-pane` wires `term.onData` straight to `pty.write`, so queueing is
+entirely the harness TUI's own behavior and there was nothing to build. The
+availability fact is real and observable — it simply needed no code, which is
+also why the operator's "behavior only, no new light" choice cost nothing.
+
+### Verification
+
+`pnpm eval:electron:delegation` (12 checks) drives the whole pipeline in the
+real app. Its harness is a fixture, but not a mock of Exawatt: it parses the
+ACTUAL injected `--settings` document and posts the ACTUAL hook payload shapes
+captured from Claude Code 2.1.206, so everything from settings file to rendered
+dots is production code. It asserts, among others, that the settings file lands
+in Exawatt state and not the user's harness config, that a quiet parent with a
+live child still reads as working with no turn-end raised, that a `Stop`
+carrying an `agent_id` does not move the parent, that children arriving never
+resize the row, that a child's report body never reaches a surface, and that a
+source with no delegation capability renders nothing at all.
+
+Real-harness proof, same day: a genuine Claude Code session spawning a genuine
+Explore subagent reported
+`{ownTurn: "generating", children: [{agentType: "Explore", …}]}` through
+Exawatt's own IPC, held `working` with `attention: null` for the whole life of
+the child, and cleared its dots when the child finished.
+
+Regression: full suite (941), lint, both typechecks, plus the Project/Agent
+launcher and navigation-spine evals, since the launch command and three status
+surfaces changed.
+
+### Visual decisions
+
+Dots are 3 px with a 3 px gap — gap wider than the dot so a cluster reads as
+separate workers rather than as an ellipsis after the title — vertically
+centered against the status light, capped at five with the exact number kept in
+the tooltip and accessible name. The cluster is a constant width for its cap, so
+children arriving and finishing never resize the row; it appears with the first
+child and leaves with the last, the same conditional footprint the harness and
+pinned marks already use. Motion is one slow breath, staggered per dot, off
+under reduced motion.
+
+### Deliberately not built
+
+`PostToolUse` is available and would give live per-child activity. It is not
+subscribed: `reference/agent-state.md` promotes meaningful Events over per-tool
+streams, and a child-by-child ticker at Sessions altitude would be a regression.
+Child descriptions (`PreToolUse` on `Agent`, or the sibling `meta.json` reachable
+from the transcript path the hook already hands over) are D2's input, not D1's.
 
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 

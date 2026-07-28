@@ -280,3 +280,76 @@ describe('extractRoadmapItemIds', () => {
     expect(rows[0].searchValue).toContain('APP-018');
   });
 });
+
+/**
+ * Delegation in the ⌘K switcher (ENG-023 D1). The switcher is how the operator
+ * picks what to look at next, so offering a delegating Session as a ready
+ * result sends them to a screen with nothing new on it.
+ */
+describe('sessionRowStatus with delegated work', () => {
+  const NOW = 100_000;
+  const delegating = {
+    ownTurn: 'available' as const,
+    children: [{ id: 'a1', agentType: 'Explore', startedAt: 1 }],
+  };
+
+  it('reads as working rather than done while children run', () => {
+    expect(
+      sessionRowStatus(
+        session({ working: false, engaged: true, attention: null }),
+        NOW
+      )
+    ).toBe('done');
+    expect(
+      sessionRowStatus(
+        session({
+          working: false,
+          engaged: true,
+          attention: null,
+          delegation: delegating,
+        }),
+        NOW
+      )
+    ).toBe('working');
+  });
+
+  it('overrides a turn-end result raised before the children finished', () => {
+    expect(
+      sessionRowStatus(
+        session({ attention: { kind: 'turn-end', since: 1 }, working: false }),
+        NOW
+      )
+    ).toBe('done');
+    expect(
+      sessionRowStatus(
+        session({
+          attention: { kind: 'turn-end', since: 1 },
+          working: false,
+          delegation: delegating,
+        }),
+        NOW
+      )
+    ).toBe('working');
+  });
+
+  it('never hides a real operator gate behind delegation', () => {
+    expect(
+      sessionRowStatus(
+        session({
+          attention: { kind: 'bell', since: 1 },
+          delegation: delegating,
+        }),
+        NOW
+      )
+    ).toBe('needs-you');
+  });
+
+  it('leaves an exited Session exited', () => {
+    expect(
+      sessionRowStatus(
+        session({ exited: true, exitCode: 1, delegation: delegating }),
+        NOW
+      )
+    ).toBe('fault');
+  });
+});

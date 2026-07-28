@@ -7,6 +7,9 @@ import { listAgentModels } from './pty/agent-models';
 import { contextSummarizer } from './pty/context-summarizer';
 import { createDiagnosticsLog } from './diagnostics-log';
 import { attentionMonitor } from './pty/attention-monitor';
+import { harnessEventChannel } from './harness-events/channel';
+import { delegationMonitor } from './harness-events/delegation-monitor';
+import type { HarnessEvent } from './harness-events/delegation-state';
 import {
   ClosedSessionLedger,
   type ClosedSessionEntry,
@@ -116,6 +119,21 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   );
   contextSummarizer.on('recap', (recap: unknown) => {
     broadcast('pty:recap', recap);
+  });
+
+  // delegation (ENG-023 D1): sources that report their own delegated work
+  // stream it here, so "the team is working" stops depending on byte
+  // quiescence. A source without the capability simply never publishes.
+  delegationMonitor.attach(harnessEventChannel, ptySessions);
+  attentionMonitor.setDelegationSource(id => delegationMonitor.isBusy(id));
+  harnessEventChannel.on('event', (id: string, event: HarnessEvent) => {
+    // A reported turn boundary is stronger evidence than inferred quiescence.
+    // It matters most for the turn a CHILD opens by returning its result:
+    // no keystroke precedes it, so nothing else would reopen the turn.
+    if (event.kind === 'turn-start') attentionMonitor.noteHarnessTurnStart(id);
+  });
+  delegationMonitor.on('delegation', (id: string, delegation: unknown) => {
+    broadcast('pty:delegation', { id, delegation });
   });
 
   // attention (ENG-015 S1): "needs you" state streams to the UI, and the
@@ -382,6 +400,9 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       attention: attentionMonitor.get(s.id),
       engaged: attentionMonitor.isEngaged(s.id),
       working: attentionMonitor.isWorking(s.id),
+      // Ride-along so a reload or late attach sees live children immediately
+      // instead of waiting for the next delegation change (ENG-023).
+      delegation: delegationMonitor.get(s.id),
     }))
   );
   handleTrusted('pty:buffer', (_event, id: string) => ptySessions.buffer(id));

@@ -272,6 +272,7 @@ export function WorkspaceClient() {
     attention,
     activity,
     engaged,
+    delegation,
     reentryRecap,
     error,
     resumeBatchProgress,
@@ -1016,6 +1017,7 @@ export function WorkspaceClient() {
               attention={mergedAttention}
               activity={activity}
               engaged={engaged}
+              delegation={delegation}
               onTogglePinTab={togglePinTab}
               onResumeTab={id => void resumeTab(id)}
               onNewAgent={dir => createDraftTab(dir)}
@@ -1442,6 +1444,7 @@ export function WorkspaceClient() {
           attention={mergedAttention}
           activity={activity}
           engaged={engaged}
+          delegation={delegation}
           activeTabId={activeTab?.id ?? null}
           activeProjectDir={activeProject?.dir ?? null}
           onPick={(dir, tabId) => {

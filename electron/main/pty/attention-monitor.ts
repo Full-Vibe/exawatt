@@ -98,6 +98,9 @@ export class AttentionMonitor extends EventEmitter {
   /** OS focus of the app window: an active tab behind another app is NOT
    *  being looked at — start false; the startup focus event corrects it */
   private windowFocused = false;
+  /** Does this Session have outstanding delegated work? (ENG-023) Injected so
+   *  the monitor stays pure Node and testable without the event channel. */
+  private delegatedBusy: (id: string) => boolean = () => false;
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly opts: Required<Omit<AttentionMonitorOptions, 'now'>>;
   private readonly now: () => number;
@@ -175,6 +178,32 @@ export class AttentionMonitor extends EventEmitter {
       this.lastDataAt.set(id, this.now());
       this.setWorking(id, true);
     }
+  }
+
+  /** Teach the monitor which Sessions still have delegated children running
+   *  (ENG-023). Byte quiescence cannot see them. */
+  setDelegationSource(delegatedBusy: (id: string) => boolean): void {
+    this.delegatedBusy = delegatedBusy;
+  }
+
+  /**
+   * The harness REPORTED that a new turn began (ENG-023).
+   *
+   * The `settled` latch exists because inferred signals are unreliable — an
+   * idle TUI repaint must not reopen a finished turn. A turn boundary the
+   * source itself declares is exactly the reliable evidence that latch was
+   * waiting for, so it opens the next turn just as operator engagement does.
+   * This is what keeps a parent from reading "quiet" while it works through a
+   * child's returned result, which is a turn no keystroke ever opened.
+   */
+  noteHarnessTurnStart(id: string): void {
+    if (this.disabled) return;
+    const session = this.manager?.list().find(item => item.id === id);
+    if (!session || session.exited || session.harness === 'shell') return;
+    this.settled.delete(id);
+    this.markEngaged(id);
+    this.lastDataAt.set(id, this.now());
+    this.setWorking(id, true);
   }
 
   private markEngaged(id: string): void {
@@ -265,6 +294,10 @@ export class AttentionMonitor extends EventEmitter {
       // revived/new tabs printing their banner then waiting is not news
       if (now - s.startedAt < this.opts.spawnGraceMs) continue;
       if (this.isWatched(s.id)) continue;
+      // The Session's own turn ended, but its team has not: a parent waiting
+      // on delegated children has produced no result for the operator to
+      // read. Quiescence cannot tell those apart — the harness can (ENG-023).
+      if (this.delegatedBusy(s.id)) continue;
       this.raise(s.id, 'turn-end');
     }
     // sessions killed without an exit event (tab closed) leave no residue
