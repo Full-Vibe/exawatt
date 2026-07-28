@@ -343,6 +343,24 @@ describe('workspace persistence v5 (ENG-018)', () => {
 });
 
 describe('workspace persistence v6 title ownership', () => {
+  it('preserves the manual inactive-Project disclosure preference', () => {
+    const parsed = parsePersisted({
+      v: 6,
+      lastUsedDir: '/project',
+      activeDir: '/project',
+      projects: [
+        {
+          dir: '/project',
+          name: 'Project',
+          activeTabId: null,
+          ribbonExpanded: true,
+          tabs: [],
+        },
+      ],
+    });
+    expect(parsed?.projects[0].ribbonExpanded).toBe(true);
+  });
+
   it('preserves an explicit rename even when it matches the source label', () => {
     const parsed = parsePersisted({
       v: 6,

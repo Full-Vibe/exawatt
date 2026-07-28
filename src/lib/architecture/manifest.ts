@@ -512,7 +512,7 @@ export const architectureManifest = {
           id: 'terminal-workspace',
           label: 'Terminal + Session Overview',
           summary:
-            'Inert Project selection, intent-safe Agent drafts, semantically merged attention, contextual command availability, keyboard-complete Project/Session actions, grouped exposé, and direct live-or-stopped Session control.',
+            'Elastic two-row Project/Initiative ribbon, inert Project selection, intent-safe Agent drafts, semantically merged parent/delegated attention, keyboard-complete actions, grouped exposé, and direct live-or-stopped Session control.',
           layer: 'ui',
           status: 'implemented',
           x: 205,
@@ -780,6 +780,7 @@ export const architectureManifest = {
     'DOM and Spatial Operations Board regimes share typed view models and command contracts.',
     'Terminal Focus, Session Overview, and Spatial Command form one navigation continuum while keeping separate renderer boundaries.',
     'Open Project identity spans Terminal, Sessions, and Spatial even before an Agent or Session exists; Agents join catalog-backed groups by stable source identity.',
+    'Terminal projects current Session tabs as Initiative-shaped work: selected Projects expand, manual inactive disclosure persists, dormant empties stable-partition to the tail, and subagent work aggregates instead of multiplying top-level tabs.',
     'Open Session identity spans Terminal, Sessions, and Spatial; PTYs add live runtime state but do not define whether a Session-backed Agent exists.',
     'Logical Sessions survive local process death through explicit, deterministic rehydration; local processes do not outlive Exawatt.',
     'Agent turn state is semantic main-process truth: finished is sticky across passive PTY redraws and only explicit operator engagement opens the next turn; shell activity remains output-driven.',

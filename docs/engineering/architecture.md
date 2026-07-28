@@ -262,11 +262,15 @@ Built:
   model-specific reasoning efforts, keeps the resolved pair visible beside the
   source, and passes per-Agent overrides as launch data without rewriting
   harness configuration. Environment-owned effort constraints remain visible
-  and non-editable because they outrank session flags. Empty-Project grace
-  handling distinguishes operator intent from background hydration: engagement
-  retains the Project, while the first authored change promotes task, source,
-  model, effort, worktree/branch, and roadmap link into one persisted draft-tab
-  record
+  and non-editable because they outrank session flags. The Terminal chrome uses
+  a measured elastic-ribbon boundary: compact Project headers, selected and
+  manually persisted disclosure, Initiative-shaped Session tabs, two-row
+  target-bounds layout, priority-preserving overflow, pointer-close stability,
+  and reduced-motion-safe transitions. Empty Projects remain open objects and
+  stable-partition into a dormant tail after a short inactive dwell; only an
+  explicit close removes the open group. The first authored change promotes
+  task, source, model, effort, worktree/branch, and roadmap link into one
+  persisted draft-tab record
 - a source-agnostic Project catalog derived from durable workspace state. The
   Electron workspace save broadcasts an authoritative change event through the
   preload boundary; FleetProvider refreshes the catalog and local Session

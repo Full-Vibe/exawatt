@@ -256,6 +256,14 @@ child and leaves with the last, the same conditional footprint the harness and
 pinned marks already use. Motion is one slow breath, staggered per dot, off
 under reduced motion.
 
+The elastic Project / Initiative ribbon (ENG-016 D41, decision `0022`) consumes
+this truth without changing its altitude: child dots stay on the parent
+Initiative-shaped tab, and delegated activity participates in the compact
+Project-level working signal when that Project is collapsed. A child never
+creates a top-level ribbon tab merely because the harness exposed it. D3 may
+make child topology directly navigable in Sessions and Spatial; that future
+zoom does not invalidate the Terminal aggregation boundary.
+
 ### Post-landing review — 2026-07-27
 
 A read-through of the landed diff found three defects that the D1 tests and eval

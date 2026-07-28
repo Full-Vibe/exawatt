@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project, WorkspaceTab } from './use-workspace-state';
 import {
-  EMPTY_PROJECT_LINGER_MS,
+  EMPTY_PROJECT_DORMANCY_MS,
   PROJECT_EXIT_MS,
   useProjectCloseLifecycle,
 } from './use-project-close-lifecycle';
@@ -25,134 +25,120 @@ function tab(): WorkspaceTab {
   };
 }
 
-function project(tabs: WorkspaceTab[]): Project {
+function project(tabs: WorkspaceTab[], dir = '/repo'): Project {
   return {
-    dir: '/repo',
-    name: 'repo',
+    dir,
+    name: dir.slice(1),
     color: '#19E6FF',
     tabs,
     activeTabId: tabs[0]?.id ?? null,
   };
 }
 
-describe('empty Project close lifecycle', () => {
+function lifecycle(
+  projects: Project[],
+  activeDir: string | null,
+  onCloseProject = vi.fn(() => true)
+) {
+  return renderHook(
+    props =>
+      useProjectCloseLifecycle({
+        ...props,
+        ready: true,
+        onCloseProject,
+      }),
+    { initialProps: { projects, activeDir } }
+  );
+}
+
+describe('empty Project ribbon lifecycle', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
   });
 
-  it('keeps the empty state briefly, retracts it, then closes the Project', () => {
+  it('keeps an empty Project open, then moves it to the dormant tail', () => {
     const onCloseProject = vi.fn(() => true);
-    const { result, rerender } = renderHook(
-      ({ projects }) =>
-        useProjectCloseLifecycle({
-          projects,
-          ready: true,
-          onCloseProject,
-        }),
-      { initialProps: { projects: [project([tab()])] } }
-    );
-
-    rerender({ projects: [project([])] });
-    act(() => vi.advanceTimersByTime(EMPTY_PROJECT_LINGER_MS - 1));
-    expect(result.current.exitingProjectDirs.has('/repo')).toBe(false);
-    expect(onCloseProject).not.toHaveBeenCalled();
-
+    const view = lifecycle([project([tab()])], null, onCloseProject);
+    view.rerender({ projects: [project([])], activeDir: null });
+    act(() => vi.advanceTimersByTime(EMPTY_PROJECT_DORMANCY_MS - 1));
+    expect(view.result.current.dormantProjectDirs.has('/repo')).toBe(false);
     act(() => vi.advanceTimersByTime(1));
-    expect(result.current.exitingProjectDirs.has('/repo')).toBe(true);
-    expect(onCloseProject).not.toHaveBeenCalled();
-
-    act(() => vi.advanceTimersByTime(PROJECT_EXIT_MS));
-    expect(onCloseProject).toHaveBeenCalledWith('/repo');
-  });
-
-  it('does not auto-close a Project that was opened empty', () => {
-    const onCloseProject = vi.fn(() => true);
-    renderHook(() =>
-      useProjectCloseLifecycle({
-        projects: [project([])],
-        ready: true,
-        onCloseProject,
-      })
-    );
-    act(() => vi.advanceTimersByTime(EMPTY_PROJECT_LINGER_MS * 2));
+    expect(view.result.current.dormantProjectDirs.has('/repo')).toBe(true);
     expect(onCloseProject).not.toHaveBeenCalled();
   });
 
-  it('cancels the pending close when another Agent opens', () => {
-    const onCloseProject = vi.fn(() => true);
-    const { rerender } = renderHook(
-      ({ projects }) =>
-        useProjectCloseLifecycle({
-          projects,
-          ready: true,
-          onCloseProject,
-        }),
-      { initialProps: { projects: [project([tab()])] } }
-    );
-    rerender({ projects: [project([])] });
-    act(() => vi.advanceTimersByTime(EMPTY_PROJECT_LINGER_MS - 1));
-    rerender({ projects: [project([tab()])] });
-    act(() => vi.advanceTimersByTime(PROJECT_EXIT_MS + 1));
-    expect(onCloseProject).not.toHaveBeenCalled();
+  it('never tails the selected empty Project', () => {
+    const view = lifecycle([project([])], '/repo');
+    act(() => vi.advanceTimersByTime(EMPTY_PROJECT_DORMANCY_MS * 2));
+    expect(view.result.current.dormantProjectDirs.has('/repo')).toBe(false);
   });
 
-  it('keeps an empty Project when the operator engages with its composer', () => {
-    const onCloseProject = vi.fn(() => true);
-    const { result, rerender } = renderHook(
-      ({ projects }) =>
-        useProjectCloseLifecycle({
-          projects,
-          ready: true,
-          onCloseProject,
-        }),
-      { initialProps: { projects: [project([tab()])] } }
-    );
+  it('starts the full dormancy dwell only after an empty Project becomes inactive', () => {
+    const view = lifecycle([project([])], '/repo');
+    act(() => vi.advanceTimersByTime(EMPTY_PROJECT_DORMANCY_MS * 2));
+    view.rerender({ projects: [project([])], activeDir: null });
+    act(() => vi.advanceTimersByTime(EMPTY_PROJECT_DORMANCY_MS - 1));
+    expect(view.result.current.dormantProjectDirs.has('/repo')).toBe(false);
+    act(() => vi.advanceTimersByTime(1));
+    expect(view.result.current.dormantProjectDirs.has('/repo')).toBe(true);
+  });
 
-    rerender({ projects: [project([])] });
-    act(() => vi.advanceTimersByTime(EMPTY_PROJECT_LINGER_MS - 1));
-    act(() => expect(result.current.retainProject('/repo')).toBe(true));
+  it('returns a dormant Project to its manual slot when selected', () => {
+    const view = lifecycle([project([])], null);
+    act(() => vi.advanceTimersByTime(EMPTY_PROJECT_DORMANCY_MS));
+    expect(view.result.current.dormantProjectDirs.has('/repo')).toBe(true);
+    view.rerender({ projects: [project([])], activeDir: '/repo' });
+    expect(view.result.current.dormantProjectDirs.has('/repo')).toBe(false);
+  });
+
+  it('cancels dormancy when another Agent opens', () => {
+    const view = lifecycle([project([])], null);
+    act(() => vi.advanceTimersByTime(EMPTY_PROJECT_DORMANCY_MS - 1));
+    view.rerender({ projects: [project([tab()])], activeDir: null });
+    act(() => vi.advanceTimersByTime(2));
+    expect(view.result.current.dormantProjectDirs.has('/repo')).toBe(false);
+  });
+
+  it('keeps stable relative empty order in the lifecycle set', () => {
+    const view = lifecycle([project([], '/a'), project([], '/b')], null);
+    act(() => vi.advanceTimersByTime(EMPTY_PROJECT_DORMANCY_MS));
+    expect([...view.result.current.dormantProjectDirs]).toEqual(['/a', '/b']);
+  });
+
+  it('manual close skips dormancy but keeps the exit transition', () => {
+    const onCloseProject = vi.fn(() => true);
+    const view = lifecycle([project([])], '/repo', onCloseProject);
     act(() =>
-      vi.advanceTimersByTime(EMPTY_PROJECT_LINGER_MS + PROJECT_EXIT_MS)
+      expect(view.result.current.requestProjectExit('/repo')).toBe(true)
     );
-
-    expect(result.current.exitingProjectDirs.has('/repo')).toBe(false);
-    expect(onCloseProject).not.toHaveBeenCalled();
-  });
-
-  it('manual close skips the grace period but keeps the exit transition', () => {
-    const onCloseProject = vi.fn(() => true);
-    const { result } = renderHook(() =>
-      useProjectCloseLifecycle({
-        projects: [project([])],
-        ready: true,
-        onCloseProject,
-      })
-    );
-    act(() => expect(result.current.requestProjectExit('/repo')).toBe(true));
-    expect(result.current.exitingProjectDirs.has('/repo')).toBe(true);
+    expect(view.result.current.exitingProjectDirs.has('/repo')).toBe(true);
     expect(onCloseProject).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(PROJECT_EXIT_MS));
     expect(onCloseProject).toHaveBeenCalledWith('/repo');
   });
 
-  it('waits for a manually closed Project to empty, then exits immediately', () => {
+  it('waits for confirmed Agent closes before exiting a non-empty Project', () => {
     const onCloseProject = vi.fn(() => true);
-    const { result, rerender } = renderHook(
-      ({ projects }) =>
-        useProjectCloseLifecycle({
-          projects,
-          ready: true,
-          onCloseProject,
-        }),
-      { initialProps: { projects: [project([tab()])] } }
+    const view = lifecycle([project([tab()])], '/repo', onCloseProject);
+    act(() =>
+      expect(view.result.current.requestProjectExit('/repo')).toBe(true)
     );
-    act(() => expect(result.current.requestProjectExit('/repo')).toBe(true));
-    expect(result.current.exitingProjectDirs.has('/repo')).toBe(false);
-    rerender({ projects: [project([])] });
-    expect(result.current.exitingProjectDirs.has('/repo')).toBe(true);
+    expect(view.result.current.exitingProjectDirs.has('/repo')).toBe(false);
+    view.rerender({ projects: [project([])], activeDir: '/repo' });
+    expect(view.result.current.exitingProjectDirs.has('/repo')).toBe(true);
     act(() => vi.advanceTimersByTime(PROJECT_EXIT_MS));
     expect(onCloseProject).toHaveBeenCalledWith('/repo');
+  });
+
+  it('operator engagement restarts the dormancy clock', () => {
+    const view = lifecycle([project([])], null);
+    act(() => vi.advanceTimersByTime(EMPTY_PROJECT_DORMANCY_MS - 1));
+    act(() => expect(view.result.current.retainProject('/repo')).toBe(true));
+    act(() => vi.advanceTimersByTime(EMPTY_PROJECT_DORMANCY_MS - 1));
+    expect(view.result.current.dormantProjectDirs.has('/repo')).toBe(false);
+    act(() => vi.advanceTimersByTime(1));
+    expect(view.result.current.dormantProjectDirs.has('/repo')).toBe(true);
   });
 });

@@ -1,32 +1,68 @@
 // No 'use client' directive: only imported by the client workspace surface.
 
 /**
- * Grouped tab strip (ENG-002 W0.2–W0.4): projects are visual clusters —
- * a numbered, project-colored group chip (⌘⌥1..9 target) followed by its
- * tabs, all sharing the project color. W0.4: double-click a group or tab
- * name to rename it (persists with the layout), and agent tabs carry an
- * auto-summarized micro-context subtitle ("what was I working on here?").
- * One of two first-class regimes (the other: sessions as entities on the
- * ENG-004 world map) — parallel skins over the same session system.
+ * Elastic Project / Initiative ribbon.
+ *
+ * Projects keep manual order; selected and explicitly disclosed Projects
+ * expose their Initiative-shaped Session tabs as independent layout atoms.
+ * The pure layout module owns admission and target bounds, the presence module
+ * owns interruption-safe entry/exit, and this component owns interaction.
  */
+
 import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from 'react';
 import { HUD } from '@/components/hud';
-import { PROJECT_PALETTE } from './project-colors';
+import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
+import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
+import type { SessionDelegation } from '@/types/electron';
 import { HarnessGlyph } from './harness-icons';
-import { tabIsPinnable } from './split-layout';
-import { useOrdinalHints } from './use-ordinal-hints';
-import { tabIsLive } from './use-workspace-state';
 import {
-  RENAME_ACTIVE_EVENT,
+  layoutProjectRibbon,
+  orderProjectsForRibbon,
+  RIBBON_ROW_HEIGHT,
+  type RibbonTarget,
+} from './project-ribbon-layout';
+import {
+  ColorSwatches,
+  EditableChrome,
+  isContextMenuKey,
+  keyboardMenuPoint,
+  type MenuCloseFocus,
+  OrdinalKeycap,
+  RenameInput,
+  StripContextMenu,
+  type StripMenuItem,
+} from './project-ribbon-menu';
+import {
+  estimateRibbonTokenWidth,
+  POINTER_CLOSE_STABILIZE_MS,
+  type PresentRibbonToken,
+  RIBBON_EXIT_MS,
+  RIBBON_MOTION_MS,
+  ribbonTargetTransform,
+  type RibbonToken,
+  useRibbonPresence,
+} from './project-ribbon-motion';
+import {
+  deriveProjectRibbonSignal,
+  PROJECT_RIBBON_SIGNAL_COPY,
+  ProjectRibbonSignalMark,
+} from './project-ribbon-signal';
+import { sessionDisplayCopy } from './session-display-copy';
+import {
   EDIT_ACTIVE_PROJECT_EVENT,
   FOCUS_ACTIVE_TERMINAL_EVENT,
+  OPEN_OVERVIEW_EVENT,
+  RENAME_ACTIVE_EVENT,
 } from './session-jump';
+import { tabIsPinnable } from './split-layout';
 import {
   attentionNeedsOperator,
   DelegationDots,
@@ -35,33 +71,10 @@ import {
   SessionStatusGlyph,
   sessionDelegationBusy,
   sessionGlyphState,
+  type SessionAttentionSignal,
 } from './status-glyphs';
-import type { SessionAttentionSignal } from './status-glyphs';
-import type { SessionDelegation } from '@/types/electron';
-import type { Project } from './use-workspace-state';
-import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
-import { SessionGoalSummary } from './session-goal-summary';
-import { sessionDisplayCopy } from './session-display-copy';
-
-/** Shortcut-ordinal keycap (D21): revealed only while the chord's modifiers
- *  are held, styled as a key so it reads as "press this", never as data.
- *  OVERLAYS its anchor (D24): revealing a hint must never shift layout —
- *  the keycap materializes over the chip's left edge instead of inserting
- *  into the row. */
-function OrdinalKeycap({ value, color }: { value: number; color: string }) {
-  return (
-    <span
-      className="pointer-events-none absolute left-1 top-1/2 z-10 inline-flex h-3.5 min-w-3.5 -translate-y-1/2 items-center justify-center rounded-sm border px-0.5 font-mono text-chrome-micro leading-none motion-safe:animate-in motion-safe:fade-in motion-safe:duration-100"
-      style={{
-        color,
-        borderColor: `${color}55`,
-        background: 'rgba(8,13,22,0.92)',
-      }}
-    >
-      {value}
-    </span>
-  );
-}
+import { useOrdinalHints } from './use-ordinal-hints';
+import { tabIsLive, type Project } from './use-workspace-state';
 
 interface Editing {
   kind: 'group' | 'tab';
@@ -69,233 +82,10 @@ interface Editing {
   value: string;
 }
 
-function RenameInput({
-  value,
-  color,
-  onChange,
-  onCommit,
-  onCancel,
-}: {
-  value: string;
-  color: string;
-  onChange: (v: string) => void;
-  onCommit: () => void;
-  onCancel: () => void;
-}) {
-  // Escape unmounts the focused input, and the browser fires blur on
-  // removal — without this flag that blur would COMMIT the abandoned edit
-  const settled = useRef(false);
-  return (
-    <input
-      value={value}
-      autoFocus
-      aria-label="Rename"
-      // rename semantics: the old name arrives selected, so typing replaces
-      // it — without this, ⌘E + typing APPENDS ("Shellbeta scratch")
-      onFocus={e => e.currentTarget.select()}
-      onChange={e => onChange(e.target.value)}
-      onBlur={() => {
-        if (!settled.current) onCommit();
-      }}
-      onKeyDown={e => {
-        e.stopPropagation();
-        if (e.key === 'Enter') {
-          settled.current = true;
-          onCommit();
-        }
-        if (e.key === 'Escape') {
-          settled.current = true;
-          onCancel();
-        }
-      }}
-      onClick={e => e.stopPropagation()}
-      className="w-28 bg-transparent font-mono text-chrome-title font-medium outline-none"
-      style={{ color, borderBottom: `1px solid ${color}99` }}
-    />
-  );
-}
-
-/** elegant inline palette: appears with the rename editor; mousedown (not
- *  click) so choosing a color never blurs/commits the text edit */
-function ColorSwatches({
-  current,
-  onPick,
-}: {
-  current: string;
-  onPick: (color: string) => void;
-}) {
-  return (
-    <span className="ml-1.5 inline-flex items-center gap-1">
-      {PROJECT_PALETTE.map(c => (
-        <button
-          key={c}
-          aria-label={`Set project color ${c}`}
-          onMouseDown={e => {
-            e.preventDefault();
-            e.stopPropagation();
-            onPick(c);
-          }}
-          className="h-3 w-3 rounded-full transition-transform hover:scale-125"
-          style={{
-            background: c,
-            boxShadow:
-              c === current ? `0 0 0 1.5px #fff, 0 0 6px ${c}` : 'none',
-          }}
-        />
-      ))}
-    </span>
-  );
-}
-
-/** Group pill / tab chrome. While its rename editor is open it renders as a
- *  `div`: the editor's input and swatch buttons must not be interactive
- *  elements nested inside a `<button>` (invalid HTML — React hydration
- *  warning, found by the spine eval's renderer error capture). */
-function EditableChrome({
-  editing,
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { editing: boolean }) {
-  return editing ? (
-    <div {...(props as React.HTMLAttributes<HTMLDivElement>)} />
-  ) : (
-    <button type="button" {...props} />
-  );
-}
-
-function isContextMenuKey(event: React.KeyboardEvent): boolean {
-  return event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey);
-}
-
-function keyboardMenuPoint(element: HTMLElement): { x: number; y: number } {
-  const rect = element.getBoundingClientRect();
-  return { x: rect.left + Math.min(24, rect.width / 2), y: rect.bottom + 2 };
-}
-
-/** right-click menu (D27): HUD-styled, keyboard-navigable (↑↓ ⏎ esc);
- *  every item is an existing verb — the menu is discovery, not new power */
-export interface StripMenuItem {
-  label: string;
-  onSelect: () => void;
-  /** the destructive item sits last and reads in the project color */
-  danger?: boolean;
-  /** Most commands return focus to their trigger. Commands that replace or
-   * remove it hand focus to their destination instead. */
-  focusAfterSelect?: 'trigger' | 'none';
-}
-
-type MenuCloseFocus = 'none' | 'trigger' | 'next' | 'previous';
-
-function StripContextMenu({
-  x,
-  y,
-  color,
-  label,
-  items,
-  onClose,
-}: {
-  x: number;
-  y: number;
-  color: string;
-  label: string;
-  items: StripMenuItem[];
-  onClose: (focus?: MenuCloseFocus) => void;
-}) {
-  const rootRef = useRef<HTMLDivElement>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
-  // a right-click near the window edge must not spill the menu off-screen
-  const [pos, setPos] = useState({ x, y });
-  useLayoutEffect(() => {
-    const rect = rootRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setPos({
-      x: Math.min(x, Math.max(4, window.innerWidth - rect.width - 4)),
-      y: Math.min(y, Math.max(4, window.innerHeight - rect.height - 4)),
-    });
-  }, [x, y]);
-  useEffect(() => {
-    rootRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
-    const away = (event: MouseEvent) => {
-      if (!(event.target instanceof Node)) return;
-      if (!rootRef.current?.contains(event.target)) onClose('none');
-    };
-    document.addEventListener('mousedown', away);
-    return () => document.removeEventListener('mousedown', away);
-  }, [onClose]);
-  return (
-    <div
-      ref={rootRef}
-      data-strip-menu
-      role="menu"
-      aria-label={label}
-      className="fixed z-50 flex min-w-44 flex-col rounded border py-1 shadow-2xl motion-safe:animate-in motion-safe:fade-in motion-safe:duration-100"
-      style={{
-        left: pos.x,
-        top: pos.y,
-        borderColor: `${color}44`,
-        background: HUD.bg.panelFill,
-        boxShadow: `0 12px 32px rgba(0,0,0,0.55), 0 0 10px ${color}22`,
-      }}
-      onKeyDown={e => {
-        e.stopPropagation();
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          onClose('trigger');
-          return;
-        }
-        const buttons = Array.from(
-          rootRef.current?.querySelectorAll<HTMLButtonElement>(
-            '[role="menuitem"]'
-          ) ?? []
-        );
-        if (e.key === 'Tab') {
-          e.preventDefault();
-          onClose(e.shiftKey ? 'previous' : 'next');
-          return;
-        }
-        if (
-          e.key === 'ArrowDown' ||
-          e.key === 'ArrowUp' ||
-          e.key === 'Home' ||
-          e.key === 'End'
-        ) {
-          e.preventDefault();
-          const index = buttons.indexOf(
-            document.activeElement as HTMLButtonElement
-          );
-          const nextIndex =
-            e.key === 'Home'
-              ? 0
-              : e.key === 'End'
-                ? buttons.length - 1
-                : (Math.max(0, index) +
-                    (e.key === 'ArrowDown' ? 1 : buttons.length - 1)) %
-                  buttons.length;
-          setActiveIndex(nextIndex);
-          buttons[nextIndex]?.focus();
-        }
-      }}
-    >
-      {items.map((item, index) => (
-        <button
-          key={item.label}
-          type="button"
-          role="menuitem"
-          tabIndex={index === activeIndex ? 0 : -1}
-          onFocus={() => setActiveIndex(index)}
-          onPointerMove={() => setActiveIndex(index)}
-          onClick={() => {
-            onClose(item.focusAfterSelect ?? 'trigger');
-            item.onSelect();
-          }}
-          className="cursor-pointer px-3 py-1.5 text-left font-mono text-chrome-label outline-none transition-[background-color] duration-75 hover:bg-white/10 focus-visible:bg-white/10"
-          style={{ color: item.danger ? color : HUD.text }}
-        >
-          {item.label}
-        </button>
-      ))}
-    </div>
-  );
-}
+const FALLBACK_RIBBON_WIDTH = 900;
+const EMPTY_SET: ReadonlySet<string> = new Set();
+const EMPTY_ACTIVITY: Record<string, boolean> = {};
+const EMPTY_DELEGATION: Record<string, SessionDelegation> = {};
 
 export function TabStrip({
   projects,
@@ -303,9 +93,9 @@ export function TabStrip({
   pinnedTabId,
   summaries,
   attention,
-  activity = {},
-  engaged = {},
-  delegation = {},
+  activity = EMPTY_ACTIVITY,
+  engaged = EMPTY_ACTIVITY,
+  delegation = EMPTY_DELEGATION,
   onTogglePinTab,
   onResumeTab,
   onNewAgent,
@@ -319,27 +109,20 @@ export function TabStrip({
   onRenameTab,
   onRenameProject,
   onSetProjectColor,
+  onToggleProjectExpanded,
   feedbackEnabled = false,
   onRateContext,
   exitingProjectDirs,
+  dormantProjectDirs,
 }: {
   projects: Project[];
   activeDir: string | null;
-  /** tab pinned in the split view (S2); null = no split */
   pinnedTabId: string | null;
-  /** goal subtitles keyed by durableSessionId (D21) — stopped tabs keep
-   *  theirs, so a restored tab still says what it was driving toward */
   summaries: Record<string, string>;
-  /** needs-operator flags keyed by sessionId (S1; S8 adds
-   *  roadmap-derived entries — only presence and recency matter here) */
   attention: Record<string, SessionAttentionSignal>;
-  /** sessions actively producing output, keyed by sessionId (D18) */
   activity?: Record<string, boolean>;
-  /** sessions ever given work, keyed by sessionId (D22) */
   engaged?: Record<string, boolean>;
-  /** harness-reported delegated work by sessionId (ENG-023) */
   delegation?: Record<string, SessionDelegation>;
-  /** context-menu verbs (D27) — all optional; items appear when wired */
   onTogglePinTab?: (tabId: string) => void;
   onResumeTab?: (tabId: string) => void;
   onNewAgent?: (dir: string) => void;
@@ -351,6 +134,7 @@ export function TabStrip({
   onRenameTab: (tabId: string, title: string) => void;
   onRenameProject: (dir: string, name: string) => void;
   onSetProjectColor: (dir: string, color: string) => void;
+  onToggleProjectExpanded?: (dir: string) => void;
   feedbackEnabled?: boolean;
   onRateContext?: (input: {
     durableSessionId: string;
@@ -359,23 +143,22 @@ export function TabStrip({
     betterLabel?: string | null;
     projectName: string;
   }) => Promise<boolean>;
-  /** drag arrangement (D20): drop a tab beside a same-Project sibling */
   onReorderTab?: (
     tabId: string,
     targetTabId: string,
     place: 'before' | 'after'
   ) => void;
-  /** drag arrangement (D20): drop a Project group beside another */
   onReorderProject?: (
     dir: string,
     targetDir: string,
     place: 'before' | 'after'
   ) => void;
-  /** Projects retract right-to-left before leaving the open workspace. */
   exitingProjectDirs?: ReadonlySet<string>;
+  dormantProjectDirs?: ReadonlySet<string>;
 }) {
+  const reducedMotion = usePrefersReducedMotion();
+  const ordinalHints = useOrdinalHints();
   const [editing, setEditing] = useState<Editing | null>(null);
-  // right-click menu (D27)
   const [menu, setMenu] = useState<{
     x: number;
     y: number;
@@ -385,16 +168,215 @@ export function TabStrip({
     target: { kind: 'project' | 'tab'; id: string };
   } | null>(null);
   const menuTriggerRef = useRef<HTMLElement | null>(null);
-  const projectNodesRef = useRef(new Map<string, HTMLDivElement>());
-  const projectPositionsRef = useRef(new Map<string, DOMRect>());
-  const projectAnimationsRef = useRef(new Map<string, Animation>());
-  const setProjectNode = useCallback(
-    (dir: string, node: HTMLDivElement | null) => {
-      if (node) projectNodesRef.current.set(dir, node);
-      else projectNodesRef.current.delete(dir);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const itemNodesRef = useRef(new Map<string, HTMLDivElement>());
+  const lastTargetsRef = useRef(new Map<string, RibbonTarget>());
+  const [containerWidth, setContainerWidth] = useState(FALLBACK_RIBBON_WIDTH);
+  const [itemWidths, setItemWidths] = useState<Record<string, number>>({});
+  const [heldCloseKeys, setHeldCloseKeys] = useState<Set<string>>(
+    () => new Set()
+  );
+  const heldCloseTimers = useRef(
+    new Map<string, ReturnType<typeof setTimeout>>()
+  );
+  const [drag, setDrag] = useState<{
+    kind: 'tab' | 'project';
+    id: string;
+    dir: string;
+  } | null>(null);
+  const [hint, setHint] = useState<{
+    key: string;
+    place: 'before' | 'after';
+  } | null>(null);
+
+  const dormant = dormantProjectDirs ?? EMPTY_SET;
+  const exiting = exitingProjectDirs ?? EMPTY_SET;
+  const orderedProjects = useMemo(
+    () => orderProjectsForRibbon(projects, dormant),
+    [dormant, projects]
+  );
+  const projectSignals = useMemo(
+    () =>
+      new Map(
+        projects.map(project => [
+          project.dir,
+          deriveProjectRibbonSignal({
+            project,
+            summaries,
+            attention,
+            activity,
+            engaged,
+            delegation,
+          }),
+        ])
+      ),
+    [activity, attention, delegation, engaged, projects, summaries]
+  );
+  const tokens = useMemo<RibbonToken[]>(() => {
+    const next: RibbonToken[] = [];
+    orderedProjects.forEach(project => {
+      const sourceProjectIndex = projects.findIndex(
+        candidate => candidate.dir === project.dir
+      );
+      const activeProject = project.dir === activeDir;
+      const projectSignal = projectSignals.get(project.dir) ?? 'quiet';
+      next.push({
+        key: `project:${project.dir}`,
+        kind: 'project',
+        project,
+        sourceProjectIndex,
+        priority: activeProject
+          ? 0
+          : projectSignal === 'fault' || projectSignal === 'needs-you'
+            ? 2
+            : 3,
+      });
+      if (activeProject || project.ribbonExpanded === true) {
+        project.tabs.forEach(tab =>
+          next.push({
+            key: `tab:${tab.id}`,
+            kind: 'tab',
+            project,
+            tab,
+            priority:
+              activeProject && tab.id === project.activeTabId
+                ? 1
+                : activeProject
+                  ? 4
+                  : 5,
+          })
+        );
+      }
+    });
+    return next;
+  }, [activeDir, orderedProjects, projectSignals, projects]);
+  const presentTokens = useRibbonPresence(tokens, heldCloseKeys);
+  const currentKeys = useMemo(
+    () => new Set(tokens.map(token => token.key)),
+    [tokens]
+  );
+
+  const layoutEntries = useMemo(
+    () =>
+      presentTokens.filter(entry => {
+        if (exiting.has(entry.token.project.dir)) return false;
+        return entry.phase !== 'exiting' || heldCloseKeys.has(entry.token.key);
+      }),
+    [exiting, heldCloseKeys, presentTokens]
+  );
+  const layout = useMemo(
+    () =>
+      layoutProjectRibbon(
+        layoutEntries.map(entry => ({
+          id: entry.token.key,
+          width:
+            itemWidths[entry.token.key] ??
+            estimateRibbonTokenWidth(entry.token),
+          priority: entry.token.priority,
+        })),
+        containerWidth
+      ),
+    [containerWidth, itemWidths, layoutEntries]
+  );
+
+  useLayoutEffect(() => {
+    for (const [key, target] of layout.targets) {
+      lastTargetsRef.current.set(key, target);
+    }
+  }, [layout]);
+
+  // Measurements and last-known bounds intentionally outlive removal for the
+  // exit animation, but not forever. Long-running workspaces can churn through
+  // thousands of Sessions; prune both caches once presence has released them.
+  useEffect(() => {
+    const presentKeys = new Set(presentTokens.map(entry => entry.token.key));
+    for (const key of lastTargetsRef.current.keys()) {
+      if (!presentKeys.has(key)) lastTargetsRef.current.delete(key);
+    }
+    setItemWidths(current => {
+      const entries = Object.entries(current).filter(([key]) =>
+        presentKeys.has(key)
+      );
+      return entries.length === Object.keys(current).length
+        ? current
+        : Object.fromEntries(entries);
+    });
+  }, [presentTokens]);
+
+  const measure = useCallback(() => {
+    const width = containerRef.current?.clientWidth ?? 0;
+    if (width > 0)
+      setContainerWidth(current => (current === width ? current : width));
+    const measured: Record<string, number> = {};
+    for (const [key, node] of itemNodesRef.current) {
+      const itemWidth = Math.ceil(node.offsetWidth);
+      if (itemWidth > 0) measured[key] = itemWidth;
+    }
+    if (Object.keys(measured).length > 0) {
+      setItemWidths(current => {
+        const changed = Object.entries(measured).some(
+          ([key, value]) => current[key] !== value
+        );
+        return changed ? { ...current, ...measured } : current;
+      });
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    if (containerRef.current) observer.observe(containerRef.current);
+    for (const node of itemNodesRef.current.values()) observer.observe(node);
+    return () => observer.disconnect();
+  }, [measure, presentTokens]);
+
+  const setItemNode = useCallback(
+    (key: string, node: HTMLDivElement | null) => {
+      if (node) itemNodesRef.current.set(key, node);
+      else itemNodesRef.current.delete(key);
     },
     []
   );
+
+  const releaseHeldClose = useCallback((key?: string) => {
+    if (key) {
+      const timer = heldCloseTimers.current.get(key);
+      if (timer) clearTimeout(timer);
+      heldCloseTimers.current.delete(key);
+      setHeldCloseKeys(current => {
+        if (!current.has(key)) return current;
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+      return;
+    }
+    for (const timer of heldCloseTimers.current.values()) clearTimeout(timer);
+    heldCloseTimers.current.clear();
+    setHeldCloseKeys(current => (current.size === 0 ? current : new Set()));
+  }, []);
+
+  const armPointerClose = useCallback(
+    (key: string) => {
+      setHeldCloseKeys(current => new Set(current).add(key));
+      const prior = heldCloseTimers.current.get(key);
+      if (prior) clearTimeout(prior);
+      heldCloseTimers.current.set(
+        key,
+        setTimeout(() => releaseHeldClose(key), POINTER_CLOSE_STABILIZE_MS)
+      );
+    },
+    [releaseHeldClose]
+  );
+
+  useEffect(
+    () => () => {
+      for (const timer of heldCloseTimers.current.values()) clearTimeout(timer);
+    },
+    []
+  );
+
   const openMenu = useCallback(
     ({
       trigger,
@@ -422,176 +404,95 @@ export function TabStrip({
     const trigger = menuTriggerRef.current;
     menuTriggerRef.current = null;
     setMenu(null);
-    if (focus !== 'none' && trigger) {
-      queueMicrotask(() => {
-        if (focus === 'trigger') {
-          if (trigger.isConnected) trigger.focus();
-          return;
-        }
-        const candidates = Array.from(
-          document.querySelectorAll<HTMLElement>(
-            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-          )
-        ).filter(
-          element =>
-            element.isConnected &&
-            !element.closest('[data-strip-menu]') &&
-            !element.closest('[inert]')
-        );
-        const index = candidates.indexOf(trigger);
-        const offset = focus === 'next' ? 1 : -1;
-        const target = candidates[index + offset];
-        (target ?? (trigger.isConnected ? trigger : null))?.focus();
-      });
-    }
+    if (focus === 'none' || !trigger) return;
+    queueMicrotask(() => {
+      if (focus === 'trigger') {
+        if (trigger.isConnected) trigger.focus();
+        return;
+      }
+      const candidates = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter(
+        element =>
+          element.isConnected &&
+          !element.closest('[data-strip-menu]') &&
+          !element.closest('[inert]')
+      );
+      const index = candidates.indexOf(trigger);
+      const target = candidates[index + (focus === 'next' ? 1 : -1)];
+      (target ?? (trigger.isConnected ? trigger : null))?.focus();
+    });
   }, []);
 
   useEffect(() => {
     if (!menu) return;
-    const targetExists =
+    const exists =
       menu.target.kind === 'project'
         ? projects.some(
             project =>
-              project.dir === menu.target.id &&
-              !exitingProjectDirs?.has(project.dir)
+              project.dir === menu.target.id && !exiting.has(project.dir)
           )
         : projects.some(project =>
             project.tabs.some(tab => tab.id === menu.target.id)
           );
-    if (!targetExists) closeMenu('none');
-  }, [closeMenu, exitingProjectDirs, menu, projects]);
-  // D21: ordinals are shortcut hints — the strip rests clean; holding ⌘
-  // reveals tab keycaps, ⌘⌥ reveals Project keycaps
-  const ordinalHints = useOrdinalHints();
+    if (!exists) closeMenu('none');
+  }, [closeMenu, exiting, menu, projects]);
 
-  /** FLIP the surviving groups after an exited Project leaves flex layout.
-   * The exiting group can visually condense without forcing a reflow on every
-   * frame; once removed, siblings glide into their new positions instead of
-   * snapping across the temporary flex gap. */
-  useLayoutEffect(() => {
-    const reduced = window.matchMedia?.(
-      '(prefers-reduced-motion: reduce)'
-    ).matches;
-    const nextPositions = new Map<string, DOMRect>();
-    for (const [dir, node] of projectNodesRef.current) {
-      const next = node.getBoundingClientRect();
-      nextPositions.set(dir, next);
-      if (exitingProjectDirs?.has(dir)) {
-        projectAnimationsRef.current.get(dir)?.cancel();
-        projectAnimationsRef.current.delete(dir);
-        continue;
-      }
-      const previous = projectPositionsRef.current.get(dir);
-      const deltaX = previous ? previous.left - next.left : 0;
-      const deltaY = previous ? previous.top - next.top : 0;
-      if (
-        reduced ||
-        (!deltaX && !deltaY) ||
-        typeof node.animate !== 'function'
-      ) {
-        continue;
-      }
-      projectAnimationsRef.current.get(dir)?.cancel();
-      const animation = node.animate(
-        [
-          { transform: `translate3d(${deltaX}px, ${deltaY}px, 0)` },
-          { transform: 'translate3d(0, 0, 0)' },
-        ],
-        {
-          duration: 180,
-          easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
-        }
-      );
-      projectAnimationsRef.current.set(dir, animation);
-      animation.addEventListener(
-        'finish',
-        () => projectAnimationsRef.current.delete(dir),
-        { once: true }
-      );
-    }
-    projectPositionsRef.current = nextPositions;
-  }, [exitingProjectDirs, projects]);
-
-  useEffect(
-    () => () => {
-      for (const animation of projectAnimationsRef.current.values()) {
-        animation.cancel();
-      }
-    },
-    []
-  );
-
-  // ⌘E edits the active tab; the palette's Project verb opens the same
-  // Project name/color editor exposed by its context menu.
   const activeRef = useRef({ projects, activeDir });
   activeRef.current = { projects, activeDir };
   useEffect(() => {
-    const onRenameActive = () => {
-      const { projects: gs, activeDir: ad } = activeRef.current;
-      const g = gs.find(x => x.dir === ad);
-      const tab = g?.tabs.find(t => t.id === g.activeTabId);
+    const renameActive = () => {
+      const group = activeRef.current.projects.find(
+        project => project.dir === activeRef.current.activeDir
+      );
+      const tab = group?.tabs.find(
+        candidate => candidate.id === group.activeTabId
+      );
       if (tab) setEditing({ kind: 'tab', id: tab.id, value: tab.title });
     };
-    const onEditProject = () => {
-      const { projects: gs, activeDir: ad } = activeRef.current;
-      const group = gs.find(project => project.dir === ad);
-      if (group) {
+    const editProject = () => {
+      const group = activeRef.current.projects.find(
+        project => project.dir === activeRef.current.activeDir
+      );
+      if (group)
         setEditing({ kind: 'group', id: group.dir, value: group.name });
-      }
     };
-    window.addEventListener(RENAME_ACTIVE_EVENT, onRenameActive);
-    window.addEventListener(EDIT_ACTIVE_PROJECT_EVENT, onEditProject);
+    window.addEventListener(RENAME_ACTIVE_EVENT, renameActive);
+    window.addEventListener(EDIT_ACTIVE_PROJECT_EVENT, editProject);
     return () => {
-      window.removeEventListener(RENAME_ACTIVE_EVENT, onRenameActive);
-      window.removeEventListener(EDIT_ACTIVE_PROJECT_EVENT, onEditProject);
+      window.removeEventListener(RENAME_ACTIVE_EVENT, renameActive);
+      window.removeEventListener(EDIT_ACTIVE_PROJECT_EVENT, editProject);
     };
   }, []);
 
-  /** editor closed (commit or cancel) — hand the keyboard back to the
-   *  active terminal so the all-keyboard flow keeps flowing */
-  const settle = () => {
+  const settleEditing = () => {
     setEditing(null);
     window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
   };
-
-  const commit = () => {
+  const commitEditing = () => {
     if (!editing) return;
     if (editing.kind === 'group') onRenameProject(editing.id, editing.value);
     else onRenameTab(editing.id, editing.value);
-    settle();
+    settleEditing();
   };
 
-  // global ring ordinals (⌘digit targets): ⌘1–8 are positional and ⌘9 is
-  // the LAST tab, like Chrome (D27) — with more than nine tabs the last
-  // tab wears the 9 keycap. Computed always, revealed while ⌘ held (D21).
-  const ordinalByTabId = new Map<string, number>();
-  {
-    const allTabs = projects.flatMap(g => g.tabs);
-    allTabs.slice(0, 8).forEach((t, i) => ordinalByTabId.set(t.id, i + 1));
-    if (allTabs.length >= 9) {
-      ordinalByTabId.set(allTabs[allTabs.length - 1].id, 9);
-    }
-  }
+  const ordinalByTabId = useMemo(() => {
+    const ordinals = new Map<string, number>();
+    const tabs = projects.flatMap(project => project.tabs);
+    tabs.slice(0, 8).forEach((tab, index) => ordinals.set(tab.id, index + 1));
+    if (tabs.length >= 9) ordinals.set(tabs[tabs.length - 1].id, 9);
+    return ordinals;
+  }, [projects]);
 
-  // ── Drag arrangement (D20): order is an interface. Tabs move within
-  // their Project (grouping is directory truth); Project groups move
-  // globally. Keyboard equivalents: ⌘⌥[/] and ⌘⌥⇧[/].
-  const [drag, setDrag] = useState<{
-    kind: 'tab' | 'project';
-    id: string;
-    dir: string;
-  } | null>(null);
-  const [hint, setHint] = useState<{
-    key: string;
-    place: 'before' | 'after';
-  } | null>(null);
   const endDrag = () => {
     setDrag(null);
     setHint(null);
   };
-  const dropPlace = (e: React.DragEvent): 'before' | 'after' => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    return e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+  const dropPlace = (event: React.DragEvent): 'before' | 'after' => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
   };
   const hintShadow = (key: string, color: string): string | undefined =>
     hint?.key === key
@@ -600,52 +501,426 @@ export function TabStrip({
         : `inset -3px 0 0 0 ${color}`
       : undefined;
 
+  const itemStyle = (
+    entry: PresentRibbonToken,
+    projectExiting: boolean
+  ): CSSProperties => {
+    const held = heldCloseKeys.has(entry.token.key);
+    const logicallyCurrent =
+      currentKeys.has(entry.token.key) && !projectExiting;
+    const visible =
+      (logicallyCurrent || held) && layout.visibleIds.has(entry.token.key);
+    const target = layout.targets.get(entry.token.key) ??
+      lastTargetsRef.current.get(entry.token.key) ?? {
+        id: entry.token.key,
+        x: 0,
+        y: 0,
+        row: 0,
+        width:
+          itemWidths[entry.token.key] ?? estimateRibbonTokenWidth(entry.token),
+      };
+    const leaving = entry.phase === 'exiting' || projectExiting;
+    return {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      transformOrigin: 'left center',
+      transform: ribbonTargetTransform(
+        target,
+        leaving ? 0 : entry.phase === 'entering' ? 0.96 : 1
+      ),
+      opacity: visible && !leaving && entry.phase !== 'entering' ? 1 : 0,
+      pointerEvents: visible && !leaving ? 'auto' : 'none',
+      zIndex: leaving ? 0 : 1,
+      transitionProperty: 'transform, opacity, filter',
+      transitionDuration: reducedMotion
+        ? '0ms'
+        : `${RIBBON_MOTION_MS}ms, ${RIBBON_EXIT_MS}ms, 100ms`,
+      transitionTimingFunction:
+        'cubic-bezier(0.25, 1, 0.5, 1), ease-out, ease-out',
+      willChange: reducedMotion ? undefined : 'transform, opacity',
+    };
+  };
+
+  const hiddenCurrentCount = tokens.filter(
+    token =>
+      !exiting.has(token.project.dir) && !layout.visibleIds.has(token.key)
+  ).length;
+
   return (
     <div
+      ref={containerRef}
       data-workspace-tab-strip
       data-ordinal-hints={ordinalHints ?? undefined}
-      className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5"
+      data-ribbon-rows={layout.rows}
+      data-ribbon-hidden={hiddenCurrentCount || undefined}
+      className="relative min-w-0 overflow-hidden"
+      style={{
+        height: layout.height,
+        minHeight: projects.length > 0 ? RIBBON_ROW_HEIGHT : 0,
+        transition: reducedMotion
+          ? 'none'
+          : `height ${RIBBON_MOTION_MS}ms cubic-bezier(0.25, 1, 0.5, 1)`,
+      }}
+      onPointerLeave={() => releaseHeldClose()}
     >
-      {projects.map((g, gi) => {
-        const color = g.color;
-        const groupActive = g.dir === activeDir;
-        const projectExiting = exitingProjectDirs?.has(g.dir) ?? false;
-        const projectMenuItems: StripMenuItem[] = [
-          ...(onNewAgent
-            ? [
-                {
-                  label: 'New agent',
-                  focusAfterSelect: 'none' as const,
-                  onSelect: () => onNewAgent(g.dir),
-                },
-              ]
-            : []),
-          {
-            label: 'Rename / color…',
-            focusAfterSelect: 'none',
-            onSelect: () =>
-              setEditing({ kind: 'group', id: g.dir, value: g.name }),
-          },
-          ...(onRevealPath
-            ? [
-                {
-                  label: 'Reveal in Finder',
-                  onSelect: () => onRevealPath(g.dir),
-                },
-              ]
-            : []),
-          ...(onCloseProject
-            ? [
-                {
-                  label: 'Close project',
-                  danger: true,
-                  focusAfterSelect: 'none' as const,
-                  onSelect: () => onCloseProject(g.dir),
-                },
-              ]
-            : []),
-        ];
-        const openProjectMenu = (
+      {presentTokens.map(entry => {
+        const token = entry.token;
+        const project = token.project;
+        const color = project.color;
+        const groupActive = project.dir === activeDir;
+        const projectExiting = exiting.has(project.dir);
+        const visible =
+          !projectExiting &&
+          layout.visibleIds.has(token.key) &&
+          entry.phase !== 'exiting';
+
+        if (token.kind === 'project') {
+          const expanded = groupActive || project.ribbonExpanded === true;
+          const dormantProject = dormant.has(project.dir);
+          const signal = projectSignals.get(project.dir) ?? 'quiet';
+          const projectMenuItems: StripMenuItem[] = [
+            ...(onNewAgent
+              ? [
+                  {
+                    label: 'New agent',
+                    focusAfterSelect: 'none' as const,
+                    onSelect: () => onNewAgent(project.dir),
+                  },
+                ]
+              : []),
+            ...(onToggleProjectExpanded && project.tabs.length > 0
+              ? [
+                  {
+                    label:
+                      project.ribbonExpanded === true
+                        ? 'Collapse when inactive'
+                        : 'Keep expanded',
+                    onSelect: () => onToggleProjectExpanded(project.dir),
+                  },
+                ]
+              : []),
+            {
+              label: 'Rename / color…',
+              focusAfterSelect: 'none',
+              onSelect: () =>
+                setEditing({
+                  kind: 'group',
+                  id: project.dir,
+                  value: project.name,
+                }),
+            },
+            ...(onRevealPath
+              ? [
+                  {
+                    label: 'Reveal in Finder',
+                    onSelect: () => onRevealPath(project.dir),
+                  },
+                ]
+              : []),
+            ...(onCloseProject
+              ? [
+                  {
+                    label: 'Close project',
+                    danger: true,
+                    focusAfterSelect: 'none' as const,
+                    onSelect: () => onCloseProject(project.dir),
+                  },
+                ]
+              : []),
+          ];
+          const openProjectMenu = (
+            trigger: HTMLElement,
+            point: { x: number; y: number }
+          ) =>
+            openMenu({
+              trigger,
+              ...point,
+              color,
+              label: `${project.name} Project actions`,
+              items: projectMenuItems,
+              target: { kind: 'project', id: project.dir },
+            });
+          const sourceOrdinal = token.sourceProjectIndex + 1;
+          return (
+            <div
+              ref={node => setItemNode(token.key, node)}
+              key={token.key}
+              data-ribbon-item="project"
+              data-ribbon-key={token.key}
+              data-project={project.name}
+              data-project-dir={project.dir}
+              data-active-project={groupActive || undefined}
+              data-ribbon-expanded={expanded}
+              data-project-dormant={dormantProject || undefined}
+              data-project-exiting={projectExiting || undefined}
+              data-close-stabilized={heldCloseKeys.has(token.key) || undefined}
+              inert={!visible}
+              aria-hidden={!visible || undefined}
+              draggable={!editing && !projectExiting}
+              onDragStart={event => {
+                event.dataTransfer.effectAllowed = 'move';
+                setDrag({
+                  kind: 'project',
+                  id: project.dir,
+                  dir: project.dir,
+                });
+              }}
+              onDragEnd={endDrag}
+              onDragOver={event => {
+                if (drag?.kind !== 'project' || drag.id === project.dir) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                setHint({ key: `p:${project.dir}`, place: dropPlace(event) });
+              }}
+              onDragLeave={() =>
+                setHint(current =>
+                  current?.key === `p:${project.dir}` ? null : current
+                )
+              }
+              onDrop={event => {
+                if (drag?.kind !== 'project' || drag.id === project.dir) return;
+                event.preventDefault();
+                onReorderProject?.(drag.id, project.dir, dropPlace(event));
+                endDrag();
+              }}
+              onContextMenu={event => {
+                event.preventDefault();
+                const trigger = event.currentTarget.querySelector<HTMLElement>(
+                  '[data-project-chrome]'
+                );
+                if (trigger) {
+                  openProjectMenu(trigger, {
+                    x: event.clientX,
+                    y: event.clientY,
+                  });
+                }
+              }}
+              className="group/project flex h-7 w-max origin-left items-center overflow-hidden rounded-md border"
+              style={{
+                ...itemStyle(entry, projectExiting),
+                borderColor: groupActive
+                  ? `${color}76`
+                  : dormantProject
+                    ? 'rgba(138,160,190,0.09)'
+                    : 'rgba(138,160,190,0.15)',
+                background: groupActive
+                  ? `${color}12`
+                  : dormantProject
+                    ? 'rgba(138,160,190,0.018)'
+                    : 'rgba(138,160,190,0.035)',
+                boxShadow: hintShadow(`p:${project.dir}`, color),
+                filter:
+                  drag?.kind === 'project' && drag.id === project.dir
+                    ? 'opacity(.5)'
+                    : dormantProject
+                      ? 'opacity(.62)'
+                      : undefined,
+              }}
+            >
+              <EditableChrome
+                data-project-chrome
+                editing={
+                  editing?.kind === 'group' && editing.id === project.dir
+                }
+                aria-label={project.name}
+                tabIndex={visible ? 0 : -1}
+                onClick={() => onSelectProject(token.sourceProjectIndex)}
+                onDoubleClick={() =>
+                  setEditing({
+                    kind: 'group',
+                    id: project.dir,
+                    value: project.name,
+                  })
+                }
+                onKeyDown={event => {
+                  if (!isContextMenuKey(event)) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  openProjectMenu(
+                    event.currentTarget,
+                    keyboardMenuPoint(event.currentTarget)
+                  );
+                }}
+                title={`${project.dir}${
+                  sourceOrdinal <= 9 ? ` · ⌘⌥${sourceOrdinal} selects` : ''
+                } · ${PROJECT_RIBBON_SIGNAL_COPY[signal]}`}
+                className="relative flex h-full cursor-pointer items-center gap-1.5 px-2 font-mono text-chrome-label font-medium outline-none transition-[filter,transform] duration-100 hover:brightness-150 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan"
+                style={{ color: groupActive ? color : HUD.textDim }}
+              >
+                <span
+                  aria-hidden
+                  className="inline-block h-3.5 w-[3px] shrink-0 rounded-full"
+                  style={{ background: color, boxShadow: `0 0 4px ${color}66` }}
+                />
+                {ordinalHints === 'projects' && sourceOrdinal <= 9 && (
+                  <span
+                    data-project-ordinal={sourceOrdinal}
+                    className="contents"
+                  >
+                    <OrdinalKeycap value={sourceOrdinal} color={color} />
+                  </span>
+                )}
+                {editing?.kind === 'group' && editing.id === project.dir ? (
+                  <>
+                    <RenameInput
+                      value={editing.value}
+                      color={color}
+                      onChange={value => setEditing({ ...editing, value })}
+                      onCommit={commitEditing}
+                      onCancel={settleEditing}
+                    />
+                    <ColorSwatches
+                      current={color}
+                      onPick={next => onSetProjectColor(project.dir, next)}
+                    />
+                  </>
+                ) : (
+                  <span
+                    data-project-label
+                    className="max-w-36 truncate whitespace-nowrap"
+                  >
+                    {project.name}
+                  </span>
+                )}
+                <ProjectRibbonSignalMark signal={signal} />
+                <span
+                  aria-hidden
+                  className="text-[9px]"
+                  style={{ opacity: dormantProject ? 0.6 : 0 }}
+                >
+                  ○
+                </span>
+              </EditableChrome>
+              {onToggleProjectExpanded && (
+                <button
+                  type="button"
+                  disabled={project.tabs.length === 0}
+                  aria-hidden={project.tabs.length === 0 || undefined}
+                  tabIndex={visible && project.tabs.length > 0 ? 0 : -1}
+                  aria-label={
+                    project.ribbonExpanded === true
+                      ? `Collapse ${project.name} when inactive`
+                      : `Keep ${project.name} expanded when inactive`
+                  }
+                  title={
+                    project.tabs.length === 0
+                      ? undefined
+                      : project.ribbonExpanded === true
+                        ? 'Collapse when inactive'
+                        : 'Keep expanded when inactive'
+                  }
+                  onClick={event => {
+                    event.stopPropagation();
+                    onToggleProjectExpanded(project.dir);
+                  }}
+                  className={`mr-0.5 grid size-6 place-items-center rounded outline-none opacity-45 transition-opacity hover:bg-white/8 hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-hud-cyan ${
+                    project.tabs.length === 0 ? 'invisible' : ''
+                  }`}
+                  style={{ color }}
+                >
+                  <span aria-hidden className="text-[9px] leading-none">
+                    {project.ribbonExpanded === true ? '◆' : '◇'}
+                  </span>
+                </button>
+              )}
+            </div>
+          );
+        }
+
+        const tab = token.tab;
+        const on = groupActive && tab.id === project.activeTabId;
+        const dead = !tabIsLive(tab);
+        const summary = summaries[tab.durableSessionId];
+        const attentionSignal =
+          !dead && tab.sessionId ? attention[tab.sessionId] : undefined;
+        const needsYou = attentionNeedsOperator(attentionSignal);
+        const working = !dead && !!(tab.sessionId && activity[tab.sessionId]);
+        const isAgent = tab.harness !== 'shell';
+        const isDraft = tab.lifecycle === 'draft';
+        const fault = tab.lifecycle === 'failed';
+        const started =
+          !!(tab.sessionId && engaged[tab.sessionId]) || !!summary;
+        const tabDelegation = tab.sessionId
+          ? delegation[tab.sessionId]
+          : undefined;
+        const glyphState = sessionGlyphState({
+          working,
+          agent: isAgent,
+          started,
+          delegatedBusy: sessionDelegationBusy(tabDelegation),
+        });
+        const display = sessionDisplayCopy({
+          harness: tab.harness,
+          title: tab.title,
+          titleKind: tab.titleKind,
+          lifecycle: tab.lifecycle,
+          summary,
+        });
+        const ordinal = ordinalByTabId.get(tab.id);
+        const stoppedStatus =
+          tab.lifecycle === 'interrupted'
+            ? 'Interrupted'
+            : tab.lifecycle === 'failed'
+              ? 'Failed'
+              : tab.lifecycle === 'exited'
+                ? 'Exited'
+                : 'Stopped';
+        const tabMenuItems: StripMenuItem[] = isDraft
+          ? [
+              {
+                label: 'Discard',
+                danger: true,
+                onSelect: () => onCloseTab(tab.id),
+              },
+            ]
+          : [
+              ...(dead &&
+              onResumeTab &&
+              (tab.harnessSessionId || tab.harness === 'shell')
+                ? [
+                    {
+                      label:
+                        tab.harness === 'shell'
+                          ? 'Start New Shell'
+                          : 'Resume This Agent',
+                      onSelect: () => onResumeTab(tab.id),
+                    },
+                  ]
+                : []),
+              {
+                label: 'Rename…',
+                focusAfterSelect: 'none',
+                onSelect: () =>
+                  setEditing({ kind: 'tab', id: tab.id, value: tab.title }),
+              },
+              ...(tabIsPinnable(tab) && onTogglePinTab
+                ? [
+                    {
+                      label:
+                        tab.id === pinnedTabId
+                          ? 'Unpin from split'
+                          : 'Pin in split',
+                      onSelect: () => onTogglePinTab(tab.id),
+                    },
+                  ]
+                : []),
+              ...(onRevealPath
+                ? [
+                    {
+                      label: 'Reveal in Finder',
+                      onSelect: () => onRevealPath(tab.cwd),
+                    },
+                  ]
+                : []),
+              {
+                label: 'Close',
+                danger: true,
+                focusAfterSelect: 'none',
+                onSelect: () => onCloseTab(tab.id),
+              },
+            ];
+        const openTabMenu = (
           trigger: HTMLElement,
           point: { x: number; y: number }
         ) =>
@@ -653,485 +928,275 @@ export function TabStrip({
             trigger,
             ...point,
             color,
-            label: `${g.name} Project actions`,
-            items: projectMenuItems,
-            target: { kind: 'project', id: g.dir },
+            label: `${display.primary} Session actions`,
+            items: tabMenuItems,
+            target: { kind: 'tab', id: tab.id },
           });
+
         return (
           <div
-            ref={node => setProjectNode(g.dir, node)}
-            key={g.dir}
-            data-project={g.name}
-            data-active-project={groupActive || undefined}
-            data-project-exiting={projectExiting || undefined}
-            inert={projectExiting}
-            aria-hidden={projectExiting || undefined}
-            draggable={!editing && !projectExiting}
-            onDragStart={e => {
-              // a drag born on a tab wrapper is the TAB's drag
+            ref={node => setItemNode(token.key, node)}
+            key={token.key}
+            data-ribbon-item="initiative"
+            data-ribbon-key={token.key}
+            data-project-parent={project.dir}
+            data-tab-id={tab.id}
+            data-tab-harness={tab.harness}
+            data-durable-session-id={tab.durableSessionId}
+            data-active={on || undefined}
+            data-close-stabilized={heldCloseKeys.has(token.key) || undefined}
+            inert={!visible}
+            aria-hidden={!visible || undefined}
+            draggable={!editing}
+            onDragStart={event => {
+              event.stopPropagation();
+              event.dataTransfer.effectAllowed = 'move';
+              setDrag({ kind: 'tab', id: tab.id, dir: project.dir });
+            }}
+            onDragEnd={event => {
+              event.stopPropagation();
+              endDrag();
+            }}
+            onDragOver={event => {
               if (
-                e.target instanceof Element &&
-                e.target.closest('[data-tab-id]')
+                drag?.kind !== 'tab' ||
+                drag.dir !== project.dir ||
+                drag.id === tab.id
               ) {
                 return;
               }
-              e.dataTransfer.effectAllowed = 'move';
-              setDrag({ kind: 'project', id: g.dir, dir: g.dir });
-            }}
-            onDragEnd={endDrag}
-            onContextMenu={e => {
-              e.preventDefault();
-              const trigger = e.currentTarget.querySelector<HTMLElement>(
-                '[data-project-chrome]'
-              );
-              if (trigger) {
-                openProjectMenu(trigger, { x: e.clientX, y: e.clientY });
-              }
-            }}
-            onDragOver={e => {
-              if (drag?.kind !== 'project' || drag.id === g.dir) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = 'move';
-              setHint({ key: `p:${g.dir}`, place: dropPlace(e) });
+              event.preventDefault();
+              event.stopPropagation();
+              event.dataTransfer.dropEffect = 'move';
+              setHint({ key: `t:${tab.id}`, place: dropPlace(event) });
             }}
             onDragLeave={() =>
-              setHint(h => (h?.key === `p:${g.dir}` ? null : h))
+              setHint(current =>
+                current?.key === `t:${tab.id}` ? null : current
+              )
             }
-            onDrop={e => {
-              if (drag?.kind !== 'project' || drag.id === g.dir) return;
-              e.preventDefault();
-              onReorderProject?.(drag.id, g.dir, dropPlace(e));
+            onDrop={event => {
+              if (
+                drag?.kind !== 'tab' ||
+                drag.dir !== project.dir ||
+                drag.id === tab.id
+              ) {
+                return;
+              }
+              event.preventDefault();
+              event.stopPropagation();
+              onReorderTab?.(drag.id, tab.id, dropPlace(event));
               endDrag();
             }}
-            className={`flex origin-left items-center gap-1 rounded border px-1 py-0.5 transition-[transform,opacity,filter] duration-[240ms] [transition-timing-function:cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none ${
-              projectExiting ? 'pointer-events-none scale-x-0' : ''
-            }`}
+            onContextMenu={event => {
+              event.preventDefault();
+              event.stopPropagation();
+              const trigger =
+                event.currentTarget.querySelector<HTMLElement>(
+                  '[data-tab-chrome]'
+                );
+              if (trigger) {
+                openTabMenu(trigger, { x: event.clientX, y: event.clientY });
+              }
+            }}
+            className="group/tab flex h-7 w-max origin-left items-center overflow-hidden rounded-md border"
             style={{
-              boxShadow: hintShadow(`p:${g.dir}`, color),
-              opacity: projectExiting
-                ? 0
-                : drag?.kind === 'project' && drag.id === g.dir
-                  ? 0.5
-                  : 1,
-              borderColor: groupActive
-                ? `${color}66`
-                : 'rgba(138,160,190,0.12)',
-              background: groupActive ? `${color}0d` : 'transparent',
+              ...itemStyle(entry, projectExiting),
+              boxShadow: hintShadow(`t:${tab.id}`, color),
+              borderColor: on ? `${color}9c` : 'rgba(138,160,190,0.17)',
+              borderBottomColor: on ? color : `${color}38`,
+              background: on ? `${color}15` : 'rgba(138,160,190,0.035)',
+              filter:
+                drag?.kind === 'tab' && drag.id === tab.id
+                  ? 'opacity(.5)'
+                  : dead
+                    ? 'opacity(.74)'
+                    : undefined,
             }}
           >
             <EditableChrome
-              data-project-chrome
-              editing={editing?.kind === 'group' && editing.id === g.dir}
-              onClick={() => onSelectProject(gi)}
+              data-tab-chrome
+              editing={editing?.kind === 'tab' && editing.id === tab.id}
+              tabIndex={visible ? 0 : -1}
+              onClick={() => onSelectTab(project.dir, tab.id)}
               onDoubleClick={() =>
-                setEditing({ kind: 'group', id: g.dir, value: g.name })
+                setEditing({ kind: 'tab', id: tab.id, value: tab.title })
               }
               onKeyDown={event => {
                 if (!isContextMenuKey(event)) return;
                 event.preventDefault();
                 event.stopPropagation();
-                openProjectMenu(
+                openTabMenu(
                   event.currentTarget,
                   keyboardMenuPoint(event.currentTarget)
                 );
               }}
-              title={`${g.dir}${
-                gi < 9 ? ` · ⌘⌥${gi + 1} selects` : ''
-              } · double-click to rename`}
-              className="relative flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-chrome-label font-medium outline-none transition-[filter,transform] duration-100 hover:brightness-150 active:scale-95 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-              style={{ color: groupActive ? color : HUD.textDim }}
+              aria-label={`${display.primary}${
+                display.context ? ` — ${display.context}` : ''
+              } — ${
+                dead
+                  ? stoppedStatus.toLowerCase()
+                  : needsYou
+                    ? 'needs your attention'
+                    : SESSION_GLYPH_LABEL[glyphState]
+              }`}
+              title={`${tab.cwd}${summary ? `\n${summary}` : ''}${
+                needsYou ? '\nneeds your attention (⌘J jumps here)' : ''
+              }${
+                !dead && !needsYou ? `\n${SESSION_GLYPH_COPY[glyphState]}` : ''
+              }${dead ? `\n${tab.resumeState.replace('-', ' ')}` : ''}${
+                ordinal ? `\n⌘${ordinal} selects` : ''
+              }\n${
+                isDraft
+                  ? '⏎ starts · ⌘W discards'
+                  : '⌘W closes — kept in Recently closed'
+              }\ndouble-click to rename`}
+              className="relative flex h-full min-w-0 cursor-pointer items-center gap-1.5 px-2 font-mono text-chrome-title font-medium outline-none transition-transform duration-100 active:scale-[0.98] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan"
+              style={{ color: on ? HUD.text : HUD.textDim }}
             >
-              <span
-                aria-hidden
-                className="inline-block h-3.5 w-[3px] shrink-0 rounded-full"
-                style={{ background: color, boxShadow: `0 0 4px ${color}88` }}
-              />
-              {ordinalHints === 'projects' && gi < 9 && (
-                <span data-project-ordinal={gi + 1} className="contents">
-                  <OrdinalKeycap value={gi + 1} color={color} />
+              {ordinal !== undefined && ordinalHints === 'tabs' && (
+                <span data-tab-ordinal={ordinal} className="contents">
+                  <OrdinalKeycap value={ordinal} color={color} />
                 </span>
               )}
-              {editing?.kind === 'group' && editing.id === g.dir ? (
+              {!dead || isDraft || fault ? (
+                <SessionStatusGlyph
+                  state={isDraft ? 'fresh' : glyphState}
+                  attention={attentionSignal}
+                  delegation={tabDelegation}
+                  fault={fault}
+                />
+              ) : null}
+              {!dead && !isDraft && (
+                <DelegationDots color={color} delegation={tabDelegation} />
+              )}
+              {tab.id === pinnedTabId && (
+                <span
+                  data-pinned
+                  title="Pinned in split view (⌘D unpins)"
+                  className="text-[10px] leading-none"
+                  style={{ color }}
+                >
+                  ◧
+                </span>
+              )}
+              {tab.harness !== 'shell' && !isDraft && (
+                <span className="shrink-0" style={{ color }}>
+                  <HarnessGlyph harness={tab.harness} size={11} />
+                </span>
+              )}
+              {editing?.kind === 'tab' && editing.id === tab.id ? (
                 <>
                   <RenameInput
                     value={editing.value}
                     color={color}
-                    onChange={v => setEditing({ ...editing, value: v })}
-                    onCommit={commit}
-                    onCancel={settle}
+                    onChange={value => setEditing({ ...editing, value })}
+                    onCommit={commitEditing}
+                    onCancel={settleEditing}
                   />
                   <ColorSwatches
                     current={color}
-                    onPick={c => onSetProjectColor(g.dir, c)}
+                    onPick={next => onSetProjectColor(project.dir, next)}
                   />
                 </>
               ) : (
-                <span data-project-label>{g.name}</span>
+                <span
+                  data-condensed={(dead && !isDraft && !on) || undefined}
+                  className={`block overflow-hidden whitespace-nowrap font-sans leading-tight transition-[max-width,opacity] duration-200 motion-reduce:transition-none ${
+                    dead && !isDraft && !on
+                      ? 'max-w-0 opacity-0 group-hover/tab:max-w-52 group-hover/tab:opacity-100 group-focus-within/tab:max-w-52 group-focus-within/tab:opacity-100'
+                      : 'max-w-52'
+                  }`}
+                >
+                  <span
+                    data-subtitle={
+                      display.primaryKind === 'context' || undefined
+                    }
+                  >
+                    {display.primary}
+                  </span>
+                </span>
               )}
-            </EditableChrome>
-            {g.tabs.map(t => {
-              const on = groupActive && t.id === g.activeTabId;
-              const dead = !tabIsLive(t);
-              const summary = summaries[t.durableSessionId];
-              const attentionSignal =
-                !dead && t.sessionId ? attention[t.sessionId] : undefined;
-              const needsYou = attentionNeedsOperator(attentionSignal);
-              const working = !dead && !!(t.sessionId && activity[t.sessionId]);
-              const isAgent = t.harness !== 'shell';
-              // ⌘T draft (D24): a new-tab chip — no process, no badge,
-              // fresh ring, discarded without ceremony
-              const isDraft = t.lifecycle === 'draft';
-              const fault = t.lifecycle === 'failed';
-              // started: main-truth engaged bit; a goal subtitle also
-              // implies it (covers sessions predating the engaged channel)
-              const started =
-                !!(t.sessionId && engaged[t.sessionId]) || !!summary;
-              // Harness-reported delegated work (ENG-023). A Session whose own
-              // turn ended while its children run is still working — the strip
-              // must not report a result the operator cannot read yet.
-              const tabDelegation = t.sessionId
-                ? delegation[t.sessionId]
-                : undefined;
-              const glyphState = sessionGlyphState({
-                working,
-                agent: isAgent,
-                started,
-                delegatedBusy: sessionDelegationBusy(tabDelegation),
-              });
-              const display = sessionDisplayCopy({
-                harness: t.harness,
-                title: t.title,
-                titleKind: t.titleKind,
-                lifecycle: t.lifecycle,
-                summary,
-              });
-              const ordinal = ordinalByTabId.get(t.id);
-              const stoppedStatus =
-                t.lifecycle === 'interrupted'
-                  ? 'Interrupted'
-                  : t.lifecycle === 'failed'
-                    ? 'Failed'
-                    : t.lifecycle === 'exited'
-                      ? 'Exited'
-                      : 'Stopped';
-              const tabMenuItems: StripMenuItem[] = isDraft
-                ? [
-                    {
-                      label: 'Discard',
-                      danger: true,
-                      onSelect: () => onCloseTab(t.id),
-                    },
-                  ]
-                : [
-                    ...(dead &&
-                    onResumeTab &&
-                    (t.harnessSessionId || t.harness === 'shell')
-                      ? [
-                          {
-                            label:
-                              t.harness === 'shell'
-                                ? 'Start New Shell'
-                                : 'Resume This Agent',
-                            onSelect: () => onResumeTab(t.id),
-                          },
-                        ]
-                      : []),
-                    {
-                      label: 'Rename…',
-                      focusAfterSelect: 'none',
-                      onSelect: () =>
-                        setEditing({
-                          kind: 'tab',
-                          id: t.id,
-                          value: t.title,
-                        }),
-                    },
-                    // D26 doctrine: stopped tabs pin fine (the split shows
-                    // retained history); only drafts have nothing to watch.
-                    ...(tabIsPinnable(t) && onTogglePinTab
-                      ? [
-                          {
-                            label:
-                              t.id === pinnedTabId
-                                ? 'Unpin from split'
-                                : 'Pin in split',
-                            onSelect: () => onTogglePinTab(t.id),
-                          },
-                        ]
-                      : []),
-                    ...(onRevealPath
-                      ? [
-                          {
-                            label: 'Reveal in Finder',
-                            onSelect: () => onRevealPath(t.cwd),
-                          },
-                        ]
-                      : []),
-                    {
-                      label: 'Close',
-                      danger: true,
-                      focusAfterSelect: 'none',
-                      onSelect: () => onCloseTab(t.id),
-                    },
-                  ];
-              const openTabMenu = (
-                trigger: HTMLElement,
-                point: { x: number; y: number }
-              ) =>
-                openMenu({
-                  trigger,
-                  ...point,
-                  color,
-                  label: `${display.primary} Session actions`,
-                  items: tabMenuItems,
-                  target: { kind: 'tab', id: t.id },
-                });
-              return (
-                <div
-                  key={t.id}
-                  data-tab-id={t.id}
-                  data-tab-harness={t.harness}
-                  data-durable-session-id={t.durableSessionId}
-                  data-active={on || undefined}
-                  draggable={!editing}
-                  onDragStart={e => {
-                    e.stopPropagation();
-                    e.dataTransfer.effectAllowed = 'move';
-                    setDrag({ kind: 'tab', id: t.id, dir: g.dir });
-                  }}
-                  onDragEnd={e => {
-                    e.stopPropagation();
-                    endDrag();
-                  }}
-                  onContextMenu={e => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const trigger =
-                      e.currentTarget.querySelector<HTMLElement>(
-                        '[data-tab-chrome]'
-                      );
-                    if (trigger) {
-                      openTabMenu(trigger, { x: e.clientX, y: e.clientY });
-                    }
-                  }}
-                  onDragOver={e => {
-                    if (
-                      drag?.kind !== 'tab' ||
-                      drag.dir !== g.dir ||
-                      drag.id === t.id
-                    ) {
-                      return;
-                    }
-                    e.preventDefault();
-                    e.stopPropagation();
-                    e.dataTransfer.dropEffect = 'move';
-                    setHint({ key: `t:${t.id}`, place: dropPlace(e) });
-                  }}
-                  onDragLeave={() =>
-                    setHint(h => (h?.key === `t:${t.id}` ? null : h))
-                  }
-                  onDrop={e => {
-                    if (
-                      drag?.kind !== 'tab' ||
-                      drag.dir !== g.dir ||
-                      drag.id === t.id
-                    ) {
-                      return;
-                    }
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onReorderTab?.(drag.id, t.id, dropPlace(e));
-                    endDrag();
-                  }}
-                  className="group/tab relative flex items-center overflow-hidden rounded border transition-[border-color,background-color,filter] duration-150 hover:brightness-125 motion-reduce:transition-none"
+              {dead && !isDraft && (
+                <span
+                  aria-label={stoppedStatus}
+                  className="shrink-0 border border-white/10 px-1 py-0.5 text-chrome-meta font-medium leading-none"
                   style={{
-                    boxShadow: hintShadow(`t:${t.id}`, color),
-                    borderColor: on ? `${color}99` : 'rgba(138,160,190,0.18)',
-                    background: on ? `${color}14` : 'rgba(138,160,190,0.04)',
-                    opacity:
-                      drag?.kind === 'tab' && drag.id === t.id
-                        ? 0.5
-                        : dead
-                          ? 0.72
-                          : 1,
+                    color:
+                      tab.lifecycle === 'interrupted'
+                        ? HUD.amber
+                        : tab.lifecycle === 'failed'
+                          ? HUD.red
+                          : HUD.textDim,
                   }}
                 >
-                  <EditableChrome
-                    data-tab-chrome
-                    editing={editing?.kind === 'tab' && editing.id === t.id}
-                    onClick={() => onSelectTab(g.dir, t.id)}
-                    onDoubleClick={() =>
-                      setEditing({ kind: 'tab', id: t.id, value: t.title })
-                    }
-                    onKeyDown={event => {
-                      if (!isContextMenuKey(event)) return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      openTabMenu(
-                        event.currentTarget,
-                        keyboardMenuPoint(event.currentTarget)
-                      );
-                    }}
-                    aria-label={`${display.primary}${
-                      display.context ? ` — ${display.context}` : ''
-                    } — ${
-                      dead
-                        ? stoppedStatus.toLowerCase()
-                        : needsYou
-                          ? 'needs your attention'
-                          : SESSION_GLYPH_LABEL[glyphState]
-                    }`}
-                    className="flex cursor-pointer items-center gap-1.5 px-2 py-1 font-mono text-chrome-title font-medium outline-none transition-transform duration-100 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                    style={{ color: on ? HUD.text : HUD.textDim }}
-                    title={`${t.cwd}${summary ? `\n${summary}` : ''}${
-                      needsYou ? '\nneeds your attention (⌘J jumps here)' : ''
-                    }${
-                      !dead && !needsYou
-                        ? `\n${SESSION_GLYPH_COPY[glyphState]}`
-                        : ''
-                    }${
-                      dead ? `\n${t.resumeState.replace('-', ' ')}` : ''
-                    }${ordinal ? `\n⌘${ordinal} selects` : ''}\n${
-                      isDraft
-                        ? '⏎ starts · ⌘W discards'
-                        : '⌘W closes — kept in Recently closed'
-                    }\ndouble-click to rename`}
-                  >
-                    {ordinal !== undefined && ordinalHints === 'tabs' && (
-                      <span data-tab-ordinal={ordinal} className="contents">
-                        <OrdinalKeycap value={ordinal} color={color} />
-                      </span>
-                    )}
-                    {!dead || isDraft || fault ? (
-                      <SessionStatusGlyph
-                        state={isDraft ? 'fresh' : glyphState}
-                        attention={attentionSignal}
-                        delegation={tabDelegation}
-                        fault={fault}
-                      />
-                    ) : null}
-                    {!dead && !isDraft && (
-                      <DelegationDots
-                        color={color}
-                        delegation={tabDelegation}
-                      />
-                    )}
-                    {t.id === pinnedTabId && (
-                      <span
-                        data-pinned
-                        title="Pinned in split view (⌘D unpins)"
-                        className="text-[10px] leading-none"
-                        style={{ color }}
-                      >
-                        ◧
-                      </span>
-                    )}
-                    {t.harness !== 'shell' && !isDraft && (
-                      <span style={{ color }}>
-                        <HarnessGlyph harness={t.harness} size={11} />
-                      </span>
-                    )}
-                    {editing?.kind === 'tab' && editing.id === t.id ? (
-                      <>
-                        <RenameInput
-                          value={editing.value}
-                          color={color}
-                          onChange={v => setEditing({ ...editing, value: v })}
-                          onCommit={commit}
-                          onCancel={settle}
-                        />
-                        <ColorSwatches
-                          current={color}
-                          onPick={c => onSetProjectColor(g.dir, c)}
-                        />
-                      </>
-                    ) : (
-                      // stopped tabs condense to a frozen chip (D23):
-                      // the text folds away until hover/focus unfurls it —
-                      // light collapse, never auto-close (operator design
-                      // pass). Active stopped tabs stay unfurled: their
-                      // restore panel is on screen.
-                      <span
-                        data-condensed={(dead && !isDraft && !on) || undefined}
-                        className={`flex flex-col items-start overflow-hidden transition-[max-width,opacity] duration-200 motion-reduce:transition-none ${
-                          dead && !isDraft && !on
-                            ? 'max-w-0 opacity-0 group-hover/tab:max-w-60 group-hover/tab:opacity-100 group-focus-within/tab:max-w-60 group-focus-within/tab:opacity-100'
-                            : 'max-w-60'
-                        }`}
-                      >
-                        {display.primaryKind === 'context' ? (
-                          <SessionGoalSummary
-                            summary={display.primary}
-                            color={color}
-                            className="max-w-56"
-                          />
-                        ) : (
-                          <span className="whitespace-nowrap font-sans leading-tight">
-                            {display.primary}
-                          </span>
-                        )}
-                        {display.context && (
-                          <SessionGoalSummary
-                            summary={display.context}
-                            color={color}
-                            className="max-w-56"
-                          />
-                        )}
-                      </span>
-                    )}
-                    {dead && !isDraft && (
-                      <span
-                        aria-label={stoppedStatus}
-                        className="border border-white/10 px-1 py-0.5 text-chrome-meta font-medium leading-none"
-                        style={{
-                          color:
-                            t.lifecycle === 'interrupted'
-                              ? HUD.amber
-                              : t.lifecycle === 'failed'
-                                ? HUD.red
-                                : HUD.textDim,
-                        }}
-                      >
-                        {stoppedStatus}
-                      </span>
-                    )}
-                  </EditableChrome>
-                  {summary && isAgent && !isDraft && onRateContext && (
-                    <ContextLabelFeedback
-                      label={summary}
-                      enabled={feedbackEnabled}
-                      onRate={(sentiment, betterLabel) =>
-                        onRateContext({
-                          durableSessionId: t.durableSessionId,
-                          label: summary,
-                          sentiment,
-                          betterLabel,
-                          projectName: g.name,
-                        })
-                      }
-                    />
-                  )}
-                  <button
-                    onClick={() => onCloseTab(t.id)}
-                    // ⌘W closes, like Chrome (D24): started live agents
-                    // get one native confirm; drafts and fresh tabs discard
-                    aria-label={`Close ${display.primary}`}
-                    title={
-                      isDraft
-                        ? 'Discard (⌘W)'
-                        : 'Close — kept in Recently closed for 14 days (⌘W)'
-                    }
-                    className="cursor-pointer px-1 py-0.5 font-mono text-chrome-label font-normal opacity-50 outline-none transition-opacity duration-100 group-hover/tab:opacity-100 hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                    style={{ color: HUD.textDim }}
-                  >
-                    ×
-                  </button>
-                </div>
-              );
-            })}
+                  {stoppedStatus}
+                </span>
+              )}
+            </EditableChrome>
+            {summary && isAgent && !isDraft && onRateContext && (
+              <ContextLabelFeedback
+                label={summary}
+                enabled={feedbackEnabled}
+                onRate={(sentiment, betterLabel) =>
+                  onRateContext({
+                    durableSessionId: tab.durableSessionId,
+                    label: summary,
+                    sentiment,
+                    betterLabel,
+                    projectName: project.name,
+                  })
+                }
+              />
+            )}
+            <button
+              type="button"
+              tabIndex={visible ? 0 : -1}
+              onPointerDown={event => {
+                if (event.button === 0) armPointerClose(token.key);
+              }}
+              onClick={() => onCloseTab(tab.id)}
+              aria-label={`Close ${display.primary}`}
+              title={
+                isDraft
+                  ? 'Discard (⌘W)'
+                  : 'Close — kept in Recently closed for 14 days (⌘W)'
+              }
+              className="mr-0.5 grid size-6 shrink-0 cursor-pointer place-items-center rounded font-mono text-chrome-label font-normal opacity-45 outline-none transition-[opacity,background-color] duration-100 group-hover/tab:opacity-100 hover:bg-white/8 hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+              style={{ color: HUD.textDim }}
+            >
+              ×
+            </button>
           </div>
         );
       })}
+
+      {layout.overflowTarget && hiddenCurrentCount > 0 && (
+        <button
+          type="button"
+          data-ribbon-overflow={hiddenCurrentCount}
+          aria-label={`Open overview for ${hiddenCurrentCount} more ${
+            hiddenCurrentCount === 1 ? 'item' : 'items'
+          }`}
+          title={`${hiddenCurrentCount} more Projects or Initiatives · open overview`}
+          onClick={() =>
+            window.dispatchEvent(new CustomEvent(OPEN_OVERVIEW_EVENT))
+          }
+          className="absolute left-0 top-0 z-[2] grid h-7 cursor-pointer place-items-center rounded-md border px-2 font-mono text-chrome-label outline-none transition-[transform,background-color] hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+          style={{
+            minWidth: layout.overflowTarget.width,
+            transform: ribbonTargetTransform(layout.overflowTarget),
+            color: HUD.textMono,
+            borderColor: 'rgba(138,160,190,0.2)',
+            background: 'rgba(138,160,190,0.055)',
+            transitionDuration: reducedMotion ? '0ms' : `${RIBBON_MOTION_MS}ms`,
+            transitionTimingFunction: 'cubic-bezier(0.25, 1, 0.5, 1)',
+          }}
+        >
+          +{hiddenCurrentCount}
+        </button>
+      )}
+
       {menu && (
         <StripContextMenu
           key={`${menu.target.kind}:${menu.target.id}`}

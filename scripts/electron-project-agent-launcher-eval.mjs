@@ -820,6 +820,10 @@ try {
       );
       await page.getByLabel('Agent Source').click();
       await page.getByRole('option', { name: 'Codex' }).click();
+      // The explicit source change is authored launch intent and therefore a
+      // real draft tab. Discard it before exercising the empty-Project verb.
+      await closeTab(page, 'New agent');
+      await page.locator('[data-agent-composer]').waitFor();
       await page.waitForFunction(() =>
         document
           .querySelector('[aria-label="Agent Source"]')
@@ -914,25 +918,24 @@ try {
       );
       await page.locator('[data-agent-composer]').waitFor();
       check(
-        'closing the last Agent briefly shows the empty Project',
+        'closing the last Agent leaves the empty Project selected',
         await page.locator('[data-project="alpha"]').isVisible()
       );
       check(
-        'last source recommendation survives during the empty grace state',
+        'last source recommendation survives in the empty Project',
         (await page.getByLabel('Agent Source').innerText()).includes('Codex')
       );
       check(
-        'Project and harness permission survive during the empty grace state',
+        'Project and harness permission survive in the empty Project',
         (await page.getByLabel('Agent permissions').innerText()).includes(
           'Auto'
         )
       );
-      const guardedTask = 'Keep this launch intent during the grace period';
+      const guardedTask = 'Keep this launch intent in the open Project';
       await page.getByLabel('Initial task for the new Agent').fill(guardedTask);
       await page.getByRole('button', { name: 'Close New agent' }).waitFor();
-      await page.waitForTimeout(3_400);
       check(
-        'typing during the empty grace period promotes a durable draft and cancels auto-close',
+        'typing in the empty Project promotes a durable draft',
         (await page.locator('[data-project="alpha"]').count()) === 1 &&
           (await page
             .getByLabel('Initial task for the new Agent')
@@ -941,37 +944,29 @@ try {
       await closeTab(page, 'New agent');
       await page.locator('[data-agent-composer]').waitFor();
       const alphaProject = page.locator('[data-project="alpha"]');
-      await page
-        .locator('[data-project="alpha"][data-project-exiting="true"]')
-        .waitFor({ state: 'attached', timeout: 6_000 });
+      await page.waitForTimeout(4_400);
       check(
-        'the exhausted Project enters the horizontal exit state',
-        (await page
-          .locator('[data-workspace-stage]')
-          .getAttribute('data-project-exiting')) === 'true'
+        'the selected exhausted Project remains open instead of auto-closing',
+        (await alphaProject.count()) === 1 &&
+          !(await alphaProject.getAttribute('data-project-exiting')) &&
+          !(await alphaProject.getAttribute('data-project-dormant'))
       );
       await page.screenshot({
-        path: join(output, '05-project-retracting.png'),
+        path: join(output, '05-empty-project-retained.png'),
       });
-      await alphaProject.waitFor({ state: 'detached', timeout: 6_000 });
-      await page.waitForTimeout(600);
-      const afterCloseLayout = await page.evaluate(() =>
+      const afterLastCloseLayout = await page.evaluate(() =>
         window.electron?.workspace?.load()
       );
       check(
-        'the exhausted Project leaves the open workspace',
-        !afterCloseLayout?.projects?.some(project => project.name === 'alpha')
-      );
-      check(
-        'the closed Project remains durable in recents',
-        afterCloseLayout?.recentProjects?.some(
+        'closing the last Agent preserves the open Project object',
+        afterLastCloseLayout?.projects?.some(
           project => project.name === 'alpha'
         )
       );
 
       // Browser-style restore is ledger-backed, not a fresh launch. Two rapid
-      // presses must pop newest then next-newest even after the Project group
-      // itself has closed, and neither restore may spawn a process.
+      // presses must pop newest then next-newest into the retained Project, and
+      // neither restore may spawn a process.
       await page.keyboard.press('Meta+Shift+KeyT');
       await page.keyboard.press('Meta+Shift+KeyT');
       await page.waitForFunction(async () => {
@@ -990,7 +985,7 @@ try {
         secondRestoredIsActive
       );
       check(
-        'reopen revives the closed Project without starting a process',
+        'reopen repopulates the retained Project without starting a process',
         (await page.locator('[data-project="alpha"]').count()) === 1 &&
           (await sessions(page)).length === 0
       );
@@ -1023,35 +1018,18 @@ try {
         ledgerAfterImmediateUndo.length === 0
       );
 
-      // Put both stopped Sessions back in the ledger so the remaining Project
-      // recency/empty-state checks continue against their original fixture.
+      // Put both stopped Sessions back in the ledger so the remaining explicit
+      // Project-close and recency checks continue against their original fixture.
       await closeTab(page, 'Claude Code');
       await closeTab(page, 'Codex');
       await waitForClosedSessionCount(page, 2);
       await page.locator('[data-agent-composer]').waitFor();
-      await page
-        .locator('[data-project="alpha"]')
-        .waitFor({ state: 'detached', timeout: 6_000 });
-      await page.waitForTimeout(600);
-
-      await page.keyboard.press('Meta+KeyN');
-      await page.locator('[data-project-opener]').waitFor();
-      const reopenAlpha = page
-        .locator('[data-project-opener] button')
-        .filter({ hasText: 'alpha' });
-      await reopenAlpha.waitFor();
       check(
-        'Command-N can reopen the automatically closed Project',
-        await reopenAlpha.isVisible()
-      );
-      await reopenAlpha.click();
-      await page.locator('[data-agent-composer]').waitFor();
-      check(
-        'source recommendation survives Project close and reopen',
+        'source recommendation survives the close and restore cycle',
         (await page.getByLabel('Agent Source').innerText()).includes('Codex')
       );
       check(
-        'permission recommendation survives Project close and reopen',
+        'permission recommendation survives the close and restore cycle',
         (await page.getByLabel('Agent permissions').innerText()).includes(
           'Auto'
         )
@@ -1093,7 +1071,7 @@ try {
       await page.keyboard.press('Escape');
 
       // The close verb follows the active UI object. With no Agent tab left,
-      // Command-W closes the explicitly reopened empty Project immediately.
+      // Command-W closes the selected empty Project immediately.
       await page.evaluate(() => {
         globalThis.__EXAWATT_SAW_PROJECT_EXIT = false;
         const observer = new MutationObserver(records => {
@@ -1163,8 +1141,8 @@ try {
         )
       );
 
-      // The explicit context-menu verb is the immediate counterpart to the
-      // close-last-Agent grace path. Leave the app with alpha closed so the
+      // The explicit context-menu verb is the pointer counterpart to ⌘W.
+      // Leave the app with alpha closed so the
       // next launch proves durable library reentry rather than open-layout
       // persistence.
       await page.locator('[data-project="alpha"]').click({ button: 'right' });
@@ -1253,6 +1231,22 @@ try {
       check(
         'closing a shell retains its Project',
         await page.locator('[data-project="bravo"]').isVisible()
+      );
+      await page.getByRole('button', { name: 'charlie', exact: true }).click();
+      const dormantBravo = page.locator(
+        '[data-project="bravo"][data-project-dormant="true"]'
+      );
+      await dormantBravo.waitFor({ state: 'attached', timeout: 6_000 });
+      check(
+        'an inactive empty Project settles into the dormant ribbon tail',
+        await dormantBravo.isVisible()
+      );
+      await page.getByRole('button', { name: 'bravo', exact: true }).click();
+      await dormantBravo.waitFor({ state: 'detached' });
+      check(
+        'selecting a dormant Project restores it without starting work',
+        (await page.locator('[data-project="bravo"]').count()) === 1 &&
+          (await sessions(page)).length === 0
       );
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();

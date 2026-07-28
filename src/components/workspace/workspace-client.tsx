@@ -304,15 +304,21 @@ export function WorkspaceClient() {
     renameTab,
     renameProject,
     setProjectColor,
+    toggleProjectRibbonExpanded,
     ready,
   } = useWorkspaceState({ getInitialSize });
 
-  const { exitingProjectDirs, requestProjectExit, retainProject } =
-    useProjectCloseLifecycle({
-      projects,
-      ready,
-      onCloseProject: closeProject,
-    });
+  const {
+    dormantProjectDirs,
+    exitingProjectDirs,
+    requestProjectExit,
+    retainProject,
+  } = useProjectCloseLifecycle({
+    projects,
+    activeDir: activeProject?.dir ?? null,
+    ready,
+    onCloseProject: closeProject,
+  });
 
   useEffect(() => {
     if (!inElectron) return;
@@ -1031,6 +1037,7 @@ export function WorkspaceClient() {
               onRenameTab={renameTab}
               onRenameProject={renameProject}
               onSetProjectColor={setProjectColor}
+              onToggleProjectExpanded={toggleProjectRibbonExpanded}
               feedbackEnabled={feedbackEnabled}
               onRateContext={submitContextRating}
               onReorderTab={(tabId, targetTabId, place) =>
@@ -1040,6 +1047,7 @@ export function WorkspaceClient() {
                 void reorderProject(dir, targetDir, place)
               }
               exitingProjectDirs={exitingProjectDirs}
+              dormantProjectDirs={dormantProjectDirs}
             />
           </div>
           {activeProject && activeProject.tabs.length > 0 ? (

@@ -260,6 +260,11 @@ export function AgentComposer({
   const modelReady = modelCatalog !== null;
   const controlsDisabled = launching !== null;
   const branchReady = !worktree || branch.trim().length > 0;
+  // Source policy is the only asynchronous launch prerequisite. Model
+  // discovery enriches the override picker, but every harness already has a
+  // trustworthy default of its own; a slow or unavailable catalog must not
+  // eat the operator's Enter key or strand the Start control.
+  const launchReady = preferencesReady && branchReady;
   const effectiveSource = isAgentSourceId(source)
     ? source
     : AGENT_SOURCE_ORDER[0];
@@ -603,7 +608,7 @@ export function AgentComposer({
   );
 
   const launchAgent = async () => {
-    if (controlsDisabled || !sourcePreferences || !modelReady || !branchReady) {
+    if (controlsDisabled || !sourcePreferences || !branchReady) {
       return;
     }
     setLaunching('agent');
@@ -1352,17 +1357,14 @@ export function AgentComposer({
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <AgentStartKeySwitchButton
             busy={launching === 'agent'}
-            disabled={
-              controlsDisabled ||
-              !preferencesReady ||
-              !modelReady ||
-              !branchReady
-            }
+            disabled={controlsDisabled || !launchReady}
             onActivate={() => void launchAgent()}
             title={
-              preferencesReady && modelReady
+              launchReady
                 ? `Start ${sourceMeta.label} with ${modelLabel} and ${permissionMeta.label} permissions`
-                : 'Loading launch preferences'
+                : preferencesReady
+                  ? 'Enter a worktree branch name before starting'
+                  : 'Loading launch preferences'
             }
           />
 

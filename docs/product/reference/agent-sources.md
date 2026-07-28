@@ -23,17 +23,18 @@ visible source choice; the source adapter decides how that request maps to a
 local process, remote Agent, or provider Session.
 
 Closing a Project does not delete its source-agnostic identity. After the last
-Agent closes, the open zero-Session state lingers briefly and then leaves the
-workspace; the durable Project library remains the `⌘N` reopen boundary. The
-close command is context-sensitive: `⌘W` closes the active Agent tab, or the
-active Project when it has no tabs. `⌘⇧T` restores the newest recoverable
-Session without starting it; direct shell launch uses `⌘⌥T`.
+Agent closes, the open zero-Session Project remains valid and moves to a compact
+dormant ribbon tail after a short inactive dwell. Only an explicit Project close
+removes it from the open workspace; the durable Project library remains the
+`⌘N` reopen boundary. The close command is context-sensitive: `⌘W` closes the
+active Agent tab, or the active Project when it has no tabs. `⌘⇧T` restores the
+newest recoverable Session without starting it; direct shell launch uses
+`⌘⌥T`.
 
-The close-last-Agent grace state cannot race new launch intent. Operator
-engagement retains the empty Project, and the first composer edit creates a
-draft tab carrying the complete launch configuration. Untouched catalog/default
-hydration remains ephemeral; operator-authored task, source, model, effort,
-worktree/branch, and roadmap-link choices persist together.
+The first composer edit creates a draft tab carrying the complete launch
+configuration. Untouched catalog/default hydration remains ephemeral;
+operator-authored task, source, model, effort, worktree/branch, and roadmap-link
+choices persist together.
 
 Near-term Claude Code and Codex Sessions are PTY-backed. That transport is an
 implementation detail, not a requirement for future sources. Shells remain

@@ -44,10 +44,10 @@ can grow beyond coding CLIs without committing Exawatt to one provider.
 ## Consequences
 
 - Project state must support zero Session tabs without implicitly launching
-  work. AMENDED 2026-07-22: a Project opened empty remains open, while closing
-  its last Agent leaves a short empty-state confirmation and then closes the
-  open group. Its registry and recency identity survive so `Command-N` can
-  reopen it; close is not delete.
+  work. AMENDED 2026-07-27 by decision `0022`: both an explicitly opened empty
+  Project and a Project whose last Agent closed remain open; inactive empties
+  settle into a compact dormant ribbon tail. Only explicit Project close
+  removes the open group. Registry and recency identity survive either way.
 - An open Project must remain the same addressable object in Terminal, Sessions,
   and Spatial even with zero Agents or Sessions. Agent-derived grouping alone is
   insufficient; sources expose a Project catalog, and later Agents join its
@@ -83,3 +83,15 @@ the complete launch configuration. Background source/model discovery cannot
 make an untouched empty Project durable. The Project strip retracts from the
 right; surviving flex groups use a bounded layout transition so removal does
 not end in a lateral snap.
+
+## 2026-07-27 amendment: retain and dormantly partition empty Projects
+
+Further density dogfood reversed the automatic removal portion of the prior
+amendment. The Project view is expected to gain Project-owned value beyond
+running Agents, and automatic close conflated an exhausted child collection
+with the lifecycle of its parent object. Closing the last Agent now leaves the
+Project open; once inactive for a short tunable dwell its constant-height header
+animates into a stable dormant tail. `Command-W` on the selected empty Project
+and **Close project** remain explicit close. Decision `0022` owns the elastic
+two-row layout, persisted disclosure, Initiative projection, and motion
+contract.

@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Project } from './use-workspace-state';
 
-/** The empty composer remains useful feedback before its Project leaves. */
-export const EMPTY_PROJECT_LINGER_MS = 3_000;
+/**
+ * Empty Projects remain real open objects, then become low-salience ribbon
+ * residents. Centralized for later preference/settings work (the operator
+ * explicitly wants this delay tunable rather than scattered through views).
+ */
+export const EMPTY_PROJECT_DORMANCY_MS = 4_000;
 
-/** Exit is intentionally quicker than the surrounding 300ms stage entrance. */
-export const PROJECT_EXIT_MS = 240;
+/** Chrome-adjacent target-bounds timing: quick, legible, never theatrical. */
+export const PROJECT_EXIT_MS = 200;
 
 function reducedMotionPreferred(): boolean {
   return (
@@ -16,29 +20,40 @@ function reducedMotionPreferred(): boolean {
 }
 
 /**
- * Owns the visual half of closing an open Project.
+ * Owns the lifecycle that is shared by the Project stage and elastic ribbon.
  *
- * A Project that is opened empty is stable. Only a non-empty -> empty
- * transition starts the grace period, so Project selection remains separate
- * from Agent creation. Re-populating the Project during either the grace
- * period or exit cancels the close.
+ * Natural non-empty → empty transitions no longer destroy an open Project.
+ * They keep the useful empty stage and, once inactive for a short dwell, move
+ * the compact Project chip to a dormant tail. Explicit Close Project remains a
+ * close and uses the same bounded exit motion. Starting work or selecting the
+ * Project cancels dormancy immediately.
  */
 export function useProjectCloseLifecycle({
   projects,
+  activeDir,
   ready,
   onCloseProject,
+  dormancyMs = EMPTY_PROJECT_DORMANCY_MS,
 }: {
   projects: Project[];
+  activeDir: string | null;
   ready: boolean;
   onCloseProject: (dir: string) => boolean;
+  /** Test/settings seam; production uses EMPTY_PROJECT_DORMANCY_MS. */
+  dormancyMs?: number;
 }) {
   const [exitingProjectDirs, setExitingProjectDirs] = useState<Set<string>>(
     () => new Set()
   );
+  const [dormantProjectDirs, setDormantProjectDirs] = useState<Set<string>>(
+    () => new Set()
+  );
   const projectsRef = useRef(projects);
+  const activeDirRef = useRef(activeDir);
   projectsRef.current = projects;
-  const previousCountsRef = useRef<Map<string, number> | null>(null);
-  const lingerTimersRef = useRef(
+  activeDirRef.current = activeDir;
+  const emptySinceRef = useRef(new Map<string, number>());
+  const dormancyTimersRef = useRef(
     new Map<string, ReturnType<typeof setTimeout>>()
   );
   const exitTimersRef = useRef(
@@ -46,27 +61,87 @@ export function useProjectCloseLifecycle({
   );
   const manualCloseDirsRef = useRef(new Set<string>());
 
-  const removeExitState = useCallback((dir: string) => {
-    setExitingProjectDirs(current => {
-      if (!current.has(dir)) return current;
-      const next = new Set(current);
-      next.delete(dir);
-      return next;
-    });
-  }, []);
+  const removeFromSet = useCallback(
+    (
+      setter: React.Dispatch<React.SetStateAction<Set<string>>>,
+      dir: string
+    ) => {
+      setter(current => {
+        if (!current.has(dir)) return current;
+        const next = new Set(current);
+        next.delete(dir);
+        return next;
+      });
+    },
+    []
+  );
 
-  const cancelProjectClose = useCallback(
+  const cancelDormancy = useCallback(
+    (dir: string, resetClock: boolean) => {
+      const timer = dormancyTimersRef.current.get(dir);
+      if (timer) clearTimeout(timer);
+      dormancyTimersRef.current.delete(dir);
+      if (resetClock) emptySinceRef.current.set(dir, Date.now());
+      removeFromSet(setDormantProjectDirs, dir);
+    },
+    [removeFromSet]
+  );
+
+  const cancelExit = useCallback(
     (dir: string, clearManualIntent = true) => {
-      const lingerTimer = lingerTimersRef.current.get(dir);
-      if (lingerTimer) clearTimeout(lingerTimer);
-      lingerTimersRef.current.delete(dir);
-      const exitTimer = exitTimersRef.current.get(dir);
-      if (exitTimer) clearTimeout(exitTimer);
+      const timer = exitTimersRef.current.get(dir);
+      if (timer) clearTimeout(timer);
       exitTimersRef.current.delete(dir);
       if (clearManualIntent) manualCloseDirsRef.current.delete(dir);
-      removeExitState(dir);
+      removeFromSet(setExitingProjectDirs, dir);
     },
-    [removeExitState]
+    [removeFromSet]
+  );
+
+  const makeDormant = useCallback((dir: string) => {
+    dormancyTimersRef.current.delete(dir);
+    const project = projectsRef.current.find(
+      candidate => candidate.dir === dir
+    );
+    if (!project || project.tabs.length > 0 || activeDirRef.current === dir) {
+      return;
+    }
+    setDormantProjectDirs(current =>
+      current.has(dir) ? current : new Set(current).add(dir)
+    );
+  }, []);
+
+  const armDormancy = useCallback(
+    (dir: string) => {
+      const project = projectsRef.current.find(
+        candidate => candidate.dir === dir
+      );
+      if (!project || project.tabs.length > 0) {
+        emptySinceRef.current.delete(dir);
+        cancelDormancy(dir, false);
+        return;
+      }
+      // Dormancy measures time spent both empty and inactive. An empty
+      // Project can remain selected indefinitely without using up its dwell;
+      // leaving it starts a fresh, predictable countdown.
+      if (activeDirRef.current === dir) {
+        emptySinceRef.current.delete(dir);
+        cancelDormancy(dir, false);
+        return;
+      }
+      if (!emptySinceRef.current.has(dir)) {
+        emptySinceRef.current.set(dir, Date.now());
+      }
+      if (dormancyTimersRef.current.has(dir)) return;
+      const elapsed =
+        Date.now() - (emptySinceRef.current.get(dir) ?? Date.now());
+      const remaining = Math.max(0, dormancyMs - elapsed);
+      dormancyTimersRef.current.set(
+        dir,
+        setTimeout(() => makeDormant(dir), remaining)
+      );
+    },
+    [cancelDormancy, dormancyMs, makeDormant]
   );
 
   const beginExit = useCallback(
@@ -75,32 +150,30 @@ export function useProjectCloseLifecycle({
         candidate => candidate.dir === dir
       );
       if (!project || project.tabs.length > 0) {
-        cancelProjectClose(dir);
+        cancelExit(dir);
         return;
       }
-      const lingerTimer = lingerTimersRef.current.get(dir);
-      if (lingerTimer) clearTimeout(lingerTimer);
-      lingerTimersRef.current.delete(dir);
+      cancelDormancy(dir, false);
       if (exitTimersRef.current.has(dir)) return;
-      setExitingProjectDirs(current => {
-        if (current.has(dir)) return current;
-        return new Set(current).add(dir);
-      });
+      setExitingProjectDirs(current =>
+        current.has(dir) ? current : new Set(current).add(dir)
+      );
       const duration = reducedMotionPreferred() ? 0 : PROJECT_EXIT_MS;
       exitTimersRef.current.set(
         dir,
         setTimeout(() => {
           exitTimersRef.current.delete(dir);
           manualCloseDirsRef.current.delete(dir);
-          removeExitState(dir);
+          emptySinceRef.current.delete(dir);
+          removeFromSet(setExitingProjectDirs, dir);
           onCloseProject(dir);
         }, duration)
       );
     },
-    [cancelProjectClose, onCloseProject, removeExitState]
+    [cancelDormancy, cancelExit, onCloseProject, removeFromSet]
   );
 
-  /** Manual close bypasses the grace period but still uses the exit motion. */
+  /** Manual close waits for any confirmed tab closes, then exits immediately. */
   const requestProjectExit = useCallback(
     (dir: string): boolean => {
       const project = projectsRef.current.find(
@@ -114,62 +187,61 @@ export function useProjectCloseLifecycle({
     [beginExit]
   );
 
-  /** Any operator interaction with the empty Project converts the transient
-   * grace state into an intentional workspace. Its next non-empty -> empty
-   * transition can still arm the lifecycle again. */
+  /** Engagement promotes a dormant empty Project back into its manual slot. */
   const retainProject = useCallback(
     (dir: string): boolean => {
-      if (!projectsRef.current.some(project => project.dir === dir)) {
+      if (!projectsRef.current.some(project => project.dir === dir))
         return false;
-      }
-      cancelProjectClose(dir);
+      cancelDormancy(dir, true);
+      armDormancy(dir);
       return true;
     },
-    [cancelProjectClose]
+    [armDormancy, cancelDormancy]
   );
 
   useEffect(() => {
-    const currentCounts = new Map(
-      projects.map(project => [project.dir, project.tabs.length] as const)
-    );
-    const previousCounts = previousCountsRef.current;
-    previousCountsRef.current = currentCounts;
-    if (!ready || !previousCounts) return;
-
+    if (!ready) return;
+    const existing = new Set(projects.map(project => project.dir));
     for (const project of projects) {
       if (project.tabs.length > 0) {
-        // Starting another Agent during the grace/exit keeps the Project open.
-        cancelProjectClose(project.dir);
-        continue;
-      }
-      if (manualCloseDirsRef.current.has(project.dir)) {
+        emptySinceRef.current.delete(project.dir);
+        cancelDormancy(project.dir, false);
+        cancelExit(project.dir);
+      } else if (manualCloseDirsRef.current.has(project.dir)) {
         beginExit(project.dir);
-        continue;
-      }
-      if (
-        (previousCounts.get(project.dir) ?? 0) > 0 &&
-        !lingerTimersRef.current.has(project.dir) &&
-        !exitTimersRef.current.has(project.dir)
-      ) {
-        lingerTimersRef.current.set(
-          project.dir,
-          setTimeout(() => beginExit(project.dir), EMPTY_PROJECT_LINGER_MS)
-        );
+      } else {
+        armDormancy(project.dir);
       }
     }
-
-    for (const dir of previousCounts.keys()) {
-      if (!currentCounts.has(dir)) cancelProjectClose(dir);
+    for (const dir of [...emptySinceRef.current.keys()]) {
+      if (existing.has(dir)) continue;
+      emptySinceRef.current.delete(dir);
+      cancelDormancy(dir, false);
+      cancelExit(dir);
     }
-  }, [beginExit, cancelProjectClose, projects, ready]);
+  }, [
+    activeDir,
+    armDormancy,
+    beginExit,
+    cancelDormancy,
+    cancelExit,
+    projects,
+    ready,
+  ]);
 
   useEffect(
     () => () => {
-      for (const timer of lingerTimersRef.current.values()) clearTimeout(timer);
+      for (const timer of dormancyTimersRef.current.values())
+        clearTimeout(timer);
       for (const timer of exitTimersRef.current.values()) clearTimeout(timer);
     },
     []
   );
 
-  return { exitingProjectDirs, requestProjectExit, retainProject };
+  return {
+    dormantProjectDirs,
+    exitingProjectDirs,
+    requestProjectExit,
+    retainProject,
+  };
 }

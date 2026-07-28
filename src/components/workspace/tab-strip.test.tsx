@@ -429,8 +429,11 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     });
     const project = container.querySelector('[data-project-exiting="true"]');
     expect(project).not.toBeNull();
-    expect(project).toHaveClass('origin-left', 'scale-x-0');
-    expect(project).toHaveStyle({ opacity: '0' });
+    expect(project).toHaveStyle({
+      opacity: '0',
+      transformOrigin: 'left center',
+    });
+    expect(project?.getAttribute('style')).toContain('scaleX(0)');
   });
 
   it('dead tabs carry their lifecycle badge, not a turn-state glyph', () => {

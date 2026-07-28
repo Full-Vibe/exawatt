@@ -16,16 +16,22 @@ Project, while keeping the choice visible and changeable. A blank task starts an
 interactive Agent Session. Plain shells remain available as a separate Project
 tool. **⌘T** opens a new Agent tab; **⌘⌥T** opens a shell directly.
 
-Closing the last Agent leaves the empty Project composer visible for a few
-seconds, then retracts the Project from the open workspace. Reopen it from the
-Project chooser with **⌘N**. **⌘W** closes the active Agent tab, or closes the
-active Project when it is already empty. A Project's right-click menu also
-offers **Close project**; Exawatt confirms first when that would close remaining
-Agent tabs. Clicking or typing in the empty composer keeps the Project open;
-the first edit becomes a draft Agent tab, so the delayed close cannot discard
-new launch work. With the Project or Session chip focused, **Shift+F10** opens
-the same action menu without a pointer. Arrow keys, Home/End, and Tab move
-through or out of it; Escape returns focus to that chip.
+The ribbon keeps Project structure compact. The selected Project expands to
+show its Initiative-shaped Agent tabs; inactive Projects stay collapsed unless
+you use the small diamond or **Keep expanded** menu action. That preference
+survives restart. The ribbon uses at most two rows; **+N** opens the existing
+overview when more work exists than fits.
+
+Closing the last Agent leaves the empty Project and composer open. After a short
+inactive dwell, its compact header slides into the dormant tail instead of
+remaining between active work. Selecting it restores its manual position and
+starting an Agent repopulates the same Project. **⌘W** closes the active Agent
+tab, or explicitly closes the active Project when it is already empty. A
+Project's right-click menu also offers **Close project**; Exawatt confirms first
+when that would close remaining Agent tabs. The first composer edit becomes a
+draft Agent tab, so new launch work is durable. With the Project or Session chip
+focused, **Shift+F10** opens the same action menu without a pointer. Arrow keys,
+Home/End, and Tab move through or out of it; Escape returns focus to that chip.
 
 Closing a meaningful Session keeps it in **Recently closed** for 14 days.
 **⌘⇧T** restores the newest one as a stopped tab without starting its Agent or

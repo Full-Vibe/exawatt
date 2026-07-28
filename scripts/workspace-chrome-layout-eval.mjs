@@ -199,13 +199,21 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1312, height: 700 } });
 const errors = [];
+// This geometry eval is intentionally unauthenticated. The admin feedback
+// badge is outside its contract and Supabase correctly rejects that request;
+// stub only that unrelated read so renderer-error capture stays meaningful.
+await page.route('**/rest/v1/product_feedback**', route =>
+  route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+);
 page.on('pageerror', error => errors.push(String(error.message || error)));
 page.on('console', message => {
   if (
     message.type() === 'error' &&
     !message.text().includes('eval() is not supported')
   ) {
-    errors.push(message.text());
+    errors.push(
+      `${message.text()}${message.location().url ? ` (${message.location().url})` : ''}`
+    );
   }
 });
 
@@ -324,6 +332,20 @@ try {
   const chrome = page.locator('[data-workspace-chrome]');
   await chrome.waitFor();
   await page.locator('[data-project="cortex-ehr"]').waitFor();
+  // Elastic ribbon: selected Projects auto-expand; an inactive Project can be
+  // kept open explicitly. Keep gpagent open so the viewport sweep exercises
+  // mixed active/manual groups and the stopped lifecycle specimen remains in
+  // the production DOM at every width.
+  await page
+    .getByRole('button', {
+      name: 'Keep gpagent expanded when inactive',
+    })
+    .click();
+  await page
+    .getByRole('button', {
+      name: 'Keep exawatt expanded when inactive',
+    })
+    .click();
   // ⌘T pops a REAL tab (D24): the New Agent button creates a draft tab
   // whose pane hosts the composer — geometry checks run against that pane
   const composerToggle = page.locator('[data-composer-toggle]');
@@ -404,7 +426,20 @@ try {
           left: chromeRect.left,
           right: chromeRect.right,
           width: chromeRect.width,
+          height: chromeRect.height,
           scrollWidth: chromeElement.scrollWidth,
+        },
+        ribbon: {
+          rows: Number(
+            document
+              .querySelector('[data-workspace-tab-strip]')
+              ?.getAttribute('data-ribbon-rows') ?? 0
+          ),
+          hidden: Number(
+            document
+              .querySelector('[data-workspace-tab-strip]')
+              ?.getAttribute('data-ribbon-hidden') ?? 0
+          ),
         },
         panel: {
           left: panelRect.left,
@@ -449,6 +484,11 @@ try {
     if (metrics.chrome.scrollWidth > metrics.chrome.width + 1) {
       throw new Error(
         `Workspace chrome overflows at ${width}px: ${JSON.stringify(metrics)}`
+      );
+    }
+    if (metrics.chrome.height > 82 || metrics.ribbon.rows > 2) {
+      throw new Error(
+        `Elastic ribbon exceeded its two-row chrome budget at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
     if (
@@ -580,7 +620,7 @@ try {
     });
   });
   const gpaTab = page.locator(
-    '[data-project="gpagent"] [data-tab-id="gpa-tab"]'
+    '[data-project-parent="/tmp/gpagent"][data-tab-id="gpa-tab"]'
   );
   const attentionMarker = gpaTab.locator('[data-attention]');
   await attentionMarker.waitFor();
@@ -632,7 +672,7 @@ try {
   }
   // Return to the original fixture state for the remaining parity checks.
   await page
-    .locator('[data-project="exawatt"] [data-tab-id="exawatt-tab"]')
+    .locator('[data-project-parent="/tmp/exawatt"][data-tab-id="exawatt-tab"]')
     .locator('button')
     .first()
     .click();
@@ -736,7 +776,7 @@ try {
     path: join(SCREENSHOT_DIR, 'stopped-condensed.png'),
   });
   await page
-    .locator('[data-project="gpagent"]')
+    .locator('[data-project-parent="/tmp/gpagent"][data-tab-id="frozen-tab"]')
     .getByRole('button', { name: 'Close billing migration' })
     .hover();
   await settle();
@@ -777,7 +817,7 @@ try {
   }
   // 2. right-click menus (D27): a tab offers its verbs, esc dismisses
   await page
-    .locator('[data-project="gpagent"] [data-tab-id]')
+    .locator('[data-project-parent="/tmp/gpagent"][data-tab-id]')
     .first()
     .click({ button: 'right' });
   const stripMenu = page.locator('[data-strip-menu]');
@@ -792,7 +832,7 @@ try {
   // 3. a STARTED agent pops the in-app confirm: default-highlighted Close,
   // esc keeps it open the first time, ⏎ presses the default the second
   const gpaClose = page
-    .locator('[data-project="gpagent"]')
+    .locator('[data-project-parent="/tmp/gpagent"][data-tab-id="gpa-tab"]')
     .getByRole('button', {
       name: 'Close Testing UTC date parsing fix and seeding demo org',
     });
@@ -836,10 +876,10 @@ try {
   // 5. back stack (D27): reselect the codex tab, then ⌘[ returns to the
   // previously active tab — tab switches are history stops now
   const codexTab = page
-    .locator('[data-project="exawatt"] [data-tab-id]')
+    .locator('[data-project-parent="/tmp/exawatt"][data-tab-id]')
     .first();
   const freshTab = page
-    .locator('[data-project="exawatt"] [data-tab-id]')
+    .locator('[data-project-parent="/tmp/exawatt"][data-tab-id]')
     .last();
   await codexTab.locator('button').first().click();
   await freshTab.locator('button').first().click();
@@ -853,7 +893,7 @@ try {
   await page.keyboard.press('Meta+BracketRight');
   await page.waitForFunction(() => {
     const tabs = document.querySelectorAll(
-      '[data-project="exawatt"] [data-tab-id]'
+      '[data-project-parent="/tmp/exawatt"][data-tab-id]'
     );
     return !!tabs[tabs.length - 1]?.hasAttribute('data-active');
   });
@@ -861,7 +901,7 @@ try {
   // tab, not just the workspace — the pending tab-select applies against
   // the freshly mounted layout
   await page
-    .locator('[data-project="exawatt"] [data-tab-id]')
+    .locator('[data-project-parent="/tmp/exawatt"][data-tab-id]')
     .first()
     .locator('button')
     .first()
@@ -961,7 +1001,7 @@ try {
   );
   await page.reload({ waitUntil: 'networkidle' });
   const hydratedWorkingTab = page.locator(
-    '[data-project="exawatt"] [data-tab-id="fresh-tab"] [data-status="working"]'
+    '[data-project-parent="/tmp/exawatt"][data-tab-id="fresh-tab"] [data-status="working"]'
   );
   await hydratedWorkingTab.waitFor();
   await page.screenshot({
@@ -1037,6 +1077,7 @@ try {
   // The stopped pane must not impersonate an interactive terminal. Its action
   // is scoped to this Agent and retained output is explicitly read-only. Keep
   // this navigation last so it cannot perturb the back-stack assertions above.
+  await page.getByRole('button', { name: 'gpagent', exact: true }).click();
   await page.locator('[data-tab-id="frozen-tab"]').click();
   const stoppedPane = page.locator('[data-session-restore="frozen-tab"]');
   await stoppedPane.waitFor();

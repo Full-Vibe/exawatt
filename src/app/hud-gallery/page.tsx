@@ -37,6 +37,7 @@ import { ContextLabelFeedback } from '@/components/feedback/context-label-feedba
 import { QuickCaptureBar } from '@/components/feedback/quick-capture-bar';
 import type { QuickFeedbackKind } from '@/components/feedback/quick-feedback-events';
 import { SessionStateTileStudy } from '@/components/hud/session-state-tile-study';
+import { ProjectRibbonStudy } from '@/components/hud/project-ribbon-study';
 
 const STUDY_SCREENSHOT =
   'data:image/svg+xml,' +
@@ -55,10 +56,10 @@ function QuickCaptureStudy() {
         className="max-w-[68ch] text-xs leading-relaxed"
         style={{ color: HUD.textDim }}
       >
-        ⌘⇧F from anywhere, including inside a terminal. Enter sends and the
-        bar closes optimistically; Esc dismisses but keeps the draft. The
-        screenshot is captured before the bar renders, so it never contains
-        the capture UI. ⌘1/⌘2/⌘3 switch kind, ⌘S toggles the screenshot.
+        ⌘⇧F from anywhere, including inside a terminal. Enter sends and the bar
+        closes optimistically; Esc dismisses but keeps the draft. The screenshot
+        is captured before the bar renders, so it never contains the capture UI.
+        ⌘1/⌘2/⌘3 switch kind, ⌘S toggles the screenshot.
       </p>
       <QuickCaptureBar
         kind={kind}
@@ -155,6 +156,12 @@ interface Section {
 }
 
 const SECTIONS: Section[] = [
+  {
+    id: 'elastic-project-ribbon',
+    title: 'Elastic Project ribbon',
+    meta: 'production component · two-row target-bounds layout + Initiative projection',
+    showcase: <ProjectRibbonStudy />,
+  },
   {
     id: 'session-state-tiles',
     title: 'Session state tiles',
