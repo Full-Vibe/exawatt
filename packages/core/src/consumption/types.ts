@@ -208,6 +208,36 @@ export interface ConsumptionSample {
    * which is a different fact from "no delegation happened".
    */
   delegation: ConsumptionDelegation | null;
+  /**
+   * How the run was invoked, verbatim from the source: Claude Code's
+   * `entrypoint` (`cli` interactive, `sdk-cli` programmatic `claude -p`,
+   * `claude-desktop`) or Codex's `originator` (`codex-tui`). null when the
+   * source does not record it.
+   *
+   * Load-bearing for honesty, not metadata. Exawatt's own goal-subtitle
+   * summarizer invokes `claude -p --model haiku` per Session, and each call
+   * opens a fresh provider session id. On this operator's corpus that is 1,991
+   * of 2,070 Claude session ids — so a per-Session surface that does not
+   * separate machine-invoked from operator work is ~96% noise, and Exawatt's
+   * own overhead silently books against the Projects it is measuring. Use
+   * `isOperatorEntrypoint` rather than testing for haiku, which is a model
+   * choice this tool could change at any time.
+   */
+  entrypoint: string | null;
+}
+
+/**
+ * Entrypoints that represent a human driving a Session, as opposed to a tool
+ * (including Exawatt itself) invoking the harness programmatically.
+ *
+ * `null` counts as operator work: an unknown entrypoint must not silently
+ * disappear from a consumption total. Under-reporting is the worse failure.
+ */
+const MACHINE_ENTRYPOINTS = new Set(['sdk-cli', 'sdk', 'sdk-ts', 'sdk-py']);
+
+export function isOperatorEntrypoint(entrypoint: string | null): boolean {
+  if (entrypoint === null) return true;
+  return !MACHINE_ENTRYPOINTS.has(entrypoint);
 }
 
 /**

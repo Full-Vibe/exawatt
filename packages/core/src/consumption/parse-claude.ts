@@ -220,6 +220,7 @@ export function parseClaudeTranscript(
       contextWindow: null,
       sourceFile,
       delegation,
+      entrypoint: readString(record, 'entrypoint'),
     });
     diagnostics.samplesEmitted += 1;
   }

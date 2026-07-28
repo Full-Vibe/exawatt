@@ -96,6 +96,7 @@ const sample = (overrides: SampleOverrides): ConsumptionSample => {
     ...overrides,
     source,
     delegation: overrides.delegation ?? null,
+    entrypoint: overrides.entrypoint ?? null,
     assurance: overrides.assurance ?? localLogAssurance(source),
     usage: { ...ZERO_USAGE, ...(overrides.usage ?? {}) },
   };

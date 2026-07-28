@@ -318,6 +318,64 @@ export const CLAUDE_DELEGATED_JSONL = jsonl([
 ]);
 
 /** The spawn-time sidecar. `spawnDepth` is present here but often is not. */
+/**
+ * A programmatic `claude -p` run, as Exawatt's own goal-subtitle summarizer
+ * produces. Each such call opens a fresh provider session id, so these dominate
+ * session COUNTS while contributing almost no tokens. `entrypoint: 'sdk-cli'`
+ * is the only durable discriminator — the haiku model is a choice, not a marker.
+ */
+export const CLAUDE_SDK_INVOCATION_JSONL = jsonl([
+  {
+    ...claudeAssistant({
+      entrypoint: 'sdk-cli',
+      sessionId: 'sess-summarizer-1',
+      requestId: 'req_sdk_1',
+      uuid: 'u-sdk-1',
+      timestamp: '2026-07-04T09:00:00.000Z',
+      usage: { input_tokens: 4, cache_read_input_tokens: 900, output_tokens: 11 },
+    }),
+    message: {
+      ...claudeAssistant({}).message,
+      model: 'claude-haiku-4-5-20251001',
+      usage: {
+        input_tokens: 4,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 900,
+        output_tokens: 11,
+        server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 },
+      },
+    },
+  },
+]);
+
+/**
+ * A haiku turn inside an INTERACTIVE session. Proves the model is not a valid
+ * proxy for machine invocation: this is operator work and must be counted.
+ */
+export const CLAUDE_INTERACTIVE_HAIKU_JSONL = jsonl([
+  {
+    ...claudeAssistant({
+      entrypoint: 'cli',
+      sessionId: 'sess-claude-9',
+      requestId: 'req_interactive_haiku',
+      uuid: 'u-ih-1',
+      timestamp: '2026-07-04T09:05:00.000Z',
+      usage: { input_tokens: 8, cache_read_input_tokens: 4_000, output_tokens: 120 },
+    }),
+    message: {
+      ...claudeAssistant({}).message,
+      model: 'claude-haiku-4-5-20251001',
+      usage: {
+        input_tokens: 8,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 4_000,
+        output_tokens: 120,
+        server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 },
+      },
+    },
+  },
+]);
+
 export const CLAUDE_DELEGATED_META_JSON = JSON.stringify({
   agentType: 'Explore',
   description: 'fixture delegated run',

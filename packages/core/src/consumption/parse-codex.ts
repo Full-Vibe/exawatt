@@ -84,6 +84,8 @@ export interface CodexSessionContext {
   effort: string | null;
   contextWindow: number | null;
   cliVersion: string | null;
+  /** Codex's `originator` (e.g. `codex-tui`) — the entrypoint analogue. */
+  originator: string | null;
   /** Cumulative snapshots already counted, for cross-read idempotency. */
   seenSnapshots: string[];
 }
@@ -96,6 +98,7 @@ export function emptyCodexContext(): CodexSessionContext {
     effort: null,
     contextWindow: null,
     cliVersion: null,
+    originator: null,
     seenSnapshots: [],
   };
 }
@@ -224,6 +227,8 @@ export function parseCodexRollout(
       session.cwd = readString(payload, 'cwd') ?? session.cwd;
       session.cliVersion =
         readString(payload, 'cli_version') ?? session.cliVersion;
+      session.originator =
+        readString(payload, 'originator') ?? session.originator;
       diagnostics.linesWithoutUsage += 1;
       continue;
     }
@@ -312,6 +317,7 @@ export function parseCodexRollout(
       // reports the capability as absent so this null is never read as "no
       // delegation happened".
       delegation: null,
+      entrypoint: session.originator,
     });
     diagnostics.samplesEmitted += 1;
   }

@@ -7,11 +7,14 @@ import {
   parseCodexRollout,
 } from '../consumption/parse-codex';
 import { assuranceLevel } from '../consumption/assurance';
+import { isOperatorEntrypoint } from '../consumption/types';
 import { SOURCE_CAPABILITIES } from '../consumption/types';
 import {
   CLAUDE_DAMAGED_JSONL,
   CLAUDE_DELEGATED_JSONL,
   CLAUDE_DELEGATED_META_JSON,
+  CLAUDE_SDK_INVOCATION_JSONL,
+  CLAUDE_INTERACTIVE_HAIKU_JSONL,
   CLAUDE_DELEGATED_NO_META_JSONL,
   CLAUDE_MIXED_MODELS_JSONL,
   CLAUDE_NO_CWD_JSONL,
@@ -405,5 +408,52 @@ describe('parseCodexRollout', () => {
     expect(tail.samples[0].providerSessionId).toBe('codex-sess-1');
     // The duplicate that straddles the split is still suppressed.
     expect(head.samples.length + tail.samples.length).toBe(2);
+  });
+});
+
+describe('entrypoint (operator work vs machine-invoked)', () => {
+  it('captures Claude Code entrypoint verbatim', () => {
+    const interactive = parseClaudeTranscript(fixtureLines(CLAUDE_ORDINARY_JSONL));
+    expect(interactive.samples.every(s => s.entrypoint === 'cli')).toBe(true);
+
+    const programmatic = parseClaudeTranscript(fixtureLines(CLAUDE_SDK_INVOCATION_JSONL));
+    expect(programmatic.samples).toHaveLength(1);
+    expect(programmatic.samples[0].entrypoint).toBe('sdk-cli');
+  });
+
+  it('captures Codex originator as the entrypoint analogue', () => {
+    const result = parseCodexRollout(fixtureLines(CODEX_RATE_LIMITED_JSONL));
+    expect(result.samples.length).toBeGreaterThan(0);
+    expect(result.samples[0].entrypoint).toBe('codex-tui');
+
+    // No session_meta means the source cannot say. null, not a guess.
+    const noMeta = parseCodexRollout(fixtureLines(CODEX_NO_META_JSONL), {
+      fallbackSessionId: 'sess-codex-fallback',
+    });
+    expect(noMeta.samples.every(s => s.entrypoint === null)).toBe(true);
+  });
+
+  it('classifies sdk entrypoints as machine-invoked and everything else as operator work', () => {
+    expect(isOperatorEntrypoint('cli')).toBe(true);
+    expect(isOperatorEntrypoint('claude-desktop')).toBe(true);
+    expect(isOperatorEntrypoint('codex-tui')).toBe(true);
+    expect(isOperatorEntrypoint('sdk-cli')).toBe(false);
+  });
+
+  it('treats an unknown entrypoint as operator work so usage is never lost', () => {
+    // Under-reporting is the worse failure: an entrypoint this parser has never
+    // seen must still count toward a total rather than silently vanishing.
+    expect(isOperatorEntrypoint(null)).toBe(true);
+    expect(isOperatorEntrypoint('some-future-entrypoint')).toBe(true);
+  });
+
+  it('does not use the model as a proxy for machine invocation', () => {
+    // A haiku turn in an INTERACTIVE session is operator work. Filtering on
+    // model rather than entrypoint would wrongly discard it.
+    const result = parseClaudeTranscript(fixtureLines(CLAUDE_INTERACTIVE_HAIKU_JSONL));
+    expect(result.samples).toHaveLength(1);
+    expect(result.samples[0].model).toContain('haiku');
+    expect(result.samples[0].entrypoint).toBe('cli');
+    expect(isOperatorEntrypoint(result.samples[0].entrypoint)).toBe(true);
   });
 });
