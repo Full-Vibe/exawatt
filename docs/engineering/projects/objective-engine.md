@@ -92,6 +92,28 @@ projection implemented and verified 2026-07-26
   evaluator passed owner-only rows, idempotency, anonymous denial, private
   attachment ownership, wrong-folder denial, and cleanup.
 
+### Intake evidence — 2026-07-27
+
+Feedback row `91c90593-a712-46ad-a4ff-3ceaa5ba7408` arrived through the label
+**correction** affordance with `sentiment: -1`, but it is not a label judgment.
+The shown label ("Debug Divvy shortcuts in Exawatt") was accurate; the operator
+used the correction field to report a tab-strip layout defect, which is now
+queued in the daily-driver adoption findings log.
+
+Two consequences worth holding:
+
+- **The corpus must not ingest this row.** A naive promotion of
+  `context.betterLabel` into `src/lib/context-labels/gold-cases.ts` would train
+  the labeler toward "It's a two-row tab with truncated text, yet whitespace in
+  the right 40%" as the correct objective for that Session. Corpus additions
+  stay a judged step, never an automatic one — this row is the first concrete
+  case proving why.
+- **A negative label vote is not always a label signal.** The correction box is
+  the nearest writable surface when something on the strip looks wrong, so
+  `context_label` sentiment cannot be read as label quality without inspecting
+  the message. Any future accuracy metric derived from vote counts needs this
+  confound stated.
+
 ## Roadmap milestone log
 
 ### 2026-07-26 — E1.1 Session comparison and titleless-tab incident
