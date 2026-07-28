@@ -2,18 +2,181 @@
 
 Roadmap item: ENG-023
 
-This is execution detail for ENG-023, not a separate roadmap. The direction is
-**deliberately unshaped pending a design pass**; this doc holds the feasibility
-evidence gathered at capture time and the boundaries the pass inherits. Do not
-shape scope, altitudes, or slices here — that happens in the design pass, and
-its conclusions land back on the roadmap item.
+This is execution detail for ENG-023, not a separate roadmap. The **design pass
+ran 2026-07-27** with the operator; its conclusions are recorded on the roadmap
+item, and this doc holds the durable evidence and contracts behind them.
 
 ## Why this doc exists
 
-The roadmap item is a direction capture, not a plan. It arrived with enough
-verified on-disk evidence that a future design pass can argue about
-presentation rather than about whether the data exists. That evidence is
-durable execution detail, so it lives here and the roadmap keeps the contract.
+The roadmap item began as a direction capture, not a plan. It arrived with
+enough verified on-disk evidence that the design pass could argue about
+presentation rather than about whether the data exists. That evidence is durable
+execution detail, so it lives here and the roadmap keeps the contract.
+
+## Design pass — 2026-07-27
+
+Operator session. Four decisions were taken; every mechanism claim below was
+verified end-to-end on the operator's machine during the pass, not reasoned
+about. The capture-time evidence (on-disk layout, corpus counts) is preserved in
+the verbatim log further down; where the two disagree, this section wins,
+because the capture-time framing assumed a file reader and the pass replaced it.
+
+### D-A Mechanism: a harness event channel, push-primary
+
+The capture framed this as reading `~/.claude/projects/<slug>/<sessionId>/subagents/`.
+**That framing is superseded.** Claude Code exposes delegation as documented
+lifecycle hooks, and Exawatt can subscribe per launch without touching the user's
+configuration. The harness reports its own delegation; Exawatt does not go
+looking for it.
+
+Verified during the pass (Claude Code 2.1.206):
+
+| Property | Result |
+| --- | --- |
+| Hooks injected via `claude --settings <file>` fire | yes — `SessionStart`, `SubagentStart`, `SubagentStop` all delivered |
+| `SubagentStart` payload | `agent_id`, `agent_type`, parent `session_id`, `prompt_id`, `cwd`, `transcript_path` |
+| `SubagentStop` payload | the above plus **`agent_transcript_path`**, `last_assistant_message`, `permission_mode`, `background_tasks`, `session_crons` |
+| `PreToolUse` with matcher `Agent\|Task` | fires in the PARENT carrying `tool_input.description` — the operator-legible child label, at spawn |
+| `PostToolUse` inside a child | carries `agent_id` + `agent_type` — live per-child activity is available as push |
+| `type: "http"` hooks | POST the payload with custom headers to a loopback listener; no helper binary needed |
+| Injected settings vs the user's own project hooks | **merge additively** — a project `.claude/settings.local.json` hook and the injected hook both fired |
+| Dead listener (Exawatt closed or crashed) | **fails open** — the Session completed normally in 9.7 s |
+
+Two consequences:
+
+1. **Path discovery leaves the critical path.** `SubagentStop` hands Exawatt the
+   child's transcript path. There is no slug derivation, no directory-layout
+   assumption, and no `~/.claude` hardcoding in the live path — which is what
+   makes this safe to ship to users who are not the operator. The on-disk reader
+   remains as a **fallback** for history and for Sessions Exawatt did not launch,
+   and that fallback already resolves `CLAUDE_CONFIG_DIR` / `CODEX_HOME` from the
+   spawned process environment (`electron/main/pty/agent-models.ts`), not from a
+   hardcoded home directory.
+2. **The channel is not delegation-specific.** It is a general source-agnostic
+   observation seam — turn boundaries, notifications, permission requests, and
+   compaction are all available through it. Delegation is its first consumer, not
+   its purpose. Operator framing during the pass: push "is the most future-proof
+   and supports some of our longer-term goals as well."
+
+### D-A2 The channel is a capability, not an assumption
+
+Three mechanisms exist across the harnesses Exawatt targets. The contract
+describes which one a source supports; the UI never assumes.
+
+| Source | Delegation today | Observation mechanism |
+| --- | --- | --- |
+| Claude Code | yes | **push** — injected `--settings` hooks (verified) |
+| Codex | **none** — no Agent/Task tool; ENG-008 E0 measured 0 delegated records across 356 files | hooks exist and use the same JSON shape, but are **trust-gated**: Codex persists a `trusted_hash` per hook file in `config.toml` and needs `--dangerously-bypass-hook-trust` to skip. Exawatt must not silently inject. Future: `codex app-server` |
+| OpenClaw | unknown | **protocol** — gateway events (`packages/core/src/oc`), a third mechanism under the same contract |
+| Demo Scenario Source | simulated | same view model, clearly simulated provenance |
+
+A source therefore declares delegation as `observable: false` (Codex today),
+not as zero children. Absent capability reads as absent — confirmed by the
+operator — and never as an empty state, a zero count, or a broken surface in a
+parallel first-class regime.
+
+### D-B State model: two independent facts, no new light
+
+The pass established that Exawatt today collapses three distinct situations into
+one `Active` light. Measured event ordering from a real delegating Session:
+
+```
+658.24  UserPromptSubmit          parent turn opens
+662.06  SubagentStart  ac1ac…     child starts
+663.46  Stop (parent)             parent finished its OWN turn
+737.21  SubagentStop   ac1ac…     child finishes — 74 s later
+737.29  UserPromptSubmit          the child's result re-opens the parent turn
+743.74  Stop (parent)
+```
+
+For 74 seconds the parent was **idle and available** while its child worked.
+Operator framing: *"'Active but you can talk to me because my subordinates are
+busy' is different from 'Active and you can only enqueue a message.'"*
+
+Both facts are independently push-observable and must stay independent, exactly
+as `reference/agent-state.md` requires ("Attention, Agent turn state, Session
+process lifecycle, plan position, and freshness remain independent facts even
+when a view composes them into one row"):
+
+- **Own turn** — `generating` between `UserPromptSubmit` and `Stop`; `available`
+  after `Stop`.
+- **Delegated work** — outstanding `SubagentStart` minus `SubagentStop`.
+
+Resolution, per the operator's explicit choice of *behavior only, no new light*:
+
+- The **five-light protocol is unchanged**. No new state is added to the reviewed
+  Off / Active / Result / Needs You / Fault vocabulary. Existing states receive
+  more correct inputs; the vocabulary does not grow.
+- **Terminal** answers *"can I talk to it?"*. The light continues to describe the
+  Session's own turn. The composer simply behaves correctly: input while
+  `available` sends immediately even with children running; input while
+  `generating` enqueues, as today. The affordance lives in the input, not in a
+  new glyph.
+- **Sessions and Spatial** answer *"is this work moving?"*. A Session with running
+  children never reads as finished. Operator framing: *"if the team is working
+  they're working."*
+- Delegation renders as a **separate additive channel** — child **dots, not
+  counts**, per the established UI preference — in a constant footprint, so a
+  child appearing or finishing never shifts a row (the D24 rule).
+- The concrete correctness fix: `attention-monitor` must not raise `turn-end`
+  while children are outstanding. Byte quiescence currently reports a delegating
+  parent as a finished turn, which is the bug this item exists to kill.
+
+### D-C Altitude sequence
+
+The operator ranked the jobs: *"1 primarily. But all broadly. I don't care about
+4 so much (but I suppose there should be a way to zoom into a child agent as
+well in the future)."*
+
+- **D1 — "Is that quiet tab done, or waiting on children?"** The first slice.
+  Event channel, capability contract, the two-fact state model, the attention fix,
+  and child dots in Terminal and the tab strip. Sessions and Spatial consume the
+  same derivation from `session-status.ts`, so no delegating Session reads as
+  finished anywhere, without designing a new surface yet.
+- **D2 — Terminal delegation detail.** The per-child rail: type, the child's own
+  description, elapsed, state; the child's result readable here.
+- **D3 — Fleet topology and child zoom.** Sessions and Spatial gain real
+  delegation topology (ENG-004's stated mandate), including entering a child.
+- **Not scope.** A results-collection surface. The operator explicitly deprioritized
+  it; the results themselves remain reachable in Terminal.
+
+### D-D Content boundary
+
+Delegated labels and results are message content, which the ENG-008 consumption
+parse deliberately never reads. Measured on the operator's own corpus:
+
+| | Example | Size |
+| --- | --- | --- |
+| label | `Find project open/switch in Exawatt` | 29–36 characters |
+| result | a full markdown report naming files and findings | 7,148–10,401 characters |
+
+Decision: **labels everywhere, result readable in Terminal only, nothing sent
+off-machine.** Labels are chips; results are multi-KB documents describing a
+private codebase, and holding them would put a permanent asterisk on the
+otherwise trivially auditable claim that Exawatt keeps only names and numbers.
+Results stay in the Electron main process and are never routed to the ENG-021
+summarizer or any other network path. Reversible: D3's child zoom is the
+deliberate next step past this line, taken knowingly rather than by drift.
+
+### D-E Risks this pass accepted
+
+- **Hook injection is configuration that executes code.** Exawatt injects its
+  own hook file; the user must be able to inspect exactly what is injected, and
+  the file belongs in Exawatt's own state directory with restrictive permissions.
+- **Loopback listener is an attack surface.** Bind 127.0.0.1 only, ephemeral
+  port, per-Session bearer token, bounded payload size, reject non-loopback.
+- **Hook latency is the operator's latency.** Every injected hook runs inside the
+  harness turn. Keep them a single loopback POST with a short timeout and
+  fail-open semantics — verified above, and a permanent regression gate.
+- **`--settings` is a CLI contract that can change.** Probe the capability at
+  launch and degrade to the pull reader rather than assuming.
+- **No activity exhaust.** `PostToolUse` inside children is available and is
+  deliberately NOT subscribed in D1. `reference/agent-state.md` requires grouped,
+  meaningful Events over per-tool streams, and a child-by-child tool ticker at
+  Sessions altitude would be a regression.
+- **Unverified.** Whether `--settings` applies on `--resume`, and the behavior of
+  `background_tasks` / `session_crons` (reported by `SubagentStop`, out of scope
+  here but the same channel would carry them).
 
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 
