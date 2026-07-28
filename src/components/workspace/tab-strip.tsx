@@ -849,6 +849,7 @@ export function TabStrip({
           agent: isAgent,
           started,
           delegatedBusy: sessionDelegationBusy(tabDelegation),
+          ownTurn: tabDelegation?.ownTurn,
         });
         const display = sessionDisplayCopy({
           harness: tab.harness,

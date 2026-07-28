@@ -127,10 +127,12 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   delegationMonitor.attach(harnessEventChannel, ptySessions);
   attentionMonitor.setDelegationSource(id => delegationMonitor.isBusy(id));
   harnessEventChannel.on('event', (id: string, event: HarnessEvent) => {
-    // A reported turn boundary is stronger evidence than inferred quiescence.
-    // It matters most for the turn a CHILD opens by returning its result:
-    // no keystroke precedes it, so nothing else would reopen the turn.
+    // A reported turn boundary is stronger evidence than inferred quiescence,
+    // and it arrives 6–7 s sooner. Turn-start also matters for the turn a
+    // CHILD opens by returning its result: no keystroke precedes it, so
+    // nothing else would reopen the turn.
     if (event.kind === 'turn-start') attentionMonitor.noteHarnessTurnStart(id);
+    if (event.kind === 'turn-end') attentionMonitor.noteHarnessTurnEnd(id);
   });
   delegationMonitor.on('delegation', (id: string, delegation: unknown) => {
     broadcast('pty:delegation', { id, delegation });

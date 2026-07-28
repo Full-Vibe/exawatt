@@ -422,6 +422,7 @@ export function ExposeOverlay({
       agent: tile.harness !== 'shell',
       started: !!(tile.sessionId && engaged[tile.sessionId]) || !!subtitle,
       delegatedBusy: sessionDelegationBusy(tileDelegation),
+      ownTurn: tileDelegation?.ownTurn,
     });
     const roadmap = roadmapByTab[tile.tabId];
     const current = sessionCurrentStateCopy({

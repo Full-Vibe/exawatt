@@ -870,7 +870,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         if (s.engaged) seededEngaged[s.id] = true;
         // Reload and late-attach adopt live delegation immediately (ENG-023);
         // otherwise the dots would wait for the next child to start or stop.
-        if (s.delegation && s.delegation.children.length > 0) {
+        if (
+          s.delegation &&
+          (s.delegation.children.length > 0 ||
+            s.delegation.ownTurn === 'generating')
+        ) {
           seededDelegation[s.id] = s.delegation;
         }
       }
@@ -1156,13 +1160,19 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     // work" rather than "zero children" — absent is not the same as none.
     const offDelegation = api.onDelegation?.(({ id, delegation: next }) => {
       setDelegation(prev => {
-        if (!next || next.children.length === 0) {
+        // The record carries BOTH reported facts, so it is kept while either
+        // is live: children outstanding, or the Session's own turn running.
+        // Dropping it on "no children" would discard the turn truth that
+        // corrects the glyph (ENG-015 S1.1).
+        const live =
+          !!next && (next.children.length > 0 || next.ownTurn === 'generating');
+        if (!live) {
           if (!(id in prev)) return prev;
           const cleared = { ...prev };
           delete cleared[id];
           return cleared;
         }
-        return { ...prev, [id]: next };
+        return { ...prev, [id]: next! };
       });
     });
     const offAttention = api.onAttention?.(({ id, attention: att }) => {

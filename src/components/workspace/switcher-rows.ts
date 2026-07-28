@@ -66,6 +66,7 @@ export function sessionRowStatus(
     agent: s.harness !== 'shell',
     started: !!s.engaged || !!s.contextSummary?.trim(),
     delegatedBusy,
+    ownTurn: s.delegation?.ownTurn,
   });
 }
 

@@ -334,6 +334,29 @@ describe('AttentionMonitor', () => {
       expect(monitor.isWorking('a')).toBe(true);
     });
 
+    it('retires a superseded result when a new turn is reported', () => {
+      // Measured on a real Session: the previous turn's result signal survived
+      // into the next turn, and the light reads a turn-end as `result` no
+      // matter the turn state — so it showed "result ready" while the Agent
+      // was visibly working again.
+      add('a', 'claude', clock - 60_000);
+      data('a', 'x'.repeat(500));
+      monitor.noteHarnessTurnEnd('a');
+      expect(monitor.get('a')?.kind).toBe('turn-end');
+      monitor.noteHarnessTurnStart('a');
+      expect(monitor.get('a')).toBeNull();
+      expect(monitor.isWorking('a')).toBe(true);
+    });
+
+    it('never retires a real operator gate on a new turn', () => {
+      // A question or a block is not answered by more output arriving.
+      add('a', 'claude', clock - 60_000);
+      data('a', `needs you${BELL}`);
+      expect(monitor.get('a')?.kind).toBe('bell');
+      monitor.noteHarnessTurnStart('a');
+      expect(monitor.get('a')?.kind).toBe('bell');
+    });
+
     it('ignores a reported turn start for a shell or a dead session', () => {
       add('s', 'shell');
       monitor.noteHarnessTurnStart('s');
@@ -344,6 +367,118 @@ describe('AttentionMonitor', () => {
       monitor.noteHarnessTurnStart('a');
       expect(monitor.isWorking('a')).toBe(false);
       expect(monitor.isEngaged('a')).toBe(false);
+    });
+
+    it('settles a reported turn end immediately, without waiting for silence', () => {
+      // Inference needs minBurst + quietMs. A reported boundary must not.
+      add('a', 'claude', clock - 60_000);
+      data('a', 'x'.repeat(500));
+      expect(monitor.isWorking('a')).toBe(true);
+      monitor.noteHarnessTurnEnd('a');
+      expect(monitor.isWorking('a')).toBe(false);
+      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+    });
+
+    it('leaves inference running as a backstop for an unreported end', () => {
+      // A turn that aborts, or a harness that dies mid-turn, reports nothing.
+      // Quiescence must still settle it rather than hanging on working.
+      add('a', 'claude', clock - 60_000);
+      data('a', 'x'.repeat(500));
+      clock += 5000;
+      monitor.sweepNow();
+      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+    });
+
+    it('does not double-raise when both paths observe the same turn', () => {
+      add('a', 'claude', clock - 60_000);
+      data('a', 'x'.repeat(500));
+      const reportedAt = clock;
+      monitor.noteHarnessTurnEnd('a');
+      clock += 5000;
+      monitor.sweepNow();
+      // the ORIGINAL signal is retained, so the attention queue stays ordered
+      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: reportedAt });
+      expect(events.filter(e => e.id === 'a' && e.att)).toHaveLength(1);
+    });
+
+    it('consumes the burst so the next sweep cannot re-raise the same turn', () => {
+      add('a', 'claude', clock - 60_000);
+      data('a', 'x'.repeat(500));
+      monitor.noteHarnessTurnEnd('a');
+      monitor.setWindowFocused(true);
+      monitor.setFocus('a');
+      monitor.setFocus(null);
+      clock += 5000;
+      monitor.sweepNow();
+      expect(monitor.get('a')).toBeNull();
+    });
+
+    it('never raises a reported end on the watched Session', () => {
+      add('a', 'claude', clock - 60_000);
+      monitor.setWindowFocused(true);
+      monitor.setFocus('a');
+      data('a', 'x'.repeat(500));
+      monitor.noteHarnessTurnEnd('a');
+      expect(monitor.get('a')).toBeNull();
+      // but it still settles, so an idle repaint cannot resurrect "working"
+      expect(monitor.isWorking('a')).toBe(false);
+    });
+
+    it('withholds a reported end while children are still running', () => {
+      const busy = new Set(['a']);
+      monitor.setDelegationSource(id => busy.has(id));
+      add('a', 'claude', clock - 60_000);
+      data('a', 'x'.repeat(500));
+      monitor.noteHarnessTurnEnd('a');
+      expect(monitor.get('a')).toBeNull();
+    });
+
+    it('does not apply the spawn grace to a reported end', () => {
+      // The grace protects INFERENCE from reading a startup banner as a
+      // finished turn. A reported boundary is unambiguous, and most first
+      // turns finish inside the 20s grace — swallowing their result would
+      // make the feature useless exactly when a Session is newest.
+      add('a', 'claude', clock); // just spawned
+      data('a', 'x'.repeat(500));
+      monitor.noteHarnessTurnEnd('a');
+      expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+      // inference still respects it
+      add('b', 'claude', clock);
+      data('b', 'x'.repeat(500));
+      clock += 5000;
+      monitor.sweepNow();
+      expect(monitor.get('b')).toBeNull();
+    });
+
+    it('ignores a reported end for a shell or a dead session', () => {
+      add('s', 'shell', clock - 60_000);
+      monitor.noteHarnessTurnEnd('s');
+      expect(monitor.get('s')).toBeNull();
+
+      add('a', 'claude', clock - 60_000);
+      manager.sessions[1].exited = true;
+      monitor.noteHarnessTurnEnd('a');
+      expect(monitor.get('a')).toBeNull();
+    });
+
+    it('cycles cleanly across repeated reported turns', () => {
+      add('a', 'claude', clock - 60_000);
+      for (let turn = 0; turn < 3; turn += 1) {
+        monitor.noteHarnessTurnStart('a');
+        expect(monitor.isWorking('a')).toBe(true);
+        data('a', 'x'.repeat(300));
+        clock += 1000;
+        monitor.noteHarnessTurnEnd('a');
+        expect(monitor.isWorking('a')).toBe(false);
+        expect(monitor.get('a')?.kind).toBe('turn-end');
+        // the operator looks, clearing it, and the next turn opens clean
+        monitor.setWindowFocused(true);
+        monitor.setFocus('a');
+        monitor.setFocus(null);
+        monitor.setWindowFocused(false);
+        expect(monitor.get('a')).toBeNull();
+        clock += 1000;
+      }
     });
 
     it('defaults to reporting nothing delegated', () => {

@@ -183,3 +183,96 @@ describe('delegated work', () => {
     expect(delegationCopy({ ownTurn: 'available', children: [] })).toBeNull();
   });
 });
+
+/**
+ * Reported turn truth (ENG-015 S1.1). Measured on a real Session, byte
+ * inference trailed the harness's own boundary by 6-7 s on every turn — long
+ * enough to read "working" for an Agent that had provably finished. A source
+ * that declares its boundary therefore outranks inference in BOTH directions,
+ * while sources that report nothing keep the inferred behavior exactly.
+ */
+describe('reported turn truth', () => {
+  const agent = { agent: true, started: true };
+
+  it('is a no-op for every source that reports nothing', () => {
+    // The full inference matrix must be untouched when ownTurn is undefined.
+    expect(sessionGlyphState({ ...agent, working: true })).toBe('working');
+    expect(sessionGlyphState({ ...agent, working: false })).toBe('done');
+    expect(
+      sessionGlyphState({ working: false, agent: true, started: false })
+    ).toBe('fresh');
+    expect(
+      sessionGlyphState({ working: false, agent: false, started: true })
+    ).toBe('quiet');
+    expect(
+      sessionGlyphState({ working: true, agent: false, started: true })
+    ).toBe('working');
+  });
+
+  it('shows a reported turn as working even when the stream is silent', () => {
+    // A turn can go quiet without ending — inference cannot tell those apart.
+    expect(
+      sessionGlyphState({ ...agent, working: false, ownTurn: 'generating' })
+    ).toBe('working');
+  });
+
+  it('settles a reported turn end while bytes are still arriving', () => {
+    // This is the measured 6-7s lie: the Agent has finished, the TUI is still
+    // repainting, and the strip claimed "working" the whole time.
+    expect(
+      sessionGlyphState({ ...agent, working: true, ownTurn: 'available' })
+    ).toBe('done');
+  });
+
+  it('keeps the rest vocabulary intact under a reported turn', () => {
+    expect(
+      sessionGlyphState({
+        working: true,
+        agent: true,
+        started: false,
+        ownTurn: 'available',
+      })
+    ).toBe('fresh');
+    expect(
+      sessionGlyphState({
+        working: true,
+        agent: false,
+        started: true,
+        ownTurn: 'available',
+      })
+    ).toBe('quiet');
+  });
+
+  it('lets delegated children outrank a finished own turn', () => {
+    // "If the team is working, they're working" (ENG-023) survives S1.1: the
+    // parent's own turn ending is exactly the case delegation exists for.
+    expect(
+      sessionGlyphState({
+        ...agent,
+        working: false,
+        ownTurn: 'available',
+        delegatedBusy: true,
+      })
+    ).toBe('working');
+  });
+
+  it('projects a reported turn end into a ready result, not a gate', () => {
+    const state = sessionGlyphState({
+      ...agent,
+      working: true,
+      ownTurn: 'available',
+    });
+    expect(sessionStatusLightState({ state, attention: null })).toBe('result');
+    expect(
+      sessionStatusLightState({
+        state,
+        attention: { kind: 'turn-end', since: 1 },
+      })
+    ).toBe('result');
+    // a real gate still wins over a finished turn
+    expect(
+      sessionStatusLightState({ state, attention: { kind: 'bell', since: 1 } })
+    ).toBe('needs-you');
+    expect(sessionStatusLightState({ state, fault: true })).toBe('fault');
+  });
+});

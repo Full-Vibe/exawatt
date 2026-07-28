@@ -256,6 +256,70 @@ Acceptance criteria:
 - The registry is the shared source of truth the spatial board's Project zones
   (ENG-004) read, not a terminal-only structure.
 
+### S1.1 Reported turn truth
+
+Status: landed 2026-07-27
+
+S1's inferred signal class was always the weaker half: a work burst followed by
+output quiescence is a _guess_ that a turn ended. ENG-023's harness event
+channel made the real boundary available, so S1.1 uses it where a source
+reports one.
+
+**The measurement.** A real Claude Session, sampled through Exawatt's own IPC:
+
+```
++0.6s   own=generating  glyph=working
++2.6s   own=available   glyph=working    <- the Agent has provably finished
++9.9s   own=available   glyph=done       <- the strip catches up, 7.3s later
+...
++53.2s  own=available   glyph=working
++58.8s  own=available   glyph=done       <- 5.6s later
++59.6s  attention=turn-end
+```
+
+After: the glyph and the result signal land in the same sample as the reported
+boundary, on every turn.
+
+**A correction to the motivating case.** This work was proposed on the theory
+that a long silent stretch (a 20s test run) would make inference declare a
+false result. That did **not** reproduce: Claude Code repaints a live timer
+while working, so the stream is never actually quiet. The real defect is the
+opposite direction — a 6-7s window, twice per turn, where the strip reports
+work that is already done. Do not restate the false-result claim.
+
+Scope:
+
+- `attention-monitor.noteHarnessTurnEnd` settles a reported boundary at once:
+  settle, stop working, consume the burst, then raise the ready result subject
+  to the same watched / delegated-busy rules as inference
+- `sessionGlyphState` accepts the reported `ownTurn`, which outranks byte
+  activity in both directions and resolves through the SAME rest vocabulary,
+  so a reported turn changes when the strip is right, never what it can say
+- the renderer keeps a Session's reported record while its own turn is running,
+  not only while it has delegated children
+- inference is deliberately LEFT RUNNING as a backstop; `raise` is idempotent,
+  so it is a no-op when the reported path already fired
+
+Two defects the permutation testing found, both fixed here:
+
+1. **The 20s spawn grace was swallowing reported ends.** That guard exists
+   because a revived tab printing its banner and going quiet _looks_ like a
+   finished turn to inference. A reported boundary has no such ambiguity, and
+   most first turns finish inside the grace — so honoring it made the feature
+   useless exactly when a Session is newest.
+2. **A superseded result survived into the next turn.**
+   `sessionStatusLightState` reads a turn-end signal as `result` regardless of
+   turn state, so a stale flag lit "result ready" on a Session that was visibly
+   working again. A reported turn start now retires the RESULT class only — an
+   unanswered question or block still needs the operator, and more output does
+   not answer it.
+
+Verification: `pnpm eval:electron:turn-truth` drives the permutations in the
+real app over a fixture harness that speaks the actual hook payloads;
+`attention-monitor.test.ts` and `session-status.test.ts` own the state matrix,
+including the watched/unwatched split and the burst/quiescence thresholds,
+which need an injected clock and focus rather than a live window.
+
 ## Context-paging idea bank (research-grounded)
 
 Ranked roughly by conviction × cost. These are candidates, not commitments;

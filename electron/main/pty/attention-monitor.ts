@@ -180,6 +180,39 @@ export class AttentionMonitor extends EventEmitter {
     }
   }
 
+  /**
+   * The harness REPORTED that this Session's turn ended (ENG-015 S1.1).
+   *
+   * Quiescence needs ~600 bytes plus 4 s of silence to conclude the same
+   * thing, so the strip trailed the truth by 6–7 s on every measured turn —
+   * long enough to read "working" for a Session that had provably finished.
+   * A source that declares its own boundary settles it immediately.
+   *
+   * The inferred path is deliberately LEFT RUNNING as a backstop: `raise` is
+   * idempotent, so it becomes a no-op when this already fired, and a turn that
+   * ends without a report (an abort, a crashed harness) still settles the slow
+   * way instead of hanging as permanently working.
+   */
+  noteHarnessTurnEnd(id: string): void {
+    if (this.disabled) return;
+    const session = this.manager?.list().find(item => item.id === id);
+    if (!session || session.exited || session.harness === 'shell') return;
+    this.settled.add(id);
+    this.setWorking(id, false);
+    // Consume the burst: the boundary is accounted for, and leaving it would
+    // let the next quiescence sweep re-raise the same finished turn.
+    this.burstBytes.set(id, 0);
+    if (this.isWatched(id)) return;
+    // NO spawn grace here, deliberately. That guard exists because a revived
+    // tab printing its banner and going quiet LOOKS like a finished turn to
+    // inference; a reported boundary carries no such ambiguity, and honoring
+    // the grace would swallow the result of any turn finished within 20s of
+    // launch — which is most first turns.
+    // The Session's own turn ended, but its team has not (ENG-023).
+    if (this.delegatedBusy(id)) return;
+    this.raise(id, 'turn-end');
+  }
+
   /** Teach the monitor which Sessions still have delegated children running
    *  (ENG-023). Byte quiescence cannot see them. */
   setDelegationSource(delegatedBusy: (id: string) => boolean): void {
@@ -202,6 +235,13 @@ export class AttentionMonitor extends EventEmitter {
     if (!session || session.exited || session.harness === 'shell') return;
     this.settled.delete(id);
     this.markEngaged(id);
+    // A ready result that new work has already superseded is not a result to
+    // review. `sessionStatusLightState` reads a turn-end signal as `result`
+    // regardless of turn state, so leaving it would light "result ready" on a
+    // Session that is visibly working again. Only the RESULT class is
+    // retired — an unanswered question or block still needs the operator, and
+    // more output does not answer it.
+    if (this.attention.get(id)?.kind === 'turn-end') this.clear(id);
     this.lastDataAt.set(id, this.now());
     this.setWorking(id, true);
   }

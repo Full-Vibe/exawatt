@@ -86,6 +86,7 @@ export function sessionGlyphState({
   agent,
   started,
   delegatedBusy = false,
+  ownTurn,
 }: {
   working: boolean;
   /** false for shells — they have no turn state */
@@ -93,8 +94,23 @@ export function sessionGlyphState({
   started: boolean;
   /** harness-reported outstanding children; false when unreported (ENG-023) */
   delegatedBusy?: boolean;
+  /** the source's OWN report of its turn, when it makes one (ENG-015 S1.1).
+   *  Undefined means unreported, and the inferred byte activity stands. */
+  ownTurn?: 'generating' | 'available';
 }): SessionGlyphState {
-  if (working || delegatedBusy) return 'working';
+  if (delegatedBusy) return 'working';
+  // A source that declares its own boundary outranks byte activity in BOTH
+  // directions. Measured on a real Session, inference trailed the reported
+  // truth by 6-7s every turn — long enough to show "working" for an Agent
+  // that had already finished, and to hide a result that was ready.
+  if (ownTurn === 'generating') return 'working';
+  // `available` resolves through the SAME rest vocabulary as inference, so a
+  // reported turn changes when the strip is right, never what it can say.
+  if (ownTurn === 'available') {
+    if (!agent) return 'quiet';
+    return started ? 'done' : 'fresh';
+  }
+  if (working) return 'working';
   if (!agent) return 'quiet';
   return started ? 'done' : 'fresh';
 }
