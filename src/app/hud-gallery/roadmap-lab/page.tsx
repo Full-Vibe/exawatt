@@ -97,6 +97,7 @@ export default function RoadmapLabPage() {
               onModeChange={() => {}}
               onSelectSession={() => {}}
               overlay={false}
+              untriagedFeedback={null}
             />
           </div>
         </section>
@@ -125,6 +126,7 @@ export default function RoadmapLabPage() {
               onModeChange={setMode}
               onSelectSession={() => {}}
               overlay={false}
+              untriagedFeedback={3}
             />
           </div>
         </section>

@@ -21,6 +21,11 @@ export function requestQuickFeedback(kind?: QuickFeedbackKind): void {
   );
 }
 
+/** Fired by the provider after any accepted submission (quick bar, Help
+ * modal, label votes) so inbox surfaces — the roadmap rail's untriaged
+ * count — can refresh without polling. */
+export const FEEDBACK_SUBMITTED_EVENT = 'exawatt:feedback-submitted';
+
 /** The surface that owns operator attention may register richer attribution
  * (active Project, durable Session) so a quick submission can say where it
  * came from without the provider knowing any workspace state. */

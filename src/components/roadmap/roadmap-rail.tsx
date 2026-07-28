@@ -22,6 +22,7 @@ import {
 } from 'react';
 import { HUD, withAlpha } from '@/components/hud';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from '../workspace/session-jump';
+import { useUntriagedFeedbackCount } from '../feedback/use-untriaged-feedback';
 import type {
   RoadmapItemView,
   RoadmapLensSessionInput,
@@ -328,6 +329,7 @@ export function RoadmapRail({
    *  leaving it moves focus to the overview instead of the terminal */
   permanent = false,
   onExitFocus,
+  untriagedFeedback,
 }: {
   view: RoadmapLensView;
   projectDir: string | null;
@@ -340,8 +342,16 @@ export function RoadmapRail({
   overlay: boolean;
   permanent?: boolean;
   onExitFocus?: () => void;
+  /** ENG-025 F2.1: operator inbox pressure. Omit to sample live Supabase
+   *  state; the lab passes a fixture value. null hides the line. */
+  untriagedFeedback?: number | null;
 }) {
   const color = projectColor ?? HUD.cyan;
+  const liveUntriaged = useUntriagedFeedbackCount(
+    untriagedFeedback === undefined
+  );
+  const untriagedCount =
+    untriagedFeedback === undefined ? liveUntriaged : untriagedFeedback;
   const rootRef = useRef<HTMLDivElement>(null);
   const [entered, setEntered] = useState(false);
   const [shippedOpen, setShippedOpen] = useState(false);
@@ -941,6 +951,20 @@ export function RoadmapRail({
             {trustLine(view)}
           </span>
         )}
+        {untriagedCount !== null &&
+          untriagedCount !== undefined &&
+          untriagedCount > 0 && (
+            <span
+              data-untriaged-feedback
+              className="font-ui text-[11px]"
+              style={{ color: HUD.amber }}
+              title="Filed feedback not yet folded into the roadmap — ask an agent to drain the inbox"
+            >
+              {untriagedCount === 1
+                ? '1 filed thought awaiting triage'
+                : `${untriagedCount} filed thoughts awaiting triage`}
+            </span>
+          )}
         <span className="font-ui text-[11px]">
           Read-only — Exawatt reads this file, never writes it
         </span>

@@ -44,6 +44,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { QuickCaptureBar } from './quick-capture-bar';
 import {
+  FEEDBACK_SUBMITTED_EVENT,
   OPEN_QUICK_FEEDBACK_EVENT,
   sampleQuickFeedbackAttribution,
   type QuickFeedbackDetail,
@@ -198,6 +199,9 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
             idempotencyKey: crypto.randomUUID(),
           } satisfies ProductFeedbackRequest),
         });
+        if (response.ok) {
+          window.dispatchEvent(new CustomEvent(FEEDBACK_SUBMITTED_EVENT));
+        }
         return response.ok;
       } catch {
         return false;
