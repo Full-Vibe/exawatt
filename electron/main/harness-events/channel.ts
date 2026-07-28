@@ -68,11 +68,15 @@ export class HarnessEventChannel extends EventEmitter {
       const server = http.createServer((request, response) =>
         this.handle(request, response)
       );
-      server.on('error', () => {
+      // Only a failure to BIND is fatal. A socket error on an already-listening
+      // server must not null out a server that is still open, or new launches
+      // would go unsubscribed while the listener leaked.
+      const failedToBind = () => {
         this.server = null;
         this.starting = null;
         resolve(false);
-      });
+      };
+      server.once('error', failedToBind);
       // Loopback only, ephemeral port. Never keep the app alive for this.
       server.listen(0, '127.0.0.1', () => {
         const address = server.address();
@@ -84,6 +88,10 @@ export class HarnessEventChannel extends EventEmitter {
         }
         this.server = server;
         this.port = address.port;
+        server.off('error', failedToBind);
+        // Post-bind errors are per-socket noise; log-free tolerance keeps one
+        // bad client from disabling delegation for every Session.
+        server.on('error', () => {});
         server.unref?.();
         this.starting = null;
         resolve(true);
@@ -136,9 +144,19 @@ export class HarnessEventChannel extends EventEmitter {
     response: http.ServerResponse
   ): void {
     // Always answer, always fast: this runs inside the harness's turn.
+    // Guarded because `error` and `end` can both fire for one request — a
+    // second writeHead throws ERR_HTTP_HEADERS_SENT, and an uncaught throw
+    // here would take down the main process over a hook delivery.
+    let answered = false;
     const done = (status: number) => {
-      response.writeHead(status, { 'content-type': 'application/json' });
-      response.end('{}');
+      if (answered || response.writableEnded) return;
+      answered = true;
+      try {
+        response.writeHead(status, { 'content-type': 'application/json' });
+        response.end('{}');
+      } catch {
+        // The client hung up mid-answer. Nothing to do and nothing broken.
+      }
     };
     if (
       request.method !== 'POST' ||

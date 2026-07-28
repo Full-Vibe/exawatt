@@ -208,6 +208,40 @@ describe('HarnessEventChannel', () => {
     ).rejects.toThrow();
   });
 
+  it('survives a client that hangs up mid-request', async () => {
+    // `error` and `end` can both fire for one request. A second response would
+    // throw ERR_HTTP_HEADERS_SENT inside an event handler, and an uncaught
+    // throw here would take down the main process over a hook delivery.
+    const target = await started();
+    const registration = target.register('pty-1', claudeHookEvent)!;
+    const uncaught: unknown[] = [];
+    const onUncaught = (error: unknown) => uncaught.push(error);
+    process.on('uncaughtException', onUncaught);
+    try {
+      const controller = new AbortController();
+      const inflight = fetch(`http://127.0.0.1:${registration.port}/hook`, {
+        method: 'POST',
+        headers: { 'x-exawatt-token': registration.token },
+        body: JSON.stringify({ hook_event_name: 'Stop' }),
+        signal: controller.signal,
+      }).catch(() => undefined);
+      controller.abort();
+      await inflight;
+      await new Promise(done => setTimeout(done, 150));
+    } finally {
+      process.off('uncaughtException', onUncaught);
+    }
+    expect(uncaught).toEqual([]);
+    // and the channel still serves the next request
+    expect(
+      await post(
+        registration,
+        { hook_event_name: 'Stop' },
+        { 'x-exawatt-token': registration.token }
+      )
+    ).toBe(200);
+  });
+
   it('registers nothing before it is listening, so a launch just goes unwatched', () => {
     const idle = new HarnessEventChannel();
     expect(idle.listening).toBe(false);

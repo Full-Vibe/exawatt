@@ -75,8 +75,8 @@ export function buildHarnessCommand(
   // Subscribe BEFORE the Agent-shaped flags so the launch reads as
   // "this harness, wired to Exawatt, then asked to do X".
   const baseInvocation =
-    settingsPath && descriptor.eventChannelInvocation
-      ? descriptor.eventChannelInvocation(permissionInvocation, settingsPath)
+    settingsPath && descriptor.eventChannel
+      ? descriptor.eventChannel.invocation(permissionInvocation, settingsPath)
       : permissionInvocation;
   const modelInvocation = selectedModel
     ? descriptor.modelInvocation(baseInvocation, shellQuote(selectedModel))

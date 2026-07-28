@@ -114,8 +114,13 @@ export function AttentionMarker() {
  */
 export function DelegationDots({
   delegation,
+  color,
 }: {
   delegation?: SessionDelegation | null;
+  /** Owned here rather than by a wrapper: a wrapping element would survive as
+   *  an empty flex child when there is no delegation, and its parent's `gap`
+   *  would then pad every NON-delegating row. */
+  color?: string;
 }) {
   const running = delegation?.children.length ?? 0;
   const copy = delegationCopy(delegation);
@@ -131,7 +136,10 @@ export function DelegationDots({
         // Gap wider than the dot so a cluster reads as separate workers rather
         // than as an ellipsis after the title. Width is the cap, always, so
         // children arriving and finishing never resize the row.
-        style={{ width: DELEGATION_DOT_CAP * 3 + (DELEGATION_DOT_CAP - 1) * 3 }}
+        style={{
+          width: DELEGATION_DOT_CAP * 3 + (DELEGATION_DOT_CAP - 1) * 3,
+          ...(color ? { color } : {}),
+        }}
       >
         {Array.from({ length: DELEGATION_DOT_CAP }, (_, index) => (
           <span

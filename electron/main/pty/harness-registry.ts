@@ -1,4 +1,27 @@
 import type { AgentHarness, AgentPermissionMode } from './harness-types';
+import type { HarnessEventNormalizer } from '../harness-events/channel';
+import {
+  claudeHookEvent,
+  claudeHookSettings,
+} from '../harness-events/claude-hooks';
+
+/**
+ * How a source is wired to Exawatt's harness event channel (ENG-023).
+ *
+ * Kept together so a source cannot declare half of a mechanism: the document
+ * Exawatt writes, the flag that makes the harness read it, and the parser for
+ * what comes back are one decision. A second push source supplies its OWN
+ * normalizer here rather than inheriting whichever one a call site happened to
+ * hardcode.
+ */
+export interface HarnessEventChannelBinding {
+  /** Build the settings document Exawatt writes for one launch. */
+  settings: (port: number, token: string) => string;
+  /** Point the launch at that document. */
+  invocation: (invocation: string, settingsPath: string) => string;
+  /** Translate this source's payloads into the shared event vocabulary. */
+  normalize: HarnessEventNormalizer;
+}
 
 /**
  * Whether a source reports the work it delegates, and how (ENG-023).
@@ -19,7 +42,7 @@ interface HarnessLaunchDescriptor {
   delegation: DelegationCapability;
   /** Subscribe this launch to Exawatt's harness event channel. Omitted by
    *  sources with no push mechanism, which simply launch unsubscribed. */
-  eventChannelInvocation?: (invocation: string, settingsPath: string) => string;
+  eventChannel?: HarnessEventChannelBinding;
   permissionFlags: (mode: AgentPermissionMode) => string;
   modelInvocation: (invocation: string, quotedModel: string) => string;
   effortInvocation: (invocation: string, effort: string) => string;
@@ -46,8 +69,12 @@ const descriptors = {
     // project and local hooks instead of replacing them, and nothing under
     // the user's harness configuration is written.
     delegation: { observable: true, mechanism: 'settings-hooks' },
-    eventChannelInvocation: (invocation, settingsPath) =>
-      `${invocation} --settings ${shellQuote(settingsPath)}`,
+    eventChannel: {
+      settings: claudeHookSettings,
+      invocation: (invocation, settingsPath) =>
+        `${invocation} --settings ${shellQuote(settingsPath)}`,
+      normalize: claudeHookEvent,
+    },
     permissionFlags: mode =>
       mode === 'prompt'
         ? '--permission-mode default'

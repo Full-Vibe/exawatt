@@ -519,6 +519,21 @@ describe('TabStrip delegated work (ENG-023)', () => {
     expect(measure()).toBe(oneChild);
   });
 
+  it('adds no empty flex child to a tab that is not delegating', () => {
+    // Regression: the dots were briefly wrapped in a colored <span>. The
+    // wrapper survived as a zero-width flex child when there was nothing to
+    // draw, and the row's gap-1.5 then padded EVERY non-delegating tab.
+    const { container } = strip({
+      tabs: [tab({ id: 'a' })],
+      engaged: { 'session-a': true },
+    });
+    const chrome = container.querySelector('[data-tab-chrome]');
+    const empties = Array.from(chrome?.children ?? []).filter(
+      node => node.innerHTML === ''
+    );
+    expect(empties).toEqual([]);
+  });
+
   it('renders nothing at all when no delegation is reported', () => {
     // Codex reports none: absent must read as absent, never as an empty
     // cluster or a zero.

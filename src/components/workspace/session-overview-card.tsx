@@ -78,9 +78,7 @@ export function SessionOverviewCardContent({
           )}
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span style={{ color }}>
-            <DelegationDots delegation={delegation} />
-          </span>
+          <DelegationDots color={color} delegation={delegation} />
           <SessionStatusGlyph
             state={glyphState}
             attention={attention}

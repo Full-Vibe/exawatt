@@ -256,6 +256,44 @@ child and leaves with the last, the same conditional footprint the harness and
 pinned marks already use. Motion is one slow breath, staggered per dot, off
 under reduced motion.
 
+### Post-landing review — 2026-07-27
+
+A read-through of the landed diff found three defects that the D1 tests and eval
+had not covered, because all of them asserted delegation-PRESENT behavior and
+none asserted what happens when there is nothing to draw.
+
+1. **Empty flex child padded every non-delegating row.** The dots were wrapped
+   in a colored `<span>` at both call sites. `DelegationDots` returns `null`
+   correctly, but the wrapper survived as a zero-width flex child, and the tab
+   row's `gap-1.5` then added ~6 px to every agent tab that was not delegating —
+   a silent regression to a tuned strip. Fixed by giving `DelegationDots` a
+   `color` prop so it owns its own styling and no wrapper exists. Locked in by a
+   test asserting the tab chrome has no empty element children.
+2. **A hook delivery could throw in the main process.** `request.on('error')`
+   and `request.on('end')` can both fire for one request; the second
+   `writeHead` throws `ERR_HTTP_HEADERS_SENT` from inside an event handler.
+   Fixed with a one-shot guard plus a `writableEnded` check and a try/catch.
+   Locked in by a test that aborts a request mid-flight and asserts no
+   `uncaughtException`.
+3. **A second push source would have been parsed as Claude.** `session-manager`
+   hardcoded `claudeHookEvent` / `claudeHookSettings` for any harness declaring
+   an event-channel invocation. The settings document, the launch flag, and the
+   payload parser are one decision, so they now live together as
+   `HarnessEventChannelBinding` on the harness descriptor, and `session-manager`
+   no longer imports any provider module.
+
+Also hardened: a post-bind socket error no longer nulls a still-open listener
+(which would have left new launches unsubscribed while the server leaked), and
+the eval's first two waits carry cold-compile headroom so a cold dev server
+reports real failures instead of a Next build.
+
+**Known and accepted:** if the listener is up when a child starts but down when
+it stops, that Session keeps a stale dot until its process exits. The window is
+narrow (the app must go down and come back while the same PTY survives, which
+rehydration does not do — a resumed Session gets a fresh id and empty state) and
+closing it would require a timeout heuristic, which is exactly the guessing this
+feature exists to replace.
+
 ### Deliberately not built
 
 `PostToolUse` is available and would give live per-child activity. It is not

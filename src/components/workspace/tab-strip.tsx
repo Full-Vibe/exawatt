@@ -1011,9 +1011,10 @@ export function TabStrip({
                       />
                     ) : null}
                     {!dead && !isDraft && (
-                      <span style={{ color }}>
-                        <DelegationDots delegation={tabDelegation} />
-                      </span>
+                      <DelegationDots
+                        color={color}
+                        delegation={tabDelegation}
+                      />
                     )}
                     {t.id === pinnedTabId && (
                       <span

@@ -14,7 +14,13 @@
  * shapes captured from Claude Code 2.1.206. Everything from the settings file
  * to the rendered dots is production code.
  */
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { withElectronApp, sweepOrphans } from './lib/electron-eval.mjs';
@@ -139,13 +145,18 @@ try {
         console.log(`[delegation] pageerror: ${error.message}`)
       );
       await page.setViewportSize({ width: 1200, height: 760 });
-      await page.locator('[data-command-altitude]').waitFor();
+      // A cold dev server compiles the workspace route on first hit, which
+      // can outlast the default timeout. Give only the FIRST waits that
+      // headroom so a cold run reports real failures, not a compile.
+      await page
+        .locator('[data-command-altitude]')
+        .waitFor({ timeout: 90_000 });
       await page.evaluate(dir => {
         window.dispatchEvent(
           new CustomEvent('exawatt:open-project', { detail: dir })
         );
       }, project);
-      await page.locator('[data-agent-composer]').waitFor();
+      await page.locator('[data-agent-composer]').waitFor({ timeout: 90_000 });
       await page.getByRole('button', { name: 'Start' }).click();
 
       const sessions = async () =>
@@ -221,9 +232,8 @@ try {
         'a quiet parent with a live child still reads as working',
         (await statusOf()) === 'working'
       );
-      const attention = await page.evaluate(
-        async () =>
-          ((await window.electron?.pty?.list()) ?? []).map(s => s.attention)
+      const attention = await page.evaluate(async () =>
+        ((await window.electron?.pty?.list()) ?? []).map(s => s.attention)
       );
       check(
         'no turn-end result is raised while a child runs',
@@ -263,7 +273,10 @@ try {
         'the Session to settle as a ready result',
         12_000
       );
-      check('a finished Session finally reads as a ready result', settled === 'done');
+      check(
+        'a finished Session finally reads as a ready result',
+        settled === 'done'
+      );
 
       // --- the child's report never reaches the renderer ----------------
       const leaked = await page.evaluate(() =>

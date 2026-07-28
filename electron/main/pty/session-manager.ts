@@ -13,10 +13,6 @@ import type { HarnessLaunchWiring } from './harness-command';
 import { harnessEventChannel } from '../harness-events/channel';
 import { HookSettingsStore } from '../harness-events/hook-settings-store';
 import {
-  claudeHookEvent,
-  claudeHookSettings,
-} from '../harness-events/claude-hooks';
-import {
   SessionHistoryStore,
   type SessionHistorySnapshot,
 } from './session-history-store';
@@ -213,15 +209,14 @@ export class PtySessionManager extends EventEmitter {
   ): Promise<HarnessLaunchWiring> {
     if (harness === 'shell') return {};
     const descriptor = harnessDescriptor(harness);
-    if (!descriptor.delegation.observable || !descriptor.eventChannelInvocation)
-      return {};
-    if (!this.hookSettings) return {};
+    const channel = descriptor.eventChannel;
+    if (!channel || !this.hookSettings) return {};
     if (!(await harnessEventChannel.start())) return {};
-    const registration = harnessEventChannel.register(id, claudeHookEvent);
+    const registration = harnessEventChannel.register(id, channel.normalize);
     if (!registration) return {};
     const settingsPath = await this.hookSettings.write(
       id,
-      claudeHookSettings(registration.port, registration.token)
+      channel.settings(registration.port, registration.token)
     );
     if (!settingsPath) {
       harnessEventChannel.release(id);
