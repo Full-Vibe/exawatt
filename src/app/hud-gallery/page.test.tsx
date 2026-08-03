@@ -75,4 +75,15 @@ describe('HUD gallery', () => {
       screen.queryByRole('link', { name: /Application themes/ })
     ).not.toBeInTheDocument();
   });
+
+  it('keeps the Fleet board composition review candidate in the workbench', () => {
+    render(<HudGallery />);
+
+    expect(
+      screen.getByRole('heading', { name: 'Fleet board composition' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /Fleet board composition/ })
+    ).toHaveAttribute('href', '#board-tiles');
+  });
 });

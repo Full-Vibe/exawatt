@@ -1680,6 +1680,41 @@ selection). `eval:spatial:pointer` was already broken before this change —
 it drives the retired "Seed N demo fleet" dev controls; V3.3 S1 owns that
 harness's future.
 
+### V3.3 F7 + S3 composition review candidate (2026-08-03)
+
+The gallery review boundary now treats F7 and the S3 tiled-board slice as one
+composition problem, per the operator sequencing amendment. The existing F4
+tile-material study grew into `/hud-gallery#board-tiles`'s **Fleet board
+composition** bench; production `/fleet/spatial` remains untouched pending
+operator review.
+
+The candidate makes the doctrine inspectable at three explicit resolution
+tiers over one 173-Agent fixture:
+
+- **Unit detail** resolves distinct goal-first identity and current activity on
+  beveled Agent hexes inside a same-family Project plate.
+- **Fleet fit** renders all 173 Agents individually in population-sized hex
+  Projects; one instanced body field plus five instanced D40 mark fields keep
+  status subordinate and shape-redundant. Only Active rotates.
+- **Very far** is the sole agglomerated tier. Project marks retain stable
+  addresses while their area, exact count, active count, and needs-you count
+  preserve mass.
+
+Attention stays anchored to the owning Partner portal unit/Project in all three
+tiers. One top row replaces the audit's three-row preamble and names all five
+D40 states with counts, so the board teaches its marks without a manual. The
+minimap now sizes Projects by population, marks attention/fault, and shows a
+tier-specific viewport. The existing RTS reference remains a control and
+legibility model only: material, palette, fixed top-down framing, and stable
+automatic addresses continue to follow decisions `0007`, `0023`, and `0024`.
+
+Verification candidate: isolated `/eval/t13-board-composition`; `pnpm
+eval:r3f` 100/100 with T13 painted at a max 20 draw calls and zero warnings or
+errors; targeted isolated captures for all three tiers likewise reported zero
+console/page errors. Operator acceptance or revision is the next gate before
+pure `ui-model` hex layout and the accepted R3F/DOM composition are wired into
+production S3.
+
 ### V2.1 Scale & Truth
 
 Status: planned; gated by V2.0

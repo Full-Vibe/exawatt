@@ -81,8 +81,8 @@ const SECTIONS: Section[] = [
   },
   {
     id: 'board-tiles',
-    title: 'Board tile family',
-    meta: 'V3.3 F4 prototype · hex tile grammar for operator review · decision 0024 direction',
+    title: 'Fleet board composition',
+    meta: 'V3.3 S3 + F7 review candidate · tiled board, mass, attention, learnability',
     showcase: <BoardTileStudy />,
   },
   {
