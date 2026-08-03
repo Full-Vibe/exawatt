@@ -30,6 +30,7 @@ import {
   DEMO_PROJECTS_BY_KEY,
   DEMO_ROADMAP_MARKDOWN,
   DEMO_TRANSCRIPTS,
+  demoAgentSessionId,
   demoDelegatedRunCount,
   demoFleetAgents,
   demoProjectRoadmap,
@@ -511,8 +512,18 @@ describe('consumption history (W3, over the real ENG-008 shapes)', () => {
       rawTotal(operator.filter(s => s.source === 'codex')) / codexSessions.size;
     expect(claudeMean).toBeGreaterThan(codexMean);
 
-    // measured: delegated runs are 37.7% of Claude Code samples
-    const claude = corpus.samples.filter(s => s.source === 'claude-code');
+    // measured: delegated runs are 37.7% of Claude Code samples. That was
+    // measured on FINISHED sessions, so it is asserted on the history
+    // portion the generator mimics — the W7 full-fleet corpus also carries
+    // the CURRENT sessions, whose in-flight delegation is honestly sparser.
+    const currentSessionIds = new Set(
+      demoFleetAgents('scale').map(agent => demoAgentSessionId(agent))
+    );
+    const claude = corpus.samples.filter(
+      s =>
+        s.source === 'claude-code' &&
+        !currentSessionIds.has(s.providerSessionId)
+    );
     const delegatedShare =
       claude.filter(s => s.delegation !== null).length / claude.length;
     expect(delegatedShare).toBeGreaterThan(0.32);

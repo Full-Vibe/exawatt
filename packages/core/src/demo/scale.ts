@@ -126,7 +126,7 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
         blocked: {
           4: {
             type: 'approval_required',
-            t: 'Day 4 was scored against restated ERCOT settlements — accept the restatement?',
+            t: 'The market operator revised its official numbers — score day 4 against the new ones?',
             d: 'ERCOT restated the July 9 operating day after initial publication. Scoring day 4 against the restatement moves its MAE by six percent; both scorecards are written up, and the batch summary aggregates whichever ruling makes canonical.',
             r: ['Score against the restatement', 'Keep the original publication', 'Report both in the summary'],
           },
@@ -137,7 +137,7 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
         blocked: {
           2: {
             type: 'input_needed',
-            t: 'Feature set 2 cuts MAE 3.1% but doubles inference latency — trade it?',
+            t: 'Feature set 2 is more accurate but twice as slow — take the trade?',
             d: 'Candidate set 2 improves holdout MAE by 3.1% and pushes per-interval inference from 40ms to 95ms against a 60ms dispatch-loop budget. It can ship trimmed or not at all; the sweep summary needs the ruling.',
             r: ['Trim the set to fit 60ms', 'Take the latency hit', 'Drop set 2 from the sweep'],
           },
@@ -162,7 +162,7 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
         blocked: {
           6: {
             type: 'credentials_needed',
-            t: 'Partner 6 rotated its webhook secret mid-migration — need the new value',
+            t: 'Partner 6 changed its credentials mid-migration — need the new ones',
             d: 'GreenVolt Installations rotated their sandbox signing secret outside the migration window, so dual-sign verification cannot be proven against their endpoint. Partners 1–5 are unaffected; partner 6 is parked until the rotated secret arrives.',
             r: ['Request the secret via the partner portal', 'Skip partner 6 for this pass', 'Escalate to the integrations channel'],
           },
@@ -197,7 +197,7 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
         blocked: {
           9: {
             type: 'input_needed',
-            t: 'Matrix cell 9 fails only on the iOS 19 beta — gate GA on it or waive?',
+            t: 'One flow fails only on the iOS 19 beta — hold the launch on it or waive it?',
             d: 'Resume-from-background drops the entered address on iOS 19 beta 3 and nowhere else. If GA gates on released OS versions only, cell 9 becomes a tracked waiver; if betas count, the flow needs a state-serialization fix first.',
             r: ['Waive and track for iOS 19 GA', 'Fix before GA', 'Reproduce on beta 4 first'],
           },
@@ -293,7 +293,7 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
         blocked: {
           7: {
             type: 'approval_required',
-            t: 'Control 7 capture wants a service role that writes to the auditor evidence bucket',
+            t: 'Needs permission to write into the auditor evidence store',
             d: 'Automating access-review capture (CC6.2) requires a role with direct write access to the immutable evidence store. The role policy passed security review in draft; granting it is an explicit go-ahead, not an inference call.',
             r: ['Grant the drafted role', 'Scope it to this audit window', 'Route through the manual uploader'],
           },
@@ -349,8 +349,8 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
         n: 'Digest context enrichment', g: 'Attach site, hardware, and dispatch context to escalation digest entries.', c: 'Enriching escalation digest context', i: 'SUP-6',
         b: {
           type: 'credentials_needed',
-          t: 'Enrichment needs a read-only help-desk token scoped to ticket bodies',
-          d: 'Joining dispatch context onto ticket text requires help-desk API access, but the only token on file is admin-scoped. A read-only token scoped to ticket bodies was requested from IT on Thursday; nothing ships against admin credentials.',
+          t: 'Needs read-only access to help-desk tickets',
+          d: 'Joining dispatch context onto ticket text requires help-desk API access, but the only token on file is admin-scoped. A read-only token scoped to ticket bodies has been requested from IT; nothing ships against admin credentials.',
           r: ['Chase IT for the scoped token', 'Approve temporary admin-token use', 'Park until the token arrives'],
         },
       },
@@ -550,11 +550,14 @@ function synthesizeAgent(
   if (!project) throw new Error(`unknown demo project "${projectKey}"`);
   const id = `vgs-${projectKey}-${slugify(name)}`;
   const status: ScaleStatus = authoredBlocker ? 'blocked' : statusFor(id);
-  // Preview desks run on Claude in this fleet; coding splits between sources.
+  // Preview desks run on Claude in this fleet. Coding leans codex-majority,
+  // matching the measured operator mix the consumption corpus cites (Codex
+  // sessions are the majority; Claude sessions are individually larger) —
+  // the W7 full-fleet corpus keeps that property with current sessions in.
   const source: DemoFleetAgent['source'] =
     project.readiness === 'preview'
       ? 'claude-code'
-      : unit(`${id}:source`) < 0.55
+      : unit(`${id}:source`) < 0.4
         ? 'claude-code'
         : 'codex';
   const model =

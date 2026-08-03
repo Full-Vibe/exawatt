@@ -358,7 +358,7 @@ Milestones:
 
 ### POR-12 Utility SSO
 
-Status: blocked — waiting on SAML IdP metadata from the utility's IT team, requested 2026-07-22.
+Status: blocked — waiting on the utility's sign-on details (SAML metadata) from their IT team; requested twice.
 
 ### POR-13 Settlement statement export
 

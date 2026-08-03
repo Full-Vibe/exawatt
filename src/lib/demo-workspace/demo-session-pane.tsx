@@ -231,10 +231,31 @@ export function DemoSessionPane({
             </p>
           </section>
         ) : (
-          <section data-demo-session-record className="pb-4">
-            <p className="font-mono text-chrome-meta" style={{ color: HUD.textDim }}>
-              No transcript recorded for this Session.
+          // W7: the few-bullet work log — "worked on X, then Y" — so every
+          // Session opens readable without a dense transcript.
+          <section data-demo-work-log className="pb-4">
+            <p
+              className="mb-2 font-mono text-chrome-meta"
+              style={{ color: HUD.textDim }}
+            >
+              Work so far
             </p>
+            <ul className="flex flex-col gap-1.5">
+              {content.lines.map((line, index) => (
+                <li
+                  key={index}
+                  className="flex gap-2.5 text-chrome-title leading-relaxed"
+                  style={{ color: HUD.text }}
+                >
+                  <span
+                    aria-hidden
+                    className="mt-[9px] h-1 w-1 shrink-0 rounded-full"
+                    style={{ background: project?.color ?? HUD.textDim }}
+                  />
+                  {line}
+                </li>
+              ))}
+            </ul>
           </section>
         )}
       </div>

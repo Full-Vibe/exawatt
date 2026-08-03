@@ -36,6 +36,7 @@ import type {
 import type { DemoFleetAgent, DemoUsageSpec } from './types';
 import { deepFreezeFixture } from './types';
 import { DEMO_BASE_AGENTS } from './agents';
+import { demoFleetAgents } from './scale';
 import { DEMO_PROJECTS, DEMO_PROJECTS_BY_KEY } from './projects';
 import {
   DAY_MS,
@@ -285,7 +286,7 @@ function historySamples(): ConsumptionSample[] {
         if (!codex) {
           const delegRoll = seedFrom(`${key}:deleg`); // 1.1..~2.1
           if (delegRoll < 1.85) {
-            const childCount = delegRoll < 1.45 ? 3 : delegRoll < 1.7 ? 2 : 1;
+            const childCount = delegRoll < 1.35 ? 3 : delegRoll < 1.65 ? 2 : 1;
             for (let c = 0; c < childCount; c++) {
               const childKey = `${key}:child:${c}`;
               const childTurns = Math.max(3, Math.round(turns / 2));
@@ -410,11 +411,16 @@ export function demoWorkspacePlanWindows(): PlanWindow[] {
   ];
 }
 
-/** Pure build of the whole corpus at the frozen fixture clock. */
+/** Pure build of the whole corpus at the frozen fixture clock. The current
+ *  sessions cover the FULL fleet (W7): every Agent on the Fleet board owns a
+ *  consumption record, so the board's burn lens and `/consumption` report
+ *  reconcilable totals — history then extends past the current fleet. */
 function buildConsumption(): DemoWorkspaceConsumption {
   return {
     samples: [
-      ...DEMO_BASE_AGENTS.flatMap(agentSamples),
+      ...demoFleetAgents('scale', { nowMs: DEMO_WORKSPACE_NOW_MS }).flatMap(
+        agentSamples
+      ),
       ...historySamples(),
       ...overheadSamples(),
     ],

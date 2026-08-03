@@ -65,8 +65,9 @@ function voltaicRoadmapItems(): DemoRoadmapItem[] {
   return items;
 }
 
-/** Base-tier fixture Agents as session specs — the per-session identity the
- *  attribution and outcome acts render (title, model, branch, link). */
+/** Fixture Agents as session specs — the per-session identity the
+ *  attribution and outcome acts render (title, model, branch, link). W7:
+ *  the whole fleet, so every board Agent resolves in the drill grid. */
 function voltaicSessionSpecs(agents: DemoFleetAgent[]): DemoSessionSpec[] {
   return agents.map(agent => {
     const project = DEMO_PROJECTS_BY_KEY.get(agent.projectKey);
@@ -110,9 +111,11 @@ export function voltaicConsumption(): DemoConsumption {
   if (cached) return cached;
   const nowMs = demoShellNowMs();
   const corpus = demoWorkspaceConsumption({ nowMs });
-  const baseAgents = demoFleetAgents('base', { nowMs });
+  // The FULL fleet (W7): `/consumption` and the Fleet board's burn lens must
+  // reconcile, so every board Agent owns identity and links here.
+  const fleetAgents = demoFleetAgents('scale', { nowMs });
   const sessionLinks = new Map<string, { itemId: string; method: LinkMethod }>();
-  for (const agent of baseAgents) {
+  for (const agent of fleetAgents) {
     if (agent.roadmapItemId && agent.link) {
       sessionLinks.set(demoAgentSessionId(agent), {
         itemId: agent.roadmapItemId,
@@ -133,7 +136,7 @@ export function voltaicConsumption(): DemoConsumption {
     planWindows: corpus.planWindows,
     projects,
     roadmap: voltaicRoadmapItems(),
-    sessionSpecs: voltaicSessionSpecs(baseAgents),
+    sessionSpecs: voltaicSessionSpecs(fleetAgents),
     projectResolver: demoWorkspaceProjectResolver,
     sessionLinks,
     burn: {

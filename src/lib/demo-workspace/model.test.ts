@@ -31,9 +31,13 @@ describe('demoShellFleetAgentById (closing fix: Fleet-board jumps)', () => {
       const resolved = demoShellFleetAgentById(agent.id);
       expect(resolved, agent.id).toBeDefined();
       // A scale-tier Session has no authored transcript: its pane is the
-      // honest session record, never a silent fallback to the hero.
+      // honest readable work log, never a silent fallback to the hero.
       if (agent.tier === 'scale') {
-        expect(demoPaneContent(resolved!).kind).toBe('record');
+        const content = demoPaneContent(resolved!);
+        expect(content.kind).toBe('log');
+        if (content.kind === 'log') {
+          expect(content.lines.length).toBeGreaterThan(0);
+        }
       }
     }
   });

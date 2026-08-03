@@ -182,6 +182,11 @@ export interface DemoFleetAgent {
   blocker?: DemoBlocker;
   /** Present only when status is `error`: what actually failed. */
   faultNote?: string;
+  /** Few-bullet recorded work log — "worked on X, then Y" — for Sessions
+   *  without an authored transcript. Every Session must open READABLE
+   *  (ENG-027 W7); generated-tier Sessions derive theirs from fixture facts
+   *  via `demoWorkLog`. */
+  workLog?: readonly string[];
   readiness: DemoReadiness;
   tier: DemoFleetTier;
   /** Initiative this work rolls up to, when any. */

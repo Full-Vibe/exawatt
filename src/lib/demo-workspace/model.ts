@@ -20,6 +20,7 @@ import {
   DEMO_WORKSPACE_NOW_MS,
   demoAgentBurn,
   demoFleetAgents,
+  demoWorkLog,
   demoProjectRoadmap,
   type DemoFleetAgent,
   type DemoTranscriptLine,
@@ -294,13 +295,14 @@ export function demoSessionRows(): SessionRow[] {
 
 export type DemoPaneContent =
   | { kind: 'transcript'; lines: DemoTranscriptLine[] }
-  | { kind: 'record' };
+  | { kind: 'log'; lines: string[] };
 
 /**
- * What a demo Session's pane renders. Three hero Sessions carry authored
- * transcripts; every other Session renders its honest record — exactly what
- * a real fleet looks like for a tab you have not opened. Never a PTY, never
- * a blank pane, never a simulated stream.
+ * What a demo Session's pane renders (W7: every Session opens READABLE).
+ * Three hero Sessions carry authored transcripts; every other Session
+ * renders its few-bullet work log — authored for the hand-written fleet,
+ * derived from fixture facts for the generated board tier. Never a PTY,
+ * never a blank pane, never a simulated stream.
  */
 export function demoPaneContent(agent: DemoFleetAgent): DemoPaneContent {
   const lines = DEMO_TRANSCRIPTS[agent.id];
@@ -313,7 +315,7 @@ export function demoPaneContent(agent: DemoFleetAgent): DemoPaneContent {
       lines: lines.map(line => ({ ...line, atMs: line.atMs + delta })),
     };
   }
-  return { kind: 'record' };
+  return { kind: 'log', lines: demoWorkLog(agent) };
 }
 
 /* ------------------------------------------------------------------ */
