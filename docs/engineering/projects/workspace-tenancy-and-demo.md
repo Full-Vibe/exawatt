@@ -310,6 +310,16 @@ The demo-arc closing review verified findings against the landed W2; fixes:
 
 ## Open questions
 
-- Does the operator want a keyboard gesture for Workspace switching, or is the account menu enough? (Leaning: menu only. A one-stroke path to demo data during real work is a hazard, not a feature.)
+- ~~Does the operator want a keyboard gesture for Workspace switching, or is the account menu enough?~~ ANSWERED 2026-08-03 (feedback row `486a87e1-5a3b-40e0-9ff3-85799072f339`): yes — Workspace switching belongs in ⌘K. Operator: "Org switching should be available in Command K so I should be able to type a different organization or 'personal' and be able to switch to that org via Command K. In general everything that one can do as a first-class citizen in the UI should be in command-K and that should be a general invariant." The earlier hazard leaning is overruled; ⌘K switching still lands on the same tenant-gate path the account menu uses, so the no-lifecycle-side-effects guarantee is unchanged. Queued below.
 - Should the Demo Workspace be seeded from *recorded* real sessions (redacted) rather than authored fixtures? Recording is more convincing and more work; authored is controllable and safe. Leaning: authored for W3, recording as a later upgrade once the pane content source exists.
 - Whether a shared/read-only Workspace link is the natural first multiplayer primitive (ENG-034) once W2 lands.
+
+## Queued work (triage 2026-08-03)
+
+- **⌘K Workspace switching** (feedback row `486a87e1`, operator): the palette
+  gets Workspace rows — type "personal", "demo", or an organization name and
+  switch scope from ⌘K, through the exact `switchWorkspace` seam the account
+  menu uses. Carries the operator's general invariant: every verb that is
+  first-class in the UI is reachable in ⌘K (the complement of the standing
+  "⌘K is a backstop, not IA" rule — the palette mirrors the IA, it never
+  substitutes for it).
