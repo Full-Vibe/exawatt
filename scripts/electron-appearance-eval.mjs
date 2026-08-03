@@ -93,14 +93,10 @@ function normalizeHex(value) {
   return typeof value === 'string' ? value.slice(0, 7).toUpperCase() : value;
 }
 
-async function setMockSystemAppearance(app, page, appearance) {
+async function setMockSystemAppearance(app, appearance) {
   await app.evaluate(({ nativeTheme }, next) => {
     nativeTheme.themeSource = next;
   }, appearance);
-  await page.waitForFunction(
-    dark => matchMedia('(prefers-color-scheme: dark)').matches === dark,
-    appearance === 'dark'
-  );
 }
 
 async function commitAppearance(page, preferences) {
@@ -357,7 +353,7 @@ async function launch(
         startup
       );
 
-      if (mockAuto) await setMockSystemAppearance(app, page, osAppearance);
+      if (mockAuto) await setMockSystemAppearance(app, osAppearance);
       // withElectronApp resolves after the initial window has begun loading,
       // so addInitScript cannot observe that document retroactively. Reload
       // once through the same top-level preload/navigation boundary and trace
@@ -397,7 +393,7 @@ try {
         mirrorAppearance: defaultAppearance,
         bootstrapThemeId: 'exawatt-air-light',
       });
-      await setMockSystemAppearance(app, page, 'dark');
+      await setMockSystemAppearance(app, 'dark');
       return inspectRenderer(app, page, 'fresh-auto-live-dark', {
         themeId: 'exawatt-night-dark',
         nativeSource: 'dark',

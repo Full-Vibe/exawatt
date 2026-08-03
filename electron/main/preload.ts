@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { ElectronAppearanceBootstrapSnapshot } from './appearance';
 
 /** one subscribe-shape for every main→renderer event channel: wraps the
  *  handler, registers it, returns a disposer that removes ONLY it (never
@@ -16,7 +17,9 @@ const subscribe =
 
 // This value is captured synchronously on every top-level navigation so the
 // first document script never has to guess from a possibly stale web mirror.
-const bootstrapAppearance = ipcRenderer.sendSync('app:appearance-bootstrap');
+const bootstrapAppearance = ipcRenderer.sendSync(
+  'app:appearance-bootstrap'
+) as ElectronAppearanceBootstrapSnapshot;
 
 contextBridge.exposeInMainWorld('electron', {
   isElectron: true,

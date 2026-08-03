@@ -83,14 +83,34 @@ describe('resolveNativeAppearance', () => {
         darkThemeId: 'exawatt-night-dark',
       },
     };
-    const snapshot = rendererAppearanceBootstrapSnapshot(automatic, true);
+    const snapshot = rendererAppearanceBootstrapSnapshot(automatic, true, true);
     expect(snapshot).toMatchObject({
+      dark: true,
       safeTheme: true,
       preferences: {
         selection: { mode: 'manual', themeId: 'exawatt-classic-dark' },
       },
     });
     expect(automatic.selection.mode).toBe('auto');
+  });
+
+  it('includes the effective native appearance in the renderer bootstrap', () => {
+    const automatic: ElectronAppearancePreferencesV1 = {
+      ...CLASSIC,
+      selection: {
+        mode: 'auto',
+        lightThemeId: 'exawatt-air-light',
+        darkThemeId: 'exawatt-night-dark',
+      },
+    };
+
+    expect(
+      rendererAppearanceBootstrapSnapshot(automatic, false, true)
+    ).toMatchObject({
+      dark: true,
+      safeTheme: false,
+      preferences: { selection: { mode: 'auto' } },
+    });
   });
 
   it('returns to system source before resolving Auto after Manual', () => {

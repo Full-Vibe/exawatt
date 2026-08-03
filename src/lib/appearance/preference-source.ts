@@ -22,6 +22,7 @@ export interface AppearancePreferenceSource {
 
 export interface AppearanceBootstrapSnapshot {
   preferences: AppearancePreferencesV1;
+  dark: boolean;
   safeTheme: boolean;
 }
 
@@ -36,13 +37,22 @@ function recoveryPreferences(): AppearancePreferencesV1 {
 export function readElectronAppearanceBootstrap(): AppearanceBootstrapSnapshot | null {
   if (typeof window === 'undefined' || !window.electron?.isElectron) return null;
   const raw = window.electron.app?.bootstrapAppearance;
-  if (!raw || typeof raw.safeTheme !== 'boolean') {
-    return { preferences: recoveryPreferences(), safeTheme: false };
+  if (
+    !raw ||
+    typeof raw.dark !== 'boolean' ||
+    typeof raw.safeTheme !== 'boolean'
+  ) {
+    return {
+      preferences: recoveryPreferences(),
+      dark: true,
+      safeTheme: false,
+    };
   }
   return {
     preferences:
       parseProductionAppearancePreferences(raw.preferences) ??
       recoveryPreferences(),
+    dark: raw.dark,
     safeTheme: raw.safeTheme,
   };
 }

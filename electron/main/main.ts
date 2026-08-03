@@ -975,7 +975,8 @@ function registerAppIPC(): void {
     assertTrustedIpcSender(event);
     event.returnValue = rendererAppearanceBootstrapSnapshot(
       loadSettings().appearance,
-      safeThemeLaunch
+      safeThemeLaunch,
+      nativeTheme.shouldUseDarkColors
     );
   });
   handleTrusted('app:get-build-info', () => ({

@@ -72,9 +72,9 @@ function mediaMatches(query: string): boolean {
   );
 }
 
-function webSignals(): AppearanceOsSignals {
+function webSignals(authoritativeDark?: boolean): AppearanceOsSignals {
   return {
-    dark: mediaMatches('(prefers-color-scheme: dark)'),
+    dark: authoritativeDark ?? mediaMatches('(prefers-color-scheme: dark)'),
     highContrast: mediaMatches('(prefers-contrast: more)'),
     forcedColors: mediaMatches('(forced-colors: active)'),
     invertedColors: mediaMatches('(inverted-colors: inverted)'),
@@ -97,13 +97,15 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   // that same snapshot in a layout effect updates React-owned descendants
   // before the next paint without producing hydration attribute mismatches.
   useLayoutEffect(() => {
+    const browser = webSignals(bootstrap?.dark);
     setPreferences(
       bootstrap?.preferences ??
         readAppearanceMirror() ??
         DEFAULT_APPEARANCE_PREFERENCES
     );
     setOs({
-      ...webSignals(),
+      ...browser,
+      dark: bootstrap?.dark ?? browser.dark,
       safeTheme: bootstrap?.safeTheme ?? false,
     });
   }, [bootstrap]);
@@ -132,18 +134,24 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     let active = true;
     const applyNative = (native?: NativeAppearanceSnapshot) => {
       if (!active) return;
-      const browser = webSignals();
-      setOs({
+      // Electron owns color-scheme state. A native event can advance it; a
+      // renderer-only media event must preserve the last native value.
+      const browser = webSignals(
+        source.kind === 'electron' ? false : undefined
+      );
+      setOs(current => ({
         ...browser,
-        dark: native?.dark ?? browser.dark,
+        dark:
+          native?.dark ??
+          (source.kind === 'electron' ? current.dark : browser.dark),
         highContrast: native?.highContrast ?? browser.highContrast,
         invertedColors: native?.invertedColors ?? browser.invertedColors,
         systemAccent: native?.systemAccent ?? undefined,
-        safeTheme: native?.safeTheme ?? false,
-      });
+        safeTheme: native?.safeTheme ?? bootstrap?.safeTheme ?? false,
+      }));
     };
     const queries = [
-      '(prefers-color-scheme: dark)',
+      ...(source.kind === 'web' ? ['(prefers-color-scheme: dark)'] : []),
       '(prefers-contrast: more)',
       '(forced-colors: active)',
       '(inverted-colors: inverted)',
@@ -165,7 +173,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
         query.removeEventListener?.('change', onMediaChange);
       unsubscribeNative?.();
     };
-  }, []);
+  }, [bootstrap?.dark, bootstrap?.safeTheme, source.kind]);
 
   const resolved = useMemo(
     () =>

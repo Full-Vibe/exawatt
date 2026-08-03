@@ -610,6 +610,7 @@ export interface ElectronAppApi {
    * document script runs. Web renderers do not expose this field. */
   bootstrapAppearance?: {
     preferences: AppearancePreferencesV1;
+    dark: boolean;
     safeTheme: boolean;
   } | null;
   getBuildInfo: () => Promise<ExawattBuildInfo>;

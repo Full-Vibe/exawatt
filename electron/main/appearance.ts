@@ -43,6 +43,7 @@ export interface NativeThemeAdapter {
 
 export interface ElectronAppearanceBootstrapSnapshot {
   preferences: ElectronAppearancePreferencesV1;
+  dark: boolean;
   safeTheme: boolean;
 }
 
@@ -53,7 +54,8 @@ export interface NativeAppearanceWindow {
 
 export function rendererAppearanceBootstrapSnapshot(
   appearance: ElectronAppearancePreferencesV1 | undefined,
-  safeTheme: boolean
+  safeTheme: boolean,
+  dark: boolean
 ): ElectronAppearanceBootstrapSnapshot {
   return {
     preferences: structuredClone(
@@ -61,6 +63,7 @@ export function rendererAppearanceBootstrapSnapshot(
         ? CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES
         : (appearance ?? DEFAULT_ELECTRON_APPEARANCE_PREFERENCES)
     ),
+    dark,
     safeTheme,
   };
 }

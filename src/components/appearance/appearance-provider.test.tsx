@@ -109,6 +109,7 @@ describe('AppearanceProvider', () => {
       app: {
         bootstrapAppearance: {
           preferences: classic,
+          dark: true,
           safeTheme: true,
         },
         appearance: vi.fn(() => new Promise(() => undefined)),
@@ -121,5 +122,36 @@ describe('AppearanceProvider', () => {
     await waitFor(() => expect(view.result.current.ready).toBe(true));
     expect(view.result.current.preferences).toEqual(automatic);
     expect(view.result.current.resolved.themeId).toBe('exawatt-classic-dark');
+  });
+
+  it('hydrates Auto from Electron dark authority before native async state resolves', async () => {
+    const automatic = structuredClone(DEFAULT_APPEARANCE_PREFERENCES);
+    window.electron = {
+      isElectron: true,
+      platform: 'darwin',
+      settings: {
+        get: vi.fn().mockResolvedValue({ appearance: automatic }),
+        setAppearance: vi.fn(),
+        onChanged: vi.fn(() => vi.fn()),
+      },
+      app: {
+        bootstrapAppearance: {
+          preferences: automatic,
+          dark: true,
+          safeTheme: false,
+        },
+        appearance: vi.fn(() => new Promise(() => undefined)),
+        onAppearanceChanged: vi.fn(() => vi.fn()),
+      },
+    } as unknown as NonNullable<Window['electron']>;
+
+    const view = renderHook(() => useAppearance(), { wrapper });
+
+    expect(view.result.current.resolved.themeId).toBe('exawatt-night-dark');
+    await waitFor(() => expect(view.result.current.ready).toBe(true));
+    expect(view.result.current.resolved.themeId).toBe('exawatt-night-dark');
+    expect(window.matchMedia).not.toHaveBeenCalledWith(
+      '(prefers-color-scheme: dark)'
+    );
   });
 });

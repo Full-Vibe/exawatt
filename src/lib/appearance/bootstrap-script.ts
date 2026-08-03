@@ -44,8 +44,9 @@ export const APPEARANCE_BOOTSTRAP_SCRIPT = `(() => {
   };
   let preferences = defaultPreferences;
   const electron = window.electron;
+  const electronBootstrap = electron?.app?.bootstrapAppearance;
   if (electron?.isElectron) {
-    const authoritative = electron.app?.bootstrapAppearance?.preferences;
+    const authoritative = electronBootstrap?.preferences;
     preferences = valid(authoritative) ? authoritative : recoveryPreferences;
   } else {
     try {
@@ -61,7 +62,9 @@ export const APPEARANCE_BOOTSTRAP_SCRIPT = `(() => {
   }
   const selection = preferences.selection;
   const matches = query => typeof matchMedia === 'function' && matchMedia(query).matches;
-  const dark = matches('(prefers-color-scheme: dark)');
+  const dark = electron?.isElectron
+    ? (typeof electronBootstrap?.dark === 'boolean' ? electronBootstrap.dark : true)
+    : matches('(prefers-color-scheme: dark)');
   const id = selection.mode === 'manual' ? selection.themeId : (dark ? selection.darkThemeId : selection.lightThemeId);
   const theme = themes[id] || themes['exawatt-classic-dark'];
   const root = document.documentElement;
