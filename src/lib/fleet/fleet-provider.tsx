@@ -47,6 +47,9 @@ interface FleetContextValue {
   projects: ProjectCatalogEntry[];
   connectionStatus: OCConnectionStatus | 'initializing';
   ocAvailable: boolean;
+  /** the Demo TENANT drives the fleet (vs the web's default demo posture) —
+   *  its corpus is not a connection state, so Connect never applies */
+  demoTenantActive: boolean;
   connectToRealOC: () => void;
 }
 
@@ -439,6 +442,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         ? ('connecting' as const)
         : connectionStatus,
       ocAvailable,
+      demoTenantActive,
       connectToRealOC,
     }),
     [
@@ -448,6 +452,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       projects,
       connectionStatus,
       ocAvailable,
+      demoTenantActive,
       connectToRealOC,
       isConnectingToOC,
     ]
@@ -664,10 +669,15 @@ export function useConnectToOC(): {
   ocAvailable: boolean;
   canConnect: boolean;
 } {
-  const { connectToRealOC, ocAvailable, isDemo } = useFleetContext();
+  const { connectToRealOC, ocAvailable, isDemo, demoTenantActive } =
+    useFleetContext();
   // Connect is a WEB demo-posture affordance; the Demo tenant's fleet is a
-  // corpus, not a connection, so `connectToRealOC` refuses it there.
-  return { connectToRealOC, ocAvailable, canConnect: isDemo && ocAvailable };
+  // corpus, not a connection — no dead button there.
+  return {
+    connectToRealOC,
+    ocAvailable,
+    canConnect: isDemo && !demoTenantActive && ocAvailable,
+  };
 }
 
 export function useCron() {

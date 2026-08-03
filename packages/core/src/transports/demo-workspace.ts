@@ -22,6 +22,7 @@
 
 import type { FleetManager } from '../state/fleet-manager';
 import type {
+  AgentActivity,
   AgentDelegation,
   ExawattAgent,
 } from '../types/agent';
@@ -62,6 +63,43 @@ function delegationFor(agent: DemoFleetAgent): AgentDelegation | undefined {
   };
 }
 
+/**
+ * The recorded activity backlog: each Agent's latest fact, as the feed event
+ * the live path would have recorded when it happened. This is fixture truth
+ * replayed once — nothing ticks or streams after `start()`.
+ */
+function activitiesFor(agent: DemoFleetAgent): AgentActivity[] {
+  const out: AgentActivity[] = agent.delegated.map(run => ({
+    id: `${agent.id}-delegate-${run.agentId}`,
+    timestamp: run.startedAtMs,
+    type: 'tool_use',
+    content: run.task,
+  }));
+  if (agent.blocker) {
+    out.push({
+      id: `${agent.id}-blocker`,
+      timestamp: agent.blocker.createdAtMs,
+      type: 'blocker_created',
+      content: agent.blocker.title,
+    });
+  } else if (agent.faultNote) {
+    out.push({
+      id: `${agent.id}-fault`,
+      timestamp: agent.lastActivityAtMs,
+      type: 'status_change',
+      content: agent.faultNote,
+    });
+  } else {
+    out.push({
+      id: `${agent.id}-latest`,
+      timestamp: agent.lastActivityAtMs,
+      type: 'chat_message',
+      content: agent.contextLabel,
+    });
+  }
+  return out;
+}
+
 /** Map one fixture Agent into the live `ExawattAgent` contract. */
 export function demoWorkspaceAgent(agent: DemoFleetAgent): ExawattAgent {
   const project = DEMO_PROJECTS_BY_KEY.get(agent.projectKey);
@@ -80,7 +118,10 @@ export function demoWorkspaceAgent(agent: DemoFleetAgent): ExawattAgent {
     projectId: agent.projectKey,
     project: project?.name ?? agent.projectKey,
     sessionKey: agent.id,
-    sessionState: 'live',
+    // A failed fixture Session reads as stopped — the same "Open stopped
+    // session" affordance the live board shows for a dead process.
+    sessionState: agent.status === 'error' ? 'stopped' : 'live',
+    activities: activitiesFor(agent),
     metrics: {
       ...INITIAL_AGENT_METRICS,
       tokensIn: agent.usage.input,

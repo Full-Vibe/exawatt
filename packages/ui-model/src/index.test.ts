@@ -216,7 +216,8 @@ describe('@exawatt/ui-model', () => {
     expect(beta.rimColor).toBe('#f87171'); // only the hero zone is red
     expect(alpha.ownsHeroBlocker).toBe(false);
     expect(alpha.rimColor).not.toBe('#f87171');
-    expect(beta.statLine).toMatch(/^3 agents · 2 blocked · \$/);
+    // this fixture's source reports no cost, so no dollars ride the line
+    expect(beta.statLine).toBe('3 agents · 2 blocked');
     expect(beta.width).toBeGreaterThan(0);
     expect(beta.depth).toBeGreaterThan(0);
   });

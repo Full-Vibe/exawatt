@@ -58,6 +58,8 @@ export interface FleetAgentView {
   cost: number;
   costRate: number;
   tokenRate: number;
+  /** Raw tokens across all units when the source reports usage; 0 = absent. */
+  rawTokens: number;
   turnCount: number;
   activityCount: number;
   hasHeartbeat: boolean;
@@ -380,6 +382,7 @@ function toAgentView(agent: ExawattAgent): FleetAgentView {
     cost: agent.metrics.estimatedCost,
     costRate: agent.metrics.costRate,
     tokenRate: agent.metrics.tokenRate,
+    rawTokens: agent.metrics.rawTokens ?? 0,
     turnCount: agent.metrics.turnCount,
     activityCount: agent.activities?.length ?? 0,
     hasHeartbeat: Boolean(agent.cronJobId),
@@ -974,7 +977,11 @@ export function selectSpatialProjectZones(
         costRate: s.costRate,
         totalCost: s.totalCost,
         attentionPressure: s.attentionPressure,
-        statLine: `${s.agentCount} ${agentWord} · ${s.blockedCount} blocked · $${s.costRate.toFixed(2)}/hr`,
+        // Spend rides the line only when the source reports it — a source
+        // that reports no cost shows no dollars (absent, never zero).
+        statLine: `${s.agentCount} ${agentWord} · ${s.blockedCount} blocked${
+          s.costRate > 0 ? ` · $${s.costRate.toFixed(2)}/hr` : ''
+        }`,
         tier,
         ownsHeroBlocker: ownsHero,
         selected,

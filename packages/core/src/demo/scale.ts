@@ -94,6 +94,8 @@ interface FanOutBatch {
   n: string;
   /** Goal template; `#` is replaced with `partition of total`. */
   g: string;
+  /** Context-label template; `#` is replaced with `partition/total` so
+   *  fan-out siblings never share an identical subtitle. */
   c: string;
   i: string;
   count: number;
@@ -120,7 +122,7 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
     ],
     fanouts: [
       {
-        n: 'Shadow-day scoring', g: 'Score shadow-bid trading day # against production.', c: 'Scoring one shadow trading day', i: 'DSP-31', count: 10,
+        n: 'Shadow-day scoring', g: 'Score shadow-bid trading day # against production.', c: 'Scoring shadow trading day #', i: 'DSP-31', count: 10,
         blocked: {
           4: {
             type: 'approval_required',
@@ -131,7 +133,7 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
         },
       },
       {
-        n: 'Basis feature sweep', g: 'Evaluate hub-to-node basis feature candidate set # for the refit model.', c: 'Evaluating one basis feature set', i: 'DSP-31', count: 6,
+        n: 'Basis feature sweep', g: 'Evaluate hub-to-node basis feature candidate set # for the refit model.', c: 'Evaluating basis feature set #', i: 'DSP-31', count: 6,
         blocked: {
           2: {
             type: 'input_needed',
@@ -156,7 +158,7 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
     ],
     fanouts: [
       {
-        n: 'Partner verifier migration', g: 'Migrate sandbox partner # to v2 signature verification.', c: 'Migrating one sandbox partner', i: 'API-18', count: 8,
+        n: 'Partner verifier migration', g: 'Migrate sandbox partner # to v2 signature verification.', c: 'Migrating sandbox partner #', i: 'API-18', count: 8,
         blocked: {
           6: {
             type: 'credentials_needed',
@@ -191,7 +193,7 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
     ],
     fanouts: [
       {
-        n: 'Flow test matrix', g: 'Run enrollment resume test matrix cell #.', c: 'Running one resume matrix cell', i: 'HOME-24', count: 10,
+        n: 'Flow test matrix', g: 'Run enrollment resume test matrix cell #.', c: 'Running resume matrix cell #', i: 'HOME-24', count: 10,
         blocked: {
           9: {
             type: 'input_needed',
@@ -216,7 +218,7 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
     ],
     fanouts: [
       {
-        n: 'July reconciliation partition', g: 'Reconcile double-counted July window partition # against vendor portals.', c: 'Reconciling one July partition', i: 'TEL-14', count: 14,
+        n: 'July reconciliation partition', g: 'Reconcile double-counted July window partition # against vendor portals.', c: 'Reconciling July partition #', i: 'TEL-14', count: 14,
         blocked: {
           11: {
             type: 'input_needed',
@@ -239,7 +241,7 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
     ],
     fanouts: [
       {
-        n: 'Vendor conformance run', g: 'Run the adapter conformance suite against vendor bench #.', c: 'Running one vendor bench', i: 'EDGE-10', count: 6,
+        n: 'Vendor conformance run', g: 'Run the adapter conformance suite against vendor bench #.', c: 'Running vendor bench #', i: 'EDGE-10', count: 6,
         blocked: {
           2: {
             type: 'input_needed',
@@ -262,7 +264,7 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
     ],
     fanouts: [
       {
-        n: 'Portal accessibility audit', g: 'Audit portal surface area segment # for accessibility.', c: 'Auditing one portal segment', i: 'POR-11', count: 4,
+        n: 'Portal accessibility audit', g: 'Audit portal surface area segment # for accessibility.', c: 'Auditing portal segment #', i: 'POR-11', count: 4,
         blocked: {
           3: {
             type: 'approval_required',
@@ -287,7 +289,7 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
     ],
     fanouts: [
       {
-        n: 'Control evidence capture', g: 'Wire automated evidence capture for audit control #.', c: 'Wiring one control capture', i: 'INF-21', count: 10,
+        n: 'Control evidence capture', g: 'Wire automated evidence capture for audit control #.', c: 'Wiring control capture #', i: 'INF-21', count: 10,
         blocked: {
           7: {
             type: 'approval_required',
@@ -309,7 +311,7 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
     ],
     fanouts: [
       {
-        n: 'Queue region scan', g: 'Scan interconnection queue region # for storage entries ahead of ours.', c: 'Scanning one queue region', i: 'RES-8', count: 3,
+        n: 'Queue region scan', g: 'Scan interconnection queue region # for storage entries ahead of ours.', c: 'Scanning queue region #', i: 'RES-8', count: 3,
         blocked: {
           2: {
             type: 'approval_required',
@@ -357,7 +359,7 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
     ],
     fanouts: [
       {
-        n: 'Backlog classification week', g: 'Classify historical ticket backlog week # into the symptom taxonomy.', c: 'Classifying one backlog week', i: 'SUP-5', count: 6,
+        n: 'Backlog classification week', g: 'Classify historical ticket backlog week # into the symptom taxonomy.', c: 'Classifying backlog week #', i: 'SUP-5', count: 6,
         blocked: {
           5: {
             type: 'input_needed',
@@ -465,6 +467,12 @@ function childStemsFor(fn: DemoProjectFunction) {
   return CHILD_TASK_STEMS[fn as 'research' | 'marketing' | 'support'];
 }
 
+/** Deterministic per-child spread around an authored base so no two
+ *  delegated runs report identical usage. */
+function jitterUsage(key: string, base: number): number {
+  return Math.round(base * (0.55 + unit(key) * 0.9));
+}
+
 function delegatedFor(
   id: string,
   source: 'claude-code' | 'codex',
@@ -488,13 +496,13 @@ function delegatedFor(
         .padStart(4, '0')}`,
       agentType: 'Explore',
       model: 'claude-sonnet-5',
-      task: `${stems.explore}: ${assignmentName.toLowerCase()}`,
+      task: `${stems.explore}: ${assignmentName}`,
       startedAtMs: startedAtMs + 20 * MIN_MS,
       usage: {
-        input: 34_000,
-        cacheRead: 1_200_000,
-        cacheWrite: 130_000,
-        output: 46_000,
+        input: jitterUsage(`${id}:child0:in`, 34_000),
+        cacheRead: jitterUsage(`${id}:child0:cr`, 1_200_000),
+        cacheWrite: jitterUsage(`${id}:child0:cw`, 130_000),
+        output: jitterUsage(`${id}:child0:out`, 46_000),
       },
     },
   ];
@@ -505,13 +513,13 @@ function delegatedFor(
         .padStart(4, '0')}`,
       agentType: 'general-purpose',
       model: 'claude-opus-5',
-      task: `${stems.general}: ${assignmentName.toLowerCase()}`,
+      task: `${stems.general}: ${assignmentName}`,
       startedAtMs: startedAtMs + 50 * MIN_MS,
       usage: {
-        input: 28_000,
-        cacheRead: 940_000,
-        cacheWrite: 110_000,
-        output: 41_000,
+        input: jitterUsage(`${id}:child1:in`, 28_000),
+        cacheRead: jitterUsage(`${id}:child1:cr`, 940_000),
+        cacheWrite: jitterUsage(`${id}:child1:cw`, 110_000),
+        output: jitterUsage(`${id}:child1:out`, 41_000),
       },
     });
   }
@@ -522,6 +530,11 @@ const FAULT_STEMS = [
   'Verification run exited non-zero on the final check; the failure reproduces and needs a human read.',
   'Dependency of this task changed underneath the run; rebase produced conflicts the agent will not resolve unattended.',
   'Environment prerequisite is missing on this runner; the task cannot proceed without provisioning.',
+  'The working branch diverged from its roadmap item mid-run; continuing would overwrite a landed change.',
+  'An upstream fixture this run replays was republished with different totals; the comparison baseline is gone.',
+  'The runner lost access to the vendor sandbox partway through; partial results are recorded, nothing was retried.',
+  'A step in this task needs a credential the runner does not hold; stopped before any partial write.',
+  'Output validation failed twice on the same schema field; the agent stopped rather than loosen the check.',
 ];
 
 function synthesizeAgent(
@@ -650,7 +663,8 @@ function generateScaleAgents(): DemoFleetAgent[] {
             projectKey,
             `${batch.n} ${part}/${batch.count}`,
             batch.g.replace('#', `${part} of ${batch.count}`),
-            batch.c,
+            // `4/10`, not `4 of 10` — the label must hold the D33 six-word cap
+            batch.c.replace('#', `${part}/${batch.count}`),
             batch.i,
             'declared', // batch launches declare their item at spawn
             batch.blocked?.[part]

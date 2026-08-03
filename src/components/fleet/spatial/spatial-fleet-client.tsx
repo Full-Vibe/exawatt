@@ -448,6 +448,13 @@ export function SpatialFleetClient() {
   ]);
   const showSideRail = Boolean(inspectedAgent || visibleActivity.length > 0);
 
+  const formatTokens = (n: number) =>
+    n >= 1_000_000
+      ? `${(n / 1_000_000).toFixed(1)}M`
+      : n >= 1_000
+        ? `${Math.round(n / 1_000)}k`
+        : `${n}`;
+
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -692,12 +699,27 @@ export function SpatialFleetClient() {
                 </div>
 
                 <dl className="mt-4 grid grid-cols-2 divide-x divide-zinc-800 border-y border-zinc-800 py-3 text-sm">
-                  <div className="px-3 first:pl-0">
-                    <p className="text-xs text-zinc-500">Cost</p>
-                    <p className="mt-1 font-mono text-zinc-100">
-                      {formatCurrency(inspectedAgent.cost)}
-                    </p>
-                  </div>
+                  {/* Spend renders only when the source reports it; a source
+                      with usage but no dollars shows tokens instead (absent,
+                      never zero — the local and demo transports report no
+                      cost by design). */}
+                  {inspectedAgent.cost > 0 ? (
+                    <div className="px-3 first:pl-0">
+                      <p className="text-xs text-zinc-500">Cost</p>
+                      <p className="mt-1 font-mono text-zinc-100">
+                        {formatCurrency(inspectedAgent.cost)}
+                      </p>
+                    </div>
+                  ) : inspectedAgent.rawTokens > 0 ? (
+                    <div className="px-3 first:pl-0">
+                      <p className="text-xs text-zinc-500">Tokens</p>
+                      <p className="mt-1 font-mono text-zinc-100">
+                        {formatTokens(inspectedAgent.rawTokens)}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="px-3 first:pl-0" />
+                  )}
                   <div className="px-3">
                     <p className="text-xs text-zinc-500">Turns</p>
                     <p className="mt-1 font-mono text-zinc-100">
