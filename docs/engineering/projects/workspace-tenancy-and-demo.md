@@ -51,8 +51,8 @@ The demo fleet must support the full altitude sweep across *different* Projects,
 
 - **W1 Workspace as a real scope** — LANDED 2026-08-02 (see milestone log). Workspace identity, the account-menu switcher, Workspace-scoped view state, and the hard guarantee that switching never disturbs live local Sessions. Personal only; the switcher shows Demo as `Coming soon` until W2.
 - **W2 Demo source and pane content source** — the demo data source behind the existing fleet transport boundary plus the Terminal pane content source; demo tabs render transcripts and cannot spawn a PTY.
-- **W3 Demo fleet content** — the authored demo Workspace: Projects, roadmaps, Agents, Sessions, consumption. Authored as data, versioned in the repo, resettable.
-- **W4 Scale tier (data)** — the demo fleet authored or generated at the entity count the Spatial moment needs, with honest structure at that volume rather than cloned filler. This milestone owns the DATA only; ENG-004 V3.1 owns rendering it. See the contradiction note below.
+- **W3 Demo fleet content** (landed 2026-08-02 — see milestone log) — the authored demo Workspace: Projects, roadmaps, Agents, Sessions, consumption. Authored as data, versioned in the repo, resettable.
+- **W4 Scale tier (data)** (landed 2026-08-02 — see milestone log) — the demo fleet authored or generated at the entity count the Spatial moment needs, with honest structure at that volume rather than cloned filler. This milestone owns the DATA only; ENG-004 V3.1 owns rendering it. See the contradiction note below.
 - **W5 Organization Workspace preview** — shared tenants appear in the switcher as ENG-026 `preview`, linking to the Organization surface. Named Organization, not Team: decision `0023` gives **Team** to the middle command altitude, and two Teams in one product is a collision.
 
 ## Recorded contradiction: demo scale vs parked V2.1
@@ -81,6 +81,61 @@ Workspace tenancy exists as a real, switchable scope with Personal live and Demo
 **Proof.** `pnpm eval:electron:tenancy` (`scripts/electron-workspace-tenancy-eval.mjs`, withElectronApp): starts a real shell PTY in Personal, prints a marker, switches to a registered non-personal tenant through the real menu, verifies `pty.list()` identity is untouched, writes to the PTY over IPC **while the other Workspace is on screen** and sees fresh output (running, not merely not-killed), switches back, and verifies the pane re-adopts with both markers replayed and identical session identity. All 11 checks pass; screenshots of the switcher, the scoped view, and the restored shell are captured by the eval.
 
 **Explicitly out of W1** (tracked forward): Workspace-attributed feedback and consumption ride the W2 source work; the Demo tenant flips `availability` in W2; no keyboard gesture for switching (per the open question's leaning — the menu is the only path).
+
+### 2026-08-02 — W3 + W4: the authored demo fleet (data only)
+
+**What landed.** The Demo Workspace's content, authored as deterministic,
+versioned, resettable fixtures in `@exawatt/core` (`packages/core/src/demo/`),
+with its contract enforced by `packages/core/src/__tests__/demo-workspace.test.ts`
+(37 tests). No rendering was touched — ENG-004 V3.1 owns pixels, and W2's demo
+source / pane content source are the intended consumers of this data.
+
+**The startup.** Voltaic Grid Systems ("Voltaic") — an AI-native virtual power
+plant that aggregates home batteries, EV chargers, and rooftop solar into
+dispatchable grid capacity. Chosen per the coordination pass: energy-tech fits
+Exawatt's wattage vocabulary. Ten Projects (7 coding / 3 non-coding), four
+Initiatives (ERCOT market entry, Voltaic Home GA, Pilot: 500-home fleet, SOC 2
+Type II):
+
+- coding, `live`: `dispatch-engine`, `grid-api`, `voltaic-home`,
+  `telemetry-ingest`, `edge-gateway`, `partner-portal`, `platform-infra`
+- non-coding, `preview` (ENG-028 Agent Types: Researcher / Marketer / Support):
+  `market-intel`, `demand-gen`, `support-ops`
+
+**Roadmaps.** Each Project carries a real `ROADMAP.md` (52 items, 36
+milestones total) stored as raw markdown and read through the real
+`parseRoadmap` — never a pre-parsed demo shape. The test suite fails on any
+warn-level diagnostic, any unparsed line, or missing `declared` conformance,
+so "parses with zero warnings" is a gate, not an eyeball. Item ids are unique
+workspace-wide, and every Session link on every Agent is verified to point at
+an item that exists in its Project's roadmap.
+
+**Fleet.** 27 hand-authored base Agents (readable up close: goals, six-word
+D33 subtitles, three fully-written blockers covering approval/question/
+credential, two written fault notes, three hero transcripts including one
+preview-desk transcript). The W4 scale generator extends this to 173 Agents
+plus 36 delegated runs (~209 board entities) with honest structure: every
+generated Agent executes a distinct authored assignment — singleton
+workstreams or partitions of genuinely parallel fan-out batches (sharded
+backtests, per-control SOC 2 evidence, per-vendor conformance runs) — tracing
+to a real roadmap item. Uniqueness of id/name/goal, five-signal coverage at
+both tiers, Codex-never-delegates capability truth, and preview honesty for
+every non-coding Agent are all test-enforced. Everything derives
+deterministically from the frozen fixture clock (`DEMO_WORKSPACE_NOW_MS`);
+`demoFleetAgents(tier, { nowMs })` rebases timestamps without changing
+structure, so reset means byte-identical data.
+
+**Consumption.** 1,008 real `ConsumptionSample`s across 145 provider sessions
+over 14 days, following the ENG-008 E4 precedent: emitted in core's own
+shapes and rolled up with core's own `rollupBy*`, so no shape is unique to
+the demo. The corpus keeps the measured real-world properties — cache reads
+dominate 10-100x, delegated spend exists only on Claude Code samples, Codex
+alone reports reasoning tokens and plan windows, and Exawatt's own `sdk-cli`
+summarizer overhead is present and separable.
+
+**Not in this milestone.** The Workspace switcher (W1), the demo source and
+pane content source (W2), any rendering, and any UI marker components — the
+fixtures carry `readiness` as data; ENG-026 owns how `preview` renders.
 
 ## Open questions
 

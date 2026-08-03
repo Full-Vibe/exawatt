@@ -46,3 +46,4 @@ export type {
   SessionLink,
 } from './roadmap/types';
 export * from './consumption/index';
+export * from './demo/index';
