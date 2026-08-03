@@ -45,9 +45,11 @@ export {
   delegationCopy,
   SESSION_GLYPH_COPY,
   SESSION_GLYPH_LABEL,
+  SESSION_BLOCKED_COPY,
   sessionDelegationBusy,
   sessionGlyphCopy,
   sessionGlyphState,
+  sessionReportedBlocked,
   sessionStatusLightState,
 } from './session-status';
 export type {
@@ -179,13 +181,21 @@ export function SessionStatusGlyph({
     lightState === 'fault'
       ? FAULT_GLYPH_COPY
       : lightState === 'needs-you'
-        ? ATTENTION_GLYPH_COPY
+        ? // A REPORTED gate knows what it is waiting for; the generic attention
+          // sentence is the fallback for inferred signals that do not.
+          state === 'blocked'
+          ? sessionGlyphCopy(state, delegation)
+          : ATTENTION_GLYPH_COPY
         : sessionGlyphCopy(state, delegation);
 
   if (lightState === 'needs-you') {
     return (
       <StatusTooltip copy={copy}>
-        <span data-attention className={GLYPH_BOX}>
+        {/* `data-status` rides along rather than being replaced: turn state and
+            attention are separate channels, and a Session that stops reporting
+            its turn state the moment it needs the operator is exactly the blind
+            spot that made this area hard to test and hard to trust. */}
+        <span data-attention data-status={state} className={GLYPH_BOX}>
           <StatusLight decorative size="compact" state={lightState} />
         </span>
       </StatusTooltip>

@@ -13,8 +13,13 @@ import {
 describe('claudeHookSettings', () => {
   const settings = JSON.parse(claudeHookSettings(51234, 'tok-abc'));
 
-  it('subscribes to both turn boundaries and both child boundaries', () => {
+  it('subscribes to turn boundaries, child boundaries, and operator gates', () => {
     expect(Object.keys(settings.hooks).sort()).toEqual([
+      'ElicitationResult',
+      'Notification',
+      'PostToolBatch',
+      'PostToolUse',
+      'PreToolUse',
       'Stop',
       'SubagentStart',
       'SubagentStop',
@@ -22,12 +27,27 @@ describe('claudeHookSettings', () => {
     ]);
   });
 
-  it('never subscribes to per-tool events', () => {
-    // PostToolUse fires inside every child for every tool call. Subscribing
-    // would turn delegation into an activity ticker, which agent-state rules
-    // out — this assertion is the guard on that decision.
-    expect(Object.keys(settings.hooks)).not.toContain('PostToolUse');
-    expect(Object.keys(settings.hooks)).not.toContain('PreToolUse');
+  it('never subscribes to per-tool events UNMATCHED', () => {
+    // An unmatched PreToolUse/PostToolUse fires inside every child for every
+    // tool call and would turn delegation into an activity ticker, which
+    // agent-state rules out. D4 needs exactly one tool — the one that stops
+    // and asks the operator — so every registration must carry a matcher that
+    // names it. This assertion is the guard on that decision.
+    for (const event of ['PreToolUse', 'PostToolUse']) {
+      for (const group of settings.hooks[event]) {
+        expect(group.matcher).toBe('AskUserQuestion');
+      }
+    }
+  });
+
+  it('matches Notification to gates only, never to idle', () => {
+    const matchers = settings.hooks.Notification.map(
+      (group: { matcher: string }) => group.matcher
+    ).join('|');
+    expect(matchers).toContain('permission_prompt');
+    expect(matchers).toContain('agent_needs_input');
+    // every finished Session goes idle; it is not a request for the operator
+    expect(matchers).not.toContain('idle_prompt');
   });
 
   it('posts to loopback with the launch token and a short timeout', () => {

@@ -29,7 +29,15 @@ import type { PtySessionManager } from './session-manager';
  *                                     600; 0 = every quiet turn flags)
  */
 
-export type AttentionKind = 'bell' | 'turn-end';
+export type AttentionKind = 'bell' | 'turn-end' | 'blocked';
+
+/** What the harness itself reported about a Session, when it reports at all.
+ *  Structurally the delegation record; named for what it is used for here. */
+export interface ReportedTurn {
+  ownTurn: 'generating' | 'available';
+  blockedOn: string | null;
+  children: readonly unknown[];
+}
 
 export interface SessionAttention {
   kind: AttentionKind;
@@ -98,9 +106,10 @@ export class AttentionMonitor extends EventEmitter {
   /** OS focus of the app window: an active tab behind another app is NOT
    *  being looked at — start false; the startup focus event corrects it */
   private windowFocused = false;
-  /** Does this Session have outstanding delegated work? (ENG-023) Injected so
-   *  the monitor stays pure Node and testable without the event channel. */
-  private delegatedBusy: (id: string) => boolean = () => false;
+  /** What the harness REPORTED about this Session (ENG-023). Injected so the
+   *  monitor stays pure Node and testable without the event channel. `null`
+   *  means the source reports nothing and inference is on its own. */
+  private reportedTurn: (id: string) => ReportedTurn | null = () => null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly opts: Required<Omit<AttentionMonitorOptions, 'now'>>;
   private readonly now: () => number;
@@ -202,6 +211,11 @@ export class AttentionMonitor extends EventEmitter {
     // Consume the burst: the boundary is accounted for, and leaving it would
     // let the next quiescence sweep re-raise the same finished turn.
     this.burstBytes.set(id, 0);
+    // A turn cannot end while a gate is open, so the gate is gone whether or
+    // not its own release arrived. The reported record clears itself here
+    // (`applyHarnessEvent`); the queue must clear with it or a dropped
+    // release would leave a Session flagged "needs you" forever.
+    this.noteHarnessUnblocked(id);
     if (this.isWatched(id)) return;
     // NO spawn grace here, deliberately. That guard exists because a revived
     // tab printing its banner and going quiet LOOKS like a finished turn to
@@ -213,10 +227,33 @@ export class AttentionMonitor extends EventEmitter {
     this.raise(id, 'turn-end');
   }
 
-  /** Teach the monitor which Sessions still have delegated children running
-   *  (ENG-023). Byte quiescence cannot see them. */
-  setDelegationSource(delegatedBusy: (id: string) => boolean): void {
-    this.delegatedBusy = delegatedBusy;
+  /**
+   * Teach the monitor what the harness reported (ENG-023).
+   *
+   * ONE source, not one per fact. This began as a delegated-children peephole,
+   * and the narrowness was the bug: quiescence could see neither the children
+   * NOR the Session's own reported turn, so it went on concluding "turn
+   * finished" for an Agent whose harness had said it was still generating.
+   * Every guard below reads this same record.
+   */
+  setReportedTurnSource(read: (id: string) => ReportedTurn | null): void {
+    this.reportedTurn = read;
+  }
+
+  /** The Session's own turn has NOT ended by the harness's own account —
+   *  inference must not claim otherwise, in either direction. */
+  private reportedUnfinished(id: string): boolean {
+    const report = this.reportedTurn(id);
+    if (!report) return false;
+    return (
+      report.ownTurn === 'generating' ||
+      !!report.blockedOn ||
+      report.children.length > 0
+    );
+  }
+
+  private delegatedBusy(id: string): boolean {
+    return (this.reportedTurn(id)?.children.length ?? 0) > 0;
   }
 
   /**
@@ -242,8 +279,47 @@ export class AttentionMonitor extends EventEmitter {
     // retired — an unanswered question or block still needs the operator, and
     // more output does not answer it.
     if (this.attention.get(id)?.kind === 'turn-end') this.clear(id);
+    // A new prompt is an answered question by definition (D4).
+    this.noteHarnessUnblocked(id);
     this.lastDataAt.set(id, this.now());
     this.setWorking(id, true);
+  }
+
+  /**
+   * The harness REPORTED that it is waiting on the operator (ENG-023 D4) — a
+   * question, a permission decision, or an MCP elicitation.
+   *
+   * This is the state Exawatt could not previously name. An Agent parked on
+   * `AskUserQuestion` never fires `Stop`, so its reported turn stays
+   * `generating` and nothing here contradicted it; quiescence filled the gap
+   * with "turn finished" and the tab showed a green result for a question
+   * nobody had answered. A gate is neither working nor finished, and now it
+   * says so.
+   *
+   * Unlike a bell, this is raised even while WATCHED. The queue entry is
+   * suppressed for a watched Session the same way every other signal is — but
+   * the gate is a CONDITION, not an unseen event, and `⌘J`'s queue is not the
+   * only reader: the strip's light must keep saying "needs you" while the
+   * question is still on screen in front of the operator.
+   */
+  noteHarnessBlocked(id: string): void {
+    if (this.disabled) return;
+    const session = this.manager?.list().find(item => item.id === id);
+    if (!session || session.exited || session.harness === 'shell') return;
+    this.settled.add(id);
+    this.setWorking(id, false);
+    // The gate accounts for the burst; leaving it would let the next
+    // quiescence sweep re-raise the same pause as a finished turn.
+    this.burstBytes.set(id, 0);
+    this.markEngaged(id);
+    if (this.isWatched(id)) return;
+    this.raise(id, 'blocked');
+  }
+
+  /** The gate closed — the operator answered, or the harness withdrew it. */
+  noteHarnessUnblocked(id: string): void {
+    if (this.disabled) return;
+    if (this.attention.get(id)?.kind === 'blocked') this.clear(id);
   }
 
   private markEngaged(id: string): void {
@@ -334,10 +410,12 @@ export class AttentionMonitor extends EventEmitter {
       // revived/new tabs printing their banner then waiting is not news
       if (now - s.startedAt < this.opts.spawnGraceMs) continue;
       if (this.isWatched(s.id)) continue;
-      // The Session's own turn ended, but its team has not: a parent waiting
-      // on delegated children has produced no result for the operator to
-      // read. Quiescence cannot tell those apart — the harness can (ENG-023).
-      if (this.delegatedBusy(s.id)) continue;
+      // Quiescence means "no bytes", which is NOT the same fact as "the turn
+      // ended". A parent waiting on delegated children, and an Agent parked on
+      // a question it asked the operator, are both silent and neither has
+      // produced a result. The harness knows; the byte stream cannot. When it
+      // has spoken, its answer stands (ENG-023 D1/D4).
+      if (this.reportedUnfinished(s.id)) continue;
       this.raise(s.id, 'turn-end');
     }
     // sessions killed without an exit event (tab closed) leave no residue
@@ -347,8 +425,15 @@ export class AttentionMonitor extends EventEmitter {
   }
 
   private raise(id: string, kind: AttentionKind): void {
-    if (this.attention.has(id)) return; // keep the original since (queue order)
-    // a turn-end or bell means a turn happened — the session has started
+    const existing = this.attention.get(id);
+    // Same class: keep the original `since` so queue order stays stable.
+    // Across classes an operator GATE outranks a ready result — the same
+    // precedence `mergeSessionAttentionSignals` applies on the renderer side,
+    // which is precisely why it has to hold here too. A result that arrived
+    // first must not lock out the question that came after it.
+    if (existing && !(kind !== 'turn-end' && existing.kind === 'turn-end'))
+      return;
+    // a turn-end, bell, or gate means a turn happened — the session has started
     this.markEngaged(id);
     const att = { kind, since: this.now() };
     this.attention.set(id, att);

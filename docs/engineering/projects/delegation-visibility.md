@@ -304,11 +304,91 @@ feature exists to replace.
 
 ### Deliberately not built
 
-`PostToolUse` is available and would give live per-child activity. It is not
-subscribed: `reference/agent-state.md` promotes meaningful Events over per-tool
-streams, and a child-by-child ticker at Sessions altitude would be a regression.
-Child descriptions (`PreToolUse` on `Agent`, or the sibling `meta.json` reachable
-from the transcript path the hook already hands over) are D2's input, not D1's.
+UNMATCHED `PreToolUse`/`PostToolUse` are available and would give live per-child
+activity. They are not subscribed that way: `reference/agent-state.md` promotes
+meaningful Events over per-tool streams, and a child-by-child ticker at Sessions
+altitude would be a regression. D4 subscribes both MATCHED to `AskUserQuestion`
+alone; the boundary is intact and now measured (see D4's verification). Child
+descriptions (`PreToolUse` on `Agent`, or the sibling `meta.json` reachable from
+the transcript path the hook already hands over) are D2's input, not D1's.
+
+## D4 implementation — landed 2026-08-02
+
+### The report
+
+An operator screenshot pair: a `⌘4` tab showing a green Result light while
+Claude Code sat on an `AskUserQuestion`, and the same tab showing the blue
+Active rotor a moment later, after `⌘4` focused it. Neither reading was true,
+and the operator's framing was the important part — "I often see bugs here in
+this area, even after a few different bugfixing passes."
+
+### Root cause — three defects, one event
+
+1. **Inference was allowed to contradict the report.** `AttentionMonitor` was
+   handed `setDelegationSource(id => isBusy(id))` — a boolean about CHILDREN.
+   It could see neither the Session's own reported turn nor anything else, so
+   byte quiescence went on concluding "turn finished" for a Session whose
+   harness had reported `ownTurn: 'generating'`. D1 fixed this shape for
+   children and left the parent's own turn unguarded.
+2. **There was no state for "waiting on the operator."** `AskUserQuestion`
+   fires no `Stop`, so the reported turn stays open while the Agent does
+   nothing at all. No subscribed hook reported the gate, so the truthful
+   `needs-you` light was unreachable — after focus cleared the bogus result the
+   tab read "working — output streaming" indefinitely.
+3. **The surface hid the contradiction until focus revealed it.**
+   `sessionStatusLightState` short-circuited to `result` on a turn-end signal
+   instead of going through `deriveStatusLightState`. Attention is an
+   unseen-event overlay and is cleared by focus, so the disagreement underneath
+   only became visible at the moment of focus — which is exactly what the
+   operator saw and why it read as a race rather than as a lie.
+
+### The durable rules
+
+- **Reported outranks inferred AT THE SOURCE.** One `setReportedTurnSource`
+  handing over the whole record, not one injection per fact. The narrowness was
+  the bug; a new reported fact now corrects inference without new wiring.
+- **Waiting on the operator is its own fact.** `blockedOn` sits beside
+  `ownTurn` and `children`, independent of both, because an Agent parked on a
+  question is genuinely mid-turn AND genuinely producing nothing.
+- **Gate releases are reason-scoped**, with turn boundaries as a never-latch
+  backstop, so an unrelated hook can never answer an open question and a
+  dropped release can never strand one.
+- **Attention is what has not been SEEN; the light is what is TRUE.** Focusing
+  a Session changes the first and never the second. This is the invariant every
+  case in `turn-truth-pipeline.test.ts` asserts.
+
+Still no sixth light: a gate lands on the existing `needs-you`.
+
+### Verification — measured against Claude Code 2.1.220, not assumed
+
+Fixture evals cannot tell you whether the harness behaves as documented, and
+this area had already survived several passes that were locally consistent and
+globally wrong. So the mechanism was driven against the real binary:
+
+- **Matchers genuinely scope HTTP hooks.** A run where Claude executed a `Bash`
+  tool call posted `UserPromptSubmit -> PostToolBatch -> Stop` and NO
+  `PreToolUse`/`PostToolUse`. The no-activity-ticker boundary is now a measured
+  property, not a hope.
+- **The matched path fires.** Re-aiming the same matcher at `Bash` produced
+  `UserPromptSubmit -> PreToolUse[Bash] -> PostToolUse[Bash] -> PostToolBatch
+  -> Stop`, confirming payload fields (`tool_name`, `tool_use_id`) and ordering.
+- **The reported bug, observed.** A real interactive session asked a real
+  question and reported `UserPromptSubmit -> PreToolUse[AskUserQuestion] ->
+  Notification[permission_prompt]`, with **no `Stop`** — the root cause, live.
+
+That last measurement corrected the design mid-flight. One question is
+announced TWICE, six seconds apart, under two different names. The first draft
+let a later `blocked` overwrite the gate's reason, which would have left
+`PostToolUse[AskUserQuestion]`'s scoped release unable to match — a gate
+stranded until the next turn boundary. **One wait is one gate, however many
+times it is announced**: the first report wins until something releases it.
+
+### Deliberately out of scope
+
+`⌘J` still treats focus as "seen", so it will not walk back to a Session that
+is still blocked once the operator has looked at it. The tab keeps its
+`needs-you` light, so the state stays visible; changing the navigation queue's
+seen-semantics is a separate decision about `⌘J`, not a status-indicator fix.
 
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 

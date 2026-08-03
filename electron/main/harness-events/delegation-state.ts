@@ -23,6 +23,13 @@ export interface DelegatedChild {
   startedAt: number;
 }
 
+/**
+ * Why the Agent stopped and handed control back to the operator (ENG-023 D4).
+ * Kept as a reason rather than a boolean because Terminal and Sessions want to
+ * say WHICH gate is open, and because the reasons unblock differently.
+ */
+export type SessionBlockedReason = 'question' | 'permission' | 'elicitation';
+
 export interface SessionDelegation {
   /**
    * The Session's OWN turn. `generating` between a submitted prompt and the
@@ -30,6 +37,18 @@ export interface SessionDelegation {
    * children are still working, which is the whole point.
    */
   ownTurn: 'generating' | 'available';
+  /**
+   * The operator gate the Agent is sitting behind, or `null` when it is not
+   * waiting on a human (ENG-023 D4).
+   *
+   * INDEPENDENT of `ownTurn` on purpose. An Agent blocked on `AskUserQuestion`
+   * is still `generating` — the turn has not ended and `Stop` has not fired —
+   * so collapsing the two would force a choice between "working" and "needs
+   * you" when the truth is both. `reference/agent-state.md` calls this the
+   * `Asked`/`Blocked` Event and requires attention and turn state to stay
+   * separate channels; this is that separation in the reported model.
+   */
+  blockedOn: SessionBlockedReason | null;
   /** live children, oldest first */
   children: DelegatedChild[];
 }
@@ -37,6 +56,9 @@ export interface SessionDelegation {
 export type HarnessEvent =
   | { kind: 'turn-start' }
   | { kind: 'turn-end' }
+  | { kind: 'blocked'; reason: SessionBlockedReason }
+  /** Releases only a gate of this reason; omit to release whatever is open. */
+  | { kind: 'unblocked'; reason?: SessionBlockedReason }
   | {
       kind: 'child-start';
       childId: string;
@@ -47,6 +69,7 @@ export type HarnessEvent =
 
 export const EMPTY_DELEGATION: SessionDelegation = {
   ownTurn: 'available',
+  blockedOn: null,
   children: [],
 };
 
@@ -66,7 +89,9 @@ export function delegationIsLive(
 ): boolean {
   return (
     !!delegation &&
-    (delegation.children.length > 0 || delegation.ownTurn === 'generating')
+    (delegation.children.length > 0 ||
+      delegation.ownTurn === 'generating' ||
+      !!delegation.blockedOn)
   );
 }
 
@@ -75,6 +100,13 @@ export function delegationBusy(
   delegation: SessionDelegation | null | undefined
 ): boolean {
   return !!delegation && delegation.children.length > 0;
+}
+
+/** The Agent reported that it is waiting on the operator (ENG-023 D4). */
+export function delegationBlocked(
+  delegation: SessionDelegation | null | undefined
+): boolean {
+  return !!delegation?.blockedOn;
 }
 
 /**
@@ -90,13 +122,41 @@ export function applyHarnessEvent(
   event: HarnessEvent
 ): SessionDelegation {
   switch (event.kind) {
+    // A turn boundary in EITHER direction also closes any open operator gate.
+    // A new prompt means the last question was answered; a finished turn means
+    // the Agent is no longer sitting behind one. Without this, a gate whose own
+    // release event went missing would latch "needs you" forever — the exact
+    // failure mode that makes a status indicator untrustworthy.
     case 'turn-start':
-      if (state.ownTurn === 'generating') return state;
-      return { ...state, ownTurn: 'generating' };
+      if (state.ownTurn === 'generating' && !state.blockedOn)
+        return state;
+      return { ...state, ownTurn: 'generating', blockedOn: null };
 
     case 'turn-end':
-      if (state.ownTurn === 'available') return state;
-      return { ...state, ownTurn: 'available' };
+      if (state.ownTurn === 'available' && !state.blockedOn)
+        return state;
+      return { ...state, ownTurn: 'available', blockedOn: null };
+
+    // FIRST report of a gate wins until something releases it. Measured on a
+    // real Claude Code 2.1.220 session: one `AskUserQuestion` reports twice —
+    // `PreToolUse[AskUserQuestion]`, then `Notification[permission_prompt]`
+    // six seconds later. Letting the second overwrite the reason would strand
+    // the gate, because the release that eventually arrives
+    // (`PostToolUse[AskUserQuestion]`) is scoped to the reason the FIRST
+    // report set. One wait is one gate, however many times it is announced.
+    case 'blocked':
+      if (state.blockedOn) return state;
+      return { ...state, blockedOn: event.reason };
+
+    // Releases are reason-SCOPED so a release that belongs to one gate can
+    // never close a different one. The permission backstop (`PostToolBatch`)
+    // is the reason this matters: it is the only release whose ordering
+    // against an open question gate is not guaranteed by the harness, and
+    // scoping makes that ordering irrelevant instead of load-bearing.
+    case 'unblocked':
+      if (!state.blockedOn) return state;
+      if (event.reason && state.blockedOn !== event.reason) return state;
+      return { ...state, blockedOn: null };
 
     case 'child-start': {
       // A repeated start for a known child keeps the ORIGINAL startedAt: the

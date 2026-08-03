@@ -391,7 +391,7 @@ describe('sessionRowStatus agrees with the strip on a settled Session', () => {
         session({
           working: false,
           engaged: true,
-          delegation: { ownTurn: 'generating', children: [] },
+          delegation: { ownTurn: 'generating', blockedOn: null, children: [] },
         }),
         NOW
       )

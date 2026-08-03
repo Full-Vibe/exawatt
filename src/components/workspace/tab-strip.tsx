@@ -71,6 +71,7 @@ import {
   SessionStatusGlyph,
   sessionDelegationBusy,
   sessionGlyphState,
+  sessionReportedBlocked,
   type SessionAttentionSignal,
 } from './status-glyphs';
 import { useOrdinalHints } from './use-ordinal-hints';
@@ -849,6 +850,7 @@ export function TabStrip({
           agent: isAgent,
           started,
           delegatedBusy: sessionDelegationBusy(tabDelegation),
+          blocked: sessionReportedBlocked(tabDelegation),
           ownTurn: tabDelegation?.ownTurn,
         });
         const display = sessionDisplayCopy({

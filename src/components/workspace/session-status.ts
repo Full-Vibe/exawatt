@@ -5,10 +5,15 @@
  * switcher all consume the same derivation and language, while their visual
  * components remain free to choose the appropriate footprint.
  */
-export type SessionGlyphState = 'working' | 'done' | 'fresh' | 'quiet';
+export type SessionGlyphState =
+  | 'working'
+  | 'blocked'
+  | 'done'
+  | 'fresh'
+  | 'quiet';
 
 export interface SessionAttentionSignal {
-  kind?: 'bell' | 'turn-end' | 'roadmap-blocked';
+  kind?: 'bell' | 'turn-end' | 'roadmap-blocked' | 'blocked';
   since: number;
 }
 
@@ -86,6 +91,7 @@ export function sessionGlyphState({
   agent,
   started,
   delegatedBusy = false,
+  blocked = false,
   ownTurn,
 }: {
   working: boolean;
@@ -94,10 +100,18 @@ export function sessionGlyphState({
   started: boolean;
   /** harness-reported outstanding children; false when unreported (ENG-023) */
   delegatedBusy?: boolean;
+  /** harness-reported operator gate — a question, permission, or elicitation
+   *  the Agent is waiting on (ENG-023 D4) */
+  blocked?: boolean;
   /** the source's OWN report of its turn, when it makes one (ENG-015 S1.1).
    *  Undefined means unreported, and the inferred byte activity stands. */
   ownTurn?: 'generating' | 'available';
 }): SessionGlyphState {
+  // Outranks every other fact, including a still-open turn. An Agent parked on
+  // a question IS mid-turn — `Stop` has not fired — but "working" is the one
+  // thing it is provably not doing, and the operator is the only one who can
+  // change that. Nothing below can be more urgent.
+  if (blocked) return 'blocked';
   if (delegatedBusy) return 'working';
   // A source that declares its own boundary outranks byte activity in BOTH
   // directions. Measured on a real Session, inference trailed the reported
@@ -117,8 +131,16 @@ export function sessionGlyphState({
 
 /**
  * Project durable Session truth into the approved five-light vocabulary.
- * A quiet turn boundary is a ready result; an explicit bell or roadmap block
- * is a human gate. Presence-only legacy flags remain conservative needs-you.
+ * A quiet turn boundary is a ready result; an explicit bell, roadmap block, or
+ * reported operator gate is a human gate. Presence-only legacy flags remain
+ * conservative needs-you.
+ *
+ * Every input goes THROUGH `deriveStatusLightState`. It used to short-circuit
+ * to `result` on a turn-end signal, and that bypass is what let one Session
+ * render two contradictory answers: a green result while the harness reported
+ * the turn still open, flipping to a blue spinner the moment focus cleared the
+ * signal and revealed the state underneath. Focusing a tab must change what
+ * the operator has SEEN, never what is true.
  */
 export function sessionStatusLightState({
   state,
@@ -129,11 +151,16 @@ export function sessionStatusLightState({
   attention?: SessionAttentionSignal | null;
   fault?: boolean;
 }): StatusLightState {
-  if (fault) return 'fault';
-  if (attention?.kind === 'turn-end') return 'result';
   return deriveStatusLightState({
-    needsOperator: attentionNeedsOperator(attention),
-    hasResult: state === 'done',
+    fault,
+    // A reported gate is a CONDITION, not an unseen event: it survives the
+    // operator looking at the tab, because looking does not answer a question.
+    needsOperator: state === 'blocked' || attentionNeedsOperator(attention),
+    // A turn-end signal claims a result only when no fresher truth contradicts
+    // it. Inference no longer raises one over a reported-open turn, and this
+    // keeps the surface honest if some future producer does.
+    hasResult:
+      state === 'done' || (attention?.kind === 'turn-end' && state !== 'working'),
     active: state === 'working',
   });
 }
@@ -141,6 +168,7 @@ export function sessionStatusLightState({
 /** Tooltip copy — one voice across every Session surface. */
 export const SESSION_GLYPH_COPY: Record<SessionGlyphState, string> = {
   working: 'working — output streaming',
+  blocked: 'needs you — waiting on your answer',
   done: 'result ready — turn finished',
   fresh: 'new — not given a task yet',
   quiet: 'quiet — waiting or between turns',
@@ -156,6 +184,7 @@ export const FAULT_GLYPH_COPY =
 /** Compact state words for visible labels and accessible names. */
 export const SESSION_GLYPH_LABEL: Record<SessionGlyphState, string> = {
   working: 'working',
+  blocked: 'needs you',
   done: 'result ready',
   fresh: 'new',
   quiet: 'quiet',
@@ -176,6 +205,23 @@ export function sessionDelegationBusy(
 ): boolean {
   return !!delegation && delegation.children.length > 0;
 }
+
+/** The harness reported an open operator gate (ENG-023 D4). */
+export function sessionReportedBlocked(
+  delegation?: SessionDelegation | null
+): boolean {
+  return !!delegation?.blockedOn;
+}
+
+/** Names the gate for the tooltip and the accessible name. */
+export const SESSION_BLOCKED_COPY: Record<
+  NonNullable<SessionDelegation['blockedOn']>,
+  string
+> = {
+  question: 'Needs you — the Agent asked a question and is waiting on your answer.',
+  permission: 'Needs you — the Agent is waiting on a permission decision.',
+  elicitation: 'Needs you — a tool is waiting on input from you.',
+};
 
 /**
  * One sentence naming the delegated work. Kinds are the source's own agent
@@ -210,6 +256,12 @@ export function sessionGlyphCopy(
   state: SessionGlyphState,
   delegation?: SessionDelegation | null
 ): string {
+  // "Needs you" is the answer to a question the operator will immediately ask
+  // back: needs me for WHAT? The reported reason is the only place that is
+  // known, so it is the only place that can say.
+  if (state === 'blocked' && delegation?.blockedOn) {
+    return SESSION_BLOCKED_COPY[delegation.blockedOn];
+  }
   if (state === 'working' && sessionDelegationBusy(delegation)) {
     return 'working — delegated agents running';
   }

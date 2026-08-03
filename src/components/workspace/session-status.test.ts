@@ -139,7 +139,7 @@ describe('delegated work', () => {
     ).toBe('done');
     expect(sessionDelegationBusy(null)).toBe(false);
     expect(sessionDelegationBusy(undefined)).toBe(false);
-    expect(sessionDelegationBusy({ ownTurn: 'available', children: [] })).toBe(
+    expect(sessionDelegationBusy({ ownTurn: 'available', blockedOn: null, children: [] })).toBe(
       false
     );
   });
@@ -180,7 +180,7 @@ describe('delegated work', () => {
       })
     ).toBe('1 delegated agent working');
     expect(delegationCopy(null)).toBeNull();
-    expect(delegationCopy({ ownTurn: 'available', children: [] })).toBeNull();
+    expect(delegationCopy({ ownTurn: 'available', blockedOn: null, children: [] })).toBeNull();
   });
 });
 

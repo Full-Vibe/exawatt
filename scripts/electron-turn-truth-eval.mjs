@@ -216,9 +216,107 @@ try {
       );
       check('byte inference still settles a source that reports nothing', true);
 
+      // 9. OPERATOR GATES (ENG-023 D4) — the reported bug, replayed exactly.
+      //    A `⌘4` tab showed a green Result while Claude sat on an
+      //    AskUserQuestion, then flipped to the blue Active rotor the instant
+      //    the tab was focused. Neither reading was true.
+      const blockedOn = async () =>
+        (await sessions()).find(s => s.id === claude.id)?.delegation
+          ?.blockedOn ?? 'none';
+
+      await send('turn');
+      await until(
+        async () => (await ownTurnOf()) === 'generating',
+        'the turn that asks a question'
+      );
+      await send('say a burst of work before the question');
+      // The REAL sequence from Claude Code 2.1.220: one question announced
+      // twice, seconds apart, under two different names.
+      await send('ask');
+      await send('permission');
+      await until(
+        async () => (await blockedOn()) === 'question',
+        'the reported operator gate'
+      );
+      // Well past BOTH sweeps that used to misread this pause: the 3s
+      // working -> quiet transition and the 4s turn-boundary raise.
+      await page.waitForTimeout(5_000);
+      check(
+        'a pending question never reads as a ready result',
+        (await status()) === 'blocked' && (await attentionOf()) === 'blocked'
+      );
+      check(
+        'the needs-you light is what the strip actually renders',
+        (await page.locator('[data-attention]').count()) > 0
+      );
+
+      // The invariant: focusing the tab changes what has been SEEN, never what
+      // is true. This is the exact flip in the operator's screenshots.
+      const beforeFocus = await status();
+      await page
+        .locator(`[data-ribbon-item="initiative"][data-tab-harness="claude"]`)
+        .first()
+        .locator('[data-tab-chrome]')
+        .click();
+      await page.waitForTimeout(1_500);
+      check(
+        'focusing the tab does not change the light',
+        beforeFocus === 'blocked' && (await status()) === 'blocked'
+      );
+
+      // Answering releases the gate and the Session goes back to working.
+      await send('answer');
+      await until(
+        async () => (await blockedOn()) === 'none',
+        'the gate to close when the question is answered'
+      );
+      check('answering the question releases the gate', true);
+
+      // A resolved tool batch must not be able to answer a question. Ordering
+      // it against an open gate must simply not matter.
+      await send('ask');
+      await until(async () => (await blockedOn()) === 'question', 'a new gate');
+      await send('batch');
+      await page.waitForTimeout(1_000);
+      check(
+        'a resolved tool batch cannot answer an open question',
+        (await blockedOn()) === 'question'
+      );
+
+      // A gate whose own release never arrives must not latch forever.
+      await send('stop');
+      await until(
+        async () => (await blockedOn()) === 'none',
+        'a turn boundary to release an orphaned gate'
+      );
+      check('a turn boundary releases a gate that never got its release', true);
+
+      // Idle is not a gate: every finished Session goes idle eventually.
+      await send('turn');
+      await send('idle');
+      await page.waitForTimeout(1_000);
+      check(
+        'an idle prompt is not an operator gate',
+        (await blockedOn()) === 'none'
+      );
+
+      // A permission prompt is, and its batch release closes it.
+      await send('permission');
+      await until(
+        async () => (await blockedOn()) === 'permission',
+        'the permission gate'
+      );
+      check('a permission prompt reads as needs-you', (await status()) === 'blocked');
+      await send('batch');
+      await until(
+        async () => (await blockedOn()) === 'none',
+        'the granted permission to release its gate'
+      );
+      check('a granted permission releases its own gate', true);
+
       completed = true;
     },
-    { maxMs: 240_000 }
+    { maxMs: 300_000 }
   );
 } finally {
   if (process.env.EXAWATT_KEEP_EVAL) {

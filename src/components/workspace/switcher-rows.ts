@@ -9,13 +9,22 @@ import type { PtySessionInfo } from '@/types/electron';
 import {
   sessionDelegationBusy,
   sessionGlyphState,
-  type SessionGlyphState,
+  sessionReportedBlocked,
 } from './session-status';
 
+/**
+ * Row vocabulary. Spelled out rather than derived from `SessionGlyphState`
+ * because the two are not the same list: a reported operator gate is its own
+ * turn state but NOT its own row status — it lands on the existing `needs-you`,
+ * which is the "no new light" boundary ENG-023 set.
+ */
 export type SessionRowStatus =
   | 'needs-you'
   | 'fault'
-  | SessionGlyphState
+  | 'working'
+  | 'done'
+  | 'fresh'
+  | 'quiet'
   | 'exited';
 
 export interface SessionRow {
@@ -55,19 +64,27 @@ export function sessionRowStatus(
 ): SessionRowStatus {
   if (s.exited)
     return s.exitCode != null && s.exitCode !== 0 ? 'fault' : 'exited';
-  // Delegated work outranks a finished own-turn (ENG-023): the switcher must
-  // not offer a Session as a ready result while its children are running.
   const delegatedBusy = sessionDelegationBusy(s.delegation);
-  if (s.attention?.kind === 'turn-end' && !delegatedBusy) return 'done';
-  if (s.attention && s.attention.kind !== 'turn-end') return 'needs-you';
   const working = s.working ?? now - s.lastDataAt < LEGACY_WORKING_FALLBACK_MS;
-  return sessionGlyphState({
+  // Turn state FIRST, attention second. This used to run the other way, and
+  // an attention signal could therefore answer for a Session it disagreed
+  // with — reporting `done` while the harness said the turn was still open.
+  // The shared derivation already knows about delegated children and reported
+  // gates, so letting it speak first is what keeps this row and the tab strip
+  // from producing two different answers for one Session.
+  const glyph = sessionGlyphState({
     working,
     agent: s.harness !== 'shell',
     started: !!s.engaged || !!s.contextSummary?.trim(),
     delegatedBusy,
+    blocked: sessionReportedBlocked(s.delegation),
     ownTurn: s.delegation?.ownTurn,
   });
+  if (glyph === 'blocked') return 'needs-you';
+  if (s.attention && s.attention.kind !== 'turn-end') return 'needs-you';
+  // A ready result, unless something fresher says the Session is still going.
+  if (s.attention?.kind === 'turn-end' && glyph !== 'working') return 'done';
+  return glyph;
 }
 
 /** tolerant read of the persisted layout's dir → color assignments */

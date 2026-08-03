@@ -125,7 +125,10 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   // stream it here, so "the team is working" stops depending on byte
   // quiescence. A source without the capability simply never publishes.
   delegationMonitor.attach(harnessEventChannel, ptySessions);
-  attentionMonitor.setDelegationSource(id => delegationMonitor.isBusy(id));
+  // One reported-truth source for every inference guard. The monitor
+  // subscribes to the record, not to a boolean, so a new reported fact
+  // (D4's operator gate) corrects inference without a second wire.
+  attentionMonitor.setReportedTurnSource(id => delegationMonitor.get(id));
   harnessEventChannel.on('event', (id: string, event: HarnessEvent) => {
     // A reported turn boundary is stronger evidence than inferred quiescence,
     // and it arrives 6–7 s sooner. Turn-start also matters for the turn a
@@ -133,6 +136,11 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     // nothing else would reopen the turn.
     if (event.kind === 'turn-start') attentionMonitor.noteHarnessTurnStart(id);
     if (event.kind === 'turn-end') attentionMonitor.noteHarnessTurnEnd(id);
+    // An Agent waiting on a question, a permission, or an elicitation is
+    // neither working nor finished (D4). Reported, because no amount of
+    // staring at the byte stream can tell a pause from a gate.
+    if (event.kind === 'blocked') attentionMonitor.noteHarnessBlocked(id);
+    if (event.kind === 'unblocked') attentionMonitor.noteHarnessUnblocked(id);
     // The result of a DELEGATING Session arrives when its last child stops,
     // not when its own turn ended — that boundary was deliberately withheld
     // while the team was still working. Without this, a Session that fans out

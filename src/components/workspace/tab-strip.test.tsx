@@ -199,7 +199,10 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     });
     const marker = container.querySelector('[data-attention]');
     expect(marker).not.toBeNull();
-    expect(container.querySelector('[data-status]')).toBeNull();
+    // Attention and turn state are separate channels (agent-state.md), so the
+    // marker CARRIES the turn state rather than replacing it. Hiding turn
+    // state behind attention is what let two surfaces disagree unnoticed.
+    expect(marker?.getAttribute('data-status')).toBe('working');
     expect(marker?.querySelector('.animate-ping')).toBeNull();
     expect(marker?.querySelector('.lucide-bell')).toBeNull();
 
@@ -465,7 +468,7 @@ describe('TabStrip delegated work (ENG-023)', () => {
       startedAt: index,
     }));
   const delegating = (count: number, kind?: string): SessionDelegation => ({
-    ownTurn: 'available',
+    ownTurn: 'available', blockedOn: null,
     children: children(count, kind),
   });
 

@@ -176,7 +176,10 @@ export interface AgentModelCatalog {
   selectionAction: 'choose-in-source' | null;
 }
 
-export type PtyAttentionKind = 'bell' | 'turn-end';
+/** `blocked` is a reported operator gate (ENG-023 D4) — a question, a
+ *  permission decision, or an MCP elicitation. Like `bell` and unlike
+ *  `turn-end`, it needs the operator. */
+export type PtyAttentionKind = 'bell' | 'turn-end' | 'blocked';
 
 /** "this session needs the operator" (ENG-015 S1) */
 export interface PtyAttention {
@@ -232,16 +235,26 @@ export interface DelegatedChild {
   startedAt: number;
 }
 
+/** Which operator gate an Agent is sitting behind (ENG-023 D4). */
+export type SessionBlockedReason = 'question' | 'permission' | 'elicitation';
+
 /**
- * Harness-reported delegation for one Session (ENG-023).
+ * Harness-reported turn truth for one Session (ENG-023).
  *
- * Two facts, deliberately kept apart: `ownTurn` answers "is this Session itself
- * generating?" and `children` answers "is its team still working?". A parent
- * can be `available` with children mid-flight — that is the common case, and
- * collapsing it is what made a delegating tab read as finished.
+ * Three facts, deliberately kept apart: `ownTurn` answers "is this Session
+ * itself generating?", `children` answers "is its team still working?", and
+ * `blockedOn` answers "is it waiting on a human?". A parent can be `available`
+ * with children mid-flight — that is the common case, and collapsing it is
+ * what made a delegating tab read as finished. An Agent can equally be
+ * `generating` AND blocked: `AskUserQuestion` fires no `Stop`, so the turn is
+ * open while the Agent is doing nothing but waiting for an answer.
  */
 export interface SessionDelegation {
   ownTurn: 'generating' | 'available';
+  /** Optional on the WIRE only. Main always sends it; a payload from a main
+   *  process that predates D4 simply omits it, and absent must read as "no
+   *  gate reported" rather than as a type error in the renderer. */
+  blockedOn?: SessionBlockedReason | null;
   children: DelegatedChild[];
 }
 

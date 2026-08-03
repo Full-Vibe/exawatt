@@ -14,6 +14,11 @@ import { join } from 'node:path';
  *   turn                 UserPromptSubmit    stop            Stop
  *   spawn <id>           SubagentStart       done <id>       SubagentStop
  *   child-stop <id>      Stop carrying agent_id (must not move the parent)
+ *   ask                  PreToolUse[AskUserQuestion]  — the operator gate
+ *   answer               PostToolUse[AskUserQuestion] — the gate closing
+ *   permission           Notification[permission_prompt]
+ *   idle                 Notification[idle_prompt] — deliberately NOT a gate
+ *   batch                PostToolBatch — the granted-permission release
  *   say <text>           plain stdout, no hook — pure terminal bytes
  */
 export function createHarnessFixture(prefix) {
@@ -71,6 +76,16 @@ process.stdin.on('data', async chunk => {
       await post({ hook_event_name: 'SubagentStop', agent_id: rest, agent_type: 'Explore', last_assistant_message: 'PRIVATE_REPORT_BODY' });
     else if (command === 'turn') await post({ hook_event_name: 'UserPromptSubmit' });
     else if (command === 'stop') await post({ hook_event_name: 'Stop' });
+    else if (command === 'ask')
+      await post({ hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'toolu_ask' });
+    else if (command === 'answer')
+      await post({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'toolu_ask' });
+    else if (command === 'permission')
+      await post({ hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude wants to run: Bash' });
+    else if (command === 'idle')
+      await post({ hook_event_name: 'Notification', notification_type: 'idle_prompt', message: 'waiting' });
+    else if (command === 'batch')
+      await post({ hook_event_name: 'PostToolBatch', tool_calls: [] });
     else if (command === 'child-stop')
       await post({ hook_event_name: 'Stop', agent_id: rest });
     else if (command === 'say') process.stdout.write(rest + '\\n');

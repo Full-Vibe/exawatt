@@ -72,7 +72,7 @@ describe('deriveProjectRibbonSignal', () => {
       signal([tab('parent')], {
         delegation: {
           'session-parent': {
-            ownTurn: 'available',
+            ownTurn: 'available', blockedOn: null,
             children: [{ id: 'child-1', agentType: 'explorer', startedAt: 1 }],
           },
         },

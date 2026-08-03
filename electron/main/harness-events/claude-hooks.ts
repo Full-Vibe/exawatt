@@ -8,23 +8,73 @@
  * read, or assumed on this path — which is what makes the feature safe to ship
  * to users whose machines look nothing like the author's.
  *
- * Deliberately NOT subscribed: `PostToolUse`. It fires inside every child for
- * every tool call and would turn a delegation surface into an activity ticker,
- * which `docs/product/reference/agent-state.md` rules out. D2 needs child
- * labels, not child keystrokes.
+ * Deliberately NOT subscribed: UNMATCHED `PreToolUse`/`PostToolUse`. They fire
+ * inside every child for every tool call and would turn a delegation surface
+ * into an activity ticker, which `docs/product/reference/agent-state.md` rules
+ * out. D2 needs child labels, not child keystrokes. D4 subscribes both, but
+ * MATCHED to `AskUserQuestion` alone, so the harness posts for the one tool
+ * whose entire purpose is to stop and wait for a human — and for nothing else.
  */
-import type { HarnessEvent } from './delegation-state';
+import type { HarnessEvent, SessionBlockedReason } from './delegation-state';
 
 /** Kept low on purpose: every hook runs INSIDE the harness turn, so this is
  *  the operator's latency, not ours. A dead listener fails open. */
 const HOOK_TIMEOUT_SECONDS = 2;
 
-const SUBSCRIBED_EVENTS = [
-  'UserPromptSubmit',
-  'Stop',
-  'SubagentStart',
-  'SubagentStop',
-] as const;
+/**
+ * The tool whose whole purpose is to stop and ask the operator. Subscribing
+ * `PreToolUse`/`PostToolUse` MATCHED TO THIS ONE TOOL is what keeps the "no
+ * activity exhaust" boundary intact: the harness never posts for Read, Bash,
+ * or Edit, so this cannot decay into a child-by-child tool ticker.
+ */
+const ASK_TOOL = 'AskUserQuestion';
+
+/**
+ * Notification types that mean "the Agent stopped and is waiting on a human".
+ *
+ * `idle_prompt` is deliberately EXCLUDED. It fires when a session has simply
+ * been sitting at its prompt, which is true of every finished Session
+ * eventually — treating it as a gate would light "needs you" on the whole
+ * fleet and destroy the signal.
+ */
+const BLOCKING_NOTIFICATIONS: Record<string, SessionBlockedReason> = {
+  permission_prompt: 'permission',
+  agent_needs_input: 'question',
+  elicitation_dialog: 'elicitation',
+};
+
+/** Notification types that report the gate closing again. */
+const RELEASING_NOTIFICATIONS = new Set([
+  'elicitation_complete',
+  'elicitation_response',
+]);
+
+interface Subscription {
+  event: string;
+  /** Claude Code's hook matcher — absent means "every payload for this event" */
+  matcher?: string;
+}
+
+const SUBSCRIBED_EVENTS: readonly Subscription[] = [
+  { event: 'UserPromptSubmit' },
+  { event: 'Stop' },
+  { event: 'SubagentStart' },
+  { event: 'SubagentStop' },
+  // Operator gates (ENG-023 D4). Without these, an Agent parked on a question
+  // is indistinguishable from one that is thinking: no `Stop` fires, so the
+  // reported turn stays `generating` and byte quiescence is left to invent an
+  // answer — which is how a pending question came to read "result ready".
+  { event: 'PreToolUse', matcher: ASK_TOOL },
+  { event: 'PostToolUse', matcher: ASK_TOOL },
+  { event: 'Notification', matcher: Object.keys(BLOCKING_NOTIFICATIONS).join('|') },
+  { event: 'Notification', matcher: [...RELEASING_NOTIFICATIONS].join('|') },
+  { event: 'ElicitationResult' },
+  // The gate-release backstop for a granted permission, which reports no event
+  // of its own. One post per resolved tool BATCH, not per tool call, and it is
+  // normalized to exactly one meaning — `unblocked` — so it can never become
+  // an activity channel for any surface to read.
+  { event: 'PostToolBatch' },
+];
 
 export const CLAUDE_HOOK_HEADER = 'x-exawatt-token';
 
@@ -41,9 +91,12 @@ export function claudeHookSettings(port: number, token: string): string {
     headers: { [CLAUDE_HOOK_HEADER]: token },
     timeout: HOOK_TIMEOUT_SECONDS,
   };
-  const hooks = Object.fromEntries(
-    SUBSCRIBED_EVENTS.map(event => [event, [{ hooks: [endpoint] }]])
-  );
+  const hooks: Record<string, Array<Record<string, unknown>>> = {};
+  for (const { event, matcher } of SUBSCRIBED_EVENTS) {
+    (hooks[event] ??= []).push(
+      matcher ? { matcher, hooks: [endpoint] } : { hooks: [endpoint] }
+    );
+  }
   return JSON.stringify({ hooks }, null, 2);
 }
 
@@ -82,6 +135,38 @@ export function claudeHookEvent(
       return insideChild ? null : { kind: 'turn-start' };
     case 'Stop':
       return insideChild ? null : { kind: 'turn-end' };
+
+    // Operator gates are NOT gated on `insideChild`, unlike turn boundaries.
+    // A child's turn is not its parent's, but a child's question is: there is
+    // one terminal, and it is the operator who has to answer.
+    case 'PreToolUse':
+      return readString(record, 'tool_name') === ASK_TOOL
+        ? { kind: 'blocked', reason: 'question' }
+        : null;
+    case 'PostToolUse':
+      return readString(record, 'tool_name') === ASK_TOOL
+        ? { kind: 'unblocked', reason: 'question' }
+        : null;
+    case 'Notification': {
+      // Re-checked here rather than trusted from the matcher: the matcher is
+      // configuration, and a version that widens what it delivers must not
+      // silently start reporting gates that are not gates.
+      const type = readString(record, 'notification_type');
+      if (!type) return null;
+      const reason = BLOCKING_NOTIFICATIONS[type];
+      if (reason) return { kind: 'blocked', reason };
+      return RELEASING_NOTIFICATIONS.has(type)
+        ? { kind: 'unblocked', reason: 'elicitation' }
+        : null;
+    }
+    case 'ElicitationResult':
+      return { kind: 'unblocked', reason: 'elicitation' };
+    // Scoped to permissions ONLY. A granted permission reports nothing of its
+    // own, so this is its release; scoping it means a batch resolving for any
+    // other reason cannot silently answer an open question.
+    case 'PostToolBatch':
+      return { kind: 'unblocked', reason: 'permission' };
+
     case 'SubagentStart': {
       const childId = readString(record, 'agent_id');
       if (!childId) return null;

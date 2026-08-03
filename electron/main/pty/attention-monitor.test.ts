@@ -25,6 +25,13 @@ class FakeManager extends EventEmitter {
 
 const BELL = '\x07';
 
+/** the reported record a harness with N running children publishes */
+const reportBusy = (busy: Set<string>, id: string) => ({
+  ownTurn: 'available' as const,
+  blockedOn: null,
+  children: busy.has(id) ? [{}] : [],
+});
+
 describe('AttentionMonitor', () => {
   let manager: FakeManager;
   let monitor: AttentionMonitor;
@@ -285,7 +292,7 @@ describe('AttentionMonitor', () => {
 
     it('withholds turn-end while children are still running', () => {
       const busy = new Set(['a']);
-      monitor.setDelegationSource(id => busy.has(id));
+      monitor.setReportedTurnSource(id => reportBusy(busy, id));
       add('a');
       goQuietAfterWork('a');
       // the Session's OWN turn ended, but there is no result to read yet
@@ -294,7 +301,7 @@ describe('AttentionMonitor', () => {
 
     it('raises turn-end normally once the last child finishes', () => {
       const busy = new Set(['a']);
-      monitor.setDelegationSource(id => busy.has(id));
+      monitor.setReportedTurnSource(id => reportBusy(busy, id));
       add('a');
       goQuietAfterWork('a');
       expect(monitor.get('a')).toBeNull();
@@ -307,7 +314,7 @@ describe('AttentionMonitor', () => {
     });
 
     it('only withholds for the delegating Session', () => {
-      monitor.setDelegationSource(id => id === 'a');
+      monitor.setReportedTurnSource(id => reportBusy(new Set(['a']), id));
       add('a');
       add('b');
       data('a', 'x'.repeat(500));
@@ -426,7 +433,7 @@ describe('AttentionMonitor', () => {
 
     it('withholds a reported end while children are still running', () => {
       const busy = new Set(['a']);
-      monitor.setDelegationSource(id => busy.has(id));
+      monitor.setReportedTurnSource(id => reportBusy(busy, id));
       add('a', 'claude', clock - 60_000);
       data('a', 'x'.repeat(500));
       monitor.noteHarnessTurnEnd('a');
@@ -487,7 +494,7 @@ describe('AttentionMonitor', () => {
       // re-raising, a Session that fans out and finishes never enters the
       // attention queue, which is the Session most worth returning to.
       const busy = new Set(['a']);
-      monitor.setDelegationSource(id => busy.has(id));
+      monitor.setReportedTurnSource(id => reportBusy(busy, id));
       add('a', 'claude', clock - 60_000);
       data('a', 'x'.repeat(500));
       monitor.noteHarnessTurnEnd('a');

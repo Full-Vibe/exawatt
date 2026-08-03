@@ -119,7 +119,7 @@ export function ProjectRibbonStudy() {
   const delegation: Record<string, SessionDelegation> = delegatedSession
     ? {
         [delegatedSession]: {
-          ownTurn: 'available',
+          ownTurn: 'available', blockedOn: null,
           children: [
             { id: 'study-child-a', agentType: 'Explore', startedAt: 1 },
             { id: 'study-child-b', agentType: 'general-purpose', startedAt: 2 },

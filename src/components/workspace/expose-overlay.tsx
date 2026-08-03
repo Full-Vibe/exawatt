@@ -17,6 +17,7 @@ import {
   SESSION_GLYPH_LABEL,
   sessionDelegationBusy,
   sessionGlyphState,
+  sessionReportedBlocked,
 } from './status-glyphs';
 import type { SessionAttentionSignal } from './status-glyphs';
 import {
@@ -422,6 +423,7 @@ export function ExposeOverlay({
       agent: tile.harness !== 'shell',
       started: !!(tile.sessionId && engaged[tile.sessionId]) || !!subtitle,
       delegatedBusy: sessionDelegationBusy(tileDelegation),
+      blocked: sessionReportedBlocked(tileDelegation),
       ownTurn: tileDelegation?.ownTurn,
     });
     const roadmap = roadmapByTab[tile.tabId];
