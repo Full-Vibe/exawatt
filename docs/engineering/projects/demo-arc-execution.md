@@ -19,7 +19,7 @@ The operator named three risks (2026-08-02). Reliability was explicitly **not** 
 Two files are contention points. Respect these or agents will conflict:
 
 - **`src/components/nav/surfaces.ts`** — touched by the rename (P2) and the readiness manifest (P6). P2 owns it first; P6 waits.
-- **The spatial surface** — touched by demo-scale rendering (P5) and the altitude handoff (P7). P5 owns it first; P7 waits.
+- **The spatial surface** — P5 landed. As of 2026-08-02 the ENG-004 V3.3 spatial-feel stream owns it: S1 → S2 → S3 → S4 in order (S1 and S3 may overlap with care; S2 restructures the canvas layer tree and runs alone). P7 lands on S2's machinery and follows it.
 
 Everything else in wave 1 is file-disjoint by construction.
 
@@ -89,7 +89,7 @@ Everything else in wave 1 is file-disjoint by construction.
 ### P7 · Altitude handoff
 
 - **Owns:** ENG-004 V3.0, decision `0023`
-- **Depends on:** P5 (owns spatial first), P3 (Team-altitude layout stable), P6.5 (the handoff must be built and tuned against the populated Voltaic board, not a dozen-agent personal board)
+- **Depends on:** P3 (landed), P6.5 (landed — tune against the populated Voltaic board, not a dozen-agent personal board), **S2** (the V3.3 continuity slice: the entry pose is built ON its surviving-layers transition machinery, not as a parallel implementation — one arc, operator 2026-08-02)
 - **Scope:** the board's entry pose, position handoff from cards to nodes, camera pull-back. Identity and position carry; content never does.
 - **Acceptance:** the fallback cut fires correctly under reduced motion, low power, and a missed frame budget — the fallback is the feature that makes the handoff safe. Transitions never block input. Entry pose and tuning are demonstrated against the Demo Workspace's populated board.
 
@@ -106,6 +106,48 @@ Everything else in wave 1 is file-disjoint by construction.
 - **Depends on:** P6
 - **Scope:** Organization and Cloud previews, the `announced` *Push to cloud* affordance, the Coordination preview (broad strokes), and the Agent Type chip and surface.
 - **Acceptance:** each of the four recurring user questions can be answered on screen without leaving the app.
+
+## The spatial-feel stream (ENG-004 V3.3) — added 2026-08-02
+
+Owner of scope: ENG-004 V3.3; the pick-up-cold slice contracts (scope, files,
+acceptance, boundaries) live in
+`docs/engineering/projects/spatial-operations-board.md` §"V3.3 execution
+contract". This section only sequences them for parallel agents. Feel first,
+then the cinematic handoff (P7) on top — the operator's explicit ordering.
+
+### S1 · Board input — keyboard unit navigation + RTS pointer grammar
+
+- **Owns:** ENG-004 V3.3 F2+F3, decision `0024`
+- **Files:** `operations-board-canvas.tsx` (pointer/selection rectangle),
+  `operations-board-surface.tsx` (keys, hints), `packages/ui-model`
+  (nearest-neighbor + band-hit selectors, multi-selection state),
+  `spatial-navigation-state.ts`
+- **May start:** immediately. May overlap S3 with care; never S2.
+
+### S2 · Board continuity — layers survive altitude changes
+
+- **Owns:** ENG-004 V3.3 F1 (V3.0/P7 builds directly on it)
+- **Files:** `operations-board-canvas.tsx` (layer keying/morph),
+  `spatial-fleet-client.tsx`, transition ownership per ENG-016 D11
+- **May start:** after S1 lands (it rewrites the layer tree S1 touches).
+  Runs ALONE on the spatial surface. P7 follows it.
+
+### S3 · The tiled board — hex family + in-world identity
+
+- **Owns:** ENG-004 V3.3 F4+F5; prototype: `/hud-gallery` → "Board tile
+  family" (`src/components/hud/board-tile-study.tsx`)
+- **Files:** `packages/ui-model/src/spatial-board.ts` (hex tiling policy),
+  `operations-board-canvas.tsx` (tile rendering), transport `goal` labels
+- **May start:** immediately for the ui-model tiling policy + gallery
+  iteration; canvas adoption coordinates with whoever holds S1/S2. The
+  operator's gallery review shapes materials mid-flight (input, not gate).
+
+### S4 · Board chrome — the selection command panel
+
+- **Owns:** ENG-004 V3.3 F6 (multi-select preview under ENG-026 grammar)
+- **Files:** `operations-board-surface.tsx`, `spatial-fleet-client.tsx`
+  (inspector/activity retirement), minimap/tool cluster
+- **May start:** after S1 (it presents the selection state S1 creates).
 
 ## Standing rules for every packet
 

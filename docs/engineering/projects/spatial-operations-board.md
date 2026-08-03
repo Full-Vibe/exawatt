@@ -137,6 +137,108 @@ identity-and-position-carries foundation V3.0's entry pose needs, so V3.0
 its own. The tile-family redesign prototypes in `/hud-gallery` for operator
 review before production adoption, per the standing workbench rule.
 
+### V3.3 execution contract (planning session, operator + agent, 2026-08-02)
+
+The four open calls from the UX pass are decided; this section is the
+pick-up-cold contract for the agents that execute V3.3. It amends nothing —
+it makes the brief above executable. One stream, one order: **feel first,
+then the V3.0 cinematic handoff on top of F1's machinery** (operator,
+2026-08-02). V3.3 and V3.0 are one integrated arc, not two competing plans.
+
+**Decisions taken 2026-08-02 (operator):**
+
+- **The board is the Fleet altitude only.** The DOM tile grid stays the Team
+  altitude. The operator explicitly reserves the right to revisit
+  board-as-Team later; V2.3's consolidation question therefore stays OPEN and
+  gains this as fresh input — do not treat Fleet-only as settled forever, and
+  do not build toward consolidation without a new decision.
+- **Multi-select is preview-only in this arc.** Band select is real selection
+  state; the command card shows the group with a muted
+  "Direct these N agents — Coming soon" affordance under ENG-026's readiness
+  grammar. No fan-out mechanism ships (V3.2's boundary holds).
+- **F4 builds now.** The hex direction is decided from the gallery prototype;
+  the operator's in-app review of `/hud-gallery` → "Board tile family" shapes
+  materials and proportions MID-FLIGHT (it is an input to F4's acceptance,
+  not a gate on starting). Schedule the review at the next dogfood install.
+
+**Slice contracts.** Order: **S1 (F2+F3) → S2 (F1, then V3.0 on top) →
+S3 (F4+F5) → S4 (F6)**. S1 and S3 are file-disjoint enough to run in
+parallel with care; S2 must not run concurrently with either (it restructures
+the canvas layer tree both touch). Every slice: read
+`docs/engineering/r3f-authoring-guide.md` first, keep decision `0007`
+(no free orbit, deterministic layout in `@exawatt/ui-model`) and decision
+`0024` (the control model), screenshot-iterate, and keep `pnpm eval:r3f`,
+`eval:spatial`, `eval:spatial:pointer`, and `eval:spatial:scale` green.
+
+- **S1 — Input (F2 keyboard unit navigation + F3 RTS pointer grammar).**
+  Scope: arrows move SELECTION to the nearest piece in the pressed direction
+  (spatial nearest-neighbor over board coordinates, a pure `ui-model`
+  selector), camera follows selection with the NUDGE lambda; camera-only pan
+  moves to a secondary binding; click-drag draws an in-world selection
+  rectangle (band select over piece bounds, also a pure selector) replacing
+  drag-pan; plain wheel/trackpad pans, pinch/ctrl-wheel zooms at cursor;
+  clamped input answers with a short damped overshoot, never silence.
+  Files: `operations-board-canvas.tsx` (pointer handlers, selection
+  rectangle), `operations-board-surface.tsx` (key handling, hints),
+  `packages/ui-model/src/spatial-board.ts` (nearest-neighbor + band-hit
+  selectors + multi-selection state shape), `spatial-navigation-state.ts`
+  (single selection stays URL-addressed; band selections are ephemeral).
+  Acceptance: arrows never pan; every gesture the hand tries produces visible
+  feedback; selection acks <80ms; DOM keyboard path can extend selection
+  (a11y equivalent of band select); the keyboard-hint bar teaches the new
+  verbs; unit tests for both selectors.
+- **S2 — Continuity (F1 continuous transitions; V3.0 entry pose on top).**
+  Scope: stop keying `ZoneLayer`/`AgentPieceLayer`/controls by
+  `choreoKey` — layers survive altitude changes; zones/pieces morph position,
+  scale, and visibility with damped motion while the camera flies; entrance
+  choreography runs on DATA arrival only; lateral moves (N/P, project
+  switches) glide the same way. Kill the measured 500–1400ms remount stalls.
+  Then V3.0 lands on this: the Team-cards→board entry pose per decision
+  `0023`, with the directional cut as fallback — same owner or a follow-on
+  agent, but the same machinery, tuned against the live Demo Workspace's
+  Voltaic board (P6.5 landed 2026-08-02).
+  Acceptance: one continuous 60fps morph per altitude change with zero
+  full-layer remounts (assert via a transition-frame eval that samples
+  `__EVAL_GL__` frame gaps — no gap >100ms during the settle window);
+  reduced-motion snaps; input is never blocked mid-transition.
+- **S3 — The tiled board (F4 tile family + F5 in-world identity).**
+  Scope: replace zone rectangles and cylinder pieces with the hex family from
+  the `board-tile-study` prototype — beveled hex agent tiles in socketed
+  positions on population-sized hex project plates, subordinate glowing
+  status lamps (status stays the five-light protocol), scarce color at fleet
+  scale (idle sinks toward the board); layout math for hex plates/sockets is
+  pure `ui-model` (`spatial-board.ts` grows a hex tiling policy, versioned,
+  stable slots preserved); piece labels switch to the durable context goal
+  (`agent.goal`, already the ENG-021 context summary via the transport —
+  NEVER the `cwd · harness-title` name) with the current activity sentence at
+  Team/Agent altitude inside the label-budget rules; delegation satellites
+  (ENG-023 D3b) re-anchor to the new tile geometry.
+  Acceptance: no rectangles remain at any altitude; a real 4-agent Project
+  shows four DISTINCT goal labels; a 1-agent drill frames the tile, not an
+  empty slab; `eval:spatial:scale` still meets V3.1's recorded budgets on the
+  Voltaic fleet; the operator's gallery-review notes are reflected or
+  explicitly answered in the landing message.
+- **S4 — Chrome (F6 command panel + consolidation).**
+  Scope: one game-style selection panel (single unit: identity, status,
+  goal, current activity, recent meaningful Events, delegation children,
+  Open Session; multi: the preview affordance above) replacing the inspector
+  rail and the activity feed; one stable tool cluster (projection, minimap,
+  zoom, hints) that does not relocate between altitudes; the hero callout
+  retires in favor of zone highlight + minimap ping + the existing needs-you
+  queue (`N` still walks it); the top fleet-stats strip survives.
+  Acceptance: at most TWO chrome regions besides breadcrumbs (status strip,
+  tool cluster) plus the selection panel when something is selected; nothing
+  overlaps in-world content at any seeded scale; no state-transition exhaust
+  copy anywhere on the surface.
+
+**Verification assets that already exist:** the drive harness from the UX
+pass (`/tmp` scratch, recreate from this section: burst screenshots + frame
+gaps via `__EVAL_GL__`), `eval:spatial` (4 scenario contexts),
+`eval:spatial:pointer`, `eval:spatial:scale` (Voltaic + synthetic tiers),
+`/eval/t5-operations-board` (`?altitude=project` supported), and
+`/eval/t10-board-scale?fleet=voltaic`. S1's selector tests live beside
+`spatial-board.test.ts`.
+
 ## V2.0 Design Brief: Spatial Operations Board
 
 ### Outcome and operator job
