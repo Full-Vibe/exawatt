@@ -44,6 +44,20 @@ describe('readiness grammar (ENG-026 N0)', () => {
     expect(inner?.textContent).toContain('Push to cloud');
   });
 
+  it('the micro chip keeps the full announced contract at badge scale', () => {
+    render(
+      <AnnouncedChip size="micro" coming="portable Agent Types (ENG-028)">
+        Type
+      </AnnouncedChip>
+    );
+    const chip = screen.getByTitle(
+      'Coming soon — portable Agent Types (ENG-028)'
+    );
+    expect(chip.getAttribute('data-readiness')).toBe('announced');
+    expect(chip.className).toContain('text-chrome-micro');
+    expect(chip.querySelector('[inert]')).not.toBeNull();
+  });
+
   it('an unbuilt region carries the token, its owner, and inert contents', () => {
     render(
       <Unbuilt owner="ENG-014 · wattage allocation" note="Nothing here responds.">

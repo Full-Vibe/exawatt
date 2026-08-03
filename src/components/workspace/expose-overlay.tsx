@@ -10,7 +10,9 @@
  * decision `0003` hybrid rule; motion respects prefers-reduced-motion.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { HUD } from '@/components/hud';
+import { READINESS_NEUTRAL } from '@/components/readiness';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import {
   attentionNeedsOperator,
@@ -545,6 +547,24 @@ export function ExposeOverlay({
               Projects &amp; Sessions
             </h2>
             <span>arrows or J/K move · enter opens · esc returns</span>
+            {/* Coordination preview's contextual anchor (ENG-026 N4): the
+                Team altitude is where "how do these Agents hand off?" is
+                asked, so the entry point lives here — real navigation with
+                the muted Coming soon note (the ⌘K preview-row pattern). */}
+            <Link
+              href="/coordination"
+              data-coordination-anchor
+              className="ml-auto inline-flex items-baseline gap-1.5 font-mono text-chrome-label outline-none transition-colors hover:text-hud-text focus-visible:text-hud-text"
+              style={{ color: HUD.textDim }}
+            >
+              Coordination
+              <span
+                className="text-chrome-micro"
+                style={{ color: READINESS_NEUTRAL }}
+              >
+                Coming soon
+              </span>
+            </Link>
           </div>
           {projects.length === 0 && (
             <div

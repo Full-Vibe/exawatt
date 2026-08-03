@@ -53,7 +53,7 @@ The brief asks how a Designer serves many Projects at once — "clones or delega
 
 ## Milestones
 
-- **T1 Agent Type preview** — the Agent Type chip as an ENG-026 `announced` affordance on tabs and Sessions cards, plus the Agent Types preview surface. Makes the product claim ("your Designer, running on Claude Code") visible before the mechanism exists.
+- **T1 Agent Type preview** — LANDED 2026-08-02 (see the milestone log). The Agent Type chip as an ENG-026 `announced` affordance on Sessions cards, plus the `/agent-types` preview surface. Makes the product claim ("your Designer, running on Claude Code") visible before the mechanism exists.
 - **T2 Type format and launch application** — the documented file format and the launch path that applies a Type through the existing settings-injection seam, with capability requirements declared against ENG-003 source truth.
 - **T3 Reviewer/collaborator Types** — the operator's concrete first case: a Designer that participates in others' front-end work as a gate that either enforces the style guide or deliberately improves it.
 - **T4 Type-scoped conversation and self-improvement** — talking to a Type across Sessions; evolution of its identity file as reviewable, disclosed proposals. Unshaped.
@@ -63,3 +63,11 @@ The brief asks how a Designer serves many Projects at once — "clones or delega
 - A Type never mutates the user's harness configuration (`~/.claude`, `~/.codex`); injection stays per-launch and inspectable, exactly as ENG-023 established.
 - A Type never claims a capability its source cannot deliver.
 - Types do not become a second permission system: launch policy remains ENG-016 D14's per-Project/harness Ask first / Auto-review / YOLO, enforced by the provider (decision `0016`).
+
+## Roadmap milestone log
+
+### T1 (landed 2026-08-02, inside ENG-026 N3–N5's change)
+
+The `/agent-types` surface presents the concept over Voltaic's authored roster: the one-worker-two-engines claim (Engineer running on Claude Code and Codex, engines observed from `DEMO_BASE_AGENTS` fixture truth, never asserted), a Type spec sheet showing the portable bundle (identity / instructions / tools / defaults, with defaults derived as the roster's dominant model+effort), and the four-Type library where the non-coding desks carry a `preview desk` label so the direction never reads as shipped capability. Derivations live in `src/app/agent-types/model.ts`, test-enforced (partition of Projects and Agents, capability honesty, determinism). Entry point: a composer-source-row control beside the engine picker — where a Type will be chosen — navigating to the surface (the ⌘K preview-row pattern; not an announced chip, because it works).
+
+The Type chip landed on **Sessions cards** as `AnnouncedChip size="micro"` beside the harness glyph: a source that declares a Type names it (the Demo Workspace's desks can), an untyped live Session shows the empty `Type` slot, shell sessions get none (a plain shell is not a worker). **Deliberately omitted: the tab-strip chip.** The D42-reviewed ribbon condenses tabs to 46px where the chip would erase the status glyph — the only state signal at that width — so "tabs" is served by the Session tab's context menu carrying the surface-adjacent affordances instead; revisit if the ribbon ever gains a roomier standing presentation. Recorded here so the omission is a decision, not a drift.

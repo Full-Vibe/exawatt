@@ -265,6 +265,22 @@ export function SiteHeaderNav({
                       </DropdownMenuItem>
                     );
                   })}
+                  {/* Organization preview's contextual anchor (ENG-026 N3):
+                      the Workspace switcher is where the multi-human story
+                      starts, so the row navigates to the designed surface
+                      under the ⌘K preview pattern — real navigation, muted
+                      Coming soon note. */}
+                  <DropdownMenuItem asChild data-organization-anchor>
+                    <Link href="/organization">
+                      <Building2 className="mr-2 h-4 w-4" />
+                      <span className="min-w-0 flex-1 truncate">
+                        Organization
+                      </span>
+                      <span className="ml-2 shrink-0 border border-border px-1.5 py-0.5 text-chrome-micro text-muted-foreground">
+                        Coming soon
+                      </span>
+                    </Link>
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                 </>
               )}

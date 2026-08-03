@@ -1,6 +1,8 @@
 'use client';
 
+import { Shapes } from 'lucide-react';
 import { HUD } from '@/components/hud';
+import { AnnouncedChip } from '@/components/readiness';
 import { HarnessGlyph } from './harness-icons';
 import { SessionGoalSummary } from './session-goal-summary';
 import {
@@ -22,6 +24,13 @@ export interface SessionOverviewCardContentProps {
   attention?: SessionAttentionSignal;
   /** harness-reported delegated work (ENG-023); absent when unreported */
   delegation?: SessionDelegation | null;
+  /**
+   * ENG-028 T1: the Agent Type name, when the data source declares one (the
+   * Demo Workspace's authored desks). Live untyped Sessions leave it unset
+   * and get the empty Type slot; the chip is `announced` either way. Shell
+   * sessions never render it — a plain shell is not a worker.
+   */
+  agentType?: string | null;
   fault?: boolean;
   lifecycleLabel?: string | null;
   current: string;
@@ -44,6 +53,7 @@ export function SessionOverviewCardContent({
   glyphState,
   attention,
   delegation,
+  agentType,
   fault = false,
   lifecycleLabel,
   current,
@@ -68,6 +78,19 @@ export function SessionOverviewCardContent({
           >
             <HarnessGlyph harness={harness} size={13} />
           </span>
+          {/* ENG-028 T1: the Type slot — what kind of worker, not just which
+              engine — announced until Types exist. Constant chip footprint;
+              strictly additive to the header row. */}
+          {harness !== 'shell' && (
+            <AnnouncedChip
+              size="micro"
+              coming="Agent Types — what kind of worker this is, not just which engine runs it (ENG-028)"
+              className="shrink-0"
+            >
+              <Shapes aria-hidden className="h-2.5 w-2.5" />
+              {agentType ?? 'Type'}
+            </AnnouncedChip>
+          )}
           {lifecycleLabel && (
             <span
               data-expose-state={lifecycleLabel}

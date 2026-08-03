@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import Link from 'next/link';
 import {
   GitBranch,
   ExternalLink,
   LoaderCircle,
   Settings2,
+  Shapes,
   ShieldCheck,
   ShieldQuestion,
   SquareTerminal,
@@ -1469,6 +1471,22 @@ export function AgentComposer({
               )}
             </PopoverContent>
           </Popover>
+
+          {/* Agent Types preview's contextual anchor (ENG-026 N5 / ENG-028):
+              the composer source row is where "what kind of worker" will be
+              chosen, beside "which engine". Real navigation to the designed
+              surface, muted like a Coming soon ⌘K row — not an announced
+              chip, because it works. */}
+          <Link
+            href="/agent-types"
+            data-agent-types-anchor
+            aria-label="Agent Types — coming soon. What kind of worker this is, not just which engine runs it."
+            title="Agent Types — Coming soon. What kind of worker this is, not just which engine runs it."
+            className="grid h-9 w-9 shrink-0 place-items-center rounded border outline-none transition-[filter,transform] duration-150 hover:brightness-125 active:scale-[0.96] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+            style={{ color: HUD.textDim, borderColor: HUD.strokeSoft }}
+          >
+            <Shapes className="h-4 w-4" />
+          </Link>
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-1 @max-[520px]:w-full">

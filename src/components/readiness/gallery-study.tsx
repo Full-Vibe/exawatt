@@ -100,6 +100,11 @@ export function ReadinessGrammarStudy() {
               <Shapes aria-hidden className="h-3.5 w-3.5" />
               Reviewer
             </AnnouncedChip>
+            {/* micro cut for dense card headers (ENG-026 N5's Type slot) */}
+            <AnnouncedChip size="micro" coming="portable Agent Types (ENG-028)">
+              <Shapes aria-hidden className="h-2.5 w-2.5" />
+              Type
+            </AnnouncedChip>
           </span>
         </StateCard>
       </div>

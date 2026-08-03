@@ -1,6 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
+
+// the strip navigates to the Cloud preview from the tab menu (ENG-026 N3);
+// jsdom mounts no app router, so provide the standard stub
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+}));
+
 import { buildRibbonTokens, TabStrip } from './tab-strip';
 import type { Project, WorkspaceTab } from './use-workspace-state';
 

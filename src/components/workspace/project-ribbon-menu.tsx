@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { HUD } from '@/components/hud';
+import { READINESS_NEUTRAL } from '@/components/readiness';
 import { PROJECT_PALETTE } from './project-colors';
 
 /** Shortcut hints overlay their anchor so revealing them never shifts
@@ -128,9 +129,20 @@ export function keyboardMenuPoint(element: HTMLElement): {
 
 export interface StripMenuItem {
   label: string;
-  onSelect: () => void;
+  /** Absent only on `announced` rows, which cannot be operated. */
+  onSelect?: () => void;
   danger?: boolean;
   focusAfterSelect?: 'trigger' | 'none';
+  /**
+   * ENG-026 `announced` affordance: the row is visible so the map is
+   * complete, but inert — muted readiness neutral, `cursor: default`,
+   * tooltip `Coming soon — {announcedComing}`, skipped by keyboard menu
+   * navigation. Never renders as disabled-by-error.
+   */
+  announcedComing?: string;
+  /** Muted right-aligned micro note, e.g. `Coming soon` on a preview-surface
+   *  entry point (the ⌘K preview-row pattern). */
+  note?: string;
 }
 
 export type MenuCloseFocus = 'none' | 'trigger' | 'next' | 'previous';
@@ -232,24 +244,50 @@ export function StripContextMenu({
         }
       }}
     >
-      {items.map((item, index) => (
-        <button
-          key={item.label}
-          type="button"
-          role="menuitem"
-          tabIndex={index === activeIndex ? 0 : -1}
-          onFocus={() => setActiveIndex(index)}
-          onPointerMove={() => setActiveIndex(index)}
-          onClick={() => {
-            onClose(item.focusAfterSelect ?? 'trigger');
-            item.onSelect();
-          }}
-          className="cursor-pointer px-3 py-1.5 text-left font-mono text-chrome-label outline-none transition-[background-color] duration-75 hover:bg-white/10 focus-visible:bg-white/10"
-          style={{ color: item.danger ? color : HUD.text }}
-        >
-          {item.label}
-        </button>
-      ))}
+      {items.map((item, index) =>
+        item.announcedComing ? (
+          // ENG-026 announced affordance: not a menuitem, so arrow keys and
+          // the focus loop skip it; `inert` keeps the promise that it cannot
+          // be operated or read as merely disabled.
+          <div
+            key={item.label}
+            data-readiness="announced"
+            title={`Coming soon — ${item.announcedComing}`}
+            aria-label={`${item.announcedComing} — coming soon`}
+            className="cursor-default select-none px-3 py-1.5 text-left font-mono text-chrome-label"
+            style={{ color: READINESS_NEUTRAL }}
+          >
+            <span inert className="opacity-80">
+              {item.label}
+            </span>
+          </div>
+        ) : (
+          <button
+            key={item.label}
+            type="button"
+            role="menuitem"
+            tabIndex={index === activeIndex ? 0 : -1}
+            onFocus={() => setActiveIndex(index)}
+            onPointerMove={() => setActiveIndex(index)}
+            onClick={() => {
+              onClose(item.focusAfterSelect ?? 'trigger');
+              item.onSelect?.();
+            }}
+            className="flex cursor-pointer items-baseline gap-3 px-3 py-1.5 text-left font-mono text-chrome-label outline-none transition-[background-color] duration-75 hover:bg-white/10 focus-visible:bg-white/10"
+            style={{ color: item.danger ? color : HUD.text }}
+          >
+            <span className="min-w-0 flex-1">{item.label}</span>
+            {item.note && (
+              <span
+                className="shrink-0 text-chrome-micro"
+                style={{ color: READINESS_NEUTRAL }}
+              >
+                {item.note}
+              </span>
+            )}
+          </button>
+        )
+      )}
     </div>
   );
 }

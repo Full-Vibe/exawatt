@@ -1,43 +1,182 @@
 import type { Metadata } from 'next';
-import { PreviewSurfaceShell } from '@/components/readiness';
+import { Building2, Laptop, MonitorPlay, Share2 } from 'lucide-react';
+import { AnnouncedChip, PreviewSurfaceShell, Unbuilt } from '@/components/readiness';
+import { DEMO_WORKSPACE } from '@exawatt/core';
+import { demoOrgMembers, ORG_ROLES, type OrgRole } from './model';
 
-// Preview surface (ENG-026 N1). noindex for the same stealth reason as
+// Preview surface (ENG-026 N3). noindex for the same stealth reason as
 // /consumption: reachable by URL for demos, not discoverable.
 export const metadata: Metadata = {
   title: 'Organization',
   robots: { index: false, follow: false },
 };
 
+function formatTokens(raw: number): string {
+  if (raw >= 1_000_000_000)
+    return `${(raw / 1_000_000_000).toFixed(1)}B tokens`;
+  return `${Math.round(raw / 1_000_000)}M tokens`;
+}
+
+function RoleChip({ role }: { role: OrgRole }) {
+  return (
+    <span
+      title={ORG_ROLES[role]}
+      className="rounded border border-border px-1.5 py-0.5 font-mono text-chrome-micro text-muted-foreground"
+    >
+      {role}
+    </span>
+  );
+}
+
 export default function OrganizationPage() {
+  const members = demoOrgMembers();
+
   return (
     <PreviewSurfaceShell
       surfaceId="organization"
+      width="wide"
       question="What does multiplayer look like in Exawatt?"
-      intent="Exawatt's tenancy scope is the Workspace; Organization is where people, permissions, and spend meet it."
-      rows={[
-        {
-          title: 'Members and roles',
-          detail:
-            'Who is in the Organization, and what each person can see and command — Docs-like permissions over Workspaces, not repo ACLs.',
-        },
-        {
-          title: 'Shared Workspaces',
-          detail:
-            'A Workspace shared with teammates keeps every live local Session exactly where it is; sharing changes visibility, never execution.',
-        },
-        {
-          title: 'Spend by person and team',
-          detail:
-            'The same consumption rollups you have today, cut by member — raw units first, assurance stated, never a fabricated bill.',
-        },
-        {
-          title: 'Managed ceilings',
-          detail:
-            'Organization policy as an absolute ceiling that personal preferences can narrow but never bypass.',
-        },
-      ]}
+      intent="Workspace tenancy is the boundary; Organization is where people, roles, and spend meet it — sharing changes visibility, never execution."
       owner="ENG-012 and ENG-034 · hosted control plane, multiplayer and sharing"
-      today="Workspace tenancy is real and switchable on this machine (ENG-027); nothing is shared beyond it."
-    />
+      today="Workspace tenancy is real and switchable on this machine; nothing is shared beyond it. The people shown are Voltaic demo content."
+    >
+      {/* Workspaces: the real tenancy seam, plus the designed shared tenant. */}
+      <section aria-label="Workspaces" className="space-y-2">
+        <h2 className="text-lg font-semibold tracking-tight">Workspaces</h2>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border bg-card p-4">
+            <div className="flex items-center gap-2">
+              <Laptop aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-sm font-semibold">Personal</span>
+            </div>
+            <p className="text-chrome-meta text-muted-foreground">
+              Local truth — this machine. Yours alone; live Agents keep running
+              no matter what is shared elsewhere.
+            </p>
+          </div>
+          <div className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border bg-card p-4">
+            <div className="flex items-center gap-2">
+              <MonitorPlay
+                aria-hidden
+                className="h-3.5 w-3.5 text-muted-foreground"
+              />
+              <span className="text-sm font-semibold">
+                {DEMO_WORKSPACE.name}
+              </span>
+            </div>
+            <p className="text-chrome-meta text-muted-foreground">
+              The authored demo fleet — always visibly demo, never mixed into
+              Personal totals.
+            </p>
+          </div>
+          <div className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border bg-card p-4">
+            <div className="flex items-center gap-2">
+              <Building2
+                aria-hidden
+                className="h-3.5 w-3.5 text-muted-foreground"
+              />
+              <span className="text-sm font-semibold">
+                {DEMO_WORKSPACE.company}
+              </span>
+              <AnnouncedChip
+                size="micro"
+                coming="shared Organization Workspaces (ENG-012)"
+                className="ml-auto"
+              >
+                Shared
+              </AnnouncedChip>
+            </div>
+            <p className="text-chrome-meta text-muted-foreground">
+              An Organization Workspace: {members.length} people over one
+              fleet, each seeing exactly what their role grants.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Members, roles, and spend cut by person. */}
+      <section aria-label="Members and roles" className="space-y-2">
+        <h2 className="text-lg font-semibold tracking-tight">
+          Members and roles
+        </h2>
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
+          <table className="w-full min-w-[620px] text-left">
+            <thead>
+              <tr className="border-b border-border">
+                {['Member', 'Role', 'Commands', 'Spend · 14 days'].map(
+                  heading => (
+                    <th
+                      key={heading}
+                      scope="col"
+                      className="px-4 py-2 font-mono text-chrome-micro font-medium uppercase tracking-[0.12em] text-muted-foreground"
+                    >
+                      {heading}
+                    </th>
+                  )
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {members.map(member => (
+                <tr key={member.name}>
+                  <td className="px-4 py-2.5">
+                    <span className="flex flex-col">
+                      <span className="text-sm font-medium">{member.name}</span>
+                      <span className="text-chrome-meta text-muted-foreground">
+                        {member.title}
+                      </span>
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <RoleChip role={member.role} />
+                  </td>
+                  <td className="px-4 py-2.5 text-chrome-meta text-muted-foreground">
+                    {member.projectKeys.length}{' '}
+                    {member.projectKeys.length === 1 ? 'Project' : 'Projects'} ·{' '}
+                    {member.sessionCount} Sessions
+                  </td>
+                  <td className="px-4 py-2.5 font-mono text-chrome-label tabular-nums text-muted-foreground">
+                    {formatTokens(member.rawTokens)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-chrome-meta text-muted-foreground">
+          The same rollups Consumption carries, cut by person — raw units
+          first, assurance stated, never a fabricated bill.
+        </p>
+      </section>
+
+      {/* Sharing and ceilings: announced control + designed policy region. */}
+      <section aria-label="Sharing and ceilings" className="space-y-5">
+        <h2 className="text-lg font-semibold tracking-tight">
+          Sharing and ceilings
+        </h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <AnnouncedChip coming="Docs-like Workspace sharing (ENG-034)">
+            <Share2 aria-hidden className="h-3.5 w-3.5" />
+            Share Workspace
+          </AnnouncedChip>
+          <span className="text-chrome-meta text-muted-foreground">
+            Share visibility the way you share a document — never execution,
+            never your local Agents.
+          </span>
+        </div>
+        <Unbuilt
+          owner="ENG-012 · managed ceilings"
+          note="Organization policy is an absolute ceiling. Personal preferences can narrow it; they can never bypass it."
+        >
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="text-sm">Organization ceiling</span>
+            <span className="h-2 w-48 rounded-[2px] bg-muted" />
+            <span className="rounded border border-border px-3 py-1.5 text-chrome-label text-muted-foreground">
+              Apply
+            </span>
+          </div>
+        </Unbuilt>
+      </section>
+    </PreviewSurfaceShell>
   );
 }

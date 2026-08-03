@@ -18,6 +18,7 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
+import { useRouter } from 'next/navigation';
 import { HUD } from '@/components/hud';
 import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
@@ -261,6 +262,7 @@ export function TabStrip({
   dormantProjectDirs?: ReadonlySet<string>;
 }) {
   const reducedMotion = usePrefersReducedMotion();
+  const router = useRouter();
   const ordinalHints = useOrdinalHints();
   const [editing, setEditing] = useState<Editing | null>(null);
   const [menu, setMenu] = useState<{
@@ -1325,6 +1327,24 @@ export function TabStrip({
                     {
                       label: 'Reveal in Finder',
                       onSelect: () => onRevealPath(tab.cwd),
+                    },
+                  ]
+                : []),
+              // ENG-026 N3 / ENG-033: the per-Agent Push to cloud control,
+              // announced where it will really live, with the Cloud preview
+              // surface's contextual entry point beside it (the ⌘K
+              // preview-row pattern: real navigation, muted Coming soon).
+              ...(tab.harness !== 'shell'
+                ? [
+                    {
+                      label: 'Push to cloud',
+                      announcedComing:
+                        'run this Agent on an Exawatt-hosted plan (Cloud)',
+                    },
+                    {
+                      label: 'Cloud',
+                      note: 'Coming soon',
+                      onSelect: () => router.push('/cloud'),
                     },
                   ]
                 : []),

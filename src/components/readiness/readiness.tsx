@@ -103,20 +103,32 @@ export function AnnouncedChip({
   children,
   /** What is coming, named for the tooltip: `Coming soon — {coming}`. */
   coming,
+  /**
+   * `control` is the default, control-sized chip. `micro` is the badge-tier
+   * cut (design kernel: chip/badge `px-1.5 py-0.5`, chrome-micro) for dense
+   * rows — Sessions-card headers — where a control-sized chip would outweigh
+   * the real signals beside it.
+   */
+  size = 'control',
   className = '',
   style,
 }: {
   children: ReactNode;
   coming: string;
+  size?: 'control' | 'micro';
   className?: string;
   style?: CSSProperties;
 }) {
+  const sizing =
+    size === 'micro'
+      ? 'gap-1 px-1.5 py-0.5 text-chrome-micro'
+      : 'gap-1.5 px-2 py-1 text-chrome-label';
   return (
     <span
       data-readiness="announced"
       title={`Coming soon — ${coming}`}
       aria-label={`${coming} — coming soon`}
-      className={`inline-flex cursor-default select-none items-center gap-1.5 rounded px-2 py-1 font-ui text-chrome-label ${className}`}
+      className={`inline-flex cursor-default select-none items-center rounded font-ui ${sizing} ${className}`}
       style={{
         border: `1px dashed ${STROKE}`,
         color: READINESS_NEUTRAL,

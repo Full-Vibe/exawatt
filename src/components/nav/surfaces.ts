@@ -187,7 +187,9 @@ export const APP_SURFACES: AppSurface[] = [
       'blackboard',
       'bus',
       'shared context',
-      'claims',
+      // ENG-029 vocabulary: the coordination record is an *assignment*;
+      // `claim` stays the assurance word and is never overloaded.
+      'assignments',
       'crystallization',
     ],
   },

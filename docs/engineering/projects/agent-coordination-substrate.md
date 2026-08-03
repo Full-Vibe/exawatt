@@ -61,7 +61,7 @@ Triggered launches must be as visible, attributable, and killable as operator la
 
 ## Milestones
 
-- **C1 Coordination viewer** — the Exawatt surface that shows inter-agent traffic and assignments for a Project, designed and demo-able under ENG-026's `preview` grammar before real traffic exists. First because it is the demo answer to "how do you think about handoff between agents?" and because it defines what the substrate must produce.
+- **C1 Coordination viewer** — PREVIEW LANDED 2026-08-02 (see the milestone log); the live viewer over real traffic follows the substrate and remains this milestone's remainder. The Exawatt surface that shows inter-agent traffic and assignments for a Project, designed and demo-able under ENG-026's `preview` grammar before real traffic exists. First because it is the demo answer to "how do you think about handoff between agents?" and because it defines what the substrate must produce.
 - **C2 Assignments** — `.exawatt/` records of which Agent works which roadmap item, with expiry. GATED, not urgent: see "What assignments do not solve" below.
 - **C3 Triggers** — time-based first, then bus events. Same visibility, attribution, and policy as operator launches.
 - **C4 Directed notes** — bounded one-way messages between agents, fully auditable.
@@ -89,6 +89,19 @@ Therefore: **do not build an assignment mechanism until a collision appears that
 - What expires an assignment: time, session death, or an explicit release? (Session death is knowable via the bus; leaning on all three with time as the backstop.)
 - Whether assignments are the same record ENG-017 already infers from branch/worktree/title evidence, or a separate declared fact that outranks inference. Leaning: same lens, declared outranks inferred, exactly as ENG-017 S4 already handles declare-at-launch.
 - Whether the hosted-brain upgrade path wants the repo files to be the source of truth with a hosted index, or a genuine second store.
+
+## Roadmap milestone log
+
+### C1 preview (landed 2026-08-02, inside ENG-026 N3–N5's change)
+
+`/coordination` presents the design in broad strokes, all under the surface's one Coming soon marker:
+
+- **The shape** — three cards: the blackboard is your repo (`.exawatt/`, plain git-versioned files, no lock-in), the bus already exists (ENG-023's harness event channel, second consumer, never a second channel), Exawatt is the viewer and never the owner (everything operator-readable).
+- **One Project as common ground** — a board over dispatch-engine derived from the Voltaic fixtures' real link fields (`src/app/coordination/model.ts`): which Agent works which roadmap item and how Exawatt knows (declared at launch / read from branch / read from title). This half is real product truth today — it is what the ENG-017 lens reads — shown over demo data.
+- **The ladder** — assignments (rung 1, explicitly *gated until a collision worktrees and git do not catch*, per the operator's recorded correction; the operator assigns and agents execute per ENG-017 S10), directed notes (later), queryable room (later, gated), with the audit rule stated once beneath.
+- **A handoff record** — an authored ENG-019 specimen rendered as a repo file (`.exawatt/sessions/…/handoff.md`: Done / Unfinished / The next agent must know), continuing the fixtures' DSP-31 story.
+
+Vocabulary held by construction and by test: the module's exported copy contains no form of "claim" (`model.test.ts`), and the navigation manifest keyword flipped `claims` → `assignments`. The honest today line stays on screen: handoff today is the operator. No fan-out or coordination mechanism shipped — this is the viewer's designed shape; the substrate (C2 onward) remains gated on evidence.
 
 ## Sources
 

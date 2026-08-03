@@ -1,6 +1,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
+
+// the strip navigates to the Cloud preview from the tab menu (ENG-026 N3);
+// jsdom mounts no app router, so provide the standard stub
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+}));
+
 import { TabStrip } from './tab-strip';
 import type { SessionAttentionSignal } from './status-glyphs';
 import type { Project, WorkspaceTab } from './use-workspace-state';
@@ -418,6 +425,39 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(menu).toHaveTextContent('Rename…');
     expect(menu).toHaveTextContent('Pin in split');
     expect(menu).toHaveTextContent('Close');
+  });
+
+  it('an agent tab menu carries the announced Push to cloud row and the Cloud entry; a shell tab does not (ENG-026 N3)', () => {
+    strip({
+      tabs: [
+        tab({ id: 'a' }),
+        tab({ id: 'sh', harness: 'shell', title: 'Shell' }),
+      ],
+    });
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'New agent — new' }), {
+      key: 'ContextMenu',
+    });
+    const agentMenu = screen.getByRole('menu', {
+      name: 'New agent Session actions',
+    });
+    const announced = agentMenu.querySelector('[data-readiness="announced"]');
+    expect(announced).not.toBeNull();
+    expect(announced).toHaveTextContent('Push to cloud');
+    // announced is not a menuitem: keyboard traversal skips it
+    expect(announced?.getAttribute('role')).toBeNull();
+    const cloudRow = screen.getByRole('menuitem', { name: /Cloud/ });
+    expect(cloudRow).toHaveTextContent('Coming soon');
+    fireEvent.keyDown(agentMenu, { key: 'Escape' });
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Shell — quiet' }), {
+      key: 'ContextMenu',
+    });
+    const shellMenu = screen.getByRole('menu', {
+      name: /Shell Session actions/,
+    });
+    expect(shellMenu.querySelector('[data-readiness="announced"]')).toBeNull();
+    expect(shellMenu).not.toHaveTextContent('Cloud');
   });
 
   it('opens the active Project editor from the shared command event', () => {
