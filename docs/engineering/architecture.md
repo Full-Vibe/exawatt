@@ -144,6 +144,23 @@ retains existing state rather than invoking a competing local summarizer
 use an authenticated Supabase-backed feedback intake with private optional
 attachments; inference excerpts themselves are not persisted.
 
+Goal visual identity is a downstream projection of that accepted Session
+context, never a second classifier. Electron main creates a new revision only
+for the first accepted label, an Objective Engine `new_context` result, or an
+explicit operator correction; `same_context` preserves the current asset. The
+renderer consumes one source-neutral `GoalVisual` contract with deterministic
+fallback, while Demo supplies the same contract without network I/O.
+
+Live generation crosses an authenticated hosted boundary with only the
+accepted label and a one-way Project identity. The FAL prototype credential
+stays server-side. The hosted route derives a deterministic identity and seed,
+checks per-user quota and a private Supabase cache, disables provider payload
+retention, safety-checks the request, downloads a bounded result from a trusted
+provider host, and immediately stores it privately. Electron and renderer
+receive no raw instruction, terminal output, local path, Project name,
+provider URL, or provider credential. Failure, offline use, quota, or safety
+rejection remains a complete deterministic Team tile.
+
 #### Agency control spine
 
 Visibility, authorization, evidence, and enforcement form a cross-cutting spine

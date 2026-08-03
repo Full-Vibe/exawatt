@@ -91,7 +91,7 @@ Scope (reshaped by dogfood round 4 — discoverability first-class):
 ### S4 Context paging
 
 Status: active-build — recap delivery moved ambient under ENG-016 D18;
-S4.1 goal visual anchors are shaped for a gallery-first implementation.
+S4.1 goal visual anchors landed 2026-08-03 for direct live dogfood.
 
 The deep layer: the operator's real bottleneck at 5–10 agents is not the
 software, it's human working memory — paging a mental context back in
@@ -126,9 +126,11 @@ First-slice acceptance criteria:
 
 #### S4.1 Goal visual anchors
 
-Status: shaped 2026-08-03 from operator direction; `/hud-gallery` study is the
-next slice. The visual treatment and exact-reuse policy are reversible
-dogfood hypotheses, not permanent identity doctrine.
+Status: landed 2026-08-03 for direct live dogfood. The operator explicitly
+waived the gallery-first gate for this slice; a focused `/hud-gallery` study
+remains available if live evidence calls for faster visual-treatment
+comparison. The treatment and exact-reuse policy are reversible dogfood
+hypotheses, not permanent identity doctrine.
 
 **Problem and outcome.** The operator's practical ceiling remains five or six
 live contexts. At Team altitude, a quiet image behind each Agent tile should
@@ -180,15 +182,14 @@ projection and never requires generation. The Objective Engine must preserve
 the accepted relationship/revision far enough to drive this projection;
 imagery must not create a second semantic classifier.
 
-**Execution sequence.** First generate 6–10 representative fixture assets and
-compare a small number of backdrop/scrim treatments in `/hud-gallery`, using
-realistic long-copy, working, blocked, idle, stopped, and high-Consumption
-tiles. Operator review chooses abstract versus more literal scenery and tests
-whether exact same-goal reuse aids recognition or feels repetitive. After
-acceptance, add the server-owned generation/cache path, wire the shared
-projection into Demo and Live Team tiles, then dogfood before percolating any
-identity treatment to Agent or Fleet altitude. Retire the gallery study when
-the production treatment ships.
+**Execution sequence.** Per the operator's 2026-08-03 waiver, wire the quiet
+abstract treatment directly into Demo and Live Team tiles behind the shared
+projection, then use live dogfood to decide whether it needs a comparison
+study. If it does, generate 6–10 representative fixtures and compare a small
+number of backdrop/scrim treatments in `/hud-gallery` across realistic
+long-copy, working, blocked, idle, stopped, and high-Consumption tiles. Keep
+all percolation to Agent or Fleet altitude out of scope until the Team
+treatment earns that expansion.
 
 **Acceptance criteria.** Related instructions generate zero replacement
 assets; one accepted durable-purpose pivot produces at most one. Every empty,
@@ -197,6 +198,34 @@ tile without a spinner. Existing text contrast, keyboard selection, tile
 footprint, D40 recognition, and reduced-motion behavior do not regress. No FAL
 credential, raw operator instruction, terminal output, or long-lived public
 FAL URL reaches the client. Demo and Live render the same component contract.
+
+#### Roadmap milestone log — 2026-08-03
+
+S4.1 landed as one source-neutral `GoalVisual` projection across Electron
+main/preload, persisted workspace state, Demo fixtures, and the existing Team
+tile. ENG-021's accepted relationship is the only cadence owner: the first
+accepted goal, `new_context`, or an explicit correction creates a revision;
+`same_context`, status changes, reloads, and ordinary follow-ups preserve it.
+Electron sends the hosted boundary only the accepted label and a one-way
+SHA-256 Project identity, never a local path, Project name, raw instruction, or
+PTY output. Stale generations coalesce and transient failure gets one bounded
+retry.
+
+The authenticated `/api/goal-visuals` route derives a deterministic cache key
+and seed, checks a private per-user Supabase JPEG cache, applies hourly/daily
+quota, and invokes `fal-ai/fast-sdxl` with safety checking and provider payload
+retention disabled. It immediately downloads a bounded trusted FAL result into
+private Exawatt storage; renderer state contains a data URL, never a provider
+URL or credential. Missing auth, offline use, failure, quota, and rejection all
+leave the same complete deterministic Project-tinted tile.
+
+The Team tile retains its 300×272 footprint, interaction, semantics, and
+goal/Now/Next hierarchy. A subdued raster may crossfade once behind a
+protective scrim; reduced motion hard-cuts, and high-contrast or
+reduced-transparency modes suppress imagery. Demo assigns the same identity to
+Agents advancing the same Initiative and performs no generation I/O. The
+operator chose direct live dogfood over the planned gallery review; the gallery
+comparison remains a reversible follow-up, not a second source of truth.
 
 ### S5 Durable Projects
 
