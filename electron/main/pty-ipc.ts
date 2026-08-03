@@ -26,6 +26,7 @@ import {
   setAgentPermissionMode,
   setAttentionNotifications,
   setDockBadge,
+  setGoalVisualsEnabled,
   setHostedConversationSummaries,
   setAppearancePreferences,
 } from './settings-store';
@@ -105,6 +106,9 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   // micro-context subtitles (W0.4): summaries stream as they refresh, and
   // ride along on pty:list so late attaches/pollers see the latest
   contextSummarizer.attach(ptySessions);
+  contextSummarizer.setGoalVisualsEnabled(
+    loadSettings().goalVisuals?.enabled !== false
+  );
   // packaged-app stdout goes nowhere — the summarizer's attempts, failures,
   // and backoffs persist to userData/logs so a silent-subtitle dogfood
   // report is a file read (D28)
@@ -688,6 +692,14 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       return settings;
     }
   );
+  handleTrusted('settings:set-goal-visuals', (_event, enabled: boolean) => {
+    if (typeof enabled !== 'boolean')
+      throw new Error('Invalid goal visual setting');
+    const settings = setGoalVisualsEnabled(enabled);
+    contextSummarizer.setGoalVisualsEnabled(enabled);
+    broadcast('settings:changed', settings);
+    return settings;
+  });
   handleTrusted(
     'settings:record-agent-source-use',
     (_event, projectDir: string, source: string, usedAt: number) => {

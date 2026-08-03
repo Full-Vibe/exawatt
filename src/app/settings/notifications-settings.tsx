@@ -139,6 +139,44 @@ export function ConversationPrivacySettings() {
   );
 }
 
+export function GoalVisualSettings() {
+  const [settings, setSettings] = useState<ExawattSettings | null>(null);
+  const [available, setAvailable] = useState(false);
+
+  useEffect(() => {
+    const api = window.electron?.settings;
+    if (!api) return;
+    setAvailable(true);
+    void api.get().then(setSettings);
+    const off = api.onChanged?.(next => setSettings(next));
+    return () => off?.();
+  }, []);
+
+  if (!available) return null;
+  const enabled = settings?.goalVisuals?.enabled !== false;
+
+  return (
+    <SettingsGroup
+      title="Team visuals"
+      description="Visual identity for Agent goals in Team view."
+      dataAttribute="data-goal-visual-settings"
+    >
+      <SettingRow
+        title="Goal backgrounds"
+        description="Show quiet generated imagery behind Agent tiles. Turning this off hides cached visuals and stops new image requests."
+      >
+        <SettingSwitch
+          checked={enabled}
+          label="Goal backgrounds"
+          onChange={next =>
+            void window.electron?.settings?.setGoalVisualsEnabled(next)
+          }
+        />
+      </SettingRow>
+    </SettingsGroup>
+  );
+}
+
 /**
  * Notification preferences (ENG-016 D6 + D18). Everything here defaults OFF:
  * OS-level signals (native notifications, the dock badge count) are opt-in —

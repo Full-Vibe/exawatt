@@ -32,6 +32,7 @@ import {
 } from '@/app/actions/preferences';
 import {
   ConversationPrivacySettings,
+  GoalVisualSettings,
   NotificationsSettings,
   PermissionsExplainer,
 } from './notifications-settings';
@@ -408,11 +409,12 @@ export function SettingsClient() {
                   Preferences
                 </h2>
                 <p className="mt-1 font-ui text-chrome-title text-[var(--settings-dim)]">
-                  Personal controls for notifications, privacy, and keyboard
-                  behavior.
+                  Personal controls for visuals, notifications, privacy, and
+                  keyboard behavior.
                 </p>
               </div>
 
+              <GoalVisualSettings />
               <NotificationsSettings />
               <ConversationPrivacySettings />
               <PermissionsExplainer />

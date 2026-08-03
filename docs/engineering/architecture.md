@@ -199,6 +199,11 @@ state. Public values are therefore recorded by Exawatt with stated assurance,
 not independently verified claims. GitHub seeds V1 identity, while the stored
 identity shape remains provider-neutral for later operator classes.
 
+A device-local preference defaults goal visuals on and gates both sides of the
+projection. Off suppresses future hosted requests in Electron main and removes
+the backdrop in Team without deleting cached assets or changing accepted goal
+truth; on resumes from the private cache or current accepted goal.
+
 #### Agency control spine
 
 Visibility, authorization, evidence, and enforcement form a cross-cutting spine

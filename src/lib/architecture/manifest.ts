@@ -730,7 +730,7 @@ export const architectureManifest = {
           id: 'goal-visual-service',
           label: 'Goal Visual Service',
           summary:
-            'Authenticated deterministic generation, private per-user cache and quota, bounded provider download, and source-neutral fallback/ready projection.',
+            'Device-locally gated deterministic generation, private per-user cache and quota, bounded provider download, and source-neutral fallback/ready projection.',
           layer: 'coordination',
           status: 'implemented',
           x: 920,

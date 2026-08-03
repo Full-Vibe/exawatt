@@ -172,6 +172,20 @@ export function ExposeOverlay({
   onAttachRoadmapSession?: (tabId: string, itemId: string) => boolean;
   onClose: () => void;
 }) {
+  const [goalVisualsEnabled, setGoalVisualsEnabled] = useState(true);
+  useEffect(() => {
+    const api = window.electron?.settings;
+    if (!api) return;
+    void api
+      .get()
+      .then(settings =>
+        setGoalVisualsEnabled(settings.goalVisuals?.enabled !== false)
+      );
+    return api.onChanged?.(settings =>
+      setGoalVisualsEnabled(settings.goalVisuals?.enabled !== false)
+    );
+  }, []);
+
   // stable order = model order (spatial memory: tiles never reshuffle)
   const tiles = useMemo<Tile[]>(
     () =>
@@ -549,11 +563,13 @@ export function ExposeOverlay({
           transitionDelay: entered ? `${Math.min(index * 18, 300)}ms` : '0ms',
         }}
       >
-        <GoalVisualBackdrop
-          visual={goalVisuals[tile.durableSessionId] ?? null}
-          fallbackIdentity={tile.durableSessionId}
-          projectColor={tile.color}
-        />
+        {goalVisualsEnabled && (
+          <GoalVisualBackdrop
+            visual={goalVisuals[tile.durableSessionId] ?? null}
+            fallbackIdentity={tile.durableSessionId}
+            projectColor={tile.color}
+          />
+        )}
         <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           <SessionOverviewCardContent
             title={display.primary}

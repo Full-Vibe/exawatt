@@ -323,6 +323,7 @@ export class ContextSummarizer extends EventEmitter {
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private accessToken: string | null = null;
   private goalVisuals = new Map<string, GoalVisual>();
+  private goalVisualsEnabled = true;
   private goalVisualPending = new Map<string, PendingGoalVisual>();
   private goalVisualInFlight = new Set<string>();
   private goalVisualRetryTimers = new Map<
@@ -402,6 +403,25 @@ export class ContextSummarizer extends EventEmitter {
         void this.drainLabel(durableId);
       for (const durableId of this.goalVisualPending.keys())
         void this.drainGoalVisual(durableId);
+    }
+  }
+
+  setGoalVisualsEnabled(enabled: boolean): void {
+    if (enabled === this.goalVisualsEnabled) return;
+    this.goalVisualsEnabled = enabled;
+    if (!enabled) {
+      this.goalVisualPending.clear();
+      for (const timer of this.goalVisualRetryTimers.values())
+        clearTimeout(timer);
+      this.goalVisualRetryTimers.clear();
+      return;
+    }
+    for (const session of this.manager?.list() ?? []) {
+      const durableId = session.durableSessionId;
+      const label = this.summaries.get(durableId);
+      if (label && this.goalVisuals.get(durableId)?.state !== 'ready') {
+        this.queueGoalVisual(durableId, label);
+      }
     }
   }
 
@@ -665,6 +685,7 @@ export class ContextSummarizer extends EventEmitter {
   }
 
   private queueGoalVisual(durableId: string, label: string): void {
+    if (!this.goalVisualsEnabled) return;
     const session = this.manager
       ?.list()
       .find(item => item.durableSessionId === durableId);
@@ -698,7 +719,12 @@ export class ContextSummarizer extends EventEmitter {
 
   private async drainGoalVisual(durableId: string): Promise<void> {
     const pending = this.goalVisualPending.get(durableId);
-    if (!this.accessToken || !pending || this.goalVisualInFlight.has(durableId))
+    if (
+      !this.goalVisualsEnabled ||
+      !this.accessToken ||
+      !pending ||
+      this.goalVisualInFlight.has(durableId)
+    )
       return;
     const token = this.accessToken;
     this.goalVisualPending.delete(durableId);
@@ -716,6 +742,7 @@ export class ContextSummarizer extends EventEmitter {
       const response = await this.generateGoalVisual(pending.request, token);
       if (!validHostedGoalVisual(response))
         throw new Error('invalid-goal-visual-response');
+      if (!this.goalVisualsEnabled) return;
       if (this.goalVisuals.get(durableId)?.revision !== pending.revision) {
         this.diagnoseFn('goal-visual.stale-response', {
           session: durableId,
@@ -736,6 +763,7 @@ export class ContextSummarizer extends EventEmitter {
         revision: pending.revision,
       });
     } catch (error) {
+      if (!this.goalVisualsEnabled) return;
       if (this.goalVisuals.get(durableId)?.revision !== pending.revision)
         return;
       const rejected =

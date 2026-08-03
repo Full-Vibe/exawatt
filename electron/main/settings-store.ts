@@ -51,6 +51,11 @@ export interface ExawattSettings {
      * excerpts are secret-redacted before they leave the device. */
     hosted: boolean;
   };
+  goalVisuals?: {
+    /** Generated Team-tile imagery defaults on; false suppresses rendering
+     * and future generation while preserving the private cache. */
+    enabled: boolean;
+  };
   agentSources?: {
     projectLastUsed: Record<string, string>;
     sourceRecency: Record<string, number>;
@@ -280,6 +285,11 @@ export function parseSettings(raw: unknown): ExawattSettings {
       settings.conversationSummaries = { hosted };
     }
   }
+  const goalVisuals = (raw as { goalVisuals?: unknown }).goalVisuals;
+  if (goalVisuals && typeof goalVisuals === 'object') {
+    const enabled = (goalVisuals as { enabled?: unknown }).enabled;
+    if (typeof enabled === 'boolean') settings.goalVisuals = { enabled };
+  }
   const agentSources = (raw as { agentSources?: unknown }).agentSources;
   if (agentSources && typeof agentSources === 'object') {
     const candidate = agentSources as {
@@ -410,6 +420,13 @@ export function setHostedConversationSummaries(
 ): ExawattSettings {
   const settings = loadSettings();
   settings.conversationSummaries = { hosted: enabled };
+  writeSettings(settings);
+  return settings;
+}
+
+export function setGoalVisualsEnabled(enabled: boolean): ExawattSettings {
+  const settings = loadSettings();
+  settings.goalVisuals = { enabled };
   writeSettings(settings);
   return settings;
 }

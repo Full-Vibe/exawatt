@@ -544,6 +544,9 @@ export interface ExawattSettings {
   conversationSummaries?: {
     hosted: boolean;
   };
+  goalVisuals?: {
+    enabled: boolean;
+  };
   agentSources?: {
     projectLastUsed: Record<string, string>;
     sourceRecency: Record<string, number>;
@@ -562,6 +565,7 @@ export interface ElectronSettingsApi {
   setHostedConversationSummaries: (
     enabled: boolean
   ) => Promise<ExawattSettings>;
+  setGoalVisualsEnabled: (enabled: boolean) => Promise<ExawattSettings>;
   recordAgentSourceUse: (
     projectDir: string,
     source: string,

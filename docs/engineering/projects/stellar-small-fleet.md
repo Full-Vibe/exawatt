@@ -227,6 +227,12 @@ Agents advancing the same Initiative and performs no generation I/O. The
 operator chose direct live dogfood over the planned gallery review; the gallery
 comparison remains a reversible follow-up, not a second source of truth.
 
+Operator amendment, 2026-08-03: a device-local **Goal backgrounds** toggle in
+Settings → Preferences defaults on. Turning it off immediately hides cached
+imagery and prevents future generation requests; turning it back on restores a
+ready cache hit or requests the current accepted goal. The setting changes no
+goal, revision, or Project identity truth.
+
 ### S5 Durable Projects
 
 Status: landed 2026-07-10 — scoped same day (operator); all phases complete.
