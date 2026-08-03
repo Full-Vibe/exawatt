@@ -34,8 +34,8 @@ The altitude ladder is **singular → group → everything**, in plain language,
 
 **Position handoff, with a directional cut as the guaranteed fallback.**
 
-- **Agent ↔ Work** is one DOM document and is genuinely continuous: the focused pane and its tile are the same object at two sizes.
-- **Work ↔ Fleet** crosses the DOM→WebGL boundary. The board's entry camera pose places each Project/Agent node at the screen position its card occupied; cards crossfade into nodes in place, and only then does the camera pull back and the fleet resolve. The renderer swap is invisible because nothing moves during it.
+- **Agent ↔ Team** is one DOM document and is genuinely continuous: the focused pane and its tile are the same object at two sizes.
+- **Team ↔ Fleet** crosses the DOM→WebGL boundary. The board's entry camera pose places each Project/Agent node at the screen position its card occupied; cards crossfade into nodes in place, and only then does the camera pull back and the fleet resolve. The renderer swap is invisible because nothing moves during it.
 - What carries across is **identity and position**, never content. Project color, emblem, and selection persist; terminal text does not travel and is not expected to.
 - **Agent → Fleet** directly (one keystroke skipping the middle) runs the same motion continuously through both stages, faster — not a different animation.
 - The existing single transition owner (ENG-016 D11) stays the only implementation. It hard-cuts to a fast directional transition whenever the target is not ready within its frame budget, under reduced motion, in low-power mode, or on any failure. Falling back is a normal outcome, not an error.
