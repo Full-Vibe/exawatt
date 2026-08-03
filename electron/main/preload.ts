@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('pty:correct-context', durableSessionId, label),
     restoreContext: (durableSessionId: string, subtitle: string) =>
       ipcRenderer.invoke('pty:restore-context', durableSessionId, subtitle),
+    restoreGoalVisual: (durableSessionId: string, visual: unknown) =>
+      ipcRenderer.invoke('pty:restore-goal-visual', durableSessionId, visual),
     list: () => ipcRenderer.invoke('pty:list'),
     buffer: (id: string) => ipcRenderer.invoke('pty:buffer', id),
     bufferSnapshot: (id: string) =>
@@ -119,6 +121,9 @@ contextBridge.exposeInMainWorld('electron', {
     }>('pty:identity'),
     onContext: subscribe<{ durableSessionId: string; summary: string }>(
       'pty:context'
+    ),
+    onGoalVisual: subscribe<{ durableSessionId: string; visual: unknown }>(
+      'pty:goal-visual'
     ),
     onRecap: subscribe<{
       id: string;

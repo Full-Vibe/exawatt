@@ -69,6 +69,7 @@ import type {
   PtyReentryRecap,
   PtySessionInfo,
   ClosedSessionEntry,
+  GoalVisual,
 } from '@/types/electron';
 
 export interface WorkspaceTab {
@@ -307,6 +308,8 @@ export interface PersistedV6 {
        *  layouts lack them; both restore the context layer on relaunch */
       initialTask?: string | null;
       contextSummary?: string | null;
+      /** Last accepted visual survives restart; transitional states do not. */
+      goalVisual?: GoalVisual | null;
       /** Draft new-tab composer state: any operator-authored launch choice
        * persists; an untouched ⌘T tile still vanishes without ceremony. */
       draftTask?: string | null;
@@ -616,6 +619,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    *  Session truth — live updates stream from main, the persisted layout
    *  seeds them back after a restart, stopped tabs keep theirs */
   const [summaries, setSummaries] = useState<Record<string, string>>({});
+  /** Goal visuals share the same durable-Session identity and source seam. */
+  const [goalVisuals, setGoalVisuals] = useState<Record<string, GoalVisual>>(
+    {}
+  );
   /** needs-operator flags keyed by sessionId (ENG-015 S1; main is truth) */
   const [attention, setAttention] = useState<Record<string, PtyAttention>>({});
   /** sessions actively producing output right now, keyed by sessionId
@@ -650,6 +657,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   readyRef.current = ready;
   const summariesRef = useRef(summaries);
   summariesRef.current = summaries;
+  const goalVisualsRef = useRef(goalVisuals);
+  goalVisualsRef.current = goalVisuals;
   const engagedRef = useRef(engaged);
   engagedRef.current = engaged;
   const activityRef = useRef(activity);
@@ -834,6 +843,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       // Attention, activity, and started flags adopt from live main truth
       // (D22/D29), so renderer reloads cannot regress any status surface.
       const seeded: Record<string, string> = {};
+      const seededGoalVisuals: Record<string, GoalVisual> = {};
       const seededAttention: Record<string, PtyAttention> = {};
       const seededActivity: Record<string, boolean> = {};
       const seededEngaged: Record<string, boolean> = {};
@@ -862,9 +872,31 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         for (const [durableSessionId, summary] of restoredSummaries) {
           if (summary) seeded[durableSessionId] = summary;
         }
+        const persistedGoalVisuals = persisted.projects.flatMap(g =>
+          g.tabs.flatMap(t =>
+            t.goalVisual ? [[t.durableSessionId, t.goalVisual] as const] : []
+          )
+        );
+        const restoreGoalVisual = api.restoreGoalVisual;
+        const restoredGoalVisuals = restoreGoalVisual
+          ? await Promise.all(
+              persistedGoalVisuals.map(
+                async ([durableSessionId, visual]) =>
+                  [
+                    durableSessionId,
+                    await restoreGoalVisual(durableSessionId, visual),
+                  ] as const
+              )
+            )
+          : persistedGoalVisuals;
+        if (cancelled) return;
+        for (const [durableSessionId, visual] of restoredGoalVisuals) {
+          if (visual) seededGoalVisuals[durableSessionId] = visual;
+        }
       }
       for (const s of live) {
         if (s.contextSummary) seeded[s.durableSessionId] = s.contextSummary;
+        if (s.goalVisual) seededGoalVisuals[s.durableSessionId] = s.goalVisual;
         if (s.attention && !clearedBeforeSeed.has(s.id)) {
           seededAttention[s.id] = s.attention;
         }
@@ -881,6 +913,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       }
       if (Object.keys(seeded).length > 0) {
         setSummaries(prev => ({ ...seeded, ...prev }));
+      }
+      if (Object.keys(seededGoalVisuals).length > 0) {
+        setGoalVisuals(prev => ({ ...seededGoalVisuals, ...prev }));
       }
       if (Object.keys(seededAttention).length > 0) {
         setAttention(prev => ({ ...seededAttention, ...prev }));
@@ -1133,6 +1168,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     const offContext = api.onContext?.(({ durableSessionId, summary }) => {
       setSummaries(prev => ({ ...prev, [durableSessionId]: summary }));
     });
+    const offGoalVisual = api.onGoalVisual?.(({ durableSessionId, visual }) => {
+      setGoalVisuals(prev => ({ ...prev, [durableSessionId]: visual }));
+    });
     const offRecap = api.onRecap?.(next => {
       const { projects: groups, activeDir: dir } = stateRef.current;
       const active = groups.find(group => group.dir === dir);
@@ -1190,6 +1228,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       offExit();
       offIdentity?.();
       offContext?.();
+      offGoalVisual?.();
       offRecap?.();
       offActivity?.();
       offEngaged?.();
@@ -1261,6 +1300,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 initialTask: tab.initialTask ?? null,
                 contextSummary:
                   summariesRef.current[tab.durableSessionId] ?? null,
+                goalVisual:
+                  goalVisualsRef.current[tab.durableSessionId]?.state ===
+                  'ready'
+                    ? goalVisualsRef.current[tab.durableSessionId]
+                    : null,
                 ...(tab.lifecycle === 'draft'
                   ? {
                       draftTask: tab.draftTask ?? null,
@@ -1291,8 +1335,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   );
 
   // ---- persistence: debounced; ended tabs remain as explicit resume targets ----
-  // `summaries` is a dependency (D21): goal subtitles persist with the layout
-  // so a relaunch restores them instead of re-deriving from recent scrollback
+  // Goal subtitles and their last ready visual persist with the layout so a
+  // relaunch restores identity instead of re-deriving it from scrollback.
   useEffect(() => {
     if (!ready) return;
     const ws = window.electron?.workspace;
@@ -1309,6 +1353,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     lastUsedDir,
     pinnedTabId,
     summaries,
+    goalVisuals,
     ready,
     serializeWorkspace,
   ]);
@@ -2437,6 +2482,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     pinnedTabId,
     lastUsedDir,
     summaries,
+    goalVisuals,
     attention,
     activity,
     delegation,

@@ -213,6 +213,12 @@ describe('workspace persistence v5 (ENG-018)', () => {
               exitCode: null,
               initialTask: 'Overhaul the YC intake flow',
               contextSummary: 'Fix YC intake feature',
+              goalVisual: {
+                identityKey: 'goal-identity',
+                revision: 2,
+                state: 'ready',
+                dataUrl: 'data:image/webp;base64,YWJj',
+              },
             },
             {
               // pre-D21 layout: no goal fields
@@ -229,9 +235,15 @@ describe('workspace persistence v5 (ENG-018)', () => {
     expect(parsed?.projects[0].tabs[0]).toMatchObject({
       initialTask: 'Overhaul the YC intake flow',
       contextSummary: 'Fix YC intake feature',
+      goalVisual: {
+        identityKey: 'goal-identity',
+        revision: 2,
+        state: 'ready',
+      },
     });
     expect(parsed?.projects[0].tabs[1].initialTask).toBeUndefined();
     expect(parsed?.projects[0].tabs[1].contextSummary).toBeUndefined();
+    expect(parsed?.projects[0].tabs[1].goalVisual).toBeUndefined();
   });
 
   it('round-trips a content-bearing draft tab (D28)', () => {

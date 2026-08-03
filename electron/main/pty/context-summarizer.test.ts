@@ -17,6 +17,7 @@ class FakeManager extends EventEmitter {
       durableSessionId: 'session-1',
       exited: false,
       harness: 'codex',
+      projectDir: '/repo/exawatt',
       projectName: 'Exawatt',
     },
   ];
@@ -97,6 +98,7 @@ describe('provisional and accepted context labels', () => {
 describe('hosted Session context ownership', () => {
   let manager: FakeManager;
   let generateLabel: ReturnType<typeof vi.fn>;
+  let generateGoalVisual: ReturnType<typeof vi.fn>;
   let service: ContextSummarizer;
 
   beforeEach(() => {
@@ -106,7 +108,15 @@ describe('hosted Session context ownership', () => {
       relationship: 'new_context' as const,
       confidence: 0.95,
     }));
-    service = new ContextSummarizer({ generateLabel, retryBaseMs: 1 });
+    generateGoalVisual = vi.fn(async () => ({
+      identityKey: 'goal-identity',
+      dataUrl: 'data:image/jpeg;base64,YWJj',
+    }));
+    service = new ContextSummarizer({
+      generateLabel,
+      generateGoalVisual,
+      retryBaseMs: 1,
+    });
     service.attach(manager as unknown as PtySessionManager);
   });
 
@@ -155,6 +165,154 @@ describe('hosted Session context ownership', () => {
     service.setAccessToken('jwt');
     await flush();
     expect(service.getSummary('session-1')).toBe('MVP of Widget Checkout');
+    expect(generateGoalVisual).toHaveBeenCalledOnce();
+  });
+
+  it('requests visuals from accepted labels without raw instruction evidence', async () => {
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'Raw operator wording that must stay local\r');
+    await vi.waitFor(() => expect(generateGoalVisual).toHaveBeenCalledOnce());
+    expect(generateGoalVisual).toHaveBeenCalledWith(
+      {
+        schemaVersion: 1,
+        projectKey: '/repo/exawatt',
+        label: 'Improve agent context summaries',
+      },
+      'jwt'
+    );
+    expect(JSON.stringify(generateGoalVisual.mock.calls[0][0])).not.toContain(
+      'Raw operator wording'
+    );
+    expect(service.getGoalVisual('session-1')).toEqual({
+      identityKey: 'goal-identity',
+      revision: 1,
+      state: 'ready',
+      dataUrl: 'data:image/jpeg;base64,YWJj',
+    });
+  });
+
+  it('preserves a ready visual for later same-context classifications', async () => {
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'First work\r');
+    await vi.waitFor(() => expect(generateGoalVisual).toHaveBeenCalledOnce());
+    generateLabel.mockResolvedValue({
+      label: 'Different wording ignored',
+      relationship: 'same_context',
+      confidence: 0.9,
+    });
+    service.noteInput('live-1', 'More of the same work\r');
+    await vi.waitFor(() => expect(generateLabel).toHaveBeenCalledTimes(2));
+    expect(generateGoalVisual).toHaveBeenCalledOnce();
+    expect(service.getGoalVisual('session-1')?.revision).toBe(1);
+  });
+
+  it('coalesces a stale image response when the goal changes again', async () => {
+    let resolveFirst!: (value: {
+      identityKey: string;
+      dataUrl: string;
+    }) => void;
+    generateGoalVisual.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveFirst = resolve;
+        })
+    );
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'First goal\r');
+    await vi.waitFor(() => expect(generateGoalVisual).toHaveBeenCalledOnce());
+    generateLabel.mockResolvedValue({
+      label: 'Second accepted goal',
+      relationship: 'new_context',
+      confidence: 1,
+    });
+    service.noteInput('live-1', 'Second goal\r');
+    await vi.waitFor(() =>
+      expect(service.getGoalVisual('session-1')?.revision).toBe(2)
+    );
+    resolveFirst({
+      identityKey: 'stale-goal',
+      dataUrl: 'data:image/jpeg;base64,c3RhbGU=',
+    });
+    await vi.waitFor(() => expect(generateGoalVisual).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(service.getGoalVisual('session-1')).toMatchObject({
+        identityKey: 'goal-identity',
+        revision: 2,
+        state: 'ready',
+      })
+    );
+  });
+
+  it('regenerates after an operator correction and falls back on failure', async () => {
+    generateGoalVisual.mockRejectedValue(new Error('offline'));
+    service.setAccessToken('jwt');
+    service.correct('session-1', 'Corrected human goal');
+    await vi.waitFor(() => expect(generateGoalVisual).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(service.getGoalVisual('session-1')).toMatchObject({
+        revision: 1,
+        state: 'fallback',
+        dataUrl: null,
+      })
+    );
+  });
+
+  it('does not regenerate when correction copy is unchanged', async () => {
+    service.restore('session-1', 'Corrected human goal');
+    service.setAccessToken('jwt');
+    expect(service.correct('session-1', 'Corrected human goal')).toBe(
+      'Corrected human goal'
+    );
+    await flush();
+    expect(generateGoalVisual).not.toHaveBeenCalled();
+  });
+
+  it('retries one transient visual failure, then accepts the result', async () => {
+    vi.useFakeTimers();
+    generateGoalVisual
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({
+        identityKey: 'retried-goal',
+        dataUrl: 'data:image/jpeg;base64,YWJj',
+      });
+    service.setAccessToken('jwt');
+    service.correct('session-1', 'Corrected human goal');
+    await flush();
+    expect(service.getGoalVisual('session-1')?.state).toBe('fallback');
+    await vi.advanceTimersByTimeAsync(2_000);
+    await flush();
+    expect(generateGoalVisual).toHaveBeenCalledTimes(2);
+    expect(service.getGoalVisual('session-1')).toMatchObject({
+      identityKey: 'retried-goal',
+      revision: 1,
+      state: 'ready',
+    });
+    vi.useRealTimers();
+  });
+
+  it('restores only bounded ready visuals and sheds transitional state', () => {
+    const ready = service.restoreGoalVisual('session-1', {
+      identityKey: 'persisted-goal',
+      revision: 3,
+      state: 'ready',
+      dataUrl: 'data:image/webp;base64,YWJj',
+    });
+    expect(ready).toMatchObject({ state: 'ready', revision: 3 });
+    expect(
+      service.restoreGoalVisual('session-2', {
+        identityKey: 'pending-goal',
+        revision: 2,
+        state: 'generating',
+      })
+    ).toMatchObject({ state: 'fallback', dataUrl: null });
+    expect(
+      service.restoreGoalVisual('session-3', {
+        identityKey: 'bad-goal',
+        revision: 1,
+        state: 'ready',
+        dataUrl: 'https://public.example/image.jpg',
+      })
+    ).toBeNull();
   });
 
   it('lets hosted inference sharpen a provisional launch instruction', async () => {

@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
+import { createHash } from 'crypto';
 import { defaultShell } from './session-manager';
 import type { PtySessionManager } from './session-manager';
 
@@ -21,6 +22,10 @@ const RECAP_CALL_TIMEOUT_MS = 45_000;
 const RETRY_BASE_MS = 30_000;
 const RETRY_MAX_MS = 10 * 60_000;
 const DEFAULT_CONTEXT_ENDPOINT = 'https://www.exawatt.ai/api/context-labels';
+const DEFAULT_GOAL_VISUAL_ENDPOINT = 'https://www.exawatt.ai/api/goal-visuals';
+const MAX_GOAL_VISUAL_DATA_URL_CHARS = 2 * 1024 * 1024;
+const GOAL_VISUAL_RETRY_MS = 2_000;
+const GOAL_VISUAL_MAX_ATTEMPTS = 2;
 const PROMPT_END = '\n</untrusted-scrollback>';
 const RECAP_PROMPT =
   'You summarize what changed in a terminal session while its operator was ' +
@@ -66,6 +71,26 @@ export interface HostedContextLabel {
   confidence: number;
 }
 
+/** Source-neutral visual identity for one durable Session goal (ENG-015 S4.1). */
+export interface GoalVisual {
+  identityKey: string;
+  revision: number;
+  state: 'fallback' | 'generating' | 'ready' | 'rejected';
+  dataUrl?: string | null;
+}
+
+export interface GoalVisualRequest {
+  schemaVersion: 1;
+  projectKey: string;
+  /** Accepted six-word context label only; never raw instructions/output. */
+  label: string;
+}
+
+interface HostedGoalVisual {
+  identityKey: string;
+  dataUrl: string;
+}
+
 export interface ContextSummarizerOptions {
   recapAwayMs?: number;
   recapMinChars?: number;
@@ -77,6 +102,11 @@ export interface ContextSummarizerOptions {
     evidence: ContextLabelEvidence,
     accessToken: string
   ) => Promise<HostedContextLabel>;
+  /** Test seam for the authenticated, server-owned image provider boundary. */
+  generateGoalVisual?: (
+    request: GoalVisualRequest,
+    accessToken: string
+  ) => Promise<HostedGoalVisual>;
   retryBaseMs?: number;
   diagnose?: (event: string, fields?: Record<string, unknown>) => void;
 }
@@ -94,11 +124,67 @@ interface PendingRecap {
   generation: number;
 }
 
+interface PendingGoalVisual {
+  request: GoalVisualRequest;
+  revision: number;
+  attempt: number;
+}
+
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw === '') return fallback;
   const value = Number(raw);
   return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+class GoalVisualEndpointError extends Error {
+  constructor(readonly status: number) {
+    super(`goal visual endpoint returned ${status}`);
+  }
+}
+
+function fallbackIdentityKey(projectKey: string, label: string): string {
+  return `fallback:${createHash('sha256')
+    .update(
+      `${projectKey}\0${label.toLocaleLowerCase().replace(/\s+/g, ' ').trim()}`
+    )
+    .digest('hex')
+    .slice(0, 32)}`;
+}
+
+function validDataUrl(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length <= MAX_GOAL_VISUAL_DATA_URL_CHARS &&
+    /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(value)
+  );
+}
+
+function validHostedGoalVisual(value: unknown): value is HostedGoalVisual {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<HostedGoalVisual>;
+  return (
+    typeof candidate.identityKey === 'string' &&
+    candidate.identityKey.length > 0 &&
+    candidate.identityKey.length <= 256 &&
+    validDataUrl(candidate.dataUrl)
+  );
+}
+
+function validGoalVisual(value: unknown): value is GoalVisual {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<GoalVisual>;
+  return (
+    typeof candidate.identityKey === 'string' &&
+    candidate.identityKey.length > 0 &&
+    candidate.identityKey.length <= 256 &&
+    Number.isInteger(candidate.revision) &&
+    (candidate.revision ?? 0) >= 1 &&
+    ['fallback', 'generating', 'ready', 'rejected'].includes(
+      candidate.state ?? ''
+    ) &&
+    (candidate.state !== 'ready' || validDataUrl(candidate.dataUrl))
+  );
 }
 
 export function truncateAtWord(text: string, maxChars: number): string {
@@ -229,6 +315,13 @@ export class ContextSummarizer extends EventEmitter {
   private labelFailures = new Map<string, number>();
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private accessToken: string | null = null;
+  private goalVisuals = new Map<string, GoalVisual>();
+  private goalVisualPending = new Map<string, PendingGoalVisual>();
+  private goalVisualInFlight = new Set<string>();
+  private goalVisualRetryTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
 
   private checkpoints = new Map<string, VisitCheckpoint>();
   private focusedId: string | null = null;
@@ -245,12 +338,15 @@ export class ContextSummarizer extends EventEmitter {
     process.env.EXAWATT_SUMMARIZER_CMD || 'claude -p --model haiku';
   private readonly endpoint =
     process.env.EXAWATT_CONTEXT_LABEL_ENDPOINT || DEFAULT_CONTEXT_ENDPOINT;
+  private readonly goalVisualEndpoint =
+    process.env.EXAWATT_GOAL_VISUAL_ENDPOINT || DEFAULT_GOAL_VISUAL_ENDPOINT;
   private readonly recapAwayMs: number;
   private readonly recapMinChars: number;
   private readonly retryBaseMs: number;
   private readonly now: () => number;
   private readonly summarizeOverride?: ContextSummarizerOptions['summarize'];
   private readonly generateLabelOverride?: ContextSummarizerOptions['generateLabel'];
+  private readonly generateGoalVisualOverride?: ContextSummarizerOptions['generateGoalVisual'];
   private diagnoseFn: NonNullable<ContextSummarizerOptions['diagnose']>;
 
   constructor(options: ContextSummarizerOptions = {}) {
@@ -263,6 +359,7 @@ export class ContextSummarizer extends EventEmitter {
     this.now = options.now ?? (() => Date.now());
     this.summarizeOverride = options.summarize;
     this.generateLabelOverride = options.generateLabel;
+    this.generateGoalVisualOverride = options.generateGoalVisual;
     this.diagnoseFn = options.diagnose ?? (() => {});
   }
 
@@ -285,6 +382,10 @@ export class ContextSummarizer extends EventEmitter {
     this.retryTimers.clear();
     this.pendingRecap = null;
     this.recapGeneration += 1;
+    this.goalVisualPending.clear();
+    for (const timer of this.goalVisualRetryTimers.values())
+      clearTimeout(timer);
+    this.goalVisualRetryTimers.clear();
   }
 
   setAccessToken(token: string | null): void {
@@ -292,11 +393,36 @@ export class ContextSummarizer extends EventEmitter {
     if (this.accessToken) {
       for (const durableId of this.labelPending)
         void this.drainLabel(durableId);
+      for (const durableId of this.goalVisualPending.keys())
+        void this.drainGoalVisual(durableId);
     }
   }
 
   getSummary(durableSessionId: string): string | null {
     return this.summaries.get(durableSessionId) ?? null;
+  }
+
+  getGoalVisual(durableSessionId: string): GoalVisual | null {
+    return this.goalVisuals.get(durableSessionId) ?? null;
+  }
+
+  /** Restore only validated projection data; provider credentials stay in main. */
+  restoreGoalVisual(
+    durableSessionId: string,
+    candidate: GoalVisual | undefined
+  ): GoalVisual | null {
+    if (!validGoalVisual(candidate)) return null;
+    const existing = this.goalVisuals.get(durableSessionId);
+    if (existing && existing.revision >= candidate.revision) return existing;
+    const restored: GoalVisual = {
+      identityKey: candidate.identityKey,
+      revision: candidate.revision,
+      state: candidate.state === 'ready' ? 'ready' : 'fallback',
+      dataUrl: candidate.state === 'ready' ? candidate.dataUrl : null,
+    };
+    this.goalVisuals.set(durableSessionId, restored);
+    this.emit('goal-visual', durableSessionId, restored);
+    return restored;
   }
 
   seedFromTask(durableSessionId: string, task: string | undefined): void {
@@ -340,6 +466,7 @@ export class ContextSummarizer extends EventEmitter {
       .trim()
       .replace(/[.;,\s]+$/g, '');
     if (subtitleRejectionReason(clean)) return null;
+    if (this.summaries.get(durableSessionId) === clean) return clean;
     this.labelVersions.set(
       durableSessionId,
       (this.labelVersions.get(durableSessionId) ?? 0) + 1
@@ -355,6 +482,7 @@ export class ContextSummarizer extends EventEmitter {
     this.summaries.set(durableSessionId, clean);
     this.summarySources.set(durableSessionId, 'operator');
     this.emit('context', durableSessionId, clean);
+    this.queueGoalVisual(durableSessionId, clean);
     this.diagnoseFn('context-label.operator-correction', {
       session: durableSessionId,
     });
@@ -465,6 +593,12 @@ export class ContextSummarizer extends EventEmitter {
       this.summarySources.set(durableId, 'accepted');
       this.labelFailures.delete(durableId);
       this.emit('context', durableId, label);
+      if (
+        result.relationship === 'new_context' ||
+        !this.goalVisuals.has(durableId)
+      ) {
+        this.queueGoalVisual(durableId, label);
+      }
       this.diagnoseFn('context-label.accepted', {
         session: durableId,
         relationship: result.relationship,
@@ -521,6 +655,143 @@ export class ContextSummarizer extends EventEmitter {
     if (!response.ok)
       throw new Error(`context endpoint returned ${response.status}`);
     return (await response.json()) as HostedContextLabel;
+  }
+
+  private queueGoalVisual(durableId: string, label: string): void {
+    const session = this.manager
+      ?.list()
+      .find(item => item.durableSessionId === durableId);
+    const projectKey = session?.projectDir ?? session?.projectName;
+    if (!projectKey) {
+      this.diagnoseFn('goal-visual.missing-project', { session: durableId });
+      return;
+    }
+    const prior = this.goalVisuals.get(durableId);
+    const revision = (prior?.revision ?? 0) + 1;
+    const request: GoalVisualRequest = {
+      schemaVersion: 1,
+      projectKey,
+      label,
+    };
+    const next: GoalVisual = {
+      identityKey: fallbackIdentityKey(projectKey, label),
+      revision,
+      state: this.accessToken ? 'generating' : 'fallback',
+      dataUrl: null,
+    };
+    this.goalVisuals.set(durableId, next);
+    this.goalVisualPending.set(durableId, { request, revision, attempt: 1 });
+    const retry = this.goalVisualRetryTimers.get(durableId);
+    if (retry) clearTimeout(retry);
+    this.goalVisualRetryTimers.delete(durableId);
+    this.emit('goal-visual', durableId, next);
+    void this.drainGoalVisual(durableId);
+  }
+
+  private async drainGoalVisual(durableId: string): Promise<void> {
+    const pending = this.goalVisualPending.get(durableId);
+    if (!this.accessToken || !pending || this.goalVisualInFlight.has(durableId))
+      return;
+    const token = this.accessToken;
+    this.goalVisualPending.delete(durableId);
+    this.goalVisualInFlight.add(durableId);
+    const current = this.goalVisuals.get(durableId);
+    if (
+      current?.revision === pending.revision &&
+      current.state !== 'generating'
+    ) {
+      const generating = { ...current, state: 'generating' as const };
+      this.goalVisuals.set(durableId, generating);
+      this.emit('goal-visual', durableId, generating);
+    }
+    try {
+      const response = await this.generateGoalVisual(pending.request, token);
+      if (!validHostedGoalVisual(response))
+        throw new Error('invalid-goal-visual-response');
+      if (this.goalVisuals.get(durableId)?.revision !== pending.revision) {
+        this.diagnoseFn('goal-visual.stale-response', {
+          session: durableId,
+          revision: pending.revision,
+        });
+        return;
+      }
+      const ready: GoalVisual = {
+        identityKey: response.identityKey,
+        revision: pending.revision,
+        state: 'ready',
+        dataUrl: response.dataUrl,
+      };
+      this.goalVisuals.set(durableId, ready);
+      this.emit('goal-visual', durableId, ready);
+      this.diagnoseFn('goal-visual.ready', {
+        session: durableId,
+        revision: pending.revision,
+      });
+    } catch (error) {
+      if (this.goalVisuals.get(durableId)?.revision !== pending.revision)
+        return;
+      const rejected =
+        error instanceof GoalVisualEndpointError && error.status === 422;
+      const fallback: GoalVisual = {
+        identityKey: fallbackIdentityKey(
+          pending.request.projectKey,
+          pending.request.label
+        ),
+        revision: pending.revision,
+        state: rejected ? 'rejected' : 'fallback',
+        dataUrl: null,
+      };
+      this.goalVisuals.set(durableId, fallback);
+      this.emit('goal-visual', durableId, fallback);
+      this.diagnoseFn('goal-visual.request-failure', {
+        session: durableId,
+        revision: pending.revision,
+        rejected,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      const isClientError =
+        error instanceof GoalVisualEndpointError &&
+        error.status >= 400 &&
+        error.status < 500;
+      if (!isClientError && pending.attempt < GOAL_VISUAL_MAX_ATTEMPTS) {
+        this.goalVisualPending.set(durableId, {
+          ...pending,
+          attempt: pending.attempt + 1,
+        });
+        const timer = setTimeout(() => {
+          this.goalVisualRetryTimers.delete(durableId);
+          void this.drainGoalVisual(durableId);
+        }, GOAL_VISUAL_RETRY_MS);
+        timer.unref?.();
+        this.goalVisualRetryTimers.set(durableId, timer);
+      }
+    } finally {
+      this.goalVisualInFlight.delete(durableId);
+      if (
+        this.goalVisualPending.has(durableId) &&
+        !this.goalVisualRetryTimers.has(durableId)
+      )
+        void this.drainGoalVisual(durableId);
+    }
+  }
+
+  private async generateGoalVisual(
+    request: GoalVisualRequest,
+    token: string
+  ): Promise<HostedGoalVisual> {
+    if (this.generateGoalVisualOverride)
+      return this.generateGoalVisualOverride(request, token);
+    const response = await fetch(this.goalVisualEndpoint, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new GoalVisualEndpointError(response.status);
+    return (await response.json()) as HostedGoalVisual;
   }
 
   setFocus(id: string | null): void {

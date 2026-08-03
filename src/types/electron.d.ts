@@ -129,6 +129,14 @@ export interface PtyReentryRecap {
   generatedAt: number;
 }
 
+/** Quiet visual identity for the accepted goal of one durable Session. */
+export interface GoalVisual {
+  identityKey: string;
+  revision: number;
+  state: 'fallback' | 'generating' | 'ready' | 'rejected';
+  dataUrl?: string | null;
+}
+
 export interface PtySessionInfo {
   id: string;
   durableSessionId: string;
@@ -149,6 +157,8 @@ export interface PtySessionInfo {
   harnessSessionId: string | null;
   /** auto-summarized micro-context (W0.4); null until first summary */
   contextSummary?: string | null;
+  /** Goal-level work-world projection (ENG-015 S4.1). */
+  goalVisual?: GoalVisual | null;
   /** needs-operator flag (ENG-015 S1); null when clear */
   attention?: PtyAttention | null;
   /** ever given work — task, resume, or human keystroke (D22); adopt-time
@@ -281,6 +291,11 @@ export interface ElectronPtyApi {
     durableSessionId: string,
     subtitle: string
   ) => Promise<string | null>;
+  /** Re-seed a validated persisted visual into main on app restart. */
+  restoreGoalVisual?: (
+    durableSessionId: string,
+    visual: GoalVisual
+  ) => Promise<GoalVisual | null>;
   list: () => Promise<PtySessionInfo[]>;
   buffer: (id: string) => Promise<string>;
   bufferSnapshot: (id: string) => Promise<{ text: string; cursor: number }>;
@@ -351,6 +366,9 @@ export interface ElectronPtyApi {
   ) => () => void;
   onContext: (
     handler: (payload: { durableSessionId: string; summary: string }) => void
+  ) => () => void;
+  onGoalVisual?: (
+    handler: (payload: { durableSessionId: string; visual: GoalVisual }) => void
   ) => () => void;
   onRecap: (handler: (payload: PtyReentryRecap) => void) => () => void;
   onAttention: (

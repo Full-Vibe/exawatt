@@ -122,6 +122,12 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       broadcast('pty:context', { durableSessionId, summary });
     }
   );
+  contextSummarizer.on(
+    'goal-visual',
+    (durableSessionId: string, visual: unknown) => {
+      broadcast('pty:goal-visual', { durableSessionId, visual });
+    }
+  );
   contextSummarizer.on('recap', (recap: unknown) => {
     broadcast('pty:recap', recap);
   });
@@ -373,6 +379,14 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       contextSummarizer.restore(durableSessionId, subtitle)
   );
   handleTrusted(
+    'pty:restore-goal-visual',
+    (_event, durableSessionId: string, visual: unknown) =>
+      contextSummarizer.restoreGoalVisual(
+        durableSessionId,
+        visual as import('./pty/context-summarizer').GoalVisual
+      )
+  );
+  handleTrusted(
     'pty:resize',
     (_event, id: string, cols: number, rows: number) =>
       // node-pty can synchronously emit the WINCH redraw from resize(), so
@@ -451,6 +465,7 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     ptySessions.list().map(s => ({
       ...s,
       contextSummary: contextSummarizer.getSummary(s.durableSessionId),
+      goalVisual: contextSummarizer.getGoalVisual(s.durableSessionId),
       attention: attentionMonitor.get(s.id),
       engaged: attentionMonitor.isEngaged(s.id),
       working: attentionMonitor.isWorking(s.id),
