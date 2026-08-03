@@ -145,6 +145,19 @@ operator's terser object-flavored one; a sanitized case needs the Session's
 instruction sequence to be reconstructed before it can be added, so this note
 records the candidate rather than the case.
 
+Feedback row `51e51b1f-3cb6-4fdb-872b-767f1fc622a2` is a second genuine label
+correction on the `exawatt` Project. The Session showed **Redesign Exawatt app
+icon with transparent background** and the operator replaced it with **New app
+icon**. The correction removes solution method and asset-production detail in
+favor of the short work-world name the operator would use to find the Session.
+
+This reinforces the same altitude signal as the **Improve spatial UI** case:
+labels should identify the durable object/outcome, not narrate the current
+implementation instruction. It is a gold-corpus candidate, but the feedback row
+does not carry the source instruction sequence. A sanitized executable case
+must reconstruct that sequence from the attributed durable Session before it is
+added; this drain records the evidence and does not invent missing inputs.
+
 ### 2026-08-02 — E1.2 executable gold-corpus gate
 
 The corpus had become durable evidence but still depended on a reviewer to
