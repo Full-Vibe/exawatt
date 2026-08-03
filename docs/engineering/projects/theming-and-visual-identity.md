@@ -143,6 +143,40 @@ Sources: [Electron `nativeTheme`](https://www.electronjs.org/docs/latest/api/nat
 [DTCG format 2025.10](https://www.w3.org/community/reports/design-tokens/CG-FINAL-format-20251028/),
 [Apple materials guidance](https://developer.apple.com/design/human-interface-guidelines/materials).
 
+### Material and typography portability — discovery pass 2
+
+- “Glass” cannot be one platform API in a portable theme payload. Electron 43
+  exposes macOS vibrancy categories and Windows backdrop materials through
+  different window APIs; Windows material mutation is limited to Windows 11
+  22H2 and later. The hosted renderer cannot reveal the desktop behind its
+  browser window at all. Exawatt therefore needs semantic material roles that
+  resolve through desktop-native and renderer adapters rather than platform API
+  names in the authored preset.
+- A translucent surface is conditional output, not a dependable background.
+  System reduced-transparency and forced-color preferences call for simpler
+  solid treatment; Windows material guidance additionally documents automatic
+  fallbacks for high contrast, transparency disabled, unsupported hardware,
+  remote sessions, and (for Acrylic) battery saver. Every translucent semantic
+  role must carry an opaque fallback that still passes contrast checks.
+- Chromium's local-font enumeration requires an explicit `local-fonts`
+  permission and exposes a fingerprintable surface. It is Chromium-desktop-only,
+  while Exawatt's future hosted surface has a broader browser boundary. This is
+  too much permission and portability machinery to inherit accidentally from
+  first-party themes.
+- The existing Next.js font pipeline can self-host Google and local font files
+  without runtime network requests or layout shift. Subject to each face's
+  redistribution license, bundled preset fonts are the deterministic first-mile
+  option. An arbitrary installed-font picker should be treated as a separate
+  appearance capability if the operator wants it.
+
+Sources: [Electron `BrowserWindow`](https://www.electronjs.org/docs/latest/api/browser-window),
+[Electron window customization](https://www.electronjs.org/docs/latest/tutorial/window-customization),
+[CSS user-preference media features](https://www.w3.org/TR/mediaqueries-5/#mf-user-preferences),
+[CSS forced colors](https://www.w3.org/TR/css-color-adjust-1/),
+[Windows Acrylic guidance](https://learn.microsoft.com/en-us/windows/apps/design/style/acrylic),
+[Chromium Local Font Access](https://developer.chrome.com/docs/capabilities/web-apis/local-fonts),
+[Next.js font optimization](https://nextjs.org/docs/app/getting-started/fonts).
+
 ## Constraints already fixed by canon
 
 - The theming substrate comes before the new default visual identity.
@@ -213,3 +247,7 @@ implementation tasks until the design brief is approved.
   fixed selection as an app-global personal preference; fixed the first release
   to two or three built-in presets with community distribution deferred to a
   future marketplace.
+- 2026-08-03, discovery pass 2: established that native material APIs are
+  platform adapters rather than portable theme vocabulary; made authored opaque
+  fallbacks a requirement for every translucent role; separated permissioned
+  local-font enumeration from deterministic bundled preset typography.
