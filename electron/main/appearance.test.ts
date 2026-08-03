@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   applyNativeAppearancePreference,
+  refreshNativeWindowBackgrounds,
+  rendererAppearanceBootstrapSnapshot,
   resolveNativeAppearance,
 } from './appearance';
 import type { ElectronAppearancePreferencesV1 } from './settings-store';
@@ -72,6 +74,25 @@ describe('resolveNativeAppearance', () => {
     });
   });
 
+  it('injects Classic into a safe renderer without changing its stored preference', () => {
+    const automatic: ElectronAppearancePreferencesV1 = {
+      ...CLASSIC,
+      selection: {
+        mode: 'auto',
+        lightThemeId: 'exawatt-air-light',
+        darkThemeId: 'exawatt-night-dark',
+      },
+    };
+    const snapshot = rendererAppearanceBootstrapSnapshot(automatic, true);
+    expect(snapshot).toMatchObject({
+      safeTheme: true,
+      preferences: {
+        selection: { mode: 'manual', themeId: 'exawatt-classic-dark' },
+      },
+    });
+    expect(automatic.selection.mode).toBe('auto');
+  });
+
   it('returns to system source before resolving Auto after Manual', () => {
     const automatic: ElectronAppearancePreferencesV1 = {
       ...CLASSIC,
@@ -98,5 +119,29 @@ describe('resolveNativeAppearance', () => {
     applyNativeAppearancePreference(automatic, native, { safeTheme: false });
     expect(sourcesAtRead).toEqual(['system']);
     expect(source).toBe('system');
+  });
+
+  it('refreshes every live BrowserWindow background on an Auto OS change', () => {
+    const automatic: ElectronAppearancePreferencesV1 = {
+      ...CLASSIC,
+      selection: {
+        mode: 'auto',
+        lightThemeId: 'exawatt-air-light',
+        darkThemeId: 'exawatt-night-dark',
+      },
+    };
+    const live = { isDestroyed: () => false, setBackgroundColor: vi.fn() };
+    const destroyed = { isDestroyed: () => true, setBackgroundColor: vi.fn() };
+
+    const resolved = refreshNativeWindowBackgrounds(
+      automatic,
+      { shouldUseDarkColors: true },
+      [live, destroyed],
+      { safeTheme: false }
+    );
+
+    expect(resolved.themeId).toBe('exawatt-night-dark');
+    expect(live.setBackgroundColor).toHaveBeenCalledWith('#0B100E');
+    expect(destroyed.setBackgroundColor).not.toHaveBeenCalled();
   });
 });

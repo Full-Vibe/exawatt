@@ -20,12 +20,31 @@ export interface AppearancePreferenceSource {
   ) => () => void;
 }
 
+export interface AppearanceBootstrapSnapshot {
+  preferences: AppearancePreferencesV1;
+  safeTheme: boolean;
+}
+
 function defaultPreferences(): AppearancePreferencesV1 {
   return structuredClone(DEFAULT_APPEARANCE_PREFERENCES);
 }
 
 function recoveryPreferences(): AppearancePreferencesV1 {
   return structuredClone(CLASSIC_RECOVERY_APPEARANCE_PREFERENCES);
+}
+
+export function readElectronAppearanceBootstrap(): AppearanceBootstrapSnapshot | null {
+  if (typeof window === 'undefined' || !window.electron?.isElectron) return null;
+  const raw = window.electron.app?.bootstrapAppearance;
+  if (!raw || typeof raw.safeTheme !== 'boolean') {
+    return { preferences: recoveryPreferences(), safeTheme: false };
+  }
+  return {
+    preferences:
+      parseProductionAppearancePreferences(raw.preferences) ??
+      recoveryPreferences(),
+    safeTheme: raw.safeTheme,
+  };
 }
 
 export function readAppearanceMirror(

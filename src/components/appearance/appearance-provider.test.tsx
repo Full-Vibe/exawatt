@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import {
   CLASSIC_RECOVERY_APPEARANCE_PREFERENCES,
+  DEFAULT_APPEARANCE_PREFERENCES,
   selectManualTheme,
 } from '@/lib/appearance';
 import { APPEARANCE_MIRROR_STORAGE_KEY } from '@/lib/appearance/preference-source';
@@ -88,6 +89,37 @@ describe('AppearanceProvider', () => {
     await waitFor(() => expect(view.result.current.ready).toBe(true));
 
     expect(view.result.current.preferences).toEqual(classic);
+    expect(view.result.current.resolved.themeId).toBe('exawatt-classic-dark');
+  });
+
+  it('keeps a safe Electron launch on Classic while stored Auto hydrates', async () => {
+    const automatic = structuredClone(DEFAULT_APPEARANCE_PREFERENCES);
+    window.localStorage.setItem(
+      APPEARANCE_MIRROR_STORAGE_KEY,
+      JSON.stringify(automatic)
+    );
+    window.electron = {
+      isElectron: true,
+      platform: 'darwin',
+      settings: {
+        get: vi.fn().mockResolvedValue({ appearance: automatic }),
+        setAppearance: vi.fn(),
+        onChanged: vi.fn(() => vi.fn()),
+      },
+      app: {
+        bootstrapAppearance: {
+          preferences: classic,
+          safeTheme: true,
+        },
+        appearance: vi.fn(() => new Promise(() => undefined)),
+        onAppearanceChanged: vi.fn(() => vi.fn()),
+      },
+    } as unknown as NonNullable<Window['electron']>;
+
+    const view = renderHook(() => useAppearance(), { wrapper });
+    expect(view.result.current.resolved.themeId).toBe('exawatt-classic-dark');
+    await waitFor(() => expect(view.result.current.ready).toBe(true));
+    expect(view.result.current.preferences).toEqual(automatic);
     expect(view.result.current.resolved.themeId).toBe('exawatt-classic-dark');
   });
 });

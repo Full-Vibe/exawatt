@@ -8,6 +8,7 @@ import {
   session as electronSession,
   net as electronNet,
   nativeTheme,
+  ipcMain,
   systemPreferences,
 } from 'electron';
 import { spawn, type ChildProcess } from 'child_process';
@@ -17,7 +18,11 @@ import fs from 'fs';
 import nodeNet from 'net';
 import http from 'http';
 import path from 'path';
-import { handleTrusted, setTrustedRendererOrigin } from './ipc-security';
+import {
+  assertTrustedIpcSender,
+  handleTrusted,
+  setTrustedRendererOrigin,
+} from './ipc-security';
 import { registerSystemShortcutIPC } from './system-shortcuts';
 import { registerOperatorStatsIPC } from './operator-stats-ipc';
 import { randomUUID } from 'crypto';
@@ -47,6 +52,8 @@ import { FIXED_SESSION_MENU_COMMANDS } from './fixed-session-menu';
 import { loadSettings } from './settings-store';
 import {
   applyNativeAppearancePreference,
+  refreshNativeWindowBackgrounds,
+  rendererAppearanceBootstrapSnapshot,
   type NativeAppearanceResolution,
 } from './appearance';
 
@@ -961,6 +968,16 @@ function registerDialogIPC(): void {
 }
 
 function registerAppIPC(): void {
+  // Preload executes before the document's inline first-paint script. A tiny
+  // synchronous read is intentional here: it lets Electron's durable settings,
+  // including one-launch safe mode, win before any renderer pixels are chosen.
+  ipcMain.on('app:appearance-bootstrap', event => {
+    assertTrustedIpcSender(event);
+    event.returnValue = rendererAppearanceBootstrapSnapshot(
+      loadSettings().appearance,
+      safeThemeLaunch
+    );
+  });
   handleTrusted('app:get-build-info', () => ({
     ...buildInfo,
     // marketed version alongside the exact sha (ENG-025 feedback stamping)
@@ -986,6 +1003,12 @@ function registerAppIPC(): void {
   handleTrusted('app:accent-color', systemAccentColor);
   handleTrusted('app:appearance', appearanceSnapshot);
   nativeTheme.on('updated', () => {
+    refreshNativeWindowBackgrounds(
+      loadSettings().appearance,
+      nativeTheme,
+      BrowserWindow.getAllWindows(),
+      { safeTheme: safeThemeLaunch }
+    );
     const snapshot = appearanceSnapshot();
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {

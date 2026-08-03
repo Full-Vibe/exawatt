@@ -14,6 +14,10 @@ const subscribe =
     };
   };
 
+// This value is captured synchronously on every top-level navigation so the
+// first document script never has to guess from a possibly stale web mirror.
+const bootstrapAppearance = ipcRenderer.sendSync('app:appearance-bootstrap');
+
 contextBridge.exposeInMainWorld('electron', {
   isElectron: true,
   platform: process.platform,
@@ -231,6 +235,7 @@ contextBridge.exposeInMainWorld('electron', {
     }>('settings:changed'),
   },
   app: {
+    bootstrapAppearance,
     getBuildInfo: () => ipcRenderer.invoke('app:get-build-info'),
     accentColor: () => ipcRenderer.invoke('app:accent-color'),
     appearance: () => ipcRenderer.invoke('app:appearance'),

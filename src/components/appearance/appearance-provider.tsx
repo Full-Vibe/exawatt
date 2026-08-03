@@ -18,6 +18,7 @@ import { applyResolvedAppearance } from '@/lib/appearance/dom-adapter';
 import {
   createAppearancePreferenceSource,
   readAppearanceMirror,
+  readElectronAppearanceBootstrap,
   writeAppearanceMirror,
 } from '@/lib/appearance/preference-source';
 import {
@@ -83,14 +84,17 @@ function webSignals(): AppearanceOsSignals {
 
 export function AppearanceProvider({ children }: { children: ReactNode }) {
   const source = useMemo(() => createAppearancePreferenceSource(), []);
+  const bootstrap = useMemo(() => readElectronAppearanceBootstrap(), []);
   const [preferences, setPreferences] = useState<AppearancePreferencesV1>(
     () =>
+      bootstrap?.preferences ??
       (typeof window === 'undefined' ? null : readAppearanceMirror()) ??
       DEFAULT_APPEARANCE_PREFERENCES
   );
-  const [os, setOs] = useState<AppearanceOsSignals>(() =>
-    typeof window === 'undefined' ? DEFAULT_OS_SIGNALS : webSignals()
-  );
+  const [os, setOs] = useState<AppearanceOsSignals>(() => ({
+    ...(typeof window === 'undefined' ? DEFAULT_OS_SIGNALS : webSignals()),
+    safeTheme: bootstrap?.safeTheme ?? false,
+  }));
   const [previewThemeId, setPreviewThemeId] = useState<string>();
   const [ready, setReady] = useState(false);
 

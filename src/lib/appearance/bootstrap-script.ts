@@ -43,16 +43,22 @@ export const APPEARANCE_BOOTSTRAP_SCRIPT = `(() => {
     return selectionIsValid && pairIsValid && autoPairMatches && ['theme', 'system'].includes(value.accentSource) && ['theme', 'system', 'geist'].includes(value.interfaceFont) && [90, 100, 110, 120].includes(value.interfaceScale) && ['system', 'enhanced'].includes(value.contrast) && ['system', 'reduced'].includes(value.transparency);
   };
   let preferences = defaultPreferences;
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw !== null) {
-      try {
-        const stored = JSON.parse(raw);
-        if (valid(stored)) preferences = stored;
-        else { preferences = recoveryPreferences; localStorage.setItem(key, JSON.stringify(recoveryPreferences)); }
-      } catch { preferences = recoveryPreferences; try { localStorage.setItem(key, JSON.stringify(recoveryPreferences)); } catch {} }
-    }
-  } catch { preferences = recoveryPreferences; }
+  const electron = window.electron;
+  if (electron?.isElectron) {
+    const authoritative = electron.app?.bootstrapAppearance?.preferences;
+    preferences = valid(authoritative) ? authoritative : recoveryPreferences;
+  } else {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw !== null) {
+        try {
+          const stored = JSON.parse(raw);
+          if (valid(stored)) preferences = stored;
+          else { preferences = recoveryPreferences; localStorage.setItem(key, JSON.stringify(recoveryPreferences)); }
+        } catch { preferences = recoveryPreferences; try { localStorage.setItem(key, JSON.stringify(recoveryPreferences)); } catch {} }
+      }
+    } catch { preferences = recoveryPreferences; }
+  }
   const selection = preferences.selection;
   const matches = query => typeof matchMedia === 'function' && matchMedia(query).matches;
   const dark = matches('(prefers-color-scheme: dark)');

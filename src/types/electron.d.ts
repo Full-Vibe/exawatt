@@ -606,6 +606,12 @@ export interface ProductUpdateStatus {
 }
 
 export interface ElectronAppApi {
+  /** Electron-authoritative first-paint state, captured by preload before any
+   * document script runs. Web renderers do not expose this field. */
+  bootstrapAppearance?: {
+    preferences: AppearancePreferencesV1;
+    safeTheme: boolean;
+  } | null;
   getBuildInfo: () => Promise<ExawattBuildInfo>;
   /** the operator's OS highlight color, '#RRGGBB' (D32); null when
    *  unavailable (web, linux) — CSS falls back to the app accent */

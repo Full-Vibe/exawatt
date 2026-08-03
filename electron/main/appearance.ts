@@ -3,6 +3,7 @@ import {
   type ThemeBootstrapId,
 } from './generated-theme-bootstrap';
 import {
+  CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES,
   DEFAULT_ELECTRON_APPEARANCE_PREFERENCES,
   type ElectronAppearancePreferencesV1,
 } from './settings-store';
@@ -38,6 +39,30 @@ export interface NativeAppearanceResolution {
 export interface NativeThemeAdapter {
   themeSource: 'system' | 'light' | 'dark';
   readonly shouldUseDarkColors: boolean;
+}
+
+export interface ElectronAppearanceBootstrapSnapshot {
+  preferences: ElectronAppearancePreferencesV1;
+  safeTheme: boolean;
+}
+
+export interface NativeAppearanceWindow {
+  isDestroyed(): boolean;
+  setBackgroundColor(color: string): void;
+}
+
+export function rendererAppearanceBootstrapSnapshot(
+  appearance: ElectronAppearancePreferencesV1 | undefined,
+  safeTheme: boolean
+): ElectronAppearanceBootstrapSnapshot {
+  return {
+    preferences: structuredClone(
+      safeTheme
+        ? CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES
+        : (appearance ?? DEFAULT_ELECTRON_APPEARANCE_PREFERENCES)
+    ),
+    safeTheme,
+  };
 }
 
 function productionTheme(
@@ -120,5 +145,29 @@ export function applyNativeAppearancePreference(
     safeTheme: options.safeTheme,
   });
   native.themeSource = resolved.themeSource;
+  return resolved;
+}
+
+/**
+ * An OS appearance update arrives after Electron has already recomputed
+ * `shouldUseDarkColors`. Re-resolve the generated bootstrap subset without
+ * reassigning `themeSource` inside its own update event, then keep every native
+ * window background aligned with the renderer's new Auto selection.
+ */
+export function refreshNativeWindowBackgrounds(
+  appearance: ElectronAppearancePreferencesV1 | undefined,
+  native: Pick<NativeThemeAdapter, 'shouldUseDarkColors'>,
+  windows: readonly NativeAppearanceWindow[],
+  options: { safeTheme: boolean }
+): NativeAppearanceResolution {
+  const resolved = resolveNativeAppearance(appearance, {
+    dark: native.shouldUseDarkColors,
+    safeTheme: options.safeTheme,
+  });
+  for (const window of windows) {
+    if (!window.isDestroyed()) {
+      window.setBackgroundColor(resolved.bootstrap.background);
+    }
+  }
   return resolved;
 }

@@ -1,4 +1,8 @@
-import { ipcMain, type IpcMainInvokeEvent } from 'electron';
+import {
+  ipcMain,
+  type IpcMainEvent,
+  type IpcMainInvokeEvent,
+} from 'electron';
 
 type TrustedHandler = (
   event: IpcMainInvokeEvent,
@@ -11,7 +15,9 @@ export function setTrustedRendererOrigin(url: string): void {
   trustedOrigin = new URL(url).origin;
 }
 
-export function assertTrustedIpcSender(event: IpcMainInvokeEvent): void {
+export function assertTrustedIpcSender(
+  event: IpcMainInvokeEvent | IpcMainEvent
+): void {
   const senderUrl = event.senderFrame?.url || event.sender.getURL();
   let senderOrigin: string;
   try {
