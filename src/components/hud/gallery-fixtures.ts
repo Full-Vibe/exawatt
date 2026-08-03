@@ -13,6 +13,7 @@ function agent(p: Partial<FleetAgentView> & { id: string; name: string }): Fleet
     cost: 0,
     costRate: 0,
     tokenRate: 0,
+    rawTokens: 0,
     turnCount: 0,
     activityCount: 0,
     hasHeartbeat: false,
