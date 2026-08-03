@@ -51,6 +51,11 @@ import {
   StatusLight,
   statusLightStateForAgentStatus,
 } from '@/components/status-light';
+import { useAppearance } from '@/components/appearance/appearance-provider';
+import {
+  spatialColorWithAlpha,
+  spatialThemeFromResolvedAppearance,
+} from './spatial-theme';
 
 // The Spatial Operations Board is route-scoped. ssr:false keeps Three.js out of
 // the DOM fleet bundle and lets the Electron/web shells share the same model.
@@ -62,7 +67,7 @@ const OperationsBoardSurface = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="flex h-full min-h-[360px] items-center justify-center bg-[#070b10] text-sm text-zinc-500">
+      <div className="flex h-full min-h-[360px] items-center justify-center bg-background text-sm text-muted-foreground">
         Preparing operations board…
       </div>
     ),
@@ -70,6 +75,11 @@ const OperationsBoardSurface = dynamic(
 );
 
 export function SpatialFleetClient() {
+  const { resolved: resolvedAppearance } = useAppearance();
+  const spatialTheme = useMemo(
+    () => spatialThemeFromResolvedAppearance(resolvedAppearance),
+    [resolvedAppearance]
+  );
   const router = useRouter();
   const searchParams = useSearchParams();
   const rawAltitude = searchParams.get('altitude');
@@ -247,7 +257,9 @@ export function SpatialFleetClient() {
   );
 
   const clearMultiSelect = useCallback(() => {
-    setMultiSelectedIds(previous => (previous.size === 0 ? previous : new Set()));
+    setMultiSelectedIds(previous =>
+      previous.size === 0 ? previous : new Set()
+    );
   }, []);
 
   // Scope-aware activity + burn: the selection's totals while one exists,
@@ -549,34 +561,34 @@ export function SpatialFleetClient() {
       data-spatial-command
       data-spatial-altitude={scene.altitude}
       data-agent-count={commandView.agents.length}
-      className="fleet-shell flex min-h-[calc(100svh-3rem)] flex-col overflow-x-hidden text-zinc-100 xl:h-[calc(100svh-3rem)] xl:overflow-hidden"
+      data-spatial-shell-theme={resolvedAppearance.themeId}
+      className="flex min-h-[calc(100svh-3rem)] flex-col overflow-x-hidden bg-background text-foreground xl:h-[calc(100svh-3rem)] xl:overflow-hidden"
     >
       <FleetMetricsBar />
 
-      <header className="relative z-20 flex shrink-0 flex-wrap items-center gap-3 border-b border-zinc-800/80 bg-zinc-950/90 px-4 py-3 backdrop-blur">
+      <header className="exa-material-chrome relative z-20 flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
-          <Crosshair className="h-4 w-4 text-teal-200" />
-          <h1 className="truncate text-lg font-semibold tracking-tight text-zinc-50">
+          <Crosshair className="h-4 w-4 text-primary" />
+          <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">
             Fleet
           </h1>
-          <span className="rounded-full border border-zinc-800 bg-zinc-950/70 px-2 py-0.5 text-xs text-zinc-500">
+          <span className="rounded-full border border-border bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
             {isDemo ? 'Demo' : 'Live'}
           </span>
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {canConnect && (
-            <Button
-              onClick={connectToRealOC}
-              className="fleet-action-button h-8 bg-teal-300 text-zinc-950 hover:bg-teal-200"
-            >
+            <Button onClick={connectToRealOC} size="sm">
               <RadioTower className="h-4 w-4" />
               Connect
             </Button>
           )}
           <Button
             type="button"
-            className="fleet-action-button grid h-11 w-11 place-items-center p-0 xl:hidden"
+            size="icon"
+            variant="outline"
+            className="grid h-11 w-11 place-items-center xl:hidden"
             onClick={openHelpModal}
             aria-label="Keyboard shortcuts"
             aria-keyshortcuts={
@@ -591,7 +603,7 @@ export function SpatialFleetClient() {
 
       <nav
         aria-label="Zoom altitude"
-        className="relative z-20 flex shrink-0 items-center gap-1 border-b border-zinc-800/60 bg-zinc-950/70 px-4 py-1.5 text-xs"
+        className="exa-material-chrome relative z-20 flex shrink-0 items-center gap-1 border-b border-border px-4 py-1.5 text-xs"
       >
         <span className="sr-only" aria-live="polite">
           {scene.altitude === 'agent' && inspectedAgent
@@ -606,15 +618,15 @@ export function SpatialFleetClient() {
           }
           className={`rounded px-2 py-1 transition ${
             scene.altitude === 'fleet'
-              ? 'text-teal-200'
-              : 'text-zinc-400 hover:text-zinc-100'
+              ? 'text-primary'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           Fleet
         </button>
         {scene.altitude !== 'fleet' && focusedZoneLabel && (
           <>
-            <span className="text-zinc-600">›</span>
+            <span className="text-muted-foreground">›</span>
             <button
               onClick={() =>
                 navigate({
@@ -625,8 +637,8 @@ export function SpatialFleetClient() {
               }
               className={`max-w-[40vw] truncate rounded px-2 py-1 transition ${
                 scene.altitude === 'project'
-                  ? 'text-teal-200'
-                  : 'text-zinc-400 hover:text-zinc-100'
+                  ? 'text-primary'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               {focusedZoneLabel}
@@ -635,9 +647,9 @@ export function SpatialFleetClient() {
         )}
         {scene.altitude === 'agent' && inspectedAgent && (
           <>
-            <span className="text-zinc-600">›</span>
+            <span className="text-muted-foreground">›</span>
             <span
-              className="max-w-[40vw] truncate rounded px-2 py-1 text-teal-200"
+              className="max-w-[40vw] truncate rounded px-2 py-1 text-primary"
               title={inspectedAgent.name}
             >
               {inspectedAgent.name}
@@ -645,15 +657,15 @@ export function SpatialFleetClient() {
           </>
         )}
         {scene.altitude !== 'fleet' && (
-          <span className="hidden text-chrome-meta text-zinc-600 sm:inline">
+          <span className="hidden text-chrome-meta text-muted-foreground sm:inline">
             Esc to zoom out
           </span>
         )}
 
         {scene.altitude !== 'agent' && (
           <div className="ml-auto flex flex-wrap items-center gap-1.5">
-            <div className="flex items-center gap-1 rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">
-              <Search className="h-3 w-3 text-zinc-500" />
+            <div className="flex items-center gap-1 rounded border border-input bg-background px-2 py-1">
+              <Search className="h-3 w-3 text-muted-foreground" />
               <input
                 value={query}
                 onChange={event =>
@@ -670,7 +682,7 @@ export function SpatialFleetClient() {
                 }}
                 placeholder="Search agents…"
                 aria-label="Search agents"
-                className="w-24 rounded-sm bg-transparent text-chrome-meta text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus-visible:ring-1 focus-visible:ring-teal-400/70 sm:w-40"
+                className="w-24 rounded-sm bg-transparent text-chrome-meta text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:w-40"
               />
             </div>
             <div className="flex flex-wrap items-center gap-1">
@@ -681,8 +693,8 @@ export function SpatialFleetClient() {
                   aria-pressed={statusFilter.includes(status)}
                   className={`rounded px-1.5 py-1 text-chrome-micro capitalize transition ${
                     statusFilter.includes(status)
-                      ? 'bg-teal-600 text-white'
-                      : 'text-zinc-400 hover:text-zinc-100'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   {status}
@@ -694,7 +706,7 @@ export function SpatialFleetClient() {
                 onClick={() => {
                   updateFilters({ query: '', statuses: [] });
                 }}
-                className="rounded px-1.5 py-1 text-chrome-micro text-zinc-500 hover:text-zinc-200"
+                className="rounded px-1.5 py-1 text-chrome-micro text-muted-foreground hover:text-foreground"
                 title="Clear search and filters"
               >
                 clear
@@ -743,19 +755,19 @@ export function SpatialFleetClient() {
         </section>
 
         {showSideRail && (
-          <aside className="relative z-10 flex flex-col gap-3 border-t border-zinc-800 bg-zinc-950/94 p-4 pb-24 xl:min-h-0 xl:border-l xl:border-t-0 xl:pb-4">
+          <aside className="exa-material-overlay relative z-10 flex flex-col gap-3 border-t border-border p-4 pb-24 xl:min-h-0 xl:border-l xl:border-t-0 xl:pb-4">
             {inspectedAgent ? (
-              <section className="fleet-panel p-4">
+              <section className="exa-material-raised rounded-lg border border-border p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                       Selected Agent
                     </p>
-                    <h2 className="mt-1 break-words text-xl font-semibold leading-tight text-zinc-50">
+                    <h2 className="mt-1 break-words text-xl font-semibold leading-tight text-foreground">
                       {inspectedAgent.name}
                     </h2>
                   </div>
-                  <span className="inline-flex items-center gap-1.5 rounded border border-zinc-700 bg-zinc-950 px-2 py-1 font-mono text-xs text-zinc-300">
+                  <span className="inline-flex items-center gap-1.5 rounded border border-border bg-background px-2 py-1 font-mono text-xs text-foreground">
                     {inspectedLightState && (
                       <StatusLight
                         decorative
@@ -772,12 +784,12 @@ export function SpatialFleetClient() {
                 </div>
 
                 <div className="mt-4 space-y-1.5">
-                  <p className="text-sm leading-6 text-zinc-300">
+                  <p className="text-sm leading-6 text-foreground">
                     {inspectedGoal?.summary}
                   </p>
                   {inspectedGoal?.context && (
                     <p
-                      className="break-words font-mono text-xs leading-5 text-zinc-500"
+                      className="break-words font-mono text-xs leading-5 text-muted-foreground"
                       title={inspectedGoal.contextTitle ?? undefined}
                     >
                       {inspectedGoal.context}
@@ -785,22 +797,22 @@ export function SpatialFleetClient() {
                   )}
                 </div>
 
-                <dl className="mt-4 grid grid-cols-2 divide-x divide-zinc-800 border-y border-zinc-800 py-3 text-sm">
+                <dl className="mt-4 grid grid-cols-2 divide-x divide-border border-y border-border py-3 text-sm">
                   {/* Spend renders only when the source reports it; a source
                       with usage but no dollars shows tokens instead (absent,
                       never zero — the local and demo transports report no
                       cost by design). */}
                   {inspectedAgent.cost > 0 ? (
                     <div className="px-3 first:pl-0">
-                      <p className="text-xs text-zinc-500">Cost</p>
-                      <p className="mt-1 font-mono text-zinc-100">
+                      <p className="text-xs text-muted-foreground">Cost</p>
+                      <p className="mt-1 font-mono text-foreground">
                         {formatCurrency(inspectedAgent.cost)}
                       </p>
                     </div>
                   ) : inspectedAgent.rawTokens !== undefined ? (
                     <div className="px-3 first:pl-0">
-                      <p className="text-xs text-zinc-500">Tokens</p>
-                      <p className="mt-1 font-mono text-zinc-100">
+                      <p className="text-xs text-muted-foreground">Tokens</p>
+                      <p className="mt-1 font-mono text-foreground">
                         {formatTokens(inspectedAgent.rawTokens)}
                       </p>
                     </div>
@@ -808,21 +820,34 @@ export function SpatialFleetClient() {
                     <div className="px-3 first:pl-0" />
                   )}
                   <div className="px-3">
-                    <p className="text-xs text-zinc-500">Turns</p>
-                    <p className="mt-1 font-mono text-zinc-100">
+                    <p className="text-xs text-muted-foreground">Turns</p>
+                    <p className="mt-1 font-mono text-foreground">
                       {inspectedAgent.turnCount}
                     </p>
                   </div>
                 </dl>
 
                 {inspectedAgent.needsOperator && (
-                  <div className="mt-4 rounded-md border border-red-300/20 bg-red-300/10 p-3 text-sm text-red-100">
+                  <div
+                    className="mt-4 rounded-md border p-3 text-sm"
+                    style={{
+                      borderColor: spatialColorWithAlpha(
+                        spatialTheme.destructive,
+                        0.36
+                      ),
+                      background: spatialColorWithAlpha(
+                        spatialTheme.destructive,
+                        0.1
+                      ),
+                      color: spatialTheme.destructive,
+                    }}
+                  >
                     <div className="flex items-center gap-2 font-semibold">
                       <AlertTriangle className="h-4 w-4" />
                       {inspectedAgent.blockerTitle ?? 'Needs operator'}
                     </div>
                     {inspectedAgent.blockerDescription && (
-                      <p className="mt-2 line-clamp-3 text-red-100/75">
+                      <p className="mt-2 line-clamp-3 opacity-75">
                         {inspectedAgent.blockerDescription}
                       </p>
                     )}
@@ -832,7 +857,18 @@ export function SpatialFleetClient() {
                 {sessionHandoffError && (
                   <p
                     role="alert"
-                    className="mt-4 border border-red-300/20 bg-red-300/10 p-3 text-sm leading-5 text-red-100"
+                    className="mt-4 border p-3 text-sm leading-5"
+                    style={{
+                      borderColor: spatialColorWithAlpha(
+                        spatialTheme.destructive,
+                        0.36
+                      ),
+                      background: spatialColorWithAlpha(
+                        spatialTheme.destructive,
+                        0.1
+                      ),
+                      color: spatialTheme.destructive,
+                    }}
                   >
                     {sessionHandoffError}
                   </p>
@@ -842,7 +878,6 @@ export function SpatialFleetClient() {
                   <Button
                     type="button"
                     data-open-agent-session={inspectedAgent.id}
-                    className="fleet-action-button"
                     disabled={Boolean(sessionHandoffAgentId)}
                     onClick={() => void openInspectedSession()}
                   >
@@ -853,10 +888,7 @@ export function SpatialFleetClient() {
                         : 'Open session'}
                   </Button>
                   {inspectedAgent.needsOperator && !isDemo && (
-                    <Button
-                      asChild
-                      className="fleet-action-button bg-red-200 text-zinc-950 hover:bg-red-100"
-                    >
+                    <Button asChild variant="destructive">
                       <Link
                         href={`/fleet/${encodeURIComponent(inspectedAgent.id)}`}
                       >
@@ -871,17 +903,17 @@ export function SpatialFleetClient() {
             {/* Activity feed — a live event stream, distinct from the hero/blocker
               attention shown on the surface itself (no duplicate blocker list). */}
             <section
-              className={`fleet-panel overflow-hidden p-4 ${
+              className={`exa-material-raised overflow-hidden rounded-lg border border-border p-4 ${
                 visibleActivity.length > 0 ? 'min-h-0 flex-1' : ''
               }`}
             >
-              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-100">
-                <Activity className="h-4 w-4 text-teal-200" />
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Activity className="h-4 w-4 text-primary" />
                 Activity
               </div>
               <div className="space-y-2 overflow-y-auto pr-1">
                 {visibleActivity.length === 0 ? (
-                  <p className="text-sm leading-5 text-zinc-500">
+                  <p className="text-sm leading-5 text-muted-foreground">
                     {scene.altitude === 'fleet'
                       ? 'Waiting for events.'
                       : `No recent activity for this ${scene.altitude === 'agent' ? 'Agent' : 'Project'}.`}
@@ -890,12 +922,12 @@ export function SpatialFleetClient() {
                   visibleActivity.map(item => (
                     <div
                       key={item.id}
-                      className="rounded-md border border-zinc-800/70 bg-zinc-950/50 p-2.5"
+                      className="rounded-md border border-border bg-background/50 p-2.5"
                     >
-                      <p className="truncate text-chrome-meta font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                      <p className="truncate text-chrome-meta font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                         {item.agentName}
                       </p>
-                      <p className="mt-0.5 line-clamp-2 text-sm text-zinc-300">
+                      <p className="mt-0.5 line-clamp-2 text-sm text-foreground">
                         {item.content}
                       </p>
                     </div>

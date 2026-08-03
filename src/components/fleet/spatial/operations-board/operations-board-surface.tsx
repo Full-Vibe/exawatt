@@ -6,6 +6,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  type CSSProperties,
   type ReactNode,
 } from 'react';
 import Link from 'next/link';
@@ -16,7 +17,7 @@ import type {
   SpatialBoardRect,
   SpatialScopeActivity,
 } from '@exawatt/ui-model';
-import { FLUX, exact, tokens } from '@/components/consumption/flux';
+import { exact, tokens } from '@/components/consumption/flux';
 import { AnnouncedChip } from '@/components/readiness';
 import { useAgentFieldGlide } from '@/components/hud/webgl/use-agent-field-glide';
 import {
@@ -27,13 +28,29 @@ import {
 import { RECENTER_SPATIAL_EVENT } from '@/components/nav/command-altitude-events';
 import { altitudeHandoffActive } from '@/components/nav/altitude-handoff';
 import { parseStoredViewport } from '../spatial-navigation-state';
+import { statusLightStateForAgentStatus } from '@/components/status-light/protocol';
+import { useAppearance } from '@/components/appearance/appearance-provider';
+import { mixHexColors } from '@/lib/appearance/color';
+import { resolvedAppearanceCssVariables } from '@/lib/appearance/dom-adapter';
+import type { ResolvedAppearance } from '@/lib/appearance/types';
 import {
-  STATUS_LIGHT_META,
-  statusLightStateForAgentStatus,
-} from '@/components/status-light/protocol';
+  spatialColorWithAlpha,
+  spatialPressureColor,
+  spatialProjectIdentityColor,
+  spatialThemeFromResolvedAppearance,
+  type SpatialThemeSnapshot,
+} from '../spatial-theme';
+
+function spatialMaterialFrame(theme: SpatialThemeSnapshot): CSSProperties {
+  return {
+    borderColor: theme.unitMuted,
+    color: theme.label,
+    boxShadow: `0 12px 32px ${theme.shadow}`,
+  };
+}
 
 class BoardErrorBoundary extends Component<
-  { children: ReactNode },
+  { children: ReactNode; theme: SpatialThemeSnapshot },
   { failed: boolean }
 > {
   state = { failed: false };
@@ -44,18 +61,33 @@ class BoardErrorBoundary extends Component<
 
   render() {
     if (this.state.failed) {
+      const { theme } = this.props;
       return (
-        <div className="grid h-full place-items-center bg-[oklch(0.135_0.009_220)] p-8">
-          <div className="max-w-sm border border-[oklch(0.34_0.018_215)] bg-[oklch(0.16_0.01_220)] p-5 text-left">
-            <p className="text-sm font-semibold text-[oklch(0.88_0.01_210)]">
+        <div
+          className="grid h-full place-items-center p-8"
+          style={{ background: theme.canvas }}
+        >
+          <div
+            className="exa-material-raised max-w-sm border p-5 text-left"
+            style={spatialMaterialFrame(theme)}
+          >
+            <p className="text-sm font-semibold" style={{ color: theme.label }}>
               The spatial renderer is unavailable
             </p>
-            <p className="mt-2 text-xs leading-5 text-[oklch(0.62_0.012_210)]">
+            <p
+              className="mt-2 text-xs leading-5"
+              style={{ color: theme.labelMuted }}
+            >
               Your fleet is still available in the text operations view.
             </p>
             <Link
               href="/fleet"
-              className="mt-4 inline-flex min-h-11 items-center border border-[oklch(0.55_0.07_185)] bg-[oklch(0.24_0.045_185)] px-3 text-xs font-semibold text-[oklch(0.9_0.025_185)] outline-none hover:bg-[oklch(0.28_0.055_185)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.45)]"
+              className="mt-4 inline-flex min-h-11 items-center border px-3 text-xs font-semibold outline-none hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring"
+              style={{
+                borderColor: theme.selection,
+                background: theme.selection,
+                color: theme.material.raised.fallback,
+              }}
             >
               Open Fleet view
             </Link>
@@ -67,10 +99,28 @@ class BoardErrorBoundary extends Component<
   }
 }
 
-function KeyHint({ keyName, label }: { keyName: string; label: string }) {
+function KeyHint({
+  keyName,
+  label,
+  theme,
+}: {
+  keyName: string;
+  label: string;
+  theme: SpatialThemeSnapshot;
+}) {
   return (
-    <span className="flex items-center gap-1.5 whitespace-nowrap text-chrome-micro text-[oklch(0.6_0.012_210)]">
-      <kbd className="border border-[oklch(0.35_0.015_210)] bg-[oklch(0.14_0.009_215/0.94)] px-1.5 py-0.5 font-mono text-chrome-nano text-[oklch(0.73_0.035_190)]">
+    <span
+      className="flex items-center gap-1.5 whitespace-nowrap text-chrome-micro"
+      style={{ color: theme.labelMuted }}
+    >
+      <kbd
+        className="exa-material-raised border px-1.5 py-0.5 font-mono text-chrome-nano"
+        style={{
+          ...spatialMaterialFrame(theme),
+          color: theme.selection,
+          boxShadow: 'none',
+        }}
+      >
         {keyName}
       </kbd>
       <span className="uppercase tracking-[0.12em]">{label}</span>
@@ -85,10 +135,12 @@ function ScopeCount({
   color,
   count,
   label,
+  theme,
 }: {
   color: string;
   count: number;
   label: string;
+  theme: SpatialThemeSnapshot;
 }) {
   return (
     <span className="flex items-center gap-1 whitespace-nowrap">
@@ -97,10 +149,10 @@ function ScopeCount({
         className="h-1.5 w-1.5 rounded-full"
         style={{ background: color, opacity: count > 0 ? 1 : 0.35 }}
       />
-      <span className="font-mono tabular-nums text-[oklch(0.88_0.01_210)]">
+      <span className="font-mono tabular-nums" style={{ color: theme.label }}>
         {count}
       </span>
-      <span className="text-[oklch(0.6_0.012_210)]">{label}</span>
+      <span style={{ color: theme.labelMuted }}>{label}</span>
     </span>
   );
 }
@@ -116,20 +168,26 @@ function ScopeReadout({
   activity,
   selectionCount,
   onClearSelection,
+  theme,
 }: {
   activity: SpatialScopeActivity;
   selectionCount: number;
   onClearSelection?: () => void;
+  theme: SpatialThemeSnapshot;
 }) {
   const selection = selectionCount > 0;
   return (
     <div
       data-board-scope={selection ? 'selection' : 'fleet'}
       data-board-scope-agents={activity.agentCount}
-      className="absolute left-3 top-3 z-10 flex flex-col gap-1.5 border border-[oklch(0.29_0.01_215)] bg-[oklch(0.13_0.008_220/0.92)] px-2.5 py-2"
+      className="exa-material-chrome absolute left-3 top-3 z-10 flex flex-col gap-1.5 border px-2.5 py-2"
+      style={spatialMaterialFrame(theme)}
     >
       <div className="flex items-center justify-between gap-3">
-        <span className="font-mono text-chrome-micro uppercase tracking-[0.12em] text-[oklch(0.68_0.025_190)]">
+        <span
+          className="font-mono text-chrome-micro uppercase tracking-[0.12em]"
+          style={{ color: theme.selection }}
+        >
           {selection
             ? `${selectionCount} selected`
             : `${activity.agentCount} agents`}
@@ -139,7 +197,8 @@ function ScopeReadout({
             type="button"
             aria-label="Clear selection"
             onClick={onClearSelection}
-            className="grid h-5 w-5 place-items-center font-mono text-xs leading-none text-[oklch(0.6_0.012_210)] outline-none transition-colors hover:text-[oklch(0.88_0.01_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)]"
+            className="grid h-5 w-5 place-items-center font-mono text-xs leading-none outline-none transition-opacity hover:opacity-70 focus-visible:ring-2 focus-visible:ring-ring"
+            style={{ color: theme.labelMuted }}
           >
             ×
           </button>
@@ -147,19 +206,22 @@ function ScopeReadout({
       </div>
       <div className="flex items-center gap-2.5 text-chrome-micro">
         <ScopeCount
-          color={STATUS_LIGHT_META.active.color}
+          color={theme.status.active}
           count={activity.working}
           label="working"
+          theme={theme}
         />
         <ScopeCount
-          color={STATUS_LIGHT_META['needs-you'].color}
+          color={theme.status['needs-you']}
           count={activity.blocked}
           label="blocked"
+          theme={theme}
         />
         <ScopeCount
-          color={STATUS_LIGHT_META.off.color}
+          color={theme.status.off}
           count={activity.idle}
           label="idle"
+          theme={theme}
         />
       </div>
       {activity.burn && (
@@ -168,14 +230,17 @@ function ScopeReadout({
           className="flex items-baseline gap-1.5 text-chrome-micro"
           title={`${exact(activity.burn.rawTokens)} raw tokens, session to date, across ${activity.burn.reportedCount} reporting ${activity.burn.reportedCount === 1 ? 'Agent' : 'Agents'}${activity.burn.unreportedCount > 0 ? ` · ${activity.burn.unreportedCount} unreported` : ''}`}
         >
-          <span className="font-mono tabular-nums text-[oklch(0.88_0.01_210)]">
+          <span
+            className="font-mono tabular-nums"
+            style={{ color: theme.label }}
+          >
             {tokens(activity.burn.rawTokens)}
           </span>
           {/* the figure states its basis and window like every consumption
               readout: raw units, each Agent's session to date */}
-          <span className="text-[oklch(0.6_0.012_210)]">raw · session</span>
+          <span style={{ color: theme.labelMuted }}>raw · session</span>
           {activity.burn.unreportedCount > 0 && (
-            <span style={{ color: FLUX.unknown }}>
+            <span style={{ color: theme.consumption.unknown }}>
               {activity.burn.unreportedCount} unreported
             </span>
           )}
@@ -197,10 +262,12 @@ function BoardMiniMap({
   layout,
   viewportRef,
   onRecenter,
+  theme,
 }: {
   layout: SpatialBoardLayout;
   viewportRef: { current: SVGRectElement | null };
   onRecenter: () => void;
+  theme: SpatialThemeSnapshot;
 }) {
   const bounds = layout.minimap.bounds;
   const width = Math.max(bounds.width, 1);
@@ -210,7 +277,8 @@ function BoardMiniMap({
       type="button"
       aria-label="Recenter board from minimap"
       onClick={onRecenter}
-      className="block h-11 w-16 border border-[oklch(0.34_0.014_210)] bg-[oklch(0.15_0.009_220/0.96)] p-1.5 outline-none transition-colors hover:border-[oklch(0.52_0.055_185)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:h-24 sm:w-40 sm:p-2"
+      className="exa-material-chrome block h-11 w-16 border p-1.5 outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring sm:h-24 sm:w-40 sm:p-2"
+      style={spatialMaterialFrame(theme)}
     >
       <svg
         viewBox={`${bounds.x} ${bounds.y} ${width} ${height}`}
@@ -225,11 +293,11 @@ function BoardMiniMap({
             y={zone.rect.y}
             width={zone.rect.width}
             height={zone.rect.height}
-            fill={
-              zone.visible ? 'oklch(0.35 0.025 200)' : 'oklch(0.2 0.01 215)'
-            }
+            fill={zone.visible ? theme.zoneHover : theme.zone}
             stroke={
-              zone.selected ? 'oklch(0.75 0.09 185)' : 'oklch(0.48 0.025 210)'
+              zone.selected
+                ? theme.selection
+                : spatialProjectIdentityColor(theme, zone.id)
             }
             strokeWidth={0.45}
             vectorEffect="non-scaling-stroke"
@@ -242,7 +310,7 @@ function BoardMiniMap({
           width={layout.cameraBounds.width}
           height={layout.cameraBounds.height}
           fill="none"
-          stroke="oklch(0.82 0.11 185)"
+          stroke={theme.selection}
           strokeWidth={1.2}
           vectorEffect="non-scaling-stroke"
         />
@@ -276,6 +344,7 @@ export function OperationsBoardSurface({
   sessionTransitionAgentId = null,
   viewportStorageKey = 'exawatt:spatial-viewport:v2:fleet:~:~:top-down',
   preserveDrawingBuffer = false,
+  resolvedAppearance,
 }: {
   layout: SpatialBoardLayout;
   projection: SpatialBoardProjection;
@@ -301,7 +370,20 @@ export function OperationsBoardSurface({
   sessionTransitionAgentId?: string | null;
   viewportStorageKey?: string;
   preserveDrawingBuffer?: boolean;
+  /** Deterministic gallery/eval injection. Production omits this and consumes
+   * the app-global AppearanceProvider snapshot. */
+  resolvedAppearance?: ResolvedAppearance;
 }) {
+  const appearance = useAppearance();
+  const resolved = resolvedAppearance ?? appearance.resolved;
+  const theme = useMemo(
+    () => spatialThemeFromResolvedAppearance(resolved),
+    [resolved]
+  );
+  const appearanceVariables = useMemo(
+    () => resolvedAppearanceCssVariables(resolved) as CSSProperties,
+    [resolved]
+  );
   const controller = useRef<OperationsBoardHandle | null>(null);
   const viewportRect = useRef<SVGRectElement | null>(null);
   const bandOverlay = useRef<HTMLDivElement | null>(null);
@@ -511,10 +593,25 @@ export function OperationsBoardSurface({
       data-board-status-lights={visibleLightStates}
       data-board-multi-count={multiSelection?.size ?? 0}
       data-session-handoff={sessionTransitionAgentId ?? undefined}
-      className="relative h-full w-full overflow-hidden bg-[oklch(0.135_0.009_220)]"
+      data-spatial-theme={theme.themeId}
+      data-spatial-bloom={theme.bloom.enabled ? 'on' : 'off'}
+      data-exa-theme={resolved.themeId}
+      data-exa-appearance={resolved.appearance}
+      data-exa-contrast={resolved.enhancedContrast ? 'enhanced' : 'standard'}
+      data-exa-transparency={
+        resolved.reducedTransparency ? 'reduced' : 'standard'
+      }
+      data-exa-font={resolved.interfaceFont}
+      data-exa-typography={resolved.theme.typography.profile}
+      className="relative h-full w-full overflow-hidden"
+      style={{
+        ...appearanceVariables,
+        background: theme.canvas,
+        color: theme.label,
+      }}
     >
       <div className="absolute inset-0">
-        <BoardErrorBoundary>
+        <BoardErrorBoundary theme={theme}>
           <OperationsBoardCanvas
             layout={layout}
             projection={projection}
@@ -530,6 +627,7 @@ export function OperationsBoardSurface({
             onBandSelect={onBandSelect}
             bandOverlayRef={bandOverlay}
             preserveDrawingBuffer={preserveDrawingBuffer}
+            theme={theme}
           />
         </BoardErrorBoundary>
       </div>
@@ -542,18 +640,28 @@ export function OperationsBoardSurface({
           ref={bandOverlay}
           data-board-band-overlay
           aria-hidden="true"
-          className="pointer-events-none absolute z-10 border border-dashed border-[oklch(0.75_0.09_185/0.9)] bg-[oklch(0.75_0.09_185/0.08)]"
-          style={{ display: 'none' }}
+          className="pointer-events-none absolute z-10 border border-dashed"
+          style={{
+            display: 'none',
+            borderColor: theme.selection,
+            background: theme.selectionWash,
+          }}
         />
       )}
 
       {visibleZones.length === 0 && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center p-8">
-          <div className="max-w-sm border border-[oklch(0.31_0.012_215)] bg-[oklch(0.15_0.009_220/0.96)] p-4 text-center shadow-[0_18px_60px_oklch(0.06_0.01_220/0.45)]">
-            <p className="text-sm font-medium text-[oklch(0.84_0.012_210)]">
+          <div
+            className="exa-material-overlay max-w-sm border p-4 text-center"
+            style={spatialMaterialFrame(theme)}
+          >
+            <p className="text-sm font-medium" style={{ color: theme.label }}>
               No Agents match this view
             </p>
-            <p className="mt-1 text-xs leading-5 text-[oklch(0.6_0.012_210)]">
+            <p
+              className="mt-1 text-xs leading-5"
+              style={{ color: theme.labelMuted }}
+            >
               Clear the active search or status filters to restore the board.
             </p>
           </div>
@@ -572,18 +680,34 @@ export function OperationsBoardSurface({
               activity={scopeActivity}
               selectionCount={multiSelection?.size ?? 0}
               onClearSelection={onClearMultiSelect}
+              theme={theme}
             />
           )}
         {hero && layout.altitude !== 'agent' && (
           <button
             type="button"
             onClick={() => onSelectAgent(hero.agentId)}
-            className="absolute left-1/2 top-3 z-10 max-w-[min(30rem,calc(100%-2rem))] -translate-x-1/2 border border-[oklch(0.56_0.12_28)] bg-[oklch(0.19_0.045_28/0.97)] px-3 py-2 text-left shadow-[0_12px_32px_oklch(0.07_0.025_28/0.5)] outline-none transition-[border-color,transform] duration-150 hover:border-[oklch(0.68_0.14_28)] active:translate-y-px focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.12_28/0.45)]"
+            className="exa-material-overlay absolute left-1/2 top-3 z-10 max-w-[min(30rem,calc(100%-2rem))] -translate-x-1/2 border px-3 py-2 text-left outline-none transition-[filter,transform] duration-150 hover:brightness-105 active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring"
+            style={{
+              ...spatialMaterialFrame(theme),
+              borderColor: theme.attention,
+              background: mixHexColors(
+                theme.material.overlay.fallback,
+                theme.attention,
+                theme.appearance === 'light' ? 0.08 : 0.14
+              ),
+            }}
           >
-            <span className="block truncate text-xs font-semibold text-[oklch(0.92_0.025_28)]">
+            <span
+              className="block truncate text-xs font-semibold"
+              style={{ color: theme.label }}
+            >
               {hero.title}
             </span>
-            <span className="mt-0.5 block truncate text-chrome-micro text-[oklch(0.72_0.05_28)]">
+            <span
+              className="mt-0.5 block truncate text-chrome-micro"
+              style={{ color: theme.attention }}
+            >
               {hero.reason}
             </span>
           </button>
@@ -593,32 +717,46 @@ export function OperationsBoardSurface({
           <button
             type="button"
             onClick={() => triage(1)}
-            className="absolute bottom-16 left-3 z-10 min-h-11 border border-[oklch(0.52_0.1_28)] bg-[oklch(0.18_0.035_28/0.94)] px-2.5 py-1.5 font-mono text-chrome-micro text-[oklch(0.78_0.09_28)] outline-none transition-colors hover:bg-[oklch(0.22_0.045_28/0.98)] focus-visible:ring-2 focus-visible:ring-[oklch(0.68_0.12_28/0.4)] sm:bottom-3"
+            className="exa-material-raised absolute bottom-16 left-3 z-10 min-h-11 border px-2.5 py-1.5 font-mono text-chrome-micro outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring sm:bottom-3"
+            style={{
+              ...spatialMaterialFrame(theme),
+              borderColor: theme.attention,
+              color: theme.attention,
+            }}
           >
             {attentionIds.length} need attention
           </button>
         )}
 
-        <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 hidden -translate-x-1/2 flex-wrap items-center justify-center gap-x-3 gap-y-1.5 border border-[oklch(0.29_0.01_215)] bg-[oklch(0.13_0.008_220/0.9)] px-2.5 py-2 xl:flex">
+        <div
+          className="exa-material-chrome pointer-events-none absolute bottom-3 left-1/2 z-10 hidden -translate-x-1/2 flex-wrap items-center justify-center gap-x-3 gap-y-1.5 border px-2.5 py-2 xl:flex"
+          style={spatialMaterialFrame(theme)}
+        >
           {layout.altitude === 'fleet' && (
-            <KeyHint keyName="1–9" label="Project" />
+            <KeyHint keyName="1–9" label="Project" theme={theme} />
           )}
-          <KeyHint keyName="drag ←↑↓→" label="pan" />
-          <KeyHint keyName="pinch + −" label="zoom" />
-          {onBandSelect && <KeyHint keyName="⇧ drag" label="select" />}
-          <KeyHint keyName="V" label="view" />
-          {onLensChange && <KeyHint keyName="B" label="burn" />}
-          {attentionIds.length > 0 && <KeyHint keyName="N" label="attention" />}
+          <KeyHint keyName="drag ←↑↓→" label="pan" theme={theme} />
+          <KeyHint keyName="pinch + −" label="zoom" theme={theme} />
+          {onBandSelect && (
+            <KeyHint keyName="⇧ drag" label="select" theme={theme} />
+          )}
+          <KeyHint keyName="V" label="view" theme={theme} />
+          {onLensChange && <KeyHint keyName="B" label="burn" theme={theme} />}
+          {attentionIds.length > 0 && (
+            <KeyHint keyName="N" label="attention" theme={theme} />
+          )}
           <KeyHint
             keyName={layout.altitude === 'fleet' ? '0' : 'Esc'}
             label={layout.altitude === 'fleet' ? 'recenter' : 'zoom out'}
+            theme={theme}
           />
         </div>
 
         <div className="absolute bottom-3 right-3 z-10 flex flex-row items-end gap-1.5 sm:flex-col">
           <div
-            className="flex border border-[oklch(0.34_0.014_210)] bg-[oklch(0.15_0.009_220/0.96)] p-1"
+            className="exa-material-chrome flex border p-1"
             aria-label="Board projection"
+            style={spatialMaterialFrame(theme)}
           >
             {(['top-down', 'fixed-angle'] as const).map(option => (
               <button
@@ -626,11 +764,15 @@ export function OperationsBoardSurface({
                 type="button"
                 aria-pressed={projection === option}
                 onClick={() => onProjectionChange(option)}
-                className={`min-h-11 px-2 font-mono text-chrome-micro font-semibold uppercase tracking-[0.1em] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:px-3 ${
+                className="min-h-11 px-2 font-mono text-chrome-micro font-semibold uppercase tracking-[0.1em] outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
+                style={
                   projection === option
-                    ? 'bg-[oklch(0.32_0.055_185)] text-[oklch(0.92_0.025_185)]'
-                    : 'text-[oklch(0.62_0.012_210)] hover:bg-[oklch(0.2_0.015_210)] hover:text-[oklch(0.82_0.015_210)]'
-                }`}
+                    ? {
+                        background: theme.selection,
+                        color: theme.material.chrome.fallback,
+                      }
+                    : { color: theme.labelMuted }
+                }
               >
                 {option === 'top-down' ? 'Top' : 'Angle'}
               </button>
@@ -640,8 +782,9 @@ export function OperationsBoardSurface({
           {onLensChange && (
             <div className="flex flex-col items-stretch gap-1">
               <div
-                className="flex border border-[oklch(0.34_0.014_210)] bg-[oklch(0.15_0.009_220/0.96)] p-1"
+                className="exa-material-chrome flex border p-1"
                 aria-label="Board color lens"
+                style={spatialMaterialFrame(theme)}
               >
                 {(['status', 'burn'] as const).map(option => (
                   <button
@@ -655,13 +798,18 @@ export function OperationsBoardSurface({
                         : 'Color by agent status'
                     }
                     onClick={() => onLensChange(option)}
-                    className={`min-h-11 px-2 font-mono text-chrome-micro font-semibold uppercase tracking-[0.1em] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:px-3 ${
+                    className="min-h-11 px-2 font-mono text-chrome-micro font-semibold uppercase tracking-[0.1em] outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
+                    style={
                       lens === option
-                        ? option === 'burn'
-                          ? 'bg-[oklch(0.28_0.09_305)] text-[oklch(0.9_0.06_320)]'
-                          : 'bg-[oklch(0.32_0.055_185)] text-[oklch(0.92_0.025_185)]'
-                        : 'text-[oklch(0.62_0.012_210)] hover:bg-[oklch(0.2_0.015_210)] hover:text-[oklch(0.82_0.015_210)]'
-                    }`}
+                        ? {
+                            background:
+                              option === 'burn'
+                                ? theme.consumption.mid
+                                : theme.selection,
+                            color: theme.material.chrome.fallback,
+                          }
+                        : { color: theme.labelMuted }
+                    }
                   >
                     {option === 'status' ? 'Status' : 'Burn'}
                   </button>
@@ -670,21 +818,25 @@ export function OperationsBoardSurface({
               {lens === 'burn' && (
                 <div
                   data-board-lens-legend
-                  className="hidden border border-[oklch(0.3_0.012_215)] bg-[oklch(0.14_0.009_220/0.94)] px-1.5 py-1 sm:block"
+                  className="exa-material-chrome hidden border px-1.5 py-1 sm:block"
+                  style={spatialMaterialFrame(theme)}
                 >
                   <span
                     aria-hidden="true"
                     className="block h-1 w-full"
                     style={{
-                      background: `linear-gradient(90deg, ${FLUX.calm}, ${FLUX.mid}, ${FLUX.warm}, ${FLUX.hot})`,
+                      background: `linear-gradient(90deg, ${theme.consumption.calm}, ${theme.consumption.mid}, ${theme.consumption.warm}, ${theme.consumption.hot})`,
                     }}
                   />
                   <span
                     className="mt-1 block font-mono text-chrome-nano tracking-[0.08em]"
-                    style={{ color: 'oklch(0.62 0.012 210)' }}
+                    style={{ color: theme.labelMuted }}
                   >
                     share of normalized burn ·{' '}
-                    <span style={{ color: FLUX.unknown }}>grey</span> unreported
+                    <span style={{ color: theme.consumption.unknown }}>
+                      grey
+                    </span>{' '}
+                    unreported
                   </span>
                 </div>
               )}
@@ -695,14 +847,19 @@ export function OperationsBoardSurface({
             layout={layout}
             viewportRef={viewportRect}
             onRecenter={() => controller.current?.recenter()}
+            theme={theme}
           />
 
-          <div className="flex border border-[oklch(0.34_0.014_210)] bg-[oklch(0.15_0.009_220/0.96)] p-1">
+          <div
+            className="exa-material-chrome flex border p-1"
+            style={spatialMaterialFrame(theme)}
+          >
             <button
               type="button"
               aria-label="Zoom out"
               onClick={() => controller.current?.zoom(-1)}
-              className="grid h-11 w-11 place-items-center font-mono text-sm text-[oklch(0.72_0.02_210)] outline-none hover:bg-[oklch(0.21_0.015_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)]"
+              className="grid h-11 w-11 place-items-center font-mono text-sm outline-none hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring"
+              style={{ color: theme.labelMuted }}
             >
               −
             </button>
@@ -710,7 +867,8 @@ export function OperationsBoardSurface({
               type="button"
               aria-label="Recenter board"
               onClick={() => controller.current?.recenter()}
-              className="grid h-11 min-w-11 place-items-center border-x border-[oklch(0.3_0.012_210)] px-1 font-mono text-chrome-micro uppercase tracking-[0.08em] text-[oklch(0.68_0.025_190)] outline-none hover:bg-[oklch(0.21_0.015_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:px-2"
+              className="grid h-11 min-w-11 place-items-center border-x px-1 font-mono text-chrome-micro uppercase tracking-[0.08em] outline-none hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring sm:px-2"
+              style={{ borderColor: theme.unitMuted, color: theme.selection }}
             >
               Center
             </button>
@@ -718,7 +876,8 @@ export function OperationsBoardSurface({
               type="button"
               aria-label="Zoom in"
               onClick={() => controller.current?.zoom(1)}
-              className="grid h-11 w-11 place-items-center font-mono text-sm text-[oklch(0.72_0.02_210)] outline-none hover:bg-[oklch(0.21_0.015_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)]"
+              className="grid h-11 w-11 place-items-center font-mono text-sm outline-none hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring"
+              style={{ color: theme.labelMuted }}
             >
               +
             </button>
@@ -732,12 +891,20 @@ export function OperationsBoardSurface({
           aria-live="polite"
           className="pointer-events-none absolute inset-0 z-20 grid place-items-center"
           style={{
-            background:
-              'radial-gradient(ellipse at center, oklch(0.08 0.008 220 / 0) 30%, oklch(0.08 0.008 220 / 0.55) 100%)',
+            background: `radial-gradient(ellipse at center, ${spatialColorWithAlpha(theme.canvas, 0)} 30%, ${spatialColorWithAlpha(theme.canvas, 0.72)} 100%)`,
           }}
         >
-          <div className="board-control-enter border border-[oklch(0.48_0.055_185)] bg-[oklch(0.13_0.012_220/0.94)] px-4 py-2 text-center shadow-[0_16px_48px_oklch(0.04_0.01_220/0.55)]">
-            <span className="block font-mono text-chrome-micro uppercase tracking-[0.14em] text-[oklch(0.82_0.055_185)]">
+          <div
+            className="exa-material-overlay board-control-enter border px-4 py-2 text-center"
+            style={{
+              ...spatialMaterialFrame(theme),
+              borderColor: theme.selection,
+            }}
+          >
+            <span
+              className="block font-mono text-chrome-micro uppercase tracking-[0.14em]"
+              style={{ color: theme.selection }}
+            >
               Opening session
             </span>
             {(() => {
@@ -745,7 +912,10 @@ export function OperationsBoardSurface({
                 entry => entry.agentId === sessionTransitionAgentId
               );
               return piece ? (
-                <span className="mt-0.5 block max-w-56 truncate text-chrome-meta font-medium text-[oklch(0.9_0.01_210)]">
+                <span
+                  className="mt-0.5 block max-w-56 truncate text-chrome-meta font-medium"
+                  style={{ color: theme.label }}
+                >
                   {piece.label}
                 </span>
               ) : null;

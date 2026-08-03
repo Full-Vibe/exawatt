@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
 import { selectSpatialBoardLayout } from '@exawatt/ui-model';
 import { OperationsBoardSurface } from '@/components/fleet/spatial/operations-board/operations-board-surface';
+import { THEME_REGISTRY } from '@/generated/theme-registry';
+import { resolveAppearance } from '@/lib/appearance/resolve-appearance';
+import type { BuiltInThemeId } from '@/lib/appearance/types';
 
 const metrics: FleetMetrics = {
   activeCount: 2,
@@ -86,16 +89,43 @@ const state: FleetState = {
   lastUpdated: 1,
 };
 
+const EVAL_THEME_IDS = {
+  air: 'exawatt-air-light',
+  classic: 'exawatt-classic-dark',
+  night: 'exawatt-night-dark',
+} as const satisfies Record<string, BuiltInThemeId>;
+
+declare global {
+  interface Window {
+    __EVAL_SET_BOARD_THEME__?: (theme: keyof typeof EVAL_THEME_IDS) => void;
+  }
+}
+
 export default function OperationsBoardEvalPage() {
   // Eval-only altitude override so screenshots can grade the Team-altitude
   // regime (satellites + control copy) against the same fixture fleet. Read
   // after mount so the server and first client render agree.
   const [focusedProject, setFocusedProject] = useState<string | null>(null);
+  const [themeId, setThemeId] = useState<BuiltInThemeId>(
+    'exawatt-classic-dark'
+  );
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('altitude') === 'project') {
       setFocusedProject(params.get('project') ?? 'project:Atlas');
     }
+    const requested = params.get('theme');
+    if (requested && requested in EVAL_THEME_IDS) {
+      setThemeId(EVAL_THEME_IDS[requested as keyof typeof EVAL_THEME_IDS]);
+    }
+  }, []);
+  useEffect(() => {
+    window.__EVAL_SET_BOARD_THEME__ = theme => {
+      setThemeId(EVAL_THEME_IDS[theme]);
+    };
+    return () => {
+      delete window.__EVAL_SET_BOARD_THEME__;
+    };
   }, []);
   const layout = useMemo(
     () =>
@@ -107,9 +137,40 @@ export default function OperationsBoardEvalPage() {
       ),
     [focusedProject]
   );
+  const resolvedAppearance = useMemo(() => {
+    const theme = THEME_REGISTRY[themeId];
+    return resolveAppearance(
+      THEME_REGISTRY,
+      {
+        schemaVersion: 1,
+        selection: { mode: 'manual', themeId },
+        accentSource: 'theme',
+        interfaceFont: 'theme',
+        interfaceScale: 100,
+        contrast: 'system',
+        transparency: 'system',
+      },
+      {
+        dark: theme.appearance === 'dark',
+        highContrast: false,
+        forcedColors: false,
+        invertedColors: false,
+        reducedTransparency: false,
+      }
+    );
+  }, [themeId]);
   return (
-    <main className="h-screen min-h-[620px] bg-[#101418] p-5">
-      <div className="h-full overflow-hidden border border-[#354149]">
+    <main
+      className="h-screen min-h-[620px] p-5"
+      data-eval-board-theme={themeId}
+      style={{ background: resolvedAppearance.theme.foundation.canvas }}
+    >
+      <div
+        className="h-full overflow-hidden border"
+        style={{
+          borderColor: resolvedAppearance.theme.foundation.borderStrong,
+        }}
+      >
         <OperationsBoardSurface
           layout={layout}
           projection="top-down"
@@ -123,6 +184,7 @@ export default function OperationsBoardEvalPage() {
           onOverview={() => undefined}
           onProjectionChange={() => undefined}
           preserveDrawingBuffer
+          resolvedAppearance={resolvedAppearance}
         />
       </div>
     </main>

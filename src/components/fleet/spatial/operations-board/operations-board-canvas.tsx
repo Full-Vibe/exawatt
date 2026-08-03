@@ -26,7 +26,6 @@ import type {
   SpatialBoardProjectZone,
   SpatialBoardRect,
 } from '@exawatt/ui-model';
-import { FLUX, pressureColor } from '@/components/consumption/flux';
 import {
   STATUS_LIGHT_ACTIVE_ROTATION_SECONDS,
   STATUS_LIGHT_META,
@@ -48,92 +47,32 @@ import {
   solveEntryPose,
   type HandoffPoseDetail,
 } from '@/components/nav/altitude-handoff';
+import {
+  spatialColorWithAlpha,
+  spatialPressureColor,
+  spatialProjectIdentityColor,
+  spatialProjectZoneFill,
+  spatialStatusColor,
+  type SpatialThemeSnapshot,
+} from '../spatial-theme';
 
 const OperationsBoardEffects = lazy(() => import('./operations-board-effects'));
 
-const BOARD_COLOR = {
-  background: '#0e1216',
-  plane: '#12181d',
-  grid: '#28323a',
-  gridMajor: '#39454e',
-  zoneHover: '#232d33',
-  border: '#43515a',
-  borderSelected: '#75c8bd',
-} as const;
-
-const PIECE_BODY = '#263139';
-
-/** Per-project accent hues for zone edges — muted neon, no reds. */
-const PROJECT_ACCENTS = [
-  '#4fd8c4',
-  '#5aa7e8',
-  '#b8a76a',
-  '#9a8fe8',
-  '#6fc487',
-  '#5ac4d8',
-] as const;
-
-function statusColor(status: SpatialBoardPiece['status']): string {
-  return STATUS_LIGHT_META[statusLightStateForAgentStatus(status)].color;
-}
-
-/**
- * Burn-lens palette (ENG-008): the consumption FLUX pressure ramp
- * pre-sampled into a module-scope LUT (never allocated per frame), plus the
- * neutral unknown for unreported usage. The ramp is violet→magenta by
- * design-kernel channel ownership — a hot zone can never read as a status.
- */
 const BURN_RAMP_STEPS = 32;
-const BURN_RAMP_COLORS = Array.from(
-  { length: BURN_RAMP_STEPS + 1 },
-  (_, index) => new THREE.Color(pressureColor((index / BURN_RAMP_STEPS) * 100))
-);
-const BURN_UNKNOWN_COLOR = new THREE.Color(FLUX.unknown);
-
-function burnRampColor(intensity: number | null | undefined): THREE.Color {
-  if (intensity == null || intensity < 0) return BURN_UNKNOWN_COLOR;
-  const clamped = Math.max(0, Math.min(1, intensity));
-  return BURN_RAMP_COLORS[Math.round(clamped * BURN_RAMP_STEPS)]!;
-}
 
 /** One color decision for every piece mark: status protocol by default, the
  *  FLUX ramp under the burn lens. Shape always keeps carrying status (D30
  *  redundant channels), so the lens swaps only the hue channel. */
 function pieceLensColor(
   piece: SpatialBoardPiece,
-  lens: SpatialBoardLens
-): THREE.Color | string {
+  lens: SpatialBoardLens,
+  theme: SpatialThemeSnapshot
+): string {
   return lens === 'burn'
-    ? burnRampColor(piece.burnIntensity)
-    : statusColor(piece.status);
-}
-
-function hashId(id: string): number {
-  let hash = 0;
-  for (let index = 0; index < id.length; index++) {
-    hash = (hash * 31 + id.charCodeAt(index)) >>> 0;
-  }
-  return hash;
-}
-
-function projectAccent(projectId: string): string {
-  return PROJECT_ACCENTS[hashId(projectId) % PROJECT_ACCENTS.length]!;
-}
-
-const zoneFillCache = new Map<string, string>();
-/** Zone plate fill: the project accent pulled far down toward the board, so
- *  each sector reads as a distinct lit plate without competing with pieces. */
-function zoneFill(projectId: string): string {
-  const cached = zoneFillCache.get(projectId);
-  if (cached) return cached;
-  const color = new THREE.Color(projectAccent(projectId));
-  // The lit lambert plate roughly doubles perceived brightness — keep the
-  // accent contribution tiny so plates stay dark with a readable hue whisper.
-  color.multiplyScalar(0.05);
-  color.add(new THREE.Color('#0c1114'));
-  const fill = `#${color.getHexString()}`;
-  zoneFillCache.set(projectId, fill);
-  return fill;
+    ? piece.burnIntensity == null || piece.burnIntensity < 0
+      ? theme.consumption.unknown
+      : spatialPressureColor(theme, piece.burnIntensity)
+    : spatialStatusColor(theme, piece.status);
 }
 
 /** Reads matchMedia synchronously on mount (guide rule 12): initializing to
@@ -451,8 +390,7 @@ function BoardCameraRig({
     }
     targetForRect(layout.cameraBounds);
     if (!initialized.current || reduced) {
-      const entered =
-        !initialized.current && !reduced && tryEnterFromHandoff();
+      const entered = !initialized.current && !reduced && tryEnterFromHandoff();
       initialized.current = true;
       if (!entered) {
         snapToTarget();
@@ -782,7 +720,8 @@ function BoardCameraRig({
 function gridGeometry(
   bounds: SpatialBoardRect,
   step: number,
-  major: boolean
+  major: boolean,
+  theme: SpatialThemeSnapshot
 ): THREE.BufferGeometry {
   const margin = 30;
   const minX = Math.floor((bounds.x - margin) / step) * step;
@@ -792,9 +731,7 @@ function gridGeometry(
   const centerX = bounds.x + bounds.width / 2;
   const centerY = bounds.y + bounds.height / 2;
   const maxRadius = Math.max(Math.hypot(maxX - centerX, maxY - centerY), 1);
-  const base = new THREE.Color(
-    major ? BOARD_COLOR.gridMajor : BOARD_COLOR.grid
-  );
+  const base = new THREE.Color(major ? theme.gridMajor : theme.grid);
   const points: number[] = [];
   const colors: number[] = [];
   const scratch = new THREE.Color();
@@ -837,9 +774,21 @@ function gridGeometry(
   return geometry;
 }
 
-function BoardGrid({ bounds }: { bounds: SpatialBoardRect }) {
-  const minor = useMemo(() => gridGeometry(bounds, 2, false), [bounds]);
-  const major = useMemo(() => gridGeometry(bounds, 2, true), [bounds]);
+function BoardGrid({
+  bounds,
+  theme,
+}: {
+  bounds: SpatialBoardRect;
+  theme: SpatialThemeSnapshot;
+}) {
+  const minor = useMemo(
+    () => gridGeometry(bounds, 2, false, theme),
+    [bounds, theme]
+  );
+  const major = useMemo(
+    () => gridGeometry(bounds, 2, true, theme),
+    [bounds, theme]
+  );
   useEffect(
     () => () => {
       minor.dispose();
@@ -854,7 +803,7 @@ function BoardGrid({ bounds }: { bounds: SpatialBoardRect }) {
     <>
       <mesh position={[center.x, center.y, -1.2]} raycast={() => null}>
         <planeGeometry args={[planeWidth, planeHeight]} />
-        <meshBasicMaterial color={BOARD_COLOR.plane} />
+        <meshBasicMaterial color={theme.zone} />
       </mesh>
       <lineSegments geometry={minor} raycast={() => null}>
         <lineBasicMaterial vertexColors transparent opacity={0.6} />
@@ -867,24 +816,23 @@ function BoardGrid({ bounds }: { bounds: SpatialBoardRect }) {
 }
 
 /** All zone edges in ONE Line2 draw: per-vertex accent colors carry each
- *  Project's hue; selection/hover brighten their zone's vertices. The bright
- *  states cross the bloom threshold (toneMapped={false}) and glow. */
+ *  Project's hue, while selection replaces identity with the selection role.
+ *  Concrete sRGB values enter Three's color-managed working space once. */
 function ZoneEdges({
   zones,
-  hoveredId,
+  theme,
 }: {
   zones: SpatialBoardProjectZone[];
-  hoveredId: string | null;
+  theme: SpatialThemeSnapshot;
 }) {
   const { points, colors } = useMemo(() => {
     const points: Array<[number, number, number]> = [];
     const colors: THREE.Color[] = [];
     for (const zone of zones) {
       const accent = new THREE.Color(
-        zone.selected ? BOARD_COLOR.borderSelected : projectAccent(zone.id)
-      );
-      accent.multiplyScalar(
-        zone.selected ? 1.5 : hoveredId === zone.id ? 1.15 : 0.72
+        zone.selected
+          ? theme.selection
+          : spatialProjectIdentityColor(theme, zone.id)
       );
       const { x, y, width, height } = zone.rect;
       const z = 0.35;
@@ -900,7 +848,7 @@ function ZoneEdges({
       }
     }
     return { points, colors };
-  }, [hoveredId, zones]);
+  }, [theme, zones]);
   if (points.length === 0) return null;
   return (
     <Line
@@ -910,7 +858,7 @@ function ZoneEdges({
       lineWidth={1.4}
       toneMapped={false}
       transparent
-      opacity={0.95}
+      opacity={1}
       depthWrite={false}
       raycast={() => null}
     />
@@ -926,6 +874,7 @@ function ZoneLayer({
   onToggleZoneSelect,
   onHover,
   hoveredId,
+  theme,
 }: {
   zones: SpatialBoardProjectZone[];
   reduced: boolean;
@@ -933,6 +882,7 @@ function ZoneLayer({
   onToggleZoneSelect?: (zoneId: string) => void;
   onHover: (zoneId: string | null) => void;
   hoveredId: string | null;
+  theme: SpatialThemeSnapshot;
 }) {
   const materialRef = useRef<THREE.MeshLambertMaterial>(null);
   const entrance = useRef(reduced ? 1 : 0);
@@ -970,8 +920,8 @@ function ZoneLayer({
               scale={[zone.rect.width, zone.rect.height, 0.62]}
               color={
                 hoveredId === zone.id
-                  ? BOARD_COLOR.zoneHover
-                  : zoneFill(zone.id)
+                  ? theme.zoneHover
+                  : spatialProjectZoneFill(theme, zone.id)
               }
               onPointerOver={event => {
                 if (!interactive) return;
@@ -994,12 +944,18 @@ function ZoneLayer({
           );
         })}
       </Instances>
-      <ZoneEdges zones={zones} hoveredId={hoveredId} />
+      <ZoneEdges zones={zones} theme={theme} />
     </>
   );
 }
 
-function ProjectHealthRail({ zone }: { zone: SpatialBoardProjectZone }) {
+function ProjectHealthRail({
+  zone,
+  theme,
+}: {
+  zone: SpatialBoardProjectZone;
+  theme: SpatialThemeSnapshot;
+}) {
   const total = Math.max(zone.agentCount, 1);
   const segments: Array<[StatusLightState, number]> = [
     ['active', zone.statusCounts.working + zone.statusCounts.reviewing],
@@ -1009,14 +965,17 @@ function ProjectHealthRail({ zone }: { zone: SpatialBoardProjectZone }) {
     ['off', zone.statusCounts.idle],
   ];
   return (
-    <span className="mt-1 flex h-[3px] w-full overflow-hidden bg-[oklch(0.22_0.008_220)]">
+    <span
+      className="mt-1 flex h-[3px] w-full overflow-hidden"
+      style={{ background: spatialColorWithAlpha(theme.unitMuted, 0.28) }}
+    >
       {segments.map(([status, count]) =>
         count > 0 ? (
           <span
             key={status}
             style={{
               width: `${(count / total) * 100}%`,
-              background: STATUS_LIGHT_META[status].color,
+              background: theme.status[status],
             }}
           />
         ) : null
@@ -1044,6 +1003,7 @@ function ProjectControls({
   lens,
   onDrillProject,
   onToggleZoneSelect,
+  theme,
 }: {
   zones: SpatialBoardProjectZone[];
   altitude: SpatialBoardLayout['altitude'];
@@ -1051,6 +1011,7 @@ function ProjectControls({
   lens: SpatialBoardLens;
   onDrillProject: (projectId: string) => void;
   onToggleZoneSelect?: (zoneId: string) => void;
+  theme: SpatialThemeSnapshot;
 }) {
   return zones.map(zone => {
     // The zone control is the focusable DOM equivalent of the zone plate, so
@@ -1065,25 +1026,36 @@ function ProjectControls({
       -(zone.rect.y + 1.35),
       0.8,
     ];
-    const accent = projectAccent(zone.id);
+    const accent = spatialProjectIdentityColor(theme, zone.id);
     if (labelTier === 'compact' && altitude === 'fleet') {
       const compactContent = (
         <span className="flex items-baseline gap-2">
-          <span className="max-w-[7.5rem] truncate text-[10px] font-semibold tracking-[-0.01em] text-[oklch(0.9_0.008_210)]">
+          <span
+            className="max-w-[7.5rem] truncate text-chrome-micro font-semibold tracking-[-0.01em]"
+            style={{ color: theme.label }}
+          >
             {zone.label}
           </span>
-          <span className="font-mono text-[9px] tabular-nums text-[oklch(0.65_0.015_210)]">
+          <span
+            className="font-mono text-chrome-nano tabular-nums"
+            style={{ color: theme.labelMuted }}
+          >
             {zone.agentCount}
           </span>
           {zone.blockedCount > 0 && (
-            <span className="font-mono text-[9px] tabular-nums text-[oklch(0.72_0.13_28)]">
+            <span
+              className="font-mono text-chrome-nano tabular-nums"
+              style={{ color: theme.status['needs-you'] }}
+            >
               {zone.blockedCount}!
             </span>
           )}
           {lens === 'burn' && zone.burn && (
             <span
-              className="font-mono text-[9px] tabular-nums"
-              style={{ color: pressureColor(zone.burn.intensity * 100) }}
+              className="font-mono text-chrome-nano tabular-nums"
+              style={{
+                color: spatialPressureColor(theme, zone.burn.intensity),
+              }}
               title={`${burnShareCopy(zone.burn.share)} of the fleet's normalized token burn`}
             >
               {burnShareCopy(zone.burn.share)}
@@ -1103,15 +1075,23 @@ function ProjectControls({
               data-board-zone={zone.id}
               aria-label={`Open Project ${zone.label}`}
               onClick={activateZone}
-              style={{ borderLeftColor: accent }}
-              className="board-control-enter border border-l-2 border-[oklch(0.34_0.014_210)] bg-[oklch(0.14_0.009_215/0.94)] px-1.5 py-0.5 text-left outline-none transition-[border-color,background-color] duration-150 hover:border-[oklch(0.61_0.08_185)] hover:bg-[oklch(0.18_0.012_210/0.98)] focus-visible:border-[oklch(0.72_0.1_185)] focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.1_185/0.35)]"
+              style={{
+                borderColor: accent,
+                color: theme.label,
+                boxShadow: `0 8px 22px ${theme.shadow}`,
+              }}
+              className="exa-material-chrome board-control-enter border px-1.5 py-0.5 text-left outline-none transition-[border-color,background-color] duration-150 hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring"
             >
               {compactContent}
             </button>
           ) : (
             <div
-              style={{ borderLeftColor: accent }}
-              className="board-control-enter border border-l-2 border-[oklch(0.3_0.012_210)] bg-[oklch(0.14_0.009_215/0.92)] px-1.5 py-0.5 text-left"
+              style={{
+                borderColor: accent,
+                color: theme.label,
+                boxShadow: `0 8px 22px ${theme.shadow}`,
+              }}
+              className="exa-material-chrome board-control-enter border px-1.5 py-0.5 text-left"
             >
               {compactContent}
             </div>
@@ -1122,37 +1102,50 @@ function ProjectControls({
     const content = (
       <>
         <span className="flex items-baseline justify-between gap-3">
-          <span className="max-w-[9.5rem] truncate text-[11px] font-semibold tracking-[-0.01em] text-[oklch(0.91_0.008_210)]">
+          <span
+            className="max-w-[9.5rem] truncate text-chrome-meta font-semibold tracking-[-0.01em]"
+            style={{ color: theme.label }}
+          >
             {zone.label}
           </span>
-          <span className="font-mono text-[9px] tabular-nums text-[oklch(0.65_0.015_210)]">
+          <span
+            className="font-mono text-chrome-nano tabular-nums"
+            style={{ color: theme.labelMuted }}
+          >
             {zone.agentCount}A
           </span>
         </span>
-        <span className="mt-0.5 flex gap-2 font-mono text-[9px] tabular-nums text-[oklch(0.64_0.012_210)]">
+        <span
+          className="mt-0.5 flex gap-2 font-mono text-chrome-nano tabular-nums"
+          style={{ color: theme.labelMuted }}
+        >
           <span>
             {zone.agentCount === 0
               ? 'No agents yet'
               : `${zone.activeCount} active`}
           </span>
           {zone.blockedCount > 0 && (
-            <span className="text-[oklch(0.72_0.13_28)]">
+            <span style={{ color: theme.status['needs-you'] }}>
               {zone.blockedCount} blocked
             </span>
           )}
           {lens === 'burn' &&
             (zone.burn ? (
               <span
-                style={{ color: pressureColor(zone.burn.intensity * 100) }}
+                style={{
+                  color: spatialPressureColor(theme, zone.burn.intensity),
+                }}
                 title={`${burnShareCopy(zone.burn.share)} of the fleet's normalized token burn`}
               >
                 {burnShareCopy(zone.burn.share)} of burn
               </span>
             ) : (
-              <span style={{ color: FLUX.unknown }}>usage unreported</span>
+              <span style={{ color: theme.consumption.unknown }}>
+                usage unreported
+              </span>
             ))}
         </span>
-        <ProjectHealthRail zone={zone} />
+        <ProjectHealthRail zone={zone} theme={theme} />
       </>
     );
     return (
@@ -1163,15 +1156,23 @@ function ProjectControls({
             data-board-zone={zone.id}
             aria-label={`Open Project ${zone.label}`}
             onClick={activateZone}
-            style={{ borderLeftColor: accent }}
-            className="board-control-enter w-44 border border-l-2 border-[oklch(0.36_0.014_210)] bg-[oklch(0.15_0.009_215/0.96)] px-2.5 py-2 text-left shadow-[0_8px_22px_oklch(0.06_0.01_220/0.42)] outline-none transition-[border-color,background-color,transform] duration-150 hover:border-[oklch(0.61_0.08_185)] hover:bg-[oklch(0.18_0.012_210/0.98)] active:translate-y-px focus-visible:border-[oklch(0.72_0.1_185)] focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.1_185/0.35)]"
+            style={{
+              borderColor: accent,
+              color: theme.label,
+              boxShadow: `0 8px 22px ${theme.shadow}`,
+            }}
+            className="exa-material-chrome board-control-enter w-44 border px-2.5 py-2 text-left outline-none transition-[border-color,background-color,transform] duration-150 hover:brightness-105 active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring"
           >
             {content}
           </button>
         ) : (
           <div
-            style={{ borderLeftColor: accent }}
-            className="board-control-enter w-44 border border-l-2 border-[oklch(0.32_0.012_210)] bg-[oklch(0.15_0.009_215/0.94)] px-2.5 py-2 text-left"
+            style={{
+              borderColor: accent,
+              color: theme.label,
+              boxShadow: `0 8px 22px ${theme.shadow}`,
+            }}
+            className="exa-material-chrome board-control-enter w-44 border px-2.5 py-2 text-left"
           >
             {content}
           </div>
@@ -1236,9 +1237,11 @@ const SATELLITE_PARK_PHASE = Math.asin(
 function DelegationSatelliteLayer({
   pieces,
   active,
+  theme,
 }: {
   pieces: SpatialBoardPiece[];
   active: boolean;
+  theme: SpatialThemeSnapshot;
 }) {
   const material = useRef<THREE.MeshBasicMaterial>(null);
   const phase = useRef(SATELLITE_PARK_PHASE);
@@ -1257,7 +1260,7 @@ function DelegationSatelliteLayer({
       x: piece.x + (index - (shown - 1) / 2) * gap,
       y: piece.y - piece.size * 0.72,
       scale: dot,
-      color: projectAccent(piece.projectId),
+      color: spatialProjectIdentityColor(theme, piece.projectId),
     }));
   });
 
@@ -1275,8 +1278,7 @@ function DelegationSatelliteLayer({
       return;
     }
     phase.current += (Math.min(delta, 0.05) * Math.PI * 2) / 2.6;
-    material.current.opacity =
-      0.725 + 0.175 * Math.sin(phase.current);
+    material.current.opacity = 0.725 + 0.175 * Math.sin(phase.current);
     state.invalidate();
   });
 
@@ -1315,10 +1317,12 @@ function StatusMarkLayer({
   pieces,
   active,
   lens,
+  theme,
 }: {
   pieces: SpatialBoardPiece[];
   active: boolean;
   lens: SpatialBoardLens;
+  theme: SpatialThemeSnapshot;
 }) {
   const rotorRefs = useRef(new Map<string, THREE.Object3D>());
   const agentPieces = pieces.filter(piece => piece.kind === 'agent');
@@ -1369,7 +1373,7 @@ function StatusMarkLayer({
   const instance = (piece: SpatialBoardPiece) => ({
     position: [piece.x, -piece.y, 0.94] as [number, number, number],
     scale: [piece.size, piece.size, 1] as [number, number, number],
-    color: pieceLensColor(piece, lens),
+    color: pieceLensColor(piece, lens, theme),
   });
 
   return (
@@ -1477,7 +1481,7 @@ function StatusMarkLayer({
           renderOrder={3}
         >
           <meshBasicMaterial
-            color={PIECE_BODY}
+            color={theme.canvas}
             toneMapped={false}
             transparent
             opacity={0.98}
@@ -1486,7 +1490,7 @@ function StatusMarkLayer({
           {result.map(piece => (
             <Instance
               {...instance(piece)}
-              color={PIECE_BODY}
+              color={theme.canvas}
               key={`status-check:${piece.id}`}
               position={[piece.x, -piece.y, 0.97]}
               raycast={() => null}
@@ -1502,7 +1506,7 @@ function StatusMarkLayer({
           renderOrder={3}
         >
           <meshBasicMaterial
-            color={PIECE_BODY}
+            color={theme.canvas}
             toneMapped={false}
             transparent
             opacity={0.98}
@@ -1511,7 +1515,7 @@ function StatusMarkLayer({
           {needsYou.map(piece => (
             <Instance
               {...instance(piece)}
-              color={PIECE_BODY}
+              color={theme.canvas}
               key={`status-dot:${piece.id}`}
               position={[piece.x, -piece.y, 0.97]}
               raycast={() => null}
@@ -1527,7 +1531,7 @@ function StatusMarkLayer({
           renderOrder={3}
         >
           <meshBasicMaterial
-            color={PIECE_BODY}
+            color={theme.canvas}
             toneMapped={false}
             transparent
             opacity={0.98}
@@ -1536,7 +1540,7 @@ function StatusMarkLayer({
           {fault.map(piece => (
             <Instance
               {...instance(piece)}
-              color={PIECE_BODY}
+              color={theme.canvas}
               key={`status-cross:${piece.id}`}
               position={[piece.x, -piece.y, 0.97]}
               raycast={() => null}
@@ -1555,10 +1559,12 @@ function SelectionRing({
   piece,
   active,
   reduced,
+  theme,
 }: {
   piece: SpatialBoardPiece;
   active: boolean;
   reduced: boolean;
+  theme: SpatialThemeSnapshot;
 }) {
   const group = useRef<THREE.Group>(null);
   const entrance = useRef(reduced ? 1 : 0);
@@ -1592,7 +1598,7 @@ function SelectionRing({
     <group ref={group} position={[piece.x, -piece.y, 0.78]}>
       <Line
         points={points}
-        color={BOARD_COLOR.borderSelected}
+        color={theme.selection}
         lineWidth={1.6}
         dashed
         dashSize={0.22}
@@ -1615,6 +1621,7 @@ function AgentPieceLayer({
   lens,
   onSelectAgent,
   onToggleAgentSelect,
+  theme,
 }: {
   pieces: SpatialBoardPiece[];
   altitude: SpatialBoardLayout['altitude'];
@@ -1623,6 +1630,7 @@ function AgentPieceLayer({
   lens: SpatialBoardLens;
   onSelectAgent: (agentId: string) => void;
   onToggleAgentSelect?: (agentId: string) => void;
+  theme: SpatialThemeSnapshot;
 }) {
   // Aggregate pieces render as the instanced population dot field (V3.1),
   // never as per-piece bodies or DOM count labels.
@@ -1698,7 +1706,7 @@ function AgentPieceLayer({
               }}
               position={[piece.x, -piece.y, 0.65]}
               scale={[piece.size, piece.size, 1]}
-              color={PIECE_BODY}
+              color={theme.unit}
               onPointerOver={event => {
                 if (!interactive) return;
                 event.stopPropagation();
@@ -1723,15 +1731,21 @@ function AgentPieceLayer({
           );
         })}
       </Instances>
-      <StatusMarkLayer pieces={solid} active={ambient} lens={lens} />
-      <DelegationSatelliteLayer pieces={solid} active={ambient} />
-      <StoppedAgentOutlines pieces={visible} lens={lens} />
+      <StatusMarkLayer
+        pieces={solid}
+        active={ambient}
+        lens={lens}
+        theme={theme}
+      />
+      <DelegationSatelliteLayer pieces={solid} active={ambient} theme={theme} />
+      <StoppedAgentOutlines pieces={visible} lens={lens} theme={theme} />
       {selected && (
         <SelectionRing
           key={selected.id}
           piece={selected}
           active={ambient}
           reduced={reduced}
+          theme={theme}
         />
       )}
     </>
@@ -1739,12 +1753,6 @@ function AgentPieceLayer({
 }
 
 const noopRaycast = () => null;
-
-/** One exact protocol color per population status (module scope — never
- *  allocated per frame). */
-const DOT_STATUS_COLORS = POPULATION_STATUS_ORDER.map(
-  status => new THREE.Color(statusColor(status))
-);
 
 /**
  * Demo-scale population field (V3.1): every aggregate piece expands into
@@ -1758,11 +1766,13 @@ function PopulationDotLayer({
   pieces,
   reduced,
   lens,
+  theme,
 }: {
   zones: SpatialBoardProjectZone[];
   pieces: SpatialBoardPiece[];
   reduced: boolean;
   lens: SpatialBoardLens;
+  theme: SpatialThemeSnapshot;
 }) {
   const invalidate = useThree(state => state.invalidate);
   const field = useMemo(
@@ -1780,6 +1790,28 @@ function PopulationDotLayer({
   const materialRef = useRef<THREE.MeshBasicMaterial>(null);
   const entrance = useRef(reduced ? 1 : 0);
   const scratch = useMemo(() => new THREE.Object3D(), []);
+  /** Palette conversion happens once per resolved snapshot, never per dot or
+   * frame. Theme changes update the existing mesh's instance colors in place. */
+  const statusColors = useMemo(
+    () =>
+      POPULATION_STATUS_ORDER.map(
+        status => new THREE.Color(spatialStatusColor(theme, status))
+      ),
+    [theme]
+  );
+  const burnColors = useMemo(
+    () =>
+      Array.from(
+        { length: BURN_RAMP_STEPS + 1 },
+        (_, index) =>
+          new THREE.Color(spatialPressureColor(theme, index / BURN_RAMP_STEPS))
+      ),
+    [theme]
+  );
+  const burnUnknown = useMemo(
+    () => new THREE.Color(theme.consumption.unknown),
+    [theme]
+  );
 
   useLayoutEffect(() => {
     const mesh = meshRef.current;
@@ -1796,14 +1828,20 @@ function PopulationDotLayer({
       mesh.setColorAt(
         index,
         lens === 'burn'
-          ? burnRampColor(field.burn[index]!)
-          : DOT_STATUS_COLORS[field.status[index]!]!
+          ? field.burn[index]! < 0
+            ? burnUnknown
+            : burnColors[
+                Math.round(
+                  Math.max(0, Math.min(1, field.burn[index]!)) * BURN_RAMP_STEPS
+                )
+              ]!
+          : statusColors[field.status[index]!]!
       );
     }
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     invalidate();
-  }, [field, invalidate, lens, scratch]);
+  }, [burnColors, burnUnknown, field, invalidate, lens, scratch, statusColors]);
 
   useFrame((state, delta) => {
     const material = materialRef.current;
@@ -1851,9 +1889,11 @@ function PopulationDotLayer({
 function StoppedAgentOutlines({
   pieces,
   lens,
+  theme,
 }: {
   pieces: SpatialBoardPiece[];
   lens: SpatialBoardLens;
+  theme: SpatialThemeSnapshot;
 }) {
   const geometry = useMemo(() => {
     const points: Array<[number, number, number]> = [];
@@ -1861,7 +1901,7 @@ function StoppedAgentOutlines({
     for (const piece of pieces) {
       if (piece.kind !== 'agent' || piece.sessionState !== 'stopped') continue;
       const radius = piece.size * 0.52;
-      const color = new THREE.Color(pieceLensColor(piece, lens));
+      const color = new THREE.Color(pieceLensColor(piece, lens, theme));
       for (let edge = 0; edge < 8; edge += 1) {
         const from = (edge / 8) * Math.PI * 2 + Math.PI / 8;
         const to = ((edge + 1) / 8) * Math.PI * 2 + Math.PI / 8;
@@ -1881,7 +1921,7 @@ function StoppedAgentOutlines({
       }
     }
     return { points, vertexColors };
-  }, [lens, pieces]);
+  }, [lens, pieces, theme]);
 
   if (geometry.points.length === 0) return null;
   return (
@@ -1911,9 +1951,11 @@ function StoppedAgentOutlines({
 function MultiSelectionLayer({
   layout,
   selection,
+  theme,
 }: {
   layout: SpatialBoardLayout;
   selection: ReadonlySet<string>;
+  theme: SpatialThemeSnapshot;
 }) {
   const points = useMemo(() => {
     const result: Array<[number, number, number]> = [];
@@ -1933,8 +1975,16 @@ function MultiSelectionLayer({
         const from = (segment / RING_SEGMENTS) * Math.PI * 2;
         const to = ((segment + 1) / RING_SEGMENTS) * Math.PI * 2;
         result.push(
-          [piece.x + Math.cos(from) * radius, -piece.y + Math.sin(from) * radius, 0.78],
-          [piece.x + Math.cos(to) * radius, -piece.y + Math.sin(to) * radius, 0.78]
+          [
+            piece.x + Math.cos(from) * radius,
+            -piece.y + Math.sin(from) * radius,
+            0.78,
+          ],
+          [
+            piece.x + Math.cos(to) * radius,
+            -piece.y + Math.sin(to) * radius,
+            0.78,
+          ]
         );
       }
     }
@@ -1970,7 +2020,7 @@ function MultiSelectionLayer({
   return (
     <Line
       points={points}
-      color={BOARD_COLOR.borderSelected}
+      color={theme.selection}
       segments
       dashed
       dashSize={0.24}
@@ -1990,11 +2040,13 @@ function AgentControls({
   altitude,
   onSelectAgent,
   onToggleAgentSelect,
+  theme,
 }: {
   pieces: SpatialBoardPiece[];
   altitude: SpatialBoardLayout['altitude'];
   onSelectAgent: (agentId: string) => void;
   onToggleAgentSelect?: (agentId: string) => void;
+  theme: SpatialThemeSnapshot;
 }) {
   if (altitude === 'fleet') return null;
   return pieces
@@ -2041,14 +2093,22 @@ function AgentControls({
                 onSelectAgent(piece.agentId!);
               }
             }}
-            className="board-control-enter group relative grid h-11 w-11 place-items-center border border-transparent bg-transparent outline-none transition-[border-color,transform] duration-150 active:translate-y-px focus-visible:border-[oklch(0.72_0.1_185)] focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.1_185/0.4)]"
+            className="board-control-enter group relative grid h-11 w-11 place-items-center border border-transparent bg-transparent outline-none transition-[border-color,transform] duration-150 active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span
-              className={`pointer-events-none absolute left-1/2 top-[calc(100%+3px)] w-16 -translate-x-1/2 border border-[oklch(0.3_0.012_210)] bg-[oklch(0.13_0.008_215/0.96)] px-1 py-1 text-center text-[9px] font-medium text-[oklch(0.88_0.01_210)] shadow-[0_6px_16px_oklch(0.06_0.01_220/0.4)] transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 sm:w-28 sm:px-1.5 sm:text-[10px] ${always ? 'opacity-100' : 'opacity-0'}`}
+              className={`exa-material-overlay pointer-events-none absolute left-1/2 top-[calc(100%+3px)] w-16 -translate-x-1/2 border px-1 py-1 text-center text-chrome-nano font-medium transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 sm:w-28 sm:px-1.5 sm:text-chrome-micro ${always ? 'opacity-100' : 'opacity-0'}`}
+              style={{
+                borderColor: theme.unitMuted,
+                color: theme.label,
+                boxShadow: `0 8px 22px ${theme.shadow}`,
+              }}
             >
               <span className="block truncate">{piece.label}</span>
               {delegationCopy && (
-                <span className="block truncate text-[8px] font-normal text-[oklch(0.72_0.02_210)] sm:text-[9px]">
+                <span
+                  className="block truncate text-chrome-nano font-normal"
+                  style={{ color: theme.labelMuted }}
+                >
                   {delegated!.count} delegated
                   {delegationKinds ? ` · ${delegationKinds}` : ''}
                 </span>
@@ -2058,6 +2118,14 @@ function AgentControls({
         </Html>
       );
     });
+}
+
+/** Demand-loop bridge: material/DOM props update in place, then the existing
+ * scene gets exactly one requested paint for the new resolved snapshot. */
+function InvalidateOnSpatialTheme({ theme }: { theme: SpatialThemeSnapshot }) {
+  const invalidate = useThree(state => state.invalidate);
+  useEffect(() => invalidate(), [invalidate, theme]);
+  return null;
 }
 
 export function OperationsBoardCanvas({
@@ -2075,6 +2143,7 @@ export function OperationsBoardCanvas({
   onBandSelect,
   bandOverlayRef,
   preserveDrawingBuffer = false,
+  theme,
 }: {
   layout: SpatialBoardLayout;
   projection: SpatialBoardProjection;
@@ -2092,6 +2161,7 @@ export function OperationsBoardCanvas({
   onBandSelect?: (band: SpatialBoardRect) => void;
   bandOverlayRef?: { current: HTMLDivElement | null };
   preserveDrawingBuffer?: boolean;
+  theme: SpatialThemeSnapshot;
 }) {
   const reduced = useReducedMotion();
   const lowPower = useLowPowerMode();
@@ -2189,8 +2259,10 @@ export function OperationsBoardCanvas({
         }
       }}
       aria-hidden="true"
+      data-board-canvas-theme={theme.themeId}
     >
-      <color attach="background" args={[BOARD_COLOR.background]} />
+      <color attach="background" args={[theme.canvas]} />
+      <InvalidateOnSpatialTheme theme={theme} />
       {/* Soft key + fill: gives zone plates and piece bodies a readable
           top/side split in the fixed-angle projection. */}
       <ambientLight intensity={1.15} />
@@ -2206,7 +2278,7 @@ export function OperationsBoardCanvas({
         bandOverlayRef={bandOverlayRef}
         suppressMissRef={suppressMissRef}
       />
-      <BoardGrid bounds={layout.bounds} />
+      <BoardGrid bounds={layout.bounds} theme={theme} />
       <ZoneLayer
         key={`zones:${choreoKey}`}
         zones={visibleZones}
@@ -2215,6 +2287,7 @@ export function OperationsBoardCanvas({
         onToggleZoneSelect={onToggleZoneSelect}
         onHover={setHoveredZoneId}
         hoveredId={hoveredZoneId}
+        theme={theme}
       />
       <AgentPieceLayer
         key={`pieces:${choreoKey}`}
@@ -2225,6 +2298,7 @@ export function OperationsBoardCanvas({
         lens={lens}
         onSelectAgent={onSelectAgent}
         onToggleAgentSelect={onToggleAgentSelect}
+        theme={theme}
       />
       <PopulationDotLayer
         key={`dots:${choreoKey}`}
@@ -2232,9 +2306,14 @@ export function OperationsBoardCanvas({
         pieces={layout.pieces}
         reduced={reduced}
         lens={lens}
+        theme={theme}
       />
       {multiSelection && multiSelection.size > 0 && (
-        <MultiSelectionLayer layout={layout} selection={multiSelection} />
+        <MultiSelectionLayer
+          layout={layout}
+          selection={multiSelection}
+          theme={theme}
+        />
       )}
       <ProjectControls
         zones={visibleZones}
@@ -2243,16 +2322,18 @@ export function OperationsBoardCanvas({
         lens={lens}
         onDrillProject={onDrillProject}
         onToggleZoneSelect={onToggleZoneSelect}
+        theme={theme}
       />
       <AgentControls
         pieces={layout.pieces}
         altitude={layout.altitude}
         onSelectAgent={onSelectAgent}
         onToggleAgentSelect={onToggleAgentSelect}
+        theme={theme}
       />
-      {!lowPower && effectsReady && (
+      {!lowPower && effectsReady && theme.bloom.enabled && (
         <Suspense fallback={null}>
-          <OperationsBoardEffects />
+          <OperationsBoardEffects bloom={theme.bloom} />
         </Suspense>
       )}
     </Canvas>

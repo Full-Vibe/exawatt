@@ -6,7 +6,7 @@ export default function SpatialFleetPage() {
   return (
     <Suspense
       fallback={
-        <div className="fleet-shell flex h-[calc(100svh-3rem)] items-center justify-center text-zinc-400">
+        <div className="flex h-[calc(100svh-3rem)] items-center justify-center bg-background text-muted-foreground">
           Loading the fleet…
         </div>
       }
