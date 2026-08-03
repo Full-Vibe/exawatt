@@ -1,7 +1,7 @@
 # 0023 Command-altitude names and the transition model
 
 Date: 2026-08-02
-Status: accepted; the middle-altitude name is provisional pending a holistic brand pass. **Rename and legacy-trio retirement LANDED 2026-08-02** (demo-arc packet P2): the manifest, shortcut/menu labels, window titles, ⌘K and cheat-sheet copy, `AGENTS.md`, and product/engineering docs say Agent · Team · Fleet; `/fleet`, `/dashboard`, `/board` and their Supabase demo machinery are deleted, freeing the Fleet name. The transition model (V3.0 handoff) remains future work.
+Status: accepted; the middle-altitude name is provisional pending a holistic brand pass. **Rename and legacy-trio retirement LANDED 2026-08-02** (demo-arc packet P2): the manifest, shortcut/menu labels, window titles, ⌘K and cheat-sheet copy, `AGENTS.md`, and product/engineering docs say Agent · Team · Fleet; `/fleet`, `/dashboard`, `/board` and their Supabase demo machinery are deleted, freeing the Fleet name. **Transition model (V3.0 handoff) LANDED 2026-08-02** (demo-arc packet P7): entry pose, card→zone crossfade, and the fallback-cut matrix; implementation notes in the spatial-operations-board project doc. One consequence refined in delivery: with one rigid orthographic camera, per-node "at the position its card occupied" is exact only when the Team card order correlates with the board's stable zone addresses — otherwise the pose carries scale + centroid and the per-card ghost flights carry exact positions; the board's addresses were deliberately NOT reordered per entry path.
 
 ## Context
 

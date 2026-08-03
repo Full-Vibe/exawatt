@@ -1264,6 +1264,93 @@ Acceptance:
   complete); `pnpm eval:r3f` and the full-route spatial evaluator pass
 - no regression in draw-call counts beyond the added halo/effects budget
 
+### V3.0 Altitude handoff
+
+Status: landed 2026-08-02 — the Team → Fleet position handoff decided in
+`0023`, built on the D11 single transition owner and tuned against the
+populated Voltaic Demo Workspace board (ENG-027 W2).
+
+What ships: ascending from the Team altitude to the Fleet altitude carries
+**identity and position** across the DOM→WebGL boundary — content never
+travels. Each visible Project card's screen rect and identity (name, color)
+is captured at departure; the board arrives at an **entry pose** derived
+from those rects; card ghosts crossfade into their zones in place; only
+then does the camera pull back to the resting fit.
+
+Ownership (extends D11, adds no second transition system):
+
+- **`nav/altitude-handoff.ts`** — the shared contract: capture
+  (`[data-handoff-card]` hooks on the exposé Project sections), a
+  single-use snapshot store with freshness (= the frame budget, 900ms) and
+  viewport-match validation, the entry-pose solver, and the two
+  coordination events (`pose`, `fallback`).
+- **`CommandNavigationProvider` (the D11 owner)** owns the lifecycle: it
+  captures and publishes on a sessions→spatial regime crossing, renders the
+  ghost layer (`nav/altitude-handoff-ghosts.tsx`), and owns the fallback
+  decision — the deadline, the stall watchdog, and teardown when the
+  operator navigates again mid-flight.
+- **`BoardCameraRig`** is an executor, exactly as D11 kept xterm and R3F
+  renderer ownership uncoupled: it claims the snapshot on mount, solves the
+  pose against the live zone layout, applies it (current = target = pose),
+  dispatches `pose` only after the first PAINTED frame at it (so ghosts
+  hold still over the renderer swap and shader-compile stall), holds
+  through the crossfade, then releases the target to the camera-bounds fit
+  — the same damped FLIGHT the rig already owns. The lazy bloom chunk
+  defers until the choreography settles (its compile was the one stall long
+  enough to trip the mid-flight watchdog).
+
+Entry-pose solver (`solveEntryPose`): a top-down orthographic camera has
+exactly uniform-zoom + translation degrees of freedom. When the card order
+correlates with the board's stable zone addresses (correlation ≥ 0.55), the
+least-squares similarity fit places each zone as close as one camera can to
+the screen position its card occupied. When the orders disagree — the
+NORMAL case, since the Team overview is operator-ordered and board
+addresses are stable — the least-squares scale degenerates toward zero (a
+tiny distant board), so the pose instead matches **scale** (zones arrive at
+roughly card size, via the median card/zone area ratio) and **centroid**,
+and the per-card ghost flights carry the exact positions. Entry zoom is
+clamped to [fit, 4.5×fit]: the release always PULLS BACK, never dives in.
+
+The fallback cut is the feature that makes this safe, and firing it is a
+normal outcome (event-driven, never an exception): reduced motion and low
+power never attempt the capture (same `hardwareConcurrency` gate as the
+canvas's low-power mode); a missed frame budget (no painted pose within
+900ms of capture) fades the ghosts and leaves the ordinary fast directional
+arrival; stale snapshots, viewport changes, wrong arrival regime
+(projection/altitude/deep-link), unmatched or duplicate identities,
+degenerate geometry, and a failed renderer (no pose ever dispatched — the
+error boundary path) all cut the same way. A main-thread stall >250ms
+mid-crossfade finishes the flight instantly rather than resuming a stale
+tween.
+
+Transitions never block input: the ghost layer is `pointer-events-none`;
+the board's keyboard model answers mid-crossfade (eval proves a `1` drill
+lands while ghosts are flying); operator camera input during the entry hold
+wins — the automatic pull-back is suppressed rather than yanking the
+camera; a new altitude command mid-handoff tears the ghosts down
+immediately. The stored-viewport restore yields to an active handoff (the
+one arrival where the remembered camera must not win).
+
+Evidence: `eval:spatial` gained four handoff scenarios over the new
+`/eval/t11-altitude-handoff` fixture (real capture → publish → ghosts →
+claim → pose → pull-back over the Voltaic fleet): `handoff-pose` (10/10
+card identities carried, entry zoom 13.13 → settled fit 12.10, input probe
+drilled mid-flight), `handoff-reduced-motion` and `handoff-low-power`
+(never attempted, board arrives normally), `handoff-missed-budget`
+(claimDelay 1600ms > budget → fallback outcome, pose never applied).
+Unit coverage: capture hygiene (offscreen/zero-size/duplicate cards),
+store single-use/freshness/viewport gates, solver exact-recovery,
+scale-fallback, bounds, and degeneracy declines. Frame-by-frame video of
+the crossfade and the entry/mid/settled screenshots live in
+`scripts/r3f-eval/spatial-report/`.
+
+Deliberately NOT built (the roadmap's overinvestment warning): no
+per-node camera choreography beyond the one pose, no xterm-into-WebGL, no
+Team-card-order adoption by the board layout (stable spatial addresses win;
+the ghost flights absorb the difference), and Agent→Fleet direct keeps the
+existing directional transition — with no cards on screen there is no
+position to carry, which is the fallback working as designed.
+
 ### V3.1 Demo-scale board — RENDERING
 
 Status: landed 2026-08-02 — measured against the real ENG-027 W4 fleet
