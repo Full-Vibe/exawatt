@@ -17,6 +17,11 @@ import {
   validStoredCommandSurface,
 } from './command-surface-memory';
 import { useCommandNavigation } from './command-navigation-provider';
+import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
+import {
+  PERSONAL_WORKSPACE_ID,
+  workspaceScopedStorageKey,
+} from '@/lib/tenancy/workspace-scope';
 
 let didRestoreInitialCommandSurface = false;
 
@@ -100,6 +105,15 @@ export function CommandAltitudeNav() {
   // null on non-spine surfaces (settings, legacy views): the rail still
   // renders — every level stays one click away — with no current level marked
   const active = resolveCommandAltitude(pathname, searchParams);
+  // the surface memory is Workspace-scoped view state (ENG-027 W1): each
+  // tenant remembers its own last command surface. Personal keeps the legacy
+  // unscoped key so pre-tenancy operator memory survives.
+  const activeWorkspaceId =
+    useOptionalWorkspaceTenancy()?.activeWorkspace.id ?? PERSONAL_WORKSPACE_ID;
+  const surfaceMemoryKey = workspaceScopedStorageKey(
+    activeWorkspaceId,
+    LAST_COMMAND_SURFACE_KEY
+  );
 
   useEffect(() => {
     if (!window.electron?.isElectron) return;
@@ -112,15 +126,15 @@ export function CommandAltitudeNav() {
     if (!didRestoreInitialCommandSurface) {
       didRestoreInitialCommandSurface = true;
       const stored = validStoredCommandSurface(
-        window.localStorage.getItem(LAST_COMMAND_SURFACE_KEY)
+        window.localStorage.getItem(surfaceMemoryKey)
       );
       if (current === '/workspace' && stored && stored !== current) {
         router.replace(stored);
         return;
       }
     }
-    window.localStorage.setItem(LAST_COMMAND_SURFACE_KEY, current);
-  }, [pathname, router, searchParams]);
+    window.localStorage.setItem(surfaceMemoryKey, current);
+  }, [pathname, router, searchParams, surfaceMemoryKey]);
 
   return (
     <nav

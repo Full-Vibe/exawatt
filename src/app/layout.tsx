@@ -10,6 +10,7 @@ import { UpdateReadyNotice } from '@/components/nav/update-ready-notice';
 import { CommandNavigationProvider } from '@/components/nav/command-navigation-provider';
 import { SystemAccent } from '@/components/nav/system-accent';
 import { ProductFeedbackProvider } from '@/components/feedback/product-feedback-provider';
+import { WorkspaceTenancyProvider } from '@/lib/tenancy/tenancy-provider';
 
 const exo2 = Exo_2({
   variable: '--font-exo2',
@@ -52,6 +53,9 @@ export default function RootLayout({
         <TooltipProvider>
           <SystemAccent />
           <CommandNavigationProvider>
+            {/* Workspace tenancy (ENG-027 W1) scopes everything below it —
+                the header switcher and every surface read the active tenant */}
+            <WorkspaceTenancyProvider>
             {/* Feedback sits above ShortcutProvider so the ⌘K palette can
                 read auth state for its quick-feedback verbs (ENG-025 F1) */}
             <ProductFeedbackProvider>
@@ -63,6 +67,7 @@ export default function RootLayout({
                 </FleetProvider>
               </ShortcutProvider>
             </ProductFeedbackProvider>
+            </WorkspaceTenancyProvider>
           </CommandNavigationProvider>
         </TooltipProvider>
         <SiteFooter />

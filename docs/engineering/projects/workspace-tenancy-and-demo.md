@@ -49,7 +49,7 @@ The demo fleet must support the full altitude sweep across *different* Projects,
 
 ## Milestones
 
-- **W1 Workspace as a real scope** — Workspace identity, the account-menu switcher, Workspace-scoped view state, and the hard guarantee that switching never disturbs live local Sessions. Personal only; the switcher shows Demo as `Coming soon` until W2.
+- **W1 Workspace as a real scope** — LANDED 2026-08-02 (see milestone log). Workspace identity, the account-menu switcher, Workspace-scoped view state, and the hard guarantee that switching never disturbs live local Sessions. Personal only; the switcher shows Demo as `Coming soon` until W2.
 - **W2 Demo source and pane content source** — the demo data source behind the existing fleet transport boundary plus the Terminal pane content source; demo tabs render transcripts and cannot spawn a PTY.
 - **W3 Demo fleet content** — the authored demo Workspace: Projects, roadmaps, Agents, Sessions, consumption. Authored as data, versioned in the repo, resettable.
 - **W4 Scale tier (data)** — the demo fleet authored or generated at the entity count the Spatial moment needs, with honest structure at that volume rather than cloned filler. This milestone owns the DATA only; ENG-004 V3.1 owns rendering it. See the contradiction note below.
@@ -64,6 +64,23 @@ W4 needs part of that work: the demo's "zoom out to thousands" moment is precise
 Resolution: only the **rendering-budget** half of V2.1 unparks — instancing, culling, label budgets, and frame measurement against the demo fleet — and the **truth** half stays parked, since Initiative-level aggregation and aggregate Project drill answer questions no demo asks. The demo-asset reframing is the reason to do the rendering half, not a reason to skip it.
 
 That rendering work is **ENG-004 V3.1**, not this milestone. W4 produces the data; V3.1 makes it render at frame budget. Two milestones were briefly written claiming the same work on 2026-08-02 and were split the same day — an ownership collision is exactly the layer-cake failure `AGENTS.md` forbids, and parallel agents would have duplicated it.
+
+## Roadmap milestone log
+
+### 2026-08-02 — W1 Workspace as a real scope (landed)
+
+Workspace tenancy exists as a real, switchable scope with Personal live and Demo visible as `Coming soon`.
+
+**Mechanism.** New tenancy module at `src/lib/tenancy/` — deliberately named "tenant workspace" in code because "workspace" was already taken by the terminal shell (`src/components/workspace`, `workspace-store.ts`):
+
+- `workspace-scope.ts` — the pure model: `TenantWorkspace` (id, name, kind, availability), builtin Personal/Demo, `resolveActiveWorkspace` (unknown or `coming-soon` ids always fall back to Personal — the app can never wake up inside a tenant that cannot render), `workspaceScopedStorageKey` (Personal keeps the legacy unscoped keys so pre-tenancy operator view memory survives; every other tenant gets `exawatt:ws:<id>:…`), `mergeWorkspaces` (builtins win id collisions).
+- `tenancy-provider.tsx` — owns WHICH Workspace the app is looking at and nothing else; it never imports `window.electron.pty`/`workspace`, making the zero-lifecycle-side-effects guarantee structural. On switch it restores the target tenant's remembered command surface (recorded per-tenant by `CommandAltitudeNav` under the scoped key). A dev-only registration event lets tests add an `available` tenant — the same shape W2/W5 use to make Demo/Organization real.
+- `workspace-scope-gate.tsx` — wraps `WorkspaceClient` on `/workspace`: non-personal tenants render an honest identity-carrying empty state instead of the PTY-bound shell. Unmounting the personal shell disposes only renderer widgets; PTYs live in the Electron main process, and returning re-adopts them via the existing reload-adoption path — no new session machinery was needed or touched.
+- Account menu (`site-header-nav.tsx`): a `Workspace` section lists tenants with kind icons, taglines, an active check, and `Coming soon` disabled entries; in Electron the menu renders signed in or not so the switcher is always reachable. When the active tenant is not Personal, an always-visible teal identity chip (`data-active-tenant-workspace`) sits in the header — the "demo data can never be mistaken for real" rule made structural from day one.
+
+**Proof.** `pnpm eval:electron:tenancy` (`scripts/electron-workspace-tenancy-eval.mjs`, withElectronApp): starts a real shell PTY in Personal, prints a marker, switches to a registered non-personal tenant through the real menu, verifies `pty.list()` identity is untouched, writes to the PTY over IPC **while the other Workspace is on screen** and sees fresh output (running, not merely not-killed), switches back, and verifies the pane re-adopts with both markers replayed and identical session identity. All 11 checks pass; screenshots of the switcher, the scoped view, and the restored shell are captured by the eval.
+
+**Explicitly out of W1** (tracked forward): Workspace-attributed feedback and consumption ride the W2 source work; the Demo tenant flips `availability` in W2; no keyboard gesture for switching (per the open question's leaning — the menu is the only path).
 
 ## Open questions
 

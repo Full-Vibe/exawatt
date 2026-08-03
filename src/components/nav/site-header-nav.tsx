@@ -14,8 +14,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  Building2,
+  Check,
+  Laptop,
   LayoutDashboard,
   LayoutGrid,
+  MonitorPlay,
   User,
   LogOut,
   Network,
@@ -31,6 +35,14 @@ import { isAdminEmail } from '@/lib/auth/admin';
 import { CommandAltitudeNav } from './command-altitude-nav';
 import { isAppRoute, surfacesByTier, type AppSurface } from './surfaces';
 import { useOptionalProductFeedback } from '@/components/feedback/product-feedback-provider';
+import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
+import type { TenantWorkspaceKind } from '@/lib/tenancy/workspace-scope';
+
+const WORKSPACE_KIND_ICONS: Record<TenantWorkspaceKind, LucideIcon> = {
+  personal: Laptop,
+  demo: MonitorPlay,
+  organization: Building2,
+};
 
 const LEGACY_ICONS: Partial<Record<AppSurface['id'], LucideIcon>> = {
   dashboard: LayoutDashboard,
@@ -56,6 +68,8 @@ export function SiteHeaderNav({
   const isWorkspace = pathname?.startsWith('/workspace');
   const isAdmin = isAdminEmail(userEmail);
   const feedback = useOptionalProductFeedback();
+  const tenancy = useOptionalWorkspaceTenancy();
+  const activeWorkspace = tenancy?.activeWorkspace;
   // in the desktop app the Workspace (terminal) link is always relevant,
   // signed in or not; detected post-mount for hydration safety
   const [inElectron, setInElectron] = useState(false);
@@ -132,6 +146,17 @@ export function SiteHeaderNav({
             : undefined
         }
       >
+        {/* non-personal tenancy identity is ALWAYS visible (ENG-027): demo
+            data must never be mistaken for Personal truth */}
+        {activeWorkspace && activeWorkspace.kind !== 'personal' && (
+          <span
+            data-active-tenant-workspace={activeWorkspace.id}
+            className="mr-1 inline-flex h-6 items-center gap-1.5 border border-teal-300/40 bg-teal-950/40 px-2 font-mono text-[11px] font-medium text-teal-200"
+          >
+            <MonitorPlay aria-hidden="true" className="h-3 w-3" />
+            {activeWorkspace.name} Workspace
+          </span>
+        )}
         {!isArchitecture && (
           <Button variant="ghost" size="sm" asChild>
             <Link href="/architecture" className="text-chrome-title!">
@@ -166,12 +191,17 @@ export function SiteHeaderNav({
             <Link href="/sign-in">Sign In</Link>
           </Button>
         )}
-        {isAuthenticated && (
+        {/* the account menu is the tenancy seam (ENG-027): in the desktop app
+            it renders signed in or not, because the Workspace switcher must
+            always be reachable */}
+        {(isAuthenticated || inElectron) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
+                data-account-menu-trigger
+                aria-label="Account and Workspace menu"
                 className="h-8 w-8 rounded-full"
               >
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
@@ -179,7 +209,7 @@ export function SiteHeaderNav({
                 </div>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuContent align="end" className="w-72">
               {(userName || userEmail) && (
                 <>
                   <DropdownMenuLabel>
@@ -190,6 +220,45 @@ export function SiteHeaderNav({
                       </div>
                     )}
                   </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              {tenancy && (
+                <>
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">
+                    Workspace
+                  </DropdownMenuLabel>
+                  {tenancy.workspaces.map(workspace => {
+                    const Icon = WORKSPACE_KIND_ICONS[workspace.kind];
+                    const isActive = workspace.id === tenancy.activeWorkspace.id;
+                    const comingSoon = workspace.availability === 'coming-soon';
+                    return (
+                      <DropdownMenuItem
+                        key={workspace.id}
+                        data-workspace-switch={workspace.id}
+                        disabled={comingSoon}
+                        onSelect={() => tenancy.switchWorkspace(workspace.id)}
+                      >
+                        <Icon className="mr-2 h-4 w-4" />
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate">{workspace.name}</span>
+                          {workspace.tagline && (
+                            <span className="truncate text-[11px] text-muted-foreground">
+                              {workspace.tagline}
+                            </span>
+                          )}
+                        </span>
+                        {isActive && (
+                          <Check className="ml-2 h-4 w-4 shrink-0 text-teal-300" />
+                        )}
+                        {comingSoon && (
+                          <span className="ml-2 shrink-0 border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                            Coming soon
+                          </span>
+                        )}
+                      </DropdownMenuItem>
+                    );
+                  })}
                   <DropdownMenuSeparator />
                 </>
               )}
@@ -218,15 +287,19 @@ export function SiteHeaderNav({
                   </DropdownMenuItem>
                 );
               })}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={async () => {
-                  await signOut();
-                }}
-              >
-                <LogOut className="mr-2 h-4 w-4" />
-                Sign out
-              </DropdownMenuItem>
+              {isAuthenticated && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={async () => {
+                      await signOut();
+                    }}
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign out
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}

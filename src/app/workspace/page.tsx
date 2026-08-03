@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import { WorkspaceClient } from '@/components/workspace/workspace-client';
 import { TestAuthBridge } from '@/components/workspace/test-auth-bridge';
+import { WorkspaceScopeGate } from '@/lib/tenancy/workspace-scope-gate';
 
 export const metadata: Metadata = {
   title: 'Terminal',
@@ -25,7 +26,9 @@ export default function WorkspacePage() {
           </div>
         }
       >
-        <WorkspaceClient />
+        <WorkspaceScopeGate>
+          <WorkspaceClient />
+        </WorkspaceScopeGate>
       </Suspense>
     </div>
   );
