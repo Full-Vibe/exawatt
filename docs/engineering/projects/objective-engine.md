@@ -151,6 +151,14 @@ icon with transparent background** and the operator replaced it with **New app
 icon**. The correction removes solution method and asset-production detail in
 favor of the short work-world name the operator would use to find the Session.
 
+Feedback row `ff068da3-017a-4cf0-bddd-2ebab2e19c47` repeats that altitude
+correction. The Session showed **Verify ENG-003 S2 opencode config merge
+behavior** and the operator replaced it with **OpenCode support + improved
+new-agent UI**. The rejected label overfit to a verification step and roadmap
+slice; the correction names the durable capability and adjacent product
+surface. It is a gold-corpus candidate, but the row does not contain the
+instruction sequence needed to build an honest executable case.
+
 This reinforces the same altitude signal as the **Improve spatial UI** case:
 labels should identify the durable object/outcome, not narrate the current
 implementation instruction. It is a gold-corpus candidate, but the feedback row
