@@ -10,7 +10,7 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import { HUD } from '@/components/hud';
-import { AgentStartKeySwitchButton } from '@/components/hud/webgl/keyswitch-study';
+import { Button } from '@/components/ui/button';
 import {
   Popover,
   PopoverContent,
@@ -1471,11 +1471,13 @@ export function AgentComposer({
           </Popover>
         </div>
 
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          <AgentStartKeySwitchButton
-            busy={launching === 'agent'}
+        <div className="ml-auto flex shrink-0 items-center gap-1 @max-[520px]:w-full">
+          <Button
+            type="submit"
+            aria-busy={launching === 'agent'}
+            aria-label={launching === 'agent' ? 'Starting…' : 'Start'}
+            data-agent-start-button
             disabled={controlsDisabled || !launchReady}
-            onActivate={() => void launchAgent()}
             title={
               launchReady
                 ? `Start ${sourceMeta.label} with ${modelLabel} and ${permissionMeta.label} permissions`
@@ -1489,7 +1491,16 @@ export function AgentComposer({
                       ? `${sourceMeta.label}: ${sourceMeta.stateLabel}`
                       : 'Enter a worktree branch name before starting'
             }
-          />
+            className="min-w-20 shrink-0 @max-[520px]:flex-1 motion-reduce:transition-none"
+          >
+            {launching === 'agent' && (
+              <LoaderCircle
+                aria-hidden="true"
+                className="animate-spin motion-reduce:animate-none"
+              />
+            )}
+            {launching === 'agent' ? 'Starting…' : 'Start'}
+          </Button>
 
           <button
             type="button"
