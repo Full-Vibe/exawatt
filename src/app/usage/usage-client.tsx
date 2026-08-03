@@ -20,6 +20,10 @@
  * Below the answers sits the drill-down floor — attribution pivot, session
  * grid, drill panel ("where is it going?") — and one quiet diagnostics row.
  * Text renders through the six-role treatment budget in `chrome.tsx`.
+ * Grew out of the two operator-picked ENG-008 directions (Console top,
+ * Ops-board floor); the explored directions (`/hud-gallery/consumption-redesign`)
+ * retired 2026-08-03 once the composite shipped — the design record lives in
+ * git history, the review screenshots, and the E8 milestone log.
  *
  * Per-tenant source (ENG-027 W2): the Demo tenant reads the Voltaic corpus;
  * Personal keeps the demo week until the E5 live local parse. Both corpora

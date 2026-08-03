@@ -3,10 +3,10 @@
 /**
  * Shared consumption atoms (ENG-008).
  *
- * Consumed by BOTH producers — the `/consumption` expository surface and the
- * `/hud-gallery/consumption-lab` workbench — over the one view-model in
- * `./model`. Neither owns a private copy; a change here changes both, which is
- * the point.
+ * Consumed by the production `/usage` surface over the one view-model in
+ * `./model`. (The `/hud-gallery/consumption-lab` workbench was the second
+ * consumer until it retired on 2026-08-03.) No surface owns a private copy;
+ * a change here changes every consumer, which is the point.
  *
  * SPATIAL SEAM: every atom here is pure geometry over the view-model and holds
  * no DOM measurement. A future R3F wattage overlay (flow volume as emissive

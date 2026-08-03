@@ -14,7 +14,6 @@ const NON_PRODUCTION_PREFIXES = [
   'src/generated/',
 ];
 const NON_PRODUCTION_FILES = new Set([
-  'src/components/consumption/meter/gallery-study.tsx',
   'src/components/hud/board-tile-study.tsx',
   'src/components/hud/gallery-fixtures.ts',
   'src/components/hud/project-ribbon-study.tsx',

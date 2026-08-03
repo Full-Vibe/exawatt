@@ -36,7 +36,6 @@ import {
 import { SessionStateTileStudy } from '@/components/hud/session-state-tile-study';
 import { ProjectRibbonStudy } from '@/components/hud/project-ribbon-study';
 import { ReadinessGrammarStudy } from '@/components/readiness/gallery-study';
-import { AmbientMeterStudy } from '@/components/consumption/meter/gallery-study';
 
 const TONES: HudTone[] = ['cyan', 'magenta', 'amber', 'red', 'green', 'idle'];
 const STATUSES: AgentStatus[] = [
@@ -60,12 +59,6 @@ interface Section {
 }
 
 const SECTIONS: Section[] = [
-  {
-    id: 'ambient-consumption-meter',
-    title: 'Ambient consumption meter',
-    meta: 'review candidate · ENG-008 — four chrome forms, monochrome-until-hot, operator picks',
-    showcase: <AmbientMeterStudy />,
-  },
   {
     id: 'readiness-grammar',
     title: 'Readiness grammar',
@@ -468,20 +461,6 @@ export default function HudGallery() {
               (docs/engineering/design-system.md). DOM wins for crisp,
               keyboard-accessible chrome; WebGL is reserved for the scalable
               agent world and reviewable material work.{' '}
-              <a
-                href="/hud-gallery/consumption-lab"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
-              >
-                Open the Consumption lab →
-              </a>{' '}
-              <a
-                href="/hud-gallery/consumption-redesign"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
-              >
-                Open the Consumption page redesign →
-              </a>{' '}
               <a
                 href="/hud-gallery/roadmap-lab"
                 className="underline underline-offset-2"

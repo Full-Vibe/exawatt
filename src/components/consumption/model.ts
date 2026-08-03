@@ -5,12 +5,14 @@
  * `@exawatt/core`'s Consumption contract is translated for display. Two
  * producers feed it and both go through this file:
  *
- *   - `/consumption` — the expository surface, fed by `demo-source.ts`, which
+ *   - `/usage` — the production surface, fed by `demo-source.ts`, which
  *     emits real `ConsumptionSample`s and rolls them up with core's own
  *     `rollupBy*`. Live wiring later swaps the sample producer and nothing
  *     downstream changes.
- *   - `/hud-gallery/consumption-lab` — the design workbench, fed by hand-authored
- *     fixtures that construct this shape directly.
+ *   - the ambient chrome meter (`./meter/`), which reads the same
+ *     `ConsumptionSourceView`s through `use-tenant-consumption`.
+ *   (The `/hud-gallery/consumption-lab` fixture workbench was the second
+ *   producer until it retired on 2026-08-03 — its subject shipped as `/usage`.)
  *
  * TWO TRANSLATIONS MATTER, and both exist because the display shape and the
  * measurement shape are honestly different:
@@ -193,33 +195,6 @@ export interface ConsumptionSourceView {
   burn: number[];
   /** Why this source has no windows, in the harness's own terms. */
   unreportedReason?: string;
-}
-
-/** The single most constrained reported window across every source. */
-export function tightestWindow(
-  sources: ConsumptionSourceView[]
-): { source: ConsumptionSourceView; window: CapacityWindowView } | null {
-  let best: {
-    source: ConsumptionSourceView;
-    window: CapacityWindowView;
-  } | null = null;
-  for (const source of sources) {
-    for (const window of source.windows) {
-      if (!best || window.usedPercent > best.window.usedPercent) {
-        best = { source, window };
-      }
-    }
-  }
-  return best;
-}
-
-export function reportingCoverage(sources: ConsumptionSourceView[]) {
-  const reported = sources.filter(s => s.windows.length > 0);
-  return {
-    reported: reported.length,
-    total: sources.length,
-    silent: sources.filter(s => s.windows.length === 0),
-  };
 }
 
 /**

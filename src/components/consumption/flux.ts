@@ -108,8 +108,7 @@ export const UNIT_LABEL: Record<UnitKey, string> = {
 // model-weights module, stated for display by `units.ts`
 // (`NORMALIZED_BASIS_SENTENCE`). The early design-exploration ratio table
 // that used to sit here diverged from core's arithmetic (codex 1.4,
-// reasoning ×5) and moved to its only remaining consumer, the frozen
-// consumption-lab workbench (`src/app/hud-gallery/consumption-lab/weights.ts`).
+// reasoning ×5) and retired with the consumption-lab workbench on 2026-08-03.
 
 function mix(a: string, b: string, t: number): string {
   const p = (h: string) => [

@@ -8,8 +8,8 @@
  * retyped. No React, no DOM.
  *
  * Descended from the ENG-008 design-options workbench
- * (`src/app/hud-gallery/consumption-redesign/derive.ts`), which stays frozen
- * as the design record; this copy is the production line.
+ * (`consumption-redesign/derive.ts`, retired 2026-08-03 — design record in
+ * git history and the E8 milestone log); this copy is the production line.
  *
  * Honesty rules carried from the model layer:
  *   - absent is never zero (Claude Code plan windows, Codex delegation,

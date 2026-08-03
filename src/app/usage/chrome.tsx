@@ -2,7 +2,9 @@
 
 /**
  * Page chrome for `/usage` — labels, values, and states only
- * (design-system.md, Voice).
+ * (design-system.md, Voice). Descended from the ENG-008 design-options
+ * workbench chrome (`consumption-redesign/shared.tsx`, retired 2026-08-03 —
+ * design record in git history and the E8 milestone log).
  *
  * THE TREATMENT BUDGET (ENG-008 hierarchy pass, 2026-08-03). The whole page
  * renders text through exactly these roles — the operator-review complaint
