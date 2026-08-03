@@ -15,7 +15,7 @@
  * GLYPH_BOX footprint: state changes never nudge the row.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { HUD } from '@/components/hud';
+import { WORKSPACE_HUD as HUD } from './workspace-theme';
 import { StatusLight } from '@/components/status-light/status-light';
 import {
   Tooltip,

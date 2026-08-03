@@ -1,5 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { HUD } from '@/components/hud';
+import {
+  WORKSPACE_FOUNDATION,
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha,
+} from './workspace-theme';
 import { READINESS_NEUTRAL } from '@/components/readiness';
 import { PROJECT_PALETTE } from './project-colors';
 
@@ -20,7 +24,7 @@ export function OrdinalKeycap({
       style={{
         color,
         borderColor: `${color}55`,
-        background: 'rgba(8,13,22,0.94)',
+        background: HUD.bg.panelFill,
       }}
     >
       {value}
@@ -95,7 +99,9 @@ export function ColorSwatches({
           style={{
             background: color,
             boxShadow:
-              color === current ? `0 0 0 1.5px #fff, 0 0 6px ${color}` : 'none',
+              color === current
+                ? `0 0 0 1.5px ${WORKSPACE_FOUNDATION.text}, 0 0 6px ${color}`
+                : 'none',
           }}
         />
       ))}
@@ -202,7 +208,7 @@ export function StripContextMenu({
         top: position.y,
         borderColor: `${color}44`,
         background: HUD.bg.panelFill,
-        boxShadow: `0 12px 32px rgba(0,0,0,0.55), 0 0 10px ${color}22`,
+        boxShadow: `0 12px 32px ${withThemeAlpha(HUD.bg.void, 0.55)}, 0 0 10px ${withThemeAlpha(color, 0.13)}`,
       }}
       onKeyDown={event => {
         event.stopPropagation();
@@ -273,7 +279,7 @@ export function StripContextMenu({
               onClose(item.focusAfterSelect ?? 'trigger');
               item.onSelect?.();
             }}
-            className="flex cursor-pointer items-baseline gap-3 px-3 py-1.5 text-left font-mono text-chrome-label outline-none transition-[background-color] duration-75 hover:bg-white/10 focus-visible:bg-white/10"
+            className="flex cursor-pointer items-baseline gap-3 px-3 py-1.5 text-left font-mono text-chrome-label outline-none transition-[background-color] duration-75 hover:bg-hud-fill-hi focus-visible:bg-hud-fill-hi"
             style={{ color: item.danger ? color : HUD.text }}
           >
             <span className="min-w-0 flex-1">{item.label}</span>

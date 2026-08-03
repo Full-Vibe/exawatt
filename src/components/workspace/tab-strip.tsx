@@ -23,7 +23,10 @@ import {
   type CSSProperties,
 } from 'react';
 import { useRouter } from 'next/navigation';
-import { HUD } from '@/components/hud';
+import {
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha,
+} from './workspace-theme';
 import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import type { SessionDelegation } from '@/types/electron';
@@ -888,7 +891,7 @@ export function TabStrip({
         pointerEvents: 'none',
         zIndex: 30,
         cursor: 'grabbing',
-        boxShadow: '0 6px 18px rgba(0,0,0,0.5)',
+        boxShadow: `0 6px 18px ${withThemeAlpha(HUD.bg.void, 0.5)}`,
         transitionProperty: 'none',
         willChange: 'transform',
       };
@@ -918,6 +921,7 @@ export function TabStrip({
     };
   };
 
+  // Mask color is alpha-only compositing syntax, not presentation paint.
   const fadeMask = layout.scrollable
     ? `linear-gradient(to right, transparent 0, #000 ${
         scrollEdges.left ? '28px' : '0'
@@ -1097,17 +1101,17 @@ export function TabStrip({
               style={{
                 ...itemStyle(entry, projectExiting),
                 borderColor: groupActive
-                  ? `${color}76`
+                  ? withThemeAlpha(color, 0.46)
                   : dormantProject
-                    ? 'rgba(138,160,190,0.09)'
-                    : 'rgba(138,160,190,0.15)',
+                    ? withThemeAlpha(HUD.textDim, 0.09)
+                    : withThemeAlpha(HUD.textDim, 0.15),
                 background: draggingSelf
                   ? HUD.bg.panelFill
                   : groupActive
-                    ? `${color}12`
+                    ? withThemeAlpha(color, 0.07)
                     : dormantProject
-                      ? 'rgba(138,160,190,0.018)'
-                      : 'rgba(138,160,190,0.035)',
+                      ? withThemeAlpha(HUD.textDim, 0.018)
+                      : withThemeAlpha(HUD.textDim, 0.035),
                 filter: dormantProject ? 'opacity(.62)' : undefined,
               }}
             >
@@ -1213,10 +1217,10 @@ export function TabStrip({
                       // under ⌘ that reads as ordinal 1, which belongs to a
                       // different Project. Ordinals wear the keycap chrome.
                       background: foldedOrdinalHint
-                        ? 'rgba(8,13,22,0.94)'
-                        : `${color}1f`,
+                        ? HUD.bg.panelFill
+                        : withThemeAlpha(color, 0.12),
                       borderColor: foldedOrdinalHint
-                        ? `${color}55`
+                        ? withThemeAlpha(color, 0.33)
                         : undefined,
                     }}
                   >
@@ -1415,13 +1419,17 @@ export function TabStrip({
             className="group/tab flex h-7 w-max origin-left items-center overflow-hidden rounded-md border"
             style={{
               ...itemStyle(entry, projectExiting),
-              borderColor: on ? `${color}9c` : 'rgba(138,160,190,0.17)',
-              borderBottomColor: on ? color : `${color}38`,
+              borderColor: on
+                ? withThemeAlpha(color, 0.61)
+                : withThemeAlpha(HUD.textDim, 0.17),
+              borderBottomColor: on
+                ? color
+                : withThemeAlpha(color, 0.22),
               background: draggingSelf
                 ? HUD.bg.panelFill
                 : on
-                  ? `${color}15`
-                  : 'rgba(138,160,190,0.035)',
+                  ? withThemeAlpha(color, 0.08)
+                  : withThemeAlpha(HUD.textDim, 0.035),
               filter: dead ? 'opacity(.74)' : undefined,
             }}
           >
@@ -1555,7 +1563,7 @@ export function TabStrip({
               {dead && !isDraft && !condensed && (
                 <span
                   aria-label={stoppedStatus}
-                  className="shrink-0 border border-white/10 px-1 py-0.5 text-chrome-meta font-medium leading-none"
+                  className="shrink-0 border border-hud-stroke-faint px-1 py-0.5 text-chrome-meta font-medium leading-none"
                   style={{
                     color:
                       tab.lifecycle === 'interrupted'
@@ -1601,7 +1609,7 @@ export function TabStrip({
                     ? 'Discard (⌘W)'
                     : 'Close — kept in Recently closed for 14 days (⌘W)'
                 }
-                className={`grid size-5 shrink-0 cursor-pointer place-items-center rounded font-mono text-chrome-label font-normal outline-none transition-[opacity,background-color] duration-100 hover:bg-white/10 hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan ${
+                className={`grid size-5 shrink-0 cursor-pointer place-items-center rounded font-mono text-chrome-label font-normal outline-none transition-[opacity,background-color] duration-100 hover:bg-hud-fill-hi hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan ${
                   floatingClose
                     ? 'absolute inset-y-0 right-1 my-auto opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100'
                     : 'mr-1 opacity-45 group-hover/tab:opacity-100'
@@ -1612,9 +1620,13 @@ export function TabStrip({
                   // the chip-coloured backdrop keeps both readable.
                   ...(floatingClose
                     ? {
-                        background: on ? `${color}26` : HUD.bg.panelFill,
+                        background: on
+                          ? withThemeAlpha(color, 0.15)
+                          : HUD.bg.panelFill,
                         boxShadow: `-8px 0 8px -4px ${
-                          on ? `${color}26` : HUD.bg.panelFill
+                          on
+                            ? withThemeAlpha(color, 0.15)
+                            : HUD.bg.panelFill
                         }`,
                       }
                     : {}),

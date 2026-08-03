@@ -7,7 +7,10 @@
  * no-roadmap-found and read-error states so every degraded condition speaks
  * in the same voice.
  */
-import { HUD, withAlpha } from '@/components/hud';
+import {
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha as withAlpha,
+} from '@/components/workspace/workspace-theme';
 
 export function RoadmapEmptyQueue({
   shippedCount,
@@ -39,7 +42,7 @@ export function RoadmapEmptyQueue({
           type="button"
           tabIndex={-1}
           onClick={onOpenFile}
-          className="self-start rounded border px-2 py-1 font-mono text-chrome-meta outline-none hover:bg-white/10"
+          className="self-start rounded border px-2 py-1 font-mono text-chrome-meta outline-none hover:bg-hud-fill-hi"
           style={{
             color: HUD.amber,
             borderColor: withAlpha(HUD.amber, 0.45),

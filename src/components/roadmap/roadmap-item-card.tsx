@@ -6,7 +6,11 @@
  * unfinished items as mid-density rows, shipped/parked as compact rows.
  * Read-only by design: the only affordance is drill (Enter/→/click).
  */
-import { CornerBrackets, HUD, withAlpha } from '@/components/hud';
+import { CornerBrackets } from '@/components/hud';
+import {
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha as withAlpha,
+} from '@/components/workspace/workspace-theme';
 import type { RoadmapItemView } from '@exawatt/ui-model';
 import {
   ROADMAP_STATUS_COLOR,
@@ -98,7 +102,7 @@ export function RoadmapItemCard({
             boxShadow: selected ? `0 0 14px ${withAlpha(statusColor, 0.33)}` : 'none',
           }}
         >
-          {selected && <CornerBrackets tone="cyan" active />}
+          {selected && <CornerBrackets color={HUD.cyan} tone="cyan" active />}
           <div className="flex items-center gap-2">
             <RoadmapStatusPill status={item.displayStatus} />
             {item.blocked && <RoadmapBlockedBadge />}
@@ -127,7 +131,7 @@ export function RoadmapItemCard({
             <div
               aria-hidden
               className="h-[3px] w-full overflow-hidden rounded-full"
-              style={{ background: 'rgba(255,255,255,0.08)' }}
+              style={{ background: HUD.divider }}
             >
               <div
                 className="h-full rounded-full"

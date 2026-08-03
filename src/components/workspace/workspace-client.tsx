@@ -85,7 +85,11 @@ import {
   findRoadmapSessionChip,
   deriveRoadmapBlockedSessions,
 } from '@exawatt/ui-model';
-import { HUD } from '@/components/hud';
+import {
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha,
+} from './workspace-theme';
+import { PROJECT_PALETTE } from './project-colors';
 import { useProductFeedback } from '@/components/feedback/product-feedback-provider';
 import { setQuickFeedbackAttribution } from '@/components/feedback/quick-feedback-events';
 import {
@@ -166,7 +170,7 @@ export function WorkspaceKeyHint({
       <kbd
         className="rounded border px-1 leading-4"
         style={{
-          borderColor: 'rgba(80,230,255,0.25)',
+          borderColor: HUD.strokeSoft,
           color: HUD.textMono,
         }}
       >
@@ -1039,8 +1043,8 @@ export function WorkspaceClient() {
         <div
           className="max-w-md rounded border p-6 text-center"
           style={{
-            borderColor: 'rgba(80,230,255,0.25)',
-            background: 'rgba(7,12,20,0.9)',
+            borderColor: HUD.strokeSoft,
+            background: HUD.bg.panelFill,
           }}
         >
           <p
@@ -1111,7 +1115,7 @@ export function WorkspaceClient() {
           data-workspace-chrome
           className="relative flex shrink-0 items-start gap-2 border-b px-3 py-2"
           style={{
-            borderColor: 'rgba(80,230,255,0.15)',
+            borderColor: HUD.strokeFaint,
             background: HUD.bg.deep,
           }}
         >
@@ -1192,12 +1196,12 @@ export function WorkspaceClient() {
                 : 'Attention notifications disabled'
             }
             onClick={toggleNotifications}
-            className="grid h-7 w-7 shrink-0 place-items-center rounded border outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded border outline-none hover:bg-hud-fill-hi focus-visible:ring-1 focus-visible:ring-hud-cyan"
             style={{
               color: notificationsEnabled ? HUD.amber : HUD.textDim,
               borderColor: notificationsEnabled
-                ? 'rgba(255,184,77,0.42)'
-                : 'rgba(80,230,255,0.2)',
+                ? withThemeAlpha(HUD.amber, 0.42)
+                : HUD.strokeSoft,
             }}
           >
             {notificationsEnabled ? (
@@ -1214,8 +1218,8 @@ export function WorkspaceClient() {
             aria-label="Saved Agent recovery"
             className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 font-mono text-xs"
             style={{
-              borderColor: 'rgba(25,230,255,0.18)',
-              background: 'rgba(25,230,255,0.06)',
+              borderColor: withThemeAlpha(HUD.cyan, 0.18),
+              background: withThemeAlpha(HUD.cyan, 0.06),
               color: HUD.textDim,
             }}
           >
@@ -1246,7 +1250,7 @@ export function WorkspaceClient() {
               aria-label="Dismiss resume notice"
               title="Dismiss"
               onClick={() => setResumeNoticeDismissed(true)}
-              className="grid h-7 w-7 place-items-center outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+              className="grid h-7 w-7 place-items-center outline-none hover:bg-hud-fill-hi focus-visible:ring-1 focus-visible:ring-hud-cyan"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -1264,8 +1268,8 @@ export function WorkspaceClient() {
                 data-active-session-context
                 className="flex min-h-9 shrink-0 items-center gap-2 border-b px-3 py-1.5"
                 style={{
-                  borderColor: 'rgba(80,230,255,0.1)',
-                  background: 'rgba(8,13,22,0.92)',
+                  borderColor: HUD.divider,
+                  background: HUD.bg.panelFill,
                 }}
               >
                 <FolderOpen
@@ -1286,10 +1290,13 @@ export function WorkspaceClient() {
                     type="button"
                     title={`working on ${activeItemChip.item.title} — open in roadmap`}
                     onClick={() => summonRoadmap(activeItemChip.item.id)}
-                    className="shrink-0 rounded border px-1.5 py-px font-mono text-chrome-meta outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                    className="shrink-0 rounded border px-1.5 py-px font-mono text-chrome-meta outline-none hover:bg-hud-fill-hi focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{
                       color: activeProject?.color ?? HUD.textMono,
-                      borderColor: `${activeProject?.color ?? HUD.cyan}55`,
+                      borderColor: withThemeAlpha(
+                        activeProject?.color ?? PROJECT_PALETTE[0],
+                        0.33
+                      ),
                       borderStyle:
                         activeItemChip.chip.method === 'inferred'
                           ? 'dashed'
@@ -1313,7 +1320,7 @@ export function WorkspaceClient() {
                       className="line-clamp-2 min-w-0 flex-1 border-l pl-3 text-sm leading-5"
                       style={{
                         color: HUD.textDim,
-                        borderColor: 'rgba(138,160,190,0.18)',
+                        borderColor: HUD.strokeFaint,
                       }}
                     >
                       {summaries[activeTab.durableSessionId]}
@@ -1329,7 +1336,7 @@ export function WorkspaceClient() {
                       new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT)
                     )
                   }
-                  className="grid h-7 w-7 shrink-0 place-items-center rounded outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded outline-none hover:bg-hud-fill-hi focus-visible:ring-1 focus-visible:ring-hud-cyan"
                   style={{ color: HUD.textDim }}
                 >
                   <SquareTerminal className="h-4 w-4" />
@@ -1344,8 +1351,8 @@ export function WorkspaceClient() {
                 className="flex shrink-0 items-center justify-between gap-3 border-b px-3 py-1.5 font-mono text-xs"
                 style={{
                   color: HUD.red,
-                  borderColor: 'rgba(255,31,75,0.35)',
-                  background: 'rgba(255,31,75,0.08)',
+                  borderColor: withThemeAlpha(HUD.red, 0.35),
+                  background: withThemeAlpha(HUD.red, 0.08),
                 }}
               >
                 <span>{error}</span>
@@ -1376,10 +1383,10 @@ export function WorkspaceClient() {
                   <button
                     type="button"
                     onClick={() => setProjectOpenerOpen(true)}
-                    className="inline-flex h-10 items-center gap-2 rounded border px-4 font-mono text-sm outline-none hover:bg-white/5 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                    className="inline-flex h-10 items-center gap-2 rounded border px-4 font-mono text-sm outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
                     style={{
                       color: HUD.text,
-                      borderColor: 'rgba(80,230,255,0.3)',
+                      borderColor: HUD.strokeSoft,
                     }}
                   >
                     <FolderOpen className="h-4 w-4" /> Open Project
@@ -1426,7 +1433,7 @@ export function WorkspaceClient() {
                           style={
                             layout === 'right'
                               ? {
-                                  borderLeft: '1px solid rgba(80,230,255,0.2)',
+                                  borderLeft: `1px solid ${HUD.strokeSoft}`,
                                 }
                               : undefined
                           }
@@ -1534,7 +1541,7 @@ export function WorkspaceClient() {
           className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t px-3 py-1 font-mono text-chrome-meta"
           style={{
             color: HUD.textDim,
-            borderColor: 'rgba(80,230,255,0.12)',
+            borderColor: HUD.strokeFaint,
             background: HUD.bg.deep,
           }}
         >
@@ -1606,7 +1613,7 @@ export function WorkspaceClient() {
           role="status"
           className="fixed bottom-10 right-4 z-40 max-w-md rounded border px-3 py-2 font-sans text-xs motion-safe:animate-in motion-safe:fade-in"
           style={{
-            borderColor: 'rgba(138,160,190,0.25)',
+            borderColor: HUD.strokeSoft,
             background: HUD.bg.panelFill,
             color: HUD.textDim,
           }}

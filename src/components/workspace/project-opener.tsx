@@ -8,7 +8,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { HUD } from '@/components/hud';
+import {
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha,
+} from './workspace-theme';
 import { listProjects, rebindProjectPath } from '@/lib/projects/registry';
 import { extractRecentProjects } from './switcher-rows';
 import {
@@ -269,12 +272,12 @@ export function ProjectOpener({
         className="max-h-[min(760px,calc(100vh-3rem))] w-[min(820px,calc(100vw-2rem))] max-w-none overflow-hidden rounded-md border p-0"
         style={{
           background: HUD.bg.deep,
-          borderColor: 'rgba(80,230,255,0.25)',
+          borderColor: HUD.strokeSoft,
         }}
       >
         <DialogHeader
           className="gap-1 border-b px-5 py-4 pr-12"
-          style={{ borderColor: 'rgba(80,230,255,0.14)' }}
+          style={{ borderColor: HUD.strokeFaint }}
         >
           <DialogTitle
             className="font-display text-base"
@@ -320,7 +323,7 @@ export function ProjectOpener({
                             return next;
                           })
                         }
-                        className="flex min-w-0 items-center gap-3 rounded px-3 py-2 text-left outline-none hover:bg-white/5 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                        className="flex min-w-0 items-center gap-3 rounded px-3 py-2 text-left outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
                       >
                         <span
                           className="grid h-4 w-4 shrink-0 place-items-center border"
@@ -353,7 +356,7 @@ export function ProjectOpener({
             </div>
             <div
               className="flex items-center justify-between border-t px-4 py-3"
-              style={{ borderColor: 'rgba(80,230,255,0.14)' }}
+              style={{ borderColor: HUD.strokeFaint }}
             >
               <button
                 type="button"
@@ -361,7 +364,7 @@ export function ProjectOpener({
                   setCandidates(null);
                   setError(null);
                 }}
-                className="inline-flex h-8 items-center gap-2 rounded px-2 font-mono text-xs outline-none hover:bg-white/5 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                className="inline-flex h-8 items-center gap-2 rounded px-2 font-mono text-xs outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
                 style={{ color: HUD.textDim }}
               >
                 <ArrowLeft className="h-3.5 w-3.5" /> Back
@@ -373,8 +376,8 @@ export function ProjectOpener({
                 className="h-8 rounded border px-3 font-mono text-xs outline-none disabled:opacity-40 focus-visible:ring-1 focus-visible:ring-hud-cyan"
                 style={{
                   color: HUD.text,
-                  borderColor: 'rgba(25,230,255,0.45)',
-                  background: 'rgba(25,230,255,0.09)',
+                  borderColor: withThemeAlpha(HUD.cyan, 0.45),
+                  background: withThemeAlpha(HUD.cyan, 0.09),
                 }}
               >
                 Import {selected.size || ''}
@@ -385,12 +388,12 @@ export function ProjectOpener({
           <>
             <div
               className="border-b px-4 py-3"
-              style={{ borderColor: 'rgba(80,230,255,0.1)' }}
+              style={{ borderColor: HUD.divider }}
             >
               <label
                 className="flex h-9 items-center gap-2 rounded border px-3"
                 style={{
-                  borderColor: 'rgba(80,230,255,0.2)',
+                  borderColor: HUD.strokeSoft,
                   color: HUD.textDim,
                 }}
               >
@@ -428,17 +431,17 @@ export function ProjectOpener({
                       key={project.dir}
                       type="button"
                       onClick={() => void choose(project)}
-                      className="group min-w-0 rounded-md border p-3 text-left outline-none transition-colors hover:bg-white/5 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                      className="group min-w-0 rounded-md border p-3 text-left outline-none transition-colors hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
                       style={{
-                        borderColor: 'rgba(138,160,190,0.18)',
-                        background: 'rgba(8,13,22,0.7)',
+                        borderColor: HUD.strokeFaint,
+                        background: HUD.surfaceInputSoft,
                       }}
                     >
                       <span
                         className="mb-5 block h-5 w-[3px] rounded-full"
                         style={{
                           background: project.color ?? HUD.textDim,
-                          boxShadow: `0 0 8px ${project.color ?? HUD.textDim}66`,
+                          boxShadow: `0 0 8px ${withThemeAlpha(project.color ?? HUD.textDim, 0.4)}`,
                         }}
                       />
                       <span
@@ -469,16 +472,16 @@ export function ProjectOpener({
             </div>
             <div
               className="flex items-center gap-2 border-t px-4 py-3"
-              style={{ borderColor: 'rgba(80,230,255,0.14)' }}
+              style={{ borderColor: HUD.strokeFaint }}
             >
               <button
                 type="button"
                 disabled={nativePicker !== null}
                 onClick={() => void browse()}
-                className="inline-flex h-8 items-center gap-2 rounded border px-3 font-mono text-xs outline-none hover:bg-white/5 disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                className="inline-flex h-8 items-center gap-2 rounded border px-3 font-mono text-xs outline-none hover:bg-hud-fill disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan"
                 style={{
                   color: HUD.text,
-                  borderColor: 'rgba(80,230,255,0.25)',
+                  borderColor: HUD.strokeSoft,
                 }}
               >
                 <FolderOpen className="h-3.5 w-3.5" /> Browse Folder
@@ -487,7 +490,7 @@ export function ProjectOpener({
                 type="button"
                 disabled={nativePicker !== null}
                 onClick={() => void beginImport()}
-                className="inline-flex h-8 items-center gap-2 rounded px-3 font-mono text-xs outline-none hover:bg-white/5 disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                className="inline-flex h-8 items-center gap-2 rounded px-3 font-mono text-xs outline-none hover:bg-hud-fill disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan"
                 style={{ color: HUD.textDim }}
               >
                 <FolderInput className="h-3.5 w-3.5" /> Import Folder

@@ -6,15 +6,14 @@
  * the operator can override via the swatch picker on rename. The hash
  * remains only as a fallback for groups with no assigned color yet.
  */
-import { HUD } from '@/components/hud';
-
+/** Project identity is persisted data, never theme presentation paint. */
 export const PROJECT_PALETTE = [
-  HUD.cyan,
-  HUD.magenta,
-  HUD.amber,
-  HUD.green,
+  '#19E6FF', // cyan
+  '#FF3B8B', // magenta
+  '#FFB02E', // amber
+  '#6FE39F', // green
   '#9D7BFF', // violet
-  HUD.cyan2,
+  '#55EAD4', // teal
   '#55A0FF', // blue
   '#FF7A5C', // coral
   '#C8F05A', // lime

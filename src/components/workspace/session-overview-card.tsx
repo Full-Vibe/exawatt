@@ -1,7 +1,10 @@
 'use client';
 
 import { Shapes } from 'lucide-react';
-import { HUD } from '@/components/hud';
+import {
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha,
+} from './workspace-theme';
 import {
   FLUX,
   exact,
@@ -276,7 +279,7 @@ export function SessionOverviewCardContent({
                   width: `${Math.max(3, consumption.intensity * 100)}%`,
                   background: consumptionNotable
                     ? pressureColor(consumption.intensity * 100)
-                    : 'rgba(138, 160, 190, 0.55)',
+                    : withThemeAlpha(HUD.textDim, 0.55),
                 }}
               />
             </span>

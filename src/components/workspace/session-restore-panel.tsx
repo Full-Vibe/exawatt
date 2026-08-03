@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import type { HarnessResumeCandidate } from '@/types/electron';
 import type { WorkspaceTab } from './use-workspace-state';
 import { HARNESS_META } from './harnesses';
+import { WORKSPACE_HUD as HUD } from './workspace-theme';
 
 export function SessionRestorePanel({
   tab,
@@ -53,22 +54,30 @@ export function SessionRestorePanel({
       data-session-restore={tab.id}
       data-session-durable={tab.durableSessionId}
       data-identity-missing={!exact || undefined}
-      className="relative z-10 shrink-0 border-b border-white/10 bg-zinc-950/95 px-3 py-2.5 text-zinc-100 backdrop-blur"
+      className="relative z-10 shrink-0 border-b px-3 py-2.5 backdrop-blur"
+      style={{
+        color: HUD.text,
+        background: HUD.bg.panelFill,
+        borderColor: HUD.divider,
+      }}
     >
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
         <span
           role="status"
-          className={`shrink-0 border px-1.5 py-0.5 font-mono text-chrome-micro ${
-            exact
-              ? 'border-white/15 text-zinc-400'
-              : 'border-amber-300/30 text-amber-200'
-          }`}
+          className="shrink-0 border px-1.5 py-0.5 font-mono text-chrome-micro"
+          style={{
+            color: exact ? HUD.textDim : HUD.amber,
+            borderColor: exact ? HUD.strokeFaint : HUD.amber,
+          }}
         >
           {status}
         </span>
         <div className="min-w-48 flex-1">
           <p className="truncate text-xs font-medium">{tab.title}</p>
-          <p className="mt-0.5 text-chrome-meta leading-4 text-zinc-400">
+          <p
+            className="mt-0.5 text-chrome-meta leading-4"
+            style={{ color: HUD.textDim }}
+          >
             {exact
               ? tab.harness === 'shell'
                 ? 'Saved terminal history is read-only. Start a new shell in the same directory.'
@@ -94,16 +103,23 @@ export function SessionRestorePanel({
           </Button>
         )}
         {candidateError && (
-          <span role="status" className="text-chrome-micro text-amber-300">
+          <span
+            role="status"
+            className="text-chrome-micro"
+            style={{ color: HUD.amber }}
+          >
             Conversations unavailable
           </span>
         )}
       </div>
 
       {candidates && (
-        <div className="mt-2 max-h-64 space-y-1 overflow-y-auto border-t border-white/10 pt-2">
+        <div
+          className="mt-2 max-h-64 space-y-1 overflow-y-auto border-t pt-2"
+          style={{ borderColor: HUD.divider }}
+        >
           {candidates.length === 0 ? (
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs" style={{ color: HUD.textDim }}>
               No saved {harnessLabel} conversations were found for this Project.
             </p>
           ) : (
@@ -111,18 +127,27 @@ export function SessionRestorePanel({
               <button
                 key={candidate.id}
                 type="button"
-                className="block w-full border border-transparent px-2 py-2 text-left hover:border-white/10 hover:bg-white/5 focus-visible:border-cyan-400 focus-visible:outline-none"
+                className="block w-full border border-transparent px-2 py-2 text-left hover:border-hud-stroke-faint hover:bg-hud-fill focus-visible:border-hud-cyan focus-visible:outline-none"
                 onClick={() => void onResumeTab(tab.id, candidate.id)}
               >
-                <span className="block truncate text-xs text-zinc-200">
+                <span
+                  className="block truncate text-xs"
+                  style={{ color: HUD.text }}
+                >
                   {candidate.label}
                 </span>
                 {candidate.description && (
-                  <span className="mt-1 line-clamp-2 block text-chrome-meta leading-4 text-zinc-400">
+                  <span
+                    className="mt-1 line-clamp-2 block text-chrome-meta leading-4"
+                    style={{ color: HUD.textDim }}
+                  >
                     {candidate.description}
                   </span>
                 )}
-                <span className="mt-1 block font-mono text-chrome-micro text-zinc-500">
+                <span
+                  className="mt-1 block font-mono text-chrome-micro"
+                  style={{ color: HUD.textDim }}
+                >
                   {new Date(candidate.updatedAt).toLocaleString()}
                 </span>
               </button>

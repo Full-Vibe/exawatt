@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { glow, TONE_COLOR, type Corner, type HudTone } from './tokens';
+import { TONE_COLOR, type Corner, type HudTone } from './tokens';
 
 interface CornerBracketsProps {
   corners?: ReadonlyArray<Corner>;
@@ -9,6 +9,8 @@ interface CornerBracketsProps {
   /** bracket leg length in px */
   legLength?: number;
   className?: string;
+  /** DOM-safe generated color override; `tone` remains the legacy fallback. */
+  color?: string;
 }
 
 const POS: Record<Corner, CSSProperties> = {
@@ -32,6 +34,11 @@ function bracketPath(corner: Corner, L: number, size: number): string {
   }
 }
 
+function bracketGlow(color: string, intensity: number): string {
+  const alpha = Math.round(Math.min(1, 0.45 * intensity) * 10_000) / 100;
+  return `drop-shadow(0 0 ${1.5 * intensity}px ${color}) drop-shadow(0 0 ${9 * intensity}px color-mix(in srgb, ${color} ${alpha}%, transparent))`;
+}
+
 /**
  * L-shaped focus brackets at panel corners — fixed-size SVGs pinned to each
  * corner. When `active`, the legs draw on (hud-bracket-draw keyframe; gated by
@@ -43,8 +50,9 @@ export function CornerBrackets({
   active = false,
   legLength = 14,
   className,
+  color: colorOverride,
 }: CornerBracketsProps) {
-  const color = TONE_COLOR[tone];
+  const color = colorOverride ?? TONE_COLOR[tone];
   const size = legLength + 4;
   const order: Corner[] = ['tl', 'tr', 'br', 'bl'];
   return (
@@ -61,7 +69,10 @@ export function CornerBrackets({
             height={size}
             viewBox={`0 0 ${size} ${size}`}
             className="absolute"
-            style={{ ...POS[corner], filter: glow(color, active ? 1.1 : 0.7) }}
+            style={{
+              ...POS[corner],
+              filter: bracketGlow(color, active ? 1.1 : 0.7),
+            }}
           >
             <path
               d={bracketPath(corner, legLength, size)}

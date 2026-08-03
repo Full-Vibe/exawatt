@@ -2,6 +2,7 @@ import {
   STATUS_LIGHT_META,
   type StatusLightState,
 } from '@/components/status-light/protocol';
+import { STATUS_THEME_COLOR } from '@/components/status-light/status-light';
 import type { SessionDelegation } from '@/types/electron';
 import {
   sessionDelegationBusy,
@@ -11,6 +12,7 @@ import {
 } from './session-status';
 import { tabIsLive, type Project } from './use-workspace-state';
 import type { SessionAttentionSignal } from './status-glyphs';
+import { withThemeAlpha } from './workspace-theme';
 
 export type ProjectRibbonSignal =
   | 'fault'
@@ -112,7 +114,7 @@ export function ProjectRibbonSignalMark({
 }) {
   const protocolState: StatusLightState =
     signal === 'quiet' ? 'off' : signal === 'working' ? 'active' : signal;
-  const signalColor = STATUS_LIGHT_META[protocolState].color;
+  const signalColor = STATUS_THEME_COLOR[protocolState];
   return (
     <span
       data-project-signal={signal}
@@ -129,7 +131,7 @@ export function ProjectRibbonSignalMark({
         opacity: signal === 'quiet' ? 0 : 1,
         boxShadow:
           signal === 'needs-you' || signal === 'fault'
-            ? `0 0 0 2px ${signalColor}24`
+            ? `0 0 0 2px ${withThemeAlpha(signalColor, 0.14)}`
             : undefined,
       }}
     />

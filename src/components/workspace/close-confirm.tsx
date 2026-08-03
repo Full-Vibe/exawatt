@@ -13,7 +13,10 @@
  */
 import { useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { HUD } from '@/components/hud';
+import {
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha,
+} from './workspace-theme';
 
 export function CloseConfirm({
   title,
@@ -67,15 +70,15 @@ export function CloseConfirm({
         // space presses the FOCUSED button — native button behavior
       }}
       className="fixed inset-0 z-50 flex items-center justify-center motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150"
-      style={{ background: 'rgba(4,6,11,0.55)' }}
+      style={{ background: withThemeAlpha(HUD.bg.void, 0.55) }}
       onClick={onCancel}
     >
       <div
         className="flex w-[26rem] max-w-[calc(100%-2rem)] flex-col gap-3 rounded border p-4"
         style={{
-          borderColor: `${color}55`,
+          borderColor: withThemeAlpha(color, 0.33),
           background: HUD.bg.panelFill,
-          boxShadow: `0 0 28px rgba(0,0,0,0.55), 0 0 12px ${color}22`,
+          boxShadow: `0 0 28px ${withThemeAlpha(HUD.bg.void, 0.55)}, 0 0 12px ${withThemeAlpha(color, 0.13)}`,
         }}
         onClick={e => e.stopPropagation()}
       >
@@ -85,7 +88,7 @@ export function CloseConfirm({
         {goal && (
           <div
             className="font-sans text-xs leading-4"
-            style={{ color: `${color}B0` }}
+            style={{ color: withThemeAlpha(color, 0.69) }}
           >
             {goal}
           </div>
@@ -176,15 +179,15 @@ export function CloseProjectConfirm({
         }
       }}
       className="fixed inset-0 z-50 flex items-center justify-center motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150"
-      style={{ background: 'rgba(4,6,11,0.55)' }}
+      style={{ background: withThemeAlpha(HUD.bg.void, 0.55) }}
       onClick={onCancel}
     >
       <div
         className="flex w-[26rem] max-w-[calc(100%-2rem)] flex-col gap-3 rounded border p-4"
         style={{
-          borderColor: `${color}55`,
+          borderColor: withThemeAlpha(color, 0.33),
           background: HUD.bg.panelFill,
-          boxShadow: `0 0 28px rgba(0,0,0,0.55), 0 0 12px ${color}22`,
+          boxShadow: `0 0 28px ${withThemeAlpha(HUD.bg.void, 0.55)}, 0 0 12px ${withThemeAlpha(color, 0.13)}`,
         }}
         onClick={e => e.stopPropagation()}
       >

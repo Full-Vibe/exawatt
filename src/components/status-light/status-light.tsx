@@ -11,6 +11,14 @@ const SIZE = {
   spacious: 21,
 } as const;
 
+export const STATUS_THEME_COLOR = {
+  off: 'var(--exa-status-off, #dce5ed)',
+  active: 'var(--exa-status-active, #9cd5fe)',
+  result: 'var(--exa-status-result, #9bf396)',
+  'needs-you': 'var(--exa-status-needs-you, #ffd0b8)',
+  fault: 'var(--exa-status-fault, #ff7373)',
+} as const satisfies Record<StatusLightState, string>;
+
 export type StatusLightSize = keyof typeof SIZE;
 
 function ActiveMark({
@@ -97,14 +105,15 @@ export function StatusLight({
   className?: string;
 }) {
   const meta = STATUS_LIGHT_META[state];
+  const color = STATUS_THEME_COLOR[state];
   const iconSize = SIZE[size];
   const boxSize = iconSize + (size === 'compact' ? 4 : 7);
   const glow =
     state === 'off'
       ? 'none'
       : state === 'active'
-        ? `0 0 9px color-mix(in srgb, ${meta.color} 46%, transparent)`
-        : `0 0 6px color-mix(in srgb, ${meta.color} 24%, transparent)`;
+        ? `0 0 9px color-mix(in srgb, ${color} 46%, transparent)`
+        : `0 0 6px color-mix(in srgb, ${color} 24%, transparent)`;
 
   return (
     <span
@@ -116,11 +125,11 @@ export function StatusLight({
       style={{
         width: boxSize,
         height: boxSize,
-        color: meta.color,
+        color,
         background:
           state === 'off'
-            ? 'rgba(220, 229, 237, 0.035)'
-            : `color-mix(in srgb, ${meta.color} 10%, transparent)`,
+            ? `color-mix(in srgb, ${color} 3.5%, transparent)`
+            : `color-mix(in srgb, ${color} 10%, transparent)`,
         boxShadow: glow,
       }}
     >

@@ -6,7 +6,10 @@
  * with the evidence spelled out in the tooltip. The chip is the lens's one
  * cross-surface jump — activating it focuses that terminal tab.
  */
-import { HUD, withAlpha } from '@/components/hud';
+import {
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha as withAlpha,
+} from '@/components/workspace/workspace-theme';
 import { HarnessGlyph } from '../workspace/harness-icons';
 import type { PtyHarness } from '@/types/electron';
 import type { RoadmapSessionChip as ChipModel } from '@exawatt/ui-model';
@@ -36,7 +39,7 @@ export function RoadmapSessionChipButton({
       data-selected={selected || undefined}
       title={chipTooltip(chip)}
       onClick={onJump}
-      className="flex min-w-0 max-w-full items-center gap-1.5 rounded border px-1.5 py-0.5 font-mono text-chrome-micro outline-none hover:bg-white/10"
+      className="flex min-w-0 max-w-full items-center gap-1.5 rounded border px-1.5 py-0.5 font-mono text-chrome-micro outline-none hover:bg-hud-fill-hi"
       style={{
         borderColor: selected ? color : withAlpha(color, 0.45),
         borderStyle: chip.method === 'inferred' ? 'dashed' : 'solid',

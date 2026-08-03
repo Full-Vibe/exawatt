@@ -12,7 +12,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { ArrowRight, LoaderCircle, Search, Sparkles } from 'lucide-react';
-import { HUD } from '@/components/hud';
+import { WORKSPACE_HUD as HUD } from './workspace-theme';
 import { createClient } from '@/lib/supabase/client';
 import type { RecentConversation } from '@/types/electron';
 import { AGENT_SOURCE_META } from './agent-sources';

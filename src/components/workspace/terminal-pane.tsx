@@ -8,41 +8,24 @@
  * lost between tab switches. On (re)mount the main-process scrollback buffer
  * is replayed first, so renderer reloads restore what you saw.
  */
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import type { ITheme } from '@xterm/xterm';
 import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
+import { useAppearance } from '@/components/appearance/appearance-provider';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from './session-jump';
 import { TERMINAL_FONT } from './terminal-font';
 import type { EffectiveTerminalFont } from './terminal-font';
 import { findFileLinks } from './terminal-links';
 import { matchTerminalChord } from './terminal-chords';
+import {
+  XTERM_MINIMUM_CONTRAST_RATIO,
+  xtermThemeForAppearance,
+} from './terminal-theme';
+import { WORKSPACE_HUD } from './workspace-theme';
 
 export { TERMINAL_FONT, resolveTerminalFont } from './terminal-font';
 export type { EffectiveTerminalFont } from './terminal-font';
-
-export const HUD_TERM_THEME = {
-  background: '#04060B',
-  foreground: '#F4F4F4',
-  cursor: '#19E6FF',
-  cursorAccent: '#04060B',
-  selectionBackground: 'rgba(25,230,255,0.25)',
-  black: '#0B1220',
-  red: '#FF1F4B',
-  green: '#6FE39F',
-  yellow: '#FFB02E',
-  blue: '#55A0FF',
-  magenta: '#FF3B8B',
-  cyan: '#19E6FF',
-  white: '#F4F4F4',
-  brightBlack: '#6A7585',
-  brightRed: '#FF5C7A',
-  brightGreen: '#8FF0B5',
-  brightYellow: '#FFC65C',
-  brightBlue: '#7FB5FF',
-  brightMagenta: '#FF6BA6',
-  brightCyan: '#55EAD4',
-  brightWhite: '#FFFFFF',
-};
 
 /** where this pane sits (S2 split view): full when alone, left/right when
  *  the active tab shares the surface with the pinned tab, hidden otherwise.
@@ -75,6 +58,11 @@ export function TerminalPane({
   /** clicking into a visible-but-inactive pane makes its tab active */
   onActivate?: () => void;
 }) {
+  const { resolved } = useAppearance();
+  const terminalTheme = useMemo(
+    () => xtermThemeForAppearance(resolved),
+    [resolved]
+  );
   const container = useRef<HTMLDivElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -96,6 +84,7 @@ export function TerminalPane({
     copySelection(): void;
     selectAll(): void;
     applyFont(font: EffectiveTerminalFont): void;
+    applyTheme(theme: Readonly<ITheme>): void;
   } | null>(null);
   // the term is created ASYNC (dynamic import) — it must read the CURRENT
   // active state when it finally exists, or the first focus is lost
@@ -105,6 +94,10 @@ export function TerminalPane({
   // update this ref and the live xterm through applyFont below
   const fontRef = useRef(font);
   fontRef.current = font;
+  // Theme refresh is orthogonal to xterm/PTY lifecycle. An async constructor
+  // reads the latest snapshot; an existing terminal receives it in place.
+  const themeRef = useRef(terminalTheme);
+  themeRef.current = terminalTheme;
   // hidden panes must NOT resize their PTY: an invisible element keeps
   // full-container geometry, so during a split every hidden session would
   // get SIGWINCHed to the WRONG width on each layout change (TUIs then
@@ -150,7 +143,8 @@ export function TerminalPane({
         letterSpacing: f?.letterSpacing ?? TERMINAL_FONT.letterSpacing,
         cursorBlink: true,
         scrollback: 50_000,
-        theme: HUD_TERM_THEME,
+        theme: themeRef.current,
+        minimumContrastRatio: XTERM_MINIMUM_CONTRAST_RATIO,
       });
       cleanup.push(() => term.dispose());
       const fit = new FitAddon();
@@ -287,6 +281,9 @@ export function TerminalPane({
           term.options.lineHeight = next.lineHeight;
           term.options.letterSpacing = next.letterSpacing;
           syncSize();
+        },
+        applyTheme: next => {
+          term.options.theme = next;
         },
       };
       cleanup.push(() => {
@@ -429,6 +426,11 @@ export function TerminalPane({
     if (font) termRef.current?.applyFont(font);
   }, [font]);
 
+  // Deliberately no fit/resize here: appearance never changes cell metrics.
+  useEffect(() => {
+    termRef.current?.applyTheme(terminalTheme);
+  }, [terminalTheme]);
+
   // refit when the pane's geometry changes (activation, split/unsplit —
   // it may have been hidden during a container resize); focus follows the
   // ACTIVE tab only, so in a split the driven pane keeps the keyboard
@@ -457,7 +459,7 @@ export function TerminalPane({
         {
           '--terminal-font-stroke': `${font?.fontStrokeWidth ?? TERMINAL_FONT.fontStrokeWidth}px`,
           ...(layout === 'right'
-            ? { borderLeft: '1px solid rgba(80,230,255,0.2)' }
+            ? { borderLeft: `1px solid ${WORKSPACE_HUD.strokeSoft}` }
             : {}),
         } as CSSProperties
       }
@@ -476,7 +478,12 @@ export function TerminalPane({
       {searchOpen && (
         <div
           data-terminal-search
-          className="absolute right-3 top-3 z-20 flex h-9 items-center border border-white/15 bg-zinc-950 px-2 shadow-lg"
+          className="absolute right-3 top-3 z-20 flex h-9 items-center border px-2 shadow-lg"
+          style={{
+            color: WORKSPACE_HUD.text,
+            background: WORKSPACE_HUD.bg.panel,
+            borderColor: WORKSPACE_HUD.strokeSoft,
+          }}
         >
           <input
             ref={searchInput}
@@ -490,15 +497,18 @@ export function TerminalPane({
               }
             }}
             aria-label="Search terminal scrollback"
-            className="h-full w-56 bg-transparent text-sm text-zinc-100 outline-none"
+            className="h-full w-56 bg-transparent text-sm outline-none"
             placeholder="Search"
           />
-          <span className="w-12 text-center font-mono text-chrome-micro text-zinc-500">
+          <span
+            className="w-12 text-center font-mono text-chrome-micro"
+            style={{ color: WORKSPACE_HUD.textDim }}
+          >
             {searchResult}
           </span>
           <button
             type="button"
-            className="grid h-7 w-7 place-items-center text-zinc-400 hover:text-white"
+            className="grid h-7 w-7 place-items-center text-hud-text-dim hover:text-hud-text"
             aria-label="Previous terminal match"
             title="Previous match"
             onClick={() => stepSearch('previous')}
@@ -507,7 +517,7 @@ export function TerminalPane({
           </button>
           <button
             type="button"
-            className="grid h-7 w-7 place-items-center text-zinc-400 hover:text-white"
+            className="grid h-7 w-7 place-items-center text-hud-text-dim hover:text-hud-text"
             aria-label="Next terminal match"
             title="Next match"
             onClick={() => stepSearch('next')}
@@ -516,7 +526,7 @@ export function TerminalPane({
           </button>
           <button
             type="button"
-            className="grid h-7 w-7 place-items-center text-zinc-400 hover:text-white"
+            className="grid h-7 w-7 place-items-center text-hud-text-dim hover:text-hud-text"
             aria-label="Close terminal search"
             title="Close search"
             onClick={closeSearch}
@@ -529,13 +539,19 @@ export function TerminalPane({
         <div
           role="menu"
           aria-label="Terminal actions"
-          className="fixed z-50 min-w-36 border border-white/15 bg-zinc-950 py-1 text-sm text-zinc-200 shadow-xl"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
+          className="fixed z-50 min-w-36 border py-1 text-sm shadow-xl"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+            color: WORKSPACE_HUD.text,
+            background: WORKSPACE_HUD.bg.panel,
+            borderColor: WORKSPACE_HUD.strokeSoft,
+          }}
           onPointerDown={event => event.stopPropagation()}
         >
           <button
             role="menuitem"
-            className="block w-full px-3 py-1.5 text-left hover:bg-white/10"
+            className="block w-full px-3 py-1.5 text-left hover:bg-hud-fill-hi"
             onClick={() => {
               termRef.current?.copySelection();
               setContextMenu(null);
@@ -545,7 +561,7 @@ export function TerminalPane({
           </button>
           <button
             role="menuitem"
-            className="block w-full px-3 py-1.5 text-left hover:bg-white/10"
+            className="block w-full px-3 py-1.5 text-left hover:bg-hud-fill-hi"
             onClick={() => {
               void window.electron?.pty?.pasteClipboard(sessionId);
               setContextMenu(null);
@@ -556,7 +572,7 @@ export function TerminalPane({
           </button>
           <button
             role="menuitem"
-            className="block w-full px-3 py-1.5 text-left hover:bg-white/10"
+            className="block w-full px-3 py-1.5 text-left hover:bg-hud-fill-hi"
             onClick={() => {
               termRef.current?.selectAll();
               setContextMenu(null);

@@ -6,7 +6,10 @@
  * prohibit. Display vocabulary: active / next / later / shipped / parked,
  * with `blocked` as an orthogonal badge rendered by the caller.
  */
-import { HUD, withAlpha } from '@/components/hud';
+import {
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha as withAlpha,
+} from '@/components/workspace/workspace-theme';
 import type { RoadmapDisplayStatus } from '@exawatt/ui-model';
 
 // Status discipline (S7): color belongs to the states that matter — active

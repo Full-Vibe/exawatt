@@ -11,7 +11,10 @@ import {
   SquareTerminal,
   TriangleAlert,
 } from 'lucide-react';
-import { HUD } from '@/components/hud';
+import {
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha,
+} from './workspace-theme';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -1241,9 +1244,9 @@ export function AgentComposer({
                 color: permissionColor,
                 borderColor:
                   permissionSaveState === 'failed'
-                    ? `${HUD.red}88`
+                    ? withThemeAlpha(HUD.red, 0.53)
                     : permissionMode === 'unrestricted'
-                      ? `${HUD.amber}66`
+                      ? withThemeAlpha(HUD.amber, 0.4)
                       : HUD.strokeSoft,
                 background: HUD.bg.deep,
               }}
@@ -1421,7 +1424,7 @@ export function AgentComposer({
                   className="mt-2 h-8 w-full rounded border bg-transparent px-2 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
                   style={{
                     color: HUD.cyan,
-                    borderColor: 'rgba(25,230,255,0.3)',
+                    borderColor: withThemeAlpha(HUD.cyan, 0.3),
                   }}
                 />
               )}
@@ -1558,11 +1561,11 @@ export function AgentComposer({
           style={{
             color: sourceActionMessage.ok ? HUD.green : HUD.amber,
             borderColor: sourceActionMessage.ok
-              ? 'rgba(121, 199, 165, 0.28)'
-              : 'rgba(231, 189, 106, 0.32)',
+              ? withThemeAlpha(HUD.green, 0.28)
+              : withThemeAlpha(HUD.amber, 0.32),
             background: sourceActionMessage.ok
-              ? 'rgba(121, 199, 165, 0.06)'
-              : 'rgba(231, 189, 106, 0.07)',
+              ? withThemeAlpha(HUD.green, 0.06)
+              : withThemeAlpha(HUD.amber, 0.07),
           }}
         >
           <span>{sourceActionMessage.text}</span>
@@ -1571,7 +1574,7 @@ export function AgentComposer({
               type="button"
               disabled={sourceRegistryStatus === 'loading'}
               onClick={() => void recheckSources()}
-              className="shrink-0 rounded px-2 py-1 font-medium outline-none transition-colors hover:bg-white/[0.06] disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+              className="shrink-0 rounded px-2 py-1 font-medium outline-none transition-colors hover:bg-hud-fill disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan"
             >
               {sourceRegistryStatus === 'loading' ? 'Checking…' : 'Recheck'}
             </button>

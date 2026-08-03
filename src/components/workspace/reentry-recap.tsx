@@ -3,7 +3,10 @@
 import { useEffect } from 'react';
 import { History } from 'lucide-react';
 import type { PtyReentryRecap } from '@/types/electron';
-import { HUD } from '@/components/hud';
+import {
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha,
+} from './workspace-theme';
 
 /** How long the ambient recap line stays before yielding back to the
  *  ordinary micro-context summary. */
@@ -43,7 +46,7 @@ export function ReentryRecapLine({
       role="status"
       aria-live="polite"
       className="flex min-w-0 flex-1 items-baseline gap-1.5 border-l pl-3 text-sm leading-5"
-      style={{ borderColor: 'rgba(25,230,255,0.28)' }}
+      style={{ borderColor: withThemeAlpha(HUD.cyan, 0.28) }}
     >
       <History
         aria-hidden="true"

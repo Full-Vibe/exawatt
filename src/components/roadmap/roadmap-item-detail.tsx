@@ -5,7 +5,11 @@
  * milestone spine, description, and the doc chips that are the lens's only
  * edit path (open the file — Exawatt never writes the roadmap).
  */
-import { HUD, withAlpha } from '@/components/hud';
+import {
+  WORKSPACE_FOUNDATION,
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha as withAlpha,
+} from '@/components/workspace/workspace-theme';
 import type { RoadmapItemView } from '@exawatt/ui-model';
 import {
   ROADMAP_STATUS_COLOR,
@@ -158,7 +162,10 @@ export function RoadmapItemDetail({
                     className="absolute left-0.5 top-[5px] grid h-3.5 w-3.5 place-items-center rounded-full font-mono text-chrome-nano font-bold"
                     style={
                       m.done
-                        ? { background: HUD.green, color: '#08120b' }
+                        ? {
+                            background: HUD.green,
+                            color: WORKSPACE_FOUNDATION.actionText,
+                          }
                         : {
                             border: m.retired
                               ? `1.5px dashed ${withAlpha(HUD.textDim, 0.6)}`
@@ -218,10 +225,10 @@ export function RoadmapItemDetail({
                 type="button"
                 tabIndex={-1}
                 onClick={() => onOpenPath(docPath)}
-                className="max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-chrome-micro outline-none hover:bg-white/10"
+                className="max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-chrome-micro outline-none hover:bg-hud-fill-hi"
                 style={{
                   color: HUD.textMono,
-                  borderColor: 'rgba(80,230,255,0.25)',
+                  borderColor: HUD.strokeSoft,
                 }}
                 title={docPath}
               >

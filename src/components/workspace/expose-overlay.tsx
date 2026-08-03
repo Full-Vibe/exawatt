@@ -11,7 +11,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { HUD } from '@/components/hud';
+import {
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha,
+} from './workspace-theme';
 import { READINESS_NEUTRAL } from '@/components/readiness';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import {
@@ -495,9 +498,13 @@ export function ExposeOverlay({
         className="flex h-[272px] flex-col overflow-hidden rounded border p-3 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
         style={{
           width: TILE_W,
-          borderColor: selected ? tile.color : `${tile.color}44`,
-          background: 'rgba(7,12,20,0.92)',
-          boxShadow: selected ? `0 0 14px ${tile.color}55` : 'none',
+          borderColor: selected
+            ? tile.color
+            : withThemeAlpha(tile.color, 0.27),
+          background: HUD.bg.panelFill,
+          boxShadow: selected
+            ? `0 0 14px ${withThemeAlpha(tile.color, 0.33)}`
+            : 'none',
           opacity: entered ? (tile.live ? 1 : 0.55) : 0,
           transform: entered
             ? selected
@@ -550,7 +557,7 @@ export function ExposeOverlay({
       }}
       className="absolute inset-0 z-20 flex overflow-hidden outline-none transition-opacity duration-200 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
       style={{
-        background: 'rgba(4,6,11,0.84)',
+        background: withThemeAlpha(HUD.bg.void, 0.84),
         backdropFilter: 'blur(6px)',
         opacity: entered ? 1 : 0,
       }}
@@ -597,7 +604,7 @@ export function ExposeOverlay({
           {projects.length === 0 && (
             <div
               className="flex min-h-48 max-w-lg flex-col justify-center gap-2 border-y py-8"
-              style={{ borderColor: 'rgba(80,230,255,0.12)' }}
+              style={{ borderColor: HUD.strokeFaint }}
             >
               <p
                 className="font-display text-base font-semibold"
@@ -633,7 +640,9 @@ export function ExposeOverlay({
                 >
                   <div
                     className="mb-2 flex items-center gap-2 border-b pb-2"
-                    style={{ borderColor: `${project.color}33` }}
+                    style={{
+                      borderColor: withThemeAlpha(project.color, 0.2),
+                    }}
                   >
                     <span
                       className="h-3.5 w-[3px] shrink-0 rounded-full"
@@ -678,10 +687,10 @@ export function ExposeOverlay({
                           width: TILE_W,
                           borderColor: emptySelected
                             ? project.color
-                            : `${project.color}44`,
-                          background: 'rgba(7,12,20,0.94)',
+                            : withThemeAlpha(project.color, 0.27),
+                          background: HUD.bg.panelFill,
                           boxShadow: emptySelected
-                            ? `0 0 14px ${project.color}44`
+                            ? `0 0 14px ${withThemeAlpha(project.color, 0.27)}`
                             : 'none',
                           opacity: entered ? 1 : 0,
                           transform: entered

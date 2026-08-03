@@ -20,7 +20,10 @@ import {
   useRef,
   useState,
 } from 'react';
-import { HUD, withAlpha } from '@/components/hud';
+import {
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha as withAlpha,
+} from '@/components/workspace/workspace-theme';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from '../workspace/session-jump';
 import { useUntriagedFeedbackCount } from '../feedback/use-untriaged-feedback';
 import type {
@@ -644,10 +647,10 @@ export function RoadmapRail({
         aria-label={`Open roadmap rail${healthAlert ? ' — needs attention' : ''}`}
         title="Roadmap (⌘B)"
         onClick={() => onModeChange('open')}
-        className="relative flex shrink-0 flex-col items-center border-l pb-2 pt-3 outline-none hover:bg-white/5 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+        className="relative flex shrink-0 flex-col items-center border-l pb-2 pt-3 outline-none hover:bg-hud-fill focus-visible:ring-1 focus-visible:ring-hud-cyan"
         style={{
           width: ROADMAP_STRIP_WIDTH,
-          borderColor: 'rgba(80,230,255,0.12)',
+          borderColor: HUD.strokeFaint,
           background: HUD.bg.deep,
         }}
       >
@@ -689,18 +692,21 @@ export function RoadmapRail({
       // focus it wears an accent ring + an esc hint, so the drill →
       // rail-blur → out ladder gives feedback at every rung
       className={`group/rail flex shrink-0 flex-col border-l outline-none transition-shadow duration-150 focus-within:ring-1 focus-within:ring-inset focus-within:ring-hud-cyan/60 motion-reduce:transition-none motion-reduce:[&_*]:!transition-none ${
-        overlay ? 'absolute inset-y-0 right-0 z-10 shadow-[-12px_0_32px_rgba(0,0,0,0.55)]' : ''
+        overlay ? 'absolute inset-y-0 right-0 z-10' : ''
       }`}
       style={{
         width: ROADMAP_RAIL_WIDTH,
-        borderColor: 'rgba(80,230,255,0.15)',
+        borderColor: HUD.strokeFaint,
         background: HUD.bg.deep,
+        boxShadow: overlay
+          ? `-12px 0 32px ${withAlpha(HUD.bg.void, 0.55)}`
+          : undefined,
       }}
     >
       {/* header: whose roadmap this is, from which file */}
       <div
         className="relative flex shrink-0 flex-col gap-1 overflow-hidden border-b px-3 py-2"
-        style={{ borderColor: 'rgba(80,230,255,0.12)' }}
+        style={{ borderColor: HUD.strokeFaint }}
       >
         {sweep > 0 && (
           <span
@@ -744,7 +750,7 @@ export function RoadmapRail({
                 onModeChange('strip');
                 focusTerminal();
               }}
-              className="ml-auto grid h-6 w-6 shrink-0 place-items-center rounded outline-none hover:bg-white/10"
+              className="ml-auto grid h-6 w-6 shrink-0 place-items-center rounded outline-none hover:bg-hud-fill-hi"
               style={{ color: HUD.textDim }}
             >
               ×
@@ -757,8 +763,8 @@ export function RoadmapRail({
               type="button"
               tabIndex={-1}
               onClick={() => openPath(view.file)}
-              className="min-w-0 truncate rounded border px-1 py-px outline-none hover:bg-white/10"
-              style={{ color: HUD.textMono, borderColor: 'rgba(80,230,255,0.2)' }}
+              className="min-w-0 truncate rounded border px-1 py-px outline-none hover:bg-hud-fill-hi"
+              style={{ color: HUD.textMono, borderColor: HUD.strokeSoft }}
               title={`open ${view.file}`}
             >
               {view.file}
@@ -797,7 +803,7 @@ export function RoadmapRail({
                 tabIndex={-1}
                 onClick={() => setDrillId(null)}
                 aria-label="Back to queue"
-                className="rounded px-1 font-mono text-xs outline-none hover:bg-white/10"
+                className="rounded px-1 font-mono text-xs outline-none hover:bg-hud-fill-hi"
                 style={{ color: HUD.textDim }}
               >
                 ←
@@ -865,7 +871,7 @@ export function RoadmapRail({
                         onClick={() =>
                           row.session.tabId && onSelectSession(row.session.tabId)
                         }
-                        className="flex min-w-0 max-w-full items-center gap-1.5 rounded border border-dashed px-1.5 py-0.5 font-mono text-chrome-micro outline-none hover:bg-white/10"
+                        className="flex min-w-0 max-w-full items-center gap-1.5 rounded border border-dashed px-1.5 py-0.5 font-mono text-chrome-micro outline-none hover:bg-hud-fill-hi"
                         style={{
                           borderColor: withAlpha(HUD.amber, i === sel ? 0.9 : 0.45),
                           color: HUD.text,
@@ -941,7 +947,7 @@ export function RoadmapRail({
       {/* trust strip + rail keys: what is read, and that it is never written */}
       <div
         className="flex shrink-0 flex-col gap-0.5 border-t px-3 py-1.5 font-mono text-chrome-micro"
-        style={{ borderColor: 'rgba(80,230,255,0.12)', color: HUD.textDim }}
+        style={{ borderColor: HUD.strokeFaint, color: HUD.textDim }}
       >
         {view.status === 'ok' && view.trust && (
           <span

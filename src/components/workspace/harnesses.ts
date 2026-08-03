@@ -5,7 +5,6 @@
  * the capability registry in agent-sources.ts; shell remains a Project tool.
  * Main-process command resolution lives in electron/main/pty/session-manager.ts.
  */
-import { HUD } from '@/components/hud';
 import type { PtyHarness } from '@/types/electron';
 import { AGENT_SOURCE_META } from './agent-sources';
 
@@ -25,7 +24,8 @@ export const HARNESS_META: Record<PtyHarness, HarnessMeta> = {
   // operator, dogfood round 4)
   claude: { ...AGENT_SOURCE_META.claude, launch: '+ Claude Code' },
   codex: { ...AGENT_SOURCE_META.codex, launch: '+ Codex' },
-  shell: { label: 'Shell', color: HUD.idle, launch: '+ Shell' },
+  // Source identity is a brand/data channel and stays stable across themes.
+  shell: { label: 'Shell', color: '#6A7585', launch: '+ Shell' },
 };
 
 /** derived from the registry — declaration order IS display order */
