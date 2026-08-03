@@ -38,7 +38,6 @@ import { BoardTileStudy } from '@/components/hud/board-tile-study';
 import { ProjectRibbonStudy } from '@/components/hud/project-ribbon-study';
 import { ReadinessGrammarStudy } from '@/components/readiness/gallery-study';
 import { AmbientMeterStudy } from '@/components/consumption/meter/gallery-study';
-import { ThemeSystemStudy } from '@/components/appearance/theme-system-study';
 
 const TONES: HudTone[] = ['cyan', 'magenta', 'amber', 'red', 'green', 'idle'];
 const STATUSES: AgentStatus[] = [
@@ -62,12 +61,6 @@ interface Section {
 }
 
 const SECTIONS: Section[] = [
-  {
-    id: 'theme-system',
-    title: 'Application themes',
-    meta: 'ENG-032 T2 · Air/Night acceptance workbench · gallery-only',
-    showcase: <ThemeSystemStudy />,
-  },
   {
     id: 'ambient-consumption-meter',
     title: 'Ambient consumption meter',
