@@ -113,21 +113,6 @@ const CLAUDE_EFFORTS: AgentEffortOption[] = [
   },
 ];
 
-function claudeModel(
-  id: string,
-  label: string,
-  description: string,
-  efforts: AgentEffortOption[] = CLAUDE_EFFORTS
-): AgentModelOption {
-  return {
-    id,
-    label,
-    description,
-    defaultEffort: 'auto',
-    efforts,
-  };
-}
-
 function configuredClaudeModel(
   id: string,
   label: string,
@@ -375,7 +360,11 @@ const CLAUDE_AUTO_EFFORT = CLAUDE_EFFORTS[0];
 function claudeModelFromInfo(info: ClaudeModelInfo): AgentModelOption | null {
   if (!isValidAgentModel(info.value)) return null;
   const levels = Array.isArray(info.supportedEffortLevels)
-    ? info.supportedEffortLevels.filter(isValidAgentEffort)
+    ? info.supportedEffortLevels
+        .filter(isValidAgentEffort)
+        // Exawatt's own 'auto' row already means "the model's default", so a
+        // reported level of that name must not produce a duplicate option.
+        .filter(level => level !== CLAUDE_AUTO_EFFORT.id)
     : [];
   const label =
     typeof info.displayName === 'string' && info.displayName.trim()
@@ -410,7 +399,10 @@ function claudeModelFromInfo(info: ClaudeModelInfo): AgentModelOption | null {
 }
 
 /** Reads the model rows out of a Claude Code `initialize` control response —
- * the same `getModelOptions()` list its own `/model` picker renders. */
+ * the same `getModelOptions()` list its own `/model` picker renders. Only the
+ * selectable rows: Claude Code reports models the account can see but not run
+ * under a separate `unavailable_models` key, and Exawatt has no disabled-row
+ * presentation to render them honestly yet. */
 export function parseClaudeModelCatalog(
   raw: string
 ): AgentModelOption[] | null {
@@ -678,8 +670,9 @@ async function readClaudeModelOptions(
     });
     return parseClaudeModelCatalog(result.stdout);
   } catch {
-    // Older CLIs, a failed launch, or a slow cold start fall back to the
-    // built-in list rather than leaving the operator with no models at all.
+    // Older CLIs, a failed launch, or a slow cold start leave the catalog
+    // unknown; the caller then reports the configured values it can see
+    // rather than inventing an account catalog.
     return null;
   }
 }
@@ -691,6 +684,10 @@ interface ClaudeCatalogCacheEntry {
 
 const CLAUDE_CATALOG_TTL_MS = 5 * 60_000;
 const claudeCatalogCache = new Map<string, ClaudeCatalogCacheEntry>();
+const claudeCatalogInFlight = new Map<
+  string,
+  Promise<AgentModelOption[] | null>
+>();
 
 async function cachedClaudeModelOptions(
   cwd: string,
@@ -699,9 +696,18 @@ async function cachedClaudeModelOptions(
   const key = `${shell}\u0000${cwd}`;
   const cached = claudeCatalogCache.get(key);
   if (cached && cached.expires > Date.now()) return cached.models;
-  const models = await readClaudeModelOptions(cwd, shell);
+  // One probe per Project at a time: the composer can ask again while the first
+  // CLI launch is still running, and a second spawn would only answer the same
+  // thing a second later.
+  const inFlight = claudeCatalogInFlight.get(key);
+  if (inFlight) return inFlight;
+  const probe = readClaudeModelOptions(cwd, shell).finally(() => {
+    claudeCatalogInFlight.delete(key);
+  });
+  claudeCatalogInFlight.set(key, probe);
+  const models = await probe;
   // Only a successful probe is cached: a failure should retry on the next open,
-  // not pin the fallback list for five minutes.
+  // not pin the configured-values view for five minutes.
   if (models) {
     claudeCatalogCache.set(key, {
       expires: Date.now() + CLAUDE_CATALOG_TTL_MS,

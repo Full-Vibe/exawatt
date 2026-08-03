@@ -48,6 +48,18 @@ if [ "$1" = "--safe-mode" ]; then
   printf '%s\\n' '{"type":"control_response","response":{"subtype":"success","request_id":"exawatt-model-catalog","response":{"models":[{"value":"default","displayName":"Account default","description":"Claude Code chooses the recommended model for your account.","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"]},{"value":"eval-claude-fable","displayName":"Eval Claude Fable","description":"Frontier evaluator model.","supportsEffort":true,"supportedEffortLevels":["high","max"]}]}}}'
   exit 0
 fi
+if [ "$1" = "--version" ]; then
+  printf '${source === 'claude' ? '2.1.220 (Claude Code)' : 'codex-cli 0.146.0'}\\n'
+  exit 0
+fi
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  printf '%s\\n' '{"loggedIn":true,"email":"operator@example.com","subscriptionType":"max"}'
+  exit 0
+fi
+if [ "$1" = "login" ] && [ "$2" = "status" ]; then
+  printf 'Logged in using ChatGPT\\n'
+  exit 0
+fi
 if [ "$1" = "-p" ]; then printf 'fixture context'; exit 0; fi
 printf 'FAKE_${source.toUpperCase()}_ARGS:'
 printf '<%s>' "$@"
@@ -839,10 +851,12 @@ try {
       );
       await page.getByLabel('Agent Source').click();
       await page.getByRole('option', { name: 'Codex' }).click();
-      // The explicit source change is authored launch intent and therefore a
-      // real draft tab. Discard it before exercising the empty-Project verb.
-      await closeTab(page, 'New agent');
-      await page.locator('[data-agent-composer]').waitFor();
+      // Keep the draft: it is the composer under test, and the launch below
+      // consumes it into the second Agent. Discarding it here would select
+      // the neighbouring live Session instead (D24 close policy), leaving no
+      // composer to assert against — and would drop the per-source model and
+      // effort choices the launch assertions depend on. The later
+      // palette-opened draft is the one that needs an explicit discard.
       await page.waitForFunction(() =>
         document
           .querySelector('[aria-label="Agent Source"]')
@@ -1088,6 +1102,13 @@ try {
         .waitFor();
       check('command palette describes the contextual close target', true);
       await page.keyboard.press('Escape');
+
+      // The source switch above is authored launch intent, so it promoted a
+      // real draft tab. Discard it first: the close verb follows the active UI
+      // object, so with a draft present Command-W would close that tab, not
+      // the Project.
+      await closeTab(page, 'New agent');
+      await page.locator('[data-agent-composer]').waitFor();
 
       // The close verb follows the active UI object. With no Agent tab left,
       // Command-W closes the selected empty Project immediately.

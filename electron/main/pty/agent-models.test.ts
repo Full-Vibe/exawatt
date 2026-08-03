@@ -170,6 +170,23 @@ model_reasoning_effort = "low"
     expect(parseClaudeModelCatalog('not json\n{}')).toBeNull();
   });
 
+  it('keeps one Auto row when the CLI reports an auto effort level', () => {
+    const models = parseClaudeModelCatalog(
+      claudeInitializeResponse([
+        {
+          value: 'sonnet',
+          displayName: 'Sonnet',
+          supportsEffort: true,
+          supportedEffortLevels: ['auto', 'high'],
+        },
+      ])
+    );
+    expect(models?.[0]?.efforts.map(effort => effort.id)).toEqual([
+      'auto',
+      'high',
+    ]);
+  });
+
   it('never adds rows on top of a reported Claude catalog', () => {
     const reported = parseClaudeModelCatalog(
       claudeInitializeResponse([
