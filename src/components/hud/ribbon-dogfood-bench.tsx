@@ -20,6 +20,7 @@ import {
 } from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { TabStrip } from '@/components/workspace/tab-strip';
+import { DEFAULT_RIBBON_POLICY } from '@/components/workspace/project-ribbon-layout';
 import { nextTabInRing, tabAtOrdinal } from '@/components/workspace/tab-ring';
 import type {
   Project,
@@ -190,6 +191,21 @@ export function RibbonDogfoodBench() {
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [activeDir, setActiveDir] = useState('/workspace/exawatt');
   const [benchWidth, setBenchWidth] = useState(1080);
+  // The layout dial, live (operator, 2026-08-03: "I'll need to play with
+  // it"). minTab is the hard floor; comfort is how much title the active
+  // Project's tabs are entitled to before quiet Projects fold to protect it.
+  const [minTab, setMinTab] = useState(DEFAULT_RIBBON_POLICY.minTabWidth);
+  const [comfortTab, setComfortTab] = useState(
+    DEFAULT_RIBBON_POLICY.comfortTabWidth
+  );
+  const layoutPolicy = useMemo(
+    () => ({
+      ...DEFAULT_RIBBON_POLICY,
+      minTabWidth: minTab,
+      comfortTabWidth: comfortTab,
+    }),
+    [comfortTab, minTab]
+  );
   const [attention, setAttention] = useState<
     Record<string, SessionAttentionSignal>
   >({});
@@ -421,6 +437,7 @@ export function RibbonDogfoodBench() {
           >
             <div className="min-w-0 flex-1">
               <TabStrip
+                layoutPolicy={layoutPolicy}
                 projects={projects}
                 activeDir={activeDir}
                 pinnedTabId={null}
@@ -555,7 +572,46 @@ export function RibbonDogfoodBench() {
               onChange={event => setBenchWidth(Number(event.target.value))}
             />
           </label>
+          <label className="flex items-center gap-2">
+            min tab {minTab}px
+            <input
+              type="range"
+              data-bench-min-tab
+              min={72}
+              max={200}
+              step={2}
+              value={minTab}
+              onChange={event => {
+                const next = Number(event.target.value);
+                setMinTab(next);
+                setComfortTab(current => Math.max(current, next));
+              }}
+            />
+          </label>
+          <label className="flex items-center gap-2">
+            fold to protect {comfortTab}px
+            <input
+              type="range"
+              data-bench-comfort-tab
+              min={72}
+              max={280}
+              step={2}
+              value={comfortTab}
+              onChange={event =>
+                setComfortTab(Math.max(minTab, Number(event.target.value)))
+              }
+            />
+          </label>
         </div>
+        <p
+          className="max-w-[80ch] font-mono text-[11px] leading-relaxed"
+          style={{ color: 'rgba(160,190,220,0.6)' }}
+        >
+          Leave “fold to protect” equal to “min tab” and the row shrinks tabs
+          first, then scrolls the last inch. Raise it and quiet Projects fold
+          into counted containers sooner so tabs keep their titles and nothing
+          scrolls. Lower “min tab” for shorter titles that fit more.
+        </p>
 
         {/* ── instrumentation readout ── */}
         <div

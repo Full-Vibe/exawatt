@@ -59,7 +59,6 @@ import {
   OPEN_ROADMAP_EVENT,
   RENAME_ACTIVE_EVENT,
   CLOSE_ACTIVE_EVENT,
-  OPEN_OVERVIEW_EVENT,
   FOCUS_ACTIVE_TERMINAL_EVENT,
   OPEN_PROJECT_PICKER_EVENT,
   consumePendingProjectPicker,
@@ -906,17 +905,12 @@ export function WorkspaceClient() {
       if (durableSessionId) void reopenClosedSession(durableSessionId);
     };
     window.addEventListener(REOPEN_CLOSED_EVENT, onReopenClosed);
-    const onOpenOverview = () => {
-      updateOverview(true);
-    };
     window.addEventListener(CLOSE_ACTIVE_EVENT, onCloseActive);
-    window.addEventListener(OPEN_OVERVIEW_EVENT, onOpenOverview);
     return () => {
       window.removeEventListener(REOPEN_CLOSED_EVENT, onReopenClosed);
       window.removeEventListener(CLOSE_ACTIVE_EVENT, onCloseActive);
-      window.removeEventListener(OPEN_OVERVIEW_EVENT, onOpenOverview);
     };
-  }, [closeActiveItem, reopenClosedSession, updateOverview]);
+  }, [closeActiveItem, reopenClosedSession]);
 
   // Native Session menu requests survive a route transition; the shortcut
   // itself calls the same action directly below. Wait for restored workspace

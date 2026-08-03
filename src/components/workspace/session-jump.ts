@@ -41,7 +41,6 @@ export const MOVE_ACTIVE_PROJECT_EVENT = 'exawatt:move-active-project';
 export const REOPEN_CLOSED_EVENT = 'exawatt:reopen-closed-session';
 /** native menu → workspace: reopen the ledger's newest recoverable Session */
 export const REOPEN_LAST_CLOSED_EVENT = 'exawatt:reopen-last-closed-session';
-export const OPEN_OVERVIEW_EVENT = 'exawatt:open-overview';
 /** palette/menu → summon the Project roadmap at the Sessions altitude (S12) */
 export const OPEN_ROADMAP_EVENT = 'exawatt:open-roadmap';
 

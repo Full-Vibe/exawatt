@@ -32,11 +32,13 @@ import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion
 import type { SessionDelegation } from '@/types/electron';
 import { HarnessGlyph } from './harness-icons';
 import {
+  DEFAULT_RIBBON_POLICY,
   layoutRibbonRow,
   orderProjectsForRibbon,
   type ProjectPresentation,
   RIBBON_ROW_HEIGHT,
   ribbonHeightForRows,
+  type RibbonLayoutPolicy,
   type RibbonProjectInput,
   type RibbonTarget,
 } from './project-ribbon-layout';
@@ -169,6 +171,7 @@ export function TabStrip({
   onRateContext,
   exitingProjectDirs,
   dormantProjectDirs,
+  layoutPolicy = DEFAULT_RIBBON_POLICY,
 }: {
   projects: Project[];
   activeDir: string | null;
@@ -209,6 +212,9 @@ export function TabStrip({
   ) => void;
   exitingProjectDirs?: ReadonlySet<string>;
   dormantProjectDirs?: ReadonlySet<string>;
+  /** Overrides the layout dial. Production uses the default; the ribbon lab
+   *  drives it live so the tuning can be felt before it is chosen. */
+  layoutPolicy?: RibbonLayoutPolicy;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const router = useRouter();
@@ -353,8 +359,8 @@ export function TabStrip({
         miniWidth: CONDENSED_TAB_WIDTH,
       });
     }
-    return layoutRibbonRow(blocks, containerWidth);
-  }, [activeDir, containerWidth, headerWidths, layoutEntries]);
+    return layoutRibbonRow(blocks, containerWidth, layoutPolicy);
+  }, [activeDir, containerWidth, headerWidths, layoutEntries, layoutPolicy]);
   const presentationFor = useCallback(
     (dir: string): ProjectPresentation =>
       layout.presentation.get(dir) ?? (dir === activeDir ? 'open' : 'mini'),

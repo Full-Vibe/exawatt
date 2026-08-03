@@ -32,8 +32,22 @@ export const RIBBON_COLUMN_GAP = 4;
 export const RIBBON_GROUP_GAP = 12;
 
 export interface RibbonLayoutPolicy {
-  /** narrowest an open tab may shrink to before folding starts */
+  /** hard floor: an open tab is never drawn narrower than this */
   minTabWidth: number;
+  /**
+   * How much title the active Project's tabs are *entitled* to before quiet
+   * Projects start folding to protect it. This is the single dial between
+   * the operator's three acceptable outcomes (2026-08-03):
+   *
+   *   comfort == min   fold only to avoid scrolling — tabs shrink first and
+   *                    the row scrolls the last inch  ("scrolling is fine")
+   *   comfort >  min   fold quiet Projects earlier so tabs keep their title
+   *                    and nothing scrolls             ("aggressive folding")
+   *
+   * and `minTabWidth` itself is the third ("narrower tabs"). Everything in
+   * between is reachable, which is why this is a number and not a mode.
+   */
+  comfortTabWidth: number;
   /** widest an open tab is ever drawn */
   maxTabWidth: number;
   /** a folded Project's container chip: its name plus a count */
@@ -49,6 +63,9 @@ export const DEFAULT_RIBBON_POLICY: RibbonLayoutPolicy = {
   // A tab keeps its status glyph, ~9 characters of title, and a close
   // button that floats in on hover once it is this tight (see tab-strip).
   minTabWidth: 118,
+  // Defaults to the floor: today's behaviour exactly, so the dial changes
+  // nothing until it is deliberately turned.
+  comfortTabWidth: 118,
   maxTabWidth: 232,
   foldedProjectWidth: 124,
   columnGap: RIBBON_COLUMN_GAP,
@@ -181,10 +198,17 @@ export function layoutRibbonRow(
   const foldable = projects.filter(
     project => project.tabs.length > 0
   ).length;
+  // Fold until the WORST-CASE row fits with tabs at their entitled width.
+  // Raising `comfortTabWidth` above the floor buys title length by folding
+  // quiet Projects sooner; leaving it at the floor folds only to avoid
+  // scrolling. Either way the count is computed from the hungriest Project,
+  // never the current selection — that is what keeps the ribbon's
+  // presentation identical wherever you are standing.
+  const entitledWidth = Math.max(policy.minTabWidth, policy.comfortTabWidth);
   let foldCount = 0;
   while (
     foldCount < Math.max(0, foldable - 1) &&
-    widthWithFolds(foldCount, hungriest, policy.minTabWidth) > width
+    widthWithFolds(foldCount, hungriest, entitledWidth) > width
   ) {
     foldCount += 1;
   }

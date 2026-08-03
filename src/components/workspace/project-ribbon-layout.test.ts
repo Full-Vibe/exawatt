@@ -164,3 +164,58 @@ describe('orderProjectsForRibbon', () => {
     ).toEqual(['a', 'c', 'b', 'd']);
   });
 });
+
+describe('the comfort dial (D45 tuning)', () => {
+  const shape = (activeIdx: number) =>
+    [
+      project('/a', 5, activeIdx === 0),
+      project('/b', 2, activeIdx === 1),
+      project('/c', 2, activeIdx === 2),
+    ];
+
+  it('at the floor, shrinks tabs and scrolls rather than folding', () => {
+    const layout = layoutRibbonRow(shape(0), 900, {
+      ...DEFAULT_RIBBON_POLICY,
+      minTabWidth: 100,
+      comfortTabWidth: 100,
+    });
+    expect([...layout.presentation.values()]).not.toContain('folded');
+    expect(layout.targets.get('tab:/a-0')?.width).toBeLessThan(200);
+  });
+
+  it('raised, folds quiet Projects so the tabs keep their title', () => {
+    const layout = layoutRibbonRow(shape(0), 900, {
+      ...DEFAULT_RIBBON_POLICY,
+      minTabWidth: 100,
+      comfortTabWidth: 200,
+    });
+    expect([...layout.presentation.values()]).toContain('folded');
+    // the Project you are in never folds, and its tabs got the room back
+    expect(layout.presentation.get('/a')).toBe('open');
+    expect(layout.targets.get('tab:/a-0')?.width).toBeGreaterThan(
+      layoutRibbonRow(shape(0), 900, {
+        ...DEFAULT_RIBBON_POLICY,
+        minTabWidth: 100,
+        comfortTabWidth: 100,
+      }).targets.get('tab:/a-0')!.width
+    );
+  });
+
+  it('stays selection-invariant at every setting of the dial', () => {
+    for (const comfortTabWidth of [100, 160, 220, 280]) {
+      const policy = {
+        ...DEFAULT_RIBBON_POLICY,
+        minTabWidth: 100,
+        comfortTabWidth,
+      };
+      const modes = [0, 1, 2].map(active =>
+        layoutRibbonRow(shape(active), 900, policy)
+      );
+      // '/c' is inactive in the first two selections; its presentation must
+      // not depend on which of them is current
+      expect(modes[0].presentation.get('/c')).toBe(
+        modes[1].presentation.get('/c')
+      );
+    }
+  });
+});
