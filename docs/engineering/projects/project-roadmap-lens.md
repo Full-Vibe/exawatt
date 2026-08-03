@@ -465,10 +465,23 @@ And the concrete failure that triggered it: an agent was actively working ENG-03
 
 ### Boundary: what writes, and what does not
 
-ENG-017 has been read-only since S0, and `roadmap.md` in each repo is the only truth. That posture survives, with one clarification the new gestures force:
+RESOLVED 2026-08-03 by decision `0027` — the operator lifted the read-only gate: *"Yes indeed, manipulate roadmap state in the repo. Maybe pop a permission dialog with always allow / don't ask me again."*
 
-- **launch-from-item and attach are LOCAL annotations**, exactly like S4's declare-at-launch (`workspace.json`). They write no repo file, and they are therefore unblocked.
-- **reordering the queue and transitioning item status would be repo writes.** Those stay GATED. The operator's word was "manipulate"; if that means reordering, it is a genuine canon change (Exawatt would begin writing another repo's roadmap file) and needs its own decision record, not an inherited assumption. Recommendation on the table: keep Exawatt read-only and let agents do the writing, since an agent editing its own repo's roadmap is already how every ENG item gets updated.
+- **launch-from-item and attach are LOCAL annotations**, exactly like S4's declare-at-launch (`workspace.json`). No repo file is touched.
+- **reordering, status changes, and milestone ticks now write the repo file**, under decision `0027`'s six constraints: sequence and state only (never prose, never item creation); declared conformance required; Exawatt writes the file and never runs git; permission rides the Project's launch policy behind its own seam; concurrent modification is refused rather than merged; and the operator sees the edit animate in place with an inline pending/applied/failed state and a short undo window.
+- **Read the decision before implementing.** Two things there are easy to get wrong: "commit" in the operator's phrasing means the write being applied, NOT authorization for Exawatt to run `git commit` (that would reverse ENG-019 and needs its own decision); and permission is *modeled* separately even though it *resolves* through the launch policy today, so the two can be split later without a refactor.
+
+### Repo readiness (S13.6) — mostly already built
+
+The operator asked for "a publishable spec to make a repo Exawatt-ready and manipulable… nice and green in the roadmap view, or a small warning icon with hover tooltip / remediation-agent-spawn gesture if the repo is not natively Exawatt compatible," and added that capturing it was enough if it did not exist.
+
+Most of it does exist. `docs/product/reference/roadmap-convention.md` is the published spec (S1, decision `0011`), the parser already distinguishes a **declared-conformant** file from one it read on a tolerant best-effort basis, and it already emits positioned diagnostics instead of guessing (S1, S5). What is missing is purely the surfacing:
+
+- conformance state visible in the lens — conformant reads as unremarkable, non-conformant carries a small honest marker
+- the parser's existing diagnostics readable in place, so "what is wrong with my roadmap" is answerable without running a script
+- a gesture that launches an agent to adapt the repo to the published convention — the operator's "remediation-agent-spawn", which composes naturally with S13.3's launch-from-item since both start an agent with a pre-filled task
+
+This milestone also carries S13.5's gate: conformance is what decides whether a roadmap is manipulable at all, so the badge is not decoration — it explains why the write gestures are or are not available.
 
 ### Queued work (defects, not design)
 
