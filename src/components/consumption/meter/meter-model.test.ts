@@ -11,7 +11,7 @@ import {
   remediationHint,
 } from './meter-model';
 import { METER_STATES } from './fixtures';
-import { FLUX } from '../flux';
+import { FLUX_CSS as FLUX } from '../flux';
 
 const NOW = Date.parse('2026-08-02T15:20:00.000Z');
 const MIN = 60_000;
@@ -157,7 +157,12 @@ describe('state ladder', () => {
   it('a pace that exhausts the window before reset is hot even under 85%', () => {
     // 70% used, 1.5h to reset, 25%/h → projected 107.5%
     expect(stateAt(70, 25)).toBe('hot');
-    expect(readMeter([source([win({ usedPercent: 70, burnPercentPerHour: 25 })])], NOW).reading?.exhaustsBeforeReset).toBe(true);
+    expect(
+      readMeter(
+        [source([win({ usedPercent: 70, burnPercentPerHour: 25 })])],
+        NOW
+      ).reading?.exhaustsBeforeReset
+    ).toBe(true);
   });
 });
 
@@ -201,8 +206,10 @@ describe('words', () => {
   it('coaches only at hot and exhausted', () => {
     const warm = readMeter([source([win({ usedPercent: 71 })])], NOW).reading!;
     const hot = readMeter([source([win({ usedPercent: 86 })])], NOW).reading!;
-    const spent = readMeter([source([win({ usedPercent: 100 })])], NOW)
-      .reading!;
+    const spent = readMeter(
+      [source([win({ usedPercent: 100 })])],
+      NOW
+    ).reading!;
     expect(remediationHint(warm)).toBeNull();
     expect(remediationHint(hot)).toBeTruthy();
     expect(remediationHint(spent)).toMatch(/resets|reset/i);
@@ -214,12 +221,7 @@ describe('gallery fixtures', () => {
     const states = METER_STATES.map(
       s => readMeter(s.sources, s.nowMs).reading?.state
     );
-    expect(states.slice(0, 4)).toEqual([
-      'healthy',
-      'warm',
-      'hot',
-      'exhausted',
-    ]);
+    expect(states.slice(0, 4)).toEqual(['healthy', 'warm', 'hot', 'exhausted']);
   });
 
   it('the hot fixture is ahead of even pace, per the operator spec', () => {

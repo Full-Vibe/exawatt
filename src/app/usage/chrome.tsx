@@ -9,14 +9,15 @@
  * the design record.
  */
 import type { ReactNode } from 'react';
-import { HUD, withAlpha } from '@/components/hud';
 import {
-  FLUX,
+  CONSUMPTION_CHROME as CHROME,
+  FLUX_CSS as FLUX,
+  consumptionAlpha as withAlpha,
   percent,
-  pressureColor,
+  pressureColorCss as pressureColor,
   projectionHatch,
   tokens,
-  unknownHatch,
+  unknownHatchCss as unknownHatch,
 } from '@/components/consumption/flux';
 import type { DemoConsumption } from '@/components/consumption/demo-source';
 import type { WindowPace } from './derive';
@@ -54,7 +55,7 @@ export function DemoBanner({
       >
         {voltaic ? DEMO_WORKSPACE.name : 'Demo data'}
       </span>
-      <span className="text-chrome-meta" style={{ color: HUD.textDim }}>
+      <span className="text-chrome-meta" style={{ color: CHROME.textDim }}>
         {voltaic ? `${DEMO_ORGANIZATION.name} · ` : ''}
         {demo.windowLabel} · {demo.workspace.sessionCount} sessions ·{' '}
         {tokens(raw)} raw tokens · same rollup path as a live local read · not
@@ -124,7 +125,7 @@ export function PaceBar({
           top: -3,
           width: 2,
           height: height + 6,
-          background: withAlpha(HUD.text, 0.85),
+          background: withAlpha(CHROME.text, 0.85),
         }}
         title={`even pace would be at ${percent(pace.evenPacePercent)}`}
       />
@@ -170,7 +171,7 @@ export function UnreportedChannel({
       />
       <span
         className="font-mono text-chrome-meta tabular-nums"
-        style={{ color: HUD.textDim }}
+        style={{ color: CHROME.textDim }}
       >
         {tokens(observed)} raw observed · 5h
       </span>
@@ -189,7 +190,7 @@ export function UnreportedChannel({
 
 export function MicroLabel({
   children,
-  color = HUD.textDim,
+  color = CHROME.textDim,
 }: {
   children: ReactNode;
   color?: string;
@@ -218,9 +219,8 @@ export function Card({
       aria-label={label}
       className={`rounded-lg border p-4 ${className}`}
       style={{
-        borderColor: 'rgba(150,120,255,0.16)',
-        background:
-          'linear-gradient(180deg, rgba(14,11,30,0.9), rgba(7,8,18,0.92))',
+        borderColor: CHROME.border,
+        background: CHROME.surface,
       }}
     >
       {children}

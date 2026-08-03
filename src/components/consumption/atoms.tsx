@@ -17,19 +17,20 @@
  */
 
 import type { ReactNode } from 'react';
-import { HUD, withAlpha } from '@/components/hud';
 import {
-  FLUX,
-  UNIT_COLOR,
+  CONSUMPTION_CHROME as CHROME,
+  FLUX_CSS as FLUX,
+  UNIT_COLOR_CSS as UNIT_COLOR,
   UNIT_LABEL,
   UNIT_ORDER,
+  consumptionAlpha as withAlpha,
   duration,
   exact,
   percent,
-  pressureColor,
+  pressureColorCss as pressureColor,
   projectionHatch,
   tokens,
-  unknownHatch,
+  unknownHatchCss as unknownHatch,
   type UnitKey,
 } from './flux';
 import { useConsumptionClock } from './clock';
@@ -64,7 +65,10 @@ export function CapacityBar({
   // wedge can sit outside it — so an unclamped width paints the hatch straight
   // over the labels beside the bar. Overshoot is carried by the hot ceiling tick
   // and the wedge, which is the whole point of racing a fixed tick.
-  const projectedW = Math.max(0, Math.min(100 - usedW, p.projectedPercent - w.usedPercent));
+  const projectedW = Math.max(
+    0,
+    Math.min(100 - usedW, p.projectedPercent - w.usedPercent)
+  );
   const overshoot = p.projectedPercent > 100;
 
   return (
@@ -166,10 +170,18 @@ export function Sparkline({
   if (values.length === 0) return null;
   const step = width / (values.length - 1);
   const pts = values
-    .map((v, i) => `${(i * step).toFixed(1)},${(height - v * (height - 2) - 1).toFixed(1)}`)
+    .map(
+      (v, i) =>
+        `${(i * step).toFixed(1)},${(height - v * (height - 2) - 1).toFixed(1)}`
+    )
     .join(' ');
   return (
-    <svg aria-hidden width={width} height={height} className="shrink-0 overflow-visible">
+    <svg
+      aria-hidden
+      width={width}
+      height={height}
+      className="shrink-0 overflow-visible"
+    >
       <polyline
         points={pts}
         fill="none"
@@ -257,14 +269,19 @@ export function UnitLegend({ compact = false }: { compact?: boolean }) {
             style={{ background: UNIT_COLOR[key] }}
           />
           <span
-            className={compact ? 'font-ui text-chrome-micro' : 'font-ui text-chrome-meta'}
-            style={{ color: HUD.textDim }}
+            className={
+              compact ? 'font-ui text-chrome-micro' : 'font-ui text-chrome-meta'
+            }
+            style={{ color: CHROME.textDim }}
           >
             {UNIT_LABEL[key as UnitKey]}
           </span>
         </span>
       ))}
-      <span className="ml-1 font-ui text-chrome-micro" style={{ color: withAlpha(HUD.textDim, 0.8) }}>
+      <span
+        className="ml-1 font-ui text-chrome-micro"
+        style={{ color: withAlpha(CHROME.textDim, 0.8) }}
+      >
         brighter = costlier per token · width = raw volume
       </span>
     </div>
@@ -297,7 +314,7 @@ export function Figure({
   return (
     <span
       className="shrink-0 text-right font-mono text-chrome-meta tabular-nums"
-      style={{ width, color: muted ? HUD.textDim : HUD.text }}
+      style={{ width, color: muted ? CHROME.textDim : CHROME.text }}
       title={title ?? exact(value)}
     >
       {value === 0 ? '—' : tokens(value)}
@@ -368,7 +385,7 @@ function FacetMark({ state }: { state: FacetState }) {
       <span
         aria-hidden
         className="inline-block h-[7px] w-[7px] shrink-0 rounded-full"
-        style={{ background: HUD.text }}
+        style={{ background: CHROME.text }}
       />
     );
   }
@@ -377,7 +394,9 @@ function FacetMark({ state }: { state: FacetState }) {
       <span
         aria-hidden
         className="inline-block h-[7px] w-[7px] shrink-0 rounded-full"
-        style={{ boxShadow: `inset 0 0 0 1px ${withAlpha(HUD.textDim, 0.65)}` }}
+        style={{
+          boxShadow: `inset 0 0 0 1px ${withAlpha(CHROME.textDim, 0.65)}`,
+        }}
       />
     );
   }
@@ -388,10 +407,17 @@ function FacetMark({ state }: { state: FacetState }) {
         cy={3.5}
         r={3}
         fill="none"
-        stroke={withAlpha(HUD.textDim, 0.65)}
+        stroke={withAlpha(CHROME.textDim, 0.65)}
         strokeWidth={1}
       />
-      <line x1={1} y1={6} x2={6} y2={1} stroke={HUD.textDim} strokeWidth={1} />
+      <line
+        x1={1}
+        y1={6}
+        x2={6}
+        y2={1}
+        stroke={CHROME.textDim}
+        strokeWidth={1}
+      />
     </svg>
   );
 }
@@ -412,12 +438,14 @@ export function AssuranceLine({
             tabIndex={0}
             title={f.detail}
             aria-label={`${f.label}: ${f.detail}`}
-            className="inline-flex cursor-help items-center gap-1.5 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+            className="inline-flex cursor-help items-center gap-1.5 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--exa-foundation-focus)]"
           >
             <FacetMark state={f.state} />
             <span
               className="font-ui text-chrome-meta"
-              style={{ color: f.state === 'holds' ? HUD.text : HUD.textDim }}
+              style={{
+                color: f.state === 'holds' ? CHROME.text : CHROME.textDim,
+              }}
             >
               {f.label}
             </span>
@@ -425,7 +453,10 @@ export function AssuranceLine({
         ))}
       </div>
       {children && (
-        <p className="font-ui text-chrome-meta leading-4" style={{ color: HUD.textDim }}>
+        <p
+          className="font-ui text-chrome-meta leading-4"
+          style={{ color: CHROME.textDim }}
+        >
           {children}
         </p>
       )}
@@ -451,8 +482,8 @@ export function Panel({
       aria-label={label}
       className={`rounded-md border ${className}`}
       style={{
-        borderColor: 'rgba(150,120,255,0.16)',
-        background: 'linear-gradient(180deg, rgba(14,11,30,0.9), rgba(7,8,18,0.92))',
+        borderColor: CHROME.border,
+        background: CHROME.surface,
       }}
     >
       {children}
@@ -463,7 +494,10 @@ export function Panel({
 export function ResetCountdown({ window: w }: { window: CapacityWindowView }) {
   const p = projectWindow(w, useConsumptionClock());
   return (
-    <span className="font-mono text-chrome-meta tabular-nums" style={{ color: HUD.textDim }}>
+    <span
+      className="font-mono text-chrome-meta tabular-nums"
+      style={{ color: CHROME.textDim }}
+    >
       resets in {duration(p.msToReset)}
     </span>
   );

@@ -31,11 +31,13 @@
  * here reads a file, spawns a process, or makes a network call.
  */
 import { useMemo, useState } from 'react';
-import { HUD } from '@/components/hud';
 import { displayUsage, rawTotal } from '@/components/consumption/model';
 import { useTenantConsumption } from '@/components/consumption/use-tenant-consumption';
 import { CONSUMPTION_SURFACE_NAME } from '@/components/consumption/surface-name';
-import { exact } from '@/components/consumption/flux';
+import {
+  CONSUMPTION_CHROME as CHROME,
+  exact,
+} from '@/components/consumption/flux';
 import { SurfaceReadinessMarker } from '@/components/readiness';
 import {
   allPaces,
@@ -76,7 +78,10 @@ export function UsageClient() {
   const [selection, setSelection] = useState<DrillSelection>(null);
   const [gridExpanded, setGridExpanded] = useState(false);
 
-  const pivots = useMemo(() => pivotRows(demo, pivot, rows), [demo, pivot, rows]);
+  const pivots = useMemo(
+    () => pivotRows(demo, pivot, rows),
+    [demo, pivot, rows]
+  );
   const sessionPivots = useMemo(
     () => (pivot === 'session' ? pivots : pivotRows(demo, 'session', rows)),
     [demo, pivot, pivots, rows]
@@ -85,7 +90,9 @@ export function UsageClient() {
   // The drill panel is never empty: the top pivot row is the default door.
   const drill: PivotRow | null = useMemo(() => {
     if (selection?.kind === 'session') {
-      return sessionPivots.find(r => r.id === selection.id) ?? pivots[0] ?? null;
+      return (
+        sessionPivots.find(r => r.id === selection.id) ?? pivots[0] ?? null
+      );
     }
     if (selection?.kind === 'pivot') {
       return pivots.find(r => r.id === selection.id) ?? pivots[0] ?? null;
@@ -95,14 +102,15 @@ export function UsageClient() {
 
   return (
     <main
+      data-consumption-surface
       className="min-h-svh font-ui"
-      style={{ background: '#07060E', color: HUD.text }}
+      style={{ background: CHROME.canvas, color: CHROME.text }}
     >
       <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-4 px-6 pb-16 pt-8 sm:px-8">
         <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <h1
             className="text-surface-title font-semibold tracking-tight"
-            style={{ color: HUD.text }}
+            style={{ color: CHROME.text }}
           >
             {CONSUMPTION_SURFACE_NAME}
           </h1>
@@ -112,7 +120,7 @@ export function UsageClient() {
           <SurfaceReadinessMarker surfaceId="consumption" />
           <span
             className="ml-auto text-chrome-meta"
-            style={{ color: HUD.textDim }}
+            style={{ color: CHROME.textDim }}
           >
             read locally from Claude Code and Codex logs · no provider API ·
             nothing leaves this machine
@@ -173,7 +181,7 @@ export function UsageClient() {
 
         <footer
           className="border-t pt-3 text-chrome-meta"
-          style={{ borderColor: 'rgba(150,120,255,0.14)', color: HUD.textDim }}
+          style={{ borderColor: CHROME.border, color: CHROME.textDim }}
         >
           {exact(demo.samples.length)} usage records ·{' '}
           {demo.workspace.sessionCount + demo.overhead.sessionCount} provider

@@ -5,8 +5,10 @@
  * tiles. Readings live in tooltips, not prose. The ENG-014 allocation
  * affordance survives beside it at chip scale, honestly unbuilt.
  */
-import { HUD } from '@/components/hud';
-import { FLUX } from '@/components/consumption/flux';
+import {
+  CONSUMPTION_CHROME as CHROME,
+  FLUX_CSS as FLUX,
+} from '@/components/consumption/flux';
 import { AnnouncedChip } from '@/components/readiness';
 import type { Diagnostic } from './derive';
 import { Card, MicroLabel } from './chrome';
@@ -30,7 +32,7 @@ export function Diagnostics({ diags }: { diags: Diagnostic[] }) {
                     ? FLUX.unknown
                     : d.state === 'watch'
                       ? FLUX.warm
-                      : HUD.text,
+                      : CHROME.text,
               }}
               title={d.hint}
             >

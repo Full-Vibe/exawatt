@@ -14,9 +14,16 @@
  * FLUX channel-ownership rule holds: nothing here is ever green, amber, or
  * fault-red.
  *
- * Pure data and pure functions: no React, no DOM.
+ * Pure presentation data and pure functions: no React or DOM state. Theme
+ * values stay as unresolved CSS-variable strings until the browser paints.
  */
-import { duration, pressureColor, FLUX } from '../flux';
+import {
+  CONSUMPTION_CHROME as CHROME,
+  FLUX_CSS as FLUX,
+  consumptionAlpha,
+  duration,
+  pressureColorCss as pressureColor,
+} from '../flux';
 import {
   projectWindow,
   windowFreshness,
@@ -156,14 +163,14 @@ export interface MeterTone {
   colored: boolean;
 }
 
-/** Chrome neutrals, matched to the zinc title-bar ladder the meter sits in. */
+/** Theme-resolved chrome neutrals; Consumption color still appears only hot. */
 const MONO = {
-  fillCalm: '#8f939c', // ≈ zinc-400: present, not talking
-  fillWarm: '#d4d4d8', // ≈ zinc-300: brighter, still monochrome
-  textCalm: '#a1a1aa',
-  textWarm: '#e4e4e7',
-  track: 'rgba(255, 255, 255, 0.13)',
-  tick: 'rgba(255, 255, 255, 0.6)',
+  fillCalm: CHROME.textDim,
+  fillWarm: CHROME.text,
+  textCalm: CHROME.textDim,
+  textWarm: CHROME.text,
+  track: consumptionAlpha(CHROME.text, 0.13),
+  tick: consumptionAlpha(CHROME.text, 0.6),
 } as const;
 
 export const METER_MONO = MONO;

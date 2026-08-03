@@ -8,8 +8,12 @@
  * door: selecting it opens the sessions behind it in the shared drill panel.
  */
 import { useMemo } from 'react';
-import { HUD, withAlpha } from '@/components/hud';
-import { FLUX, tokens } from '@/components/consumption/flux';
+import {
+  CONSUMPTION_CHROME as CHROME,
+  FLUX_CSS as FLUX,
+  consumptionAlpha as withAlpha,
+  tokens,
+} from '@/components/consumption/flux';
 // The printed basis MUST be the arithmetic's own basis: figures here are
 // weighted by `@exawatt/core`'s model-weight table, so the sentence is
 // stated from core's constants (units.ts), never a parallel ratio table.
@@ -65,12 +69,13 @@ export function Attribution({
               type="button"
               aria-pressed={k === pivot}
               onClick={() => onPivot(k)}
-              className="rounded border px-2 py-0.5 text-chrome-label outline-none transition-colors hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+              className="rounded border px-2 py-0.5 text-chrome-label outline-none transition-colors hover:bg-[var(--exa-hud-fill)] focus-visible:ring-1 focus-visible:ring-[var(--exa-foundation-focus)]"
               style={{
                 borderColor:
-                  k === pivot ? withAlpha(FLUX.mid, 0.7) : 'rgba(150,120,255,0.2)',
-                color: k === pivot ? HUD.text : HUD.textDim,
-                background: k === pivot ? withAlpha(FLUX.mid, 0.12) : 'transparent',
+                  k === pivot ? withAlpha(FLUX.mid, 0.7) : CHROME.border,
+                color: k === pivot ? CHROME.text : CHROME.textDim,
+                background:
+                  k === pivot ? withAlpha(FLUX.mid, 0.12) : 'transparent',
               }}
             >
               {PIVOT_LABEL[k]}
@@ -85,11 +90,11 @@ export function Attribution({
               aria-pressed={m === mode}
               onClick={() => onMode(m)}
               title={m === 'normalized' ? NORMALIZED_BASIS_SENTENCE : undefined}
-              className="rounded border px-2 py-0.5 font-mono text-chrome-micro outline-none transition-colors hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+              className="rounded border px-2 py-0.5 font-mono text-chrome-micro outline-none transition-colors hover:bg-[var(--exa-hud-fill)] focus-visible:ring-1 focus-visible:ring-[var(--exa-foundation-focus)]"
               style={{
                 borderColor:
-                  m === mode ? withAlpha(FLUX.mid, 0.7) : 'rgba(150,120,255,0.2)',
-                color: m === mode ? HUD.text : HUD.textDim,
+                  m === mode ? withAlpha(FLUX.mid, 0.7) : CHROME.border,
+                color: m === mode ? CHROME.text : CHROME.textDim,
               }}
             >
               {m === 'raw' ? 'raw tokens' : 'normalized'}
@@ -112,7 +117,7 @@ export function Attribution({
         {overflow.length > 0 && (
           <p
             className="px-1 pt-1 font-mono text-chrome-meta"
-            style={{ color: HUD.textDim }}
+            style={{ color: CHROME.textDim }}
           >
             {overflow.length} more ·{' '}
             {mode === 'raw'
@@ -151,7 +156,7 @@ function PivotBarRow({
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      className="grid grid-cols-[minmax(120px,200px)_1fr_76px] items-center gap-3 rounded px-1.5 py-1 text-left outline-none transition-colors hover:bg-white/[0.05] focus-visible:ring-1 focus-visible:ring-hud-cyan"
+      className="grid grid-cols-[minmax(120px,200px)_1fr_76px] items-center gap-3 rounded px-1.5 py-1 text-left outline-none transition-colors hover:bg-[var(--exa-hud-fill)] focus-visible:ring-1 focus-visible:ring-[var(--exa-foundation-focus)]"
       style={{
         background: selected ? withAlpha(FLUX.mid, 0.1) : undefined,
       }}
@@ -166,7 +171,7 @@ function PivotBarRow({
         )}
         <span
           className="truncate text-chrome-label"
-          style={{ color: row.unknown ? FLUX.unknown : HUD.text }}
+          style={{ color: row.unknown ? FLUX.unknown : CHROME.text }}
         >
           {row.label}
         </span>
@@ -201,7 +206,7 @@ function PivotBarRow({
       </span>
       <span
         className="text-right font-mono text-chrome-meta tabular-nums"
-        style={{ color: HUD.textDim }}
+        style={{ color: CHROME.textDim }}
       >
         {tokens(value)}
         {mode === 'raw' ? '' : ' nt'}

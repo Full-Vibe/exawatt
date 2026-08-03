@@ -10,8 +10,13 @@
  * identity; the grid folds beyond a cap so Voltaic's fortnight stays
  * comfortable.
  */
-import { HUD, withAlpha } from '@/components/hud';
-import { FLUX, duration, tokens } from '@/components/consumption/flux';
+import {
+  CONSUMPTION_CHROME as CHROME,
+  FLUX_CSS as FLUX,
+  consumptionAlpha as withAlpha,
+  duration,
+  tokens,
+} from '@/components/consumption/flux';
 import { Sparkline } from '@/components/consumption/atoms';
 import { STATUS_LIGHT_META } from '@/components/status-light/protocol';
 import type { GridRow } from './derive';
@@ -55,7 +60,7 @@ export function SessionsGrid({
           IMPACT header — at gap-2 the two tracked micro-labels read as one */}
       <div
         className={`grid ${COLS} items-center gap-3 border-b px-3 py-1.5`}
-        style={{ borderColor: 'rgba(150,120,255,0.14)' }}
+        style={{ borderColor: CHROME.border }}
       >
         <MicroLabel>Session</MicroLabel>
         <MicroLabel>Src / model</MicroLabel>
@@ -86,8 +91,8 @@ export function SessionsGrid({
           type="button"
           onClick={onToggleExpanded}
           aria-expanded={expanded}
-          className="w-full border-t px-3 py-1.5 text-left font-mono text-chrome-meta outline-none transition-colors hover:bg-white/[0.05] focus-visible:ring-1 focus-visible:ring-hud-cyan"
-          style={{ borderColor: 'rgba(150,120,255,0.14)', color: HUD.textDim }}
+          className="w-full border-t px-3 py-1.5 text-left font-mono text-chrome-meta outline-none transition-colors hover:bg-[var(--exa-hud-fill)] focus-visible:ring-1 focus-visible:ring-[var(--exa-foundation-focus)]"
+          style={{ borderColor: CHROME.border, color: CHROME.textDim }}
         >
           {expanded
             ? 'Show fewer'
@@ -98,7 +103,7 @@ export function SessionsGrid({
       )}
       <div
         className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t px-3 py-1.5 font-mono text-chrome-micro"
-        style={{ borderColor: 'rgba(150,120,255,0.14)', color: HUD.textDim }}
+        style={{ borderColor: CHROME.border, color: CHROME.textDim }}
       >
         <span>norm = normalized tokens, stated ratio basis</span>
         <span>impact = normalized burn relative to the largest session</span>
@@ -132,9 +137,9 @@ function SessionRow({
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      className={`grid ${COLS} w-full items-center gap-3 border-b px-3 py-1 text-left outline-none transition-colors last:border-b-0 hover:bg-white/[0.05] focus-visible:ring-1 focus-visible:ring-hud-cyan`}
+      className={`grid ${COLS} w-full items-center gap-3 border-b px-3 py-1 text-left outline-none transition-colors last:border-b-0 hover:bg-[var(--exa-hud-fill)] focus-visible:ring-1 focus-visible:ring-[var(--exa-foundation-focus)]`}
       style={{
-        borderColor: 'rgba(150,120,255,0.08)',
+        borderColor: CHROME.border,
         background: selected
           ? withAlpha(FLUX.mid, 0.1)
           : r.live
@@ -152,7 +157,7 @@ function SessionRow({
         )}
         <span
           className="truncate text-chrome-label"
-          style={{ color: r.identified ? HUD.text : FLUX.unknown }}
+          style={{ color: r.identified ? CHROME.text : FLUX.unknown }}
           title={r.identified ? undefined : 'outside the fleet record — measured from local logs, no session identity'}
         >
           {r.title}
@@ -164,7 +169,7 @@ function SessionRow({
         ) : (
           <span
             className="shrink-0 font-mono text-chrome-micro tabular-nums"
-            style={{ color: HUD.textDim }}
+            style={{ color: CHROME.textDim }}
           >
             -{duration(nowMs - r.lastAtMs)}
           </span>
@@ -179,7 +184,10 @@ function SessionRow({
           </span>
         )}
       </span>
-      <span className="truncate font-mono text-chrome-micro" style={{ color: HUD.textDim }}>
+      <span
+        className="truncate font-mono text-chrome-micro"
+        style={{ color: CHROME.textDim }}
+      >
         {r.source === 'codex' ? 'codex' : 'claude'}
         {r.model ? ` · ${r.model.replace(/^claude-|^gpt-/, '')}` : ''}
       </span>
@@ -188,13 +196,13 @@ function SessionRow({
       <Sparkline values={r.spark} width={84} height={14} color={FLUX.mid} />
       <span
         className="text-right font-mono text-chrome-meta tabular-nums"
-        style={{ color: HUD.textDim }}
+        style={{ color: CHROME.textDim }}
       >
         {tokens(r.raw)}
       </span>
       <span
         className="text-right font-mono text-chrome-meta tabular-nums"
-        style={{ color: HUD.text }}
+        style={{ color: CHROME.text }}
       >
         {tokens(r.weighted)}
       </span>
@@ -222,7 +230,7 @@ function SessionRow({
       ) : (
         <span
           className="text-right font-mono text-chrome-meta tabular-nums"
-          style={{ color: r.interventions >= 4 ? FLUX.warm : HUD.textDim }}
+          style={{ color: r.interventions >= 4 ? FLUX.warm : CHROME.textDim }}
         >
           {r.interventions}
         </span>

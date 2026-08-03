@@ -128,7 +128,7 @@ export function AmbientMeterControl({
         onKeyDown={e => {
           if (e.key === 'Escape') schedule(false, 0);
         }}
-        className="inline-flex h-7 items-center rounded-[3px] px-2 outline-none transition-[background-color] duration-150 hover:bg-white/[0.06] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-300 motion-reduce:transition-none"
+        className="inline-flex h-7 items-center rounded-[3px] px-2 outline-none transition-[background-color] duration-150 hover:bg-[var(--exa-hud-fill)] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--exa-foundation-focus)] motion-reduce:transition-none"
       >
         <Form reading={snapshot.reading} />
       </Link>

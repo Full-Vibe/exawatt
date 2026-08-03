@@ -33,6 +33,41 @@ export const FLUX = {
   panel: 'rgba(10, 8, 26, 0.92)',
 } as const;
 
+/**
+ * DOM projection of the Consumption channel.
+ *
+ * Keep this separate from `FLUX`: Fleet's burn lens still consumes concrete
+ * sRGB values until its T4 spatial adapter lands, while DOM paint must retain
+ * the `var()` references so preview, Auto, and accessibility overlays repaint
+ * in place without remounting the Consumption surface.
+ */
+export const FLUX_CSS = {
+  calm: 'var(--exa-consumption-calm)',
+  mid: 'var(--exa-consumption-mid)',
+  warm: 'var(--exa-consumption-warm)',
+  hot: 'var(--exa-consumption-hot)',
+  track: 'var(--exa-consumption-track)',
+  trackLine: 'var(--exa-consumption-track-line)',
+  unknown: 'var(--exa-consumption-unknown)',
+  unknownLine: 'var(--exa-consumption-unknown-line)',
+  panel: 'var(--exa-consumption-panel)',
+} as const satisfies Record<keyof typeof FLUX, string>;
+
+/** Generated, theme-aware chrome roles used only to frame Consumption data. */
+export const CONSUMPTION_CHROME = {
+  canvas: 'var(--exa-foundation-canvas)',
+  surface: FLUX_CSS.panel,
+  text: 'var(--exa-hud-text)',
+  textDim: 'var(--exa-hud-text-dim)',
+  textFaint: 'var(--exa-foundation-text-faint)',
+  border: 'var(--exa-foundation-border)',
+  borderStrong: 'var(--exa-foundation-border-strong)',
+  hover: 'var(--exa-hud-fill)',
+  selection: 'var(--exa-foundation-selection)',
+  selectionText: 'var(--exa-foundation-selection-text)',
+  focus: 'var(--exa-foundation-focus)',
+} as const;
+
 /** Raw unit channel. Order is stack order: ballast first, expensive last. */
 export const UNIT_ORDER = [
   'cacheRead',
@@ -50,6 +85,15 @@ export const UNIT_COLOR: Record<UnitKey, string> = {
   input: '#8B6BF7',
   output: '#CE6BF4',
   reasoning: '#FF6BD6',
+};
+
+/** DOM projection of the raw-unit visualization channel. */
+export const UNIT_COLOR_CSS: Record<UnitKey, string> = {
+  cacheRead: 'var(--exa-consumption-units-cache-read)',
+  cacheWrite: 'var(--exa-consumption-units-cache-write)',
+  input: 'var(--exa-consumption-units-input)',
+  output: 'var(--exa-consumption-units-output)',
+  reasoning: 'var(--exa-consumption-units-reasoning)',
 };
 
 export const UNIT_LABEL: Record<UnitKey, string> = {
@@ -79,6 +123,22 @@ function mix(a: string, b: string, t: number): string {
   return `rgb(${c(r1, r2)}, ${c(g1, g2)}, ${c(b1, b2)})`;
 }
 
+function mixCss(a: string, b: string, t: number): string {
+  const bounded = Math.max(0, Math.min(1, t));
+  if (bounded === 0) return a;
+  if (bounded === 1) return b;
+  const aPercent = Math.round((1 - bounded) * 10_000) / 100;
+  return `color-mix(in srgb, ${a} ${aPercent}%, ${b})`;
+}
+
+/** Alpha composition that remains live when `color` is a CSS variable. */
+export function consumptionAlpha(color: string, alpha: number): string {
+  const bounded = Math.max(0, Math.min(1, alpha));
+  if (bounded === 1) return color;
+  const percent = Math.round(bounded * 10_000) / 100;
+  return `color-mix(in srgb, ${color} ${percent}%, transparent)`;
+}
+
 /**
  * Pressure colour for a 0..100 window figure. Continuous rather than bucketed:
  * bucketing made 73% and 91% render as the same alarming magenta, which
@@ -92,9 +152,31 @@ export function pressureColor(usedPercent: number): string {
   return mix(FLUX.warm, FLUX.hot, (t - 0.85) / 0.15);
 }
 
+/** Theme-aware DOM sibling of `pressureColor` over the same ramp stops. */
+export function pressureColorCss(usedPercent: number): string {
+  const t = Math.max(0, Math.min(100, usedPercent)) / 100;
+  if (t === 0) return FLUX_CSS.calm;
+  if (t === 0.62) return FLUX_CSS.mid;
+  if (t === 0.85) return FLUX_CSS.warm;
+  if (t === 1) return FLUX_CSS.hot;
+  if (t <= 0.62) return mixCss(FLUX_CSS.calm, FLUX_CSS.mid, t / 0.62);
+  if (t <= 0.85) {
+    return mixCss(FLUX_CSS.mid, FLUX_CSS.warm, (t - 0.62) / 0.23);
+  }
+  return mixCss(FLUX_CSS.warm, FLUX_CSS.hot, (t - 0.85) / 0.15);
+}
+
 /** Diagonal hatch used wherever a source did not report — visibly not a fill. */
 export function unknownHatch(alpha = 0.34): string {
   return `repeating-linear-gradient(-45deg, rgba(119,131,154,${alpha}) 0 1px, transparent 1px 5px)`;
+}
+
+/** Theme-aware DOM sibling of `unknownHatch`. */
+export function unknownHatchCss(alpha = 0.34): string {
+  return `repeating-linear-gradient(-45deg, ${consumptionAlpha(
+    FLUX_CSS.unknown,
+    alpha
+  )} 0 1px, transparent 1px 5px)`;
 }
 
 /** Forward projection hatch — "where this lands if the pace holds". */

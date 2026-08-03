@@ -14,7 +14,7 @@
  * appears per-row only where that row's window has earned it.
  */
 
-import { duration, percent } from '../flux';
+import { CONSUMPTION_CHROME as CHROME, duration, percent } from '../flux';
 import { HARNESS_LABEL, type ConsumptionSourceView } from '../model';
 import {
   meterTone,
@@ -26,12 +26,11 @@ import {
 } from './meter-model';
 
 const PANEL = {
-  bg: 'rgba(13, 15, 21, 0.97)',
-  border: 'rgba(255, 255, 255, 0.12)',
-  divider: 'rgba(255, 255, 255, 0.07)',
-  text: '#e4e4e7',
-  dim: '#a1a1aa',
-  faint: '#71717a',
+  border: CHROME.borderStrong,
+  divider: CHROME.border,
+  text: CHROME.text,
+  dim: CHROME.textDim,
+  faint: CHROME.textFaint,
 } as const;
 
 function WindowRow({
@@ -158,11 +157,9 @@ export function MeterPopover({ snapshot }: { snapshot: MeterSnapshot }) {
     <div
       data-meter-popover
       role="tooltip"
-      className="relative w-[296px] overflow-hidden rounded-md border shadow-2xl"
+      className="exa-material-overlay relative w-[296px] overflow-hidden rounded-md border shadow-2xl"
       style={{
         borderColor: PANEL.border,
-        background: PANEL.bg,
-        backdropFilter: 'blur(8px)',
       }}
     >
       <div
@@ -215,7 +212,7 @@ export function MeterPopover({ snapshot }: { snapshot: MeterSnapshot }) {
 
       <div
         className="flex items-center gap-1.5 border-t px-3 py-1.5"
-        style={{ borderColor: PANEL.divider, background: 'rgba(0,0,0,0.28)' }}
+        style={{ borderColor: PANEL.divider, background: CHROME.hover }}
       >
         <span className="font-ui text-chrome-micro" style={{ color: PANEL.faint }}>
           Open Usage
