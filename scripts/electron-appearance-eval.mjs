@@ -113,6 +113,40 @@ async function commitAppearance(page, preferences) {
   return settings;
 }
 
+async function installAppearanceTrace(page) {
+  await page.addInitScript(() => {
+    const trace = [];
+    Object.defineProperty(window, '__EXAWATT_APPEARANCE_TRACE__', {
+      configurable: true,
+      value: trace,
+    });
+    let rootObserver;
+    const capture = () => {
+      const root = document.documentElement;
+      const themeId = root?.dataset.exaTheme;
+      if (!root || !themeId) return;
+      trace.push({
+        themeId,
+        appearance: root.dataset.exaAppearance ?? null,
+        bodyPresent: Boolean(document.body),
+      });
+    };
+    const attach = () => {
+      const root = document.documentElement;
+      if (!root || rootObserver) return;
+      capture();
+      rootObserver = new MutationObserver(capture);
+      rootObserver.observe(root, {
+        attributes: true,
+        attributeFilter: ['data-exa-theme', 'data-exa-appearance'],
+      });
+    };
+    const documentObserver = new MutationObserver(attach);
+    documentObserver.observe(document, { childList: true, subtree: true });
+    attach();
+  });
+}
+
 async function inspectRenderer(app, page, label, expected) {
   const theme = THEMES[expected.themeId];
   assert(theme, `${label} references an unknown evaluator theme`);
@@ -146,6 +180,8 @@ async function inspectRenderer(app, page, label, expected) {
         settings: await window.electron?.settings?.get(),
         native: await window.electron?.app?.appearance?.(),
         mirror: mirror ? JSON.parse(mirror) : null,
+        mirrorRaw: mirror,
+        appearanceTrace: window.__EXAWATT_APPEARANCE_TRACE__ ?? [],
       };
     }),
     app.evaluate(({ BrowserWindow, nativeTheme }) => {
@@ -214,6 +250,31 @@ async function inspectRenderer(app, page, label, expected) {
       native
     );
   }
+  if (expected.bootstrapThemeId) {
+    const preBodyTrace = renderer.appearanceTrace.filter(
+      entry => !entry.bodyPresent
+    );
+    assert(
+      preBodyTrace.length > 0,
+      `${label} recorded no pre-body appearance state`,
+      renderer.appearanceTrace
+    );
+    assert(
+      preBodyTrace.at(-1)?.themeId === expected.bootstrapThemeId,
+      `${label} pre-hydration theme mismatch`,
+      renderer.appearanceTrace
+    );
+  }
+  if (expected.onlyTracedThemeId) {
+    assert(
+      renderer.appearanceTrace.length > 0 &&
+        renderer.appearanceTrace.every(
+          entry => entry.themeId === expected.onlyTracedThemeId
+        ),
+      `${label} exposed a forbidden intermediate theme`,
+      renderer.appearanceTrace
+    );
+  }
 
   if (expected.settingsAppearance === null) {
     assert(
@@ -266,6 +327,7 @@ async function launch(
     },
     async (app, page) => {
       const rendererErrors = [];
+      await installAppearanceTrace(page);
       page.on('pageerror', error => rendererErrors.push(String(error.message)));
       page.on('console', message => {
         if (message.type() === 'error') rendererErrors.push(message.text());
@@ -318,13 +380,22 @@ try {
       startupSource: 'system',
       mockAuto: true,
     },
-    (app, page) =>
-      inspectRenderer(app, page, 'fresh-auto-light', {
+    async (app, page) => {
+      await inspectRenderer(app, page, 'fresh-auto-light', {
         themeId: 'exawatt-air-light',
         nativeSource: 'light',
         settingsAppearance: null,
         mirrorAppearance: defaultAppearance,
-      })
+        bootstrapThemeId: 'exawatt-air-light',
+      });
+      await setMockSystemAppearance(app, 'dark');
+      return inspectRenderer(app, page, 'fresh-auto-live-dark', {
+        themeId: 'exawatt-night-dark',
+        nativeSource: 'dark',
+        settingsAppearance: null,
+        mirrorAppearance: defaultAppearance,
+      });
+    }
   );
   await launch(
     {
@@ -341,6 +412,7 @@ try {
         nativeSource: 'dark',
         settingsAppearance: null,
         mirrorAppearance: defaultAppearance,
+        bootstrapThemeId: 'exawatt-night-dark',
       })
   );
 
@@ -518,7 +590,7 @@ try {
     }
   );
 
-  await launch(
+  const autoLightSnapshot = await launch(
     {
       label: 'auto-relaunch-light',
       userData: selectionData,
@@ -537,6 +609,7 @@ try {
         nativeSource: 'light',
         settingsAppearance: defaultAppearance,
         mirrorAppearance: defaultAppearance,
+        bootstrapThemeId: 'exawatt-air-light',
       });
     }
   );
@@ -557,10 +630,75 @@ try {
         settingsAppearance: defaultAppearance,
         mirrorAppearance: defaultAppearance,
         safeTheme: true,
+        bootstrapThemeId: 'exawatt-classic-dark',
+        onlyTracedThemeId: 'exawatt-classic-dark',
       });
       assert(
         readFileSync(settingsFile, 'utf8') === autoFile,
         '--safe-theme rewrote the stored Auto selection'
+      );
+      assert(
+        snapshot.renderer.mirrorRaw === autoLightSnapshot.renderer.mirrorRaw,
+        '--safe-theme changed the renderer bootstrap mirror',
+        {
+          before: autoLightSnapshot.renderer.mirrorRaw,
+          after: snapshot.renderer.mirrorRaw,
+        }
+      );
+      return snapshot;
+    }
+  );
+
+  const staleMirrorData = scenarioUserData('stale-valid-mirror');
+  await launch(
+    {
+      label: 'stale-valid-mirror-seed',
+      userData: staleMirrorData,
+      osAppearance: 'light',
+      startupThemeId: 'exawatt-air-light',
+      startupSource: 'system',
+      mockAuto: true,
+    },
+    async (_app, page) => {
+      await page.locator('[data-command-altitude]').waitFor();
+      await page.evaluate(preferences => {
+        localStorage.setItem('exawatt.appearance.v1', JSON.stringify(preferences));
+      }, manualPreferences('exawatt-classic-dark'));
+    }
+  );
+  const staleSettingsFile = join(staleMirrorData, 'settings.json');
+  const authoritativeAir = manualPreferences('exawatt-air-light');
+  const staleSettingsSeed = `${JSON.stringify(
+    { appearance: authoritativeAir },
+    null,
+    2
+  )}\n`;
+  writeFileSync(staleSettingsFile, staleSettingsSeed);
+
+  await launch(
+    {
+      label: 'stale-valid-mirror-authority',
+      userData: staleMirrorData,
+      osAppearance: 'dark',
+      startupThemeId: 'exawatt-air-light',
+      startupSource: 'light',
+    },
+    async (app, page) => {
+      const snapshot = await inspectRenderer(
+        app,
+        page,
+        'stale-valid-mirror-authority',
+        {
+          themeId: 'exawatt-air-light',
+          nativeSource: 'light',
+          settingsAppearance: authoritativeAir,
+          mirrorAppearance: authoritativeAir,
+          bootstrapThemeId: 'exawatt-air-light',
+        }
+      );
+      assert(
+        readFileSync(staleSettingsFile, 'utf8') === staleSettingsSeed,
+        'authoritative stale-mirror recovery rewrote settings'
       );
       return snapshot;
     }
@@ -613,6 +751,7 @@ try {
         nativeSource: 'dark',
         settingsAppearance: classicRecovery,
         mirrorAppearance: classicRecovery,
+        bootstrapThemeId: 'exawatt-classic-dark',
         settingsSubset: {
           terminal: { fontSize: 15 },
           notifications: { attention: true },
@@ -640,8 +779,10 @@ try {
           'exawatt-night-dark',
         ],
         autoRoundTrip: AUTO_PAIR,
+        liveAutoTransition: 'Air -> Night in one process',
+        staleMirrorAuthority: 'Electron settings won before hydration',
         corruptRecovery: 'exawatt-classic-dark',
-        safeTheme: 'one launch, stored Auto unchanged',
+        safeTheme: 'Classic-only trace, stored Auto and mirror unchanged',
         screenshots,
       },
       null,
