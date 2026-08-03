@@ -331,6 +331,36 @@ real app over a fixture harness that speaks the actual hook payloads;
 including the watched/unwatched split and the burst/quiescence thresholds,
 which need an injected clock and focus rather than a live window.
 
+### S1.2 Reported needs-you — open lead, NOT verified
+
+S1.1 replaced the inferred half of the _turn_ signal. The **needs-you** half is
+still inferred from a BEL character, so an Agent that asks a question without
+ringing the terminal bell reads as a finished result rather than a human gate.
+That is the last guess left in the attention system.
+
+The documented candidate is the Claude Code `Notification` hook (matchers
+include `permission_prompt` and `idle_prompt`), with `PermissionRequest`
+alongside it. It would ride the existing harness event channel with no new
+transport.
+
+**Do not build on this until it is verified.** Three attempts failed to make
+either hook fire, and the reason is not yet understood:
+
+- `claude -p` (print mode) never prompts, so no notification is produced — the
+  hook is simply not reachable that way.
+- Driving an interactive session under `expect` did not work either: Claude
+  produced no output at all under that pty, so the session never reached a
+  prompt. This is an artifact of the probe, not evidence about the hook.
+- The reliable path is the Electron eval harness, which does drive a real
+  interactive Claude session (it is how S1.1 and ENG-023 D1 were both proven).
+  A probe there needs a Session launched with a permission policy that actually
+  prompts — `prompt` / **Ask first**, not the YOLO default — and a tool call
+  that requires approval.
+
+Until a payload is captured, the shape of the event, whether it carries the
+question, and whether it distinguishes a permission prompt from an idle nudge
+are all unknown. Treat every claim about it as unverified.
+
 ## Context-paging idea bank (research-grounded)
 
 Ranked roughly by conviction × cost. These are candidates, not commitments;

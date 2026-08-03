@@ -25,6 +25,38 @@ wrong checkout.
 - Launch resilience is bounded to the one observed Playwright transient. A
   second failure surfaces rather than retrying into a loop.
 
+## Findings log
+
+- 2026-07-27, concurrent-agent load makes timing tests lie. During the ENG-015
+  S1.1 pass the machine reached **load average 425** with several agent
+  worktrees and dev servers running. Effects, all environmental and none
+  reproducible once load cleared: five `waitFor`-based renderer tests failed
+  (`_home-hero`, `settings-client`, `session-state-tile-study`,
+  `command-navigation-provider`, `launch-controls`), each taking 5-25s where
+  they normally take milliseconds; a Next dev server took **114s** to compile
+  `/workspace`, which blew past `assertDevServerServesTree`'s 15s identity
+  check and reported "no dev server answering" for a server that was healthy;
+  and Playwright Electron launches timed out outright. **Diagnosis before
+  fixing: run the suspect files in isolation and check `uptime` first.** A
+  failure that vanishes in isolation and correlates with load is not a
+  regression. Do not "fix" a product test by loosening its timeout on this
+  evidence.
+
+- 2026-07-27, Electron evals need cold-compile headroom on their FIRST waits.
+  A cold dev server compiles the workspace route on first hit, so the opening
+  `[data-command-altitude]` and `[data-agent-composer]` waits can exceed the
+  default timeout and report a spurious failure. `electron-turn-truth-eval` and
+  `electron-delegation-eval` give exactly those two waits 90s and leave every
+  later wait short, so real failures still surface fast. New evals should copy
+  that shape rather than raising the global default.
+
+- 2026-07-27, driving a real interactive Claude session: use the Electron eval
+  harness, not `expect`. Three `expect`-driven attempts produced no output from
+  the CLI at all, while the same task through `withElectronApp` worked first
+  try. The harness also gives the production IPC surface (`pty.list()`,
+  `pty.write`) to assert against, which is what made the S1.1 before/after
+  measurement possible.
+
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 
 On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —
