@@ -15,6 +15,48 @@ Examples:
 
 OpenClaw is the first implementation target, not the product boundary.
 
+## Agent Source registry
+
+Settings owns an Agent Source registry: a compact list of configured source
+instances and a selected-source detail view. A user may eventually connect
+multiple instances of one source type, so the row identifies both the adapter
+(`Claude Code`, `Codex`, `OpenClaw`, or `Demo Mode`) and the configured source
+(`Personal`, `Work gateway`, or another user-chosen name).
+
+A configured source is how Exawatt reaches the runtime that creates and resumes
+real Agents. It also supplies the identity, model, capability, and health truth
+Exawatt needs to represent those Agents accurately. Connecting does not move
+execution or source-owned authentication into Exawatt; it gives Exawatt the
+minimum command and observation boundary required to operate that source.
+
+The registry reports installation, reachability, authentication, identity,
+version compatibility, capabilities, freshness, and provenance as separate
+facts. Its normalized roll-up states are `ready`, `connecting`, `action
+required`, `degraded`, `unavailable`, `not installed`, `incompatible`, and
+`unknown`. A roll-up helps scanning; detail must retain the underlying facts so
+that, for example, installed-but-signed-out never collapses into a vague
+offline state.
+
+For local Claude Code and Codex sources, authentication remains source-owned.
+Exawatt may launch the harness's supported sign-in command and recheck status,
+but does not collect or store the provider token. Gateway and future custom
+source credentials may be stored as narrowly scoped connection material in the
+operating system keychain. This is distinct from ENG-009's future general
+Secrets/Credentials broker for Agent tool use.
+
+Global source facts and Project-effective launch configuration appear at their
+proper scopes. The registry can show the account identity and default; the
+Terminal composer shows the model and effort that the current Project will
+actually request. A provenance affordance explains whether a fact came from a
+source command, source configuration, Project settings, environment policy, or
+Demo fixture, and a relative freshness label exposes its formatted timestamp
+on hover.
+
+The **Add source** flow separates sources Exawatt supports but cannot currently
+reach from future source types. `Not installed` or `Configure` is actionable
+now; `Coming later` is an honest product affordance, not a disabled connection
+that looks broken.
+
 ## Launch contract
 
 Project selection and Agent launch are separate commands. An open Project may
@@ -48,15 +90,19 @@ Model and reasoning-effort choice are also visible and source-owned. Before a
 new local Agent starts, the composer resolves the selected harness's effective
 model/effort pair and exposes its available choices. Codex supplies its
 installed model catalog, each model's supported efforts and default, and the
-configured pair; Claude Code contributes its layered settings, account-default
-alias, and supported aliases/custom entries. Changing models immediately
+configured pair. Claude Code does not currently expose its native account-aware
+model catalog through a supported machine-readable command, so Exawatt shows
+the exact layered configuration when known, otherwise the account default, and
+offers **Choose in Claude Code…** for catalog selection. Changing models immediately
 reconciles effort to that model's valid choices and default. Exawatt pins the
 displayed pair on the launch command so the UI and process cannot drift between
 composition and spawn. An override is scoped to that new Agent and does not
 mutate the user's Codex or Claude configuration. A dominant environment effort
 is shown as fixed because the harness would ignore a conflicting CLI choice. If
-a harness cannot describe an exact value, Exawatt labels the harness default
-honestly and lets the harness remain the authority instead of inventing one.
+a harness cannot describe an exact value or live catalog, Exawatt labels the
+harness default honestly and lets the harness remain the authority instead of
+inventing one. Cached catalog values carry source provenance and freshness;
+hard-coded provider catalogs are fixtures only and never product truth.
 
 Launch permission policy is also visible, personal, and reversible. Exawatt
 uses one source-agnostic three-level contract:

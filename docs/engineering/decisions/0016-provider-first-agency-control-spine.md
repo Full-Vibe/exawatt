@@ -1,4 +1,4 @@
-# 0016 Provider-first agency control with future Exawatt enforcement
+# 0016 Provider-first agency control and source-owned identity
 
 Date: 2026-07-21
 Status: accepted architectural direction; evidence and Approval defaults remain
@@ -62,6 +62,23 @@ Primary evidence reviewed:
 - Source capability is not authority. Adapters advertise supported commands,
   policy modes, activity, evidence, and enforcement ownership without implying
   that advertised capability grants permission or proves an outcome.
+- Agent Source identity and authentication remain provider-owned whenever the
+  local harness owns them. Exawatt may invoke the source's supported sign-in
+  flow and observe its minimum status/identity output, but it does not ingest
+  Claude Code or Codex account tokens. Remote Gateway and custom-source
+  credentials are a narrower connection concern and may use the operating
+  system keychain; this does not pull ENG-009's general Agent credential broker
+  into the current slice.
+- Source readiness is not one boolean. Adapters preserve installation,
+  reachability, authentication, identity, version compatibility, capability,
+  freshness, and provenance as independent facts, then derive a compact UI
+  state from them.
+- Source catalogs are runtime evidence, not product constants. Exawatt uses a
+  supported machine-readable discovery contract when one exists, caches it
+  with provenance and freshness, and otherwise presents only the exact
+  configured value or account default the source can substantiate. Native
+  source UI remains the fallback for account-aware choices that the source
+  cannot expose programmatically.
 - Demo Scenario Sources use the same contracts and label their provenance as
   simulated. They never imply that a real-world effect occurred.
 - Exawatt does not build first-party email, payment, messaging, general network,
@@ -121,6 +138,11 @@ This decision amends existing work rather than adding another plan:
 - Today's UI can be useful without pretending Exawatt is the enforcement point.
 - Sources with sparse telemetry remain compatible, but the UI must show their
   lower assurance instead of silently filling gaps.
+- The same source type may have multiple configured instances without changing
+  the Agent Source abstraction or teaching product surfaces provider-specific
+  account rules.
+- Settings can explain and repair source availability without becoming the
+  credential owner for source-managed accounts.
 - Later enforcement can be introduced incrementally behind the same adapter and
   Coordination contracts.
 - "Safe" is not a single badge. Product surfaces should explain the relevant

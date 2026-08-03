@@ -60,13 +60,13 @@ export const architectureManifest = {
   title: 'Exawatt Architecture',
   summary:
     'Exawatt is a command interface for managing agent fleets across local, hosted, and third-party harnesses.',
-  lastReviewed: '2026-07-24',
+  lastReviewed: '2026-07-27',
   layers: [
     {
       key: 'ui',
       label: 'UI Layer',
       summary:
-        'Surfaces for fleet overview, initiative allocation, agent focus, artifact review, and approvals.',
+        'Surfaces for fleet overview, initiative allocation, agent focus, source configuration, artifact review, and approvals.',
       color: 'rgba(14,165,150,0.08)',
       accent: '#0ea596',
     },
@@ -409,7 +409,7 @@ export const architectureManifest = {
           id: 'agent-source',
           label: 'Agent Source / Harness',
           summary:
-            'A provider/runtime boundary describing agent controls, reported activity, evidence, and enforcement ownership.',
+            'A provider/runtime boundary with one or more configured instances, each describing identity, connection truth, controls, activity, evidence, and enforcement ownership.',
           layer: 'infrastructure',
           x: 95,
           y: 705,
@@ -606,9 +606,9 @@ export const architectureManifest = {
         },
         {
           id: 'source-adapters',
-          label: 'Agent Source Adapters',
+          label: 'Agent Source Registry + Adapters',
           summary:
-            'Registered source-first boundaries that discover models, effort, and runtime capabilities, represent advertised-but-unavailable tools, translate launch choices and policy, reconcile exact Session identity, and describe activity, evidence, and enforcement ownership.',
+            'Configured source instances and source-first adapters that preserve installation, reachability, authentication, identity, compatibility, capability, freshness, and provenance; discover live model/effort evidence where supported; and derive Project-effective launch truth without owning provider credentials.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,
@@ -753,6 +753,7 @@ export const architectureManifest = {
         { from: 'architecture-map', to: 'architecture-manifest' },
         { from: 'review-ui', to: 'decision-context-layer', style: 'dashed' },
         { from: 'fleet-provider', to: 'source-adapters' },
+        { from: 'next-app-shell', to: 'source-adapters' },
         {
           from: 'canonical-docs',
           to: 'architecture-manifest',

@@ -40,10 +40,14 @@ entries remain individually selectable from **⌘K**. Empty drafts and Agents
 that never received work are discarded instead of entering recovery history.
 
 The adjacent model and effort selectors show the capability pair that will be
-requested for the new Agent. Exawatt resolves the current Codex catalog,
-model-specific effort levels, and configured defaults, or the current Claude
-Code settings/account defaults, without rewriting either harness's
-configuration. Changing either value overrides only this new Agent; both
+requested for the new Agent. Exawatt resolves Codex's live catalog,
+model-specific effort levels, and configured defaults. Claude Code currently
+exposes its layered configuration and account default but not the account-aware
+catalog behind its native `/model` menu, so Exawatt shows the exact configured
+model when known, otherwise **Account default**, with **Choose in Claude
+Code…** as the honest catalog path. It does not ship a provider list that can
+go stale or rewrite either harness's configuration. Changing a value overrides
+only this new Agent; both
 choices stay with a saved draft while you move between tabs. Effort trades
 speed and spend for reasoning depth, and changing models updates its valid
 choices and default. Worktree/branch and roadmap-link choices are part of the

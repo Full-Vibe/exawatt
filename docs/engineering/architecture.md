@@ -171,6 +171,42 @@ or responsive behavior. The verified 2026-07-22 trace and supported alternatives
 are recorded in the
 [Agent Terminal Workspace project history](projects/agent-terminal-workspace.md#dogfood-investigation-codex-browser-capability-boundary-2026-07-22).
 
+#### Agent Source registry and connection truth
+
+Settings consumes a source-agnostic Agent Source registry rather than reading
+PTY launch helpers directly. A configured source record combines a source
+adapter with user-scoped instance metadata: display name, endpoint or local
+installation, minimum exposed identity, credential owner, and last successful
+observation. Multiple records may use the same adapter.
+
+The adapter reports independent installation, reachability, authentication,
+identity, compatibility, capability, freshness, and provenance facets. A pure
+view-model derivation produces the compact registry state (`ready`,
+`connecting`, `action required`, `degraded`, `unavailable`, `not installed`,
+`incompatible`, or `unknown`) without discarding the facts that explain it.
+Demo Mode enters below this boundary and emits the same contract with simulated
+provenance.
+
+Discovery is evidence-bearing. Each catalog or capability snapshot names the
+source mechanism and observation time. Codex's supported machine-readable
+model command can populate a live catalog. Claude Code's current CLI can expose
+configuration and account identity but not the account-aware catalog shown by
+its native `/model` interface, so its adapter returns the exact configured
+model when known or an account-default sentinel and a source-owned selection
+action. Product code must not promote fixture aliases into source truth.
+
+The registry exposes global source/account facts. Terminal resolves a separate
+Project-effective launch view by combining source facts, Project draft state,
+and environment policy. This separation prevents an account default in
+Settings from masquerading as the model a particular Agent will launch.
+
+Local source authentication remains harness-owned: Electron may launch the
+source's supported sign-in flow and then re-observe status, but provider tokens
+do not cross into the renderer or Exawatt storage. Remote Gateway and future
+custom-source credentials may be held as narrowly scoped OS-keychain connection
+material behind Electron main. That is an explicit seam, not ENG-009's general
+Secrets/Credentials broker.
+
 The same contracts leave a deliberate future seam for Exawatt to become a
 Harness or compose with policy engines, credential brokers, restricted
 runtimes, network controls, and typed action providers. Those components can
@@ -258,15 +294,19 @@ Built:
   policy cross the launch boundary as data. Personal permission defaults are
   persisted by Project and harness; the PTY/source boundary translates
   `prompt`, `auto`, and `unrestricted` into current Claude Code and Codex
-  flags. The same boundary discovers each local harness's effective model and
-  model-specific reasoning efforts, keeps the resolved pair visible beside the
-  source, and passes per-Agent overrides as launch data without rewriting
-  harness configuration. Environment-owned effort constraints remain visible
-  and non-editable because they outrank session flags. The Terminal chrome uses
-  a measured elastic-ribbon boundary: compact Project headers, selected and
-  manually persisted disclosure, Initiative-shaped Session tabs, two-row
-  target-bounds layout, priority-preserving overflow, pointer-close stability,
-  and reduced-motion-safe transitions. Empty Projects remain open objects and
+  flags. The same boundary discovers Codex's live model catalog and reads
+  Claude Code's layered configured/default value, keeps the resolved pair
+  visible beside the source, and passes per-Agent overrides as launch data
+  without rewriting harness configuration. The current Claude path still
+  contains legacy UI aliases because its CLI has no supported catalog command;
+  ENG-003's Agent Source registry slice replaces those aliases with an honest
+  account-default/configured-value fallback and source-owned selection action.
+  Environment-owned effort constraints remain visible and non-editable because
+  they outrank session flags. The Terminal chrome uses a measured elastic-ribbon
+  boundary: compact Project headers, selected and manually persisted disclosure,
+  Initiative-shaped Session tabs, two-row target-bounds layout,
+  priority-preserving overflow, pointer-close stability, and
+  reduced-motion-safe transitions. Empty Projects remain open objects and
   stable-partition into a dormant tail after a short inactive dwell; only an
   explicit close removes the open group. The first authored change promotes
   task, source, model, effort, worktree/branch, and roadmap link into one

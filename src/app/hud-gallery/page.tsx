@@ -576,6 +576,13 @@ export default function HudGallery() {
                 style={{ color: HUD.cyan }}
               >
                 Open the Consumption lab →
+              </a>{' '}
+              <a
+                href="/hud-gallery/agent-sources"
+                className="underline underline-offset-2"
+                style={{ color: HUD.cyan }}
+              >
+                Open the Agent Sources lab →
               </a>
             </p>
           </header>
