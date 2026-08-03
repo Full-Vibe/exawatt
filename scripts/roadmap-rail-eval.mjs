@@ -195,7 +195,7 @@ await withElectronApp(
     results.blockedBadge = /blocked/i.test(text);
     results.shippedCollapsed = text.includes('2 shipped');
     results.trustLine = text.includes('7 items');
-    results.readOnlyFooter = text.includes('Read-only');
+    results.readOnlyFooter = text.includes('ROADMAP.md');
     // the plain shell session matches no item → visibly unmapped (S3)
     results.unmappedShelf = text.includes('not linked to an item');
 

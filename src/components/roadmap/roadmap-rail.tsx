@@ -10,7 +10,7 @@
  * rail owns plain keys while focused (roving selection, Enter/→ drill,
  * Esc/← back out, `o` opens the file, `g` jumps to the now station).
  * Read-only is a trust posture: no edit affordances anywhere; the footer
- * says exactly what file is read.
+ * names the file that is read and says nothing else.
  */
 import {
   useCallback,
@@ -965,9 +965,11 @@ export function RoadmapRail({
                 : `${untriagedCount} filed thoughts awaiting triage`}
             </span>
           )}
-        <span className="font-ui text-chrome-meta">
-          Read-only — Exawatt reads this file, never writes it
-        </span>
+        {view.file && (
+          <span className="font-mono text-chrome-meta" title={view.file}>
+            {view.file.split('/').pop()}
+          </span>
+        )}
         <span>
           {permanent
             ? '↑↓ move · ⏎ open · esc to Team'
