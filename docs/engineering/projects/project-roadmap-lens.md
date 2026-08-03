@@ -486,10 +486,10 @@ Three consequences that must land together, because doing any one alone leaves t
 
 ### Boundary: what writes, and what does not
 
-RESOLVED 2026-08-03 by decision `0027` — the operator lifted the read-only gate: *"Yes indeed, manipulate roadmap state in the repo. Maybe pop a permission dialog with always allow / don't ask me again."*
+RESOLVED 2026-08-03 by decision `0029` — the operator lifted the read-only gate: *"Yes indeed, manipulate roadmap state in the repo. Maybe pop a permission dialog with always allow / don't ask me again."*
 
 - **launch-from-item and attach are LOCAL annotations**, exactly like S4's declare-at-launch (`workspace.json`). No repo file is touched.
-- **reordering, status changes, and milestone ticks now write the repo file**, under decision `0027`'s six constraints: sequence and state only (never prose, never item creation); declared conformance required; Exawatt writes the file and never runs git; permission rides the Project's launch policy behind its own seam; concurrent modification is refused rather than merged; and the operator sees the edit animate in place with an inline pending/applied/failed state and a short undo window.
+- **reordering, status changes, and milestone ticks now write the repo file**, under decision `0029`'s six constraints: sequence and state only (never prose, never item creation); declared conformance required; Exawatt writes the file and never runs git; permission rides the Project's launch policy behind its own seam; concurrent modification is refused rather than merged; and the operator sees the edit animate in place with an inline pending/applied/failed state and a short undo window.
 - **Read the decision before implementing.** Two things there are easy to get wrong: "commit" in the operator's phrasing means the write being applied, NOT authorization for Exawatt to run `git commit` (that would reverse ENG-019 and needs its own decision); and permission is *modeled* separately even though it *resolves* through the launch policy today, so the two can be split later without a refactor.
 
 ### Repo readiness (S13.6) — mostly already built
