@@ -376,10 +376,13 @@ export function TabStrip({
     }
   }, [presentTokens]);
 
-  // Only Project headers are measured, and only from their INNER chrome,
-  // which is never width-constrained — so a header's natural width can
-  // never be read back from a width the engine itself assigned. A folded
-  // header renders different content, so its measurement is skipped.
+  // Only Project headers are measured. The chrome fills the width the
+  // engine assigned (so the name truncates rather than overflowing), which
+  // means chrome.offsetWidth would just echo that assignment straight back
+  // into the engine. Measure the LABEL's untruncated scrollWidth and add
+  // the chrome's non-label overhead: that is a true natural width and
+  // cannot feed back. A folded header renders a count too, so it is
+  // skipped — its width is derived from the header's.
   const measure = useCallback(() => {
     const width = containerRef.current?.clientWidth ?? 0;
     if (width > 0)
@@ -394,7 +397,25 @@ export function TabStrip({
         .closest('[data-ribbon-item="project"]')
         ?.getAttribute('data-project-dir');
       if (!dir) continue;
-      const natural = Math.ceil(node.offsetWidth) + 2; // + chip borders
+      const label = node.querySelector<HTMLElement>('[data-project-label]');
+      if (!label) continue;
+      // Build the natural width from the PARTS — padding, gaps, and every
+      // sibling of the label — plus the label's untruncated text width.
+      // Reading the chrome's own box here would hand the engine back the
+      // width it just assigned, and the header would never fit its content.
+      const style = getComputedStyle(node);
+      const gap = Number.parseFloat(style.columnGap || '0') || 0;
+      const children = Array.from(node.children) as HTMLElement[];
+      const overhead =
+        (Number.parseFloat(style.paddingLeft) || 0) +
+        (Number.parseFloat(style.paddingRight) || 0) +
+        gap * Math.max(0, children.length - 1) +
+        children.reduce(
+          (total, child) =>
+            total + (child === label ? 0 : child.getBoundingClientRect().width),
+          0
+        );
+      const natural = Math.ceil(overhead + label.scrollWidth) + 2; // + borders
       if (natural > 2) measured[dir] = natural;
     }
     if (Object.keys(measured).length === 0) return;
@@ -440,6 +461,9 @@ export function TabStrip({
   useEffect(() => {
     const node = scrollerRef.current;
     if (!node || !activeDir) return;
+    // Never scroll under a drag: the layout recomputes on every pointer
+    // move, and auto-scrolling then would fight the hand holding the chip.
+    if (pointerDragRef.current?.engaged) return;
     const target = layout.targets.get(`project:${activeDir}`);
     if (!target) return;
     const activeProject = projects.find(item => item.dir === activeDir);
@@ -693,13 +717,17 @@ export function TabStrip({
       // Defensive: tear down any zombie gesture (its pointerup never
       // arrived) before arming a new one, so listener sets cannot stack.
       activeGestureCleanupRef.current?.();
-      const rect = containerRef.current?.getBoundingClientRect();
+      const scroller = scrollerRef.current;
+      const rect = scroller?.getBoundingClientRect();
       const node = itemNodesRef.current.get(params.key);
-      if (!rect || !node) return;
+      if (!scroller || !rect || !node) return;
       const nodeRect = node.getBoundingClientRect();
       const gesturePointerId = event.pointerId;
+      // Targets are laid out in the scroller's CONTENT space, so pointer
+      // coordinates have to include scrollLeft — otherwise every drag is
+      // off by however far the row is scrolled, and lands nowhere.
       const start = {
-        x: event.clientX - rect.left,
+        x: event.clientX - rect.left + scroller.scrollLeft,
         y: event.clientY - rect.top,
       };
       const candidate = {
@@ -732,9 +760,10 @@ export function TabStrip({
       const onMove = (moveEvent: PointerEvent) => {
         if (moveEvent.pointerId !== gesturePointerId) return;
         const active = pointerDragRef.current;
-        const bounds = containerRef.current?.getBoundingClientRect();
-        if (!active || !bounds) return;
-        const x = moveEvent.clientX - bounds.left;
+        const liveScroller = scrollerRef.current;
+        const bounds = liveScroller?.getBoundingClientRect();
+        if (!active || !liveScroller || !bounds) return;
+        const x = moveEvent.clientX - bounds.left + liveScroller.scrollLeft;
         const y = moveEvent.clientY - bounds.top;
         let engaged = active.engaged;
         if (!engaged) {
@@ -769,9 +798,11 @@ export function TabStrip({
             .map(token => geometry.layout.targets.get(token.key))
             .filter((target): target is RibbonTarget => !!target)
             .map(slotCenter);
-          // One row now, so every sibling shares row 0 and the drop index
-          // is decided purely by x.
-          index = dropIndexForPointer(centers, { x, y }, RIBBON_ROW_HEIGHT);
+          // One row now: every sibling sits on row 0, so the drop index is
+          // decided purely by x. Passing the live y would let a pointer that
+          // drifts a few pixels below the strip read as "a row down" and
+          // fling the chip to the end.
+          index = dropIndexForPointer(centers, { x, y: 0 }, RIBBON_ROW_HEIGHT);
         }
         const next = { ...active, engaged, x, y, index };
         pointerDragRef.current = next;
@@ -854,7 +885,10 @@ export function TabStrip({
     if (pointerDrag?.engaged && pointerDrag.key === entry.token.key) {
       const dragX = Math.max(
         -8,
-        Math.min(pointerDrag.x - pointerDrag.grabDX, containerWidth - 24)
+        Math.min(
+          pointerDrag.x - pointerDrag.grabDX,
+          Math.max(layout.contentWidth, containerWidth) - 24
+        )
       );
       const dragY = Math.max(
         -4,
@@ -904,6 +938,14 @@ export function TabStrip({
     };
   };
 
+  const fadeMask = layout.scrollable
+    ? `linear-gradient(to right, transparent 0, #000 ${
+        scrollEdges.left ? '28px' : '0'
+      }, #000 calc(100% - ${
+        scrollEdges.right ? '28px' : '0px'
+      }), transparent 100%)`
+    : undefined;
+
   return (
     <div
       ref={containerRef}
@@ -917,19 +959,6 @@ export function TabStrip({
         // terminal below can never be resized by anything the ribbon does.
         height: stripHeight,
         minHeight: projects.length > 0 ? RIBBON_ROW_HEIGHT : 0,
-        // Edge fades stand in for the scrollbar: they say "there is more
-        // this way" without spending a row on chrome. Only drawn on the
-        // side that actually has more content.
-        maskImage: layout.scrollable
-          ? `linear-gradient(to right, transparent 0, #000 ${
-              scrollEdges.left ? '28px' : '0'
-            }, #000 calc(100% - ${scrollEdges.right ? '28px' : '0px'}), transparent 100%)`
-          : undefined,
-        WebkitMaskImage: layout.scrollable
-          ? `linear-gradient(to right, transparent 0, #000 ${
-              scrollEdges.left ? '28px' : '0'
-            }, #000 calc(100% - ${scrollEdges.right ? '28px' : '0px'}), transparent 100%)`
-          : undefined,
       }}
       onPointerLeave={() => releaseHeldClose()}
     >
@@ -938,6 +967,15 @@ export function TabStrip({
         data-ribbon-scroller
         className="relative h-full w-full overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onScroll={syncScrollEdges}
+        style={{
+          // Edge fades stand in for the scrollbar: they say "there is more
+          // this way" without spending a row on chrome, and only on the side
+          // that actually has more. The mask lives HERE, not on the strip:
+          // a mask paints its whole subtree, so on the outer element it
+          // sliced the fixed-position context menu down to a sliver.
+          maskImage: fadeMask,
+          WebkitMaskImage: fadeMask,
+        }}
       >
         <div
           className="relative h-full"
@@ -1140,7 +1178,7 @@ export function TabStrip({
                 ) : (
                   <span
                     data-project-label
-                    className="min-w-0 flex-1 truncate whitespace-nowrap text-left"
+                    className="min-w-0 shrink truncate whitespace-nowrap text-left"
                   >
                     {project.name}
                   </span>

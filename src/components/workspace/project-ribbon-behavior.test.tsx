@@ -232,3 +232,32 @@ describe('single-row Project ribbon (D45)', () => {
     );
   });
 });
+
+describe('D45 review-round regressions', () => {
+  it('draws the scroll fade on the scroller, not over the whole strip', () => {
+    // A mask paints its entire subtree: on the outer element it sliced the
+    // fixed-position context menu down to a sliver whenever the row scrolled.
+    const projects = Array.from({ length: 10 }, (_, index) =>
+      project(`/project-${index}`, [tab(`tab-${index}`)])
+    );
+    const { container } = ribbon({ projects, activeDir: projects[0].dir });
+    const strip = container.querySelector(
+      '[data-workspace-tab-strip]'
+    ) as HTMLElement;
+    expect(strip.style.maskImage || '').toBe('');
+    expect(strip.style.webkitMaskImage || '').toBe('');
+    expect(container.querySelector('[data-ribbon-scroller]')).not.toBeNull();
+  });
+
+  it('sizes a Project header from its own content, never from its assignment', () => {
+    // The header fills the width the engine assigns so long names truncate;
+    // measuring that box would hand the engine its own output straight back
+    // and the header could never grow to fit a longer name.
+    const projects = [project('/alpha', [tab('a1')])];
+    const { container } = ribbon({ projects, activeDir: '/alpha' });
+    const label = container.querySelector('[data-project-label]');
+    expect(label).not.toBeNull();
+    // the label must not absorb slack — that slack is visible whitespace
+    expect(label?.className).not.toContain('flex-1');
+  });
+});
