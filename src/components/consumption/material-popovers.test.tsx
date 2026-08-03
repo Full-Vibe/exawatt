@@ -27,10 +27,7 @@ describe('Consumption material popovers', () => {
 
   it('projects the ambient meter through the same overlay material', () => {
     const view = render(
-      <MeterPopover
-        snapshot={readMeter(fixture.sources, fixture.nowMs)}
-        layout="static"
-      />
+      <MeterPopover snapshot={readMeter(fixture.sources, fixture.nowMs)} />
     );
 
     expect(
