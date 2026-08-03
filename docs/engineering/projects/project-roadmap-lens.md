@@ -453,7 +453,28 @@ And the concrete failure that triggered it: an agent was actively working ENG-03
 - **provenance is visible** (operator requirement): every backlog row shows where it came from — quick-capture feedback, operator triage, an incident record — and its owning item. "I want to be able to see bugs clearly and also source"
 - this maps onto the ENG-025 triage taxonomy that already exists: kernel → new roadmap item; small fix / incident candidate → backlog row against an owning item
 
-**Home: the Team-altitude panel stays** (operator). No new tab, no new destination. The panel gets better rather than graduating into a surface — density, detail, and the launch gesture all have to work in a docked column. This is a real constraint on the design, not a temporary compromise.
+**Home: the Team-altitude panel stays** (operator). No new tab, no new destination. The panel gets better rather than graduating into a surface.
+
+The column is narrow, and the panel now has to hold a queue, a backlog, item detail, and launch gestures. The operator relaxed the constraint rather than the scope: *"We can also x-expand the panel slightly when it has focus if we need more space."* So the panel is **ambient when glanced at and wider when focused** — the same lens at two densities, which is the pattern the app already uses between an altitude and its overview.
+
+Even expanded it is a column, not a page, so navigation stays single-focus: the queue is the resting view, selecting an item slides its detail over the list with a back gesture, and one thing is legible at a time. A permanently split column would halve the room for exactly the detail view the operator called unreadable.
+
+**Backlog storage: short entries in the repo's roadmap file** (operator, 2026-08-03). Chosen over a separate defect file or reading the feedback database directly, because it keeps one tracker, keeps the backlog repo-owned like every other piece of project state, and works for any adopting repo rather than only the operator's own account.
+
+An entry is a heading, the item it belongs to, and its provenance — no scope, no exit criteria:
+
+```markdown
+## Backlog
+
+### Codex tab shows finished while the agent is still working
+Status: bug · ENG-016 · quick-capture 2026-08-03
+```
+
+Three consequences that must land together, because doing any one alone leaves the model incoherent:
+
+1. **The published convention and the parser need `backlog` as a queue status distinct from `later`.** Today `## Backlog` is a recognized *synonym* for `## Later` (`roadmap-convention.md` → Queue sections), so the distinction the operator asked for does not survive parsing. The change is additive and degrades gracefully — an older parser reading a newer file still resolves `later` — but the convention is **published** and other repos adopt it, so this is a versioned spec change with a migration note, not a private edit. Change the spec and the parser in the same slice; never ship a spec that describes behavior the parser lacks.
+2. **The ENG-025 triage protocol gains a target.** A small fix or incident candidate writes a backlog entry in the roadmap file *and* keeps its diagnostic narrative in the owning item's project doc. The entry is the machine-readable pointer; the doc note is the reasoning. The three rows triaged on 2026-08-03 into `daily-driver-adoption.md` are the worked example — each has real diagnostic content that does not belong in a one-line entry, and each is currently invisible to any UI.
+3. **The lens renders both as one record set**, with provenance visible on every backlog row so the operator can see at a glance what came from quick capture, what from triage, and what belongs to which item.
 
 **Assignment: launch from the item.** Select an item, press a key, an agent starts on it — pre-filled with the item as its task and **linked by construction**, so inference never has to guess. Attaching an already-running agent is the secondary path. This is S10's long-gated ASSIGN verb, and it inverts the linkage problem: today the lens guesses which item an agent is on; after this, the operator says so at launch.
 
