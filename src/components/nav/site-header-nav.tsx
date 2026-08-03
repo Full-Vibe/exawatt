@@ -30,6 +30,10 @@ import { signOut } from '@/app/actions/projects';
 import { isAdminEmail } from '@/lib/auth/admin';
 import { ALTITUDE_ICONS, CommandAltitudeNav } from './command-altitude-nav';
 import { APP_SURFACES, isAppRoute } from './surfaces';
+import {
+  AMBIENT_CHROME_METER_ENABLED,
+  AmbientChromeMeter,
+} from '@/components/consumption/meter/ambient-meter-chrome';
 import { useOptionalProductFeedback } from '@/components/feedback/product-feedback-provider';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import type { TenantWorkspaceKind } from '@/lib/tenancy/workspace-scope';
@@ -158,6 +162,12 @@ export function SiteHeaderNav({
             : undefined
         }
       >
+        {/* ambient consumption meter (ENG-008): the always-on plan-window
+            glance and /consumption's first-class chrome entry — glyph,
+            hover popover, click-through. App surfaces only; the flag is
+            the whole mount. */}
+        {AMBIENT_CHROME_METER_ENABLED &&
+          (inElectron || isAppRoute(pathname)) && <AmbientChromeMeter />}
         {/* non-personal tenancy identity is ALWAYS visible (ENG-027): demo
             data must never be mistaken for Personal truth */}
         {activeWorkspace && activeWorkspace.kind !== 'personal' && (

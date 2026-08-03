@@ -32,6 +32,10 @@ vi.mock('@/components/readiness/gallery-study', () => ({
   ReadinessGrammarStudy: () => null,
 }));
 
+vi.mock('@/components/consumption/meter/gallery-study', () => ({
+  AmbientMeterStudy: () => null,
+}));
+
 import HudGallery from './page';
 
 class IntersectionObserverStub implements IntersectionObserver {

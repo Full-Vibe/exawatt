@@ -37,6 +37,7 @@ import { SessionStateTileStudy } from '@/components/hud/session-state-tile-study
 import { BoardTileStudy } from '@/components/hud/board-tile-study';
 import { ProjectRibbonStudy } from '@/components/hud/project-ribbon-study';
 import { ReadinessGrammarStudy } from '@/components/readiness/gallery-study';
+import { AmbientMeterStudy } from '@/components/consumption/meter/gallery-study';
 
 const TONES: HudTone[] = ['cyan', 'magenta', 'amber', 'red', 'green', 'idle'];
 const STATUSES: AgentStatus[] = [
@@ -60,6 +61,12 @@ interface Section {
 }
 
 const SECTIONS: Section[] = [
+  {
+    id: 'ambient-consumption-meter',
+    title: 'Ambient consumption meter',
+    meta: 'review candidate · ENG-008 — four chrome forms, monochrome-until-hot, operator picks',
+    showcase: <AmbientMeterStudy />,
+  },
   {
     id: 'readiness-grammar',
     title: 'Readiness grammar',
