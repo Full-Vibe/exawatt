@@ -216,7 +216,10 @@ export function AltitudeHandoffGhosts({
         ref={scrim}
         data-altitude-handoff-scrim
         className="absolute inset-0"
-        style={{ background: 'rgba(4,6,11,0.7)' }}
+        style={{
+          background:
+            'color-mix(in srgb, var(--exa-foundation-canvas) 70%, transparent)',
+        }}
       />
       {snapshot.cards.map(card => (
         <div
@@ -226,7 +229,7 @@ export function AltitudeHandoffGhosts({
             else ghosts.current.delete(card.key);
           }}
           data-altitude-handoff-ghost={card.key}
-          className="absolute overflow-hidden rounded border"
+          className="exa-material-overlay absolute overflow-hidden rounded border"
           style={{
             left: card.rect.left,
             top: card.rect.top,
@@ -235,7 +238,6 @@ export function AltitudeHandoffGhosts({
             transformOrigin: 'top left',
             willChange: 'transform, opacity',
             borderColor: `${card.color}66`,
-            background: 'rgba(7,12,20,0.92)',
             boxShadow: `0 0 14px ${card.color}22`,
           }}
         >
@@ -244,7 +246,7 @@ export function AltitudeHandoffGhosts({
               className="h-3.5 w-[3px] shrink-0 rounded-full"
               style={{ background: card.color }}
             />
-            <span className="truncate font-sans text-sm font-semibold text-zinc-100">
+            <span className="truncate font-sans text-sm font-semibold text-[var(--exa-foundation-text)]">
               {card.label}
             </span>
           </span>

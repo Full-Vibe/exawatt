@@ -18,10 +18,10 @@
  * reader meets their first instance of it.
  */
 import type { ReactNode } from 'react';
-import { HUD, withAlpha } from '@/components/hud/tokens';
 import { READINESS_NEUTRAL } from './readiness';
 
-const OUTLINE = withAlpha(READINESS_NEUTRAL, 0.55);
+const READINESS_COLOR = `var(--exa-readiness-neutral, ${READINESS_NEUTRAL})`;
+const OUTLINE = `color-mix(in srgb, ${READINESS_COLOR} 55%, transparent)`;
 
 export function Unbuilt({
   children,
@@ -42,21 +42,27 @@ export function Unbuilt({
         className="rounded-md px-5 pb-5 pt-7"
         style={{
           border: `1px dashed ${OUTLINE}`,
-          background:
-            'linear-gradient(180deg, rgba(12,12,20,0.55), rgba(6,7,14,0.55))',
+          background: 'var(--exa-readiness-surface)',
         }}
       >
         <span
           data-readiness="announced"
           className="absolute left-4 top-[-9px] inline-flex items-center gap-1.5 rounded px-2 py-0.5 font-ui text-chrome-micro"
           style={{
-            background: '#0A0912',
+            background: 'var(--exa-foundation-overlay)',
             border: `1px dashed ${OUTLINE}`,
-            color: READINESS_NEUTRAL,
+            color: READINESS_COLOR,
           }}
         >
           Coming soon
-          <span style={{ color: withAlpha(HUD.textDim, 0.75) }}>· {owner}</span>
+          <span
+            style={{
+              color:
+                'color-mix(in srgb, var(--exa-hud-text-dim) 75%, transparent)',
+            }}
+          >
+            · {owner}
+          </span>
         </span>
 
         {/* `inert` is the whole promise: a preview cannot be operated, focused,
@@ -68,7 +74,10 @@ export function Unbuilt({
         {note && (
           <p
             className="mt-4 text-chrome-title"
-            style={{ color: withAlpha(HUD.textDim, 0.95) }}
+            style={{
+              color:
+                'color-mix(in srgb, var(--exa-hud-text-dim) 95%, transparent)',
+            }}
           >
             {note}
           </p>
@@ -83,7 +92,7 @@ export function UnbuiltLegend({ className = '' }: { className?: string }) {
   return (
     <p
       className={`flex flex-wrap items-center gap-2 text-chrome-title ${className}`}
-      style={{ color: HUD.textDim }}
+      style={{ color: 'var(--exa-hud-text-dim)' }}
     >
       <span
         aria-hidden
@@ -92,7 +101,7 @@ export function UnbuiltLegend({ className = '' }: { className?: string }) {
       />
       <span>
         A dashed outline marks a control that is{' '}
-        <strong style={{ color: HUD.text, fontWeight: 600 }}>
+        <strong style={{ color: 'var(--exa-hud-text)', fontWeight: 600 }}>
           designed, not built
         </strong>
         . It does not respond to clicks, focus, or the keyboard.

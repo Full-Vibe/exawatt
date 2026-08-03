@@ -4,6 +4,7 @@ import {
   chmodSync,
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -17,6 +18,13 @@ const fakeHome = join(root, 'home');
 const fakeBin = join(root, 'bin');
 const projectDir = join(root, 'project');
 const output = resolve('.artifacts', 'agent-sources');
+const previewThemes = [
+  'exawatt-air-light',
+  'exawatt-night-dark',
+  'exawatt-classic-dark',
+].map(id =>
+  JSON.parse(readFileSync(resolve('themes', 'v1', `${id}.json`), 'utf8'))
+);
 for (const directory of [
   userData,
   fakeHome,
@@ -78,6 +86,68 @@ const check = (name, ok, detail = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`);
   if (!ok) failures.push(name);
 };
+
+const rgb = hex => {
+  const value = hex.replace('#', '').slice(0, 6);
+  return `rgb(${Number.parseInt(value.slice(0, 2), 16)}, ${Number.parseInt(
+    value.slice(2, 4),
+    16
+  )}, ${Number.parseInt(value.slice(4, 6), 16)})`;
+};
+
+async function previewTheme(page, theme, reducedTransparency = false) {
+  await page.evaluate(
+    ({ id, appearance, profile, reduced }) => {
+      const root = document.documentElement;
+      for (const name of Array.from(root.style)) {
+        if (name.startsWith('--exa-')) root.style.removeProperty(name);
+      }
+      root.dataset.exaTheme = id;
+      root.dataset.exaAppearance = appearance;
+      root.dataset.exaContrast = 'standard';
+      root.dataset.exaTransparency = reduced ? 'reduced' : 'standard';
+      root.dataset.exaFont = 'theme';
+      root.dataset.exaTypography = profile;
+      root.classList.toggle('dark', appearance === 'dark');
+      root.classList.toggle('light', appearance === 'light');
+    },
+    {
+      id: theme.id,
+      appearance: theme.appearance,
+      profile: theme.typography.profile,
+      reduced: reducedTransparency,
+    }
+  );
+  await page.evaluate(
+    () =>
+      new Promise(resolveFrame =>
+        requestAnimationFrame(() => requestAnimationFrame(resolveFrame))
+      )
+  );
+  return page.evaluate(() => {
+    const root = document.documentElement;
+    const shell = document.querySelector('[data-settings-shell]');
+    const material = document.querySelector('.exa-material-chrome');
+    if (!(shell instanceof HTMLElement) || !(material instanceof HTMLElement)) {
+      throw new Error('Settings theme preview targets are missing');
+    }
+    const shellStyle = getComputedStyle(shell);
+    const materialStyle = getComputedStyle(material);
+    const backdropFilter = materialStyle.backdropFilter;
+    const webkitBackdropFilter = materialStyle.getPropertyValue(
+      '-webkit-backdrop-filter'
+    );
+    return {
+      themeId: root.dataset.exaTheme,
+      background: shellStyle.backgroundColor,
+      color: shellStyle.color,
+      colorScheme: getComputedStyle(root).colorScheme,
+      backdropFilter,
+      webkitBackdropFilter,
+      materialBackground: materialStyle.backgroundColor,
+    };
+  });
+}
 
 const base = process.env.EXA_BASE ?? 'http://localhost:7421';
 const launch = () => ({
@@ -174,6 +244,51 @@ try {
         fullPage: true,
       });
 
+      for (const theme of previewThemes.slice(0, 2)) {
+        const label = theme.label.toLowerCase();
+        const standard = await previewTheme(page, theme);
+        check(
+          `${theme.label} resolves on the production Settings shell`,
+          standard.themeId === theme.id &&
+            standard.background === rgb(theme.foundation.canvas) &&
+            standard.color === rgb(theme.foundation.text) &&
+            standard.colorScheme === theme.appearance,
+          JSON.stringify(standard)
+        );
+        check(
+          `${theme.label} uses the generated chrome material recipe`,
+          [standard.backdropFilter, standard.webkitBackdropFilter].some(value =>
+            value?.includes('blur(')
+          ),
+          JSON.stringify({
+            backdropFilter: standard.backdropFilter,
+            webkitBackdropFilter: standard.webkitBackdropFilter,
+          })
+        );
+        await page.screenshot({
+          path: join(output, `settings-${label}-1400x900.png`),
+          fullPage: true,
+        });
+
+        const reduced = await previewTheme(page, theme, true);
+        check(
+          `${theme.label} reduced transparency swaps to the opaque fallback`,
+          reduced.backdropFilter === 'none' &&
+            (!reduced.webkitBackdropFilter ||
+              reduced.webkitBackdropFilter === 'none') &&
+            reduced.materialBackground === rgb(theme.material.chrome.fallback),
+          JSON.stringify(reduced)
+        );
+        await page.screenshot({
+          path: join(
+            output,
+            `settings-${label}-reduced-transparency-1400x900.png`
+          ),
+          fullPage: true,
+        });
+      }
+      await previewTheme(page, previewThemes[2]);
+
       await page.getByRole('button', { name: /^OpenClaw,/ }).click();
       await page.getByRole('heading', { name: 'OpenClaw' }).waitFor();
       check(
@@ -190,8 +305,10 @@ try {
         'add flow separates supported-now and future adapters',
         (await page.getByRole('heading', { name: 'Available now' }).count()) ===
           1 &&
-          (await page.getByRole('heading', { name: 'Coming soon' }).count()) ===
-            1
+          (await page
+            .getByRole('heading', { name: 'Future sources' })
+            .count()) === 1 &&
+          (await page.getByText('Coming soon', { exact: true }).count()) > 0
       );
 
       await page.setViewportSize({ width: 760, height: 900 });

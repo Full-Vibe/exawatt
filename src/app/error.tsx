@@ -18,11 +18,11 @@ export default function RouteError({
   }, [error]);
 
   return (
-    <div className="flex h-[calc(100svh-3rem)] flex-col items-center justify-center gap-4 bg-[#04060b] px-6 text-center">
-      <p className="font-mono text-xs text-zinc-500">
+    <div className="flex h-[calc(100svh-3rem)] flex-col items-center justify-center gap-4 bg-[var(--exa-foundation-canvas)] px-6 text-center">
+      <p className="font-mono text-xs text-[var(--exa-foundation-text-muted)]">
         This surface hit an error while rendering.
       </p>
-      <p className="max-w-md text-sm text-zinc-300">
+      <p className="max-w-md text-sm text-[var(--exa-foundation-text)]">
         Your agent sessions are unaffected — this is a display error, not a
         session failure.
       </p>
@@ -41,7 +41,7 @@ export default function RouteError({
         </Button>
       </div>
       {error.digest ? (
-        <p className="font-mono text-[10px] text-zinc-600">
+        <p className="font-mono text-chrome-micro text-[var(--exa-foundation-text-faint)]">
           digest {error.digest}
         </p>
       ) : null}

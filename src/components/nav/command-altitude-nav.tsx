@@ -62,7 +62,10 @@ function AltitudeLevel({
   return (
     <div className="flex min-w-0 items-center">
       {index > 0 && (
-        <span aria-hidden="true" className="h-px w-2 bg-zinc-800 sm:w-3" />
+        <span
+          aria-hidden="true"
+          className="h-px w-2 bg-[var(--exa-foundation-border)] sm:w-3"
+        />
       )}
       <button
         type="button"
@@ -72,16 +75,18 @@ function AltitudeLevel({
         aria-label={`${surface.name}: ${surface.summary}${shortcut ? ` (${shortcut})` : ''}`}
         title={`${surface.summary}${shortcut ? ` · ${shortcut}` : ''}`}
         onClick={() => onActivate(surface)}
-        className={`group flex h-8 min-w-0 items-center gap-1.5 px-2 font-mono text-chrome-label font-medium outline-none transition-[background-color,color,transform] duration-150 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-300 motion-reduce:transition-none sm:px-2.5 ${
+        className={`group flex h-8 min-w-0 items-center gap-1.5 px-2 font-mono text-chrome-label font-medium outline-none transition-[background-color,color,transform] duration-150 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--exa-foundation-focus)] motion-reduce:transition-none sm:px-2.5 ${
           current
-            ? 'bg-zinc-800/90 text-zinc-50'
-            : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 active:scale-[0.98]'
+            ? 'bg-[var(--exa-foundation-secondary)] text-[var(--exa-foundation-secondary-text)]'
+            : 'text-[var(--exa-foundation-text-muted)] hover:bg-[var(--exa-foundation-secondary)] hover:text-[var(--exa-foundation-text)] active:scale-[0.98]'
         }`}
       >
         <Icon
           aria-hidden="true"
           className={`h-3.5 w-3.5 shrink-0 ${
-            current ? 'text-teal-200' : 'text-zinc-600'
+            current
+              ? 'text-[var(--exa-foundation-action)]'
+              : 'text-[var(--exa-foundation-text-faint)]'
           }`}
         />
         <span data-command-altitude-label className="hidden sm:inline">
@@ -92,8 +97,8 @@ function AltitudeLevel({
             aria-hidden="true"
             className={`hidden border px-1 text-chrome-micro font-normal lg:inline ${
               current
-                ? 'border-zinc-600 text-zinc-300'
-                : 'border-zinc-700 text-zinc-500 group-hover:text-zinc-300'
+                ? 'border-[var(--exa-foundation-border-strong)] text-[var(--exa-foundation-text-muted)]'
+                : 'border-[var(--exa-foundation-border)] text-[var(--exa-foundation-text-faint)] group-hover:text-[var(--exa-foundation-text-muted)]'
             }`}
           >
             {shortcut}
@@ -179,7 +184,7 @@ export function CommandAltitudeNav() {
     <nav
       data-command-altitude
       aria-label="Command altitude"
-      className="mx-3 flex min-w-0 items-center border border-zinc-800/90 bg-zinc-950/70 p-0.5 shadow-[0_8px_24px_rgba(0,0,0,0.22)]"
+      className="exa-material-chrome mx-3 flex min-w-0 items-center border border-[var(--exa-foundation-border)] p-0.5 shadow-lg"
       style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
     >
       {SPINE_SURFACES.map((surface, index) => (

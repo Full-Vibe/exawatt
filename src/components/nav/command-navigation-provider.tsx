@@ -345,7 +345,7 @@ export function CommandNavigationProvider({
           aria-hidden="true"
           className={`pointer-events-none fixed inset-x-0 bottom-0 top-12 z-[60] overflow-hidden transition-colors duration-[180ms] motion-reduce:duration-75 ${
             transition.phase === 'traversing'
-              ? 'bg-zinc-950/25'
+              ? 'bg-[var(--exa-hud-fill)]'
               : 'bg-transparent'
           }`}
         >
@@ -353,8 +353,8 @@ export function CommandNavigationProvider({
               (world pulling away below), descending expands them (diving
               back in). Reduced motion keeps the crossfade only. */}
           {[
-            { size: '46vmin', border: 'border-teal-200/40', span: 0.1 },
-            { size: '72vmin', border: 'border-teal-200/20', span: 0.16 },
+            { size: '46vmin', borderOpacity: 40, span: 0.1 },
+            { size: '72vmin', borderOpacity: 20, span: 0.16 },
           ].map(ring => {
             const contract = transition.direction === 'ascend';
             const from = contract ? 1 + ring.span : 1 - ring.span;
@@ -372,8 +372,9 @@ export function CommandNavigationProvider({
                   width: ring.size,
                   height: ring.size,
                   transform: `translate(-50%, -50%) scale(${scale})`,
+                  borderColor: `color-mix(in srgb, var(--exa-foundation-action) ${ring.borderOpacity}%, transparent)`,
                 }}
-                className={`absolute left-1/2 top-1/2 border ${ring.border} transition-[transform,opacity] duration-[180ms] [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-opacity motion-reduce:duration-75 ${
+                className={`absolute left-1/2 top-1/2 border transition-[transform,opacity] duration-[180ms] [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-opacity motion-reduce:duration-75 ${
                   transition.phase === 'traversing'
                     ? 'opacity-100'
                     : 'opacity-0'
@@ -382,13 +383,17 @@ export function CommandNavigationProvider({
             );
           })}
           <div
-            className={`absolute left-1/2 top-1/2 grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center border border-teal-200/45 bg-zinc-950/90 text-teal-100 shadow-[0_0_32px_rgba(94,234,212,0.12)] transition-[opacity,transform] duration-[180ms] [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-opacity motion-reduce:duration-75 ${
+            className={`exa-material-overlay absolute left-1/2 top-1/2 grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center border border-[var(--exa-hud-stroke)] text-[var(--exa-hud-cyan)] transition-[opacity,transform] duration-[180ms] [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-opacity motion-reduce:duration-75 ${
               transition.phase === 'departing'
                 ? `${transition.direction === 'ascend' ? 'scale-75' : 'scale-125'} opacity-0`
                 : transition.phase === 'traversing'
                   ? 'scale-100 opacity-100'
                   : `${transition.direction === 'ascend' ? 'scale-110' : 'scale-90'} opacity-0`
             }`}
+            style={{
+              boxShadow:
+                '0 0 32px color-mix(in srgb, var(--exa-hud-cyan) 12%, transparent)',
+            }}
           >
             <TargetIcon className="h-4 w-4" strokeWidth={1.5} />
           </div>

@@ -47,11 +47,15 @@ server to close (with bounded force-stop escalation) before declaring cleanup
 complete. This is a presentation boundary, not a second application or
 alternate data source.
 
-ENG-032's appearance boundary is in **active build** (decision `0026`). T0–T2
+ENG-032's appearance boundary is in **active build** (decision `0026`). T0–T2 and T3A
 implement strict versioned definitions, Classic/Air/Night authored data, a
 deterministic validator/generator, one pure resolver, device-local Electron/web
 preference adapters, a production provider, first-paint/native bootstrap, and
-the gallery-accepted Air/Night visual family.
+the gallery-accepted Air/Night visual family. Generated foundation, action, HUD,
+readiness, typography, and material roles now project through root app chrome,
+Settings, feedback, and shared overlay primitives. Material filters and authored
+opaque fallbacks swap in place through CSS variables; renderer capability never
+changes theme truth.
 Electron settings are authoritative on desktop; a validated local mirror exists
 only to select generated CSS before hydration, then reconciles immediately.
 BrowserWindow, the CSP launch document, native theme source, and the hydrated
@@ -59,8 +63,8 @@ root consume one generated/validated state path. `--safe-theme` bypasses stored
 appearance for one launch without mutating it. The temporary theme workbench
 resolves that same immutable snapshot into scoped DOM/material variables,
 ANSI/xterm data, and a concrete-sRGB on-demand R3F sibling with a bloom-free
-Air gate. Classic is still the only persistable production preset. T3–T5
-project the accepted contract through production DOM, xterm, Fleet/R3F, and
+Air gate. Classic is still the only persistable production preset. T3B–T5
+finish projecting the accepted contract through production DOM, xterm, Fleet/R3F, and
 selection adapters; those renderers do not merge theme state independently.
 The contract keeps action, status, Project identity, Consumption, and readiness
 channels distinct and accepts no executable CSS/JavaScript or remote assets.

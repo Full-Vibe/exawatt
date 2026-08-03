@@ -32,7 +32,6 @@
  * (no all-caps words), `rounded` chrome radius, constant footprint.
  */
 import type { CSSProperties, ReactNode } from 'react';
-import { withAlpha } from '@/components/hud/tokens';
 import { surfaceById, type AppSurface } from '@/components/nav/surfaces';
 
 /**
@@ -43,7 +42,9 @@ import { surfaceById, type AppSurface } from '@/components/nav/surfaces';
  */
 export const READINESS_NEUTRAL = '#77839A';
 
-const STROKE = withAlpha(READINESS_NEUTRAL, 0.55);
+const READINESS_COLOR = `var(--exa-readiness-neutral, ${READINESS_NEUTRAL})`;
+const READINESS_STROKE = `color-mix(in srgb, ${READINESS_COLOR} 55%, transparent)`;
+const READINESS_OWNER = `color-mix(in srgb, ${READINESS_COLOR} 80%, transparent)`;
 
 /**
  * The app-wide token, as a pill. Place it once in a `preview` surface's
@@ -61,17 +62,13 @@ export function ComingSoonMarker({
       data-readiness="preview"
       className={`inline-flex shrink-0 items-baseline gap-1.5 whitespace-nowrap rounded px-2 py-0.5 font-ui text-chrome-micro ${className}`}
       style={{
-        border: `1px dashed ${STROKE}`,
-        color: READINESS_NEUTRAL,
-        background: withAlpha(READINESS_NEUTRAL, 0.06),
+        border: `1px dashed ${READINESS_STROKE}`,
+        color: READINESS_COLOR,
+        background: 'var(--exa-readiness-surface)',
       }}
     >
       Coming soon
-      {owner && (
-        <span style={{ color: withAlpha(READINESS_NEUTRAL, 0.8) }}>
-          · {owner}
-        </span>
-      )}
+      {owner && <span style={{ color: READINESS_OWNER }}>· {owner}</span>}
     </span>
   );
 }
@@ -133,8 +130,8 @@ export function AnnouncedChip({
       aria-label={`${coming} — coming soon`}
       className={`inline-flex cursor-default select-none items-center rounded font-ui ${sizing} ${className}`}
       style={{
-        border: `1px dashed ${STROKE}`,
-        color: READINESS_NEUTRAL,
+        border: `1px dashed ${READINESS_STROKE}`,
+        color: READINESS_COLOR,
         ...style,
       }}
     >

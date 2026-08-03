@@ -117,7 +117,7 @@ export function ContextLabelFeedback({
                 maxLength={72}
                 onChange={event => setBetterLabel(event.target.value)}
                 placeholder="Improve agent context summaries"
-                className="bg-black/20"
+                className="bg-[var(--exa-hud-fill)]"
               />
               {state === 'error' && (
                 <p role="alert" className="text-xs text-destructive">

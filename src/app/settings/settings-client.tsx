@@ -79,7 +79,7 @@ function SettingsNavigation({
     },
   ];
   return (
-    <aside className="border-b border-[var(--settings-line)] bg-[var(--settings-shell)] px-3 py-3 lg:border-r lg:border-b-0 lg:py-5">
+    <aside className="exa-material-chrome border-b border-[var(--settings-line)] px-3 py-3 lg:border-r lg:border-b-0 lg:py-5">
       <p className="mb-2 hidden px-3 font-ui text-chrome-label font-medium text-[var(--settings-faint)] lg:block">
         Settings
       </p>
@@ -458,7 +458,7 @@ export function SettingsClient() {
                             return (
                               <div
                                 key={shortcut.id}
-                                className="group flex min-h-11 items-center justify-between px-2 py-2 transition-colors hover:bg-white/[0.03]"
+                                className="group flex min-h-11 items-center justify-between px-2 py-2 transition-colors hover:bg-[var(--settings-hover)]"
                               >
                                 <div className="flex items-center gap-3">
                                   <span className="font-ui text-chrome-title text-[var(--settings-soft)]">
@@ -552,7 +552,7 @@ export function SettingsClient() {
           {!bindingError && bindingWarning && (
             <div
               data-binding-warning
-              className="flex items-start gap-2 text-sm text-amber-500"
+              className="flex items-start gap-2 text-sm text-[var(--exa-hud-amber)]"
             >
               <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
               {bindingWarning}

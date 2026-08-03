@@ -84,7 +84,10 @@ function stateTone(state: AgentSourceState): {
   ) {
     return { color: 'var(--settings-red)', wash: 'var(--settings-red-wash)' };
   }
-  return { color: 'var(--settings-dim)', wash: 'rgba(142,154,174,0.08)' };
+  return {
+    color: 'var(--settings-dim)',
+    wash: 'color-mix(in srgb, var(--settings-dim) 8%, transparent)',
+  };
 }
 
 function StateGlyph({ state }: { state: AgentSourceState }) {
@@ -164,7 +167,7 @@ function ObservationTime({
         <button
           type="button"
           aria-label={`${prefix}${exact}`}
-          className="inline-flex min-h-7 max-w-full items-center gap-1 rounded px-1 font-ui text-chrome-label text-[var(--settings-faint)] outline-none hover:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
+          className="inline-flex min-h-7 max-w-full items-center gap-1 rounded px-1 font-ui text-chrome-label text-[var(--settings-faint)] outline-none hover:bg-[var(--settings-hover)] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
         >
           {prefix ? <span>{prefix.trim()}</span> : null}
           <time dateTime={iso}>{relativeTime(timestamp, now)}</time>
@@ -184,7 +187,7 @@ function InfoTip({ label }: { label: string }) {
         <button
           type="button"
           aria-label={label}
-          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--settings-faint)] outline-none transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--settings-faint)] outline-none transition-colors hover:bg-[var(--settings-hover-strong)] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
         >
           <Info aria-hidden size={14} />
         </button>
@@ -287,7 +290,7 @@ function RegistryRail({
           aria-label="Browse Agent Sources"
           aria-pressed={adding}
           onClick={onAdd}
-          className="flex size-10 items-center justify-center rounded-lg border outline-none transition-colors hover:bg-white/[0.05] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
+          className="flex size-10 items-center justify-center rounded-lg border outline-none transition-colors hover:bg-[var(--settings-hover-strong)] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
           style={{
             color: adding ? 'var(--settings-teal)' : 'var(--settings-soft)',
             borderColor: adding
@@ -309,9 +312,9 @@ function RegistryRail({
               onClick={() => onSelect(source.id)}
               aria-label={`${source.label}, ${source.connectionName}, ${source.stateLabel}`}
               aria-pressed={active}
-              className="group relative flex min-h-[78px] min-w-0 items-center gap-3 rounded-lg border px-3 text-left outline-none transition-[background-color,border-color] duration-150 hover:bg-white/[0.035] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] motion-reduce:transition-none"
+              className="group relative flex min-h-[78px] min-w-0 items-center gap-3 rounded-lg border px-3 text-left outline-none transition-[background-color,border-color] duration-150 hover:bg-[var(--settings-hover)] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] motion-reduce:transition-none"
               style={{
-                background: active ? 'rgba(255,255,255,0.052)' : 'transparent',
+                background: active ? 'var(--settings-selected)' : 'transparent',
                 borderColor: active
                   ? 'var(--settings-line-strong)'
                   : 'transparent',
@@ -473,7 +476,7 @@ function SourceDetail({
             type="button"
             disabled={busy}
             onClick={onRecheck}
-            className="flex min-h-10 items-center gap-2 rounded-lg border border-[var(--settings-line-strong)] bg-[var(--settings-raised)] px-3.5 font-ui text-chrome-title font-medium text-[var(--settings-soft)] outline-none transition-[background-color,transform] hover:bg-white/[0.07] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] motion-reduce:transition-none"
+            className="flex min-h-10 items-center gap-2 rounded-lg border border-[var(--settings-line-strong)] bg-[var(--settings-raised)] px-3.5 font-ui text-chrome-title font-medium text-[var(--settings-soft)] outline-none transition-[background-color,transform] hover:bg-[var(--settings-hover-strong)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] motion-reduce:transition-none"
           >
             <RefreshCw
               aria-hidden
@@ -635,7 +638,7 @@ function AddSourceView({
               key={entry.adapterId}
               type="button"
               onClick={() => onSelect(entry.adapterId as AgentSourceAdapterId)}
-              className="flex min-h-[72px] w-full items-center gap-3 px-1 text-left outline-none transition-colors hover:bg-white/[0.025] focus-visible:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--settings-teal)]"
+              className="flex min-h-[72px] w-full items-center gap-3 px-1 text-left outline-none transition-colors hover:bg-[var(--settings-hover)] focus-visible:bg-[var(--settings-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--settings-teal)]"
             >
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-[var(--settings-line)] bg-[var(--settings-shell)] text-[var(--settings-soft)]">
                 <CatalogMark id={entry.adapterId} />

@@ -434,7 +434,10 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
                 value={kind}
                 onValueChange={value => setKind(value as typeof kind)}
               >
-                <SelectTrigger id="feedback-kind" className="bg-black/20">
+                <SelectTrigger
+                  id="feedback-kind"
+                  className="bg-[var(--exa-hud-fill)]"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -454,9 +457,9 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
                 rows={6}
                 onChange={event => setMessage(event.target.value)}
                 placeholder="What happened, what did you expect, or what would make this better?"
-                className="min-h-32 resize-y bg-black/20"
+                className="min-h-32 resize-y bg-[var(--exa-hud-fill)]"
               />
-              <div className="text-right font-mono text-[10px] text-muted-foreground">
+              <div className="text-right font-mono text-chrome-micro text-muted-foreground">
                 {message.length.toLocaleString()} / 12,000
               </div>
             </div>
@@ -468,7 +471,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
                 </span>
               </Label>
               {attachment ? (
-                <div className="flex items-center gap-3 rounded-md border border-hud-cyan/20 bg-black/20 p-2">
+                <div className="flex items-center gap-3 rounded-md border border-hud-cyan/20 bg-[var(--exa-hud-fill)] p-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={attachment}
@@ -492,7 +495,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
                 <Button
                   type="button"
                   variant="outline"
-                  className="justify-start gap-2 bg-black/20"
+                  className="justify-start gap-2 bg-[var(--exa-hud-fill)]"
                   onClick={() => void capture()}
                   disabled={status === 'capturing'}
                 >

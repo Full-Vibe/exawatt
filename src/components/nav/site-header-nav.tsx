@@ -58,7 +58,7 @@ function WorkspaceIdentityChip({
   return (
     <span
       data-active-tenant-workspace={workspace.id}
-      className="mr-1 inline-flex h-6 items-center gap-1.5 border border-teal-300/40 bg-teal-950/40 px-2 font-mono text-chrome-meta font-medium text-teal-200"
+      className="mr-1 inline-flex h-6 items-center gap-1.5 border border-[var(--exa-hud-stroke-soft)] bg-[var(--exa-hud-fill)] px-2 font-mono text-chrome-meta font-medium text-[var(--exa-hud-cyan)]"
     >
       <KindIcon aria-hidden="true" className="h-3 w-3" />
       {workspace.name} Workspace
@@ -94,7 +94,7 @@ export function SiteHeaderNav({
   return (
     <header
       id="site-header"
-      className="sticky top-0 z-40 flex h-12 items-center justify-between border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 md:px-6"
+      className="exa-material-chrome sticky top-0 z-40 flex h-12 items-center justify-between border-b px-4 md:px-6"
       // desktop app: hiddenInset title bar — clear the macOS traffic lights
       // and let the header double as the window drag strip
       style={
@@ -265,7 +265,7 @@ export function SiteHeaderNav({
                           )}
                         </span>
                         {isActive && (
-                          <Check className="ml-2 h-4 w-4 shrink-0 text-teal-300" />
+                          <Check className="ml-2 h-4 w-4 shrink-0 text-primary" />
                         )}
                         {comingSoon && (
                           <span className="ml-2 shrink-0 border border-border px-1.5 py-0.5 text-chrome-micro text-muted-foreground">

@@ -135,7 +135,7 @@ export function captureAltitudeCards(
     cards.push({
       key,
       label,
-      color: element.dataset.handoffColor ?? '#4fd8c4',
+      color: element.dataset.handoffColor ?? 'var(--exa-hud-cyan)',
       rect: {
         left: rect.left,
         top: rect.top,

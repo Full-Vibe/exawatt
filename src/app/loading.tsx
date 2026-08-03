@@ -4,11 +4,13 @@
 export default function RootLoading() {
   return (
     <div
-      className="flex h-[calc(100svh-3rem)] items-center justify-center bg-[#04060b]"
+      className="flex h-[calc(100svh-3rem)] items-center justify-center bg-[var(--exa-foundation-canvas)]"
       role="status"
       aria-label="Loading"
     >
-      <p className="animate-pulse font-mono text-xs text-zinc-500">Loading…</p>
+      <p className="animate-pulse font-mono text-xs text-[var(--exa-foundation-text-muted)]">
+        Loading…
+      </p>
     </div>
   );
 }

@@ -227,27 +227,118 @@ body {
   color: var(--foreground);
 }
 
+/* Shared material projection. Themes own tint/opacity/blur/saturation plus an
+   authored opaque fallback; accessibility can disable transparency without a
+   component-specific branch or remount. */
+.exa-material-chrome,
+.exa-material-overlay,
+.exa-material-raised {
+  --exa-material-role-filter: blur(var(--exa-material-role-blur))
+    saturate(var(--exa-material-role-saturation));
+  background: color-mix(
+    in srgb,
+    var(--exa-material-role-tint) calc(var(--exa-material-role-opacity) * 100%),
+    transparent
+  );
+  /* Keep the complete value behind a custom property. Lightning CSS otherwise
+     canonicalizes this declaration to the WebKit prefix, which Electron's
+     pinned Chromium no longer accepts. */
+  backdrop-filter: var(--exa-material-role-filter);
+}
+
+.exa-material-chrome {
+  --exa-material-role-tint: var(--exa-material-chrome-tint);
+  --exa-material-role-opacity: var(--exa-material-chrome-opacity);
+  --exa-material-role-blur: var(--exa-material-chrome-blur);
+  --exa-material-role-saturation: var(--exa-material-chrome-saturation);
+  --exa-material-role-fallback: var(--exa-material-chrome-fallback);
+}
+
+.exa-material-overlay {
+  --exa-material-role-tint: var(--exa-material-overlay-tint);
+  --exa-material-role-opacity: var(--exa-material-overlay-opacity);
+  --exa-material-role-blur: var(--exa-material-overlay-blur);
+  --exa-material-role-saturation: var(--exa-material-overlay-saturation);
+  --exa-material-role-fallback: var(--exa-material-overlay-fallback);
+}
+
+.exa-material-raised {
+  --exa-material-role-tint: var(--exa-material-raised-tint);
+  --exa-material-role-opacity: var(--exa-material-raised-opacity);
+  --exa-material-role-blur: var(--exa-material-raised-blur);
+  --exa-material-role-saturation: var(--exa-material-raised-saturation);
+  --exa-material-role-fallback: var(--exa-material-raised-fallback);
+}
+
+[data-exa-transparency='reduced'] .exa-material-chrome,
+[data-exa-transparency='reduced'] .exa-material-overlay,
+[data-exa-transparency='reduced'] .exa-material-raised {
+  background: var(--exa-material-role-fallback);
+  --exa-material-role-filter: none;
+}
+
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .exa-material-chrome,
+  .exa-material-overlay,
+  .exa-material-raised {
+    background: var(--exa-material-role-fallback);
+  }
+}
+
+.exa-overlay-scrim {
+  background: color-mix(in srgb, var(--exa-foundation-canvas) 55%, transparent);
+}
+
+[data-exa-transparency='reduced'] .exa-overlay-scrim {
+  background: color-mix(in srgb, var(--exa-foundation-canvas) 82%, transparent);
+}
+
 /* Agent Source Settings graduated from /hud-gallery into a shared production
    shell. These calmer operational neutrals are intentionally scoped: fleet
    surfaces keep the higher-energy HUD palette, while settings favors dense,
    legible source truth over ambient spectacle. */
 [data-settings-shell] {
-  --settings-page: #070a0f;
-  --settings-shell: #0b0f15;
-  --settings-panel: #0e131b;
-  --settings-raised: #121923;
-  --settings-line: #222d3b;
-  --settings-line-strong: #334357;
-  --settings-text: #e8eef7;
-  --settings-soft: #c2ccda;
-  --settings-dim: #8e9aae;
-  --settings-faint: #7d899c;
-  --settings-teal: #72d8cc;
-  --settings-teal-wash: rgba(114, 216, 204, 0.08);
-  --settings-amber: #e7bd6a;
-  --settings-amber-wash: rgba(231, 189, 106, 0.08);
-  --settings-red: #ef8e8e;
-  --settings-red-wash: rgba(239, 142, 142, 0.08);
+  --settings-page: var(--exa-foundation-canvas);
+  --settings-shell: var(--exa-foundation-surface);
+  --settings-panel: var(--exa-foundation-surface-raised);
+  --settings-raised: var(--exa-foundation-overlay);
+  --settings-line: var(--exa-foundation-border);
+  --settings-line-strong: var(--exa-foundation-border-strong);
+  --settings-text: var(--exa-foundation-text);
+  --settings-soft: var(--exa-foundation-secondary-text);
+  --settings-dim: var(--exa-foundation-text-muted);
+  --settings-faint: var(--exa-foundation-text-faint);
+  --settings-teal: var(--exa-foundation-action);
+  --settings-teal-wash: color-mix(
+    in srgb,
+    var(--exa-foundation-action) 8%,
+    transparent
+  );
+  --settings-amber: var(--exa-hud-amber);
+  --settings-amber-wash: color-mix(
+    in srgb,
+    var(--exa-hud-amber) 8%,
+    transparent
+  );
+  --settings-red: var(--exa-status-fault);
+  --settings-red-wash: color-mix(
+    in srgb,
+    var(--exa-status-fault) 8%,
+    transparent
+  );
+  --settings-hover: color-mix(in srgb, var(--settings-text) 4%, transparent);
+  --settings-hover-strong: color-mix(
+    in srgb,
+    var(--settings-text) 7%,
+    transparent
+  );
+  --settings-selected: color-mix(
+    in srgb,
+    var(--settings-text) 5.2%,
+    transparent
+  );
 }
 
 /* Electron is pointer-first today, but the composer also runs through the

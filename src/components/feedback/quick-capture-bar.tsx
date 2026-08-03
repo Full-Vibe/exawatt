@@ -117,12 +117,12 @@ export function QuickCaptureBar({
             className={cn(
               'flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs transition-colors',
               entry.kind === kind
-                ? 'border-hud-cyan bg-cyan-400/10 text-foreground'
+                ? 'border-hud-cyan bg-[var(--exa-hud-fill-hi)] text-foreground'
                 : 'border-hud-cyan/20 text-muted-foreground hover:text-foreground'
             )}
           >
             {entry.label}
-            <span className="font-mono text-[10px] text-muted-foreground">
+            <span className="font-mono text-chrome-micro text-muted-foreground">
               {entry.hint}
             </span>
           </button>
@@ -141,7 +141,7 @@ export function QuickCaptureBar({
             className={cn(
               'ml-1 flex items-center gap-1.5 rounded-full border py-0.5 pr-2.5 pl-1 text-xs transition-colors',
               attachScreenshot
-                ? 'border-hud-cyan bg-cyan-400/10 text-foreground'
+                ? 'border-hud-cyan bg-[var(--exa-hud-fill-hi)] text-foreground'
                 : 'border-hud-cyan/20 text-muted-foreground hover:text-foreground'
             )}
           >
@@ -155,14 +155,14 @@ export function QuickCaptureBar({
               )}
             />
             {attachScreenshot && <Check className="size-3" />}
-            <span className="font-mono text-[10px] text-muted-foreground">
+            <span className="font-mono text-chrome-micro text-muted-foreground">
               ⌘S
             </span>
           </button>
         )}
         <div
           aria-live="polite"
-          className="ml-auto pr-1 font-mono text-[10px] whitespace-nowrap text-muted-foreground"
+          className="ml-auto pr-1 font-mono text-chrome-micro whitespace-nowrap text-muted-foreground"
         >
           {error ? (
             <span className="text-destructive">{error}</span>

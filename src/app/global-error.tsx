@@ -21,14 +21,20 @@ export default function GlobalError({
           alignItems: 'center',
           justifyContent: 'center',
           gap: 16,
-          background: '#04060b',
-          color: '#d4d4d8',
+          background: 'var(--exa-foundation-canvas, #04060b)',
+          color: 'var(--exa-foundation-text, #d4d4d8)',
           fontFamily: 'ui-sans-serif, system-ui, sans-serif',
           textAlign: 'center',
           padding: 24,
         }}
       >
-        <p style={{ fontSize: 13, color: '#71717a', margin: 0 }}>
+        <p
+          style={{
+            fontSize: 13,
+            color: 'var(--exa-foundation-text-muted, #71717a)',
+            margin: 0,
+          }}
+        >
           Exawatt hit an error while rendering.
         </p>
         <p style={{ fontSize: 14, maxWidth: 420, margin: 0 }}>
@@ -39,8 +45,8 @@ export default function GlobalError({
             onClick={reset}
             style={{
               background: 'transparent',
-              color: '#d4d4d8',
-              border: '1px solid #3f3f46',
+              color: 'var(--exa-foundation-text, #d4d4d8)',
+              border: '1px solid var(--exa-foundation-border-strong, #3f3f46)',
               borderRadius: 6,
               padding: '6px 14px',
               fontSize: 13,
@@ -55,7 +61,7 @@ export default function GlobalError({
             }}
             style={{
               background: 'transparent',
-              color: '#a1a1aa',
+              color: 'var(--exa-foundation-text-muted, #a1a1aa)',
               border: '1px solid transparent',
               borderRadius: 6,
               padding: '6px 14px',
@@ -67,7 +73,13 @@ export default function GlobalError({
           </button>
         </div>
         {error.digest ? (
-          <p style={{ fontSize: 10, color: '#52525b', fontFamily: 'monospace' }}>
+          <p
+            style={{
+              fontSize: 10,
+              color: 'var(--exa-foundation-text-faint, #52525b)',
+              fontFamily: 'monospace',
+            }}
+          >
             digest {error.digest}
           </p>
         ) : null}

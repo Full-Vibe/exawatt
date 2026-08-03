@@ -14,6 +14,9 @@ describe('readiness grammar (ENG-026 N0)', () => {
     render(<ComingSoonMarker owner="ENG-033" />);
     const marker = screen.getByText('Coming soon');
     expect(marker.parentElement?.textContent).toContain('ENG-033');
+    const style = marker.getAttribute('style') ?? '';
+    expect(style).toContain('var(--exa-readiness-neutral, #77839A)');
+    expect(style).toContain('var(--exa-readiness-surface)');
   });
 
   it('SurfaceReadinessMarker renders the marker for a preview surface and nothing for a live one', () => {

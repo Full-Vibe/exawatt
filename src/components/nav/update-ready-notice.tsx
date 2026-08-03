@@ -67,12 +67,12 @@ export function UpdateReadyNotice() {
               : `Update failed. Exawatt ${status?.currentVersion} remains installed.`;
 
   return (
-    <div className="fixed bottom-8 left-1/2 z-[100] flex w-[min(42rem,calc(100%-2rem))] -translate-x-1/2 flex-wrap items-center gap-3 border border-white/10 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 shadow-lg">
+    <div className="exa-material-overlay fixed bottom-8 left-1/2 z-[100] flex w-[min(42rem,calc(100%-2rem))] -translate-x-1/2 flex-wrap items-center gap-3 border border-[var(--exa-foundation-border-strong)] px-3 py-2 text-xs text-[var(--exa-foundation-text)] shadow-lg">
       <span className="min-w-0 flex-1">{message}</span>
       {!shutdownActive && !installedSha && status?.phase === 'downloaded' && (
         <button
           type="button"
-          className="inline-flex h-7 items-center gap-1.5 border border-white/15 px-2 text-zinc-100 hover:bg-white/10"
+          className="inline-flex h-7 items-center gap-1.5 border border-[var(--exa-foundation-border-strong)] px-2 text-[var(--exa-foundation-text)] hover:bg-[var(--exa-foundation-secondary)]"
           onClick={() => void window.electron?.app?.restartUpdate()}
         >
           <RefreshCw className="h-3.5 w-3.5" />
@@ -82,7 +82,7 @@ export function UpdateReadyNotice() {
       {!shutdownActive && (
         <button
           type="button"
-          className="ml-auto grid h-6 w-6 shrink-0 place-items-center text-zinc-400 hover:text-white"
+          className="ml-auto grid h-6 w-6 shrink-0 place-items-center text-[var(--exa-foundation-text-muted)] hover:text-[var(--exa-foundation-text)]"
           aria-label="Dismiss update notice"
           title="Dismiss"
           onClick={() => {

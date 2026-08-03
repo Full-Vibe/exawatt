@@ -20,10 +20,10 @@ function SettingsGroup({
       {...{ [dataAttribute]: '' }}
     >
       <header className="border-b border-[var(--settings-line)] px-5 py-4">
-        <h3 className="font-display text-[15px] font-semibold text-[var(--settings-text)]">
+        <h3 className="font-display text-reading font-semibold text-[var(--settings-text)]">
           {title}
         </h3>
-        <p className="mt-1 max-w-[72ch] font-ui text-[12px] leading-5 text-[var(--settings-dim)]">
+        <p className="mt-1 max-w-[72ch] font-ui text-chrome-label leading-5 text-[var(--settings-dim)]">
           {description}
         </p>
       </header>
@@ -46,10 +46,10 @@ function SettingRow({
   return (
     <div className="flex min-h-[76px] items-center justify-between gap-5 py-3 max-[520px]:items-start">
       <div>
-        <p className="font-ui text-[13px] font-medium text-[var(--settings-soft)]">
+        <p className="font-ui text-chrome-title font-medium text-[var(--settings-soft)]">
           {title}
         </p>
-        <p className="mt-0.5 max-w-[68ch] font-ui text-[12px] leading-5 text-[var(--settings-dim)]">
+        <p className="mt-0.5 max-w-[68ch] font-ui text-chrome-label leading-5 text-[var(--settings-dim)]">
           {description}
         </p>
       </div>

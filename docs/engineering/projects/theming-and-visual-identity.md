@@ -6,12 +6,14 @@ discovery, and (once approved) the executable milestone detail.
 
 ## Current phase
 
-**Active build — T0 through T2 landed; T3 and T4 are next.** The versioned
+**Active build — T0 through T2 and T3A landed; T3B/T3C and T4 are active.** The versioned
 contract, device-local resolver/runtime, strict Electron settings and
 first-paint bootstrap, and the gallery-accepted Air/Night visual family are
-implemented. The temporary workbench exercises one resolved snapshot through
-DOM variables, material fallbacks, ANSI data, and a concrete-sRGB bloom-free
-R3F sibling. Production still resolves only the shipped Classic appearance;
+implemented. Root app chrome, Settings, shared overlays, feedback, and readiness
+now consume the same generated DOM roles, including theme-owned material recipes
+with opaque reduced-transparency fallbacks. The temporary workbench exercises
+one resolved snapshot through DOM variables, ANSI data, and a concrete-sRGB
+bloom-free R3F sibling. Production still resolves only the shipped Classic appearance;
 Air and Night cannot be persisted or selected before the T5 rollout gate.
 
 The originating operator signal is broader than dark-versus-light: the current
@@ -777,3 +779,14 @@ no packet privately extends the contract to solve a local color.
   gallery tests, `theme:check`, lint, type-check, the full R3F evaluator, and
   Playwright captures for Air/Night layered, opaque, and enhanced states at
   100%, exact 560×400/900×700/1400×900 viewports, and 90/120% narrow layouts.
+- 2026-08-03, T3A landed: percolated generated foundation, action, HUD,
+  readiness, typography, and material roles through root loading/error state,
+  title/navigation chrome, Settings, shared dialog/popover/menu/select/sheet
+  primitives, feedback, and readiness. The material projection keeps its full
+  filter value behind a custom property so Next's Lightning CSS output retains
+  the standard property required by pinned Electron Chromium; reduced
+  transparency swaps that same property to `none` and uses the authored opaque
+  fallback without remounting. A production-scope literal gate and the Electron
+  Agent Sources evaluator now prove Air/Night canvas, text, color scheme,
+  material blur, opaque fallback, compact geometry, source truth, and clean
+  renderer logs. Air/Night remain non-persistable until T5.
