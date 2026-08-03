@@ -83,14 +83,17 @@ export function ComingSoonMarker({
  */
 export function SurfaceReadinessMarker({
   surfaceId,
+  owner,
   className,
 }: {
   surfaceId: AppSurface['id'];
+  /** What ships this surface, named on the marker pill. */
+  owner?: string;
   className?: string;
 }) {
   const surface = surfaceById(surfaceId);
   if (surface.readiness === 'live') return null;
-  return <ComingSoonMarker className={className} />;
+  return <ComingSoonMarker owner={owner} className={className} />;
 }
 
 /**

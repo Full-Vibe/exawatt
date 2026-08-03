@@ -141,6 +141,21 @@ Motion beyond status (pointer for G2): the house easing is `cubic-bezier(0.22, 1
 
 ---
 
+## Voice
+
+Every user-visible string is written for a production user of a top-tier product — the register Salesforce, Linear, or Stripe would use on the same screen (operator correction, 2026-08-03: "We need to always be designing for production audiences, not spewing documentation text into the app. In general."). The interface demonstrates; it does not narrate.
+
+- **Nouns, values, states, short labels.** Headings name the thing on screen ("Members and roles", "Capacity"), cells carry values, and state is carried by product state — badges, counts, empty states — not by sentences about the state.
+- **No thesis sentences.** The UI never argues its own design ("X is the boundary; Y is where … meet it"). If a sentence explains the product or its philosophy to the reader, it belongs in `docs/`, not on a surface.
+- **No rhetorical framing.** No "Asked by users:" blocks, no quotes-as-headers, no question the page then answers in prose. A recurring user question is answered by showing the product state that answers it, under a plain noun heading.
+- **No self-reference.** A surface never explains what it is, why it exists, how it was designed, or what corpus it was measured against. Provenance and methodology live in docs and code comments.
+- **Preview surfaces show honest product-shaped UI** — real labels, marked representative data, empty states, Coming soon markers — never essays about the future capability. The readiness grammar (marker, chip, dashed block) carries the honesty; the copy stays product copy.
+- **When tempted to explain, show a concrete product state instead.** The prose ceiling on an operational surface is a caption: one `text-chrome-meta` line stating a fact about the data on screen (a legend, a definition, a privacy or assurance fact). Multi-sentence expository paragraphs are off-voice the way bracketed pixel sizes are off-scale.
+
+Honesty markers are product UI and stay: **Coming soon**, Demo banners, "not recorded", "unreported", assurance facet labels. They state facts in short form; they do not editorialize about them.
+
+---
+
 ## Building a new page — the short answer
 
 - Root: `font-ui`, semantic chrome tokens (`bg-background text-foreground`), forced dark.
@@ -191,3 +206,4 @@ Never fork a parallel convention (a new fractional type scale, a fifth palette, 
 - 2026-08-02 — review fixes: minted the four missing rung tokens in `globals.css` (`text-chrome-nano`, `text-reading`, `text-surface-title`, `text-display`) so the no-bracketed-sizes rule is satisfiable by the doc's own prescriptions (the app-wide bracketed-usage sweep remains P8); corrected measured counts (`rounded` 135, HUD atom importers 36, tactile-key dead CSS ~294 lines, raw 10–15px literals 295/217); added the substrate note pinning counts at `f3efd83`; fixed the quick-capture retire rationale (it imports production components — the drift risk is mounting context, not the components).
 - 2026-08-02 — ENG-026 N3–N5 readiness family extensions, same grammar at two new mounting scales: `AnnouncedChip` gained `size="micro"` (badge-tier `px-1.5 py-0.5` chrome-micro, per the chip/badge density row) for dense card headers — the ENG-028 Type chip on Sessions cards; `StripContextMenu` learned an announced ROW (readiness neutral, `cursor: default`, tooltip, inert contents, no `menuitem` role so keyboard traversal skips it) for *Push to cloud*, plus a muted right-aligned **Coming soon** micro-note on rows that navigate to a `preview` surface (the ⌘K preview-row pattern carried into menus). The dashed-stroke meaning is unchanged and got its first block-scale in-situ use outside a component: `/cloud`'s hosted card draws the dashed neutral border because it is the drawing of a session, not a session. No new colors, sizes, or phrases. Evidence: the ENG-026 N3–N5 milestone log screenshots.
 - 2026-08-02 — decision `0025`: reversed only the keyswitch-study portion of G1 retirement after operator review. Restored the interactive R3F material bench to `/hud-gallery` and a lean T7 paint/variant gate; kept the unused DOM `TactileActionKey` CSS retired and the New Agent composer on the standard shadcn button. Evidence: `/hud-gallery#keyswitch-material-studies` and `scripts/r3f-eval/report/t7-keyswitch.png`.
+- 2026-08-03 — Voice section added (ENG-036), from the operator's `/organization` correction (thesis lede + "Asked by users" header in main product UI). Production-voice sweep executed in the same change: `/organization`, `/cloud`, `/coordination`, `/agent-types` (the `PreviewSurfaceShell` `question` prop and the intent/designed-shape footer sentences retired), `/consumption` (all four acts, unit ladder, cost-per-agent and intervention sections rewritten from question-headers to noun headings and captions), the demo Session pane empty state, and the `UnbuiltLegend`. Readiness markers, demo banners, and "not recorded"/"unreported" states unchanged — they are the honesty channel the essays were duplicating.

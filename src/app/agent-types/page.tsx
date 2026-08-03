@@ -80,9 +80,8 @@ export default function AgentTypesPage() {
     <PreviewSurfaceShell
       surfaceId="agent-types"
       width="wide"
-      intent="The Type — identity, instructions, tools, defaults — is the worker; the harness is only the engine it runs on."
-      owner="ENG-028 · agent types"
-      today="Agents are launched per-harness with per-launch instructions; no Type is stored or reused yet. The roster shown is Voltaic demo content."
+      owner="ENG-028"
+      today="No Type is stored or reused yet. The roster shown is Voltaic demo content."
     >
       {/* The claim, shown not told: one worker, two engines. */}
       <section
@@ -102,9 +101,8 @@ export default function AgentTypesPage() {
           </span>
         </div>
         <p className="mt-2 max-w-[64ch] text-chrome-meta text-muted-foreground">
-          The same worker, whichever engine runs it. A Type declares what it
-          requires; a source declares what it can do — an under-capable launch
-          shows what is missing instead of silently degrading.
+          A Type declares the tools it requires; a launch on an under-capable
+          source shows what is missing.
         </p>
       </section>
 
@@ -147,10 +145,7 @@ export default function AgentTypesPage() {
           </div>
         </div>
         <p className="text-chrome-meta text-muted-foreground">
-          Applied at launch through the per-launch settings seam that already
-          exists — merged with your own config, never mutating it. A Type may
-          evolve its own identity file, but every change is disclosed and
-          reviewable.
+          Applied at launch, merged with your own config — never mutating it.
         </p>
       </section>
 
@@ -164,11 +159,6 @@ export default function AgentTypesPage() {
             <TypeCard key={profile.name} profile={profile} />
           ))}
         </div>
-        <p className="text-chrome-meta text-muted-foreground">
-          Types you refine and reuse, portable across Projects and repos. The
-          non-coding desks are preview content — the direction Types unlock,
-          not capability Exawatt ships today.
-        </p>
       </section>
     </PreviewSurfaceShell>
   );

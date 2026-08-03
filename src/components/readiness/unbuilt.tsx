@@ -91,12 +91,11 @@ export function UnbuiltLegend({ className = '' }: { className?: string }) {
         style={{ border: `1px dashed ${OUTLINE}` }}
       />
       <span>
-        Anything inside a dashed outline is{' '}
+        A dashed outline marks a control that is{' '}
         <strong style={{ color: HUD.text, fontWeight: 600 }}>
-          designed but not built
+          designed, not built
         </strong>
-        . It shows where the product is going, and it does not respond — you
-        cannot click it, focus it, or reach it with the keyboard.
+        . It does not respond to clicks, focus, or the keyboard.
       </span>
     </p>
   );

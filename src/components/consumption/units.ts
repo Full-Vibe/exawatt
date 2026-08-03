@@ -31,7 +31,7 @@ export type Epistemics = 'measured' | 'modelled';
 export interface RungBasis {
   key: LadderRung;
   label: string;
-  /** The question this unit answers, in the reader's words. */
+  /** Short role label for the rung — a noun phrase, not a question. */
   question: string;
   epistemics: Epistemics;
   /** One sentence, printed beside the figure. Must be arguable, not reassuring. */
@@ -91,39 +91,38 @@ export const LADDER: RungBasis[] = [
   {
     key: 'tokens',
     label: 'tokens',
-    question: 'What did the harness actually record?',
+    question: 'The stored unit.',
     epistemics: 'measured',
     basis:
-      'Read verbatim from the usage records Claude Code and Codex write to local disk. Exawatt sums them and never estimates one.',
+      'Read verbatim from the usage records Claude Code and Codex write to local disk. Summed, never estimated.',
     caveat:
-      'Complete only for what the harnesses keep: both prune old sessions, and neither documents a retention policy.',
+      'Complete only for what the harnesses keep: both prune old sessions.',
   },
   {
     key: 'normalized',
     label: 'normalized compute',
-    question: 'How much work was that, comparing models fairly?',
+    question: 'Cross-model comparison.',
     epistemics: 'modelled',
     basis: NORMALIZED_BASIS_SENTENCE,
     caveat:
-      'A stated ratio table, deliberately coarse. It is a compute proxy, not a physical measurement, and it is dimensionless on purpose.',
+      'A stated ratio table — a compute proxy, not a physical measurement.',
   },
   {
     key: 'dollars',
     label: 'dollars',
-    question: 'What would that have cost at list price?',
+    question: 'List-price equivalent.',
     epistemics: 'modelled',
     basis: DOLLAR_BASIS_SENTENCE,
     caveat:
-      'NOT billing truth. On a subscription plan the per-token price is not what is paid, and provider pricing changes independently of this table. Never reconcile this against an invoice.',
+      'Not billing truth: subscription plans do not pay per token, and list prices change independently of this table.',
   },
   {
     key: 'watts',
     label: 'watts',
-    question: 'How much energy did that flow of intelligence take?',
+    question: 'Energy equivalent.',
     epistemics: 'modelled',
     basis: WATT_BASIS_SENTENCE,
-    caveat:
-      'An estimate, and the reason the product is called Exawatt. Tokens behave like a metered fluid; this rung is where that stops being a metaphor.',
+    caveat: 'An order-of-magnitude estimate.',
   },
 ];
 

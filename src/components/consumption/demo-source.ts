@@ -1158,7 +1158,7 @@ export function demoConsumption(): DemoConsumption {
     },
     burnRates: { 'codex-primary': 9.4, 'codex-weekly': 0.92 },
     claudePlanNote:
-      'No plan, quota, or rate-limit record exists anywhere in Claude Code’s local files.',
+      'Claude Code keeps no plan, quota, or rate-limit record in its local files.',
   });
   return cached;
 }

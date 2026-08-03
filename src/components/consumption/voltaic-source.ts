@@ -144,7 +144,7 @@ export function voltaicConsumption(): DemoConsumption {
     },
     burnRates: { 'codex-primary': 8.1, 'codex-weekly': 0.78 },
     claudePlanNote:
-      'No plan, quota, or rate-limit record exists anywhere in Claude Code’s local files.',
+      'Claude Code keeps no plan, quota, or rate-limit record in its local files.',
   });
   return cached;
 }

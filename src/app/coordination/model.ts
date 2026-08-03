@@ -73,52 +73,50 @@ export function demoCoordinationBoard(
   return { project, rows };
 }
 
-/** The three substrate roles — the designed architecture, one card each. */
+/** The three substrate parts, one card each — product nouns, not theses. */
 export const SUBSTRATE = [
   {
     id: 'blackboard',
-    title: 'The blackboard is your repo',
+    title: 'Blackboard',
     detail:
-      'Durable shared state lives under .exawatt/ in the Project repo: plain git-versioned files any agent can read with ordinary file tools.',
-    meta: 'Yours, offline, no lock-in — readable by agents that have never heard of Exawatt',
+      'Durable shared state as plain files under .exawatt/ in the Project repo, versioned in git.',
+    meta: '.exawatt/ · git-versioned · ordinary file tools',
   },
   {
     id: 'bus',
-    title: 'The bus already exists',
+    title: 'Bus',
     detail:
-      'Live coordination traffic rides the harness event channel Exawatt already runs for delegation — bounded payloads, per-Session identity, fail-open.',
-    meta: 'ENG-023’s channel, second consumer — never a second channel',
+      'Live coordination messages over the harness event channel — bounded payloads, per-Session identity, fail-open.',
+    meta: 'harness event channel · ENG-023',
   },
   {
     id: 'viewer',
-    title: 'Exawatt is the viewer, never the owner',
+    title: 'Audit',
     detail:
-      'Every message between agents is readable by the operator, at every rung. Deleting Exawatt loses no project state.',
-    meta: 'Auditable is a hard requirement, not a nice-to-have',
+      'Every message between agents stays readable by the operator. Deleting Exawatt loses no project state.',
+    meta: 'all traffic operator-readable',
   },
 ] as const;
 
-/** The coordination ladder — least chatty first, later rungs gated. */
+/** The coordination levels — least chatty first, later levels gated. */
 export const LADDER = [
   {
     rung: 1,
     name: 'Assignments',
     detail:
-      'The operator assigns; agents execute. A record of which Agent works which roadmap item, read by others before starting. No conversation exists.',
-    state: 'designed · gated until a collision worktrees and git do not catch',
+      'The operator assigns; agents execute. One record per Agent per roadmap item, read by other agents before starting.',
+    state: 'designed · gated',
   },
   {
     rung: 2,
     name: 'Directed notes',
-    detail:
-      'One agent leaves a bounded, one-way message for another — “the API contract changed, your slice is affected.” No threads.',
+    detail: 'A bounded one-way note from one agent to another. No threads.',
     state: 'later',
   },
   {
     rung: 3,
     name: 'Queryable room',
-    detail:
-      'Agents ask each other questions. Most capable, most prone to debate loops — climbed to only on evidence.',
+    detail: 'Agents answer each other’s questions on request.',
     state: 'later · gated',
   },
 ] as const;

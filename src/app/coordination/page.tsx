@@ -33,14 +33,12 @@ export default function CoordinationPage() {
     <PreviewSurfaceShell
       surfaceId="coordination"
       width="wide"
-      question="How do you think about handoff between agents?"
-      intent="The repo is the blackboard and the harness event channel is the bus; coordination is auditable shared state, not chat between agents."
-      owner="ENG-029 · project blackboard and agent bus"
-      today="handoff is the operator. Agents coordinate through worktrees, the roadmap, and git; this surface shows the record that replaces that sentence."
+      owner="ENG-029"
+      today="Today Agents coordinate through worktrees, the roadmap, and git. The board shown is Voltaic demo content."
     >
-      {/* The shape: blackboard, bus, viewer. */}
+      {/* The substrate: blackboard, bus, audit. */}
       <section
-        aria-label="The coordination substrate"
+        aria-label="Coordination substrate"
         className="grid gap-3 sm:grid-cols-3"
       >
         {SUBSTRATE.map(part => {
@@ -68,11 +66,9 @@ export default function CoordinationPage() {
         })}
       </section>
 
-      {/* One Project read as common ground — real lens truth over demo data. */}
-      <section aria-label="One Project as common ground" className="space-y-2">
-        <h2 className="text-lg font-semibold tracking-tight">
-          One Project, read as common ground
-        </h2>
+      {/* One Project's board — real lens truth over demo data. */}
+      <section aria-label="Assignments" className="space-y-2">
+        <h2 className="text-lg font-semibold tracking-tight">Assignments</h2>
         <div className="overflow-x-auto rounded-lg border border-border bg-card">
           <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
             <span
@@ -88,7 +84,7 @@ export default function CoordinationPage() {
           <table className="w-full min-w-[560px] text-left">
             <thead>
               <tr className="border-b border-border">
-                {['Agent', 'Working', 'How Exawatt knows', 'Last activity'].map(
+                {['Agent', 'Working', 'Link', 'Last activity'].map(
                   heading => (
                     <th
                       key={heading}
@@ -120,16 +116,14 @@ export default function CoordinationPage() {
           </table>
         </div>
         <p className="text-chrome-meta text-muted-foreground">
-          The left half of this board is real today: the roadmap lens already
-          reads who works what from launch declarations, branches, and titles.
-          Declared outranks inferred.
+          Declared links outrank inferred ones.
         </p>
       </section>
 
-      {/* The ladder: least chatty first, later rungs gated. */}
-      <section aria-label="The coordination ladder" className="space-y-2">
+      {/* The levels: least chatty first, later levels gated. */}
+      <section aria-label="Coordination levels" className="space-y-2">
         <h2 className="text-lg font-semibold tracking-tight">
-          The ladder — least chatty first
+          Coordination levels
         </h2>
         <div className="rounded-lg border border-border bg-card px-4">
           <ol className="divide-y divide-border">
@@ -153,17 +147,11 @@ export default function CoordinationPage() {
             ))}
           </ol>
         </div>
-        <p className="text-chrome-meta text-muted-foreground">
-          Every rung is auditable: all inter-agent traffic stays readable by
-          the operator, or it does not ship.
-        </p>
       </section>
 
       {/* Handoff record specimen — ENG-019's crystallization as a repo file. */}
-      <section aria-label="A handoff record" className="space-y-2">
-        <h2 className="text-lg font-semibold tracking-tight">
-          Handoff is a file, not a conversation
-        </h2>
+      <section aria-label="Handoff record" className="space-y-2">
+        <h2 className="text-lg font-semibold tracking-tight">Handoff record</h2>
         <div className="overflow-x-auto rounded-lg border border-border bg-card">
           <div className="border-b border-border px-4 py-2.5 font-mono text-chrome-label text-muted-foreground">
             {HANDOFF_SPECIMEN.path}
@@ -180,9 +168,8 @@ export default function CoordinationPage() {
           </div>
         </div>
         <p className="text-chrome-meta text-muted-foreground">
-          Written by the departing Agent on graceful quit, versioned in git,
-          read by the next Agent before starting — whether or not that agent
-          has ever heard of Exawatt.
+          Written by the departing Agent on graceful quit; read by the next
+          Agent before starting.
         </p>
       </section>
     </PreviewSurfaceShell>

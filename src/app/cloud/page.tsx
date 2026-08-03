@@ -76,17 +76,16 @@ const ROWS = [
   {
     title: 'Hosted beside local',
     detail:
-      'Cloud Agents appear in the same Team and Fleet views as local ones, source and assurance visibly different, never blended.',
+      'Cloud Agents appear in the same Team and Fleet views as local ones, each marked by source.',
   },
   {
     title: 'Any source',
-    detail:
-      'Hosted OpenClaw first, but the seam is the Agent Source boundary — the harness is an engine choice, not the product boundary.',
+    detail: 'Hosted OpenClaw first; other Agent Sources follow.',
   },
   {
     title: 'Plan-aware capacity',
     detail:
-      'Hosted plan windows join the Consumption capacity view with reported assurance, the same way Codex plan windows do today.',
+      'Hosted plan windows appear in the Consumption capacity view, like Codex plan windows today.',
   },
 ] as const;
 
@@ -95,9 +94,8 @@ export default function CloudPage() {
     <PreviewSurfaceShell
       surfaceId="cloud"
       width="wide"
-      intent="Push an Agent to an Exawatt-hosted plan with one action, and keep commanding it from the same tab."
-      owner="ENG-033 · cloud-hosted agents"
-      today="Every Agent runs locally. The Push to cloud control sits in each Agent tab's menu — marked and inert. The Session shown is Voltaic demo content."
+      owner="ENG-033"
+      today="Every Agent runs locally today. The Session shown is Voltaic demo content."
     >
       {/* The one action, before and after. */}
       <section
@@ -107,7 +105,7 @@ export default function CloudPage() {
         <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-center">
           <HeroCard
             where="Local · this machine"
-            detail="Stops when the laptop lid closes."
+            detail="Runs while this machine is awake."
           />
           <div className="flex shrink-0 flex-col items-center gap-1.5 self-center px-1">
             <AnnouncedChip coming="one-click hosted agents (ENG-033)">
@@ -122,18 +120,17 @@ export default function CloudPage() {
           <HeroCard
             hosted
             where="Exawatt-hosted plan"
-            detail="Keeps running when your machine does not."
+            detail="Keeps running when this machine sleeps."
           />
         </div>
         <p className="mt-3 text-chrome-meta text-muted-foreground">
-          Session identity, Project, and context carry across the push.
-          Nothing else changes — same tab, same command surfaces.
+          Same Session, same Project, same tab after the push.
         </p>
       </section>
 
-      {/* What hosted means, in three facts. */}
+      {/* Hosted capabilities, as feature rows. */}
       <section
-        aria-label="What Cloud will show"
+        aria-label="Cloud capabilities"
         className="rounded-lg border border-border bg-card p-4"
       >
         <ul className="divide-y divide-border">

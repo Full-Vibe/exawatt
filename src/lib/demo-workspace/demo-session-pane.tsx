@@ -115,7 +115,7 @@ export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
         <span
           className="font-mono text-chrome-micro"
           style={{ color: HUD.textDim }}
-          title="Demo Sessions are authored recordings and records. They accept no input and can never spawn a process."
+          title="Demo Sessions are read-only records. They accept no input and never spawn a process."
         >
           read-only demo Session
         </span>
@@ -226,9 +226,7 @@ export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
         ) : (
           <section data-demo-session-record className="pb-4">
             <p className="font-mono text-chrome-meta" style={{ color: HUD.textDim }}>
-              No transcript recorded for this Session — its goal, status, and
-              usage above are the honest record, exactly what a real fleet
-              shows for a tab you have not opened.
+              No transcript recorded for this Session.
             </p>
           </section>
         )}

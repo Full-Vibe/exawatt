@@ -35,10 +35,8 @@ export default function OrganizationPage() {
     <PreviewSurfaceShell
       surfaceId="organization"
       width="wide"
-      question="What does multiplayer look like in Exawatt?"
-      intent="Workspace tenancy is the boundary; Organization is where people, roles, and spend meet it — sharing changes visibility, never execution."
-      owner="ENG-012 and ENG-034 · hosted control plane, multiplayer and sharing"
-      today="Workspace tenancy is real and switchable on this machine; nothing is shared beyond it. The people shown are Voltaic demo content."
+      owner="ENG-012 · ENG-034"
+      today="Workspace switching is live on this machine. Sharing is not; the members shown are Voltaic demo content."
     >
       {/* Workspaces: the real tenancy seam, plus the designed shared tenant. */}
       <section aria-label="Workspaces" className="space-y-2">
@@ -50,8 +48,7 @@ export default function OrganizationPage() {
               <span className="text-sm font-semibold">Personal</span>
             </div>
             <p className="text-chrome-meta text-muted-foreground">
-              Local truth — this machine. Yours alone; live Agents keep running
-              no matter what is shared elsewhere.
+              This machine only. Not shared.
             </p>
           </div>
           <div className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border bg-card p-4">
@@ -65,8 +62,7 @@ export default function OrganizationPage() {
               </span>
             </div>
             <p className="text-chrome-meta text-muted-foreground">
-              The authored demo fleet — always visibly demo, never mixed into
-              Personal totals.
+              Demo content. Kept separate from Personal totals.
             </p>
           </div>
           <div className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border bg-card p-4">
@@ -87,8 +83,7 @@ export default function OrganizationPage() {
               </AnnouncedChip>
             </div>
             <p className="text-chrome-meta text-muted-foreground">
-              An Organization Workspace: {members.length} people over one
-              fleet, each seeing exactly what their role grants.
+              {members.length} members · one fleet · visibility by role.
             </p>
           </div>
         </div>
@@ -144,9 +139,8 @@ export default function OrganizationPage() {
           </table>
         </div>
         <p className="text-chrome-meta text-muted-foreground">
-          The same rollups Consumption carries, cut by person: raw tokens
-          across each member&rsquo;s current Sessions and their delegated runs
-          — raw units first, assurance stated, never a fabricated bill.
+          Usage is raw tokens across each member&rsquo;s Sessions, delegated
+          runs included. Not a bill.
         </p>
       </section>
 
@@ -156,18 +150,18 @@ export default function OrganizationPage() {
           Sharing and ceilings
         </h2>
         <div className="flex flex-wrap items-center gap-3">
-          <AnnouncedChip coming="Docs-like Workspace sharing (ENG-034)">
+          <AnnouncedChip coming="Workspace sharing (ENG-034)">
             <Share2 aria-hidden className="h-3.5 w-3.5" />
             Share Workspace
           </AnnouncedChip>
           <span className="text-chrome-meta text-muted-foreground">
-            Share visibility the way you share a document — never execution,
-            never your local Agents.
+            Sharing grants visibility only. Shared members cannot run your
+            local Agents.
           </span>
         </div>
         <Unbuilt
           owner="ENG-012 · managed ceilings"
-          note="Organization policy is an absolute ceiling. Personal preferences can narrow it; they can never bypass it."
+          note="Applies to every member. Personal limits can be lower, never higher."
         >
           <div className="flex flex-wrap items-center gap-4">
             <span className="text-sm">Organization ceiling</span>
