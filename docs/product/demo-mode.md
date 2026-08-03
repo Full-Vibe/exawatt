@@ -14,11 +14,19 @@ Demo Mode lets investors, collaborators, and users experience Exawatt without li
 
 ## Current Implementation
 
-**Interim — superseded by the Demo Workspace at ENG-027 W2.** The mock fleet source (`MockFleetTransport`) powers the Fleet altitude at `/fleet/spatial` when no live source is connected. It demonstrates agent status changes, attention, and fleet-scale motion without a live OpenClaw gateway, stays clearly labeled as simulated data, and drives the same UI-facing command hooks as Live Mode. When W2 lands, `MockFleetTransport` and `DemoControls` demote from the product surface to eval-only: the Demo Workspace's honest authored fleet becomes the only demo source on product surfaces, so simulated and honest demo data never coexist in a demo.
+**The Demo Workspace (ENG-027, landed 2026-08-02) is the demo implementation.** Demo is a real tenant in the account-menu Workspace switcher. Selecting it runs the authored Voltaic Grid Systems fixtures (`@exawatt/core` demo module) through the production surfaces:
 
-Fleet surfaces start in Demo Mode by default so public demos do not emit live-source token probes, auth redirects, or connection errors on page load. Live OpenClaw auto-connect is opt-in via `NEXT_PUBLIC_EXAWATT_AUTO_CONNECT_OC=true`; otherwise, users enter Live Mode through the explicit Connect control.
+- the Fleet altitude renders the honest ~209-entity fleet through `DemoWorkspaceTransport` — the same `FleetManager`/UI-model contracts the live local transport feeds
+- the Agent and Team altitudes render the demo shell behind `WorkspaceScopeGate`: Sessions open a **pane content source** — authored hero transcripts or the honest session record — never a live PTY, never a simulated stream, never a blank pane
+- ⌘K lists the demo Sessions through the same row shapes; every verb that could reach a PTY or Personal truth is absent in the Demo tenant
+- `/consumption` reads the Voltaic consumption corpus through the same core rollups; demo consumption structurally cannot contribute to Personal totals
+- switching Workspaces never touches live agents — proven end to end by `pnpm eval:electron:tenancy`
 
-The Consumption surface (`/consumption`, ENG-008) reads its own in-process demo corpus and is Electron-navigable and demo-sourced by design.
+The web app (no Electron, no OpenClaw) starts on the same honest Demo Workspace source by default so public demos do not emit live-source token probes, auth redirects, or connection errors on page load. Live OpenClaw auto-connect is opt-in via `NEXT_PUBLIC_EXAWATT_AUTO_CONNECT_OC=true`; otherwise, users enter Live Mode through the explicit Connect control.
+
+### Retired to eval-only: the mock fleet simulation
+
+The simulation engine (`MockFleetTransport`, with its speed/scale `DemoControls` UI) demoted from the product surface to eval-only when the Demo Workspace landed, per the recorded ENG-027 W2 disposition: the simulated and honest demo sources must never coexist in a demo. The class remains in `@exawatt/core` for eval harnesses; its synthetic 1k/10k tiers serve rendering-headroom measurement only (`/eval/t10-board-scale`) and are always presented as synthetic, never as "the fleet".
 
 ### Retired: the legacy demo trio
 

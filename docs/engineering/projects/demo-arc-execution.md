@@ -71,6 +71,7 @@ Everything else in wave 1 is file-disjoint by construction.
 
 ### P6.5 · Demo Workspace live (W2) — first wave-2 packet
 
+- **Status:** LANDED 2026-08-02 (ENG-027 W2 milestone log holds the narrative). P7 and P9's demo posture are unblocked.
 - **Owns:** ENG-027 W2
 - **Depends on:** P3 (tenancy scope landed), P4 (Voltaic fixtures landed)
 - **Scope:** wire the Voltaic fixtures from `@exawatt/core` behind the existing fleet transport boundary — the same UI-model contracts the live path uses — plus the pane content sources, and flip Demo's availability from `coming-soon` to available in the tenancy module. Must also close the two W2-armed tenancy findings from the W1 review (being fixed in parallel under the ENG-027 W1 review fixes — coordinate, don't duplicate).

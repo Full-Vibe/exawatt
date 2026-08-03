@@ -302,7 +302,8 @@ Built:
 - Electron shell
 - Supabase auth/data
 - legacy Supabase demo task flow
-- `@exawatt/core` OpenClaw JSON-RPC client, adapters, FleetManager, and MockFleetTransport
+- `@exawatt/core` OpenClaw JSON-RPC client, adapters, FleetManager, and the Demo Workspace fixture transport (`DemoWorkspaceTransport`; the simulated `MockFleetTransport` is eval-only since ENG-027 W2)
+- Workspace tenancy (ENG-027): Personal and Demo tenants behind the account-menu switcher; the Demo tenant runs the authored Voltaic fleet, pane content sources (transcripts / honest session records, never a PTY), demo ⌘K rows, and the Voltaic consumption corpus through the production surfaces
 - `@exawatt/ui-model` typed UI-facing fleet selectors and command contracts
 - `/fleet/spatial` Fleet Operations Board (V2.0 active replacement of the
   superseded immersive 3D composition)

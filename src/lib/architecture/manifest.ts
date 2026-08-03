@@ -714,11 +714,11 @@ export const architectureManifest = {
         },
         {
           id: 'demo-harness',
-          label: 'Demo Harness',
+          label: 'Demo Source',
           summary:
-            'A swappable harness that emits the same activity and assurance shapes with simulated provenance.',
+            'The Demo Workspace source (ENG-027): authored Voltaic fixtures behind the same transport and rollup contracts the live paths use. The mock simulation engine is eval-only.',
           layer: 'infrastructure',
-          status: 'active-build',
+          status: 'implemented',
           x: 535,
           y: 685,
           width: 185,

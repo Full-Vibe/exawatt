@@ -50,7 +50,7 @@ The demo fleet must support the full altitude sweep across *different* Projects,
 ## Milestones
 
 - **W1 Workspace as a real scope** — LANDED 2026-08-02 (see milestone log). Workspace identity, the account-menu switcher, Workspace-scoped view state, and the hard guarantee that switching never disturbs live local Sessions. Personal only; the switcher shows Demo as `Coming soon` until W2.
-- **W2 Demo source and pane content source** — the demo data source behind the existing fleet transport boundary plus the Terminal pane content source; demo tabs render transcripts and cannot spawn a PTY.
+- **W2 Demo source and pane content source** — LANDED 2026-08-02 (see milestone log). The demo data source behind the existing fleet transport boundary plus the pane content source; demo tabs render transcripts and cannot spawn a PTY; Demo flips `available`.
 - **W3 Demo fleet content** (landed 2026-08-02 — see milestone log) — the authored demo Workspace: Projects, roadmaps, Agents, Sessions, consumption. Authored as data, versioned in the repo, resettable.
 - **W4 Scale tier (data)** (landed 2026-08-02 — see milestone log) — the demo fleet authored or generated at the entity count the Spatial moment needs, with honest structure at that volume rather than cloned filler. This milestone owns the DATA only; ENG-004 V3.1 owns rendering it. See the contradiction note below.
 - **W5 Organization Workspace preview** — shared tenants appear in the switcher as ENG-026 `preview`, linking to the Organization surface. Named Organization, not Team: decision `0023` gives **Team** to the middle command altitude, and two Teams in one product is a collision.
@@ -193,6 +193,80 @@ test-enforced (`demo-workspace.test.ts`, now 43 tests):
   `demoFleetAgents`; the base-agents doc comment no longer overclaims "one of
   each `BlockerType`"; `pnpm --filter @exawatt/core test` now runs the suite
   instead of silently exiting 0.
+
+### 2026-08-02 — W2 Demo source and pane content source (landed)
+
+The Demo Workspace is live: switching to Demo in the account menu walks
+Voltaic through the production surfaces at every altitude, and switching back
+finds every live local Session exactly as it was.
+
+**Transport.** `DemoWorkspaceTransport` (`packages/core/src/transports/demo-workspace.ts`)
+maps the W3/W4 fixtures into the SAME `FleetManager`/`ExawattAgent` contract
+`LocalSessionsTransport` feeds — status, blockers, delegation (present only
+when children exist), turns/tokens — with every timestamp rebased to real now
+via the fixtures' `nowMs` support. Deliberately NOT mapped: dollars.
+`estimatedCost` stays 0 exactly as the live local path reports it, because a
+list-price-derived figure is the confident lie `model-weights.ts` refuses;
+the Consumption surface owns the demo spend story. `stop()` removes every
+demo agent, and the tenant-aware `FleetProvider` additionally creates a fresh
+`FleetManager` per source regime, so demo entities can never linger under
+Personal's identity (or vice versa). The provider waits on the W1 `hydrated`
+fence before picking a source, so a relaunch inside Demo never spins up the
+personal source first.
+
+**Pane content source.** The demo shell (`src/lib/demo-workspace/`) renders
+`/workspace` and `/workspace?view=sessions` for the Demo tenant behind
+`WorkspaceScopeGate` (which grew a per-route `demo` slot and fails closed to
+the scoped empty state for any tenant without content). A demo Session opens
+readable content: the three authored hero transcripts, or the honest session
+record — goal, subtitle, status, blocker text, delegated team, usage — which
+is exactly what a real fleet shows for a tab you have not opened. No input
+affordance exists; the module imports no Electron API, so the PTY path is
+unreachable by construction. Preview desks carry the shared ENG-026
+`ComingSoonMarker` (owner = the ENG-028 Agent Type), not a local vocabulary.
+
+**Same UI-model contracts everywhere.** The Team altitude is the REAL
+`ExposeOverlay` over fixture-derived `Project`/`WorkspaceTab` shapes, with
+the roadmap rail reading fixture markdown through the real parser via an
+injected `RoadmapReadSource` on `useProjectRoadmap` (no filesystem, no
+watcher). ⌘K lists Voltaic Sessions through the same `SessionRow` shape and
+session-jump events; every verb that reaches Personal truth or a PTY (Start
+Agent, shells, Projects, reopen) is gated off in Demo. The Fleet altitude is
+the unmodified `SpatialFleetClient` — the tenant-aware provider swaps the
+transport underneath, so the 173-agent / ~209-entity honest board renders
+with drill, filters, and the session handoff jumping into the demo shell.
+Scale honesty holds: the board shows the honest fleet; the synthetic 1k/10k
+tiers remain eval-only (`/eval/t10-board-scale`).
+
+**Consumption.** `/consumption` joined `TENANT_SCOPE_GATED_SURFACE_PATHS`
+per the W1 decision note: it now has a per-tenant source. The E4 rollup
+builder was extracted (`buildDemoConsumption`), and the Demo tenant feeds it
+the Voltaic corpus (`demoWorkspaceConsumption({ nowMs })` on the shared
+demo-shell clock) with the fixture roadmaps parsed for the outcome act and
+derived intervention counts for the N2 metric. Two corpora, one rollup path,
+zero merging — demo consumption structurally cannot contribute to Personal
+totals.
+
+**Disposition executed.** `MockFleetTransport` is eval-only (removed from
+`FleetProvider`; the web demo posture now runs the honest Voltaic source) and
+`DemoControls` was deleted from the product surface. The simulated and honest
+demo sources can no longer coexist anywhere a user looks.
+`docs/product/demo-mode.md` records the Demo Workspace as the demo
+implementation.
+
+**ENG-026 readiness:** nothing flips. The spine surfaces were already `live`;
+Consumption stays `preview` because it is still demo-sourced in Personal —
+E5's live local parse owns that flip.
+
+**Proof.** `pnpm eval:electron:tenancy` grew from 13 to 31 checks across two
+launches: the W1 bench round trip unchanged; the Demo walk (readable
+transcript, preview marker, palette rows and absent launch verbs, 27 exposé
+tiles with the in-tenant roadmap rail, the populated board, PTY identity
+untouched AND still executing under a third marker); and a relaunch on the
+same userData proving boot-restore inside Demo lands on Demo content — the
+W1 review-fix composition demonstrated, not assumed. Screenshots of every
+altitude, the palette, Consumption, and the relaunch are captured by the
+eval and the CDP consumption check.
 
 ## Open questions
 
