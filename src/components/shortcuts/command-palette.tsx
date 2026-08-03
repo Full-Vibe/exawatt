@@ -969,8 +969,7 @@ export function CommandPalette({
                   {workspaceRows.map(row => {
                     const Icon = WORKSPACE_ICONS[row.workspace.kind];
                     const disabled =
-                      row.action === 'current' ||
-                      row.action === 'unavailable';
+                      row.action === 'current' || row.action === 'unavailable';
                     return (
                       <CommandItem
                         key={row.id}
@@ -982,9 +981,7 @@ export function CommandPalette({
                             : undefined
                         }
                         data-palette-workspace-switch={
-                          row.action === 'switch'
-                            ? row.workspace.id
-                            : undefined
+                          row.action === 'switch' ? row.workspace.id : undefined
                         }
                         data-palette-workspace-preview={
                           row.action === 'open-preview'
