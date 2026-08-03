@@ -206,6 +206,8 @@ export interface AppearanceOsSignals {
   invertedColors: boolean;
   reducedTransparency: boolean;
   systemAccent?: string;
+  /** One-launch recovery override supplied by Electron's --safe-theme flag. */
+  safeTheme?: boolean;
 }
 
 export interface AppearancePreview {
@@ -224,4 +226,3 @@ export interface ResolvedAppearance {
 }
 
 export type ThemeRegistry = Readonly<Record<string, ThemeDefinitionV1>>;
-

@@ -101,8 +101,8 @@ export function CloseConfirm({
           — moves to Recently closed. Reopen it from ⌘K within 14 days.
         </div>
         <div className="flex items-center justify-end gap-2">
-          {/* one button system (D32): neutral outline + the DEFAULT in the
-              operator's system accent — never the project hue */}
+          {/* One button system (D32/ENG-032): neutral outline + the active
+              appearance action color — never the Project identity hue. */}
           <Button
             ref={cancelRef}
             type="button"

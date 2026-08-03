@@ -58,7 +58,9 @@ describe('ThemeDefinitionV1', () => {
       expect(result.error.issues.map(issue => issue.path.join('.'))).toEqual(
         expect.arrayContaining(['foundation.action'])
       );
-      expect(result.error.issues.some(issue => issue.code === 'unrecognized_keys')).toBe(true);
+      expect(
+        result.error.issues.some(issue => issue.code === 'unrecognized_keys')
+      ).toBe(true);
     }
   });
 
@@ -95,9 +97,15 @@ describe('ThemeDefinitionV1', () => {
     );
     for (const theme of THEME_DEFINITIONS) {
       expect(css).toContain(`[data-exa-theme='${theme.id}']`);
-      expect(css).toContain(`--exa-foundation-canvas: ${theme.foundation.canvas}`);
-      expect(css).toContain(`--exa-terminal-foreground: ${theme.terminal.foreground}`);
-      expect(css).toContain(`--exa-spatial-emissive-active: ${theme.spatial.emissiveActive}`);
+      expect(css).toContain(
+        `--exa-foundation-canvas: ${theme.foundation.canvas}`
+      );
+      expect(css).toContain(
+        `--exa-terminal-foreground: ${theme.terminal.foreground}`
+      );
+      expect(css).toContain(
+        `--exa-spatial-emissive-active: ${theme.spatial.emissiveActive}`
+      );
       expect(THEME_BOOTSTRAP_REGISTRY[theme.id]).toMatchObject({
         appearance: theme.appearance,
         background: theme.bootstrap.background,
@@ -137,6 +145,34 @@ describe('AppearancePreferencesV1 and resolver', () => {
     expect(resolved.themeId).toBe(CLASSIC_THEME_ID);
   });
 
+  it('switches a valid Auto pair with the OS while Manual stays pinned', () => {
+    const automatic = {
+      ...DEFAULT_APPEARANCE_PREFERENCES,
+      selection: {
+        mode: 'auto' as const,
+        lightThemeId: 'exawatt-air-light',
+        darkThemeId: 'exawatt-night-dark',
+      },
+    };
+    expect(resolveAppearance(THEME_REGISTRY, automatic, LIGHT_OS).themeId).toBe(
+      'exawatt-air-light'
+    );
+    expect(
+      resolveAppearance(THEME_REGISTRY, automatic, { ...LIGHT_OS, dark: true })
+        .themeId
+    ).toBe('exawatt-night-dark');
+    expect(
+      resolveAppearance(
+        THEME_REGISTRY,
+        {
+          ...DEFAULT_APPEARANCE_PREFERENCES,
+          selection: { mode: 'manual', themeId: 'exawatt-air-light' },
+        },
+        { ...LIGHT_OS, dark: true }
+      ).themeId
+    ).toBe('exawatt-air-light');
+  });
+
   it('resolves preview and accessibility overlays without mutating preferences', () => {
     const preferences = structuredClone(DEFAULT_APPEARANCE_PREFERENCES);
     const resolved = resolveAppearance(
@@ -150,8 +186,13 @@ describe('AppearancePreferencesV1 and resolver', () => {
     expect(resolved.preview).toBe(true);
     expect(resolved.enhancedContrast).toBe(true);
     expect(resolved.reducedTransparency).toBe(true);
-    expect(resolved.theme.foundation.textMuted).toBe(resolved.theme.foundation.text);
-    expect(resolved.theme.material.chrome).toMatchObject({ opacity: 1, blur: 0 });
+    expect(resolved.theme.foundation.textMuted).toBe(
+      resolved.theme.foundation.text
+    );
+    expect(resolved.theme.material.chrome).toMatchObject({
+      opacity: 1,
+      blur: 0,
+    });
     expect(preferences).toEqual(DEFAULT_APPEARANCE_PREFERENCES);
   });
 
@@ -167,5 +208,25 @@ describe('AppearancePreferencesV1 and resolver', () => {
         resolved.theme.foundation.actionText
       )
     ).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('forces Classic during a safe-theme launch, including over preview', () => {
+    const resolved = resolveAppearance(
+      THEME_REGISTRY,
+      DEFAULT_APPEARANCE_PREFERENCES,
+      { ...LIGHT_OS, safeTheme: true },
+      { themeId: 'exawatt-air-light' }
+    );
+    expect(resolved.themeId).toBe(CLASSIC_THEME_ID);
+    expect(resolved.preview).toBe(false);
+  });
+
+  it('treats inverted colors as an unconditional contrast request', () => {
+    const resolved = resolveAppearance(
+      THEME_REGISTRY,
+      DEFAULT_APPEARANCE_PREFERENCES,
+      { ...LIGHT_OS, invertedColors: true }
+    );
+    expect(resolved.enhancedContrast).toBe(true);
   });
 });

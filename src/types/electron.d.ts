@@ -453,6 +453,18 @@ export interface ElectronRoadmapApi {
 }
 
 /** userData/settings.json — the personal-taste escape hatch (S3) */
+export interface AppearancePreferencesV1 {
+  schemaVersion: 1;
+  selection:
+    | { mode: 'manual'; themeId: string }
+    | { mode: 'auto'; lightThemeId: string; darkThemeId: string };
+  accentSource: 'theme' | 'system';
+  interfaceFont: 'theme' | 'system' | 'geist';
+  interfaceScale: 90 | 100 | 110 | 120;
+  contrast: 'system' | 'enhanced';
+  transparency: 'system' | 'reduced';
+}
+
 export interface ExawattSettings {
   terminal?: {
     fontFamily?: string;
@@ -477,10 +489,14 @@ export interface ExawattSettings {
     sourceRecency: Record<string, number>;
     projectPermissionModes: Record<string, Record<string, AgentPermissionMode>>;
   };
+  appearance?: AppearancePreferencesV1;
 }
 
 export interface ElectronSettingsApi {
   get: () => Promise<ExawattSettings>;
+  setAppearance: (
+    appearance: AppearancePreferencesV1
+  ) => Promise<ExawattSettings>;
   setAttentionNotifications: (enabled: boolean) => Promise<ExawattSettings>;
   setDockBadge: (enabled: boolean) => Promise<ExawattSettings>;
   setHostedConversationSummaries: (
@@ -526,6 +542,22 @@ export interface ElectronAppApi {
   /** the operator's OS highlight color, '#RRGGBB' (D32); null when
    *  unavailable (web, linux) — CSS falls back to the app accent */
   accentColor?: () => Promise<string | null>;
+  appearance?: () => Promise<{
+    dark: boolean;
+    highContrast: boolean;
+    invertedColors: boolean;
+    systemAccent: string | null;
+    safeTheme: boolean;
+  }>;
+  onAppearanceChanged?: (
+    handler: (appearance: {
+      dark: boolean;
+      highContrast: boolean;
+      invertedColors: boolean;
+      systemAccent: string | null;
+      safeTheme: boolean;
+    }) => void
+  ) => () => void;
   getUpdateStatus: () => Promise<ProductUpdateStatus>;
   checkForUpdates: () => Promise<ProductUpdateStatus>;
   restartUpdate: () => Promise<void>;

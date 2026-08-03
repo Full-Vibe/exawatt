@@ -1,6 +1,10 @@
 import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  THEME_BOOTSTRAP_REGISTRY,
+  type ThemeBootstrapId,
+} from './generated-theme-bootstrap';
 
 export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
 
@@ -52,6 +56,25 @@ export interface ExawattSettings {
     sourceRecency: Record<string, number>;
     projectPermissionModes: Record<string, Record<string, AgentPermissionMode>>;
   };
+  appearance?: ElectronAppearancePreferencesV1;
+}
+
+export type ElectronAppearanceSelectionV1 =
+  | { mode: 'manual'; themeId: ThemeBootstrapId }
+  | {
+      mode: 'auto';
+      lightThemeId: ThemeBootstrapId;
+      darkThemeId: ThemeBootstrapId;
+    };
+
+export interface ElectronAppearancePreferencesV1 {
+  schemaVersion: 1;
+  selection: ElectronAppearanceSelectionV1;
+  accentSource: 'theme' | 'system';
+  interfaceFont: 'theme' | 'system' | 'geist';
+  interfaceScale: 90 | 100 | 110 | 120;
+  contrast: 'system' | 'enhanced';
+  transparency: 'system' | 'reduced';
 }
 
 const AGENT_PERMISSION_MODES = new Set<AgentPermissionMode>([
@@ -68,6 +91,118 @@ function isAgentPermissionMode(value: unknown): value is AgentPermissionMode {
   return (
     typeof value === 'string' &&
     AGENT_PERMISSION_MODES.has(value as AgentPermissionMode)
+  );
+}
+
+function isThemeId(value: unknown): value is ThemeBootstrapId {
+  return (
+    typeof value === 'string' &&
+    Object.prototype.hasOwnProperty.call(THEME_BOOTSTRAP_REGISTRY, value)
+  );
+}
+
+function hasExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[]
+): boolean {
+  const keys = Object.keys(value).sort();
+  return (
+    keys.length === expected.length &&
+    keys.every((key, index) => key === [...expected].sort()[index])
+  );
+}
+
+export function parseAppearancePreferences(
+  raw: unknown
+): ElectronAppearancePreferencesV1 | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const candidate = raw as Record<string, unknown>;
+  if (
+    candidate.schemaVersion !== 1 ||
+    !hasExactKeys(candidate, [
+      'schemaVersion',
+      'selection',
+      'accentSource',
+      'interfaceFont',
+      'interfaceScale',
+      'contrast',
+      'transparency',
+    ])
+  )
+    return null;
+
+  const rawSelection = candidate.selection;
+  if (!rawSelection || typeof rawSelection !== 'object') return null;
+  const selectionCandidate = rawSelection as Record<string, unknown>;
+  let selection: ElectronAppearanceSelectionV1;
+  if (
+    selectionCandidate.mode === 'manual' &&
+    isThemeId(selectionCandidate.themeId) &&
+    hasExactKeys(selectionCandidate, ['mode', 'themeId'])
+  ) {
+    selection = {
+      mode: 'manual',
+      themeId: selectionCandidate.themeId,
+    };
+  } else if (
+    selectionCandidate.mode === 'auto' &&
+    isThemeId(selectionCandidate.lightThemeId) &&
+    isThemeId(selectionCandidate.darkThemeId) &&
+    hasExactKeys(selectionCandidate, ['mode', 'lightThemeId', 'darkThemeId']) &&
+    THEME_BOOTSTRAP_REGISTRY[selectionCandidate.lightThemeId].appearance ===
+      'light' &&
+    THEME_BOOTSTRAP_REGISTRY[selectionCandidate.darkThemeId].appearance ===
+      'dark'
+  ) {
+    selection = {
+      mode: 'auto',
+      lightThemeId: selectionCandidate.lightThemeId,
+      darkThemeId: selectionCandidate.darkThemeId,
+    };
+  } else {
+    return null;
+  }
+
+  const accentSource = candidate.accentSource;
+  const interfaceFont = candidate.interfaceFont;
+  const interfaceScale = candidate.interfaceScale;
+  const contrast = candidate.contrast;
+  const transparency = candidate.transparency;
+  if (
+    (accentSource !== 'theme' && accentSource !== 'system') ||
+    (interfaceFont !== 'theme' &&
+      interfaceFont !== 'system' &&
+      interfaceFont !== 'geist') ||
+    (interfaceScale !== 90 &&
+      interfaceScale !== 100 &&
+      interfaceScale !== 110 &&
+      interfaceScale !== 120) ||
+    (contrast !== 'system' && contrast !== 'enhanced') ||
+    (transparency !== 'system' && transparency !== 'reduced')
+  ) {
+    return null;
+  }
+
+  return {
+    schemaVersion: 1,
+    selection,
+    accentSource,
+    interfaceFont,
+    interfaceScale,
+    contrast,
+    transparency,
+  };
+}
+
+export function isPersistableAppearancePreferences(
+  preferences: ElectronAppearancePreferencesV1
+): boolean {
+  const ids =
+    preferences.selection.mode === 'manual'
+      ? [preferences.selection.themeId]
+      : [preferences.selection.lightThemeId, preferences.selection.darkThemeId];
+  return ids.every(
+    id => THEME_BOOTSTRAP_REGISTRY[id].availability === 'production'
   );
 }
 
@@ -224,6 +359,10 @@ export function parseSettings(raw: unknown): ExawattSettings {
       projectPermissionModes,
     };
   }
+  const appearance = parseAppearancePreferences(
+    (raw as { appearance?: unknown }).appearance
+  );
+  if (appearance) settings.appearance = appearance;
   return settings;
 }
 
@@ -271,6 +410,17 @@ export function setHostedConversationSummaries(
 ): ExawattSettings {
   const settings = loadSettings();
   settings.conversationSummaries = { hosted: enabled };
+  writeSettings(settings);
+  return settings;
+}
+
+export function setAppearancePreferences(raw: unknown): ExawattSettings {
+  const appearance = parseAppearancePreferences(raw);
+  if (!appearance || !isPersistableAppearancePreferences(appearance)) {
+    throw new Error('Invalid or unavailable appearance preference');
+  }
+  const settings = loadSettings();
+  settings.appearance = appearance;
   writeSettings(settings);
   return settings;
 }

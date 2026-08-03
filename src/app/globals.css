@@ -21,45 +21,49 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --font-sans: var(--font-exo2);
+  --font-sans: var(--exa-interface-font, var(--font-exo2));
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-geist-sans);
   --font-ui: var(--font-geist-sans);
   /* Application chrome type roles (ENG-016 D39). Keep operational copy on a
      compact but readable scale; the micro role is only for nonessential
      shortcut ordinals and symbolic marks, never the primary reading path. */
-  --text-chrome-micro: 0.625rem;
-  --text-chrome-micro--line-height: 0.875rem;
-  --text-chrome-meta: 0.6875rem;
-  --text-chrome-meta--line-height: 1rem;
-  --text-chrome-label: 0.75rem;
-  --text-chrome-label--line-height: 1rem;
-  --text-chrome-title: 0.8125rem;
-  --text-chrome-title--line-height: 1.125rem;
+  --text-chrome-micro: calc(0.625rem * var(--exa-interface-scale, 1));
+  --text-chrome-micro--line-height: calc(
+    0.875rem * var(--exa-interface-scale, 1)
+  );
+  --text-chrome-meta: calc(0.6875rem * var(--exa-interface-scale, 1));
+  --text-chrome-meta--line-height: calc(1rem * var(--exa-interface-scale, 1));
+  --text-chrome-label: calc(0.75rem * var(--exa-interface-scale, 1));
+  --text-chrome-label--line-height: calc(1rem * var(--exa-interface-scale, 1));
+  --text-chrome-title: calc(0.8125rem * var(--exa-interface-scale, 1));
+  --text-chrome-title--line-height: calc(
+    1.125rem * var(--exa-interface-scale, 1)
+  );
   /* Remaining named rungs of the design-kernel type scale (ENG-036 G0):
      nano for ordinal digits/symbolic glyphs in the densest chrome (always
      font-mono), reading for expository prose, surface-title for a surface's
      h1, display for hero numbers and top-level headings on dense surfaces.
      See docs/engineering/design-system.md — new code cites these utilities,
      never bracketed pixel sizes. */
-  --text-chrome-nano: 0.5625rem;
+  --text-chrome-nano: calc(0.5625rem * var(--exa-interface-scale, 1));
   --text-chrome-nano--line-height: 1;
-  --text-reading: 0.9375rem;
-  --text-surface-title: 1.25rem;
-  --text-display: 1.375rem;
+  --text-reading: calc(0.9375rem * var(--exa-interface-scale, 1));
+  --text-surface-title: calc(1.25rem * var(--exa-interface-scale, 1));
+  --text-display: calc(1.375rem * var(--exa-interface-scale, 1));
   /* HUD palette utilities: text-hud-cyan, bg-hud-void, border-hud-stroke, ... */
-  --color-hud-void: #04060b;
-  --color-hud-deep: #070b14;
-  --color-hud-panel: #0b1220;
-  --color-hud-cyan: #19e6ff;
-  --color-hud-cyan-2: #55ead4;
-  --color-hud-magenta: #ff3b8b;
-  --color-hud-amber: #ffb02e;
-  --color-hud-red: #ff1f4b;
-  --color-hud-green: #6fe39f;
-  --color-hud-idle: #6a7585;
-  --color-hud-text: #dcebff;
-  --color-hud-text-dim: #8aa0be;
+  --color-hud-void: var(--exa-hud-void, #04060b);
+  --color-hud-deep: var(--exa-hud-deep, #070b14);
+  --color-hud-panel: var(--exa-hud-panel, #0b1220);
+  --color-hud-cyan: var(--exa-hud-cyan, #19e6ff);
+  --color-hud-cyan-2: var(--exa-hud-cyan2, #55ead4);
+  --color-hud-magenta: var(--exa-hud-magenta, #ff3b8b);
+  --color-hud-amber: var(--exa-hud-amber, #ffb02e);
+  --color-hud-red: var(--exa-hud-red, #ff1f4b);
+  --color-hud-green: var(--exa-hud-green, #6fe39f);
+  --color-hud-idle: var(--exa-hud-idle, #6a7585);
+  --color-hud-text: var(--exa-hud-text, #dcebff);
+  --color-hud-text-dim: var(--exa-hud-text-dim, #8aa0be);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -139,6 +143,44 @@
     --input: #262626;
     --ring: #d4d4d4;
   }
+}
+
+/* Theme contract → existing semantic component API. Classic resolves to the
+   exact pre-theme values, while future built-ins can replace color/material/
+   typography without forking component markup. */
+[data-exa-theme] {
+  --background: var(--exa-foundation-canvas);
+  --foreground: var(--exa-foundation-text);
+  --card: var(--exa-foundation-surface);
+  --card-foreground: var(--exa-foundation-text);
+  --popover: var(--exa-foundation-overlay);
+  --popover-foreground: var(--exa-foundation-text);
+  --primary: var(--exa-foundation-action);
+  --primary-foreground: var(--exa-foundation-action-text);
+  --secondary: var(--exa-foundation-secondary);
+  --secondary-foreground: var(--exa-foundation-secondary-text);
+  --muted: var(--exa-foundation-secondary);
+  --muted-foreground: var(--exa-foundation-text-muted);
+  --accent: var(--exa-foundation-secondary);
+  --accent-foreground: var(--exa-foundation-secondary-text);
+  --destructive: var(--exa-foundation-destructive);
+  --destructive-foreground: var(--exa-foundation-destructive-text);
+  --border: var(--exa-foundation-border);
+  --input: var(--exa-foundation-input);
+  --ring: var(--exa-foundation-focus);
+}
+
+[data-exa-font='theme'] {
+  --exa-interface-font: var(--font-exo2);
+}
+
+[data-exa-font='system'] {
+  --exa-interface-font:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+[data-exa-font='geist'] {
+  --exa-interface-font: var(--font-geist-sans);
 }
 
 body {

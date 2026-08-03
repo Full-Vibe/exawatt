@@ -8,9 +8,10 @@ import { SiteFooter } from '@/components/nav/site-footer';
 import { FleetProvider } from '@/lib/fleet/fleet-provider';
 import { UpdateReadyNotice } from '@/components/nav/update-ready-notice';
 import { CommandNavigationProvider } from '@/components/nav/command-navigation-provider';
-import { SystemAccent } from '@/components/nav/system-accent';
 import { ProductFeedbackProvider } from '@/components/feedback/product-feedback-provider';
 import { WorkspaceTenancyProvider } from '@/lib/tenancy/tenancy-provider';
+import { AppearanceProvider } from '@/components/appearance/appearance-provider';
+import { APPEARANCE_BOOTSTRAP_SCRIPT } from '@/lib/appearance/bootstrap-script';
 
 const exo2 = Exo_2({
   variable: '--font-exo2',
@@ -43,34 +44,45 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // Exawatt is a dark-branded HUD product: force dark so shadcn surfaces
-    // (⌘K palette, dialogs) never render light on a light-mode OS while the
-    // HUD chrome around them is hardcoded dark
-    <html lang="en" className="dark">
+    <html
+      lang="en"
+      data-exa-theme="exawatt-classic-dark"
+      data-exa-appearance="dark"
+      data-exa-contrast="standard"
+      data-exa-transparency="standard"
+      data-exa-font="theme"
+      suppressHydrationWarning
+    >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{ __html: APPEARANCE_BOOTSTRAP_SCRIPT }}
+        />
+      </head>
       <body
         className={`${exo2.variable} ${geistMono.variable} ${geistSans.variable} font-sans antialiased`}
       >
-        <TooltipProvider>
-          <SystemAccent />
-          <CommandNavigationProvider>
-            {/* Workspace tenancy (ENG-027 W1) scopes everything below it —
+        <AppearanceProvider>
+          <TooltipProvider>
+            <CommandNavigationProvider>
+              {/* Workspace tenancy (ENG-027 W1) scopes everything below it —
                 the header switcher and every surface read the active tenant */}
-            <WorkspaceTenancyProvider>
-            {/* Feedback sits above ShortcutProvider so the ⌘K palette can
+              <WorkspaceTenancyProvider>
+                {/* Feedback sits above ShortcutProvider so the ⌘K palette can
                 read auth state for its quick-feedback verbs (ENG-025 F1) */}
-            <ProductFeedbackProvider>
-              <ShortcutProvider>
-                <FleetProvider>
-                  <SiteHeader />
-                  <UpdateReadyNotice />
-                  {children}
-                </FleetProvider>
-              </ShortcutProvider>
-            </ProductFeedbackProvider>
-            </WorkspaceTenancyProvider>
-          </CommandNavigationProvider>
-        </TooltipProvider>
-        <SiteFooter />
+                <ProductFeedbackProvider>
+                  <ShortcutProvider>
+                    <FleetProvider>
+                      <SiteHeader />
+                      <UpdateReadyNotice />
+                      {children}
+                    </FleetProvider>
+                  </ShortcutProvider>
+                </ProductFeedbackProvider>
+              </WorkspaceTenancyProvider>
+            </CommandNavigationProvider>
+          </TooltipProvider>
+          <SiteFooter />
+        </AppearanceProvider>
       </body>
     </html>
   );

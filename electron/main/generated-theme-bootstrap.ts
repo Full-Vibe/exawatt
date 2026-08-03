@@ -2,10 +2,14 @@
 export const THEME_BOOTSTRAP_REGISTRY = {
   "exawatt-air-light": {
     "appearance": "light",
+    "availability": "gallery",
     "background": "#F3F5F2",
     "foreground": "#18211D",
     "signal": "#087F6E",
     "colorScheme": "light",
+    "muted": "#4F5D56",
+    "faint": "#D8DFD9",
+    "danger": "#A73543",
     "material": {
       "tint": "#F7FAF6",
       "opacity": 0.78,
@@ -16,10 +20,14 @@ export const THEME_BOOTSTRAP_REGISTRY = {
   },
   "exawatt-classic-dark": {
     "appearance": "dark",
+    "availability": "production",
     "background": "#04060B",
     "foreground": "#DCEBFF",
     "signal": "#19E6FF",
     "colorScheme": "dark",
+    "muted": "#A3A3A3",
+    "faint": "#262626",
+    "danger": "#7F1D1D",
     "material": {
       "tint": "#070B14",
       "opacity": 0.94,
@@ -30,10 +38,14 @@ export const THEME_BOOTSTRAP_REGISTRY = {
   },
   "exawatt-night-dark": {
     "appearance": "dark",
+    "availability": "gallery",
     "background": "#0B100E",
     "foreground": "#E8F0EB",
     "signal": "#60BFA7",
     "colorScheme": "dark",
+    "muted": "#9DAEA4",
+    "faint": "#25332B",
+    "danger": "#7D2D3A",
     "material": {
       "tint": "#0D1511",
       "opacity": 0.88,

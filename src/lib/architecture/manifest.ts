@@ -562,7 +562,7 @@ export const architectureManifest = {
           id: 'appearance-runtime',
           label: 'Appearance Resolver',
           summary:
-            'ENG-032 T0 active build: validated Classic, Air, and Night definitions resolve once and generate DOM and Electron adapter inputs; preference and production renderer wiring follow.',
+            'ENG-032 T0–T1 active build: validated device-local preferences resolve once through the production provider and generated first-paint/Electron bootstrap; Classic is the sole production preset until T5.',
           layer: 'ui',
           status: 'active-build',
           x: 330,
@@ -771,7 +771,6 @@ export const architectureManifest = {
         {
           from: 'next-app-shell',
           to: 'appearance-runtime',
-          style: 'dashed',
         },
         {
           from: 'appearance-runtime',
@@ -786,7 +785,6 @@ export const architectureManifest = {
         {
           from: 'appearance-runtime',
           to: 'electron-shell',
-          style: 'dashed',
         },
         { from: 'command-navigation', to: 'terminal-workspace' },
         { from: 'command-navigation', to: 'spatial-operations-board' },

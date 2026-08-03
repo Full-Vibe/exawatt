@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parseSettings } from './settings-store';
+import {
+  isPersistableAppearancePreferences,
+  parseAppearancePreferences,
+  parseSettings,
+} from './settings-store';
 
 describe('parseSettings', () => {
   it('defaults notifications off when absent or malformed', () => {
@@ -73,5 +77,62 @@ describe('parseSettings dock badge (D18)', () => {
     expect(
       parseSettings({ notifications: { dockBadge: 'yes' } }).notifications
     ).toBeUndefined();
+  });
+});
+
+describe('appearance preferences (ENG-032 T1)', () => {
+  const classic = {
+    schemaVersion: 1,
+    selection: { mode: 'manual', themeId: 'exawatt-classic-dark' },
+    accentSource: 'theme',
+    interfaceFont: 'theme',
+    interfaceScale: 100,
+    contrast: 'system',
+    transparency: 'system',
+  } as const;
+
+  it('parses a valid preference without disturbing unrelated settings', () => {
+    expect(
+      parseSettings({ terminal: { fontSize: 15 }, appearance: classic })
+    ).toEqual({ terminal: { fontSize: 15 }, appearance: classic });
+  });
+
+  it('rejects corrupt, unknown, and wrongly paired appearance data only', () => {
+    expect(
+      parseSettings({
+        notifications: { attention: true },
+        appearance: {
+          ...classic,
+          selection: { mode: 'manual', themeId: 'remote-theme' },
+        },
+      })
+    ).toEqual({ notifications: { attention: true } });
+    expect(
+      parseAppearancePreferences({
+        ...classic,
+        selection: {
+          mode: 'auto',
+          lightThemeId: 'exawatt-night-dark',
+          darkThemeId: 'exawatt-air-light',
+        },
+      })
+    ).toBeNull();
+    expect(
+      parseAppearancePreferences({ ...classic, injectedCss: 'body{}' })
+    ).toBeNull();
+  });
+
+  it('keeps gallery themes readable for forward compatibility but not persistable', () => {
+    const future = parseAppearancePreferences({
+      ...classic,
+      selection: {
+        mode: 'auto',
+        lightThemeId: 'exawatt-air-light',
+        darkThemeId: 'exawatt-night-dark',
+      },
+    });
+    expect(future).not.toBeNull();
+    expect(isPersistableAppearancePreferences(future!)).toBe(false);
+    expect(isPersistableAppearancePreferences(classic)).toBe(true);
   });
 });

@@ -6,11 +6,12 @@ discovery, and (once approved) the executable milestone detail.
 
 ## Current phase
 
-**Active build — T0 landed; T1 is next.** The versioned contract, three authored
-built-ins, deterministic generator, pure resolver, Classic parity oracle, and
-gallery scaffold are implemented. Production remains forced to the shipped
-Classic appearance: no preference source, production provider, or non-Classic
-selection is wired yet. This document does not authorize skipping
+**Active build — T0 and T1 landed; T2 is next.** The versioned contract, three
+authored built-ins, deterministic generator, pure resolver, Classic parity
+oracle, device-local preference adapters, production provider, strict Electron
+settings IPC, and first-paint/native bootstrap are implemented. Production
+still resolves only the shipped Classic appearance; Air and Night cannot be
+persisted. This document does not authorize skipping
 `/hud-gallery` review or switching the production default before T5.
 
 The originating operator signal is broader than dark-versus-light: the current
@@ -746,3 +747,17 @@ no packet privately extends the contract to solve a local color.
   `/hud-gallery#theme-system` previews the generated definitions without
   setting root production state. Evidence: contract/component/gallery tests,
   full Vitest, lint, type-check, production build, and Electron compile.
+- 2026-08-03, T1 landed: made Electron `settings.json` the desktop appearance
+  authority and browser local storage the hosted adapter behind one validated
+  source; added atomic `settings:set-appearance`, focus refresh, live-window
+  broadcast, native source/background updates, and a `--safe-theme` one-launch
+  bypass that does not rewrite stored state. `AppearanceProvider` now owns the
+  production resolver, OS accessibility/accent inputs, preview/commit/cancel,
+  Classic root aliases, and a last-known-good local mirror consumed by the
+  dependency-free head bootstrap before hydration. The launch document and
+  BrowserWindow use the same generated subset. Air/Night remain gallery-only
+  and are rejected at every production persistence boundary. Evidence: 36
+  focused appearance/settings/provider/bootstrap tests, strict generation,
+  lint/type/Electron compile, mocked-light and mocked-dark Electron relaunches,
+  safe-theme recovery, identical deterministic screenshots, and the offline
+  altitude evaluator.

@@ -47,16 +47,19 @@ server to close (with bounded force-stop escalation) before declaring cleanup
 complete. This is a presentation boundary, not a second application or
 alternate data source.
 
-ENG-032's appearance boundary is in **active build** (decision `0026`). T0
-implements strict versioned definitions, Classic/Air/Night authored data, a
-deterministic validator/generator, complete generated CSS and renderer
-registries, an Electron bootstrap subset, and one pure resolver with preview and
-accessibility overlays. The generated definitions are reviewable at
-`/hud-gallery#theme-system`, but production still has no preference source or
-provider and remains forced to the shipped Classic baseline. T1–T5 connect the
-device-local source and project the resolved snapshot through DOM/CSS, xterm,
-R3F/Three, and Electron boot/native adapters; those renderers do not merge theme
-state independently. The contract keeps action, status, Project identity,
+ENG-032's appearance boundary is in **active build** (decision `0026`). T0–T1
+implement strict versioned definitions, Classic/Air/Night authored data, a
+deterministic validator/generator, one pure resolver, device-local Electron/web
+preference adapters, a production provider, and first-paint/native bootstrap.
+Electron settings are authoritative on desktop; a validated local mirror exists
+only to select generated CSS before hydration, then reconciles immediately.
+BrowserWindow, the CSP launch document, native theme source, and the hydrated
+root consume one generated/validated state path. `--safe-theme` bypasses stored
+appearance for one launch without mutating it. The generated definitions remain
+reviewable at `/hud-gallery#theme-system`, and Classic is still the only
+persistable production preset. T2–T5 author and project the accepted snapshot
+through xterm, remaining DOM scopes, and R3F/Three; those renderers do not merge
+theme state independently. The contract keeps action, status, Project identity,
 Consumption, and readiness channels distinct and accepts no executable
 CSS/JavaScript or remote assets. Demo and Live data remain irrelevant to
 appearance selection.
@@ -453,8 +456,8 @@ Partial:
 
 Planned:
 
-- ENG-032 versioned application appearance resolver and built-in Classic/Air/
-  Night presets across DOM, xterm, Fleet R3F, and Electron boot/native chrome
+- ENG-032 Air/Night gallery acceptance, DOM/xterm and Fleet/R3F percolation,
+  production selection UI, and final Auto rollout
 - Initiative model
 - scoped Decision model
 - Context Signals

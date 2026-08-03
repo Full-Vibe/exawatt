@@ -7,6 +7,7 @@ import {
   screen,
   session as electronSession,
   net as electronNet,
+  nativeTheme,
   systemPreferences,
 } from 'electron';
 import { spawn, type ChildProcess } from 'child_process';
@@ -42,6 +43,11 @@ import { resolveWindowLaunchMode } from './window-launch-mode';
 import { createDirectoryPicker } from './directory-picker';
 import { stopChildProcess } from './child-process-lifecycle';
 import { FIXED_SESSION_MENU_COMMANDS } from './fixed-session-menu';
+import { loadSettings } from './settings-store';
+import {
+  applyNativeAppearancePreference,
+  type NativeAppearanceResolution,
+} from './appearance';
 
 const isDev = process.env.NODE_ENV === 'development';
 const isTest = process.env.EXAWATT_TEST === '1';
@@ -80,6 +86,7 @@ const testQuitResponses =
         .map(value => value.trim())
         .filter(Boolean)
     : [];
+const safeThemeLaunch = process.argv.includes('--safe-theme');
 
 let mainWindow: BrowserWindow | null = null;
 let pendingDeepLinkUrl: string | null = null;
@@ -452,7 +459,29 @@ function testWindowPosition(): { x: number; y: number } | undefined {
   }
 }
 
-function createWindow(initialUrl: string): void {
+function applyNativeAppearance(): NativeAppearanceResolution {
+  const testOsAppearance = isTest
+    ? process.env.EXAWATT_TEST_OS_APPEARANCE
+    : undefined;
+  return applyNativeAppearancePreference(
+    loadSettings().appearance,
+    nativeTheme,
+    {
+      safeTheme: safeThemeLaunch,
+      systemDarkOverride:
+        testOsAppearance === 'dark'
+          ? true
+          : testOsAppearance === 'light'
+            ? false
+            : undefined,
+    }
+  );
+}
+
+function createWindow(
+  initialUrl: string,
+  appearance: NativeAppearanceResolution
+): void {
   const showAtCreation =
     windowLaunchMode === 'foreground' || inactiveLaunchPromoted;
   mainWindow = new BrowserWindow({
@@ -471,7 +500,7 @@ function createWindow(initialUrl: string): void {
     minHeight: 400,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
-    backgroundColor: '#09090b',
+    backgroundColor: appearance.bootstrap.background,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -918,14 +947,31 @@ function registerDialogIPC(): void {
 
 function registerAppIPC(): void {
   handleTrusted('app:get-build-info', () => buildInfo);
-  // the ONE default-action color (D32): the operator's macOS highlight
-  // color, not a per-project hue. '#RRGGBB' or null off-macOS/Windows.
-  handleTrusted('app:accent-color', () => {
+  // Optional ENG-032 action overlay input: '#RRGGBB' or null off-macOS.
+  // The selected theme remains the default and Project identity stays separate.
+  const systemAccentColor = () => {
     try {
       const accent = systemPreferences.getAccentColor?.();
       return accent ? `#${accent.slice(0, 6)}` : null;
     } catch {
       return null;
+    }
+  };
+  const appearanceSnapshot = () => ({
+    dark: nativeTheme.shouldUseDarkColors,
+    highContrast: nativeTheme.shouldUseHighContrastColors,
+    invertedColors: nativeTheme.shouldUseInvertedColorScheme,
+    systemAccent: systemAccentColor(),
+    safeTheme: safeThemeLaunch,
+  });
+  handleTrusted('app:accent-color', systemAccentColor);
+  handleTrusted('app:appearance', appearanceSnapshot);
+  nativeTheme.on('updated', () => {
+    const snapshot = appearanceSnapshot();
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send('app:appearance-changed', snapshot);
+      }
     }
   });
   handleTrusted(
@@ -1354,13 +1400,20 @@ app.whenReady().then(() => {
   let commandSurface = rendererWasWarmAtLaunch
     ? bootstrapCommandSurface()
     : null;
-  createWindow(launchScreenUrl());
+  const appearance = applyNativeAppearance();
+  createWindow(launchScreenUrl(appearance.bootstrap), appearance);
   commandSurface ??= bootstrapCommandSurface();
 
   app.on('activate', () => {
     if (shutdownCoordinator?.phase !== 'idle') return;
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow(startupComplete ? workspaceUrl() : launchScreenUrl());
+      const nextAppearance = applyNativeAppearance();
+      createWindow(
+        startupComplete
+          ? workspaceUrl()
+          : launchScreenUrl(nextAppearance.bootstrap),
+        nextAppearance
+      );
     }
   });
 

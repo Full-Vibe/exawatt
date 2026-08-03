@@ -1,4 +1,4 @@
-import { BrowserWindow, Notification, app, shell } from 'electron';
+import { BrowserWindow, Notification, app, nativeTheme, shell } from 'electron';
 import { handleTrusted } from './ipc-security';
 import { resolveContainedPath, isRepoRelativePath } from './contained-path';
 import { ptySessions } from './pty/session-manager';
@@ -27,7 +27,9 @@ import {
   setAttentionNotifications,
   setDockBadge,
   setHostedConversationSummaries,
+  setAppearancePreferences,
 } from './settings-store';
+import { applyNativeAppearancePreference } from './appearance';
 import { listResumeCandidates } from './pty/resume-candidates';
 import type { ResumeIdentityHint } from './pty/resume-candidates';
 import { RecentConversationCatalog } from './pty/conversation-catalog';
@@ -43,6 +45,7 @@ import {
   nativeNotificationCopy,
   shouldDeliverNativeNotification,
 } from './notification-policy';
+import { broadcastToWindows } from './window-broadcast';
 
 /**
  * IPC surface for PTY sessions (decision 0005). Invocations are namespaced
@@ -51,9 +54,7 @@ import {
  */
 export function registerPtyIPC(previousRunInterrupted = false): void {
   const broadcast = (channel: string, payload: unknown) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send(channel, payload);
-    }
+    broadcastToWindows(BrowserWindow.getAllWindows(), channel, payload);
   };
   const closedLedger = new ClosedSessionLedger(
     path.join(app.getPath('userData'), 'closed-sessions.json'),
@@ -182,7 +183,19 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     contextSummarizer.setWindowFocused(true);
     // Settings may have been edited while Exawatt was in the background.
     // Main owns authoritative OS focus, so refresh existing panes from here.
-    broadcast('settings:changed', loadSettings());
+    const settings = loadSettings();
+    const appearance = applyNativeAppearancePreference(
+      settings.appearance,
+      nativeTheme,
+      {
+        safeTheme: process.argv.includes('--safe-theme'),
+      }
+    );
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed())
+        win.setBackgroundColor(appearance.bootstrap.background);
+    }
+    broadcast('settings:changed', settings);
   });
   app.on('browser-window-blur', () => {
     attentionMonitor.setWindowFocused(false);
@@ -611,6 +624,22 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
 
   // user settings (S3): userData/settings.json — e.g. the terminal font
   handleTrusted('settings:get', () => loadSettings());
+  handleTrusted('settings:set-appearance', (_event, appearance: unknown) => {
+    const settings = setAppearancePreferences(appearance);
+    const resolved = applyNativeAppearancePreference(
+      settings.appearance,
+      nativeTheme,
+      {
+        safeTheme: process.argv.includes('--safe-theme'),
+      }
+    );
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed())
+        win.setBackgroundColor(resolved.bootstrap.background);
+    }
+    broadcast('settings:changed', settings);
+    return settings;
+  });
   handleTrusted(
     'settings:set-attention-notifications',
     (_event, enabled: boolean) => {

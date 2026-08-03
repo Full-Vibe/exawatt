@@ -153,6 +153,8 @@ contextBridge.exposeInMainWorld('electron', {
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
+    setAppearance: (appearance: unknown) =>
+      ipcRenderer.invoke('settings:set-appearance', appearance),
     setAttentionNotifications: (enabled: boolean) =>
       ipcRenderer.invoke('settings:set-attention-notifications', enabled),
     setDockBadge: (enabled: boolean) =>
@@ -196,11 +198,30 @@ contextBridge.exposeInMainWorld('electron', {
         sourceRecency: Record<string, number>;
         projectPermissionModes: Record<string, Record<string, string>>;
       };
+      appearance?: {
+        schemaVersion: 1;
+        selection:
+          | { mode: 'manual'; themeId: string }
+          | { mode: 'auto'; lightThemeId: string; darkThemeId: string };
+        accentSource: 'theme' | 'system';
+        interfaceFont: 'theme' | 'system' | 'geist';
+        interfaceScale: 90 | 100 | 110 | 120;
+        contrast: 'system' | 'enhanced';
+        transparency: 'system' | 'reduced';
+      };
     }>('settings:changed'),
   },
   app: {
     getBuildInfo: () => ipcRenderer.invoke('app:get-build-info'),
     accentColor: () => ipcRenderer.invoke('app:accent-color'),
+    appearance: () => ipcRenderer.invoke('app:appearance'),
+    onAppearanceChanged: subscribe<{
+      dark: boolean;
+      highContrast: boolean;
+      invertedColors: boolean;
+      systemAccent: string | null;
+      safeTheme: boolean;
+    }>('app:appearance-changed'),
     getUpdateStatus: () => ipcRenderer.invoke('app:get-update-status'),
     checkForUpdates: () => ipcRenderer.invoke('app:check-for-updates'),
     restartUpdate: () => ipcRenderer.invoke('app:restart-update'),

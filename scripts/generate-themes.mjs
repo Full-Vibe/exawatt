@@ -152,7 +152,11 @@ function generateElectronBootstrap(themes) {
       theme.id,
       {
         appearance: theme.appearance,
+        availability: theme.availability,
         ...theme.bootstrap,
+        muted: theme.foundation.textMuted,
+        faint: theme.foundation.border,
+        danger: theme.foundation.destructive,
         material: theme.material.chrome,
       },
     ])

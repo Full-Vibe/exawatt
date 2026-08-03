@@ -83,23 +83,30 @@ Radii: `rounded` (4px) is the chrome default (135 uses; 165 including `rounded-s
 
 ## Color roles
 
-The app is **forced dark** (`html.dark`, ENG-016 D3); nothing may assume a light ground. Color is organized as one semantic layer plus three scoped operational palettes and two reserved channels. The channel-ownership rule is load-bearing: **status owns white/blue/green/peach/red; chrome attention owns amber; consumption owns violet→magenta; Project identity is its own channel and is never a status signal.**
+Production is **Classic dark until T5** (ENG-032); new or migrated presentation
+must consume semantic roles and must not assume that dark ground is permanent.
+Color is organized as one semantic layer plus three scoped operational palettes
+and two reserved channels. The channel-ownership rule is load-bearing:
+**status owns white/blue/green/peach/red; chrome attention owns amber;
+consumption owns violet→magenta; Project identity is its own channel and is
+never a status signal.**
 
-ENG-032 transition note (T0, 2026-08-03): forced dark remains the production
-truth until T5, but it is now captured as the generated
-`exawatt-classic-dark` compatibility oracle rather than the future contract's
-limit. Air and Night are validated gallery-only definitions. New theme-owned
-roles enter through `ThemeDefinitionV1` and generated `--exa-*` variables;
-production components continue using the shipped authorities below until their
-T3/T4 migration packet proves Classic parity. Status, action, Consumption,
-readiness, and Project-identity ownership do not change with the ground.
+ENG-032 transition note (T1, 2026-08-03): Classic remains the only production
+ground until T5, but root appearance now comes from the generated
+`exawatt-classic-dark` definition through `AppearanceProvider`, not a static
+`html.dark` declaration. Air and Night remain gallery-only and cannot be saved.
+The provider projects the existing semantic shadcn/HUD aliases, bounded named
+type-rung scale, and accessibility overlays; production components keep their
+remaining scoped authorities below until their T3/T4 migration packet proves
+Classic parity. Status, action, Consumption, readiness, and Project-identity
+ownership do not change with the ground.
 
 ### 1. Semantic chrome (shadcn variables, `globals.css`)
 
 Default for all standard UI: `bg-background`, `text-foreground`, `bg-card`, `border-border`, etc.
 
 - **Muted text**: `text-muted-foreground` (`#a3a3a3` dark) — the default secondary-text answer on any standard surface.
-- **Action color (D32, one button system)**: `--primary` is the operator's **macOS system accent** (set at runtime by `SystemAccent`; HUD cyan `#19E6FF` is the web/off-macOS fallback). Exactly one shadcn button recipe app-wide: `default` = accent-filled primary action, `outline` = neutral, `ghost` = icon buttons (`src/components/ui/button.tsx`). Project color is never an action color.
+- **Action color (D32 amended by ENG-032, one button system)**: `--primary` is the active preset's action role (Classic: HUD cyan `#19E6FF`). The global `accentSource: system` overlay may replace it with the operator's macOS accent after runtime contrast correction; it is no longer an unconditional root mutation. Exactly one shadcn button recipe app-wide: `default` = accent-filled primary action, `outline` = neutral, `ghost` = icon buttons (`src/components/ui/button.tsx`). Project color is never an action color.
 
 ### 2. HUD operational palette (fleet/workspace surfaces)
 
@@ -167,7 +174,7 @@ Honesty markers are product UI and stay: **Coming soon**, Demo banners, "not rec
 
 ## Building a new page — the short answer
 
-- Root: `font-ui`, semantic chrome tokens (`bg-background text-foreground`), forced dark.
+- Root: `font-ui`, semantic chrome tokens (`bg-background text-foreground`), no hardcoded ground.
 - Body text `text-sm`; chrome labels `text-chrome-label`; metadata `text-chrome-meta`; h1 `text-surface-title font-semibold`; secondary text `text-muted-foreground` (or `hud-text-dim` on a HUD surface).
 - Cards: `rounded-lg border border-border p-4` (operational) or `px-5 py-4` (prose); sections `space-y-6`; page gutter `px-8`.
 - Buttons: the shadcn `Button` recipe only — `default` for the one primary action, `outline` neutral, `ghost` icons.
@@ -215,6 +222,13 @@ Never fork a parallel convention (a new fractional type scale, a fifth palette, 
   material, and bootstrap roles. Classic is the parity oracle and only
   production-available definition; Air/Night remain gallery-only until T5. The
   existing channel and type-scale rules remain authoritative.
+- 2026-08-03 — ENG-032 T1: root appearance now resolves through the validated
+  app-global provider and generated Classic aliases; removed the static
+  `html.dark` and one-off `SystemAccent` mutator. A system accent is now the
+  contract's optional, contrast-corrected overlay, while the preset action role
+  is the default. Interface scale multiplies named type rungs only—never root
+  font size, spacing, terminal metrics, geometry, or motion. First-paint and
+  native Electron chrome use the same generated bootstrap subset.
 - 2026-08-02 — G0: initial kernel extracted from the shipped UI; named 12-rung type scale over the D39 chrome roles; off-scale register recorded; `/hud-gallery` merge/retire decisions written (execution = G1).
 - 2026-08-02 — G1 executed: the `/hud-gallery` decision list above is now reality. Retired the quick-capture, context-label, and keyswitch/tactile study sections; deleted `/hud-gallery/agent-field` and `/hud-gallery/agent-sources`; removed the 301-line `.tactile-key` block from `globals.css` (`TactileActionKey` re-verified at zero consumers before deletion); retired `/eval/t7-keyswitch` and its harness task with the study (production keyswitch buttons and their T8/T9 evals untouched); keyswitch direction note archived at `docs/archive/keyswitch-material-studies.md`; `AGENTS.md` workbench rule amended per the line above.
 - 2026-08-02 — ENG-026 N0 readiness grammar: one shared unbuilt-state family in `src/components/readiness/` — readiness neutral `#77839A` (same value as consumption's `FLUX.unknown`, kept outside every status/attention/consumption/identity channel per the channel-ownership rule) + dashed stroke at three scales (`ComingSoonMarker` pill, `AnnouncedChip` control, `Unbuilt` block), sentence-case **Coming soon** as the only phrase (no all-caps). Supersedes ENG-008 E4's local `designed, not built` tag. Type: chrome-micro on markers/tags, chrome-label on chips, chrome-title on unbuilt notes (the migration retired that file's `text-[13px]` literals). Do not draw dashed strokes in the neutral grey for any other purpose — dashes now mean *designed, not built*. Evidence: `/hud-gallery#readiness-grammar` and the ENG-026 milestone log screenshots.

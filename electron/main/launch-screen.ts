@@ -1,3 +1,6 @@
+import { THEME_BOOTSTRAP_REGISTRY } from './generated-theme-bootstrap';
+import type { NativeAppearanceBootstrap } from './appearance';
+
 export interface StartupStage {
   progress: number;
   label: string;
@@ -5,7 +8,9 @@ export interface StartupStage {
   failed?: boolean;
 }
 
-const html = String.raw`<!doctype html>
+export type LaunchAppearance = NativeAppearanceBootstrap;
+
+const html = (appearance: LaunchAppearance) => String.raw`<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -13,18 +18,18 @@ const html = String.raw`<!doctype html>
       http-equiv="Content-Security-Policy"
       content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
     />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="${appearance.colorScheme}" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Exawatt — Starting</title>
     <style>
       :root {
-        color-scheme: dark;
-        --ink: #f1f0ed;
-        --muted: #777873;
-        --faint: #292a28;
-        --surface: #090a09;
-        --signal: #d7ff43;
-        --danger: #ff735c;
+        color-scheme: ${appearance.colorScheme};
+        --ink: ${appearance.foreground};
+        --muted: ${appearance.muted};
+        --faint: ${appearance.faint};
+        --surface: ${appearance.background};
+        --signal: ${appearance.signal};
+        --danger: ${appearance.danger};
         --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
       }
 
@@ -239,6 +244,10 @@ const html = String.raw`<!doctype html>
   </body>
 </html>`;
 
-export function launchScreenUrl(): string {
-  return `data:text/html;charset=UTF-8,${encodeURIComponent(html)}`;
+export function launchScreenUrl(
+  appearance: LaunchAppearance = THEME_BOOTSTRAP_REGISTRY[
+    'exawatt-classic-dark'
+  ]
+): string {
+  return `data:text/html;charset=UTF-8,${encodeURIComponent(html(appearance))}`;
 }

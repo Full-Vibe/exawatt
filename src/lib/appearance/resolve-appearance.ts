@@ -35,6 +35,12 @@ function selectedTheme(
   os: AppearanceOsSignals,
   preview?: AppearancePreview
 ): { theme: ThemeDefinitionV1; preview: boolean } {
+  const classic = registry[CLASSIC_THEME_ID];
+  if (!classic) {
+    throw new Error(`Theme registry is missing ${CLASSIC_THEME_ID}`);
+  }
+  if (os.safeTheme) return { theme: classic, preview: false };
+
   const previewTheme = validTheme(registry, preview?.themeId);
   if (previewTheme) return { theme: previewTheme, preview: true };
 
@@ -48,11 +54,8 @@ function selectedTheme(
         );
 
   const pairingIsValid =
-    selection.mode === 'manual' || selected?.appearance === (os.dark ? 'dark' : 'light');
-  const classic = registry[CLASSIC_THEME_ID];
-  if (!classic) {
-    throw new Error(`Theme registry is missing ${CLASSIC_THEME_ID}`);
-  }
+    selection.mode === 'manual' ||
+    selected?.appearance === (os.dark ? 'dark' : 'light');
   return {
     theme: selected && pairingIsValid ? selected : classic,
     preview: false,
@@ -65,7 +68,10 @@ function withRuntimeOverlays(
   os: AppearanceOsSignals
 ): ThemeDefinitionV1 {
   const enhancedContrast =
-    preferences.contrast === 'enhanced' || os.highContrast || os.forcedColors;
+    preferences.contrast === 'enhanced' ||
+    os.highContrast ||
+    os.forcedColors ||
+    os.invertedColors;
   const reducedTransparency =
     preferences.transparency === 'reduced' || os.reducedTransparency;
 
@@ -135,10 +141,12 @@ export function resolveAppearance(
     interfaceFont: preferences.interfaceFont,
     interfaceScale: preferences.interfaceScale,
     enhancedContrast:
-      preferences.contrast === 'enhanced' || os.highContrast || os.forcedColors,
+      preferences.contrast === 'enhanced' ||
+      os.highContrast ||
+      os.forcedColors ||
+      os.invertedColors,
     reducedTransparency:
       preferences.transparency === 'reduced' || os.reducedTransparency,
     preview: selected.preview,
   });
 }
-
