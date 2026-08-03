@@ -24,6 +24,8 @@ import {
   Columns2,
   BellRing,
   XCircle,
+  ArrowLeftToLine,
+  ArrowRightToLine,
   Map as MapIcon,
   FolderOpen,
   LogIn,
@@ -51,6 +53,7 @@ import {
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
   CLOSE_ACTIVE_EVENT,
+  MOVE_ACTIVE_TAB_EVENT,
   REOPEN_CLOSED_EVENT,
   OPEN_ROADMAP_EVENT,
 } from '@/components/workspace/session-jump';
@@ -155,6 +158,17 @@ interface CommandItem {
    *  only when there is no shortcut to show. */
   note?: string;
 }
+
+// fixed arrangement family (D20): displayed beside the palette rows, not
+// rebindable — the workspace key layer resolves the chords, not the registry
+const MOVE_TAB_LEFT_KEYS: ShortcutKeys = {
+  key: '[',
+  modifiers: ['meta', 'alt'],
+};
+const MOVE_TAB_RIGHT_KEYS: ShortcutKeys = {
+  key: ']',
+  modifiers: ['meta', 'alt'],
+};
 
 /** palette icon per manifest surface — the manifest stays render-free */
 const SURFACE_ICONS: Record<AppSurface['id'], LucideIcon> = {
@@ -415,6 +429,39 @@ export function CommandPalette({
         onSelect: () => dispatch(OPEN_ROADMAP_EVENT),
       },
       {
+        id: 'ws-move-left',
+        label: 'Move tab left',
+        value: 'move tab left reorder arrange shift nudge order',
+        // fixed arrangement family (D20) — displayed, not rebindable
+        shortcut: MOVE_TAB_LEFT_KEYS,
+        icon: ArrowLeftToLine,
+        availability: workspaceAvailability.commands['move-tab'],
+        onSelect: () =>
+          handleSelect(() =>
+            window.dispatchEvent(
+              new CustomEvent(MOVE_ACTIVE_TAB_EVENT, {
+                detail: { delta: -1 },
+              })
+            )
+          ),
+      },
+      {
+        id: 'ws-move-right',
+        label: 'Move tab right',
+        value: 'move tab right reorder arrange shift nudge order',
+        shortcut: MOVE_TAB_RIGHT_KEYS,
+        icon: ArrowRightToLine,
+        availability: workspaceAvailability.commands['move-tab'],
+        onSelect: () =>
+          handleSelect(() =>
+            window.dispatchEvent(
+              new CustomEvent(MOVE_ACTIVE_TAB_EVENT, {
+                detail: { delta: 1 },
+              })
+            )
+          ),
+      },
+      {
         id: 'ws-close',
         label: 'Close the active tab or empty Project',
         value: 'close tab agent empty project kill session end',
@@ -424,7 +471,7 @@ export function CommandPalette({
         onSelect: () => dispatch(CLOSE_ACTIVE_EVENT),
       },
     ];
-  }, [dispatch, shortcutVersion, workspaceAvailability]);
+  }, [dispatch, handleSelect, shortcutVersion, workspaceAvailability]);
 
   // Navigation rows derive from the manifest (ENG-016 D8): the palette, the
   // go-chords, and the header must always agree on names and targets.

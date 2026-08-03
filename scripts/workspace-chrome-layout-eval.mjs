@@ -934,15 +934,88 @@ try {
   // same-document navigations here)
   await page.waitForFunction(() => window.location.pathname === '/settings');
   await page.locator('[data-workspace-chrome]').waitFor({ state: 'detached' });
-  await page.keyboard.press('Escape');
-  await page.waitForFunction(() =>
-    window.location.pathname.startsWith('/workspace')
-  );
+  // Escape returns to the workspace (D27). Settings' esc listener attaches
+  // in a mount effect — wait for the settings chrome to be interactive, and
+  // retry the press so a slow hydration cannot race the keydown.
+  await page.locator('aside').waitFor();
+  let escapedToWorkspace = false;
+  for (let attempt = 0; attempt < 5 && !escapedToWorkspace; attempt += 1) {
+    await page.keyboard.press('Escape');
+    escapedToWorkspace = await page
+      .waitForFunction(
+        () => window.location.pathname.startsWith('/workspace'),
+        undefined,
+        { timeout: 2000 }
+      )
+      .then(() => true)
+      .catch(() => false);
+  }
+  if (!escapedToWorkspace) {
+    throw new Error('escape-from-settings did not return to /workspace');
+  }
   await page.waitForFunction(() =>
     document
       .querySelector('[data-workspace-tab-strip] [data-tab-id][data-active]')
       ?.textContent?.includes('Updating tests')
   );
+
+  // ── Move tab verbs: the ⌘K row and the ⌘⌥[/⌘⌥] fixed family drive the
+  // same pure move (D20 chords surfaced as palette/menu verbs) ──
+  const exawattTabOrder = () =>
+    page.evaluate(() =>
+      Array.from(
+        document.querySelectorAll(
+          '[data-project-parent="/tmp/exawatt"][data-tab-id]'
+        )
+      )
+        .map(node => ({
+          id: node.getAttribute('data-tab-id'),
+          x: node.getBoundingClientRect().x,
+          y: node.getBoundingClientRect().y,
+        }))
+        .sort((a, b) => (Math.abs(a.y - b.y) > 8 ? a.y - b.y : a.x - b.x))
+        .map(entry => entry.id)
+    );
+  const orderBeforeMove = await exawattTabOrder();
+  if (orderBeforeMove[0] !== 'exawatt-tab') {
+    throw new Error(
+      `Move-tab fixture expectation drifted: ${JSON.stringify(orderBeforeMove)}`
+    );
+  }
+  await page.keyboard.press('Meta+KeyK');
+  await page.locator('[cmdk-root]').waitFor();
+  await page.locator('[cmdk-input]').fill('move tab right');
+  await page.getByText('Move tab right').waitFor();
+  for (let i = 0; i < 8; i += 1) {
+    const selected = await page.evaluate(
+      () =>
+        document.querySelector('[cmdk-item][aria-selected="true"]')
+          ?.textContent ?? ''
+    );
+    if (selected.includes('Move tab right')) break;
+    await page.keyboard.press('ArrowDown');
+  }
+  await page.keyboard.press('Enter');
+  await page.locator('[cmdk-root]').waitFor({ state: 'detached' });
+  await page.waitForTimeout(350);
+  const orderAfterPalette = await exawattTabOrder();
+  if (
+    orderAfterPalette[0] !== orderBeforeMove[1] ||
+    orderAfterPalette[1] !== orderBeforeMove[0]
+  ) {
+    throw new Error(
+      `Palette Move tab right did not reorder: ${JSON.stringify({ orderBeforeMove, orderAfterPalette })}`
+    );
+  }
+  // the fixed chord moves it back — palette and chord are one verb
+  await page.keyboard.press('Meta+Alt+BracketLeft');
+  await page.waitForTimeout(350);
+  const orderAfterChord = await exawattTabOrder();
+  if (orderAfterChord.join() !== orderBeforeMove.join()) {
+    throw new Error(
+      `⌘⌥[ did not restore the order: ${JSON.stringify({ orderBeforeMove, orderAfterChord })}`
+    );
+  }
 
   await page.setViewportSize({ width: 800, height: 700 });
   // the strip clicks above click-away-collapsed the summoned composer —

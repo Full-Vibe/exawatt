@@ -612,6 +612,8 @@ const menuAvailability: Record<string, boolean> = {
   'reopen-closed-tab': false,
   'rename-tab': false,
   'toggle-split': false,
+  'move-tab-left': false,
+  'move-tab-right': false,
   'close-tab': false,
   'jump-attention': false,
 };
@@ -687,13 +689,24 @@ function registerMenuIPC(): void {
   });
 }
 
+// Fixed keyboard families (D13/D20) never enter the rebindable registry,
+// so the accelerator sync cannot deliver them; display them statically.
+// registerAccelerator stays false — the renderer's capture-phase workspace
+// key layer owns these chords.
+const FIXED_MENU_ACCELERATORS: Record<string, string> = {
+  'move-tab-left': 'Alt+Command+[',
+  'move-tab-right': 'Alt+Command+]',
+};
+
 function menuCommand(
   label: string,
   command: string,
   registerAccelerator = false
 ): Electron.MenuItemConstructorOptions {
   const accelerator =
-    command === 'open-settings' ? 'Command+,' : menuAccelerators[command];
+    command === 'open-settings'
+      ? 'Command+,'
+      : (menuAccelerators[command] ?? FIXED_MENU_ACCELERATORS[command]);
   return {
     id: command,
     label,
@@ -792,6 +805,8 @@ function createMenu(): void {
         menuCommand('Reopen Closed Tab', 'reopen-closed-tab'),
         menuCommand('Rename Session', 'rename-tab'),
         menuCommand('Split: Pin / Unpin', 'toggle-split'),
+        menuCommand('Move Tab Left', 'move-tab-left'),
+        menuCommand('Move Tab Right', 'move-tab-right'),
         menuCommand('Close Tab or Empty Project', 'close-tab'),
         { type: 'separator' },
         menuCommand('Jump to Session Needing You', 'jump-attention'),

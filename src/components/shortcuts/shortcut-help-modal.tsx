@@ -96,6 +96,16 @@ const FIXED_FAMILIES: Array<{
     keys: { key: '[ / ]', modifiers: ['meta', 'shift'] },
   },
   {
+    category: 'workspace',
+    label: 'Move tab left / right',
+    keys: { key: '[ / ]', modifiers: ['meta', 'alt'] },
+  },
+  {
+    category: 'workspace',
+    label: 'Move Project left / right',
+    keys: { key: '[ / ]', modifiers: ['meta', 'alt', 'shift'] },
+  },
+  {
     category: 'view',
     label: 'Fleet: open Project 1–9',
     keys: { key: '1…9' },

@@ -41,6 +41,7 @@ import {
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
   CLOSE_ACTIVE_EVENT,
+  MOVE_ACTIVE_TAB_EVENT,
   requestProjectPicker,
   requestAgentComposer,
   requestReopenLastClosed,
@@ -285,6 +286,19 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             dispatch(TOGGLE_SPLIT_EVENT);
           }
           break;
+        case 'move-tab-left':
+        case 'move-tab-right':
+          if (
+            onWorkspaceRoute &&
+            workspaceAvailability.commands['move-tab'].available
+          ) {
+            window.dispatchEvent(
+              new CustomEvent(MOVE_ACTIVE_TAB_EVENT, {
+                detail: { delta: command === 'move-tab-right' ? 1 : -1 },
+              })
+            );
+          }
+          break;
         case 'close-tab':
           if (
             onWorkspaceRoute &&
@@ -344,6 +358,8 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
       'reopen-closed-tab': commands['reopen-closed-tab'].available,
       'rename-tab': onWorkspaceRoute && commands['rename-tab'].available,
       'toggle-split': onWorkspaceRoute && commands['toggle-split'].available,
+      'move-tab-left': onWorkspaceRoute && commands['move-tab'].available,
+      'move-tab-right': onWorkspaceRoute && commands['move-tab'].available,
       'close-tab': onWorkspaceRoute && commands['close-tab'].available,
       'jump-attention':
         onWorkspaceRoute && commands['jump-attention'].available,

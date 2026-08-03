@@ -15,6 +15,7 @@ export type WorkspaceContextCommand =
   | 'rename-project'
   | 'toggle-split'
   | 'close-tab'
+  | 'move-tab'
   | 'jump-attention'
   | 'open-roadmap';
 
@@ -33,6 +34,8 @@ export interface WorkspaceCommandAvailabilityInput {
   hasActiveTab: boolean;
   canToggleSplit: boolean;
   canClose: boolean;
+  /** the active tab has at least one sibling to trade places with */
+  canMoveTab: boolean;
   hasAttentionTarget: boolean;
   closedSessionCount: number;
 }
@@ -52,6 +55,7 @@ export function deriveWorkspaceCommandAvailability({
   hasActiveTab,
   canToggleSplit,
   canClose,
+  canMoveTab,
   hasAttentionTarget,
   closedSessionCount,
 }: WorkspaceCommandAvailabilityInput): WorkspaceCommandAvailability {
@@ -78,6 +82,9 @@ export function deriveWorkspaceCommandAvailability({
       'close-tab': canClose
         ? available()
         : unavailable('Open a Project or Session first'),
+      'move-tab': canMoveTab
+        ? available()
+        : unavailable('Needs a second Session in the Project'),
       'jump-attention': hasAttentionTarget
         ? available()
         : unavailable('No Sessions need you'),
@@ -94,6 +101,7 @@ export const EMPTY_WORKSPACE_COMMAND_AVAILABILITY =
     hasActiveTab: false,
     canToggleSplit: false,
     canClose: false,
+    canMoveTab: false,
     hasAttentionTarget: false,
     closedSessionCount: 0,
   });

@@ -29,6 +29,9 @@ export const FOCUS_ACTIVE_TERMINAL_EVENT = 'exawatt:focus-active-terminal';
 export const TOGGLE_SPLIT_EVENT = 'exawatt:toggle-split';
 export const JUMP_ATTENTION_EVENT = 'exawatt:jump-attention';
 export const CLOSE_ACTIVE_EVENT = 'exawatt:close-active-tab';
+/** palette/menu → workspace: nudge the active tab within its Project
+ *  (the ⌘⌥[/⌘⌥] fixed family, D20); detail = { delta: 1 | -1 } */
+export const MOVE_ACTIVE_TAB_EVENT = 'exawatt:move-active-tab';
 /** palette → workspace: resurrect a Recently-closed Session (D23);
  *  detail = { durableSessionId } */
 export const REOPEN_CLOSED_EVENT = 'exawatt:reopen-closed-session';

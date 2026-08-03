@@ -54,6 +54,7 @@ import {
 } from './use-workspace-shortcuts';
 import {
   JUMP_ATTENTION_EVENT,
+  MOVE_ACTIVE_TAB_EVENT,
   OPEN_ROADMAP_EVENT,
   RENAME_ACTIVE_EVENT,
   CLOSE_ACTIVE_EVENT,
@@ -563,6 +564,17 @@ export function WorkspaceClient() {
     return () => window.removeEventListener(JUMP_ATTENTION_EVENT, onJump);
   }, [jumpAttentionQueue]);
 
+  // palette and menu rows nudge the active tab through the same pure move
+  // the ⌘⌥[/⌘⌥] fixed family uses
+  useEffect(() => {
+    const onMove = (event: Event) => {
+      const delta = (event as CustomEvent<{ delta?: 1 | -1 }>).detail?.delta;
+      if (delta === 1 || delta === -1) moveActiveTab(delta);
+    };
+    window.addEventListener(MOVE_ACTIVE_TAB_EVENT, onMove);
+    return () => window.removeEventListener(MOVE_ACTIVE_TAB_EVENT, onMove);
+  }, [moveActiveTab]);
+
   // agent-first mirror (S9): tabId → what that agent is executing. Declared
   // ids cover every project (machine-local layout truth); the active
   // project's lens enriches with real labels, fractions, inferred links.
@@ -758,6 +770,10 @@ export function WorkspaceClient() {
         canClose:
           activeTab !== null ||
           (!!activeProject && activeProject.tabs.length === 0),
+        canMoveTab:
+          activeTab !== null &&
+          !!activeProject &&
+          activeProject.tabs.length > 1,
         hasAttentionTarget,
         closedSessionCount,
       }),
