@@ -6,14 +6,15 @@ discovery, and (once approved) the executable milestone detail.
 
 ## Current phase
 
-**Active build — T0 through T2 and T3A landed; T3B/T3C and T4 are active.** The versioned
+**Active build — T0 through T2 plus T3A/T3B landed; T3C and T4 are active.** The versioned
 contract, device-local resolver/runtime, strict Electron settings and
 first-paint bootstrap, and the gallery-accepted Air/Night visual family are
-implemented. Root app chrome, Settings, shared overlays, feedback, and readiness
-now consume the same generated DOM roles, including theme-owned material recipes
-with opaque reduced-transparency fallbacks. The temporary workbench exercises
-one resolved snapshot through DOM variables, ANSI data, and a concrete-sRGB
-bloom-free R3F sibling. Production still resolves only the shipped Classic appearance;
+implemented. Root app chrome, Settings, shared overlays, feedback, readiness,
+Workspace/Roadmap/status paint, and live plus retained xterm terminals now
+consume the same generated snapshot. Terminal palette changes update existing
+instances in place without remount, replay, resize, or data loss. The temporary
+workbench still exercises the pending Consumption and Fleet adapters. Production
+resolves only the shipped Classic appearance;
 Air and Night cannot be persisted or selected before the T5 rollout gate.
 
 The originating operator signal is broader than dark-versus-light: the current
@@ -790,3 +791,13 @@ no packet privately extends the contract to solve a local color.
   Agent Sources evaluator now prove Air/Night canvas, text, color scheme,
   material blur, opaque fallback, compact geometry, source truth, and clean
   renderer logs. Air/Night remain non-persistable until T5.
+- 2026-08-03, T3B landed: percolated generated foundation, HUD, action, status,
+  xterm, and typography roles through Workspace, Roadmap, menus, composer,
+  Sessions cards, status glyphs, and both live and retained terminal panes.
+  Existing xterm instances receive `options.theme` updates in place without a
+  remount, scrollback replay, fit/resize, PTY write, or terminal data loss; the
+  adapter enforces a readable foreground/background floor while preserving the
+  generated ANSI-16 palette. Project/source identity and protocol metadata stay
+  separate from theme paint. Evidence: lifecycle/adapter tests, 560–1600px
+  Workspace and terminal Electron evaluations, Air/Night theme matrix, full
+  tests, lint, type-check, production build, and packaged Electron smoke.
