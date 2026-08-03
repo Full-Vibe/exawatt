@@ -291,8 +291,21 @@ try {
       await page.screenshot({
         path: join(SCREENSHOT_DIR, 'demo-agent-altitude.png'),
       });
-      // A preview desk carries the ENG-026 marker (readiness truth)
-      await page.locator('[data-demo-session="vg-res-nprr"]').click();
+      // The Demo shell rides the REAL ribbon (W6): live TabStrip chrome,
+      // no demo-only navigation surface.
+      check(
+        'Demo Agent altitude renders the live TabStrip ribbon',
+        (await page
+          .locator('[data-workspace-chrome] [data-workspace-tab-strip]')
+          .count()) === 1
+      );
+      // A preview desk carries the ENG-026 marker (readiness truth).
+      // Reach it the way a user would: ⌘K session jump (the ribbon may hold
+      // its Project mini or folded at this window width).
+      await page.keyboard.press('Meta+k');
+      await page.locator('[cmdk-root]').waitFor();
+      await page.keyboard.type('NPRR impact briefs');
+      await page.locator('[cmdk-root] [data-session-id="vg-res-nprr"]').click();
       await page.locator('[data-demo-session-pane="vg-res-nprr"]').waitFor();
       check(
         'preview desk Session carries the shared Coming soon marker',
@@ -359,19 +372,17 @@ try {
       // Fixed workspace families run through a Demo-backed action adapter —
       // the help surface never advertises inert Live-only keys.
       const demoProjectMove = await page.evaluate(() => {
+        // Ribbon truth (W6): Project headers are `project:<dir>` tokens and
+        // the active chip names its Project via data-project-parent.
         const projects = Array.from(
-          document.querySelectorAll('[data-demo-project]')
-        );
-        const selected = document.querySelector(
-          '[data-demo-session][data-selected]'
-        );
-        const active = projects.findIndex(project =>
-          project.contains(selected)
-        );
+          document.querySelectorAll('[data-ribbon-key^="project:"]')
+        ).map(header => header.getAttribute('data-ribbon-key'));
+        const activeDir = document
+          .querySelector('[data-tab-id][data-active]')
+          ?.getAttribute('data-project-parent');
+        const active = projects.indexOf(`project:${activeDir}`);
         return {
-          before: projects.map(project =>
-            project.getAttribute('data-demo-project')
-          ),
+          before: projects,
           active,
           delta: active < projects.length - 1 ? 1 : -1,
         };
@@ -382,9 +393,9 @@ try {
           : 'Meta+Alt+Shift+BracketLeft'
       );
       const demoProjectOrderAfter = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('[data-demo-project]')).map(
-          project => project.getAttribute('data-demo-project')
-        )
+        Array.from(
+          document.querySelectorAll('[data-ribbon-key^="project:"]')
+        ).map(header => header.getAttribute('data-ribbon-key'))
       );
       check(
         'fixed Project movement executes in Demo',
@@ -406,7 +417,7 @@ try {
         'F6 moves focus from the Demo Session to app controls',
         await page.evaluate(
           () =>
-            document.activeElement?.hasAttribute('data-demo-session') ?? false
+            document.activeElement?.hasAttribute('data-tab-chrome') ?? false
         )
       );
       await page.keyboard.press('Escape');

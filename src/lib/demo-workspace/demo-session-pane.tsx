@@ -54,7 +54,14 @@ function fmtTokens(n: number): string {
   return `${n}`;
 }
 
-export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
+export function DemoSessionPane({
+  agent,
+  title,
+}: {
+  agent: DemoFleetAgent;
+  /** Operator rename from the ribbon; the authored name otherwise. */
+  title?: string;
+}) {
   const nowMs = demoShellNowMs();
   const project = demoProjectFor(agent);
   const content = demoPaneContent(agent);
@@ -78,7 +85,7 @@ export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
           className="min-w-0 truncate font-display text-sm font-semibold"
           style={{ color: HUD.text }}
         >
-          {agent.name}
+          {title ?? agent.name}
         </h2>
         <span
           className="inline-flex items-center gap-1.5 font-mono text-chrome-meta"
@@ -127,7 +134,7 @@ export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
           {agent.goal}
         </p>
         <p className="mt-0.5 font-mono text-chrome-meta" style={{ color: HUD.textDim }}>
-          {agent.contextLabel} · {project?.name ?? agent.projectKey} · started{' '}
+          {project?.name ?? agent.projectKey} · started{' '}
           {relativeTime(nowMs, agent.startedAtMs)} · last activity{' '}
           {relativeTime(nowMs, agent.lastActivityAtMs)}
         </p>

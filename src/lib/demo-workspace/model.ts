@@ -90,7 +90,10 @@ export function demoHarness(agent: DemoFleetAgent): PtyHarness {
 /* Team altitude: Project/tab shapes for the exposé                    */
 /* ------------------------------------------------------------------ */
 
-function demoTab(agent: DemoFleetAgent, project: DemoWorkspaceProject): WorkspaceTab {
+export function demoTab(
+  agent: DemoFleetAgent,
+  project: DemoWorkspaceProject
+): WorkspaceTab {
   const failed = agent.status === 'error';
   return {
     id: agent.id,

@@ -152,7 +152,7 @@ const KEY_HINTS: Array<{
   { shortcutId: 'help-modal-slash', label: 'all keys' },
 ];
 
-function WorkspaceKeyHint({
+export function WorkspaceKeyHint({
   shortcutId,
   label,
 }: {
