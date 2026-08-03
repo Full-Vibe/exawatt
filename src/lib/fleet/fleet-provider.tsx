@@ -14,7 +14,8 @@ import {
   FleetManager,
   OCClient,
   OCMethods,
-  MockFleetTransport,
+  DemoWorkspaceTransport,
+  demoWorkspaceProjectCatalog,
   LocalSessionsTransport,
   type ExawattAgent,
   type AgentActivity,
@@ -30,12 +31,15 @@ import {
   extractLocalWorkspaceProjects,
   mergeLocalWorkspaceSessions,
 } from './local-workspace-sessions';
+import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
+import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
 
 // --- Context ---
 
 interface FleetContextValue {
   manager: FleetManager;
-  mockTransport: MockFleetTransport | null;
+  /** the honest Demo Workspace source is driving the fleet (ENG-027 W2) —
+   *  either the Demo tenant, or the web's default demo posture */
   isDemo: boolean;
   /** desktop local-sessions mode: the terminal workspace IS the fleet */
   isLocal: boolean;
@@ -82,7 +86,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<ProjectCatalogEntry[]>([]);
   const [ocAvailable, setOcAvailable] = useState(false);
   const [isConnectingToOC, setIsConnectingToOC] = useState(false);
-  const mockTransportRef = useRef<MockFleetTransport | null>(null);
+  const demoTransportRef = useRef<DemoWorkspaceTransport | null>(null);
   const localTransportRef = useRef<LocalSessionsTransport | null>(null);
   const ocClientRef = useRef<OCClient | null>(null);
   const prevConnectionStatusRef = useRef<OCConnectionStatus | 'initializing'>(
@@ -90,6 +94,16 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   );
   const toastIdRef = useRef(0);
   const toastTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+
+  // Workspace tenancy (ENG-027 W2): the fleet source is a property of the
+  // ACTIVE TENANT. Personal = live local truth; Demo = the Voltaic fixtures
+  // behind the same transport boundary. `hydrated` fences boot so a relaunch
+  // inside Demo never spins up (then tears down) the personal source.
+  const tenancy = useOptionalWorkspaceTenancy();
+  const tenancyHydrated = tenancy?.hydrated ?? true;
+  const demoTenantActive =
+    (tenancy?.hydrated ?? false) &&
+    tenancy?.activeWorkspace.id === DEMO_WORKSPACE_ID;
 
   const pushConnectionToast = useCallback((message: string) => {
     const id = ++toastIdRef.current;
@@ -102,20 +116,53 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     toastTimersRef.current.push(timer);
   }, []);
 
-  // Stable FleetManager instance
-  const manager = useMemo(() => new FleetManager(), []);
+  // One FleetManager per source regime: recreating it on tenant change is
+  // what guarantees zero state bleed between the Demo and Personal fleets.
+  const manager = useMemo(() => {
+    void demoTenantActive; // deliberate key: a tenant switch means a new manager
+    return new FleetManager();
+  }, [demoTenantActive]);
 
   useEffect(() => {
     let mounted = true;
     let offWorkspaceChanged: (() => void) | undefined;
     let offDelegation: (() => void) | undefined;
 
+    function startDemoWorkspace() {
+      if (!mounted) return;
+      setIsDemo(true);
+      setIsLocal(false);
+      setConnectionStatus('connected');
+      prevConnectionStatusRef.current = 'connected';
+      setProjects(current => {
+        const next = demoWorkspaceProjectCatalog();
+        return sameProjectCatalog(current, next) ? current : next;
+      });
+      const demoTransport = new DemoWorkspaceTransport({
+        tier: 'scale',
+        nowMs: Date.now(),
+      });
+      demoTransportRef.current = demoTransport;
+      demoTransport.initialize(manager);
+      demoTransport.start();
+    }
+
     async function initializeFleet() {
       console.log('[Exawatt] initializeFleet: starting');
+      // Boot fence: pick no source until the persisted tenant has resolved.
+      if (!tenancyHydrated) return;
       try {
+        // The Demo tenant (ENG-027 W2): the authored Voltaic fleet through
+        // the same transport boundary — never a PTY, never a simulation.
+        if (demoTenantActive) {
+          console.log('[Exawatt] Demo Workspace source active');
+          startDemoWorkspace();
+          return;
+        }
+
         // Desktop app: LIVE LOCAL TRUTH (ENG-002 W0.3). The Agent Terminal
-        // Workspace's real PTY sessions ARE the fleet — no mock noise. The
-        // web app keeps Demo Mode / OC below, unchanged.
+        // Workspace's real PTY sessions ARE the fleet. The web app keeps the
+        // demo posture / OC below, unchanged.
         const pty =
           typeof window !== 'undefined' ? window.electron?.pty : undefined;
         if (pty) {
@@ -177,16 +224,11 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         }
 
         if (process.env.NEXT_PUBLIC_EXAWATT_AUTO_CONNECT_OC !== 'true') {
+          // Web default: the honest Demo Workspace fleet. The simulated
+          // MockFleetTransport is eval-only since ENG-027 W2 — the simulated
+          // and honest demo sources never coexist on a product surface.
           console.log('[Exawatt] Demo mode active by default');
-          if (!mounted) return;
-          setIsDemo(true);
-          setConnectionStatus('connected');
-          prevConnectionStatusRef.current = 'connected';
-
-          const mockTransport = new MockFleetTransport();
-          mockTransportRef.current = mockTransport;
-          mockTransport.initialize(manager);
-          mockTransport.start();
+          startDemoWorkspace();
           return;
         }
 
@@ -251,34 +293,20 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           console.log(
             `[Exawatt] Token API returned ${res.status} — activating demo mode`
           );
-          // Fall back to demo/mock mode
+          // Fall back to the Demo Workspace source
           if (!mounted) return;
           ocClientRef.current?.disconnect();
-          setIsDemo(true);
-          setConnectionStatus('connected');
-          prevConnectionStatusRef.current = 'connected';
-
-          const mockTransport = new MockFleetTransport();
-          mockTransportRef.current = mockTransport;
-          mockTransport.initialize(manager);
-          mockTransport.start();
+          startDemoWorkspace();
         }
       } catch (err) {
         console.warn(
           '[Exawatt] Connection failed, activating demo mode:',
           err instanceof Error ? err.message : err
         );
-        // On any error, fall back to demo mode
+        // On any error, fall back to the Demo Workspace source
         if (!mounted) return;
         ocClientRef.current?.disconnect();
-        setIsDemo(true);
-        setConnectionStatus('connected');
-        prevConnectionStatusRef.current = 'connected';
-
-        const mockTransport = new MockFleetTransport();
-        mockTransportRef.current = mockTransport;
-        mockTransport.initialize(manager);
-        mockTransport.start();
+        startDemoWorkspace();
       }
     }
 
@@ -292,17 +320,21 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       for (const timer of toastTimersRef.current) clearTimeout(timer);
       toastTimersRef.current = [];
       manager.disconnect();
-      mockTransportRef.current?.stop();
+      demoTransportRef.current?.stop();
+      demoTransportRef.current = null;
       localTransportRef.current?.stop();
+      localTransportRef.current = null;
     };
-  }, [manager, pushConnectionToast]);
+  }, [manager, pushConnectionToast, tenancyHydrated, demoTenantActive]);
 
   const connectToRealOC = useCallback(() => {
-    if (isConnectingToOC || !isDemo) return;
+    // Never from the Demo tenant: its fleet is the authored corpus, not a
+    // connection state.
+    if (isConnectingToOC || !isDemo || demoTenantActive) return;
     setIsConnectingToOC(true);
 
-    mockTransportRef.current?.stop();
-    mockTransportRef.current = null;
+    demoTransportRef.current?.stop();
+    demoTransportRef.current = null;
     ocClientRef.current?.disconnect();
     manager.disconnect();
 
@@ -365,10 +397,13 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         setIsConnectingToOC(false);
         pushConnectionToast('OpenClaw unavailable. Staying in Demo Mode.');
 
-        const mockTransport = new MockFleetTransport();
-        mockTransportRef.current = mockTransport;
-        mockTransport.initialize(manager);
-        mockTransport.start();
+        const demoTransport = new DemoWorkspaceTransport({
+          tier: 'scale',
+          nowMs: Date.now(),
+        });
+        demoTransportRef.current = demoTransport;
+        demoTransport.initialize(manager);
+        demoTransport.start();
       }
     }
 
@@ -376,12 +411,11 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, [isDemo, isConnectingToOC, manager, pushConnectionToast]);
+  }, [isDemo, isConnectingToOC, demoTenantActive, manager, pushConnectionToast]);
 
   const value = useMemo(
     () => ({
       manager,
-      mockTransport: mockTransportRef.current,
       isDemo,
       isLocal,
       projects,
@@ -493,7 +527,7 @@ export function useAgent(agentId: string): {
   abortChat: () => Promise<void>;
   isLoadingHistory: boolean;
 } {
-  const { manager, mockTransport, isDemo } = useFleetContext();
+  const { manager, isDemo } = useFleetContext();
   const [agent, setAgent] = useState<ExawattAgent | undefined>(() =>
     manager.getAgent(agentId)
   );
@@ -542,10 +576,8 @@ export function useAgent(agentId: string): {
 
   const sendMessage = useCallback(
     async (text: string) => {
-      if (isDemo && mockTransport) {
-        await mockTransport.sendMessage(agentId, text);
-        return;
-      }
+      // Demo Sessions accept nothing: no simulated replies (ENG-027).
+      if (isDemo) return;
 
       const targetAgent = manager.getAgent(agentId);
       if (!targetAgent) return;
@@ -554,19 +586,14 @@ export function useAgent(agentId: string): {
 
       await chatAdapter.sendMessage(agentId, text, targetAgent.sessionKey);
     },
-    [agentId, isDemo, manager, mockTransport]
+    [agentId, isDemo, manager]
   );
 
   const resolveBlocker = useCallback(
     async (response: string) => {
-      if (isDemo && mockTransport) {
-        mockTransport.resolveBlocker(agentId, response);
-        return;
-      }
-
       await sendMessage(response);
     },
-    [agentId, isDemo, mockTransport, sendMessage]
+    [sendMessage]
   );
 
   const loadHistory = useCallback(async () => {
@@ -597,16 +624,13 @@ export function useAgent(agentId: string): {
   }, [agentId, isDemo, manager]);
 
   const abortChat = useCallback(async () => {
-    if (isDemo && mockTransport) {
-      await mockTransport.abortAgent(agentId);
-      return;
-    }
+    if (isDemo) return;
 
     const targetAgent = manager.getAgent(agentId);
     const chatAdapter = manager.getChatAdapter();
     if (!chatAdapter) return;
     await chatAdapter.abort(targetAgent?.sessionKey);
-  }, [agentId, isDemo, manager, mockTransport]);
+  }, [agentId, isDemo, manager]);
 
   return {
     agent,
@@ -619,30 +643,27 @@ export function useAgent(agentId: string): {
   };
 }
 
-export function useMockTransport(): MockFleetTransport | null {
-  return useFleetContext().mockTransport;
-}
-
 export function useConnectToOC(): {
   connectToRealOC: () => void;
   ocAvailable: boolean;
   canConnect: boolean;
 } {
   const { connectToRealOC, ocAvailable, isDemo } = useFleetContext();
-  return { connectToRealOC, ocAvailable, canConnect: isDemo };
+  // Connect is a WEB demo-posture affordance; the Demo tenant's fleet is a
+  // corpus, not a connection, so `connectToRealOC` refuses it there.
+  return { connectToRealOC, ocAvailable, canConnect: isDemo && ocAvailable };
 }
 
 export function useCron() {
-  const { manager, mockTransport, isDemo, isLocal, connectionStatus } =
-    useFleetContext();
+  const { manager, isDemo, isLocal, connectionStatus } = useFleetContext();
   const [jobs, setJobs] = useState<ExawattCronJob[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // local-sessions mode has no cron backend (heartbeats come with OC/ENG-003)
-  const cronSource = isLocal
-    ? null
-    : isDemo
-      ? mockTransport
+  // local-sessions mode has no cron backend (heartbeats come with OC/ENG-003);
+  // the Demo Workspace has none either — absent, never simulated.
+  const cronSource =
+    isLocal || isDemo
+      ? null
       : connectionStatus === 'connected'
         ? manager
         : null;

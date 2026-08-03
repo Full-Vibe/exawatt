@@ -13,6 +13,9 @@ export const LAST_COMMAND_SURFACE_KEY = 'exawatt:last-command-surface:v1';
 const TENANT_SCOPE_GATED_SURFACE_PATHS: ReadonlySet<string> = new Set([
   '/workspace',
   '/fleet/spatial',
+  // ENG-027 W2: Consumption gained a per-tenant source (E4 week vs the
+  // Voltaic corpus), so it joined the gated set — its page mounts the gate.
+  '/consumption',
 ]);
 
 /** Accept only durable command-surface addresses from local renderer state. */

@@ -960,24 +960,52 @@ export interface DemoConsumption {
   };
 }
 
-let cached: DemoConsumption | null = null;
+/**
+ * Everything a consumption view needs, decoupled from WHICH demo corpus
+ * feeds it (ENG-027 W2): the E4 expository week below and the Demo
+ * Workspace's Voltaic corpus (`voltaic-source.ts`) build the same shape
+ * through the same core rollups.
+ */
+export interface DemoConsumptionInputs {
+  nowMs: number;
+  samples: ConsumptionSample[];
+  planWindows: PlanWindow[];
+  projects: DemoProject[];
+  roadmap: DemoRoadmapItem[];
+  sessionSpecs: DemoSessionSpec[];
+  projectResolver: (cwd: string) => { id: string; label: string } | null;
+  sessionLinks: Map<string, { itemId: string; method: LinkMethod }>;
+  /** sparkline burn per source, most-recent last */
+  burn: Record<ConsumptionSourceId, number[]>;
+  /** per plan-window limitId: percent consumed per hour */
+  burnRates: Record<string, number>;
+  claudePlanNote: string;
+}
 
-export function demoConsumption(): DemoConsumption {
-  if (cached) return cached;
-
-  const samples = demoSamples();
-  const planWindows = demoPlanWindows();
+export function buildDemoConsumption(
+  inputs: DemoConsumptionInputs
+): DemoConsumption {
+  const {
+    nowMs,
+    samples,
+    planWindows,
+    projects: projectList,
+    roadmap: roadmapItems,
+    sessionSpecs,
+    projectResolver,
+    sessionLinks,
+  } = inputs;
   const operator = samples.filter(s => isOperatorEntrypoint(s.entrypoint));
   const machine = samples.filter(s => !isOperatorEntrypoint(s.entrypoint));
 
   const workspace =
     rollupWorkspace(operator, { id: 'workspace', label: 'Your workspace' }) ??
-    emptyWorkspace();
+    emptyWorkspace(nowMs);
 
   const projectResult = rollupByProject(operator, {
-    projectResolver: demoProjectResolver,
+    projectResolver,
   });
-  const projects: DemoProjectRollup[] = DEMO_PROJECTS.map(project => ({
+  const projects: DemoProjectRollup[] = projectList.map(project => ({
     project,
     rollup: projectResult.rollups.find(r => r.scope.id === project.key) ?? null,
   }));
@@ -989,7 +1017,7 @@ export function demoConsumption(): DemoConsumption {
     sessionsById.set(rollup.scope.label, rollup);
   }
 
-  const specsById = new Map(DEMO_SESSIONS.map(s => [s.id, s]));
+  const specsById = new Map(sessionSpecs.map(s => [s.id, s]));
   const sessionRollups: DemoSessionRollup[] = [];
   for (const [id, spec] of specsById) {
     const rollup = sessionsById.get(id);
@@ -997,22 +1025,22 @@ export function demoConsumption(): DemoConsumption {
   }
 
   const roadmapResult = rollupByRoadmapItem(operator, sample => {
-    const link = SESSION_LINKS.get(sample.providerSessionId);
+    const link = sessionLinks.get(sample.providerSessionId);
     if (!link) return null;
-    const item = DEMO_ROADMAP.find(i => i.id === link.itemId);
+    const item = roadmapItems.find(i => i.id === link.itemId);
     return item ? { id: item.id, label: item.title } : null;
   });
 
   let declaredWeighted = 0;
   let inferredWeighted = 0;
-  const roadmap: DemoRoadmapRollup[] = DEMO_ROADMAP.map(item => {
+  const roadmap: DemoRoadmapRollup[] = roadmapItems.map(item => {
     const linked = sessionRollups.filter(
-      s => SESSION_LINKS.get(s.spec.id)?.itemId === item.id
+      s => sessionLinks.get(s.spec.id)?.itemId === item.id
     );
     let declared = 0;
     let inferred = 0;
     for (const s of linked) {
-      if (SESSION_LINKS.get(s.spec.id)?.method === 'declared') {
+      if (sessionLinks.get(s.spec.id)?.method === 'declared') {
         declared += s.rollup.weightedTokens;
       } else {
         inferred += s.rollup.weightedTokens;
@@ -1036,7 +1064,7 @@ export function demoConsumption(): DemoConsumption {
   });
 
   const unattributedSessions = sessionRollups
-    .filter(s => !SESSION_LINKS.has(s.spec.id))
+    .filter(s => !sessionLinks.has(s.spec.id))
     .sort((a, b) => b.rollup.weightedTokens - a.rollup.weightedTokens);
   const unattributedWeighted = unattributedSessions.reduce(
     (n, s) => n + s.rollup.weightedTokens,
@@ -1070,8 +1098,8 @@ export function demoConsumption(): DemoConsumption {
     })
   );
 
-  cached = {
-    nowMs: DEMO_NOW_MS,
+  return {
+    nowMs,
     samples,
     planWindows,
     workspace,
@@ -1087,7 +1115,7 @@ export function demoConsumption(): DemoConsumption {
       sessionCount: new Set(machine.map(s => s.providerSessionId)).size,
       rollup: overheadRollup,
     },
-    sources: buildSources(operator, planWindows),
+    sources: buildSources(inputs, operator, planWindows),
     interventions: {
       rows: interventionRows,
       total: interventionStats(interventionRows),
@@ -1101,11 +1129,34 @@ export function demoConsumption(): DemoConsumption {
       },
     },
   };
+}
+
+let cached: DemoConsumption | null = null;
+
+export function demoConsumption(): DemoConsumption {
+  if (cached) return cached;
+  cached = buildDemoConsumption({
+    nowMs: DEMO_NOW_MS,
+    samples: demoSamples(),
+    planWindows: demoPlanWindows(),
+    projects: DEMO_PROJECTS,
+    roadmap: DEMO_ROADMAP,
+    sessionSpecs: DEMO_SESSIONS,
+    projectResolver: demoProjectResolver,
+    sessionLinks: SESSION_LINKS,
+    burn: {
+      codex: [0.31, 0.44, 0.38, 0.52, 0.61, 0.55, 0.72, 0.66, 0.58, 0.74, 0.81, 0.69],
+      'claude-code': [0.48, 0.62, 0.71, 0.58, 0.83, 0.69, 0.44, 0.76, 0.88, 0.64, 0.55, 0.61],
+    },
+    burnRates: { 'codex-primary': 9.4, 'codex-weekly': 0.92 },
+    claudePlanNote:
+      'No plan, quota, or rate-limit record exists anywhere in Claude Code’s local files.',
+  });
   return cached;
 }
 
-function emptyWorkspace(): ConsumptionRollup {
-  const at = iso(DEMO_NOW_MS);
+function emptyWorkspace(nowMs: number): ConsumptionRollup {
+  const at = iso(nowMs);
   return {
     scope: { kind: 'workspace', id: 'workspace', label: 'Your workspace' },
     window: { from: at, to: at },
@@ -1146,10 +1197,11 @@ function emptyWorkspace(): ConsumptionRollup {
 
 /** Per-source capacity view, assembled from the same samples and plan windows. */
 function buildSources(
+  inputs: DemoConsumptionInputs,
   operator: ConsumptionSample[],
   planWindows: PlanWindow[]
 ): ConsumptionSourceView[] {
-  const fiveHoursAgo = iso(DEMO_NOW_MS - 5 * HOUR);
+  const fiveHoursAgo = iso(inputs.nowMs - 5 * HOUR);
   const recent = operator.filter(s => s.at >= fiveHoursAgo);
 
   const build = (
@@ -1205,18 +1257,13 @@ function buildSources(
   };
 
   return [
-    build(
-      'codex',
-      'Codex',
-      [0.31, 0.44, 0.38, 0.52, 0.61, 0.55, 0.72, 0.66, 0.58, 0.74, 0.81, 0.69],
-      { 'codex-primary': 9.4, 'codex-weekly': 0.92 }
-    ),
+    build('codex', 'Codex', inputs.burn.codex, inputs.burnRates),
     build(
       'claude-code',
       'Claude Code',
-      [0.48, 0.62, 0.71, 0.58, 0.83, 0.69, 0.44, 0.76, 0.88, 0.64, 0.55, 0.61],
+      inputs.burn['claude-code'],
       {},
-      'No plan, quota, or rate-limit record exists anywhere in Claude Code’s local files.'
+      inputs.claudePlanNote
     ),
   ];
 }

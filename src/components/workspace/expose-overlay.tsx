@@ -36,6 +36,7 @@ import {
 } from '@/components/roadmap/roadmap-rail';
 import {
   useProjectRoadmap,
+  type RoadmapReadSource,
   type RoadmapSessionDescriptor,
 } from '@/components/roadmap/use-project-roadmap';
 
@@ -96,6 +97,7 @@ export function ExposeOverlay({
   roadmapByTab = {},
   activeTabId,
   activeProjectDir = null,
+  roadmapRead,
   onPick,
   onPickProject = () => {},
   onClose,
@@ -120,6 +122,9 @@ export function ExposeOverlay({
   activeTabId: string | null;
   /** selects an empty Project when there is no originating Session */
   activeProjectDir?: string | null;
+  /** tenant roadmap source override (ENG-027 W2): the Demo Workspace lens
+   *  reads fixture markdown instead of the `roadmap:read` IPC */
+  roadmapRead?: RoadmapReadSource;
   onPick: (dir: string, tabId: string) => void;
   onPickProject?: (dir: string) => void;
   onClose: () => void;
@@ -275,7 +280,8 @@ export function ExposeOverlay({
   const { view: roadmapView } = useProjectRoadmap(
     railVisible ? selectedDir : null,
     roadmapSessions,
-    declaredLinks
+    declaredLinks,
+    roadmapRead
   );
   const exitRailFocus = useCallback(() => {
     if (!railDocks) setRailSummoned(false);

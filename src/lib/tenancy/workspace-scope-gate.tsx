@@ -14,25 +14,41 @@
  * Electron main process and keep running untouched — returning to Personal
  * re-adopts them exactly where they were (the reload-adoption path).
  *
- * In W1 non-personal Workspaces have no content source yet, so the scoped view
- * is an honest empty state carrying the Workspace's identity. ENG-027 W2
- * replaces the empty state with the demo source behind the same gate.
+ * Since W2 the builtin Demo tenant has a real content source: routes pass it
+ * as `demo`, and the gate renders it under the Demo identity. Any non-personal
+ * tenant WITHOUT content (Organization previews, test benches, a gated route
+ * that passed no `demo`) still gets the honest identity-carrying empty state —
+ * the gate fails closed to "no content", never open to Personal truth.
  */
 import type { ReactNode } from 'react';
 import { Layers } from 'lucide-react';
 import { useOptionalWorkspaceTenancy } from './tenancy-provider';
+import { DEMO_WORKSPACE_ID } from './workspace-scope';
 
 export function WorkspaceScopeGate({
   children,
+  demo,
   className,
 }: {
   children: ReactNode;
+  /** What the builtin Demo tenant renders on this route (ENG-027 W2) — the
+   *  demo-sourced version of the surface. Omit it and Demo gets the scoped
+   *  empty state: fail closed, never Personal truth. */
+  demo?: ReactNode;
   /** sizing for the scoped view on routes without a fixed-height parent */
   className?: string;
 }) {
   const tenancy = useOptionalWorkspaceTenancy();
   const active = tenancy?.activeWorkspace;
   if (!active || active.kind === 'personal') return <>{children}</>;
+
+  if (active.id === DEMO_WORKSPACE_ID && demo !== undefined) {
+    return (
+      <div data-tenant-workspace-scope={active.id} className="contents">
+        {demo}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -45,7 +61,7 @@ export function WorkspaceScopeGate({
       </p>
       <p className="max-w-md font-mono text-xs leading-relaxed text-zinc-500">
         {active.kind === 'demo'
-          ? 'This Workspace has no content source yet — its populated fleet arrives with the demo data source (ENG-027 W2).'
+          ? 'This surface has no demo content source in this Workspace.'
           : 'This Workspace has no local content yet.'}
       </p>
       <p className="font-mono text-[10px] text-zinc-600">

@@ -44,14 +44,14 @@ export const PERSONAL_WORKSPACE: TenantWorkspace = {
   tagline: 'Local truth — this machine',
 };
 
-/** W2 flips availability when the demo source exists; the entry is visible
- *  now so the tenancy seam reads as real, not as a hidden feature flag. */
+/** Live since ENG-027 W2: the Voltaic demo source feeds the gated surfaces,
+ *  so the switcher entry is real. */
 export const DEMO_WORKSPACE: TenantWorkspace = {
   id: DEMO_WORKSPACE_ID,
   name: 'Demo',
   kind: 'demo',
-  availability: 'coming-soon',
-  tagline: 'Populated fleet, demo data',
+  availability: 'available',
+  tagline: 'Voltaic Grid Systems — demo fleet',
 };
 
 export const BUILTIN_WORKSPACES: readonly TenantWorkspace[] = [

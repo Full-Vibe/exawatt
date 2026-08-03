@@ -18,7 +18,6 @@ import {
   useFleet,
   useFleetConnection,
 } from '@/lib/fleet/fleet-provider';
-import { DemoControls } from '@/components/fleet/demo-controls';
 import { FleetMetricsBar } from '@/components/fleet/fleet-metrics-bar';
 import { Button } from '@/components/ui/button';
 import {
@@ -363,6 +362,25 @@ export function SpatialFleetClient() {
   const openInspectedSession = useCallback(async () => {
     if (!inspectedAgent || sessionHandoffAgentId) return;
     setSessionHandoffError(null);
+
+    // Demo source (ENG-027 W2): the Session opens in the Demo Workspace
+    // shell — same jump event, same pending-slot contract, never a PTY.
+    if (isDemo) {
+      rememberSpatialReturn(
+        `${window.location.pathname}${window.location.search}`
+      );
+      setSessionHandoffAgentId(inspectedAgent.id);
+      const reduced = window.matchMedia(
+        '(prefers-reduced-motion: reduce)'
+      ).matches;
+      await new Promise(resolve =>
+        window.setTimeout(resolve, reduced ? 40 : 240)
+      );
+      requestSessionJump(inspectedAgent.sessionKey);
+      navigateCommandSurface('/workspace');
+      return;
+    }
+
     const detailHref = `/fleet/${encodeURIComponent(inspectedAgent.id)}`;
     const pty = window.electron?.pty;
     if (!pty) {
@@ -402,7 +420,13 @@ export function SpatialFleetClient() {
         'The live terminal could not be opened. Your board position is unchanged.'
       );
     }
-  }, [inspectedAgent, navigateCommandSurface, router, sessionHandoffAgentId]);
+  }, [
+    inspectedAgent,
+    isDemo,
+    navigateCommandSurface,
+    router,
+    sessionHandoffAgentId,
+  ]);
   const showSideRail = Boolean(inspectedAgent || visibleActivity.length > 0);
 
   const formatCurrency = (value: number) =>
@@ -698,7 +722,7 @@ export function SpatialFleetClient() {
                         ? 'Open stopped session'
                         : 'Open session'}
                   </Button>
-                  {inspectedAgent.needsOperator && (
+                  {inspectedAgent.needsOperator && !isDemo && (
                     <Button
                       asChild
                       className="fleet-action-button bg-red-200 text-zinc-950 hover:bg-red-100"
@@ -752,8 +776,6 @@ export function SpatialFleetClient() {
           </aside>
         )}
       </main>
-
-      <DemoControls />
     </div>
   );
 }

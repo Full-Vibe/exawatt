@@ -39,11 +39,28 @@ export interface ProjectRoadmap {
   refresh: () => void;
 }
 
+/** `roadmap:read`-shaped result an injected source resolves to. */
+export type RoadmapReadResult =
+  | { status: 'ok'; text: string; file: string; mtimeMs: number }
+  | { status: 'none'; checked: string[] }
+  | { status: 'error'; error: string };
+
+/**
+ * Injected roadmap source (ENG-027 W2): the Demo Workspace serves fixture
+ * markdown through the SAME hook and parser instead of the `roadmap:read`
+ * IPC. Must be referentially stable (module fn / useCallback). When set, git
+ * evidence and file watching are skipped — the source is not a filesystem.
+ */
+export type RoadmapReadSource = (
+  projectDir: string
+) => RoadmapReadResult | Promise<RoadmapReadResult>;
+
 export function useProjectRoadmap(
   projectDir: string | null,
   sessions: RoadmapSessionDescriptor[] = [],
   /** declared-at-launch links (S4); they override inference in the lens */
-  declaredLinks: SessionLink[] = []
+  declaredLinks: SessionLink[] = [],
+  readSource?: RoadmapReadSource
 ): ProjectRoadmap {
   const [read, setRead] = useState<RoadmapLensRead>({ status: 'loading' });
   const [evidence, setEvidence] = useState<Record<string, RoadmapSessionEvidence>>({});
@@ -52,13 +69,14 @@ export function useProjectRoadmap(
 
   const load = useCallback(() => {
     const api = window.electron?.roadmap;
-    if (!projectDir || !api) {
+    const readVia: RoadmapReadSource | undefined =
+      readSource ?? (api ? dir => api.read(dir) : undefined);
+    if (!projectDir || !readVia) {
       setRead({ status: 'loading' });
       return;
     }
     const gen = ++generation.current;
-    void api
-      .read(projectDir)
+    void Promise.resolve(readVia(projectDir))
       .then(result => {
         if (gen !== generation.current) return;
         if (result.status === 'ok') {
@@ -84,7 +102,7 @@ export function useProjectRoadmap(
           error: reason instanceof Error ? reason.message : String(reason),
         });
       });
-  }, [projectDir]);
+  }, [projectDir, readSource]);
 
   useEffect(() => {
     // show the shimmer only across project switches, not focus refreshes
@@ -99,7 +117,8 @@ export function useProjectRoadmap(
   );
   const loadEvidence = useCallback(() => {
     const api = window.electron?.roadmap;
-    if (!api || cwdKey === '') return;
+    // an injected source is not a filesystem: no git evidence to gather
+    if (readSource || !api || cwdKey === '') return;
     for (const cwd of cwdKey.split('\n')) {
       void api
         .sessionEvidence(cwd)
@@ -113,7 +132,7 @@ export function useProjectRoadmap(
         )
         .catch(() => {});
     }
-  }, [cwdKey]);
+  }, [cwdKey, readSource]);
   useEffect(loadEvidence, [loadEvidence]);
 
   useEffect(() => {
@@ -130,7 +149,8 @@ export function useProjectRoadmap(
   // an agent committing a roadmap edit shows up without a focus round-trip
   useEffect(() => {
     const api = window.electron?.roadmap;
-    if (!projectDir || !api?.watch) return;
+    // fixture sources never change on disk — nothing to watch
+    if (readSource || !projectDir || !api?.watch) return;
     void api.watch(projectDir).catch(() => {});
     const off = api.onFileChanged?.(({ projectDir: changed }) => {
       if (changed === projectDir) load();
@@ -139,7 +159,7 @@ export function useProjectRoadmap(
       off?.();
       void api.unwatch(projectDir).catch(() => {});
     };
-  }, [projectDir, load]);
+  }, [projectDir, load, readSource]);
 
   const view = useMemo(() => {
     const inputs: RoadmapLensSessionInput[] = sessions.map(s => ({

@@ -16,8 +16,16 @@ export { ChatAdapter } from './adapters/chat-adapter';
 export { FleetAdapter } from './adapters/fleet-adapter';
 export { FleetManager } from './state/fleet-manager';
 export { resolveContextGroups } from './state/context-groups';
+// EVAL-ONLY since ENG-027 W2: the simulation engine must not run on product
+// surfaces — the Demo Workspace transport below is the only demo source there.
 export { MockFleetTransport } from './transports/mock-fleet';
 export type { SimulationSpeed, FleetScale } from './transports/mock-fleet';
+export {
+  DemoWorkspaceTransport,
+  demoWorkspaceAgent,
+  demoWorkspaceProjectCatalog,
+} from './transports/demo-workspace';
+export type { DemoWorkspaceTransportOptions } from './transports/demo-workspace';
 export {
   LocalSessionsTransport,
   sessionToAgent,

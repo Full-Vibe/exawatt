@@ -28,10 +28,21 @@ describe('resolveActiveWorkspace', () => {
   });
 
   it('never wakes up inside a coming-soon Workspace', () => {
-    // Demo is persisted-but-unavailable in W1: the stored id must not stick
+    const teaser = {
+      id: 'org-preview',
+      name: 'Organization',
+      kind: 'organization',
+      availability: 'coming-soon',
+    } as const;
+    expect(
+      resolveActiveWorkspace('org-preview', [...BUILTIN_WORKSPACES, teaser]).id
+    ).toBe(PERSONAL_WORKSPACE_ID);
+  });
+
+  it('resolves Demo — available since ENG-027 W2', () => {
     expect(
       resolveActiveWorkspace(DEMO_WORKSPACE_ID, BUILTIN_WORKSPACES).id
-    ).toBe(PERSONAL_WORKSPACE_ID);
+    ).toBe(DEMO_WORKSPACE_ID);
   });
 
   it('resolves an available non-personal Workspace', () => {

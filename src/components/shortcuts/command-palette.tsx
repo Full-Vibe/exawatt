@@ -95,6 +95,9 @@ import {
 } from '@/components/feedback/quick-feedback-events';
 import { listProjects, rebindProjectPath } from '@/lib/projects/registry';
 import type { Project } from '@/lib/projects/registry';
+import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
+import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
+import { demoSessionRows } from '@/lib/demo-workspace/model';
 import { HUD } from '@/components/hud';
 import type { ShortcutKeys } from '@/types/shortcuts';
 import type { CommandAltitude } from '@/components/nav/command-altitude';
@@ -204,6 +207,14 @@ export function CommandPalette({
     []
   );
   const inElectron = typeof window !== 'undefined' && !!window.electron?.pty;
+  // Demo tenant (ENG-027 W2): the palette lists the demo Workspace's
+  // Sessions and drops every verb that reaches Personal truth or a PTY —
+  // launching, shells, Projects, reopen. Demo tabs cannot spawn a process.
+  const tenancy = useOptionalWorkspaceTenancy();
+  const inDemoTenant =
+    (tenancy?.hydrated ?? false) &&
+    tenancy?.activeWorkspace.id === DEMO_WORKSPACE_ID;
+  const personalVerbs = inElectron && !inDemoTenant;
 
   // Reset search AND session rows when closing — stale rows on reopen can
   // list dead sessions or wrong statuses until the refetch lands, and Enter
@@ -224,6 +235,11 @@ export function CommandPalette({
     setOnWorkspaceRoute(window.location.pathname.startsWith('/workspace'));
     setOnSpatialRoute(window.location.pathname.startsWith('/fleet/spatial'));
     setRecentIds(rankRecents(readPaletteUses(), Date.now()));
+    if (inDemoTenant) {
+      // demo Sessions through the same row shape; no PTY, no registry
+      setSessions(demoSessionRows());
+      return;
+    }
     const pty = window.electron?.pty;
     if (!pty) return;
     let cancelled = false;
@@ -250,7 +266,7 @@ export function CommandPalette({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, inDemoTenant]);
 
   const handleSelect = useCallback(
     (callback: () => void) => {
@@ -536,7 +552,7 @@ export function CommandPalette({
         onSelect: item.onSelect,
       });
     }
-    if (inElectron) {
+    if (inElectron && !inDemoTenant) {
       for (const h of HARNESS_ORDER) {
         if (
           h === 'shell' &&
@@ -596,6 +612,7 @@ export function CommandPalette({
     navigationItems,
     actionItems,
     inElectron,
+    inDemoTenant,
     projects,
     recents,
     onWorkspaceRoute,
@@ -657,7 +674,7 @@ export function CommandPalette({
           </>
         )}
 
-        {inElectron && sessions.length > 0 && (
+        {(inElectron || inDemoTenant) && sessions.length > 0 && (
           <>
             <CommandGroup heading="Sessions">
               {sessions.map(s => {
@@ -714,7 +731,7 @@ export function CommandPalette({
           </>
         )}
 
-        {inElectron && (
+        {personalVerbs && (
           <>
             <CommandGroup heading="Start Agent">
               {AGENT_SOURCE_ORDER.map(source => (
@@ -764,7 +781,7 @@ export function CommandPalette({
           </>
         )}
 
-        {inElectron && (
+        {personalVerbs && (
           <>
             <CommandGroup heading="Projects">
               {projects
@@ -842,7 +859,7 @@ export function CommandPalette({
             <CommandSeparator />
           </>
         )}
-        {inElectron && onWorkspaceRoute && (
+        {personalVerbs && onWorkspaceRoute && (
           <>
             <CommandGroup heading="Workspace">
               {workspaceItems.map(item => (
@@ -877,7 +894,7 @@ export function CommandPalette({
             <CommandSeparator />
           </>
         )}
-        {inElectron && onWorkspaceRoute && closedSessions.length > 0 && (
+        {personalVerbs && onWorkspaceRoute && closedSessions.length > 0 && (
           <>
             <CommandGroup heading="Recently closed">
               {closedSessions.map(entry => (
