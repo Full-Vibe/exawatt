@@ -46,7 +46,90 @@ import type {
   ShortcutKeys,
   KeyBinding,
 } from '@/types/shortcuts';
-import { RotateCcw, AlertCircle, TriangleAlert } from 'lucide-react';
+import {
+  AlertCircle,
+  Blocks,
+  RotateCcw,
+  Settings2,
+  SlidersHorizontal,
+  TriangleAlert,
+} from 'lucide-react';
+import { AgentSourcesSettings } from './agent-sources-settings';
+
+type SettingsSection = 'agent-sources' | 'preferences';
+
+function SettingsNavigation({
+  active,
+  onChange,
+}: {
+  active: SettingsSection;
+  onChange: (section: SettingsSection) => void;
+}) {
+  const items = [
+    {
+      id: 'agent-sources' as const,
+      label: 'Agent Sources',
+      icon: Settings2,
+    },
+    {
+      id: 'preferences' as const,
+      label: 'Preferences',
+      icon: SlidersHorizontal,
+    },
+  ];
+  return (
+    <aside className="border-b border-[var(--settings-line)] bg-[var(--settings-shell)] px-3 py-3 lg:border-r lg:border-b-0 lg:py-5">
+      <p className="mb-2 hidden px-3 font-ui text-[12px] font-medium text-[var(--settings-faint)] lg:block">
+        Settings
+      </p>
+      <nav
+        aria-label="Settings"
+        className="flex gap-1 overflow-x-auto lg:flex-col"
+      >
+        {items.map(item => {
+          const selected = item.id === active;
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onChange(item.id)}
+              aria-current={selected ? 'page' : undefined}
+              className="flex min-h-11 shrink-0 items-center gap-2.5 rounded-lg border px-3 text-left font-ui text-[14px] outline-none transition-[background-color,border-color,color] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] lg:w-full"
+              style={{
+                color: selected
+                  ? 'var(--settings-text)'
+                  : 'var(--settings-dim)',
+                background: selected
+                  ? 'var(--settings-teal-wash)'
+                  : 'transparent',
+                borderColor: selected
+                  ? 'color-mix(in srgb, var(--settings-teal) 20%, transparent)'
+                  : 'transparent',
+              }}
+            >
+              <Icon
+                aria-hidden
+                size={17}
+                style={{
+                  color: selected ? 'var(--settings-teal)' : 'inherit',
+                }}
+              />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+        <div className="flex min-h-11 shrink-0 items-center gap-2.5 px-3 font-ui text-[14px] text-[var(--settings-faint)] lg:w-full">
+          <Blocks aria-hidden size={17} />
+          <span>Context &amp; Tools</span>
+          <span className="ml-auto rounded-full border border-[var(--settings-line)] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.1em]">
+            Later
+          </span>
+        </div>
+      </nav>
+    </aside>
+  );
+}
 
 const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
   workspace: 'Terminal Workspace',
@@ -93,6 +176,8 @@ interface SystemHotkeyTable {
 }
 
 export function SettingsClient() {
+  const [activeSection, setActiveSection] =
+    useState<SettingsSection>('agent-sources');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [recordedKeys, setRecordedKeys] = useState<KeyBinding[]>([]);
   const [bindingError, setBindingError] = useState<string | null>(null);
@@ -300,95 +385,130 @@ export function SettingsClient() {
     editingShortcut?.bindingPolicy === 'universal-command';
 
   return (
-    <div className="container mx-auto py-6 px-4 max-w-3xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">
-          Customize your Exawatt experience
-        </p>
-      </div>
-
-      <NotificationsSettings />
-      <ConversationPrivacySettings />
-      <PermissionsExplainer />
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Keyboard Shortcuts</CardTitle>
-            <CardDescription>
-              Click a shortcut to customize it. Press one or two keys to set a
-              new binding.
-            </CardDescription>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={resetAllToDefaults}
-            disabled={saving}
+    <main
+      data-settings-shell
+      className="min-h-[calc(100vh-3.75rem)] bg-[var(--settings-page)] text-[var(--settings-text)]"
+    >
+      <h1 className="sr-only">Settings</h1>
+      <div className="grid min-h-[calc(100vh-3.75rem)] grid-cols-1 lg:grid-cols-[190px_minmax(0,1fr)]">
+        <SettingsNavigation
+          active={activeSection}
+          onChange={setActiveSection}
+        />
+        {activeSection === 'agent-sources' ? (
+          <AgentSourcesSettings />
+        ) : (
+          <section
+            aria-labelledby="preferences-heading"
+            className="min-w-0 bg-[var(--settings-page)] px-4 py-6 sm:px-7 lg:px-9"
           >
-            <RotateCcw className="mr-1.5 h-4 w-4" />
-            Reset All
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-6">
-            {categories.map(category => (
-              <div key={category}>
-                <h3 className="text-sm font-semibold text-muted-foreground mb-3">
-                  {CATEGORY_LABELS[category]}
-                </h3>
-                <div className="space-y-2">
-                  {shortcuts[category].map(shortcut => {
-                    const effectiveKeys = shortcutRegistry.getEffectiveKeys(
-                      shortcut.id
-                    );
-                    const hasOverride = shortcutRegistry.hasOverride(
-                      shortcut.id
-                    );
+            <div className="mx-auto max-w-4xl">
+              <div className="mb-7 border-b border-[var(--settings-line)] pb-5">
+                <h2
+                  id="preferences-heading"
+                  className="font-display text-[22px] font-semibold tracking-[-0.02em]"
+                >
+                  Preferences
+                </h2>
+                <p className="mt-1 font-ui text-[13px] text-[var(--settings-dim)]">
+                  Personal controls for notifications, privacy, and keyboard
+                  behavior.
+                </p>
+              </div>
 
-                    if (!effectiveKeys) return null;
+              <NotificationsSettings />
+              <ConversationPrivacySettings />
+              <PermissionsExplainer />
 
-                    return (
-                      <div
-                        key={shortcut.id}
-                        className="flex items-center justify-between py-2 px-3 rounded-md hover:bg-muted/50 transition-colors group"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm">{shortcut.label}</span>
-                          {hasOverride && (
-                            <span className="text-xs text-muted-foreground">
-                              (customized)
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {hasOverride && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="opacity-0 group-hover:opacity-100 transition-opacity h-7 px-2"
-                              onClick={() => resetToDefault(shortcut.id)}
-                            >
-                              Reset
-                            </Button>
-                          )}
-                          <button
-                            onClick={() => startEditing(shortcut.id)}
-                            className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
-                          >
-                            <ShortcutBadge keys={effectiveKeys} size="md" />
-                          </button>
+              <Card className="border-[var(--settings-line)] bg-[var(--settings-panel)] shadow-none">
+                <CardHeader className="flex flex-row items-start justify-between gap-4 border-b border-[var(--settings-line)] px-5 py-4">
+                  <div>
+                    <CardTitle className="font-display text-[15px] text-[var(--settings-text)]">
+                      Keyboard shortcuts
+                    </CardTitle>
+                    <CardDescription className="mt-1 font-ui text-[12px] leading-5 text-[var(--settings-dim)]">
+                      Click a shortcut to customize it. Press one or two keys to
+                      set a new binding.
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={resetAllToDefaults}
+                    disabled={saving}
+                  >
+                    <RotateCcw className="mr-1.5 h-4 w-4" />
+                    Reset All
+                  </Button>
+                </CardHeader>
+                <CardContent className="px-5 py-5">
+                  <div className="space-y-6">
+                    {categories.map(category => (
+                      <div key={category}>
+                        <h3 className="mb-2 font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--settings-faint)]">
+                          {CATEGORY_LABELS[category]}
+                        </h3>
+                        <div className="divide-y divide-[var(--settings-line)] border-y border-[var(--settings-line)]">
+                          {shortcuts[category].map(shortcut => {
+                            const effectiveKeys =
+                              shortcutRegistry.getEffectiveKeys(shortcut.id);
+                            const hasOverride = shortcutRegistry.hasOverride(
+                              shortcut.id
+                            );
+
+                            if (!effectiveKeys) return null;
+
+                            return (
+                              <div
+                                key={shortcut.id}
+                                className="group flex min-h-11 items-center justify-between px-2 py-2 transition-colors hover:bg-white/[0.03]"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <span className="font-ui text-[13px] text-[var(--settings-soft)]">
+                                    {shortcut.label}
+                                  </span>
+                                  {hasOverride && (
+                                    <span className="text-xs text-muted-foreground">
+                                      (customized)
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {hasOverride && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="opacity-0 group-hover:opacity-100 transition-opacity h-7 px-2"
+                                      onClick={() =>
+                                        resetToDefault(shortcut.id)
+                                      }
+                                    >
+                                      Reset
+                                    </Button>
+                                  )}
+                                  <button
+                                    onClick={() => startEditing(shortcut.id)}
+                                    className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
+                                  >
+                                    <ShortcutBadge
+                                      keys={effectiveKeys}
+                                      size="md"
+                                    />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+        )}
+      </div>
 
       {/* Edit Shortcut Dialog */}
       <Dialog open={!!editingId} onOpenChange={() => setEditingId(null)}>
@@ -455,6 +575,6 @@ export function SettingsClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </main>
   );
 }

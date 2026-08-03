@@ -1111,6 +1111,7 @@ async function bootstrapCommandSurface(): Promise<void> {
 
   const runtimeReady = Promise.all([
     import('./agent-ipc'),
+    import('./agent-sources-ipc'),
     import('./pty-ipc'),
     import('./roadmap/roadmap-ipc'),
     import('./projects/project-ipc'),
@@ -1124,6 +1125,7 @@ async function bootstrapCommandSurface(): Promise<void> {
   ]).then(
     ([
       agentIpc,
+      agentSourcesIpc,
       ptyIpc,
       roadmapIpc,
       projectIpc,
@@ -1142,6 +1144,7 @@ async function bootstrapCommandSurface(): Promise<void> {
       });
       return {
         agentIpc,
+        agentSourcesIpc,
         ptyIpc,
         roadmapIpc,
         projectIpc,
@@ -1223,6 +1226,7 @@ async function bootstrapCommandSurface(): Promise<void> {
   });
 
   runtime.agentIpc.registerAgentIPC();
+  runtime.agentSourcesIpc.registerAgentSourcesIPC();
   runtime.ptyIpc.registerPtyIPC(recovery.previousRunInterrupted);
   runtime.roadmapIpc.registerRoadmapIPC();
   runtime.projectIpc.registerProjectIPC();

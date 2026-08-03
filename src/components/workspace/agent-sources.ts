@@ -2,6 +2,11 @@ import type {
   AgentHarness,
   AgentModelCatalog,
   AgentPermissionMode,
+  AgentSourceActionResult,
+  AgentSourceAdapterId,
+  AgentSourceCatalogEntry,
+  AgentSourceRegistrySnapshot,
+  AgentSourceSnapshot,
 } from '@/types/electron';
 
 export type AgentSourceId = AgentHarness;
@@ -86,6 +91,232 @@ export const AGENT_SOURCE_META: Record<AgentSourceId, AgentSourceMeta> = {
 export const AGENT_SOURCE_ORDER = Object.keys(
   AGENT_SOURCE_META
 ) as AgentSourceId[];
+
+const fallbackObservedAt = 0;
+
+function fallbackFact(
+  value: string,
+  detail: string,
+  simulated = false
+): AgentSourceSnapshot['facts']['installation'] {
+  return {
+    state: simulated ? 'simulated' : 'unknown',
+    value,
+    detail,
+    provenance: {
+      kind: 'built-in',
+      label: simulated
+        ? 'Exawatt Demo Scenario Source'
+        : 'Renderer compatibility fallback',
+      observedAt: fallbackObservedAt,
+    },
+  };
+}
+
+function fallbackLocalSource(id: AgentSourceId): AgentSourceSnapshot {
+  const meta = AGENT_SOURCE_META[id];
+  const fact = fallbackFact(
+    'Unknown',
+    'Open the Electron desktop app to inspect this local source.'
+  );
+  return {
+    id: `${id}-local`,
+    adapterId: id,
+    harness: id,
+    label: meta.label,
+    connectionName: 'Local',
+    color: meta.color,
+    configured: true,
+    launchable: true,
+    state: 'unknown',
+    stateLabel: 'Unknown',
+    summary:
+      'Local source status is available through the Electron desktop bridge.',
+    observedAt: fallbackObservedAt,
+    facts: {
+      installation: fact,
+      reachability: fact,
+      authentication: fact,
+      identity: fact,
+      compatibility: fact,
+      modelDiscovery: fact,
+    },
+    capabilities: {
+      interactiveLaunch: true,
+      initialTask: true,
+      exactResume: true,
+      modelSelection: id === 'codex' ? 'live-catalog' : 'source-owned',
+      effortSelection: id === 'codex' ? 'live-catalog' : 'configured-value',
+      permissionModes: meta.capabilities.permissionModes,
+      delegationObservation:
+        id === 'claude'
+          ? 'Source-reported lifecycle events'
+          : 'Codex does not report delegated work',
+      enforcementOwner: meta.label,
+    },
+    actions: { recheck: false, authenticate: false, chooseModel: false },
+  };
+}
+
+function fallbackDemoSource(): AgentSourceSnapshot {
+  const fact = fallbackFact(
+    'Simulated',
+    'Fixture data with explicit simulated provenance.',
+    true
+  );
+  return {
+    id: 'demo-built-in',
+    adapterId: 'demo',
+    harness: null,
+    label: 'Demo Mode',
+    connectionName: 'Scenario source',
+    color: '#E7BD6A',
+    configured: true,
+    launchable: false,
+    state: 'ready',
+    stateLabel: 'Ready',
+    summary:
+      'Demo Mode exercises the same source-facing concepts without a live harness.',
+    observedAt: fallbackObservedAt,
+    facts: {
+      installation: fact,
+      reachability: fact,
+      authentication: fact,
+      identity: fact,
+      compatibility: fact,
+      modelDiscovery: fact,
+    },
+    capabilities: {
+      interactiveLaunch: false,
+      initialTask: true,
+      exactResume: true,
+      modelSelection: 'scenario',
+      effortSelection: 'scenario',
+      permissionModes: [],
+      delegationObservation: 'Simulated lifecycle events',
+      enforcementOwner: 'No real enforcement (simulation)',
+    },
+    actions: { recheck: false, authenticate: false, chooseModel: false },
+  };
+}
+
+function fallbackOpenClawSource(): AgentSourceSnapshot {
+  const fact = fallbackFact(
+    'Unknown',
+    'Open the Electron desktop app to inspect the local gateway.'
+  );
+  return {
+    id: 'openclaw-local',
+    adapterId: 'openclaw',
+    harness: null,
+    label: 'OpenClaw',
+    connectionName: 'Local gateway',
+    color: '#8BB9ED',
+    configured: false,
+    launchable: false,
+    state: 'unknown',
+    stateLabel: 'Unknown',
+    summary: 'Local gateway status is available through the desktop bridge.',
+    observedAt: fallbackObservedAt,
+    facts: {
+      installation: fact,
+      reachability: fact,
+      authentication: fact,
+      identity: fact,
+      compatibility: fact,
+      modelDiscovery: fact,
+    },
+    capabilities: {
+      interactiveLaunch: false,
+      initialTask: true,
+      exactResume: true,
+      modelSelection: 'gateway',
+      effortSelection: 'gateway',
+      permissionModes: [],
+      delegationObservation: 'Gateway protocol events',
+      enforcementOwner: 'OpenClaw gateway',
+    },
+    actions: { recheck: false, authenticate: false, chooseModel: false },
+  };
+}
+
+const futureSourceCatalog: AgentSourceCatalogEntry[] = [
+  {
+    adapterId: 'hosted-openclaw',
+    label: 'Hosted OpenClaw',
+    description: 'Connect a remote or managed gateway.',
+    availability: 'coming-later',
+  },
+  {
+    adapterId: 'custom',
+    label: 'Custom harness',
+    description: 'Bring another compatible Agent Source adapter.',
+    availability: 'coming-later',
+  },
+];
+
+export function fallbackAgentSourceRegistry(
+  scope: 'all' | 'launch' = 'all'
+): AgentSourceRegistrySnapshot {
+  const local = AGENT_SOURCE_ORDER.map(fallbackLocalSource);
+  const sources =
+    scope === 'launch'
+      ? local
+      : [...local, fallbackOpenClawSource(), fallbackDemoSource()];
+  return {
+    sources,
+    available: sources.map(source => ({
+      adapterId: source.adapterId,
+      label: source.label,
+      description: source.summary,
+      availability: source.configured ? 'configured' : 'configure',
+    })),
+    comingLater: scope === 'all' ? futureSourceCatalog : [],
+    observedAt: fallbackObservedAt,
+  };
+}
+
+export async function loadAgentSourceRegistry(
+  scope: 'all' | 'launch' = 'all',
+  refresh = false
+): Promise<AgentSourceRegistrySnapshot> {
+  const list =
+    typeof window !== 'undefined' ? window.electron?.agentSources?.list : null;
+  if (!list) return fallbackAgentSourceRegistry(scope);
+  try {
+    return await list(scope, refresh);
+  } catch {
+    return fallbackAgentSourceRegistry(scope);
+  }
+}
+
+export async function runAgentSourceAction(
+  harness: AgentHarness,
+  action: 'authenticate' | 'choose-model'
+): Promise<AgentSourceActionResult> {
+  const act =
+    typeof window !== 'undefined' ? window.electron?.agentSources?.act : null;
+  if (!act) {
+    return {
+      ok: false,
+      message: 'This source action is available in the Electron desktop app.',
+    };
+  }
+  try {
+    return await act(harness, action);
+  } catch {
+    return { ok: false, message: 'The source action could not be opened.' };
+  }
+}
+
+export function launchSourceSnapshots(
+  registry: AgentSourceRegistrySnapshot
+): Array<AgentSourceSnapshot & { harness: AgentHarness }> {
+  return registry.sources.filter(
+    (source): source is AgentSourceSnapshot & { harness: AgentHarness } =>
+      source.harness !== null && source.capabilities.interactiveLaunch
+  );
+}
 
 export interface AgentSourcePreferenceState {
   projectLastUsed: Record<string, AgentSourceId>;
@@ -269,33 +500,21 @@ export async function loadAgentModelCatalog(
   }
   return {
     harness: source,
-    effectiveModel: source === 'claude' ? 'default' : null,
+    effectiveModel: null,
+    effectiveModelLabel:
+      source === 'claude' ? 'Account default' : 'Source default',
     effectiveModelSource:
       source === 'claude' ? 'account-default' : 'unavailable',
-    effectiveEffort: source === 'claude' ? 'auto' : null,
-    effectiveEffortSource:
-      source === 'claude' ? 'model-default' : 'unavailable',
+    effectiveEffort: null,
+    effectiveEffortLabel: source === 'claude' ? 'Model default' : 'Unavailable',
+    effectiveEffortSource: 'unavailable',
     effortLocked: false,
-    models:
-      source === 'claude'
-        ? [
-            {
-              id: 'default',
-              label: 'Default (recommended)',
-              description:
-                'Claude Code chooses the recommended model for your account.',
-              defaultEffort: 'auto',
-              efforts: [
-                {
-                  id: 'auto',
-                  label: 'Auto',
-                  description:
-                    "Use the selected Claude model's default effort.",
-                },
-              ],
-            },
-          ]
-        : [],
+    models: [],
+    catalogMode: source === 'claude' ? 'source-owned' : 'unavailable',
+    catalogProvenance:
+      source === 'claude' ? 'Claude Code account default' : 'Unavailable',
+    observedAt: 0,
+    selectionAction: source === 'claude' ? 'choose-in-source' : null,
   };
 }
 

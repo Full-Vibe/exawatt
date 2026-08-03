@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   GitBranch,
+  ExternalLink,
   LoaderCircle,
   Settings2,
   ShieldCheck,
@@ -31,15 +32,19 @@ import {
   AGENT_PERMISSION_MODE_META,
   AGENT_PERMISSION_MODE_ORDER,
   DEFAULT_AGENT_PERMISSION_MODE,
+  fallbackAgentSourceRegistry,
   isAgentSourceId,
   isAgentPermissionMode,
+  launchSourceSnapshots,
   loadAgentModelCatalog,
+  loadAgentSourceRegistry,
   loadAgentSourcePreferences,
   permissionModeFor,
   recommendAgentSource,
   recordAgentPermissionMode,
   rememberAgentPermissionMode,
   rememberAgentSource,
+  runAgentSourceAction,
   type AgentSourcePreferenceState,
   type AgentSourceId,
 } from './agent-sources';
@@ -48,6 +53,7 @@ import type { LaunchOptions, WorkspaceDraftPatch } from './use-workspace-state';
 import type {
   AgentModelCatalog,
   AgentPermissionMode,
+  AgentSourceRegistrySnapshot,
   RecentConversation,
 } from '@/types/electron';
 import {
@@ -209,6 +215,14 @@ export function AgentComposer({
     onDraftIntentRef.current?.({ ...patch, draftTouched: true });
   }, []);
   const [source, setSource] = useState<AgentSourceId>('claude');
+  const [sourceRegistry, setSourceRegistry] =
+    useState<AgentSourceRegistrySnapshot>(() =>
+      fallbackAgentSourceRegistry('launch')
+    );
+  const [sourceRegistryReady, setSourceRegistryReady] = useState(false);
+  const [sourceActionMessage, setSourceActionMessage] = useState<string | null>(
+    null
+  );
   const [modelCatalog, setModelCatalog] = useState<AgentModelCatalog | null>(
     null
   );
@@ -264,11 +278,24 @@ export function AgentComposer({
   // discovery enriches the override picker, but every harness already has a
   // trustworthy default of its own; a slow or unavailable catalog must not
   // eat the operator's Enter key or strand the Start control.
-  const launchReady = preferencesReady && branchReady;
+  const sourceSnapshots = launchSourceSnapshots(sourceRegistry);
+  const sourceOrder = sourceSnapshots.map(source => source.harness);
   const effectiveSource = isAgentSourceId(source)
     ? source
-    : AGENT_SOURCE_ORDER[0];
-  const sourceMeta = AGENT_SOURCE_META[effectiveSource];
+    : (sourceOrder[0] ?? AGENT_SOURCE_ORDER[0]);
+  const sourceMeta =
+    sourceSnapshots.find(source => source.harness === effectiveSource) ??
+    fallbackAgentSourceRegistry('launch').sources.find(
+      source => source.harness === effectiveSource
+    )!;
+  const launchableSourceOrder = sourceSnapshots
+    .filter(source => source.launchable)
+    .map(source => source.harness);
+  const launchReady =
+    preferencesReady &&
+    sourceRegistryReady &&
+    sourceMeta.launchable &&
+    branchReady;
   const modelOptions = modelCatalog
     ? model && !modelCatalog.models.some(option => option.id === model)
       ? [
@@ -284,7 +311,9 @@ export function AgentComposer({
       : modelCatalog.models
     : [];
   const modelMeta = modelOptions.find(option => option.id === model) ?? null;
-  const modelLabel = modelMeta?.label ?? (model ? model : 'Harness default');
+  const modelLabel =
+    modelMeta?.label ??
+    (model ? model : (modelCatalog?.effectiveModelLabel ?? 'Harness default'));
   const effortOptions = modelMeta
     ? effort && !modelMeta.efforts.some(option => option.id === effort)
       ? [
@@ -300,7 +329,9 @@ export function AgentComposer({
   const effortMeta = effortOptions.find(option => option.id === effort) ?? null;
   const effortLabel =
     effortMeta?.label ??
-    (effort ? displayEffortLabel(effort) : 'Model default');
+    (effort
+      ? displayEffortLabel(effort)
+      : (modelCatalog?.effectiveEffortLabel ?? 'Model default'));
   const defaultEffort =
     model === modelCatalog?.effectiveModel
       ? modelCatalog.effectiveEffort
@@ -362,6 +393,8 @@ export function AgentComposer({
     setEffort(initialEffortRef.current ?? null);
     setPermissionMode(DEFAULT_AGENT_PERMISSION_MODE);
     setUsedSafePreferenceFallback(false);
+    setSourceRegistryReady(false);
+    setSourceActionMessage(null);
     setPermissionSaveState('idle');
     void loadAgentSourcePreferences().then(result => {
       if (cancelled) return;
@@ -380,6 +413,11 @@ export function AgentComposer({
         )
       );
       requestedSourceRef.current = null;
+    });
+    void loadAgentSourceRegistry('launch').then(registry => {
+      if (cancelled) return;
+      setSourceRegistry(registry);
+      setSourceRegistryReady(true);
     });
     // a (re)mount or Project change is not an operator edit: restore the
     // tab's saved draft directly instead of reporting a blank up (D28)
@@ -608,7 +646,7 @@ export function AgentComposer({
   );
 
   const launchAgent = async () => {
-    if (controlsDisabled || !sourcePreferences || !branchReady) {
+    if (controlsDisabled || !sourcePreferences || !launchReady) {
       return;
     }
     setLaunching('agent');
@@ -619,7 +657,11 @@ export function AgentComposer({
         harness: effectiveSource,
         dir: projectDir,
         permissionMode,
-        model: model ?? undefined,
+        model:
+          modelCatalog?.effectiveModelSource === 'account-default' &&
+          model === modelCatalog.effectiveModel
+            ? undefined
+            : (model ?? undefined),
         effort: effort && effort !== 'auto' ? effort : undefined,
         initialPrompt: task.trim() || undefined,
         worktreeBranch: worktree ? branch.trim() : undefined,
@@ -796,7 +838,8 @@ export function AgentComposer({
             event.altKey
           ) {
             event.preventDefault();
-            const order = AGENT_SOURCE_ORDER;
+            const order = launchableSourceOrder;
+            if (order.length < 2) return;
             const index = order.indexOf(effectiveSource);
             const step = event.key === 'ArrowDown' ? 1 : order.length - 1;
             const nextSource = order[(index + step) % order.length];
@@ -822,7 +865,9 @@ export function AgentComposer({
         <div className="flex min-w-0 items-center gap-1 @max-[520px]:flex-wrap">
           <Select
             value={effectiveSource}
-            disabled={!preferencesReady || controlsDisabled}
+            disabled={
+              !preferencesReady || !sourceRegistryReady || controlsDisabled
+            }
             onValueChange={value => {
               if (!isAgentSourceId(value)) return;
               reportDraftIntent({ draftSource: value });
@@ -858,131 +903,166 @@ export function AgentComposer({
               )}
             </SelectTrigger>
             <SelectContent>
-              {AGENT_SOURCE_ORDER.map(id => (
-                <SelectItem
-                  key={id}
-                  value={id}
-                  textValue={AGENT_SOURCE_META[id].label}
-                  className="font-mono"
-                >
-                  {/* Options own their menu presentation independently of the
-                  trigger: glyph + brand color, with no selection flash. */}
-                  <span
-                    className="flex items-center gap-2"
-                    style={{ color: AGENT_SOURCE_META[id].color }}
+              {sourceSnapshots.map(sourceOption => {
+                const id = sourceOption.harness;
+                return (
+                  <SelectItem
+                    key={id}
+                    value={id}
+                    disabled={!sourceOption.launchable}
+                    textValue={`${sourceOption.label} ${sourceOption.stateLabel}`}
+                    className="font-mono"
                   >
-                    <HarnessGlyph harness={id} size={12} />
-                    {AGENT_SOURCE_META[id].label}
-                  </span>
-                </SelectItem>
-              ))}
+                    {/* Options own their menu presentation independently of the
+                  trigger: glyph + brand color, with no selection flash. */}
+                    <span
+                      className="flex items-center gap-2"
+                      style={{ color: sourceOption.color }}
+                    >
+                      <HarnessGlyph harness={id} size={12} />
+                      <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                        <span>{sourceOption.label}</span>
+                        {!sourceOption.launchable && (
+                          <span className="text-[9px] uppercase tracking-[0.1em] text-hud-text-dim">
+                            {sourceOption.stateLabel}
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
 
-          <Select
-            value={model ?? UNRESOLVED_MODEL_VALUE}
-            disabled={
-              !modelReady || controlsDisabled || modelOptions.length === 0
-            }
-            onValueChange={value => {
-              const nextModel = modelOptions.find(
-                option => option.id === value
-              );
-              if (!nextModel) return;
-              const nextEffortKey = effortChoiceKey(effectiveSource, value);
-              const nextEffort = modelCatalog?.effortLocked
-                ? (modelCatalog.effectiveEffort ?? null)
-                : (effortChoicesRef.current[nextEffortKey] ??
-                  (value === modelCatalog?.effectiveModel
-                    ? modelCatalog.effectiveEffort
-                    : null) ??
-                  nextModel.defaultEffort ??
-                  null);
-              modelChoicesRef.current[effectiveSource] = value;
-              if (nextEffort) {
-                effortChoicesRef.current[nextEffortKey] = nextEffort;
-              }
-              setModel(value);
-              setEffort(nextEffort);
-              onDraftChangeRef.current?.({
-                draftModel: value,
-                draftEffort: nextEffort,
-              });
-              reportDraftIntent({
-                draftModel: value,
-                draftEffort: nextEffort,
-              });
-            }}
-          >
-            <SelectTrigger
-              aria-label="Agent model"
-              title={
-                modelReady
-                  ? `Agent model: ${modelLabel}. Default from ${modelOriginLabel}.`
-                  : `Detecting ${sourceMeta.label} model`
-              }
-              className="h-9 w-[168px] shrink-0 rounded border px-2 font-mono text-xs shadow-none transition-[border-color,filter] duration-150 hover:brightness-110 focus:ring-hud-cyan data-[state=open]:brightness-110 @max-[560px]:w-[152px] motion-reduce:transition-none"
+          {modelCatalog?.selectionAction === 'choose-in-source' ? (
+            <button
+              type="button"
+              disabled={!modelReady || controlsDisabled}
+              onClick={() => {
+                setSourceActionMessage(null);
+                void runAgentSourceAction(effectiveSource, 'choose-model').then(
+                  result => setSourceActionMessage(result.message)
+                );
+              }}
+              aria-label={`Agent model: ${modelLabel}. Choose in ${sourceMeta.label}`}
+              title={`${modelLabel} · choose in ${sourceMeta.label}`}
+              className="flex h-9 w-[168px] shrink-0 items-center justify-between gap-2 rounded border px-2 font-mono text-xs outline-none transition-[border-color,filter] duration-150 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan @max-[560px]:w-[152px] motion-reduce:transition-none"
               style={{
                 color: HUD.text,
                 borderColor: HUD.strokeSoft,
                 background: HUD.bg.deep,
               }}
             >
-              {modelReady ? (
-                <span className="min-w-0 truncate">
-                  <SelectValue>{modelLabel}</SelectValue>
-                </span>
-              ) : (
-                <span
-                  className="flex min-w-0 items-center gap-1.5 truncate"
-                  style={{ color: HUD.textDim }}
-                >
-                  <LoaderCircle
-                    aria-hidden="true"
-                    className="h-3 w-3 shrink-0 animate-spin motion-reduce:animate-none"
-                  />
-                  Detecting…
-                </span>
-              )}
-            </SelectTrigger>
-            <SelectContent className="w-[min(23rem,calc(100vw-1.5rem))] border-hud-cyan/25 bg-hud-deep shadow-xl">
-              <SelectGroup>
-                <SelectLabel className="px-2 pb-1 pt-2 font-mono text-[11px] font-medium text-hud-text-dim">
-                  {sourceMeta.label} model
-                </SelectLabel>
-                {modelOptions.map(option => (
-                  <SelectItem
-                    key={option.id}
-                    value={option.id}
-                    textValue={`${option.label} ${option.description}`}
-                    className="items-start py-2.5 pl-2 pr-8 font-mono [&>span:first-child]:top-3"
+              <span className="min-w-0 truncate">{modelLabel}</span>
+              <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
+            </button>
+          ) : (
+            <Select
+              value={model ?? UNRESOLVED_MODEL_VALUE}
+              disabled={
+                !modelReady || controlsDisabled || modelOptions.length === 0
+              }
+              onValueChange={value => {
+                const nextModel = modelOptions.find(
+                  option => option.id === value
+                );
+                if (!nextModel) return;
+                const nextEffortKey = effortChoiceKey(effectiveSource, value);
+                const nextEffort = modelCatalog?.effortLocked
+                  ? (modelCatalog.effectiveEffort ?? null)
+                  : (effortChoicesRef.current[nextEffortKey] ??
+                    (value === modelCatalog?.effectiveModel
+                      ? modelCatalog.effectiveEffort
+                      : null) ??
+                    nextModel.defaultEffort ??
+                    null);
+                modelChoicesRef.current[effectiveSource] = value;
+                if (nextEffort) {
+                  effortChoicesRef.current[nextEffortKey] = nextEffort;
+                }
+                setModel(value);
+                setEffort(nextEffort);
+                onDraftChangeRef.current?.({
+                  draftModel: value,
+                  draftEffort: nextEffort,
+                });
+                reportDraftIntent({
+                  draftModel: value,
+                  draftEffort: nextEffort,
+                });
+              }}
+            >
+              <SelectTrigger
+                aria-label="Agent model"
+                title={
+                  modelReady
+                    ? `Agent model: ${modelLabel}. Default from ${modelOriginLabel}.`
+                    : `Detecting ${sourceMeta.label} model`
+                }
+                className="h-9 w-[168px] shrink-0 rounded border px-2 font-mono text-xs shadow-none transition-[border-color,filter] duration-150 hover:brightness-110 focus:ring-hud-cyan data-[state=open]:brightness-110 @max-[560px]:w-[152px] motion-reduce:transition-none"
+                style={{
+                  color: HUD.text,
+                  borderColor: HUD.strokeSoft,
+                  background: HUD.bg.deep,
+                }}
+              >
+                {modelReady ? (
+                  <span className="min-w-0 truncate">
+                    <SelectValue>{modelLabel}</SelectValue>
+                  </span>
+                ) : (
+                  <span
+                    className="flex min-w-0 items-center gap-1.5 truncate"
+                    style={{ color: HUD.textDim }}
                   >
-                    <span className="flex min-w-0 flex-col gap-0.5">
-                      <span className="flex items-baseline gap-2">
-                        <span className="text-xs font-semibold text-hud-text">
-                          {option.label}
-                        </span>
-                        {option.id === modelCatalog?.effectiveModel && (
-                          <span className="text-[9px] uppercase tracking-[0.12em] text-hud-cyan">
-                            default
+                    <LoaderCircle
+                      aria-hidden="true"
+                      className="h-3 w-3 shrink-0 animate-spin motion-reduce:animate-none"
+                    />
+                    Detecting…
+                  </span>
+                )}
+              </SelectTrigger>
+              <SelectContent className="w-[min(23rem,calc(100vw-1.5rem))] border-hud-cyan/25 bg-hud-deep shadow-xl">
+                <SelectGroup>
+                  <SelectLabel className="px-2 pb-1 pt-2 font-mono text-[11px] font-medium text-hud-text-dim">
+                    {sourceMeta.label} model
+                  </SelectLabel>
+                  {modelOptions.map(option => (
+                    <SelectItem
+                      key={option.id}
+                      value={option.id}
+                      textValue={`${option.label} ${option.description}`}
+                      className="items-start py-2.5 pl-2 pr-8 font-mono [&>span:first-child]:top-3"
+                    >
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="flex items-baseline gap-2">
+                          <span className="text-xs font-semibold text-hud-text">
+                            {option.label}
                           </span>
-                        )}
+                          {option.id === modelCatalog?.effectiveModel && (
+                            <span className="text-[9px] uppercase tracking-[0.12em] text-hud-cyan">
+                              default
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-[11px] leading-4 text-hud-text-dim">
+                          {option.description}
+                        </span>
                       </span>
-                      <span className="text-[11px] leading-4 text-hud-text-dim">
-                        {option.description}
-                      </span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-              <SelectSeparator className="bg-hud-cyan/15" />
-              <p className="px-2 py-1.5 font-mono text-[11px] leading-4 text-hud-text-dim">
-                {model === modelCatalog?.effectiveModel
-                  ? `Default from ${modelOriginLabel}.`
-                  : `This override applies only to this Agent.`}
-              </p>
-            </SelectContent>
-          </Select>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectSeparator className="bg-hud-cyan/15" />
+                <p className="px-2 py-1.5 font-mono text-[11px] leading-4 text-hud-text-dim">
+                  {model === modelCatalog?.effectiveModel
+                    ? `Default from ${modelOriginLabel}.`
+                    : `This override applies only to this Agent.`}
+                </p>
+              </SelectContent>
+            </Select>
+          )}
 
           <Select
             value={effort ?? UNRESOLVED_MODEL_VALUE}
@@ -1362,9 +1442,13 @@ export function AgentComposer({
             title={
               launchReady
                 ? `Start ${sourceMeta.label} with ${modelLabel} and ${permissionMeta.label} permissions`
-                : preferencesReady
-                  ? 'Enter a worktree branch name before starting'
-                  : 'Loading launch preferences'
+                : !preferencesReady
+                  ? 'Loading launch preferences'
+                  : !sourceRegistryReady
+                    ? 'Checking Agent Sources'
+                    : !sourceMeta.launchable
+                      ? `${sourceMeta.label}: ${sourceMeta.stateLabel}`
+                      : 'Enter a worktree branch name before starting'
             }
           />
 
@@ -1406,7 +1490,7 @@ export function AgentComposer({
             ? `Opening a shell in ${projectName}.`
             : permissionSaveState === 'failed'
               ? 'This permission choice applies now but could not be saved.'
-              : ''}
+              : (sourceActionMessage ?? '')}
       </span>
     </form>
   );

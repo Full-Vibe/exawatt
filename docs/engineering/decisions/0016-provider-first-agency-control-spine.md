@@ -135,6 +135,14 @@ This decision amends existing work rather than adding another plan:
 
 ## Consequences
 
+As of 2026-08-02, the first production implementation follows this decision:
+Electron main owns source inspection and source-owned actions; Settings and the
+Terminal composer receive normalized facts; Claude Code's SDK-reported account
+catalog is consumed directly and its unavailable state is never replaced with
+aliases; and provider/gateway secrets do not cross the preload boundary. Local
+OpenClaw and Demo Mode use the same UI-facing shape without pretending either
+is a Terminal-launch source.
+
 - Today's UI can be useful without pretending Exawatt is the enforcement point.
 - Sources with sparse telemetry remain compatible, but the UI must show their
   lower assurance instead of silently filling gaps.

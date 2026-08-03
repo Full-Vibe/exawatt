@@ -134,6 +134,29 @@ body {
   color: var(--foreground);
 }
 
+/* Agent Source Settings graduated from /hud-gallery into a shared production
+   shell. These calmer operational neutrals are intentionally scoped: fleet
+   surfaces keep the higher-energy HUD palette, while settings favors dense,
+   legible source truth over ambient spectacle. */
+[data-settings-shell] {
+  --settings-page: #070a0f;
+  --settings-shell: #0b0f15;
+  --settings-panel: #0e131b;
+  --settings-raised: #121923;
+  --settings-line: #222d3b;
+  --settings-line-strong: #334357;
+  --settings-text: #e8eef7;
+  --settings-soft: #c2ccda;
+  --settings-dim: #8e9aae;
+  --settings-faint: #677386;
+  --settings-teal: #72d8cc;
+  --settings-teal-wash: rgba(114, 216, 204, 0.08);
+  --settings-amber: #e7bd6a;
+  --settings-amber-wash: rgba(231, 189, 106, 0.08);
+  --settings-red: #ef8e8e;
+  --settings-red-wash: rgba(239, 142, 142, 0.08);
+}
+
 /* Electron is pointer-first today, but the composer also runs through the
    hosted-compatible renderer boundary. Preserve its dense desktop geometry
    while giving coarse pointers the 44px targets expected of a primary action

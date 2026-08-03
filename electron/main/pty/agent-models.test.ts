@@ -186,6 +186,15 @@ model_reasoning_effort = "low"
       'default',
       'sonnet',
     ]);
+    expect(catalog.catalogMode).toBe('live-catalog');
+    expect(catalog.selectionAction).toBeNull();
+  });
+
+  it('labels a configured Codex fallback separately from a live catalog', () => {
+    const catalog = parseCodexModelCatalog('', 'private-model', 'high');
+    expect(catalog.models.map(model => model.id)).toEqual(['private-model']);
+    expect(catalog.catalogMode).toBe('configured-values');
+    expect(catalog.catalogProvenance).toBe('Codex configuration');
   });
 
   it('resolves Claude model settings from user to Project-local precedence', () => {
@@ -211,7 +220,7 @@ model_reasoning_effort = "low"
     ).toBe('Claude Fable 5 · 1M');
   });
 
-  it('honors Claude environment overrides and labels the true account default', () => {
+  it('honors Claude environment overrides without inventing an account catalog', () => {
     const environmentCatalog = buildClaudeModelCatalog(
       null,
       [{ model: 'sonnet', effortLevel: 'low' }],
@@ -225,29 +234,25 @@ model_reasoning_effort = "low"
     expect(environmentCatalog.effectiveEffortSource).toBe('environment');
     expect(environmentCatalog.effortLocked).toBe(true);
     const defaultCatalog = buildClaudeModelCatalog(null, [], {});
-    expect(defaultCatalog.effectiveModel).toBe('default');
+    expect(defaultCatalog.effectiveModel).toBeNull();
+    expect(defaultCatalog.effectiveModelLabel).toBe('Account default');
     expect(defaultCatalog.effectiveModelSource).toBe('account-default');
-    expect(defaultCatalog.effectiveEffort).toBe('auto');
-    expect(
-      defaultCatalog.models
-        .find(model => model.id === 'sonnet')
-        ?.efforts.map(effort => effort.id)
-    ).toEqual(['auto', 'low', 'medium', 'high', 'xhigh', 'max']);
-    expect(
-      defaultCatalog.models
-        .find(model => model.id === 'haiku')
-        ?.efforts.map(effort => effort.id)
-    ).toEqual(['auto']);
+    expect(defaultCatalog.effectiveEffort).toBeNull();
+    expect(defaultCatalog.models).toEqual([]);
+    expect(defaultCatalog.catalogMode).toBe('source-owned');
+    expect(defaultCatalog.selectionAction).toBe('choose-in-source');
 
-    const unsupportedConfiguredEffort = buildClaudeModelCatalog(
+    const configuredEffort = buildClaudeModelCatalog(
       null,
       [{ model: 'haiku', effortLevel: 'high' }],
       {}
     );
-    expect(unsupportedConfiguredEffort.effectiveEffort).toBe('auto');
-    expect(unsupportedConfiguredEffort.effectiveEffortSource).toBe(
-      'model-default'
-    );
+    expect(configuredEffort.effectiveEffort).toBe('high');
+    expect(configuredEffort.effectiveEffortSource).toBe('config');
+    expect(configuredEffort.models.map(model => model.id)).toEqual(['haiku']);
+    expect(
+      configuredEffort.models[0]?.efforts.map(effort => effort.id)
+    ).toEqual(['high']);
   });
 
   it('keeps model IDs shell-token-safe while allowing provider paths', () => {

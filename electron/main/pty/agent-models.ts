@@ -39,6 +39,7 @@ export interface AgentModelCatalog {
   harness: Exclude<PtyHarness, 'shell'>;
   /** The model Exawatt will pin for a new Agent unless the operator changes it. */
   effectiveModel: string | null;
+  effectiveModelLabel: string;
   effectiveModelSource:
     | 'config'
     | 'harness-recommended'
@@ -46,6 +47,7 @@ export interface AgentModelCatalog {
     | 'unavailable';
   /** The effort Exawatt will pin unless null/auto leaves it to the harness. */
   effectiveEffort: string | null;
+  effectiveEffortLabel: string;
   effectiveEffortSource:
     | 'config'
     | 'model-default'
@@ -53,6 +55,14 @@ export interface AgentModelCatalog {
     | 'unavailable';
   effortLocked: boolean;
   models: AgentModelOption[];
+  catalogMode:
+    | 'live-catalog'
+    | 'configured-values'
+    | 'source-owned'
+    | 'unavailable';
+  catalogProvenance: string;
+  observedAt: number;
+  selectionAction: 'choose-in-source' | null;
 }
 
 interface CodexReasoningLevel {
@@ -118,28 +128,29 @@ function claudeModel(
   };
 }
 
-/** Used only when the installed CLI cannot describe its own catalog. The live
- * list comes from Claude Code itself, so this stays deliberately minimal. */
-const CLAUDE_FALLBACK_MODELS: AgentModelOption[] = [
-  claudeModel(
-    'default',
-    'Account default',
-    'Claude Code chooses the recommended model for your account.'
-  ),
-  claudeModel('opus', 'Opus', 'Best for everyday, complex work.'),
-  claudeModel(
-    'fable',
-    'Fable',
-    'Most capable for your hardest and longest-running work.'
-  ),
-  claudeModel('sonnet', 'Sonnet', 'Efficient for routine work.'),
-  claudeModel(
-    'haiku',
-    'Haiku',
-    'Fastest for quick answers.',
-    CLAUDE_EFFORTS.filter(effort => effort.id === 'auto')
-  ),
-];
+function configuredClaudeModel(
+  id: string,
+  label: string,
+  description: string,
+  observedEffort: string | null
+): AgentModelOption {
+  const efforts = observedEffort
+    ? [
+        {
+          id: observedEffort,
+          label: formatAgentEffortLabel(observedEffort),
+          description: 'Observed in the active Claude Code configuration.',
+        },
+      ]
+    : [];
+  return {
+    id,
+    label,
+    description,
+    defaultEffort: observedEffort,
+    efforts,
+  };
+}
 
 export function isValidAgentModel(value: unknown): value is string {
   return (
@@ -270,6 +281,7 @@ export function parseCodexModelCatalog(
         efforts,
       };
     });
+  const discoveredModelCount = models.length;
   if (configuredModel && !models.some(model => model.id === configuredModel)) {
     const efforts = configuredEffort
       ? [
@@ -304,12 +316,18 @@ export function parseCodexModelCatalog(
   return {
     harness: 'codex',
     effectiveModel,
+    effectiveModelLabel: effectiveModel
+      ? (effectiveModelOption?.label ?? formatAgentModelLabel(effectiveModel))
+      : 'Source default',
     effectiveModelSource: configuredModel
       ? 'config'
       : effectiveModel
         ? 'harness-recommended'
         : 'unavailable',
     effectiveEffort,
+    effectiveEffortLabel: effectiveEffort
+      ? formatAgentEffortLabel(effectiveEffort)
+      : 'Model default',
     effectiveEffortSource: configuredEffortSupported
       ? 'config'
       : effectiveEffort
@@ -317,6 +335,20 @@ export function parseCodexModelCatalog(
         : 'unavailable',
     effortLocked: false,
     models,
+    catalogMode:
+      discoveredModelCount > 0
+        ? 'live-catalog'
+        : models.length > 0
+          ? 'configured-values'
+          : 'unavailable',
+    catalogProvenance:
+      discoveredModelCount > 0
+        ? 'Installed Codex CLI · codex debug models'
+        : configuredModel
+          ? 'Codex configuration'
+          : 'Codex model discovery unavailable',
+    observedAt: Date.now(),
+    selectionAction: null,
   };
 }
 
@@ -454,26 +486,30 @@ export function buildClaudeModelCatalog(
   const processModel = isValidAgentModel(environment.ANTHROPIC_MODEL)
     ? environment.ANTHROPIC_MODEL
     : null;
-  const effectiveModel =
-    processModel ?? settingsEnvironmentModel ?? configuredModel ?? 'default';
   const processEffort = isValidAgentEffort(environment.CLAUDE_CODE_EFFORT_LEVEL)
     ? environment.CLAUDE_CODE_EFFORT_LEVEL
     : null;
   const effortLocked = Boolean(processEffort ?? settingsEnvironmentEffort);
-  const models = reported ? [...reported] : [...CLAUDE_FALLBACK_MODELS];
+  const environmentEffort = processEffort ?? settingsEnvironmentEffort;
+  const configuredEffectiveModel =
+    processModel ?? settingsEnvironmentModel ?? configuredModel;
+  const reportedDefault =
+    reported?.find(model => model.id === 'default') ?? reported?.[0] ?? null;
+  const effectiveModel =
+    configuredEffectiveModel ?? reportedDefault?.id ?? null;
+  const models = reported ? [...reported] : [];
+
   if (!reported) {
-    // Only the fallback list needs these: a reported catalog already contains
-    // whatever the settings cascade and env overrides made selectable.
     for (const id of available) {
-      if (!models.some(model => model.id === id)) {
-        models.push(
-          claudeModel(
-            id,
-            formatAgentModelLabel(id),
-            'Available in your Claude Code settings.'
-          )
-        );
-      }
+      if (models.some(model => model.id === id)) continue;
+      models.push(
+        configuredClaudeModel(
+          id,
+          formatAgentModelLabel(id),
+          'Listed in your Claude Code settings.',
+          id === effectiveModel ? (environmentEffort ?? configuredEffort) : null
+        )
+      );
     }
     const customModel = environment.ANTHROPIC_CUSTOM_MODEL_OPTION;
     if (
@@ -481,54 +517,86 @@ export function buildClaudeModelCatalog(
       !models.some(model => model.id === customModel)
     ) {
       models.push(
-        claudeModel(
+        configuredClaudeModel(
           customModel,
           environment.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME?.trim() ||
             formatAgentModelLabel(customModel),
           environment.ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION?.trim() ||
-            'Custom model available to Claude Code.'
+            'Custom model available to Claude Code.',
+          customModel === effectiveModel
+            ? (environmentEffort ?? configuredEffort)
+            : null
+        )
+      );
+    }
+    if (effectiveModel && !models.some(model => model.id === effectiveModel)) {
+      models.unshift(
+        configuredClaudeModel(
+          effectiveModel,
+          formatAgentModelLabel(effectiveModel),
+          'Selected in your Claude Code configuration.',
+          environmentEffort ?? configuredEffort
         )
       );
     }
   }
-  if (!models.some(model => model.id === effectiveModel)) {
-    models.unshift(
-      claudeModel(
-        effectiveModel,
-        formatAgentModelLabel(effectiveModel),
-        'Selected in your Claude Code configuration.'
-      )
-    );
-  }
 
-  const environmentEffort = processEffort ?? settingsEnvironmentEffort;
   const effectiveModelOption = models.find(
     model => model.id === effectiveModel
   );
   const configuredEffortSupported =
     configuredEffort &&
-    effectiveModelOption?.efforts.some(
-      option => option.id === configuredEffort
-    );
+    (effectiveModelOption?.efforts.length === 0 ||
+      effectiveModelOption?.efforts.some(
+        option => option.id === configuredEffort
+      ));
   const effectiveEffort = effortLocked
     ? environmentEffort
     : configuredEffortSupported
       ? configuredEffort
-      : (effectiveModelOption?.defaultEffort ?? 'auto');
+      : (effectiveModelOption?.defaultEffort ?? null);
+  const usesAccountDefault =
+    !configuredEffectiveModel && effectiveModel === 'default';
+  const catalogMode = reported
+    ? 'live-catalog'
+    : models.length > 0
+      ? 'configured-values'
+      : 'source-owned';
 
   return {
     harness: 'claude',
     effectiveModel,
-    effectiveModelSource:
-      effectiveModel === 'default' ? 'account-default' : 'config',
+    effectiveModelLabel: effectiveModel
+      ? (effectiveModelOption?.label ?? formatAgentModelLabel(effectiveModel))
+      : 'Account default',
+    effectiveModelSource: usesAccountDefault
+      ? 'account-default'
+      : configuredEffectiveModel
+        ? 'config'
+        : effectiveModel
+          ? 'harness-recommended'
+          : 'account-default',
     effectiveEffort,
+    effectiveEffortLabel: effectiveEffort
+      ? formatAgentEffortLabel(effectiveEffort)
+      : 'Model default',
     effectiveEffortSource: effortLocked
       ? 'environment'
       : configuredEffortSupported
         ? 'config'
-        : 'model-default',
+        : effectiveEffort
+          ? 'model-default'
+          : 'unavailable',
     effortLocked,
     models,
+    catalogMode,
+    catalogProvenance: reported
+      ? 'Installed Claude Code CLI · SDK control protocol'
+      : models.length > 0
+        ? 'Claude Code layered configuration'
+        : 'Claude Code account default',
+    observedAt: Date.now(),
+    selectionAction: models.length > 0 ? null : 'choose-in-source',
   };
 }
 
@@ -628,7 +696,7 @@ async function cachedClaudeModelOptions(
   cwd: string,
   shell: string
 ): Promise<AgentModelOption[] | null> {
-  const key = `${shell} ${cwd}`;
+  const key = `${shell}\u0000${cwd}`;
   const cached = claudeCatalogCache.get(key);
   if (cached && cached.expires > Date.now()) return cached.models;
   const models = await readClaudeModelOptions(cwd, shell);

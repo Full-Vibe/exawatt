@@ -179,6 +179,14 @@ adapter with user-scoped instance metadata: display name, endpoint or local
 installation, minimum exposed identity, credential owner, and last successful
 observation. Multiple records may use the same adapter.
 
+The production desktop path now implements that boundary in Electron main.
+Source-specific CLI/config/gateway inspection stays behind a renderer-safe IPC
+surface; Settings and the Terminal composer consume the same normalized
+snapshots. Claude Code and Codex are launch-capable local records, local
+OpenClaw is a separately probed gateway record, and Demo Mode is a built-in
+record whose facts use simulated provenance. The renderer receives neither
+provider credentials nor OpenClaw connection secrets.
+
 The adapter reports independent installation, reachability, authentication,
 identity, compatibility, capability, freshness, and provenance facets. A pure
 view-model derivation produces the compact registry state (`ready`,
@@ -189,11 +197,11 @@ provenance.
 
 Discovery is evidence-bearing. Each catalog or capability snapshot names the
 source mechanism and observation time. Codex's supported machine-readable
-model command can populate a live catalog. Claude Code's current CLI can expose
-configuration and account identity but not the account-aware catalog shown by
-its native `/model` interface, so its adapter returns the exact configured
-model when known or an account-default sentinel and a source-owned selection
-action. Product code must not promote fixture aliases into source truth.
+model command populates its live catalog. Claude Code exposes the account-aware
+rows from its native `/model` interface through an SDK `initialize` control
+response. If that live probe is unavailable, its adapter returns only observed
+configured values or an account-default sentinel and source-owned selection
+action. Product code never promotes fixture aliases into source truth.
 
 The registry exposes global source/account facts. Terminal resolves a separate
 Project-effective launch view by combining source facts, Project draft state,
@@ -295,12 +303,12 @@ Built:
   persisted by Project and harness; the PTY/source boundary translates
   `prompt`, `auto`, and `unrestricted` into current Claude Code and Codex
   flags. The same boundary discovers Codex's live model catalog and reads
-  Claude Code's layered configured/default value, keeps the resolved pair
+  Claude Code's account-aware catalog over its SDK control protocol, keeps the resolved pair
   visible beside the source, and passes per-Agent overrides as launch data
-  without rewriting harness configuration. The current Claude path still
-  contains legacy UI aliases because its CLI has no supported catalog command;
-  ENG-003's Agent Source registry slice replaces those aliases with an honest
-  account-default/configured-value fallback and source-owned selection action.
+  without rewriting harness configuration. Claude's production path contains
+  no hard-coded provider catalog: it mirrors the rows its own `/model` menu
+  reports, falls back only to observed configured values or the honest account
+  default when live discovery is unavailable, and never invents provider aliases.
   Environment-owned effort constraints remain visible and non-editable because
   they outrank session flags. The Terminal chrome uses a measured elastic-ribbon
   boundary: compact Project headers, selected and manually persisted disclosure,

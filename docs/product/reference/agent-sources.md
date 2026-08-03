@@ -57,6 +57,23 @@ reach from future source types. `Not installed` or `Configure` is actionable
 now; `Coming later` is an honest product affordance, not a disabled connection
 that looks broken.
 
+### Current desktop implementation
+
+Settings now auto-discovers four built-in records through one Electron-main
+registry boundary: local Claude Code, local Codex, the local OpenClaw gateway,
+and Demo Mode. Claude Code and Codex can launch from the Terminal composer when
+their installation and source-owned authentication are ready. OpenClaw's local
+installation, gateway configuration, credential presence, and reachability are
+reported independently; gateway launch remains outside the current Terminal
+composer. Demo Mode uses the same record and fact shapes with every value
+marked as simulated.
+
+Recheck repeats source discovery. When a local CLI reports that sign-in is
+required, Settings can open that source's own login command in Terminal and
+then re-observe status. Only the minimum identity exposed by the status command
+crosses to the renderer. Provider tokens, organization metadata, and OpenClaw
+connection secrets do not.
+
 ## Launch contract
 
 Project selection and Agent launch are separate commands. An open Project may

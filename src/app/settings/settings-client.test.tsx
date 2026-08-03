@@ -21,6 +21,9 @@ vi.mock('@/app/actions/preferences', () => ({
 }));
 
 function editShortcut(label: string): HTMLElement {
+  if (!screen.queryByText(label)) {
+    fireEvent.click(screen.getByRole('button', { name: 'Preferences' }));
+  }
   const row = screen.getByText(label).closest('.group');
   if (!(row instanceof HTMLElement)) throw new Error(`No row for ${label}`);
   fireEvent.click(within(row).getByRole('button'));
@@ -103,7 +106,7 @@ describe('shortcut settings policy', () => {
     render(<SettingsClient />);
     await waitFor(() =>
       expect(
-        (window.electron!.shortcuts!.systemHotkeys as ReturnType<typeof vi.fn>)
+        window.electron!.shortcuts!.systemHotkeys as ReturnType<typeof vi.fn>
       ).toHaveBeenCalled()
     );
     const capture = editShortcut('Terminal');
@@ -140,7 +143,7 @@ describe('shortcut settings policy', () => {
     render(<SettingsClient />);
     await waitFor(() =>
       expect(
-        (window.electron!.shortcuts!.systemHotkeys as ReturnType<typeof vi.fn>)
+        window.electron!.shortcuts!.systemHotkeys as ReturnType<typeof vi.fn>
       ).toHaveBeenCalled()
     );
     const capture = editShortcut('Terminal');
@@ -187,7 +190,9 @@ describe('shortcut settings policy', () => {
       altKey: true,
     });
 
-    expect(screen.getByText(/reserved for Project switching/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/reserved for Project switching/)
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 });

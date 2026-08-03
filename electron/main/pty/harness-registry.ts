@@ -35,8 +35,21 @@ export type DelegationCapability =
   | { observable: true; mechanism: 'settings-hooks' }
   | { observable: false; reason: string };
 
-interface HarnessLaunchDescriptor {
+export interface HarnessLaunchDescriptor {
   id: AgentHarness;
+  /** Stable operator-facing source metadata. Renderer code receives this
+   * through the normalized source registry; it must not grow a second copy. */
+  source: {
+    label: string;
+    connectionName: string;
+    color: string;
+    executable: string;
+    versionArgs: readonly string[];
+    authStatusArgs: readonly string[];
+    authLoginArgs: readonly string[];
+    authOwner: string;
+    modelDiscovery: 'live-catalog' | 'configured-value';
+  };
   /** Some CLIs require Exawatt to allocate identity before a fresh launch. */
   allocatesFreshSessionId: boolean;
   delegation: DelegationCapability;
@@ -64,6 +77,17 @@ const workspaceReviewFlags = (mode: AgentPermissionMode): string =>
 const descriptors = {
   claude: {
     id: 'claude',
+    source: {
+      label: 'Claude Code',
+      connectionName: 'Local',
+      color: '#DD896F',
+      executable: 'claude',
+      versionArgs: ['--version'],
+      authStatusArgs: ['auth', 'status', '--json'],
+      authLoginArgs: ['auth', 'login'],
+      authOwner: 'Claude Code',
+      modelDiscovery: 'live-catalog',
+    },
     allocatesFreshSessionId: true,
     // Verified 2026-07-27: hooks supplied this way MERGE with the user's own
     // project and local hooks instead of replacing them, and nothing under
@@ -92,6 +116,17 @@ const descriptors = {
   },
   codex: {
     id: 'codex',
+    source: {
+      label: 'Codex',
+      connectionName: 'Local',
+      color: '#ECECEC',
+      executable: 'codex',
+      versionArgs: ['--version'],
+      authStatusArgs: ['login', 'status'],
+      authLoginArgs: ['login'],
+      authOwner: 'Codex',
+      modelDiscovery: 'live-catalog',
+    },
     allocatesFreshSessionId: false,
     // Codex has no Agent/Task tool, and ENG-008 E0 measured zero delegated
     // records across its whole local corpus. Its hooks are also trust-gated

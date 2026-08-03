@@ -16,6 +16,14 @@ Project, while keeping the choice visible and changeable. A blank task starts an
 interactive Agent Session. Plain shells remain available as a separate Project
 tool. **⌘T** opens a new Agent tab; **⌘⌥T** opens a shell directly.
 
+Open **Settings → Agent Sources** to inspect the source registry. Local Claude
+Code and Codex show installation, sign-in, minimum account identity, version,
+model-discovery method, capabilities, and enforcement ownership without moving
+their credentials into Exawatt. Local OpenClaw reports gateway configuration
+and reachability separately, and Demo Mode labels its facts as simulated. Use
+**Recheck** after changing a CLI or gateway; a source-owned sign-in action opens
+in Terminal when the installed CLI requires it.
+
 The ribbon keeps Project structure compact. The selected Project expands to
 show its Initiative-shaped Agent tabs; inactive Projects stay collapsed unless
 you use the small diamond or **Keep expanded** menu action. That preference

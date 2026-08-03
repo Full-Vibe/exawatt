@@ -608,7 +608,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Registry + Adapters',
           summary:
-            'Configured source instances and source-first adapters that preserve installation, reachability, authentication, identity, compatibility, capability, freshness, and provenance; discover live model/effort evidence where supported; and derive Project-effective launch truth without owning provider credentials.',
+            'Electron-main source registry and source-first adapters powering production Settings and the Terminal composer: normalized local Claude, Codex, OpenClaw, and Demo facts; live model/effort evidence where supported; source-owned auth actions; and no provider credentials in the renderer.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,

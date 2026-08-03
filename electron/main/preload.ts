@@ -31,6 +31,14 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.removeAllListeners(channel);
     },
   },
+  agentSources: {
+    list: (scope: 'all' | 'launch' = 'all', refresh = false) =>
+      ipcRenderer.invoke('agent-sources:list', scope, refresh),
+    act: (
+      harness: 'claude' | 'codex',
+      action: 'authenticate' | 'choose-model'
+    ) => ipcRenderer.invoke('agent-sources:act', harness, action),
+  },
   pty: {
     create: (options: unknown) => ipcRenderer.invoke('pty:create', options),
     listAgentModels: (harness: string, cwd: string) =>
