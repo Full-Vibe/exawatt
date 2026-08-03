@@ -72,6 +72,19 @@ function percentile(sorted, p) {
 }
 
 const SCENARIOS = [
+  // The REAL demo fleet (ENG-027 W3/W4, Voltaic) — canonical V3.1 numbers.
+  { id: 'voltaic-fleet', fleet: 'voltaic', altitude: 'fleet', park: true },
+  {
+    id: 'voltaic-fleet-angle',
+    fleet: 'voltaic',
+    altitude: 'fleet',
+    park: true,
+    projection: 'fixed-angle',
+  },
+  // Largest Voltaic Project (dispatch-engine, 28 Agents) — individual pieces
+  // + DOM agent controls path.
+  { id: 'voltaic-project', fleet: 'voltaic', altitude: 'project', park: false },
+  // Synthetic headroom tiers beyond the authored fleet.
   { id: 'fleet-150', agents: 150, altitude: 'fleet', park: true },
   { id: 'fleet-1000', agents: 1000, altitude: 'fleet', park: true },
   { id: 'fleet-10000', agents: 10000, altitude: 'fleet', park: true },
@@ -221,7 +234,9 @@ async function run() {
       if (message.type() === 'error') errors.push(message.text());
     });
 
-    const params = new URLSearchParams({ agents: String(scenario.agents) });
+    const params = new URLSearchParams();
+    if (scenario.fleet) params.set('fleet', scenario.fleet);
+    else params.set('agents', String(scenario.agents));
     if (scenario.altitude === 'project') params.set('altitude', 'project');
     if (scenario.projection) params.set('projection', scenario.projection);
     const url = `${EXA_BASE}/eval/t10-board-scale?${params.toString()}`;

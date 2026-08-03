@@ -15,7 +15,13 @@
 
 import { Suspense, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
-import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
+import {
+  DEMO_PROJECTS_BY_KEY,
+  demoFleetAgents,
+  type ExawattAgent,
+  type FleetMetrics,
+  type FleetState,
+} from '@exawatt/core';
 import {
   selectSpatialBoardLayout,
   type SpatialBoardProjection,
@@ -130,6 +136,53 @@ function buildFleet(agentCount: number, projectCount: number): FleetState {
   return { agents, metrics, lastUpdated: 1 };
 }
 
+/**
+ * The REAL demo fleet (ENG-027 W3/W4 — Voltaic Grid Systems) mapped into
+ * FleetState. This is the canonical V3.1 measurement target; the synthetic
+ * generator above provides 1k/10k headroom beyond it.
+ */
+function buildVoltaicFleet(): FleetState {
+  const demo = demoFleetAgents('scale');
+  const agents: Record<string, ExawattAgent> = {};
+  let blocked = 0;
+  let active = 0;
+  for (const item of demo) {
+    if (item.status === 'blocked' || item.status === 'error') blocked++;
+    if (item.status === 'working' || item.status === 'reviewing') active++;
+    agents[item.id] = {
+      id: item.id,
+      name: item.name,
+      project: DEMO_PROJECTS_BY_KEY.get(item.projectKey)?.name ?? item.projectKey,
+      status: item.status,
+      goal: item.goal,
+      sessionKey: item.id,
+      metrics: {
+        tokensIn: item.usage.input,
+        tokensOut: item.usage.output,
+        estimatedCost: 0,
+        turnCount: item.turns,
+        startedAt: item.startedAtMs,
+        duration: 0,
+        costRate: 0,
+        tokenRate: 0,
+        costHistory: [],
+      },
+      lastActivityAt: item.lastActivityAtMs,
+      createdAt: item.startedAtMs,
+    };
+  }
+  const metrics: FleetMetrics = {
+    activeCount: active,
+    blockedCount: blocked,
+    idleCount: demo.length - active - blocked,
+    totalCost: 0,
+    totalTokens: 0,
+    totalCostRate: 0,
+    costByProject: {},
+  };
+  return { agents, metrics, lastUpdated: 1 };
+}
+
 declare global {
   interface Window {
     __EVAL_BOARD__?: {
@@ -143,6 +196,7 @@ declare global {
 
 function BoardScaleFixture() {
   const params = useSearchParams();
+  const voltaic = params.get('fleet') === 'voltaic';
   const agentCount = Math.max(1, Number(params.get('agents') ?? 1000) || 1000);
   const projectCount = Math.max(
     1,
@@ -152,14 +206,15 @@ function BoardScaleFixture() {
   const altitude = params.get('altitude') === 'project' ? 'project' : 'fleet';
   const focusedProjectId =
     altitude === 'project'
-      ? (params.get('project') ?? `project:${PROJECT_NAMES[0]}`)
+      ? (params.get('project') ??
+        (voltaic ? 'project:dispatch-engine' : `project:${PROJECT_NAMES[0]}`))
       : null;
   const projection: SpatialBoardProjection =
     params.get('projection') === 'fixed-angle' ? 'fixed-angle' : 'top-down';
 
   const state = useMemo(
-    () => buildFleet(agentCount, projectCount),
-    [agentCount, projectCount]
+    () => (voltaic ? buildVoltaicFleet() : buildFleet(agentCount, projectCount)),
+    [agentCount, projectCount, voltaic]
   );
   const { layout, layoutMs } = useMemo(() => {
     const start = performance.now();

@@ -1087,6 +1087,111 @@ Acceptance:
   complete); `pnpm eval:r3f` and the full-route spatial evaluator pass
 - no regression in draw-call counts beyond the added halo/effects budget
 
+### V3.1 Demo-scale board — RENDERING
+
+Status: landed 2026-08-02 — measured against the real ENG-027 W4 fleet
+(Voltaic, 173 Agents / 10 Projects) plus synthetic 1k/10k headroom tiers.
+Unparks the RENDERING half of V2.1 only; the truth half (Initiative-level
+aggregation, aggregate Project drill) stays parked.
+
+Rendering strategies, each with the budget it serves:
+
+- **Instancing — population dot fields.** Every aggregate piece (status +
+  count per zone) expands into deterministic per-agent status dots packed
+  inside its zone rect, drawn as ONE `InstancedMesh` for the entire board
+  (`operations-board/population-dots.ts`, pure and unit-tested). Dots are
+  banded in board status order, use the exact status-light protocol colors,
+  are non-raycastable (zones stay the click target), and carry no per-agent
+  React elements or DOM labels. Dot pitch adapts from 1.7 (a handful of
+  agents read as substantial marks) down to 0.22 world units; beyond a zone's
+  geometric capacity the field downsamples with largest-remainder
+  proportional representation and reports `truncated` — the zone's DOM
+  control always carries the exact count, so density never lies. Replaces
+  the previous six-status-discs-plus-DOM-count-labels treatment (150 drei
+  `<Html>` labels at 10k → 0).
+- **Density zone sizing.** A focused Project beyond the 120-piece individual
+  budget used to emit a footprint sized for thousands of never-rendered
+  slots — at 10k the camera fit framed an empty sliver (screenshot in the
+  eval report). Aggregated Projects now size to bounded density content
+  (`densityZoneRect`), so the giant-Project drill reads as a banded
+  population field with correct framing.
+- **Label budgets — projected-size zone-label tiers.** Full DOM zone cards
+  render only when a zone's projected width affords them (≥290px, with
+  hysteresis at 250px); below that a one-line chip (name · count · blocked)
+  keeps identity and the drill affordance. Fixed-size cards previously
+  covered entire zones at fleet fit zoom, hiding exactly the population the
+  scale moment exists to show. The tier flips on boundary crossings only —
+  never per frame. Existing piece-label budgets (8 fleet / 32 project)
+  unchanged.
+- **Transparent-sort correctness.** Dot field and zone plates are both
+  origin-anchored instanced meshes, so painter sorting cannot order them by
+  depth; an explicit `renderOrder` keeps dots above plates in both
+  projections (the fixed-angle projection silently lost the entire field
+  without it — triangles drawn, pixels overwritten).
+- **Demand-loop parking preserved.** The dot field is static after its
+  entrance fade; at aggregate density there are no rotors, so the V2.4
+  ambient gates hold and the settled scene renders zero frames.
+
+Measured numbers (canonical run: headed Chromium, real GPU, non-primary
+display, 1400×860, top-down and fixed-angle; `pnpm eval:spatial:scale`):
+
+| Scenario | Agents | Emitted pieces | Layout | Glide raf p50/p95 | Draw calls | JS heap | Parks |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Voltaic fleet (W4) | 173 / 10 Projects | 48 aggregates → dots | 1.4ms | 8.3 / 9.3ms | 6 | 35MB | 0 frames |
+| Voltaic fleet, fixed-angle | 173 | 48 → dots | 1.3ms | 8.3 / 9.2ms | 6 | 34MB | 0 frames |
+| Voltaic project drill (dispatch-engine) | 28 individual | 28 pieces + controls | 1.3ms | 8.3 / 9.2ms | 13 | 40MB | n/a (rotors) |
+| Synthetic fleet | 1,000 / 26 | 148 → dots | 2.4ms | 8.3 / 9.0ms | 6 | 37MB | 0 frames |
+| Synthetic fleet | 10,000 / 26 | 150 → dots | 11.5ms | 8.3 / 9.2ms | 6 | 37MB | 0 frames |
+| Synthetic giant-Project drill | 3,334 in one Project | 6 → dots | 9.8ms | 8.3 / 9.3ms | 6 | 35MB | n/a |
+
+Wheel-zoom bursts match the glide numbers (p95 ≤ 9.3ms); `gl.render` CPU
+cost stays ≤0.1ms p95 at every scale. 10k dots ≈ 55.6k triangles — trivial
+GPU load. The 120Hz reference display's 8.3ms cadence means every scenario
+holds the 60fps/16.7ms budget with 2x headroom.
+
+Supporting scaffolding (measurement is a deliverable, not a byproduct):
+
+- `/eval/t10-board-scale` — deterministic fixture: seeded synthetic fleets
+  (`?agents=N&projects=P`) and the real Voltaic fleet (`?fleet=voltaic`),
+  both altitudes, both projections; exposes layout cost and stats.
+- `pnpm eval:spatial:scale` — frame cadence + `gl.render` CPU sampling
+  during held-key glide and wheel-zoom bursts, draw calls, heap,
+  park-at-rest quiescence gate, 9-point blank gate, screenshots per
+  scenario. Headless by default; `SCALE_HEADED=1 SCALE_WINDOW_POS=x,y` for
+  real-GPU runs on a non-primary display.
+- `t10-board-scale` ratcheted into `pnpm eval:r3f` (1 draw call at rest for
+  the 1k board).
+- Demo scale tiers `xl` (1k) / `xxl` (10k) in `MockFleetTransport` and
+  DemoControls drive the full route to demo scale; the synthetic project
+  list now exceeds the 24-zone budget so the `+N more Projects` aggregate
+  zone is exercised.
+
+Also fixed in this pass: the full-route evaluator's Agent-unit locator had
+been stale since the status-light protocol landed (2026-07-23) — it matched
+pre-protocol aria-labels and found zero units; it now selects
+`button[data-board-agent][data-board-status-light]`. All four contexts pass
+again.
+
+Known limits, recorded not hidden:
+
+- A zone saturates at its geometric dot capacity (~2k dots at the smallest
+  pitch); beyond that the field downsamples proportionally and the DOM
+  count stays exact. The 3,334-agent synthetic zone renders ~2k dots.
+- Delegated child runs (36 in the W4 fleet) are not board entities; the
+  board renders top-level Agents. Delegation topology arrives via ENG-023
+  D3 as a Project/Agent-altitude detail, per the design pass.
+- Per-status numeric counts left the canvas with the aggregate discs; the
+  zone control's health rail and count plus the dot banding carry the
+  composition. If dogfood misses the numbers, reopen as a V2.1-truth
+  concern, not a rendering one.
+
+Verification: type-check, lint, 1,065 unit tests (23 new: dot-field packing
+and density-rect coverage), `eval:r3f` 100/100 across ten fixtures,
+`eval:spatial` 4/4 contexts, `eval:spatial:pointer` full pass, production
+build, and the scale eval above. Screenshot evidence for every scenario in
+the eval report; full-route XXL screenshots (10,000 agents through the real
+DemoControls) captured at fleet and project altitudes.
+
 ### V2.1 Scale & Truth
 
 Status: planned; gated by V2.0
