@@ -16,6 +16,7 @@ export type WorkspaceContextCommand =
   | 'toggle-split'
   | 'close-tab'
   | 'move-tab'
+  | 'move-project'
   | 'jump-attention'
   | 'open-roadmap';
 
@@ -36,6 +37,8 @@ export interface WorkspaceCommandAvailabilityInput {
   canClose: boolean;
   /** the active tab has at least one sibling to trade places with */
   canMoveTab: boolean;
+  /** the active Project has at least one sibling to trade places with */
+  canMoveProject: boolean;
   hasAttentionTarget: boolean;
   closedSessionCount: number;
 }
@@ -56,6 +59,7 @@ export function deriveWorkspaceCommandAvailability({
   canToggleSplit,
   canClose,
   canMoveTab,
+  canMoveProject,
   hasAttentionTarget,
   closedSessionCount,
 }: WorkspaceCommandAvailabilityInput): WorkspaceCommandAvailability {
@@ -85,6 +89,9 @@ export function deriveWorkspaceCommandAvailability({
       'move-tab': canMoveTab
         ? available()
         : unavailable('Needs a second Session in the Project'),
+      'move-project': canMoveProject
+        ? available()
+        : unavailable('Needs a second open Project'),
       'jump-attention': hasAttentionTarget
         ? available()
         : unavailable('No Sessions need you'),
@@ -102,6 +109,7 @@ export const EMPTY_WORKSPACE_COMMAND_AVAILABILITY =
     canToggleSplit: false,
     canClose: false,
     canMoveTab: false,
+    canMoveProject: false,
     hasAttentionTarget: false,
     closedSessionCount: 0,
   });

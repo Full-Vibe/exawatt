@@ -53,6 +53,7 @@ import {
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
   CLOSE_ACTIVE_EVENT,
+  MOVE_ACTIVE_PROJECT_EVENT,
   MOVE_ACTIVE_TAB_EVENT,
   REOPEN_CLOSED_EVENT,
   OPEN_ROADMAP_EVENT,
@@ -169,6 +170,32 @@ const MOVE_TAB_RIGHT_KEYS: ShortcutKeys = {
   key: ']',
   modifiers: ['meta', 'alt'],
 };
+const MOVE_PROJECT_LEFT_KEYS: ShortcutKeys = {
+  key: '[',
+  modifiers: ['meta', 'alt', 'shift'],
+};
+const MOVE_PROJECT_RIGHT_KEYS: ShortcutKeys = {
+  key: ']',
+  modifiers: ['meta', 'alt', 'shift'],
+};
+
+const WORKSPACE_PALETTE_ROW_ID = {
+  rename: 'ws-rename',
+  color: 'ws-color',
+  split: 'ws-split',
+  jump: 'ws-jump',
+  roadmap: 'ws-roadmap',
+  moveTabLeft: 'ws-move-left',
+  moveTabRight: 'ws-move-right',
+  moveProjectLeft: 'ws-move-project-left',
+  moveProjectRight: 'ws-move-project-right',
+  close: 'ws-close',
+} as const;
+
+/** Contract join for fixed families that declare command-palette coverage. */
+export const WORKSPACE_PALETTE_ROW_IDS: ReadonlySet<string> = new Set(
+  Object.values(WORKSPACE_PALETTE_ROW_ID)
+);
 
 /** palette icon per manifest surface — the manifest stays render-free */
 const SURFACE_ICONS: Record<AppSurface['id'], LucideIcon> = {
@@ -384,7 +411,7 @@ export function CommandPalette({
     void shortcutVersion;
     return [
       {
-        id: 'ws-rename',
+        id: WORKSPACE_PALETTE_ROW_ID.rename,
         label: 'Rename the active tab',
         value: 'rename tab title active',
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-rename'),
@@ -393,7 +420,7 @@ export function CommandPalette({
         onSelect: () => dispatch(RENAME_ACTIVE_EVENT),
       },
       {
-        id: 'ws-color',
+        id: WORKSPACE_PALETTE_ROW_ID.color,
         label: 'Rename or recolor the active Project',
         value: 'rename color project swatch recolor palette hue',
         icon: Palette,
@@ -402,7 +429,7 @@ export function CommandPalette({
         onSelect: () => dispatch(EDIT_ACTIVE_PROJECT_EVENT),
       },
       {
-        id: 'ws-split',
+        id: WORKSPACE_PALETTE_ROW_ID.split,
         label: 'Split: pin / unpin the active tab',
         value: 'split pane pin unpin side by side watch',
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-split'),
@@ -411,7 +438,7 @@ export function CommandPalette({
         onSelect: () => dispatch(TOGGLE_SPLIT_EVENT),
       },
       {
-        id: 'ws-jump',
+        id: WORKSPACE_PALETTE_ROW_ID.jump,
         label: 'Jump to the Session needing you',
         value: 'jump attention needs you blocked waiting',
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-jump-attention'),
@@ -420,7 +447,7 @@ export function CommandPalette({
         onSelect: () => dispatch(JUMP_ATTENTION_EVENT),
       },
       {
-        id: 'ws-roadmap',
+        id: WORKSPACE_PALETTE_ROW_ID.roadmap,
         label: 'Open the Project roadmap',
         value: 'roadmap plan queue milestones next up shipped blocked sessions',
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-roadmap'),
@@ -429,7 +456,7 @@ export function CommandPalette({
         onSelect: () => dispatch(OPEN_ROADMAP_EVENT),
       },
       {
-        id: 'ws-move-left',
+        id: WORKSPACE_PALETTE_ROW_ID.moveTabLeft,
         label: 'Move tab left',
         value: 'move tab left reorder arrange shift nudge order',
         // fixed arrangement family (D20) — displayed, not rebindable
@@ -446,7 +473,7 @@ export function CommandPalette({
           ),
       },
       {
-        id: 'ws-move-right',
+        id: WORKSPACE_PALETTE_ROW_ID.moveTabRight,
         label: 'Move tab right',
         value: 'move tab right reorder arrange shift nudge order',
         shortcut: MOVE_TAB_RIGHT_KEYS,
@@ -462,7 +489,39 @@ export function CommandPalette({
           ),
       },
       {
-        id: 'ws-close',
+        id: WORKSPACE_PALETTE_ROW_ID.moveProjectLeft,
+        label: 'Move Project left',
+        value: 'move project left reorder arrange shift nudge order',
+        shortcut: MOVE_PROJECT_LEFT_KEYS,
+        icon: ArrowLeftToLine,
+        availability: workspaceAvailability.commands['move-project'],
+        onSelect: () =>
+          handleSelect(() =>
+            window.dispatchEvent(
+              new CustomEvent(MOVE_ACTIVE_PROJECT_EVENT, {
+                detail: { delta: -1 },
+              })
+            )
+          ),
+      },
+      {
+        id: WORKSPACE_PALETTE_ROW_ID.moveProjectRight,
+        label: 'Move Project right',
+        value: 'move project right reorder arrange shift nudge order',
+        shortcut: MOVE_PROJECT_RIGHT_KEYS,
+        icon: ArrowRightToLine,
+        availability: workspaceAvailability.commands['move-project'],
+        onSelect: () =>
+          handleSelect(() =>
+            window.dispatchEvent(
+              new CustomEvent(MOVE_ACTIVE_PROJECT_EVENT, {
+                detail: { delta: 1 },
+              })
+            )
+          ),
+      },
+      {
+        id: WORKSPACE_PALETTE_ROW_ID.close,
         label: 'Close the active tab or empty Project',
         value: 'close tab agent empty project kill session end',
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-close-tab'),

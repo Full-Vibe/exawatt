@@ -26,10 +26,10 @@
  * reserved for the workspace — the global chord engine can't see keystrokes
  * from inside xterm's hidden textarea). Every verb resolves its CURRENT
  * combo from the shortcut registry (ENG-016 D9), so rebinding in Settings
- * changes what the workspace responds to; only ⌘⌥1…9 and the ⌘⇧[/⌘⇧] tab
- * ring remain fixed key families. Each action reports whether it actually
- * applied — default behavior is prevented ONLY then, so impossible chords
- * (no tabs, web fallback) keep their browser behavior.
+ * changes what the workspace responds to. Non-rebindable key families derive
+ * behavior and help text from one typed manifest (ENG-016 D44). Each action
+ * reports whether it actually applied — default behavior is prevented ONLY
+ * then, so impossible chords (no tabs, web fallback) keep browser behavior.
  */
 import { useEffect } from 'react';
 import { shortcutRegistry } from '@/lib/shortcuts';
@@ -37,6 +37,10 @@ import { eventToBinding } from '@/lib/shortcuts/format';
 import { bindingsMatch, isChord } from '@/types/shortcuts';
 import { requestQuickFeedback } from '@/components/feedback/quick-feedback-events';
 import type { CommandAltitude } from '@/components/nav/command-altitude';
+import {
+  WORKSPACE_KEY_FAMILIES,
+  type FixedFamilyAction,
+} from '@/lib/shortcuts/fixed-families';
 
 /** does this event match the registry's CURRENT binding for a shortcut id?
  *  (users can rebind any workspace verb; hard-coding combos here would make
@@ -108,6 +112,28 @@ export interface WorkspaceShortcutActions {
   focusTerminal: () => boolean;
 }
 
+export function applyFixedFamilyAction(
+  action: FixedFamilyAction,
+  actions: WorkspaceShortcutActions
+): boolean {
+  switch (action.kind) {
+    case 'cycle-tab':
+      return actions.cycle(action.delta);
+    case 'move-tab':
+      return actions.moveTab(action.delta);
+    case 'move-project':
+      return actions.moveProject(action.delta);
+    case 'select-project':
+      return actions.selectIndex(action.index);
+    case 'select-tab':
+      return actions.selectTabOrdinal(action.index);
+    case 'toggle-focus':
+      return actions.toggleFocus();
+    case 'focus-terminal':
+      return actions.focusTerminal();
+  }
+}
+
 export function useWorkspaceShortcuts(
   actions: WorkspaceShortcutActions,
   enabled = true
@@ -125,8 +151,11 @@ export function useWorkspaceShortcuts(
     };
     const onCaptureKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || isModalTarget(e)) return;
-      if (e.key === 'F6') {
-        if (actions.toggleFocus()) e.preventDefault();
+      for (const family of WORKSPACE_KEY_FAMILIES) {
+        if (family.phase !== 'capture' || !family.outranksAltitudes) continue;
+        const action = family.match(e);
+        if (!action) continue;
+        if (applyFixedFamilyAction(action, actions)) e.preventDefault();
         return;
       }
       // Absolute command altitudes own capture phase so they work from xterm.
@@ -146,39 +175,16 @@ export function useWorkspaceShortcuts(
         }
       }
 
-      if (!e.metaKey || e.ctrlKey) return;
-
       // Fixed workspace navigation owns capture phase so xterm and the
       // global ⌘[/⌘] history layer cannot consume overlapping key families.
-      if (!e.altKey && e.shiftKey && e.code === 'BracketLeft') {
-        if (actions.cycle(-1)) e.preventDefault();
+      // Altitude destinations intentionally ran first, so an altitude rebound
+      // onto a bare ⌘digit still wins over tab ordinals (D19).
+      for (const family of WORKSPACE_KEY_FAMILIES) {
+        if (family.phase !== 'capture' || family.outranksAltitudes) continue;
+        const action = family.match(e);
+        if (!action) continue;
+        if (applyFixedFamilyAction(action, actions)) e.preventDefault();
         return;
-      }
-      if (!e.altKey && e.shiftKey && e.code === 'BracketRight') {
-        if (actions.cycle(1)) e.preventDefault();
-        return;
-      }
-      // arrangement (D20): ⌘⌥ nudges the tab, ⌘⌥⇧ nudges the Project
-      if (e.altKey && (e.code === 'BracketLeft' || e.code === 'BracketRight')) {
-        const delta = e.code === 'BracketRight' ? 1 : -1;
-        const apply = e.shiftKey ? actions.moveProject : actions.moveTab;
-        if (apply(delta)) e.preventDefault();
-        return;
-      }
-      const ordinal = /^Digit([1-9])$/.exec(e.code);
-      if (e.altKey && !e.shiftKey && ordinal) {
-        if (actions.selectIndex(Number(ordinal[1]) - 1)) {
-          e.preventDefault();
-        }
-        return;
-      }
-      // ⌘1–⌘9 tab ordinals (D18): the highest-frequency switch gets the
-      // cheapest chord. The altitude destinations matched above run first,
-      // so a rebind of an altitude back onto a bare ⌘digit still wins there.
-      if (!e.altKey && !e.shiftKey && ordinal) {
-        if (actions.selectTabOrdinal(Number(ordinal[1]) - 1)) {
-          e.preventDefault();
-        }
       }
     };
     const onKey = (e: KeyboardEvent) => {
@@ -188,11 +194,19 @@ export function useWorkspaceShortcuts(
       // a modal surface (⌘K palette, help modal) owns the keyboard while
       // open — ⌘W there must not close a terminal tab behind it
       if (isModalTarget(e)) return;
-      if (e.key === 'Escape') {
+      for (const family of WORKSPACE_KEY_FAMILIES) {
+        if (family.phase !== 'bubble') continue;
+        const action = family.match(e);
+        if (!action) continue;
+        // Applicability belongs to the layer, not the matcher: Escape names
+        // focus-terminal everywhere, but the terminal keeps it for the TUI.
         const inTerminal =
+          action.kind === 'focus-terminal' &&
           e.target instanceof Element &&
           !!e.target.closest('.xterm-helper-textarea');
-        if (!inTerminal && actions.focusTerminal()) e.preventDefault();
+        if (!inTerminal && applyFixedFamilyAction(action, actions)) {
+          e.preventDefault();
+        }
         return;
       }
       // a modifier-less keystroke in a text surface is TYPING — never let a

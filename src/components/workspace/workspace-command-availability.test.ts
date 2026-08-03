@@ -9,6 +9,7 @@ describe('workspace command availability', () => {
       canToggleSplit: false,
       canClose: false,
       canMoveTab: false,
+      canMoveProject: false,
       hasAttentionTarget: false,
       closedSessionCount: 0,
     });
@@ -30,6 +31,7 @@ describe('workspace command availability', () => {
       canToggleSplit: false,
       canClose: true,
       canMoveTab: false,
+      canMoveProject: false,
       hasAttentionTarget: false,
       closedSessionCount: 2,
     });
@@ -43,6 +45,9 @@ describe('workspace command availability', () => {
     expect(state.commands['move-tab'].reason).toBe(
       'Needs a second Session in the Project'
     );
+    expect(state.commands['move-project'].reason).toBe(
+      'Needs a second open Project'
+    );
     expect(state.commands['toggle-split'].available).toBe(false);
     expect(state.commands['jump-attention'].available).toBe(false);
   });
@@ -54,6 +59,7 @@ describe('workspace command availability', () => {
       canToggleSplit: true,
       canClose: true,
       canMoveTab: true,
+      canMoveProject: true,
       hasAttentionTarget: true,
       closedSessionCount: 0,
     });
@@ -61,6 +67,7 @@ describe('workspace command availability', () => {
     expect(state.commands['rename-tab'].available).toBe(true);
     expect(state.commands['toggle-split'].available).toBe(true);
     expect(state.commands['move-tab'].available).toBe(true);
+    expect(state.commands['move-project'].available).toBe(true);
     expect(state.commands['jump-attention'].available).toBe(true);
     expect(state.commands['reopen-closed-tab'].reason).toBe(
       'No recently closed Sessions'

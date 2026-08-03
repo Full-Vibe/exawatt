@@ -41,6 +41,7 @@ import {
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
   CLOSE_ACTIVE_EVENT,
+  MOVE_ACTIVE_PROJECT_EVENT,
   MOVE_ACTIVE_TAB_EVENT,
   requestProjectPicker,
   requestAgentComposer,
@@ -69,6 +70,23 @@ const MENU_COMMAND_SHORTCUTS: Record<string, string> = {
   'close-tab': 'workspace-close-tab',
   'jump-attention': 'workspace-jump-attention',
 };
+
+const WORKSPACE_MENU_AVAILABILITY_COMMANDS = [
+  'launch-shell',
+  'reopen-closed-tab',
+  'rename-tab',
+  'toggle-split',
+  'move-tab-left',
+  'move-tab-right',
+  'move-project-left',
+  'move-project-right',
+  'close-tab',
+  'jump-attention',
+] as const;
+
+/** Contract join for fixed families that declare native-menu coverage. */
+export const WORKSPACE_MENU_AVAILABILITY_COMMAND_IDS: ReadonlySet<string> =
+  new Set(WORKSPACE_MENU_AVAILABILITY_COMMANDS);
 
 interface ShortcutContextValue {
   openCommandPalette: () => void;
@@ -299,6 +317,21 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             );
           }
           break;
+        case 'move-project-left':
+        case 'move-project-right':
+          if (
+            onWorkspaceRoute &&
+            workspaceAvailability.commands['move-project'].available
+          ) {
+            window.dispatchEvent(
+              new CustomEvent(MOVE_ACTIVE_PROJECT_EVENT, {
+                detail: {
+                  delta: command === 'move-project-right' ? 1 : -1,
+                },
+              })
+            );
+          }
+          break;
         case 'close-tab':
           if (
             onWorkspaceRoute &&
@@ -353,17 +386,25 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     const api = window.electron?.menu?.syncAvailability;
     if (!api) return;
     const commands = workspaceAvailability.commands;
-    void api({
+    const availability: Record<
+      (typeof WORKSPACE_MENU_AVAILABILITY_COMMANDS)[number],
+      boolean
+    > = {
       'launch-shell': commands['launch-shell'].available,
       'reopen-closed-tab': commands['reopen-closed-tab'].available,
       'rename-tab': onWorkspaceRoute && commands['rename-tab'].available,
       'toggle-split': onWorkspaceRoute && commands['toggle-split'].available,
       'move-tab-left': onWorkspaceRoute && commands['move-tab'].available,
       'move-tab-right': onWorkspaceRoute && commands['move-tab'].available,
+      'move-project-left':
+        onWorkspaceRoute && commands['move-project'].available,
+      'move-project-right':
+        onWorkspaceRoute && commands['move-project'].available,
       'close-tab': onWorkspaceRoute && commands['close-tab'].available,
       'jump-attention':
         onWorkspaceRoute && commands['jump-attention'].available,
-    });
+    };
+    void api(availability);
   }, [onWorkspaceRoute, workspaceAvailability]);
 
   // Determine current contexts based on route

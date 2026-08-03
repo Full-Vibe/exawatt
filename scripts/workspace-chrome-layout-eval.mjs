@@ -1017,6 +1017,75 @@ try {
     );
   }
 
+  // ── Move Project verbs: the new ⌘K rows and the existing ⌘⌥⇧ chord now
+  // share the same event/action seam, just like the tab arrangement family. ──
+  const projectOrder = () =>
+    page.evaluate(() =>
+      Array.from(
+        document.querySelectorAll('[data-ribbon-item="project"]')
+      ).map(node => node.getAttribute('data-project-dir'))
+    );
+  const projectOrderBeforeMove = await projectOrder();
+  if (projectOrderBeforeMove[1] !== '/tmp/exawatt') {
+    throw new Error(
+      `Move-Project fixture expectation drifted: ${JSON.stringify(projectOrderBeforeMove)}`
+    );
+  }
+  await page.keyboard.press('Meta+KeyK');
+  await page.locator('[cmdk-root]').waitFor();
+  await page.locator('[cmdk-input]').fill('move project right');
+  await page.getByText('Move Project right').waitFor();
+  for (let i = 0; i < 8; i += 1) {
+    const selected = await page.evaluate(
+      () =>
+        document.querySelector('[cmdk-item][aria-selected="true"]')
+          ?.textContent ?? ''
+    );
+    if (selected.includes('Move Project right')) break;
+    await page.keyboard.press('ArrowDown');
+  }
+  await page.keyboard.press('Enter');
+  await page.locator('[cmdk-root]').waitFor({ state: 'detached' });
+  await page.waitForTimeout(350);
+  const projectOrderAfterPalette = await projectOrder();
+  if (
+    projectOrderAfterPalette[1] !== projectOrderBeforeMove[2] ||
+    projectOrderAfterPalette[2] !== projectOrderBeforeMove[1]
+  ) {
+    throw new Error(
+      `Palette Move Project right did not reorder: ${JSON.stringify({ projectOrderBeforeMove, projectOrderAfterPalette })}`
+    );
+  }
+  await page.keyboard.press('Meta+Alt+Shift+BracketLeft');
+  await page.waitForTimeout(350);
+  const projectOrderAfterChord = await projectOrder();
+  if (projectOrderAfterChord.join() !== projectOrderBeforeMove.join()) {
+    throw new Error(
+      `⌘⌥⇧[ did not restore Project order: ${JSON.stringify({ projectOrderBeforeMove, projectOrderAfterChord })}`
+    );
+  }
+
+  // The help modal is the exhaustive face of both the registry and manifest.
+  await page.setViewportSize({ width: 1312, height: 1000 });
+  await page.keyboard.press('Meta+Slash');
+  const shortcutDialog = page.getByRole('dialog');
+  await shortcutDialog.waitFor();
+  for (const label of [
+    'Move focus between terminal and chrome',
+    'Jump to tab 1–8, or 9 for the last tab',
+    'Return focus to the terminal',
+  ]) {
+    await shortcutDialog.getByText(label).waitFor();
+  }
+  await shortcutDialog
+    .getByText('Return focus to the terminal')
+    .scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: join(SCREENSHOT_DIR, 'shortcut-help-all-families.png'),
+  });
+  await page.keyboard.press('Escape');
+  await shortcutDialog.waitFor({ state: 'detached' });
+
   await page.setViewportSize({ width: 800, height: 700 });
   // the strip clicks above click-away-collapsed the summoned composer —
   // reopen it for the permission-menu geometry checks

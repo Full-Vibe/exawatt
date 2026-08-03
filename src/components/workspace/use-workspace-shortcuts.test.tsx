@@ -307,4 +307,24 @@ describe('keyboard doctrine + arrangement (D20)', () => {
     expect(handlers.moveProject).toHaveBeenLastCalledWith(-1);
     expect(handlers.cycle).not.toHaveBeenCalled();
   });
+
+  it('does not consume a fixed family when its action cannot apply', () => {
+    const handlers = actions();
+    vi.mocked(handlers.moveProject).mockReturnValue(false);
+    renderHook(() => useWorkspaceShortcuts(handlers));
+    const move = new KeyboardEvent('keydown', {
+      key: '}',
+      code: 'BracketRight',
+      metaKey: true,
+      altKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    window.dispatchEvent(move);
+
+    expect(handlers.moveProject).toHaveBeenCalledWith(1);
+    expect(move.defaultPrevented).toBe(false);
+  });
 });

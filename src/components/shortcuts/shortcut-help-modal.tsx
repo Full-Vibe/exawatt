@@ -23,7 +23,8 @@ import {
   AttentionMarker,
   SessionStatusGlyph,
 } from '@/components/workspace/status-glyphs';
-import type { KeyBinding, ShortcutCategory } from '@/types/shortcuts';
+import type { ShortcutCategory } from '@/types/shortcuts';
+import { ALL_FIXED_FAMILIES } from '@/lib/shortcuts/fixed-families';
 
 /** the D30 status icon vocabulary, taught where operators already look */
 const STATUS_LEGEND: Array<{
@@ -72,74 +73,6 @@ const CATEGORY_ORDER: ShortcutCategory[] = [
   'actions',
   'view',
   'help',
-];
-
-/**
- * Fixed key families (ENG-016 D9): handled positionally by the workspace key
- * layer, deliberately not rebindable — listed statically for discoverability.
- * Every other workspace verb now lives in the registry and renders
- * dynamically with its effective (possibly rebound) combo.
- */
-const FIXED_FAMILIES: Array<{
-  category: ShortcutCategory;
-  label: string;
-  keys: KeyBinding;
-}> = [
-  {
-    category: 'workspace',
-    label: 'Jump to Project 1–9',
-    keys: { key: '1…9', modifiers: ['meta', 'alt'] },
-  },
-  {
-    category: 'workspace',
-    label: 'Previous / next tab (global ring)',
-    keys: { key: '[ / ]', modifiers: ['meta', 'shift'] },
-  },
-  {
-    category: 'workspace',
-    label: 'Move tab left / right',
-    keys: { key: '[ / ]', modifiers: ['meta', 'alt'] },
-  },
-  {
-    category: 'workspace',
-    label: 'Move Project left / right',
-    keys: { key: '[ / ]', modifiers: ['meta', 'alt', 'shift'] },
-  },
-  {
-    category: 'view',
-    label: 'Fleet: open Project 1–9',
-    keys: { key: '1…9' },
-  },
-  {
-    category: 'view',
-    label: 'Fleet: pan board',
-    keys: { key: '← ↑ ↓ →' },
-  },
-  {
-    category: 'view',
-    label: 'Fleet: zoom board',
-    keys: { key: '+ / −' },
-  },
-  {
-    category: 'view',
-    label: 'Fleet: toggle projection',
-    keys: { key: 'V' },
-  },
-  {
-    category: 'view',
-    label: 'Fleet: recenter / overview',
-    keys: { key: '0' },
-  },
-  {
-    category: 'view',
-    label: 'Fleet: next / previous attention',
-    keys: { key: 'N / P' },
-  },
-  {
-    category: 'view',
-    label: 'Fleet: zoom out selection',
-    keys: { key: 'Escape' },
-  },
 ];
 
 interface ShortcutHelpModalProps {
@@ -193,10 +126,10 @@ export function ShortcutHelpModal({
           { id: shortcut.id, label: shortcut.label, keys: effectiveKeys },
         ];
       });
-      const fixed = FIXED_FAMILIES.filter(
-        family =>
-          family.category === category && matches(family.label, family.keys.key)
-      );
+      const fixed = ALL_FIXED_FAMILIES.filter(family => {
+        const keysText = formatShortcutKeys(family.keys);
+        return family.category === category && matches(family.label, keysText);
+      });
       return { category, rows, fixed };
     }).filter(s => s.rows.length > 0 || s.fixed.length > 0);
   }, [shortcuts, matches]);
@@ -267,7 +200,7 @@ export function ShortcutHelpModal({
                   ))}
                   {fixed.map(entry => (
                     <div
-                      key={entry.label}
+                      key={entry.id}
                       className="flex items-center justify-between py-1"
                     >
                       <span className="text-sm">{entry.label}</span>

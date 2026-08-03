@@ -113,8 +113,9 @@ export const defaultShortcuts: ShortcutDefinition[] = [
   // is the sole executor (only it can see keystrokes inside xterm) and
   // resolves each combo from this registry — so these are rebindable in
   // Settings, conflict-checked, and listed dynamically in the cheat-sheet.
-  // ⌘⌥1–9 (project ordinals) and ⌘⇧[ / ⌘⇧] (tab ring) stay fixed
-  // key families outside the registry.
+  // Positional ordinals, arrangement chords, and focus-boundary keys remain
+  // fixed outside the registry; fixed-families.ts is their behavior/help
+  // manifest (ENG-016 D44).
   // ⌘T is the PRIMARY launch gesture and Agents are the primary tool
   // (D14 hierarchy, D20 inversion): it summons the Agent composer. D39 pairs
   // that browser-style new-tab gesture with ⌘⇧T restore; shell remains a

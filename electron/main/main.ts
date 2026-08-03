@@ -614,6 +614,8 @@ const menuAvailability: Record<string, boolean> = {
   'toggle-split': false,
   'move-tab-left': false,
   'move-tab-right': false,
+  'move-project-left': false,
+  'move-project-right': false,
   'close-tab': false,
   'jump-attention': false,
 };
@@ -696,6 +698,8 @@ function registerMenuIPC(): void {
 const FIXED_MENU_ACCELERATORS: Record<string, string> = {
   'move-tab-left': 'Alt+Command+[',
   'move-tab-right': 'Alt+Command+]',
+  'move-project-left': 'Command+Alt+Shift+[',
+  'move-project-right': 'Command+Alt+Shift+]',
 };
 
 function menuCommand(
@@ -807,6 +811,8 @@ function createMenu(): void {
         menuCommand('Split: Pin / Unpin', 'toggle-split'),
         menuCommand('Move Tab Left', 'move-tab-left'),
         menuCommand('Move Tab Right', 'move-tab-right'),
+        menuCommand('Move Project Left', 'move-project-left'),
+        menuCommand('Move Project Right', 'move-project-right'),
         menuCommand('Close Tab or Empty Project', 'close-tab'),
         { type: 'separator' },
         menuCommand('Jump to Session Needing You', 'jump-attention'),

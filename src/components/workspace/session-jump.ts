@@ -32,6 +32,9 @@ export const CLOSE_ACTIVE_EVENT = 'exawatt:close-active-tab';
 /** palette/menu → workspace: nudge the active tab within its Project
  *  (the ⌘⌥[/⌘⌥] fixed family, D20); detail = { delta: 1 | -1 } */
 export const MOVE_ACTIVE_TAB_EVENT = 'exawatt:move-active-tab';
+/** palette/menu → workspace: nudge the active Project in the ribbon
+ *  (the ⌘⌥⇧[/⌘⌥⇧] fixed family, D20); detail = { delta: 1 | -1 } */
+export const MOVE_ACTIVE_PROJECT_EVENT = 'exawatt:move-active-project';
 /** palette → workspace: resurrect a Recently-closed Session (D23);
  *  detail = { durableSessionId } */
 export const REOPEN_CLOSED_EVENT = 'exawatt:reopen-closed-session';
