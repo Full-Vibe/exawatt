@@ -576,7 +576,9 @@ async function assertSurface(theme, surface) {
   if (surface.canvas) {
     const board = page.locator('[data-spatial-board]');
     const canvas = board.locator('canvas');
+    const canvasTheme = board.locator('[data-board-canvas-theme]');
     await canvas.waitFor({ timeout: 20_000 });
+    await canvasTheme.waitFor({ timeout: 20_000 });
     check(
       (await board.getAttribute('data-spatial-theme')) === theme.id,
       `Fleet DOM theme did not match ${theme.id}`
@@ -592,7 +594,7 @@ async function assertSurface(theme, surface) {
       `Fleet bloom policy is missing for ${theme.id}`
     );
     check(
-      (await canvas.getAttribute('data-board-canvas-theme')) === theme.id,
+      (await canvasTheme.getAttribute('data-board-canvas-theme')) === theme.id,
       `Fleet canvas theme did not match ${theme.id}`
     );
   }

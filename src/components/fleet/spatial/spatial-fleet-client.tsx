@@ -567,6 +567,10 @@ export function SpatialFleetClient() {
 
   return (
     <div
+      // The inline appearance bootstrap may intentionally change the root
+      // before hydration. This diagnostic attribute follows that client
+      // snapshot; the visual contract itself is root-token driven.
+      suppressHydrationWarning
       data-spatial-command
       data-spatial-altitude={scene.altitude}
       data-agent-count={commandView.agents.length}

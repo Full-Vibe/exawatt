@@ -86,24 +86,36 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   const source = useMemo(() => createAppearancePreferenceSource(), []);
   const bootstrap = useMemo(() => readElectronAppearanceBootstrap(), []);
   const [preferences, setPreferences] = useState<AppearancePreferencesV1>(
-    () =>
-      bootstrap?.preferences ??
-      (typeof window === 'undefined' ? null : readAppearanceMirror()) ??
-      DEFAULT_APPEARANCE_PREFERENCES
+    DEFAULT_APPEARANCE_PREFERENCES
   );
-  const [os, setOs] = useState<AppearanceOsSignals>(() => ({
-    ...(typeof window === 'undefined' ? DEFAULT_OS_SIGNALS : webSignals()),
-    safeTheme: bootstrap?.safeTheme ?? false,
-  }));
+  const [os, setOs] = useState<AppearanceOsSignals>(DEFAULT_OS_SIGNALS);
   const [previewThemeId, setPreviewThemeId] = useState<string>();
   const [ready, setReady] = useState(false);
+
+  // Keep the server and the first hydration render deterministic. The inline
+  // bootstrap has already painted the authoritative root attributes; adopting
+  // that same snapshot in a layout effect updates React-owned descendants
+  // before the next paint without producing hydration attribute mismatches.
+  useLayoutEffect(() => {
+    setPreferences(
+      bootstrap?.preferences ??
+        readAppearanceMirror() ??
+        DEFAULT_APPEARANCE_PREFERENCES
+    );
+    setOs({
+      ...webSignals(),
+      safeTheme: bootstrap?.safeTheme ?? false,
+    });
+  }, [bootstrap]);
 
   useEffect(() => {
     let active = true;
     const accept = (next: AppearancePreferencesV1) => {
       if (!active) return;
       setPreferences(next);
-      writeAppearanceMirror(next);
+      // Safe mode is a non-destructive launch override. Never rewrite either
+      // persistence layer merely because recovery Classic is being rendered.
+      if (!bootstrap?.safeTheme) writeAppearanceMirror(next);
       setReady(true);
     };
     void source.load().then(accept, () => {
@@ -114,7 +126,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
       active = false;
       unsubscribe();
     };
-  }, [source]);
+  }, [bootstrap?.safeTheme, source]);
 
   useEffect(() => {
     let active = true;

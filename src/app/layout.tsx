@@ -46,6 +46,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      className={`${exo2.variable} ${geistMono.variable} ${geistSans.variable}`}
       data-exa-theme="exawatt-classic-dark"
       data-exa-appearance="dark"
       data-exa-contrast="standard"
@@ -59,9 +60,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: APPEARANCE_BOOTSTRAP_SCRIPT }}
         />
       </head>
-      <body
-        className={`${exo2.variable} ${geistMono.variable} ${geistSans.variable} font-sans antialiased`}
-      >
+      <body className="font-sans antialiased">
         <AppearanceProvider>
           <TooltipProvider>
             <CommandNavigationProvider>

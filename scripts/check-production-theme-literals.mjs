@@ -70,54 +70,6 @@ export const PRODUCTION_LITERAL_EXCEPTIONS = {
     reason: 'architecture-map layer identity stored as data',
   },
 
-  // T3C was subsequently overlapped by ENG-008 on this branch. These caps are
-  // integration alarms, not permission for new Consumption paint; restoring
-  // the generated DOM projections should only reduce them.
-  'src/app/usage/attribution.tsx': {
-    max: 2,
-    reason: 'temporary pre-restoration T3C Consumption literal debt',
-  },
-  'src/app/usage/chrome.tsx': {
-    max: 3,
-    reason: 'temporary pre-restoration T3C Consumption literal debt',
-  },
-  'src/app/usage/drill-panel.tsx': {
-    max: 5,
-    reason: 'temporary pre-restoration T3C Consumption literal debt',
-  },
-  'src/app/usage/sessions-grid.tsx': {
-    max: 4,
-    reason: 'temporary pre-restoration T3C Consumption literal debt',
-  },
-  'src/app/usage/usage-client.tsx': {
-    max: 2,
-    reason: 'temporary pre-restoration T3C Consumption literal debt',
-  },
-  'src/components/consumption/assurance-legend.tsx': {
-    max: 1,
-    reason: 'temporary pre-restoration T3C Consumption literal debt',
-  },
-  'src/components/consumption/atoms.tsx': {
-    max: 3,
-    reason: 'temporary pre-restoration T3C Consumption literal debt',
-  },
-  'src/components/consumption/capacity.tsx': {
-    max: 10,
-    reason: 'temporary pre-restoration T3C Consumption literal debt',
-  },
-  'src/components/consumption/meter/meter-model.ts': {
-    max: 6,
-    reason: 'temporary pre-restoration T3C ambient-meter neutral debt',
-  },
-  'src/components/consumption/meter/meter-popover.tsx': {
-    max: 7,
-    reason: 'temporary pre-restoration T3C material/popover debt',
-  },
-  'src/components/consumption/unit-ladder.tsx': {
-    max: 2,
-    reason: 'temporary pre-restoration T3C Consumption literal debt',
-  },
-
   // Concrete semantic/data authorities. Production DOM consumers must use
   // their generated CSS projections; spatial/color math may need concrete
   // sRGB values and Project/brand identity must not change with themes.
@@ -132,6 +84,10 @@ export const PRODUCTION_LITERAL_EXCEPTIONS = {
   'src/components/hud/tokens.ts': {
     max: 28,
     reason: 'Classic compatibility authority for non-DOM renderer adapters',
+  },
+  'src/components/fleet/spatial/spatial-theme.ts': {
+    max: 6,
+    reason: 'stable Project identity palette for the non-DOM renderer',
   },
   'src/components/readiness/readiness.tsx': {
     max: 1,
@@ -162,23 +118,6 @@ export const PRODUCTION_LITERAL_EXCEPTIONS = {
   'src/components/workspace/tab-strip.tsx': {
     max: 2,
     reason: 'CSS alpha-mask stops, not rendered color',
-  },
-
-  // T4 is landing from an older base while the board composition changed on
-  // master. These caps make that overlap explicit; the T4 rebase should reduce
-  // or eliminate both before the final T5 completeness gate.
-  'src/components/fleet/spatial/operations-board/operations-board-canvas.tsx': {
-    max: 45,
-    reason: 'temporary pre-rebase T4 Fleet theme literal debt',
-  },
-  'src/components/fleet/spatial/operations-board/operations-board-surface.tsx':
-    {
-      max: 92,
-      reason: 'temporary pre-rebase T4 Fleet theme literal debt',
-    },
-  'src/components/fleet/spatial/spatial-fleet-client.tsx': {
-    max: 1,
-    reason: 'temporary pre-rebase T4 Fleet loading-state debt',
   },
 
   // These source-shared empty/demo states still carry Classic fallback paint.
