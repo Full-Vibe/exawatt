@@ -34,6 +34,10 @@ import {
   Bug,
   Lightbulb,
   Gauge,
+  Building2,
+  Cloud,
+  Waypoints,
+  Shapes,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -144,6 +148,9 @@ interface CommandItem {
   icon: React.ComponentType<{ className?: string }>;
   onSelect: () => void;
   availability?: CommandAvailability;
+  /** Muted trailing note (e.g. `Coming soon` on a preview surface). Rendered
+   *  only when there is no shortcut to show. */
+  note?: string;
 }
 
 /** palette icon per manifest surface — the manifest stays render-free */
@@ -153,6 +160,10 @@ const SURFACE_ICONS: Record<AppSurface['id'], LucideIcon> = {
   spatial: MapIcon,
   settings: Settings,
   consumption: Gauge,
+  organization: Building2,
+  cloud: Cloud,
+  coordination: Waypoints,
+  'agent-types': Shapes,
 };
 
 export function CommandPalette({
@@ -404,14 +415,20 @@ export function CommandPalette({
   const surfaceItem = useCallback(
     (s: AppSurface): CommandItem => {
       void shortcutVersion;
+      const shortcutId = s.gestureShortcutId ?? s.shortcutId;
       return {
         id: `nav-${s.id}`,
         label: `Go to ${s.name}`,
         value: `go ${s.name} ${s.keywords.join(' ')}`,
         icon: SURFACE_ICONS[s.id],
-        shortcut: shortcutRegistry.getEffectiveKeys(
-          s.gestureShortcutId ?? s.shortcutId
-        ),
+        shortcut: shortcutId
+          ? shortcutRegistry.getEffectiveKeys(shortcutId)
+          : undefined,
+        // Preview surfaces navigate for real — the row executes — but say
+        // what the reader will find (ENG-026 N0). `announced` never appears
+        // here at all: a palette entry that cannot execute is a worse lie
+        // than a muted button.
+        note: s.readiness === 'preview' ? 'Coming soon' : undefined,
         onSelect: () =>
           handleSelect(() => {
             if (s.tier === 'spine') {
@@ -431,7 +448,10 @@ export function CommandPalette({
   );
   const navigationItems = useMemo<CommandItem[]>(
     () =>
-      [...surfacesByTier('spine'), ...surfacesByTier('app')].map(surfaceItem),
+      [...surfacesByTier('spine'), ...surfacesByTier('app')]
+        // `announced` surfaces have no page behind them and never join ⌘K.
+        .filter(s => s.readiness !== 'announced')
+        .map(surfaceItem),
     [surfaceItem]
   );
   // Quick feedback (ENG-025 F1): the palette is the discoverable face of
@@ -919,11 +939,13 @@ export function CommandPalette({
             >
               <item.icon className="mr-2 h-4 w-4" />
               <span>{item.label}</span>
-              {item.shortcut && (
+              {item.shortcut ? (
                 <CommandShortcut>
                   {formatShortcutKeys(item.shortcut)}
                 </CommandShortcut>
-              )}
+              ) : item.note ? (
+                <CommandShortcut>{item.note}</CommandShortcut>
+              ) : null}
             </CommandItem>
           ))}
         </CommandGroup>

@@ -298,3 +298,68 @@ export function delegatedShare(rollup: ConsumptionRollup): number | null {
   if (rollup.weightedTokens <= 0) return 0;
   return rollup.delegated.weightedTokens / rollup.weightedTokens;
 }
+
+/* ------------------------------------------------------------------ */
+/* intervention rate (ENG-026 N2)                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One Session's intervention record. An intervention is an OPERATOR MESSAGE
+ * AFTER LAUNCH — the launch instruction is direction, everything after it is
+ * a human stepping in. The count is real and cheaply countable: the ENG-023
+ * harness event channel already receives `UserPromptSubmit` for Claude Code,
+ * and Codex rollouts record every user turn, so no new telemetry exists for
+ * this number.
+ *
+ * The count deliberately cannot tell desired steering from a gap the agent
+ * could not cross. It is therefore an UPPER BOUND on "where you had to
+ * intervene", and every surface rendering it must say so.
+ */
+export interface InterventionRow {
+  sessionId: string;
+  title: string;
+  harness: Harness;
+  /** Operator messages after launch. 0 is a real, meaningful zero. */
+  interventions: number;
+  /** Wall-clock span the Session was active, ms. */
+  activeMs: number;
+  /** Raw tokens the Session consumed, delegated children included. */
+  rawTokens: number;
+}
+
+export interface InterventionStats {
+  sessions: number;
+  interventions: number;
+  /** Mean interventions per Session. */
+  perSession: number;
+  /** Interventions per active hour across the scope. */
+  perActiveHour: number;
+  /** Interventions per 100k raw tokens across the scope. */
+  per100kTokens: number;
+  /** Raw tokens of agent work per single human touch. Infinity when zero. */
+  tokensPerIntervention: number;
+  /** Sessions that ran launch-to-finish with no intervention at all. */
+  untouchedSessions: number;
+  untouchedShare: number;
+}
+
+export function interventionStats(
+  rows: readonly InterventionRow[]
+): InterventionStats {
+  const sessions = rows.length;
+  const interventions = rows.reduce((n, r) => n + r.interventions, 0);
+  const activeHours = rows.reduce((n, r) => n + r.activeMs / HOUR_MS, 0);
+  const rawTokens = rows.reduce((n, r) => n + r.rawTokens, 0);
+  const untouchedSessions = rows.filter(r => r.interventions === 0).length;
+  return {
+    sessions,
+    interventions,
+    perSession: sessions > 0 ? interventions / sessions : 0,
+    perActiveHour: activeHours > 0 ? interventions / activeHours : 0,
+    per100kTokens: rawTokens > 0 ? interventions / (rawTokens / 100_000) : 0,
+    tokensPerIntervention:
+      interventions > 0 ? rawTokens / interventions : Infinity,
+    untouchedSessions,
+    untouchedShare: sessions > 0 ? untouchedSessions / sessions : 0,
+  };
+}

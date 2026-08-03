@@ -19,19 +19,50 @@ import { spatialReturnHref } from './spatial-return';
  * - `spine`  — the command-altitude continuum (Agent → Team → Fleet),
  *   the primary Electron navigation.
  * - `app`    — first-class surfaces outside the continuum (Settings).
+ *
+ * Readiness (ENG-026 N0) is a fact about each surface, carried here and
+ * rendered by the shared component set in `@/components/readiness`:
+ * - `live`      — built, truthful, the user's own data. Normal presentation.
+ * - `preview`   — the designed page exists and is navigable; it renders
+ *   representative data under one persistent **Coming soon** marker. It never
+ *   presents that data as the operator's own and never simulates an action
+ *   succeeding.
+ * - `announced` — the affordance is visible so the map is complete, but there
+ *   is no page behind it. Muted, `cursor: default`, tooltip naming what is
+ *   coming; visibly *not yet*, never broken.
+ *
+ * Readiness is a property of the data source, not of the page: shipping a
+ * capability is a one-line flip here plus a source swap, never a page rewrite.
+ * The command-altitude spine stays exactly three surfaces and every spine
+ * surface stays `live` — nothing in the spine may link into an unbuilt state
+ * (enforced by `surfaces.test.ts`).
  */
 export type SurfaceTier = 'spine' | 'app';
 
+export type SurfaceReadiness = 'live' | 'preview' | 'announced';
+
 export interface AppSurface {
-  id: 'terminal' | 'sessions' | 'spatial' | 'settings' | 'consumption';
+  id:
+    | 'terminal'
+    | 'sessions'
+    | 'spatial'
+    | 'settings'
+    | 'consumption'
+    | 'organization'
+    | 'cloud'
+    | 'coordination'
+    | 'agent-types';
   /** canonical display name — every consumer must render exactly this */
   name: string;
   /** concise operational meaning used by navigation controls */
   summary: string;
   href: string;
   tier: SurfaceTier;
-  /** registry shortcut id whose go-chord navigates here */
-  shortcutId: string;
+  readiness: SurfaceReadiness;
+  /** registry shortcut id whose go-chord navigates here. Preview surfaces
+   *  earn a chord when they flip `live`; the scarce letters stay with the
+   *  surfaces the operator actually lives in. */
+  shortcutId?: string;
   /** direct gesture advertised when moving to this surface */
   gestureShortcutId?: string;
   /** extra palette search terms */
@@ -45,6 +76,7 @@ export const APP_SURFACES: AppSurface[] = [
     summary: 'One live Agent, its terminal, its work',
     href: '/workspace',
     tier: 'spine',
+    readiness: 'live',
     shortcutId: 'go-workspace',
     gestureShortcutId: 'command-terminal',
     keywords: ['workspace', 'terminal', 'agents', 'launch'],
@@ -55,6 +87,7 @@ export const APP_SURFACES: AppSurface[] = [
     summary: 'Your Projects and the Agents working them',
     href: '/workspace?view=sessions',
     tier: 'spine',
+    readiness: 'live',
     shortcutId: 'go-sessions',
     gestureShortcutId: 'command-sessions',
     keywords: ['overview', 'expose', 'grid', 'tiles', 'all sessions'],
@@ -65,6 +98,7 @@ export const APP_SURFACES: AppSurface[] = [
     summary: 'All of it, at population scale',
     href: '/fleet/spatial',
     tier: 'spine',
+    readiness: 'live',
     shortcutId: 'go-spatial',
     gestureShortcutId: 'command-spatial',
     keywords: ['map', 'board', 'spatial', 'altitude', 'zoom'],
@@ -75,6 +109,7 @@ export const APP_SURFACES: AppSurface[] = [
     summary: 'Preferences and shortcuts',
     href: '/settings',
     tier: 'app',
+    readiness: 'live',
     shortcutId: 'go-settings',
     keywords: ['preferences', 'config', 'customize', 'shortcuts'],
   },
@@ -86,6 +121,9 @@ export const APP_SURFACES: AppSurface[] = [
     summary: 'What the fleet is spending, and on what',
     href: '/consumption',
     tier: 'app',
+    // ENG-008 E4 shipped it demo-sourced; E5 swaps the source and this line
+    // flips to `live`. That flip is the whole deployment.
+    readiness: 'preview',
     shortcutId: 'go-consumption',
     keywords: [
       'tokens',
@@ -101,6 +139,76 @@ export const APP_SURFACES: AppSurface[] = [
       'billing',
     ],
   },
+  // --- Vision surfaces (ENG-026 N1) ------------------------------------
+  // The intended IA, registered so the whole map is navigable. Each renders
+  // a designed preview shell today; its owning roadmap item replaces the
+  // body with real preview content (N3–N5) and eventually flips it `live`.
+  {
+    // ENG-012 / ENG-034 — the multiplayer and tenancy story. Named
+    // Organization, not Team: decision 0023 gives Team to the middle
+    // command altitude.
+    id: 'organization',
+    name: 'Organization',
+    summary: 'People, Workspaces, and spend across your org',
+    href: '/organization',
+    tier: 'app',
+    readiness: 'preview',
+    keywords: [
+      'team',
+      'members',
+      'permissions',
+      'sharing',
+      'multiplayer',
+      'tenancy',
+      'workspaces',
+      'roles',
+    ],
+  },
+  {
+    // ENG-033 — one-click hosted agents, any source the user wants.
+    id: 'cloud',
+    name: 'Cloud',
+    summary: 'Agents running on hosted plans, beside your local ones',
+    href: '/cloud',
+    tier: 'app',
+    readiness: 'preview',
+    keywords: ['hosted', 'remote', 'push to cloud', 'plans', 'always on'],
+  },
+  {
+    // ENG-029 — shared context and handoff between a Project's agents.
+    id: 'coordination',
+    name: 'Coordination',
+    summary: "How a Project's Agents share context and hand off",
+    href: '/coordination',
+    tier: 'app',
+    readiness: 'preview',
+    keywords: [
+      'handoff',
+      'blackboard',
+      'bus',
+      'shared context',
+      'claims',
+      'crystallization',
+    ],
+  },
+  {
+    // ENG-028 — the portable Type is the worker; the harness is the engine.
+    id: 'agent-types',
+    name: 'Agent Types',
+    summary: 'What kind of worker an Agent is, portable across harnesses',
+    href: '/agent-types',
+    tier: 'app',
+    readiness: 'preview',
+    keywords: [
+      'types',
+      'roles',
+      'worker',
+      'identity',
+      'instructions',
+      'tools',
+      'defaults',
+    ],
+  },
 ];
 
 export function surfacesByTier(tier: SurfaceTier): AppSurface[] {
@@ -109,6 +217,11 @@ export function surfacesByTier(tier: SurfaceTier): AppSurface[] {
 
 export function surfaceForShortcut(shortcutId: string): AppSurface | undefined {
   return APP_SURFACES.find(s => s.shortcutId === shortcutId);
+}
+
+export function surfaceById(id: AppSurface['id']): AppSurface {
+  // ids are a closed union, so a miss is a programming error, not a state.
+  return APP_SURFACES.find(s => s.id === id)!;
 }
 
 /** Navigation target for a surface. Fleet returns to the operator's exact

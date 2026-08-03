@@ -766,6 +766,16 @@ function createMenu(): void {
         menuCommand('Team', 'go-sessions'),
         menuCommand('Fleet', 'go-spatial'),
         { type: 'separator' },
+        menuCommand('Consumption', 'go-consumption'),
+        // Vision surfaces (ENG-026 N1): `go-<surface id>` resolves through the
+        // renderer's navigation manifest (nav/surfaces.ts), which owns names,
+        // routes, and readiness. These are navigable preview pages, honestly
+        // marked on-surface — never dead menu items.
+        menuCommand('Organization', 'go-organization'),
+        menuCommand('Cloud', 'go-cloud'),
+        menuCommand('Coordination', 'go-coordination'),
+        menuCommand('Agent Types', 'go-agent-types'),
+        { type: 'separator' },
         menuCommand('Back', 'history-back'),
         menuCommand('Forward', 'history-forward'),
       ],

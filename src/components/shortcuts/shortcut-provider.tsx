@@ -30,6 +30,7 @@ import type {
 import { isChord } from '@/types/shortcuts';
 import { bindingToAccelerator } from '@/lib/shortcuts/accelerator';
 import {
+  APP_SURFACES,
   surfaceForShortcut,
   resolveSurfaceHref,
 } from '@/components/nav/surfaces';
@@ -196,6 +197,19 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     const dispatch = (event: string) =>
       window.dispatchEvent(new CustomEvent(event));
     return window.electron?.menu?.onCommand(command => {
+      // App-tier surfaces are addressed from the Go menu as `go-<surface id>`
+      // (ENG-026 N1), resolved through the navigation manifest so the menu
+      // can never diverge from it. Spine altitudes keep their explicit cases
+      // below; `announced` surfaces have no page and never get a menu item.
+      if (command.startsWith('go-')) {
+        const surface = APP_SURFACES.find(
+          s => s.tier === 'app' && `go-${s.id}` === command
+        );
+        if (surface) {
+          navigateCommandSurface(resolveSurfaceHref(surface));
+          return;
+        }
+      }
       switch (command) {
         case 'go-terminal':
           activateCommandAltitude('terminal');

@@ -31,6 +31,12 @@ const PUBLIC_PREFIXES = [
   // own in-process demo corpus, so gating it would only break the offline
   // renderer and the demos this surface exists for.
   '/consumption',
+  // ENG-026 N1 preview surfaces: Electron-navigable shells that read no user
+  // data at all — same offline argument as /consumption.
+  '/organization',
+  '/cloud',
+  '/coordination',
+  '/agent-types',
   '/eval',
   '/privacy',
   '/terms',

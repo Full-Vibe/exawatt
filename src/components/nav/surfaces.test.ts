@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isAppRoute } from './surfaces';
+import { APP_SURFACES, isAppRoute, surfaceById, surfacesByTier } from './surfaces';
 
 describe('isAppRoute', () => {
   it.each([
@@ -8,6 +8,11 @@ describe('isAppRoute', () => {
     '/fleet/spatial/deep',
     '/settings',
     '/consumption',
+    // ENG-026 N1 vision surfaces
+    '/organization',
+    '/cloud',
+    '/coordination',
+    '/agent-types',
   ])('recognizes registered app surface %s', pathname => {
     expect(isAppRoute(pathname)).toBe(true);
   });
@@ -26,5 +31,52 @@ describe('isAppRoute', () => {
     '/board',
   ])('does not classify public route %s as an app surface', pathname => {
     expect(isAppRoute(pathname)).toBe(false);
+  });
+});
+
+describe('readiness (ENG-026 N0/N1)', () => {
+  it('every surface states its readiness', () => {
+    for (const surface of APP_SURFACES) {
+      expect(['live', 'preview', 'announced']).toContain(surface.readiness);
+    }
+  });
+
+  it('nothing in the spine links into an unbuilt state', () => {
+    for (const surface of surfacesByTier('spine')) {
+      expect(surface.readiness).toBe('live');
+    }
+  });
+
+  it('an announced surface would have no page, so it may not carry an href users can follow', () => {
+    // No announced SURFACES exist today (announced is currently a per-control
+    // fact); if one is ever added, this test forces the conversation about
+    // where its entry points may appear.
+    expect(APP_SURFACES.filter(s => s.readiness === 'announced')).toEqual([]);
+  });
+
+  it('live surfaces keep their go-chords; preview surfaces defer theirs', () => {
+    for (const surface of APP_SURFACES) {
+      if (surface.readiness === 'live') {
+        expect(surface.shortcutId, surface.id).toBeTruthy();
+      }
+    }
+  });
+
+  it('consumption is preview until ENG-008 E5 swaps the source', () => {
+    expect(surfaceById('consumption').readiness).toBe('preview');
+  });
+
+  it('the vision surfaces are registered as navigable previews in the app tier', () => {
+    for (const id of [
+      'organization',
+      'cloud',
+      'coordination',
+      'agent-types',
+    ] as const) {
+      const surface = surfaceById(id);
+      expect(surface.tier).toBe('app');
+      expect(surface.readiness).toBe('preview');
+      expect(surface.href).toBe(`/${id}`);
+    }
   });
 });

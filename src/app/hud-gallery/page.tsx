@@ -34,6 +34,7 @@ import {
 } from '@/components/hud/gallery-fixtures';
 import { SessionStateTileStudy } from '@/components/hud/session-state-tile-study';
 import { ProjectRibbonStudy } from '@/components/hud/project-ribbon-study';
+import { ReadinessGrammarStudy } from '@/components/readiness/gallery-study';
 
 const TONES: HudTone[] = ['cyan', 'magenta', 'amber', 'red', 'green', 'idle'];
 const STATUSES: AgentStatus[] = [
@@ -57,6 +58,12 @@ interface Section {
 }
 
 const SECTIONS: Section[] = [
+  {
+    id: 'readiness-grammar',
+    title: 'Readiness grammar',
+    meta: 'review candidate · ENG-026 N0 — live / preview / announced',
+    showcase: <ReadinessGrammarStudy />,
+  },
   {
     id: 'elastic-project-ribbon',
     title: 'Elastic Project ribbon',

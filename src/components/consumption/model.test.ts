@@ -3,9 +3,11 @@ import { SOURCE_CAPABILITIES } from '@exawatt/core';
 import {
   delegatedWeighted,
   displayUsage,
+  interventionStats,
   rawTotal,
   windowFreshness,
   type CapacityWindowView,
+  type InterventionRow,
 } from './model';
 import { demoConsumption, DEMO_NOW_MS, DEMO_SESSIONS } from './demo-source';
 
@@ -159,5 +161,95 @@ describe('demo corpus stays plausible against the real corpus', () => {
     for (const s of demo.unresolvedSessions) {
       expect(s.spec.projectKey).toBeNull();
     }
+  });
+});
+
+describe('intervention rate (ENG-026 N2)', () => {
+  it('computes the three cuts and the untouched share', () => {
+    const rows: InterventionRow[] = [
+      {
+        sessionId: 'a',
+        title: 'a',
+        harness: 'claude-code',
+        interventions: 3,
+        activeMs: 2 * HOUR,
+        rawTokens: 400_000,
+      },
+      {
+        sessionId: 'b',
+        title: 'b',
+        harness: 'codex',
+        interventions: 0,
+        activeMs: 2 * HOUR,
+        rawTokens: 100_000,
+      },
+    ];
+    const stats = interventionStats(rows);
+    expect(stats.sessions).toBe(2);
+    expect(stats.interventions).toBe(3);
+    expect(stats.perSession).toBeCloseTo(1.5);
+    expect(stats.perActiveHour).toBeCloseTo(0.75);
+    expect(stats.per100kTokens).toBeCloseTo(0.6);
+    expect(stats.tokensPerIntervention).toBeCloseTo(500_000 / 3);
+    expect(stats.untouchedSessions).toBe(1);
+    expect(stats.untouchedShare).toBeCloseTo(0.5);
+  });
+
+  it('a scope with no interventions reports zero rates and an infinite tokens-per-touch, never NaN', () => {
+    const stats = interventionStats([
+      {
+        sessionId: 'a',
+        title: 'a',
+        harness: 'codex',
+        interventions: 0,
+        activeMs: HOUR,
+        rawTokens: 50_000,
+      },
+    ]);
+    expect(stats.perSession).toBe(0);
+    expect(stats.perActiveHour).toBe(0);
+    expect(stats.per100kTokens).toBe(0);
+    expect(stats.tokensPerIntervention).toBe(Infinity);
+    expect(stats.untouchedShare).toBe(1);
+  });
+
+  const demo = demoConsumption();
+
+  it('covers every operator Session and excludes machine-invoked overhead', () => {
+    // one row per authored operator Session — the 38 summarizer calls have no
+    // operator to intervene and must not flatter the rate
+    expect(demo.interventions.rows.length).toBe(DEMO_SESSIONS.length);
+    const total = DEMO_SESSIONS.reduce((n, s) => n + s.interventions, 0);
+    expect(demo.interventions.total.interventions).toBe(total);
+  });
+
+  it('keeps some Sessions genuinely untouched — the honest autonomy figure', () => {
+    expect(demo.interventions.total.untouchedSessions).toBeGreaterThan(0);
+    expect(demo.interventions.total.untouchedSessions).toBeLessThan(
+      demo.interventions.total.sessions
+    );
+  });
+
+  it('splits by harness without losing anything', () => {
+    const { bySource, total } = demo.interventions;
+    expect(
+      bySource['claude-code'].sessions + bySource.codex.sessions
+    ).toBe(total.sessions);
+    expect(
+      bySource['claude-code'].interventions + bySource.codex.interventions
+    ).toBe(total.interventions);
+  });
+
+  it("counts a Session's delegated children in its token denominator", () => {
+    const delegating = DEMO_SESSIONS.find(s => s.delegated.length > 0)!;
+    const row = demo.interventions.rows.find(
+      r => r.sessionId === delegating.id
+    )!;
+    const own =
+      delegating.usage.input +
+      delegating.usage.cacheRead +
+      delegating.usage.cacheWrite +
+      delegating.usage.output;
+    expect(row.rawTokens).toBeGreaterThan(own);
   });
 });

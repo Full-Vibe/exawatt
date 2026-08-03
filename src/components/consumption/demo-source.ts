@@ -42,7 +42,11 @@ import {
 } from '@exawatt/core';
 import {
   capacityWindowFromPlan,
+  interventionStats,
   type ConsumptionSourceView,
+  type Harness,
+  type InterventionRow,
+  type InterventionStats,
 } from './model';
 
 export const DEMO_NOW_MS = Date.parse('2026-08-02T15:20:00.000Z');
@@ -196,6 +200,14 @@ export interface DemoSessionSpec {
   lastAtMs: number;
   /** Assistant turns this Session recorded. Drives how many samples it emits. */
   turns: number;
+  /**
+   * Operator messages AFTER launch (ENG-026 N2's intervention rate). Counted
+   * live from the `UserPromptSubmit` events the ENG-023 harness channel
+   * already receives (Claude Code) and the user turns Codex rollouts already
+   * record. Required, like `delegation`: a construction site must state 0
+   * rather than silently read as autonomous.
+   */
+  interventions: number;
   usage: DemoUsage;
   delegated: DemoDelegatedRun[];
   roadmapItemId: string | null;
@@ -219,6 +231,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 4 * DAY - 5 * HOUR,
     lastAtMs: DEMO_NOW_MS - 4 * DAY,
     turns: 14,
+    interventions: 3,
     usage: {
       input: 412_000,
       cacheRead: 31_460_000,
@@ -256,6 +269,8 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 2 * DAY - 7 * HOUR,
     lastAtMs: DEMO_NOW_MS - 2 * DAY,
     turns: 11,
+    // design iteration is steering-heavy by nature
+    interventions: 4,
     usage: {
       input: 268_000,
       cacheRead: 19_820_000,
@@ -292,6 +307,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 34 * HOUR,
     lastAtMs: DEMO_NOW_MS - 29 * HOUR,
     turns: 9,
+    interventions: 2,
     usage: {
       input: 151_000,
       cacheRead: 13_740_000,
@@ -320,6 +336,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 4 * HOUR - 20 * MIN,
     lastAtMs: DEMO_NOW_MS - 6 * MIN,
     turns: 18,
+    interventions: 5,
     usage: {
       input: 486_000,
       cacheRead: 38_900_000,
@@ -369,6 +386,8 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 46 * HOUR,
     lastAtMs: DEMO_NOW_MS - 44 * HOUR,
     turns: 6,
+    // copy work reads as babysitting: four touches on six turns
+    interventions: 4,
     usage: {
       input: 44_100,
       cacheRead: 2_180_000,
@@ -402,6 +421,9 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 3 * DAY - 9 * HOUR,
     lastAtMs: DEMO_NOW_MS - 3 * DAY - 1 * HOUR,
     turns: 12,
+    // the week's intervention outlier: a fault-shaped run that kept needing
+    // a human to cross the same gap
+    interventions: 6,
     usage: {
       input: 302_000,
       cacheRead: 26_400_000,
@@ -441,6 +463,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 52 * HOUR,
     lastAtMs: DEMO_NOW_MS - 51 * HOUR,
     turns: 4,
+    interventions: 3,
     usage: {
       input: 18_400,
       cacheRead: 812_000,
@@ -467,6 +490,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 5 * DAY - 3 * HOUR,
     lastAtMs: DEMO_NOW_MS - 5 * DAY,
     turns: 12,
+    interventions: 2,
     usage: {
       input: 184_000,
       cacheRead: 8_910_000,
@@ -491,6 +515,8 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 5 * DAY + 2 * HOUR,
     lastAtMs: DEMO_NOW_MS - 5 * DAY + 5 * HOUR,
     turns: 9,
+    // launched with one instruction, landed without a touch
+    interventions: 0,
     usage: {
       input: 96_400,
       cacheRead: 4_260_000,
@@ -515,6 +541,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 30 * HOUR,
     lastAtMs: DEMO_NOW_MS - 26 * HOUR,
     turns: 8,
+    interventions: 2,
     usage: {
       input: 74_800,
       cacheRead: 3_120_000,
@@ -539,6 +566,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 6 * DAY - 2 * HOUR,
     lastAtMs: DEMO_NOW_MS - 6 * DAY + 4 * HOUR,
     turns: 16,
+    interventions: 3,
     usage: {
       input: 214_000,
       cacheRead: 11_480_000,
@@ -563,6 +591,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 3 * DAY - 6 * HOUR,
     lastAtMs: DEMO_NOW_MS - 3 * DAY,
     turns: 13,
+    interventions: 2,
     usage: {
       input: 132_000,
       cacheRead: 6_940_000,
@@ -587,6 +616,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 44 * HOUR,
     lastAtMs: DEMO_NOW_MS - 42 * HOUR,
     turns: 7,
+    interventions: 0,
     usage: {
       input: 41_200,
       cacheRead: 1_840_000,
@@ -611,6 +641,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 20 * HOUR,
     lastAtMs: DEMO_NOW_MS - 17 * HOUR,
     turns: 10,
+    interventions: 2,
     usage: {
       input: 88_600,
       cacheRead: 4_020_000,
@@ -635,6 +666,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 9 * HOUR,
     lastAtMs: DEMO_NOW_MS - 2 * HOUR,
     turns: 15,
+    interventions: 4,
     usage: {
       input: 168_000,
       cacheRead: 8_120_000,
@@ -659,6 +691,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     startedAtMs: DEMO_NOW_MS - 6 * HOUR,
     lastAtMs: DEMO_NOW_MS - 40 * MIN,
     turns: 8,
+    interventions: 0,
     usage: {
       input: 61_200,
       cacheRead: 2_940_000,
@@ -695,6 +728,7 @@ function overheadSpecs(): DemoSessionSpec[] {
       startedAtMs: at,
       lastAtMs: at + 12_000,
       turns: 1,
+      interventions: 0,
       usage: {
         input: 5_200 + (i % 5) * 340,
         cacheRead: 46_000 + (i % 7) * 2_200,
@@ -914,6 +948,16 @@ export interface DemoConsumption {
   /** Exawatt's own machine-invoked harness usage. Shown, never folded in. */
   overhead: { sessionCount: number; rollup: ConsumptionRollup | null };
   sources: ConsumptionSourceView[];
+  /**
+   * ENG-026 N2 — the intervention record for operator Sessions. Overhead is
+   * excluded by construction: a machine-invoked call has no operator to
+   * intervene, and counting it would flatter the rate.
+   */
+  interventions: {
+    rows: InterventionRow[];
+    total: InterventionStats;
+    bySource: Record<Harness, InterventionStats>;
+  };
 }
 
 let cached: DemoConsumption | null = null;
@@ -1008,6 +1052,24 @@ export function demoConsumption(): DemoConsumption {
     label: 'Exawatt’s own harness calls',
   });
 
+  // Interventions ride the same session rollups as everything else, so the
+  // token denominator includes delegated children — one human touch steers
+  // the whole tree it launched.
+  const interventionRows: InterventionRow[] = sessionRollups.map(
+    ({ spec, rollup }) => ({
+      sessionId: spec.id,
+      title: spec.title,
+      harness: spec.source,
+      interventions: spec.interventions,
+      activeMs: Math.max(1, spec.lastAtMs - spec.startedAtMs),
+      rawTokens:
+        rollup.totals.inputTokens +
+        rollup.totals.cacheReadTokens +
+        rollup.totals.cacheWriteTokens +
+        rollup.totals.outputTokens,
+    })
+  );
+
   cached = {
     nowMs: DEMO_NOW_MS,
     samples,
@@ -1026,6 +1088,18 @@ export function demoConsumption(): DemoConsumption {
       rollup: overheadRollup,
     },
     sources: buildSources(operator, planWindows),
+    interventions: {
+      rows: interventionRows,
+      total: interventionStats(interventionRows),
+      bySource: {
+        'claude-code': interventionStats(
+          interventionRows.filter(r => r.harness === 'claude-code')
+        ),
+        codex: interventionStats(
+          interventionRows.filter(r => r.harness === 'codex')
+        ),
+      },
+    },
   };
   return cached;
 }
