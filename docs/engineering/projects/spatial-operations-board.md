@@ -193,10 +193,16 @@ the canvas layer tree both touch). Every slice: read
   scale, and visibility with damped motion while the camera flies; entrance
   choreography runs on DATA arrival only; lateral moves (N/P, project
   switches) glide the same way. Kill the measured 500–1400ms remount stalls.
-  Then V3.0 lands on this: the Team-cards→board entry pose per decision
-  `0023`, with the directional cut as fallback — same owner or a follow-on
-  agent, but the same machinery, tuned against the live Demo Workspace's
-  Voltaic board (P6.5 landed 2026-08-02).
+  RECONCILED 2026-08-03: V3.0 landed the same evening this contract was
+  written (Voltaic-tuned, see the V3.0 milestone above), extending the D11
+  transition owner — the one-machinery invariant this ordering protected
+  holds. S2 therefore ABSORBS the landed rig-side entry-pose execution
+  (`tryEnterFromHandoff` → pose → hold → pull-back in
+  `operations-board-canvas.tsx`) into its surviving-layers restructure
+  instead of building it; the nav-side handoff contract
+  (`nav/altitude-handoff.ts` capture/store/solver, the ghost layer, the two
+  events) is stable and must not fork. Keep the four `eval:spatial` handoff
+  scenarios green through the restructure.
   Acceptance: one continuous 60fps morph per altitude change with zero
   full-layer remounts (assert via a transition-frame eval that samples
   `__EVAL_GL__` frame gaps — no gap >100ms during the settle window);
@@ -1268,7 +1274,12 @@ Acceptance:
 
 Status: landed 2026-08-02 — the Team → Fleet position handoff decided in
 `0023`, built on the D11 single transition owner and tuned against the
-populated Voltaic Demo Workspace board (ENG-027 W2).
+populated Voltaic Demo Workspace board (ENG-027 W2). SEQUENCE
+RECONCILIATION 2026-08-03: the V3.3 execution contract (written the same
+evening, before this landing was known) sequenced V3.0 onto S2; the
+one-machinery invariant that ordering protected holds by construction, and
+S2 now absorbs the rig-side entry-pose execution — see the S2 slice
+contract below and the roadmap amendment chain.
 
 What ships: ascending from the Team altitude to the Fleet altitude carries
 **identity and position** across the DOM→WebGL boundary — content never

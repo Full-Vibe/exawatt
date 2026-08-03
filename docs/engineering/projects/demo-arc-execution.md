@@ -19,7 +19,7 @@ The operator named three risks (2026-08-02). Reliability was explicitly **not** 
 Two files are contention points. Respect these or agents will conflict:
 
 - **`src/components/nav/surfaces.ts`** — touched by the rename (P2) and the readiness manifest (P6). P2 owns it first; P6 waits.
-- **The spatial surface** — P5 landed. As of 2026-08-02 the ENG-004 V3.3 spatial-feel stream owns it: S1 → S2 → S3 → S4 in order (S1 and S3 may overlap with care; S2 restructures the canvas layer tree and runs alone). P7 lands on S2's machinery and follows it.
+- **The spatial surface** — P5 and P7 landed. The ENG-004 V3.3 spatial-feel stream owns it now: S1 → S2 → S3 → S4 in order (S1 and S3 may overlap with care; S2 restructures the canvas layer tree and runs alone, absorbing P7's landed entry-pose execution).
 
 Everything else in wave 1 is file-disjoint by construction.
 
@@ -86,12 +86,11 @@ Everything else in wave 1 is file-disjoint by construction.
 - **Scope:** the `live` / `preview` / `announced` readiness field in the navigation manifest, the shared marker and affordance components prototyped in `/hud-gallery` for operator review, and the vision surfaces registered with their entry points. Fold ENG-008 E4's local `Unbuilt` treatment into the shared grammar — it is the ancestor, and two vocabularies must not survive. Register `/consumption` with a readiness state and ship the **intervention-rate metric** — both are the open N2 remainder, and this packet owns them explicitly: without the intervention-rate metric, P9's acceptance ("all four user questions answerable on screen") is unmeetable.
 - **Acceptance:** shipping a capability is a one-line manifest change plus a source swap; nothing in the spine links into a broken state; the intervention-rate metric renders on Consumption.
 
-### P7 · Altitude handoff
+### P7 · Altitude handoff — LANDED 2026-08-03
 
 - **Owns:** ENG-004 V3.0, decision `0023`
-- **Depends on:** P3 (landed), P6.5 (landed — tune against the populated Voltaic board, not a dozen-agent personal board), **S2** (the V3.3 continuity slice: the entry pose is built ON its surviving-layers transition machinery, not as a parallel implementation — one arc, operator 2026-08-02)
-- **Scope:** the board's entry pose, position handoff from cards to nodes, camera pull-back. Identity and position carry; content never does.
-- **Acceptance:** the fallback cut fires correctly under reduced motion, low power, and a missed frame budget — the fallback is the feature that makes the handoff safe. Transitions never block input. Entry pose and tuning are demonstrated against the Demo Workspace's populated board.
+- **Landed** (Voltaic-tuned against the live Demo Workspace): the entry pose, card→zone ghost crossfade, camera pull-back, and the full fallback matrix (reduced motion, low power, missed 900ms budget, stale/missing captures, renderer failure) — all as an extension of the one D11 transition owner, with four dedicated `eval:spatial` scenarios. Evidence in the ENG-004 project doc §V3.0.
+- **Sequence note:** this packet was re-anchored onto S2 the same evening it landed (written before the landing was known). The invariant holds — one transition machinery, no parallel implementation — so **S2 inherits an absorption obligation** instead: carry the rig-side entry-pose execution across its layer-tree restructure and keep the handoff eval scenarios green.
 
 ### P8 · Polish pass
 
@@ -112,8 +111,10 @@ Everything else in wave 1 is file-disjoint by construction.
 Owner of scope: ENG-004 V3.3; the pick-up-cold slice contracts (scope, files,
 acceptance, boundaries) live in
 `docs/engineering/projects/spatial-operations-board.md` §"V3.3 execution
-contract". This section only sequences them for parallel agents. Feel first,
-then the cinematic handoff (P7) on top — the operator's explicit ordering.
+contract". This section only sequences them for parallel agents. Feel first was the
+operator's explicit ordering; P7's handoff landed first in fact
+(2026-08-03 reconciliation, recorded in the roadmap V3.0 line), so S2
+absorbs it rather than the handoff waiting on S2.
 
 ### S1 · Board input — keyboard unit navigation + RTS pointer grammar
 
@@ -126,11 +127,12 @@ then the cinematic handoff (P7) on top — the operator's explicit ordering.
 
 ### S2 · Board continuity — layers survive altitude changes
 
-- **Owns:** ENG-004 V3.3 F1 (V3.0/P7 builds directly on it)
+- **Owns:** ENG-004 V3.3 F1 (absorbs the LANDED V3.0/P7 rig-side entry-pose execution; the nav-side handoff contract is stable — do not fork it)
 - **Files:** `operations-board-canvas.tsx` (layer keying/morph),
   `spatial-fleet-client.tsx`, transition ownership per ENG-016 D11
 - **May start:** after S1 lands (it rewrites the layer tree S1 touches).
-  Runs ALONE on the spatial surface. P7 follows it.
+  Runs ALONE on the spatial surface. P7 landed before it — absorb, don't
+  rebuild.
 
 ### S3 · The tiled board — hex family + in-world identity
 
