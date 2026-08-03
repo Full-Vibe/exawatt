@@ -910,6 +910,85 @@ function crossGeometry(): THREE.ShapeGeometry {
  * zone edges; every Agent piece carries one exact protocol color and shape.
  * Only Active rotors invalidate the demand loop, at the shared DOM cadence.
  */
+/**
+ * Delegation satellites (ENG-023 D3b): one small dot per live delegated
+ * child, in a row tucked under the parent piece — the same dots-not-counts
+ * grammar the DOM surfaces use, in the project's accent so they read as the
+ * parent's team rather than as more status. One instanced draw for the whole
+ * board; capped per piece upstream (`SPATIAL_DELEGATION_SATELLITE_CAP`), the
+ * exact census stays in the DOM control copy. Breathes on the shared V2.4
+ * ambient gate and parks still at base opacity otherwise.
+ */
+function DelegationSatelliteLayer({
+  pieces,
+  active,
+}: {
+  pieces: SpatialBoardPiece[];
+  active: boolean;
+}) {
+  const material = useRef<THREE.MeshBasicMaterial>(null);
+  const phase = useRef(0);
+  const geometry = useMemo(() => new THREE.CircleGeometry(0.5, 16), []);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  const satellites = pieces.flatMap(piece => {
+    if (piece.kind !== 'agent' || !piece.delegation) return [];
+    const shown = piece.delegation.children.length;
+    const dot = piece.size * 0.13;
+    const gap = piece.size * 0.18;
+    // Above the piece: the space below belongs to the DOM control label at
+    // Team/Agent altitude, and the row must never hide behind it.
+    return piece.delegation.children.map((child, index) => ({
+      key: `satellite:${piece.id}:${child.id}`,
+      x: piece.x + (index - (shown - 1) / 2) * gap,
+      y: piece.y - piece.size * 0.72,
+      scale: dot,
+      color: projectAccent(piece.projectId),
+    }));
+  });
+
+  // One slow breath for the whole constellation — 2.6s, matching the DOM
+  // dots. Base value is set on the off-branch so the gate flipping false can
+  // never freeze the dots mid-sine (the console3d Panel bug).
+  useFrame((state, delta) => {
+    if (!material.current) return;
+    if (!active || satellites.length === 0) {
+      material.current.opacity = 0.85;
+      return;
+    }
+    phase.current += (Math.min(delta, 0.05) * Math.PI * 2) / 2.6;
+    material.current.opacity = 0.55 + 0.35 * (0.5 + 0.5 * Math.sin(phase.current));
+    state.invalidate();
+  });
+
+  if (satellites.length === 0) return null;
+  return (
+    <Instances
+      geometry={geometry}
+      limit={512}
+      range={satellites.length}
+      renderOrder={2}
+    >
+      <meshBasicMaterial
+        ref={material}
+        toneMapped={false}
+        transparent
+        opacity={0.85}
+        depthWrite={false}
+      />
+      {satellites.map(satellite => (
+        <Instance
+          key={satellite.key}
+          position={[satellite.x, -satellite.y, 0.8]}
+          scale={[satellite.scale, satellite.scale, 1]}
+          color={satellite.color}
+          raycast={() => null}
+        />
+      ))}
+    </Instances>
+  );
+}
+
 function StatusMarkLayer({
   pieces,
   active,
@@ -1308,6 +1387,7 @@ function AgentPieceLayer({
         })}
       </Instances>
       <StatusMarkLayer pieces={solid} active={ambient} />
+      <DelegationSatelliteLayer pieces={solid} active={ambient} />
       <StoppedAgentOutlines pieces={visible} />
       {selected && (
         <SelectionRing
@@ -1483,6 +1563,22 @@ function AgentControls({
     .map(piece => {
       const always = piece.labelVisibility === 'always';
       const lightState = statusLightStateForAgentStatus(piece.status);
+      // Delegation joins the control copy as labels (ENG-023 D3b): the count
+      // and the team's kinds. Full child descriptions stay at the Sessions
+      // and Terminal altitudes — a board tooltip is not a roster.
+      const delegated = piece.delegation;
+      const delegationCopy = delegated
+        ? `${delegated.count} delegated ${delegated.count === 1 ? 'agent' : 'agents'} working`
+        : null;
+      const delegationKinds = delegated
+        ? [
+            ...new Set(
+              delegated.children
+                .map(child => child.agentType?.trim())
+                .filter((kind): kind is string => !!kind)
+            ),
+          ].join(', ')
+        : '';
       return (
         <Html
           key={`control:${piece.id}`}
@@ -1495,14 +1591,21 @@ function AgentControls({
             data-board-agent={piece.agentId}
             data-board-session-state={piece.sessionState}
             data-board-status-light={lightState}
-            aria-label={`${piece.label}, ${STATUS_LIGHT_META[lightState].label}${piece.sessionState === 'stopped' ? ', stopped session' : ''}`}
+            data-board-delegation={delegated ? delegated.count : undefined}
+            aria-label={`${piece.label}, ${STATUS_LIGHT_META[lightState].label}${piece.sessionState === 'stopped' ? ', stopped session' : ''}${delegationCopy ? `, ${delegationCopy}` : ''}`}
             onClick={() => onSelectAgent(piece.agentId!)}
             className="board-control-enter group relative grid h-11 w-11 place-items-center border border-transparent bg-transparent outline-none transition-[border-color,transform] duration-150 active:translate-y-px focus-visible:border-[oklch(0.72_0.1_185)] focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.1_185/0.4)]"
           >
             <span
-              className={`pointer-events-none absolute left-1/2 top-[calc(100%+3px)] w-16 -translate-x-1/2 truncate border border-[oklch(0.3_0.012_210)] bg-[oklch(0.13_0.008_215/0.96)] px-1 py-1 text-center text-[9px] font-medium text-[oklch(0.88_0.01_210)] shadow-[0_6px_16px_oklch(0.06_0.01_220/0.4)] transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 sm:w-28 sm:px-1.5 sm:text-[10px] ${always ? 'opacity-100' : 'opacity-0'}`}
+              className={`pointer-events-none absolute left-1/2 top-[calc(100%+3px)] w-16 -translate-x-1/2 border border-[oklch(0.3_0.012_210)] bg-[oklch(0.13_0.008_215/0.96)] px-1 py-1 text-center text-[9px] font-medium text-[oklch(0.88_0.01_210)] shadow-[0_6px_16px_oklch(0.06_0.01_220/0.4)] transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 sm:w-28 sm:px-1.5 sm:text-[10px] ${always ? 'opacity-100' : 'opacity-0'}`}
             >
-              {piece.label}
+              <span className="block truncate">{piece.label}</span>
+              {delegationCopy && (
+                <span className="block truncate text-[8px] font-normal text-[oklch(0.72_0.02_210)] sm:text-[9px]">
+                  {delegated!.count} delegated
+                  {delegationKinds ? ` · ${delegationKinds}` : ''}
+                </span>
+              )}
             </span>
           </button>
         </Html>

@@ -525,16 +525,22 @@ label vocabulary.
 ### Spatial grammar — delegation topology as detail, not organizing idea
 
 Per the V3 design pass, structure-and-belonging is NOT the board's purpose;
-delegation arrives as detail at Team/Agent altitude. The grammar:
+delegation arrives as detail at Team/Agent altitude. The grammar as landed:
 
-- a delegating Agent piece gains **satellites**: small instanced markers in an
-  arc beside the parent piece, one per child up to the shared cap, aggregated
-  beyond it. Satellites carry the active-status color, breathe under the V2.4
-  ambient gate, and park under reduced motion / low power / hidden tab.
-- at Team (project) altitude, satellites are visible per piece and the child's
-  type + description join the piece's DOM control tooltip (DOM owns text).
-- at Fleet altitude, satellites persist (instanced, budgeted) but carry no
-  labels; the aggregate story stays the piece's status.
+- a delegating Agent piece gains **satellites**: one small instanced dot per
+  live child in a row tucked **above** the piece (the space below belongs to
+  the DOM control label), capped at the shared five, one draw call for the
+  whole board. Satellites carry the **project accent** — they are the parent's
+  team, not more status — and breathe on the V2.4 ambient gate, parking still
+  under reduced motion / low power / hidden tab.
+- the piece's DOM control copy gains the count and the team's kinds
+  ("3 delegated · Explore, general-purpose") in the label and the accessible
+  name. Full child descriptions stay at Sessions and Terminal altitudes — a
+  board tooltip is not a roster. Aggregate pieces carry no satellites.
+- the fleet transport treats running children as `working` with the same
+  precedence as the tab strip (gate outranks team; team outranks a stale turn
+  boundary), and `pty:delegation` pushes a re-list so the board tracks the
+  harness instead of trailing the next poll tick.
 - entering a child (child zoom) is **not** in this slice: it depends on D2's
   Terminal rail landing first so the zoom has a destination. The topology may
   render before it is navigable.

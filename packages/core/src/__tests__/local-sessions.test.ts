@@ -332,3 +332,79 @@ describe('LocalSessionsTransport', () => {
     });
   });
 });
+
+/**
+ * Delegated work at fleet altitude (ENG-023 D3b): a Session whose team is
+ * running never reads as finished, an operator gate still outranks it, and
+ * the children ride the agent as labels for the board to draw.
+ */
+describe('delegation in the fleet projection', () => {
+  const children = [
+    {
+      id: 'c1',
+      agentType: 'Explore',
+      description: 'Map the release gates',
+      startedAt: 1_000,
+    },
+  ];
+
+  it('reads a quiet delegating parent as working, not idle or complete', () => {
+    expect(
+      sessionStatus(
+        { exited: false, exitCode: null, delegation: { children } },
+        1_000,
+        50_000,
+        15_000
+      )
+    ).toBe('working');
+    // a stale turn boundary must not settle a Session with a live team
+    expect(
+      sessionStatus(
+        {
+          exited: false,
+          exitCode: null,
+          attention: { kind: 'turn-end', since: 2_000 },
+          delegation: { children },
+        },
+        1_000,
+        50_000,
+        15_000
+      )
+    ).toBe('working');
+  });
+
+  it('keeps the operator gate above delegated work', () => {
+    expect(
+      sessionStatus(
+        {
+          exited: false,
+          exitCode: null,
+          attention: { kind: 'bell', since: 2_000 },
+          delegation: { children },
+        },
+        1_000,
+        50_000,
+        15_000
+      )
+    ).toBe('blocked');
+  });
+
+  it('carries children onto the agent, and absent stays absent', () => {
+    const delegating = sessionToAgent(
+      snap({ delegation: { children } }),
+      1_000,
+      2_000,
+      15_000
+    );
+    expect(delegating.delegation?.children).toEqual(children);
+    const quiet = sessionToAgent(snap(), 1_000, 2_000, 15_000);
+    expect(quiet).not.toHaveProperty('delegation');
+    const emptied = sessionToAgent(
+      snap({ delegation: { children: [] } }),
+      1_000,
+      2_000,
+      15_000
+    );
+    expect(emptied).not.toHaveProperty('delegation');
+  });
+});

@@ -329,3 +329,50 @@ describe('selectSpatialBoardLayout', () => {
     ).toBe('fleet');
   });
 });
+
+/**
+ * Delegation topology on pieces (ENG-023 D3b): labels only, capped for the
+ * satellite draw, and absent when the source reports nothing — presence is
+ * the signal, so unreported and zero read identically.
+ */
+describe('piece delegation', () => {
+  const child = (id: string, description: string | null = null) => ({
+    id,
+    agentType: 'Explore',
+    description,
+    startedAt: 1,
+  });
+
+  it('projects live children onto the agent piece, capped at the satellite budget', () => {
+    const delegating = {
+      ...agent('a', 'Alpha', 'working'),
+      delegation: {
+        children: [
+          child('c1', 'Map the release gates'),
+          child('c2'),
+          child('c3'),
+          child('c4'),
+          child('c5'),
+          child('c6'),
+        ],
+      },
+    };
+    const layout = selectSpatialBoardLayout(fleet([delegating]));
+    const piece = layout.pieces.find(item => item.agentId === 'a');
+    expect(piece?.delegation?.count).toBe(6);
+    // the satellite list is capped; the count carries the census
+    expect(piece?.delegation?.children).toHaveLength(5);
+    expect(piece?.delegation?.children[0]).toEqual({
+      id: 'c1',
+      agentType: 'Explore',
+      description: 'Map the release gates',
+    });
+  });
+
+  it('omits delegation entirely for unreporting agents', () => {
+    const layout = selectSpatialBoardLayout(fleet([agent('a', 'Alpha')]));
+    const piece = layout.pieces.find(item => item.agentId === 'a');
+    expect(piece).toBeDefined();
+    expect(piece).not.toHaveProperty('delegation');
+  });
+});

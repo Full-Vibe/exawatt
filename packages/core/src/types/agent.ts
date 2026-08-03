@@ -60,6 +60,25 @@ export interface AgentActivity {
   metadata?: Record<string, unknown>;
 }
 
+/** One delegated child reported by the Session's harness (ENG-023 D3). */
+export interface AgentDelegatedChild {
+  id: string;
+  /** the source's own agent kind ("Explore", "general-purpose", …) */
+  agentType: string | null;
+  /** operator-legible spawn label; null when the source reported none */
+  description?: string | null;
+  startedAt: number;
+}
+
+/**
+ * Harness-reported delegation (ENG-023 D3). Absent means the source does not
+ * report delegation — which every surface must render as absent, never as an
+ * empty list meaning zero.
+ */
+export interface AgentDelegation {
+  children: AgentDelegatedChild[];
+}
+
 export interface ExawattAgent {
   id: string;
   name: string;
@@ -74,6 +93,8 @@ export interface ExawattAgent {
   metrics: AgentMetrics;
   lastActivityAt: number; // unix ms
   blockerInfo?: AgentBlocker;
+  /** harness-reported delegated children; absent when unreported (ENG-023) */
+  delegation?: AgentDelegation | null;
   createdAt: number; // unix ms
   activities?: AgentActivity[];
 }

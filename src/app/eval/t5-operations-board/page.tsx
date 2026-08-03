@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
 import { selectSpatialBoardLayout } from '@exawatt/ui-model';
 import { OperationsBoardSurface } from '@/components/fleet/spatial/operations-board/operations-board-surface';
@@ -44,7 +45,33 @@ function agent(
 }
 
 const agents = [
-  agent('atlas-build', 'Build Pipeline', 'Atlas', 'working'),
+  {
+    // Delegating parent (ENG-023 D3b): satellites under the piece, the count
+    // and kinds in the DOM control copy.
+    ...agent('atlas-build', 'Build Pipeline', 'Atlas', 'working'),
+    delegation: {
+      children: [
+        {
+          id: 'child-1',
+          agentType: 'Explore',
+          description: 'Map the release gates',
+          startedAt: 1,
+        },
+        {
+          id: 'child-2',
+          agentType: 'general-purpose',
+          description: 'Rebuild the artifact index',
+          startedAt: 1,
+        },
+        {
+          id: 'child-3',
+          agentType: 'Explore',
+          description: null,
+          startedAt: 1,
+        },
+      ],
+    },
+  },
   agent('atlas-review', 'Release Review', 'Atlas', 'reviewing'),
   agent('atlas-docs', 'Launch Notes', 'Atlas', 'idle'),
   agent('atlas-result', 'Build Result', 'Atlas', 'complete'),
@@ -59,9 +86,27 @@ const state: FleetState = {
   lastUpdated: 1,
 };
 
-const layout = selectSpatialBoardLayout(state);
-
 export default function OperationsBoardEvalPage() {
+  // Eval-only altitude override so screenshots can grade the Team-altitude
+  // regime (satellites + control copy) against the same fixture fleet. Read
+  // after mount so the server and first client render agree.
+  const [focusedProject, setFocusedProject] = useState<string | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('altitude') === 'project') {
+      setFocusedProject(params.get('project') ?? 'project:Atlas');
+    }
+  }, []);
+  const layout = useMemo(
+    () =>
+      selectSpatialBoardLayout(
+        state,
+        focusedProject
+          ? { altitude: 'project', focusedProjectId: focusedProject }
+          : {}
+      ),
+    [focusedProject]
+  );
   return (
     <main className="h-screen min-h-[620px] bg-[#101418] p-5">
       <div className="h-full overflow-hidden border border-[#354149]">

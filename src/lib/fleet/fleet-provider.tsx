@@ -108,6 +108,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
     let offWorkspaceChanged: (() => void) | undefined;
+    let offDelegation: (() => void) | undefined;
 
     async function initializeFleet() {
       console.log('[Exawatt] initializeFleet: starting');
@@ -146,6 +147,12 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           localTransportRef.current = localTransport;
           localTransport.initialize(manager);
           localTransport.start();
+          // Delegation truth is push (ENG-023): a child starting or finishing
+          // re-lists immediately, so the board's satellites track the harness
+          // instead of trailing the next poll tick.
+          offDelegation = pty.onDelegation?.(() => {
+            if (mounted) void localTransport.refresh();
+          });
           offWorkspaceChanged = workspace?.onChanged?.(layout => {
             if (!mounted) return;
             const next = extractLocalWorkspaceProjects(layout);
@@ -268,6 +275,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
       offWorkspaceChanged?.();
+      offDelegation?.();
       ocClientRef.current?.disconnect();
       for (const timer of toastTimersRef.current) clearTimeout(timer);
       toastTimersRef.current = [];

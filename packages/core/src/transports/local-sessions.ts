@@ -11,6 +11,8 @@
  * Status model:
  *   exited        -> 'complete' (code 0) or 'error'
  *   alive, explicit bell / human gate -> 'blocked'
+ *   alive, delegated children outstanding -> 'working' (ENG-023: a Session
+ *     whose team is running never reads as finished at fleet altitude)
  *   alive, quiet turn boundary -> 'complete' (result ready)
  *   alive, output within workingWindowMs -> 'working'
  *   alive, quiet  -> 'idle'
@@ -18,7 +20,12 @@
  * detection) — the fleet surfaces show the SAME result-vs-needs-you truth the
  * tab strip does. Quiet completion is not promoted into the blocker queue.
  */
-import type { ExawattAgent, AgentStatus, AgentBlocker } from '../types/index';
+import type {
+  AgentBlocker,
+  AgentDelegation,
+  AgentStatus,
+  ExawattAgent,
+} from '../types/index';
 import { INITIAL_AGENT_METRICS } from '../types/index';
 import type { FleetManager } from '../state/fleet-manager';
 
@@ -45,6 +52,9 @@ export interface LocalSessionSnapshot {
   contextSummary?: string | null;
   /** needs-operator flag (ENG-015 S1) — becomes 'blocked' + blockerInfo */
   attention?: LocalSessionAttention | null;
+  /** harness-reported delegated children (ENG-023) — absent when the source
+   *  does not report delegation, never an empty stand-in for zero */
+  delegation?: AgentDelegation | null;
 }
 
 export interface LocalSessionsSource {
@@ -79,7 +89,10 @@ function basename(p: string): string {
 }
 
 export function sessionStatus(
-  session: Pick<LocalSessionSnapshot, 'exited' | 'exitCode' | 'attention'>,
+  session: Pick<
+    LocalSessionSnapshot,
+    'exited' | 'exitCode' | 'attention' | 'delegation'
+  >,
   lastActivityAt: number,
   now: number,
   workingWindowMs: number
@@ -88,8 +101,13 @@ export function sessionStatus(
     return session.exitCode == null || session.exitCode === 0
       ? 'complete'
       : 'error';
+  // An operator gate outranks delegated work (same precedence as the tab
+  // strip); running children outrank quiet bytes AND a stale turn boundary —
+  // a Session whose team is working never reads as finished (ENG-023).
+  if (session.attention && session.attention.kind !== 'turn-end')
+    return 'blocked';
+  if ((session.delegation?.children.length ?? 0) > 0) return 'working';
   if (session.attention?.kind === 'turn-end') return 'complete';
-  if (session.attention) return 'blocked';
   return now - lastActivityAt <= workingWindowMs ? 'working' : 'idle';
 }
 
@@ -130,6 +148,11 @@ export function sessionToAgent(
     metrics: { ...INITIAL_AGENT_METRICS },
     lastActivityAt,
     blockerInfo: sessionBlocker(session),
+    // Present only while children are live: presence IS the signal, so an
+    // unreporting source and an empty team read identically as absent.
+    ...(session.delegation?.children.length
+      ? { delegation: { children: session.delegation.children } }
+      : {}),
     createdAt: session.startedAt,
   };
 }
@@ -244,7 +267,13 @@ export class LocalSessionsTransport {
       this.now(),
       this.opts.workingWindowMs
     );
-    const key = `${agent.status}:${agent.sessionState}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${agent.projectId ?? ''}:${agent.project}:${session.attention?.kind ?? ''}:${session.attention?.since ?? ''}`;
+    // Delegation participates by child identity + label, so a child arriving,
+    // finishing, or gaining its spawn label re-emits without churning on
+    // every poll tick.
+    const delegationKey = (agent.delegation?.children ?? [])
+      .map(child => `${child.id}/${child.description ?? ''}`)
+      .join(',');
+    const key = `${agent.status}:${agent.sessionState}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${agent.projectId ?? ''}:${agent.project}:${session.attention?.kind ?? ''}:${session.attention?.since ?? ''}:${delegationKey}`;
     if (this.emitted.get(session.id) === key) return; // nothing changed
     this.emitted.set(session.id, key);
     this.manager.upsertAgent(agent);

@@ -169,7 +169,8 @@ async function openProject(page) {
   await page.waitForURL(/altitude=project/, { timeout: 10_000 });
   const units = page.locator(
     // Agent units carry the status-light protocol labels (landed 2026-07-23);
-    // the previous raw-status suffixes never match anymore.
+    // the previous raw-status suffixes never match anymore, and delegation
+    // copy may follow the status (ENG-023 D3b) — match the control itself.
     'button[data-board-agent][data-board-status-light]'
   );
   await units.first().waitFor({ state: 'visible' });

@@ -48,6 +48,17 @@ export interface SpatialBoardProjectZone {
   statusCounts: SpatialBoardStatusCounts;
 }
 
+/** One delegated child projected for the board (ENG-023 D3b): labels only. */
+export interface SpatialBoardDelegatedChild {
+  id: string;
+  agentType: string | null;
+  description: string | null;
+}
+
+/** Satellites drawn per delegating piece before the count aggregates into
+ *  the DOM control copy — mirrors the DOM presence-dot cap. */
+export const SPATIAL_DELEGATION_SATELLITE_CAP = 5;
+
 export interface SpatialBoardPiece {
   id: string;
   slotIndex: number;
@@ -66,6 +77,12 @@ export interface SpatialBoardPiece {
   selected: boolean;
   needsAttention: boolean;
   labelVisibility: SpatialBoardLabelVisibility;
+  /** Present only while the source reports live children (ENG-023 D3b):
+   *  presence is the signal, so unreported and zero read identically. */
+  delegation?: {
+    count: number;
+    children: SpatialBoardDelegatedChild[];
+  };
 }
 
 export interface SpatialBoardLayout {
@@ -475,6 +492,7 @@ function individualPieces(
         ? fleetSlotPosition(zone, slotIndex)
         : projectSlotPosition(zone, slotIndex);
     const showByBudget = index < labelLimit;
+    const delegated = agent.delegation?.children ?? [];
     return {
       id,
       slotIndex,
@@ -485,6 +503,20 @@ function individualPieces(
       summary: agent.goal,
       status: agent.status,
       ...(agent.sessionState ? { sessionState: agent.sessionState } : {}),
+      ...(delegated.length > 0
+        ? {
+            delegation: {
+              count: delegated.length,
+              children: delegated
+                .slice(0, SPATIAL_DELEGATION_SATELLITE_CAP)
+                .map(child => ({
+                  id: child.id,
+                  agentType: child.agentType,
+                  description: child.description ?? null,
+                })),
+            },
+          }
+        : {}),
       count: 1,
       x: position.x,
       y: position.y,
