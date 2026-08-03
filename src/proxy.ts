@@ -27,12 +27,13 @@ const PUBLIC_PREFIXES = [
   '/hud-gallery',
   '/workspace',
   '/settings',
-  // ENG-008 E4. Electron-navigable and demo-sourced: it reads nothing but its
+  // ENG-008. Electron-navigable and demo-sourced: it reads nothing but its
   // own in-process demo corpus, so gating it would only break the offline
-  // renderer and the demos this surface exists for.
-  '/consumption',
+  // renderer and the demos this surface exists for. Renamed from
+  // /consumption 2026-08-03 (operator: hard cut, the old path 404s).
+  '/usage',
   // ENG-026 N1 preview surfaces: Electron-navigable shells that read no user
-  // data at all — same offline argument as /consumption.
+  // data at all — same offline argument as /usage.
   '/organization',
   '/cloud',
   '/coordination',

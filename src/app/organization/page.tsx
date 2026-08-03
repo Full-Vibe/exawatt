@@ -5,7 +5,7 @@ import { DEMO_WORKSPACE } from '@exawatt/core';
 import { demoOrgMembers, ORG_ROLES, type OrgRole } from './model';
 
 // Preview surface (ENG-026 N3). noindex for the same stealth reason as
-// /consumption: reachable by URL for demos, not discoverable.
+// /usage: reachable by URL for demos, not discoverable.
 export const metadata: Metadata = {
   title: 'Organization',
   robots: { index: false, follow: false },

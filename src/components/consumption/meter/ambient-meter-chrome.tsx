@@ -6,7 +6,7 @@
  * The iStat three-rung ladder in one control:
  *   1. the glyph, always on, ≤20px tall, monochrome until a window runs hot;
  *   2. hover (or keyboard focus) raises the windows/reset/pace popover;
- *   3. click goes to /consumption — the meter IS that surface's first-class
+ *   3. click goes to /usage — the meter IS that surface's first-class
  *      entry in the chrome, per the ⌘K-is-backstop rule.
  *
  * `CHROME_METER_FORM` picks which of the four candidate forms renders; the
@@ -35,13 +35,13 @@ export const CHROME_METER_FORM: MeterFormId = 'bar';
 export function meterAriaLabel(snapshot: MeterSnapshot): string {
   const r = snapshot.reading;
   if (!r) {
-    return 'Consumption: no source reports plan limits. Opens the consumption surface.';
+    return 'Usage: no source reports plan limits. Opens the usage surface.';
   }
   const head =
     r.state === 'exhausted'
       ? `${r.source.label} ${r.window.label.toLowerCase()} spent, resets in ${duration(r.msToReset)}`
       : `${r.source.label} ${r.window.label.toLowerCase()} at ${percent(r.usedPercent)}, ${paceSentence(r)}, resets in ${duration(r.msToReset)}`;
-  return `Consumption: ${head}. Opens the consumption surface.`;
+  return `Usage: ${head}. Opens the usage surface.`;
 }
 
 const HOVER_OPEN_MS = 120;
@@ -56,7 +56,7 @@ export function AmbientMeterControl({
   snapshot,
   form,
   align = 'right',
-  href = '/consumption',
+  href = '/usage',
 }: {
   snapshot: MeterSnapshot;
   form: MeterFormId;
@@ -105,7 +105,7 @@ export function AmbientMeterControl({
 
 /**
  * The wired title-bar instance: the real demo corpus's plan windows at the
- * corpus's pinned instant — the same data and clock `/consumption` renders,
+ * corpus's pinned instant — the same data and clock `/usage` renders,
  * so the glyph and the page can never disagree.
  */
 export function AmbientChromeMeter() {

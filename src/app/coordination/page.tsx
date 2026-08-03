@@ -9,7 +9,7 @@ import {
 } from './model';
 
 // Preview surface (ENG-026 N4 / ENG-029 C1). noindex for the same stealth
-// reason as /consumption: reachable by URL for demos, not discoverable.
+// reason as /usage: reachable by URL for demos, not discoverable.
 export const metadata: Metadata = {
   title: 'Coordination',
   robots: { index: false, follow: false },

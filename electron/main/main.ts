@@ -780,7 +780,11 @@ function createMenu(): void {
         menuCommand('Team', 'go-sessions'),
         menuCommand('Fleet', 'go-spatial'),
         { type: 'separator' },
-        menuCommand('Consumption', 'go-consumption'),
+        // Display name renamed Consumption → Usage (2026-08-03); the command
+        // id keeps its historical spelling. Mirrors
+        // src/components/consumption/surface-name.ts, which the main process
+        // cannot import (rootDir: electron/).
+        menuCommand('Usage', 'go-consumption'),
         // Vision surfaces (ENG-026 N1): `go-<surface id>` resolves through the
         // renderer's navigation manifest (nav/surfaces.ts), which owns names,
         // routes, and readiness. These are navigable preview pages, honestly

@@ -5,7 +5,7 @@
  *
  * Glyph (rung 1) answers "how does the tightest window stand"; this answers
  * "which windows, when do they reset, and am I pacing them" without leaving
- * the title bar; the click-through to /consumption (rung 3) owns everything
+ * the title bar; the click-through to /usage (rung 3) owns everything
  * deeper. Deliberately smaller than `CapacityPopover`: no sparklines, no
  * assurance essay — the windows, their resets, the pace verdict, and one
  * line of coaching when (and only when) a window runs hot.
@@ -185,7 +185,7 @@ export function MeterPopover({
           className="font-ui text-chrome-label font-semibold"
           style={{ color: PANEL.text }}
         >
-          Consumption
+          Usage
         </span>
         {r ? (
           <span
@@ -230,7 +230,7 @@ export function MeterPopover({
         style={{ borderColor: PANEL.divider, background: 'rgba(0,0,0,0.28)' }}
       >
         <span className="font-ui text-chrome-micro" style={{ color: PANEL.faint }}>
-          Click for the full consumption picture
+          Click for the full usage picture
         </span>
         <span
           aria-hidden

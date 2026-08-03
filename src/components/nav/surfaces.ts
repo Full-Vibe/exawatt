@@ -118,11 +118,13 @@ export const APP_SURFACES: AppSurface[] = [
     // ENG-008 E4. A VIEW, not a fourth command altitude — the spine stays
     // exactly Agent → Team → Fleet, and this sits beside Settings.
     id: 'consumption',
-    // display name shared with the page title and window title; the rename
-    // candidate ("Usage") is one constant + a route alias
+    // Display name shared with the page title and window title. Renamed
+    // "Usage" 2026-08-03 (operator + naming research); the id keeps its
+    // historical spelling per the ids-are-addresses rule above. The old
+    // /consumption route is gone — hard cut, no redirect (operator).
     name: CONSUMPTION_SURFACE_NAME,
     summary: 'What the fleet is spending, and on what',
-    href: '/consumption',
+    href: '/usage',
     tier: 'app',
     // ENG-008 E4 shipped it demo-sourced; E5 swaps the source and this line
     // flips to `live`. That flip is the whole deployment.
@@ -132,7 +134,8 @@ export const APP_SURFACES: AppSurface[] = [
       'tokens',
       'cost',
       'spend',
-      'usage',
+      // the pre-rename display name stays findable in ⌘K
+      'consumption',
       'watts',
       'energy',
       'burn',

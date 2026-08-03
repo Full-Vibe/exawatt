@@ -163,7 +163,7 @@ export function SiteHeaderNav({
         }
       >
         {/* ambient consumption meter (ENG-008): the always-on plan-window
-            glance and /consumption's first-class chrome entry — glyph,
+            glance and /usage's first-class chrome entry — glyph,
             hover popover, click-through. App surfaces only; the flag is
             the whole mount. */}
         {AMBIENT_CHROME_METER_ENABLED &&

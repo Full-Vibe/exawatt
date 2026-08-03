@@ -6,6 +6,7 @@
  */
 import { CloudUpload, Shapes } from 'lucide-react';
 import { HUD, withAlpha } from '@/components/hud/tokens';
+import { CONSUMPTION_SURFACE_NAME } from '@/components/consumption/surface-name';
 import {
   AnnouncedChip,
   ComingSoonMarker,
@@ -49,7 +50,7 @@ function MiniHeader({ marked }: { marked: boolean }) {
         className="text-chrome-title font-semibold tracking-tight"
         style={{ color: HUD.text }}
       >
-        Consumption
+        {CONSUMPTION_SURFACE_NAME}
       </span>
       {marked && <ComingSoonMarker />}
     </span>

@@ -5,7 +5,7 @@ import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import { demoAgentTypeRoster, type AgentTypeProfile } from './model';
 
 // Preview surface (ENG-026 N5 / ENG-028 T1). noindex for the same stealth
-// reason as /consumption: reachable by URL for demos, not discoverable.
+// reason as /usage: reachable by URL for demos, not discoverable.
 export const metadata: Metadata = {
   title: 'Agent Types',
   robots: { index: false, follow: false },

@@ -13,9 +13,12 @@ export const LAST_COMMAND_SURFACE_KEY = 'exawatt:last-command-surface:v1';
 const TENANT_SCOPE_GATED_SURFACE_PATHS: ReadonlySet<string> = new Set([
   '/workspace',
   '/fleet/spatial',
-  // ENG-027 W2: Consumption gained a per-tenant source (E4 week vs the
-  // Voltaic corpus), so it joined the gated set — its page mounts the gate.
-  '/consumption',
+  // ENG-027 W2: the usage surface has a per-tenant source (demo week vs the
+  // Voltaic corpus), so it is in the gated set — its page mounts the gate.
+  // Renamed /consumption → /usage 2026-08-03 with no redirect (operator:
+  // hard cut); stored pre-rename '/consumption' memory simply fails this
+  // validation and falls back to the default surface.
+  '/usage',
 ]);
 
 /** Accept only durable command-surface addresses from local renderer state. */

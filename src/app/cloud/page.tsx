@@ -10,7 +10,7 @@ import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import { demoCloudHero } from './model';
 
 // Preview surface (ENG-026 N3, previewing ENG-033). noindex for the same
-// stealth reason as /consumption: reachable by URL for demos, not
+// stealth reason as /usage: reachable by URL for demos, not
 // discoverable.
 export const metadata: Metadata = {
   title: 'Cloud',

@@ -7,7 +7,7 @@ describe('isAppRoute', () => {
     '/fleet/spatial',
     '/fleet/spatial/deep',
     '/settings',
-    '/consumption',
+    '/usage',
     // ENG-026 N1 vision surfaces
     '/organization',
     '/cloud',
