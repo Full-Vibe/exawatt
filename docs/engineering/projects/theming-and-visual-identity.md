@@ -177,6 +177,34 @@ Sources: [Electron `BrowserWindow`](https://www.electronjs.org/docs/latest/api/b
 [Chromium Local Font Access](https://developer.chrome.com/docs/capabilities/web-apis/local-fonts),
 [Next.js font optimization](https://nextjs.org/docs/app/getting-started/fonts).
 
+### Best-in-class preference ownership — discovery pass 3
+
+- Zed and GitHub model automatic appearance as a mode over independently stored
+  light and dark theme selections. Choosing a manual mode pins one named theme;
+  returning to system mode does not erase either half of the pair.
+- Zed keeps UI, editor/buffer, agent-copy, and terminal font settings adjacent to
+  but independent from its theme selection. Figma similarly keeps interface
+  scale separate from light/dark/system appearance.
+- Figma's enhanced-contrast behavior is an accessibility layer available over
+  both light and dark themes and automatically responds to increased system
+  contrast. This avoids multiplying every visual identity into ordinary and
+  high-contrast preset names.
+- Figma stores appearance per device rather than per collaborative file. That
+  reinforces the operator's decision that Project/Workspace switches cannot
+  change Exawatt's theme, but it does not decide Exawatt's still-open
+  device-local-versus-account-sync policy.
+
+The resulting Exawatt model should separate three concerns: a named preset
+supplies visual and typographic defaults; `auto | manual` decides how presets
+are selected; global accessibility/readability overrides modify the resolved
+result without changing the named preset.
+
+Sources: [Zed appearance](https://zed.dev/docs/appearance),
+[Zed visual customization](https://zed.dev/docs/visual-customization),
+[GitHub theme settings](https://docs.github.com/en/get-started/accessibility/managing-your-theme-settings),
+[Figma themes and enhanced contrast](https://help.figma.com/hc/en-us/articles/5576781786647-Change-themes-in-Figma),
+[Figma interface scale](https://help.figma.com/hc/en-us/articles/360049549913-Adjust-the-scale-of-the-Figma-UI).
+
 ## Constraints already fixed by canon
 
 - The theming substrate comes before the new default visual identity.
@@ -208,6 +236,23 @@ Sources: [Electron `BrowserWindow`](https://www.electronjs.org/docs/latest/api/b
   three first-party presets. Community-authored distribution is not first-release
   scope. The data model must leave a credible future marketplace seam without
   prematurely shipping import, installation, or arbitrary extension execution.
+- **Built-in proof set:** target three preset roles: preserve the current dark
+  appearance as a compatibility preset, author the new light/airy direction,
+  and author a calmer modern dark sibling. Names are provisional. Gallery
+  acceptance decides which new preset becomes the default; the compatibility
+  preset is not allowed to constrain the new token contract to old accidents.
+- **Selection behavior:** appearance has `auto` and `manual` modes. Manual mode
+  pins one named preset across OS and Project changes. Auto mode follows the OS
+  and retains independently chosen light and dark preset IDs, matching the
+  proven Zed/GitHub behavior rather than treating Auto as a fourth theme.
+- **Typography ownership (delegated design resolution):** a first-party preset
+  may recommend a validated typography profile—bundled/system UI families,
+  weights, tracking, and the small metric adjustments necessary for legibility.
+  It may not invent its own type scale. Global interface-font and text-size
+  overrides sit above the preset, persist across theme changes, and remain
+  bounded by the design-system scale and minimum legibility rules. Terminal
+  typography retains its existing independent settings. Arbitrary local-font
+  enumeration and font binaries are outside the first release.
 
 ## Remaining discovery queue
 
@@ -215,23 +260,19 @@ These questions are intentionally unresolved. Further operator answers are
 promoted as dated decisions during the grooming session; they are not
 implementation tasks until the design brief is approved.
 
-1. **Appearance modes:** should “follow system” choose independently configured
-   light and dark themes, and is a first-class high-contrast pair required in
-   the initial contract or only guaranteed by validation/OS forced-colors?
-2. **Accent precedence:** when a theme supplies an action accent, does the
+1. **Accent precedence:** when a theme supplies an action accent, does the
    operator's macOS accent continue to win by default, become a user-selectable
    override, or disappear from themed modes?
-3. **Legacy and default set:** does the current dark HUD ship indefinitely as a
-   `Legacy`/`Exawatt Dark` theme, and how many authored themes must prove the
-   contract before the new default is eligible to replace it?
-4. **Typography controls:** should presets select bundled type families and a
-   type-scale profile, while explicit user font/size overrides remain adjacent
-   settings, or does selecting a preset wholly determine typography? Should the
-   first release accept arbitrary locally installed fonts?
-5. **Material fallback:** may each preset choose opaque or translucent chrome,
+2. **Material fallback:** may each preset choose opaque or translucent chrome,
    with reduced-transparency/high-contrast modes forcing opaque equivalents, or
    is material a separate global preference applied over any compatible preset?
-6. **Portability:** should appearance follow the signed-in person across desktop
+3. **Accessibility overlay:** should first release expose an explicit enhanced-
+   contrast control in addition to automatically obeying system contrast and
+   forced-color preferences?
+4. **Default migration:** when the new default is accepted, should existing
+   installations remain pinned to the compatibility preset until they opt in,
+   or migrate alongside new installations?
+5. **Portability:** should appearance follow the signed-in person across desktop
    and hosted interfaces while remaining fully offline, or is device-local
    appearance the desired authority for the first mile?
 
@@ -251,3 +292,7 @@ implementation tasks until the design brief is approved.
   platform adapters rather than portable theme vocabulary; made authored opaque
   fallbacks a requirement for every translucent role; separated permissioned
   local-font enumeration from deterministic bundled preset typography.
+- 2026-08-03, operator interview 2 and discovery pass 3: fixed the three preset
+  roles and `auto | manual` selection model. Under delegated design authority,
+  kept preset typography as overridable defaults, interface readability controls
+  global, and terminal typography independent, following Zed/Figma precedent.
