@@ -28,6 +28,40 @@ V0–V1 records below remain as implementation history and evidence. They are no
 permission to reintroduce floating islands, orbit controls, planet-like marks,
 decorative rooms, oversized workstations, or material spectacle.
 
+### V3 design pass (operator, 2026-08-02)
+
+The 2026-07-24 reframing left ENG-004's continued refinement deliberately
+unshaped pending a design pass. That pass happened on 2026-08-02 from the
+operator brief. It answers what the board is FOR, which the earlier briefs
+never stated plainly:
+
+**The board is an instrument and a stage — not a map of org structure.** Ranked
+by the operator:
+
+1. **Situational awareness.** "What is my whole fleet doing right now, and where
+   should I look?" Attention hotspots, blocked clusters, work in flight. A
+   surface you glance at and immediately know where to go.
+2. **Scale awe and command.** The felt sense of population — "I have this many
+   workers and I can direct them" — and eventually the ability to act on many at
+   once.
+
+Explicitly named as future fleet-altitude capability, not near-term build:
+reallocating workers between goals (ENG-014), consumption at fleet altitude
+(ENG-008), overall activity, and bulk directives to many Agents at once. Bulk
+command lands in this arc as a **preview affordance only** under ENG-026's
+`Coming soon` grammar — lightweight broad strokes that show the vision without
+shipping a fan-out mechanism.
+
+Structure-and-belonging (org charts, delegation trees as the primary read) was
+considered and NOT chosen as the board's purpose. Delegation topology still
+arrives via ENG-023 D3 as a detail available at Project/Agent altitude, not as
+the board's organizing idea.
+
+Altitude names and the transition model are decided separately in decision
+`0023`: the ladder becomes **Agent · Work · Fleet** (middle name provisional),
+and the board gains a required **entry pose** so that arriving from the middle
+altitude is a camera move rather than a cut.
+
 ## V2.0 Design Brief: Spatial Operations Board
 
 ### Outcome and operator job
