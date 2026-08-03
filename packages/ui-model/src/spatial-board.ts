@@ -276,6 +276,33 @@ function projectZoneRect(agentCount: number): SpatialBoardRect {
   };
 }
 
+/**
+ * Zone footprint for a focused Project that exceeds the individual-piece
+ * budget and therefore renders as aggregate density rather than one slot per
+ * Agent (ENG-004 V3.1). Sizing for `agentCount` slots produced a footprint
+ * thousands of units tall whose camera fit was an empty sliver; density
+ * content only needs area proportional to the population, at a board-like
+ * aspect, with a bounded ceiling.
+ */
+function densityZoneRect(agentCount: number): SpatialBoardRect {
+  // ~0.123 world units² per rendered density dot (0.35 pitch), some slack.
+  const contentArea = Math.min(agentCount, 4_000) * 0.1225 * 1.2;
+  const aspect = 2.4;
+  const contentHeight = Math.max(
+    BOARD.fleetZoneHeight - BOARD.zoneHeaderHeight,
+    Math.sqrt(contentArea / aspect)
+  );
+  const contentWidth = Math.max(BOARD.fleetZoneWidth, contentHeight * aspect);
+  return {
+    x: 0,
+    y: 0,
+    width: round4(contentWidth + BOARD.zonePadding * 2),
+    height: round4(
+      contentHeight + BOARD.zoneHeaderHeight + BOARD.zonePadding * 2
+    ),
+  };
+}
+
 function aggregateGroups(
   groups: ContextGroup[],
   state: FleetState
@@ -599,6 +626,8 @@ export function selectSpatialBoardLayout(
     groups.map(group => group.clusterId),
     previousZoneSlots
   );
+  const maxProjectPiecesBudget =
+    options.maxProjectPieces ?? DEFAULTS.maxProjectPieces;
   const zones = groups.map(group => {
     const slotIndex =
       altitude === 'fleet' ? zoneSlots.get(group.clusterId)! : 0;
@@ -606,7 +635,9 @@ export function selectSpatialBoardLayout(
     const rect =
       altitude === 'fleet'
         ? fleetZoneRect(slotIndex)
-        : projectZoneRect(group.agentIds.length);
+        : group.agentIds.length > maxProjectPiecesBudget
+          ? densityZoneRect(group.agentIds.length)
+          : projectZoneRect(group.agentIds.length);
     return projectZone(
       group,
       state,
@@ -623,8 +654,7 @@ export function selectSpatialBoardLayout(
   const maxFleetPieces = options.maxFleetPieces ?? DEFAULTS.maxFleetPieces;
   const maxFleetPiecesPerZone =
     options.maxFleetPiecesPerZone ?? DEFAULTS.maxFleetPiecesPerZone;
-  const maxProjectPieces =
-    options.maxProjectPieces ?? DEFAULTS.maxProjectPieces;
+  const maxProjectPieces = maxProjectPiecesBudget;
   const showFleetIndividuals = sourceAgentCount <= maxFleetPieces;
   const pieces: SpatialBoardPiece[] = [];
   for (const zone of zones) {

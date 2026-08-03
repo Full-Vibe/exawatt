@@ -68,6 +68,14 @@ const TASKS = [
     drawCallMax: 60,
     settleMs: 1_200,
   },
+  {
+    id: 't10-board-scale',
+    name: 'Demo-scale board (1k population field)',
+    // The whole 1,000-agent population renders as one InstancedMesh; the
+    // board stays within the same draw budget as the small-fleet fixture.
+    drawCallMax: 12,
+    settleMs: 1_800,
+  },
 ];
 
 // Substrings that mean a real WebGL/shader failure -> hard gate.

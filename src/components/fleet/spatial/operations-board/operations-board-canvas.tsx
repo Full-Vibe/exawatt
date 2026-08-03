@@ -31,6 +31,10 @@ import {
   statusLightStateForAgentStatus,
   type StatusLightState,
 } from '@/components/status-light/protocol';
+import {
+  computePopulationDotField,
+  POPULATION_STATUS_ORDER,
+} from './population-dots';
 
 const OperationsBoardEffects = lazy(() => import('./operations-board-effects'));
 
@@ -162,12 +166,14 @@ function BoardCameraRig({
   reduced,
   controllerRef,
   onViewportChange,
+  onZoomChange,
 }: {
   layout: SpatialBoardLayout;
   projection: SpatialBoardProjection;
   reduced: boolean;
   controllerRef: { current: OperationsBoardHandle | null };
   onViewportChange?: (viewport: OperationsBoardViewport) => void;
+  onZoomChange?: (zoom: number) => void;
 }) {
   const { size, invalidate, gl } = useThree();
   const get = useThree(state => state.get);
@@ -215,8 +221,9 @@ function BoardCameraRig({
       ortho.lookAt(value.x, value.y, 0);
       ortho.zoom = value.zoom * (1 - value.tilt * 0.08);
       ortho.updateProjectionMatrix();
+      onZoomChange?.(value.zoom);
     },
-    [get]
+    [get, onZoomChange]
   );
 
   const snapToTarget = useCallback(() => {
@@ -750,13 +757,20 @@ function ProjectHealthRail({ zone }: { zone: SpatialBoardProjectZone }) {
   );
 }
 
+/** Zone-label budget (V3.1): full cards only when the zone's projected size
+ *  can afford them; below that a one-line chip keeps identity, count, and the
+ *  drill affordance while the population field stays visible. */
+export type ZoneLabelTier = 'full' | 'compact';
+
 function ProjectControls({
   zones,
   altitude,
+  labelTier,
   onDrillProject,
 }: {
   zones: SpatialBoardProjectZone[];
   altitude: SpatialBoardLayout['altitude'];
+  labelTier: ZoneLabelTier;
   onDrillProject: (projectId: string) => void;
 }) {
   return zones.map(zone => {
@@ -766,6 +780,50 @@ function ProjectControls({
       0.8,
     ];
     const accent = projectAccent(zone.id);
+    if (labelTier === 'compact' && altitude === 'fleet') {
+      const compactContent = (
+        <span className="flex items-baseline gap-2">
+          <span className="max-w-[7.5rem] truncate text-[10px] font-semibold tracking-[-0.01em] text-[oklch(0.9_0.008_210)]">
+            {zone.label}
+          </span>
+          <span className="font-mono text-[9px] tabular-nums text-[oklch(0.65_0.015_210)]">
+            {zone.agentCount}
+          </span>
+          {zone.blockedCount > 0 && (
+            <span className="font-mono text-[9px] tabular-nums text-[oklch(0.72_0.13_28)]">
+              {zone.blockedCount}!
+            </span>
+          )}
+        </span>
+      );
+      return (
+        <Html
+          key={zone.id}
+          position={position}
+          style={{ pointerEvents: 'auto' }}
+        >
+          {!zone.isAggregate ? (
+            <button
+              type="button"
+              data-board-zone={zone.id}
+              aria-label={`Open Project ${zone.label}`}
+              onClick={() => onDrillProject(zone.id)}
+              style={{ borderLeftColor: accent }}
+              className="board-control-enter border border-l-2 border-[oklch(0.34_0.014_210)] bg-[oklch(0.14_0.009_215/0.94)] px-1.5 py-0.5 text-left outline-none transition-[border-color,background-color] duration-150 hover:border-[oklch(0.61_0.08_185)] hover:bg-[oklch(0.18_0.012_210/0.98)] focus-visible:border-[oklch(0.72_0.1_185)] focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.1_185/0.35)]"
+            >
+              {compactContent}
+            </button>
+          ) : (
+            <div
+              style={{ borderLeftColor: accent }}
+              className="board-control-enter border border-l-2 border-[oklch(0.3_0.012_210)] bg-[oklch(0.14_0.009_215/0.92)] px-1.5 py-0.5 text-left"
+            >
+              {compactContent}
+            </div>
+          )}
+        </Html>
+      );
+    }
     const content = (
       <>
         <span className="flex items-baseline justify-between gap-3">
@@ -1159,7 +1217,11 @@ function AgentPieceLayer({
   ambient: boolean;
   onSelectAgent: (agentId: string) => void;
 }) {
-  const visible = pieces.filter(piece => piece.visible);
+  // Aggregate pieces render as the instanced population dot field (V3.1),
+  // never as per-piece bodies or DOM count labels.
+  const visible = pieces.filter(
+    piece => piece.visible && piece.kind === 'agent'
+  );
   const solid = visible.filter(piece => piece.sessionState !== 'stopped');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const bodyMat = useRef<THREE.MeshLambertMaterial>(null);
@@ -1255,21 +1317,105 @@ function AgentPieceLayer({
           reduced={reduced}
         />
       )}
-      {visible
-        .filter(piece => piece.kind === 'aggregate')
-        .map(piece => (
-          <Html
-            key={`count:${piece.id}`}
-            position={[piece.x, -piece.y, 1]}
-            center
-            style={{ pointerEvents: 'none' }}
-          >
-            <span className="font-mono text-[10px] font-semibold tabular-nums text-[oklch(0.96_0.005_210)]">
-              {piece.count}
-            </span>
-          </Html>
-        ))}
     </>
+  );
+}
+
+const noopRaycast = () => null;
+
+/** One exact protocol color per population status (module scope — never
+ *  allocated per frame). */
+const DOT_STATUS_COLORS = POPULATION_STATUS_ORDER.map(
+  status => new THREE.Color(statusColor(status))
+);
+
+/**
+ * Demo-scale population field (V3.1): every aggregate piece expands into
+ * per-agent status dots packed inside its zone, drawn as ONE InstancedMesh
+ * for the whole board. No per-agent React elements or DOM labels; zone DOM
+ * controls remain the interaction and exact-count owners. Static at rest so
+ * the demand loop still parks.
+ */
+function PopulationDotLayer({
+  zones,
+  pieces,
+  reduced,
+}: {
+  zones: SpatialBoardProjectZone[];
+  pieces: SpatialBoardPiece[];
+  reduced: boolean;
+}) {
+  const invalidate = useThree(state => state.invalidate);
+  const field = useMemo(
+    () => computePopulationDotField(zones, pieces),
+    [pieces, zones]
+  );
+  // Buffer capacity grows in power-of-two buckets so live ticks reuse the
+  // same GPU buffers; the mesh remounts only when the bucket changes.
+  const capacity = useMemo(() => {
+    let size = 64;
+    while (size < field.count) size *= 2;
+    return size;
+  }, [field.count]);
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const materialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const entrance = useRef(reduced ? 1 : 0);
+  const scratch = useMemo(() => new THREE.Object3D(), []);
+
+  useLayoutEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    mesh.count = field.count;
+    for (let index = 0; index < field.count; index++) {
+      scratch.position.set(field.x[index]!, -field.y[index]!, 0.7);
+      scratch.scale.setScalar(field.size[index]!);
+      scratch.updateMatrix();
+      mesh.setMatrixAt(index, scratch.matrix);
+      mesh.setColorAt(index, DOT_STATUS_COLORS[field.status[index]!]!);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    invalidate();
+  }, [field, invalidate, scratch]);
+
+  useFrame((state, delta) => {
+    const material = materialRef.current;
+    if (!material) return;
+    if (entrance.current >= 1) {
+      material.opacity = 0.92;
+      return;
+    }
+    entrance.current = Math.min(
+      1,
+      entrance.current + Math.min(delta, 0.05) * 3.5
+    );
+    material.opacity = 0.92 * entrance.current;
+    state.invalidate();
+  });
+
+  if (field.count === 0) return null;
+  return (
+    <instancedMesh
+      key={capacity}
+      ref={meshRef}
+      args={[undefined, undefined, capacity]}
+      frustumCulled={false}
+      raycast={noopRaycast}
+      // Transparent-sort tie-break: dots and zone plates are both
+      // origin-anchored instanced meshes, so painter sorting cannot order
+      // them by depth. Explicit renderOrder keeps dots above plates in both
+      // projections (status marks use 2/3).
+      renderOrder={1}
+    >
+      <circleGeometry args={[0.5, 6]} />
+      <meshBasicMaterial
+        ref={materialRef}
+        toneMapped={false}
+        transparent
+        opacity={reduced ? 0.92 : 0}
+        depthWrite={false}
+      />
+    </instancedMesh>
   );
 }
 
@@ -1389,6 +1535,28 @@ export function OperationsBoardCanvas({
   const ambient = !reduced && !lowPower && pageVisible;
   const [hoveredZoneId, setHoveredZoneId] = useState<string | null>(null);
   const visibleZones = layout.zones.filter(zone => zone.visible);
+  // Zone-label budget: full cards only when a zone's projected width can
+  // afford them. Hysteresis keeps the tier stable through damped zoom, and
+  // the state only flips at a boundary crossing (never per frame).
+  const [labelTier, setLabelTier] = useState<ZoneLabelTier>('full');
+  const labelTierRef = useRef<ZoneLabelTier>('full');
+  const zoneWidthRef = useRef(24);
+  zoneWidthRef.current = visibleZones[0]?.rect.width ?? 24;
+  const handleZoomChange = useCallback((zoom: number) => {
+    const projectedPx = zoneWidthRef.current * zoom;
+    const next: ZoneLabelTier =
+      labelTierRef.current === 'full'
+        ? projectedPx < 250
+          ? 'compact'
+          : 'full'
+        : projectedPx > 290
+          ? 'full'
+          : 'compact';
+    if (next !== labelTierRef.current) {
+      labelTierRef.current = next;
+      setLabelTier(next);
+    }
+  }, []);
   // Semantic address key: a new altitude (or focused Project) re-runs the
   // entrance choreography; live data ticks never do.
   const choreoKey = `${layout.altitude}:${layout.focusedProjectId ?? '~'}`;
@@ -1428,6 +1596,7 @@ export function OperationsBoardCanvas({
         reduced={reduced}
         controllerRef={controllerRef}
         onViewportChange={onViewportChange}
+        onZoomChange={handleZoomChange}
       />
       <BoardGrid bounds={layout.bounds} />
       <ZoneLayer
@@ -1446,9 +1615,16 @@ export function OperationsBoardCanvas({
         ambient={ambient}
         onSelectAgent={onSelectAgent}
       />
+      <PopulationDotLayer
+        key={`dots:${choreoKey}`}
+        zones={layout.zones}
+        pieces={layout.pieces}
+        reduced={reduced}
+      />
       <ProjectControls
         zones={visibleZones}
         altitude={layout.altitude}
+        labelTier={labelTier}
         onDrillProject={onDrillProject}
       />
       <AgentControls

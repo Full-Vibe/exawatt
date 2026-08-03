@@ -168,7 +168,9 @@ async function openProject(page) {
   await page.keyboard.press('Digit1');
   await page.waitForURL(/altitude=project/, { timeout: 10_000 });
   const units = page.locator(
-    'button[aria-label$=", working"], button[aria-label$=", blocked"], button[aria-label$=", reviewing"], button[aria-label$=", idle"]'
+    // Agent units carry the status-light protocol labels (landed 2026-07-23);
+    // the previous raw-status suffixes never match anymore.
+    'button[data-board-agent][data-board-status-light]'
   );
   await units.first().waitFor({ state: 'visible' });
   return { projectCount, units };

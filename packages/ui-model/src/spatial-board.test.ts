@@ -250,6 +250,32 @@ describe('selectSpatialBoardLayout', () => {
     expect(layout.pieces.every(piece => piece.kind === 'aggregate')).toBe(true);
   });
 
+  it('sizes an aggregated giant Project to density content, not one slot per Agent', () => {
+    // ENG-004 V3.1: a 3,000+-Agent Project drilled at project altitude used to
+    // emit a footprint thousands of units tall (rows for pieces that were
+    // never rendered), so the camera fit framed an empty sliver.
+    const state = projectFleet(1, 3_334);
+    const layout = selectSpatialBoardLayout(state, {
+      altitude: 'project',
+      focusedProjectId: 'project:Project 000',
+    });
+    expect(layout.zones).toHaveLength(1);
+    const rect = layout.zones[0]!.rect;
+    expect(rect.height).toBeLessThan(60);
+    expect(rect.width).toBeLessThan(120);
+    // Still aggregated: no per-Agent pieces at this population.
+    expect(layout.pieces.every(piece => piece.kind === 'aggregate')).toBe(true);
+    // A Project inside the individual budget keeps the slot-grid sizing.
+    const smallState = projectFleet(1, 12);
+    const smallLayout = selectSpatialBoardLayout(smallState, {
+      altitude: 'project',
+      focusedProjectId: 'project:Project 000',
+    });
+    expect(
+      smallLayout.pieces.every(piece => piece.kind === 'agent')
+    ).toBe(true);
+  });
+
   it('budgets labels while keeping the selected Agent label visible', () => {
     const state = fleet([
       agent('a', 'Alpha'),

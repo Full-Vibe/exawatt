@@ -36,16 +36,24 @@ const BASE_TICK_INTERVAL_MS = 5000;
 // Demo fleet size, for exercising fleet-scale readiness (V0.5). 'small' is the
 // default and keeps the 8 hand-authored agents unchanged; larger sizes add
 // synthetic agents across more Projects so the surface can be tested at scale.
-export type FleetScale = 'small' | 'medium' | 'large';
+// 'xl'/'xxl' are the ENG-004 V3.1 demo-scale rendering tiers (1k/10k): they
+// exist so the Spatial board's instancing/culling/label budgets can be driven
+// and measured before the authored demo Workspace (ENG-027 W4) supplies real
+// structure at that population.
+export type FleetScale = 'small' | 'medium' | 'large' | 'xl' | 'xxl';
 
 const SCALE_COUNTS: Record<FleetScale, number> = {
   small: 8,
   medium: 40,
   large: 150,
+  xl: 1_000,
+  xxl: 10_000,
 };
 
 // Projects synthetic agents are distributed across (the 3 canonical demo
 // Projects plus more, so high-altitude clustering has many zones to summarize).
+// The list intentionally exceeds the board's 24-zone budget at xl/xxl so the
+// "+N more Projects" aggregate zone is exercised at demo scale.
 const SYNTHETIC_PROJECTS = [
   'Exawatt Demo Polish',
   'OpenClaw Local Parity',
@@ -57,6 +65,22 @@ const SYNTHETIC_PROJECTS = [
   'Docs & DX',
   'Billing & Metering',
   'Security Review',
+  'Data Pipeline',
+  'Design System',
+  'Release Engineering',
+  'Customer Onboarding',
+  'Observability',
+  'Payments Migration',
+  'Search Relevance',
+  'Localization',
+  'Compliance Audit',
+  'Sales Tooling',
+  'Marketplace Integrations',
+  'Edge Performance',
+  'Identity & Access',
+  'Content Studio',
+  'QA Automation',
+  'Capacity Planning',
 ];
 
 // Weighted status pool for synthetic agents (mostly quiet work, a slice blocked).
