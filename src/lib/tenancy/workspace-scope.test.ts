@@ -3,6 +3,8 @@ import {
   BUILTIN_WORKSPACES,
   DEMO_WORKSPACE,
   DEMO_WORKSPACE_ID,
+  ORGANIZATION_WORKSPACE_PREVIEW,
+  ORGANIZATION_WORKSPACE_PREVIEW_ID,
   PERSONAL_WORKSPACE,
   PERSONAL_WORKSPACE_ID,
   isTenantWorkspace,
@@ -36,6 +38,15 @@ describe('resolveActiveWorkspace', () => {
     } as const;
     expect(
       resolveActiveWorkspace('org-preview', [...BUILTIN_WORKSPACES, teaser]).id
+    ).toBe(PERSONAL_WORKSPACE_ID);
+  });
+
+  it('never wakes up inside a preview Workspace', () => {
+    expect(
+      resolveActiveWorkspace(
+        ORGANIZATION_WORKSPACE_PREVIEW_ID,
+        BUILTIN_WORKSPACES
+      ).id
     ).toBe(PERSONAL_WORKSPACE_ID);
   });
 
@@ -96,6 +107,7 @@ describe('mergeWorkspaces', () => {
     expect(merged.map(workspace => workspace.id)).toEqual([
       PERSONAL_WORKSPACE_ID,
       DEMO_WORKSPACE_ID,
+      ORGANIZATION_WORKSPACE_PREVIEW_ID,
       'ok',
     ]);
   });
@@ -109,14 +121,26 @@ describe('mergeWorkspaces', () => {
         availability: 'available',
       },
     ]);
-    expect(merged).toHaveLength(2);
+    expect(merged).toHaveLength(3);
     expect(merged[0]).toEqual(PERSONAL_WORKSPACE);
     expect(merged[1]).toEqual(DEMO_WORKSPACE);
+    expect(merged[2]).toEqual(ORGANIZATION_WORKSPACE_PREVIEW);
   });
 });
 
 describe('isTenantWorkspace', () => {
   it('accepts the builtins', () => {
     expect(BUILTIN_WORKSPACES.every(isTenantWorkspace)).toBe(true);
+  });
+
+  it('requires preview Workspaces to name a local destination', () => {
+    expect(
+      isTenantWorkspace({
+        id: 'preview-without-route',
+        name: 'Preview',
+        kind: 'organization',
+        availability: 'preview',
+      })
+    ).toBe(false);
   });
 });

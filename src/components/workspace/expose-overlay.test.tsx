@@ -76,6 +76,34 @@ const projects: Project[] = [
 ];
 
 describe('Sessions overview', () => {
+  it('shows source-reported Initiative truth without inventing it for other Sessions', () => {
+    render(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        initiativeByTab={{
+          'tab-b': {
+            id: 'init-demo',
+            name: 'Investor demo polish',
+            goal: 'Make the product legible in one walkthrough.',
+          },
+        }}
+        activeTabId="tab-b"
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    const beta = screen.getByRole('button', {
+      name: /Beta, One.*Initiative Investor demo polish/,
+    });
+    expect(
+      beta.querySelector('[data-session-initiative="init-demo"]')
+    ).toHaveTextContent('Investor demo polish');
+    const alpha = screen.getByRole('button', { name: /^Alpha, One/ });
+    expect(alpha.querySelector('[data-session-initiative]')).toBeNull();
+  });
+
   it('shows EVERY tab — stopped ones dimmed with their state, still openable', () => {
     const onPick = vi.fn();
     render(

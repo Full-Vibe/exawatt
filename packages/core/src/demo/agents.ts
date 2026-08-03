@@ -423,7 +423,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     ],
     readiness: 'live',
     tier: 'base',
-    initiativeId: null,
+    initiativeId: 'init-home-ga',
   },
   {
     id: 'vg-home-outage',
@@ -844,7 +844,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     ],
     readiness: 'live',
     tier: 'base',
-    initiativeId: null,
+    initiativeId: 'init-ercot',
   },
 
   /* ---------------- market-intel (research, preview) ---------------- */

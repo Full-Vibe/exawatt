@@ -53,7 +53,8 @@ The demo fleet must support the full altitude sweep across *different* Projects,
 - **W2 Demo source and pane content source** — LANDED 2026-08-02 (see milestone log). The demo data source behind the existing fleet transport boundary plus the pane content source; demo tabs render transcripts and cannot spawn a PTY; Demo flips `available`.
 - **W3 Demo fleet content** (landed 2026-08-02 — see milestone log) — the authored demo Workspace: Projects, roadmaps, Agents, Sessions, consumption. Authored as data, versioned in the repo, resettable.
 - **W4 Scale tier (data)** (landed 2026-08-02 — see milestone log) — the demo fleet authored or generated at the entity count the Spatial moment needs, with honest structure at that volume rather than cloned filler. This milestone owns the DATA only; ENG-004 V3.1 owns rendering it. See the contradiction note below.
-- **W5 Organization Workspace preview** — shared tenants appear in the switcher as ENG-026 `preview`, linking to the Organization surface. Named Organization, not Team: decision `0023` gives **Team** to the middle command altitude, and two Teams in one product is a collision.
+- **W5 Organization Workspace preview** (landed 2026-08-03 — see milestone log) — shared tenants appear in the switcher as ENG-026 `preview`, linking to the Organization surface. Named Organization, not Team: decision `0023` gives **Team** to the middle command altitude, and two Teams in one product is a collision.
+- **W8 Identity and Initiative coherence** (landed 2026-08-03 — see milestone log) — one tenant name (**Demo**), one portrayed organization (**Voltaic Grid Systems**), and every demo Agent assigned to an authored Initiative surfaced at Agent and Team altitude. Numbered W8 because W6/W7 landed while W5 was still open.
 
 ## Scale honesty (decided 2026-08-02)
 
@@ -307,6 +308,59 @@ The demo-arc closing review verified findings against the landed W2; fixes:
 - **Push to cloud in the demo shell.** The announced inert row existed only in
   the live tab-strip menu; the demo Session pane header now carries the same
   `AnnouncedChip` so the Demo tenant can show the direction.
+
+### 2026-08-03 — W5 + W8: Organization preview, identity, and Initiatives (landed)
+
+The last demo-arc milestone and its adjacent fixture-coherence pass now tell
+one tenancy story from the same model.
+
+**Organization is a Workspace row, not a menu exception.**
+`TenantWorkspaceAvailability` now distinguishes `available`, `preview`, and
+inert `coming-soon`. The builtin Voltaic Grid Systems Organization record is a
+`preview` Workspace with a typed `/organization` destination; the account menu
+renders it through the same workspace loop as Personal and Demo under the
+shared ENG-026 marker. `resolveActiveWorkspace` and `switchWorkspace` still
+accept only `available`, so a preview can navigate but can never be persisted
+or activated before ENG-012 supplies a real source. The prior hand-coded
+Organization anchor is deleted.
+
+**Tenant identity and fixture identity are separate domains.** The tenant is
+named **Demo** everywhere it names itself (switcher, always-visible identity
+chip, Usage assurance marker, Organization Workspace list). The fixture's old
+second `DEMO_WORKSPACE` constant—`Voltaic (Demo)` beside a `company` field—was
+the model collision behind the UI drift. Core now exports
+`DEMO_ORGANIZATION`, whose one name is **Voltaic Grid Systems**; tenancy derives
+its descriptive taglines and Organization preview from that record. “Voltaic”
+continues to name the representative company and corpus, never the tenant.
+
+**Initiatives are now fleet truth.** The four authored Initiative records are
+no longer orphan fixtures. A semantic resolver assigns generated work from its
+Project and roadmap item (including the SOC 2 exceptions inside
+`platform-infra`), and the two previously unassigned base Sessions were
+reconciled. `DemoFleetAgent.initiativeId` is required: all 173 Agents now map
+to a real Initiative whose Project membership agrees with the Agent. The demo
+source projects that truth through an optional, source-agnostic
+`initiativeByTab` contract: the active Agent context bar shows the durable goal
+beside the roadmap item, and every Team card names its Initiative. Sources that
+do not report Initiative truth pass nothing; the UI never invents an
+“unassigned” zero. The shared Session-card specimen in `/hud-gallery` carries
+the DOM state before production wiring; no R3F sibling is required because the
+change does not alter Fleet rendering.
+
+This does **not** unpark Initiative aggregation or aggregate Project drill from
+ENG-004's recorded V2.1 boundary, and it does not claim ENG-005's durable
+Initiative primitive has shipped. It exposes honest source data at the two
+altitudes that already compare current work.
+
+Focused proof at implementation time: 81 tests across the core demo fixture,
+tenancy model, Demo shell model/client, Team overlay, and gallery Session-card
+study. The expanded `pnpm eval:electron:tenancy` also passes the real W5/W8
+walk: preview navigation leaves Personal active and its PTY responsive, the
+Agent context names its Initiative, all 27 Team cards carry all four authored
+Initiatives, Fleet remains 173 Agents, and both round trips plus relaunch
+preserve tenant and PTY identity. Type-check, lint, and the full test suite pass;
+the switcher, Agent, Team, and Organization screenshots were inspected at the
+Electron evaluator's real desktop viewport.
 
 ## Open questions
 

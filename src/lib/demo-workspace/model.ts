@@ -15,6 +15,7 @@
 import {
   DEMO_PROJECTS,
   DEMO_PROJECTS_BY_KEY,
+  DEMO_INITIATIVES_BY_ID,
   DEMO_ROADMAP_MARKDOWN,
   DEMO_TRANSCRIPTS,
   DEMO_WORKSPACE_NOW_MS,
@@ -23,11 +24,15 @@ import {
   demoWorkLog,
   demoProjectRoadmap,
   type DemoFleetAgent,
+  type DemoInitiative,
   type DemoTranscriptLine,
   type DemoWorkspaceProject,
   type RoadmapDoc,
 } from '@exawatt/core';
-import type { Project, WorkspaceTab } from '@/components/workspace/use-workspace-state';
+import type {
+  Project,
+  WorkspaceTab,
+} from '@/components/workspace/use-workspace-state';
 import type { SessionAttentionSignal } from '@/components/workspace/session-status';
 import type {
   SessionRow,
@@ -76,6 +81,17 @@ export function demoProjectFor(
   agent: DemoFleetAgent
 ): DemoWorkspaceProject | undefined {
   return DEMO_PROJECTS_BY_KEY.get(agent.projectKey);
+}
+
+/** Initiative lookup is strict because the demo corpus promises every Agent
+ *  advances one durable goal. A missing row is fixture drift, not optional UI
+ *  metadata to erase at the projection boundary. */
+export function demoInitiativeFor(agent: DemoFleetAgent): DemoInitiative {
+  const initiative = DEMO_INITIATIVES_BY_ID.get(agent.initiativeId);
+  if (!initiative) {
+    throw new Error(`Unknown demo Initiative ${agent.initiativeId}`);
+  }
+  return initiative;
 }
 
 const HARNESS_BY_SOURCE: Record<DemoFleetAgent['source'], PtyHarness> = {
@@ -141,6 +157,15 @@ export function demoShellAgentTypes(): Record<string, string> {
   for (const agent of demoShellAgents()) {
     const type = demoProjectFor(agent)?.agentType;
     if (type) out[agent.id] = type;
+  }
+  return out;
+}
+
+/** tabId → durable Initiative for the Team comparison surface. */
+export function demoShellInitiatives(): Record<string, DemoInitiative> {
+  const out: Record<string, DemoInitiative> = {};
+  for (const agent of demoShellAgents()) {
+    out[agent.id] = demoInitiativeFor(agent);
   }
   return out;
 }

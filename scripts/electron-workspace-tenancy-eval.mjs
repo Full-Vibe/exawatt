@@ -179,12 +179,49 @@ try {
         'Demo entry no longer reads Coming soon',
         !(await demoItem.innerText()).includes('Coming soon')
       );
+      const organizationPreview = page.locator(
+        '[data-workspace-preview="organization-preview"]'
+      );
+      await organizationPreview.waitFor();
+      check(
+        'shared Organization is a first-class preview Workspace row',
+        (await organizationPreview.innerText()).includes(
+          'Voltaic Grid Systems'
+        ) &&
+          (await organizationPreview.innerText()).includes('Coming soon') &&
+          (await organizationPreview.getAttribute('href')) === '/organization'
+      );
+      check(
+        'preview Organization cannot masquerade as a Workspace switch verb',
+        (await page
+          .locator('[data-workspace-switch="organization-preview"]')
+          .count()) === 0
+      );
       await page.screenshot({
         path: join(SCREENSHOT_DIR, 'account-menu-switcher.png'),
       });
       console.log('[tenancy] switcher screenshot captured');
 
+      // W5 navigation: the preview row opens the real Organization surface
+      // without changing the active tenant or touching the live PTY.
+      await organizationPreview.click();
+      await page.waitForFunction(
+        () => window.location.pathname === '/organization'
+      );
+      await page.getByRole('heading', { name: 'Organization' }).waitFor();
+      check(
+        'Organization preview navigation leaves Personal active',
+        (await page.locator('[data-active-tenant-workspace]').count()) === 0 &&
+          (await ptySessions(page)).length === 1
+      );
+      await page.screenshot({
+        path: join(SCREENSHOT_DIR, 'organization-workspace-preview.png'),
+      });
+      await page.goBack();
+      await page.locator('.xterm-helper-textarea').waitFor();
+
       // ---- switch away through the real menu ----------------------------
+      await openAccountMenu(page);
       await page
         .locator(`[data-workspace-switch="${BENCH_WORKSPACE.id}"]`)
         .click();
@@ -292,6 +329,12 @@ try {
           .count()) === 1
       );
       check(
+        'Demo is the tenant identity — no competing Workspace suffix',
+        (await page
+          .locator('[data-active-tenant-workspace="demo"]')
+          .innerText()) === 'Demo'
+      );
+      check(
         'no terminal renders in the Demo tenant',
         (await page.locator('.xterm-helper-textarea').count()) === 0
       );
@@ -300,6 +343,10 @@ try {
       check(
         'demo Session opens a readable transcript (pane content source)',
         (await page.locator('[data-demo-transcript]').count()) === 1
+      );
+      check(
+        'Agent context bar names the Session Initiative',
+        (await page.locator('[data-active-session-initiative]').count()) === 1
       );
       await page.screenshot({
         path: join(SCREENSHOT_DIR, 'demo-agent-altitude.png'),
@@ -323,9 +370,7 @@ try {
       check(
         'preview desk Session carries the shared Coming soon marker',
         (await page
-          .locator(
-            '[data-demo-session-pane] [data-readiness="preview"]'
-          )
+          .locator('[data-demo-session-pane] [data-readiness="preview"]')
           .count()) === 1
       );
       await page.screenshot({
@@ -356,8 +401,7 @@ try {
       await page.locator('[cmdk-root]').waitFor();
       check(
         'palette lists demo Sessions',
-        (await page.locator('[cmdk-root] [data-session-id^="vg-"]').count()) >
-          0
+        (await page.locator('[cmdk-root] [data-session-id^="vg-"]').count()) > 0
       );
       check(
         'palette offers no launch verbs in Demo',
@@ -429,8 +473,7 @@ try {
       check(
         'F6 moves focus from the Demo Session to app controls',
         await page.evaluate(
-          () =>
-            document.activeElement?.hasAttribute('data-tab-chrome') ?? false
+          () => document.activeElement?.hasAttribute('data-tab-chrome') ?? false
         )
       );
       await page.keyboard.press('Escape');
@@ -470,6 +513,18 @@ try {
         'Team altitude shows the authored demo fleet (27 Sessions)',
         tileCount === 27,
         `tiles=${tileCount}`
+      );
+      const initiativeTiles = page.locator(
+        '[data-expose-tile] [data-session-initiative]'
+      );
+      const initiativeNames = new Set(await initiativeTiles.allInnerTexts());
+      check(
+        'every Team Session names an Initiative and all four are visible',
+        (await initiativeTiles.count()) === tileCount &&
+          initiativeNames.size === 4,
+        `initiative tiles=${await initiativeTiles.count()}, names=${[
+          ...initiativeNames,
+        ].join(', ')}`
       );
       const railText =
         (await page.locator('[data-roadmap-rail]').count()) > 0
@@ -516,12 +571,15 @@ try {
       // Fire the real menu IPC inside Demo — the dispatch gate must drop
       // them whole, and the launch-family request functions must store no
       // pending slot that could fire against Personal after the switch back.
-      await app.evaluate(({ BrowserWindow }, commands) => {
-        const win = BrowserWindow.getAllWindows()[0];
-        for (const command of commands) {
-          win?.webContents.send('menu:command', command);
-        }
-      }, ['launch-shell', 'launch-claude', 'new-agent']);
+      await app.evaluate(
+        ({ BrowserWindow }, commands) => {
+          const win = BrowserWindow.getAllWindows()[0];
+          for (const command of commands) {
+            win?.webContents.send('menu:command', command);
+          }
+        },
+        ['launch-shell', 'launch-claude', 'new-agent']
+      );
       await page.waitForTimeout(500);
       check(
         'menu launch verbs are inert inside Demo (no terminal, tenant intact)',
@@ -616,7 +674,10 @@ try {
       const demoContent =
         (await page.locator('[data-demo-workspace]').count()) +
         (await page.locator('[data-spatial-command]').count());
-      check('relaunch lands on Demo content, not a placeholder', demoContent > 0);
+      check(
+        'relaunch lands on Demo content, not a placeholder',
+        demoContent > 0
+      );
       // The Fleet altitude after a relaunch is the VOLTAIC board
       await page.locator('[data-command-altitude-level="spatial"]').click();
       await page.locator('[data-spatial-command]').waitFor();

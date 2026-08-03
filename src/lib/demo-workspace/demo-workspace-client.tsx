@@ -17,7 +17,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FolderOpen, SquareTerminal } from 'lucide-react';
+import { FolderOpen, SquareTerminal, Target } from 'lucide-react';
 import { HUD } from '@/components/hud';
 import { ExposeOverlay } from '@/components/workspace/expose-overlay';
 import { TabStrip } from '@/components/workspace/tab-strip';
@@ -61,10 +61,12 @@ import {
 } from '@/components/workspace/workspace-command-availability';
 import {
   demoProjectFor,
+  demoInitiativeFor,
   demoRoadmapRead,
   demoShellActivity,
   demoShellAgents,
   demoShellAgentTypes,
+  demoShellInitiatives,
   demoShellConsumption,
   demoShellAttention,
   demoShellDelegation,
@@ -128,6 +130,7 @@ export function DemoWorkspaceClient() {
   const delegation = useMemo(() => demoShellDelegation(), []);
   const roadmapByTab = useMemo(() => demoShellRoadmapByTab(), []);
   const agentTypeByTab = useMemo(() => demoShellAgentTypes(), []);
+  const initiativeByTab = useMemo(() => demoShellInitiatives(), []);
   const consumptionByTab = useMemo(() => demoShellConsumption(), []);
   const sessionPaneRef = useRef<HTMLElement>(null);
   const [closeConfirm, setCloseConfirm] = useState<{
@@ -182,6 +185,7 @@ export function DemoWorkspaceClient() {
     agents.find(agent => agent.id === activeId) ??
     demoShellFleetAgentById(activeId) ??
     null;
+  const activeInitiative = activeAgent ? demoInitiativeFor(activeAgent) : null;
   /** A scale-tier Session opened from the Fleet board: not a base-tier tab,
    *  so its chip rides transiently in its Project's ribbon group while open. */
   const transientAgent = activeAgent && !activeTab ? activeAgent : null;
@@ -301,14 +305,18 @@ export function DemoWorkspaceClient() {
 
   const reorderTabBeside = useCallback(
     (tabId: string, targetTabId: string, place: 'before' | 'after') => {
-      setProjects(current => placeTabBeside(current, tabId, targetTabId, place) ?? current);
+      setProjects(
+        current => placeTabBeside(current, tabId, targetTabId, place) ?? current
+      );
     },
     []
   );
 
   const reorderProjectBeside = useCallback(
     (dir: string, targetDir: string, place: 'before' | 'after') => {
-      setProjects(current => placeProjectBeside(current, dir, targetDir, place) ?? current);
+      setProjects(
+        current => placeProjectBeside(current, dir, targetDir, place) ?? current
+      );
     },
     []
   );
@@ -684,6 +692,20 @@ export function DemoWorkspaceClient() {
                       : ''}
                   </span>
                 )}
+                {activeInitiative && (
+                  <span
+                    data-active-session-initiative={activeInitiative.id}
+                    title={activeInitiative.goal}
+                    className="inline-flex min-w-0 shrink items-center gap-1 rounded border px-1.5 py-px font-ui text-chrome-meta"
+                    style={{
+                      color: HUD.textDim,
+                      borderColor: HUD.divider,
+                    }}
+                  >
+                    <Target aria-hidden className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{activeInitiative.name}</span>
+                  </span>
+                )}
                 {summaries[activeId] && (
                   <span
                     className="line-clamp-2 min-w-0 flex-1 border-l pl-3 text-sm leading-5"
@@ -766,6 +788,7 @@ export function DemoWorkspaceClient() {
           delegation={delegation}
           roadmapByTab={roadmapByTab}
           agentTypeByTab={agentTypeByTab}
+          initiativeByTab={initiativeByTab}
           consumptionByTab={consumptionByTab}
           activeTabId={activeAgent?.id ?? null}
           activeProjectDir={activeProject?.dir ?? null}

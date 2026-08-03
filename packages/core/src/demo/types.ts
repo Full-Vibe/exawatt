@@ -189,17 +189,20 @@ export interface DemoFleetAgent {
   workLog?: readonly string[];
   readiness: DemoReadiness;
   tier: DemoFleetTier;
-  /** Initiative this work rolls up to, when any. */
-  initiativeId: string | null;
+  /** Initiative this work rolls up to. The authored demo fleet is strategic
+   *  by construction: every Agent must name the durable goal it advances. */
+  initiativeId: string;
 }
 
-export interface DemoWorkspaceIdentity {
-  /** Workspace id in the switcher. */
+/** The organization portrayed by the Demo Workspace's representative data.
+ *  This is deliberately NOT the tenant Workspace identity: the tenant is
+ *  canonically named "Demo" by the app tenancy layer, while this record names
+ *  the company whose fleet the fixture portrays. */
+export interface DemoOrganizationIdentity {
+  /** Stable organization id inside the fixture corpus. */
   id: string;
-  /** Workspace display name. */
+  /** Organization display name. */
   name: string;
-  /** The portrayed company. */
-  company: string;
   tagline: string;
   /** One paragraph of who this startup is, for About-style surfaces. */
   description: string;

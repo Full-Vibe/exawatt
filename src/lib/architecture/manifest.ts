@@ -730,7 +730,7 @@ export const architectureManifest = {
           id: 'demo-harness',
           label: 'Demo Source',
           summary:
-            'The Demo Workspace source (ENG-027): authored Voltaic fixtures behind the same transport and rollup contracts the live paths use. The mock simulation engine is eval-only.',
+            'The Demo tenant source (ENG-027): authored Voltaic Grid Systems fixtures, including Initiative assignments for every Agent, behind the same transport and rollup contracts the live paths use. The organization identity is separate from the tenant identity; the mock simulation engine is eval-only.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 535,

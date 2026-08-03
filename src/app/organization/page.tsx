@@ -1,7 +1,12 @@
 import type { Metadata } from 'next';
 import { Building2, Laptop, MonitorPlay, Share2 } from 'lucide-react';
-import { AnnouncedChip, PreviewSurfaceShell, Unbuilt } from '@/components/readiness';
-import { DEMO_WORKSPACE } from '@exawatt/core';
+import {
+  AnnouncedChip,
+  PreviewSurfaceShell,
+  Unbuilt,
+} from '@/components/readiness';
+import { DEMO_ORGANIZATION } from '@exawatt/core';
+import { DEMO_WORKSPACE } from '@/lib/tenancy/workspace-scope';
 import { demoOrgMembers, ORG_ROLES, type OrgRole } from './model';
 
 // Preview surface (ENG-026 N3). noindex for the same stealth reason as
@@ -44,7 +49,10 @@ export default function OrganizationPage() {
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border bg-card p-4">
             <div className="flex items-center gap-2">
-              <Laptop aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
+              <Laptop
+                aria-hidden
+                className="h-3.5 w-3.5 text-muted-foreground"
+              />
               <span className="text-sm font-semibold">Personal</span>
             </div>
             <p className="text-chrome-meta text-muted-foreground">
@@ -72,7 +80,7 @@ export default function OrganizationPage() {
                 className="h-3.5 w-3.5 text-muted-foreground"
               />
               <span className="text-sm font-semibold">
-                {DEMO_WORKSPACE.company}
+                {DEMO_ORGANIZATION.name}
               </span>
               <AnnouncedChip
                 size="micro"
@@ -155,8 +163,8 @@ export default function OrganizationPage() {
             Share Workspace
           </AnnouncedChip>
           <span className="text-chrome-meta text-muted-foreground">
-            Sharing grants visibility only. Shared members cannot run your
-            local Agents.
+            Sharing grants visibility only. Shared members cannot run your local
+            Agents.
           </span>
         </div>
         <Unbuilt

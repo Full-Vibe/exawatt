@@ -29,6 +29,7 @@ interface SessionStateFixture {
   planStep: string | null;
   planIndex: number | null;
   planTotal: number | null;
+  initiative?: { id: string; name: string; goal: string };
 }
 
 /** Fixture clock: child elapsed labels need plausible, stable start times. */
@@ -49,6 +50,11 @@ const SESSION_FIXTURES: SessionStateFixture[] = [
     planStep: 'Decide ownership',
     planIndex: 3,
     planTotal: 5,
+    initiative: {
+      id: 'init-demo-polish',
+      name: 'Investor demo polish',
+      goal: 'Make the product legible in one live walkthrough.',
+    },
   },
   {
     id: 'mmhc-baa',
@@ -269,6 +275,7 @@ function SessionTile({
         glyphState={tile.glyphState}
         attention={tile.attention}
         delegation={tile.delegation}
+        initiative={tile.initiative}
         current={tile.activity}
         meaningfulChange={tile.meaningfulChange}
         next={tile.planStep ?? 'No plan reported'}

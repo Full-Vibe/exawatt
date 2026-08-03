@@ -17,12 +17,18 @@
  *   session-persistence APIs
  */
 
+import { DEMO_ORGANIZATION } from '@exawatt/core';
+
 export type TenantWorkspaceId = string;
 
 export type TenantWorkspaceKind = 'personal' | 'demo' | 'organization';
 
-/** `coming-soon` renders in the switcher but cannot be activated. */
-export type TenantWorkspaceAvailability = 'available' | 'coming-soon';
+/** `preview` navigates to an honest ENG-026 preview; `coming-soon` is inert.
+ *  Neither can become the active Workspace until its source is available. */
+export type TenantWorkspaceAvailability =
+  | 'available'
+  | 'preview'
+  | 'coming-soon';
 
 export interface TenantWorkspace {
   id: TenantWorkspaceId;
@@ -31,10 +37,14 @@ export interface TenantWorkspace {
   availability: TenantWorkspaceAvailability;
   /** one-line identity shown under the name in the switcher */
   tagline?: string;
+  /** Required for `preview`: the real preview surface this row opens. */
+  href?: string;
 }
 
 export const PERSONAL_WORKSPACE_ID: TenantWorkspaceId = 'personal';
 export const DEMO_WORKSPACE_ID: TenantWorkspaceId = 'demo';
+export const ORGANIZATION_WORKSPACE_PREVIEW_ID: TenantWorkspaceId =
+  'organization-preview';
 
 export const PERSONAL_WORKSPACE: TenantWorkspace = {
   id: PERSONAL_WORKSPACE_ID,
@@ -51,12 +61,25 @@ export const DEMO_WORKSPACE: TenantWorkspace = {
   name: 'Demo',
   kind: 'demo',
   availability: 'available',
-  tagline: 'Voltaic Grid Systems — demo fleet',
+  tagline: `${DEMO_ORGANIZATION.name} — representative fleet`,
+};
+
+/** ENG-027 W5: the future shared tenant is a first-class Workspace row, not a
+ *  menu exception. It opens the honest Organization preview and can never be
+ *  persisted or activated until a real shared source makes it `available`. */
+export const ORGANIZATION_WORKSPACE_PREVIEW: TenantWorkspace = {
+  id: ORGANIZATION_WORKSPACE_PREVIEW_ID,
+  name: DEMO_ORGANIZATION.name,
+  kind: 'organization',
+  availability: 'preview',
+  tagline: 'Shared fleet preview',
+  href: '/organization',
 };
 
 export const BUILTIN_WORKSPACES: readonly TenantWorkspace[] = [
   PERSONAL_WORKSPACE,
   DEMO_WORKSPACE,
+  ORGANIZATION_WORKSPACE_PREVIEW,
 ];
 
 export const ACTIVE_WORKSPACE_STORAGE_KEY = 'exawatt:active-workspace:v1';
@@ -71,7 +94,8 @@ export function resolveActiveWorkspace(
   workspaces: readonly TenantWorkspace[]
 ): TenantWorkspace {
   const match = workspaces.find(
-    workspace => workspace.id === storedId && workspace.availability === 'available'
+    workspace =>
+      workspace.id === storedId && workspace.availability === 'available'
   );
   if (match) return match;
   return (
@@ -111,7 +135,10 @@ export function isTenantWorkspace(value: unknown): value is TenantWorkspace {
       candidate.kind === 'demo' ||
       candidate.kind === 'organization') &&
     (candidate.availability === 'available' ||
-      candidate.availability === 'coming-soon')
+      candidate.availability === 'preview' ||
+      candidate.availability === 'coming-soon') &&
+    (candidate.availability !== 'preview' ||
+      (typeof candidate.href === 'string' && candidate.href.startsWith('/')))
   );
 }
 

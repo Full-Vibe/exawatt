@@ -1,6 +1,6 @@
 'use client';
 
-import { Shapes } from 'lucide-react';
+import { Shapes, Target } from 'lucide-react';
 import {
   WORKSPACE_HUD as HUD,
   withThemeAlpha,
@@ -38,6 +38,12 @@ export interface SessionConsumptionReadout {
   intensity: number;
 }
 
+export interface SessionInitiativeReadout {
+  id: string;
+  name: string;
+  goal?: string;
+}
+
 export interface SessionOverviewCardContentProps {
   title: string;
   context?: string | null;
@@ -56,6 +62,9 @@ export interface SessionOverviewCardContentProps {
    * sessions never render it — a plain shell is not a worker.
    */
   agentType?: string | null;
+  /** Durable goal this Session advances. Omitted when a source does not
+   *  report Initiative truth; absence never becomes an invented bucket. */
+  initiative?: SessionInitiativeReadout | null;
   fault?: boolean;
   lifecycleLabel?: string | null;
   current: string;
@@ -81,6 +90,7 @@ export function SessionOverviewCardContent({
   attention,
   delegation,
   agentType,
+  initiative,
   fault = false,
   lifecycleLabel,
   current,
@@ -101,7 +111,7 @@ export function SessionOverviewCardContent({
   return (
     <>
       <div className="flex min-w-0 items-center justify-between gap-3">
-        <span className="inline-flex min-w-0 items-center gap-2">
+        <span className="inline-flex min-w-0 flex-1 items-center gap-2">
           <span
             aria-label={
               harness === 'claude'
@@ -130,6 +140,17 @@ export function SessionOverviewCardContent({
               <Shapes aria-hidden className="h-2.5 w-2.5" />
               {agentType ?? 'Coding'}
             </AnnouncedChip>
+          )}
+          {initiative && (
+            <span
+              data-session-initiative={initiative.id}
+              title={initiative.goal ?? initiative.name}
+              className="inline-flex min-w-0 items-center gap-1 font-ui text-chrome-meta"
+              style={{ color: HUD.textDim }}
+            >
+              <Target aria-hidden className="h-3 w-3 shrink-0" />
+              <span className="truncate">{initiative.name}</span>
+            </span>
           )}
           {lifecycleLabel && (
             <span

@@ -35,6 +35,7 @@ import {
   AmbientChromeMeter,
 } from '@/components/consumption/meter/ambient-meter-chrome';
 import { useOptionalProductFeedback } from '@/components/feedback/product-feedback-provider';
+import { ComingSoonMarker } from '@/components/readiness';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import type { TenantWorkspaceKind } from '@/lib/tenancy/workspace-scope';
 
@@ -61,7 +62,7 @@ function WorkspaceIdentityChip({
       className="mr-1 inline-flex h-6 items-center gap-1.5 border border-[var(--exa-hud-stroke-soft)] bg-[var(--exa-hud-fill)] px-2 font-mono text-chrome-meta font-medium text-[var(--exa-hud-cyan)]"
     >
       <KindIcon aria-hidden="true" className="h-3 w-3" />
-      {workspace.name} Workspace
+      {workspace.name}
     </span>
   );
 }
@@ -246,15 +247,12 @@ export function SiteHeaderNav({
                   </DropdownMenuLabel>
                   {tenancy.workspaces.map(workspace => {
                     const Icon = WORKSPACE_KIND_ICONS[workspace.kind];
-                    const isActive = workspace.id === tenancy.activeWorkspace.id;
+                    const isActive =
+                      workspace.id === tenancy.activeWorkspace.id;
                     const comingSoon = workspace.availability === 'coming-soon';
-                    return (
-                      <DropdownMenuItem
-                        key={workspace.id}
-                        data-workspace-switch={workspace.id}
-                        disabled={comingSoon}
-                        onSelect={() => tenancy.switchWorkspace(workspace.id)}
-                      >
+                    const preview = workspace.availability === 'preview';
+                    const content = (
+                      <>
                         <Icon className="mr-2 h-4 w-4" />
                         <span className="flex min-w-0 flex-1 flex-col">
                           <span className="truncate">{workspace.name}</span>
@@ -267,30 +265,36 @@ export function SiteHeaderNav({
                         {isActive && (
                           <Check className="ml-2 h-4 w-4 shrink-0 text-primary" />
                         )}
-                        {comingSoon && (
-                          <span className="ml-2 shrink-0 border border-border px-1.5 py-0.5 text-chrome-micro text-muted-foreground">
-                            Coming soon
-                          </span>
+                        {(comingSoon || preview) && (
+                          <ComingSoonMarker className="ml-2" />
                         )}
+                      </>
+                    );
+                    if (preview) {
+                      return (
+                        <DropdownMenuItem
+                          key={workspace.id}
+                          asChild
+                          data-workspace-preview={workspace.id}
+                          data-organization-anchor={
+                            workspace.kind === 'organization' || undefined
+                          }
+                        >
+                          <Link href={workspace.href!}>{content}</Link>
+                        </DropdownMenuItem>
+                      );
+                    }
+                    return (
+                      <DropdownMenuItem
+                        key={workspace.id}
+                        data-workspace-switch={workspace.id}
+                        disabled={comingSoon}
+                        onSelect={() => tenancy.switchWorkspace(workspace.id)}
+                      >
+                        {content}
                       </DropdownMenuItem>
                     );
                   })}
-                  {/* Organization preview's contextual anchor (ENG-026 N3):
-                      the Workspace switcher is where the multi-human story
-                      starts, so the row navigates to the designed surface
-                      under the ⌘K preview pattern — real navigation, muted
-                      Coming soon note. */}
-                  <DropdownMenuItem asChild data-organization-anchor>
-                    <Link href="/organization">
-                      <Building2 className="mr-2 h-4 w-4" />
-                      <span className="min-w-0 flex-1 truncate">
-                        Organization
-                      </span>
-                      <span className="ml-2 shrink-0 border border-border px-1.5 py-0.5 text-chrome-micro text-muted-foreground">
-                        Coming soon
-                      </span>
-                    </Link>
-                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                 </>
               )}

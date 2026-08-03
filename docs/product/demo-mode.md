@@ -18,9 +18,15 @@ Demo Mode lets investors, collaborators, and users experience Exawatt without li
 
 - the Fleet altitude renders the honest ~209-entity fleet through `DemoWorkspaceTransport` — the same `FleetManager`/UI-model contracts the live local transport feeds
 - the Agent and Team altitudes render the demo shell behind `WorkspaceScopeGate`: Sessions open a **pane content source** — authored hero transcripts or the honest session record — never a live PTY, never a simulated stream, never a blank pane
+- every demo Agent names one of four authored Initiatives; the active Agent context bar and Team cards project that source truth without inventing it for sources that do not report Initiatives
 - ⌘K lists the demo Sessions through the same row shapes; every verb that could reach a PTY or Personal truth is absent in the Demo tenant
 - `/consumption` reads the Voltaic consumption corpus through the same core rollups; demo consumption structurally cannot contribute to Personal totals
 - switching Workspaces never touches live agents — proven end to end by `pnpm eval:electron:tenancy`
+
+Naming is domain-specific and singular: **Demo** is the tenant's name;
+**Voltaic Grid Systems** is the organization portrayed by the representative
+fixture corpus. The switcher also shows that shared Organization Workspace as
+an honest, non-activatable preview linking to `/organization`.
 
 The web app (no Electron, no OpenClaw) starts on the same honest Demo Workspace source by default so public demos do not emit live-source token probes, auth redirects, or connection errors on page load. Live OpenClaw auto-connect is opt-in via `NEXT_PUBLIC_EXAWATT_AUTO_CONNECT_OC=true`; otherwise, users enter Live Mode through the explicit Connect control.
 

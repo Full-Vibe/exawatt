@@ -467,8 +467,8 @@ describe('consumption history (W3, over the real ENG-008 shapes)', () => {
   it('rolls up through core to every Project — no demo-only shape', () => {
     const operator = corpus.samples.filter(s => isOperatorEntrypoint(s.entrypoint));
     const workspace = rollupWorkspace(operator, {
-      id: 'demo-voltaic',
-      label: 'Voltaic (Demo)',
+      id: 'demo',
+      label: 'Demo',
     });
     expect(workspace).not.toBeNull();
     expect(workspace!.totals.cacheReadTokens).toBeGreaterThan(
@@ -566,12 +566,17 @@ describe('consumption history (W3, over the real ENG-008 shapes)', () => {
 describe('fixture cross-consistency', () => {
   it('agents reference real projects and initiatives', () => {
     const initiativeIds = new Set(DEMO_INITIATIVES.map(i => i.id));
-    for (const agent of demoFleetAgents('scale')) {
+    const agents = demoFleetAgents('scale');
+    for (const agent of agents) {
       expect(DEMO_PROJECTS_BY_KEY.has(agent.projectKey), agent.id).toBe(true);
-      if (agent.initiativeId !== null) {
-        expect(initiativeIds.has(agent.initiativeId), agent.id).toBe(true);
-      }
+      expect(initiativeIds.has(agent.initiativeId), agent.id).toBe(true);
+      const initiative = DEMO_INITIATIVES.find(i => i.id === agent.initiativeId);
+      expect(initiative?.projectKeys, agent.id).toContain(agent.projectKey);
     }
+    expect(agents.every(agent => agent.initiativeId.length > 0)).toBe(true);
+    expect(new Set(agents.map(agent => agent.initiativeId))).toEqual(
+      new Set(DEMO_INITIATIVES.map(initiative => initiative.id))
+    );
   });
 
   it('times are coherent: started before last activity, children after parent start', () => {

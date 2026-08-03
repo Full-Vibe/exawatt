@@ -66,6 +66,9 @@ describe('Demo workspace on the real ribbon (W6)', () => {
     }
     // the W2 rail is gone
     expect(container.querySelector('[data-demo-session]')).toBeNull();
+    expect(
+      container.querySelector('[data-active-session-initiative="init-home-ga"]')
+    ).toHaveTextContent('Voltaic Home GA');
   });
 
   it('runs Project movement through the shared fixed layer and publishes directional availability', () => {

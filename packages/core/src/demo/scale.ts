@@ -38,7 +38,12 @@ import type {
 import { deepFreezeFixture, isCodingFunction } from './types';
 import { DEMO_BASE_AGENTS } from './agents';
 import { DEMO_PROJECTS_BY_KEY } from './projects';
-import { DEMO_WORKSPACE_NOW_MS, HOUR_MS, MIN_MS } from './startup';
+import {
+  DEMO_WORKSPACE_NOW_MS,
+  HOUR_MS,
+  MIN_MS,
+  demoInitiativeIdForWork,
+} from './startup';
 
 /* ------------------------------------------------------------------ */
 /* deterministic pseudo-randomness                                     */
@@ -623,7 +628,7 @@ function synthesizeAgent(
     delegated: delegatedFor(id, source, status, name, startedAtMs, project.function),
     readiness: project.readiness,
     tier: 'scale',
-    initiativeId: null,
+    initiativeId: demoInitiativeIdForWork(projectKey, roadmapItemId),
   };
 
   if (authoredBlocker) {

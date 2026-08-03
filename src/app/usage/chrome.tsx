@@ -21,6 +21,8 @@ import {
 } from '@/components/consumption/flux';
 import type { DemoConsumption } from '@/components/consumption/demo-source';
 import type { WindowPace } from './derive';
+import { DEMO_ORGANIZATION } from '@exawatt/core';
+import { DEMO_WORKSPACE } from '@/lib/tenancy/workspace-scope';
 
 /* ------------------------------------------------------------------ */
 /* demo banner — honest assurance labeling, one line                   */
@@ -51,10 +53,10 @@ export function DemoBanner({
           color: FLUX.mid,
         }}
       >
-        {voltaic ? 'Demo Workspace' : 'Demo data'}
+        {voltaic ? DEMO_WORKSPACE.name : 'Demo data'}
       </span>
       <span className="text-chrome-meta" style={{ color: HUD.textDim }}>
-        {voltaic ? 'Voltaic Grid Systems · ' : ''}
+        {voltaic ? `${DEMO_ORGANIZATION.name} · ` : ''}
         {demo.windowLabel} · {demo.workspace.sessionCount} sessions ·{' '}
         {tokens(raw)} raw tokens · same rollup path as a live local read · not
         reconciled against provider billing

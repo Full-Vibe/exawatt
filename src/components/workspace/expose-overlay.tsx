@@ -33,6 +33,7 @@ import {
 import {
   SessionOverviewCardContent,
   type SessionConsumptionReadout,
+  type SessionInitiativeReadout,
 } from './session-overview-card';
 import { tokens as formatTokens } from '@/components/consumption/flux';
 import { tabIsLive } from './use-workspace-state';
@@ -105,6 +106,7 @@ export function ExposeOverlay({
   delegation = {},
   roadmapByTab = {},
   agentTypeByTab = {},
+  initiativeByTab = {},
   consumptionByTab = {},
   activeTabId,
   activeProjectDir = null,
@@ -134,6 +136,8 @@ export function ExposeOverlay({
    *  live untyped Sessions fall back to the true "Coding" value (a chip
    *  never shows its slot's name — operator, 2026-08-03). */
   agentTypeByTab?: Record<string, string>;
+  /** tabId → durable high-level goal reported by the active source. */
+  initiativeByTab?: Record<string, SessionInitiativeReadout>;
   /** tabId → per-Session consumption burn (ENG-008), from the shared burn
    *  view-model. Sessions whose source reports no usage have NO entry and
    *  render no readout — absent, never zero. Live local Sessions report
@@ -463,6 +467,7 @@ export function ExposeOverlay({
     });
     const roadmap = roadmapByTab[tile.tabId];
     const consumption = consumptionByTab[tile.tabId] ?? null;
+    const initiative = initiativeByTab[tile.tabId] ?? null;
     const delegationCensus = delegationCopy(tileDelegation);
     const current = sessionCurrentStateCopy({
       harness: tile.harness,
@@ -489,7 +494,9 @@ export function ExposeOverlay({
           tile.live && !needsYou ? `, ${SESSION_GLYPH_LABEL[glyphState]}` : ''
         }${tile.stateLabel ? `, ${tile.stateLabel}` : ''}${
           delegationCensus ? `, ${delegationCensus}` : ''
-        }${consumption ? `, ${formatTokens(consumption.rawTokens)} tokens` : ''}`}
+        }${initiative ? `, Initiative ${initiative.name}` : ''}${
+          consumption ? `, ${formatTokens(consumption.rawTokens)} tokens` : ''
+        }`}
         onClick={() => onPick(tile.dir, tile.tabId)}
         onMouseEnter={() => {
           if (mouseArmed()) setSel(index);
@@ -524,6 +531,7 @@ export function ExposeOverlay({
           attention={attentionSignal}
           delegation={tileDelegation}
           agentType={agentTypeByTab[tile.tabId] ?? null}
+          initiative={initiative}
           fault={fault}
           lifecycleLabel={tile.stateLabel}
           current={current}

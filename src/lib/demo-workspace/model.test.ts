@@ -4,6 +4,7 @@ import {
   demoPaneContent,
   demoShellAgents,
   demoShellAgentTypes,
+  demoShellInitiatives,
   demoShellFleetAgentById,
 } from './model';
 
@@ -19,6 +20,18 @@ describe('demoShellAgentTypes (ENG-028 T1)', () => {
     expect(new Set(Object.values(types))).toEqual(
       new Set(['Engineer', 'Researcher', 'Marketer', 'Support'])
     );
+  });
+});
+
+describe('demoShellInitiatives', () => {
+  it('projects one authored Initiative for every base-tier Session', () => {
+    const initiatives = demoShellInitiatives();
+    const agents = demoShellAgents();
+    expect(Object.keys(initiatives)).toHaveLength(agents.length);
+    for (const agent of agents) {
+      expect(initiatives[agent.id]?.id, agent.id).toBe(agent.initiativeId);
+      expect(initiatives[agent.id]?.name, agent.id).toBeTruthy();
+    }
   });
 });
 

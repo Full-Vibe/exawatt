@@ -9,9 +9,11 @@
 
 export * from './types';
 export {
-  DEMO_WORKSPACE,
+  DEMO_ORGANIZATION,
   DEMO_WORKSPACE_NOW_MS,
   DEMO_INITIATIVES,
+  DEMO_INITIATIVES_BY_ID,
+  demoInitiativeIdForWork,
 } from './startup';
 export {
   DEMO_PROJECTS,
