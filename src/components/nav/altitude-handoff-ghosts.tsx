@@ -125,7 +125,9 @@ export function AltitudeHandoffGhosts({
           ],
           {
             duration: detail.crossfadeMs,
-            easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+            // In-out, gently front-weighted: the flight must SPEND its
+            // duration traveling so the card is seen becoming the zone.
+            easing: 'cubic-bezier(0.45, 0.05, 0.15, 1)',
             fill: 'forwards',
           }
         );

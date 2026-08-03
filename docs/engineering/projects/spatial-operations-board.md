@@ -1309,7 +1309,10 @@ addresses are stable — the least-squares scale degenerates toward zero (a
 tiny distant board), so the pose instead matches **scale** (zones arrive at
 roughly card size, via the median card/zone area ratio) and **centroid**,
 and the per-card ghost flights carry the exact positions. Entry zoom is
-clamped to [fit, 4.5×fit]: the release always PULLS BACK, never dives in.
+clamped to [fit, 2.2×fit]: the release always PULLS BACK, never dives in,
+and matched zones never land far offscreen — real Team sections dwarf their
+zones, so an unclamped size match framed one giant zone and scattered the
+rest outside the viewport (Voltaic tuning, 2026-08-02).
 
 The fallback cut is the feature that makes this safe, and firing it is a
 normal outcome (event-driven, never an exception): reduced motion and low
@@ -1331,18 +1334,31 @@ camera; a new altitude command mid-handoff tears the ghosts down
 immediately. The stored-viewport restore yields to an active handoff (the
 one arrival where the remembered camera must not win).
 
-Evidence: `eval:spatial` gained four handoff scenarios over the new
+Evidence — eval: `eval:spatial` gained four handoff scenarios over the new
 `/eval/t11-altitude-handoff` fixture (real capture → publish → ghosts →
 claim → pose → pull-back over the Voltaic fleet): `handoff-pose` (10/10
-card identities carried, entry zoom 13.13 → settled fit 12.10, input probe
-drilled mid-flight), `handoff-reduced-motion` and `handoff-low-power`
+card identities carried, entry zoom above fit, settled at fit 12.10, input
+probe drilled mid-flight), `handoff-reduced-motion` and `handoff-low-power`
 (never attempted, board arrives normally), `handoff-missed-budget`
 (claimDelay 1600ms > budget → fallback outcome, pose never applied).
 Unit coverage: capture hygiene (offscreen/zero-size/duplicate cards),
 store single-use/freshness/viewport gates, solver exact-recovery,
-scale-fallback, bounds, and degeneracy declines. Frame-by-frame video of
-the crossfade and the entry/mid/settled screenshots live in
-`scripts/r3f-eval/spatial-report/`.
+scale-fallback, bounds, and degeneracy declines.
+
+Evidence — Voltaic acceptance tuning (the amended P7 gate, run after
+ENG-027 W2 landed, 2026-08-02): the REAL app in the Demo tenant, driven
+`/workspace?view=sessions` → ⌃⌘3. The exposé rendered all 10 Voltaic
+Project sections (the shell reuses the real `ExposeOverlay`, so the
+`data-handoff-card` hooks ride for free); the 3 sections intersecting a
+1440×1000 viewport were captured and carried — offscreen cards are
+deliberately not invented; ghosts crossfaded into their zones over the
+tenant-aware Voltaic board (10 Projects / 52 emitted pieces / 209-entity
+fleet) at the clamped 2.2×fit entry pose, then the camera pulled back to
+the 12.10 fit. Zero console errors. This run drove the two tuning changes
+recorded above (2.2×fit ceiling; 460ms in-out flight ease — the original
+front-loaded expo curve finished the travel in ~120ms and read as a pop).
+Frame-by-frame video of the crossfade and the entry/mid/settled
+screenshots live in `scripts/r3f-eval/spatial-report/`.
 
 Deliberately NOT built (the roadmap's overinvestment warning): no
 per-node camera choreography beyond the one pose, no xterm-into-WebGL, no

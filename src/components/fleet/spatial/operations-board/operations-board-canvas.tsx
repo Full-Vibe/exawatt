@@ -327,9 +327,11 @@ function BoardCameraRig({
       return false;
     }
     const canvasRect = gl.domElement.getBoundingClientRect();
-    // Entry zoom is bounded to [fit, 4.5×fit]: never farther than rest (the
-    // release must PULL BACK, not dive in) and never beyond the rig's own
-    // zoom ceiling. `targetForRect` has already run, so fitZoom is current.
+    // Entry zoom is bounded to [fit, 2.2×fit]: never farther than rest (the
+    // release must PULL BACK, not dive in), and never so close that matched
+    // zones land far offscreen — real Team sections dwarf their zones, so an
+    // unclamped size match reads as chaos, not carry (Voltaic tuning,
+    // 2026-08-02). `targetForRect` has already run, so fitZoom is current.
     const solution = solveEntryPose(
       snapshot,
       layout.zones,
@@ -339,7 +341,7 @@ function BoardCameraRig({
         left: canvasRect.left,
         top: canvasRect.top,
       },
-      { min: fitZoom.current, max: fitZoom.current * 4.5 }
+      { min: fitZoom.current, max: fitZoom.current * 2.2 }
     );
     if (!solution) {
       fallback();

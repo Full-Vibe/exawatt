@@ -177,38 +177,25 @@ async function openProject(page) {
   return { projectCount, units };
 }
 
-async function checkFleetScales(page) {
-  const counts = {};
-  const motion = {};
-  const agentCounts = { small: 8, medium: 40, large: 150 };
-  for (const scale of ['medium', 'large', 'small']) {
-    await page
-      .getByRole('button', { name: `Seed ${scale} demo fleet` })
-      .click();
-    await page.waitForFunction(
-      expected =>
-        document
-          .querySelector('[data-spatial-command]')
-          ?.getAttribute('data-agent-count') === String(expected),
-      agentCounts[scale],
-      { timeout: 10_000 }
-    );
-    const pause = page.getByRole('button', { name: 'Pause simulation' });
-    if (await pause.isVisible()) await pause.click();
-    const projects = page.locator('button[aria-label^="Open Project "]');
-    await projects.first().waitFor({ state: 'visible', timeout: 10_000 });
-    counts[scale] = await projects.count();
-    check(counts[scale] > 0, `${scale} Fleet scale rendered no Projects`);
-    if (scale === 'medium' || scale === 'small') {
-      motion[scale] = await measureGlide(page);
-      await page.keyboard.press('Digit0');
-      await page.waitForTimeout(1_000);
-    }
-    await page.screenshot({
-      path: join(REPORT_DIR, `desktop-fleet-${scale}.png`),
-    });
-  }
-  return { counts, motion };
+/**
+ * Since ENG-027 W2 the web fleet surface serves the honest Voltaic Demo
+ * Workspace (the seeded MockFleetTransport and its DemoControls are gone
+ * from product surfaces), so the desktop scenario measures glide over the
+ * real ~209-entity demo fleet; synthetic 1k/10k coverage lives in
+ * `eval:spatial:scale`.
+ */
+async function checkVoltaicFleet(page) {
+  const projects = page.locator('button[aria-label^="Open Project "]');
+  await projects.first().waitFor({ state: 'visible', timeout: 10_000 });
+  const projectCount = await projects.count();
+  check(projectCount > 0, 'Voltaic fleet rendered no Projects');
+  const motion = await measureGlide(page);
+  await page.keyboard.press('Digit0');
+  await page.waitForTimeout(1_000);
+  await page.screenshot({
+    path: join(REPORT_DIR, 'desktop-fleet-voltaic.png'),
+  });
+  return { projectCount, motion };
 }
 
 async function checkBoardTools(page) {
@@ -394,9 +381,9 @@ async function runScenario(browser, scenario) {
       );
     }
     if (scenario.scales) {
-      const scaleResult = await checkFleetScales(page);
-      result.scaleProjects = scaleResult.counts;
-      result.motion = scaleResult.motion;
+      const voltaic = await checkVoltaicFleet(page);
+      result.scaleProjects = { voltaic: voltaic.projectCount };
+      result.motion = voltaic.motion;
     }
     if (scenario.tools) result.boardTools = await checkBoardTools(page);
 

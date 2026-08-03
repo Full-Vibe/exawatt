@@ -56,8 +56,10 @@ export interface HandoffPoseDetail {
 /** Frame budget from capture to a claimed, solved entry pose. A cold route
  *  or renderer that cannot produce the pose inside this window hard-cuts. */
 export const ALTITUDE_HANDOFF_BUDGET_MS = 900;
-/** Card → zone ghost crossfade duration. */
-export const ALTITUDE_HANDOFF_CROSSFADE_MS = 380;
+/** Card → zone ghost crossfade duration. 460ms with an in-out flight ease:
+ *  the front-loaded expo curve finished the position change in ~120ms and
+ *  read as a pop, not a carry (Voltaic tuning, 2026-08-02). */
+export const ALTITUDE_HANDOFF_CROSSFADE_MS = 460;
 /** How long the camera holds the entry pose before pulling back to fit.
  *  Slightly longer than the crossfade so nothing moves during the swap. */
 export const ALTITUDE_HANDOFF_HOLD_MS = 560;
