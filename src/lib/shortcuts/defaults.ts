@@ -80,6 +80,14 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     contexts: ['global'],
   },
   {
+    id: 'go-consumption',
+    keys: [{ key: 'g' }, { key: 'c' }],
+    label: 'Go to Consumption',
+    description: 'Navigate to the Consumption surface',
+    category: 'navigation',
+    contexts: ['global'],
+  },
+  {
     id: 'go-dashboard',
     keys: [{ key: 'g' }, { key: 'd' }],
     label: 'Go to Lattice (legacy)',

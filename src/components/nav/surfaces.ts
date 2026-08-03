@@ -25,6 +25,7 @@ export interface AppSurface {
     | 'sessions'
     | 'spatial'
     | 'settings'
+    | 'consumption'
     | 'dashboard'
     | 'board'
     | 'fleet';
@@ -81,6 +82,29 @@ export const APP_SURFACES: AppSurface[] = [
     tier: 'app',
     shortcutId: 'go-settings',
     keywords: ['preferences', 'config', 'customize', 'shortcuts'],
+  },
+  {
+    // ENG-008 E4. A VIEW, not a fourth command altitude — the spine stays
+    // exactly Terminal → Sessions → Spatial, and this sits beside Settings.
+    id: 'consumption',
+    name: 'Consumption',
+    summary: 'What the fleet is spending, and on what',
+    href: '/consumption',
+    tier: 'app',
+    shortcutId: 'go-consumption',
+    keywords: [
+      'tokens',
+      'cost',
+      'spend',
+      'usage',
+      'watts',
+      'energy',
+      'burn',
+      'capacity',
+      'plan',
+      'budget',
+      'billing',
+    ],
   },
   {
     id: 'dashboard',

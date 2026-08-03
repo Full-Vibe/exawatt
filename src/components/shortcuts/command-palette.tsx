@@ -36,6 +36,7 @@ import {
   MessageSquarePlus,
   Bug,
   Lightbulb,
+  Gauge,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -154,6 +155,7 @@ const SURFACE_ICONS: Record<AppSurface['id'], LucideIcon> = {
   sessions: LayoutPanelTop,
   spatial: MapIcon,
   settings: Settings,
+  consumption: Gauge,
   dashboard: LayoutDashboard,
   board: LayoutGrid,
   fleet: Server,

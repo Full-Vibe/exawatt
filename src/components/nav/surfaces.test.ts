@@ -8,6 +8,7 @@ describe('isAppRoute', () => {
     '/fleet/spatial',
     '/fleet/agent-1',
     '/settings',
+    '/consumption',
     '/dashboard',
     '/board',
   ])('recognizes registered app surface %s', pathname => {

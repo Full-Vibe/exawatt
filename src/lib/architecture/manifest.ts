@@ -545,6 +545,18 @@ export const architectureManifest = {
           height: 74,
         },
         {
+          id: 'consumption-surface',
+          label: 'Consumption Surface',
+          summary:
+            'Expository capacity, attribution, and cost-per-outcome narrative with the unit ladder, stated assurance, and visibly unbuilt allocation affordances.',
+          layer: 'ui',
+          status: 'active-build',
+          x: 945,
+          y: 180,
+          width: 175,
+          height: 74,
+        },
+        {
           id: 'architecture-map',
           label: 'Architecture Map',
           summary:
@@ -677,6 +689,18 @@ export const architectureManifest = {
           height: 76,
         },
         {
+          id: 'consumption-spine',
+          label: 'Consumption Spine',
+          summary:
+            'Source-agnostic usage contract, local-log adapters behind an injected filesystem port, idempotent merge, and scoped rollups with assurance and delegated split.',
+          layer: 'coordination',
+          status: 'implemented',
+          x: 645,
+          y: 575,
+          width: 235,
+          height: 76,
+        },
+        {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
@@ -744,6 +768,10 @@ export const architectureManifest = {
         { from: 'next-app-shell', to: 'command-navigation' },
         { from: 'command-navigation', to: 'terminal-workspace' },
         { from: 'command-navigation', to: 'spatial-operations-board' },
+        { from: 'command-navigation', to: 'consumption-surface' },
+        { from: 'consumption-surface', to: 'consumption-spine' },
+        { from: 'consumption-spine', to: 'demo-harness' },
+        { from: 'consumption-spine', to: 'source-adapters', style: 'dashed' },
         { from: 'fleet-ui', to: 'ui-model' },
         { from: 'terminal-workspace', to: 'fleet-provider' },
         { from: 'terminal-workspace', to: 'electron-shell' },
