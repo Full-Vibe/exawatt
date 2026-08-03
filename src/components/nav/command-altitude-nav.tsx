@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Grid2X2, Orbit, SquareTerminal } from 'lucide-react';
 import {
@@ -14,21 +14,28 @@ import { surfacesByTier, type AppSurface } from './surfaces';
 import {
   commandSurfaceAddress,
   LAST_COMMAND_SURFACE_KEY,
-  validStoredCommandSurface,
+  validStoredCommandSurfaceForWorkspace,
 } from './command-surface-memory';
 import { useCommandNavigation } from './command-navigation-provider';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import {
-  PERSONAL_WORKSPACE_ID,
+  PERSONAL_WORKSPACE,
   workspaceScopedStorageKey,
 } from '@/lib/tenancy/workspace-scope';
 
 let didRestoreInitialCommandSurface = false;
 
+/** TEST ONLY: the boot restore is one-shot per renderer process. */
+export function resetInitialCommandSurfaceRestoreForTests() {
+  didRestoreInitialCommandSurface = false;
+}
+
 type SpineSurface = AppSurface & { id: CommandAltitude };
 
 const SPINE_SURFACES = surfacesByTier('spine') as SpineSurface[];
-const ALTITUDE_ICONS: Record<CommandAltitude, typeof SquareTerminal> = {
+/** Canonical icon per command altitude — reuse anywhere a spine surface is
+ *  represented outside the rail (e.g. the web header's Agent link). */
+export const ALTITUDE_ICONS: Record<CommandAltitude, typeof SquareTerminal> = {
   terminal: SquareTerminal,
   sessions: Grid2X2,
   spatial: Orbit,
@@ -108,14 +115,27 @@ export function CommandAltitudeNav() {
   // the surface memory is Workspace-scoped view state (ENG-027 W1): each
   // tenant remembers its own last command surface. Personal keeps the legacy
   // unscoped key so pre-tenancy operator memory survives.
-  const activeWorkspaceId =
-    useOptionalWorkspaceTenancy()?.activeWorkspace.id ?? PERSONAL_WORKSPACE_ID;
+  const tenancy = useOptionalWorkspaceTenancy();
+  const activeWorkspace = tenancy?.activeWorkspace ?? PERSONAL_WORKSPACE;
+  // no provider means no persisted tenant to wait for
+  const tenancyHydrated = tenancy?.hydrated ?? true;
   const surfaceMemoryKey = workspaceScopedStorageKey(
-    activeWorkspaceId,
+    activeWorkspace.id,
     LAST_COMMAND_SURFACE_KEY
+  );
+  // which tenant key the currently recorded address was recorded under —
+  // lets the effect tell "navigation landed" apart from "tenant changed"
+  const lastRecordedRef = useRef<{ key: string; address: string } | null>(
+    null
   );
 
   useEffect(() => {
+    // Boot fence (ENG-027): child effects run before the provider's mount
+    // effect, so until the persisted tenant is resolved this effect would
+    // read/write PERSONAL's key and consume the one-shot restore against the
+    // wrong tenant. Wait for hydration; the restore then runs exactly once
+    // against the correct tenant's memory.
+    if (!tenancyHydrated) return;
     if (!window.electron?.isElectron) return;
     const current = commandSurfaceAddress(
       pathname,
@@ -125,16 +145,35 @@ export function CommandAltitudeNav() {
 
     if (!didRestoreInitialCommandSurface) {
       didRestoreInitialCommandSurface = true;
-      const stored = validStoredCommandSurface(
-        window.localStorage.getItem(surfaceMemoryKey)
+      const stored = validStoredCommandSurfaceForWorkspace(
+        window.localStorage.getItem(surfaceMemoryKey),
+        activeWorkspace
       );
       if (current === '/workspace' && stored && stored !== current) {
         router.replace(stored);
         return;
       }
     }
+
+    const last = lastRecordedRef.current;
+    if (last && last.address === current && last.key !== surfaceMemoryKey) {
+      // Workspace switch in flight: the tenant key changed while the address
+      // did not, so `current` is still the PREVIOUS tenant's surface. Do not
+      // write it under the new tenant's key; record again once navigation
+      // lands (pathname/search change) or the operator moves.
+      lastRecordedRef.current = { key: surfaceMemoryKey, address: current };
+      return;
+    }
     window.localStorage.setItem(surfaceMemoryKey, current);
-  }, [pathname, router, searchParams, surfaceMemoryKey]);
+    lastRecordedRef.current = { key: surfaceMemoryKey, address: current };
+  }, [
+    activeWorkspace,
+    pathname,
+    router,
+    searchParams,
+    surfaceMemoryKey,
+    tenancyHydrated,
+  ]);
 
   return (
     <nav

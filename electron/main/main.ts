@@ -20,6 +20,11 @@ import { handleTrusted, setTrustedRendererOrigin } from './ipc-security';
 import { registerSystemShortcutIPC } from './system-shortcuts';
 import { randomUUID } from 'crypto';
 import { launchScreenUrl, type StartupStage } from './launch-screen';
+import {
+  loadWorkspace,
+  mergeHarnessIdentities,
+  saveWorkspace,
+} from './workspace-store';
 import type { PtySessionManager } from './pty/session-manager';
 import type {
   ShutdownCoordinator,
@@ -1041,16 +1046,46 @@ async function confirmWithoutCheckpoint(
   return result.response === 1;
 }
 
+/**
+ * When no renderer owns mutable workspace state (quit from /settings or the
+ * Fleet altitude, or a non-personal tenant Workspace has the shell unmounted
+ * behind the ENG-027 scope gate), the persisted LAYOUT is authoritative — but
+ * harness identities settled after the shell unmounted still need to land.
+ * Merge them into the store in-process so stale harness session ids cannot
+ * survive a quit that never reaches the renderer checkpoint.
+ */
+async function refreshPersistedHarnessIdentities(): Promise<boolean> {
+  try {
+    const live = new Map<string, string>();
+    for (const session of ptySessions.list()) {
+      if (session.harnessSessionId) {
+        live.set(session.durableSessionId, session.harnessSessionId);
+      }
+    }
+    if (live.size === 0) return true;
+    const state = await loadWorkspace();
+    if (!mergeHarnessIdentities(state, live)) return true;
+    await saveWorkspace(state);
+    return true;
+  } catch (error) {
+    console.error('[shutdown] harness identity refresh failed', error);
+    return false;
+  }
+}
+
 async function checkpointRenderer(
   intent: ShutdownIntent,
   stage: 'pre-stop' | 'stopped'
 ): Promise<boolean> {
   if (stage === 'pre-stop') await ptySessions.settleProviderIdentities();
   const win = mainWindow;
-  if (!win || win.isDestroyed()) return true;
-  // Workspace state is mutable only while the workspace hook is mounted. On
-  // Fleet/Spatial/other routes the serialized store is already authoritative.
-  if (!workspaceCheckpointOwners.has(win.webContents.id)) return true;
+  // Workspace state is mutable only while the workspace hook is mounted;
+  // otherwise the store on disk holds the layout and main lands the settled
+  // harness identities itself.
+  if (!win || win.isDestroyed()) return refreshPersistedHarnessIdentities();
+  if (!workspaceCheckpointOwners.has(win.webContents.id)) {
+    return refreshPersistedHarnessIdentities();
+  }
   const requestId = randomUUID();
   return await new Promise<boolean>(resolve => {
     let settled = false;

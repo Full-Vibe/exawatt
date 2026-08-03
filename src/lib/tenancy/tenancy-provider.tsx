@@ -36,7 +36,7 @@ import {
 } from './workspace-scope';
 import {
   LAST_COMMAND_SURFACE_KEY,
-  validStoredCommandSurface,
+  validStoredCommandSurfaceForWorkspace,
 } from '@/components/nav/command-surface-memory';
 
 /** DEV/TEST ONLY: lets the Electron eval register an `available` non-personal
@@ -48,6 +48,15 @@ export const REGISTER_TEST_WORKSPACES_EVENT =
 interface WorkspaceTenancyContextValue {
   workspaces: readonly TenantWorkspace[];
   activeWorkspace: TenantWorkspace;
+  /**
+   * False until the persisted active-Workspace choice has been resolved after
+   * mount. While false, `activeWorkspace` is the hydration-safe Personal
+   * default and MUST NOT be used to read or write tenant-scoped storage —
+   * consumers that persist per-tenant view state (CommandAltitudeNav's
+   * surface memory) wait for this flag so they never touch the wrong
+   * tenant's keys during boot.
+   */
+  hydrated: boolean;
   /** No-op for unknown or `coming-soon` targets. Zero lifecycle side effects. */
   switchWorkspace: (id: TenantWorkspaceId) => void;
 }
@@ -72,11 +81,19 @@ export function useOptionalWorkspaceTenancy() {
 
 export function WorkspaceTenancyProvider({
   children,
+  initialWorkspaces,
 }: {
   children: ReactNode;
+  /** Non-builtin tenants known at mount (test benches now; W2/W5 sources
+   *  later). Registration via the dev event arrives AFTER the persisted
+   *  tenant resolves, so a tenant that must survive a relaunch as the boot
+   *  Workspace has to be present here. */
+  initialWorkspaces?: readonly TenantWorkspace[];
 }) {
   const router = useRouter();
-  const [extraWorkspaces, setExtraWorkspaces] = useState<TenantWorkspace[]>([]);
+  const [extraWorkspaces, setExtraWorkspaces] = useState<TenantWorkspace[]>(
+    () => mergeWorkspaces([], initialWorkspaces ?? [])
+  );
   const workspaces = useMemo(
     () => mergeWorkspaces(BUILTIN_WORKSPACES, extraWorkspaces),
     [extraWorkspaces]
@@ -84,9 +101,13 @@ export function WorkspaceTenancyProvider({
 
   // Hydration safety: the server render always sees Personal; the persisted
   // choice applies post-mount (same pattern as the header's inElectron flag).
+  // `hydrated` is the boot fence: tenant-scoped storage consumers wait for it
+  // so a relaunch inside a non-personal tenant never reads or writes
+  // Personal's keys during the window before this effect resolves.
   const [activeId, setActiveId] = useState<TenantWorkspaceId>(
     BUILTIN_WORKSPACES[0].id
   );
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
     setActiveId(
       resolveActiveWorkspace(
@@ -94,6 +115,7 @@ export function WorkspaceTenancyProvider({
         workspaces
       ).id
     );
+    setHydrated(true);
     // resolve once on mount; later registrations must not yank the operator
     // out of the Workspace they are looking at
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -133,11 +155,14 @@ export function WorkspaceTenancyProvider({
       window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, target.id);
       // land on the target Workspace's remembered command surface — its own
       // "exactly where it was", recorded by CommandAltitudeNav under the
-      // target's scoped key
-      const remembered = validStoredCommandSurface(
+      // target's scoped key. Scope-aware validation: a non-personal tenant
+      // may only restore onto surfaces WorkspaceScopeGate covers, so a
+      // remembered path can never bypass the gate onto Personal live truth.
+      const remembered = validStoredCommandSurfaceForWorkspace(
         window.localStorage.getItem(
           workspaceScopedStorageKey(target.id, LAST_COMMAND_SURFACE_KEY)
-        )
+        ),
+        target
       );
       router.push(remembered ?? '/workspace');
     },
@@ -145,8 +170,8 @@ export function WorkspaceTenancyProvider({
   );
 
   const value = useMemo(
-    () => ({ workspaces, activeWorkspace, switchWorkspace }),
-    [workspaces, activeWorkspace, switchWorkspace]
+    () => ({ workspaces, activeWorkspace, hydrated, switchWorkspace }),
+    [workspaces, activeWorkspace, hydrated, switchWorkspace]
   );
 
   return (

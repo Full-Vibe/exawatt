@@ -204,6 +204,28 @@ try {
         path: join(SCREENSHOT_DIR, 'bench-scope-view.png'),
       });
 
+      // ---- the Fleet altitude is gated too (ENG-027 review finding 2) ----
+      await page.locator('[data-command-altitude-level="spatial"]').click();
+      await page.waitForFunction(
+        () => window.location.pathname === '/fleet/spatial'
+      );
+      await page
+        .locator(`[data-tenant-workspace-scope="${BENCH_WORKSPACE.id}"]`)
+        .waitFor();
+      check(
+        'Fleet altitude shows the scoped view, not the personal live fleet',
+        (await page.locator('[data-spatial-command]').count()) === 0
+      );
+      check(
+        'identity chip still visible on the Fleet altitude',
+        (await page
+          .locator(`[data-active-tenant-workspace="${BENCH_WORKSPACE.id}"]`)
+          .count()) === 1
+      );
+      await page.screenshot({
+        path: join(SCREENSHOT_DIR, 'bench-fleet-gate.png'),
+      });
+
       // ---- switch back: exactly where it was ----------------------------
       await openAccountMenu(page);
       await page.locator('[data-workspace-switch="personal"]').click();

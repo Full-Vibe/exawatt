@@ -22,15 +22,14 @@ import {
   LogOut,
   Network,
   Settings,
-  SquareTerminal,
   Blocks,
   MessageSquareWarning,
   type LucideIcon,
 } from 'lucide-react';
 import { signOut } from '@/app/actions/projects';
 import { isAdminEmail } from '@/lib/auth/admin';
-import { CommandAltitudeNav } from './command-altitude-nav';
-import { isAppRoute } from './surfaces';
+import { ALTITUDE_ICONS, CommandAltitudeNav } from './command-altitude-nav';
+import { APP_SURFACES, isAppRoute } from './surfaces';
 import { useOptionalProductFeedback } from '@/components/feedback/product-feedback-provider';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import type { TenantWorkspaceKind } from '@/lib/tenancy/workspace-scope';
@@ -40,6 +39,28 @@ const WORKSPACE_KIND_ICONS: Record<TenantWorkspaceKind, LucideIcon> = {
   demo: MonitorPlay,
   organization: Building2,
 };
+
+// the Agent altitude as the manifest names it — the web header's link must
+// carry the same label and icon as every other consumer (decision 0023)
+const AGENT_SURFACE = APP_SURFACES.find(surface => surface.id === 'terminal')!;
+const AgentSurfaceIcon = ALTITUDE_ICONS.terminal;
+
+function WorkspaceIdentityChip({
+  workspace,
+}: {
+  workspace: { id: string; name: string; kind: TenantWorkspaceKind };
+}) {
+  const KindIcon = WORKSPACE_KIND_ICONS[workspace.kind];
+  return (
+    <span
+      data-active-tenant-workspace={workspace.id}
+      className="mr-1 inline-flex h-6 items-center gap-1.5 border border-teal-300/40 bg-teal-950/40 px-2 font-mono text-[11px] font-medium text-teal-200"
+    >
+      <KindIcon aria-hidden="true" className="h-3 w-3" />
+      {workspace.name} Workspace
+    </span>
+  );
+}
 
 interface SiteHeaderNavProps {
   isAuthenticated: boolean;
@@ -140,13 +161,7 @@ export function SiteHeaderNav({
         {/* non-personal tenancy identity is ALWAYS visible (ENG-027): demo
             data must never be mistaken for Personal truth */}
         {activeWorkspace && activeWorkspace.kind !== 'personal' && (
-          <span
-            data-active-tenant-workspace={activeWorkspace.id}
-            className="mr-1 inline-flex h-6 items-center gap-1.5 border border-teal-300/40 bg-teal-950/40 px-2 font-mono text-[11px] font-medium text-teal-200"
-          >
-            <MonitorPlay aria-hidden="true" className="h-3 w-3" />
-            {activeWorkspace.name} Workspace
-          </span>
+          <WorkspaceIdentityChip workspace={activeWorkspace} />
         )}
         {!isArchitecture && (
           <Button variant="ghost" size="sm" asChild>
@@ -171,9 +186,9 @@ export function SiteHeaderNav({
           isAppRoute(pathname) &&
           !isWorkspace && (
             <Button variant="ghost" size="sm" asChild>
-              <Link href="/workspace">
-                <SquareTerminal className="h-3.5 w-3.5" />
-                Workspace
+              <Link href={AGENT_SURFACE.href}>
+                <AgentSurfaceIcon className="h-3.5 w-3.5" />
+                {AGENT_SURFACE.name}
               </Link>
             </Button>
           )}

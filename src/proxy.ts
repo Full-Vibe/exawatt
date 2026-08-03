@@ -20,7 +20,10 @@ const PUBLIC_PREFIXES = [
   '/sign-up',
   '/auth',
   '/architecture',
-  '/fleet',
+  // only /fleet/spatial exists — the broader /fleet prefix died with the
+  // legacy trio (decision 0023); keep the public surface exactly as wide as
+  // the routes it serves
+  '/fleet/spatial',
   '/hud-gallery',
   '/workspace',
   '/settings',

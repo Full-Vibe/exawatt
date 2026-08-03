@@ -41,6 +41,51 @@ export class WorkspaceStore {
   }
 }
 
+/**
+ * Merge live harness identities into a persisted workspace state, keyed by
+ * durable session id. Mutates `state` in place; returns whether anything
+ * changed.
+ *
+ * Why main does this at all: the renderer owns the workspace shape and
+ * normally performs this merge in its shutdown checkpoint. But the checkpoint
+ * only reaches a renderer that has the workspace hook MOUNTED — quitting from
+ * /settings, from the Fleet altitude, or while a non-personal tenant
+ * Workspace has the shell unmounted (ENG-027 scope gate) would otherwise
+ * persist harness session ids as of the last unmount, losing identities
+ * settled later (settleProviderIdentities at pre-stop). Main owns both the
+ * live sessions and the store, so it walks only the stable identity fields
+ * (`projects[].tabs[].durableSessionId/harnessSessionId`) defensively and
+ * touches nothing else of the renderer-owned shape.
+ */
+export function mergeHarnessIdentities(
+  state: unknown,
+  harnessIdsByDurableSession: ReadonlyMap<string, string>
+): boolean {
+  if (typeof state !== 'object' || state === null) return false;
+  const projects = (state as { projects?: unknown }).projects;
+  if (!Array.isArray(projects)) return false;
+  let changed = false;
+  for (const project of projects) {
+    if (typeof project !== 'object' || project === null) continue;
+    const tabs = (project as { tabs?: unknown }).tabs;
+    if (!Array.isArray(tabs)) continue;
+    for (const tab of tabs) {
+      if (typeof tab !== 'object' || tab === null) continue;
+      const record = tab as {
+        durableSessionId?: unknown;
+        harnessSessionId?: unknown;
+      };
+      if (typeof record.durableSessionId !== 'string') continue;
+      const live = harnessIdsByDurableSession.get(record.durableSessionId);
+      if (live && record.harnessSessionId !== live) {
+        record.harnessSessionId = live;
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}
+
 let defaultStore: WorkspaceStore | null = null;
 
 function store(): WorkspaceStore {

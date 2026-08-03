@@ -3,10 +3,14 @@
 /**
  * Workspace scope gate (ENG-027 W1).
  *
- * The Terminal surface renders PERSONAL truth — live PTY-bound Sessions on
- * this machine. When the active Workspace is any other tenant, this gate swaps
- * the shell for that Workspace's scoped view instead. Unmounting the personal
- * shell disposes only renderer widgets (xterm instances); the PTYs live in the
+ * The command surfaces render PERSONAL truth — live PTY-bound Sessions on
+ * this machine (the Agent/Team shell on /workspace, the live fleet on
+ * /fleet/spatial). When the active Workspace is any other tenant, this gate
+ * swaps the personal surface for that Workspace's scoped view instead. Every
+ * route listed in `TENANT_SCOPE_GATED_SURFACE_PATHS`
+ * (command-surface-memory.ts) MUST mount this gate — that list is what lets
+ * tenant view-state restore fail closed. Unmounting the personal shell
+ * disposes only renderer widgets (xterm instances); the PTYs live in the
  * Electron main process and keep running untouched — returning to Personal
  * re-adopts them exactly where they were (the reload-adoption path).
  *
@@ -18,7 +22,14 @@ import type { ReactNode } from 'react';
 import { Layers } from 'lucide-react';
 import { useOptionalWorkspaceTenancy } from './tenancy-provider';
 
-export function WorkspaceScopeGate({ children }: { children: ReactNode }) {
+export function WorkspaceScopeGate({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  /** sizing for the scoped view on routes without a fixed-height parent */
+  className?: string;
+}) {
   const tenancy = useOptionalWorkspaceTenancy();
   const active = tenancy?.activeWorkspace;
   if (!active || active.kind === 'personal') return <>{children}</>;
@@ -26,7 +37,7 @@ export function WorkspaceScopeGate({ children }: { children: ReactNode }) {
   return (
     <div
       data-tenant-workspace-scope={active.id}
-      className="flex h-full flex-col items-center justify-center gap-3 bg-[#04060b] px-6 text-center"
+      className={`flex h-full flex-col items-center justify-center gap-3 bg-[#04060b] px-6 text-center ${className ?? ''}`}
     >
       <Layers aria-hidden="true" className="h-6 w-6 text-teal-200/70" />
       <p className="font-mono text-sm font-medium text-zinc-100">

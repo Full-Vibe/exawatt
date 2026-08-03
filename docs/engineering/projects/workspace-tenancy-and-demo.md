@@ -86,6 +86,26 @@ Workspace tenancy exists as a real, switchable scope with Personal live and Demo
 
 **Explicitly out of W1** (tracked forward): Workspace-attributed feedback and consumption ride the W2 source work; the Demo tenant flips `availability` in W2; no keyboard gesture for switching (per the open question's leaning — the menu is the only path).
 
+### 2026-08-02 — W1 review fixes (landed)
+
+A verified code review of the W1 landing (and the decision-0023 rename) surfaced seven findings; all fixed in one pass.
+
+**View-state correctness.**
+
+- *Boot-restore race (MEDIUM).* Child effects run before parent effects, so `CommandAltitudeNav`'s one-shot surface restore ran before the tenancy provider resolved the persisted tenant — a relaunch inside a non-personal tenant read Personal's surface memory, consumed the one-shot against it, and polluted Personal's key. The provider now exposes `hydrated` (false until the persisted choice resolves post-mount); the nav's restore-and-record effect waits on it, so the restore runs exactly once against the correct tenant's key. The provider also accepts `initialWorkspaces` — tenants that must survive a relaunch as the boot Workspace have to be present at mount, because the dev registration event arrives after resolution.
+- *Transient cross-tenant write (LOW).* On switch, the memory key flips before navigation lands, so the OLD tenant's surface was briefly written under the NEW tenant's key. The nav now tracks which key each recorded address was written under and skips the write when only the tenant changed; recording resumes when navigation lands.
+- Regression tests: `src/components/nav/command-altitude-nav.test.tsx` (boot restore under a persisted non-personal tenant, no fallback to Personal memory, scope-aware validation, the transient-write skip).
+
+**Scope-gate coverage (MEDIUM).**
+
+- `/fleet/spatial` renders Personal live truth (the fleet transport reads `window.electron.pty`) but was ungated — a non-personal tenant showed the personal live fleet under its identity chip. The Fleet page now mounts `WorkspaceScopeGate`; the eval proves it end-to-end (rail to Fleet while in a bench tenant → scoped view, no `[data-spatial-command]`, chip still visible).
+- Restore hardening: `validStoredCommandSurfaceForWorkspace` allows a non-personal tenant to restore only onto surfaces in `TENANT_SCOPE_GATED_SURFACE_PATHS` (`command-surface-memory.ts`); both `switchWorkspace` and the boot restore use it, so a remembered path can never bypass the gate. Any route added to that set MUST mount the gate.
+- **Decision — Settings is tenant-neutral.** `/settings` carries app-level configuration (shortcuts, agent sources, notifications), not tenant data; it stays ungated deliberately. **Decision — `/consumption` stays ungated in W1**: it renders only its own in-process demo corpus (ENG-008 E4), so it shows no Personal live truth. The moment W2 gives Consumption a per-tenant source, it joins the gated set — that is a W2 exit criterion, not an option.
+
+**Shutdown identity refresh (LOW).** Quitting while the workspace UI was unmounted (scope-gated tenant on screen, or from `/settings`/Fleet) skipped the renderer checkpoint that merges live `harnessSessionId`s into the persisted layout, so identities settled at `pre-stop` could go stale on disk. Main now performs the merge itself when no renderer owns workspace state: `mergeHarnessIdentities` (`electron/main/workspace-store.ts`, defensive walk of `projects[].tabs[]` identity fields only) runs from `checkpointRenderer`'s no-owner path. Unit-tested in `electron/main/workspace-store.test.ts`.
+
+**Chrome consistency (LOW/NIT).** The header identity chip uses `WORKSPACE_KIND_ICONS` per tenant kind instead of a hardcoded demo icon; the web-only header link to `/workspace` now carries the manifest's name (**Agent**) and the canonical altitude icon (`ALTITUDE_ICONS`, exported from the rail); `src/proxy.ts` narrows the public prefix `/fleet` → `/fleet/spatial` — only that route exists since decision 0023.
+
 ### 2026-08-02 — W3 + W4: the authored demo fleet (data only)
 
 **What landed.** The Demo Workspace's content, authored as deterministic,
