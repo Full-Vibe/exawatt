@@ -54,6 +54,7 @@ export function AltitudeHandoffGhosts({
   useEffect(() => {
     let deadline: number | null = null;
     let stallFrame: number | null = null;
+    let fadingOut = false;
     const animations: Animation[] = [];
 
     const finish = (outcome: HandoffOutcome) => {
@@ -66,6 +67,7 @@ export function AltitudeHandoffGhosts({
 
     const fadeOutAll = (durationMs: number, outcome: HandoffOutcome) => {
       if (done.current) return;
+      fadingOut = true;
       const elements: HTMLElement[] = [
         ...(scrim.current ? [scrim.current] : []),
         ...ghosts.current.values(),
@@ -89,7 +91,11 @@ export function AltitudeHandoffGhosts({
     };
 
     const onPose = (event: Event) => {
-      if (done.current) return;
+      // Decline a pose that lands after the deadline fade has begun: the
+      // flight keyframes start at opacity 1, so accepting it would snap
+      // half-faded ghosts back to full. The fallback path is already the
+      // outcome — let it finish.
+      if (done.current || fadingOut) return;
       if (deadline !== null) {
         window.clearTimeout(deadline);
         deadline = null;

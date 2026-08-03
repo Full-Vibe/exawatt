@@ -38,6 +38,7 @@ import {
   LAST_COMMAND_SURFACE_KEY,
   validStoredCommandSurfaceForWorkspace,
 } from '@/components/nav/command-surface-memory';
+import { publishActiveTenantKind } from './active-tenant';
 
 /** DEV/TEST ONLY: lets the Electron eval register an `available` non-personal
  *  Workspace so the switch guarantee is demonstrable before W2 makes Demo
@@ -142,6 +143,12 @@ export function WorkspaceTenancyProvider({
     () => resolveActiveWorkspace(activeId, workspaces),
     [activeId, workspaces]
   );
+
+  // Mirror the active tenant kind for module-scope guards (session-jump's
+  // pending-launch slots). Render-safe consumers use the context, not this.
+  useEffect(() => {
+    publishActiveTenantKind(activeWorkspace.kind);
+  }, [activeWorkspace.kind]);
 
   const switchWorkspace = useCallback(
     (id: TenantWorkspaceId) => {

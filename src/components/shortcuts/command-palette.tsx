@@ -549,7 +549,10 @@ export function CommandPalette({
       return {
         id: `nav-${s.id}`,
         label: `Go to ${s.name}`,
-        value: `go ${s.name} ${s.keywords.join(' ')}`,
+        // Name first: typing a surface's name must rank its nav row at the
+        // top. A value starting with the verb ("go …") loses the prefix
+        // match to any item whose value happens to start with the name.
+        value: `${s.name} go ${s.keywords.join(' ')}`,
         icon: SURFACE_ICONS[s.id],
         shortcut: shortcutId
           ? shortcutRegistry.getEffectiveKeys(shortcutId)

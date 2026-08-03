@@ -577,6 +577,11 @@ function synthesizeAgent(
     startedAtMs + 10 * MIN_MS
   );
   const turns = 3 + Math.floor(unit(`${id}:turns`) * 12);
+  // Human-touch count, authored by the same deterministic recipe as every
+  // other scale-tier field: most sessions run near-untouched (the fleet
+  // story), a blocked session carries the operator gate that blocked it.
+  const interventions =
+    Math.floor(unit(`${id}:interventions`) * 3) + (authoredBlocker ? 1 : 0);
 
   const agent: DemoFleetAgent = {
     id,
@@ -597,6 +602,7 @@ function synthesizeAgent(
     startedAtMs,
     lastActivityAtMs,
     turns,
+    interventions,
     usage: usageFor(id, source, turns),
     delegated: delegatedFor(id, source, status, name, startedAtMs, project.function),
     readiness: project.readiness,

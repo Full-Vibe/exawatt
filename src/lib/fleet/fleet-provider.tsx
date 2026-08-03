@@ -94,6 +94,10 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   );
   const toastIdRef = useRef(0);
   const toastTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  /** Cancels an in-flight `connectToRealOC` retry. Invoked by the source
+   *  effect's cleanup, so a tenant switch or unmount can never let a late
+   *  resolve wire the OC client into a stale manager. */
+  const cancelOcRetryRef = useRef<(() => void) | null>(null);
 
   // Workspace tenancy (ENG-027 W2): the fleet source is a property of the
   // ACTIVE TENANT. Personal = live local truth; Demo = the Voltaic fixtures
@@ -314,6 +318,8 @@ export function FleetProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false;
+      cancelOcRetryRef.current?.();
+      cancelOcRetryRef.current = null;
       offWorkspaceChanged?.();
       offDelegation?.();
       ocClientRef.current?.disconnect();
@@ -338,7 +344,15 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     ocClientRef.current?.disconnect();
     manager.disconnect();
 
-    let mounted = true;
+    // Cancellable retry: the cancel handle lives in a ref so the source
+    // effect's cleanup (tenant switch, unmount) actually severs an in-flight
+    // attempt — a late resolve or reject must never touch a stale manager.
+    let cancelled = false;
+    cancelOcRetryRef.current?.();
+    cancelOcRetryRef.current = () => {
+      cancelled = true;
+      setIsConnectingToOC(false);
+    };
 
     async function retryConnection() {
       try {
@@ -350,6 +364,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           host: string;
           port: number;
         };
+        if (cancelled) return;
 
         const client = new OCClient({
           url: `ws://${host}:${port}?token=${encodeURIComponent(token)}`,
@@ -367,7 +382,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         manager.connect(client, methods);
 
         client.on('connection:status', status => {
-          if (!mounted) return;
+          if (cancelled) return;
           setConnectionStatus(status);
           const prev = prevConnectionStatusRef.current;
           if (status === 'disconnected')
@@ -379,22 +394,26 @@ export function FleetProvider({ children }: { children: ReactNode }) {
 
         await client.connect();
 
-        if (mounted) {
-          setIsDemo(false);
-          setIsConnectingToOC(false);
+        if (cancelled) {
+          client.disconnect();
+          return;
         }
+        setIsDemo(false);
+        setIsConnectingToOC(false);
+        cancelOcRetryRef.current = null;
       } catch (err) {
         console.warn(
           '[Exawatt] OC reconnection failed, staying in demo mode:',
           err instanceof Error ? err.message : err
         );
-        if (!mounted) return;
+        if (cancelled) return;
 
         ocClientRef.current?.disconnect();
         setIsDemo(true);
         setConnectionStatus('connected');
         prevConnectionStatusRef.current = 'connected';
         setIsConnectingToOC(false);
+        cancelOcRetryRef.current = null;
         pushConnectionToast('OpenClaw unavailable. Staying in Demo Mode.');
 
         const demoTransport = new DemoWorkspaceTransport({
@@ -408,9 +427,6 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     }
 
     void retryConnection();
-    return () => {
-      mounted = false;
-    };
   }, [isDemo, isConnectingToOC, demoTenantActive, manager, pushConnectionToast]);
 
   const value = useMemo(

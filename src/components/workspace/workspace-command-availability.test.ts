@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { deriveWorkspaceCommandAvailability } from './workspace-command-availability';
+import {
+  EMPTY_WORKSPACE_COMMAND_AVAILABILITY,
+  deriveWorkspaceCommandAvailability,
+  getWorkspaceCommandAvailability,
+  publishWorkspaceCommandAvailability,
+  resetWorkspaceCommandAvailability,
+} from './workspace-command-availability';
 
 describe('workspace command availability', () => {
   it('explains commands that cannot act before a Project is open', () => {
@@ -106,5 +112,33 @@ describe('workspace command availability', () => {
       available: false,
       reason: 'Already the last open Project',
     });
+  });
+
+  it('reset returns the module snapshot to the empty truth (ENG-027: the publisher must not outlive its workspace)', () => {
+    const published = deriveWorkspaceCommandAvailability({
+      activeProjectName: 'Exawatt',
+      hasActiveTab: true,
+      canToggleSplit: true,
+      canClose: true,
+      canMoveTabLeft: true,
+      canMoveTabRight: true,
+      canMoveProjectLeft: true,
+      canMoveProjectRight: true,
+      hasAttentionTarget: true,
+      closedSessionCount: 3,
+    });
+    publishWorkspaceCommandAvailability(published);
+    expect(getWorkspaceCommandAvailability()).toBe(published);
+    expect(
+      getWorkspaceCommandAvailability().commands['launch-shell'].available
+    ).toBe(true);
+
+    resetWorkspaceCommandAvailability();
+    expect(getWorkspaceCommandAvailability()).toBe(
+      EMPTY_WORKSPACE_COMMAND_AVAILABILITY
+    );
+    expect(
+      getWorkspaceCommandAvailability().commands['launch-shell'].available
+    ).toBe(false);
   });
 });

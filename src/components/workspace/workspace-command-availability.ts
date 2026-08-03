@@ -152,6 +152,17 @@ export function publishWorkspaceCommandAvailability(
   listeners.forEach(listener => listener());
 }
 
+/**
+ * Publisher unmount reset. The snapshot is a module global: without this,
+ * the live WorkspaceClient's last truth keeps File-menu verbs enabled after
+ * the shell unmounts (a tenant switch to Demo, most importantly). The
+ * publisher MUST call this from its unmount cleanup so availability falls
+ * back to the empty truth whenever no live workspace is on screen.
+ */
+export function resetWorkspaceCommandAvailability(): void {
+  publishWorkspaceCommandAvailability(EMPTY_WORKSPACE_COMMAND_AVAILABILITY);
+}
+
 export function getWorkspaceCommandAvailability(): WorkspaceCommandAvailability {
   return snapshot;
 }

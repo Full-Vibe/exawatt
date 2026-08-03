@@ -210,12 +210,15 @@ export function ExposeOverlay({
   selectedIndexRef.current = sel;
 
   const focusSelection = useCallback(
-    (index = selectedIndexRef.current) => {
+    (
+      index = selectedIndexRef.current,
+      block: ScrollLogicalPosition = 'nearest'
+    ) => {
       const item = items[index];
       if (item) {
         const node = tileRefs.current.get(selectionKey(item));
         node?.focus({ preventScroll: true });
-        node?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+        node?.scrollIntoView?.({ block, inline: 'nearest' });
       } else {
         rootRef.current?.focus({ preventScroll: true });
       }
@@ -328,7 +331,11 @@ export function ExposeOverlay({
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
       setEntered(true);
-      if (!railSummonedAtMountRef.current) focusSelection();
+      // Entry centers the active tile: `nearest` would leave a below-the-fold
+      // tile hugging the grid's bottom edge on arrival.
+      if (!railSummonedAtMountRef.current) {
+        focusSelection(undefined, 'center');
+      }
     });
     return () => cancelAnimationFrame(raf);
   }, [focusSelection]);
@@ -546,11 +553,13 @@ export function ExposeOverlay({
             className="mb-4 flex items-baseline gap-3 font-sans text-sm"
             style={{ color: HUD.textDim }}
           >
+            {/* Decision 0023: the middle altitude is named Team everywhere —
+                menus, ⌘K, window title. The on-surface title must match. */}
             <h2
               className="font-display text-base font-semibold"
               style={{ color: HUD.text }}
             >
-              Projects &amp; Sessions
+              Team
             </h2>
             <span>arrows or J/K move · enter opens · esc returns</span>
             {/* Coordination preview's contextual anchor (ENG-026 N4): the

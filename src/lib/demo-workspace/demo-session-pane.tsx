@@ -10,8 +10,9 @@
  * nothing, which is the "demo tabs cannot spawn a process" guarantee made
  * visible.
  */
+import { CloudUpload } from 'lucide-react';
 import { HUD } from '@/components/hud';
-import { ComingSoonMarker } from '@/components/readiness';
+import { AnnouncedChip, ComingSoonMarker } from '@/components/readiness';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import {
   STATUS_LIGHT_META,
@@ -80,14 +81,14 @@ export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
           {agent.name}
         </h2>
         <span
-          className="inline-flex items-center gap-1.5 font-mono text-[11px]"
+          className="inline-flex items-center gap-1.5 font-mono text-chrome-meta"
           style={{ color: STATUS_LIGHT_META[lightState].color }}
         >
           <StatusLight decorative size="compact" state={lightState} />
           {STATUS_LIGHT_META[lightState].label}
         </span>
         {agent.roadmapItemId && (
-          <span className="font-mono text-[11px]" style={{ color: HUD.textDim }}>
+          <span className="font-mono text-chrome-meta" style={{ color: HUD.textDim }}>
             {agent.roadmapItemId}
             {agent.link ? ` · ${agent.link}` : ''}
           </span>
@@ -100,8 +101,19 @@ export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
             owner={`${project?.agentType ?? 'Agent Types'} Agent Type`}
           />
         )}
+        {/* ENG-026 N4 / ENG-033: the per-Agent Push to cloud control,
+            announced in the demo shell too — the live tab-strip context menu
+            carries the same inert row, and the Demo tenant must be able to
+            show the direction without a live tab. */}
+        <AnnouncedChip
+          size="micro"
+          coming="run this Agent on an Exawatt-hosted plan (Cloud)"
+        >
+          <CloudUpload aria-hidden className="h-3 w-3" />
+          Push to cloud
+        </AnnouncedChip>
         <span
-          className="font-mono text-[10px]"
+          className="font-mono text-chrome-micro"
           style={{ color: HUD.textDim }}
           title="Demo Sessions are authored recordings and records. They accept no input and can never spawn a process."
         >
@@ -111,10 +123,10 @@ export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
 
       {/* Goal line — the launch sentence, then the six-word subtitle */}
       <div className="shrink-0 border-b border-white/5 px-4 py-2.5">
-        <p className="text-[13px] leading-relaxed" style={{ color: HUD.text }}>
+        <p className="text-chrome-title leading-relaxed" style={{ color: HUD.text }}>
           {agent.goal}
         </p>
-        <p className="mt-0.5 font-mono text-[11px]" style={{ color: HUD.textDim }}>
+        <p className="mt-0.5 font-mono text-chrome-meta" style={{ color: HUD.textDim }}>
           {agent.contextLabel} · {project?.name ?? agent.projectKey} · started{' '}
           {relativeTime(nowMs, agent.startedAtMs)} · last activity{' '}
           {relativeTime(nowMs, agent.lastActivityAtMs)}
@@ -132,15 +144,15 @@ export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
               background: 'rgba(255,80,80,0.06)',
             }}
           >
-            <p className="font-mono text-[11px] text-red-300">
+            <p className="font-mono text-chrome-meta text-red-300">
               needs you · {agent.blocker.title}
             </p>
-            <p className="mt-1 text-[13px] leading-relaxed text-red-100/85">
+            <p className="mt-1 text-chrome-title leading-relaxed text-red-100/85">
               {agent.blocker.description}
             </p>
             {agent.blocker.suggestedResponses &&
               agent.blocker.suggestedResponses.length > 0 && (
-                <p className="mt-2 font-mono text-[11px] text-red-200/70">
+                <p className="mt-2 font-mono text-chrome-meta text-red-200/70">
                   suggested: {agent.blocker.suggestedResponses.join(' · ')}
                 </p>
               )}
@@ -157,8 +169,8 @@ export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
               background: 'rgba(255,80,80,0.06)',
             }}
           >
-            <p className="font-mono text-[11px] text-red-300">fault</p>
-            <p className="mt-1 text-[13px] leading-relaxed text-red-100/85">
+            <p className="font-mono text-chrome-meta text-red-300">fault</p>
+            <p className="mt-1 text-chrome-title leading-relaxed text-red-100/85">
               {agent.faultNote}
             </p>
           </section>
@@ -167,7 +179,7 @@ export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
         {/* Delegated team (ENG-023) */}
         {agent.delegated.length > 0 && (
           <section className="mb-4">
-            <p className="mb-1.5 font-mono text-[11px]" style={{ color: HUD.textDim }}>
+            <p className="mb-1.5 font-mono text-chrome-meta" style={{ color: HUD.textDim }}>
               {agent.delegated.length} delegated{' '}
               {agent.delegated.length === 1 ? 'agent' : 'agents'}
             </p>
@@ -175,7 +187,7 @@ export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
               {agent.delegated.map(run => (
                 <li
                   key={run.agentId}
-                  className="flex items-baseline gap-2 font-mono text-[12px]"
+                  className="flex items-baseline gap-2 font-mono text-chrome-label"
                 >
                   <span style={{ color: '#B9A6FF' }}>{run.agentType}</span>
                   <span style={{ color: HUD.text }}>{run.task}</span>
@@ -192,14 +204,14 @@ export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
           <section data-demo-transcript className="flex flex-col gap-3 pb-4">
             {content.lines.map((line, index) => (
               <div key={index} className="flex flex-col gap-0.5">
-                <p className="font-mono text-[10px]" style={{ color: HUD.textDim }}>
+                <p className="font-mono text-chrome-micro" style={{ color: HUD.textDim }}>
                   {ROLE_LABEL[line.role]} · {relativeTime(nowMs, line.atMs)}
                 </p>
                 <p
                   className={
                     line.role === 'tool'
-                      ? 'font-mono text-[12px] leading-relaxed'
-                      : 'text-[13px] leading-relaxed'
+                      ? 'font-mono text-chrome-label leading-relaxed'
+                      : 'text-chrome-title leading-relaxed'
                   }
                   style={{ color: ROLE_COLOR[line.role] }}
                 >
@@ -207,13 +219,13 @@ export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
                 </p>
               </div>
             ))}
-            <p className="mt-2 font-mono text-[10px]" style={{ color: HUD.textDim }}>
+            <p className="mt-2 font-mono text-chrome-micro" style={{ color: HUD.textDim }}>
               End of recorded transcript.
             </p>
           </section>
         ) : (
           <section data-demo-session-record className="pb-4">
-            <p className="font-mono text-[11px]" style={{ color: HUD.textDim }}>
+            <p className="font-mono text-chrome-meta" style={{ color: HUD.textDim }}>
               No transcript recorded for this Session — its goal, status, and
               usage above are the honest record, exactly what a real fleet
               shows for a tab you have not opened.
@@ -224,7 +236,7 @@ export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
 
       {/* Usage footer — fixture truth, no invented dollars */}
       <footer
-        className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-white/5 px-4 py-2 font-mono text-[11px]"
+        className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-white/5 px-4 py-2 font-mono text-chrome-meta"
         style={{ color: HUD.textDim }}
       >
         <span>{agent.turns} turns</span>

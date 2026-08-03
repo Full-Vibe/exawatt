@@ -235,7 +235,7 @@ function HandoffFixture() {
                     {project.name}
                   </h3>
                 </div>
-                <p className="mt-2 line-clamp-2 font-mono text-[10px] leading-4 text-zinc-500">
+                <p className="mt-2 line-clamp-2 font-mono text-chrome-micro leading-4 text-zinc-500">
                   {project.summary}
                 </p>
               </section>

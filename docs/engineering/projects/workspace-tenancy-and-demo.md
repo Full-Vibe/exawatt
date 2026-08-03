@@ -268,6 +268,43 @@ W1 review-fix composition demonstrated, not assumed. Screenshots of every
 altitude, the palette, Consumption, and the relaunch are captured by the
 eval and the CDP consumption check.
 
+### 2026-08-03 — closing-review fixes (ENG-027 W2 / ENG-026)
+
+The demo-arc closing review verified findings against the landed W2; fixes:
+
+- **Wrong-Session fallback closed.** The Fleet board runs the scale tier, but
+  the Demo shell resolved jump ids against the 27 base agents and silently
+  fell back to the hero transcript. Session resolution now accepts the full
+  fleet (`demoShellFleetAgentById`); a `vgs-*` jump renders that agent's
+  honest session record with a transient rail row under its Project. Only an
+  unknown id falls back to the default hero.
+- **PTY verbs tenant-gated at both ends.** The workspace command-availability
+  snapshot (a module global) resets to the empty truth when the publishing
+  WorkspaceClient unmounts, so File-menu verbs grey out inside Demo; the
+  native-menu dispatch point drops the whole live-workspace verb set
+  (`LIVE_WORKSPACE_MENU_COMMANDS`) under any non-personal tenant; and the
+  launch-family request functions in `session-jump.ts` fail closed against a
+  module mirror of the active tenant kind (`src/lib/tenancy/active-tenant.ts`)
+  so a pending-launch slot can never be stored from Demo and fire against
+  Personal after switching back. Regression tests:
+  `session-jump.test.ts`, `workspace-command-availability.test.ts`.
+- **Interventions are authored fixture truth.** `DemoFleetAgent.interventions`
+  is now a required authored field (base tier hand-authored, heroes match
+  their transcripts' operator lines after the first — test-enforced; scale
+  tier uses the same deterministic recipe as its other fields). The
+  view-time derivation in `voltaic-source.ts` is deleted, so `/consumption`'s
+  "measured, not surveyed" copy no longer sits over an invented number.
+  This supersedes the "derived intervention counts" note above.
+- **`connectToRealOC` retry is cancellable** (`cancelOcRetryRef`), cancelled
+  by the fleet source effect's cleanup — a tenant switch or unmount can no
+  longer let a late resolve wire the OC client into a stale manager.
+- **Fleet metrics bar spend honesty.** "$0.00 today" rendered from transports
+  that deliberately report no cost read as a claim of zero spend; the spend
+  segment now renders only when a source actually reports cost.
+- **Push to cloud in the demo shell.** The announced inert row existed only in
+  the live tab-strip menu; the demo Session pane header now carries the same
+  `AnnouncedChip` so the Demo tenant can show the direction.
+
 ## Open questions
 
 - Does the operator want a keyboard gesture for Workspace switching, or is the account menu enough? (Leaning: menu only. A one-stroke path to demo data during real work is a hazard, not a feature.)

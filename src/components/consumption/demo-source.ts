@@ -932,6 +932,10 @@ export interface DemoRoadmapRollup {
 
 export interface DemoConsumption {
   nowMs: number;
+  /** The corpus's measurement window, as prose ("seven days", "fourteen
+   *  days"). Copy that names the window MUST read this — the E4 week and
+   *  the Voltaic fortnight share every component (ENG-027 W2). */
+  windowLabel: string;
   samples: ConsumptionSample[];
   planWindows: PlanWindow[];
   /** Operator work only. Exawatt's own harness calls are separated, not hidden. */
@@ -968,6 +972,8 @@ export interface DemoConsumption {
  */
 export interface DemoConsumptionInputs {
   nowMs: number;
+  /** See `DemoConsumption.windowLabel`. */
+  windowLabel: string;
   samples: ConsumptionSample[];
   planWindows: PlanWindow[];
   projects: DemoProject[];
@@ -1100,6 +1106,7 @@ export function buildDemoConsumption(
 
   return {
     nowMs,
+    windowLabel: inputs.windowLabel,
     samples,
     planWindows,
     workspace,
@@ -1137,6 +1144,7 @@ export function demoConsumption(): DemoConsumption {
   if (cached) return cached;
   cached = buildDemoConsumption({
     nowMs: DEMO_NOW_MS,
+    windowLabel: 'seven days',
     samples: demoSamples(),
     planWindows: demoPlanWindows(),
     projects: DEMO_PROJECTS,

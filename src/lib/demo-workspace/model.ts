@@ -50,6 +50,25 @@ export function demoShellAgentById(id: string): DemoFleetAgent | undefined {
   return demoShellAgents().find(agent => agent.id === id);
 }
 
+/** Full fleet (base + generated scale tier) on the shell clock, for Session
+ *  resolution only — the rail and Team exposé stay base-tier. A Fleet-board
+ *  "Open session" can target ANY board agent (`vgs-*` included); the shell
+ *  must answer with that agent's honest session record, never fall back
+ *  silently to unrelated content (the W2 pane contract). */
+let fullFleetCache: DemoFleetAgent[] | null = null;
+function demoShellFullFleet(): DemoFleetAgent[] {
+  if (!fullFleetCache) {
+    fullFleetCache = demoFleetAgents('scale', { nowMs: DEMO_SHELL_NOW_MS });
+  }
+  return fullFleetCache;
+}
+
+export function demoShellFleetAgentById(
+  id: string
+): DemoFleetAgent | undefined {
+  return demoShellFullFleet().find(agent => agent.id === id);
+}
+
 export function demoProjectFor(
   agent: DemoFleetAgent
 ): DemoWorkspaceProject | undefined {

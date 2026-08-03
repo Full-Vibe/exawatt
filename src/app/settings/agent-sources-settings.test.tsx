@@ -95,9 +95,11 @@ describe('Agent Source Settings', () => {
       screen.getByRole('button', { name: 'Browse Agent Sources' })
     );
     expect(screen.getByText('Available now')).toBeInTheDocument();
-    expect(screen.getByText('Coming soon')).toBeInTheDocument();
+    expect(screen.getByText('Future sources')).toBeInTheDocument();
     expect(screen.getByText('Hosted OpenClaw')).toBeInTheDocument();
-    expect(screen.getAllByText('Soon').length).toBeGreaterThan(0);
+    // Unconfigurable adapters carry the shared readiness marker (ENG-026
+    // grammar): sentence-case "Coming soon", never a bespoke "Soon" pill.
+    expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(0);
     expect(claude.label).toBe('Claude Code');
   });
 

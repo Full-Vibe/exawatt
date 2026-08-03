@@ -241,6 +241,31 @@ describe('honesty boundaries (ENG-026 / ENG-028)', () => {
     expect(DEMO_TRANSCRIPTS['vg-res-nprr']).toBeDefined();
   });
 
+  it('interventions are authored fixture truth, consistent with transcripts', () => {
+    // An intervention is an operator message AFTER launch (ENG-026 N2). An
+    // agent with an authored transcript must match it exactly — the record
+    // and the count are the same story told twice.
+    for (const [agentId, lines] of Object.entries(DEMO_TRANSCRIPTS)) {
+      const agent = DEMO_BASE_AGENTS.find(a => a.id === agentId)!;
+      const operatorAfterLaunch = lines.filter(
+        (line, index) => index > 0 && line.role === 'operator'
+      ).length;
+      expect(agent.interventions, agentId).toBe(operatorAfterLaunch);
+    }
+    // Every tier authors a sane count: an integer, never negative, and
+    // inside the measured E4 shape (0-6 per session).
+    for (const agent of demoFleetAgents('scale')) {
+      expect(Number.isInteger(agent.interventions), agent.id).toBe(true);
+      expect(agent.interventions, agent.id).toBeGreaterThanOrEqual(0);
+      expect(agent.interventions, agent.id).toBeLessThanOrEqual(6);
+    }
+    // …and the base tier is not uniformly touched or untouched — the
+    // untouched-session share the surface reports must be a real spread.
+    const touched = DEMO_BASE_AGENTS.filter(a => a.interventions > 0).length;
+    expect(touched).toBeGreaterThanOrEqual(5);
+    expect(touched).toBeLessThan(DEMO_BASE_AGENTS.length);
+  });
+
   it('preview desks delegate function-appropriate work, never coding tasks', () => {
     const childStems: Record<string, string[]> = {
       research: ['Primary source sweep', 'Citation and figure check'],

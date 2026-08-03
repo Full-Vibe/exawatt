@@ -15,9 +15,15 @@ export function FleetMetricsBar() {
       <span className="text-red-400">▲ {metrics.blockedCount} BLOCKED</span>
       <span className="text-zinc-500">○ {metrics.idleCount} IDLE</span>
       <span className="flex-1" />
-      <span className="text-zinc-500">
-        {formatCost(metrics.totalCost)} today
-      </span>
+      {/* Spend renders only when a source actually reports cost. The local
+          and Demo transports deliberately report none (dollars derived from
+          list price are a confident lie) — showing "$0.00 today" there is a
+          claim of zero spend the corpus contradicts. Absence, not zero. */}
+      {metrics.totalCost > 0 && (
+        <span className="text-zinc-500">
+          {formatCost(metrics.totalCost)} today
+        </span>
+      )}
       {metrics.totalCostRate > 0 && (
         <span className="text-teal-600">
           {formatRate(metrics.totalCostRate)}

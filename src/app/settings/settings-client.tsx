@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ShortcutBadge } from '@/components/shortcuts';
+import { ComingSoonMarker } from '@/components/readiness';
 import {
   shortcutRegistry,
   formatShortcutKeys,
@@ -122,9 +123,7 @@ function SettingsNavigation({
         <div className="flex min-h-11 shrink-0 items-center gap-2.5 px-3 font-ui text-sm text-[var(--settings-faint)] lg:w-full">
           <Blocks aria-hidden size={17} />
           <span>Context &amp; Tools</span>
-          <span className="ml-auto whitespace-nowrap rounded-full border border-[var(--settings-line)] px-1.5 py-0.5 font-mono text-chrome-micro uppercase tracking-[0.1em]">
-            Coming soon
-          </span>
+          <ComingSoonMarker className="ml-auto" />
         </div>
       </nav>
     </aside>

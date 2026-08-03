@@ -1378,6 +1378,12 @@ the ghost flights absorb the difference), and Agent→Fleet direct keeps the
 existing directional transition — with no cards on screen there is no
 position to carry, which is the fallback working as designed.
 
+Closing-review fix (2026-08-03): `onPose` now declines a pose that lands
+after the deadline fade has begun (`fadingOut` guard in
+`altitude-handoff-ghosts.tsx`) — the flight keyframes start at opacity 1,
+so accepting a just-late pose snapped half-faded ghosts back to full
+instead of letting the fallback finish.
+
 ### V3.1 Demo-scale board — RENDERING
 
 Status: landed 2026-08-02 — measured against the real ENG-027 W4 fleet

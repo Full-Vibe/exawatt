@@ -21,6 +21,7 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
+import { ComingSoonMarker } from '@/components/readiness';
 import {
   Tooltip,
   TooltipContent,
@@ -670,7 +671,7 @@ function AddSourceView({
             id="future-sources-heading"
             className="font-display text-reading font-semibold text-[var(--settings-text)]"
           >
-            Coming soon
+            Future sources
           </h3>
           <InfoTip label="These adapters are part of Exawatt's source-agnostic architecture, but cannot be configured in this build." />
         </div>
@@ -691,9 +692,7 @@ function AddSourceView({
                   {entry.description}
                 </span>
               </span>
-              <span className="shrink-0 rounded-full border border-[var(--settings-line-strong)] px-2 py-1 font-mono text-chrome-micro uppercase tracking-[0.1em] text-[var(--settings-faint)]">
-                Soon
-              </span>
+              <ComingSoonMarker className="shrink-0" />
             </div>
           ))}
         </div>

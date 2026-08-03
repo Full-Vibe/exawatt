@@ -103,7 +103,7 @@ export default function OrganizationPage() {
           <table className="w-full min-w-[620px] text-left">
             <thead>
               <tr className="border-b border-border">
-                {['Member', 'Role', 'Commands', 'Spend · 14 days'].map(
+                {['Member', 'Role', 'Commands', 'Usage · raw tokens'].map(
                   heading => (
                     <th
                       key={heading}
@@ -144,8 +144,9 @@ export default function OrganizationPage() {
           </table>
         </div>
         <p className="text-chrome-meta text-muted-foreground">
-          The same rollups Consumption carries, cut by person — raw units
-          first, assurance stated, never a fabricated bill.
+          The same rollups Consumption carries, cut by person: raw tokens
+          across each member&rsquo;s current Sessions and their delegated runs
+          — raw units first, assurance stated, never a fabricated bill.
         </p>
       </section>
 

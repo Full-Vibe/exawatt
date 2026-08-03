@@ -51,6 +51,7 @@ import type { PtyHarness } from '@/types/electron';
 import { requestQuickFeedback } from '@/components/feedback/quick-feedback-events';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 import { useWorkspaceCommandAvailability } from '@/components/workspace/workspace-command-availability';
+import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 
 /** application-menu command → the registry id whose binding it displays
  *  (D10): rebinding a verb updates the menu's accelerator column */
@@ -87,6 +88,22 @@ const WORKSPACE_MENU_AVAILABILITY_COMMANDS = [
 /** Contract join for fixed families that declare native-menu coverage. */
 export const WORKSPACE_MENU_AVAILABILITY_COMMAND_IDS: ReadonlySet<string> =
   new Set(WORKSPACE_MENU_AVAILABILITY_COMMANDS);
+
+/**
+ * Menu verbs that operate the LIVE personal workspace — PTY launches, the
+ * Agent composer, tab/Project mutation (ENG-027). One tenant gate at the
+ * dispatch point covers them all: while a non-personal Workspace is active
+ * these are dropped whole, so a Demo-tenant invocation can never store a
+ * pending-launch slot that fires against Personal truth after switching
+ * back. (`session-jump.ts` fails closed on the slot side as well.)
+ */
+export const LIVE_WORKSPACE_MENU_COMMANDS: ReadonlySet<string> = new Set([
+  'new-agent',
+  'launch-claude',
+  'launch-codex',
+  'open-project',
+  ...WORKSPACE_MENU_AVAILABILITY_COMMANDS,
+]);
 
 interface ShortcutContextValue {
   openCommandPalette: () => void;
@@ -126,6 +143,11 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
   const [initialized, setInitialized] = useState(false);
   const workspaceAvailability = useWorkspaceCommandAvailability();
   const onWorkspaceRoute = pathname?.startsWith('/workspace') ?? false;
+  // Tenant scope for the live-workspace verb gate (ENG-027). The pre-hydration
+  // default is Personal, matching the provider's own hydration-safe default.
+  const tenancy = useOptionalWorkspaceTenancy();
+  const personalTenantActive =
+    (tenancy?.activeWorkspace.kind ?? 'personal') === 'personal';
 
   // Track when modals close to prevent Enter key from double-triggering
   const modalClosedAtRef = useRef<number>(0);
@@ -216,6 +238,11 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     const dispatch = (event: string) =>
       window.dispatchEvent(new CustomEvent(event));
     return window.electron?.menu?.onCommand(command => {
+      // The one tenant gate (ENG-027): live-workspace verbs are inert while
+      // a non-personal Workspace is on screen. Navigation verbs stay live.
+      if (!personalTenantActive && LIVE_WORKSPACE_MENU_COMMANDS.has(command)) {
+        return;
+      }
       // App-tier surfaces are addressed from the Go menu as `go-<surface id>`
       // (ENG-026 N1), resolved through the navigation manifest so the menu
       // can never diverge from it. Spine altitudes keep their explicit cases
@@ -356,6 +383,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
     navigateForward,
     navigateCommandSurface,
     onWorkspaceRoute,
+    personalTenantActive,
     router,
     workspaceAvailability,
   ]);

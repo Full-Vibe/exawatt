@@ -54,6 +54,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(5),
     lastActivityAtMs: m(2),
     turns: 16,
+    interventions: 2,
     usage: {
       input: 342_000,
       cacheRead: 27_800_000,
@@ -99,6 +100,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(7),
     lastActivityAtMs: m(41),
     turns: 11,
+    interventions: 1,
     usage: {
       input: 128_000,
       cacheRead: 6_400_000,
@@ -129,6 +131,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(9),
     lastActivityAtMs: h(3),
     turns: 8,
+    interventions: 0,
     usage: {
       input: 74_000,
       cacheRead: 3_400_000,
@@ -157,6 +160,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(26),
     lastActivityAtMs: m(24),
     turns: 13,
+    interventions: 3,
     usage: {
       input: 214_000,
       cacheRead: 17_900_000,
@@ -187,6 +191,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(3),
     lastActivityAtMs: m(6),
     turns: 10,
+    interventions: 1,
     usage: {
       input: 92_000,
       cacheRead: 4_300_000,
@@ -215,6 +220,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(29),
     lastActivityAtMs: h(22),
     turns: 7,
+    interventions: 0,
     usage: {
       input: 56_000,
       cacheRead: 2_600_000,
@@ -243,6 +249,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(6),
     lastActivityAtMs: h(2),
     turns: 9,
+    interventions: 0,
     usage: {
       input: 88_000,
       cacheRead: 5_100_000,
@@ -284,6 +291,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(4),
     lastActivityAtMs: m(1),
     turns: 15,
+    interventions: 0,
     usage: {
       input: 296_000,
       cacheRead: 24_100_000,
@@ -337,6 +345,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(23),
     lastActivityAtMs: h(1),
     turns: 11,
+    interventions: 2,
     usage: {
       input: 132_000,
       cacheRead: 8_900_000,
@@ -364,6 +373,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: d(1.4),
     lastActivityAtMs: h(19),
     turns: 4,
+    interventions: 0,
     usage: {
       input: 21_000,
       cacheRead: 940_000,
@@ -392,6 +402,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(31),
     lastActivityAtMs: h(26),
     turns: 9,
+    interventions: 1,
     usage: {
       input: 68_000,
       cacheRead: 3_100_000,
@@ -422,6 +433,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(6),
     lastActivityAtMs: m(9),
     turns: 14,
+    interventions: 5,
     usage: {
       input: 156_000,
       cacheRead: 7_600_000,
@@ -450,6 +462,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(8),
     lastActivityAtMs: h(1),
     turns: 7,
+    interventions: 1,
     usage: {
       input: 54_000,
       cacheRead: 2_400_000,
@@ -486,6 +499,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: d(2.1),
     lastActivityAtMs: d(1.8),
     turns: 5,
+    interventions: 0,
     usage: {
       input: 34_000,
       cacheRead: 1_500_000,
@@ -515,6 +529,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(7),
     lastActivityAtMs: m(4),
     turns: 12,
+    interventions: 2,
     usage: {
       input: 204_000,
       cacheRead: 16_300_000,
@@ -551,6 +566,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(11),
     lastActivityAtMs: h(1.5),
     turns: 10,
+    interventions: 3,
     usage: {
       input: 86_000,
       cacheRead: 3_900_000,
@@ -583,6 +599,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(2.5),
     lastActivityAtMs: m(12),
     turns: 8,
+    interventions: 1,
     usage: {
       input: 64_000,
       cacheRead: 2_900_000,
@@ -611,6 +628,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: d(1.2),
     lastActivityAtMs: h(4),
     turns: 6,
+    interventions: 0,
     usage: {
       input: 42_000,
       cacheRead: 1_900_000,
@@ -649,6 +667,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(3),
     lastActivityAtMs: m(7),
     turns: 12,
+    interventions: 2,
     usage: {
       input: 188_000,
       cacheRead: 14_600_000,
@@ -693,6 +712,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: d(1.1),
     lastActivityAtMs: h(20),
     turns: 13,
+    interventions: 4,
     usage: {
       input: 142_000,
       cacheRead: 6_800_000,
@@ -721,6 +741,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: d(2.4),
     lastActivityAtMs: d(2.2),
     turns: 3,
+    interventions: 0,
     usage: {
       input: 16_000,
       cacheRead: 720_000,
@@ -751,6 +772,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(4),
     lastActivityAtMs: m(15),
     turns: 9,
+    interventions: 0,
     usage: {
       input: 96_000,
       cacheRead: 5_800_000,
@@ -779,6 +801,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: d(1.6),
     lastActivityAtMs: d(1.3),
     turns: 4,
+    interventions: 0,
     usage: {
       input: 28_000,
       cacheRead: 1_300_000,
@@ -809,6 +832,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(21),
     lastActivityAtMs: h(2),
     turns: 10,
+    interventions: 2,
     usage: {
       input: 84_000,
       cacheRead: 4_700_000,
@@ -837,6 +861,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: d(2.8),
     lastActivityAtMs: d(2.5),
     turns: 3,
+    interventions: 0,
     usage: {
       input: 19_000,
       cacheRead: 860_000,
@@ -866,6 +891,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(5),
     lastActivityAtMs: m(18),
     turns: 11,
+    interventions: 1,
     usage: {
       input: 108_000,
       cacheRead: 6_100_000,
@@ -893,6 +919,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     startedAtMs: h(9),
     lastActivityAtMs: h(6),
     turns: 6,
+    interventions: 0,
     usage: {
       input: 38_000,
       cacheRead: 1_700_000,

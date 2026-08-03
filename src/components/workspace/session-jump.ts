@@ -9,6 +9,7 @@
  * request is never applied twice.
  */
 import type { PtyHarness } from '@/types/electron';
+import { personalTenantActive } from '@/lib/tenancy/active-tenant';
 import type { AgentSourceId } from './agent-sources';
 
 export const SESSION_JUMP_EVENT = 'exawatt:open-session';
@@ -67,7 +68,20 @@ function take<T>(slot: Pending<T> | null): T | null {
   return Date.now() - slot.at <= PENDING_TTL_MS ? slot.value : null;
 }
 
+/**
+ * Launch-family guard (ENG-027): verbs that open or spawn something in the
+ * PERSONAL workspace are inert while any other tenant is on screen. Without
+ * this, a verb invoked inside the Demo tenant stores a pending slot that
+ * fires a shell/composer/reopen against Personal local truth after the next
+ * switch back. One gate here covers every dispatch path (native menu, ⌘K,
+ * future callers) — request functions fail closed, not per-call-site.
+ */
+function launchVerbsAvailable(): boolean {
+  return personalTenantActive();
+}
+
 export function requestReopenLastClosed(): void {
+  if (!launchVerbsAvailable()) return;
   pendingReopenLastClosed = { value: true, at: Date.now() };
   window.dispatchEvent(new CustomEvent(REOPEN_LAST_CLOSED_EVENT));
 }
@@ -108,6 +122,7 @@ export function requestSessionJump(sessionId: string): void {
 }
 
 export function requestLaunch(harness: PtyHarness): void {
+  if (!launchVerbsAvailable()) return;
   pendingLaunch = { value: harness, at: Date.now() };
   window.dispatchEvent(new CustomEvent(LAUNCH_EVENT, { detail: harness }));
 }
@@ -125,6 +140,7 @@ export function consumePendingLaunch(): PtyHarness | null {
 }
 
 export function requestOpenProject(dir: string): void {
+  if (!launchVerbsAvailable()) return;
   pendingOpenProject = { value: dir, at: Date.now() };
   window.dispatchEvent(new CustomEvent(OPEN_PROJECT_EVENT, { detail: dir }));
 }
@@ -136,6 +152,7 @@ export function consumePendingOpenProject(): string | null {
 }
 
 export function requestProjectPicker(): void {
+  if (!launchVerbsAvailable()) return;
   pendingProjectPicker = { value: true, at: Date.now() };
   window.dispatchEvent(new CustomEvent(OPEN_PROJECT_PICKER_EVENT));
 }
@@ -149,6 +166,7 @@ export function consumePendingProjectPicker(): boolean {
 export function requestAgentComposer(
   source: AgentSourceId | null = null
 ): void {
+  if (!launchVerbsAvailable()) return;
   pendingAgentComposer = { value: source, at: Date.now() };
   window.dispatchEvent(
     new CustomEvent(FOCUS_AGENT_COMPOSER_EVENT, { detail: source })

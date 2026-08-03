@@ -108,6 +108,7 @@ import {
 import {
   deriveWorkspaceCommandAvailability,
   publishWorkspaceCommandAvailability,
+  resetWorkspaceCommandAvailability,
   type WorkspaceContextCommand,
 } from './workspace-command-availability';
 
@@ -856,6 +857,10 @@ export function WorkspaceClient() {
   useEffect(() => {
     if (ready) publishWorkspaceCommandAvailability(commandAvailability);
   }, [commandAvailability, ready]);
+  // Unmount reset: the availability snapshot is module-global truth for the
+  // native menu — it must not outlive the workspace that published it
+  // (tenant switch to Demo unmounts this client via WorkspaceScopeGate).
+  useEffect(() => resetWorkspaceCommandAvailability, []);
   const visibleKeyHints = KEY_HINTS.filter(
     hint =>
       !hint.command || commandAvailability.commands[hint.command].available

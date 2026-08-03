@@ -65,15 +65,6 @@ function voltaicRoadmapItems(): DemoRoadmapItem[] {
   return items;
 }
 
-/** Deterministic human-touch count for one fixture Session. The fixtures do
- *  not author interventions (the metric postdates them); this derivation is
- *  stable, plausible against the measured E4 shape (0-6 per session), and
- *  higher where the record shows a real operator gate. */
-function voltaicInterventions(agent: DemoFleetAgent): number {
-  const base = (agent.turns + agent.delegated.length) % 4;
-  return agent.blocker ? base + 2 : base;
-}
-
 /** Base-tier fixture Agents as session specs — the per-session identity the
  *  attribution and outcome acts render (title, model, branch, link). */
 function voltaicSessionSpecs(agents: DemoFleetAgent[]): DemoSessionSpec[] {
@@ -92,7 +83,11 @@ function voltaicSessionSpecs(agents: DemoFleetAgent[]): DemoSessionSpec[] {
       startedAtMs: agent.startedAtMs,
       lastAtMs: agent.lastActivityAtMs,
       turns: agent.turns,
-      interventions: voltaicInterventions(agent),
+      // Authored in the fixture corpus (ENG-026 N2 honesty): the count is
+      // fixture truth like every other figure here, never derived at view
+      // time — the copy's "measured, not surveyed" claim stays honest under
+      // the surface's authored-fixture banner.
+      interventions: agent.interventions,
       usage: agent.usage,
       delegated: agent.delegated.map(run => ({
         agentId: run.agentId,
@@ -133,6 +128,7 @@ export function voltaicConsumption(): DemoConsumption {
   }));
   cached = buildDemoConsumption({
     nowMs,
+    windowLabel: 'fourteen days',
     samples: corpus.samples,
     planWindows: corpus.planWindows,
     projects,

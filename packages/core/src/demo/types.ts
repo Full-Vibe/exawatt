@@ -173,6 +173,10 @@ export interface DemoFleetAgent {
   lastActivityAtMs: number;
   /** Assistant turns recorded; drives consumption sample emission. */
   turns: number;
+  /** Operator messages AFTER launch — the intervention metric (ENG-026 N2).
+   * Authored fixture truth, never derived at view time; an agent with an
+   * authored transcript must match its operator lines after the first. */
+  interventions: number;
   usage: DemoUsageSpec;
   delegated: DemoDelegatedRun[];
   blocker?: DemoBlocker;

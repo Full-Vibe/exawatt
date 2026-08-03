@@ -45,6 +45,7 @@ import {
 } from '@/components/workspace/workspace-command-availability';
 import {
   demoHarness,
+  demoProjectFor,
   demoRoadmapRead,
   demoShellActivity,
   demoShellAgents,
@@ -52,6 +53,7 @@ import {
   demoShellAttention,
   demoShellDelegation,
   demoShellEngaged,
+  demoShellFleetAgentById,
   demoShellProjects,
   demoShellRoadmapByTab,
   demoShellSummaries,
@@ -77,9 +79,13 @@ export function DemoWorkspaceClient() {
   const agentTypeByTab = useMemo(() => demoShellAgentTypes(), []);
   const sessionPaneRef = useRef<HTMLElement>(null);
 
+  // Session resolution accepts the FULL fleet (base + scale tier): a
+  // Fleet-board "Open session" targets any board agent, and every one of
+  // them owns an honest session record. Only an unknown id falls back to
+  // the default hero — never a known agent to unrelated content.
   const [activeId, setActiveId] = useState<string>(() => {
     const pending = consumePendingSessionJump();
-    if (pending && agents.some(agent => agent.id === pending)) return pending;
+    if (pending && demoShellFleetAgentById(pending)) return pending;
     return agents.some(agent => agent.id === DEFAULT_SESSION_ID)
       ? DEFAULT_SESSION_ID
       : (agents[0]?.id ?? '');
@@ -99,7 +105,7 @@ export function DemoWorkspaceClient() {
   useEffect(() => {
     const onJump = (event: Event) => {
       const id = (event as CustomEvent<string>).detail;
-      if (agents.some(agent => agent.id === id)) {
+      if (demoShellFleetAgentById(id)) {
         consumePendingSessionJump();
         setActiveId(id);
         if (overviewOpen) router.replace('/workspace', { scroll: false });
@@ -107,12 +113,26 @@ export function DemoWorkspaceClient() {
     };
     window.addEventListener(SESSION_JUMP_EVENT, onJump);
     return () => window.removeEventListener(SESSION_JUMP_EVENT, onJump);
-  }, [agents, overviewOpen, router]);
+  }, [overviewOpen, router]);
 
   const activeAgent =
-    agents.find(agent => agent.id === activeId) ?? agents[0] ?? null;
-  const activeProject = projects.find(project =>
-    project.tabs.some(tab => tab.id === activeAgent?.id)
+    agents.find(agent => agent.id === activeId) ??
+    demoShellFleetAgentById(activeId) ??
+    agents[0] ??
+    null;
+  /** A scale-tier Session opened from the Fleet board: not in the base-tier
+   *  rail, so its row renders transiently under its Project while open. */
+  const transientAgent =
+    activeAgent && !agents.some(agent => agent.id === activeAgent.id)
+      ? activeAgent
+      : null;
+  const transientProjectDir = transientAgent
+    ? (demoProjectFor(transientAgent)?.dir ?? null)
+    : null;
+  const activeProject = projects.find(
+    project =>
+      project.tabs.some(tab => tab.id === activeAgent?.id) ||
+      (transientProjectDir !== null && project.dir === transientProjectDir)
   );
 
   const selectProject = useCallback(
@@ -351,7 +371,7 @@ export function DemoWorkspaceClient() {
                         <HarnessGlyph harness={demoHarness(agent)} size={11} />
                       </span>
                       <span
-                        className="min-w-0 flex-1 truncate font-mono text-[11px]"
+                        className="min-w-0 flex-1 truncate font-mono text-chrome-meta"
                         style={{ color: selected ? HUD.text : HUD.textDim }}
                       >
                         {agent.name}
@@ -360,6 +380,37 @@ export function DemoWorkspaceClient() {
                   </li>
                 );
               })}
+              {transientAgent && transientProjectDir === project.dir && (
+                <li>
+                  <button
+                    type="button"
+                    data-demo-session={transientAgent.id}
+                    data-selected
+                    className="flex w-full items-center gap-2 rounded px-2 py-1 text-left transition-colors"
+                    style={{ background: `${project.color}1f` }}
+                  >
+                    <StatusLight
+                      decorative
+                      size="compact"
+                      state={statusLightStateForAgentStatus(
+                        transientAgent.status
+                      )}
+                    />
+                    <span style={{ color: project.color }}>
+                      <HarnessGlyph
+                        harness={demoHarness(transientAgent)}
+                        size={11}
+                      />
+                    </span>
+                    <span
+                      className="min-w-0 flex-1 truncate font-mono text-chrome-meta"
+                      style={{ color: HUD.text }}
+                    >
+                      {transientAgent.name}
+                    </span>
+                  </button>
+                </li>
+              )}
             </ul>
           </section>
         ))}
