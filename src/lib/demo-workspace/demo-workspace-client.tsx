@@ -71,6 +71,7 @@ import {
   demoShellAttention,
   demoShellDelegation,
   demoShellEngaged,
+  demoShellGoalVisuals,
   demoShellFleetAgentById,
   demoShellProjects,
   demoShellRoadmapByTab,
@@ -131,6 +132,7 @@ export function DemoWorkspaceClient() {
   const roadmapByTab = useMemo(() => demoShellRoadmapByTab(), []);
   const agentTypeByTab = useMemo(() => demoShellAgentTypes(), []);
   const initiativeByTab = useMemo(() => demoShellInitiatives(), []);
+  const goalVisuals = useMemo(() => demoShellGoalVisuals(), []);
   const consumptionByTab = useMemo(() => demoShellConsumption(), []);
   const sessionPaneRef = useRef<HTMLElement>(null);
   const [closeConfirm, setCloseConfirm] = useState<{
@@ -789,6 +791,7 @@ export function DemoWorkspaceClient() {
           roadmapByTab={roadmapByTab}
           agentTypeByTab={agentTypeByTab}
           initiativeByTab={initiativeByTab}
+          goalVisuals={goalVisuals}
           consumptionByTab={consumptionByTab}
           activeTabId={activeAgent?.id ?? null}
           activeProjectDir={activeProject?.dir ?? null}

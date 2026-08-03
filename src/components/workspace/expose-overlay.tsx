@@ -11,10 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import {
-  WORKSPACE_HUD as HUD,
-  withThemeAlpha,
-} from './workspace-theme';
+import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import { READINESS_NEUTRAL } from '@/components/readiness';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import {
@@ -35,6 +32,10 @@ import {
   type SessionConsumptionReadout,
   type SessionInitiativeReadout,
 } from './session-overview-card';
+import {
+  GoalVisualBackdrop,
+  type GoalVisualReadout,
+} from './goal-visual-backdrop';
 import { tokens as formatTokens } from '@/components/consumption/flux';
 import { tabIsLive } from './use-workspace-state';
 import type { Project } from './use-workspace-state';
@@ -108,6 +109,7 @@ export function ExposeOverlay({
   agentTypeByTab = {},
   initiativeByTab = {},
   consumptionByTab = {},
+  goalVisuals = {},
   activeTabId,
   activeProjectDir = null,
   roadmapRead,
@@ -143,6 +145,9 @@ export function ExposeOverlay({
    *  render no readout — absent, never zero. Live local Sessions report
    *  nothing today, so the Personal workspace passes nothing. */
   consumptionByTab?: Record<string, SessionConsumptionReadout>;
+  /** durableSessionId → quiet visual identity for the accepted Session Why.
+   *  Sources own generation/authorship; Team only projects the result. */
+  goalVisuals?: Record<string, GoalVisualReadout>;
   /** selection starts on the session the operator came from */
   activeTabId: string | null;
   /** selects an empty Project when there is no originating Session */
@@ -502,12 +507,10 @@ export function ExposeOverlay({
           if (mouseArmed()) setSel(index);
         }}
         onFocus={() => setSel(index)}
-        className="flex h-[272px] flex-col overflow-hidden rounded border p-3 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
+        className="relative isolate flex h-[272px] flex-col overflow-hidden rounded border p-3 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
         style={{
           width: TILE_W,
-          borderColor: selected
-            ? tile.color
-            : withThemeAlpha(tile.color, 0.27),
+          borderColor: selected ? tile.color : withThemeAlpha(tile.color, 0.27),
           background: HUD.bg.panelFill,
           boxShadow: selected
             ? `0 0 14px ${withThemeAlpha(tile.color, 0.33)}`
@@ -521,33 +524,40 @@ export function ExposeOverlay({
           transitionDelay: entered ? `${Math.min(index * 18, 300)}ms` : '0ms',
         }}
       >
-        <SessionOverviewCardContent
-          title={display.primary}
-          context={display.context}
-          titleIsContext={display.primaryKind === 'context'}
-          color={tile.color}
-          harness={tile.harness}
-          glyphState={glyphState}
-          attention={attentionSignal}
-          delegation={tileDelegation}
-          agentType={agentTypeByTab[tile.tabId] ?? null}
-          initiative={initiative}
-          fault={fault}
-          lifecycleLabel={tile.stateLabel}
-          current={current}
-          next={roadmap?.label ?? 'No plan reported'}
-          nextProgress={roadmap?.fraction ?? null}
-          consumption={consumption}
+        <GoalVisualBackdrop
+          visual={goalVisuals[tile.durableSessionId] ?? null}
+          fallbackIdentity={tile.durableSessionId}
+          projectColor={tile.color}
         />
-        {roadmap && (
-          <span
-            data-expose-roadmap-item
-            data-link-method={roadmap.inferred ? 'inferred' : 'declared'}
-            className="sr-only"
-          >
-            {roadmap.label}
-          </span>
-        )}
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+          <SessionOverviewCardContent
+            title={display.primary}
+            context={display.context}
+            titleIsContext={display.primaryKind === 'context'}
+            color={tile.color}
+            harness={tile.harness}
+            glyphState={glyphState}
+            attention={attentionSignal}
+            delegation={tileDelegation}
+            agentType={agentTypeByTab[tile.tabId] ?? null}
+            initiative={initiative}
+            fault={fault}
+            lifecycleLabel={tile.stateLabel}
+            current={current}
+            next={roadmap?.label ?? 'No plan reported'}
+            nextProgress={roadmap?.fraction ?? null}
+            consumption={consumption}
+          />
+          {roadmap && (
+            <span
+              data-expose-roadmap-item
+              data-link-method={roadmap.inferred ? 'inferred' : 'declared'}
+              className="sr-only"
+            >
+              {roadmap.label}
+            </span>
+          )}
+        </div>
       </button>
     );
   };

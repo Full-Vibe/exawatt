@@ -34,6 +34,7 @@ import type {
   WorkspaceTab,
 } from '@/components/workspace/use-workspace-state';
 import type { SessionAttentionSignal } from '@/components/workspace/session-status';
+import type { GoalVisualReadout } from '@/components/workspace/goal-visual-backdrop';
 import type {
   SessionRow,
   SessionRowStatus,
@@ -166,6 +167,26 @@ export function demoShellInitiatives(): Record<string, DemoInitiative> {
   const out: Record<string, DemoInitiative> = {};
   for (const agent of demoShellAgents()) {
     out[agent.id] = demoInitiativeFor(agent);
+  }
+  return out;
+}
+
+/**
+ * durableSessionId → authored visual identity fixture. Demo owns stable goal
+ * keys but performs no image-generation IO; the shared Team projection paints
+ * its deterministic Project-tinted fallback until a raster fixture is added.
+ * Agents advancing one Initiative intentionally share one work-world.
+ */
+export function demoShellGoalVisuals(): Record<string, GoalVisualReadout> {
+  const out: Record<string, GoalVisualReadout> = {};
+  for (const agent of demoShellAgents()) {
+    const initiative = demoInitiativeFor(agent);
+    out[agent.id] = {
+      identityKey: `demo:${initiative.id}`,
+      revision: 1,
+      state: 'fallback',
+      dataUrl: null,
+    };
   }
   return out;
 }

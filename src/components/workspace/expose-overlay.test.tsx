@@ -76,6 +76,45 @@ const projects: Project[] = [
 ];
 
 describe('Sessions overview', () => {
+  it('projects a goal visual by durable Session identity without changing the tile contract', () => {
+    const image = 'data:image/webp;base64,UklGRg==';
+    render(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        goalVisuals={{
+          'durable-b': {
+            identityKey: 'workspace:one:goal:investor-demo',
+            revision: 2,
+            state: 'ready',
+            dataUrl: image,
+          },
+        }}
+        activeTabId="tab-b"
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    const alpha = screen.getByRole('button', { name: /^Alpha, One/ });
+    const beta = screen.getByRole('button', { name: /^Beta, One/ });
+    expect(beta.querySelector('[data-goal-visual-backdrop]')).toHaveAttribute(
+      'data-goal-visual-identity',
+      'workspace:one:goal:investor-demo'
+    );
+    expect(beta.querySelector('[data-goal-visual-image]')).toHaveAttribute(
+      'src',
+      image
+    );
+    expect(alpha.querySelector('[data-goal-visual-backdrop]')).toHaveAttribute(
+      'data-goal-visual-identity',
+      'durable-a'
+    );
+    expect(alpha.querySelector('[data-goal-visual-image]')).toBeNull();
+    expect(beta).toHaveClass('h-[272px]');
+  });
+
   it('shows source-reported Initiative truth without inventing it for other Sessions', () => {
     render(
       <ExposeOverlay
