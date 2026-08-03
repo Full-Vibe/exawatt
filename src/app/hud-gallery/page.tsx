@@ -476,6 +476,13 @@ export default function HudGallery() {
                 Open the Consumption lab →
               </a>{' '}
               <a
+                href="/hud-gallery/consumption-redesign"
+                className="underline underline-offset-2"
+                style={{ color: HUD.cyan }}
+              >
+                Open the Consumption page redesign →
+              </a>{' '}
+              <a
                 href="/hud-gallery/roadmap-lab"
                 className="underline underline-offset-2"
                 style={{ color: HUD.cyan }}
