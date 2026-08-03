@@ -118,41 +118,26 @@ function claudeModel(
   };
 }
 
-// Claude Code has no catalog command, so this list is static and must be kept
-// in sync with `claude /model` by hand whenever a new alias ships.
-const CLAUDE_MODELS: AgentModelOption[] = [
+/** Used only when the installed CLI cannot describe its own catalog. The live
+ * list comes from Claude Code itself, so this stays deliberately minimal. */
+const CLAUDE_FALLBACK_MODELS: AgentModelOption[] = [
   claudeModel(
     'default',
     'Account default',
     'Claude Code chooses the recommended model for your account.'
   ),
-  claudeModel(
-    'opus',
-    'Opus',
-    'Balanced Claude model for everyday, complex work.'
-  ),
+  claudeModel('opus', 'Opus', 'Best for everyday, complex work.'),
   claudeModel(
     'fable',
     'Fable',
-    'Most capable Claude model for the hardest, longest-running work.'
+    'Most capable for your hardest and longest-running work.'
   ),
-  claudeModel(
-    'sonnet',
-    'Sonnet',
-    'Balanced Claude model for everyday coding.',
-    CLAUDE_EFFORTS.filter(effort => effort.id !== 'xhigh')
-  ),
+  claudeModel('sonnet', 'Sonnet', 'Efficient for routine work.'),
   claudeModel(
     'haiku',
     'Haiku',
-    'Fast Claude model for focused tasks.',
+    'Fastest for quick answers.',
     CLAUDE_EFFORTS.filter(effort => effort.id === 'auto')
-  ),
-  claudeModel(
-    'opusplan',
-    'Opus plan',
-    'Opus while planning, then Sonnet while executing.',
-    CLAUDE_EFFORTS.filter(effort => effort.id !== 'xhigh')
   ),
 ];
 
@@ -342,7 +327,98 @@ interface ClaudeSettings {
   env?: unknown;
 }
 
+interface ClaudeModelInfo {
+  value?: unknown;
+  displayName?: unknown;
+  description?: unknown;
+  supportsEffort?: unknown;
+  supportedEffortLevels?: unknown;
+}
+
+const CLAUDE_EFFORTS_BY_ID = new Map(
+  CLAUDE_EFFORTS.map(effort => [effort.id, effort])
+);
+const CLAUDE_AUTO_EFFORT = CLAUDE_EFFORTS[0];
+
+function claudeModelFromInfo(info: ClaudeModelInfo): AgentModelOption | null {
+  if (!isValidAgentModel(info.value)) return null;
+  const levels = Array.isArray(info.supportedEffortLevels)
+    ? info.supportedEffortLevels.filter(isValidAgentEffort)
+    : [];
+  const label =
+    typeof info.displayName === 'string' && info.displayName.trim()
+      ? info.displayName.trim()
+      : formatAgentModelLabel(info.value);
+  return {
+    id: info.value,
+    label,
+    description:
+      typeof info.description === 'string' && info.description.trim()
+        ? info.description.trim()
+        : 'Offered by the installed Claude Code CLI.',
+    defaultEffort: 'auto',
+    efforts:
+      info.supportsEffort === true && levels.length > 0
+        ? [
+            CLAUDE_AUTO_EFFORT,
+            // Levels Exawatt has no copy for still belong in the picker: the
+            // installed CLI is the authority on what this model accepts.
+            ...levels.map(
+              id =>
+                CLAUDE_EFFORTS_BY_ID.get(id) ?? {
+                  id,
+                  label: formatAgentEffortLabel(id),
+                  description:
+                    'Supported by this model in the installed Claude Code CLI.',
+                }
+            ),
+          ]
+        : [CLAUDE_AUTO_EFFORT],
+  };
+}
+
+/** Reads the model rows out of a Claude Code `initialize` control response —
+ * the same `getModelOptions()` list its own `/model` picker renders. */
+export function parseClaudeModelCatalog(
+  raw: string
+): AgentModelOption[] | null {
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{')) continue;
+    let message: unknown;
+    try {
+      message = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!message || typeof message !== 'object') continue;
+    const envelope = message as {
+      type?: unknown;
+      response?: { response?: { models?: unknown } };
+    };
+    if (envelope.type !== 'control_response') continue;
+    const reported = envelope.response?.response?.models;
+    if (!Array.isArray(reported)) continue;
+    const models = reported
+      .map(entry =>
+        entry && typeof entry === 'object'
+          ? claudeModelFromInfo(entry as ClaudeModelInfo)
+          : null
+      )
+      .filter((model): model is AgentModelOption => model !== null);
+    if (models.length > 0) return models;
+  }
+  return null;
+}
+
+/**
+ * @param reported Models exactly as the installed CLI described them, or null
+ * when it could not be asked. A reported list is authoritative: Claude Code has
+ * already applied entitlements, the settings cascade, and env overrides, so
+ * Exawatt must not add rows of its own on top of it.
+ */
 export function buildClaudeModelCatalog(
+  reported: AgentModelOption[] | null,
   layers: unknown[],
   environment: NodeJS.ProcessEnv
 ): AgentModelCatalog {
@@ -384,32 +460,36 @@ export function buildClaudeModelCatalog(
     ? environment.CLAUDE_CODE_EFFORT_LEVEL
     : null;
   const effortLocked = Boolean(processEffort ?? settingsEnvironmentEffort);
-  const models = [...CLAUDE_MODELS];
-  for (const id of available) {
-    if (!models.some(model => model.id === id)) {
+  const models = reported ? [...reported] : [...CLAUDE_FALLBACK_MODELS];
+  if (!reported) {
+    // Only the fallback list needs these: a reported catalog already contains
+    // whatever the settings cascade and env overrides made selectable.
+    for (const id of available) {
+      if (!models.some(model => model.id === id)) {
+        models.push(
+          claudeModel(
+            id,
+            formatAgentModelLabel(id),
+            'Available in your Claude Code settings.'
+          )
+        );
+      }
+    }
+    const customModel = environment.ANTHROPIC_CUSTOM_MODEL_OPTION;
+    if (
+      isValidAgentModel(customModel) &&
+      !models.some(model => model.id === customModel)
+    ) {
       models.push(
         claudeModel(
-          id,
-          formatAgentModelLabel(id),
-          'Available in your Claude Code settings.'
+          customModel,
+          environment.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME?.trim() ||
+            formatAgentModelLabel(customModel),
+          environment.ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION?.trim() ||
+            'Custom model available to Claude Code.'
         )
       );
     }
-  }
-  const customModel = environment.ANTHROPIC_CUSTOM_MODEL_OPTION;
-  if (
-    isValidAgentModel(customModel) &&
-    !models.some(model => model.id === customModel)
-  ) {
-    models.push(
-      claudeModel(
-        customModel,
-        environment.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME?.trim() ||
-          formatAgentModelLabel(customModel),
-        environment.ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION?.trim() ||
-          'Custom model available to Claude Code.'
-      )
-    );
   }
   if (!models.some(model => model.id === effectiveModel)) {
     models.unshift(
@@ -492,8 +572,80 @@ async function loginModelEnvironment(
   }
 }
 
+function testHarnessExecutable(harness: string): string | null {
+  return process.env.EXAWATT_TEST === '1' &&
+    process.env.EXAWATT_TEST_HARNESS_BIN &&
+    path.isAbsolute(process.env.EXAWATT_TEST_HARNESS_BIN)
+    ? path.join(process.env.EXAWATT_TEST_HARNESS_BIN, harness)
+    : null;
+}
+
+// Claude Code has no catalog subcommand, but its SDK handshake carries one: the
+// `initialize` control response returns the exact rows `/model` renders, each
+// with the `--model` value Exawatt has to pass back. `--safe-mode` keeps the
+// probe side-effect free (no hooks, plugins, or MCP) while leaving auth, the
+// settings cascade, and model selection intact.
+const CLAUDE_CATALOG_REQUEST = JSON.stringify({
+  type: 'control_request',
+  request_id: 'exawatt-model-catalog',
+  request: { subtype: 'initialize' },
+});
+
+async function readClaudeModelOptions(
+  cwd: string,
+  shell: string
+): Promise<AgentModelOption[] | null> {
+  const executable = testHarnessExecutable('claude');
+  const invocation = executable ? shellQuote(executable) : 'claude';
+  const catalogCommand =
+    `printf '%s\\n' ${shellQuote(CLAUDE_CATALOG_REQUEST)} | ` +
+    `${invocation} --safe-mode --input-format stream-json ` +
+    `--output-format stream-json --verbose -p`;
+  try {
+    const result = await execFileAsync(shell, ['-l', '-c', catalogCommand], {
+      cwd,
+      timeout: 20_000,
+      maxBuffer: 5 * 1024 * 1024,
+      encoding: 'utf8',
+    });
+    return parseClaudeModelCatalog(result.stdout);
+  } catch {
+    // Older CLIs, a failed launch, or a slow cold start fall back to the
+    // built-in list rather than leaving the operator with no models at all.
+    return null;
+  }
+}
+
+interface ClaudeCatalogCacheEntry {
+  expires: number;
+  models: AgentModelOption[];
+}
+
+const CLAUDE_CATALOG_TTL_MS = 5 * 60_000;
+const claudeCatalogCache = new Map<string, ClaudeCatalogCacheEntry>();
+
+async function cachedClaudeModelOptions(
+  cwd: string,
+  shell: string
+): Promise<AgentModelOption[] | null> {
+  const key = `${shell} ${cwd}`;
+  const cached = claudeCatalogCache.get(key);
+  if (cached && cached.expires > Date.now()) return cached.models;
+  const models = await readClaudeModelOptions(cwd, shell);
+  // Only a successful probe is cached: a failure should retry on the next open,
+  // not pin the fallback list for five minutes.
+  if (models) {
+    claudeCatalogCache.set(key, {
+      expires: Date.now() + CLAUDE_CATALOG_TTL_MS,
+      models,
+    });
+  }
+  return models;
+}
+
 async function listClaudeModels(
   cwd: string,
+  shell: string,
   environment: NodeJS.ProcessEnv
 ): Promise<AgentModelCatalog> {
   const configDir =
@@ -501,12 +653,15 @@ async function listClaudeModels(
     path.join(environment.HOME || os.homedir(), '.claude');
   // Lowest → highest personal/project precedence. Managed policy is still
   // enforced by Claude Code itself; this catalog never claims to replace it.
-  const layers = await Promise.all([
-    readJson(path.join(configDir, 'settings.json')),
-    readJson(path.join(cwd, '.claude', 'settings.json')),
-    readJson(path.join(cwd, '.claude', 'settings.local.json')),
+  const [reported, layers] = await Promise.all([
+    cachedClaudeModelOptions(cwd, shell),
+    Promise.all([
+      readJson(path.join(configDir, 'settings.json')),
+      readJson(path.join(cwd, '.claude', 'settings.json')),
+      readJson(path.join(cwd, '.claude', 'settings.local.json')),
+    ]),
   ]);
-  return buildClaudeModelCatalog(layers, environment);
+  return buildClaudeModelCatalog(reported, layers, environment);
 }
 
 async function listCodexModels(
@@ -531,14 +686,9 @@ async function listCodexModels(
   }
   let stdout = '';
   try {
-    const testHarnessExecutable =
-      process.env.EXAWATT_TEST === '1' &&
-      process.env.EXAWATT_TEST_HARNESS_BIN &&
-      path.isAbsolute(process.env.EXAWATT_TEST_HARNESS_BIN)
-        ? path.join(process.env.EXAWATT_TEST_HARNESS_BIN, 'codex')
-        : null;
-    const catalogCommand = testHarnessExecutable
-      ? `${shellQuote(testHarnessExecutable)} debug models`
+    const executable = testHarnessExecutable('codex');
+    const catalogCommand = executable
+      ? `${shellQuote(executable)} debug models`
       : 'codex debug models';
     const result = await execFileAsync(shell, ['-l', '-c', catalogCommand], {
       cwd,
@@ -561,5 +711,5 @@ export async function listAgentModels(
   const environment = await loginModelEnvironment(shell, cwd);
   return harness === 'codex'
     ? listCodexModels(cwd, shell, environment)
-    : listClaudeModels(cwd, environment);
+    : listClaudeModels(cwd, shell, environment);
 }

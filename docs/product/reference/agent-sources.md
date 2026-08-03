@@ -90,10 +90,10 @@ Model and reasoning-effort choice are also visible and source-owned. Before a
 new local Agent starts, the composer resolves the selected harness's effective
 model/effort pair and exposes its available choices. Codex supplies its
 installed model catalog, each model's supported efforts and default, and the
-configured pair. Claude Code does not currently expose its native account-aware
-model catalog through a supported machine-readable command, so Exawatt shows
-the exact layered configuration when known, otherwise the account default, and
-offers **Choose in Claude Code…** for catalog selection. Changing models immediately
+configured pair. Claude Code answers the same question over its SDK control
+protocol: the rows Exawatt lists are the rows its own `/model` menu renders,
+carrying each row's launch value and accepted effort levels, so the two lists
+cannot diverge and Exawatt adds nothing of its own to them. Changing models immediately
 reconciles effort to that model's valid choices and default. Exawatt pins the
 displayed pair on the launch command so the UI and process cannot drift between
 composition and spawn. An override is scoped to that new Agent and does not

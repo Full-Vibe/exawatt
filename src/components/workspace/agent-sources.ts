@@ -281,7 +281,7 @@ export async function loadAgentModelCatalog(
         ? [
             {
               id: 'default',
-              label: 'Account default',
+              label: 'Default (recommended)',
               description:
                 'Claude Code chooses the recommended model for your account.',
               defaultEffort: 'auto',

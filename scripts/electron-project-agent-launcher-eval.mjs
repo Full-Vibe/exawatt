@@ -44,6 +44,10 @@ if [ "$1" = "debug" ] && [ "$2" = "models" ]; then
   printf '%s\\n' '{"models":[{"slug":"eval-codex-sol","display_name":"Eval Codex Sol","description":"Frontier evaluator model.","visibility":"list","priority":1,"default_reasoning_level":"low","supported_reasoning_levels":[{"effort":"low","description":"Fast evaluator reasoning."},{"effort":"high","description":"Deep evaluator reasoning."},{"effort":"max","description":"Maximum evaluator reasoning."}]},{"slug":"eval-codex-terra","display_name":"Eval Codex Terra","description":"Balanced evaluator model.","visibility":"list","priority":2,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low","description":"Fast evaluator reasoning."},{"effort":"medium","description":"Balanced evaluator reasoning."},{"effort":"high","description":"Deep evaluator reasoning."},{"effort":"max","description":"Maximum evaluator reasoning."}]}]}'
   exit 0
 fi
+if [ "$1" = "--safe-mode" ]; then
+  printf '%s\\n' '{"type":"control_response","response":{"subtype":"success","request_id":"exawatt-model-catalog","response":{"models":[{"value":"default","displayName":"Account default","description":"Claude Code chooses the recommended model for your account.","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"]},{"value":"eval-claude-fable","displayName":"Eval Claude Fable","description":"Frontier evaluator model.","supportsEffort":true,"supportedEffortLevels":["high","max"]}]}}}'
+  exit 0
+fi
 if [ "$1" = "-p" ]; then printf 'fixture context'; exit 0; fi
 printf 'FAKE_${source.toUpperCase()}_ARGS:'
 printf '<%s>' "$@"
@@ -456,6 +460,21 @@ try {
           'Account default'
         )
       );
+      // The rows must be the ones the installed CLI reported, not a list
+      // Exawatt keeps of its own.
+      const claudeModelTrigger = page.getByLabel('Agent model');
+      await claudeModelTrigger.click();
+      const claudeModelMenu = page.getByRole('listbox');
+      await claudeModelMenu.waitFor();
+      check(
+        'Claude model choices mirror the catalog the installed CLI reports',
+        (await claudeModelMenu.innerText()).includes('Eval Claude Fable')
+      );
+      await page.screenshot({
+        path: join(output, '04-claude-model-options.png'),
+      });
+      await page.keyboard.press('Escape');
+      await claudeModelMenu.waitFor({ state: 'hidden' });
       const claudeEffortTrigger = page.getByLabel('Agent effort');
       await page.waitForFunction(() =>
         document
