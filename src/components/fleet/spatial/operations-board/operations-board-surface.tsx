@@ -13,8 +13,11 @@ import type {
   SpatialBoardLayout,
   SpatialBoardLens,
   SpatialBoardProjection,
+  SpatialBoardRect,
+  SpatialScopeActivity,
 } from '@exawatt/ui-model';
-import { FLUX } from '@/components/consumption/flux';
+import { FLUX, exact, tokens } from '@/components/consumption/flux';
+import { AnnouncedChip } from '@/components/readiness';
 import { useAgentFieldGlide } from '@/components/hud/webgl/use-agent-field-glide';
 import {
   OperationsBoardCanvas,
@@ -24,7 +27,10 @@ import {
 import { RECENTER_SPATIAL_EVENT } from '@/components/nav/command-altitude-events';
 import { altitudeHandoffActive } from '@/components/nav/altitude-handoff';
 import { parseStoredViewport } from '../spatial-navigation-state';
-import { statusLightStateForAgentStatus } from '@/components/status-light/protocol';
+import {
+  STATUS_LIGHT_META,
+  statusLightStateForAgentStatus,
+} from '@/components/status-light/protocol';
 
 class BoardErrorBoundary extends Component<
   { children: ReactNode },
@@ -69,6 +75,119 @@ function KeyHint({ keyName, label }: { keyName: string; label: string }) {
       </kbd>
       <span className="uppercase tracking-[0.12em]">{label}</span>
     </span>
+  );
+}
+
+/** One count in the scope readout: protocol-colored dot + mono figure. The
+ *  dot echoes the D40 light the bucket folds into (D30 redundant channels:
+ *  the word carries the meaning; the hue only echoes it). */
+function ScopeCount({
+  color,
+  count,
+  label,
+}: {
+  color: string;
+  count: number;
+  label: string;
+}) {
+  return (
+    <span className="flex items-center gap-1 whitespace-nowrap">
+      <span
+        aria-hidden="true"
+        className="h-1.5 w-1.5 rounded-full"
+        style={{ background: color, opacity: count > 0 ? 1 : 0.35 }}
+      />
+      <span className="font-mono tabular-nums text-[oklch(0.88_0.01_210)]">
+        {count}
+      </span>
+      <span className="text-[oklch(0.6_0.012_210)]">{label}</span>
+    </span>
+  );
+}
+
+/**
+ * Fleet-scope activity readout (V3.2): fleet totals by default, the
+ * selection's totals while a multi-selection exists. Working/blocked/idle
+ * ride the D40 buckets; token burn is the scope's reported total — absent
+ * (not zero) when nothing in scope reports. On a selection the panel also
+ * carries the announced "Direct N Agents" verb — dashed, inert, honest.
+ */
+function ScopeReadout({
+  activity,
+  selectionCount,
+  onClearSelection,
+}: {
+  activity: SpatialScopeActivity;
+  selectionCount: number;
+  onClearSelection?: () => void;
+}) {
+  const selection = selectionCount > 0;
+  return (
+    <div
+      data-board-scope={selection ? 'selection' : 'fleet'}
+      data-board-scope-agents={activity.agentCount}
+      className="absolute left-3 top-3 z-10 flex flex-col gap-1.5 border border-[oklch(0.29_0.01_215)] bg-[oklch(0.13_0.008_220/0.92)] px-2.5 py-2"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-mono text-chrome-micro uppercase tracking-[0.12em] text-[oklch(0.68_0.025_190)]">
+          {selection
+            ? `${selectionCount} selected`
+            : `${activity.agentCount} agents`}
+        </span>
+        {selection && onClearSelection && (
+          <button
+            type="button"
+            aria-label="Clear selection"
+            onClick={onClearSelection}
+            className="grid h-5 w-5 place-items-center font-mono text-xs leading-none text-[oklch(0.6_0.012_210)] outline-none transition-colors hover:text-[oklch(0.88_0.01_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)]"
+          >
+            ×
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-2.5 text-chrome-micro">
+        <ScopeCount
+          color={STATUS_LIGHT_META.active.color}
+          count={activity.working}
+          label="working"
+        />
+        <ScopeCount
+          color={STATUS_LIGHT_META['needs-you'].color}
+          count={activity.blocked}
+          label="blocked"
+        />
+        <ScopeCount
+          color={STATUS_LIGHT_META.off.color}
+          count={activity.idle}
+          label="idle"
+        />
+      </div>
+      {activity.burn && (
+        <div
+          data-board-scope-burn
+          className="flex items-baseline gap-1.5 text-chrome-micro"
+          title={`${exact(activity.burn.rawTokens)} tokens across ${activity.burn.reportedCount} reporting ${activity.burn.reportedCount === 1 ? 'Agent' : 'Agents'}${activity.burn.unreportedCount > 0 ? ` · ${activity.burn.unreportedCount} unreported` : ''}`}
+        >
+          <span className="font-mono tabular-nums text-[oklch(0.88_0.01_210)]">
+            {tokens(activity.burn.rawTokens)}
+          </span>
+          <span className="text-[oklch(0.6_0.012_210)]">tokens</span>
+          {activity.burn.unreportedCount > 0 && (
+            <span style={{ color: FLUX.unknown }}>
+              {activity.burn.unreportedCount} unreported
+            </span>
+          )}
+        </div>
+      )}
+      {selection && (
+        <AnnouncedChip
+          coming={`direct all ${selectionCount} selected Agents at once`}
+          className="mt-0.5 self-start"
+        >
+          Direct {selectionCount} {selectionCount === 1 ? 'Agent' : 'Agents'}
+        </AnnouncedChip>
+      )}
+    </div>
   );
 }
 
@@ -146,6 +265,12 @@ export function OperationsBoardSurface({
   onOverview,
   onProjectionChange,
   onLensChange,
+  multiSelection,
+  onToggleAgentSelect,
+  onToggleZoneSelect,
+  onBandSelect,
+  onClearMultiSelect,
+  scopeActivity = null,
   sessionTransitionAgentId = null,
   viewportStorageKey = 'exawatt:spatial-viewport:v2:fleet:~:~:top-down',
   preserveDrawingBuffer = false,
@@ -162,12 +287,22 @@ export function OperationsBoardSurface({
   onOverview: () => void;
   onProjectionChange: (projection: SpatialBoardProjection) => void;
   onLensChange?: (lens: SpatialBoardLens) => void;
+  /** Multi-selection (V3.2): real, ephemeral, client-owned. Selection is the
+   *  shipped mechanism; the only announced part is the Direct verb. */
+  multiSelection?: ReadonlySet<string>;
+  onToggleAgentSelect?: (agentId: string) => void;
+  onToggleZoneSelect?: (zoneId: string) => void;
+  onBandSelect?: (band: SpatialBoardRect) => void;
+  onClearMultiSelect?: () => void;
+  /** Scope-aware activity readout (fleet totals, or the selection's). */
+  scopeActivity?: SpatialScopeActivity | null;
   sessionTransitionAgentId?: string | null;
   viewportStorageKey?: string;
   preserveDrawingBuffer?: boolean;
 }) {
   const controller = useRef<OperationsBoardHandle | null>(null);
   const viewportRect = useRef<SVGRectElement | null>(null);
+  const bandOverlay = useRef<HTMLDivElement | null>(null);
   const pendingViewport = useRef<OperationsBoardViewport | null>(null);
   const viewportSaveTimer = useRef<number | null>(null);
   const visibleZones = useMemo(
@@ -306,6 +441,21 @@ export function OperationsBoardSurface({
         target?.isContentEditable
       )
         return;
+      // Shift+1–9 toggles the zone in the multi-selection (V3.2): the
+      // keyboard equivalent of shift-clicking its plate. `code` because
+      // shifted digits produce symbol `key`s.
+      if (
+        event.shiftKey &&
+        onToggleZoneSelect &&
+        /^Digit[1-9]$/.test(event.code)
+      ) {
+        const zone = visibleZones[Number(event.code.slice(5)) - 1];
+        if (zone && !zone.isAggregate) {
+          onToggleZoneSelect(zone.id);
+          event.preventDefault();
+        }
+        return;
+      }
       if (event.key >= '1' && event.key <= '9') {
         const zone = visibleZones[Number(event.key) - 1];
         if (zone && !zone.isAggregate) {
@@ -343,6 +493,7 @@ export function OperationsBoardSurface({
     onLensChange,
     onOverview,
     onProjectionChange,
+    onToggleZoneSelect,
     projection,
     triage,
     visibleZones,
@@ -356,6 +507,7 @@ export function OperationsBoardSurface({
       data-board-projects={visibleZones.length}
       data-board-pieces={layout.stats.visiblePieceCount}
       data-board-status-lights={visibleLightStates}
+      data-board-multi-count={multiSelection?.size ?? 0}
       data-session-handoff={sessionTransitionAgentId ?? undefined}
       className="relative h-full w-full overflow-hidden bg-[oklch(0.135_0.009_220)]"
     >
@@ -370,10 +522,28 @@ export function OperationsBoardSurface({
             onDrillProject={onDrillProject}
             onSelectAgent={agentId => onSelectAgent(agentId)}
             onBackground={() => onSelectAgent(null)}
+            multiSelection={multiSelection}
+            onToggleAgentSelect={onToggleAgentSelect}
+            onToggleZoneSelect={onToggleZoneSelect}
+            onBandSelect={onBandSelect}
+            bandOverlayRef={bandOverlay}
             preserveDrawingBuffer={preserveDrawingBuffer}
           />
         </BoardErrorBoundary>
       </div>
+
+      {/* Shift-drag selection band (V3.2): positioned imperatively by the
+          camera rig at pointer frequency; dashed per the board's selection
+          language. Display:none until a band is being drawn. */}
+      {onBandSelect && (
+        <div
+          ref={bandOverlay}
+          data-board-band-overlay
+          aria-hidden="true"
+          className="pointer-events-none absolute z-10 border border-dashed border-[oklch(0.75_0.09_185/0.9)] bg-[oklch(0.75_0.09_185/0.08)]"
+          style={{ display: 'none' }}
+        />
+      )}
 
       {visibleZones.length === 0 && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center p-8">
@@ -393,6 +563,15 @@ export function OperationsBoardSurface({
           sessionTransitionAgentId ? 'pointer-events-none opacity-0' : ''
         }`}
       >
+        {scopeActivity &&
+          ((multiSelection && multiSelection.size > 0) ||
+            (layout.altitude === 'fleet' && scopeActivity.agentCount > 0)) && (
+            <ScopeReadout
+              activity={scopeActivity}
+              selectionCount={multiSelection?.size ?? 0}
+              onClearSelection={onClearMultiSelect}
+            />
+          )}
         {hero && layout.altitude !== 'agent' && (
           <button
             type="button"
@@ -424,6 +603,7 @@ export function OperationsBoardSurface({
           )}
           <KeyHint keyName="drag ←↑↓→" label="pan" />
           <KeyHint keyName="pinch + −" label="zoom" />
+          {onBandSelect && <KeyHint keyName="⇧ drag" label="select" />}
           <KeyHint keyName="V" label="view" />
           {onLensChange && <KeyHint keyName="B" label="burn" />}
           {attentionIds.length > 0 && <KeyHint keyName="N" label="attention" />}

@@ -24,12 +24,15 @@ import {
   filterFleetState,
   selectFleetCommandView,
   selectFleetSpatialScene,
+  selectSpatialBandAgentIds,
   selectSpatialBoardLayout,
   selectSpatialProjectZones,
+  selectSpatialScopeActivity,
   type Altitude,
   type SpatialBoardLayout,
   type SpatialBoardLens,
   type SpatialBoardProjection,
+  type SpatialBoardRect,
 } from '@exawatt/ui-model';
 import { agentGoalDisplay } from './spatial-agent-copy';
 import { requestSessionJump } from '@/components/workspace/session-jump';
@@ -187,6 +190,77 @@ export function SpatialFleetClient() {
     previousBoardLayout.current = boardLayout;
   }, [boardLayout]);
 
+  // Multi-selection (V3.2): real, ephemeral, client-owned — the single
+  // inspected Agent stays URL-addressed; a band/shift selection is a working
+  // set, not an address. Pruned against the filtered fleet so filters and
+  // live departures cannot leave phantom members in the count.
+  const [multiSelectedIds, setMultiSelectedIds] = useState<ReadonlySet<string>>(
+    () => new Set<string>()
+  );
+  const multiSelection = useMemo(() => {
+    if (multiSelectedIds.size === 0) return multiSelectedIds;
+    const pruned = new Set<string>();
+    for (const id of multiSelectedIds) {
+      if (filteredState.agents[id]) pruned.add(id);
+    }
+    return pruned.size === multiSelectedIds.size ? multiSelectedIds : pruned;
+  }, [filteredState.agents, multiSelectedIds]);
+
+  const toggleAgentSelect = useCallback((agentId: string) => {
+    setMultiSelectedIds(previous => {
+      const next = new Set(previous);
+      if (next.has(agentId)) next.delete(agentId);
+      else next.add(agentId);
+      return next;
+    });
+  }, []);
+
+  // Zone toggle: all of the zone's visible Agents join the selection; if the
+  // zone is already fully selected, they leave it.
+  const toggleZoneSelect = useCallback(
+    (zoneId: string) => {
+      const zone = boardLayout.zones.find(entry => entry.id === zoneId);
+      if (!zone) return;
+      const members = zone.agentIds.filter(id => visibleAgentIds.has(id));
+      if (members.length === 0) return;
+      setMultiSelectedIds(previous => {
+        const next = new Set(previous);
+        const fullySelected = members.every(id => next.has(id));
+        for (const id of members) {
+          if (fullySelected) next.delete(id);
+          else next.add(id);
+        }
+        return next;
+      });
+    },
+    [boardLayout.zones, visibleAgentIds]
+  );
+
+  // Band select replaces the working set (RTS grammar); an empty band clears.
+  const bandSelect = useCallback(
+    (band: SpatialBoardRect) => {
+      setMultiSelectedIds(
+        new Set(selectSpatialBandAgentIds(boardLayout, band, visibleAgentIds))
+      );
+    },
+    [boardLayout, visibleAgentIds]
+  );
+
+  const clearMultiSelect = useCallback(() => {
+    setMultiSelectedIds(previous => (previous.size === 0 ? previous : new Set()));
+  }, []);
+
+  // Scope-aware activity + burn: the selection's totals while one exists,
+  // otherwise the (filtered) fleet's.
+  const scopeActivity = useMemo(
+    () =>
+      selectSpatialScopeActivity(
+        filteredState,
+        multiSelection.size > 0 ? multiSelection : null
+      ),
+    [filteredState, multiSelection]
+  );
+
   // Legacy semantic selectors continue to supply Attention and DOM inspector
   // content during V2.0; renderer layout is owned by the board model above.
   const fieldZones = useMemo(
@@ -312,21 +386,25 @@ export function SpatialFleetClient() {
   );
 
   // Clicking an agent drills to the agent (with its owning Project as the
-  // focused context); clicking empty space ascends.
+  // focused context); clicking empty space releases the working set first,
+  // then ascends (the RTS deselect-before-zoom-out order).
   const handleSelectAgent = useCallback(
     (agentId: string | null) => {
       if (agentId) {
         const owner =
           fieldZones.find(z => z.agentIds.includes(agentId))?.clusterId ?? null;
         navigate({ altitude: 'agent', project: owner, agent: agentId });
+      } else if (multiSelection.size > 0) {
+        clearMultiSelect();
       } else {
         ascend();
       }
     },
-    [fieldZones, navigate, ascend]
+    [ascend, clearMultiSelect, fieldZones, multiSelection.size, navigate]
   );
 
-  // Escape ascends one altitude — but not while typing (there it clears search).
+  // Escape releases the multi-selection first, then ascends one altitude —
+  // but not while typing (there it clears search).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -337,11 +415,14 @@ export function SpatialFleetClient() {
       ) {
         return;
       }
-      if (event.key === 'Escape') ascend();
+      if (event.key === 'Escape') {
+        if (multiSelection.size > 0) clearMultiSelect();
+        else ascend();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [ascend]);
+  }, [ascend, clearMultiSelect, multiSelection.size]);
 
   const focusedZoneLabel = scene.groups[0]?.label ?? null;
   const inspectedAgent =
@@ -650,6 +731,12 @@ export function SpatialFleetClient() {
             onOverview={overview}
             onProjectionChange={changeProjection}
             onLensChange={changeLens}
+            multiSelection={multiSelection}
+            onToggleAgentSelect={toggleAgentSelect}
+            onToggleZoneSelect={toggleZoneSelect}
+            onBandSelect={bandSelect}
+            onClearMultiSelect={clearMultiSelect}
+            scopeActivity={scopeActivity}
             sessionTransitionAgentId={sessionHandoffAgentId}
             viewportStorageKey={viewportStorageKey}
           />

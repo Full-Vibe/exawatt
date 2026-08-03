@@ -6,7 +6,11 @@ import {
   type FleetState,
   type ProjectCatalogEntry,
 } from '@exawatt/core';
-import { selectFleetBurn, type FleetBurnView } from './consumption-burn';
+import {
+  computeAgentBurn,
+  selectFleetBurn,
+  type FleetBurnView,
+} from './consumption-burn';
 
 export type SpatialBoardAltitude = 'fleet' | 'project' | 'agent';
 export type SpatialBoardProjection = 'top-down' | 'fixed-angle';
@@ -854,6 +858,126 @@ export function selectSpatialBoardLayout(
       visibleLabelCount,
     },
   };
+}
+
+/**
+ * Band-hit selection (ENG-004 V3.2): resolve a drag rectangle in LAYOUT space
+ * (y-down, the coordinate system every `SpatialBoardRect` uses) to the Agents
+ * it captures. Two capture rules, both over visible entities only:
+ *
+ * - a visible agent piece whose CENTER falls inside the band is captured
+ *   individually (the RTS unit rule);
+ * - a zone whose population renders as the aggregated dot field — no
+ *   per-agent pieces to hit — is captured whole when the band INTERSECTS its
+ *   rect (the RTS building rule; at fleet density the zone is the unit).
+ *   Zones that do render agent pieces are owned by the piece rule, so a band
+ *   inside a focused Project never grabs the whole Project.
+ *
+ * `visibleAgentIds` (the same set the layout was computed with) keeps
+ * filtered-out Agents out of zone captures. Pure and order-stable: piece
+ * captures in piece order, then zone captures in zone order, deduplicated.
+ */
+export function selectSpatialBandAgentIds(
+  layout: SpatialBoardLayout,
+  band: SpatialBoardRect,
+  visibleAgentIds?: ReadonlySet<string>
+): string[] {
+  const left = Math.min(band.x, band.x + band.width);
+  const right = Math.max(band.x, band.x + band.width);
+  const top = Math.min(band.y, band.y + band.height);
+  const bottom = Math.max(band.y, band.y + band.height);
+  const captured = new Set<string>();
+  const pieceOwnedZones = new Set<string>();
+  for (const piece of layout.pieces) {
+    if (piece.kind !== 'agent' || !piece.visible || !piece.agentId) continue;
+    pieceOwnedZones.add(piece.projectId);
+    if (
+      piece.x >= left &&
+      piece.x <= right &&
+      piece.y >= top &&
+      piece.y <= bottom
+    ) {
+      captured.add(piece.agentId);
+    }
+  }
+  for (const zone of layout.zones) {
+    if (!zone.visible || zone.isAggregate || zone.agentCount === 0) continue;
+    if (pieceOwnedZones.has(zone.id)) continue;
+    const { x, y, width, height } = zone.rect;
+    const intersects =
+      x < right && x + width > left && y < bottom && y + height > top;
+    if (!intersects) continue;
+    for (const agentId of zone.agentIds) {
+      if (visibleAgentIds && !visibleAgentIds.has(agentId)) continue;
+      captured.add(agentId);
+    }
+  }
+  return [...captured];
+}
+
+/**
+ * Fleet-altitude activity summary (ENG-004 V3.2): the compact working /
+ * blocked / idle readout plus the scope's token burn, over the whole fleet or
+ * a selected scope. Buckets follow the D40 projection the zone health rails
+ * already use: working folds in reviewing (both Active), blocked folds in
+ * error (both demand the operator), idle folds in complete (both quietly
+ * waiting). `burn` is null when no Agent in scope reports usage — absent,
+ * never zero, per consumption canon.
+ */
+export interface SpatialScopeActivity {
+  agentCount: number;
+  working: number;
+  blocked: number;
+  idle: number;
+  burn: {
+    rawTokens: number;
+    normalizedTokens: number;
+    reportedCount: number;
+    unreportedCount: number;
+  } | null;
+}
+
+export function selectSpatialScopeActivity(
+  state: FleetState,
+  scope?: ReadonlySet<string> | null
+): SpatialScopeActivity {
+  const agents = Object.values(state.agents).filter(
+    agent => !scope || scope.has(agent.id)
+  );
+  const summary: SpatialScopeActivity = {
+    agentCount: agents.length,
+    working: 0,
+    blocked: 0,
+    idle: 0,
+    burn: null,
+  };
+  for (const agent of agents) {
+    if (agent.status === 'working' || agent.status === 'reviewing') {
+      summary.working++;
+    } else if (agent.status === 'blocked' || agent.status === 'error') {
+      summary.blocked++;
+    } else {
+      summary.idle++;
+    }
+  }
+  const burn = computeAgentBurn(
+    agents.map(agent => ({
+      id: agent.id,
+      rawTokens: agent.metrics.rawTokens,
+      normalizedTokens: agent.metrics.normalizedTokens,
+    }))
+  );
+  if (burn.reportedCount > 0) {
+    let rawTokens = 0;
+    for (const entry of burn.byAgent.values()) rawTokens += entry.rawTokens;
+    summary.burn = {
+      rawTokens,
+      normalizedTokens: burn.totalNormalizedTokens,
+      reportedCount: burn.reportedCount,
+      unreportedCount: burn.unreportedCount,
+    };
+  }
+  return summary;
 }
 
 export function spatialBoardPieceForAgent(

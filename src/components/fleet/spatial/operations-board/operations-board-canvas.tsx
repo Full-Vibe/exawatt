@@ -221,6 +221,9 @@ function BoardCameraRig({
   controllerRef,
   onViewportChange,
   onZoomChange,
+  onBandSelect,
+  bandOverlayRef,
+  suppressMissRef,
 }: {
   layout: SpatialBoardLayout;
   projection: SpatialBoardProjection;
@@ -228,6 +231,12 @@ function BoardCameraRig({
   controllerRef: { current: OperationsBoardHandle | null };
   onViewportChange?: (viewport: OperationsBoardViewport) => void;
   onZoomChange?: (zoom: number) => void;
+  /** Band select (V3.2): rect arrives in LAYOUT space (y-down). */
+  onBandSelect?: (band: SpatialBoardRect) => void;
+  /** DOM rectangle the surface renders; the rig positions it directly. */
+  bandOverlayRef?: { current: HTMLDivElement | null };
+  /** Set on band end so the trailing click never reads as background. */
+  suppressMissRef?: { current: number };
 }) {
   const { size, invalidate, gl } = useThree();
   const get = useThree(state => state.get);
@@ -496,14 +505,47 @@ function BoardCameraRig({
     let dragging = false;
     let lastX = 0;
     let lastY = 0;
+    // Shift-drag draws a selection band instead of panning (V3.2). The
+    // overlay div is DOM (pixel-crisp, outside the canvas); its transform is
+    // written directly per move — never through React state (guide rule 14).
+    let banding = false;
+    let bandStartX = 0;
+    let bandStartY = 0;
+    const positionBandOverlay = (clientX: number, clientY: number) => {
+      const overlay = bandOverlayRef?.current;
+      if (!overlay) return;
+      const rect = element.getBoundingClientRect();
+      const left = Math.min(bandStartX, clientX) - rect.left;
+      const top = Math.min(bandStartY, clientY) - rect.top;
+      overlay.style.display = 'block';
+      overlay.style.left = `${left}px`;
+      overlay.style.top = `${top}px`;
+      overlay.style.width = `${Math.abs(clientX - bandStartX)}px`;
+      overlay.style.height = `${Math.abs(clientY - bandStartY)}px`;
+    };
+    const hideBandOverlay = () => {
+      const overlay = bandOverlayRef?.current;
+      if (overlay) overlay.style.display = 'none';
+    };
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0 && event.button !== 1) return;
+      if (event.shiftKey && event.button === 0 && onBandSelect) {
+        banding = true;
+        bandStartX = event.clientX;
+        bandStartY = event.clientY;
+        element.setPointerCapture(event.pointerId);
+        return;
+      }
       dragging = true;
       lastX = event.clientX;
       lastY = event.clientY;
       element.setPointerCapture(event.pointerId);
     };
     const onPointerMove = (event: PointerEvent) => {
+      if (banding) {
+        positionBandOverlay(event.clientX, event.clientY);
+        return;
+      }
       if (!dragging) return;
       const zoom = Math.max(current.current.zoom, 0.001);
       target.current.x -= (event.clientX - lastX) / zoom;
@@ -517,6 +559,29 @@ function BoardCameraRig({
       invalidate();
     };
     const endDrag = (event: PointerEvent) => {
+      if (banding) {
+        banding = false;
+        hideBandOverlay();
+        if (element.hasPointerCapture(event.pointerId)) {
+          element.releasePointerCapture(event.pointerId);
+        }
+        const moved =
+          Math.abs(event.clientX - bandStartX) >= 4 ||
+          Math.abs(event.clientY - bandStartY) >= 4;
+        // A still shift-click falls through to the piece/zone handlers.
+        if (!moved || !onBandSelect) return;
+        const from = worldAt(bandStartX, bandStartY);
+        const to = worldAt(event.clientX, event.clientY);
+        // World y is up; layout rects are y-down.
+        onBandSelect({
+          x: Math.min(from.x, to.x),
+          y: Math.min(-from.y, -to.y),
+          width: Math.abs(to.x - from.x),
+          height: Math.abs(to.y - from.y),
+        });
+        if (suppressMissRef) suppressMissRef.current = performance.now();
+        return;
+      }
       if (!dragging) return;
       dragging = false;
       element.style.cursor = '';
@@ -557,7 +622,16 @@ function BoardCameraRig({
       element.removeEventListener('pointercancel', endDrag);
       element.removeEventListener('wheel', onWheel);
     };
-  }, [announceTargetViewport, gl, invalidate, reduced, snapToTarget]);
+  }, [
+    announceTargetViewport,
+    bandOverlayRef,
+    gl,
+    invalidate,
+    onBandSelect,
+    reduced,
+    snapToTarget,
+    suppressMissRef,
+  ]);
 
   useEffect(() => {
     const span = () => Math.max(layout.bounds.width, layout.bounds.height, 24);
@@ -849,12 +923,14 @@ function ZoneLayer({
   zones,
   reduced,
   onDrillProject,
+  onToggleZoneSelect,
   onHover,
   hoveredId,
 }: {
   zones: SpatialBoardProjectZone[];
   reduced: boolean;
   onDrillProject: (projectId: string) => void;
+  onToggleZoneSelect?: (zoneId: string) => void;
   onHover: (zoneId: string | null) => void;
   hoveredId: string | null;
 }) {
@@ -906,7 +982,13 @@ function ZoneLayer({
               onClick={(event: ThreeEvent<MouseEvent>) => {
                 if (!interactive || event.delta > 5) return;
                 event.stopPropagation();
-                onDrillProject(zone.id);
+                // Shift-click toggles the zone's Agents in the multi-selection
+                // (V3.2) — the same verb the zone's DOM control carries.
+                if (event.shiftKey && onToggleZoneSelect) {
+                  onToggleZoneSelect(zone.id);
+                } else {
+                  onDrillProject(zone.id);
+                }
               }}
             />
           );
@@ -961,14 +1043,23 @@ function ProjectControls({
   labelTier,
   lens,
   onDrillProject,
+  onToggleZoneSelect,
 }: {
   zones: SpatialBoardProjectZone[];
   altitude: SpatialBoardLayout['altitude'];
   labelTier: ZoneLabelTier;
   lens: SpatialBoardLens;
   onDrillProject: (projectId: string) => void;
+  onToggleZoneSelect?: (zoneId: string) => void;
 }) {
   return zones.map(zone => {
+    // The zone control is the focusable DOM equivalent of the zone plate, so
+    // it carries both verbs: activate opens, shift-activate (pointer or
+    // keyboard — synthesized clicks keep modifier state) toggles selection.
+    const activateZone = (event: { shiftKey: boolean }) => {
+      if (event.shiftKey && onToggleZoneSelect) onToggleZoneSelect(zone.id);
+      else onDrillProject(zone.id);
+    };
     const position: [number, number, number] = [
       zone.rect.x + 1.5,
       -(zone.rect.y + 1.35),
@@ -1011,7 +1102,7 @@ function ProjectControls({
               type="button"
               data-board-zone={zone.id}
               aria-label={`Open Project ${zone.label}`}
-              onClick={() => onDrillProject(zone.id)}
+              onClick={activateZone}
               style={{ borderLeftColor: accent }}
               className="board-control-enter border border-l-2 border-[oklch(0.34_0.014_210)] bg-[oklch(0.14_0.009_215/0.94)] px-1.5 py-0.5 text-left outline-none transition-[border-color,background-color] duration-150 hover:border-[oklch(0.61_0.08_185)] hover:bg-[oklch(0.18_0.012_210/0.98)] focus-visible:border-[oklch(0.72_0.1_185)] focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.1_185/0.35)]"
             >
@@ -1071,7 +1162,7 @@ function ProjectControls({
             type="button"
             data-board-zone={zone.id}
             aria-label={`Open Project ${zone.label}`}
-            onClick={() => onDrillProject(zone.id)}
+            onClick={activateZone}
             style={{ borderLeftColor: accent }}
             className="board-control-enter w-44 border border-l-2 border-[oklch(0.36_0.014_210)] bg-[oklch(0.15_0.009_215/0.96)] px-2.5 py-2 text-left shadow-[0_8px_22px_oklch(0.06_0.01_220/0.42)] outline-none transition-[border-color,background-color,transform] duration-150 hover:border-[oklch(0.61_0.08_185)] hover:bg-[oklch(0.18_0.012_210/0.98)] active:translate-y-px focus-visible:border-[oklch(0.72_0.1_185)] focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.1_185/0.35)]"
           >
@@ -1523,6 +1614,7 @@ function AgentPieceLayer({
   ambient,
   lens,
   onSelectAgent,
+  onToggleAgentSelect,
 }: {
   pieces: SpatialBoardPiece[];
   altitude: SpatialBoardLayout['altitude'];
@@ -1530,6 +1622,7 @@ function AgentPieceLayer({
   ambient: boolean;
   lens: SpatialBoardLens;
   onSelectAgent: (agentId: string) => void;
+  onToggleAgentSelect?: (agentId: string) => void;
 }) {
   // Aggregate pieces render as the instanced population dot field (V3.1),
   // never as per-piece bodies or DOM count labels.
@@ -1613,7 +1706,16 @@ function AgentPieceLayer({
               }}
               onPointerOut={() => setHoveredId(null)}
               onClick={(event: ThreeEvent<MouseEvent>) => {
-                if (!interactive || !piece.agentId || event.delta > 5) return;
+                if (!piece.agentId || event.delta > 5) return;
+                // Shift-click toggles multi-selection at EVERY altitude
+                // (V3.2) — fleet pieces stay non-interactive for plain
+                // clicks, where zones own the drill verb.
+                if (event.shiftKey && onToggleAgentSelect) {
+                  event.stopPropagation();
+                  onToggleAgentSelect(piece.agentId);
+                  return;
+                }
+                if (!interactive) return;
                 event.stopPropagation();
                 onSelectAgent(piece.agentId);
               }}
@@ -1799,14 +1901,100 @@ function StoppedAgentOutlines({
   );
 }
 
+/**
+ * Multi-selection marks (V3.2): dashed rings on every multi-selected agent
+ * piece plus a dashed outline around zones whose visible population is fully
+ * captured — the board's existing selection language (the dashed teal of
+ * `SelectionRing`) applied at group scale. ONE segmented Line2 draw for the
+ * whole set; static, so the demand loop still parks.
+ */
+function MultiSelectionLayer({
+  layout,
+  selection,
+}: {
+  layout: SpatialBoardLayout;
+  selection: ReadonlySet<string>;
+}) {
+  const points = useMemo(() => {
+    const result: Array<[number, number, number]> = [];
+    if (selection.size === 0) return result;
+    const RING_SEGMENTS = 16;
+    for (const piece of layout.pieces) {
+      if (
+        piece.kind !== 'agent' ||
+        !piece.visible ||
+        !piece.agentId ||
+        !selection.has(piece.agentId)
+      ) {
+        continue;
+      }
+      const radius = piece.size * 0.66;
+      for (let segment = 0; segment < RING_SEGMENTS; segment += 1) {
+        const from = (segment / RING_SEGMENTS) * Math.PI * 2;
+        const to = ((segment + 1) / RING_SEGMENTS) * Math.PI * 2;
+        result.push(
+          [piece.x + Math.cos(from) * radius, -piece.y + Math.sin(from) * radius, 0.78],
+          [piece.x + Math.cos(to) * radius, -piece.y + Math.sin(to) * radius, 0.78]
+        );
+      }
+    }
+    for (const zone of layout.zones) {
+      if (!zone.visible || zone.isAggregate || zone.visibleAgentCount === 0) {
+        continue;
+      }
+      let selectedCount = 0;
+      for (const agentId of zone.agentIds) {
+        if (selection.has(agentId)) selectedCount += 1;
+      }
+      if (selectedCount < zone.visibleAgentCount) continue;
+      const inset = 0.5;
+      const x = zone.rect.x + inset;
+      const y = zone.rect.y + inset;
+      const width = zone.rect.width - inset * 2;
+      const height = zone.rect.height - inset * 2;
+      const z = 0.4;
+      const corners: Array<[number, number, number]> = [
+        [x, -y, z],
+        [x + width, -y, z],
+        [x + width, -(y + height), z],
+        [x, -(y + height), z],
+      ];
+      for (let edge = 0; edge < 4; edge += 1) {
+        result.push(corners[edge]!, corners[(edge + 1) % 4]!);
+      }
+    }
+    return result;
+  }, [layout.pieces, layout.zones, selection]);
+
+  if (points.length === 0) return null;
+  return (
+    <Line
+      points={points}
+      color={BOARD_COLOR.borderSelected}
+      segments
+      dashed
+      dashSize={0.24}
+      gapSize={0.12}
+      lineWidth={1.5}
+      toneMapped={false}
+      transparent
+      opacity={0.92}
+      depthWrite={false}
+      raycast={() => null}
+    />
+  );
+}
+
 function AgentControls({
   pieces,
   altitude,
   onSelectAgent,
+  onToggleAgentSelect,
 }: {
   pieces: SpatialBoardPiece[];
   altitude: SpatialBoardLayout['altitude'];
   onSelectAgent: (agentId: string) => void;
+  onToggleAgentSelect?: (agentId: string) => void;
 }) {
   if (altitude === 'fleet') return null;
   return pieces
@@ -1844,7 +2032,15 @@ function AgentControls({
             data-board-status-light={lightState}
             data-board-delegation={delegated ? delegated.count : undefined}
             aria-label={`${piece.label}, ${STATUS_LIGHT_META[lightState].label}${piece.sessionState === 'stopped' ? ', stopped session' : ''}${delegationCopy ? `, ${delegationCopy}` : ''}`}
-            onClick={() => onSelectAgent(piece.agentId!)}
+            onClick={event => {
+              // Shift-activate (pointer or keyboard) toggles the Agent in
+              // the multi-selection (V3.2); plain activate inspects it.
+              if (event.shiftKey && onToggleAgentSelect) {
+                onToggleAgentSelect(piece.agentId!);
+              } else {
+                onSelectAgent(piece.agentId!);
+              }
+            }}
             className="board-control-enter group relative grid h-11 w-11 place-items-center border border-transparent bg-transparent outline-none transition-[border-color,transform] duration-150 active:translate-y-px focus-visible:border-[oklch(0.72_0.1_185)] focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.1_185/0.4)]"
           >
             <span
@@ -1873,6 +2069,11 @@ export function OperationsBoardCanvas({
   onDrillProject,
   onSelectAgent,
   onBackground,
+  multiSelection,
+  onToggleAgentSelect,
+  onToggleZoneSelect,
+  onBandSelect,
+  bandOverlayRef,
   preserveDrawingBuffer = false,
 }: {
   layout: SpatialBoardLayout;
@@ -1883,6 +2084,13 @@ export function OperationsBoardCanvas({
   onDrillProject: (projectId: string) => void;
   onSelectAgent: (agentId: string) => void;
   onBackground: () => void;
+  /** Multi-selection (V3.2): ephemeral Agent ids; rendering + toggles only —
+   *  the single URL-addressed selection stays `layout.selectedAgentId`. */
+  multiSelection?: ReadonlySet<string>;
+  onToggleAgentSelect?: (agentId: string) => void;
+  onToggleZoneSelect?: (zoneId: string) => void;
+  onBandSelect?: (band: SpatialBoardRect) => void;
+  bandOverlayRef?: { current: HTMLDivElement | null };
   preserveDrawingBuffer?: boolean;
 }) {
   const reduced = useReducedMotion();
@@ -1906,6 +2114,8 @@ export function OperationsBoardCanvas({
     return () => window.clearTimeout(timer);
   }, []);
   const [hoveredZoneId, setHoveredZoneId] = useState<string | null>(null);
+  /** Band-drag end timestamp — the trailing click must not clear/ascend. */
+  const suppressMissRef = useRef(0);
   const visibleZones = layout.zones.filter(zone => zone.visible);
   // Zone-label budget: full cards only when every zone's projected width can
   // afford them, so the bound is the NARROWEST visible zone (one overflowing
@@ -1961,6 +2171,8 @@ export function OperationsBoardCanvas({
       camera={{ position: [0, 0, 100], zoom: 1, near: 0.1, far: 200 }}
       gl={{ antialias: true, preserveDrawingBuffer }}
       onPointerMissed={event => {
+        // The click that trails a band drag is not a background click.
+        if (performance.now() - suppressMissRef.current < 250) return;
         if (event.type === 'click' && event.target instanceof HTMLCanvasElement)
           onBackground();
       }}
@@ -1990,6 +2202,9 @@ export function OperationsBoardCanvas({
         controllerRef={controllerRef}
         onViewportChange={onViewportChange}
         onZoomChange={handleZoomChange}
+        onBandSelect={onBandSelect}
+        bandOverlayRef={bandOverlayRef}
+        suppressMissRef={suppressMissRef}
       />
       <BoardGrid bounds={layout.bounds} />
       <ZoneLayer
@@ -1997,6 +2212,7 @@ export function OperationsBoardCanvas({
         zones={visibleZones}
         reduced={reduced}
         onDrillProject={onDrillProject}
+        onToggleZoneSelect={onToggleZoneSelect}
         onHover={setHoveredZoneId}
         hoveredId={hoveredZoneId}
       />
@@ -2008,6 +2224,7 @@ export function OperationsBoardCanvas({
         ambient={ambient}
         lens={lens}
         onSelectAgent={onSelectAgent}
+        onToggleAgentSelect={onToggleAgentSelect}
       />
       <PopulationDotLayer
         key={`dots:${choreoKey}`}
@@ -2016,17 +2233,22 @@ export function OperationsBoardCanvas({
         reduced={reduced}
         lens={lens}
       />
+      {multiSelection && multiSelection.size > 0 && (
+        <MultiSelectionLayer layout={layout} selection={multiSelection} />
+      )}
       <ProjectControls
         zones={visibleZones}
         altitude={layout.altitude}
         labelTier={labelTier}
         lens={lens}
         onDrillProject={onDrillProject}
+        onToggleZoneSelect={onToggleZoneSelect}
       />
       <AgentControls
         pieces={layout.pieces}
         altitude={layout.altitude}
         onSelectAgent={onSelectAgent}
+        onToggleAgentSelect={onToggleAgentSelect}
       />
       {!lowPower && effectsReady && (
         <Suspense fallback={null}>

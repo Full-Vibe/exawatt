@@ -1538,6 +1538,83 @@ local report.
   hook no longer issues a guaranteed-401 Supabase query when signed out
   (console-error noise on every surface that mounts it).
 
+### V3.2 Fleet-altitude command previews
+
+Status: landed 2026-08-03 — the Fleet altitude's command story beat for the
+demo arc: selection is a real mechanism, the group verb is an honest
+announced affordance, and the board answers "what is this scope doing and
+burning" in one compact readout. Lightweight broad strokes by design; no
+fan-out mechanism ships (the V3.3-contract boundary holds — band select is
+real selection state, "Direct these N agents" is `Coming soon`).
+
+What is REAL:
+
+- **Multi-select.** Shift-drag draws a dashed selection band over the board
+  (plain drag still pans — V2.4's grammar stands until V3.3 S1 flips it per
+  decision `0024`; shift-drag is forward-compatible with that model, where
+  it remains the additive-selection gesture). Shift-click toggles agent
+  pieces at every altitude and zone plates at fleet altitude. The working
+  set is ephemeral client state (per the V3.3 contract: the single
+  inspected Agent stays URL-addressed; a band selection is a working set,
+  not an address), pruned live against the filtered fleet.
+- **Band-hit semantics** are a pure ui-model selector
+  (`selectSpatialBandAgentIds`, unit-tested): visible agent pieces are RTS
+  units (center-in-band); zones whose population renders as the V3.1 dot
+  field — no per-agent hit targets — are RTS buildings, captured whole when
+  the band intersects their rect; zones that do render pieces are owned by
+  the piece rule, so a band inside a focused Project never grabs the whole
+  Project. Filtered-out Agents never enter a zone capture.
+- **Complete DOM/keyboard path** (exit-criteria a11y rule): shift+1–9
+  toggles the numbered zone; the focusable zone cards and agent controls
+  carry shift-activate (keyboard-synthesized clicks keep modifier state);
+  Esc releases the selection before ascending; background click releases
+  before ascending (RTS deselect-before-zoom-out order). The keyboard-hint
+  bar teaches "⇧ drag select".
+- **Selection visuals** reuse the board's existing selection language: the
+  dashed-teal `SelectionRing` idiom, drawn as ONE segmented Line2 for the
+  whole set (rings on selected pieces, inset outlines on fully-captured
+  zones) — static, so the demand loop still parks; the DOM band rectangle
+  is positioned imperatively at pointer frequency (guide rule 14).
+- **Scope-aware activity readout** (top-left, fleet altitude; any altitude
+  while a selection exists): agent count, working/blocked/idle per the D40
+  folding the zone health rails already use (working+reviewing / blocked+
+  error / idle+complete), and the scope's reported token burn via
+  `selectSpatialScopeActivity` over the shared E7 burn derivation —
+  absent-never-zero (no figure renders when nothing in scope reports; the
+  unreported count is stated when partial). Fleet totals by default; the
+  selection's totals the moment one exists. Known honest divergence: the
+  fleet metrics strip above buckets `error` into IDLE (core
+  `fleet-manager`); this readout counts error as blocked, matching the
+  board's own needs-attention semantics — so the two can disagree by the
+  error count. Roadmap-shaping note: V3.2 was shaped with this readout as a
+  `Coming soon` preview before the burn data existed; E7 landed first, so
+  it ships real (recorded in the roadmap Amendment chain).
+
+What is ANNOUNCED (and nothing else):
+
+- **"Direct N Agents"** — an `AnnouncedChip` (ENG-026 grammar: dashed
+  readiness-neutral, inert contents, `Coming soon` tooltip) in the scope
+  readout whenever a selection exists. It presents the future fan-out verb
+  and does nothing, honestly.
+
+Verification: `pnpm eval:r3f` 100/100, `eval:spatial` 8/8 PASS (including
+the four handoff scenarios), `eval:spatial:scale` all scenarios green
+(park === 0, calls=6 at fleet scale — the selection layer adds one draw
+only while a selection exists). Scale-eval honesty note: under heavy
+multi-agent host load (headless render intervals 250–460ms vs the canonical
+16.7ms) the park gate flaked intermittently, on a different synthetic
+scenario each run; the t10 fixture passes none of the V3.2 props, so every
+addition is provably dormant in those scenarios — the flake is
+environmental, not this change. A fully green run exists and the Voltaic
+scenarios parked at 0 in every run. Also ui-model selector unit tests, and
+a headless
+screenshot pass over the Voltaic board: band drag mid-gesture, 58-Agent
+band capture with zone outlines + "Direct 58 Agents", shift+1 zone toggle,
+project-altitude shift-clicks, and both lenses (the burn lens composes with
+selection). `eval:spatial:pointer` was already broken before this change —
+it drives the retired "Seed N demo fleet" dev controls; V3.3 S1 owns that
+harness's future.
+
 ### V2.1 Scale & Truth
 
 Status: planned; gated by V2.0

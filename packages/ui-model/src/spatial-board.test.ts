@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
 import {
+  selectSpatialBandAgentIds,
   selectSpatialBoardLayout,
+  selectSpatialScopeActivity,
   spatialBoardPieceForAgent,
   spatialBoardZoneForAgent,
 } from './spatial-board';
@@ -374,5 +376,150 @@ describe('piece delegation', () => {
     const piece = layout.pieces.find(item => item.agentId === 'a');
     expect(piece).toBeDefined();
     expect(piece).not.toHaveProperty('delegation');
+  });
+});
+
+/** Band-hit selection (ENG-004 V3.2): drag rect in layout space → Agents. */
+describe('selectSpatialBandAgentIds', () => {
+  it('captures visible agent pieces whose centers fall inside the band', () => {
+    const layout = selectSpatialBoardLayout(
+      fleet([agent('a', 'Alpha'), agent('b', 'Alpha'), agent('c', 'Beta')])
+    );
+    const pieceA = spatialBoardPieceForAgent(layout, 'a')!;
+    const band = {
+      x: pieceA.x - 1,
+      y: pieceA.y - 1,
+      width: 2,
+      height: 2,
+    };
+    expect(selectSpatialBandAgentIds(layout, band)).toEqual(['a']);
+  });
+
+  it('normalizes a band dragged up-left (negative width/height)', () => {
+    const layout = selectSpatialBoardLayout(fleet([agent('a', 'Alpha')]));
+    const piece = spatialBoardPieceForAgent(layout, 'a')!;
+    const band = {
+      x: piece.x + 1,
+      y: piece.y + 1,
+      width: -2,
+      height: -2,
+    };
+    expect(selectSpatialBandAgentIds(layout, band)).toEqual(['a']);
+  });
+
+  it('captures a dot-rendered zone whole when the band intersects it, aggregated Agents included', () => {
+    // One dense Project: agents aggregate into dots with no per-agent piece.
+    const state = projectFleet(1, 40);
+    const layout = selectSpatialBoardLayout(state, {
+      maxFleetPiecesPerZone: 12,
+    });
+    expect(
+      layout.pieces.every(piece => piece.kind === 'aggregate')
+    ).toBe(true);
+    const zone = layout.zones[0]!;
+    // Clipping a corner is enough — at fleet density the zone is the unit.
+    const corner = {
+      x: zone.rect.x - 2,
+      y: zone.rect.y - 2,
+      width: 4,
+      height: 4,
+    };
+    expect(selectSpatialBandAgentIds(layout, corner)).toHaveLength(40);
+    // A band that misses the zone captures nothing.
+    const outside = {
+      x: zone.rect.x + zone.rect.width + 5,
+      y: zone.rect.y,
+      width: 4,
+      height: 4,
+    };
+    expect(selectSpatialBandAgentIds(layout, outside)).toHaveLength(0);
+  });
+
+  it('keeps filtered-out Agents out of zone captures and lets pieces own their zone', () => {
+    const state = projectFleet(1, 40);
+    const layout = selectSpatialBoardLayout(state, {
+      maxFleetPiecesPerZone: 12,
+    });
+    const zone = layout.zones[0]!;
+    const visible = new Set(zone.agentIds.slice(0, 5));
+    const fullBand = {
+      x: zone.rect.x - 1,
+      y: zone.rect.y - 1,
+      width: zone.rect.width + 2,
+      height: zone.rect.height + 2,
+    };
+    expect(
+      selectSpatialBandAgentIds(layout, fullBand, visible)
+    ).toHaveLength(5);
+    // Focused Project altitude renders individual pieces, so the piece rule
+    // owns the zone: a small band inside it grabs only what it covers.
+    const focused = selectSpatialBoardLayout(state, {
+      altitude: 'project',
+      focusedProjectId: zone.id,
+    });
+    const somePiece = focused.pieces.find(piece => piece.kind === 'agent')!;
+    const tightBand = {
+      x: somePiece.x - 0.5,
+      y: somePiece.y - 0.5,
+      width: 1,
+      height: 1,
+    };
+    const tight = selectSpatialBandAgentIds(focused, tightBand);
+    expect(tight.length).toBeGreaterThan(0);
+    expect(tight.length).toBeLessThan(40);
+  });
+});
+
+/** Fleet-altitude scope activity (ENG-004 V3.2). */
+describe('selectSpatialScopeActivity', () => {
+  const withBurn = (
+    base: ExawattAgent,
+    rawTokens: number,
+    normalizedTokens: number
+  ): ExawattAgent => ({
+    ...base,
+    metrics: { ...base.metrics, rawTokens, normalizedTokens },
+  });
+
+  it('buckets statuses per the D40 projection over the whole fleet', () => {
+    const summary = selectSpatialScopeActivity(
+      fleet([
+        agent('a', 'Alpha', 'working'),
+        agent('b', 'Alpha', 'reviewing'),
+        agent('c', 'Beta', 'blocked'),
+        agent('d', 'Beta', 'error'),
+        agent('e', 'Beta', 'idle'),
+        agent('f', 'Beta', 'complete'),
+      ])
+    );
+    expect(summary).toMatchObject({
+      agentCount: 6,
+      working: 2,
+      blocked: 2,
+      idle: 2,
+      burn: null,
+    });
+  });
+
+  it('scopes to a selection and totals its reported burn, unreported stays absent', () => {
+    const state = fleet([
+      withBurn(agent('a', 'Alpha', 'working'), 1000, 800),
+      withBurn(agent('b', 'Alpha', 'idle'), 500, 400),
+      agent('c', 'Beta', 'blocked'),
+    ]);
+    const scoped = selectSpatialScopeActivity(state, new Set(['a', 'c']));
+    expect(scoped.agentCount).toBe(2);
+    expect(scoped.working).toBe(1);
+    expect(scoped.blocked).toBe(1);
+    expect(scoped.burn).toEqual({
+      rawTokens: 1000,
+      normalizedTokens: 800,
+      reportedCount: 1,
+      unreportedCount: 1,
+    });
+    // Nothing in scope reports → burn is null, never zero.
+    expect(
+      selectSpatialScopeActivity(state, new Set(['c'])).burn
+    ).toBeNull();
   });
 });
