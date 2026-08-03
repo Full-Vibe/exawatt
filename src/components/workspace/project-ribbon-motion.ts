@@ -131,8 +131,8 @@ export function useRibbonPresence(
   return present;
 }
 
-/** A glyph chip: status + source marks and padding, nothing else. */
-export const CONDENSED_TAB_WIDTH = 40;
+/** A glyph chip: one status mark and its padding, nothing else. */
+export const CONDENSED_TAB_WIDTH = 26;
 
 /** The tab's NATURAL width — what it wants when drawn with its title. The
  *  engine treats this as a ceiling and shrinks Chrome-style from there. */

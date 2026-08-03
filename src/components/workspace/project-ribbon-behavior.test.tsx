@@ -169,7 +169,9 @@ describe('single-row Project ribbon (D45)', () => {
     expect(modeOf(container, 'mid')).toBe(midWhileBigActive);
   });
 
-  it('keeps per-Agent attention on the mini chip and on the Project signal', () => {
+  it('reads attention off the chip, and the Project dot yields to it', () => {
+    // The dot summarises a Project's Agents; while those Agents are on
+    // screen as chips it would only repeat them (operator, 2026-08-03).
     const projects = [
       project('/alpha', [tab('a1')]),
       project('/beta', [tab('b1')]),
@@ -179,14 +181,66 @@ describe('single-row Project ribbon (D45)', () => {
       activeDir: '/alpha',
       attention: { 'session-b1': { kind: 'bell', since: 1 } },
     });
-    expect(
-      container
-        .querySelector('[data-project="beta"]')
-        ?.querySelector('[data-project-signal="needs-you"]')
-    ).not.toBeNull();
     const b1 = container.querySelector('[data-tab-id="b1"]');
     expect(b1).toHaveAttribute('data-tab-condensed');
     expect(b1?.querySelector('[data-attention]')).not.toBeNull();
+    expect(
+      container
+        .querySelector('[data-project="beta"]')
+        ?.querySelector('[data-project-signal]')
+    ).toBeNull();
+  });
+
+  it('shows the Project dot exactly where the chips are missing', () => {
+    // Folded Projects draw no chips, so the dot is the only status they
+    // have.
+    const many = Array.from({ length: 9 }, (_, index) =>
+      project(
+        `/project-${index}`,
+        Array.from({ length: 3 }, (_, t) => tab(`p${index}-t${t}`))
+      )
+    );
+    const { container } = ribbon({ projects: many, activeDir: many[0].dir });
+    const folded = container.querySelector('[data-project-folded]');
+    expect(folded?.querySelector('[data-project-signal]')).not.toBeNull();
+  });
+
+  it('does not resize a Project header when its last tab closes', () => {
+    // An empty Project has no Agents to summarise, so it grows no dot —
+    // which also means closing the last tab cannot shift the chips beside
+    // it out from under the pointer mid-close (the D41 stability window).
+    const populated = [project('/alpha', [tab('a1')]), project('/beta', [tab('b1')])];
+    const emptied = [project('/alpha', [tab('a1')]), project('/beta', [])];
+    const { container, rerender } = ribbon({
+      projects: populated,
+      activeDir: '/alpha',
+    });
+    const marksIn = (name: string) =>
+      container.querySelector(`[data-project="${name}"]`)
+        ?.querySelectorAll('[data-project-signal]').length;
+    expect(marksIn('beta')).toBe(0);
+    rerender(view({ projects: emptied, activeDir: '/alpha' }));
+    expect(marksIn('beta')).toBe(0);
+  });
+
+  it('gives each glyph chip exactly one mark', () => {
+    // The source swirl left the chips: status is the whole job at 26px.
+    // a title long enough that the open tab is not width-squeezed, where
+    // the source mark is dropped for room regardless
+    const projects = [
+      project('/alpha', [tab('a1-with-a-comfortably-long-goal')]),
+      project('/beta', [tab('b1')]),
+    ];
+    const { container } = ribbon({ projects, activeDir: '/alpha' });
+    const chip = container.querySelector('[data-tab-id="b1"]');
+    expect(chip).toHaveAttribute('data-tab-condensed');
+    expect(chip?.querySelector('[data-slot="harness-glyph"]')).toBeNull();
+    // ...while the Project you are in keeps its source marks
+    expect(
+      container
+        .querySelector('[data-tab-id="a1-with-a-comfortably-long-goal"]')
+        ?.querySelector('[data-slot="harness-glyph"]')
+    ).not.toBeNull();
   });
 
   it('stable-partitions dormant empty Projects at the visual tail', () => {

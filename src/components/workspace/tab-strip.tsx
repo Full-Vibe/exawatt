@@ -333,9 +333,10 @@ export function TabStrip({
           headerWidth:
             headerWidths[token.project.dir] ?? estimateRibbonTokenWidth(token),
           // the same chip plus a count badge
+          // folded chips add the status dot and the count to the name
           foldedWidth:
             (headerWidths[token.project.dir] ??
-              estimateRibbonTokenWidth(token)) + 22,
+              estimateRibbonTokenWidth(token)) + 34,
           tabs: [],
           active: token.project.dir === activeDir,
         });
@@ -1178,7 +1179,16 @@ export function TabStrip({
                     {project.name}
                   </span>
                 )}
-                <ProjectRibbonSignalMark signal={signal} />
+                {/* The Project dot summarises its Agents, so it earns its
+                    place only when those Agents are not on screen — a
+                    folded Project, whose chips are not drawn. Otherwise it
+                    repeats the chips beside it. An empty Project has no
+                    Agents to summarise, and rendering an always-quiet mark
+                    there would also mean the header CHANGED WIDTH the
+                    moment its last tab closed, breaking the pointer-close
+                    stability window that keeps close targets under the
+                    cursor. */}
+                {folded && <ProjectRibbonSignalMark signal={signal} />}
                 {/* A folded Project is a container holding children: the
                     count is what keeps that work visible when its chips
                     cannot be drawn. */}
@@ -1486,11 +1496,13 @@ export function TabStrip({
                   ◧
                 </span>
               )}
-              {tab.harness !== 'shell' && !isDraft && !tightTab && (
-                <span
-                  className={`shrink-0 ${condensed ? 'opacity-55' : ''}`}
-                  style={{ color }}
-                >
+              {/* A glyph chip carries ONE mark: what this Agent is doing.
+                  The source swirl beside it read as noise at 40px and cost
+                  the width that decides when Projects fold — Claude vs
+                  Codex stays legible on the Project you are in, in the
+                  tooltip, and in ⌘K (operator, 2026-08-03). */}
+              {tab.harness !== 'shell' && !isDraft && !tightTab && !condensed && (
+                <span className="shrink-0" style={{ color }}>
                   <HarnessGlyph harness={tab.harness} size={11} />
                 </span>
               )}
