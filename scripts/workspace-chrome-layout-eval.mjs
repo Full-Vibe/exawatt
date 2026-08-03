@@ -1056,6 +1056,38 @@ try {
       `Palette Move Project right did not reorder: ${JSON.stringify({ projectOrderBeforeMove, projectOrderAfterPalette })}`
     );
   }
+  const projectMoveStatus = await page
+    .locator('[role="status"]', { hasText: 'Moved Project' })
+    .last()
+    .textContent();
+  if (!projectMoveStatus?.includes('position 3 of 3')) {
+    throw new Error(
+      `Project reorder status was not announced: ${JSON.stringify(projectMoveStatus)}`
+    );
+  }
+
+  // Movement stops at edges: the impossible direction stays visible for
+  // learning, but is disabled with a concrete reason and cannot close/no-op.
+  await page.keyboard.press('Meta+KeyK');
+  await page.locator('[cmdk-root]').waitFor();
+  await page.locator('[cmdk-input]').fill('move project right');
+  const rightEdgeRow = page
+    .locator('[cmdk-item]', { hasText: 'Move Project right' })
+    .first();
+  await rightEdgeRow.waitFor();
+  if ((await rightEdgeRow.getAttribute('data-disabled')) !== 'true') {
+    throw new Error('Move Project right stayed enabled at the right edge');
+  }
+  if (
+    !(await rightEdgeRow.textContent())?.includes(
+      'Already the last open Project'
+    )
+  ) {
+    throw new Error('Move Project right did not explain its edge constraint');
+  }
+  await page.keyboard.press('Escape');
+  await page.locator('[cmdk-root]').waitFor({ state: 'detached' });
+
   await page.keyboard.press('Meta+Alt+Shift+BracketLeft');
   await page.waitForTimeout(350);
   const projectOrderAfterChord = await projectOrder();
@@ -1071,14 +1103,14 @@ try {
   const shortcutDialog = page.getByRole('dialog');
   await shortcutDialog.waitFor();
   for (const label of [
-    'Move focus between terminal and chrome',
-    'Jump to tab 1–8, or 9 for the last tab',
-    'Return focus to the terminal',
+    'Move focus between the Session and app controls',
+    'Jump to Session 1–8, or 9 for the last Session',
+    'Return focus to the Session',
   ]) {
     await shortcutDialog.getByText(label).waitFor();
   }
   await shortcutDialog
-    .getByText('Return focus to the terminal')
+    .getByText('Return focus to the Session')
     .scrollIntoViewIfNeeded();
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'shortcut-help-all-families.png'),

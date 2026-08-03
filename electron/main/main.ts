@@ -41,6 +41,7 @@ import type { AuthDiagnosticRecorder } from './auth-diagnostics';
 import { resolveWindowLaunchMode } from './window-launch-mode';
 import { createDirectoryPicker } from './directory-picker';
 import { stopChildProcess } from './child-process-lifecycle';
+import { FIXED_SESSION_MENU_COMMANDS } from './fixed-session-menu';
 
 const isDev = process.env.NODE_ENV === 'development';
 const isTest = process.env.EXAWATT_TEST === '1';
@@ -612,10 +613,9 @@ const menuAvailability: Record<string, boolean> = {
   'reopen-closed-tab': false,
   'rename-tab': false,
   'toggle-split': false,
-  'move-tab-left': false,
-  'move-tab-right': false,
-  'move-project-left': false,
-  'move-project-right': false,
+  ...Object.fromEntries(
+    FIXED_SESSION_MENU_COMMANDS.map(command => [command.id, false])
+  ),
   'close-tab': false,
   'jump-attention': false,
 };
@@ -695,12 +695,9 @@ function registerMenuIPC(): void {
 // so the accelerator sync cannot deliver them; display them statically.
 // registerAccelerator stays false — the renderer's capture-phase workspace
 // key layer owns these chords.
-const FIXED_MENU_ACCELERATORS: Record<string, string> = {
-  'move-tab-left': 'Alt+Command+[',
-  'move-tab-right': 'Alt+Command+]',
-  'move-project-left': 'Command+Alt+Shift+[',
-  'move-project-right': 'Command+Alt+Shift+]',
-};
+const FIXED_MENU_ACCELERATORS: Record<string, string> = Object.fromEntries(
+  FIXED_SESSION_MENU_COMMANDS.map(command => [command.id, command.accelerator])
+);
 
 function menuCommand(
   label: string,
@@ -809,10 +806,9 @@ function createMenu(): void {
         menuCommand('Reopen Closed Tab', 'reopen-closed-tab'),
         menuCommand('Rename Session', 'rename-tab'),
         menuCommand('Split: Pin / Unpin', 'toggle-split'),
-        menuCommand('Move Tab Left', 'move-tab-left'),
-        menuCommand('Move Tab Right', 'move-tab-right'),
-        menuCommand('Move Project Left', 'move-project-left'),
-        menuCommand('Move Project Right', 'move-project-right'),
+        ...FIXED_SESSION_MENU_COMMANDS.map(command =>
+          menuCommand(command.label, command.id)
+        ),
         menuCommand('Close Tab or Empty Project', 'close-tab'),
         { type: 'separator' },
         menuCommand('Jump to Session Needing You', 'jump-attention'),

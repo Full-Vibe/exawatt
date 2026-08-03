@@ -308,7 +308,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
         case 'move-tab-right':
           if (
             onWorkspaceRoute &&
-            workspaceAvailability.commands['move-tab'].available
+            workspaceAvailability.commands[command].available
           ) {
             window.dispatchEvent(
               new CustomEvent(MOVE_ACTIVE_TAB_EVENT, {
@@ -321,7 +321,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
         case 'move-project-right':
           if (
             onWorkspaceRoute &&
-            workspaceAvailability.commands['move-project'].available
+            workspaceAvailability.commands[command].available
           ) {
             window.dispatchEvent(
               new CustomEvent(MOVE_ACTIVE_PROJECT_EVENT, {
@@ -394,12 +394,13 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
       'reopen-closed-tab': commands['reopen-closed-tab'].available,
       'rename-tab': onWorkspaceRoute && commands['rename-tab'].available,
       'toggle-split': onWorkspaceRoute && commands['toggle-split'].available,
-      'move-tab-left': onWorkspaceRoute && commands['move-tab'].available,
-      'move-tab-right': onWorkspaceRoute && commands['move-tab'].available,
+      'move-tab-left': onWorkspaceRoute && commands['move-tab-left'].available,
+      'move-tab-right':
+        onWorkspaceRoute && commands['move-tab-right'].available,
       'move-project-left':
-        onWorkspaceRoute && commands['move-project'].available,
+        onWorkspaceRoute && commands['move-project-left'].available,
       'move-project-right':
-        onWorkspaceRoute && commands['move-project'].available,
+        onWorkspaceRoute && commands['move-project-right'].available,
       'close-tab': onWorkspaceRoute && commands['close-tab'].available,
       'jump-attention':
         onWorkspaceRoute && commands['jump-attention'].available,

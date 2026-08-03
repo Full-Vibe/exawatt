@@ -15,7 +15,7 @@
  * Nothing in this file can reach `window.electron.pty` — the Demo tenant has
  * no path to a process by construction.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { HUD } from '@/components/hud';
 import { ExposeOverlay } from '@/components/workspace/expose-overlay';
@@ -26,8 +26,23 @@ import {
 } from '@/components/status-light';
 import {
   SESSION_JUMP_EVENT,
+  MOVE_ACTIVE_PROJECT_EVENT,
+  MOVE_ACTIVE_TAB_EVENT,
   consumePendingSessionJump,
 } from '@/components/workspace/session-jump';
+import {
+  useFixedWorkspaceShortcuts,
+  type FixedWorkspaceShortcutActions,
+} from '@/components/workspace/use-workspace-shortcuts';
+import {
+  moveProjectInList,
+  moveTabWithinProject,
+} from '@/components/workspace/tab-ring';
+import {
+  deriveWorkspaceCommandAvailability,
+  publishWorkspaceCommandAvailability,
+  EMPTY_WORKSPACE_COMMAND_AVAILABILITY,
+} from '@/components/workspace/workspace-command-availability';
 import {
   demoHarness,
   demoRoadmapRead,
@@ -52,7 +67,7 @@ export function DemoWorkspaceClient() {
   const overviewOpen = searchParams.get('view') === 'sessions';
 
   const agents = useMemo(() => demoShellAgents(), []);
-  const projects = useMemo(() => demoShellProjects(), []);
+  const [projects, setProjects] = useState(() => demoShellProjects());
   const summaries = useMemo(() => demoShellSummaries(), []);
   const attention = useMemo(() => demoShellAttention(), []);
   const activity = useMemo(() => demoShellActivity(), []);
@@ -60,6 +75,7 @@ export function DemoWorkspaceClient() {
   const delegation = useMemo(() => demoShellDelegation(), []);
   const roadmapByTab = useMemo(() => demoShellRoadmapByTab(), []);
   const agentTypeByTab = useMemo(() => demoShellAgentTypes(), []);
+  const sessionPaneRef = useRef<HTMLElement>(null);
 
   const [activeId, setActiveId] = useState<string>(() => {
     const pending = consumePendingSessionJump();
@@ -68,6 +84,16 @@ export function DemoWorkspaceClient() {
       ? DEFAULT_SESSION_ID
       : (agents[0]?.id ?? '');
   });
+  const [reorderStatus, setReorderStatus] = useState({
+    sequence: 0,
+    message: '',
+  });
+  const announceReorder = useCallback((message: string) => {
+    setReorderStatus(current => ({
+      sequence: current.sequence + 1,
+      message,
+    }));
+  }, []);
 
   // ⌘K / Fleet-altitude jumps: same event contract as the live shell
   useEffect(() => {
@@ -89,6 +115,171 @@ export function DemoWorkspaceClient() {
     project.tabs.some(tab => tab.id === activeAgent?.id)
   );
 
+  const selectProject = useCallback(
+    (index: number): boolean => {
+      const project = projects[index];
+      const first = project?.tabs[0];
+      if (!first) return false;
+      setActiveId(first.id);
+      if (overviewOpen) router.replace('/workspace', { scroll: false });
+      return true;
+    },
+    [overviewOpen, projects, router]
+  );
+
+  const selectTabOrdinal = useCallback(
+    (index: number): boolean => {
+      const tabs = projects.flatMap(project => project.tabs);
+      const target = index === 8 ? tabs.at(-1) : tabs[index];
+      if (!target) return false;
+      setActiveId(target.id);
+      if (overviewOpen) router.replace('/workspace', { scroll: false });
+      return true;
+    },
+    [overviewOpen, projects, router]
+  );
+
+  const cycleTab = useCallback(
+    (delta: 1 | -1): boolean => {
+      const tabs = projects.flatMap(project => project.tabs);
+      const from = tabs.findIndex(tab => tab.id === activeId);
+      if (from < 0 || tabs.length < 2) return false;
+      const target = tabs[(from + delta + tabs.length) % tabs.length];
+      setActiveId(target.id);
+      if (overviewOpen) router.replace('/workspace', { scroll: false });
+      return true;
+    },
+    [activeId, overviewOpen, projects, router]
+  );
+
+  const moveTab = useCallback(
+    (delta: 1 | -1): boolean => {
+      const project = projects.find(candidate =>
+        candidate.tabs.some(tab => tab.id === activeId)
+      );
+      const from = project?.tabs.findIndex(tab => tab.id === activeId) ?? -1;
+      const next = moveTabWithinProject(projects, activeId, delta);
+      if (!next) {
+        announceReorder(
+          `Session cannot move ${delta < 0 ? 'left' : 'right'} from its current position.`
+        );
+        return false;
+      }
+      setProjects(next);
+      const tab = project?.tabs[from];
+      if (project && tab) {
+        announceReorder(
+          `Moved Session ${tab.title} to position ${from + delta + 1} of ${project.tabs.length}.`
+        );
+      }
+      return true;
+    },
+    [activeId, announceReorder, projects]
+  );
+
+  const moveProject = useCallback(
+    (delta: 1 | -1): boolean => {
+      if (!activeProject) return false;
+      const from = projects.findIndex(
+        project => project.dir === activeProject.dir
+      );
+      const next = moveProjectInList(projects, activeProject.dir, delta);
+      if (!next) {
+        announceReorder(
+          `Project cannot move ${delta < 0 ? 'left' : 'right'} from its current position.`
+        );
+        return false;
+      }
+      setProjects(next);
+      announceReorder(
+        `Moved Project ${activeProject.name} to position ${from + delta + 1} of ${projects.length}.`
+      );
+      return true;
+    },
+    [activeProject, announceReorder, projects]
+  );
+
+  const focusSession = useCallback((): boolean => {
+    sessionPaneRef.current?.focus();
+    return document.activeElement === sessionPaneRef.current;
+  }, []);
+
+  const fixedActions = useMemo<FixedWorkspaceShortcutActions>(
+    () => ({
+      selectIndex: selectProject,
+      selectTabOrdinal,
+      cycle: cycleTab,
+      moveTab,
+      moveProject,
+      focusTerminal: focusSession,
+      toggleFocus: () => {
+        if (sessionPaneRef.current?.contains(document.activeElement)) {
+          const selected = document.querySelector<HTMLElement>(
+            '[data-demo-session][data-selected]'
+          );
+          selected?.focus();
+          return document.activeElement === selected;
+        }
+        return focusSession();
+      },
+    }),
+    [
+      cycleTab,
+      focusSession,
+      moveProject,
+      moveTab,
+      selectProject,
+      selectTabOrdinal,
+    ]
+  );
+  useFixedWorkspaceShortcuts(fixedActions);
+
+  const commandAvailability = useMemo(() => {
+    const activeTabIndex =
+      activeProject?.tabs.findIndex(tab => tab.id === activeId) ?? -1;
+    const activeProjectIndex = projects.findIndex(
+      project => project.dir === activeProject?.dir
+    );
+    return deriveWorkspaceCommandAvailability({
+      activeProjectName: activeProject?.name ?? null,
+      hasActiveTab: activeAgent !== null,
+      canToggleSplit: false,
+      canClose: false,
+      canMoveTabLeft: activeTabIndex > 0,
+      canMoveTabRight:
+        activeTabIndex >= 0 &&
+        activeTabIndex < (activeProject?.tabs.length ?? 0) - 1,
+      canMoveProjectLeft: activeProjectIndex > 0,
+      canMoveProjectRight:
+        activeProjectIndex >= 0 && activeProjectIndex < projects.length - 1,
+      hasAttentionTarget: false,
+      closedSessionCount: 0,
+    });
+  }, [activeAgent, activeId, activeProject, projects]);
+
+  useEffect(() => {
+    publishWorkspaceCommandAvailability(commandAvailability);
+    return () =>
+      publishWorkspaceCommandAvailability(EMPTY_WORKSPACE_COMMAND_AVAILABILITY);
+  }, [commandAvailability]);
+
+  useEffect(() => {
+    const onMoveTab = (event: Event) => {
+      const delta = (event as CustomEvent<{ delta?: 1 | -1 }>).detail?.delta;
+      if (delta === 1 || delta === -1) moveTab(delta);
+    };
+    const onMoveProject = (event: Event) => {
+      const delta = (event as CustomEvent<{ delta?: 1 | -1 }>).detail?.delta;
+      if (delta === 1 || delta === -1) moveProject(delta);
+    };
+    window.addEventListener(MOVE_ACTIVE_TAB_EVENT, onMoveTab);
+    window.addEventListener(MOVE_ACTIVE_PROJECT_EVENT, onMoveProject);
+    return () => {
+      window.removeEventListener(MOVE_ACTIVE_TAB_EVENT, onMoveTab);
+      window.removeEventListener(MOVE_ACTIVE_PROJECT_EVENT, onMoveProject);
+    };
+  }, [moveProject, moveTab]);
+
   const closeOverview = useCallback(
     () => router.replace('/workspace', { scroll: false }),
     [router]
@@ -100,13 +291,26 @@ export function DemoWorkspaceClient() {
       className="relative flex h-full min-h-0 overflow-hidden"
       style={{ background: '#04060b' }}
     >
+      <p
+        key={reorderStatus.sequence}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {reorderStatus.message}
+      </p>
       {/* Project & Session rail */}
       <nav
         aria-label="Demo Projects and Sessions"
         className="flex w-64 shrink-0 flex-col overflow-y-auto border-r border-white/5 py-2"
       >
         {projects.map(project => (
-          <section key={project.dir} className="mb-2 px-2">
+          <section
+            key={project.dir}
+            data-demo-project={project.dir}
+            className="mb-2 px-2"
+          >
             <div
               className="flex items-center gap-2 px-2 py-1.5"
               title={project.dir}
@@ -162,7 +366,12 @@ export function DemoWorkspaceClient() {
       </nav>
 
       {/* Active Session pane — the pane content source */}
-      <main className="min-h-0 min-w-0 flex-1">
+      <main
+        ref={sessionPaneRef}
+        tabIndex={-1}
+        data-workspace-session-focus-owner
+        className="min-h-0 min-w-0 flex-1 outline-none"
+      >
         {activeAgent ? (
           <DemoSessionPane agent={activeAgent} />
         ) : (

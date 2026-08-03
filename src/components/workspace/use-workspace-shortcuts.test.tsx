@@ -2,6 +2,7 @@ import { fireEvent, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultShortcuts, shortcutRegistry } from '@/lib/shortcuts';
 import {
+  useFixedWorkspaceShortcuts,
   useWorkspaceShortcuts,
   type WorkspaceShortcutActions,
 } from './use-workspace-shortcuts';
@@ -326,5 +327,24 @@ describe('keyboard doctrine + arrangement (D20)', () => {
 
     expect(handlers.moveProject).toHaveBeenCalledWith(1);
     expect(move.defaultPrevented).toBe(false);
+  });
+
+  it('lets a source adapter mount fixed families without stealing registry verbs', () => {
+    const handlers = actions();
+    renderHook(() => useFixedWorkspaceShortcuts(handlers));
+
+    fireEvent.keyDown(window, {
+      key: '1',
+      code: 'Digit1',
+      metaKey: true,
+    });
+    fireEvent.keyDown(window, {
+      key: 't',
+      code: 'KeyT',
+      metaKey: true,
+    });
+
+    expect(handlers.selectTabOrdinal).toHaveBeenCalledWith(0);
+    expect(handlers.newAgent).not.toHaveBeenCalled();
   });
 });

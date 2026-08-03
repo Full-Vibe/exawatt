@@ -133,6 +133,10 @@ export function ShortcutHelpModal({
       return { category, rows, fixed };
     }).filter(s => s.rows.length > 0 || s.fixed.length > 0);
   }, [shortcuts, matches]);
+  const statusLegendMatches =
+    !q ||
+    'agent status'.includes(q) ||
+    STATUS_LEGEND.some(entry => matches(entry.label, entry.meaning));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -161,8 +165,7 @@ export function ShortcutHelpModal({
             )}
             {/* the status icon vocabulary is learnable, so the cheat
                 sheet TEACHES it (D30) — the text channel Carbon requires */}
-            {(!query ||
-              'agent status'.includes(query.toLowerCase().trim())) && (
+            {statusLegendMatches && (
               <div data-help-category="agent-status">
                 <h3 className="text-sm font-semibold text-muted-foreground mb-3">
                   Agent Status
@@ -192,6 +195,7 @@ export function ShortcutHelpModal({
                   {rows.map(row => (
                     <div
                       key={row.id}
+                      data-shortcut-id={row.id}
                       className="flex items-center justify-between py-1"
                     >
                       <span className="text-sm">{row.label}</span>
@@ -201,6 +205,7 @@ export function ShortcutHelpModal({
                   {fixed.map(entry => (
                     <div
                       key={entry.id}
+                      data-shortcut-id={entry.id}
                       className="flex items-center justify-between py-1"
                     >
                       <span className="text-sm">{entry.label}</span>

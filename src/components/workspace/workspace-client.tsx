@@ -218,6 +218,16 @@ export function WorkspaceClient() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [resumeNoticeDismissed, setResumeNoticeDismissed] = useState(false);
   const [projectOpenerOpen, setProjectOpenerOpen] = useState(false);
+  const [reorderStatus, setReorderStatus] = useState({
+    sequence: 0,
+    message: '',
+  });
+  const announceReorder = useCallback((message: string) => {
+    setReorderStatus(current => ({
+      sequence: current.sequence + 1,
+      message,
+    }));
+  }, []);
   useEffect(() => {
     if (!inElectron) return;
     let cancelled = false;
@@ -309,6 +319,45 @@ export function WorkspaceClient() {
     toggleProjectRibbonExpanded,
     ready,
   } = useWorkspaceState({ getInitialSize });
+
+  const moveTabWithFeedback = useCallback(
+    (delta: 1 | -1): boolean => {
+      const from =
+        activeProject?.tabs.findIndex(tab => tab.id === activeTab?.id) ?? -1;
+      const moved = moveActiveTab(delta);
+      if (moved && activeProject && activeTab) {
+        announceReorder(
+          `Moved Session ${activeTab.title} to position ${from + delta + 1} of ${activeProject.tabs.length}.`
+        );
+      } else {
+        announceReorder(
+          `Session cannot move ${delta < 0 ? 'left' : 'right'} from its current position.`
+        );
+      }
+      return moved;
+    },
+    [activeProject, activeTab, announceReorder, moveActiveTab]
+  );
+
+  const moveProjectWithFeedback = useCallback(
+    (delta: 1 | -1): boolean => {
+      const from = projects.findIndex(
+        project => project.dir === activeProject?.dir
+      );
+      const moved = moveActiveProject(delta);
+      if (moved && activeProject) {
+        announceReorder(
+          `Moved Project ${activeProject.name} to position ${from + delta + 1} of ${projects.length}.`
+        );
+      } else {
+        announceReorder(
+          `Project cannot move ${delta < 0 ? 'left' : 'right'} from its current position.`
+        );
+      }
+      return moved;
+    },
+    [activeProject, announceReorder, moveActiveProject, projects]
+  );
 
   const {
     dormantProjectDirs,
@@ -570,22 +619,22 @@ export function WorkspaceClient() {
   useEffect(() => {
     const onMove = (event: Event) => {
       const delta = (event as CustomEvent<{ delta?: 1 | -1 }>).detail?.delta;
-      if (delta === 1 || delta === -1) moveActiveTab(delta);
+      if (delta === 1 || delta === -1) moveTabWithFeedback(delta);
     };
     window.addEventListener(MOVE_ACTIVE_TAB_EVENT, onMove);
     return () => window.removeEventListener(MOVE_ACTIVE_TAB_EVENT, onMove);
-  }, [moveActiveTab]);
+  }, [moveTabWithFeedback]);
 
   // Palette and menu rows nudge the active Project through the same pure
   // move the ⌘⌥⇧[/⌘⌥⇧] fixed family uses.
   useEffect(() => {
     const onMove = (event: Event) => {
       const delta = (event as CustomEvent<{ delta?: 1 | -1 }>).detail?.delta;
-      if (delta === 1 || delta === -1) moveActiveProject(delta);
+      if (delta === 1 || delta === -1) moveProjectWithFeedback(delta);
     };
     window.addEventListener(MOVE_ACTIVE_PROJECT_EVENT, onMove);
     return () => window.removeEventListener(MOVE_ACTIVE_PROJECT_EVENT, onMove);
-  }, [moveActiveProject]);
+  }, [moveProjectWithFeedback]);
 
   // agent-first mirror (S9): tabId → what that agent is executing. Declared
   // ids cover every project (machine-local layout truth); the active
@@ -771,34 +820,39 @@ export function WorkspaceClient() {
     return false;
   }, [activeProject, activeTab, requestClose, requestProjectClose]);
 
-  const commandAvailability = useMemo(
-    () =>
-      deriveWorkspaceCommandAvailability({
-        activeProjectName: activeProject?.name ?? null,
-        hasActiveTab: activeTab !== null,
-        canToggleSplit:
-          pinnedTabId !== null ||
-          (activeTab !== null && tabIsPinnable(activeTab)),
-        canClose:
-          activeTab !== null ||
-          (!!activeProject && activeProject.tabs.length === 0),
-        canMoveTab:
-          activeTab !== null &&
-          !!activeProject &&
-          activeProject.tabs.length > 1,
-        canMoveProject: projects.length > 1,
-        hasAttentionTarget,
-        closedSessionCount,
-      }),
-    [
-      activeProject,
-      activeTab,
-      closedSessionCount,
+  const commandAvailability = useMemo(() => {
+    const activeTabIndex =
+      activeProject?.tabs.findIndex(tab => tab.id === activeTab?.id) ?? -1;
+    const activeProjectIndex = projects.findIndex(
+      project => project.dir === activeProject?.dir
+    );
+    return deriveWorkspaceCommandAvailability({
+      activeProjectName: activeProject?.name ?? null,
+      hasActiveTab: activeTab !== null,
+      canToggleSplit:
+        pinnedTabId !== null ||
+        (activeTab !== null && tabIsPinnable(activeTab)),
+      canClose:
+        activeTab !== null ||
+        (!!activeProject && activeProject.tabs.length === 0),
+      canMoveTabLeft: activeTabIndex > 0,
+      canMoveTabRight:
+        activeTabIndex >= 0 &&
+        activeTabIndex < (activeProject?.tabs.length ?? 0) - 1,
+      canMoveProjectLeft: activeProjectIndex > 0,
+      canMoveProjectRight:
+        activeProjectIndex >= 0 && activeProjectIndex < projects.length - 1,
       hasAttentionTarget,
-      pinnedTabId,
-      projects.length,
-    ]
-  );
+      closedSessionCount,
+    });
+  }, [
+    activeProject,
+    activeTab,
+    closedSessionCount,
+    hasAttentionTarget,
+    pinnedTabId,
+    projects,
+  ]);
   useEffect(() => {
     if (ready) publishWorkspaceCommandAvailability(commandAvailability);
   }, [commandAvailability, ready]);
@@ -895,8 +949,8 @@ export function WorkspaceClient() {
       selectIndex: selectProject,
       selectTabOrdinal: selectTabByOrdinal,
       cycle: cycleTab,
-      moveTab: moveActiveTab,
-      moveProject: moveActiveProject,
+      moveTab: moveTabWithFeedback,
+      moveProject: moveProjectWithFeedback,
       newAgent: () => {
         // same summon the palette uses: expands + focuses the composer, or
         // opens the Project chooser first when nothing is open
@@ -963,8 +1017,8 @@ export function WorkspaceClient() {
     selectProject,
     cycleTab,
     selectTabByOrdinal,
-    moveActiveTab,
-    moveActiveProject,
+    moveTabWithFeedback,
+    moveProjectWithFeedback,
     jumpAttentionQueue,
     togglePin,
     activateCommandAltitude,
@@ -1032,6 +1086,15 @@ export function WorkspaceClient() {
       className="relative flex h-full flex-col"
       style={{ background: HUD.bg.void }}
     >
+      <p
+        key={reorderStatus.sequence}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {reorderStatus.message}
+      </p>
       <div
         data-workspace-underlay
         inert={overviewOpen}

@@ -104,6 +104,10 @@ import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
 import { demoSessionRows } from '@/lib/demo-workspace/model';
 import { HUD } from '@/components/hud';
 import type { ShortcutKeys } from '@/types/shortcuts';
+import {
+  fixedFamilyBindings,
+  getWorkspaceFixedFamily,
+} from '@/lib/shortcuts/fixed-families';
 import type { CommandAltitude } from '@/components/nav/command-altitude';
 import type { PtyHarness, ClosedSessionEntry } from '@/types/electron';
 import { useShortcutRegistryVersion } from './use-effective-shortcut';
@@ -162,22 +166,12 @@ interface CommandItem {
 
 // fixed arrangement family (D20): displayed beside the palette rows, not
 // rebindable — the workspace key layer resolves the chords, not the registry
-const MOVE_TAB_LEFT_KEYS: ShortcutKeys = {
-  key: '[',
-  modifiers: ['meta', 'alt'],
-};
-const MOVE_TAB_RIGHT_KEYS: ShortcutKeys = {
-  key: ']',
-  modifiers: ['meta', 'alt'],
-};
-const MOVE_PROJECT_LEFT_KEYS: ShortcutKeys = {
-  key: '[',
-  modifiers: ['meta', 'alt', 'shift'],
-};
-const MOVE_PROJECT_RIGHT_KEYS: ShortcutKeys = {
-  key: ']',
-  modifiers: ['meta', 'alt', 'shift'],
-};
+const [MOVE_TAB_LEFT_KEYS, MOVE_TAB_RIGHT_KEYS] = fixedFamilyBindings(
+  getWorkspaceFixedFamily('fixed-move-tab')
+);
+const [MOVE_PROJECT_LEFT_KEYS, MOVE_PROJECT_RIGHT_KEYS] = fixedFamilyBindings(
+  getWorkspaceFixedFamily('fixed-move-project')
+);
 
 const WORKSPACE_PALETTE_ROW_ID = {
   rename: 'ws-rename',
@@ -256,6 +250,7 @@ export function CommandPalette({
     (tenancy?.hydrated ?? false) &&
     tenancy?.activeWorkspace.id === DEMO_WORKSPACE_ID;
   const personalVerbs = inElectron && !inDemoTenant;
+  const workspaceVerbs = inElectron || inDemoTenant;
 
   // Reset search AND session rows when closing — stale rows on reopen can
   // list dead sessions or wrong statuses until the refetch lands, and Enter
@@ -407,7 +402,9 @@ export function CommandPalette({
       handleSelect(() => window.dispatchEvent(new CustomEvent(event))),
     [handleSelect]
   );
-  const workspaceItems = useMemo(() => {
+  const workspaceItems = useMemo<
+    Array<CommandItem & { demoAvailable?: boolean }>
+  >(() => {
     void shortcutVersion;
     return [
       {
@@ -462,7 +459,8 @@ export function CommandPalette({
         // fixed arrangement family (D20) — displayed, not rebindable
         shortcut: MOVE_TAB_LEFT_KEYS,
         icon: ArrowLeftToLine,
-        availability: workspaceAvailability.commands['move-tab'],
+        availability: workspaceAvailability.commands['move-tab-left'],
+        demoAvailable: true,
         onSelect: () =>
           handleSelect(() =>
             window.dispatchEvent(
@@ -478,7 +476,8 @@ export function CommandPalette({
         value: 'move tab right reorder arrange shift nudge order',
         shortcut: MOVE_TAB_RIGHT_KEYS,
         icon: ArrowRightToLine,
-        availability: workspaceAvailability.commands['move-tab'],
+        availability: workspaceAvailability.commands['move-tab-right'],
+        demoAvailable: true,
         onSelect: () =>
           handleSelect(() =>
             window.dispatchEvent(
@@ -494,7 +493,8 @@ export function CommandPalette({
         value: 'move project left reorder arrange shift nudge order',
         shortcut: MOVE_PROJECT_LEFT_KEYS,
         icon: ArrowLeftToLine,
-        availability: workspaceAvailability.commands['move-project'],
+        availability: workspaceAvailability.commands['move-project-left'],
+        demoAvailable: true,
         onSelect: () =>
           handleSelect(() =>
             window.dispatchEvent(
@@ -510,7 +510,8 @@ export function CommandPalette({
         value: 'move project right reorder arrange shift nudge order',
         shortcut: MOVE_PROJECT_RIGHT_KEYS,
         icon: ArrowRightToLine,
-        availability: workspaceAvailability.commands['move-project'],
+        availability: workspaceAvailability.commands['move-project-right'],
+        demoAvailable: true,
         onSelect: () =>
           handleSelect(() =>
             window.dispatchEvent(
@@ -531,6 +532,13 @@ export function CommandPalette({
       },
     ];
   }, [dispatch, handleSelect, shortcutVersion, workspaceAvailability]);
+  const tenantWorkspaceItems = useMemo(
+    () =>
+      inDemoTenant
+        ? workspaceItems.filter(item => item.demoAvailable)
+        : workspaceItems,
+    [inDemoTenant, workspaceItems]
+  );
 
   // Navigation rows derive from the manifest (ENG-016 D8): the palette, the
   // go-chords, and the header must always agree on names and targets.
@@ -693,7 +701,7 @@ export function CommandPalette({
         });
       }
       if (onWorkspaceRoute) {
-        for (const w of workspaceItems) {
+        for (const w of tenantWorkspaceItems) {
           if (w.availability && !w.availability.available) continue;
           candidates.set(w.id, {
             label: w.label,
@@ -723,7 +731,7 @@ export function CommandPalette({
     recents,
     onWorkspaceRoute,
     onSpatialRoute,
-    workspaceItems,
+    tenantWorkspaceItems,
     launchHarness,
     openAgentComposer,
     openProject,
@@ -965,41 +973,43 @@ export function CommandPalette({
             <CommandSeparator />
           </>
         )}
-        {personalVerbs && onWorkspaceRoute && (
-          <>
-            <CommandGroup heading="Workspace">
-              {workspaceItems.map(item => (
-                <CommandItem
-                  key={item.id}
-                  value={`${item.value} ${item.availability?.reason ?? ''}`}
-                  disabled={
-                    item.availability
-                      ? !item.availability.available
-                      : undefined
-                  }
-                  title={item.availability?.reason ?? undefined}
-                  onSelect={() => {
-                    recordPaletteUse(item.id);
-                    item.onSelect();
-                  }}
-                >
-                  <item.icon className="mr-2 h-4 w-4" />
-                  <span>{item.label}</span>
-                  {item.availability && !item.availability.available ? (
-                    <CommandShortcut>
-                      {item.availability.reason}
-                    </CommandShortcut>
-                  ) : item.shortcut ? (
-                    <CommandShortcut>
-                      {formatShortcutKeys(item.shortcut)}
-                    </CommandShortcut>
-                  ) : null}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-            <CommandSeparator />
-          </>
-        )}
+        {workspaceVerbs &&
+          onWorkspaceRoute &&
+          tenantWorkspaceItems.length > 0 && (
+            <>
+              <CommandGroup heading="Workspace">
+                {tenantWorkspaceItems.map(item => (
+                  <CommandItem
+                    key={item.id}
+                    value={`${item.value} ${item.availability?.reason ?? ''}`}
+                    disabled={
+                      item.availability
+                        ? !item.availability.available
+                        : undefined
+                    }
+                    title={item.availability?.reason ?? undefined}
+                    onSelect={() => {
+                      recordPaletteUse(item.id);
+                      item.onSelect();
+                    }}
+                  >
+                    <item.icon className="mr-2 h-4 w-4" />
+                    <span>{item.label}</span>
+                    {item.availability && !item.availability.available ? (
+                      <CommandShortcut>
+                        {item.availability.reason}
+                      </CommandShortcut>
+                    ) : item.shortcut ? (
+                      <CommandShortcut>
+                        {formatShortcutKeys(item.shortcut)}
+                      </CommandShortcut>
+                    ) : null}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              <CommandSeparator />
+            </>
+          )}
         {personalVerbs && onWorkspaceRoute && closedSessions.length > 0 && (
           <>
             <CommandGroup heading="Recently closed">

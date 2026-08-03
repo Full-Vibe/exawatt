@@ -15,8 +15,10 @@ export type WorkspaceContextCommand =
   | 'rename-project'
   | 'toggle-split'
   | 'close-tab'
-  | 'move-tab'
-  | 'move-project'
+  | 'move-tab-left'
+  | 'move-tab-right'
+  | 'move-project-left'
+  | 'move-project-right'
   | 'jump-attention'
   | 'open-roadmap';
 
@@ -35,10 +37,10 @@ export interface WorkspaceCommandAvailabilityInput {
   hasActiveTab: boolean;
   canToggleSplit: boolean;
   canClose: boolean;
-  /** the active tab has at least one sibling to trade places with */
-  canMoveTab: boolean;
-  /** the active Project has at least one sibling to trade places with */
-  canMoveProject: boolean;
+  canMoveTabLeft: boolean;
+  canMoveTabRight: boolean;
+  canMoveProjectLeft: boolean;
+  canMoveProjectRight: boolean;
   hasAttentionTarget: boolean;
   closedSessionCount: number;
 }
@@ -58,8 +60,10 @@ export function deriveWorkspaceCommandAvailability({
   hasActiveTab,
   canToggleSplit,
   canClose,
-  canMoveTab,
-  canMoveProject,
+  canMoveTabLeft,
+  canMoveTabRight,
+  canMoveProjectLeft,
+  canMoveProjectRight,
   hasAttentionTarget,
   closedSessionCount,
 }: WorkspaceCommandAvailabilityInput): WorkspaceCommandAvailability {
@@ -86,12 +90,34 @@ export function deriveWorkspaceCommandAvailability({
       'close-tab': canClose
         ? available()
         : unavailable('Open a Project or Session first'),
-      'move-tab': canMoveTab
+      'move-tab-left': canMoveTabLeft
         ? available()
-        : unavailable('Needs a second Session in the Project'),
-      'move-project': canMoveProject
+        : unavailable(
+            canMoveTabRight
+              ? 'Already the first Session in the Project'
+              : 'Needs a second Session in the Project'
+          ),
+      'move-tab-right': canMoveTabRight
         ? available()
-        : unavailable('Needs a second open Project'),
+        : unavailable(
+            canMoveTabLeft
+              ? 'Already the last Session in the Project'
+              : 'Needs a second Session in the Project'
+          ),
+      'move-project-left': canMoveProjectLeft
+        ? available()
+        : unavailable(
+            canMoveProjectRight
+              ? 'Already the first open Project'
+              : 'Needs a second open Project'
+          ),
+      'move-project-right': canMoveProjectRight
+        ? available()
+        : unavailable(
+            canMoveProjectLeft
+              ? 'Already the last open Project'
+              : 'Needs a second open Project'
+          ),
       'jump-attention': hasAttentionTarget
         ? available()
         : unavailable('No Sessions need you'),
@@ -108,8 +134,10 @@ export const EMPTY_WORKSPACE_COMMAND_AVAILABILITY =
     hasActiveTab: false,
     canToggleSplit: false,
     canClose: false,
-    canMoveTab: false,
-    canMoveProject: false,
+    canMoveTabLeft: false,
+    canMoveTabRight: false,
+    canMoveProjectLeft: false,
+    canMoveProjectRight: false,
     hasAttentionTarget: false,
     closedSessionCount: 0,
   });

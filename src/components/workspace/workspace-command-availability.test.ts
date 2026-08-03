@@ -8,8 +8,10 @@ describe('workspace command availability', () => {
       hasActiveTab: false,
       canToggleSplit: false,
       canClose: false,
-      canMoveTab: false,
-      canMoveProject: false,
+      canMoveTabLeft: false,
+      canMoveTabRight: false,
+      canMoveProjectLeft: false,
+      canMoveProjectRight: false,
       hasAttentionTarget: false,
       closedSessionCount: 0,
     });
@@ -30,8 +32,10 @@ describe('workspace command availability', () => {
       hasActiveTab: false,
       canToggleSplit: false,
       canClose: true,
-      canMoveTab: false,
-      canMoveProject: false,
+      canMoveTabLeft: false,
+      canMoveTabRight: false,
+      canMoveProjectLeft: false,
+      canMoveProjectRight: false,
       hasAttentionTarget: false,
       closedSessionCount: 2,
     });
@@ -42,10 +46,10 @@ describe('workspace command availability', () => {
     expect(state.commands['close-tab'].available).toBe(true);
     expect(state.commands['reopen-closed-tab'].available).toBe(true);
     expect(state.commands['rename-tab'].reason).toBe('Select a Session first');
-    expect(state.commands['move-tab'].reason).toBe(
+    expect(state.commands['move-tab-left'].reason).toBe(
       'Needs a second Session in the Project'
     );
-    expect(state.commands['move-project'].reason).toBe(
+    expect(state.commands['move-project-right'].reason).toBe(
       'Needs a second open Project'
     );
     expect(state.commands['toggle-split'].available).toBe(false);
@@ -58,19 +62,49 @@ describe('workspace command availability', () => {
       hasActiveTab: true,
       canToggleSplit: true,
       canClose: true,
-      canMoveTab: true,
-      canMoveProject: true,
+      canMoveTabLeft: true,
+      canMoveTabRight: true,
+      canMoveProjectLeft: true,
+      canMoveProjectRight: true,
       hasAttentionTarget: true,
       closedSessionCount: 0,
     });
 
     expect(state.commands['rename-tab'].available).toBe(true);
     expect(state.commands['toggle-split'].available).toBe(true);
-    expect(state.commands['move-tab'].available).toBe(true);
-    expect(state.commands['move-project'].available).toBe(true);
+    expect(state.commands['move-tab-left'].available).toBe(true);
+    expect(state.commands['move-tab-right'].available).toBe(true);
+    expect(state.commands['move-project-left'].available).toBe(true);
+    expect(state.commands['move-project-right'].available).toBe(true);
     expect(state.commands['jump-attention'].available).toBe(true);
     expect(state.commands['reopen-closed-tab'].reason).toBe(
       'No recently closed Sessions'
     );
+  });
+
+  it('disables only the impossible direction at a reorder edge', () => {
+    const state = deriveWorkspaceCommandAvailability({
+      activeProjectName: 'Exawatt',
+      hasActiveTab: true,
+      canToggleSplit: true,
+      canClose: true,
+      canMoveTabLeft: false,
+      canMoveTabRight: true,
+      canMoveProjectLeft: true,
+      canMoveProjectRight: false,
+      hasAttentionTarget: false,
+      closedSessionCount: 0,
+    });
+
+    expect(state.commands['move-tab-left']).toEqual({
+      available: false,
+      reason: 'Already the first Session in the Project',
+    });
+    expect(state.commands['move-tab-right'].available).toBe(true);
+    expect(state.commands['move-project-left'].available).toBe(true);
+    expect(state.commands['move-project-right']).toEqual({
+      available: false,
+      reason: 'Already the last open Project',
+    });
   });
 });

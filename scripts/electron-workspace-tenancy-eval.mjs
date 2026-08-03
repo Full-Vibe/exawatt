@@ -342,10 +342,101 @@ try {
             .locator('[cmdk-item]', { hasText: 'Open shell in' })
             .count()) === 0
       );
+      check(
+        'palette exposes source-safe Project movement in Demo',
+        (await page
+          .locator('[cmdk-item]', { hasText: 'Move Project left' })
+          .count()) === 1 &&
+          (await page
+            .locator('[cmdk-item]', { hasText: 'Move Project right' })
+            .count()) === 1
+      );
       await page.screenshot({
         path: join(SCREENSHOT_DIR, 'demo-command-palette.png'),
       });
       await page.keyboard.press('Escape');
+
+      // Fixed workspace families run through a Demo-backed action adapter —
+      // the help surface never advertises inert Live-only keys.
+      const demoProjectMove = await page.evaluate(() => {
+        const projects = Array.from(
+          document.querySelectorAll('[data-demo-project]')
+        );
+        const selected = document.querySelector(
+          '[data-demo-session][data-selected]'
+        );
+        const active = projects.findIndex(project =>
+          project.contains(selected)
+        );
+        return {
+          before: projects.map(project =>
+            project.getAttribute('data-demo-project')
+          ),
+          active,
+          delta: active < projects.length - 1 ? 1 : -1,
+        };
+      });
+      await page.keyboard.press(
+        demoProjectMove.delta === 1
+          ? 'Meta+Alt+Shift+BracketRight'
+          : 'Meta+Alt+Shift+BracketLeft'
+      );
+      const demoProjectOrderAfter = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('[data-demo-project]')).map(
+          project => project.getAttribute('data-demo-project')
+        )
+      );
+      check(
+        'fixed Project movement executes in Demo',
+        demoProjectOrderAfter[
+          demoProjectMove.active + demoProjectMove.delta
+        ] === demoProjectMove.before[demoProjectMove.active]
+      );
+      check(
+        'Demo Project movement announces its result',
+        (await page
+          .locator('[role="status"]', { hasText: 'Moved Project' })
+          .count()) === 1
+      );
+
+      const demoPane = page.locator('[data-workspace-session-focus-owner]');
+      await demoPane.focus();
+      await page.keyboard.press('F6');
+      check(
+        'F6 moves focus from the Demo Session to app controls',
+        await page.evaluate(
+          () =>
+            document.activeElement?.hasAttribute('data-demo-session') ?? false
+        )
+      );
+      await page.keyboard.press('Escape');
+      check(
+        'Escape returns focus to the Demo Session',
+        await page.evaluate(
+          () =>
+            document.activeElement?.hasAttribute(
+              'data-workspace-session-focus-owner'
+            ) ?? false
+        )
+      );
+
+      // The global registry deliberately ignores keys for 100 ms after a
+      // palette closes so its closing Enter/Escape cannot trigger a second
+      // command. Keep this assertion outside that protection window.
+      await page.waitForTimeout(150);
+      await page.keyboard.press('Meta+Slash');
+      const demoHelp = page.getByRole('dialog');
+      await demoHelp.waitFor();
+      check(
+        'Demo help entries name working fixed commands',
+        (await demoHelp
+          .getByText('Move focus between the Session and app controls')
+          .count()) === 1 &&
+          (await demoHelp.getByText('Return focus to the Session').count()) ===
+            1
+      );
+      await page.keyboard.press('Escape');
+      await demoHelp.waitFor({ state: 'detached' });
 
       // Team altitude: the exposé fans out the 27 authored Sessions
       await page.locator('[data-command-altitude-level="sessions"]').click();

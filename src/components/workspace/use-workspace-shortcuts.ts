@@ -39,6 +39,7 @@ import { requestQuickFeedback } from '@/components/feedback/quick-feedback-event
 import type { CommandAltitude } from '@/components/nav/command-altitude';
 import {
   WORKSPACE_KEY_FAMILIES,
+  matchFixedFamily,
   type FixedFamilyAction,
 } from '@/lib/shortcuts/fixed-families';
 
@@ -73,16 +74,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
-export interface WorkspaceShortcutActions {
-  launchShell: () => boolean;
-  /** ⌘T — summon the Agent composer (the primary launch gesture) */
-  newAgent: () => boolean;
-  /** ⌘N — open Exawatt's curated Project chooser */
-  newProject: () => boolean;
-  /** close the active tab, or the active Project when it is empty */
-  closeActive: () => boolean;
-  /** ⌘⇧T — restore the newest recoverable Session from the close ledger */
-  reopenClosed: () => boolean;
+export interface FixedWorkspaceShortcutActions {
   selectIndex: (index: number) => boolean;
   /** ⌘1–⌘9 — jump to the Nth tab of the global ring */
   selectTabOrdinal: (index: number) => boolean;
@@ -92,6 +84,22 @@ export interface WorkspaceShortcutActions {
   moveTab: (delta: 1 | -1) => boolean;
   /** ⌘⌥⇧[/]: nudge the active Project in the strip (D20) */
   moveProject: (delta: 1 | -1) => boolean;
+  /** move focus to the other Session/app-controls region */
+  toggleFocus: () => boolean;
+  /** leave app controls and return to the active Session */
+  focusTerminal: () => boolean;
+}
+
+export interface WorkspaceShortcutActions extends FixedWorkspaceShortcutActions {
+  launchShell: () => boolean;
+  /** ⌘T — summon the Agent composer (the primary launch gesture) */
+  newAgent: () => boolean;
+  /** ⌘N — open Exawatt's curated Project chooser */
+  newProject: () => boolean;
+  /** close the active tab, or the active Project when it is empty */
+  closeActive: () => boolean;
+  /** ⌘⇧T — restore the newest recoverable Session from the close ledger */
+  reopenClosed: () => boolean;
   /** jump to the oldest visible needs-attention Session */
   jumpAttention: () => boolean;
   /** open or refocus one absolute command altitude */
@@ -106,15 +114,11 @@ export interface WorkspaceShortcutActions {
   renameActive: () => boolean;
   /** open the keyboard cheat-sheet */
   openHelp: () => boolean;
-  /** move focus to the other terminal/chrome region */
-  toggleFocus: () => boolean;
-  /** leave chrome and return to the active terminal */
-  focusTerminal: () => boolean;
 }
 
 export function applyFixedFamilyAction(
   action: FixedFamilyAction,
-  actions: WorkspaceShortcutActions
+  actions: FixedWorkspaceShortcutActions
 ): boolean {
   switch (action.kind) {
     case 'cycle-tab':
@@ -134,8 +138,9 @@ export function applyFixedFamilyAction(
   }
 }
 
-export function useWorkspaceShortcuts(
-  actions: WorkspaceShortcutActions,
+function useWorkspaceShortcutLayer(
+  fixedActions: FixedWorkspaceShortcutActions,
+  registryActions: WorkspaceShortcutActions | null,
   enabled = true
 ): void {
   useEffect(() => {
@@ -153,9 +158,9 @@ export function useWorkspaceShortcuts(
       if (e.defaultPrevented || isModalTarget(e)) return;
       for (const family of WORKSPACE_KEY_FAMILIES) {
         if (family.phase !== 'capture' || !family.outranksAltitudes) continue;
-        const action = family.match(e);
+        const action = matchFixedFamily(family, e);
         if (!action) continue;
-        if (applyFixedFamilyAction(action, actions)) e.preventDefault();
+        if (applyFixedFamilyAction(action, fixedActions)) e.preventDefault();
         return;
       }
       // Absolute command altitudes own capture phase so they work from xterm.
@@ -169,7 +174,9 @@ export function useWorkspaceShortcuts(
         ];
         for (const [id, target] of altitudes) {
           if (matchesRegistry(e, id)) {
-            if (actions.activateCommandAltitude(target)) e.preventDefault();
+            if (registryActions?.activateCommandAltitude(target)) {
+              e.preventDefault();
+            }
             return;
           }
         }
@@ -181,9 +188,9 @@ export function useWorkspaceShortcuts(
       // onto a bare ⌘digit still wins over tab ordinals (D19).
       for (const family of WORKSPACE_KEY_FAMILIES) {
         if (family.phase !== 'capture' || family.outranksAltitudes) continue;
-        const action = family.match(e);
+        const action = matchFixedFamily(family, e);
         if (!action) continue;
-        if (applyFixedFamilyAction(action, actions)) e.preventDefault();
+        if (applyFixedFamilyAction(action, fixedActions)) e.preventDefault();
         return;
       }
     };
@@ -196,19 +203,27 @@ export function useWorkspaceShortcuts(
       if (isModalTarget(e)) return;
       for (const family of WORKSPACE_KEY_FAMILIES) {
         if (family.phase !== 'bubble') continue;
-        const action = family.match(e);
+        const action = matchFixedFamily(family, e);
         if (!action) continue;
         // Applicability belongs to the layer, not the matcher: Escape names
         // focus-terminal everywhere, but the terminal keeps it for the TUI.
-        const inTerminal =
+        const sessionOwnsEscape =
           action.kind === 'focus-terminal' &&
           e.target instanceof Element &&
-          !!e.target.closest('.xterm-helper-textarea');
-        if (!inTerminal && applyFixedFamilyAction(action, actions)) {
+          !!e.target.closest(
+            '.xterm-helper-textarea, [data-workspace-session-focus-owner]'
+          );
+        if (
+          !sessionOwnsEscape &&
+          applyFixedFamilyAction(action, fixedActions)
+        ) {
           e.preventDefault();
         }
         return;
       }
+      // Demo and future source adapters mount only the source-agnostic fixed
+      // layer. The global registry provider remains their command owner.
+      if (!registryActions) return;
       // a modifier-less keystroke in a text surface is TYPING — never let a
       // workspace verb consume it (guards against a verb mis-rebound to a
       // plain key eating terminal/input characters; every default verb uses
@@ -219,11 +234,11 @@ export function useWorkspaceShortcuts(
       // palette + cheat-sheet: registry-resolved (rebindable), reachable
       // from inside terminals where the chord engine is blind
       if (matchesRegistry(e, 'command-palette')) {
-        if (actions.openPalette()) e.preventDefault();
+        if (registryActions.openPalette()) e.preventDefault();
         return;
       }
       if (matchesRegistry(e, 'help-modal-slash')) {
-        if (actions.openHelp()) e.preventDefault();
+        if (registryActions.openHelp()) e.preventDefault();
         return;
       }
       // quick feedback capture (ENG-025 F1): same reach as the palette; the
@@ -243,15 +258,15 @@ export function useWorkspaceShortcuts(
       const verbs: Array<
         [id: string, apply: () => boolean, shiftAlias?: boolean]
       > = [
-        ['workspace-new-agent', actions.newAgent],
-        ['workspace-new-shell', actions.launchShell],
-        ['workspace-new-project', actions.newProject],
-        ['workspace-close-tab', actions.closeActive, true],
-        ['workspace-reopen-closed-tab', actions.reopenClosed],
-        ['workspace-jump-attention', actions.jumpAttention],
-        ['workspace-split', actions.togglePin],
-        ['workspace-roadmap', actions.toggleRoadmap],
-        ['workspace-rename', actions.renameActive],
+        ['workspace-new-agent', registryActions.newAgent],
+        ['workspace-new-shell', registryActions.launchShell],
+        ['workspace-new-project', registryActions.newProject],
+        ['workspace-close-tab', registryActions.closeActive, true],
+        ['workspace-reopen-closed-tab', registryActions.reopenClosed],
+        ['workspace-jump-attention', registryActions.jumpAttention],
+        ['workspace-split', registryActions.togglePin],
+        ['workspace-roadmap', registryActions.toggleRoadmap],
+        ['workspace-rename', registryActions.renameActive],
       ];
       for (const [id, apply] of verbs) {
         if (matchesRegistry(e, id)) {
@@ -272,5 +287,21 @@ export function useWorkspaceShortcuts(
       window.removeEventListener('keydown', onCaptureKey, true);
       window.removeEventListener('keydown', onKey);
     };
-  }, [actions, enabled]);
+  }, [enabled, fixedActions, registryActions]);
+}
+
+/** Source-agnostic fixed families for Demo and compatible future sources. */
+export function useFixedWorkspaceShortcuts(
+  actions: FixedWorkspaceShortcutActions,
+  enabled = true
+): void {
+  useWorkspaceShortcutLayer(actions, null, enabled);
+}
+
+/** Full Live workspace layer: fixed families plus registry-backed verbs. */
+export function useWorkspaceShortcuts(
+  actions: WorkspaceShortcutActions,
+  enabled = true
+): void {
+  useWorkspaceShortcutLayer(actions, actions, enabled);
 }

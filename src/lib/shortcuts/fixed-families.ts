@@ -1,4 +1,8 @@
-import type { KeyBinding, ShortcutCategory } from '@/types/shortcuts';
+import type {
+  KeyBinding,
+  ModifierKey,
+  ShortcutCategory,
+} from '@/types/shortcuts';
 
 export type FixedFamilyAction =
   | { kind: 'cycle-tab'; delta: 1 | -1 }
@@ -9,7 +13,7 @@ export type FixedFamilyAction =
   | { kind: 'toggle-focus' }
   | { kind: 'focus-terminal' };
 
-/** Structural slice of KeyboardEvent, so matchers stay pure and DOM-free. */
+/** Structural slice of KeyboardEvent, so matching stays pure and DOM-free. */
 export interface FixedFamilyKeyEvent {
   key: string;
   code: string;
@@ -19,9 +23,11 @@ export interface FixedFamilyKeyEvent {
   shiftKey: boolean;
 }
 
+type NonEmptyIds = readonly [string, ...string[]];
+
 type Surfaced = {
-  paletteRowIds: readonly string[];
-  menuCommandIds: readonly string[];
+  paletteRowIds: NonEmptyIds;
+  menuCommandIds: NonEmptyIds;
 };
 
 type Unsurfaced = {
@@ -38,166 +44,236 @@ export interface DisplayKeyFamily {
   category: ShortcutCategory;
 }
 
-export type FixedKeyFamily = DisplayKeyFamily & {
+type LiteralTrigger = {
+  kind: 'literal';
+  key: 'F6' | 'Escape';
+  modifiers?: readonly ModifierKey[];
+  action: Extract<
+    FixedFamilyAction,
+    { kind: 'toggle-focus' | 'focus-terminal' }
+  >;
+};
+
+type BracketPairTrigger = {
+  kind: 'bracket-pair';
+  modifiers: readonly ModifierKey[];
+  actionKind: 'cycle-tab' | 'move-tab' | 'move-project';
+};
+
+type DigitOrdinalTrigger = {
+  kind: 'digit-ordinals';
+  modifiers: readonly ModifierKey[];
+  actionKind: 'select-project' | 'select-tab';
+};
+
+export type FixedFamilyTrigger =
+  | LiteralTrigger
+  | BracketPairTrigger
+  | DigitOrdinalTrigger;
+
+type FixedKeyFamilyDefinition = {
+  id: string;
+  label: string;
+  category: ShortcutCategory;
   phase: 'capture' | 'bubble';
   /** Matched before the absolute command altitudes (F6 only). */
   outranksAltitudes?: boolean;
-  match(event: FixedFamilyKeyEvent): FixedFamilyAction | null;
+  trigger: FixedFamilyTrigger;
 } & (Surfaced | Unsurfaced);
 
-function hasNoModifiers(event: FixedFamilyKeyEvent): boolean {
-  return !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
+export type FixedKeyFamily = DisplayKeyFamily & FixedKeyFamilyDefinition;
+
+function binding(key: string, modifiers: readonly ModifierKey[]): KeyBinding {
+  return {
+    key,
+    ...(modifiers.length > 0 ? { modifiers: [...modifiers] } : {}),
+  };
 }
 
-function bracketDelta(event: FixedFamilyKeyEvent): 1 | -1 | null {
-  if (event.code === 'BracketLeft') return -1;
-  if (event.code === 'BracketRight') return 1;
-  return null;
+function displayKeys(trigger: FixedFamilyTrigger): KeyBinding {
+  switch (trigger.kind) {
+    case 'literal':
+      return binding(trigger.key, trigger.modifiers ?? []);
+    case 'bracket-pair':
+      return binding('[ / ]', trigger.modifiers);
+    case 'digit-ordinals':
+      return binding('1…9', trigger.modifiers);
+  }
 }
 
-function digitIndex(event: FixedFamilyKeyEvent): number | null {
-  const ordinal = /^Digit([1-9])$/.exec(event.code);
-  return ordinal ? Number(ordinal[1]) - 1 : null;
+function defineFixedFamily(
+  definition: FixedKeyFamilyDefinition
+): FixedKeyFamily {
+  return { ...definition, keys: displayKeys(definition.trigger) };
 }
 
-/**
- * Fixed workspace commands in dispatch precedence order. Behavior and the
- * shortcut help surface both derive from this declaration (ENG-016 D44).
- */
+function modifiersMatch(
+  event: FixedFamilyKeyEvent,
+  modifiers: readonly ModifierKey[]
+): boolean {
+  return (
+    event.metaKey === modifiers.includes('meta') &&
+    event.ctrlKey === modifiers.includes('ctrl') &&
+    event.altKey === modifiers.includes('alt') &&
+    event.shiftKey === modifiers.includes('shift')
+  );
+}
+
+/** Concrete bindings derived from the executable trigger declaration. */
+export function fixedFamilyBindings(family: FixedKeyFamily): KeyBinding[] {
+  const { trigger } = family;
+  switch (trigger.kind) {
+    case 'literal':
+      return [binding(trigger.key, trigger.modifiers ?? [])];
+    case 'bracket-pair':
+      return [binding('[', trigger.modifiers), binding(']', trigger.modifiers)];
+    case 'digit-ordinals':
+      return Array.from({ length: 9 }, (_, index) =>
+        binding(String(index + 1), trigger.modifiers)
+      );
+  }
+}
+
+/** Match behavior derives from the same trigger that produces help/menu keys. */
+export function matchFixedFamily(
+  family: FixedKeyFamily,
+  event: FixedFamilyKeyEvent
+): FixedFamilyAction | null {
+  const { trigger } = family;
+  if (!modifiersMatch(event, trigger.modifiers ?? [])) return null;
+
+  switch (trigger.kind) {
+    case 'literal':
+      return event.key === trigger.key ? trigger.action : null;
+    case 'bracket-pair': {
+      const delta =
+        event.code === 'BracketLeft'
+          ? -1
+          : event.code === 'BracketRight'
+            ? 1
+            : null;
+      return delta === null ? null : { kind: trigger.actionKind, delta };
+    }
+    case 'digit-ordinals': {
+      const ordinal = /^Digit([1-9])$/.exec(event.code);
+      return ordinal
+        ? { kind: trigger.actionKind, index: Number(ordinal[1]) - 1 }
+        : null;
+    }
+  }
+}
+
+/** Fixed workspace commands in dispatch precedence order (ENG-016 D44). */
 export const WORKSPACE_KEY_FAMILIES: readonly FixedKeyFamily[] = [
-  {
+  defineFixedFamily({
     id: 'fixed-focus-toggle',
-    label: 'Move focus between terminal and chrome',
-    keys: { key: 'F6' },
+    label: 'Move focus between the Session and app controls',
     category: 'workspace',
     phase: 'capture',
     outranksAltitudes: true,
+    trigger: {
+      kind: 'literal',
+      key: 'F6',
+      action: { kind: 'toggle-focus' },
+    },
     paletteRowIds: null,
     menuCommandIds: null,
     discoverability:
       'Focus movement has no nameable target; a palette row would leave the palette merely to move focus elsewhere.',
-    match: event =>
-      event.key === 'F6' && hasNoModifiers(event)
-        ? { kind: 'toggle-focus' }
-        : null,
-  },
-  {
+  }),
+  defineFixedFamily({
     id: 'fixed-tab-ring',
-    label: 'Previous / next tab (global ring)',
-    keys: { key: '[ / ]', modifiers: ['meta', 'shift'] },
+    label: 'Previous / next Session across Projects',
     category: 'workspace',
     phase: 'capture',
+    trigger: {
+      kind: 'bracket-pair',
+      modifiers: ['meta', 'shift'],
+      actionKind: 'cycle-tab',
+    },
     paletteRowIds: null,
     menuCommandIds: null,
     discoverability:
       'The command palette lists every Session directly, so stepping the ring from a row would duplicate targets already on screen.',
-    match: event => {
-      const delta = bracketDelta(event);
-      return event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        event.shiftKey &&
-        delta !== null
-        ? { kind: 'cycle-tab', delta }
-        : null;
-    },
-  },
-  {
+  }),
+  defineFixedFamily({
     id: 'fixed-move-tab',
-    label: 'Move tab left / right',
-    keys: { key: '[ / ]', modifiers: ['meta', 'alt'] },
+    label: 'Move Session tab left / right',
     category: 'workspace',
     phase: 'capture',
+    trigger: {
+      kind: 'bracket-pair',
+      modifiers: ['meta', 'alt'],
+      actionKind: 'move-tab',
+    },
     paletteRowIds: ['ws-move-left', 'ws-move-right'],
     menuCommandIds: ['move-tab-left', 'move-tab-right'],
-    match: event => {
-      const delta = bracketDelta(event);
-      return event.metaKey &&
-        !event.ctrlKey &&
-        event.altKey &&
-        !event.shiftKey &&
-        delta !== null
-        ? { kind: 'move-tab', delta }
-        : null;
-    },
-  },
-  {
+  }),
+  defineFixedFamily({
     id: 'fixed-move-project',
     label: 'Move Project left / right',
-    keys: { key: '[ / ]', modifiers: ['meta', 'alt', 'shift'] },
     category: 'workspace',
     phase: 'capture',
+    trigger: {
+      kind: 'bracket-pair',
+      modifiers: ['meta', 'alt', 'shift'],
+      actionKind: 'move-project',
+    },
     paletteRowIds: ['ws-move-project-left', 'ws-move-project-right'],
     menuCommandIds: ['move-project-left', 'move-project-right'],
-    match: event => {
-      const delta = bracketDelta(event);
-      return event.metaKey &&
-        !event.ctrlKey &&
-        event.altKey &&
-        event.shiftKey &&
-        delta !== null
-        ? { kind: 'move-project', delta }
-        : null;
-    },
-  },
-  {
+  }),
+  defineFixedFamily({
     id: 'fixed-project-ordinals',
     label: 'Jump to Project 1–9',
-    keys: { key: '1…9', modifiers: ['meta', 'alt'] },
     category: 'workspace',
     phase: 'capture',
+    trigger: {
+      kind: 'digit-ordinals',
+      modifiers: ['meta', 'alt'],
+      actionKind: 'select-project',
+    },
     paletteRowIds: null,
     menuCommandIds: null,
     discoverability:
       'The command palette opens any Project by name, which subsumes positional jumps and continues working beyond the ninth Project.',
-    match: event => {
-      const index = digitIndex(event);
-      return event.metaKey &&
-        !event.ctrlKey &&
-        event.altKey &&
-        !event.shiftKey &&
-        index !== null
-        ? { kind: 'select-project', index }
-        : null;
-    },
-  },
-  {
+  }),
+  defineFixedFamily({
     id: 'fixed-tab-ordinals',
-    label: 'Jump to tab 1–8, or 9 for the last tab',
-    keys: { key: '1…9', modifiers: ['meta'] },
+    label: 'Jump to Session 1–8, or 9 for the last Session',
     category: 'workspace',
     phase: 'capture',
+    trigger: {
+      kind: 'digit-ordinals',
+      modifiers: ['meta'],
+      actionKind: 'select-tab',
+    },
     paletteRowIds: null,
     menuCommandIds: null,
     discoverability:
       'The command palette lists every Session by name and status; a positional row would say less about the same target.',
-    match: event => {
-      const index = digitIndex(event);
-      return event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        !event.shiftKey &&
-        index !== null
-        ? { kind: 'select-tab', index }
-        : null;
-    },
-  },
-  {
+  }),
+  defineFixedFamily({
     id: 'fixed-focus-terminal',
-    label: 'Return focus to the terminal',
-    keys: { key: 'Escape' },
+    label: 'Return focus to the Session',
     category: 'workspace',
     phase: 'bubble',
+    trigger: {
+      kind: 'literal',
+      key: 'Escape',
+      action: { kind: 'focus-terminal' },
+    },
     paletteRowIds: null,
     menuCommandIds: null,
     discoverability:
-      'Escape belongs to the agent while terminal focus is active; from chrome it is ambient back-out behavior with nothing to name.',
-    match: event =>
-      event.key === 'Escape' && hasNoModifiers(event)
-        ? { kind: 'focus-terminal' }
-        : null,
-  },
+      'Escape belongs to the Session while its content owns focus; from app controls it is ambient back-out behavior with nothing to name.',
+  }),
 ];
+
+export function getWorkspaceFixedFamily(id: string): FixedKeyFamily {
+  const family = WORKSPACE_KEY_FAMILIES.find(candidate => candidate.id === id);
+  if (!family) throw new Error(`Unknown fixed shortcut family: ${id}`);
+  return family;
+}
 
 /** Fleet board keys are display-only: the focused R3F surface owns behavior. */
 export const BOARD_KEY_FAMILIES = [
