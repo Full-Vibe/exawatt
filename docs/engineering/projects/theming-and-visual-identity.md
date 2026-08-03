@@ -160,33 +160,44 @@ Sources: [Electron `nativeTheme`](https://www.electronjs.org/docs/latest/api/nat
   or arbitrary CSS into the privileged desktop renderer would expand the trust
   boundary far beyond visual customization.
 
-## Discovery queue
+## Operator decisions — 2026-08-03
 
-These questions are intentionally unresolved. Operator answers are promoted as
-dated decisions during the grooming session; they are not implementation tasks
-until the design brief is approved.
+- **Theme boundary:** a theme may own color and application typography. It may
+  also own a bounded material/transparency treatment once the fallback contract
+  is defined. It does not own motion and must not materially rearrange or resize
+  the interface. Minor optical adjustments required to keep a typeface legible
+  are still an unresolved edge, not permission for theme-specific layouts.
+- **Scope and identity:** the active theme is an application-global personal
+  preference. Switching Workspace, Initiative, Project, Agent, or Session does
+  not switch themes. Project identity remains an independent semantic channel.
+- **Extensibility horizon:** the first release proves the contract with two or
+  three first-party presets. Community-authored distribution is not first-release
+  scope. The data model must leave a credible future marketplace seam without
+  prematurely shipping import, installation, or arbitrary extension execution.
 
-1. **Theme boundary:** is a theme primarily a color/material mapping, with UI
-   typography and density as separate appearance preferences, or should one
-   theme package be able to change fonts, type scale, density, radii, material,
-   and motion together?
-2. **Scope and identity:** is the active theme personal and global, a property
-   of each Workspace/company identity, or a layered model (personal default with
-   an optional Workspace override)?
-3. **Extensibility horizon:** does “like VS Code” require community-authored,
-   installable themes in the first useful release, or should the first release
-   ship built-ins plus a versioned local JSON import/override seam while a
-   marketplace remains later work?
-4. **Appearance modes:** should “follow system” choose independently configured
+## Remaining discovery queue
+
+These questions are intentionally unresolved. Further operator answers are
+promoted as dated decisions during the grooming session; they are not
+implementation tasks until the design brief is approved.
+
+1. **Appearance modes:** should “follow system” choose independently configured
    light and dark themes, and is a first-class high-contrast pair required in
    the initial contract or only guaranteed by validation/OS forced-colors?
-5. **Accent precedence:** when a theme supplies an action accent, does the
+2. **Accent precedence:** when a theme supplies an action accent, does the
    operator's macOS accent continue to win by default, become a user-selectable
    override, or disappear from themed modes?
-6. **Legacy and default set:** does the current dark HUD ship indefinitely as a
+3. **Legacy and default set:** does the current dark HUD ship indefinitely as a
    `Legacy`/`Exawatt Dark` theme, and how many authored themes must prove the
    contract before the new default is eligible to replace it?
-7. **Portability:** should appearance follow the signed-in person across desktop
+4. **Typography controls:** should presets select bundled type families and a
+   type-scale profile, while explicit user font/size overrides remain adjacent
+   settings, or does selecting a preset wholly determine typography? Should the
+   first release accept arbitrary locally installed fonts?
+5. **Material fallback:** may each preset choose opaque or translucent chrome,
+   with reduced-transparency/high-contrast modes forcing opaque equivalents, or
+   is material a separate global preference applied over any compatible preset?
+6. **Portability:** should appearance follow the signed-in person across desktop
    and hosted interfaces while remaining fully offline, or is device-local
    appearance the desired authority for the first mile?
 
@@ -197,3 +208,8 @@ until the design brief is approved.
   official VS Code, Zed, JetBrains, Electron, xterm, Three.js, WCAG, DTCG, and
   Apple material contracts; recorded the unresolved operator decision queue.
   No product or implementation decision was made.
+- 2026-08-03, operator interview 1: bounded themes to color, typography, and
+  possibly material/transparency while excluding motion and meaningful layout;
+  fixed selection as an app-global personal preference; fixed the first release
+  to two or three built-in presets with community distribution deferred to a
+  future marketplace.
