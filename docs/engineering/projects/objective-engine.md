@@ -114,6 +114,21 @@ Two consequences worth holding:
   the message. Any future accuracy metric derived from vote counts needs this
   confound stated.
 
+### Intake evidence — 2026-08-02
+
+Feedback row `36e966ec-d534-4aaa-845c-8c4f0d9d7300` is a genuine stale-label
+correction. The Session still showed **Close projects with animation** after
+its work-world had pivoted to production Agent Source architecture, Settings,
+composer behavior, source-truth reconciliation, and delivery validation. The
+operator replaced it with **Trustworthy agent sources and launch UX**.
+
+This is corpus-worthy evidence for a delayed multi-turn pivot: mechanical
+follow-ups should preserve a label, but a later implementation initiative that
+changes both the product object and intended outcome must replace an older UX
+label. A sanitized regression case was added to
+`src/lib/context-labels/gold-cases.ts`; it retains the stale/current labels and
+the semantic transition without copying raw Session content.
+
 ## Roadmap milestone log
 
 ### 2026-07-26 — E1.1 Session comparison and titleless-tab incident

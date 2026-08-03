@@ -30,6 +30,17 @@ export const CONTEXT_LABEL_GOLD_CASES: ContextLabelGoldCase[] = [
     note: 'Attachment paths must never become visible context.',
   },
   {
+    id: 'dogfood-project-ribbon-to-agent-sources',
+    currentLabel: 'Close projects with animation',
+    instructions: [
+      'Productionize the accepted Agent Sources design with careful validation and polished UI.',
+      'Reconcile the source registry, Settings, and agent composer with the live provider catalogs.',
+    ],
+    expectedLabel: 'Trustworthy agent sources and launch UX',
+    expectedRelationship: 'new_context',
+    note: 'A later multi-turn implementation initiative must replace an older product-area label.',
+  },
+  {
     id: 'widget-related-subtask',
     currentLabel: 'MVP of Widget Checkout',
     instructions: [

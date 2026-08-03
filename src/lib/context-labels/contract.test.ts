@@ -22,6 +22,11 @@ describe('Session context-label contract', () => {
           id: 'dogfood-image-only-launch',
           expectedLabel: 'New agent',
         }),
+        expect.objectContaining({
+          id: 'dogfood-project-ribbon-to-agent-sources',
+          expectedLabel: 'Trustworthy agent sources and launch UX',
+          expectedRelationship: 'new_context',
+        }),
       ])
     );
   });
