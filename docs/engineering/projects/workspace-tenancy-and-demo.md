@@ -37,6 +37,8 @@ The demo work therefore pays for itself architecturally rather than accreting de
 
 ## Demo Workspace content
 
+**What it portrays** (operator, 2026-08-02): one plausible multi-function startup, **majority coding**. Frontend, API, infra, and design-engineering Projects dominate; a minority of marketing, research, and support work shows the Agent Types vision (ENG-028) without implying those capabilities ship today. Non-coding Agents must read as ENG-026 `preview` content — the demo may show the future, but it may not fake the present.
+
 The demo fleet must support the full altitude sweep across *different* Projects, Agents, and roadmaps:
 
 - 6–12 Projects with distinct identities, colors, and real-looking roadmaps that parse under the published roadmap convention (ENG-017's parser reads them unmodified)

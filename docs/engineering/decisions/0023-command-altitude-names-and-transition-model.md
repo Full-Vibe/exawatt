@@ -26,6 +26,8 @@ The altitude ladder is **singular → group → everything**, in plain language,
 - Labels are manifest data (`src/components/nav/surfaces.ts` is the single typed source), so renaming is a one-file change and does not justify deferring.
 - **Blocker to resolve before the far altitude takes the name `Fleet`:** the legacy demo surface at `/fleet` is currently named "Fleet Command". Two names cannot both be Fleet. The legacy surfaces are already out of primary navigation and slated for retirement; retire or rename that surface as part of the rename, do not ship the collision.
 - Route paths are not part of this decision. `/workspace` and `/fleet/spatial` may keep their URLs; user-facing labels are what change.
+- **Timing (operator, 2026-08-02): the rename lands BEFORE the demos**, so audiences hear plain language instead of implementation words. It must be **holistic in one sweep**, not a manifest edit: the navigation manifest, shortcut and menu labels, window titles, `⌘K` and cheat-sheet copy, in-app strings, `AGENTS.md`, product and engineering docs, and any guide or marketing surface that names an altitude. A half-rename is worse than none, and future guides and marketing (ENG-031) inherit whatever is true when they are written.
+- The legacy demo trio (`/fleet`, `/dashboard`, `/board`) is **retired** as part of this work (operator, 2026-08-02). That frees the `Fleet` name, and ENG-027's Demo Workspace supersedes the trio's entire purpose — showing the product without live agents.
 
 ### Transition model
 
@@ -42,8 +44,9 @@ The altitude ladder is **singular → group → everything**, in plain language,
 
 - Sessions layout and board layout must agree on positions well enough to hand off. That coupling is real work and is the main risk in the design; the fallback cut is what makes taking that risk safe.
 - The board gains a required "entry pose" concept: a camera pose derived from incoming screen positions, distinct from its resting pose.
-- The rename touches the navigation manifest, shortcut labels, menus, docs, and roadmap prose. Prefer one sweep over gradual drift; until it lands, docs may continue to say Terminal/Sessions/Spatial and mean Agent/Work/Fleet.
-- Naming the far altitude Fleet forces the legacy `/fleet` retirement question, which ENG-016 already wanted and never scheduled.
+- The rename touches the navigation manifest, shortcut labels, menus, docs, and roadmap prose. One sweep, before the demos; until it lands, docs may continue to say Terminal/Sessions/Spatial and mean Agent/Work/Fleet.
+- Naming the far altitude Fleet forces the legacy `/fleet` retirement, which ENG-016 already wanted and never scheduled. Now scheduled: the trio retires with the rename.
+- Retiring the trio deletes the legacy Supabase demo task flow's surfaces. Check `docs/product/demo-mode.md`, which still documents them as the current primary demo implementation, and reconcile it to ENG-027's Demo Workspace in the same sweep.
 
 ## Alternatives considered
 
