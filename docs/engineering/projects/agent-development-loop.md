@@ -102,3 +102,22 @@ Landed 2026-07-21:
 Exit criteria: a fresh worktree reaches a passing Electron eval with exactly `pnpm worktree:setup` + `pnpm dev -p <port>` + `EXA_BASE=... pnpm eval:...`, and pointing an eval at the wrong tree's dev server fails loudly instead of testing the wrong code — both validated 2026-07-21 (this item was itself landed from a worktree bootstrapped by the script; the split eval re-ran green through the guarded harness).
 
 Sequencing: independent; extend as new agent-loop friction is diagnosed (fold future findings here rather than into product items).
+
+## Friction evidence — 2026-08-03: two green landings composed a red master
+
+Observed during the ENG-008 arc: `e52fc0f` made `FleetAgentView.rawTokens`
+required while a near-simultaneous landing added a gallery fixture that did not
+carry the field; each branch verified green in its own worktree, but their
+composition left `pnpm type-check` red on master for ~80 minutes until a
+forward-fix (`10d5be7`). `agent-land`'s guard rejects a push when master has
+moved since fetch, but verification and the fast-forward push are not atomic —
+two agents whose verifies overlap can both pass and land semantically
+conflicting changes.
+
+Not yet diagnosed to the exact interleaving; recorded here per this item's
+"fold future agent-loop friction" rule. Candidate hardenings for a future
+slice, to be verified against the actual interleaving first
+(verify-mechanism-against-cited-failure): re-run the cheap gate (type-check)
+after the final fetch/rebase inside `agent:land` immediately before the push,
+or an advisory land lock. No mechanism should ship without reproducing the
+race.
