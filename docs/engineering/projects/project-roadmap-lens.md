@@ -430,6 +430,50 @@ lab is back to the real strip + rail against fixture states.
 - The v3→v4 `workspace.json` upgrade is covered by
   `workspace-persistence.test.ts` and a manual restore.
 
+## Third arc: the roadmap you actually want to use (S13, design pass 2026-08-03)
+
+Design pass for S13, held with the operator on 2026-08-03. S13 was captured 2026-08-02 as "deliberately unshaped"; this section shapes it. Nothing here is a new roadmap item — S13 gains sub-milestones and S10's ASSIGN gate finally gets its gesture.
+
+### The complaint, in the operator's words
+
+> "UI/UX on the roadmap in general is pretty bad — selecting something is just like a huge horrible wall of text, which really sucks. There's a bunch of other navigability issues and linkage and liveness and too much copy… I want to be able to navigate and manipulate and check out the roadmap very smoothly, very easily, like a beautiful Linear app, like Backlog or Gantt chart."
+
+And the concrete failure that triggered it: an agent was actively working ENG-032 (VS Code theming) while the lens showed its Session as **not linked to an item**. That is a shipped defect in S3's inference linking, not a design gap — see the queued work below.
+
+### Decided
+
+**Form: a sequenced list, with time as a lens.** The list is the home view — ordered, dense, keyboard-walkable, no invented dates. Dates are "kind of irrelevant in an agentic coding world" (operator) though future customers may need them, so the model must not foreclose them: real elapsed and activity data may overlay the list to give the Gantt feeling honestly. Never synthesize a future date the repo does not contain.
+
+**Detail: progressive prose, high-level first.** Selecting an item opens with what and why at the highest level — the operator's bar is **grokking it in under five seconds** — and deepens on demand. The current behavior (dumping status paragraph, scope bullets, exit criteria, and every milestone at once) is the thing being fixed. State (milestone checklist, attached agents, what is blocking, recent commits) outranks contract prose in the opening view; scope and exit criteria live one level down.
+
+**Backlog: one list, backlog is a state.** Researched 2026-08-03 rather than invented. The 2026 consensus is that roadmap and backlog are two layers of one planning system, not two documents, and the strongest practical rule is one tracker — do not split defects from work. Linear implements exactly this by making Backlog a *status* rather than a separate view. Applied here:
+
+- everything is one queue; `backlog` is a state for items not yet sequenced
+- a defect with an owning item hangs off that item **and** appears in the backlog lane — one record, two ways in. The operator's "bugs on their item" and "a bug backlog" options were never alternatives
+- **provenance is visible** (operator requirement): every backlog row shows where it came from — quick-capture feedback, operator triage, an incident record — and its owning item. "I want to be able to see bugs clearly and also source"
+- this maps onto the ENG-025 triage taxonomy that already exists: kernel → new roadmap item; small fix / incident candidate → backlog row against an owning item
+
+**Home: the Team-altitude panel stays** (operator). No new tab, no new destination. The panel gets better rather than graduating into a surface — density, detail, and the launch gesture all have to work in a docked column. This is a real constraint on the design, not a temporary compromise.
+
+**Assignment: launch from the item.** Select an item, press a key, an agent starts on it — pre-filled with the item as its task and **linked by construction**, so inference never has to guess. Attaching an already-running agent is the secondary path. This is S10's long-gated ASSIGN verb, and it inverts the linkage problem: today the lens guesses which item an agent is on; after this, the operator says so at launch.
+
+**Liveness: three signals** (operator selected all three):
+
+- progress moves as commits land — checkmarks and progress fill visibly, as it happens, not silently between visits
+- agents visibly attached and working, with elapsed time and turn state, updating continuously — the roadmap doubles as a fleet view organized by work rather than by project
+- a recent-change trail — "ENG-032 T0 landed 2h ago" — so returning after hours pages the work-world back in
+
+### Boundary: what writes, and what does not
+
+ENG-017 has been read-only since S0, and `roadmap.md` in each repo is the only truth. That posture survives, with one clarification the new gestures force:
+
+- **launch-from-item and attach are LOCAL annotations**, exactly like S4's declare-at-launch (`workspace.json`). They write no repo file, and they are therefore unblocked.
+- **reordering the queue and transitioning item status would be repo writes.** Those stay GATED. The operator's word was "manipulate"; if that means reordering, it is a genuine canon change (Exawatt would begin writing another repo's roadmap file) and needs its own decision record, not an inherited assumption. Recommendation on the table: keep Exawatt read-only and let agents do the writing, since an agent editing its own repo's roadmap is already how every ENG item gets updated.
+
+### Queued work (defects, not design)
+
+- **S3 inference linking fails on a real case.** An agent working ENG-032 in a worktree showed as unmapped while the matcher looks for the declared id in branch, worktree, title, context summary, and commit subjects. Reproduce against the operator's live theming Session before changing the matcher — the cause may be worktree cwd resolution rather than the matcher itself. Launch-from-item (S13.3) reduces the blast radius but does not excuse the bug: Sessions Exawatt did not launch still depend on inference.
+
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 
 On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —

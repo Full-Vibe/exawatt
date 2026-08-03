@@ -58,9 +58,61 @@ arrives via ENG-023 D3 as a detail available at Project/Agent altitude, not as
 the board's organizing idea.
 
 Altitude names and the transition model are decided separately in decision
-`0023`: the ladder becomes **Agent · Work · Fleet** (middle name provisional),
-and the board gains a required **entry pose** so that arriving from the middle
-altitude is a camera move rather than a cut.
+`0023`: the ladder becomes **Agent · Team · Fleet**, and the board gains a
+required **entry pose** so that arriving from the middle altitude is a camera
+move rather than a cut.
+
+### Composition doctrine (operator, 2026-08-03)
+
+Decision `0024` settled how the board is CONTROLLED (RTS unit grammar). This
+settles what it is COMPOSED of. Both came from the same motif; this half was
+still open when the 2026-08-03 visual audit found the shipped board reading as
+sparse rather than vast.
+
+The operator's framing:
+
+> "Overlooking my fleet of thousands or tens of thousands of agents and
+> generally seeing what they're working on, where my priorities are, and where
+> the activity is… I think about it like a game board, StarCraft or Red Alert 2,
+> where I can have all my units working against a given goal and I can select
+> them and re-vector them. It's a very zoomed-out view of tmux."
+
+With an explicit styling caveat: *"it doesn't have to be geeky and game-like
+though. I'm just giving you kind of the UI motif."* The RTS reference governs
+the **control and legibility model** — units, mass, selection, re-vectoring —
+not the aesthetic. Decision `0007`'s restraint holds in full.
+
+Four rules follow.
+
+1. **Zoom decides individuality, and mass stays legible at every step.** Agents
+   are drawn individually by default; they agglomerate into one another only
+   when the operator is *very* zoomed out. Density and mass must read clearly at
+   every altitude — an aggregate that hides how much is running defeats the
+   purpose. This extends V3.1's label tiers into a stated policy and is the
+   direct fix for the audit's "reads sparse, not vast" finding, together with
+   F4's population-sized zones.
+2. **Structure organizes; attention overlays and never relocates.** Projects
+   hold stable positions so spatial memory survives. Attention is expressed
+   through prominence, weight, color, and callouts **anchored to their subject**
+   — never by moving a zone. The audit found the hero blocked callout floating
+   top-center while `partner-portal`, its subject, sat two rows away; an
+   unanchored callout is the failure mode this rule forbids.
+3. **Work visibly happens.** At rest the board should convey that a population
+   is working — the C&C-general feeling — rather than looking like a diagram of
+   a fleet. Constraint that keeps this from fighting canon: liveness rides
+   D40's existing rule that **only Active moves**, plus genuine state
+   transitions (a turn completing, an agent arriving or leaving). It does not
+   add resting animation to idle or finished states, and it parks under reduced
+   motion, low power, and hidden tabs per V2.4.
+4. **The board must be learnable without a manual.** The audit counted at least
+   five hex fills against three named header states with no legend on screen.
+   D30 retired hue-only signalling precisely because it is not learnable; a
+   surface that encodes status in color owes the viewer a way to learn it.
+
+Open composition gaps recorded by the same audit, owned by V3.3: three stacked
+chrome rows before content (with "Fleet" appearing twice), and a minimap of ten
+identical grey rectangles carrying no population, status, or viewport
+information.
 
 ### UX pass — 2026-08-02 (operator + hands-on drive): the V3.3 brief
 
