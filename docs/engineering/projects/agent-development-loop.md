@@ -27,6 +27,17 @@ wrong checkout.
 
 ## Findings log
 
+- 2026-08-02, `.env.local` copying was idempotent only when “a file exists” was
+  treated as success; rerunning `pnpm worktree:setup` never refreshed a stale
+  worktree snapshot, and the live context-label command did not load the file
+  it required. A linked worktree bootstrap now pulls Vercel Development values
+  directly into that worktree, avoiding shared-file races; if Vercel or the
+  network is unavailable it refreshes from the main checkout's last good
+  snapshot and says so. Snapshot synchronization is content-idempotent,
+  permission-bounded to `0600`, and covered by delivery tests. The live label
+  command explicitly loads `.env.local` while still accepting an exported key
+  in CI.
+
 - 2026-07-27, concurrent-agent load makes timing tests lie. During the ENG-015
   S1.1 pass the machine reached **load average 425** with several agent
   worktrees and dev servers running. Effects, all environmental and none

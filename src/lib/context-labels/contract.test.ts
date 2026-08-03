@@ -151,8 +151,13 @@ describe('Session context-label contract', () => {
       ],
     });
     expect(body.system).toContain('Improve agent context summaries');
-    expect(body.system).toContain('repeat the current label exactly');
-    expect(body.system).toContain('genuinely unrelated purpose');
+    expect(body.system).toContain('repeat that current label exactly');
+    expect(body.system).toContain('current label is a prior hypothesis');
+    expect(body.system).toContain(
+      'Sharing the same app, Project, or Session does not make two purposes the same context'
+    );
+    expect(body.system).toContain('Trustworthy agent sources and launch UX');
+    expect(body.temperature).toBe(0);
     expect(body.tool_choice.name).toBe('record_session_context');
     expect(body.tools[0].input_schema.properties.confidence).toEqual({
       type: 'number',

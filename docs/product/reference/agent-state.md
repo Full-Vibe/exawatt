@@ -87,6 +87,11 @@ operator rename stays primary, and **New agent** is the final Agent fallback.
 Source and status glyphs may support that text but may never become an
 icon-only tab or card.
 
+That context label is stable across necessary subtasks and direct
+continuations. It changes when newer work establishes a distinct durable
+purpose that could stand as its own Initiative, even within the same app,
+Project, or Session.
+
 Raw terminal lines are inspection evidence, not Session meaning. Model/context
 meters, permission modes, prompts, branch state, command output, and transcript
 tails stay in Terminal; they must not be copied into Sessions cards. Until a

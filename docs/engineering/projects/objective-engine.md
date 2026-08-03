@@ -11,15 +11,18 @@ changing the Session-label contract.
 ## E1 — Session context labels and feedback loop
 
 Status: E1 implemented and verified 2026-07-24; E1.1 Session comparison
-projection implemented and verified 2026-07-26
+projection implemented and verified 2026-07-26; E1.2 executable corpus and
+E1.3 live-provider closure implemented and verified 2026-08-02
 
 ### Product contract
 
 - A label answers why the Session exists and what work-world the operator needs
   to page back in. It describes durable intent, not the latest command output.
-- A related follow-up keeps the label. A genuinely unrelated submitted
-  instruction replaces it. Returning to an earlier topic may restore that
-  topic's label.
+- A necessary subtask, revision, or direct continuation keeps the label. A
+  newer durable purpose that changes the primary object or intended outcome
+  enough to stand as its own Initiative replaces it, even inside the same app,
+  Project, or Session. Returning to an earlier topic may restore that topic's
+  label.
 - The engine always returns its best topic guess. It never exposes `KEEP`,
   `NO_GOAL`, a model explanation, or an attachment/temp-file URI.
 - A new Session gets immediate zero-network copy from a meaningful launch
@@ -139,6 +142,25 @@ suite executes every committed case without provider access. An opt-in live
 command runs the production Anthropic request and parser against the same cases
 when credentials are intentionally available; local verification never turns a
 fixture into a claim about current provider behavior.
+
+### 2026-08-02 — E1.3 live-provider closure and pivot semantics
+
+The first credentialed run of the executable corpus passed five of six cases
+and reproduced the production Agent Source correction: **Close projects with
+animation** survived even after newer work established a separate Agent Source
+initiative. The prompt had treated only a “genuinely unrelated” purpose as new
+context, which was too coarse: two durable initiatives can share an app,
+Project, and Session while differing in both primary object and intended
+outcome.
+
+The classifier now decides relationship before wording, treats the current
+label as a prior hypothesis rather than a veto, and distinguishes a necessary
+subtask/direct continuation from a newer purpose that could stand as its own
+Initiative. Accepted or operator-authored labels resist mechanical churn but
+not a clear durable-purpose pivot. Temperature is zero because this is stable
+classification and retrieval copy, not creative generation. The live command
+loads `.env.local` explicitly, so a green provider run is evidence about the
+current configured model rather than the invoking shell's accidental exports.
 
 ## Roadmap milestone log
 

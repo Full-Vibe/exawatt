@@ -148,9 +148,11 @@ was I working on, and what is the reason for that work?** It should let the
 operator page the Session's world back into memory. It is not a transcription
 of the last command or a live activity indicator.
 
-Sessions are used both for deep work and as convenient scratchpads. Related
-subtasks keep the established cue; a genuinely unrelated instruction changes
-it; returning to an earlier topic may restore the earlier cue. The product
+Sessions are used both for deep work and as convenient scratchpads. A necessary
+subtask or direct continuation keeps the established cue. A newer durable
+purpose that changes the primary object or intended outcome enough to stand as
+its own Initiative changes the cue—even inside the same app, Project, or
+Session. Returning to an earlier topic may restore the earlier cue. The product
 always shows its best current guess, with **New agent** as the honest fallback
 for an attachment-only or otherwise non-semantic launch. It never presents a
 temp-file path, `KEEP`, `NO_GOAL`, or model narration as user-facing context.

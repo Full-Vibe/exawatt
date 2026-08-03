@@ -8,10 +8,9 @@
  * worktrees), and Electron evals can silently exercise ANOTHER checkout's
  * dev server. Idempotent — safe to re-run.
  */
-import { execSync } from 'node:child_process';
-import { copyFileSync, existsSync } from 'node:fs';
-import path from 'node:path';
+import { execFileSync, execSync } from 'node:child_process';
 import { nodePtyBindingPath } from './lib/native-preflight.mjs';
+import { prepareWorktreeEnv } from './lib/worktree-env.mjs';
 
 const root = process.cwd();
 const run = command => execSync(command, { stdio: 'inherit', cwd: root });
@@ -27,14 +26,40 @@ const mainCheckout = execSync('git worktree list --porcelain', { cwd: root })
 say('pnpm install');
 run('pnpm install --prefer-offline');
 
-if (!existsSync(path.join(root, '.env.local'))) {
-  const source = path.join(mainCheckout, '.env.local');
-  if (mainCheckout !== root && existsSync(source)) {
-    copyFileSync(source, path.join(root, '.env.local'));
+const env = prepareWorktreeEnv({
+  root,
+  mainCheckout,
+  pullDevelopmentEnv: ({ cwd, target }) =>
+    execFileSync(
+      'vercel',
+      ['env', 'pull', target, '--environment=development', '--yes'],
+      { cwd, stdio: 'inherit' }
+    ),
+});
+if (env.pullFailed) {
+  say(
+    'Vercel Development env refresh unavailable; using the main checkout snapshot'
+  );
+}
+switch (env.status) {
+  case 'pulled':
+    say('pulled Development env from the linked Vercel project');
+    break;
+  case 'copied':
     say(`copied .env.local from ${mainCheckout}`);
-  } else {
-    say('no .env.local to copy — Supabase-backed routes will 500 in dev');
-  }
+    break;
+  case 'refreshed':
+    say(`refreshed .env.local from ${mainCheckout}`);
+    break;
+  case 'current':
+  case 'main-current':
+    say('.env.local is current');
+    break;
+  case 'missing-source':
+    say(
+      'no Development env available — run `pnpm env:pull` in the linked main checkout'
+    );
+    break;
 }
 
 if (nodePtyBindingPath(root)) {
