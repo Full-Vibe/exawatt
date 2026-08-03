@@ -103,6 +103,7 @@ describe('Team → Fleet altitude handoff (ENG-004 V3.0)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     resetAltitudeHandoffForTests();
+    vi.spyOn(navigator, 'hardwareConcurrency', 'get').mockReturnValue(8);
     navigation.pathname = '/workspace';
     window.history.replaceState({}, '', '/workspace?view=sessions');
     navigation.push.mockReset();
