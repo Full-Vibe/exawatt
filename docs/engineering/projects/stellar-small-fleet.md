@@ -90,8 +90,8 @@ Scope (reshaped by dogfood round 4 — discoverability first-class):
 
 ### S4 Context paging
 
-Status: active-build — re-entry recap is the first implementation slice;
-remaining candidates stay in the idea bank below.
+Status: active-build — recap delivery moved ambient under ENG-016 D18;
+S4.1 goal visual anchors are shaped for a gallery-first implementation.
 
 The deep layer: the operator's real bottleneck at 5–10 agents is not the
 software, it's human working memory — paging a mental context back in
@@ -106,10 +106,10 @@ for input or an error may enter the attention queue immediately, but must not
 steal focus. Tune or replace this policy from dogfood evidence rather than
 treating it as a permanent notification contract.
 
-The first S4 implementation slice should prioritize the re-entry recap and
-change-since-last-visit digest. Emblems, spatial anchors, batching, and the
-cross-surface status grammar remain candidates to evaluate after that loop is
-useful.
+The first S4 implementation slice prioritized the re-entry recap and
+change-since-last-visit digest. Its popup delivery was later retired under
+ENG-016 D18; the summarizer seam survived. S4.1 now selects the next candidate
+from the idea bank without reopening that delivery decision.
 
 First-slice acceptance criteria:
 
@@ -123,6 +123,80 @@ First-slice acceptance criteria:
   typing or switching before generation completes suppresses stale output
 - one summarizer call runs globally, using the existing authenticated CLI and
   failure cutoff; thresholds remain environment-tunable for dogfood
+
+#### S4.1 Goal visual anchors
+
+Status: shaped 2026-08-03 from operator direction; `/hud-gallery` study is the
+next slice. The visual treatment and exact-reuse policy are reversible
+dogfood hypotheses, not permanent identity doctrine.
+
+**Problem and outcome.** The operator's practical ceiling remains five or six
+live contexts. At Team altitude, a quiet image behind each Agent tile should
+make its durable work-world recognizable before its title is read. This is a
+context-retrieval aid, not decoration, status, activity, or a new content
+region. Success means the operator can find and re-enter a familiar goal more
+quickly without weakening D40 status or the tile's goal / Now / Next reading
+order.
+
+**Identity and cadence.** The asset belongs provisionally to the accepted
+durable goal/work-world, not to the Agent instance or Harness. Within a
+Workspace and Project, matching normalized accepted goals may reuse the exact
+asset. ENG-021's Objective Engine owns semantic cadence: the first accepted
+label creates an identity; `same_context` preserves it; `new_context` creates
+a new revision. An explicit operator label correction also creates a revision
+because corrections are rare, intentional, and frequently repair a missed
+pivot. Coalesce superseded requests and cache by the stable identity key so a
+restart, Agent state change, or wording-preserving follow-up never spends or
+changes the image. Similar-but-not-identical variants remain an optional later
+experiment.
+
+**Visual contract.** The image fills the existing 300×272 Team tile behind its
+content and consumes no new layout space. Start with subdued abstract scenes:
+one memorable silhouette or spatial composition, muted low-frequency detail,
+and no people, faces, text, logos, UI, or literal code imagery. A controlled
+scrim protects the header and goal / Now / Next / Consumption hierarchy.
+Project color may tint identity but never becomes status; D40 lights remain
+the strongest peripheral signal. High-contrast and reduced-transparency modes
+may suppress the image. Reduced motion hard-cuts; otherwise a completed asset
+may crossfade once. The image is non-interactive.
+
+**Generation and privacy boundary.** `fal-ai/fast-sdxl` is the first prototype
+provider because iteration is fast; it is not the product boundary or a
+durable vendor commitment. The FAL credential is a server-only secret and
+must never enter renderer code, Electron main, a packaged application, logs,
+or committed env. The authenticated Exawatt server sends only the accepted
+label plus a non-sensitive identity key — never raw instructions or terminal
+output — prevents FAL request-payload retention, enables the safety checker,
+and downloads an accepted result immediately into Exawatt-controlled private
+storage. The product must not depend on FAL's public output URL or retention.
+Provider failure, sign-out, offline use, quota exhaustion, or safety rejection
+leaves a deterministic Project-tinted fallback; generation never blocks Team.
+
+**Source boundary.** One source-agnostic `GoalVisual` projection carries the
+identity key, revision, state (`fallback | generating | ready | rejected`),
+and renderable asset reference. Live Mode obtains it through the authenticated
+generation/cache path. Demo Mode supplies authored fixtures through the same
+projection and never requires generation. The Objective Engine must preserve
+the accepted relationship/revision far enough to drive this projection;
+imagery must not create a second semantic classifier.
+
+**Execution sequence.** First generate 6–10 representative fixture assets and
+compare a small number of backdrop/scrim treatments in `/hud-gallery`, using
+realistic long-copy, working, blocked, idle, stopped, and high-Consumption
+tiles. Operator review chooses abstract versus more literal scenery and tests
+whether exact same-goal reuse aids recognition or feels repetitive. After
+acceptance, add the server-owned generation/cache path, wire the shared
+projection into Demo and Live Team tiles, then dogfood before percolating any
+identity treatment to Agent or Fleet altitude. Retire the gallery study when
+the production treatment ships.
+
+**Acceptance criteria.** Related instructions generate zero replacement
+assets; one accepted durable-purpose pivot produces at most one. Every empty,
+loading, offline, rejected, and failed state remains a complete readable Team
+tile without a spinner. Existing text contrast, keyboard selection, tile
+footprint, D40 recognition, and reduced-motion behavior do not regress. No FAL
+credential, raw operator instruction, terminal output, or long-lived public
+FAL URL reaches the client. Demo and Live render the same component contract.
 
 ### S5 Durable Projects
 
@@ -367,6 +441,11 @@ Ranked roughly by conviction × cost. These are candidates, not commitments;
 S4 planning picks from here.
 
 1. **Visual identity anchors — per-initiative generated emblems.**
+   **Superseded by S4.1 (operator, 2026-08-03).** The durable insight — use
+   recognition rather than serial title reading — survives. The proposed
+   identity boundary, deterministic SVG treatment, and offline-only posture do
+   not: the shaped first experiment is goal/work-world imagery in Team tiles,
+   driven by ENG-021 semantic pivots with a deterministic offline fallback.
    Recognizing a familiar image is near-instant and pre-attentive; reading
    a text summary is serial and slow (picture-superiority effect). Give
    every initiative a deterministic generative emblem (constellation /
