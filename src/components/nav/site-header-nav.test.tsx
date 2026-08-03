@@ -25,11 +25,15 @@ describe('SiteHeaderNav leaderboard link', () => {
   });
 
   it('shows the public Leaderboard link to every operator', () => {
-    render(<SiteHeaderNav isAuthenticated userEmail="someone@example.com" />);
+    render(<SiteHeaderNav isAuthenticated={false} />);
 
     expect(screen.getByRole('link', { name: /leaderboard/i })).toHaveAttribute(
       'href',
       '/agentmaxxing'
+    );
+    expect(screen.getByRole('link', { name: /sign in/i })).toHaveAttribute(
+      'href',
+      '/sign-in'
     );
   });
 });

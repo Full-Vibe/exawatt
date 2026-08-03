@@ -21,6 +21,7 @@ import {
   Laptop,
   MonitorPlay,
   User,
+  LogIn,
   LogOut,
   Network,
   Trophy,
@@ -226,17 +227,27 @@ export function SiteHeaderNav({
         )}
         {!isArchitecture && (
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/architecture" className="text-chrome-title!">
+            <Link
+              href="/architecture"
+              aria-label="Architecture"
+              title="Architecture"
+              className="text-chrome-title!"
+            >
               <Network className="h-3.5 w-3.5" />
-              Architecture
+              <span className="hidden sm:inline">Architecture</span>
             </Link>
           </Button>
         )}
         {!isAgentmaxxing && (
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/agentmaxxing" className="text-chrome-title!">
+            <Link
+              href="/agentmaxxing"
+              aria-label="Leaderboard"
+              title="Leaderboard"
+              className="text-chrome-title!"
+            >
               <Trophy className="h-3.5 w-3.5" />
-              Leaderboard
+              <span className="hidden sm:inline">Leaderboard</span>
             </Link>
           </Button>
         )}
@@ -255,7 +266,10 @@ export function SiteHeaderNav({
           )}
         {!isAuthenticated && isAppRoute(pathname) && (
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/sign-in">Sign In</Link>
+            <Link href="/sign-in" aria-label="Sign In" title="Sign In">
+              <LogIn className="h-3.5 w-3.5 sm:hidden" />
+              <span className="hidden sm:inline">Sign In</span>
+            </Link>
           </Button>
         )}
         {/* the account menu is the tenancy seam (ENG-027): in the desktop app

@@ -361,15 +361,35 @@ async function commitPreset(appearance, theme) {
 
 async function chooseSetting(appearance, label, option) {
   await appearance.getByRole('combobox', { name: label, exact: true }).click();
+  const listbox = page.getByRole('listbox');
   await page.getByRole('option', { name: option, exact: true }).click();
+  // Radix keeps its positioned portal mounted for the close transition. Do
+  // not count that transient overlay as document layout overflow.
+  await listbox.waitFor({ state: 'detached' });
 }
 
 async function assertNoHorizontalOverflow(label) {
-  const metrics = await page.evaluate(() => ({
-    viewport: document.documentElement.clientWidth,
-    root: document.documentElement.scrollWidth,
-    body: document.body.scrollWidth,
-  }));
+  const metrics = await page.evaluate(() => {
+    const viewport = document.documentElement.clientWidth;
+    return {
+      viewport,
+      root: document.documentElement.scrollWidth,
+      body: document.body.scrollWidth,
+      offenders: [...document.querySelectorAll('*')]
+        .map(element => {
+          const bounds = element.getBoundingClientRect();
+          return {
+            tag: element.tagName,
+            text: element.textContent?.trim().slice(0, 80),
+            left: Math.round(bounds.left),
+            right: Math.round(bounds.right),
+            width: Math.round(bounds.width),
+          };
+        })
+        .filter(item => item.left < viewport && item.right > viewport + 1)
+        .slice(0, 12),
+    };
+  });
   assert(
     Math.max(metrics.root, metrics.body) <= metrics.viewport + 1,
     `${label} overflows horizontally: ${JSON.stringify(metrics)}`
