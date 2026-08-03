@@ -57,7 +57,7 @@ export function Diagnostics({ diags }: { diags: Diagnostic[] }) {
         ))}
       </div>
       <div className="flex items-center gap-2">
-        <AnnouncedChip coming="ENG-014 · allocate wattage to goals, with ceilings the fleet respects">
+        <AnnouncedChip coming="allocate wattage to goals, with ceilings the fleet respects">
           Allocation
         </AnnouncedChip>
       </div>

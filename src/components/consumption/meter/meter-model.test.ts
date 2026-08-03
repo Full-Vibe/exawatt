@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { CapacityWindowView, ConsumptionSourceView } from '../model';
 import {
+  PACE_EVEN_BAND,
+  classifyPace,
   meterTone,
+  paceLabel,
   paceSentence,
   readMeter,
+  readWindowPace,
   remediationHint,
 } from './meter-model';
 import { METER_STATES } from './fixtures';
@@ -96,6 +100,45 @@ describe('readMeter', () => {
   it('reads within the ±5pt band as even pace', () => {
     const snap = readMeter([source([win({ usedPercent: 72 })])], NOW);
     expect(snap.reading?.pace).toBe('even');
+  });
+});
+
+describe('classifyPace — the one band every surface shares', () => {
+  it('is symmetric around the ±5 even band', () => {
+    expect(PACE_EVEN_BAND).toBe(5);
+    expect(classifyPace(0)).toBe('even');
+    expect(classifyPace(PACE_EVEN_BAND)).toBe('even');
+    expect(classifyPace(-PACE_EVEN_BAND)).toBe('even');
+    expect(classifyPace(PACE_EVEN_BAND + 0.01)).toBe('ahead');
+    expect(classifyPace(-PACE_EVEN_BAND - 0.01)).toBe('behind');
+  });
+
+  it('readWindowPace, paceSentence, and paceLabel all speak the same verdict', () => {
+    // 300-minute window, resets in 90m → even pace 70%; 78% used = +8 pts
+    const r = readWindowPace(source([]), win({ usedPercent: 78 }), NOW);
+    expect(r.pace).toBe(classifyPace(r.paceDeltaPoints));
+    expect(paceSentence(r)).toBe('ahead of even pace by 8 pts');
+    expect(paceLabel(r).text).toBe('8 pts ahead of even pace');
+  });
+
+  it('a 4-point delta is even everywhere — no surface may re-band it', () => {
+    const r = readWindowPace(source([]), win({ usedPercent: 74 }), NOW);
+    expect(r.paceDeltaPoints).toBeCloseTo(4, 5);
+    expect(r.pace).toBe('even');
+    expect(paceLabel(r).text).toBe('on even pace');
+    expect(paceSentence(r)).toBe('on even pace for this window');
+  });
+
+  it('exhaustion speaks one verb: spent', () => {
+    // 70% used, 25%/h, 1.5h to reset → spent before reset
+    const r = readWindowPace(
+      source([]),
+      win({ usedPercent: 70, burnPercentPerHour: 25 }),
+      NOW
+    );
+    expect(r.exhaustsBeforeReset).toBe(true);
+    expect(paceLabel(r).text).toMatch(/^spent in /);
+    expect(paceLabel(r).text).not.toContain('exhausts');
   });
 });
 

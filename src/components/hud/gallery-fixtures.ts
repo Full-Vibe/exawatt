@@ -13,7 +13,9 @@ function agent(p: Partial<FleetAgentView> & { id: string; name: string }): Fleet
     cost: 0,
     costRate: 0,
     tokenRate: 0,
-    rawTokens: 0,
+    // rawTokens deliberately absent: the fixture source reports no usage,
+    // and absent is never zero (10d5be7's hardcoded 0 reverted with the
+    // field's restored optionality).
     turnCount: 0,
     activityCount: 0,
     hasHeartbeat: false,

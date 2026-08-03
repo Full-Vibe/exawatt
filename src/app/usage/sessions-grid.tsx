@@ -13,6 +13,7 @@
 import { HUD, withAlpha } from '@/components/hud';
 import { FLUX, duration, tokens } from '@/components/consumption/flux';
 import { Sparkline } from '@/components/consumption/atoms';
+import { STATUS_LIGHT_META } from '@/components/status-light/protocol';
 import type { GridRow } from './derive';
 import { Card, MicroLabel } from './chrome';
 
@@ -20,6 +21,13 @@ const ROW_CAP = 14;
 
 const COLS =
   'grid-cols-[minmax(0,1.6fr)_116px_92px_76px_76px_minmax(64px,0.6fr)_40px]';
+
+/**
+ * "Live" is agent-activity state, not burn intensity: it renders in the
+ * status protocol's Active blue, never in FLUX magenta — on this surface
+ * the consumption ramp must only ever mean burn (channel-ownership rule).
+ */
+const LIVE = STATUS_LIGHT_META.active.color;
 
 export function SessionsGrid({
   rows,
@@ -43,8 +51,10 @@ export function SessionsGrid({
 
   return (
     <Card label="Sessions" className="flex min-w-0 flex-col p-0">
+      {/* gap-3 keeps the right-aligned NORM figure clear of the left-aligned
+          IMPACT header — at gap-2 the two tracked micro-labels read as one */}
       <div
-        className={`grid ${COLS} items-center gap-2 border-b px-3 py-1.5`}
+        className={`grid ${COLS} items-center gap-3 border-b px-3 py-1.5`}
         style={{ borderColor: 'rgba(150,120,255,0.14)' }}
       >
         <MicroLabel>Session</MicroLabel>
@@ -117,19 +127,18 @@ function SessionRow({
   onSelect: () => void;
 }) {
   const share = r.weighted / Math.max(1, maxWeighted);
-  const impactColor = r.live ? FLUX.hot : FLUX.calm;
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      className={`grid ${COLS} w-full items-center gap-2 border-b px-3 py-1 text-left outline-none transition-colors last:border-b-0 hover:bg-white/[0.05] focus-visible:ring-1 focus-visible:ring-hud-cyan`}
+      className={`grid ${COLS} w-full items-center gap-3 border-b px-3 py-1 text-left outline-none transition-colors last:border-b-0 hover:bg-white/[0.05] focus-visible:ring-1 focus-visible:ring-hud-cyan`}
       style={{
         borderColor: 'rgba(150,120,255,0.08)',
         background: selected
           ? withAlpha(FLUX.mid, 0.1)
           : r.live
-            ? withAlpha(FLUX.hot, 0.04)
+            ? withAlpha(LIVE, 0.05)
             : undefined,
       }}
     >
@@ -149,7 +158,7 @@ function SessionRow({
           {r.title}
         </span>
         {r.live ? (
-          <span className="shrink-0 font-mono text-chrome-micro" style={{ color: FLUX.hot }}>
+          <span className="shrink-0 font-mono text-chrome-micro" style={{ color: LIVE }}>
             live
           </span>
         ) : (
@@ -174,12 +183,9 @@ function SessionRow({
         {r.source === 'codex' ? 'codex' : 'claude'}
         {r.model ? ` · ${r.model.replace(/^claude-|^gpt-/, '')}` : ''}
       </span>
-      <Sparkline
-        values={r.spark}
-        width={84}
-        height={14}
-        color={r.live ? FLUX.hot : FLUX.mid}
-      />
+      {/* the sparkline is burn, so it stays in the FLUX channel regardless
+          of liveness */}
+      <Sparkline values={r.spark} width={84} height={14} color={FLUX.mid} />
       <span
         className="text-right font-mono text-chrome-meta tabular-nums"
         style={{ color: HUD.textDim }}
@@ -201,7 +207,7 @@ function SessionRow({
           className="block h-full rounded-[1px]"
           style={{
             width: `${Math.max(2, share * 100)}%`,
-            background: impactColor,
+            background: FLUX.calm,
           }}
         />
       </span>

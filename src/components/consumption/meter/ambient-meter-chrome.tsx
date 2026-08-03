@@ -16,15 +16,16 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { duration, percent } from '../flux';
-import { DEMO_NOW_MS, demoConsumption } from '../demo-source';
+import { useTenantConsumption } from '../use-tenant-consumption';
 import {
   paceSentence,
   readMeter,
   type MeterSnapshot,
 } from './meter-model';
 import { METER_FORM, type MeterFormId } from './meter-forms';
-import { MeterPopover } from './meter-popover';
+import { METER_POPOVER_WIDTH, MeterPopover } from './meter-popover';
 
 /** The one boolean between the meter and the title bar. */
 export const AMBIENT_CHROME_METER_ENABLED = true;
@@ -51,6 +52,12 @@ const HOVER_CLOSE_MS = 160;
  * The reusable control: any form, any snapshot, hover popover, click-through.
  * The gallery's chrome mocks mount this exact component so the wired
  * placement cannot drift from what was reviewed.
+ *
+ * The popover renders through a portal on `document.body`: the site header
+ * carries a backdrop-filter material, and an overflowing absolutely-positioned
+ * descendant of a backdrop root composites wrong (verified against the
+ * translucent-panel bug — forcing opacity does not fix it; leaving the
+ * backdrop root does). Navigating away (click-through) closes it.
  */
 export function AmbientMeterControl({
   snapshot,
@@ -65,6 +72,8 @@ export function AmbientMeterControl({
 }) {
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const anchor = useRef<HTMLSpanElement | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const Form = METER_FORM[form];
 
   const schedule = useCallback((next: boolean, delay: number) => {
@@ -79,8 +88,32 @@ export function AmbientMeterControl({
     []
   );
 
+  // Anchor the portal to the control's viewport rect while open.
+  useEffect(() => {
+    if (!open) return;
+    const el = anchor.current;
+    if (!el) return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      // The popover has a fixed width (`w-[296px]`), so right-alignment is
+      // arithmetic — a transform here would fight the enter animation's.
+      setPos({
+        top: r.bottom + 6,
+        left: align === 'right' ? r.right - METER_POPOVER_WIDTH : r.left,
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [open, align]);
+
   return (
     <span
+      ref={anchor}
       className="relative inline-flex"
       data-consumption-chrome-meter={form}
       onMouseEnter={() => schedule(true, HOVER_OPEN_MS)}
@@ -89,6 +122,7 @@ export function AmbientMeterControl({
       <Link
         href={href}
         aria-label={meterAriaLabel(snapshot)}
+        onClick={() => schedule(false, 0)}
         onFocus={() => schedule(true, 0)}
         onBlur={() => schedule(false, 0)}
         onKeyDown={e => {
@@ -98,17 +132,31 @@ export function AmbientMeterControl({
       >
         <Form reading={snapshot.reading} />
       </Link>
-      {open && <MeterPopover snapshot={snapshot} align={align} />}
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            data-meter-popover-root
+            className="fixed z-50 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-150"
+            style={{ top: pos.top, left: pos.left }}
+            onMouseEnter={() => schedule(true, 0)}
+            onMouseLeave={() => schedule(false, HOVER_CLOSE_MS)}
+          >
+            <MeterPopover snapshot={snapshot} />
+          </div>,
+          document.body
+        )}
     </span>
   );
 }
 
 /**
- * The wired title-bar instance: the real demo corpus's plan windows at the
- * corpus's pinned instant — the same data and clock `/usage` renders,
- * so the glyph and the page can never disagree.
+ * The wired title-bar instance: the active tenant's corpus at that corpus's
+ * pinned instant, through the one tenant-aware seam `/usage` reads — the
+ * glyph and the page are structurally the same numbers.
  */
 export function AmbientChromeMeter() {
-  const snapshot = readMeter(demoConsumption().sources, DEMO_NOW_MS);
+  const { view } = useTenantConsumption();
+  const snapshot = readMeter(view.sources, view.nowMs);
   return <AmbientMeterControl snapshot={snapshot} form={CHROME_METER_FORM} />;
 }

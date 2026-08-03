@@ -12,7 +12,6 @@ import type { ReactNode } from 'react';
 import { HUD, withAlpha } from '@/components/hud';
 import {
   FLUX,
-  duration,
   percent,
   pressureColor,
   projectionHatch,
@@ -66,13 +65,13 @@ export function DemoBanner({
 }
 
 /* ------------------------------------------------------------------ */
-/* pace bar — headroom + reset + even-burn marker                      */
+/* pace bar — headroom + reset + even-pace marker                      */
 /* ------------------------------------------------------------------ */
 
 /**
  * The pacing bar: fill = used, hatch = projected by reset, hollow tick =
- * where even burn would put you now. The delta between fill edge and tick IS
- * the pace read.
+ * where even pace would put you now. The delta between fill edge and tick
+ * IS the pace read.
  */
 export function PaceBar({
   pace,
@@ -117,17 +116,17 @@ export function PaceBar({
           }}
         />
       )}
-      {/* even-burn marker — a reference tick, not a fill */}
+      {/* even-pace marker — a reference tick, not a fill */}
       <span
         className="absolute"
         style={{
-          left: `calc(${Math.min(100, pace.evenPercent)}% - 1px)`,
+          left: `calc(${Math.min(100, pace.evenPacePercent)}% - 1px)`,
           top: -3,
           width: 2,
           height: height + 6,
           background: withAlpha(HUD.text, 0.85),
         }}
-        title={`even burn would be at ${percent(pace.evenPercent)}`}
+        title={`even pace would be at ${percent(pace.evenPacePercent)}`}
       />
       {/* ceiling tick */}
       <span
@@ -144,27 +143,8 @@ export function PaceBar({
   );
 }
 
-/** Pace read as words: state label + delta value. */
-export function paceLabel(pace: WindowPace): {
-  text: string;
-  color: string;
-} {
-  const d = pace.deltaPercent;
-  if (pace.exhaustsBeforeReset) {
-    return {
-      text: `exhausts in ${duration(pace.msToExhaust)} — before reset`,
-      color: FLUX.hot,
-    };
-  }
-  if (Math.abs(d) < 4) return { text: 'on even pace', color: FLUX.calm };
-  if (d > 0) {
-    return {
-      text: `${Math.round(d)} pts ahead of even burn`,
-      color: pressureColor(pace.window.usedPercent),
-    };
-  }
-  return { text: `${Math.round(-d)} pts behind even burn`, color: FLUX.calm };
-}
+/** Pace words come from the one shared derivation — never re-phrased here. */
+export { paceLabel } from '@/components/consumption/meter/meter-model';
 
 /** The absent channel for a source that reports no plan data. */
 export function UnreportedChannel({

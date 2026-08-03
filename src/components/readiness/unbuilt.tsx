@@ -8,8 +8,8 @@
  *
  *   - a dashed outline in the readiness neutral, never a status or data
  *     channel, so an unbuilt thing can never be mistaken for data;
- *   - a tag carrying the app-wide token plus what would build it, on every
- *     instance;
+ *   - a tag carrying the app-wide token; what would build it rides the
+ *     tooltip only (provenance never renders as chrome text);
  *   - contents rendered `inert`: not focusable, not clickable, not tabbable,
  *     and announced to assistive technology as a preview.
  *
@@ -45,8 +45,11 @@ export function Unbuilt({
           background: 'var(--exa-readiness-surface)',
         }}
       >
+        {/* The owner surfaces only as a tooltip: provenance (roadmap IDs
+            included) lives in docs, never as visible chrome text. */}
         <span
           data-readiness="announced"
+          title={owner}
           className="absolute left-4 top-[-9px] inline-flex items-center gap-1.5 rounded px-2 py-0.5 font-ui text-chrome-micro"
           style={{
             background: 'var(--exa-foundation-overlay)',
@@ -55,14 +58,6 @@ export function Unbuilt({
           }}
         >
           Coming soon
-          <span
-            style={{
-              color:
-                'color-mix(in srgb, var(--exa-hud-text-dim) 75%, transparent)',
-            }}
-          >
-            · {owner}
-          </span>
         </span>
 
         {/* `inert` is the whole promise: a preview cannot be operated, focused,

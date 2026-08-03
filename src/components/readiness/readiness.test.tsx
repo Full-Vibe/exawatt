@@ -10,10 +10,12 @@ import {
 describe('readiness grammar (ENG-026 N0)', () => {
   afterEach(cleanup);
 
-  it('the marker speaks the app-wide token, optionally naming its owner', () => {
+  it('the marker speaks the app-wide token; the owner is tooltip-only, never visible text', () => {
     render(<ComingSoonMarker owner="ENG-033" />);
     const marker = screen.getByText('Coming soon');
-    expect(marker.parentElement?.textContent).toContain('ENG-033');
+    // provenance lives in docs — a roadmap ID must not render as chrome text
+    expect(marker.textContent).toBe('Coming soon');
+    expect(marker).toHaveAttribute('title', 'ENG-033');
     const style = marker.getAttribute('style') ?? '';
     expect(style).toContain('var(--exa-readiness-neutral, #77839A)');
     expect(style).toContain('var(--exa-readiness-surface)');
@@ -61,14 +63,15 @@ describe('readiness grammar (ENG-026 N0)', () => {
     expect(chip.querySelector('[inert]')).not.toBeNull();
   });
 
-  it('an unbuilt region carries the token, its owner, and inert contents', () => {
+  it('an unbuilt region carries the token, its tooltip-only owner, and inert contents', () => {
     render(
       <Unbuilt owner="ENG-014 · wattage allocation" note="Nothing here responds.">
         <button type="button">Rebalance</button>
       </Unbuilt>
     );
-    expect(screen.getByText('Coming soon')).toBeInTheDocument();
-    expect(screen.getByText('· ENG-014 · wattage allocation')).toBeInTheDocument();
+    const tag = screen.getByText('Coming soon');
+    expect(tag.textContent).toBe('Coming soon');
+    expect(tag).toHaveAttribute('title', 'ENG-014 · wattage allocation');
     expect(screen.getByText('Nothing here responds.')).toBeInTheDocument();
     const inertWrapper = screen
       .getByText('Rebalance')

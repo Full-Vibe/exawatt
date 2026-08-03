@@ -58,8 +58,13 @@ export interface FleetAgentView {
   cost: number;
   costRate: number;
   tokenRate: number;
-  /** Raw tokens across all units when the source reports usage; 0 = absent. */
-  rawTokens: number;
+  /**
+   * Raw tokens across all units when the source reports usage. Absent when
+   * the source keeps no usage record — never coerced to 0 (consumption
+   * canon: absent is a different fact from a reported zero). Consumers gate
+   * on presence, not on `> 0`.
+   */
+  rawTokens?: number;
   turnCount: number;
   activityCount: number;
   hasHeartbeat: boolean;
@@ -382,7 +387,9 @@ function toAgentView(agent: ExawattAgent): FleetAgentView {
     cost: agent.metrics.estimatedCost,
     costRate: agent.metrics.costRate,
     tokenRate: agent.metrics.tokenRate,
-    rawTokens: agent.metrics.rawTokens ?? 0,
+    ...(agent.metrics.rawTokens !== undefined
+      ? { rawTokens: agent.metrics.rawTokens }
+      : {}),
     turnCount: agent.metrics.turnCount,
     activityCount: agent.activities?.length ?? 0,
     hasHeartbeat: Boolean(agent.cronJobId),

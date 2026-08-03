@@ -32,61 +32,36 @@ import type {
 } from '@/components/consumption/demo-source';
 import {
   displayUsage,
-  projectWindow,
   rawTotal,
   sumUsage,
-  type CapacityWindowView,
   type ConsumptionSourceView,
   type DisplayUsage,
   type Harness,
 } from '@/components/consumption/model';
+import {
+  readAllWindows,
+  type MeterReading,
+} from '@/components/consumption/meter/meter-model';
 
 const LIVE_WITHIN_MS = 45 * 60_000;
 
 /* ------------------------------------------------------------------ */
-/* pace                                                                */
+/* pace — derived once, in meter-model (the shared instrument)         */
 /* ------------------------------------------------------------------ */
 
-/** A reported window with its pacing read: where you are vs even burn. */
-export interface WindowPace {
-  source: ConsumptionSourceView;
-  window: CapacityWindowView;
-  /** Share of the window elapsed, 0..100 — where even burn would put you. */
-  evenPercent: number;
-  /** usedPercent − evenPercent. Positive = ahead of even burn. */
-  deltaPercent: number;
-  projectedPercent: number;
-  msToReset: number;
-  exhaustsBeforeReset: boolean;
-  msToExhaust: number;
-}
+/**
+ * The page renders the SAME reading the chrome meter renders: one derivation
+ * (`readWindowPace`), one even-pace band (`PACE_EVEN_BAND`), one freshness
+ * discipline (live windows only — a four-month-old window must never
+ * headline the page any more than the meter).
+ */
+export type WindowPace = MeterReading;
 
-export function windowPace(
-  source: ConsumptionSourceView,
-  w: CapacityWindowView,
-  nowMs: number
-): WindowPace {
-  const p = projectWindow(w, nowMs);
-  const windowMs = w.windowMinutes * 60_000;
-  const elapsed = Math.max(0, Math.min(1, (windowMs - p.msToReset) / windowMs));
-  const evenPercent = elapsed * 100;
-  return {
-    source,
-    window: w,
-    evenPercent,
-    deltaPercent: w.usedPercent - evenPercent,
-    projectedPercent: p.projectedPercent,
-    msToReset: p.msToReset,
-    exhaustsBeforeReset: p.exhaustsBeforeReset,
-    msToExhaust: p.msToExhaust,
-  };
-}
-
-/** Every reported window across every source, tightest first. */
+/** Every LIVE reported window across every source, tightest first. */
 export function allPaces(demo: DemoConsumption): WindowPace[] {
   return demo.sources
-    .flatMap(s => s.windows.map(w => windowPace(s, w, demo.nowMs)))
-    .sort((a, b) => b.window.usedPercent - a.window.usedPercent);
+    .flatMap(s => readAllWindows(s, demo.nowMs))
+    .sort((a, b) => b.usedPercent - a.usedPercent);
 }
 
 /** Sources that report no plan data at all — rendered absent, never 0%. */
@@ -509,7 +484,16 @@ export interface Diagnostic {
 
 const rate1 = (n: number) => (n >= 10 ? Math.round(n).toString() : n.toFixed(1));
 
+/** Corpus window as the short qualifier the tile labels carry. */
+const WINDOW_SHORT: Record<string, string> = {
+  'seven days': '7d',
+  'fourteen days': '14d',
+};
+
 export function diagnostics(demo: DemoConsumption): Diagnostic[] {
+  // Every tile states its window, the way the delegated tile always did:
+  // corpus-window figures carry the corpus window, the 5h figure carries 5h.
+  const win = WINDOW_SHORT[demo.windowLabel] ?? demo.windowLabel;
   const usage = displayUsage(demo.workspace.totals, demo.workspace.sources);
   const raw = rawTotal(usage);
   const prompt = usage.input + usage.cacheWrite + usage.cacheRead;
@@ -533,7 +517,7 @@ export function diagnostics(demo: DemoConsumption): Diagnostic[] {
   const out: Diagnostic[] = [
     {
       key: 'cache-miss',
-      label: 'Cache-miss share',
+      label: `Cache-miss share · ${win}`,
       value: `${Math.round(missShare * 100)}%`,
       state: missShare > 0.2 ? 'watch' : 'steady',
       hint:
@@ -544,7 +528,7 @@ export function diagnostics(demo: DemoConsumption): Diagnostic[] {
     },
     {
       key: 'reread',
-      label: 'Cache re-read',
+      label: `Cache re-read · ${win}`,
       value: `${reread.toFixed(1)}× per write`,
       state: 'steady',
       hint: 'every cached write is re-read this many times',
@@ -553,7 +537,7 @@ export function diagnostics(demo: DemoConsumption): Diagnostic[] {
   if (reasoningShare !== null) {
     out.push({
       key: 'reasoning',
-      label: 'Reasoning share',
+      label: `Reasoning share · ${win}`,
       value: `${Math.round(reasoningShare * 100)}%`,
       state: reasoningShare > 0.75 ? 'watch' : 'steady',
       hint:
@@ -583,7 +567,7 @@ export function diagnostics(demo: DemoConsumption): Diagnostic[] {
   );
   out.push({
     key: 'interventions',
-    label: 'Intervention rate',
+    label: `Intervention rate · ${win}`,
     value: `${rate1(iv.perSession)} per Session`,
     state: 'steady',
     hint: `${iv.interventions} operator messages after launch across ${iv.sessions} Sessions · ${rate1(iv.perActiveHour)} per active hour · ${iv.untouchedSessions} Sessions ran untouched · an upper bound: steering and a stuck agent arrive the same way`,
@@ -591,7 +575,7 @@ export function diagnostics(demo: DemoConsumption): Diagnostic[] {
   });
   out.push({
     key: 'overhead',
-    label: 'Exawatt overhead',
+    label: `Exawatt overhead · ${win}`,
     value: `${(overheadShare * 100).toFixed(1)}% of raw`,
     state: 'steady',
     hint: `${demo.overhead.sessionCount} machine-invoked calls, separated by entrypoint, never booked to a Project`,

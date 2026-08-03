@@ -6,8 +6,12 @@
 import type { ExawattAgent } from './agent';
 
 export interface FleetMetrics {
+  /** working + reviewing (D40 Active). */
   activeCount: number;
+  /** blocked + error — needs-attention semantics, matching the board's
+   *  scope readout and zone health rails. */
   blockedCount: number;
+  /** idle + complete — quietly waiting. */
   idleCount: number;
   totalCost: number;
   totalTokens: number;

@@ -60,31 +60,12 @@ export const UNIT_LABEL: Record<UnitKey, string> = {
   reasoning: 'reasoning',
 };
 
-/**
- * Stated normalization basis. This is deliberately a published ratio table,
- * not provider pricing — Consumption canon keeps raw units ahead of money, and
- * contract pricing changes underneath us.
- */
-export const UNIT_WEIGHT: Record<UnitKey, number> = {
-  input: 1,
-  cacheWrite: 1.25,
-  cacheRead: 0.1,
-  output: 5,
-  reasoning: 5,
-};
-
-/** Model-size weight, relative to a Sonnet-class input token = 1. */
-export const MODEL_WEIGHT: Record<string, number> = {
-  'claude-opus-5': 5,
-  'claude-sonnet-5': 1,
-  'gpt-5.3-codex': 1.4,
-  'gpt-5.3-codex-mini': 0.35,
-};
-
-export const WEIGHT_BASIS_SENTENCE =
-  'Normalized token = (input×1 + cache write×1.25 + cache read×0.1 + output×5 + reasoning×5) × model weight ' +
-  '(opus 5.0 · sonnet 1.0 · codex 1.4 · codex-mini 0.35), relative to one Sonnet-class input token. ' +
-  'A stated ratio basis, not provider pricing.';
+// The normalization weight truth lives in ONE place: `@exawatt/core`'s
+// model-weights module, stated for display by `units.ts`
+// (`NORMALIZED_BASIS_SENTENCE`). The early design-exploration ratio table
+// that used to sit here diverged from core's arithmetic (codex 1.4,
+// reasoning ×5) and moved to its only remaining consumer, the frozen
+// consumption-lab workbench (`src/app/hud-gallery/consumption-lab/weights.ts`).
 
 function mix(a: string, b: string, t: number): string {
   const p = (h: string) => [

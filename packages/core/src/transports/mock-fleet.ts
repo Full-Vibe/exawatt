@@ -923,12 +923,14 @@ export class MockFleetTransport {
         case 'reviewing':
           activeCount++;
           break;
+        // Needs-attention semantics (D40): error demands the operator the
+        // same way blocked does — every fleet readout buckets them together.
         case 'blocked':
+        case 'error':
           blockedCount++;
           break;
         case 'idle':
         case 'complete':
-        case 'error':
           idleCount++;
           break;
       }

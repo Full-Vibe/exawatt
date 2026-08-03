@@ -1634,11 +1634,13 @@ What is REAL:
   `selectSpatialScopeActivity` over the shared E7 burn derivation —
   absent-never-zero (no figure renders when nothing in scope reports; the
   unreported count is stated when partial). Fleet totals by default; the
-  selection's totals the moment one exists. Known honest divergence: the
-  fleet metrics strip above buckets `error` into IDLE (core
-  `fleet-manager`); this readout counts error as blocked, matching the
-  board's own needs-attention semantics — so the two can disagree by the
-  error count. Roadmap-shaping note: V3.2 was shaped with this readout as a
+  selection's totals the moment one exists. The "known honest divergence"
+  this section originally recorded — the fleet metrics strip bucketing
+  `error` into IDLE while this readout folds error into blocked — was
+  RESOLVED 2026-08-03 by the ENG-008 usage-loop review fixes: core
+  `fleet-manager`/`mock-fleet` metrics now use the board's needs-attention
+  semantics (error counts as blocked), so the strip and this readout agree
+  on the same screen. Roadmap-shaping note: V3.2 was shaped with this readout as a
   `Coming soon` preview before the burn data existed; E7 landed first, so
   it ships real (recorded in the roadmap Amendment chain).
 
@@ -1648,6 +1650,17 @@ What is ANNOUNCED (and nothing else):
   readiness-neutral, inert contents, `Coming soon` tooltip) in the scope
   readout whenever a selection exists. It presents the future fan-out verb
   and does nothing, honestly.
+
+Owed (recorded 2026-08-03, ENG-008 usage-loop review): a first-class
+KEYBOARD path for building a band-scale multi-selection and reaching the
+Direct verb. Shift+1–9 and shift-activate cover piece/zone toggling, but
+there is no keyboard equivalent of sweeping a band or extending a selection
+directionally, and the announced Direct chip is inert by design so it has no
+keyboard story yet. Owner: V3.3 S1 already carries the acceptance line "DOM
+keyboard path can extend selection (a11y equivalent of band select)"; the
+Direct verb's keyboard reachability lands with whatever ships the real
+fan-out mechanism. Build nothing before S1 — this note only prevents the gap
+from being forgotten.
 
 Verification: `pnpm eval:r3f` 100/100, `eval:spatial` 8/8 PASS (including
 the four handoff scenarios), `eval:spatial:scale` all scenarios green

@@ -222,8 +222,9 @@ describe('FleetManager', () => {
     const state = manager.getFleetState();
 
     expect(state.metrics.activeCount).toBe(2);
-    expect(state.metrics.blockedCount).toBe(1);
-    expect(state.metrics.idleCount).toBe(3);
+    // error folds into blocked: needs-attention semantics (D40)
+    expect(state.metrics.blockedCount).toBe(2);
+    expect(state.metrics.idleCount).toBe(2);
     expect(state.metrics.totalCost).toBe(6);
     expect(state.metrics.totalTokens).toBe(245);
     expect(state.metrics.totalCostRate).toBe(6);

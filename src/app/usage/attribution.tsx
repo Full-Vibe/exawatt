@@ -7,12 +7,13 @@
  * same rollups, normalized by default with a raw-units mode. Every bar is a
  * door: selecting it opens the sessions behind it in the shared drill panel.
  */
+import { useMemo } from 'react';
 import { HUD, withAlpha } from '@/components/hud';
-import {
-  FLUX,
-  WEIGHT_BASIS_SENTENCE,
-  tokens,
-} from '@/components/consumption/flux';
+import { FLUX, tokens } from '@/components/consumption/flux';
+// The printed basis MUST be the arithmetic's own basis: figures here are
+// weighted by `@exawatt/core`'s model-weight table, so the sentence is
+// stated from core's constants (units.ts), never a parallel ratio table.
+import { NORMALIZED_BASIS_SENTENCE } from '@/components/consumption/units';
 import { UnitStack, UnitLegend } from '@/components/consumption/atoms';
 import { rawTotal } from '@/components/consumption/model';
 import { PIVOT_LABEL, type PivotKey, type PivotRow } from './derive';
@@ -39,6 +40,20 @@ export function Attribution({
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
+  // Raw mode is a real reordering, not a re-skin: rows sort by raw total and
+  // bars scale to the raw max, so what reads biggest IS biggest in raw units.
+  const ordered = useMemo(
+    () =>
+      mode === 'raw'
+        ? [...rows].sort((a, b) => rawTotal(b.usage) - rawTotal(a.usage))
+        : rows,
+    [rows, mode]
+  );
+  const max =
+    mode === 'raw'
+      ? (ordered[0] ? rawTotal(ordered[0].usage) : 1)
+      : (ordered[0]?.weighted ?? 1);
+  const overflow = ordered.slice(9);
   return (
     <Card label="Attribution" className="flex min-w-0 flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -69,7 +84,7 @@ export function Attribution({
               type="button"
               aria-pressed={m === mode}
               onClick={() => onMode(m)}
-              title={m === 'normalized' ? WEIGHT_BASIS_SENTENCE : undefined}
+              title={m === 'normalized' ? NORMALIZED_BASIS_SENTENCE : undefined}
               className="rounded border px-2 py-0.5 font-mono text-chrome-micro outline-none transition-colors hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
               style={{
                 borderColor:
@@ -84,23 +99,25 @@ export function Attribution({
       </div>
 
       <div className="flex min-w-0 flex-col gap-1">
-        {rows.slice(0, 9).map(r => (
+        {ordered.slice(0, 9).map(r => (
           <PivotBarRow
             key={r.id}
             row={r}
-            max={rows[0]?.weighted ?? 1}
+            max={max}
             mode={mode}
             selected={r.id === selectedId}
             onSelect={() => onSelect(r.id)}
           />
         ))}
-        {rows.length > 9 && (
+        {overflow.length > 0 && (
           <p
             className="px-1 pt-1 font-mono text-chrome-meta"
             style={{ color: HUD.textDim }}
           >
-            {rows.length - 9} more ·{' '}
-            {tokens(rows.slice(9).reduce((n, r) => n + r.weighted, 0))} nt
+            {overflow.length} more ·{' '}
+            {mode === 'raw'
+              ? `${tokens(overflow.reduce((n, r) => n + rawTotal(r.usage), 0))} raw`
+              : `${tokens(overflow.reduce((n, r) => n + r.weighted, 0))} nt`}
           </p>
         )}
         {mode === 'raw' && (
@@ -127,7 +144,8 @@ function PivotBarRow({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const share = row.weighted / Math.max(1, max);
+  const value = mode === 'raw' ? rawTotal(row.usage) : row.weighted;
+  const share = value / Math.max(1, max);
   return (
     <button
       type="button"
@@ -159,7 +177,7 @@ function PivotBarRow({
             usage={row.usage}
             width="100%"
             height={7}
-            scaleTo={undefined}
+            scaleTo={max}
             dim={row.unknown}
           />
         ) : (
@@ -185,7 +203,7 @@ function PivotBarRow({
         className="text-right font-mono text-chrome-meta tabular-nums"
         style={{ color: HUD.textDim }}
       >
-        {tokens(mode === 'raw' ? rawTotal(row.usage) : row.weighted)}
+        {tokens(value)}
         {mode === 'raw' ? '' : ' nt'}
       </span>
     </button>

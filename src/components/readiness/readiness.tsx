@@ -44,11 +44,12 @@ export const READINESS_NEUTRAL = '#77839A';
 
 const READINESS_COLOR = `var(--exa-readiness-neutral, ${READINESS_NEUTRAL})`;
 const READINESS_STROKE = `color-mix(in srgb, ${READINESS_COLOR} 55%, transparent)`;
-const READINESS_OWNER = `color-mix(in srgb, ${READINESS_COLOR} 80%, transparent)`;
 
 /**
  * The app-wide token, as a pill. Place it once in a `preview` surface's
- * header. `owner` names what ships it, in the product's own vocabulary.
+ * header. `owner` names what ships it; it surfaces only as a hover tooltip —
+ * never as visible chrome text, because provenance (roadmap IDs included)
+ * lives in docs, not on production surfaces (design-system.md, Voice).
  */
 export function ComingSoonMarker({
   owner,
@@ -60,6 +61,7 @@ export function ComingSoonMarker({
   return (
     <span
       data-readiness="preview"
+      title={owner}
       className={`inline-flex shrink-0 items-baseline gap-1.5 whitespace-nowrap rounded px-2 py-0.5 font-ui text-chrome-micro ${className}`}
       style={{
         border: `1px dashed ${READINESS_STROKE}`,
@@ -68,7 +70,6 @@ export function ComingSoonMarker({
       }}
     >
       Coming soon
-      {owner && <span style={{ color: READINESS_OWNER }}>· {owner}</span>}
     </span>
   );
 }

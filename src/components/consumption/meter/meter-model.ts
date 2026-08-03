@@ -16,7 +16,7 @@
  *
  * Pure data and pure functions: no React, no DOM.
  */
-import { pressureColor, FLUX } from '../flux';
+import { duration, pressureColor, FLUX } from '../flux';
 import {
   projectWindow,
   windowFreshness,
@@ -27,8 +27,21 @@ import {
 export type MeterState = 'healthy' | 'warm' | 'hot' | 'exhausted';
 export type MeterPace = 'ahead' | 'even' | 'behind';
 
-/** Pace deltas inside ±this many percentage points read as "even". */
+/**
+ * Pace deltas inside ±this many percentage points read as "even".
+ *
+ * THE one band. The chrome meter, the `/usage` page, and any other pace
+ * consumer derive their verdict through `classifyPace` below — a second band
+ * anywhere makes the title bar and the page disagree about the same window.
+ */
 export const PACE_EVEN_BAND = 5;
+
+/** The one pace verdict: usedPercent − evenPacePercent vs the even band. */
+export function classifyPace(deltaPoints: number): MeterPace {
+  if (deltaPoints > PACE_EVEN_BAND) return 'ahead';
+  if (deltaPoints < -PACE_EVEN_BAND) return 'behind';
+  return 'even';
+}
 
 export interface MeterReading {
   source: ConsumptionSourceView;
@@ -70,7 +83,12 @@ function stateFor(
   return 'healthy';
 }
 
-function readWindow(
+/**
+ * One window, one reading — the shared pace/projection derivation every
+ * consumption surface renders (the meter's snapshot and `/usage`'s pace
+ * cards both come through here).
+ */
+export function readWindowPace(
   source: ConsumptionSourceView,
   window: CapacityWindowView,
   nowMs: number
@@ -84,8 +102,7 @@ function readWindow(
     usedPercent: window.usedPercent,
     evenPacePercent: evenPace,
     paceDeltaPoints: delta,
-    pace:
-      delta > PACE_EVEN_BAND ? 'ahead' : delta < -PACE_EVEN_BAND ? 'behind' : 'even',
+    pace: classifyPace(delta),
     msToReset: p.msToReset,
     projectedPercent: p.projectedPercent,
     exhaustsBeforeReset: p.exhaustsBeforeReset,
@@ -107,7 +124,7 @@ export function readMeter(
   for (const source of sources) {
     for (const window of source.windows) {
       if (windowFreshness(window, nowMs) !== 'live') continue;
-      const reading = readWindow(source, window, nowMs);
+      const reading = readWindowPace(source, window, nowMs);
       if (!best || reading.usedPercent > best.usedPercent) best = reading;
     }
   }
@@ -121,7 +138,7 @@ export function readAllWindows(
 ): MeterReading[] {
   return source.windows
     .filter(w => windowFreshness(w, nowMs) === 'live')
-    .map(w => readWindow(source, w, nowMs));
+    .map(w => readWindowPace(source, w, nowMs));
 }
 
 /* ------------------------------------------------------------------ */
@@ -199,6 +216,33 @@ export function paceSentence(r: MeterReading): string {
   return r.pace === 'ahead'
     ? `ahead of even pace by ${pts} pts`
     : `behind even pace by ${pts} pts`;
+}
+
+/**
+ * The pace verdict as a short card label, with its display color. Same
+ * vocabulary as `paceSentence` — "even pace", pts, and the one exhaustion
+ * verb "spent" — so the title bar and the page can never phrase the same
+ * window differently.
+ */
+export function paceLabel(r: MeterReading): { text: string; color: string } {
+  if (r.exhaustsBeforeReset && r.state !== 'exhausted') {
+    return {
+      text: `spent in ${duration(r.msToExhaust)} — before reset`,
+      color: FLUX.hot,
+    };
+  }
+  if (r.state === 'exhausted') {
+    return { text: 'spent — holds until reset', color: FLUX.hot };
+  }
+  const pts = Math.abs(Math.round(r.paceDeltaPoints));
+  if (r.pace === 'even') return { text: 'on even pace', color: FLUX.calm };
+  if (r.pace === 'ahead') {
+    return {
+      text: `${pts} pts ahead of even pace`,
+      color: pressureColor(r.usedPercent),
+    };
+  }
+  return { text: `${pts} pts behind even pace`, color: FLUX.calm };
 }
 
 /**

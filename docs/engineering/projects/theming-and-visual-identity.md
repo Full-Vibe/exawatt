@@ -567,6 +567,11 @@ must rebase on every contract change:
   status glyph DOM paint, terminal containers, live/retained xterm palettes.
 - **T3C scoped visualization:** Consumption's FLUX mapping and remaining
   scoped settings/HUD palettes without merging their semantic channels.
+  Debt note (2026-08-03, ENG-008 usage-loop review): `/usage` hardcodes its
+  ground (`#07060E` page background plus the purple-tinged card gradients in
+  `src/app/usage/chrome.tsx` / `usage-client.tsx`) instead of consuming
+  semantic ground roles — a T3C migration item, deliberately not patched in
+  the review-fix change while this project's theme worktree is active.
 
 Exit criteria for every packet:
 

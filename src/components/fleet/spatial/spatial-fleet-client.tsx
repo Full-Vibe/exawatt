@@ -797,7 +797,7 @@ export function SpatialFleetClient() {
                         {formatCurrency(inspectedAgent.cost)}
                       </p>
                     </div>
-                  ) : inspectedAgent.rawTokens > 0 ? (
+                  ) : inspectedAgent.rawTokens !== undefined ? (
                     <div className="px-3 first:pl-0">
                       <p className="text-xs text-zinc-500">Tokens</p>
                       <p className="mt-1 font-mono text-zinc-100">

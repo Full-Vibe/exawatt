@@ -147,16 +147,10 @@ function SourceRows({
   );
 }
 
-export function MeterPopover({
-  snapshot,
-  align = 'right',
-  layout = 'floating',
-}: {
-  snapshot: MeterSnapshot;
-  align?: 'left' | 'right';
-  /** 'static' renders the same panel in flow — the gallery's popover specimen. */
-  layout?: 'floating' | 'static';
-}) {
+/** Fixed panel width — the portal wrapper aligns with plain arithmetic. */
+export const METER_POPOVER_WIDTH = 296;
+
+export function MeterPopover({ snapshot }: { snapshot: MeterSnapshot }) {
   const r = snapshot.reading;
   const hint = r ? remediationHint(r) : null;
   const tone = meterTone(r);
@@ -164,13 +158,7 @@ export function MeterPopover({
     <div
       data-meter-popover
       role="tooltip"
-      className={`w-[296px] overflow-hidden rounded-md border shadow-2xl ${
-        layout === 'floating'
-          ? `absolute top-full z-50 mt-1.5 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-150 ${
-              align === 'right' ? 'right-0' : 'left-0'
-            }`
-          : 'relative'
-      }`}
+      className="relative w-[296px] overflow-hidden rounded-md border shadow-2xl"
       style={{
         borderColor: PANEL.border,
         background: PANEL.bg,
@@ -230,7 +218,7 @@ export function MeterPopover({
         style={{ borderColor: PANEL.divider, background: 'rgba(0,0,0,0.28)' }}
       >
         <span className="font-ui text-chrome-micro" style={{ color: PANEL.faint }}>
-          Click for the full usage picture
+          Open Usage
         </span>
         <span
           aria-hidden

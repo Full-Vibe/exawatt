@@ -166,12 +166,14 @@ function ScopeReadout({
         <div
           data-board-scope-burn
           className="flex items-baseline gap-1.5 text-chrome-micro"
-          title={`${exact(activity.burn.rawTokens)} tokens across ${activity.burn.reportedCount} reporting ${activity.burn.reportedCount === 1 ? 'Agent' : 'Agents'}${activity.burn.unreportedCount > 0 ? ` · ${activity.burn.unreportedCount} unreported` : ''}`}
+          title={`${exact(activity.burn.rawTokens)} raw tokens, session to date, across ${activity.burn.reportedCount} reporting ${activity.burn.reportedCount === 1 ? 'Agent' : 'Agents'}${activity.burn.unreportedCount > 0 ? ` · ${activity.burn.unreportedCount} unreported` : ''}`}
         >
           <span className="font-mono tabular-nums text-[oklch(0.88_0.01_210)]">
             {tokens(activity.burn.rawTokens)}
           </span>
-          <span className="text-[oklch(0.6_0.012_210)]">tokens</span>
+          {/* the figure states its basis and window like every consumption
+              readout: raw units, each Agent's session to date */}
+          <span className="text-[oklch(0.6_0.012_210)]">raw · session</span>
           {activity.burn.unreportedCount > 0 && (
             <span style={{ color: FLUX.unknown }}>
               {activity.burn.unreportedCount} unreported
@@ -681,7 +683,7 @@ export function OperationsBoardSurface({
                     className="mt-1 block font-mono text-chrome-nano tracking-[0.08em]"
                     style={{ color: 'oklch(0.62 0.012 210)' }}
                   >
-                    share of token burn ·{' '}
+                    share of normalized burn ·{' '}
                     <span style={{ color: FLUX.unknown }}>grey</span> unreported
                   </span>
                 </div>

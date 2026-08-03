@@ -8,6 +8,7 @@
 import { HUD, withAlpha } from '@/components/hud';
 import { FLUX, dollars, tokens } from '@/components/consumption/flux';
 import { modelledDollars } from '@/components/consumption/units';
+import { STATUS_LIGHT_META } from '@/components/status-light/protocol';
 import type { PivotRow } from './derive';
 
 export function DrillPanel({ row }: { row: PivotRow | null }) {
@@ -63,9 +64,11 @@ export function DrillPanel({ row }: { row: PivotRow | null }) {
               >
                 {d.title}
                 {d.liveNow && (
+                  // activity state, not burn: the protocol's Active blue,
+                  // never the FLUX ramp (channel-ownership rule)
                   <span
                     className="ml-1.5 font-mono text-chrome-micro"
-                    style={{ color: FLUX.hot }}
+                    style={{ color: STATUS_LIGHT_META.active.color }}
                   >
                     live
                   </span>

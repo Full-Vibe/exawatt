@@ -11,7 +11,7 @@
  * should I change?
  *
  *   1. demo-data assurance banner
- *   2. plan-window cards — headroom, reset, pace vs even burn, projection;
+ *   2. plan-window cards — headroom, reset, pace vs even pace, projection;
  *      a source with no plan record rendered absent, never 0%
  *   3. headroom-over-time for the tightest window
  *   4. attribution pivot — bars are doors into the drill panel (the page's
@@ -33,13 +33,10 @@
 import { useMemo, useState } from 'react';
 import { HUD } from '@/components/hud';
 import { displayUsage, rawTotal } from '@/components/consumption/model';
-import { demoConsumption } from '@/components/consumption/demo-source';
-import { voltaicConsumption } from '@/components/consumption/voltaic-source';
+import { useTenantConsumption } from '@/components/consumption/use-tenant-consumption';
 import { CONSUMPTION_SURFACE_NAME } from '@/components/consumption/surface-name';
 import { exact } from '@/components/consumption/flux';
 import { SurfaceReadinessMarker } from '@/components/readiness';
-import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
-import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
 import {
   allPaces,
   diagnostics,
@@ -62,14 +59,9 @@ type DrillSelection =
   | null;
 
 export function UsageClient() {
-  const tenancy = useOptionalWorkspaceTenancy();
-  const inDemoTenant =
-    (tenancy?.hydrated ?? false) &&
-    tenancy?.activeWorkspace.id === DEMO_WORKSPACE_ID;
-  const demo = useMemo(
-    () => (inDemoTenant ? voltaicConsumption() : demoConsumption()),
-    [inDemoTenant]
-  );
+  // ONE tenant-aware seam, shared with the ambient chrome meter — the title
+  // bar and this page render the same corpus at the same pinned instant.
+  const { view: demo, voltaic: inDemoTenant } = useTenantConsumption();
 
   const raw = rawTotal(
     displayUsage(demo.workspace.totals, demo.workspace.sources)
@@ -115,8 +107,9 @@ export function UsageClient() {
             {CONSUMPTION_SURFACE_NAME}
           </h1>
           {/* ENG-026 N0: the surface's one readiness marker, manifest-driven —
-              E5's flip to `live` removes it with no change here. */}
-          <SurfaceReadinessMarker surfaceId="consumption" owner="ENG-008" />
+              E5's flip to `live` removes it with no change here. No owner
+              tag: roadmap IDs are provenance and live in docs, not chrome. */}
+          <SurfaceReadinessMarker surfaceId="consumption" />
           <span
             className="ml-auto text-chrome-meta"
             style={{ color: HUD.textDim }}
