@@ -146,6 +146,46 @@ describe('workspace focus shortcuts', () => {
     terminal.remove();
   });
 
+  it('summons quick feedback on ⌘⇧F from inside xterm once the terminal declines the chord (ENG-025)', () => {
+    const handlers = actions();
+    renderHook(() => useWorkspaceShortcuts(handlers));
+    const opened = vi.fn();
+    window.addEventListener('exawatt:open-quick-feedback', opened);
+    const terminal = document.createElement('textarea');
+    terminal.className = 'xterm-helper-textarea';
+    document.body.append(terminal);
+
+    // the terminal's chord matcher declines ⌘⇧F (terminal-chords.ts), so the
+    // event reaches this layer unprevented and the global verb fires
+    const summon = new KeyboardEvent('keydown', {
+      key: 'F',
+      code: 'KeyF',
+      metaKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    terminal.dispatchEvent(summon);
+    expect(opened).toHaveBeenCalledTimes(1);
+    expect(summon.defaultPrevented).toBe(true);
+
+    // a chord the terminal DID handle (plain ⌘F find) arrives prevented and
+    // must never double-apply as a workspace verb
+    const find = new KeyboardEvent('keydown', {
+      key: 'f',
+      code: 'KeyF',
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(find, 'defaultPrevented', { value: true });
+    terminal.dispatchEvent(find);
+    expect(opened).toHaveBeenCalledTimes(1);
+
+    window.removeEventListener('exawatt:open-quick-feedback', opened);
+    terminal.remove();
+  });
+
   it('moves fixed Project ordinals to command-option digits', () => {
     const handlers = actions();
     renderHook(() => useWorkspaceShortcuts(handlers));

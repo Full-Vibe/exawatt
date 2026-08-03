@@ -21,6 +21,7 @@ function installApi() {
         branch: 'master',
         builtAt: '',
         delivery: 'dogfood',
+        version: '1.0.0',
       }),
       getUpdateStatus: async () => ({
         phase: 'idle',

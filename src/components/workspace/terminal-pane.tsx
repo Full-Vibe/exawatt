@@ -15,6 +15,7 @@ import { FOCUS_ACTIVE_TERMINAL_EVENT } from './session-jump';
 import { TERMINAL_FONT } from './terminal-font';
 import type { EffectiveTerminalFont } from './terminal-font';
 import { findFileLinks } from './terminal-links';
+import { matchTerminalChord } from './terminal-chords';
 
 export { TERMINAL_FONT, resolveTerminalFont } from './terminal-font';
 export type { EffectiveTerminalFont } from './terminal-font';
@@ -228,35 +229,30 @@ export function TerminalPane({
         el.removeEventListener('keydown', onTerminalKeyDown, true);
         el.removeEventListener('pointerdown', onTerminalPointerDown, true);
       });
+      // The pane claims exactly the chords it implements; a declined chord
+      // (for example ⌘⇧F quick feedback) bubbles on to the workspace layers.
       term.attachCustomKeyEventHandler(event => {
-        if (event.type !== 'keydown') return true;
-        if (!event.metaKey) {
-          return true;
+        const verb = matchTerminalChord(event);
+        if (!verb) return true;
+        event.preventDefault();
+        switch (verb) {
+          case 'find':
+            setSearchOpen(true);
+            requestAnimationFrame(() => searchInput.current?.focus());
+            break;
+          case 'copy': {
+            const selection = term.getSelection();
+            if (selection) void api.copyText(selection);
+            break;
+          }
+          case 'paste':
+            void api.pasteClipboard(sessionId);
+            break;
+          case 'select-all':
+            term.selectAll();
+            break;
         }
-        const key = event.key.toLowerCase();
-        if (key === 'f') {
-          event.preventDefault();
-          setSearchOpen(true);
-          requestAnimationFrame(() => searchInput.current?.focus());
-          return false;
-        }
-        if (key === 'c') {
-          event.preventDefault();
-          const selection = term.getSelection();
-          if (selection) void api.copyText(selection);
-          return false;
-        }
-        if (key === 'v') {
-          event.preventDefault();
-          void api.pasteClipboard(sessionId);
-          return false;
-        }
-        if (key === 'a') {
-          event.preventDefault();
-          term.selectAll();
-          return false;
-        }
-        return true;
+        return false;
       });
       // paste is ONE verb with ONE implementation (D28): a menu-driven
       // Edit ▸ Paste lands as a DOM paste event on xterm's textarea —

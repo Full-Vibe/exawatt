@@ -946,7 +946,11 @@ function registerDialogIPC(): void {
 }
 
 function registerAppIPC(): void {
-  handleTrusted('app:get-build-info', () => buildInfo);
+  handleTrusted('app:get-build-info', () => ({
+    ...buildInfo,
+    // marketed version alongside the exact sha (ENG-025 feedback stamping)
+    version: app.getVersion(),
+  }));
   // Optional ENG-032 action overlay input: '#RRGGBB' or null off-macOS.
   // The selected theme remains the default and Project identity stays separate.
   const systemAccentColor = () => {

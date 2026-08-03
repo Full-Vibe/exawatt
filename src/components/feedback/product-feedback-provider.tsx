@@ -24,6 +24,10 @@ import type {
   FeedbackKind,
   ProductFeedbackRequest,
 } from '@/lib/feedback/contract';
+import {
+  applyBuildMetadata,
+  type FeedbackBuildInfo,
+} from '@/lib/feedback/build-metadata';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -173,12 +177,9 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     ): Promise<boolean> => {
       const token = tokenRef.current;
       if (!token) return false;
-      let buildSha: string | null = request.buildSha ?? null;
+      let build: FeedbackBuildInfo | null = null;
       try {
-        buildSha =
-          buildSha ??
-          (await window.electron?.app?.getBuildInfo?.())?.sha ??
-          null;
+        build = (await window.electron?.app?.getBuildInfo?.()) ?? null;
       } catch {
         // Build metadata is useful context, never a condition of feedback.
       }
@@ -190,8 +191,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
             'content-type': 'application/json',
           },
           body: JSON.stringify({
-            ...request,
-            buildSha,
+            ...applyBuildMetadata(request, build),
             platform:
               request.platform ??
               window.electron?.platform ??
@@ -415,11 +415,11 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
         open={open}
         onOpenChange={next => status !== 'submitting' && setOpen(next)}
       >
-        <DialogContent className="max-w-xl border-[color:var(--hud-line)] bg-[color:var(--hud-panel)] p-0 text-foreground shadow-2xl">
-          <div className="border-b border-[color:var(--hud-line)] px-6 py-5">
+        <DialogContent className="max-w-xl border-hud-cyan/20 bg-hud-panel p-0 text-foreground shadow-2xl">
+          <div className="border-b border-hud-cyan/20 px-6 py-5">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-base">
-                <MessageSquareWarning className="size-4 text-[color:var(--hud-cyan)]" />
+                <MessageSquareWarning className="size-4 text-hud-cyan" />
                 Submit feedback
               </DialogTitle>
               <DialogDescription>
@@ -468,7 +468,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
                 </span>
               </Label>
               {attachment ? (
-                <div className="flex items-center gap-3 rounded-md border border-[color:var(--hud-line)] bg-black/20 p-2">
+                <div className="flex items-center gap-3 rounded-md border border-hud-cyan/20 bg-black/20 p-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={attachment}
@@ -543,7 +543,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
               )}
             </div>
           </div>
-          <DialogFooter className="border-t border-[color:var(--hud-line)] px-6 py-4">
+          <DialogFooter className="border-t border-hud-cyan/20 px-6 py-4">
             <Button
               type="button"
               variant="ghost"
@@ -593,7 +593,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
       )}
       {sentPulse && (
         <div className="pointer-events-none fixed inset-x-0 top-6 z-50 flex justify-center">
-          <div className="animate-in fade-in slide-in-from-top-1 flex items-center gap-1.5 rounded-full border border-[color:var(--hud-line)] bg-[color:var(--hud-panel)] px-3 py-1 text-xs text-muted-foreground shadow-lg duration-200">
+          <div className="animate-in fade-in slide-in-from-top-1 flex items-center gap-1.5 rounded-full border border-hud-cyan/20 bg-hud-panel px-3 py-1 text-xs text-muted-foreground shadow-lg duration-200">
             <Check className="size-3.5 text-emerald-400" /> Feedback sent
           </div>
         </div>

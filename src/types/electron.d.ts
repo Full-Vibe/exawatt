@@ -520,6 +520,9 @@ export interface ExawattBuildInfo {
   branch: string;
   builtAt: string;
   delivery: 'dogfood' | 'signed';
+  /** `app.getVersion()` — the marketed app version alongside the exact sha
+   *  (ENG-025: feedback rows stamp both) */
+  version: string;
 }
 
 export interface ProductUpdateStatus {

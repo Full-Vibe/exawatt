@@ -91,7 +91,7 @@ export function QuickCaptureBar({
       role="dialog"
       aria-label="Quick feedback"
       onKeyDown={onKeyDown}
-      className="w-[min(34rem,calc(100vw-2rem))] rounded-lg border border-[color:var(--hud-line)] bg-[color:var(--hud-panel)] shadow-2xl"
+      className="w-[min(34rem,calc(100vw-2rem))] rounded-lg border border-hud-cyan/20 bg-hud-panel shadow-2xl"
     >
       <textarea
         ref={textareaRef}
@@ -117,8 +117,8 @@ export function QuickCaptureBar({
             className={cn(
               'flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs transition-colors',
               entry.kind === kind
-                ? 'border-[color:var(--hud-cyan)] bg-cyan-400/10 text-foreground'
-                : 'border-[color:var(--hud-line)] text-muted-foreground hover:text-foreground'
+                ? 'border-hud-cyan bg-cyan-400/10 text-foreground'
+                : 'border-hud-cyan/20 text-muted-foreground hover:text-foreground'
             )}
           >
             {entry.label}
@@ -141,8 +141,8 @@ export function QuickCaptureBar({
             className={cn(
               'ml-1 flex items-center gap-1.5 rounded-full border py-0.5 pr-2.5 pl-1 text-xs transition-colors',
               attachScreenshot
-                ? 'border-[color:var(--hud-cyan)] bg-cyan-400/10 text-foreground'
-                : 'border-[color:var(--hud-line)] text-muted-foreground hover:text-foreground'
+                ? 'border-hud-cyan bg-cyan-400/10 text-foreground'
+                : 'border-hud-cyan/20 text-muted-foreground hover:text-foreground'
             )}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
