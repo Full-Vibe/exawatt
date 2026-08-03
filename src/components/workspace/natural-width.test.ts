@@ -74,8 +74,9 @@ describe('naturalContentWidth', () => {
     });
     // 6 + 6 padding, three children so two 4px gaps, siblings 10 + 12,
     // label 90 untruncated, plus 2 for the chip's borders
+    // + 1 reserves scrollWidth's integer rounding
     expect(naturalContentWidth(c.container, c.label, 2)).toBe(
-      6 + 6 + 8 + 22 + 90 + 2
+      6 + 6 + 8 + 22 + 90 + 1 + 2
     );
   });
 
@@ -95,6 +96,19 @@ describe('naturalContentWidth', () => {
     expect(naturalContentWidth(long.container, long.label, 2)).toBeGreaterThan(
       naturalContentWidth(short.container, short.label, 2)!
     );
+  });
+
+  it('reserves the pixel scrollWidth rounds away', () => {
+    // A label whose real text width is fractional reports a floor'd
+    // integer; sizing exactly to it draws an ellipsis for nothing.
+    const c = chip({
+      assigned: 200,
+      labelText: 50,
+      labelBox: 50,
+      siblings: [],
+    });
+    const width = naturalContentWidth(c.container, c.label, 0)!;
+    expect(width).toBeGreaterThan(6 + 6 + 50);
   });
 
   it('returns null when there is nothing measurable', () => {

@@ -49,7 +49,13 @@ export function naturalContentWidth(
     (Number.parseFloat(style.paddingRight) || 0) +
     gap * Math.max(0, children.length - 1) +
     siblings +
+    // `scrollWidth` is an INTEGER: a label whose text is really 50.4px wide
+    // reports 50, so sizing the chip to it hands the text 50px and the
+    // renderer draws an ellipsis the content did not need. Every Project
+    // name in the ribbon was quietly truncating by a fraction of a pixel.
+    // Reserve the rounding.
     flexible.scrollWidth +
+    1 +
     extra;
   return width > extra ? Math.ceil(width) : null;
 }
