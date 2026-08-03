@@ -62,6 +62,81 @@ Altitude names and the transition model are decided separately in decision
 and the board gains a required **entry pose** so that arriving from the middle
 altitude is a camera move rather than a cut.
 
+### UX pass — 2026-08-02 (operator + hands-on drive): the V3.3 brief
+
+The operator's verdict on the shipped board: *"It's really chunky and clunky
+and rough around the edges. I don't really like using it at all."* The pass
+drove every interaction at four fleet scales (demo S/M/L and the 173-agent
+Voltaic fleet) with frame timing, then put the findings to the operator. The
+evidence and the operator's answers together shape **V3.3 Feel & Fidelity**.
+
+**Measured/observed findings** (drive harness, dev server):
+
+1. Altitude changes remount the zone/piece layers (they are keyed by semantic
+   address), replaying entrance choreography and stalling 500–1400ms
+   mid-transition. The camera "flight" completes between two frames ~140ms
+   apart — a cut dressed as a flight, at the most-used interaction. Lateral
+   moves (N/P, project-to-project) jump the same way. Operator: transitions
+   are "jumpy, also jumpy laterally."
+2. Plain wheel input is frequently eaten whole by pan clamping (six ticks at
+   Agent altitude moved nothing). `V` acked at 133ms against the 80ms budget.
+3. Arrow keys pan the camera; the operator expects them to WALK UNITS:
+   "I want the arrow keys to navigate spatially to different units on the map
+   and not pan the camera."
+4. Up close the octagon body vanishes into the zone fill, so a piece reads as
+   a large flat status moon with a black label chip. At Voltaic scale every
+   agent is a saturated status-colored chip — the grammar's "semantic and
+   scarce" status color is instead 100% of the field. Operator: "the noun
+   primitives just look super low quality and basic. Just boxes with
+   background colors — we chose R3F/WebGL for a reason, and that was to push
+   the UI more."
+5. Pieces are not individually recognizable: the board labels pieces with the
+   transport's `cwd · harness-title` name, so a real four-agent Project reads
+   "exawatt · Claude Co…" four times (operator screenshot). The durable
+   context goal that already distinguishes these Sessions on the Team tiles
+   never reaches the board.
+6. The world is information-starved: a one-agent drill renders one donut
+   centered in a screen-sized empty slab; identity/goal/activity/cost all
+   live in edge chrome. Agent altitude is Team altitude plus a side panel —
+   no in-world resolution change.
+7. Chrome is scattered across six floating clusters, the minimap/switcher
+   cluster relocates between altitudes, and the hero attention callout is "a
+   bell waiting pop-up floating modal thing that doesn't make any sense" that
+   also overlaps zone headers at scale. The operator does not use the chrome.
+   Top-level fleet stats are worth keeping; the activity feed's
+   state-transition exhaust is not.
+
+**Operator direction** (the shape of V3.3):
+
+- **Control model: classic RTS unit control** — decision `0024`. Scroll and
+  trackpad pan; click-drag draws a selection box; arrow keys walk units with
+  the camera following; selection populates a game-style command panel.
+  Comp named by the operator: StarCraft / Command & Conquer unit control.
+- **A tiled game board, not rectangles.** "Each agent should be kind of like
+  an octagon or hexagon tile and then each of the projects should be a larger
+  version of that on the tiled game board, not just a big rectangle." One
+  tile family at two scales; zones sized by their population, no empty pools.
+- **Rendering pushed to earn the WebGL choice**: real tile materiality
+  (bevel, depth, edge light), status subordinate to a visible body, scarce
+  color at scale — within decision `0007`'s restrained-board constraints.
+- **In-world identity and activity** (operator chose "activity in-world"):
+  each piece carries the durable context goal as its label — the same truth
+  the Team tiles show, never the duplicated harness title — plus its current
+  activity sentence at Team/Agent altitude within the label budget.
+- **Chrome consolidation**: one stable tool cluster; the selection command
+  panel absorbs the inspector and the activity feed (the feed becomes "what
+  has this unit been doing" — meaningful Events, not state-transition
+  exhaust); the hero callout is redesigned into the attention system (zone
+  highlight + minimap ping + the needs-you queue) rather than a floating
+  modal; the top status strip survives.
+
+**Sequencing note.** V3.3's transition slice (F1) makes the board's layers
+survive altitude changes and morph in place — that is the same
+identity-and-position-carries foundation V3.0's entry pose needs, so V3.0
+(demo-arc P7, gated on P6.5) should land ON this foundation rather than build
+its own. The tile-family redesign prototypes in `/hud-gallery` for operator
+review before production adoption, per the standing workbench rule.
+
 ## V2.0 Design Brief: Spatial Operations Board
 
 ### Outcome and operator job

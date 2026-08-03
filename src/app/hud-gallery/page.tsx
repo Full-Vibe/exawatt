@@ -33,6 +33,7 @@ import {
   FIXTURE_METRICS,
 } from '@/components/hud/gallery-fixtures';
 import { SessionStateTileStudy } from '@/components/hud/session-state-tile-study';
+import { BoardTileStudy } from '@/components/hud/board-tile-study';
 import { ProjectRibbonStudy } from '@/components/hud/project-ribbon-study';
 import { ReadinessGrammarStudy } from '@/components/readiness/gallery-study';
 
@@ -69,6 +70,12 @@ const SECTIONS: Section[] = [
     title: 'Elastic Project ribbon',
     meta: 'production component · two-row target-bounds layout + Initiative projection',
     showcase: <ProjectRibbonStudy />,
+  },
+  {
+    id: 'board-tiles',
+    title: 'Board tile family',
+    meta: 'V3.3 F4 prototype · hex tile grammar for operator review · decision 0024 direction',
+    showcase: <BoardTileStudy />,
   },
   {
     id: 'session-state-tiles',
