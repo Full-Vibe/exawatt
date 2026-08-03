@@ -25,12 +25,10 @@ import {
   Network,
   Trophy,
   Settings,
-  Blocks,
   MessageSquareWarning,
   type LucideIcon,
 } from 'lucide-react';
 import { signOut } from '@/app/actions/projects';
-import { isAdminEmail } from '@/lib/auth/admin';
 import { ALTITUDE_ICONS, CommandAltitudeNav } from './command-altitude-nav';
 import { APP_SURFACES, isAppRoute } from './surfaces';
 import {
@@ -132,9 +130,7 @@ export function SiteHeaderNav({
     pathname?.startsWith('/agentmaxxing') ||
     pathname?.startsWith('/operator/') ||
     pathname?.startsWith('/run/');
-  const isComponentLibrary = pathname?.startsWith('/hud-gallery');
   const isWorkspace = pathname?.startsWith('/workspace');
-  const isAdmin = isAdminEmail(userEmail);
   const feedback = useOptionalProductFeedback();
   const tenancy = useOptionalWorkspaceTenancy();
   const activeWorkspace = tenancy?.activeWorkspace;
@@ -240,15 +236,7 @@ export function SiteHeaderNav({
           <Button variant="ghost" size="sm" asChild>
             <Link href="/agentmaxxing" className="text-chrome-title!">
               <Trophy className="h-3.5 w-3.5" />
-              Agentmaxxing
-            </Link>
-          </Button>
-        )}
-        {isAdmin && !isComponentLibrary && (
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/hud-gallery">
-              <Blocks className="h-3.5 w-3.5" />
-              Components
+              Leaderboard
             </Link>
           </Button>
         )}

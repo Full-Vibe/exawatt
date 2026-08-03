@@ -12,22 +12,24 @@ vi.mock('@/app/actions/projects', () => ({
 
 afterEach(cleanup);
 
-describe('SiteHeaderNav component-library link', () => {
-  it('shows Components beside Architecture for the temporary admin', () => {
+describe('SiteHeaderNav leaderboard link', () => {
+  it('shows Leaderboard beside Architecture', () => {
     render(<SiteHeaderNav isAuthenticated userEmail="jake@jakeschwartz.com" />);
 
     expect(screen.getByRole('link', { name: /architecture/i })).toBeVisible();
-    expect(screen.getByRole('link', { name: /components/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /leaderboard/i })).toHaveAttribute(
       'href',
-      '/hud-gallery'
+      '/agentmaxxing'
     );
+    expect(screen.queryByRole('link', { name: /components/i })).toBeNull();
   });
 
-  it('does not expose the Components link to other users', () => {
+  it('shows the public Leaderboard link to every operator', () => {
     render(<SiteHeaderNav isAuthenticated userEmail="someone@example.com" />);
 
-    expect(
-      screen.queryByRole('link', { name: /components/i })
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /leaderboard/i })).toHaveAttribute(
+      'href',
+      '/agentmaxxing'
+    );
   });
 });
