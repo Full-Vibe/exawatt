@@ -11,7 +11,10 @@
  *   idle 5                   → off
  *   complete 5               → result
  *   blocked 3                → needs-you (approval, question, credential —
- *                              one of each `BlockerType` story)
+ *                              the three operator-answerable `BlockerType`
+ *                              stories; the union's `error`/`awaiting_agent`
+ *                              members surface through fault notes and
+ *                              delegation states, not authored blockers)
  *   error 2                  → fault
  *
  * Delegation (ENG-023): four Claude Code parents carry eight delegated runs
@@ -25,6 +28,7 @@
  */
 
 import type { DemoFleetAgent } from './types';
+import { deepFreezeFixture } from './types';
 import { DEMO_WORKSPACE_NOW_MS, HOUR_MS, MIN_MS, DAY_MS } from './startup';
 
 const NOW = DEMO_WORKSPACE_NOW_MS;
@@ -32,7 +36,7 @@ const m = (n: number) => NOW - n * MIN_MS;
 const h = (n: number) => NOW - n * HOUR_MS;
 const d = (n: number) => NOW - n * DAY_MS;
 
-export const DEMO_BASE_AGENTS: DemoFleetAgent[] = [
+export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
   /* ---------------- dispatch-engine ---------------- */
   {
     id: 'vg-dsp-forecast',
@@ -900,4 +904,4 @@ export const DEMO_BASE_AGENTS: DemoFleetAgent[] = [
     tier: 'base',
     initiativeId: 'init-pilot-500',
   },
-];
+]);

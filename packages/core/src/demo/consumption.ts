@@ -11,8 +11,12 @@
  *
  * - cache reads dominate raw volume by 10-100x;
  * - Claude Code sessions are fewer and larger, Codex sessions many and
- *   smaller, and only Codex reports reasoning tokens and plan windows;
- * - delegated runs exist ONLY on Claude Code samples (`SOURCE_CAPABILITIES`);
+ *   smaller (measured: 61 vs 302 operator sessions), and only Codex reports
+ *   reasoning tokens and plan windows;
+ * - delegated runs exist ONLY on Claude Code samples (`SOURCE_CAPABILITIES`)
+ *   and are a large share of them (measured: 37.7% of Claude samples);
+ *   both of these cited properties are TEST-ENFORCED against this corpus in
+ *   `demo-workspace.test.ts`, so this header cannot drift from the data;
  * - Exawatt's own goal-subtitle summarizer (`entrypoint: sdk-cli`) appears
  *   as many tiny machine sessions, so surfaces can separate tool overhead
  *   from the work being measured;
@@ -30,6 +34,7 @@ import type {
   RawUsage,
 } from '../consumption/types';
 import type { DemoFleetAgent, DemoUsageSpec } from './types';
+import { deepFreezeFixture } from './types';
 import { DEMO_BASE_AGENTS } from './agents';
 import { DEMO_PROJECTS, DEMO_PROJECTS_BY_KEY } from './projects';
 import {
@@ -235,26 +240,31 @@ function historySamples(): ConsumptionSample[] {
       const sessionCount = Math.round(roll * 3 * weight * weekendFactor);
       for (let s = 0; s < sessionCount; s++) {
         const key = `${project.key}:history:${day}:${s}`;
-        const codex = seedFrom(`${key}:src`) < 1.6;
+        // Codex is the majority of operator sessions (measured: 302 of 363,
+        // 83%); Claude sessions are fewer and individually larger.
+        const codex = seedFrom(`${key}:src`) < 1.8;
         const magnitude = 0.5 + (seedFrom(`${key}:mag`) - 1.1) * 1.8;
         const turns = 4 + Math.floor((seedFrom(`${key}:turns`) - 1.1) * 9);
         const startedAtMs =
           dayStart + 9 * HOUR_MS + Math.round((seedFrom(`${key}:hour`) - 1.1) * 8 * HOUR_MS);
         const output = Math.round(turns * (codex ? 27_000 : 22_000) * magnitude);
+        const sessionId = sessionIdFrom(key);
+        const gitBranch = codex
+          ? null
+          : `agent/${project.key}-${HISTORY_TITLE_SLUGS[s % HISTORY_TITLE_SLUGS.length]}-${day}`;
+        const effort = seedFrom(`${key}:effort`) < 1.6 ? 'medium' : 'high';
         out.push(
           ...emit({
-            sessionId: sessionIdFrom(key),
+            sessionId,
             source: codex ? 'codex' : 'claude-code',
             model: codex
               ? 'gpt-5.3-codex'
               : seedFrom(`${key}:model`) < 1.5
                 ? 'claude-opus-5'
                 : 'claude-sonnet-5',
-            effort: seedFrom(`${key}:effort`) < 1.6 ? 'medium' : 'high',
+            effort,
             cwd: project.dir,
-            gitBranch: codex
-              ? null
-              : `agent/${project.key}-${HISTORY_TITLE_SLUGS[s % HISTORY_TITLE_SLUGS.length]}-${day}`,
+            gitBranch,
             entrypoint: codex ? 'codex-tui' : 'cli',
             startedAtMs,
             lastAtMs: startedAtMs + Math.round(turns * 14 * MIN_MS),
@@ -269,6 +279,50 @@ function historySamples(): ConsumptionSample[] {
             delegation: null,
           })
         );
+        // Delegation is pervasive on real Claude Code sessions — 37.7% of
+        // measured Claude samples are delegated runs — so most finished
+        // Claude sessions here carry one to three child runs.
+        if (!codex) {
+          const delegRoll = seedFrom(`${key}:deleg`); // 1.1..~2.1
+          if (delegRoll < 1.85) {
+            const childCount = delegRoll < 1.45 ? 3 : delegRoll < 1.7 ? 2 : 1;
+            for (let c = 0; c < childCount; c++) {
+              const childKey = `${key}:child:${c}`;
+              const childTurns = Math.max(3, Math.round(turns / 2));
+              const childStart = startedAtMs + (c + 1) * 25 * MIN_MS;
+              const childOutput = Math.round(childTurns * 15_000 * magnitude);
+              out.push(
+                ...emit({
+                  sessionId,
+                  source: 'claude-code',
+                  model: c % 2 === 0 ? 'claude-sonnet-5' : 'claude-opus-5',
+                  effort,
+                  cwd: project.dir,
+                  gitBranch,
+                  entrypoint: 'cli',
+                  startedAtMs: childStart,
+                  lastAtMs: childStart + childTurns * 10 * MIN_MS,
+                  turns: childTurns,
+                  usage: {
+                    input: Math.round(childTurns * 7_000 * magnitude),
+                    cacheRead: Math.round(childTurns * 900_000 * magnitude),
+                    cacheWrite: Math.round(childTurns * 90_000 * magnitude),
+                    output: childOutput,
+                  },
+                  delegation: {
+                    agentId: `agent-${sessionIdFrom(childKey).slice(0, 4)}`,
+                    parentSessionId: sessionId,
+                    agentType: c === 0 ? 'Explore' : 'general-purpose',
+                    spawnDepth: 1,
+                    skill: null,
+                    background: false,
+                    parentAgentId: null,
+                  },
+                })
+              );
+            }
+          }
+        }
       }
     }
   }
@@ -356,16 +410,9 @@ export function demoWorkspacePlanWindows(): PlanWindow[] {
   ];
 }
 
-let cached: DemoWorkspaceConsumption | null = null;
-
-/**
- * The Demo Workspace's full consumption corpus: base-tier Sessions (with
- * their delegated runs), fourteen days of finished-session history, and
- * Exawatt's own machine-entrypoint overhead. Deterministic and cached.
- */
-export function demoWorkspaceConsumption(): DemoWorkspaceConsumption {
-  if (cached) return cached;
-  cached = {
+/** Pure build of the whole corpus at the frozen fixture clock. */
+function buildConsumption(): DemoWorkspaceConsumption {
+  return {
     samples: [
       ...DEMO_BASE_AGENTS.flatMap(agentSamples),
       ...historySamples(),
@@ -373,7 +420,57 @@ export function demoWorkspaceConsumption(): DemoWorkspaceConsumption {
     ],
     planWindows: demoWorkspacePlanWindows(),
   };
-  return cached;
+}
+
+let cached: DemoWorkspaceConsumption | null = null;
+
+export interface DemoConsumptionOptions {
+  /** Rebase every timestamp so the corpus reads as "now" (mirrors
+   * `demoFleetAgents`' option, so W2 consumers get time-coherent data). */
+  nowMs?: number;
+}
+
+function rebaseConsumption(
+  corpus: DemoWorkspaceConsumption,
+  nowMs: number
+): DemoWorkspaceConsumption {
+  const delta = nowMs - DEMO_WORKSPACE_NOW_MS;
+  if (delta === 0) return corpus;
+  return {
+    samples: corpus.samples.map(sample => ({
+      ...sample,
+      at: iso(Date.parse(sample.at) + delta),
+    })),
+    planWindows: corpus.planWindows.map(window => ({
+      ...window,
+      observedAt: iso(Date.parse(window.observedAt) + delta),
+      resetsAt:
+        window.resetsAt === null ? null : iso(Date.parse(window.resetsAt) + delta),
+    })),
+  };
+}
+
+/**
+ * The Demo Workspace's full consumption corpus: base-tier Sessions (with
+ * their delegated runs), fourteen days of finished-session history, and
+ * Exawatt's own machine-entrypoint overhead. Deterministic; the canonical
+ * corpus is built once and deep-frozen (consumer mutation cannot corrupt
+ * "reset = identical"), and `nowMs` rebasing derives fresh copies from it.
+ */
+export function demoWorkspaceConsumption(
+  options: DemoConsumptionOptions = {}
+): DemoWorkspaceConsumption {
+  if (!cached) cached = deepFreezeFixture(buildConsumption());
+  return rebaseConsumption(cached, options.nowMs ?? DEMO_WORKSPACE_NOW_MS);
+}
+
+/**
+ * INTERNAL, for tests: rebuild the corpus from scratch, bypassing the module
+ * cache, so determinism is provable against an INDEPENDENT build rather than
+ * by comparing a cached object to itself.
+ */
+export function rebuildConsumptionForTest(): DemoWorkspaceConsumption {
+  return buildConsumption();
 }
 
 /**

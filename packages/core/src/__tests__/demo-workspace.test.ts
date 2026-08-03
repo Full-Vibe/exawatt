@@ -37,7 +37,10 @@ import {
   demoWorkspaceConsumption,
   demoWorkspaceProjectResolver,
   isCodingFunction,
+  rebuildConsumptionForTest,
+  rebuildScaleTierForTest,
 } from '../demo/index';
+import type { DemoProjectFunction } from '../demo/index';
 
 /** ENG-016 D40 five-signal projection of the shared AgentStatus union.
  * Mirrors `AGENT_STATUS_LIGHT_STATE` in the app's status-light protocol. */
@@ -75,7 +78,16 @@ describe('demo workspace shape (W3)', () => {
         isCodingFunction(project.function) ? 'live' : 'preview'
       );
     }
-    expect(CODING_FUNCTIONS).not.toContain('research');
+    // pin EVERY preview function: silently promoting one into
+    // CODING_FUNCTIONS would flip its Projects to `live` and fake the present
+    const previewFunctions: DemoProjectFunction[] = ['research', 'marketing', 'support'];
+    for (const fn of previewFunctions) {
+      expect(CODING_FUNCTIONS).not.toContain(fn);
+    }
+    // and the two lists partition the whole union
+    expect(new Set([...CODING_FUNCTIONS, ...previewFunctions]).size).toBe(
+      CODING_FUNCTIONS.length + previewFunctions.length
+    );
   });
 
   it('initiatives reference only real Projects', () => {
@@ -155,6 +167,24 @@ describe('five-signal status protocol coverage (W3, ENG-016 D40)', () => {
     }
   });
 
+  it('every needs-you row is distinct, authored copy — no clone filler', () => {
+    const blocked = demoFleetAgents('scale').filter(a => a.blocker);
+    expect(blocked.length).toBeGreaterThanOrEqual(10);
+    const titles = blocked.map(a => a.blocker!.title);
+    const descriptions = blocked.map(a => a.blocker!.description);
+    expect(new Set(titles).size).toBe(blocked.length);
+    expect(new Set(descriptions).size).toBe(blocked.length);
+    for (const agent of blocked) {
+      // written like the base tier: a concrete description and suggested
+      // responses, not a generic stem
+      expect(agent.blocker!.description.length, agent.id).toBeGreaterThan(80);
+      expect(agent.blocker!.suggestedResponses?.length, agent.id).toBeGreaterThanOrEqual(2);
+      // investor-visible copy: month names are proper nouns
+      expect(agent.blocker!.title, agent.id).not.toMatch(/\bjuly\b/);
+      expect(agent.blocker!.description, agent.id).not.toMatch(/\bjuly\b/);
+    }
+  });
+
   it('base tier exercises all three needs-you stories', () => {
     const types = new Set(
       DEMO_BASE_AGENTS.filter(a => a.blocker).map(a => a.blocker!.type)
@@ -211,6 +241,32 @@ describe('honesty boundaries (ENG-026 / ENG-028)', () => {
     expect(DEMO_TRANSCRIPTS['vg-res-nprr']).toBeDefined();
   });
 
+  it('preview desks delegate function-appropriate work, never coding tasks', () => {
+    const childStems: Record<string, string[]> = {
+      research: ['Primary source sweep', 'Citation and figure check'],
+      marketing: ['Prior campaign scan', 'Claim fact-check'],
+      support: ['Ticket sample pull', 'Macro tone audit'],
+    };
+    let previewParents = 0;
+    for (const agent of demoFleetAgents('scale')) {
+      const project = DEMO_PROJECTS_BY_KEY.get(agent.projectKey)!;
+      if (isCodingFunction(project.function)) continue;
+      if (agent.delegated.length > 0) previewParents += 1;
+      for (const child of agent.delegated) {
+        expect(child.task, `${agent.id}: ${child.task}`).not.toMatch(
+          /^(Survey prior art|Test coverage)/
+        );
+        const stems = childStems[project.function];
+        expect(
+          stems.some(stem => child.task.startsWith(stem)),
+          `${agent.id}: "${child.task}" does not fit a ${project.function} desk`
+        ).toBe(true);
+      }
+    }
+    // at least one preview desk actually delegates, so this test bites
+    expect(previewParents).toBeGreaterThanOrEqual(1);
+  });
+
   it('session links point at items that exist in that Project roadmap', () => {
     for (const agent of demoFleetAgents('scale')) {
       if (agent.roadmapItemId !== null) {
@@ -243,6 +299,38 @@ describe('scale tier (W4) — honest structure, not cloned filler', () => {
     expect(goals.size).toBe(fleet.length);
   });
 
+  it('every git branch is unique and never truncated mid-word', () => {
+    const branches = fleet
+      .map(a => a.gitBranch)
+      .filter((b): b is string => b !== null);
+    expect(branches.length).toBeGreaterThanOrEqual(50);
+    expect(new Set(branches).size).toBe(branches.length);
+    for (const agent of fleet) {
+      // the word-shape rules below target the GENERATED tier (base-tier
+      // branches are hand-authored and may abbreviate deliberately)
+      if (agent.gitBranch === null || agent.tier !== 'scale') continue;
+      // a fan-out partition's branch keeps its distinguishing partition
+      // token, so parallel partitions can never collapse onto one branch
+      const partition = agent.name.match(/(\d+)\/(\d+)$/);
+      if (partition) {
+        expect(agent.gitBranch, agent.id).toMatch(
+          new RegExp(`-${partition[1]}-${partition[2]}$`)
+        );
+      }
+      // no branch segment is a truncated word: every hyphen-separated token
+      // must appear whole in the agent's name or roadmap item id
+      const sourceWords = new Set(
+        `${agent.roadmapItemId ?? ''} ${agent.projectKey} ${agent.name}`
+          .toLowerCase()
+          .split(/[^a-z0-9]+/)
+          .filter(Boolean)
+      );
+      for (const token of agent.gitBranch.replace(/^agent\//, '').split('-')) {
+        expect(sourceWords.has(token), `${agent.id}: "${token}" in ${agent.gitBranch}`).toBe(true);
+      }
+    }
+  });
+
   it('every Project keeps a populated cluster at scale', () => {
     for (const project of DEMO_PROJECTS) {
       const members = fleet.filter(a => a.projectKey === project.key);
@@ -266,8 +354,26 @@ describe('scale tier (W4) — honest structure, not cloned filler', () => {
     expect(working / scaleOnly.length).toBeLessThan(0.6);
   });
 
-  it('is deterministic — reset means identical data', () => {
-    expect(demoFleetAgents('scale')).toEqual(demoFleetAgents('scale'));
+  it('is deterministic — an INDEPENDENT rebuild is deeply identical', () => {
+    // rebuildScaleTierForTest bypasses the module cache, so this compares
+    // two separate generation runs, not a cached object to itself
+    const cachedScaleTier = demoFleetAgents('scale').filter(a => a.tier === 'scale');
+    expect(rebuildScaleTierForTest()).toEqual(cachedScaleTier);
+    expect(rebuildScaleTierForTest()).toEqual(rebuildScaleTierForTest());
+  });
+
+  it('fixtures are deep-frozen — consumer mutation cannot corrupt reset', () => {
+    const first = demoFleetAgents('scale');
+    expect(Object.isFrozen(first[0])).toBe(true);
+    expect(Object.isFrozen(first[0].usage)).toBe(true);
+    expect(() => {
+      (first[0] as { name: string }).name = 'mutated';
+    }).toThrow(TypeError);
+    expect(() => {
+      (first[0].delegated as unknown[]).push('bogus');
+    }).toThrow(TypeError);
+    // and a second read is byte-identical to the first
+    expect(demoFleetAgents('scale')).toEqual(first);
   });
 
   it('rebasing shifts every timestamp without changing structure', () => {
@@ -352,8 +458,72 @@ describe('consumption history (W3, over the real ENG-008 shapes)', () => {
     }
   });
 
-  it('is deterministic — reset means identical data', () => {
-    expect(demoWorkspaceConsumption().samples).toEqual(corpus.samples);
+  it('matches the measured corpus properties the header cites', () => {
+    // measured (consumption-spine.md): 61 Claude vs 302 Codex operator
+    // sessions — Codex sessions are the majority, Claude sessions are
+    // individually larger
+    const operator = corpus.samples.filter(s => isOperatorEntrypoint(s.entrypoint));
+    const sessionsOf = (source: string) =>
+      new Set(
+        operator.filter(s => s.source === source).map(s => s.providerSessionId)
+      );
+    const claudeSessions = sessionsOf('claude-code');
+    const codexSessions = sessionsOf('codex');
+    expect(codexSessions.size).toBeGreaterThan(claudeSessions.size);
+    const rawTotal = (samples: typeof corpus.samples) =>
+      samples.reduce(
+        (total, s) =>
+          total +
+          s.usage.inputTokens +
+          s.usage.cacheReadTokens +
+          s.usage.cacheWriteTokens +
+          s.usage.outputTokens,
+        0
+      );
+    const claudeMean =
+      rawTotal(operator.filter(s => s.source === 'claude-code')) / claudeSessions.size;
+    const codexMean =
+      rawTotal(operator.filter(s => s.source === 'codex')) / codexSessions.size;
+    expect(claudeMean).toBeGreaterThan(codexMean);
+
+    // measured: delegated runs are 37.7% of Claude Code samples
+    const claude = corpus.samples.filter(s => s.source === 'claude-code');
+    const delegatedShare =
+      claude.filter(s => s.delegation !== null).length / claude.length;
+    expect(delegatedShare).toBeGreaterThan(0.32);
+    expect(delegatedShare).toBeLessThan(0.43);
+  });
+
+  it('rebases to a caller nowMs, like demoFleetAgents does', () => {
+    const nowMs = Date.parse('2026-09-01T12:00:00.000Z');
+    const delta = nowMs - Date.parse('2026-08-02T16:00:00.000Z');
+    const shifted = demoWorkspaceConsumption({ nowMs });
+    expect(shifted.samples.length).toBe(corpus.samples.length);
+    for (const i of [0, 100, corpus.samples.length - 1]) {
+      expect(Date.parse(shifted.samples[i].at)).toBe(
+        Date.parse(corpus.samples[i].at) + delta
+      );
+      expect(shifted.samples[i].idempotencyKey).toBe(corpus.samples[i].idempotencyKey);
+    }
+    expect(Date.parse(shifted.planWindows[0].resetsAt!)).toBe(
+      Date.parse(corpus.planWindows[0].resetsAt!) + delta
+    );
+  });
+
+  it('is deterministic — an INDEPENDENT rebuild is deeply identical', () => {
+    // rebuildConsumptionForTest bypasses the module cache: two separate
+    // builds, not a cached object compared to itself
+    expect(rebuildConsumptionForTest()).toEqual({
+      samples: corpus.samples,
+      planWindows: corpus.planWindows,
+    });
+    expect(rebuildConsumptionForTest()).toEqual(rebuildConsumptionForTest());
+    // and the canonical corpus is frozen against consumer mutation
+    expect(Object.isFrozen(corpus.samples)).toBe(true);
+    expect(Object.isFrozen(corpus.samples[0])).toBe(true);
+    expect(() => {
+      (corpus.samples[0] as { model: string }).model = 'mutated';
+    }).toThrow(TypeError);
   });
 });
 

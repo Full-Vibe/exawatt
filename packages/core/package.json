@@ -15,6 +15,7 @@
     }
   },
   "scripts": {
+    "test": "vitest run",
     "test:run": "vitest run",
     "type-check": "tsc --noEmit",
     "types:build": "tsc -p tsconfig.types.json"

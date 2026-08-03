@@ -161,6 +161,39 @@ summarizer overhead is present and separable.
 pane content source (W2), any rendering, and any UI marker components — the
 fixtures carry `readiness` as data; ENG-026 owns how `preview` renders.
 
+### 2026-08-02 — W3/W4 review fixes (landed)
+
+A verified review of the fixture commit found six defects; all are fixed and
+test-enforced (`demo-workspace.test.ts`, now 43 tests):
+
+- **Branches**: the scale generator truncated branch slugs mid-word at 24
+  chars, collapsing fan-out partitions onto one branch (`…-migrati` ×5).
+  Branch slugs now trim at word boundaries only and always keep the partition
+  token; branch uniqueness and word-shape are test-enforced.
+- **Determinism was tested tautologically** (cached object vs itself). The
+  fixtures now expose internal rebuild hooks (`rebuildScaleTierForTest`,
+  `rebuildConsumptionForTest`) and tests compare two independent builds. The
+  canonical fleet and corpus are deep-frozen, so consumer mutation cannot
+  corrupt "reset = identical".
+- **Consumption now matches the measured corpus it cites**
+  (consumption-spine.md): Codex operator sessions outnumber Claude's
+  (75 vs 40; measured 302 vs 61) while Claude sessions stay individually
+  larger, and delegated runs are ~36% of Claude samples (measured 37.7%).
+  Both cited properties are test-enforced so the module header cannot lie.
+  The corpus is now 1,178 samples over the same 145 provider sessions.
+- **Needs-you rows are authored, never rolled**: blocked status at the scale
+  tier now comes only from a written, assignment/partition-specific blocker
+  (13 authored, with descriptions and suggested responses matching base-tier
+  quality); the generic clone stems (byte-identical titles ×4, lowercase
+  "july") are gone. Title/description uniqueness is test-enforced fleet-wide.
+- **Preview desks delegate function-appropriate children** (source sweeps,
+  claim fact-checks, ticket pulls — never "test coverage").
+- Smaller: all three preview functions are pinned against silent promotion
+  into `CODING_FUNCTIONS`; `demoWorkspaceConsumption({ nowMs })` rebases like
+  `demoFleetAgents`; the base-agents doc comment no longer overclaims "one of
+  each `BlockerType`"; `pnpm --filter @exawatt/core test` now runs the suite
+  instead of silently exiting 0.
+
 ## Open questions
 
 - Does the operator want a keyboard gesture for Workspace switching, or is the account menu enough? (Leaning: menu only. A one-stroke path to demo data during real work is a hazard, not a feature.)

@@ -12,9 +12,15 @@
  *   conformance runs — the shapes real agent fleets actually take);
  * - every assignment traces to a real item in its Project's roadmap, so the
  *   roadmap lens, Project drill-down, and Fleet altitude tell one story;
- * - names and goals are unique across the whole fleet (enforced by test);
+ * - names, goals, and git branches are unique across the whole fleet
+ *   (enforced by test), and branch names never truncate mid-word or drop
+ *   the partition token;
+ * - every needs-you row is AUTHORED: blocked status comes only from a
+ *   written, assignment-specific blocker, never from a status roll;
  * - status, timing, model, and usage derive DETERMINISTICALLY from the
- *   agent id — no Math.random, so the fleet is versioned and resettable;
+ *   agent id — no Math.random, so the fleet is versioned and resettable
+ *   (and the canonical fixture is deep-frozen, so consumer mutation cannot
+ *   corrupt a reset);
  * - Codex agents never carry delegated children (the source cannot record
  *   them), and preview-function Projects stay `preview` at every scale.
  *
@@ -26,8 +32,10 @@ import type {
   DemoDelegatedRun,
   DemoFleetAgent,
   DemoFleetTier,
+  DemoProjectFunction,
   DemoUsageSpec,
 } from './types';
+import { deepFreezeFixture, isCodingFunction } from './types';
 import { DEMO_BASE_AGENTS } from './agents';
 import { DEMO_PROJECTS_BY_KEY } from './projects';
 import { DEMO_WORKSPACE_NOW_MS, HOUR_MS, MIN_MS } from './startup';
@@ -50,6 +58,24 @@ function unit(text: string): number {
 /* authored workstreams                                                */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Fully-authored needs-you copy for one blocked scale Agent. The needs-you
+ * queue is the product's flagship attention story, so blocked status is
+ * never rolled from a hash — an Agent is blocked exactly when a human wrote
+ * its blocker, and every title/description is specific to its assignment
+ * (for fan-out batches, to its PARTITION), so a drill-in never shows two
+ * identical rows.
+ */
+interface ScaleBlockerSpec {
+  type: 'input_needed' | 'approval_required' | 'credentials_needed';
+  /** Title, written to survive a shoulder-read. */
+  t: string;
+  /** Description with the concrete situation, like the base-tier blockers. */
+  d: string;
+  /** Suggested responses (macOS-style, most constructive first). */
+  r: string[];
+}
+
 interface SingleAssignment {
   /** Display name. */
   n: string;
@@ -59,6 +85,8 @@ interface SingleAssignment {
   c: string;
   /** Roadmap item id in the Project's own roadmap. */
   i: string | null;
+  /** Authored blocker; its presence makes this Agent `blocked`. */
+  b?: ScaleBlockerSpec;
 }
 
 interface FanOutBatch {
@@ -69,6 +97,8 @@ interface FanOutBatch {
   c: string;
   i: string;
   count: number;
+  /** Authored blockers by partition number; those partitions are `blocked`. */
+  blocked?: Readonly<Record<number, ScaleBlockerSpec>>;
 }
 
 interface ProjectWorkstreams {
@@ -89,8 +119,28 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
       { n: 'Redispatch trigger sketch', g: 'Sketch the telemetry-divergence trigger for sub-hourly redispatch.', c: 'Sketching redispatch divergence trigger', i: 'DSP-34' },
     ],
     fanouts: [
-      { n: 'Shadow-day scoring', g: 'Score shadow-bid trading day # against production.', c: 'Scoring one shadow trading day', i: 'DSP-31', count: 10 },
-      { n: 'Basis feature sweep', g: 'Evaluate hub-to-node basis feature candidate set # for the refit model.', c: 'Evaluating one basis feature set', i: 'DSP-31', count: 6 },
+      {
+        n: 'Shadow-day scoring', g: 'Score shadow-bid trading day # against production.', c: 'Scoring one shadow trading day', i: 'DSP-31', count: 10,
+        blocked: {
+          4: {
+            type: 'approval_required',
+            t: 'Day 4 was scored against restated ERCOT settlements — accept the restatement?',
+            d: 'ERCOT restated the July 9 operating day after initial publication. Scoring day 4 against the restatement moves its MAE by six percent; both scorecards are written up, and the batch summary aggregates whichever ruling makes canonical.',
+            r: ['Score against the restatement', 'Keep the original publication', 'Report both in the summary'],
+          },
+        },
+      },
+      {
+        n: 'Basis feature sweep', g: 'Evaluate hub-to-node basis feature candidate set # for the refit model.', c: 'Evaluating one basis feature set', i: 'DSP-31', count: 6,
+        blocked: {
+          2: {
+            type: 'input_needed',
+            t: 'Feature set 2 cuts MAE 3.1% but doubles inference latency — trade it?',
+            d: 'Candidate set 2 improves holdout MAE by 3.1% and pushes per-interval inference from 40ms to 95ms against a 60ms dispatch-loop budget. It can ship trimmed or not at all; the sweep summary needs the ruling.',
+            r: ['Trim the set to fit 60ms', 'Take the latency hit', 'Drop set 2 from the sweep'],
+          },
+        },
+      },
     ],
   },
   'grid-api': {
@@ -105,14 +155,32 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
       { n: 'OpenAPI drift check', g: 'Fail CI when the published OpenAPI spec drifts from handlers.', c: 'Gating CI on spec drift', i: null },
     ],
     fanouts: [
-      { n: 'Partner verifier migration', g: 'Migrate sandbox partner # to v2 signature verification.', c: 'Migrating one sandbox partner', i: 'API-18', count: 8 },
+      {
+        n: 'Partner verifier migration', g: 'Migrate sandbox partner # to v2 signature verification.', c: 'Migrating one sandbox partner', i: 'API-18', count: 8,
+        blocked: {
+          6: {
+            type: 'credentials_needed',
+            t: 'Partner 6 rotated its webhook secret mid-migration — need the new value',
+            d: 'GreenVolt Installations rotated their sandbox signing secret outside the migration window, so dual-sign verification cannot be proven against their endpoint. Partners 1–5 are unaffected; partner 6 is parked until the rotated secret arrives.',
+            r: ['Request the secret via the partner portal', 'Skip partner 6 for this pass', 'Escalate to the integrations channel'],
+          },
+        },
+      },
     ],
   },
   'voltaic-home': {
     singles: [
       { n: 'Prefill coverage telemetry', g: 'Instrument how often commissioning-record prefill fills each enrollment field.', c: 'Instrumenting prefill field coverage', i: 'HOME-24' },
       { n: 'Enrollment a11y pass', g: 'Take the three-screen enrollment flow through a full accessibility pass.', c: 'Auditing enrollment flow accessibility', i: 'HOME-24' },
-      { n: 'Savings card settlement split', g: 'Show pending versus settled earnings honestly on the savings card.', c: 'Splitting pending from settled', i: null },
+      {
+        n: 'Savings card settlement split', g: 'Show pending versus settled earnings honestly on the savings card.', c: 'Splitting pending from settled', i: null,
+        b: {
+          type: 'input_needed',
+          t: 'Pending earnings: show a range or a point estimate?',
+          d: 'Settlement lags dispatch by up to 72 hours. A point estimate reads confident and lands up to 9% wrong; a range is honest but reads hedgy on a card customers check daily. Mocks of both are on the branch.',
+          r: ['Show the range', 'Point estimate with a pending badge', 'Look at both mocks first'],
+        },
+      },
       { n: 'Event timeline data contract', g: 'Define the dispatch-event timeline contract with the grid-api team.', c: 'Defining event timeline contract', i: 'HOME-25' },
       { n: 'Referral deep-link spike', g: 'Spike neighbor referral deep links that prefill the address screen.', c: 'Spiking referral deep links', i: 'HOME-26' },
       { n: 'Old-flow retirement checklist', g: 'Enumerate everything still depending on the legacy enrollment flow.', c: 'Enumerating legacy flow dependencies', i: 'HOME-24' },
@@ -122,7 +190,17 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
       { n: 'Store listing refresh', g: 'Refresh app store screenshots to show the rebuilt enrollment flow.', c: 'Refreshing store listing screenshots', i: 'HOME-24' },
     ],
     fanouts: [
-      { n: 'Flow test matrix', g: 'Run enrollment resume test matrix cell #.', c: 'Running one resume matrix cell', i: 'HOME-24', count: 10 },
+      {
+        n: 'Flow test matrix', g: 'Run enrollment resume test matrix cell #.', c: 'Running one resume matrix cell', i: 'HOME-24', count: 10,
+        blocked: {
+          9: {
+            type: 'input_needed',
+            t: 'Matrix cell 9 fails only on the iOS 19 beta — gate GA on it or waive?',
+            d: 'Resume-from-background drops the entered address on iOS 19 beta 3 and nowhere else. If GA gates on released OS versions only, cell 9 becomes a tracked waiver; if betas count, the flow needs a state-serialization fix first.',
+            r: ['Waive and track for iOS 19 GA', 'Fix before GA', 'Reproduce on beta 4 first'],
+          },
+        },
+      },
     ],
   },
   'telemetry-ingest': {
@@ -137,7 +215,17 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
       { n: 'Schema registry cleanup', g: 'Retire the three deprecated reading schema versions still registered.', c: 'Retiring deprecated reading schemas', i: null },
     ],
     fanouts: [
-      { n: 'July reconciliation partition', g: 'Reconcile double-counted July window partition # against vendor portals.', c: 'Reconciling one July partition', i: 'TEL-14', count: 14 },
+      {
+        n: 'July reconciliation partition', g: 'Reconcile double-counted July window partition # against vendor portals.', c: 'Reconciling one July partition', i: 'TEL-14', count: 14,
+        blocked: {
+          11: {
+            type: 'input_needed',
+            t: 'Partition 11 holds 2,100 readings the vendor portal lacks — which record wins?',
+            d: 'The double-counted window in partition 11 overlaps a gateway firmware reboot; our pipeline kept 2,100 readings the vendor portal never received. Reconciling toward either side moves July settlement by $412, and both deltas are staged.',
+            r: ['Trust our pipeline', 'Trust the vendor portal', 'Split at the reboot timestamp'],
+          },
+        },
+      },
     ],
   },
   'edge-gateway': {
@@ -150,7 +238,17 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
       { n: 'Update bandwidth budget', g: 'Measure OTA payload sizes against rural cellular data budgets.', c: 'Measuring OTA bandwidth cost', i: 'EDGE-9' },
     ],
     fanouts: [
-      { n: 'Vendor conformance run', g: 'Run the adapter conformance suite against vendor bench #.', c: 'Running one vendor bench', i: 'EDGE-10', count: 6 },
+      {
+        n: 'Vendor conformance run', g: 'Run the adapter conformance suite against vendor bench #.', c: 'Running one vendor bench', i: 'EDGE-10', count: 6,
+        blocked: {
+          2: {
+            type: 'input_needed',
+            t: 'Bench 2 shipped on firmware 4.2.1 but the fleet runs 4.1.9 — test which?',
+            d: 'The vendor pre-flashed bench 2 with a firmware the fleet has not adopted. Conformance against 4.2.1 validates a future we have not scheduled; reflashing to 4.1.9 costs a bench day. The other five benches are unaffected.',
+            r: ['Reflash to 4.1.9', 'Test 4.2.1 and note the skew', 'Run both, half suite each'],
+          },
+        },
+      },
     ],
   },
   'partner-portal': {
@@ -163,7 +261,17 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
       { n: 'Health board drill-down', g: 'Add per-site drill-down from the utility fleet health board.', c: 'Adding health board drill-down', i: null },
     ],
     fanouts: [
-      { n: 'Portal accessibility audit', g: 'Audit portal surface area segment # for accessibility.', c: 'Auditing one portal segment', i: 'POR-11', count: 4 },
+      {
+        n: 'Portal accessibility audit', g: 'Audit portal surface area segment # for accessibility.', c: 'Auditing one portal segment', i: 'POR-11', count: 4,
+        blocked: {
+          3: {
+            type: 'approval_required',
+            t: 'Segment 3 contrast fix changes the utility’s co-branded header — approve the brand exception?',
+            d: 'The co-branded header fails WCAG AA contrast in segment 3, and that palette is contractually the utility’s. Shipping the fix needs either their brand team’s sign-off or an approved exception noted in the audit record.',
+            r: ['Request utility sign-off', 'File the exception note', 'Restrict the fix to non-branded chrome'],
+          },
+        },
+      },
     ],
   },
   'platform-infra': {
@@ -178,7 +286,17 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
       { n: 'Alert routing review', g: 'Re-check page routing after the on-call noise diet.', c: 'Reviewing post-diet alert routing', i: null },
     ],
     fanouts: [
-      { n: 'Control evidence capture', g: 'Wire automated evidence capture for audit control #.', c: 'Wiring one control capture', i: 'INF-21', count: 10 },
+      {
+        n: 'Control evidence capture', g: 'Wire automated evidence capture for audit control #.', c: 'Wiring one control capture', i: 'INF-21', count: 10,
+        blocked: {
+          7: {
+            type: 'approval_required',
+            t: 'Control 7 capture wants a service role that writes to the auditor evidence bucket',
+            d: 'Automating access-review capture (CC6.2) requires a role with direct write access to the immutable evidence store. The role policy passed security review in draft; granting it is an explicit go-ahead, not an inference call.',
+            r: ['Grant the drafted role', 'Scope it to this audit window', 'Route through the manual uploader'],
+          },
+        },
+      },
     ],
   },
   'market-intel': {
@@ -190,7 +308,17 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
       { n: 'Tariff change monitor', g: 'Watch pilot-utility tariff dockets for change filings.', c: 'Watching pilot tariff dockets', i: 'RES-6' },
     ],
     fanouts: [
-      { n: 'Queue region scan', g: 'Scan interconnection queue region # for storage entries ahead of ours.', c: 'Scanning one queue region', i: 'RES-8', count: 3 },
+      {
+        n: 'Queue region scan', g: 'Scan interconnection queue region # for storage entries ahead of ours.', c: 'Scanning one queue region', i: 'RES-8', count: 3,
+        blocked: {
+          2: {
+            type: 'approval_required',
+            t: 'Region 2 queue data sits behind a paid mirror — approve the $240/mo subscription?',
+            d: 'The ISO’s public queue export for region 2 lags six weeks, so the scan would report stale positions. A commercial mirror carries same-day data. Spend needs explicit approval before the desk relies on it.',
+            r: ['Approve the subscription', 'Use the lagged public export', 'One-month trial, then decide'],
+          },
+        },
+      },
     ],
   },
   'demand-gen': {
@@ -199,7 +327,15 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
       { n: 'Claims evidence table', g: 'Trace every launch claim to cleared pilot data in one table.', c: 'Tracing claims to evidence', i: 'MKT-9' },
       { n: 'Press one-pager tightening', g: 'Cut the press one-pager to a single ruthless page.', c: 'Tightening press one-pager', i: 'MKT-9' },
       { n: 'Kitchen-table savings sheet', g: 'Draft the installer savings one-pager with real pilot numbers.', c: 'Drafting installer savings sheet', i: 'MKT-10' },
-      { n: 'Neighborhood story shortlist', g: 'Shortlist pilot neighborhoods with story-worthy savings results.', c: 'Shortlisting neighborhood savings stories', i: 'MKT-11' },
+      {
+        n: 'Neighborhood story shortlist', g: 'Shortlist pilot neighborhoods with story-worthy savings results.', c: 'Shortlisting neighborhood savings stories', i: 'MKT-11',
+        b: {
+          type: 'approval_required',
+          t: 'The three strongest stories need consent outreach to eight pilot households',
+          d: 'The shortlist’s best savings numbers belong to named pilot customers. Marketing cannot contact them without program-consent sign-off from customer ops; the outreach drafts are written and attached.',
+          r: ['Approve the outreach', 'Anonymize the stories instead', 'Ask customer ops to make first contact'],
+        },
+      },
       { n: 'Case study distribution plan', g: 'Plan distribution for the Pflugerville case study beyond the blog.', c: 'Planning case study distribution', i: 'MKT-8' },
     ],
     fanouts: [],
@@ -207,12 +343,30 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
   'support-ops': {
     singles: [
       { n: 'Routing rule drafts', g: 'Draft help-desk routing rules from the symptom taxonomy.', c: 'Drafting symptom routing rules', i: 'SUP-5' },
-      { n: 'Digest context enrichment', g: 'Attach site, hardware, and dispatch context to escalation digest entries.', c: 'Enriching escalation digest context', i: 'SUP-6' },
+      {
+        n: 'Digest context enrichment', g: 'Attach site, hardware, and dispatch context to escalation digest entries.', c: 'Enriching escalation digest context', i: 'SUP-6',
+        b: {
+          type: 'credentials_needed',
+          t: 'Enrichment needs a read-only help-desk token scoped to ticket bodies',
+          d: 'Joining dispatch context onto ticket text requires help-desk API access, but the only token on file is admin-scoped. A read-only token scoped to ticket bodies was requested from IT on Thursday; nothing ships against admin credentials.',
+          r: ['Chase IT for the scoped token', 'Approve temporary admin-token use', 'Park until the token arrives'],
+        },
+      },
       { n: 'Troubleshooter failure modes', g: 'Rank the top enrollment failure modes for the self-serve troubleshooter.', c: 'Ranking enrollment failure modes', i: 'SUP-7' },
       { n: 'Macro voice audit', g: 'Spot-check rewritten macros against the support voice guide.', c: 'Spot-checking macro voice', i: 'SUP-4' },
     ],
     fanouts: [
-      { n: 'Backlog classification week', g: 'Classify historical ticket backlog week # into the symptom taxonomy.', c: 'Classifying one backlog week', i: 'SUP-5', count: 6 },
+      {
+        n: 'Backlog classification week', g: 'Classify historical ticket backlog week # into the symptom taxonomy.', c: 'Classifying one backlog week', i: 'SUP-5', count: 6,
+        blocked: {
+          5: {
+            type: 'input_needed',
+            t: 'Week 5 tickets predate the taxonomy v2 split — classify under old or new codes?',
+            d: 'The taxonomy split “no data reported” into gateway-offline and meter-silent after week 5 was filed. Back-classifying needs a rule for tickets whose evidence no longer distinguishes the two.',
+            r: ['Map ambiguous tickets to gateway-offline', 'Add an unresolved-legacy code', 'Sample 50 and decide from evidence'],
+          },
+        },
+      },
     ],
   },
 };
@@ -223,13 +377,17 @@ const WORKSTREAMS: Readonly<Record<string, ProjectWorkstreams>> = {
 
 type ScaleStatus = DemoFleetAgent['status'];
 
-/** Weighted status wheel — mostly quiet work, a truthful slice needing you. */
+/**
+ * Weighted status wheel — mostly quiet work. `blocked` is deliberately NOT
+ * on the wheel: an Agent is blocked exactly when its assignment carries an
+ * authored `ScaleBlockerSpec`, so every needs-you row is written, never
+ * generated filler.
+ */
 const STATUS_WHEEL: Array<{ status: ScaleStatus; upTo: number }> = [
-  { status: 'working', upTo: 0.34 },
-  { status: 'idle', upTo: 0.56 },
-  { status: 'reviewing', upTo: 0.66 },
-  { status: 'complete', upTo: 0.84 },
-  { status: 'blocked', upTo: 0.94 },
+  { status: 'working', upTo: 0.36 },
+  { status: 'idle', upTo: 0.6 },
+  { status: 'reviewing', upTo: 0.7 },
+  { status: 'complete', upTo: 0.92 },
   { status: 'error', upTo: 1.0 },
 ];
 
@@ -248,6 +406,31 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+/** Character budget for the name portion of a generated branch. */
+const BRANCH_NAME_BUDGET = 32;
+
+/**
+ * Branch-name slug: trims at WORD boundaries only, and never drops the
+ * trailing partition token (`3/14` slugifies to `3-14`), so every partition
+ * of a fan-out batch gets its own branch and no branch ends mid-word.
+ */
+function branchSlug(name: string): string {
+  const words = slugify(name).split('-');
+  const partition: string[] = [];
+  while (words.length > 1 && /^\d+$/.test(words[words.length - 1])) {
+    partition.unshift(words.pop() as string);
+  }
+  const kept: string[] = [];
+  let length = 0;
+  for (const word of words) {
+    const next = length === 0 ? word.length : length + 1 + word.length;
+    if (next > BRANCH_NAME_BUDGET && kept.length > 0) break;
+    kept.push(word);
+    length = next;
+  }
+  return [...kept, ...partition].join('-');
+}
+
 function usageFor(id: string, source: 'claude-code' | 'codex', turns: number): DemoUsageSpec {
   const scale = 0.6 + unit(`${id}:usage`) * 1.6; // 0.6x – 2.2x
   const perTurnOutput = source === 'codex' ? 26_000 : 21_000;
@@ -262,20 +445,42 @@ function usageFor(id: string, source: 'claude-code' | 'codex', turns: number): D
   };
 }
 
+/**
+ * Delegated child-task templates per business function, so a Researcher
+ * never fans out coding-flavored work (a Marketer running "test coverage"
+ * would break the preview-desk story on a drill-in).
+ */
+const CHILD_TASK_STEMS: Record<
+  'coding' | 'research' | 'marketing' | 'support',
+  { explore: string; general: string }
+> = {
+  coding: { explore: 'Survey prior art', general: 'Test coverage' },
+  research: { explore: 'Primary source sweep', general: 'Citation and figure check' },
+  marketing: { explore: 'Prior campaign scan', general: 'Claim fact-check' },
+  support: { explore: 'Ticket sample pull', general: 'Macro tone audit' },
+};
+
+function childStemsFor(fn: DemoProjectFunction) {
+  if (isCodingFunction(fn)) return CHILD_TASK_STEMS.coding;
+  return CHILD_TASK_STEMS[fn as 'research' | 'marketing' | 'support'];
+}
+
 function delegatedFor(
   id: string,
   source: 'claude-code' | 'codex',
   status: ScaleStatus,
   assignmentName: string,
-  startedAtMs: number
+  startedAtMs: number,
+  projectFunction: DemoProjectFunction
 ): DemoDelegatedRun[] {
-  // Only Claude Code records delegation, and only a slice of active work
-  // fans out — mirrors the measured ~38% delegated-sample share without
-  // making every parent identical.
+  // Only Claude Code records delegation (`SOURCE_CAPABILITIES.codex` has
+  // none), and only a slice of ACTIVE work fans out, so delegating parents
+  // read as a pattern of real work rather than a uniform decoration.
   if (source !== 'claude-code') return [];
   if (status !== 'working' && status !== 'reviewing') return [];
   const roll = unit(`${id}:delegate`);
   if (roll > 0.45) return [];
+  const stems = childStemsFor(projectFunction);
   const children: DemoDelegatedRun[] = [
     {
       agentId: `agent-${Math.floor(unit(`${id}:child0`) * 0xffff)
@@ -283,7 +488,7 @@ function delegatedFor(
         .padStart(4, '0')}`,
       agentType: 'Explore',
       model: 'claude-sonnet-5',
-      task: `Survey prior art: ${assignmentName.toLowerCase()}`,
+      task: `${stems.explore}: ${assignmentName.toLowerCase()}`,
       startedAtMs: startedAtMs + 20 * MIN_MS,
       usage: {
         input: 34_000,
@@ -300,7 +505,7 @@ function delegatedFor(
         .padStart(4, '0')}`,
       agentType: 'general-purpose',
       model: 'claude-opus-5',
-      task: `Test coverage: ${assignmentName.toLowerCase()}`,
+      task: `${stems.general}: ${assignmentName.toLowerCase()}`,
       startedAtMs: startedAtMs + 50 * MIN_MS,
       usage: {
         input: 28_000,
@@ -312,25 +517,6 @@ function delegatedFor(
   }
   return children;
 }
-
-const BLOCKER_STEMS: Array<{
-  type: 'input_needed' | 'approval_required';
-  title: (what: string) => string;
-  description: string;
-}> = [
-  {
-    type: 'input_needed',
-    title: what => `Direction needed before continuing: ${what}`,
-    description:
-      'Two viable approaches diverge here and the choice is not reversible cheaply. Work is parked at the decision point with both options written up.',
-  },
-  {
-    type: 'approval_required',
-    title: what => `Approval required to proceed: ${what}`,
-    description:
-      'The next step touches shared state other teams depend on. Holding for an explicit go-ahead rather than proceeding on inference.',
-  },
-];
 
 const FAULT_STEMS = [
   'Verification run exited non-zero on the final check; the failure reproduces and needs a human read.',
@@ -344,12 +530,13 @@ function synthesizeAgent(
   goal: string,
   contextLabel: string,
   roadmapItemId: string | null,
-  linkPreference: DemoFleetAgent['link']
+  linkPreference: DemoFleetAgent['link'],
+  authoredBlocker?: ScaleBlockerSpec
 ): DemoFleetAgent {
   const project = DEMO_PROJECTS_BY_KEY.get(projectKey);
   if (!project) throw new Error(`unknown demo project "${projectKey}"`);
   const id = `vgs-${projectKey}-${slugify(name)}`;
-  const status = statusFor(id);
+  const status: ScaleStatus = authoredBlocker ? 'blocked' : statusFor(id);
   // Preview desks run on Claude in this fleet; coding splits between sources.
   const source: DemoFleetAgent['source'] =
     project.readiness === 'preview'
@@ -403,7 +590,7 @@ function synthesizeAgent(
     effort,
     gitBranch:
       source === 'claude-code' && project.readiness === 'live'
-        ? `agent/${slugify(roadmapItemId ?? projectKey)}-${slugify(name).slice(0, 24)}`
+        ? `agent/${slugify(roadmapItemId ?? projectKey)}-${branchSlug(name)}`
         : null,
     roadmapItemId,
     link: roadmapItemId === null ? null : linkPreference,
@@ -411,18 +598,18 @@ function synthesizeAgent(
     lastActivityAtMs,
     turns,
     usage: usageFor(id, source, turns),
-    delegated: delegatedFor(id, source, status, name, startedAtMs),
+    delegated: delegatedFor(id, source, status, name, startedAtMs, project.function),
     readiness: project.readiness,
     tier: 'scale',
     initiativeId: null,
   };
 
-  if (status === 'blocked') {
-    const stem = BLOCKER_STEMS[Math.floor(unit(`${id}:blocker`) * BLOCKER_STEMS.length)];
+  if (authoredBlocker) {
     agent.blocker = {
-      type: stem.type,
-      title: stem.title(contextLabel.toLowerCase()),
-      description: stem.description,
+      type: authoredBlocker.type,
+      title: authoredBlocker.t,
+      description: authoredBlocker.d,
+      suggestedResponses: authoredBlocker.r,
       createdAtMs: lastActivityAtMs,
     };
   }
@@ -445,7 +632,8 @@ function generateScaleAgents(): DemoFleetAgent[] {
           single.g,
           single.c,
           single.i,
-          linkRoll < 0.5 ? 'declared' : linkRoll < 0.8 ? 'branch' : 'title'
+          linkRoll < 0.5 ? 'declared' : linkRoll < 0.8 ? 'branch' : 'title',
+          single.b
         )
       );
     }
@@ -458,7 +646,8 @@ function generateScaleAgents(): DemoFleetAgent[] {
             batch.g.replace('#', `${part} of ${batch.count}`),
             batch.c,
             batch.i,
-            'declared' // batch launches declare their item at spawn
+            'declared', // batch launches declare their item at spawn
+            batch.blocked?.[part]
           )
         );
       }
@@ -467,7 +656,23 @@ function generateScaleAgents(): DemoFleetAgent[] {
   return out;
 }
 
-let scaleCache: DemoFleetAgent[] | null = null;
+let scaleCache: readonly DemoFleetAgent[] | null = null;
+
+/** The canonical (frozen) generated tier. Frozen so consumer mutation can
+ * never corrupt "reset = identical"; rebasing derives fresh copies. */
+function scaleAgents(): readonly DemoFleetAgent[] {
+  if (!scaleCache) scaleCache = deepFreezeFixture(generateScaleAgents());
+  return scaleCache;
+}
+
+/**
+ * INTERNAL, for tests: rebuild the generated tier from scratch, bypassing
+ * the module cache, so determinism is provable against an INDEPENDENT build
+ * rather than by comparing a cached object to itself.
+ */
+export function rebuildScaleTierForTest(): DemoFleetAgent[] {
+  return generateScaleAgents();
+}
 
 export interface DemoFleetOptions {
   /** Rebase every timestamp so the fixture reads as "now". */
@@ -500,9 +705,8 @@ export function demoFleetAgents(
   tier: DemoFleetTier = 'scale',
   options: DemoFleetOptions = {}
 ): DemoFleetAgent[] {
-  if (!scaleCache) scaleCache = generateScaleAgents();
   const agents =
-    tier === 'base' ? DEMO_BASE_AGENTS : [...DEMO_BASE_AGENTS, ...scaleCache];
+    tier === 'base' ? [...DEMO_BASE_AGENTS] : [...DEMO_BASE_AGENTS, ...scaleAgents()];
   return rebase(agents, options.nowMs ?? DEMO_WORKSPACE_NOW_MS);
 }
 

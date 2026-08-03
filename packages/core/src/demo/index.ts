@@ -29,6 +29,7 @@ export { DEMO_TRANSCRIPTS } from './transcripts';
 export {
   demoFleetAgents,
   demoDelegatedRunCount,
+  rebuildScaleTierForTest,
   type DemoFleetOptions,
 } from './scale';
 export {
@@ -37,5 +38,7 @@ export {
   demoWorkspacePlanWindows,
   demoWorkspaceProjectResolver,
   demoAgentSessionId,
+  rebuildConsumptionForTest,
+  type DemoConsumptionOptions,
   type DemoWorkspaceConsumption,
 } from './consumption';

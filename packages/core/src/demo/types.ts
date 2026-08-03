@@ -55,6 +55,22 @@ export function isCodingFunction(fn: DemoProjectFunction): boolean {
   return (CODING_FUNCTIONS as DemoProjectFunction[]).includes(fn);
 }
 
+/**
+ * Deep-freeze a fixture so consumer mutation cannot corrupt "reset =
+ * identical". The canonical fixtures are frozen once at build time; `nowMs`
+ * rebasing always returns fresh copies derived from the frozen canon, so no
+ * caller can reach mutable shared state.
+ */
+export function deepFreezeFixture<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const key of Object.keys(value)) {
+      deepFreezeFixture((value as Record<string, unknown>)[key]);
+    }
+  }
+  return value;
+}
+
 /** Fixture tier: `base` is the hand-authored fleet an operator reads up
  * close; `scale` adds the generated volume the Fleet-altitude moment needs. */
 export type DemoFleetTier = 'base' | 'scale';
