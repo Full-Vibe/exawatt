@@ -501,18 +501,6 @@ export function RibbonDogfoodBench() {
                     return next;
                   });
                 }}
-                onToggleProjectExpanded={dir =>
-                  setProjects(current =>
-                    current.map(project =>
-                      project.dir === dir
-                        ? {
-                            ...project,
-                            ribbonExpanded: project.ribbonExpanded !== true,
-                          }
-                        : project
-                    )
-                  )
-                }
               />
             </div>
           </div>

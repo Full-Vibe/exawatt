@@ -1,12 +1,16 @@
 // No 'use client' directive: only imported by the client workspace surface.
 
 /**
- * Elastic Project / Initiative ribbon.
+ * Project / Initiative ribbon — one row (ENG-016 D45).
  *
- * Projects keep manual order; selected and explicitly disclosed Projects
- * expose their Initiative-shaped Session tabs as independent layout atoms.
- * The pure layout module owns admission and target bounds, the presence module
- * owns interruption-safe entry/exit, and this component owns interaction.
+ * Projects keep manual order. Exactly three presentations exist and the
+ * layout engine picks them: the active Project is `open` (tabs with
+ * titles, Chrome-shrunk to fit), every other Project is `mini` (glyph
+ * chips), and a Project that still cannot fit `folded` (one container chip
+ * carrying its count). Nothing is ever evicted; when even folding is not
+ * enough the row scrolls. The pure layout module owns widths and target
+ * bounds, the presence module owns interruption-safe entry/exit, and this
+ * component owns interaction.
  */
 
 import {
@@ -25,12 +29,12 @@ import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion
 import type { SessionDelegation } from '@/types/electron';
 import { HarnessGlyph } from './harness-icons';
 import {
-  layoutProjectRibbon,
+  layoutRibbonRow,
   orderProjectsForRibbon,
-  RIBBON_ROW_GAP,
+  type ProjectPresentation,
   RIBBON_ROW_HEIGHT,
   ribbonHeightForRows,
-  stableRibbonRows,
+  type RibbonProjectInput,
   type RibbonTarget,
 } from './project-ribbon-layout';
 import {
@@ -53,6 +57,7 @@ import {
   type StripMenuItem,
 } from './project-ribbon-menu';
 import {
+  CONDENSED_TAB_WIDTH,
   estimateRibbonTokenWidth,
   POINTER_CLOSE_STABILIZE_MS,
   type PresentRibbonToken,
@@ -71,7 +76,6 @@ import { sessionDisplayCopy } from './session-display-copy';
 import {
   EDIT_ACTIVE_PROJECT_EVENT,
   FOCUS_ACTIVE_TERMINAL_EVENT,
-  OPEN_OVERVIEW_EVENT,
   RENAME_ACTIVE_EVENT,
 } from './session-jump';
 import { tabIsPinnable } from './split-layout';
@@ -96,95 +100,37 @@ interface Editing {
 }
 
 /**
- * Ribbon token order and admission priority (D42). Every Project's tabs are
- * ALWAYS tokens — inactive Projects' tabs condense to glyph chips instead of
- * unmounting, so per-Agent state, tab count, and ordinal-hint anchors survive
- * collapse. Admission: the active Project's own work outranks every inactive
- * Project's chrome, so your own next tab can never be invisible while another
- * Project's chrome is.
+ * Ribbon tokens: every Project header and every tab, in display order.
  *
- *   0 active Project header
- *   1 active tab
- *   2 active Project's remaining tabs
- *   3 inactive Project headers with fault / needs-you
- *   4 other inactive Project headers
- *   5 inactive tabs that need the operator
- *   6 other inactive tabs
+ * Tokens carry identity and order only. How wide a tab is drawn — full,
+ * glyph chip, or not at all because its Project folded — is decided by the
+ * layout engine (D45) and read back at render time, so paint truth and
+ * width truth cannot disagree. Admission priority is gone with the two-row
+ * budget: nothing is evicted any more.
  */
 export function buildRibbonTokens({
   orderedProjects,
   projects,
-  activeDir,
-  projectSignals,
-  attention,
-  reserveDeadExpansion = false,
 }: {
   orderedProjects: readonly Project[];
   projects: readonly Project[];
-  activeDir: string | null;
-  projectSignals: ReadonlyMap<string, string>;
-  attention: Record<string, SessionAttentionSignal>;
-  /** Height-model only: treat every dead tab of the ACTIVE Project as
-   *  uncollapsed, so no `activeTabId` choice inside that Project can need
-   *  more rows than the variant reserved (a tab click is a pure selection
-   *  change and must never resize the terminal). */
-  reserveDeadExpansion?: boolean;
 }): RibbonToken[] {
   const next: RibbonToken[] = [];
   orderedProjects.forEach(project => {
     const sourceProjectIndex = projects.findIndex(
       candidate => candidate.dir === project.dir
     );
-    const activeProject = project.dir === activeDir;
-    const signal = projectSignals.get(project.dir) ?? 'quiet';
     next.push({
       key: `project:${project.dir}`,
       kind: 'project',
       project,
       sourceProjectIndex,
-      priority: activeProject
-        ? 0
-        : signal === 'fault' || signal === 'needs-you'
-          ? 3
-          : 4,
     });
-    const condensed = !activeProject && project.ribbonExpanded !== true;
     project.tabs.forEach(tab => {
-      const needsYou =
-        !!tab.sessionId && attentionNeedsOperator(attention[tab.sessionId]);
-      const selected = activeProject && tab.id === project.activeTabId;
-      next.push({
-        key: `tab:${tab.id}`,
-        kind: 'tab',
-        project,
-        tab,
-        condensed,
-        // mirrors the render-time dead-chip condition exactly: the height
-        // model must know this width differs between selection states
-        titleCollapsed:
-          !condensed &&
-          !tabIsLive(tab) &&
-          tab.lifecycle !== 'draft' &&
-          !selected &&
-          !(reserveDeadExpansion && activeProject),
-        priority: selected ? 1 : activeProject ? 2 : needsYou ? 5 : 6,
-      });
+      next.push({ key: `tab:${tab.id}`, kind: 'tab', project, tab });
     });
   });
   return next;
-}
-
-/**
- * A token's rendered width depends on more than its identity: condensed
- * chips, dead collapsed-title chips, and full tabs are three different
- * widths for the same tab. Measurements are cached PER PRESENTATION so the
- * height model's inputs cannot flip between measured and estimated when the
- * selection changes (that flip was itself a height-instability source).
- */
-export function ribbonTokenPresentation(token: RibbonToken): string {
-  return token.kind === 'tab'
-    ? `${token.condensed === true}|${token.titleCollapsed === true}`
-    : 'project';
 }
 
 const FALLBACK_RIBBON_WIDTH = 900;
@@ -214,7 +160,6 @@ export function TabStrip({
   onRenameTab,
   onRenameProject,
   onSetProjectColor,
-  onToggleProjectExpanded,
   feedbackEnabled = false,
   onRateContext,
   exitingProjectDirs,
@@ -239,7 +184,6 @@ export function TabStrip({
   onRenameTab: (tabId: string, title: string) => void;
   onRenameProject: (dir: string, name: string) => void;
   onSetProjectColor: (dir: string, color: string) => void;
-  onToggleProjectExpanded?: (dir: string) => void;
   feedbackEnabled?: boolean;
   onRateContext?: (input: {
     durableSessionId: string;
@@ -275,14 +219,18 @@ export function TabStrip({
   } | null>(null);
   const menuTriggerRef = useRef<HTMLElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [scrollEdges, setScrollEdges] = useState({
+    left: false,
+    right: false,
+  });
   const itemNodesRef = useRef(new Map<string, HTMLDivElement>());
   const lastTargetsRef = useRef(new Map<string, RibbonTarget>());
   const [containerWidth, setContainerWidth] = useState(FALLBACK_RIBBON_WIDTH);
-  /** key → presentation → measured width (see ribbonTokenPresentation) */
-  const [itemWidths, setItemWidths] = useState<
-    Record<string, Record<string, number>>
-  >({});
-  const presentationByKeyRef = useRef(new Map<string, string>());
+  /** Project dir → measured natural header width. Only headers are
+   *  measured now: tab chips are either a fixed glyph width or a width the
+   *  engine assigns, so nothing else can feed its own output back in. */
+  const [headerWidths, setHeaderWidths] = useState<Record<string, number>>({});
   const [heldCloseKeys, setHeldCloseKeys] = useState<Set<string>>(
     () => new Set()
   );
@@ -313,7 +261,7 @@ export function TabStrip({
   const dragGeometryRef = useRef<{
     tokens: RibbonToken[];
     orderedTokens: RibbonToken[];
-    layout: ReturnType<typeof layoutProjectRibbon>;
+    layout: ReturnType<typeof layoutRibbonRow>;
     dormant: ReadonlySet<string>;
   } | null>(null);
 
@@ -341,15 +289,8 @@ export function TabStrip({
     [activity, attention, delegation, engaged, projects, summaries]
   );
   const tokens = useMemo<RibbonToken[]>(
-    () =>
-      buildRibbonTokens({
-        orderedProjects,
-        projects,
-        activeDir,
-        projectSignals,
-        attention,
-      }),
-    [activeDir, attention, orderedProjects, projectSignals, projects]
+    () => buildRibbonTokens({ orderedProjects, projects }),
+    [orderedProjects, projects]
   );
   // While a drag is engaged, the strip renders the HYPOTHETICAL order so
   // siblings make room live; commit happens only on release.
@@ -360,15 +301,6 @@ export function TabStrip({
       : reorderTokensForProjectDrag(tokens, pointerDrag.id, pointerDrag.index);
   }, [pointerDrag, tokens]);
   const presentTokens = useRibbonPresence(orderedTokens, heldCloseKeys);
-  // Which presentation each rendered node currently wears — the measurement
-  // path files widths under this so no presentation's cache is poisoned by
-  // another's DOM size.
-  presentationByKeyRef.current = new Map(
-    presentTokens.map(entry => [
-      entry.token.key,
-      ribbonTokenPresentation(entry.token),
-    ])
-  );
   const currentKeys = useMemo(
     () => new Set(orderedTokens.map(token => token.key)),
     [orderedTokens]
@@ -382,78 +314,51 @@ export function TabStrip({
       }),
     [exiting, heldCloseKeys, presentTokens]
   );
-  const layout = useMemo(
-    () =>
-      layoutProjectRibbon(
-        layoutEntries.map(entry => ({
-          id: entry.token.key,
-          width:
-            itemWidths[entry.token.key]?.[
-              ribbonTokenPresentation(entry.token)
-            ] ?? estimateRibbonTokenWidth(entry.token),
-          priority: entry.token.priority,
-          parentId:
-            entry.token.kind === 'tab'
-              ? `project:${entry.token.project.dir}`
-              : undefined,
-          groupId: entry.token.project.dir,
-        })),
-        containerWidth
-      ),
-    [containerWidth, itemWidths, layoutEntries]
+  // One row, laid out from the Projects in their current (possibly
+  // drag-hypothetical) order. The engine decides each Project's
+  // presentation; rendering reads that rather than deciding for itself, so
+  // width truth and paint truth cannot disagree.
+  const layout = useMemo(() => {
+    type Block = Omit<RibbonProjectInput, 'tabs'> & {
+      tabs: Array<RibbonProjectInput['tabs'][number]>;
+    };
+    const blocks: Block[] = [];
+    for (const entry of layoutEntries) {
+      const token = entry.token;
+      if (token.kind === 'project') {
+        blocks.push({
+          dir: token.project.dir,
+          headerWidth:
+            headerWidths[token.project.dir] ?? estimateRibbonTokenWidth(token),
+          // the same chip plus a count badge
+          foldedWidth:
+            (headerWidths[token.project.dir] ??
+              estimateRibbonTokenWidth(token)) + 22,
+          tabs: [],
+          active: token.project.dir === activeDir,
+        });
+        continue;
+      }
+      const block = blocks.at(-1);
+      if (!block || block.dir !== token.project.dir) continue;
+      block.tabs.push({
+        id: token.tab.id,
+        openWidth: estimateRibbonTokenWidth(token),
+        miniWidth: CONDENSED_TAB_WIDTH,
+      });
+    }
+    return layoutRibbonRow(blocks, containerWidth);
+  }, [activeDir, containerWidth, headerWidths, layoutEntries]);
+  const presentationFor = useCallback(
+    (dir: string): ProjectPresentation =>
+      layout.presentation.get(dir) ?? (dir === activeDir ? 'open' : 'mini'),
+    [activeDir, layout]
   );
 
-  // The strip's outer height is SELECTION-INVARIANT (D42): reserve the rows
-  // the tallest hypothetical selection needs, so switching Projects or tabs
-  // can never resize the terminal below. Each variant reads its OWN
-  // presentation's cached measurement (falling back to the estimate), so the
-  // width inputs do not change with the current selection; and dead tabs of
-  // the hypothetically active Project are reserved uncollapsed so no
-  // activeTabId choice can exceed the reservation.
-  const stableRows = useMemo(() => {
-    const liveProjects = projects.filter(
-      project => !exiting.has(project.dir)
-    );
-    const variants = liveProjects.map(candidate => {
-      // Selecting a dormant Project un-dorms it (it returns to its manual
-      // slot), and packing is order-sensitive — each hypothetical must
-      // model the order its own selection would produce.
-      const dormantForVariant = dormant.has(candidate.dir)
-        ? new Set([...dormant].filter(dir => dir !== candidate.dir))
-        : dormant;
-      return buildRibbonTokens({
-        orderedProjects: orderProjectsForRibbon(
-          liveProjects,
-          dormantForVariant
-        ),
-        projects,
-        activeDir: candidate.dir,
-        projectSignals,
-        attention,
-        reserveDeadExpansion: true,
-      }).map(token => ({
-        id: token.key,
-        width:
-          itemWidths[token.key]?.[ribbonTokenPresentation(token)] ??
-          estimateRibbonTokenWidth(token),
-        priority: token.priority,
-        parentId:
-          token.kind === 'tab' ? `project:${token.project.dir}` : undefined,
-        groupId: token.project.dir,
-      }));
-    });
-    return stableRibbonRows(variants, containerWidth);
-  }, [
-    attention,
-    containerWidth,
-    dormant,
-    exiting,
-    itemWidths,
-    projectSignals,
-    projects,
-  ]);
-  const stripRows = Math.max(stableRows, layout.rows);
-  const stripHeight = ribbonHeightForRows(stripRows);
+  // Height is constant by construction now (D45): one row cannot vary, so
+  // the terminal below never resizes on a selection change and the whole
+  // hypothetical-variant machinery D42 needed is gone.
+  const stripHeight = ribbonHeightForRows(layout.rows);
 
   useLayoutEffect(() => {
     for (const [key, target] of layout.targets) {
@@ -461,49 +366,44 @@ export function TabStrip({
     }
   }, [layout]);
 
-  // Measurements and last-known bounds intentionally outlive removal for the
-  // exit animation, but not forever. Long-running workspaces can churn through
-  // thousands of Sessions; prune both caches once presence has released them.
+  // Last-known bounds intentionally outlive removal for the exit animation,
+  // but not forever. Long-running workspaces churn through thousands of
+  // Sessions; prune once presence has released them.
   useEffect(() => {
     const presentKeys = new Set(presentTokens.map(entry => entry.token.key));
     for (const key of lastTargetsRef.current.keys()) {
       if (!presentKeys.has(key)) lastTargetsRef.current.delete(key);
     }
-    setItemWidths(current => {
-      const entries = Object.entries(current).filter(([key]) =>
-        presentKeys.has(key)
-      );
-      return entries.length === Object.keys(current).length
-        ? current
-        : Object.fromEntries(entries);
-    });
   }, [presentTokens]);
 
+  // Only Project headers are measured, and only from their INNER chrome,
+  // which is never width-constrained — so a header's natural width can
+  // never be read back from a width the engine itself assigned. A folded
+  // header renders different content, so its measurement is skipped.
   const measure = useCallback(() => {
     const width = containerRef.current?.clientWidth ?? 0;
     if (width > 0)
       setContainerWidth(current => (current === width ? current : width));
-    const measured: Record<string, [string, number]> = {};
-    for (const [key, node] of itemNodesRef.current) {
-      const presentation = presentationByKeyRef.current.get(key);
-      if (!presentation) continue;
-      const itemWidth = Math.ceil(node.offsetWidth);
-      if (itemWidth > 0) measured[key] = [presentation, itemWidth];
+    const container = containerRef.current;
+    if (!container) return;
+    const measured: Record<string, number> = {};
+    for (const node of container.querySelectorAll<HTMLElement>(
+      '[data-ribbon-item="project"]:not([data-project-folded]) [data-project-chrome]'
+    )) {
+      const dir = node
+        .closest('[data-ribbon-item="project"]')
+        ?.getAttribute('data-project-dir');
+      if (!dir) continue;
+      const natural = Math.ceil(node.offsetWidth) + 2; // + chip borders
+      if (natural > 2) measured[dir] = natural;
     }
-    if (Object.keys(measured).length > 0) {
-      setItemWidths(current => {
-        const changed = Object.entries(measured).some(
-          ([key, [presentation, value]]) =>
-            current[key]?.[presentation] !== value
-        );
-        if (!changed) return current;
-        const next = { ...current };
-        for (const [key, [presentation, value]] of Object.entries(measured)) {
-          next[key] = { ...next[key], [presentation]: value };
-        }
-        return next;
-      });
-    }
+    if (Object.keys(measured).length === 0) return;
+    setHeaderWidths(current => {
+      const changed = Object.entries(measured).some(
+        ([dir, value]) => current[dir] !== value
+      );
+      return changed ? { ...current, ...measured } : current;
+    });
   }, []);
 
   useLayoutEffect(() => {
@@ -522,6 +422,47 @@ export function TabStrip({
     },
     []
   );
+
+  const syncScrollEdges = useCallback(() => {
+    const node = scrollerRef.current;
+    if (!node) return;
+    const left = node.scrollLeft > 2;
+    const right = node.scrollLeft + node.clientWidth < node.scrollWidth - 2;
+    setScrollEdges(current =>
+      current.left === left && current.right === right
+        ? current
+        : { left, right }
+    );
+  }, []);
+
+  // Keep the active Project reachable without hunting: when the row scrolls,
+  // bring the selection into view. Instant under Reduced Motion.
+  useEffect(() => {
+    const node = scrollerRef.current;
+    if (!node || !activeDir) return;
+    const target = layout.targets.get(`project:${activeDir}`);
+    if (!target) return;
+    const activeProject = projects.find(item => item.dir === activeDir);
+    const activeTabTarget = activeProject?.activeTabId
+      ? layout.targets.get(`tab:${activeProject.activeTabId}`)
+      : undefined;
+    const from = target.x;
+    const to = (activeTabTarget ?? target).x + (activeTabTarget ?? target).width;
+    const viewLeft = node.scrollLeft;
+    const viewRight = viewLeft + node.clientWidth;
+    let next = viewLeft;
+    if (from < viewLeft + 12) next = Math.max(0, from - 12);
+    else if (to > viewRight - 12) next = to - node.clientWidth + 12;
+    if (next === viewLeft) return;
+    // jsdom (and any host without smooth scrolling) has no scrollTo
+    if (typeof node.scrollTo === 'function') {
+      node.scrollTo({ left: next, behavior: reducedMotion ? 'auto' : 'smooth' });
+    } else {
+      node.scrollLeft = next;
+    }
+  }, [activeDir, layout, projects, reducedMotion]);
+
+  useEffect(syncScrollEdges, [syncScrollEdges, layout, containerWidth]);
 
   const releaseHeldClose = useCallback((key?: string) => {
     if (key) {
@@ -828,11 +769,9 @@ export function TabStrip({
             .map(token => geometry.layout.targets.get(token.key))
             .filter((target): target is RibbonTarget => !!target)
             .map(slotCenter);
-          index = dropIndexForPointer(
-            centers,
-            { x, y },
-            RIBBON_ROW_HEIGHT + RIBBON_ROW_GAP
-          );
+          // One row now, so every sibling shares row 0 and the drop index
+          // is decided purely by x.
+          index = dropIndexForPointer(centers, { x, y }, RIBBON_ROW_HEIGHT);
         }
         const next = { ...active, engaged, x, y, index };
         pointerDragRef.current = next;
@@ -898,20 +837,16 @@ export function TabStrip({
     projectExiting: boolean
   ): CSSProperties => {
     const held = heldCloseKeys.has(entry.token.key);
-    const logicallyCurrent =
-      currentKeys.has(entry.token.key) && !projectExiting;
+    // Nothing is evicted any more, so presence alone decides visibility.
     const visible =
-      (logicallyCurrent || held) && layout.visibleIds.has(entry.token.key);
+      (currentKeys.has(entry.token.key) && !projectExiting) || held;
     const target = layout.targets.get(entry.token.key) ??
       lastTargetsRef.current.get(entry.token.key) ?? {
         id: entry.token.key,
         x: 0,
         y: 0,
         row: 0,
-        width:
-          itemWidths[entry.token.key]?.[
-            ribbonTokenPresentation(entry.token)
-          ] ?? estimateRibbonTokenWidth(entry.token),
+        width: estimateRibbonTokenWidth(entry.token),
       };
     const leaving = entry.phase === 'exiting' || projectExiting;
     // The dragged chip tracks the pointer 1:1 — no transition, elevated,
@@ -932,6 +867,7 @@ export function TabStrip({
         position: 'absolute',
         left: 0,
         top: 0,
+        width: target.width,
         transformOrigin: 'left center',
         transform: `translate3d(${dragX}px, ${dragY}px, 0) scale(1.03)`,
         opacity: 1,
@@ -947,28 +883,26 @@ export function TabStrip({
       position: 'absolute',
       left: 0,
       top: 0,
+      // Width SNAPS while position tweens (D45). The operator ranked chips
+      // stretching as one of the three motions that read as "flying"; a chip
+      // that takes its new width immediately and then slides reads as
+      // movement, which is the part he wants kept. A LEAVING item is the
+      // exception: closing a Project is a data change, and its right-to-left
+      // retraction (D37) is the one scale the ribbon still animates.
+      width: target.width,
       transformOrigin: 'left center',
-      transform: ribbonTargetTransform(
-        target,
-        leaving ? 0 : entry.phase === 'entering' ? 0.96 : 1
-      ),
-      opacity: visible && !leaving && entry.phase !== 'entering' ? 1 : 0,
+      transform: ribbonTargetTransform(target, leaving ? 0 : 1),
+      opacity: visible && !leaving ? 1 : 0,
       pointerEvents: visible && !leaving ? 'auto' : 'none',
       zIndex: leaving ? 0 : 1,
-      transitionProperty: 'transform, opacity, filter',
+      transitionProperty: 'transform, opacity',
       transitionDuration: reducedMotion
         ? '0ms'
-        : `${RIBBON_MOTION_MS}ms, ${RIBBON_EXIT_MS}ms, 100ms`,
-      transitionTimingFunction:
-        'cubic-bezier(0.25, 1, 0.5, 1), ease-out, ease-out',
+        : `${RIBBON_MOTION_MS}ms, ${RIBBON_EXIT_MS}ms`,
+      transitionTimingFunction: 'cubic-bezier(0.25, 1, 0.5, 1), ease-out',
       willChange: reducedMotion ? undefined : 'transform, opacity',
     };
   };
-
-  const hiddenCurrentCount = tokens.filter(
-    token =>
-      !exiting.has(token.project.dir) && !layout.visibleIds.has(token.key)
-  ).length;
 
   return (
     <div
@@ -976,35 +910,58 @@ export function TabStrip({
       data-workspace-tab-strip
       data-ordinal-hints={ordinalHints ?? undefined}
       data-ribbon-rows={layout.rows}
-      data-ribbon-stable-rows={stripRows}
-      data-ribbon-hidden={hiddenCurrentCount || undefined}
-      className="relative min-w-0 overflow-hidden"
+      data-ribbon-scrollable={layout.scrollable || undefined}
+      className="relative min-w-0"
       style={{
-        // Never a height transition (D42): height moves only on data changes
-        // and SNAPS, so the terminal below absorbs exactly one resize per
-        // real change and zero per Project switch.
+        // One row: height is constant by construction (D45), so the
+        // terminal below can never be resized by anything the ribbon does.
         height: stripHeight,
         minHeight: projects.length > 0 ? RIBBON_ROW_HEIGHT : 0,
+        // Edge fades stand in for the scrollbar: they say "there is more
+        // this way" without spending a row on chrome. Only drawn on the
+        // side that actually has more content.
+        maskImage: layout.scrollable
+          ? `linear-gradient(to right, transparent 0, #000 ${
+              scrollEdges.left ? '28px' : '0'
+            }, #000 calc(100% - ${scrollEdges.right ? '28px' : '0px'}), transparent 100%)`
+          : undefined,
+        WebkitMaskImage: layout.scrollable
+          ? `linear-gradient(to right, transparent 0, #000 ${
+              scrollEdges.left ? '28px' : '0'
+            }, #000 calc(100% - ${scrollEdges.right ? '28px' : '0px'}), transparent 100%)`
+          : undefined,
       }}
       onPointerLeave={() => releaseHeldClose()}
     >
+      <div
+        ref={scrollerRef}
+        data-ribbon-scroller
+        className="relative h-full w-full overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        onScroll={syncScrollEdges}
+      >
+        <div
+          className="relative h-full"
+          style={{ width: Math.max(layout.contentWidth, containerWidth) }}
+        >
       {presentTokens.map(entry => {
         const token = entry.token;
         const project = token.project;
         const color = project.color;
         const groupActive = project.dir === activeDir;
+        const mode = presentationFor(project.dir);
+        const folded = mode === 'folded';
         // A floating chip crosses siblings; its resting translucent wash
         // would overprint their text into mush — go opaque while lifted.
         const draggingSelf =
           pointerDrag?.engaged === true && pointerDrag.key === token.key;
         const projectExiting = exiting.has(project.dir);
-        const visible =
-          !projectExiting &&
-          layout.visibleIds.has(token.key) &&
-          entry.phase !== 'exiting';
+        const visible = !projectExiting && entry.phase !== 'exiting';
+
+        // A folded Project draws one counted container; its tabs are not
+        // rendered at all, and the count is what keeps the work visible.
+        if (token.kind === 'tab' && folded) return null;
 
         if (token.kind === 'project') {
-          const expanded = groupActive || project.ribbonExpanded === true;
           const dormantProject = dormant.has(project.dir);
           const signal = projectSignals.get(project.dir) ?? 'quiet';
           const projectMenuItems: StripMenuItem[] = [
@@ -1014,17 +971,6 @@ export function TabStrip({
                     label: 'New agent',
                     focusAfterSelect: 'none' as const,
                     onSelect: () => onNewAgent(project.dir),
-                  },
-                ]
-              : []),
-            ...(onToggleProjectExpanded && project.tabs.length > 0
-              ? [
-                  {
-                    label:
-                      project.ribbonExpanded === true
-                        ? 'Collapse when inactive'
-                        : 'Keep expanded',
-                    onSelect: () => onToggleProjectExpanded(project.dir),
                   },
                 ]
               : []),
@@ -1079,7 +1025,8 @@ export function TabStrip({
               data-project={project.name}
               data-project-dir={project.dir}
               data-active-project={groupActive || undefined}
-              data-ribbon-expanded={expanded}
+              data-project-mode={mode}
+              data-project-folded={folded || undefined}
               data-project-dormant={dormantProject || undefined}
               data-project-exiting={projectExiting || undefined}
               data-close-stabilized={heldCloseKeys.has(token.key) || undefined}
@@ -1112,7 +1059,7 @@ export function TabStrip({
                   });
                 }
               }}
-              className="group/project flex h-7 w-max origin-left items-center overflow-hidden rounded-md border"
+              className="group/project flex h-7 origin-left items-center overflow-hidden rounded-md border"
               style={{
                 ...itemStyle(entry, projectExiting),
                 borderColor: groupActive
@@ -1156,9 +1103,11 @@ export function TabStrip({
                   );
                 }}
                 title={`${project.dir}${
+                  folded ? `\n${project.tabs.length} Sessions — select to open` : ''
+                }${
                   sourceOrdinal <= 9 ? ` · ⌘⌥${sourceOrdinal} selects` : ''
                 } · ${PROJECT_RIBBON_SIGNAL_COPY[signal]}`}
-                className="relative flex h-full cursor-pointer items-center gap-1.5 px-2 font-mono text-chrome-label font-medium outline-none transition-[filter,transform] duration-100 hover:brightness-150 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan"
+                className="relative flex h-full w-full cursor-pointer items-center gap-1 px-1.5 font-mono text-chrome-label font-medium outline-none transition-[filter,transform] duration-100 hover:brightness-150 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan"
                 style={{ color: groupActive ? color : HUD.textDim }}
               >
                 <span
@@ -1191,60 +1140,48 @@ export function TabStrip({
                 ) : (
                   <span
                     data-project-label
-                    className="max-w-36 truncate whitespace-nowrap"
+                    className="min-w-0 flex-1 truncate whitespace-nowrap text-left"
                   >
                     {project.name}
                   </span>
                 )}
                 <ProjectRibbonSignalMark signal={signal} />
-                <span
-                  aria-hidden
-                  className="text-[9px]"
-                  style={{ opacity: dormantProject ? 0.6 : 0 }}
-                >
-                  ○
-                </span>
-              </EditableChrome>
-              {onToggleProjectExpanded && (
-                <button
-                  type="button"
-                  data-ribbon-passive
-                  disabled={project.tabs.length === 0}
-                  aria-hidden={project.tabs.length === 0 || undefined}
-                  tabIndex={visible && project.tabs.length > 0 ? 0 : -1}
-                  aria-label={
-                    project.ribbonExpanded === true
-                      ? `Collapse ${project.name} when inactive`
-                      : `Keep ${project.name} expanded when inactive`
-                  }
-                  title={
-                    project.tabs.length === 0
-                      ? undefined
-                      : project.ribbonExpanded === true
-                        ? 'Collapse when inactive'
-                        : 'Keep expanded when inactive'
-                  }
-                  onClick={event => {
-                    event.stopPropagation();
-                    onToggleProjectExpanded(project.dir);
-                  }}
-                  className={`mr-0.5 grid size-6 place-items-center rounded outline-none opacity-45 transition-opacity hover:bg-white/8 hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-hud-cyan ${
-                    project.tabs.length === 0 ? 'invisible' : ''
-                  }`}
-                  style={{ color }}
-                >
-                  <span aria-hidden className="text-[9px] leading-none">
-                    {project.ribbonExpanded === true ? '◆' : '◇'}
+                {/* A folded Project is a container holding children: the
+                    count is what keeps that work visible when its chips
+                    cannot be drawn. */}
+                {folded && (
+                  <span
+                    data-project-folded-count={project.tabs.length}
+                    aria-label={`${project.tabs.length} Sessions`}
+                    className="shrink-0 rounded-sm px-1 font-mono text-chrome-meta leading-none"
+                    style={{
+                      color,
+                      background: `${color}1f`,
+                    }}
+                  >
+                    {project.tabs.length}
                   </span>
-                </button>
-              )}
+                )}
+                {dormantProject && (
+                  <span aria-hidden className="shrink-0 text-[9px] opacity-60">
+                    ○
+                  </span>
+                )}
+              </EditableChrome>
             </div>
           );
         }
 
         const tab = token.tab;
-        const condensed = token.condensed === true;
+        const condensed = mode === 'mini';
         const on = groupActive && tab.id === project.activeTabId;
+        // Chrome's rule: once tabs are shrunk, only the tab you are on
+        // keeps a permanent close button — the rest reveal it on hover, so
+        // ~24px goes back to the title instead of to chrome you are not
+        // using. The reveal is absolutely positioned, so it costs no reflow.
+        const tabWidth = layout.targets.get(token.key)?.width ?? 0;
+        const tightTab = !condensed && tabWidth > 0 && tabWidth < 168;
+        const floatingClose = tightTab && !on;
         const dead = !tabIsLive(tab);
         const summary = summaries[tab.durableSessionId];
         const attentionSignal =
@@ -1494,7 +1431,7 @@ export function TabStrip({
                   ◧
                 </span>
               )}
-              {tab.harness !== 'shell' && !isDraft && (
+              {tab.harness !== 'shell' && !isDraft && !tightTab && (
                 <span
                   className={`shrink-0 ${condensed ? 'opacity-55' : ''}`}
                   style={{ color }}
@@ -1597,8 +1534,24 @@ export function TabStrip({
                     ? 'Discard (⌘W)'
                     : 'Close — kept in Recently closed for 14 days (⌘W)'
                 }
-                className="mr-0.5 grid size-6 shrink-0 cursor-pointer place-items-center rounded font-mono text-chrome-label font-normal opacity-45 outline-none transition-[opacity,background-color] duration-100 group-hover/tab:opacity-100 hover:bg-white/8 hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-                style={{ color: HUD.textDim }}
+                className={`grid size-5 shrink-0 cursor-pointer place-items-center rounded font-mono text-chrome-label font-normal outline-none transition-[opacity,background-color] duration-100 hover:bg-white/10 hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan ${
+                  floatingClose
+                    ? 'absolute inset-y-0 right-1 my-auto opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100'
+                    : 'mr-1 opacity-45 group-hover/tab:opacity-100'
+                }`}
+                style={{
+                  color: HUD.textDim,
+                  // A revealed floating close sits over the title's tail;
+                  // the chip-coloured backdrop keeps both readable.
+                  ...(floatingClose
+                    ? {
+                        background: on ? `${color}26` : HUD.bg.panelFill,
+                        boxShadow: `-8px 0 8px -4px ${
+                          on ? `${color}26` : HUD.bg.panelFill
+                        }`,
+                      }
+                    : {}),
+                }}
               >
                 ×
               </button>
@@ -1606,32 +1559,8 @@ export function TabStrip({
           </div>
         );
       })}
-
-      {layout.overflowTarget && hiddenCurrentCount > 0 && (
-        <button
-          type="button"
-          data-ribbon-overflow={hiddenCurrentCount}
-          aria-label={`Open overview for ${hiddenCurrentCount} more ${
-            hiddenCurrentCount === 1 ? 'item' : 'items'
-          }`}
-          title={`${hiddenCurrentCount} more Projects or Initiatives · open overview`}
-          onClick={() =>
-            window.dispatchEvent(new CustomEvent(OPEN_OVERVIEW_EVENT))
-          }
-          className="absolute left-0 top-0 z-[2] grid h-7 cursor-pointer place-items-center rounded-md border px-2 font-mono text-chrome-label outline-none transition-[transform,background-color] hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-hud-cyan"
-          style={{
-            minWidth: layout.overflowTarget.width,
-            transform: ribbonTargetTransform(layout.overflowTarget),
-            color: HUD.textMono,
-            borderColor: 'rgba(138,160,190,0.2)',
-            background: 'rgba(138,160,190,0.055)',
-            transitionDuration: reducedMotion ? '0ms' : `${RIBBON_MOTION_MS}ms`,
-            transitionTimingFunction: 'cubic-bezier(0.25, 1, 0.5, 1)',
-          }}
-        >
-          +{hiddenCurrentCount}
-        </button>
-      )}
+        </div>
+      </div>
 
       {menu && (
         <StripContextMenu

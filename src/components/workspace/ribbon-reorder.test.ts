@@ -49,7 +49,6 @@ function tokensFor(spec: Record<string, string[]>): RibbonToken[] {
       kind: 'project',
       project,
       sourceProjectIndex: index++,
-      priority: 0,
     });
     for (const tab of project.tabs) {
       out.push({
@@ -57,7 +56,6 @@ function tokensFor(spec: Record<string, string[]>): RibbonToken[] {
         kind: 'tab',
         project,
         tab,
-        priority: 2,
       });
     }
   }

@@ -263,9 +263,6 @@ export interface Project {
   registryId?: string | null;
   tabs: WorkspaceTab[];
   activeTabId: string | null;
-  /** Manual ribbon disclosure preference. The selected Project is always
-   * expanded; this controls whether it remains expanded when inactive. */
-  ribbonExpanded?: boolean;
 }
 
 /** Current persisted layout (v6). v6 makes tab-title ownership explicit. */
@@ -290,7 +287,9 @@ export interface PersistedV6 {
     name: string;
     color?: string;
     activeTabId: string | null;
-    /** Optional so pre-ribbon v6 layouts remain valid without a migration. */
+    /** Written by pre-D45 builds; read by nothing now that the ribbon has
+     *  exactly three presentations. Kept in the shape so existing layouts
+     *  stay valid without a migration. */
     ribbonExpanded?: boolean;
     tabs: Array<{
       id: string;
@@ -902,7 +901,6 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         const restored: Project[] = persisted.projects.map((g, gi) => ({
           dir: g.dir,
           name: g.name,
-          ribbonExpanded: g.ribbonExpanded === true,
           color:
             g.color ??
             (assigned[gi] = pickDistinctColor(assigned)) ??
@@ -1281,7 +1279,6 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             dir: g.dir,
             name: g.name,
             color: g.color,
-            ribbonExpanded: g.ribbonExpanded === true,
             activeTabId: tabs.some(t => t.id === g.activeTabId)
               ? g.activeTabId
               : (tabs[0]?.id ?? null),
@@ -2319,22 +2316,6 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     }
   }, []);
 
-  /** Persisted manual disclosure. Active selection remains an independent,
-   * forced-open projection in the ribbon. */
-  const toggleProjectRibbonExpanded = useCallback((dir: string): boolean => {
-    if (!stateRef.current.projects.some(project => project.dir === dir)) {
-      return false;
-    }
-    setProjects(previous =>
-      previous.map(project =>
-        project.dir === dir
-          ? { ...project, ribbonExpanded: project.ribbonExpanded !== true }
-          : project
-      )
-    );
-    return true;
-  }, []);
-
   const renameProject = useCallback((dir: string, name: string) => {
     const next = name.trim();
     if (!next) return;
@@ -2494,6 +2475,5 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     renameTab,
     renameProject,
     setProjectColor,
-    toggleProjectRibbonExpanded,
   };
 }

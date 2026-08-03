@@ -2,7 +2,8 @@
 
 Date: 2026-07-27
 Status: accepted, expected to evolve with the Initiative primitive.
-AMENDED 2026-08-02 by ENG-016 D42 — see the Amendment section below.
+AMENDED 2026-08-02 by ENG-016 D42 and 2026-08-03 by ENG-016 D45 — see the
+Amendment sections below.
 
 ## Context
 
@@ -114,3 +115,34 @@ D23 dead-chip hover-unfurl is deleted (a reveal must not shift layout or
 feed the width model); Projects group by SPACING (a wider inter-Project gap)
 rather than by border tint alone; dormant chips are outside the drag system
 entirely; and the active tab and Project carry `aria-current`.
+
+## Amendment (2026-08-03, ENG-016 D45)
+
+Dogfood on the installed D42 build showed the two-row budget still deciding
+how much of the ribbon you could see: at 1100 px a five-tab active Project
+evicted every other Project's chips, while a one-tab Project showed all
+thirteen. Wrapping also let items hop between rows, which the operator
+ranked as the ribbon's worst motion. The overflow model is replaced:
+
+- The ribbon is **one row**. The hard two-row budget, the wrap packer, the
+  priority admission ladder, and the `+N` overview button are retired.
+  Height is now constant by construction rather than by the reserved-rows
+  machinery D42 needed, and row hopping is structurally impossible.
+- **Nothing is evicted.** Three presentations exist and the engine picks
+  them: `open` (the active Project — tabs with titles, shrunk Chrome-style
+  toward a floor), `mini` (glyph chips), `folded` (one container chip
+  carrying the Project's Session count). A Project folds rather than
+  disappearing, so its work is always represented.
+- **The presentation set is selection-invariant.** The fold budget is
+  computed for the worst case — the Project with the most tabs being the
+  open one — so what an inactive Project looks like does not change when
+  you switch Projects.
+- **Horizontal scroll with edge fades is the last resort**, used only when
+  a fully folded row still overflows; the active Project scrolls into view.
+- The manual **Keep expanded** disclosure and its `◇` control are deleted
+  (operator: "I had no idea what that did as a user"). Manual Project
+  order, the dormant empty-Project tail, explicit-close verbs, pointer
+  reorder, and the Reduced Motion contract are unchanged.
+- Motion: width snaps and position tweens; the only remaining scale is a
+  closing Project's retraction, which is a data change rather than a
+  selection change.

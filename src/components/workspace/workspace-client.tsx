@@ -317,7 +317,6 @@ export function WorkspaceClient() {
     renameTab,
     renameProject,
     setProjectColor,
-    toggleProjectRibbonExpanded,
     ready,
   } = useWorkspaceState({ getInitialSize });
 
@@ -1141,7 +1140,6 @@ export function WorkspaceClient() {
               onRenameTab={renameTab}
               onRenameProject={renameProject}
               onSetProjectColor={setProjectColor}
-              onToggleProjectExpanded={toggleProjectRibbonExpanded}
               feedbackEnabled={feedbackEnabled}
               onRateContext={submitContextRating}
               onReorderTab={(tabId, targetTabId, place) =>

@@ -47,7 +47,7 @@ function makeProject(
   dir: string,
   titles: string[],
   colorIndex: number,
-  ribbonExpanded = false
+
 ): Project {
   const tabs = titles.map((title, index) =>
     tab(title, dir, index === titles.length - 1 ? 'working' : 'done')
@@ -58,7 +58,6 @@ function makeProject(
     color: COLORS[colorIndex % COLORS.length],
     activeTabId: tabs[0]?.id ?? null,
     tabs,
-    ribbonExpanded,
   };
 }
 
@@ -80,8 +79,7 @@ const INITIAL_PROJECTS = [
   makeProject(
     '/workspace/cortex-ehr',
     ['Complete MMHC conversation', 'Plan RAF feature', 'Review Patty notes'],
-    5,
-    true
+    5
   ),
   makeProject(
     '/workspace/photo-generator',
@@ -133,7 +131,7 @@ export function ProjectRibbonStudy() {
       <div className="flex w-full max-w-7xl flex-col gap-3">
         <p className="max-w-[78ch] text-xs leading-relaxed text-muted-foreground">
           Production component in representative 8-Project / 15-Initiative
-          state. Select a Project to expand it; the diamond keeps another open.
+          state. Select a Project to expand it; every other Project shows glyph chips, and folds to a counted container when the row runs out of room.
           The two empty Projects are in the stable dormant tail. Resize the
           window to exercise the two-row overflow contract.
         </p>
@@ -194,18 +192,6 @@ export function ProjectRibbonStudy() {
             onRenameTab={() => undefined}
             onRenameProject={() => undefined}
             onSetProjectColor={() => undefined}
-            onToggleProjectExpanded={dir =>
-              setProjects(current =>
-                current.map(project =>
-                  project.dir === dir
-                    ? {
-                        ...project,
-                        ribbonExpanded: project.ribbonExpanded !== true,
-                      }
-                    : project
-                )
-              )
-            }
           />
         </div>
         <div className="flex gap-2 font-mono text-[11px]">

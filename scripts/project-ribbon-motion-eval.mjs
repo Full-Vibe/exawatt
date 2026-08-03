@@ -71,28 +71,29 @@ try {
 
   const wideMetrics = await strip.evaluate(element => {
     const bounds = element.getBoundingClientRect();
-    const visible = Array.from(
-      element.querySelectorAll('[data-ribbon-item]')
-    ).filter(node => {
-      const style = getComputedStyle(node);
-      return style.opacity !== '0' && style.pointerEvents !== 'none';
-    });
     return {
       rows: Number(element.getAttribute('data-ribbon-rows')),
-      hidden: Number(element.getAttribute('data-ribbon-hidden') || 0),
       height: bounds.height,
-      itemBottoms: visible.map(node => node.getBoundingClientRect().bottom),
+      overflowButtons: element.querySelectorAll('[data-ribbon-overflow]').length,
+      // every Project is on screen as one of the three presentations
+      modes: Array.from(
+        element.querySelectorAll('[data-ribbon-item="project"]')
+      ).map(node => node.getAttribute('data-project-mode')),
+      itemBottoms: Array.from(
+        element.querySelectorAll('[data-ribbon-item]')
+      ).map(node => node.getBoundingClientRect().bottom),
       stripBottom: bounds.bottom,
     };
   });
   if (
-    wideMetrics.rows !== 2 ||
-    wideMetrics.height > 64.5 ||
-    wideMetrics.hidden < 1 ||
+    wideMetrics.rows !== 1 ||
+    wideMetrics.height > 30.5 ||
+    wideMetrics.overflowButtons !== 0 ||
+    wideMetrics.modes.some(mode => !mode) ||
     wideMetrics.itemBottoms.some(bottom => bottom > wideMetrics.stripBottom + 1)
   ) {
     throw new Error(
-      `Representative density broke the two-row contract: ${JSON.stringify(wideMetrics)}`
+      `Single-row contract broken: ${JSON.stringify(wideMetrics)}`
     );
   }
 
@@ -204,21 +205,21 @@ try {
   const narrowMetrics = await strip.evaluate(element => ({
     rows: Number(element.getAttribute('data-ribbon-rows')),
     height: element.getBoundingClientRect().height,
-    hidden: Number(element.getAttribute('data-ribbon-hidden') || 0),
-    overflow: Number(
-      element
-        .querySelector('[data-ribbon-overflow]')
-        ?.getAttribute('data-ribbon-overflow') || 0
-    ),
+    projects: element.querySelectorAll('[data-ribbon-item="project"]').length,
+    folded: element.querySelectorAll('[data-project-folded]').length,
+    counted: element.querySelectorAll('[data-project-folded-count]').length,
+    overflowButtons: element.querySelectorAll('[data-ribbon-overflow]').length,
+    scrollable: element.getAttribute('data-ribbon-scrollable'),
   }));
   if (
-    narrowMetrics.rows > 2 ||
-    narrowMetrics.height > 64.5 ||
-    narrowMetrics.hidden < 1 ||
-    narrowMetrics.overflow !== narrowMetrics.hidden
+    narrowMetrics.rows !== 1 ||
+    narrowMetrics.height > 30.5 ||
+    narrowMetrics.overflowButtons !== 0 ||
+    narrowMetrics.folded < 1 ||
+    narrowMetrics.counted !== narrowMetrics.folded
   ) {
     throw new Error(
-      `Narrow overflow contract failed: ${JSON.stringify(narrowMetrics)}`
+      `Narrow contract failed — folding must replace hiding: ${JSON.stringify(narrowMetrics)}`
     );
   }
   await study.screenshot({ path: join(SCREENSHOT_DIR, 'density-narrow.png') });

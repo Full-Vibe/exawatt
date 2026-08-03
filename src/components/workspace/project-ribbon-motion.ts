@@ -12,22 +12,12 @@ export type RibbonToken =
       kind: 'project';
       project: Project;
       sourceProjectIndex: number;
-      priority: number;
     }
   | {
       key: string;
       kind: 'tab';
       project: Project;
       tab: WorkspaceTab;
-      priority: number;
-      /** D42: inactive-Project tabs render as glyph chips, never unmount.
-       *  Presentation only — identity, ring membership, and menus are the
-       *  same tab either way. */
-      condensed?: boolean;
-      /** D23 dead-chip treatment: a stopped, unselected, non-condensed tab
-       *  collapses its title. Part of the width-presentation model so the
-       *  selection-invariant height can tell these widths apart. */
-      titleCollapsed?: boolean;
     };
 
 export interface PresentRibbonToken {
@@ -141,24 +131,17 @@ export function useRibbonPresence(
   return present;
 }
 
-/** A condensed chip is glyphs-only: status + harness marks and padding. */
-export const CONDENSED_TAB_WIDTH = 46;
+/** A glyph chip: status + source marks and padding, nothing else. */
+export const CONDENSED_TAB_WIDTH = 40;
 
-/** A dead chip with a collapsed title: glyphs, lifecycle badge, close. */
-export const DEAD_COLLAPSED_TAB_WIDTH = 112;
-
+/** The tab's NATURAL width — what it wants when drawn with its title. The
+ *  engine treats this as a ceiling and shrinks Chrome-style from there. */
 export function estimateRibbonTokenWidth(token: RibbonToken): number {
   if (token.kind === 'project') {
-    return Math.min(210, Math.max(80, token.project.name.length * 7.2 + 56));
+    return Math.min(196, Math.max(72, token.project.name.length * 7.2 + 34));
   }
-  if (token.condensed) return CONDENSED_TAB_WIDTH;
-  if (token.titleCollapsed) return DEAD_COLLAPSED_TAB_WIDTH;
-  // Full presentation ceiling: 208px title cap + padding, gaps, status and
-  // harness glyphs, and the close button. An estimate that runs ~30px under
-  // the real DOM width near the row boundary makes the reserved height
-  // depend on which widths happen to be measured — keep it honest.
   const title = token.tab.title || 'New agent';
-  return Math.min(284, Math.max(92, title.length * 7.2 + 90));
+  return Math.min(232, Math.max(92, title.length * 7.2 + 74));
 }
 
 export function ribbonTargetTransform(target: RibbonTarget, scale = 1): string {

@@ -1,33 +1,78 @@
 /**
- * The Project ribbon has one job the browser's flexbox algorithm cannot do for
- * us: preserve a compact two-row budget while guaranteeing that the selected
- * work remains reachable. This pure module owns that policy. Rendering and
- * motion consume its target rectangles; neither gets to invent ordering.
+ * The Project ribbon is ONE row (ENG-016 D45). This pure module owns the
+ * policy that keeps it one row without ever hiding work.
+ *
+ * D41 packed the ribbon into a hard two-row budget and dropped whatever did
+ * not fit behind a `+N` button. D42 kept every tab rendered, but the budget
+ * still evicted them, so the ribbon showed a different amount of truth
+ * depending on how many tabs the Project you were in happened to have — at
+ * 1100px a five-tab active Project evicted every other Project's chips.
+ * Wrapping also meant items hopped between rows on any width change, which
+ * the operator ranked as the worst of the ribbon's motion.
+ *
+ * The ladder, in order, each step used only when the previous runs out:
+ *
+ *   1. every Project open-or-mini at its natural width
+ *   2. the active Project's tabs SHRINK toward `minTabWidth` (Chrome does
+ *      exactly this) — the common case stops here and never scrolls
+ *   3. quiet Projects FOLD into counted containers, in reverse manual
+ *      order; the active Project never folds. Folding replaces eviction:
+ *      the work stays visible as a number instead of vanishing
+ *   4. the row scrolls horizontally, with the caller drawing edge fades
+ *
+ * Nothing here removes an item, so admission and `visibleIds` are no longer
+ * concepts: a caller renders every target it is given.
  */
 
 export const RIBBON_ROW_HEIGHT = 30;
 export const RIBBON_COLUMN_GAP = 4;
-/** Gap between different Projects' items — grouping must be readable from
- *  spacing alone (D42 review round: uniform gaps left chips floating
- *  ambiguously between their own header and the next Project's). */
+/** Gap between different Projects — grouping reads from spacing alone
+ *  (D42 review round: uniform gaps left chips floating ambiguously between
+ *  their own header and the next Project's). */
 export const RIBBON_GROUP_GAP = 12;
-export const RIBBON_ROW_GAP = 4;
-export const RIBBON_MAX_ROWS = 2;
-export const RIBBON_OVERFLOW_WIDTH = 44;
 
-export interface RibbonLayoutInput {
-  id: string;
-  width: number;
-  /** Lower numbers survive overflow first. */
-  priority: number;
-  /** Admission dependency: this item may only be visible while `parentId`
-   *  is (a tab never renders without its Project header). Parents must
-   *  carry a stricter priority than their dependents. */
-  parentId?: string;
-  /** Adjacent items with the SAME groupId sit `RIBBON_COLUMN_GAP` apart;
-   *  crossing to a different defined groupId opens `RIBBON_GROUP_GAP`.
-   *  Undefined on either side keeps the plain column gap. */
-  groupId?: string;
+export interface RibbonLayoutPolicy {
+  /** narrowest an open tab may shrink to before folding starts */
+  minTabWidth: number;
+  /** widest an open tab is ever drawn */
+  maxTabWidth: number;
+  /** a folded Project's container chip: its name plus a count */
+  foldedProjectWidth: number;
+  columnGap: number;
+  groupGap: number;
+}
+
+/** One object so the behaviour can be retuned after dogfooding without
+ *  touching the algorithm (operator, 2026-08-03: "build it well enough that
+ *  we can test and change our minds after playing with it"). */
+export const DEFAULT_RIBBON_POLICY: RibbonLayoutPolicy = {
+  // A tab keeps its status glyph, ~9 characters of title, and a close
+  // button that floats in on hover once it is this tight (see tab-strip).
+  minTabWidth: 118,
+  maxTabWidth: 232,
+  foldedProjectWidth: 124,
+  columnGap: RIBBON_COLUMN_GAP,
+  groupGap: RIBBON_GROUP_GAP,
+};
+
+export type ProjectPresentation = 'open' | 'mini' | 'folded';
+
+export interface RibbonProjectInput {
+  dir: string;
+  /** measured or estimated width of the Project's own header chip */
+  headerWidth: number;
+  /** width of the folded container chip (name + count); falls back to the
+   *  policy cap. Content-derived so a short name does not leave dead space. */
+  foldedWidth?: number;
+  /** the Project's tabs, in display order */
+  tabs: ReadonlyArray<{
+    id: string;
+    /** natural width when drawn with its title */
+    openWidth: number;
+    /** width as a glyph chip */
+    miniWidth: number;
+  }>;
+  active: boolean;
 }
 
 export interface RibbonTarget {
@@ -38,170 +83,221 @@ export interface RibbonTarget {
   width: number;
 }
 
-export interface RibbonLayout {
+export interface RibbonRowLayout {
   targets: Map<string, RibbonTarget>;
-  visibleIds: ReadonlySet<string>;
-  hiddenIds: readonly string[];
-  overflowTarget: RibbonTarget | null;
-  rows: number;
+  /** what each Project ended up rendering as */
+  presentation: Map<string, ProjectPresentation>;
+  /** total laid-out width; more than the available width means it scrolls */
+  contentWidth: number;
+  scrollable: boolean;
   height: number;
-}
-
-interface Packed {
-  targets: Map<string, RibbonTarget>;
+  /** always 1 while any Project is open — the row count cannot vary now */
   rows: number;
 }
 
-function normalizedWidth(width: number, availableWidth: number): number {
-  if (!Number.isFinite(width) || width <= 0) return 1;
-  return Math.min(Math.ceil(width), Math.max(1, availableWidth));
+const tabKey = (id: string) => `tab:${id}`;
+const headerKey = (dir: string) => `project:${dir}`;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
-function pack(
-  items: readonly Pick<RibbonLayoutInput, 'id' | 'width' | 'groupId'>[],
-  availableWidth: number,
-  maxRows: number
-): Packed | null {
-  const targets = new Map<string, RibbonTarget>();
-  let row = 0;
-  let x = 0;
-  let previousGroup: string | undefined;
-
-  for (const item of items) {
-    const width = normalizedWidth(item.width, availableWidth);
-    const gap =
-      x === 0
-        ? 0
-        : previousGroup !== undefined &&
-            item.groupId !== undefined &&
-            item.groupId !== previousGroup
-          ? RIBBON_GROUP_GAP
-          : RIBBON_COLUMN_GAP;
-    let placeX = x === 0 ? 0 : x + gap;
-    if (placeX > 0 && placeX + width > availableWidth) {
-      row += 1;
-      placeX = 0;
-    }
-    if (row >= maxRows) return null;
-    targets.set(item.id, {
-      id: item.id,
-      x: placeX,
-      y: row * (RIBBON_ROW_HEIGHT + RIBBON_ROW_GAP),
-      row,
-      width,
-    });
-    x = placeX + width;
-    previousGroup = item.groupId;
-  }
-
-  return { targets, rows: items.length === 0 ? 0 : row + 1 };
-}
-
-/**
- * Compute stable ribbon target bounds.
- *
- * When everything does not fit, priority decides admission and original order
- * decides placement. That means the active Project/header/tab can remain
- * visible without visually reordering the operator's manually arranged work.
- * A real overflow target is packed alongside the admitted items, so it never
- * overlays or clips the final Initiative.
- */
-export function layoutProjectRibbon(
-  items: readonly RibbonLayoutInput[],
-  availableWidth: number,
-  {
-    maxRows = RIBBON_MAX_ROWS,
-    overflowWidth = RIBBON_OVERFLOW_WIDTH,
-  }: { maxRows?: number; overflowWidth?: number } = {}
-): RibbonLayout {
-  const width = Math.max(1, Math.floor(availableWidth));
-  const all = pack(items, width, maxRows);
-  if (all) {
-    const rows = all.rows;
-    return {
-      targets: all.targets,
-      visibleIds: new Set(items.map(item => item.id)),
-      hiddenIds: [],
-      overflowTarget: null,
-      rows,
-      height:
-        rows === 0 ? 0 : rows * RIBBON_ROW_HEIGHT + (rows - 1) * RIBBON_ROW_GAP,
-    };
-  }
-
-  const admitted = new Set<string>();
-  const byPriority = items
-    .map((item, index) => ({ item, index }))
-    .sort((a, b) => a.item.priority - b.item.priority || a.index - b.index);
-  const overflow: RibbonLayoutInput = {
-    id: '__ribbon-overflow__',
-    width: overflowWidth,
-    priority: Number.NEGATIVE_INFINITY,
-  };
-
-  for (const candidate of byPriority) {
-    // An orphan chip beside a hidden Project header reads as belonging to
-    // its visible neighbor; a dependent is only admissible with its parent.
-    if (candidate.item.parentId && !admitted.has(candidate.item.parentId)) {
-      continue;
-    }
-    const proposed = new Set(admitted).add(candidate.item.id);
-    const ordered = items.filter(item => proposed.has(item.id));
-    if (pack([...ordered, overflow], width, maxRows)) {
-      admitted.add(candidate.item.id);
-    }
-  }
-
-  const visible = items.filter(item => admitted.has(item.id));
-  const packed = pack([...visible, overflow], width, maxRows);
-  // The overflow button itself is narrower than every supported viewport. The
-  // fallback keeps the function total for synthetic zero-width unit fixtures.
-  const overflowOnly = packed ?? pack([overflow], width, maxRows);
-  const targets = overflowOnly?.targets ?? new Map<string, RibbonTarget>();
-  const overflowTarget = targets.get(overflow.id) ?? null;
-  targets.delete(overflow.id);
-  const hiddenIds = items
-    .filter(item => !admitted.has(item.id))
-    .map(item => item.id);
-  const rows = overflowOnly?.rows ?? 1;
-
-  return {
-    targets,
-    visibleIds: admitted,
-    hiddenIds,
-    overflowTarget,
-    rows,
-    height: rows * RIBBON_ROW_HEIGHT + (rows - 1) * RIBBON_ROW_GAP,
-  };
-}
-
-/**
- * The strip's outer height must be SELECTION-INVARIANT (D42): switching
- * Projects may never resize the terminal below. Callers pass one item list
- * per hypothetical selection (each Project active in turn); the reserved
- * row count is the maximum any selection needs, so no switch can change it.
- * Only data changes — open/close — move this number, and the container
- * snaps rather than animating it.
- */
-export function stableRibbonRows(
-  variants: ReadonlyArray<readonly RibbonLayoutInput[]>,
-  availableWidth: number,
-  options?: { maxRows?: number; overflowWidth?: number }
+/** Width a Project's block occupies in a given presentation. */
+function blockWidth(
+  project: RibbonProjectInput,
+  presentation: ProjectPresentation,
+  policy: RibbonLayoutPolicy,
+  openTabWidth: number
 ): number {
-  return variants.reduce(
-    (rows, items) =>
-      items.length === 0
-        ? rows
-        : Math.max(
-            rows,
-            layoutProjectRibbon(items, availableWidth, options).rows
-          ),
-    0
+  if (presentation === 'folded') {
+    return Math.min(
+      policy.foldedProjectWidth,
+      project.foldedWidth ?? policy.foldedProjectWidth
+    );
+  }
+  return project.tabs.reduce(
+    (total, tab) =>
+      total +
+      policy.columnGap +
+      (presentation === 'open' ? openTabWidth : tab.miniWidth),
+    project.headerWidth
   );
 }
 
+/**
+ * Lay the ribbon out as one row.
+ *
+ * Placement always follows the caller's manual order; the policy only ever
+ * changes how WIDE something is drawn, never where it sits relative to its
+ * neighbours. That is what keeps a selection change from reordering work.
+ */
+export function layoutRibbonRow(
+  projects: readonly RibbonProjectInput[],
+  availableWidth: number,
+  policy: RibbonLayoutPolicy = DEFAULT_RIBBON_POLICY
+): RibbonRowLayout {
+  const width = Math.max(1, Math.floor(availableWidth));
+  const active = projects.find(project => project.active) ?? null;
+
+  // How many Projects must fold? Answer it for the WORST CASE — the
+  // Project with the most tabs being the open one — rather than for the
+  // current selection. Otherwise how much of the ribbon you can see would
+  // depend on which Project you happen to be in, which is exactly the
+  // complaint D45 exists to fix: a five-tab Project used to blank every
+  // other Project's chips while a one-tab Project showed them all.
+  const hungriest = projects.reduce<RibbonProjectInput | null>(
+    (worst, project) =>
+      !worst || project.tabs.length > worst.tabs.length ? project : worst,
+    null
+  );
+  const widthWithFolds = (
+    foldCount: number,
+    openProject: RibbonProjectInput | null,
+    openWidth: number
+  ) => {
+    const foldTargets = new Set(
+      projects
+        .filter(project => project !== openProject && project.tabs.length > 0)
+        .slice(-Math.max(0, foldCount))
+        .map(project => project.dir)
+    );
+    return projects.reduce(
+      (total, project, index) =>
+        total +
+        (index === 0 ? 0 : policy.groupGap) +
+        blockWidth(
+          project,
+          foldTargets.has(project.dir)
+            ? 'folded'
+            : project === openProject
+              ? 'open'
+              : 'mini',
+          policy,
+          openWidth
+        ),
+      0
+    );
+  };
+  const foldable = projects.filter(
+    project => project.tabs.length > 0
+  ).length;
+  let foldCount = 0;
+  while (
+    foldCount < Math.max(0, foldable - 1) &&
+    widthWithFolds(foldCount, hungriest, policy.minTabWidth) > width
+  ) {
+    foldCount += 1;
+  }
+
+  // Now place the ACTUAL selection under that fold budget: the folded set
+  // is the trailing `foldCount` Projects that are not the one you are in.
+  const foldCandidates = projects.filter(
+    project => !project.active && project.tabs.length > 0
+  );
+  const folded = new Set(
+    foldCount > 0
+      ? foldCandidates.slice(-foldCount).map(project => project.dir)
+      : []
+  );
+  const presentation = new Map<string, ProjectPresentation>(
+    projects.map(project => [
+      project.dir,
+      (project.active
+        ? 'open'
+        : folded.has(project.dir)
+          ? 'folded'
+          : 'mini') as ProjectPresentation,
+    ])
+  );
+
+  // Steps 1-2: with the fold budget known, give the active Project's tabs
+  // whatever room is left, clamped into [minTabWidth, natural].
+  const natural = active
+    ? Math.min(
+        policy.maxTabWidth,
+        Math.max(
+          policy.minTabWidth,
+          ...active.tabs.map(tab => Math.min(tab.openWidth, policy.maxTabWidth))
+        )
+      )
+    : policy.maxTabWidth;
+  let openTabWidth = natural;
+  if (active && active.tabs.length > 0) {
+    const others = projects
+      .filter(project => project !== active)
+      .reduce(
+        (total, project) =>
+          total +
+          policy.groupGap +
+          blockWidth(
+            project,
+            presentation.get(project.dir) ?? 'mini',
+            policy,
+            0
+          ),
+        0
+      );
+    const room =
+      width -
+      others -
+      active.headerWidth -
+      policy.columnGap * active.tabs.length;
+    const share = Math.floor(room / active.tabs.length);
+    openTabWidth = clamp(
+      Number.isFinite(share) ? share : natural,
+      policy.minTabWidth,
+      natural
+    );
+  }
+
+  // Step 4: place. Anything still wider than the viewport scrolls.
+  const targets = new Map<string, RibbonTarget>();
+  let x = 0;
+  projects.forEach((project, index) => {
+    if (index > 0) x += policy.groupGap;
+    const mode = presentation.get(project.dir) ?? 'mini';
+    const headerWidth =
+      mode === 'folded'
+        ? Math.min(
+            policy.foldedProjectWidth,
+            project.foldedWidth ?? policy.foldedProjectWidth
+          )
+        : project.headerWidth;
+    targets.set(headerKey(project.dir), {
+      id: headerKey(project.dir),
+      x,
+      y: 0,
+      row: 0,
+      width: headerWidth,
+    });
+    x += headerWidth;
+    if (mode === 'folded') return;
+    for (const tab of project.tabs) {
+      x += policy.columnGap;
+      const tabWidth = mode === 'open' ? openTabWidth : tab.miniWidth;
+      targets.set(tabKey(tab.id), {
+        id: tabKey(tab.id),
+        x,
+        y: 0,
+        row: 0,
+        width: tabWidth,
+      });
+      x += tabWidth;
+    }
+  });
+
+  return {
+    targets,
+    presentation,
+    contentWidth: x,
+    scrollable: x > width,
+    height: projects.length === 0 ? 0 : RIBBON_ROW_HEIGHT,
+    rows: projects.length === 0 ? 0 : 1,
+  };
+}
+
 export function ribbonHeightForRows(rows: number): number {
-  return rows <= 0 ? 0 : rows * RIBBON_ROW_HEIGHT + (rows - 1) * RIBBON_ROW_GAP;
+  return rows <= 0 ? 0 : RIBBON_ROW_HEIGHT;
 }
 
 /** Stable partition: manual order survives within each side of the divider. */

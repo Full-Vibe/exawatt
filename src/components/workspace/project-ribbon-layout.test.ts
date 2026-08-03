@@ -1,146 +1,156 @@
 import { describe, expect, it } from 'vitest';
 import {
-  layoutProjectRibbon,
+  DEFAULT_RIBBON_POLICY,
+  layoutRibbonRow,
   orderProjectsForRibbon,
   RIBBON_COLUMN_GAP,
   RIBBON_GROUP_GAP,
-  RIBBON_OVERFLOW_WIDTH,
   RIBBON_ROW_HEIGHT,
-  RIBBON_ROW_GAP,
   ribbonHeightForRows,
-  stableRibbonRows,
+  type RibbonProjectInput,
 } from './project-ribbon-layout';
 
-const item = (id: string, width = 100, priority = 4) => ({
-  id,
-  width,
-  priority,
+const project = (
+  dir: string,
+  tabCount: number,
+  active = false
+): RibbonProjectInput => ({
+  dir,
+  headerWidth: 100,
+  foldedWidth: 120,
+  active,
+  tabs: Array.from({ length: tabCount }, (_, index) => ({
+    id: `${dir}-${index}`,
+    openWidth: 200,
+    miniWidth: 40,
+  })),
 });
 
-describe('layoutProjectRibbon', () => {
-  it('lays out a compact first row, then a bounded second row', () => {
-    const layout = layoutProjectRibbon(
-      [item('a'), item('b'), item('c'), item('d')],
-      208
-    );
-    expect([...layout.targets.values()]).toMatchObject([
-      { id: 'a', x: 0, y: 0, row: 0 },
-      { id: 'b', x: 104, y: 0, row: 0 },
-      { id: 'c', x: 0, y: RIBBON_ROW_HEIGHT + RIBBON_ROW_GAP, row: 1 },
-      { id: 'd', x: 104, y: RIBBON_ROW_HEIGHT + RIBBON_ROW_GAP, row: 1 },
-    ]);
-    expect(layout.height).toBe(RIBBON_ROW_HEIGHT * 2 + RIBBON_ROW_GAP);
-    expect(layout.overflowTarget).toBeNull();
-  });
+const modes = (projects: RibbonProjectInput[], width: number) =>
+  Object.fromEntries(layoutRibbonRow(projects, width).presentation.entries());
 
-  it('reserves a real overflow slot and never creates a third row', () => {
-    const layout = layoutProjectRibbon(
-      Array.from({ length: 12 }, (_, index) => item(`i${index}`, 84)),
+describe('layoutRibbonRow', () => {
+  it('is one row whose height cannot vary', () => {
+    const wide = layoutRibbonRow([project('/a', 2, true)], 2000);
+    const tight = layoutRibbonRow(
+      [project('/a', 9, true), project('/b', 9), project('/c', 9)],
       300
     );
-    expect(layout.rows).toBe(2);
-    expect(layout.hiddenIds.length).toBeGreaterThan(0);
-    expect(layout.overflowTarget).toMatchObject({
-      width: RIBBON_OVERFLOW_WIDTH,
-      row: 1,
+    expect(wide.rows).toBe(1);
+    expect(tight.rows).toBe(1);
+    expect(wide.height).toBe(RIBBON_ROW_HEIGHT);
+    expect(tight.height).toBe(RIBBON_ROW_HEIGHT);
+    expect(ribbonHeightForRows(1)).toBe(RIBBON_ROW_HEIGHT);
+    for (const target of tight.targets.values()) {
+      expect(target.row).toBe(0);
+      expect(target.y).toBe(0);
+    }
+  });
+
+  it('opens the active Project and minis the rest when everything fits', () => {
+    expect(modes([project('/a', 2, true), project('/b', 2)], 2000)).toEqual({
+      '/a': 'open',
+      '/b': 'mini',
     });
-    expect(
-      Math.max(...[...layout.targets.values()].map(target => target.row))
-    ).toBeLessThan(2);
   });
 
-  it('keeps selected work visible without changing its manual position', () => {
-    const items = [
-      item('early-1', 120, 4),
-      item('early-2', 120, 4),
-      item('active-project', 110, 0),
-      item('active-tab', 170, 1),
-      item('late', 120, 4),
-    ];
-    const layout = layoutProjectRibbon(items, 260);
-    expect(layout.visibleIds.has('active-project')).toBe(true);
-    expect(layout.visibleIds.has('active-tab')).toBe(true);
-    const visibleInOrder = items
-      .filter(entry => layout.visibleIds.has(entry.id))
-      .map(entry => entry.id);
-    expect([...layout.targets.keys()]).toEqual(visibleInOrder);
+  it('shrinks the active tabs before folding anyone (Chrome order)', () => {
+    const projects = [project('/a', 4, true), project('/b', 2)];
+    const roomy = layoutRibbonRow(projects, 2000);
+    const tight = layoutRibbonRow(projects, 900);
+    const widthOf = (layout: ReturnType<typeof layoutRibbonRow>, id: string) =>
+      layout.targets.get(`tab:${id}`)?.width ?? 0;
+    expect(widthOf(roomy, '/a-0')).toBe(200);
+    expect(widthOf(tight, '/a-0')).toBeLessThan(200);
+    expect(widthOf(tight, '/a-0')).toBeGreaterThanOrEqual(
+      DEFAULT_RIBBON_POLICY.minTabWidth
+    );
+    // nobody folded merely so the tabs could stay wide
+    expect(tight.presentation.get('/b')).toBe('mini');
   });
 
-  it('handles forty Initiatives without exceeding its vertical contract', () => {
-    const layout = layoutProjectRibbon(
-      Array.from({ length: 40 }, (_, index) =>
-        item(`initiative-${index}`, 150, index === 31 ? 0 : 4)
+  it('folds — never evicts — once shrinking is exhausted', () => {
+    const layout = layoutRibbonRow(
+      [project('/a', 5, true), project('/b', 3), project('/c', 3)],
+      620
+    );
+    expect([...layout.presentation.values()]).toContain('folded');
+    // the active Project is never the one that folds
+    expect(layout.presentation.get('/a')).toBe('open');
+    // a folded Project still gets a target, so its counted container draws
+    for (const [dir, mode] of layout.presentation) {
+      if (mode !== 'folded') continue;
+      expect(layout.targets.get(`project:${dir}`)).toBeTruthy();
+    }
+  });
+
+  it('keeps every Project in the SAME presentation whichever one is active', () => {
+    // The D45 headline: what the ribbon shows must not depend on how many
+    // tabs the Project you happen to be in has.
+    const dirs = ['/a', '/b', '/c', '/d'];
+    const counts = [5, 1, 2, 1];
+    const modeByActive = dirs.map(activeDir =>
+      layoutRibbonRow(
+        dirs.map((dir, index) => project(dir, counts[index], dir === activeDir)),
+        700
+      )
+    );
+    for (const dir of dirs) {
+      const asInactive = modeByActive
+        .filter((_, index) => dirs[index] !== dir)
+        .map(layout => layout.presentation.get(dir));
+      expect(new Set(asInactive).size).toBe(1);
+    }
+  });
+
+  it('scrolls only when even a fully folded row overflows', () => {
+    const comfortable = layoutRibbonRow(
+      [project('/a', 2, true), project('/b', 2)],
+      2000
+    );
+    expect(comfortable.scrollable).toBe(false);
+    const extreme = layoutRibbonRow(
+      Array.from({ length: 12 }, (_, index) =>
+        project(`/p${index}`, 3, index === 0)
       ),
-      1_000
+      500
     );
-    expect(layout.rows).toBe(2);
-    expect(layout.height).toBe(RIBBON_ROW_HEIGHT * 2 + RIBBON_ROW_GAP);
-    expect(layout.visibleIds.has('initiative-31')).toBe(true);
-    expect(layout.hiddenIds.length).toBeGreaterThan(20);
+    expect(extreme.scrollable).toBe(true);
+    expect(extreme.contentWidth).toBeGreaterThan(500);
   });
-});
 
-describe('group-aware gaps (D42 review round)', () => {
-  it('opens a wider gap when adjacent items belong to different groups', () => {
-    const layout = layoutProjectRibbon(
+  it('separates Projects by the group gap and own tabs by the column gap', () => {
+    const layout = layoutRibbonRow(
+      [project('/a', 1, true), project('/b', 1)],
+      2000
+    );
+    const header = layout.targets.get('project:/a')!;
+    const tab = layout.targets.get('tab:/a-0')!;
+    const next = layout.targets.get('project:/b')!;
+    expect(tab.x).toBe(header.x + header.width + RIBBON_COLUMN_GAP);
+    expect(next.x).toBe(tab.x + tab.width + RIBBON_GROUP_GAP);
+  });
+
+  it('places in manual order regardless of which Project is active', () => {
+    const order = (activeDir: string) =>
       [
-        { ...item('a-header', 100), groupId: '/a' },
-        { ...item('a-tab', 100), groupId: '/a' },
-        { ...item('b-header', 100), groupId: '/b' },
-      ],
-      1000
-    );
-    expect(layout.targets.get('a-tab')?.x).toBe(100 + RIBBON_COLUMN_GAP);
-    expect(layout.targets.get('b-header')?.x).toBe(
-      100 + RIBBON_COLUMN_GAP + 100 + RIBBON_GROUP_GAP
-    );
+        ...layoutRibbonRow(
+          ['/a', '/b', '/c'].map(dir => project(dir, 1, dir === activeDir)),
+          2000
+        ).targets.entries(),
+      ]
+        .filter(([id]) => id.startsWith('project:'))
+        .sort((a, b) => a[1].x - b[1].x)
+        .map(([id]) => id);
+    expect(order('/a')).toEqual(order('/c'));
   });
 
-  it('keeps the plain column gap when groups are undefined', () => {
-    const layout = layoutProjectRibbon([item('a', 100), item('b', 100)], 1000);
-    expect(layout.targets.get('b')?.x).toBe(100 + RIBBON_COLUMN_GAP);
-  });
-});
-
-describe('parent-dependent admission (D42)', () => {
-  it('never admits a tab whose Project header is hidden', () => {
-    // header is wide and low-priority; its chip is narrow and would fit
-    const items = [
-      item('keep-header', 100, 0),
-      { id: 'keep-tab', width: 100, priority: 1, parentId: 'keep-header' },
-      item('wide-header', 400, 4),
-      { id: 'orphan-tab', width: 30, priority: 6, parentId: 'wide-header' },
-    ];
-    const layout = layoutProjectRibbon(items, 240);
-    expect(layout.visibleIds.has('wide-header')).toBe(false);
-    expect(layout.visibleIds.has('orphan-tab')).toBe(false);
-    expect(layout.hiddenIds).toContain('orphan-tab');
-  });
-
-  it('admits the dependent normally once its parent fits', () => {
-    const items = [
-      item('header', 80, 0),
-      { id: 'tab', width: 80, priority: 2, parentId: 'header' },
-    ];
-    const layout = layoutProjectRibbon(items, 400);
-    expect(layout.visibleIds.has('tab')).toBe(true);
-  });
-});
-
-describe('stableRibbonRows (D42 selection-invariant height)', () => {
-  it('reserves the rows of the tallest hypothetical selection', () => {
-    const oneRow = [item('a', 100), item('b', 100)];
-    const twoRows = [item('a', 100), item('b', 100), item('c', 300)];
-    expect(stableRibbonRows([oneRow, twoRows], 320)).toBe(2);
-    expect(stableRibbonRows([oneRow], 320)).toBe(1);
-  });
-
-  it('is zero only when every variant is empty', () => {
-    expect(stableRibbonRows([[], []], 400)).toBe(0);
+  it('handles an empty ribbon', () => {
+    const layout = layoutRibbonRow([], 800);
+    expect(layout.rows).toBe(0);
+    expect(layout.height).toBe(0);
+    expect(layout.scrollable).toBe(false);
     expect(ribbonHeightForRows(0)).toBe(0);
-    expect(ribbonHeightForRows(2)).toBe(
-      RIBBON_ROW_HEIGHT * 2 + RIBBON_ROW_GAP
-    );
   });
 });
 

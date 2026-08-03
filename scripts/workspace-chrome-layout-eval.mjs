@@ -122,22 +122,6 @@ const persistedLayout = {
           lifecycle: 'running',
           exitCode: null,
         },
-        // a stopped Session restored from a previous run (D24/D42):
-        // renders as a title-less chip with badge; identity via tooltip
-        {
-          id: 'frozen-tab',
-          durableSessionId: 'frozen-session',
-          harness: 'claude',
-          title: 'billing migration',
-          cwd: '/tmp/gpagent',
-          sessionId: null,
-          harnessSessionId: 'provider-frozen',
-          roadmapItemId: null,
-          lifecycle: 'stopped-clean',
-          exitCode: 0,
-          initialTask: null,
-          contextSummary: 'Migrate billing to usage-based',
-        },
       ],
     },
     {
@@ -157,6 +141,22 @@ const persistedLayout = {
           roadmapItemId: null,
           lifecycle: 'running',
           exitCode: null,
+        },
+        // a stopped Session restored from a previous run (D24/D42):
+        // renders as a title-less chip with badge; identity via tooltip
+        {
+          id: 'frozen-tab',
+          durableSessionId: 'frozen-session',
+          harness: 'claude',
+          title: 'billing migration',
+          cwd: '/tmp/gpagent',
+          sessionId: null,
+          harnessSessionId: 'provider-frozen',
+          roadmapItemId: null,
+          lifecycle: 'stopped-clean',
+          exitCode: 0,
+          initialTask: null,
+          contextSummary: 'Migrate billing to usage-based',
         },
         {
           id: 'fresh-tab',
@@ -332,20 +332,9 @@ try {
   const chrome = page.locator('[data-workspace-chrome]');
   await chrome.waitFor();
   await page.locator('[data-project="cortex-ehr"]').waitFor();
-  // Elastic ribbon: selected Projects auto-expand; an inactive Project can be
-  // kept open explicitly. Keep gpagent open so the viewport sweep exercises
-  // mixed active/manual groups and the stopped lifecycle specimen remains in
-  // the production DOM at every width.
-  await page
-    .getByRole('button', {
-      name: 'Keep gpagent expanded when inactive',
-    })
-    .click();
-  await page
-    .getByRole('button', {
-      name: 'Keep exawatt expanded when inactive',
-    })
-    .click();
+  // Single-row ribbon (D45): the Project you are IN is the one drawn with
+  // full tabs — there is no manual keep-expanded any more, so the stopped
+  // lifecycle specimen lives in exawatt, the Project this sweep stands in.
   // ⌘T pops a REAL tab (D24): the New Agent button creates a draft tab
   // whose pane hosts the composer — geometry checks run against that pane
   const composerToggle = page.locator('[data-composer-toggle]');
@@ -769,7 +758,7 @@ try {
   // reveals must not shift layout or feed the width model); its badge,
   // close affordance, aria-label, and tooltip identity remain.
   const frozen = page.locator(
-    '[data-project-parent="/tmp/gpagent"][data-tab-id="frozen-tab"]'
+    '[data-project-parent="/tmp/exawatt"][data-tab-id="frozen-tab"]'
   );
   await frozen.waitFor({ state: 'attached' });
   await page.mouse.click(650, 400);
@@ -839,7 +828,11 @@ try {
   await page.keyboard.press('Escape');
   await stripMenu.waitFor({ state: 'detached' });
   // 3. a STARTED agent pops the in-app confirm: default-highlighted Close,
-  // esc keeps it open the first time, ⏎ presses the default the second
+  // esc keeps it open the first time, ⏎ presses the default the second.
+  // A close button only exists on the Project you are in (D45), so stand
+  // in gpagent to reach its started Agent.
+  await page.locator('[data-project="gpagent"] [data-project-chrome]').click();
+  await page.waitForTimeout(320);
   const gpaClose = page
     .locator('[data-project-parent="/tmp/gpagent"][data-tab-id="gpa-tab"]')
     .getByRole('button', {
@@ -875,7 +868,10 @@ try {
     throw new Error(`Close toast does not narrate the outcome: ${toastText}`);
   }
   await page.screenshot({ path: join(SCREENSHOT_DIR, 'close-toast.png') });
-  // 4. ⌘T ⌘W is a friction-free no-op: the draft discards, no dialog
+  // 4. ⌘T ⌘W is a friction-free no-op: the draft discards, no dialog.
+  // The draft lives in exawatt; stand back in it to reach its affordance.
+  await page.locator('[data-project="exawatt"] [data-project-chrome]').click();
+  await page.waitForTimeout(320);
   const draftClose = page.getByTitle('Discard (⌘W)');
   await draftClose.click();
   await draftClose.waitFor({ state: 'detached' });

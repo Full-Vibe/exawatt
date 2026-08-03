@@ -6,8 +6,8 @@
  * TabStrip over a fake terminal stage that counts every ResizeObserver
  * delivery — the exact instrument for the round's core contract:
  *
- *   1. ZERO stage resizes across Project switches (selection-invariant height)
- *   2. exactly ONE snap resize when a data change flips the row count
+ *   1. ZERO stage resizes across Project switches (constant-height row)
+ *   2. the strip height NEVER changes — one row, whatever happens
  *   3. hold-⌘ keycaps are VISIBLE on every ordinal-bearing tab, condensed
  *      chips included
  *   4. walking the full ⌘⇧] ring never lands on an invisible active tab
@@ -77,7 +77,7 @@ const stripState = () =>
     const strip = document.querySelector('[data-workspace-tab-strip]');
     return {
       rows: strip?.getAttribute('data-ribbon-rows'),
-      stable: strip?.getAttribute('data-ribbon-stable-rows'),
+      scrollable: strip?.getAttribute('data-ribbon-scrollable'),
       height: strip instanceof HTMLElement ? strip.style.height : null,
     };
   });
@@ -227,14 +227,11 @@ try {
     );
   }
 
-  // ── Gate 2: data changes snap with exactly one resize at the row flip ──
-  // Drain every Project's tabs. The reserved row count is the max over all
-  // hypothetical selections, so it flips 2→1 exactly once somewhere in the
-  // sequence — the stage must see exactly ONE resize across dozens of
-  // closes and the interleaved Project switches.
+  // ── Gate 2: the height is constant, full stop ──
+  // D45 made the ribbon one row, so no data change — not closing tabs, not
+  // draining whole Projects — can resize the terminal below it.
   const resizesBeforeCloses = await stageResizes();
-  let stableTrack = (await stripState()).stable;
-  let flips = 0;
+  const heightBeforeCloses = (await stripState()).height;
   for (const name of [
     'exawatt',
     'gpagent',
@@ -252,21 +249,19 @@ try {
         .first();
       if (!(await closable.count())) break;
       await closable.click({ force: true });
-      // outlast the pointer-close slot-stabilization window so the next
-      // iteration cannot re-click the retained ghost
       await page.waitForTimeout(700);
-      const stable = (await stripState()).stable;
-      if (stable !== stableTrack) {
-        flips += 1;
-        stableTrack = stable;
+      const now = await stripState();
+      if (now.height !== heightBeforeCloses || now.rows !== '1') {
+        throw new Error(
+          `Height moved on a data change: ${JSON.stringify({ heightBeforeCloses, now })}`
+        );
       }
     }
   }
-  const resizesAfterCloses = await stageResizes();
-  const closeDelta = resizesAfterCloses - resizesBeforeCloses;
-  if (flips !== 1 || closeDelta !== 1) {
+  const closeDelta = (await stageResizes()) - resizesBeforeCloses;
+  if (closeDelta !== 0) {
     throw new Error(
-      `Row flip contract failed: ${JSON.stringify({ flips, closeDelta, stableTrack })}`
+      `A one-row ribbon must never resize the stage: ${closeDelta} resizes`
     );
   }
 
@@ -282,7 +277,7 @@ try {
           keycaps,
           ringStops,
           reorder: { before, swapped },
-          rowFlip: { flips, closeDelta },
+          heightHeldAcrossDrain: closeDelta === 0,
         },
         screenshots: SCREENSHOT_DIR,
       },
