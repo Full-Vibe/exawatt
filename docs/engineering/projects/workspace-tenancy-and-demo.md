@@ -55,6 +55,10 @@ The demo fleet must support the full altitude sweep across *different* Projects,
 - **W4 Scale tier (data)** (landed 2026-08-02 — see milestone log) — the demo fleet authored or generated at the entity count the Spatial moment needs, with honest structure at that volume rather than cloned filler. This milestone owns the DATA only; ENG-004 V3.1 owns rendering it. See the contradiction note below.
 - **W5 Organization Workspace preview** — shared tenants appear in the switcher as ENG-026 `preview`, linking to the Organization surface. Named Organization, not Team: decision `0023` gives **Team** to the middle command altitude, and two Teams in one product is a collision.
 
+## Scale honesty (decided 2026-08-02)
+
+The honest authored fleet tops out at **~209 board entities** (173 Agents + 36 delegated runs), because every entity traces to a distinct real assignment on a real roadmap item — that is the ceiling of honest structure, not a rendering limit. The synthetic 1k/10k tiers are **headroom proof** for the rendering budget (ENG-004 V3.1) and must always be presented as synthetic — never as "the fleet". Demo scripts say **"hundreds"**, not thousands; the thousands claim belongs to the measured rendering headroom, presented as such.
+
 ## Recorded contradiction: demo scale vs parked V2.1
 
 ENG-004 V2.1 (*Scale & Truth* — density and interaction budgets at 1k/10k, viewport culling, label budgets, frame instrumentation) is **parked** as of 2026-07-24, when Spatial was reframed as a demo asset rather than a daily-driver surface.

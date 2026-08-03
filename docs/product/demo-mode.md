@@ -14,7 +14,7 @@ Demo Mode lets investors, collaborators, and users experience Exawatt without li
 
 ## Current Implementation
 
-The mock fleet source (`MockFleetTransport`) powers the Fleet altitude at `/fleet/spatial` when no live source is connected. It demonstrates agent status changes, attention, and fleet-scale motion without a live OpenClaw gateway, stays clearly labeled as simulated data, and drives the same UI-facing command hooks as Live Mode.
+**Interim — superseded by the Demo Workspace at ENG-027 W2.** The mock fleet source (`MockFleetTransport`) powers the Fleet altitude at `/fleet/spatial` when no live source is connected. It demonstrates agent status changes, attention, and fleet-scale motion without a live OpenClaw gateway, stays clearly labeled as simulated data, and drives the same UI-facing command hooks as Live Mode. When W2 lands, `MockFleetTransport` and `DemoControls` demote from the product surface to eval-only: the Demo Workspace's honest authored fleet becomes the only demo source on product surfaces, so simulated and honest demo data never coexist in a demo.
 
 Fleet surfaces start in Demo Mode by default so public demos do not emit live-source token probes, auth redirects, or connection errors on page load. Live OpenClaw auto-connect is opt-in via `NEXT_PUBLIC_EXAWATT_AUTO_CONNECT_OC=true`; otherwise, users enter Live Mode through the explicit Connect control.
 

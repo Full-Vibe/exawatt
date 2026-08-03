@@ -69,19 +69,28 @@ Everything else in wave 1 is file-disjoint by construction.
 
 ## Wave 2 — after their dependencies land
 
+### P6.5 · Demo Workspace live (W2) — first wave-2 packet
+
+- **Owns:** ENG-027 W2
+- **Depends on:** P3 (tenancy scope landed), P4 (Voltaic fixtures landed)
+- **Scope:** wire the Voltaic fixtures from `@exawatt/core` behind the existing fleet transport boundary — the same UI-model contracts the live path uses — plus the pane content sources, and flip Demo's availability from `coming-soon` to available in the tenancy module. Must also close the two W2-armed tenancy findings from the W1 review (being fixed in parallel under the ENG-027 W1 review fixes — coordinate, don't duplicate).
+- **Disposition:** when this lands, `MockFleetTransport` / `DemoControls` demote from the product surface to eval-only, so the simulated and honest demo sources never coexist in a demo (`docs/product/demo-mode.md` records the mock path as interim).
+- **Acceptance:** switching to Demo shows the populated Voltaic board through the production surfaces; demo tabs render transcripts and cannot spawn a PTY; live local Sessions are untouched by the round trip.
+- **Blocks:** P7 (the altitude handoff is built and tuned against the populated Voltaic board, not a dozen-agent personal board) and the demo posture of P9.
+
 ### P6 · Readiness grammar and surface map
 
 - **Owns:** ENG-026 N0 and N1
 - **Depends on:** P1 (vocabulary), P2 (owns `surfaces.ts` first)
-- **Scope:** the `live` / `preview` / `announced` readiness field in the navigation manifest, the shared marker and affordance components prototyped in `/hud-gallery` for operator review, and the vision surfaces registered with their entry points. Fold ENG-008 E4's local `Unbuilt` treatment into the shared grammar — it is the ancestor, and two vocabularies must not survive. Register `/consumption` with a readiness state (an open N2 obligation).
-- **Acceptance:** shipping a capability is a one-line manifest change plus a source swap; nothing in the spine links into a broken state.
+- **Scope:** the `live` / `preview` / `announced` readiness field in the navigation manifest, the shared marker and affordance components prototyped in `/hud-gallery` for operator review, and the vision surfaces registered with their entry points. Fold ENG-008 E4's local `Unbuilt` treatment into the shared grammar — it is the ancestor, and two vocabularies must not survive. Register `/consumption` with a readiness state and ship the **intervention-rate metric** — both are the open N2 remainder, and this packet owns them explicitly: without the intervention-rate metric, P9's acceptance ("all four user questions answerable on screen") is unmeetable.
+- **Acceptance:** shipping a capability is a one-line manifest change plus a source swap; nothing in the spine links into a broken state; the intervention-rate metric renders on Consumption.
 
 ### P7 · Altitude handoff
 
 - **Owns:** ENG-004 V3.0, decision `0023`
-- **Depends on:** P5 (owns spatial first), P3 (Team-altitude layout stable)
+- **Depends on:** P5 (owns spatial first), P3 (Team-altitude layout stable), P6.5 (the handoff must be built and tuned against the populated Voltaic board, not a dozen-agent personal board)
 - **Scope:** the board's entry pose, position handoff from cards to nodes, camera pull-back. Identity and position carry; content never does.
-- **Acceptance:** the fallback cut fires correctly under reduced motion, low power, and a missed frame budget — the fallback is the feature that makes the handoff safe. Transitions never block input.
+- **Acceptance:** the fallback cut fires correctly under reduced motion, low power, and a missed frame budget — the fallback is the feature that makes the handoff safe. Transitions never block input. Entry pose and tuning are demonstrated against the Demo Workspace's populated board.
 
 ### P8 · Polish pass
 
