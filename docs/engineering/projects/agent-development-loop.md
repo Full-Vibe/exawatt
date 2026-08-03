@@ -27,6 +27,13 @@ wrong checkout.
 
 ## Findings log
 
+- 2026-08-02, rebasing across route removals left `.next/types/validator.ts`
+  referring to pages that no longer existed. `pnpm type-check` then failed on
+  generated history rather than the checked-out source until a production
+  build happened to clean it. The type-check command now runs Next's supported
+  `next typegen` step first, making generated route types an owned input instead
+  of ambient build state.
+
 - 2026-08-02, `.env.local` copying was idempotent only when “a file exists” was
   treated as success; rerunning `pnpm worktree:setup` never refreshed a stale
   worktree snapshot, and the live context-label command did not load the file
