@@ -1,6 +1,6 @@
 # Design system of record — the kernel (ENG-036 G0)
 
-Created 2026-08-02 from a measured audit of the shipped UI (`src/components`, `src/app` at `f3efd83`). This document is **descriptive, not aspirational**: it writes down the taste the product already carries and that survived operator review. It does not redesign anything (ENG-032 owns a new visual identity; this owns the substrate).
+Created 2026-08-02 from a measured audit of the shipped UI (`src/components`, `src/app` at `f3efd83`). **Substrate note:** every count in this document is pinned at `f3efd83`; the `8ddd9f2` legacy retirement (-8,032 lines) landed after the audit, so re-measurements will differ (e.g. `text-sm` 219 → 137). The scale and the rules stand regardless of the counts — the numbers are evidence of what the taste was, not live telemetry. This document is **descriptive, not aspirational**: it writes down the taste the product already carries and that survived operator review. It does not redesign anything (ENG-032 owns a new visual identity; this owns the substrate).
 
 **How to use it:** read this before building or changing any surface. Pick every font size, color role, spacing step, and status mark by citing a rung in this document. If no rung fits, you are either off-scale (fix your choice) or improving the system (amend this document — see [The amendment rule](#the-amendment-rule)).
 
@@ -25,21 +25,21 @@ Rule already in force: app surfaces set `font-ui` on their root; numbers and mic
 
 ### The named scale
 
-The core of the scale is the **D39 chrome type roles**, already tokens in `globals.css` (`--text-chrome-*`, 148 usages), extended by the Tailwind named sizes the app uses correctly:
+The core of the scale is the **D39 chrome type roles**, already tokens in `globals.css` (`--text-chrome-*`, 148 usages), extended by the Tailwind named sizes the app uses correctly. All 12 rungs have named utilities — the four that existed only as bracketed sizes at the audit (nano, reading, surface-title, display) were minted as `@theme` tokens alongside the chrome roles:
 
 | Rung | px / line | Utility | Use for |
 | --- | --- | --- | --- |
-| nano | 9 / 1 | `text-[9px]` today (name a `chrome-nano` token at first deliberate touch) | ordinal digits and symbolic glyphs only, in the densest chrome (tab-strip ordinals, roadmap-rail counts); always `font-mono` + `leading-none`; never words or sentences |
+| nano | 9 / 1 | `text-chrome-nano` | ordinal digits and symbolic glyphs only, in the densest chrome (tab-strip ordinals, roadmap-rail counts); always `font-mono`; never words or sentences |
 | chrome-micro | 10 / 14 | `text-chrome-micro` | nonessential shortcut ordinals, uppercase tracked micro-labels; never the primary reading path (D39) |
 | chrome-meta | 11 / 16 | `text-chrome-meta` | secondary metadata lines in chrome |
 | chrome-label | 12 / 16 | `text-chrome-label` (≈ `text-xs`) | standard chrome labels, small buttons, chips |
 | chrome-title | 13 / 18 | `text-chrome-title` | row and panel titles in chrome |
 | body | 14 / 20 | `text-sm` | default reading and control size (219 uses; shadcn buttons/inputs) |
-| reading | 15 | `text-[15px]` today (candidate token) | expository prose on settings and consumption surfaces |
+| reading | 15 | `text-reading` | expository prose on settings and consumption surfaces |
 | title | 16 | `text-base` | emphasized in-surface titles |
 | section | 18 | `text-lg` | section headings |
-| surface-title | 20 | `text-[20px]` today | a surface's h1 (settings, labs) |
-| display | 22 | `text-[22px]` today | hero numbers and top-level headings on dense surfaces |
+| surface-title | 20 | `text-surface-title` | a surface's h1 (settings, labs) |
+| display | 22 | `text-display` | hero numbers and top-level headings on dense surfaces |
 | marketing | 24+ | `text-2xl` … `text-4xl` | marketing/site pages only, never app chrome |
 
 Weights: `font-medium` for labels/controls, `font-semibold` for titles/headings (164/163 uses — the two workhorses); `font-bold` is rare and stays rare. Uppercase is legal **only** on mono micro-labels ≤ 11px with wide tracking (`tracking-[0.1em]`–`[0.18em]`) — the established HUD label idiom; never on sentences or headings.
@@ -53,7 +53,7 @@ The roadmap's founding measurement was 17 distinct hardcoded pixel sizes; this a
 | `text-[8px]` | `src/components/fleet/spatial/operations-board/operations-board-surface.tsx`, keyswitch study, gallery | below the 9px floor; migrate to nano/chrome-micro on next deliberate touch |
 | `text-[11.5px]`, `[12.5px]`, `[13.5px]`, `[14.5px]`, `[15.5px]`, `[16.5px]` | the consumption suite (`src/app/consumption/*`, `src/components/consumption/*`), `src/components/roadmap/roadmap-item-card.tsx`, roadmap-lab | ENG-008's private fractional scale, never reconciled with D39. Either promote deliberately (amend this doc) or snap to the neighboring rung when the surface is next touched. Do not copy it into new surfaces |
 | `text-[17px]`, `[19px]`, `[25px]`, `[26px]`, `[28px]` | `src/app/settings/agent-sources-settings.tsx` (17), consumption `act-outcome`/`unit-ladder` (19, 26), gallery agent-sources lab (25, 28) | snap to 16/18/20/22 on next touch |
-| raw `text-[10px]`–`[15px]` px literals (~250 uses) | app-wide | same values as the named rungs — not visually wrong, but written as magic numbers. Use the `text-chrome-*` utilities / `text-sm` in all new code; migrate opportunistically |
+| raw `text-[10px]`–`[15px]` px literals (295 uses app-wide; 217 excluding gallery + eval) | app-wide | same values as the named rungs — not visually wrong, but written as magic numbers. Use the named utilities (`text-chrome-*`, `text-sm`, `text-reading`) in all new code; migrate opportunistically |
 
 Rule: **new code never introduces a bracketed pixel font size.** If a rung is missing, amend the scale here first.
 
@@ -77,7 +77,7 @@ Density tiers as shipped:
 
 Default answers for a new app surface: **card padding `p-4`** for operational content, `px-5 py-4` when the card is mostly prose; sibling elements `gap-2`; related blocks `gap-3`/`gap-4`; sections `space-y-6`.
 
-Radii: `rounded` (4px) is the chrome default (179 uses); `rounded-md` (6px) buttons/inputs (shadcn); `rounded-lg` (8px) panels and cards; `rounded-full` pills, dots, identity marks. `rounded-xl`+ is rare and stays rare. HUD panels may instead use the chamfered clip-path corners (`chamferPolygon`, leg 12px, `src/components/hud/tokens.ts`) — chamfer and rounded corners never mix on one element.
+Radii: `rounded` (4px) is the chrome default (135 uses; 165 including `rounded-sm`); `rounded-md` (6px) buttons/inputs (shadcn); `rounded-lg` (8px) panels and cards; `rounded-full` pills, dots, identity marks. `rounded-xl`+ is rare and stays rare. HUD panels may instead use the chamfered clip-path corners (`chamferPolygon`, leg 12px, `src/components/hud/tokens.ts`) — chamfer and rounded corners never mix on one element.
 
 ---
 
@@ -144,7 +144,7 @@ Motion beyond status (pointer for G2): the house easing is `cubic-bezier(0.22, 1
 ## Building a new page — the short answer
 
 - Root: `font-ui`, semantic chrome tokens (`bg-background text-foreground`), forced dark.
-- Body text `text-sm`; chrome labels `text-chrome-label`; metadata `text-chrome-meta`; h1 `text-[20px] font-semibold` (surface-title rung); secondary text `text-muted-foreground` (or `hud-text-dim` on a HUD surface).
+- Body text `text-sm`; chrome labels `text-chrome-label`; metadata `text-chrome-meta`; h1 `text-surface-title font-semibold`; secondary text `text-muted-foreground` (or `hud-text-dim` on a HUD surface).
 - Cards: `rounded-lg border border-border p-4` (operational) or `px-5 py-4` (prose); sections `space-y-6`; page gutter `px-8`.
 - Buttons: the shadcn `Button` recipe only — `default` for the one primary action, `outline` neutral, `ghost` icons.
 - Status: `StatusLight` / `status-glyphs`, never a bespoke dot.
@@ -157,13 +157,13 @@ The gallery has been the de facto design system. With this document as the writt
 
 | Route / section | Decision | Grounds |
 | --- | --- | --- |
-| `/hud-gallery` — HUD atom sections (Frames, Corner brackets, Labels & readouts, Stat bars, Ring gauges, Status pills, Composed panel) + WebGL siblings | **Merge** — keep as the workbench render of the shipped `@/components/hud` library | atoms are production components (34 importing files: consumption, roadmap, workspace, shortcuts, spatial) |
+| `/hud-gallery` — HUD atom sections (Frames, Corner brackets, Labels & readouts, Stat bars, Ring gauges, Status pills, Composed panel) + WebGL siblings | **Merge** — keep as the workbench render of the shipped `@/components/hud` library | atoms are production components (36 importing files: consumption, roadmap, workspace, shortcuts, spatial) |
 | `/hud-gallery` — Agent status lights (DOM specimens + R3F scene + protocol legend) | **Merge** — keep; canonical D40 review surface | the protocol is canon; DOM+R3F sibling rule lives here |
 | `/hud-gallery` — Elastic Project ribbon study | **Keep** | study of the shipped ribbon (decision `0022`), still the review bench for ribbon changes |
 | `/hud-gallery` — Session state tiles | **Keep (open review candidate)** | prototyped for operator review, not yet accepted or rejected |
-| `/hud-gallery` — Quick feedback capture study | **Retire** | shipped app-wide (ENG-025 F2, mounted via shortcut provider); the gallery copy duplicates the live product and will drift |
+| `/hud-gallery` — Quick feedback capture study | **Retire** | shipped app-wide (ENG-025 F2, mounted via shortcut provider); the gallery section imports the production components, so it cannot drift from them — only from their real mounting context — and duplicates a live surface for no review value |
 | `/hud-gallery` — Session context label feedback study | **Retire** | shipped in the tab strip; same drift argument |
-| `/hud-gallery` — Keyswitch / translucent agent key studies (+ `.tactile-key` CSS in `globals.css`) | **Retire (archive the direction note)** | material exploration with **zero production consumers** (`TactileActionKey` is imported nowhere outside `components/hud`); ~350 lines of dead CSS in the global stylesheet |
+| `/hud-gallery` — Keyswitch / translucent agent key studies (+ `.tactile-key` CSS in `globals.css`) | **Retire (archive the direction note)** | material exploration with **zero production consumers** (`TactileActionKey` is imported nowhere outside `components/hud`); ~294 lines of dead CSS in the global stylesheet |
 | `/hud-gallery/agent-field` | **Retire** | pre–Operations-Board scale demo; the shared R3F machinery it exercises is already production (`operations-board-surface`), and `/eval/t3-spatial-sparse` + `/eval/t4-agent-station` are the deterministic rigs. ENG-004 V3.1 (P5) does demo-scale work on the real surface, not here |
 | `/hud-gallery/agent-sources` | **Retire** | graduated to production `/settings` (settings shell + `agent-sources-settings.tsx`); the 1,182-line lab duplicates a shipped surface and carries its own off-scale type (17/22/25/28px) |
 | `/hud-gallery/consumption-lab` | **Keep until ENG-008 E5 lands, then fold into the main gallery** | active fixture-driven review rig for the in-flight consumption surface (pinned clock, corpus/direction switching); retire when the live source swap makes `/consumption` reviewable directly |
@@ -186,3 +186,4 @@ Never fork a parallel convention (a new fractional type scale, a fifth palette, 
 ### Amendment log
 
 - 2026-08-02 — G0: initial kernel extracted from the shipped UI; named 12-rung type scale over the D39 chrome roles; off-scale register recorded; `/hud-gallery` merge/retire decisions written (execution = G1).
+- 2026-08-02 — review fixes: minted the four missing rung tokens in `globals.css` (`text-chrome-nano`, `text-reading`, `text-surface-title`, `text-display`) so the no-bracketed-sizes rule is satisfiable by the doc's own prescriptions (the app-wide bracketed-usage sweep remains P8); corrected measured counts (`rounded` 135, HUD atom importers 36, tactile-key dead CSS ~294 lines, raw 10–15px literals 295/217); added the substrate note pinning counts at `f3efd83`; fixed the quick-capture retire rationale (it imports production components — the drift risk is mounting context, not the components).

@@ -35,6 +35,17 @@
   --text-chrome-label--line-height: 1rem;
   --text-chrome-title: 0.8125rem;
   --text-chrome-title--line-height: 1.125rem;
+  /* Remaining named rungs of the design-kernel type scale (ENG-036 G0):
+     nano for ordinal digits/symbolic glyphs in the densest chrome (always
+     font-mono), reading for expository prose, surface-title for a surface's
+     h1, display for hero numbers and top-level headings on dense surfaces.
+     See docs/engineering/design-system.md — new code cites these utilities,
+     never bracketed pixel sizes. */
+  --text-chrome-nano: 0.5625rem;
+  --text-chrome-nano--line-height: 1;
+  --text-reading: 0.9375rem;
+  --text-surface-title: 1.25rem;
+  --text-display: 1.375rem;
   /* HUD palette utilities: text-hud-cyan, bg-hud-void, border-hud-stroke, ... */
   --color-hud-void: #04060b;
   --color-hud-deep: #070b14;
