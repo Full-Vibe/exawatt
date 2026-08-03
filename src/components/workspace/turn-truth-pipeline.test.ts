@@ -63,6 +63,10 @@ function harness() {
     if (event.kind === 'unblocked') attention.noteHarnessUnblocked(SESSION);
     return event;
   };
+  // exactly what `pty-ipc` wires: inference reclaiming a stale report
+  attention.on('reported-turn-stale', (id: string) => {
+    delegation.apply(id, { kind: 'turn-end' });
+  });
 
   /** What the tab strip, the ⌘K row, and exposé all render from. */
   const light = (): StatusLightState => {
@@ -160,6 +164,69 @@ describe('turn truth: what the operator sees', () => {
 
     expect(h.attention.get(SESSION)).toBeNull();
     expect(h.light()).toBe('active');
+  });
+
+  it('reclaims an aborted turn the harness never closes', () => {
+    // Measured on Claude Code 2.1.220 against every documented hook: an
+    // aborted turn emits NO boundary. `UserPromptSubmit` is the last word the
+    // harness will ever say about it, so trusting `generating` forever would
+    // spin this tab until the operator's next prompt.
+    const h = harness();
+    h.hook(submit);
+    h.stream(2000);
+
+    // Still deferring to the report while it could plausibly be live.
+    h.advance(5000);
+    expect(h.light()).toBe('active');
+    expect(h.attention.get(SESSION)).toBeNull();
+
+    // Past the point where silence with no gate and no children can be
+    // explained by anything but a turn that ended without saying so.
+    h.advance(9000);
+    expect(h.delegation.get(SESSION)?.ownTurn).toBe('available');
+    expect(h.attention.get(SESSION)?.kind).toBe('turn-end');
+
+    const before = h.light();
+    h.focus();
+    expect({ before, after: h.light() }).toEqual({
+      before: 'result',
+      after: 'result',
+    });
+  });
+
+  it('never reclaims a turn whose silence is explained', () => {
+    // A question and a running child are both silent for as long as they need
+    // to be, and both end with an event the harness guarantees.
+    for (const explain of [
+      () => ask,
+      () => ({
+        hook_event_name: 'SubagentStart',
+        agent_id: 'c1',
+        agent_type: 'Explore',
+      }),
+    ]) {
+      const h = harness();
+      h.hook(submit);
+      h.stream(2000);
+      h.hook(explain());
+      h.advance(60_000);
+      expect(h.delegation.get(SESSION)?.ownTurn).toBe('generating');
+      expect(h.attention.get(SESSION)?.kind).not.toBe('turn-end');
+    }
+  });
+
+  it('the queue and the light never disagree about a finished turn', () => {
+    // The reclaim and the inferred raise are gated on ONE condition, so there
+    // is no window where ⌘J offers a ready result the strip is not showing.
+    const h = harness();
+    h.hook(submit);
+    h.stream(2000);
+    for (let elapsed = 0; elapsed < 20_000; elapsed += 1000) {
+      h.advance(1000);
+      const queued = h.attention.get(SESSION)?.kind === 'turn-end';
+      const shown = h.light() === 'result';
+      expect(queued).toBe(shown);
+    }
   });
 
   it('still infers a turn boundary for a source that reports nothing', () => {

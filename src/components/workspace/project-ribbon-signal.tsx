@@ -1,12 +1,15 @@
 import {
-  deriveStatusLightState,
   STATUS_LIGHT_META,
   type StatusLightState,
 } from '@/components/status-light/protocol';
 import type { SessionDelegation } from '@/types/electron';
-import { attentionNeedsOperator } from './status-glyphs';
-import { sessionDelegationBusy } from './session-status';
-import type { Project } from './use-workspace-state';
+import {
+  sessionDelegationBusy,
+  sessionGlyphState,
+  sessionReportedBlocked,
+  sessionStatusLightState,
+} from './session-status';
+import { tabIsLive, type Project } from './use-workspace-state';
 import type { SessionAttentionSignal } from './status-glyphs';
 
 export type ProjectRibbonSignal =
@@ -39,42 +42,66 @@ export function deriveProjectRibbonSignal({
   engaged: Record<string, boolean>;
   delegation: Record<string, SessionDelegation>;
 }): ProjectRibbonSignal {
-  let fault = false;
-  let needsOperator = false;
-  let result = false;
-  let working = false;
-
+  // The Project dot is the ONLY signal a collapsed Project shows, so it must
+  // be the same truth its Sessions would show if expanded. It used to
+  // re-derive that truth from raw activity/attention here, and drifted: it
+  // could read "Results ready" for a Session whose harness reported a turn
+  // still open, or one parked on a question the operator had not answered.
+  // Route every tab through the shared derivation and encode the strongest.
+  let strongest: StatusLightState = 'off';
   for (const tab of project.tabs) {
-    if (tab.lifecycle === 'failed') fault = true;
-    if (tab.sessionId && attentionNeedsOperator(attention[tab.sessionId])) {
-      needsOperator = true;
-    }
-    const tabWorking = !!(
-      tab.sessionId &&
-      (activity[tab.sessionId] ||
-        sessionDelegationBusy(delegation[tab.sessionId]))
-    );
-    if (tabWorking) working = true;
-    if (
-      tab.sessionId &&
-      !tabWorking &&
-      (engaged[tab.sessionId] || !!summaries[tab.durableSessionId])
-    ) {
-      result = true;
+    const light = tabStatusLight({
+      tab,
+      summaries,
+      attention,
+      activity,
+      engaged,
+      delegation,
+    });
+    if (STATUS_LIGHT_META[light].priority > STATUS_LIGHT_META[strongest].priority) {
+      strongest = light;
     }
   }
-
-  const encoded = deriveStatusLightState({
-    fault,
-    needsOperator,
-    hasResult: result,
-    active: working,
-  });
-  return encoded === 'off'
+  return strongest === 'off'
     ? 'quiet'
-    : encoded === 'active'
+    : strongest === 'active'
       ? 'working'
-      : encoded;
+      : strongest;
+}
+
+/** One Session's light, derived exactly as the tab strip derives it. */
+function tabStatusLight({
+  tab,
+  summaries,
+  attention,
+  activity,
+  engaged,
+  delegation,
+}: {
+  tab: Project['tabs'][number];
+  summaries: Record<string, string>;
+  attention: Record<string, SessionAttentionSignal>;
+  activity: Record<string, boolean>;
+  engaged: Record<string, boolean>;
+  delegation: Record<string, SessionDelegation>;
+}): StatusLightState {
+  if (tab.lifecycle === 'failed') return 'fault';
+  // A stopped Session carries no live turn state; its own row says so, and at
+  // Project altitude it must not masquerade as a pending result.
+  if (!tabIsLive(tab) || !tab.sessionId) return 'off';
+  const sessionDelegation = delegation[tab.sessionId];
+  return sessionStatusLightState({
+    state: sessionGlyphState({
+      working: !!activity[tab.sessionId],
+      agent: tab.harness !== 'shell',
+      started:
+        !!engaged[tab.sessionId] || !!summaries[tab.durableSessionId],
+      delegatedBusy: sessionDelegationBusy(sessionDelegation),
+      blocked: sessionReportedBlocked(sessionDelegation),
+      ownTurn: sessionDelegation?.ownTurn,
+    }),
+    attention: attention[tab.sessionId],
+  });
 }
 
 /** Constant footprint: signal churn never moves later close targets. */

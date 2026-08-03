@@ -300,6 +300,29 @@ try {
         (await blockedOn()) === 'none'
       );
 
+      // An ABORTED turn: the harness opens it and then never closes it.
+      // Measured on Claude Code 2.1.220 against every documented hook, an
+      // abort emits no boundary at all, so inference has to reclaim the
+      // report or the interrupted tab spins "working" until the next prompt.
+      await send('turn');
+      await until(
+        async () => (await ownTurnOf()) === 'generating',
+        'the turn that gets aborted'
+      );
+      await send('say output before the operator interrupts');
+      // ...and now nothing further is ever reported for this turn.
+      await until(
+        async () => (await ownTurnOf()) === 'unreported',
+        'inference to reclaim the abandoned report',
+        30_000
+      );
+      check('an aborted turn stops spinning without any reported boundary', true);
+      await until(
+        async () => (await status()) === 'done',
+        'the reclaimed turn to read as a result'
+      );
+      check('a reclaimed turn reads as a ready result', true);
+
       // A permission prompt is, and its batch release closes it.
       await send('permission');
       await until(

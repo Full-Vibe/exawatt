@@ -49,6 +49,67 @@ function signal(
 }
 
 describe('deriveProjectRibbonSignal', () => {
+  // A collapsed Project shows ONLY this dot, so it has to be the same truth an
+  // expanded Session would show. It used to re-derive that truth from raw
+  // activity/attention and drifted from the shared derivation.
+  it('reports a Session waiting on the operator as needs-you', () => {
+    expect(
+      signal([tab('asking')], {
+        engaged: { 'session-asking': true },
+        delegation: {
+          'session-asking': {
+            ownTurn: 'generating',
+            blockedOn: 'question',
+            children: [],
+          },
+        },
+      })
+    ).toBe('needs-you');
+  });
+
+  it('stays needs-you after the operator has looked (no attention record)', () => {
+    // Focus clears the attention QUEUE entry. The gate is still open, so the
+    // Project dot must not fall back to "results ready".
+    expect(
+      signal([tab('asking')], {
+        summaries: { 'durable-asking': 'Plan the migration' },
+        attention: {},
+        delegation: {
+          'session-asking': {
+            ownTurn: 'generating',
+            blockedOn: 'question',
+            children: [],
+          },
+        },
+      })
+    ).toBe('needs-you');
+  });
+
+  it('never calls a reported-open turn a ready result', () => {
+    expect(
+      signal([tab('thinking')], {
+        engaged: { 'session-thinking': true },
+        activity: {},
+        delegation: {
+          'session-thinking': {
+            ownTurn: 'generating',
+            blockedOn: null,
+            children: [],
+          },
+        },
+      })
+    ).toBe('working');
+  });
+
+  it('a stopped Session is not a pending result', () => {
+    // A real exited tab also loses `live` resume state; the tab strip hides
+    // its light entirely, so the Project dot must not invent one.
+    const stopped = { ...tab('gone', 'exited'), resumeState: 'ended-resumable' as const };
+    expect(signal([stopped], { engaged: { 'session-gone': true } })).toBe(
+      'quiet'
+    );
+  });
+
   it('gives a fault precedence over every other Project signal', () => {
     expect(
       signal([tab('failed', 'failed'), tab('busy')], {

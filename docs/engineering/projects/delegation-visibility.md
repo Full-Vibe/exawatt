@@ -383,6 +383,43 @@ let a later `blocked` overwrite the gate's reason, which would have left
 stranded until the next turn boundary. **One wait is one gate, however many
 times it is announced**: the first report wins until something releases it.
 
+### Post-landing review — 2026-08-02
+
+Reviewing D4 against the real harness turned up a regression D4 itself had
+introduced, plus a pre-existing blindness at the altitude above it.
+
+**The reclaim rule (a bug D4 shipped).** D4's first cut suppressed inference
+whenever the harness reported a turn open. Measured afterwards, subscribing to
+every documented hook: an ABORTED turn emits nothing at all — no `Stop`, no
+`StopFailure`, no `SessionEnd`. `UserPromptSubmit` is the last word the harness
+will ever say about it. So "the harness reported `generating`" is not proof of
+life, and treating it as such left every interrupted tab spinning until the
+operator's next prompt — the same lie as before, pointed the other way.
+
+The corrected rule is narrower and is the durable one: **a reported-open turn
+outranks inference only while something EXPLAINS its silence.** A running child
+and an open operator gate both explain silence and both end with an event the
+harness guarantees, so they are trusted indefinitely. A bare `generating` with
+neither explains nothing, and after a generous window inference reclaims it by
+applying an ordinary `turn-end` — one fact, changed once, seen by every surface
+together.
+
+The reclaim and the inferred raise are gated on ONE condition on purpose. Split
+them and `⌘J` would offer a ready result during the window in which the strip
+still read working, which is the same class of drift D4 exists to remove. The
+burst that justifies the raise is also no longer consumed while deferring to a
+live report: consuming it there left the eventual reclaim with no evidence, and
+an aborted turn settled silently.
+
+**The Project dot (pre-existing).** `deriveProjectRibbonSignal` re-derived
+Session truth from raw `activity`/`attention` instead of consuming the shared
+derivation, and had drifted from it: it could read "Results ready" for a Session
+whose harness reported a turn still open, and — because focus clears the
+attention record — for one parked on an unanswered question. A collapsed Project
+shows only that dot, so it was the loudest remaining instance of the original
+bug. It now routes every tab through `sessionStatusLightState` and encodes the
+strongest light, so it inherits every correction automatically.
+
 ### Deliberately out of scope
 
 `⌘J` still treats focus as "seen", so it will not walk back to a Session that

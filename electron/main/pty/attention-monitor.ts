@@ -39,6 +39,18 @@ export interface ReportedTurn {
   children: readonly unknown[];
 }
 
+/**
+ * Does this signal need a human, as opposed to merely offering a result?
+ *
+ * Mirrors `attentionNeedsOperator` in `session-status.ts`. The two are
+ * deliberately the same predicate expressed on each side of the IPC boundary:
+ * main decides which signal survives, the renderer decides which signal is
+ * navigable, and they must never disagree about the class of a signal.
+ */
+export function attentionIsOperatorGate(kind: AttentionKind): boolean {
+  return kind !== 'turn-end';
+}
+
 export interface SessionAttention {
   kind: AttentionKind;
   /** when the attention was raised — the queue orders oldest-first */
@@ -83,6 +95,17 @@ const WORKING_WINDOW_MS = 3000;
 /** carry cap for an OSC sequence split across chunks */
 const OSC_CARRY_LIMIT = 4096;
 
+/**
+ * How much longer than ordinary quiescence a REPORTED-open turn is trusted
+ * before inference reclaims it.
+ *
+ * A multiple, not a flat value, so tests and evals that shorten `quietMs`
+ * shorten this with it. Deliberately generous: reported truth should lose to
+ * inference only when the evidence is overwhelming, because declaring a
+ * working Agent finished is the worse error by far.
+ */
+const REPORTED_TURN_STALE_FACTOR = 3;
+
 export class AttentionMonitor extends EventEmitter {
   private manager: PtySessionManager | null = null;
   private attention = new Map<string, SessionAttention>();
@@ -114,6 +137,10 @@ export class AttentionMonitor extends EventEmitter {
   private readonly opts: Required<Omit<AttentionMonitorOptions, 'now'>>;
   private readonly now: () => number;
   private readonly disabled = process.env.EXAWATT_ATTENTION === '0';
+
+  private get reportedTurnStaleMs(): number {
+    return this.opts.quietMs * REPORTED_TURN_STALE_FACTOR;
+  }
 
   constructor(options: AttentionMonitorOptions = {}) {
     super();
@@ -240,20 +267,60 @@ export class AttentionMonitor extends EventEmitter {
     this.reportedTurn = read;
   }
 
-  /** The Session's own turn has NOT ended by the harness's own account —
-   *  inference must not claim otherwise, in either direction. */
-  private reportedUnfinished(id: string): boolean {
+  /**
+   * Something the harness reported EXPLAINS this Session's silence, so
+   * quiescence must not read it as a finished turn.
+   *
+   * Deliberately narrower than "the harness says the turn is open". A reported
+   * `generating` is not on this list, because a turn can end without the
+   * harness ever saying so: measured on Claude Code 2.1.220, subscribing to
+   * every documented hook, an ABORTED turn emits no boundary at all — not
+   * `Stop`, not `StopFailure`, nothing. Treating `generating` as permanent
+   * proof of life would leave every aborted turn spinning forever.
+   *
+   * Running children and an open operator gate DO explain silence, and both
+   * have their own guaranteed end events, so they are trusted indefinitely.
+   */
+  private silenceIsExplained(id: string): boolean {
     const report = this.reportedTurn(id);
     if (!report) return false;
-    return (
-      report.ownTurn === 'generating' ||
-      !!report.blockedOn ||
-      report.children.length > 0
-    );
+    return !!report.blockedOn || report.children.length > 0;
+  }
+
+  /** The harness's own account says this turn is still open, for any reason. */
+  private reportedTurnOpen(id: string): boolean {
+    const report = this.reportedTurn(id);
+    if (!report) return false;
+    return report.ownTurn === 'generating' || this.silenceIsExplained(id);
   }
 
   private delegatedBusy(id: string): boolean {
     return (this.reportedTurn(id)?.children.length ?? 0) > 0;
+  }
+
+  /**
+   * Hand a reported-open turn back to inference once it has gone silent with
+   * nothing to explain it (ENG-023 D4).
+   *
+   * Reported truth outranks inference — but only while the report is still
+   * being kept. Claude Code 2.1.220 opens a turn with `UserPromptSubmit` and,
+   * if the operator aborts it, never closes it: measured against every
+   * documented hook, an aborted turn emits NO boundary. Without this the tab
+   * an operator interrupts spins "working" until their next prompt.
+   *
+   * Emitting rather than mutating keeps the monitor pure Node and keeps the
+   * delegation record owned by exactly one module: the correction lands as an
+   * ordinary `turn-end`, so every surface sees one fact change once.
+   */
+  private reclaimStaleReportedTurn(id: string, quietFor: number): boolean {
+    if (quietFor < this.reportedTurnStaleMs) return false;
+    const report = this.reportedTurn(id);
+    if (!report || report.ownTurn !== 'generating') return false;
+    // An explained silence is not a stale report: a gate and a running child
+    // both end with an event the harness guarantees.
+    if (this.silenceIsExplained(id)) return false;
+    this.emit('reported-turn-stale', id);
+    return true;
   }
 
   /**
@@ -402,20 +469,36 @@ export class AttentionMonitor extends EventEmitter {
       }
       if (s.exited || s.harness === 'shell') continue;
       const last = this.lastDataAt.get(s.id);
-      if (last === undefined || now - last < this.opts.quietMs) continue;
-      // quiescence reached: the burst is consumed whether or not it flags
+      if (last === undefined) continue;
+      // Reclaiming a stale report runs BEFORE every other gate below —
+      // before the burst threshold, the spawn grace, and the watched check.
+      // Those gates all decide whether to enqueue ATTENTION, which is a
+      // different question from whether the reported turn is still real, and
+      // the tab an operator just aborted is precisely the watched one.
+      const reclaimed = this.reclaimStaleReportedTurn(s.id, now - last);
+      if (now - last < this.opts.quietMs) continue;
+      // Quiescence means "no bytes", which is NOT the same fact as "the turn
+      // ended". A parent waiting on delegated children, and an Agent parked on
+      // a question it asked the operator, are both silent and neither has
+      // produced a result. The harness knows; the byte stream cannot (D1/D4).
+      //
+      // Gated on the SAME condition as the reclaim above, deliberately: if the
+      // queue could call a turn finished before the reported record agreed,
+      // `⌘J` would offer a "ready result" while the light still read working.
+      // One condition means one instant, and the two can never disagree.
+      //
+      // This runs BEFORE the burst is consumed. Deferring to a live report is
+      // not the same as deciding this turn produced nothing worth flagging:
+      // consuming the evidence here would leave the eventual reclaim with
+      // nothing to raise, and an aborted turn would settle silently.
+      if (!reclaimed && this.reportedTurnOpen(s.id)) continue;
+      // decision time: the burst is consumed whether or not it flags
       const burst = this.burstBytes.get(s.id) ?? 0;
       this.burstBytes.set(s.id, 0);
       if (burst < this.opts.minBurstBytes) continue;
       // revived/new tabs printing their banner then waiting is not news
       if (now - s.startedAt < this.opts.spawnGraceMs) continue;
       if (this.isWatched(s.id)) continue;
-      // Quiescence means "no bytes", which is NOT the same fact as "the turn
-      // ended". A parent waiting on delegated children, and an Agent parked on
-      // a question it asked the operator, are both silent and neither has
-      // produced a result. The harness knows; the byte stream cannot. When it
-      // has spoken, its answer stands (ENG-023 D1/D4).
-      if (this.reportedUnfinished(s.id)) continue;
       this.raise(s.id, 'turn-end');
     }
     // sessions killed without an exit event (tab closed) leave no residue
@@ -426,13 +509,18 @@ export class AttentionMonitor extends EventEmitter {
 
   private raise(id: string, kind: AttentionKind): void {
     const existing = this.attention.get(id);
-    // Same class: keep the original `since` so queue order stays stable.
-    // Across classes an operator GATE outranks a ready result — the same
-    // precedence `mergeSessionAttentionSignals` applies on the renderer side,
-    // which is precisely why it has to hold here too. A result that arrived
-    // first must not lock out the question that came after it.
-    if (existing && !(kind !== 'turn-end' && existing.kind === 'turn-end'))
-      return;
+    // Precedence, the same rule `mergeSessionAttentionSignals` applies on the
+    // renderer side — which is exactly why it has to hold here too, or the two
+    // would answer differently for one Session.
+    //
+    //  - within a class: keep the original, so `since` holds queue order;
+    //  - across classes: an operator GATE outranks a ready result, so a result
+    //    that happened to arrive first cannot lock out the question after it.
+    if (existing) {
+      const upgrade =
+        existing.kind === 'turn-end' && attentionIsOperatorGate(kind);
+      if (!upgrade) return;
+    }
     // a turn-end, bell, or gate means a turn happened — the session has started
     this.markEngaged(id);
     const att = { kind, since: this.now() };

@@ -37,6 +37,20 @@ export function createHarnessFixture(prefix) {
     `#!/usr/bin/env node
 const fs = require('fs');
 const argv = process.argv.slice(2);
+// Answer the Agent Source registry's PROBES and exit. Only an interactive
+// launch holds the process open. Without this every \`claude --version\` and
+// \`auth status\` the registry runs hangs forever, and each eval run LEAKS
+// those processes — observed accumulating across runs and degrading the
+// machine for every later run.
+if (argv.includes('--version')) {
+  process.stdout.write('9.9.9-fixture (Claude Code)\n');
+  process.exit(0);
+}
+if (argv[0] === 'auth') {
+  process.stdout.write(JSON.stringify({ status: 'authenticated', account: { email: 'fixture@example.com' } }) + '\n');
+  process.exit(0);
+}
+if (argv.includes('-p')) process.exit(0);
 const settingsPath = argv[argv.indexOf('--settings') + 1];
 process.stdout.write('FAKE_CLAUDE_SETTINGS:' + (settingsPath || 'NONE') + '\\n');
 let endpoint = null;
@@ -100,7 +114,16 @@ setInterval(() => {}, 1 << 30);
   writeFileSync(
     join(fakeBin, 'codex'),
     `#!/usr/bin/env node
-process.stdout.write('FAKE_CODEX_ARGS:' + process.argv.slice(2).join(' ') + '\\n');
+const cargv = process.argv.slice(2);
+if (cargv.includes('--version')) {
+  process.stdout.write('codex-cli 9.9.9-fixture\\n');
+  process.exit(0);
+}
+if (cargv[0] === 'login') {
+  process.stdout.write('Logged in as fixture@example.com\\n');
+  process.exit(0);
+}
+process.stdout.write('FAKE_CODEX_ARGS:' + cargv.join(' ') + '\\n');
 // Accepts \`say <text>\` so a test can drive PURE byte inference on a source
 // that reports nothing — the control for the reported path.
 let buffer = '';

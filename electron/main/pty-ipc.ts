@@ -155,6 +155,14 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       attentionMonitor.noteHarnessTurnEnd(id);
     }
   });
+  // Inference reclaiming a report that will never be closed (D4). Claude Code
+  // opens a turn with `UserPromptSubmit` and emits NOTHING when the operator
+  // aborts it, so without this the interrupted tab spins "working" until the
+  // next prompt. Applied as an ordinary `turn-end` so the delegation record
+  // stays owned by one module and every surface changes once, together.
+  attentionMonitor.on('reported-turn-stale', (id: string) => {
+    delegationMonitor.apply(id, { kind: 'turn-end' });
+  });
   delegationMonitor.on('delegation', (id: string, delegation: unknown) => {
     broadcast('pty:delegation', { id, delegation });
   });
