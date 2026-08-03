@@ -54,9 +54,8 @@ contract and a pure `resolveAppearance` function as the one merge point.
   configured. A theme never owns motion, layout, density, geometry, camera,
   interaction, state derivation, or product vocabulary.
 - The first built-in set is Classic Dark compatibility, Air Light, and a calmer
-  Night Dark sibling. Classic remains the recovery fallback. Air/Night remain
-  gallery-only until the complete production adapter and accessibility matrix
-  passes.
+  Night Dark sibling. The complete adapter and accessibility matrix passed, so
+  all three are production presets. Classic remains the recovery fallback.
 - A future marketplace may distribute payloads that validate and normalize into
   this contract. Marketplace installation, signing, moderation, discovery,
   payment, theme inheritance, arbitrary overrides, and external font handling
@@ -64,8 +63,8 @@ contract and a pure `resolveAppearance` function as the one merge point.
 
 ## Supersessions
 
-This decision deliberately amends two earlier appearance choices when ENG-032
-lands:
+ENG-032 landed this decision and deliberately amends two earlier appearance
+choices:
 
 - ENG-015 S3's forced-dark rule becomes the Classic preset and recovery path;
   the application root and native chrome may resolve light or dark.
@@ -122,3 +121,21 @@ Electron with a lower-level transparent-window workaround. The generated
 `chrome`, `overlay`, and `raised` renderer roles remain the portable material
 output; every role retains its authored opaque fallback. Native material may be
 reconsidered only as a separately shaped window-architecture change.
+
+## Amendment — production selection and rollout closure
+
+ENG-032 T5 closed the first-release rollout on 2026-08-03. Classic, Air, and
+Night validate through the production registry and every renderer consumes the
+same resolved snapshot. Fresh missing preference state defaults to Auto with
+Air for light OS appearance and Night for dark; Manual pins any production
+preset while remembering that Auto pair. Appearance settings and the
+keyboard-complete **Change theme…** preview/apply/cancel command are two faces
+over the same app-global, device-local authority.
+
+Theme-provided action, typography, and material defaults remain beneath the
+system-accent, interface font/scale, enhanced-contrast, reduced-transparency,
+and OS accessibility overlays. Corrupt preferences fall back to Classic, and
+`--safe-theme` selects Classic for one launch without rewriting a valid stored
+choice. The temporary gallery theme study and evaluator retired once production
+surfaces became the review target. The final clean-master dogfood installation
+is delivery closeout and is not claimed by this decision amendment.

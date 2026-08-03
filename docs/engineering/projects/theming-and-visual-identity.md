@@ -6,17 +6,17 @@ discovery, and (once approved) the executable milestone detail.
 
 ## Current phase
 
-**Active build — T0 through T4 landed; T5 rollout is active.** The versioned
+**Production closure — T0 through T5 assembled and verified.** The versioned
 contract, device-local resolver/runtime, strict Electron settings and
-first-paint bootstrap, and the gallery-accepted Air/Night visual family are
-implemented. Root app chrome, Settings, shared overlays, feedback, readiness,
-Workspace/Roadmap/status paint, live plus retained xterm terminals, and the
-Usage/Consumption surface and Fleet Operations Board now consume the same
-generated snapshot. Terminal and Fleet theme changes update existing instances
-in place without remount, replay, resize, camera/filter/selection reset, or data
-loss. The temporary workbench now serves only the pending T5 rollout gate.
-Production resolves only the shipped Classic appearance; Air and Night cannot
-be persisted or selected before the T5 rollout gate.
+first-paint bootstrap now expose Classic, Air, and Night through production
+Appearance settings and the **Change theme…** command. Fresh state follows the
+OS with the Auto Air/Night pair; Manual pins a preset while retaining that pair.
+Root app chrome, Settings, shared overlays, feedback, readiness,
+Workspace/Roadmap/status paint, live plus retained xterm terminals,
+Usage/Consumption, and the Fleet Operations Board consume the same generated
+snapshot. Theme changes update existing terminal and Fleet instances without
+remount, replay, resize, camera/filter/selection reset, or data loss. The
+temporary theme workbench has retired; shipped surfaces are the review target.
 
 The originating operator signal is broader than dark-versus-light: the current
 fonts and colors feel “ultra-geeky” and insufficiently readable; users should be
@@ -273,11 +273,11 @@ Sources: [Zed appearance](https://zed.dev/docs/appearance),
   Electron settings file is authoritative on desktop; the hosted interface uses
   a local browser source with the same schema until account sync is deliberately
   designed. No Supabase appearance write is part of this item.
-- **Default migration:** non-Classic presets stay gallery-only until every
-  production adapter and gate below passes. At T5, operator acceptance promotes
-  the Air/Night Auto pair as the fallback for installations without an explicit
-  appearance preference; explicit choices are never overwritten. Classic
-  remains a selectable preset and the recovery fallback.
+- **Default migration:** non-Classic presets stayed gallery-only until every
+  production adapter and gate below passed. T5 promoted the Air/Night Auto pair
+  for installations without an explicit appearance preference; explicit
+  choices are never overwritten. Classic remains selectable and is the recovery
+  fallback.
 
 ## Approved design brief
 
@@ -448,12 +448,12 @@ overlays, and selected raised controls. Content planes, tables, terminals, and
 dense operational cards stay sufficiently opaque. Every translucent recipe has
 an authored solid fallback.
 
-T4 includes a bounded native-material spike using Electron's macOS vibrancy and
-Windows backdrop APIs. Native desktop-through glass ships only if the installed
-app proves legibility, active/inactive behavior, reduced-transparency fallback,
-startup continuity, and acceptable GPU/power behavior. Failure closes the spike
-with renderer material only; it does not block the theme system or invite a
-transparent-window workaround.
+T4's bounded native-material spike closed with **renderer-only material for
+V1**. Electron's native backdrop APIs remained invisible behind Exawatt's
+intentionally opaque operational renderer; making them visible would require a
+transparent-window architecture that expands the startup and accessibility
+contract. The portable `chrome`, `overlay`, and `raised` renderer recipes keep
+their authored opaque fallbacks. Decision `0026` records the full outcome.
 
 ### Migration rule
 
@@ -568,11 +568,9 @@ must rebase on every contract change:
   status glyph DOM paint, terminal containers, live/retained xterm palettes.
 - **T3C scoped visualization:** Consumption's FLUX mapping and remaining
   scoped settings/HUD palettes without merging their semantic channels.
-  Debt note (2026-08-03, ENG-008 usage-loop review): `/usage` hardcodes its
-  ground (`#07060E` page background plus the purple-tinged card gradients in
-  `src/app/usage/chrome.tsx` / `usage-client.tsx`) instead of consuming
-  semantic ground roles — a T3C migration item, deliberately not patched in
-  the review-fix change while this project's theme worktree is active.
+  Resolved debt note (2026-08-03, ENG-008 usage-loop review): T3C replaced the
+  audited `/usage` ground and purple-tinged card presentation with generated
+  semantic ground/material roles rather than patching that review-fix branch.
 
 Exit criteria for every packet:
 
@@ -617,7 +615,7 @@ Verification: focused adapter/material tests, `pnpm eval:r3f`,
 and installed-Electron screenshots for active/inactive and reduced-transparency
 windows.
 
-### T5 — Selection UI, accessibility matrix, and rollout
+### T5 — Selection UI, accessibility matrix, and rollout — assembled and verified
 
 Depends on T1–T4. Scope:
 
@@ -698,11 +696,11 @@ no packet privately extends the contract to solve a local color.
 
 ## Rollout and rollback
 
-- T0–T4 keep Classic as the only persistable production preset. Air and Night
-  can be exercised in the gallery/eval harness without leaving half-themed
-  product state in Settings.
-- T5 is the single exposure/default gate. Explicit user choices survive future
-  default changes. Missing or invalid state resolves deterministically.
+- Through T4, Classic remained the only persistable production preset while Air
+  and Night stayed inside the gallery/eval harness.
+- T5 exposes all three presets. Fresh missing state resolves to Auto Air/Night;
+  Manual pins any production preset and remembers the Auto pair; invalid state
+  resolves to Classic recovery. Explicit valid choices survive future defaults.
 - Classic remains complete indefinitely as the compatibility and recovery
   preset. `--safe-theme` bypasses stored appearance for diagnosis without
   deleting it.
@@ -835,3 +833,19 @@ no packet privately extends the contract to solve a local color.
   Classic/Air/Night screenshots, `eval:r3f` 100/100 (15 Operations Board calls,
   zero warnings), all eight spatial scenarios, 10,000-unit scale evidence, and
   an Air screenshot review after the contrast fix.
+- 2026-08-03, T5 production closure assembled and verified: promoted Classic,
+  Air, and Night through the shared production registry; added app-global
+  Appearance settings for Auto/Manual, light/dark pairing, system accent,
+  interface font/scale, enhanced contrast, and reduced transparency; and added
+  the keyboard-complete **Change theme…** preview/apply/cancel command. Fresh
+  state follows the OS with Air/Night, Manual retains the Auto pair, and corrupt
+  state plus `--safe-theme` recover through Classic without rewriting unrelated
+  settings. The production literal-completeness check now rides `theme:check`,
+  and the temporary theme gallery routes, T12 specimen, evaluator, and obsolete
+  AgentField production wrapper retired after their subject shipped. Evidence
+  already proven: focused appearance, selection, Settings, picker, and literal-
+  gate tests; deterministic theme generation; and the Electron appearance
+  rollout evaluator covering fresh light/dark Auto, all three Manual relaunches,
+  Auto round-trip, corrupt recovery, and one-launch safe-theme recovery. The
+  final clean-master dogfood installation is delivery closeout and is not
+  claimed by this milestone record.

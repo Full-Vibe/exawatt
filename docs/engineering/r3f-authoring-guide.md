@@ -46,25 +46,27 @@ a v8/drei-9 tutorial (e.g. `EnzeD/r3f-skills`) reinjects wrong-version patterns.
 
 ## Where R3F lives in this repo
 
-Three surfaces (this worktree):
-- **Gallery** `src/components/hud/webgl/scenes.tsx` — the DOM-vs-WebGL A/B blocks
-  under `/hud-gallery`. Ortho px-space (`zoom 1` ⇒ 1 world unit = 1 CSS px,
-  centered), `frameloop` **default (always)**, `<FitToWidth>` scales content to
-  the canvas.
-- **AgentField / Spatial world** `src/components/hud/webgl/agent-field.tsx`,
-  composed by
-  `src/components/fleet/spatial/agent-field/agent-field-surface.tsx` — Fleet
-  altitude uses one InstancedMesh of nodes + one of halos with per-instance
-  picking; Project and Agent altitudes use readable semantic regimes over the
-  same stable data/navigation model. The real route is `/fleet/spatial`; the
-  deterministic rigs are `/eval/t3-spatial-sparse` and `/eval/t4-agent-station`
-  (the old `/hud-gallery/agent-field` demo was retired in ENG-036 G1).
-  `frameloop="demand"`.
+Current boundaries:
+
+- **Production Fleet Operations Board**
+  `src/components/fleet/spatial/operations-board/operations-board-canvas.tsx`,
+  composed by `operations-board-surface.tsx` — the real `/fleet/spatial` world
+  over the source-agnostic board model. It uses `frameloop="demand"`, bounded
+  instancing, DOM-equivalent controls, lazy postprocessing, and one concrete
+  resolved spatial-theme snapshot. Deterministic rigs include
+  `/eval/t5-operations-board` and `/eval/t10-board-scale`.
 - **Spatial DOM chrome**
   `src/components/fleet/spatial/spatial-fleet-client.tsx` — URL altitude,
   search/filter, breadcrumbs, inspector, activity, accessible selection, and
-  recovery. Postprocessing lives in a separate lazy module and is low-power
-  gated.
+  recovery over the same board state.
+- **AgentField regression rigs** `src/components/hud/webgl/agent-field.tsx` —
+  retained for `/eval/t3-spatial-sparse` and `/eval/t4-agent-station`, not as a
+  second production `/fleet/spatial` wrapper. The obsolete
+  `fleet/spatial/agent-field/agent-field-surface.tsx` retired at ENG-032 T5.
+- **Gallery R3F studies** `src/components/hud/webgl/scenes.tsx` and the retained
+  keyswitch study — isolated workbench canvases under `/hud-gallery`. Ortho
+  px-space (`zoom 1` ⇒ 1 world unit = 1 CSS px, centered), with `frameloop`
+  **default (always)** where the study requires it.
 
 **Architecture (resolved):** WebGL renders the decorative/scalable *world*; ALL
 text and ALL interactivity for chrome live in a pixel-aligned **DOM overlay**
@@ -74,6 +76,14 @@ every altitude. Fleet aggregates; Project reveals readable units; Agent focuses
 inspection.
 
 ## Non-negotiable rules
+
+**Theme boundary:** production Three code accepts concrete sRGB strings and
+numbers from `SpatialThemeSnapshot`; it never parses CSS variables or merges OS
+state. Theme/contrast changes update material props and call `invalidate()` on
+the existing demand scene—never remounting the canvas or resetting camera,
+filters, selection, Project identity, status derivation, or Demo/Live data. Air
+must remain complete without bloom; Project identity stays data and is only
+contrast-corrected against the resolved ground.
 
 1. **Know your `frameloop`.** `demand` (spatial): `useFrame` runs but nothing
    *paints* without `invalidate()`. Every continuous animation must call
@@ -195,10 +205,11 @@ useFrame((state, delta) => {
 - Keep spatial effects in a separate module behind `React.lazy()` + a low-power
   gate; postprocessing is the heaviest import. Reduced motion does not
   automatically disable a static bloom, but low-power mode does.
-- Current selective look = `<Bloom luminanceThreshold={0.6} luminanceSmoothing={0.2}
-  intensity={0.9} radius={0.5} mipmapBlur />` + `toneMapped={false}` lines. Only
-  reach for `<Selection>/<Select>` (needs `<EffectComposer autoClear={false}>`)
-  for per-object bloom on/off.
+- The production Operations Board reads bounded threshold/strength/radius from
+  `SpatialThemeSnapshot.bloom`; Air disables bloom, while dark presets may opt
+  in. Emissive status/accent materials remain `toneMapped={false}`. Only reach
+  for `<Selection>/<Select>` (needs `<EffectComposer autoClear={false}>`) for
+  per-object bloom on/off.
 
 ## Dependency rules
 
@@ -215,9 +226,10 @@ useFrame((state, delta) => {
 
 Re-read your Playwright PNG and check: blank/clipped frame · wrong camera
 framing · z-fighting / bad occlusion · text-in-3D legibility · bloom blowout
-(or no bloom on neon) · aliasing on instanced edges · banding · contrast vs the
-dark bg. **Zero-credit if the canvas is blank or the console logged a WebGL /
-shader error.** "Does it look good?" is not a review — grade the axes.
+(or no bloom on neon) · aliasing on instanced edges · banding · contrast against
+the active theme's final composited ground. **Zero-credit if the canvas is blank
+or the console logged a WebGL / shader error.** "Does it look good?" is not a
+review — grade the axes.
 
 ## Self-check routine (run after EVERY R3F change, before "done")
 

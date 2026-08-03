@@ -96,30 +96,24 @@ Radii: `rounded` (4px) is the chrome default (135 uses; 165 including `rounded-s
 
 ## Color roles
 
-Production is **Classic dark until T5** (ENG-032); new or migrated presentation
-must consume semantic roles and must not assume that dark ground is permanent.
-Color is organized as one semantic layer plus three scoped operational palettes
-and two reserved channels. The channel-ownership rule is load-bearing:
-**status owns white/blue/green/peach/red; chrome attention owns amber;
-consumption owns violet→magenta; Project identity is its own channel and is
-never a status signal.**
+Production supports **Classic, Air, and Night** through ENG-032's app-global
+appearance resolver. Fresh state follows the OS with the Auto Air/Night pair;
+Manual pins any production preset; Classic remains the compatibility and
+recovery path. New or migrated presentation must consume generated semantic
+roles and must never assume a fixed light or dark ground. Color is organized as
+one semantic layer plus three scoped operational palettes and two reserved
+channels. The channel-ownership rule is load-bearing:
+**status owns the five D40 signal roles; chrome attention owns its dedicated
+attention role; Consumption owns the calm→hot ramp; Project identity is its own
+channel and is never a status signal.**
 
-ENG-032 transition note (T1, 2026-08-03): Classic remains the only production
-ground until T5, but root appearance now comes from the generated
-`exawatt-classic-dark` definition through `AppearanceProvider`, not a static
-`html.dark` declaration. Air and Night remain gallery-only and cannot be saved.
-The provider projects the existing semantic shadcn/HUD aliases, bounded named
-type-rung scale, and accessibility overlays; production components keep their
-remaining scoped authorities below until their T3/T4 migration packet proves
-Classic parity. Status, action, Consumption, readiness, and Project-identity
-ownership do not change with the ground.
-
-ENG-032 transition note (T2, 2026-08-03): Air and Night are one accepted visual
-family but remain gallery-only. The workbench freezes their type/material
-profiles, renders full status/Consumption/readiness/action/Project channel
-separation, and compares DOM with a concrete-sRGB bloom-free R3F sibling. It
-does not change spacing, geometry, motion, production defaults, or Demo/Live
-state ownership.
+`AppearanceProvider` resolves one immutable snapshot for DOM/CSS, xterm,
+R3F/Three, and Electron boot/native adapters. Theme defaults for action,
+typography, and material sit beneath the app-global system-accent, interface
+font/scale, enhanced-contrast, and reduced-transparency overlays. Status,
+action, Consumption, readiness, and Project-identity ownership do not change
+with the selected ground; themes never own spacing, geometry, density, motion,
+or Demo/Live state.
 
 ### 1. Semantic chrome (shadcn variables, `globals.css`)
 
@@ -130,7 +124,11 @@ Default for all standard UI: `bg-background`, `text-foreground`, `bg-card`, `bor
 
 ### 2. HUD operational palette (fleet/workspace surfaces)
 
-Tokens: `hud-*` utilities in `@theme` and the mirrored `HUD` object in `src/components/hud/tokens.ts` (single source shared by DOM and WebGL — keep them in sync).
+Authority: `themes/v1` plus the generated registry/CSS projections. DOM uses
+generated `hud-*` variables, and production WebGL consumes concrete values from
+the resolved renderer snapshot. `src/components/hud/tokens.ts` remains a
+bounded Classic compatibility authority for legacy/eval renderer helpers; it is
+not a second source to mirror manually. The values below are Classic exemplars.
 
 - Grounds: `hud-void #04060B` → `hud-deep #070B14` → `hud-panel #0B1220`.
 - Text: `hud-text #DCEBFF`; **muted on HUD surfaces**: `hud-text-dim #8AA0BE`.
@@ -141,9 +139,15 @@ Tokens: `hud-*` utilities in `@theme` and the mirrored `HUD` object in `src/comp
 
 Graduated from the gallery: calmer scoped palette for dense source-truth surfaces (`--settings-*` in `globals.css`). Text ladder: `--settings-text` → `-soft` → `-dim` → `-faint`; accents teal/amber/red with matching `-wash` fills. Use it only inside the settings shell.
 
-### 4. Consumption channel (`FLUX`, `src/components/consumption/flux.ts`)
+### 4. Consumption channel
 
-Violet→magenta plasma ramp (`calm #5D6BE8` → `mid` → `warm` → `hot #FF4FB4`), deliberately disjoint from status colors so a hot meter can never read as an agent needing you. "Unknown" is neutral grey `#77839A` and **never a fill or a zero**. Only consumption surfaces use this channel.
+The semantic calm → mid → warm → hot ramp is deliberately disjoint from status
+colors so a hot meter can never read as an Agent needing you. DOM and production
+R3F paint come from the active theme's generated Consumption roles.
+`src/components/consumption/flux.ts` retains the concrete Classic ramp and
+interpolation/formatting helpers, not universal production paint. “Unknown” is
+a neutral hatched data state—**never a fill or a zero**. Only Consumption
+surfaces use this channel.
 
 ### Project identity
 
@@ -153,17 +157,21 @@ Violet→magenta plasma ramp (`calm #5D6BE8` → `mid` → `warm` → `hot #FF4F
 
 ## Status iconography
 
-Canonical and already fully token-ized — **do not invent new status marks.** Sources of truth: `src/components/status-light/protocol.ts` (states, colors, priority, derivation), `src/components/workspace/status-glyphs.tsx` (session glyphs), `src/components/hud/tokens.ts` (`STATUS_TONE`, `HUD_STATUS_COLOR`).
+Canonical and already fully tokenized—**do not invent new status marks.**
+`src/components/status-light/protocol.ts` owns state vocabulary, priority, and
+derivation; `src/components/workspace/status-glyphs.tsx` owns Session glyph
+shape; the active theme's generated `status.*` roles own paint. Classic values
+in protocol/HUD helpers are compatibility metadata, not universal colors.
 
 **D40 five-signal protocol** — one source-agnostic projection across Agent tabs, the Team overview/switcher, and the Fleet board:
 
-| State | Color | Meaning | Priority |
+| State | Theme role (Classic exemplar) | Meaning | Priority |
 | --- | --- | --- | --- |
-| Off | `#DCE5ED` | idle, new, or quietly waiting | 0 |
-| Active | `#9CD5FE` | reasoning, streaming, tools | 1 |
-| Result | `#9BF396` | turn finished, result waiting | 2 |
-| Needs you | `#FFD0B8` | approval / question / credential / Decision | 3 |
-| Fault | `#FF7373` | failed or intervention required | 4 |
+| Off | `status.off` (`#DCE5ED`) | idle, new, or quietly waiting | 0 |
+| Active | `status.active` (`#9CD5FE`) | reasoning, streaming, tools | 1 |
+| Result | `status.result` (`#9BF396`) | turn finished, result waiting | 2 |
+| Needs you | `status.needsYou` (`#FFD0B8`) | approval / question / credential / Decision | 3 |
+| Fault | `status.fault` (`#FF7373`) | failed or intervention required | 4 |
 
 Standing rules, all operator-reviewed:
 
@@ -215,7 +223,7 @@ The gallery has been the de facto design system. With this document as the writt
 | `/hud-gallery` — Quick feedback capture study | **Retire** | shipped app-wide (ENG-025 F2, mounted via shortcut provider); the gallery section imports the production components, so it cannot drift from them — only from their real mounting context — and duplicates a live surface for no review value |
 | `/hud-gallery` — Session context label feedback study | **Retire** | shipped in the tab strip; same drift argument |
 | `/hud-gallery` — R3F keyswitch material studies | **Keep** — restored by operator review (decision `0025`) | active material workbench for physical command controls; the production home command key and T8/T9 rigs retain the shared R3F machinery. The unused DOM `.tactile-key` sibling and global CSS remain retired |
-| `/hud-gallery#theme-system` + `/hud-gallery/theme-system` | **Keep through ENG-032 T5, then retire** | temporary Air/Night contract and evaluator workbench; once production adapters and picker ship, a study of shipped state would drift |
+| `/hud-gallery#theme-system` + `/hud-gallery/theme-system` | **Retired at ENG-032 T5** | Classic/Air/Night, production adapters, and picker shipped; the temporary routes, components, T12 specimen, and evaluator retired so shipped surfaces remain the review target |
 | `/hud-gallery/agent-field` | **Retire** | pre–Operations-Board scale demo; the shared R3F machinery it exercises is already production (`operations-board-surface`), and `/eval/t3-spatial-sparse` + `/eval/t4-agent-station` are the deterministic rigs. ENG-004 V3.1 (P5) does demo-scale work on the real surface, not here |
 | `/hud-gallery/agent-sources` | **Retire** | graduated to production `/settings` (settings shell + `agent-sources-settings.tsx`); the 1,182-line lab duplicates a shipped surface and carries its own off-scale type (17/22/25/28px) |
 | `/hud-gallery/consumption-lab` | **Keep until ENG-008 E5 lands, then fold into the main gallery** | active fixture-driven review rig for the in-flight consumption surface (pinned clock, corpus/direction switching); retire when the live source swap makes `/consumption` reviewable directly |
@@ -290,6 +298,14 @@ Never fork a parallel convention (a new fractional type scale, a fifth palette, 
   than setting a metadata flag. Project identity remains a stable six-slot data
   palette corrected against the active zone. The native-material spike closed
   renderer-only; shared in-app material roles remain the portable V1 output.
+- 2026-08-03 — ENG-032 T5: Classic, Air, and Night are production presets behind
+  one app-global device-local preference. Fresh state uses Auto Air/Night;
+  Manual pins a preset while remembering the Auto pair. Settings and the
+  keyboard-complete **Change theme…** command are the production selection
+  faces; preset action/type/material defaults remain beneath global readability
+  and accessibility overlays. The production literal-completeness gate now
+  protects migrated source, Classic remains recovery, and the temporary theme
+  workbench/T12 specimen retired after the shipped surfaces became authoritative.
 - 2026-08-02 — G0: initial kernel extracted from the shipped UI; named 12-rung type scale over the D39 chrome roles; off-scale register recorded; `/hud-gallery` merge/retire decisions written (execution = G1).
 - 2026-08-02 — G1 executed: the `/hud-gallery` decision list above is now reality. Retired the quick-capture, context-label, and keyswitch/tactile study sections; deleted `/hud-gallery/agent-field` and `/hud-gallery/agent-sources`; removed the 301-line `.tactile-key` block from `globals.css` (`TactileActionKey` re-verified at zero consumers before deletion); retired `/eval/t7-keyswitch` and its harness task with the study (production keyswitch buttons and their T8/T9 evals untouched); keyswitch direction note archived at `docs/archive/keyswitch-material-studies.md`; `AGENTS.md` workbench rule amended per the line above.
 - 2026-08-02 — ENG-026 N0 readiness grammar: one shared unbuilt-state family in `src/components/readiness/` — readiness neutral `#77839A` (same value as consumption's `FLUX.unknown`, kept outside every status/attention/consumption/identity channel per the channel-ownership rule) + dashed stroke at three scales (`ComingSoonMarker` pill, `AnnouncedChip` control, `Unbuilt` block), sentence-case **Coming soon** as the only phrase (no all-caps). Supersedes ENG-008 E4's local `designed, not built` tag. Type: chrome-micro on markers/tags, chrome-label on chips, chrome-title on unbuilt notes (the migration retired that file's `text-[13px]` literals). Do not draw dashed strokes in the neutral grey for any other purpose — dashes now mean *designed, not built*. Evidence: `/hud-gallery#readiness-grammar` and the ENG-026 milestone log screenshots.
