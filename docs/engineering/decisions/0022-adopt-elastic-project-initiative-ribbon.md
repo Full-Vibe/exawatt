@@ -106,3 +106,11 @@ verbs, overview overflow route, and Reduced Motion contract stand unchanged.
 For inactive-Project tabs this narrows ENG-021 E1.1's visible-identity rule:
 condensed chips carry glyph identity plus tooltip; visible text identity is
 owed by the active and explicitly disclosed Projects' tabs.
+
+Same-day review refinements: width measurements cache per presentation and
+each height variant reserves the active Project's dead tabs uncollapsed, so
+tab clicks and stopped-tab selection changes are also height-invariant; the
+D23 dead-chip hover-unfurl is deleted (a reveal must not shift layout or
+feed the width model); Projects group by SPACING (a wider inter-Project gap)
+rather than by border tint alone; dormant chips are outside the drag system
+entirely; and the active tab and Project carry `aria-current`.

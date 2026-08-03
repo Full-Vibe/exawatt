@@ -272,8 +272,12 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     });
     expect(screen.getByLabelText('Close alpha')).not.toBeNull();
     expect(screen.getByLabelText('Close beta')).not.toBeNull();
-    // the stopped tab's text folds into a condensed chip (hover unfurls)
-    expect(container.querySelector('[data-condensed]')).not.toBeNull();
+    // the stopped tab drops its inline title entirely (D42 review round,
+    // amends the D23 hover-unfurl: reveals must not shift layout) — its
+    // badge and close remain, identity lives in the tooltip and aria-label
+    const stopped = container.querySelector('[data-tab-id="b"]');
+    expect(stopped?.textContent).not.toContain('beta');
+    expect(stopped?.querySelector('[aria-label="Stopped"]')).not.toBeNull();
   });
 
   it('a ⌘T draft is a real chip — fresh ring, no badge, discardable', () => {

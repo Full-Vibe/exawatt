@@ -37,15 +37,15 @@ const COLORS = [
 ];
 
 let benchSeq = 0;
-function benchTab(title: string, cwd: string): WorkspaceTab {
+function benchTab(title: string, cwd: string, fresh = false): WorkspaceTab {
   benchSeq += 1;
   const id = `bench-${benchSeq}`;
   return {
     id,
     durableSessionId: `durable-${id}`,
     harness: benchSeq % 3 === 0 ? 'claude' : 'codex',
-    title,
-    titleKind: 'operator',
+    title: fresh ? 'Codex' : title,
+    titleKind: fresh ? 'default' : 'operator',
     cwd,
     sessionId: `session-${id}`,
     harnessSessionId: `provider-${id}`,
@@ -53,17 +53,21 @@ function benchTab(title: string, cwd: string): WorkspaceTab {
     lifecycle: 'running',
     exitCode: null,
     roadmapItemId: null,
-    initialTask: title,
+    // fresh = never given work: excluded from summaries/engaged so the
+    // dashed-ring state is exercisable on the acceptance instrument
+    initialTask: fresh ? null : title,
   };
 }
 
 function benchProject(
   name: string,
   titles: string[],
-  colorIndex: number
+  colorIndex: number,
+  { freshTail = false }: { freshTail?: boolean } = {}
 ): Project {
   const dir = `/workspace/${name}`;
   const tabs = titles.map(title => benchTab(title, dir));
+  if (freshTail) tabs.push(benchTab('', dir, true));
   return {
     dir,
     name,
@@ -93,7 +97,9 @@ function initialProjects(): Project[] {
       3
     ),
     benchProject('switcheroo', ['Migrate billing hooks'], 4),
-    benchProject('photo-generator', ['Localization expansion'], 5),
+    benchProject('photo-generator', ['Localization expansion'], 5, {
+      freshTail: true,
+    }),
   ];
 }
 
@@ -201,7 +207,9 @@ export function RibbonDogfoodBench() {
     () =>
       Object.fromEntries(
         projects.flatMap(project =>
-          project.tabs.map(item => [item.sessionId ?? '', true])
+          project.tabs
+            .filter(item => item.initialTask !== null)
+            .map(item => [item.sessionId ?? '', true])
         )
       ),
     [projects]
@@ -210,7 +218,9 @@ export function RibbonDogfoodBench() {
     () =>
       Object.fromEntries(
         projects.flatMap(project =>
-          project.tabs.map(item => [item.durableSessionId, item.title])
+          project.tabs
+            .filter(item => item.initialTask !== null)
+            .map(item => [item.durableSessionId, item.title])
         )
       ),
     [projects]
@@ -354,6 +364,31 @@ export function RibbonDogfoodBench() {
   const toggleWorking = useCallback((sessionId: string | null) => {
     if (!sessionId) return;
     setActivity(current => ({ ...current, [sessionId]: !current[sessionId] }));
+  }, []);
+
+  const toggleStopped = useCallback((tabId: string) => {
+    setProjects(current =>
+      current.map(project => ({
+        ...project,
+        tabs: project.tabs.map(item =>
+          item.id !== tabId
+            ? item
+            : item.resumeState === 'live'
+              ? {
+                  ...item,
+                  sessionId: null,
+                  resumeState: 'ended-resumable' as const,
+                  lifecycle: 'exited' as const,
+                }
+              : {
+                  ...item,
+                  sessionId: `session-${item.id}`,
+                  resumeState: 'live' as const,
+                  lifecycle: 'running' as const,
+                }
+        ),
+      }))
+    );
   }, []);
 
   const reset = useCallback(() => {
@@ -601,10 +636,17 @@ export function RibbonDogfoodBench() {
                     </button>
                     <button
                       type="button"
-                      className="rounded border border-white/15 px-1 hover:bg-white/5"
+                      className="mr-1 rounded border border-white/15 px-1 hover:bg-white/5"
                       onClick={() => toggleWorking(sessionId)}
                     >
                       {sessionId && activity[sessionId] ? 'work✓' : 'work'}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded border border-white/15 px-1 hover:bg-white/5"
+                      onClick={() => toggleStopped(row.tabId)}
+                    >
+                      {flat?.tab.resumeState === 'live' ? 'stop' : 'revive'}
                     </button>
                   </td>
                 </tr>

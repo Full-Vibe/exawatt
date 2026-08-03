@@ -2,7 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { HUD } from '@/components/hud';
 import { PROJECT_PALETTE } from './project-colors';
 
-/** Shortcut hints overlay their anchor so revealing them never shifts layout. */
+/** Shortcut hints overlay their anchor so revealing them never shifts
+ *  layout. Right-anchored (D42 review round): the status glyph lives at the
+ *  chip's left edge, and on a 46px condensed chip a left-anchored keycap
+ *  erased the only state signal while ⌘ was held. */
 export function OrdinalKeycap({
   value,
   color,
@@ -12,7 +15,7 @@ export function OrdinalKeycap({
 }) {
   return (
     <span
-      className="pointer-events-none absolute left-1 top-1/2 z-10 inline-flex h-3.5 min-w-3.5 -translate-y-1/2 items-center justify-center rounded-sm border px-0.5 font-mono text-chrome-micro leading-none motion-safe:animate-in motion-safe:fade-in motion-safe:duration-100"
+      className="pointer-events-none absolute right-1 top-1/2 z-10 inline-flex h-3.5 min-w-3.5 -translate-y-1/2 items-center justify-center rounded-sm border px-0.5 font-mono text-chrome-micro leading-none motion-safe:animate-in motion-safe:fade-in motion-safe:duration-100"
       style={{
         color,
         borderColor: `${color}55`,

@@ -116,12 +116,18 @@ export function buildRibbonTokens({
   activeDir,
   projectSignals,
   attention,
+  reserveDeadExpansion = false,
 }: {
   orderedProjects: readonly Project[];
   projects: readonly Project[];
   activeDir: string | null;
   projectSignals: ReadonlyMap<string, string>;
   attention: Record<string, SessionAttentionSignal>;
+  /** Height-model only: treat every dead tab of the ACTIVE Project as
+   *  uncollapsed, so no `activeTabId` choice inside that Project can need
+   *  more rows than the variant reserved (a tab click is a pure selection
+   *  change and must never resize the terminal). */
+  reserveDeadExpansion?: boolean;
 }): RibbonToken[] {
   const next: RibbonToken[] = [];
   orderedProjects.forEach(project => {
@@ -158,12 +164,26 @@ export function buildRibbonTokens({
           !condensed &&
           !tabIsLive(tab) &&
           tab.lifecycle !== 'draft' &&
-          !selected,
+          !selected &&
+          !(reserveDeadExpansion && activeProject),
         priority: selected ? 1 : activeProject ? 2 : needsYou ? 5 : 6,
       });
     });
   });
   return next;
+}
+
+/**
+ * A token's rendered width depends on more than its identity: condensed
+ * chips, dead collapsed-title chips, and full tabs are three different
+ * widths for the same tab. Measurements are cached PER PRESENTATION so the
+ * height model's inputs cannot flip between measured and estimated when the
+ * selection changes (that flip was itself a height-instability source).
+ */
+export function ribbonTokenPresentation(token: RibbonToken): string {
+  return token.kind === 'tab'
+    ? `${token.condensed === true}|${token.titleCollapsed === true}`
+    : 'project';
 }
 
 const FALLBACK_RIBBON_WIDTH = 900;
@@ -256,7 +276,11 @@ export function TabStrip({
   const itemNodesRef = useRef(new Map<string, HTMLDivElement>());
   const lastTargetsRef = useRef(new Map<string, RibbonTarget>());
   const [containerWidth, setContainerWidth] = useState(FALLBACK_RIBBON_WIDTH);
-  const [itemWidths, setItemWidths] = useState<Record<string, number>>({});
+  /** key → presentation → measured width (see ribbonTokenPresentation) */
+  const [itemWidths, setItemWidths] = useState<
+    Record<string, Record<string, number>>
+  >({});
+  const presentationByKeyRef = useRef(new Map<string, string>());
   const [heldCloseKeys, setHeldCloseKeys] = useState<Set<string>>(
     () => new Set()
   );
@@ -288,6 +312,7 @@ export function TabStrip({
     tokens: RibbonToken[];
     orderedTokens: RibbonToken[];
     layout: ReturnType<typeof layoutProjectRibbon>;
+    dormant: ReadonlySet<string>;
   } | null>(null);
 
   const dormant = dormantProjectDirs ?? EMPTY_SET;
@@ -333,6 +358,15 @@ export function TabStrip({
       : reorderTokensForProjectDrag(tokens, pointerDrag.id, pointerDrag.index);
   }, [pointerDrag, tokens]);
   const presentTokens = useRibbonPresence(orderedTokens, heldCloseKeys);
+  // Which presentation each rendered node currently wears — the measurement
+  // path files widths under this so no presentation's cache is poisoned by
+  // another's DOM size.
+  presentationByKeyRef.current = new Map(
+    presentTokens.map(entry => [
+      entry.token.key,
+      ribbonTokenPresentation(entry.token),
+    ])
+  );
   const currentKeys = useMemo(
     () => new Set(orderedTokens.map(token => token.key)),
     [orderedTokens]
@@ -352,13 +386,15 @@ export function TabStrip({
         layoutEntries.map(entry => ({
           id: entry.token.key,
           width:
-            itemWidths[entry.token.key] ??
-            estimateRibbonTokenWidth(entry.token),
+            itemWidths[entry.token.key]?.[
+              ribbonTokenPresentation(entry.token)
+            ] ?? estimateRibbonTokenWidth(entry.token),
           priority: entry.token.priority,
           parentId:
             entry.token.kind === 'tab'
               ? `project:${entry.token.project.dir}`
               : undefined,
+          groupId: entry.token.project.dir,
         })),
         containerWidth
       ),
@@ -366,20 +402,13 @@ export function TabStrip({
   );
 
   // The strip's outer height is SELECTION-INVARIANT (D42): reserve the rows
-  // the tallest hypothetical selection needs, so switching Projects can never
-  // resize the terminal below. Measured widths apply when a token's current
-  // presentation matches the hypothetical one; estimates cover the rest.
+  // the tallest hypothetical selection needs, so switching Projects or tabs
+  // can never resize the terminal below. Each variant reads its OWN
+  // presentation's cached measurement (falling back to the estimate), so the
+  // width inputs do not change with the current selection; and dead tabs of
+  // the hypothetically active Project are reserved uncollapsed so no
+  // activeTabId choice can exceed the reservation.
   const stableRows = useMemo(() => {
-    // A token's measured width is only reusable in a variant whose visual
-    // presentation matches the currently rendered one — condensed chips,
-    // dead collapsed-title chips, and full tabs all have different widths.
-    const presentationOf = (token: RibbonToken) =>
-      token.kind === 'tab'
-        ? `${token.condensed === true}|${token.titleCollapsed === true}`
-        : 'project';
-    const currentPresentation = new Map(
-      tokens.map(token => [token.key, presentationOf(token)])
-    );
     const liveProjects = projects.filter(
       project => !exiting.has(project.dir)
     );
@@ -399,15 +428,16 @@ export function TabStrip({
         activeDir: candidate.dir,
         projectSignals,
         attention,
+        reserveDeadExpansion: true,
       }).map(token => ({
         id: token.key,
         width:
-          currentPresentation.get(token.key) === presentationOf(token)
-            ? (itemWidths[token.key] ?? estimateRibbonTokenWidth(token))
-            : estimateRibbonTokenWidth(token),
+          itemWidths[token.key]?.[ribbonTokenPresentation(token)] ??
+          estimateRibbonTokenWidth(token),
         priority: token.priority,
         parentId:
           token.kind === 'tab' ? `project:${token.project.dir}` : undefined,
+        groupId: token.project.dir,
       }));
     });
     return stableRibbonRows(variants, containerWidth);
@@ -419,7 +449,6 @@ export function TabStrip({
     itemWidths,
     projectSignals,
     projects,
-    tokens,
   ]);
   const stripRows = Math.max(stableRows, layout.rows);
   const stripHeight = ribbonHeightForRows(stripRows);
@@ -452,17 +481,25 @@ export function TabStrip({
     const width = containerRef.current?.clientWidth ?? 0;
     if (width > 0)
       setContainerWidth(current => (current === width ? current : width));
-    const measured: Record<string, number> = {};
+    const measured: Record<string, [string, number]> = {};
     for (const [key, node] of itemNodesRef.current) {
+      const presentation = presentationByKeyRef.current.get(key);
+      if (!presentation) continue;
       const itemWidth = Math.ceil(node.offsetWidth);
-      if (itemWidth > 0) measured[key] = itemWidth;
+      if (itemWidth > 0) measured[key] = [presentation, itemWidth];
     }
     if (Object.keys(measured).length > 0) {
       setItemWidths(current => {
         const changed = Object.entries(measured).some(
-          ([key, value]) => current[key] !== value
+          ([key, [presentation, value]]) =>
+            current[key]?.[presentation] !== value
         );
-        return changed ? { ...current, ...measured } : current;
+        if (!changed) return current;
+        const next = { ...current };
+        for (const [key, [presentation, value]] of Object.entries(measured)) {
+          next[key] = { ...next[key], [presentation]: value };
+        }
+        return next;
       });
     }
   }, []);
@@ -631,7 +668,7 @@ export function TabStrip({
     return ordinals;
   }, [projects]);
 
-  dragGeometryRef.current = { tokens, orderedTokens, layout };
+  dragGeometryRef.current = { tokens, orderedTokens, layout, dormant };
 
   const endPointerDrag = useCallback(
     (commit: boolean) => {
@@ -667,9 +704,16 @@ export function TabStrip({
               onReorderTab?.(current.id, placement.targetId, placement.place);
             }
           } else {
+            // Dormant chips are auto-partitioned to the tail; preview and
+            // commit must both speak the LIVE projection or they disagree
+            // the moment the ribbon re-partitions the committed order.
             const dirs = (list: RibbonToken[]) =>
               list
-                .filter(token => token.kind === 'project')
+                .filter(
+                  token =>
+                    token.kind === 'project' &&
+                    !geometry.dormant.has(token.project.dir)
+                )
                 .map(token => token.project.dir);
             const placement = placementForOrder(
               dirs(geometry.tokens),
@@ -700,6 +744,12 @@ export function TabStrip({
       if ((event.target as HTMLElement).closest('[data-ribbon-passive]')) {
         return;
       }
+      // A dormant chip's tail position is automatic, not manual order —
+      // there is nothing meaningful to drag it against.
+      if (params.kind === 'project' && dormant.has(params.dir)) return;
+      // Defensive: tear down any zombie gesture (its pointerup never
+      // arrived) before arming a new one, so listener sets cannot stack.
+      activeGestureCleanupRef.current?.();
       const rect = containerRef.current?.getBoundingClientRect();
       const node = itemNodesRef.current.get(params.key);
       if (!rect || !node) return;
@@ -768,7 +818,9 @@ export function TabStrip({
                 )
               : geometry.orderedTokens.filter(
                   token =>
-                    token.kind === 'project' && token.key !== active.key
+                    token.kind === 'project' &&
+                    token.key !== active.key &&
+                    !geometry.dormant.has(token.project.dir)
                 );
           const centers = siblings
             .map(token => geometry.layout.targets.get(token.key))
@@ -808,7 +860,12 @@ export function TabStrip({
         if (!canceled) endPointerDrag(false);
       };
       const cleanup = () => {
-        activeGestureCleanupRef.current = null;
+        // Only release the slot if it is still OURS — an Escape-canceled
+        // gesture's late pointerup must not clobber a newer gesture's
+        // cleanup registration.
+        if (activeGestureCleanupRef.current === cleanup) {
+          activeGestureCleanupRef.current = null;
+        }
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
         window.removeEventListener('pointercancel', onCancel);
@@ -820,7 +877,7 @@ export function TabStrip({
       window.addEventListener('pointercancel', onCancel);
       window.addEventListener('keydown', onKey, true);
     },
-    [editing, endPointerDrag]
+    [dormant, editing, endPointerDrag]
   );
 
   // Unmounting mid-gesture must release the window listeners and the
@@ -850,7 +907,9 @@ export function TabStrip({
         y: 0,
         row: 0,
         width:
-          itemWidths[entry.token.key] ?? estimateRibbonTokenWidth(entry.token),
+          itemWidths[entry.token.key]?.[
+            ribbonTokenPresentation(entry.token)
+          ] ?? estimateRibbonTokenWidth(entry.token),
       };
     const leaving = entry.phase === 'exiting' || projectExiting;
     // The dragged chip tracks the pointer 1:1 — no transition, elevated,
@@ -932,6 +991,10 @@ export function TabStrip({
         const project = token.project;
         const color = project.color;
         const groupActive = project.dir === activeDir;
+        // A floating chip crosses siblings; its resting translucent wash
+        // would overprint their text into mush — go opaque while lifted.
+        const draggingSelf =
+          pointerDrag?.engaged === true && pointerDrag.key === token.key;
         const projectExiting = exiting.has(project.dir);
         const visible =
           !projectExiting &&
@@ -1055,11 +1118,13 @@ export function TabStrip({
                   : dormantProject
                     ? 'rgba(138,160,190,0.09)'
                     : 'rgba(138,160,190,0.15)',
-                background: groupActive
-                  ? `${color}12`
-                  : dormantProject
-                    ? 'rgba(138,160,190,0.018)'
-                    : 'rgba(138,160,190,0.035)',
+                background: draggingSelf
+                  ? HUD.bg.panelFill
+                  : groupActive
+                    ? `${color}12`
+                    : dormantProject
+                      ? 'rgba(138,160,190,0.018)'
+                      : 'rgba(138,160,190,0.035)',
                 filter: dormantProject ? 'opacity(.62)' : undefined,
               }}
             >
@@ -1069,6 +1134,7 @@ export function TabStrip({
                   editing?.kind === 'group' && editing.id === project.dir
                 }
                 aria-label={project.name}
+                aria-current={groupActive ? 'true' : undefined}
                 tabIndex={visible ? 0 : -1}
                 onClick={() => onSelectProject(token.sourceProjectIndex)}
                 onDoubleClick={() =>
@@ -1329,13 +1395,18 @@ export function TabStrip({
               ...itemStyle(entry, projectExiting),
               borderColor: on ? `${color}9c` : 'rgba(138,160,190,0.17)',
               borderBottomColor: on ? color : `${color}38`,
-              background: on ? `${color}15` : 'rgba(138,160,190,0.035)',
+              background: draggingSelf
+                ? HUD.bg.panelFill
+                : on
+                  ? `${color}15`
+                  : 'rgba(138,160,190,0.035)',
               filter: dead ? 'opacity(.74)' : undefined,
             }}
           >
             <EditableChrome
               data-tab-chrome
               editing={editing?.kind === 'tab' && editing.id === tab.id}
+              aria-current={on ? 'true' : undefined}
               tabIndex={visible ? 0 : -1}
               onClick={() => onSelectTab(project.dir, tab.id)}
               onDoubleClick={() =>
@@ -1425,15 +1496,13 @@ export function TabStrip({
                     onPick={next => onSetProjectColor(project.dir, next)}
                   />
                 </>
-              ) : condensed ? null : (
-                <span
-                  data-condensed={(dead && !isDraft && !on) || undefined}
-                  className={`block overflow-hidden whitespace-nowrap font-sans leading-tight transition-[max-width,opacity] duration-200 motion-reduce:transition-none ${
-                    dead && !isDraft && !on
-                      ? 'max-w-0 opacity-0 group-hover/tab:max-w-52 group-hover/tab:opacity-100 group-focus-within/tab:max-w-52 group-focus-within/tab:opacity-100'
-                      : 'max-w-52'
-                  }`}
-                >
+              ) : condensed || (dead && !isDraft && !on) ? null : (
+                // A stopped unselected chip drops its title entirely (D42
+                // review round, amends the D23 hover-unfurl): a reveal that
+                // grows the chip feeds the width model and shifts layout —
+                // identity lives in the tooltip and aria-label, exactly as
+                // on condensed chips.
+                <span className="block max-w-52 overflow-hidden whitespace-nowrap font-sans leading-tight">
                   <span
                     data-subtitle={
                       display.primaryKind === 'context' || undefined

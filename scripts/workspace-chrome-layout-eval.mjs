@@ -122,8 +122,8 @@ const persistedLayout = {
           lifecycle: 'running',
           exitCode: null,
         },
-        // a stopped Session restored from a previous run (D24): renders as
-        // a condensed frozen chip until hover/focus unfurls it
+        // a stopped Session restored from a previous run (D24/D42):
+        // renders as a title-less chip with badge; identity via tooltip
         {
           id: 'frozen-tab',
           durableSessionId: 'frozen-session',
@@ -764,26 +764,35 @@ try {
 
   // ── Close grammar (D24, chrome model): every ⌘W CLOSES. Started live
   // agents get one native confirm (mocked here, calls recorded); fresh
-  // tabs and drafts discard instantly; a stopped tab condenses at rest,
-  // unfurls on hover, and closes straight to the ledger.
-  const condensed = strip.locator('[data-condensed]');
-  // 0. the persisted stopped tab renders as a condensed frozen chip
-  // (folded = zero-size, so wait for attachment, not visibility)
-  await condensed.waitFor({ state: 'attached' });
+  // tabs and drafts discard instantly. A stopped tab drops its inline
+  // title entirely (D42 review round, amends the D23 hover-unfurl —
+  // reveals must not shift layout or feed the width model); its badge,
+  // close affordance, aria-label, and tooltip identity remain.
+  const frozen = page.locator(
+    '[data-project-parent="/tmp/gpagent"][data-tab-id="frozen-tab"]'
+  );
+  await frozen.waitFor({ state: 'attached' });
   await page.mouse.click(650, 400);
-  await page.waitForTimeout(320); // let the 200ms fold transition finish
+  await page.waitForTimeout(320);
+  const frozenShape = await frozen.evaluate(node => ({
+    text: node.textContent ?? '',
+    badge: !!node.querySelector('[aria-label="Stopped"]'),
+    close: !!node.querySelector('button[title^="Close — kept"]'),
+  }));
+  if (
+    frozenShape.text.includes('billing migration') ||
+    !frozenShape.badge ||
+    !frozenShape.close
+  ) {
+    throw new Error(
+      `Stopped chip must be title-less with badge and close: ${JSON.stringify(frozenShape)}`
+    );
+  }
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'stopped-condensed.png'),
   });
-  await page
-    .locator('[data-project-parent="/tmp/gpagent"][data-tab-id="frozen-tab"]')
-    .getByRole('button', { name: 'Close billing migration' })
-    .hover();
-  await settle();
-  await page.screenshot({ path: join(SCREENSHOT_DIR, 'stopped-unfurled.png') });
   // 1. keycap hints overlay without shifting layout (D24). Park the
-  // pointer first — the hover from the unfurl step would hold the frozen
-  // chip open and muddy the screenshot.
+  // pointer away from the strip first.
   await page.mouse.move(650, 400);
   await page.waitForTimeout(320);
   const tabWidthBefore = await page

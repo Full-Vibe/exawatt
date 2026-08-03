@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   layoutProjectRibbon,
   orderProjectsForRibbon,
+  RIBBON_COLUMN_GAP,
+  RIBBON_GROUP_GAP,
   RIBBON_OVERFLOW_WIDTH,
   RIBBON_ROW_HEIGHT,
   RIBBON_ROW_GAP,
@@ -75,6 +77,28 @@ describe('layoutProjectRibbon', () => {
     expect(layout.height).toBe(RIBBON_ROW_HEIGHT * 2 + RIBBON_ROW_GAP);
     expect(layout.visibleIds.has('initiative-31')).toBe(true);
     expect(layout.hiddenIds.length).toBeGreaterThan(20);
+  });
+});
+
+describe('group-aware gaps (D42 review round)', () => {
+  it('opens a wider gap when adjacent items belong to different groups', () => {
+    const layout = layoutProjectRibbon(
+      [
+        { ...item('a-header', 100), groupId: '/a' },
+        { ...item('a-tab', 100), groupId: '/a' },
+        { ...item('b-header', 100), groupId: '/b' },
+      ],
+      1000
+    );
+    expect(layout.targets.get('a-tab')?.x).toBe(100 + RIBBON_COLUMN_GAP);
+    expect(layout.targets.get('b-header')?.x).toBe(
+      100 + RIBBON_COLUMN_GAP + 100 + RIBBON_GROUP_GAP
+    );
+  });
+
+  it('keeps the plain column gap when groups are undefined', () => {
+    const layout = layoutProjectRibbon([item('a', 100), item('b', 100)], 1000);
+    expect(layout.targets.get('b')?.x).toBe(100 + RIBBON_COLUMN_GAP);
   });
 });
 

@@ -276,6 +276,29 @@ describe('elastic Project ribbon behavior', () => {
       inactive?.kind === 'tab' && inactive.titleCollapsed
     ).toBe(true);
     expect(active?.kind === 'tab' && active.titleCollapsed).toBe(false);
+    // the height model reserves the ACTIVE Project's dead tabs uncollapsed
+    // even when they are NOT selected, so no activeTabId click inside it
+    // can outgrow the reservation
+    const betaOnOther = projects.map(entry =>
+      entry.dir === '/beta' ? { ...entry, activeTabId: 'b2' } : entry
+    );
+    const plain = buildRibbonTokens({
+      orderedProjects: betaOnOther,
+      projects: betaOnOther,
+      activeDir: '/beta',
+      projectSignals: new Map(),
+      attention: {},
+    }).find(token => token.key === 'tab:dead-1');
+    expect(plain?.kind === 'tab' && plain.titleCollapsed).toBe(true);
+    const reserved = buildRibbonTokens({
+      orderedProjects: betaOnOther,
+      projects: betaOnOther,
+      activeDir: '/beta',
+      projectSignals: new Map(),
+      attention: {},
+      reserveDeadExpansion: true,
+    }).find(token => token.key === 'tab:dead-1');
+    expect(reserved?.kind === 'tab' && reserved.titleCollapsed).toBe(false);
   });
 
   it('bounds dense active work to two rows with an overview affordance', () => {

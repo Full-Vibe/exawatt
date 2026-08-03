@@ -153,8 +153,12 @@ export function estimateRibbonTokenWidth(token: RibbonToken): number {
   }
   if (token.condensed) return CONDENSED_TAB_WIDTH;
   if (token.titleCollapsed) return DEAD_COLLAPSED_TAB_WIDTH;
+  // Full presentation ceiling: 208px title cap + padding, gaps, status and
+  // harness glyphs, and the close button. An estimate that runs ~30px under
+  // the real DOM width near the row boundary makes the reserved height
+  // depend on which widths happen to be measured — keep it honest.
   const title = token.tab.title || 'New agent';
-  return Math.min(250, Math.max(92, title.length * 7.2 + 74));
+  return Math.min(284, Math.max(92, title.length * 7.2 + 90));
 }
 
 export function ribbonTargetTransform(target: RibbonTarget, scale = 1): string {

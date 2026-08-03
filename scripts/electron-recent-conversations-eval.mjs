@@ -455,10 +455,15 @@ try {
               entry =>
                 entry.durableSessionId === 'session-project-owned-provider'
             ),
+            // condensed chips render no title text (D42) — the chrome
+            // button's aria-label survives condensation, textContent does not
             draftCount: Array.from(
-              document.querySelectorAll('[data-tab-id]')
-            ).filter(tab =>
-              tab.textContent?.toLowerCase().includes('new agent')
+              document.querySelectorAll('[data-tab-id] button[aria-label]')
+            ).filter(button =>
+              button
+                .getAttribute('aria-label')
+                ?.toLowerCase()
+                .startsWith('new agent')
             ).length,
           }))
         );
@@ -473,7 +478,14 @@ try {
       const migrationState = await page.evaluate(async () => {
         const draftTabs = Array.from(
           document.querySelectorAll('[data-tab-id]')
-        ).filter(tab => tab.textContent?.toLowerCase().includes('new agent'));
+        ).filter(tab =>
+          Array.from(tab.querySelectorAll('button[aria-label]')).some(button =>
+            button
+              .getAttribute('aria-label')
+              ?.toLowerCase()
+              .startsWith('new agent')
+          )
+        );
         return {
           stillClosed: (
             (await window.electron?.pty?.closedSessions()) ?? []

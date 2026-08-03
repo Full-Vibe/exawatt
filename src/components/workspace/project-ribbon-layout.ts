@@ -7,6 +7,10 @@
 
 export const RIBBON_ROW_HEIGHT = 30;
 export const RIBBON_COLUMN_GAP = 4;
+/** Gap between different Projects' items — grouping must be readable from
+ *  spacing alone (D42 review round: uniform gaps left chips floating
+ *  ambiguously between their own header and the next Project's). */
+export const RIBBON_GROUP_GAP = 12;
 export const RIBBON_ROW_GAP = 4;
 export const RIBBON_MAX_ROWS = 2;
 export const RIBBON_OVERFLOW_WIDTH = 44;
@@ -20,6 +24,10 @@ export interface RibbonLayoutInput {
    *  is (a tab never renders without its Project header). Parents must
    *  carry a stricter priority than their dependents. */
   parentId?: string;
+  /** Adjacent items with the SAME groupId sit `RIBBON_COLUMN_GAP` apart;
+   *  crossing to a different defined groupId opens `RIBBON_GROUP_GAP`.
+   *  Undefined on either side keeps the plain column gap. */
+  groupId?: string;
 }
 
 export interface RibbonTarget {
@@ -50,29 +58,40 @@ function normalizedWidth(width: number, availableWidth: number): number {
 }
 
 function pack(
-  items: readonly Pick<RibbonLayoutInput, 'id' | 'width'>[],
+  items: readonly Pick<RibbonLayoutInput, 'id' | 'width' | 'groupId'>[],
   availableWidth: number,
   maxRows: number
 ): Packed | null {
   const targets = new Map<string, RibbonTarget>();
   let row = 0;
   let x = 0;
+  let previousGroup: string | undefined;
 
   for (const item of items) {
     const width = normalizedWidth(item.width, availableWidth);
-    if (x > 0 && x + width > availableWidth) {
+    const gap =
+      x === 0
+        ? 0
+        : previousGroup !== undefined &&
+            item.groupId !== undefined &&
+            item.groupId !== previousGroup
+          ? RIBBON_GROUP_GAP
+          : RIBBON_COLUMN_GAP;
+    let placeX = x === 0 ? 0 : x + gap;
+    if (placeX > 0 && placeX + width > availableWidth) {
       row += 1;
-      x = 0;
+      placeX = 0;
     }
     if (row >= maxRows) return null;
     targets.set(item.id, {
       id: item.id,
-      x,
+      x: placeX,
       y: row * (RIBBON_ROW_HEIGHT + RIBBON_ROW_GAP),
       row,
       width,
     });
-    x += width + RIBBON_COLUMN_GAP;
+    x = placeX + width;
+    previousGroup = item.groupId;
   }
 
   return { targets, rows: items.length === 0 ? 0 : row + 1 };

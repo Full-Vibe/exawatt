@@ -898,9 +898,15 @@ export function WorkspaceClient() {
           '.xterm-helper-textarea'
         );
         if (!inTerminal) return focusTerminal();
-        const target = chromeRef.current?.querySelector<HTMLElement>(
-          'button:not([disabled]), input:not([disabled])'
-        );
+        // The strip keeps overflow-evicted chips in the DOM as inert
+        // (D42), and focus() on an inert subtree is a spec-mandated no-op
+        // — the first focusable CHROME element must skip them or F6 goes
+        // silently dead.
+        const target = Array.from(
+          chromeRef.current?.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), input:not([disabled])'
+          ) ?? []
+        ).find(element => !element.closest('[inert]'));
         target?.focus();
         return !!target;
       },
