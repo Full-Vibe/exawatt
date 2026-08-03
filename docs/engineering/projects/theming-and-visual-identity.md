@@ -6,11 +6,12 @@ discovery, and (once approved) the executable milestone detail.
 
 ## Current phase
 
-**Shaped — implementation not started.** The operator approved the product
-boundary and delegated the remaining typography/accessibility conventions to
-best-in-class precedent on 2026-08-03. This document is now the executable
-brief for ENG-032. It does not authorize skipping `/hud-gallery` review or
-switching the production default before the final rollout gate.
+**Active build — T0 landed; T1 is next.** The versioned contract, three authored
+built-ins, deterministic generator, pure resolver, Classic parity oracle, and
+gallery scaffold are implemented. Production remains forced to the shipped
+Classic appearance: no preference source, production provider, or non-Classic
+selection is wired yet. This document does not authorize skipping
+`/hud-gallery` review or switching the production default before T5.
 
 The originating operator signal is broader than dark-versus-light: the current
 fonts and colors feel “ultra-geeky” and insufficiently readable; users should be
@@ -736,3 +737,12 @@ no packet privately extends the contract to solve a local color.
   accessibility overrides, and device-local first-mile persistence. The design
   pass closed with decision `0026` and executable T0–T5 milestones; no product
   code was implemented.
+- 2026-08-03, T0 landed: added strict `ThemeDefinitionV1` and
+  `AppearancePreferencesV1` contracts, three JSON-compatible built-ins under
+  `themes/v1`, deterministic CSS/renderer/Electron generation, a pure resolver
+  with preview and accessibility overlays, contrast correction, and Classic
+  parity assertions. `pnpm theme:check` rejects unknown fields, unsafe colors,
+  stale artifacts, wrong IDs/availability/pairing, and failing contrast roles.
+  `/hud-gallery#theme-system` previews the generated definitions without
+  setting root production state. Evidence: contract/component/gallery tests,
+  full Vitest, lint, type-check, production build, and Electron compile.

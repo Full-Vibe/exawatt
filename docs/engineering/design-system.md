@@ -85,6 +85,15 @@ Radii: `rounded` (4px) is the chrome default (135 uses; 165 including `rounded-s
 
 The app is **forced dark** (`html.dark`, ENG-016 D3); nothing may assume a light ground. Color is organized as one semantic layer plus three scoped operational palettes and two reserved channels. The channel-ownership rule is load-bearing: **status owns white/blue/green/peach/red; chrome attention owns amber; consumption owns violet→magenta; Project identity is its own channel and is never a status signal.**
 
+ENG-032 transition note (T0, 2026-08-03): forced dark remains the production
+truth until T5, but it is now captured as the generated
+`exawatt-classic-dark` compatibility oracle rather than the future contract's
+limit. Air and Night are validated gallery-only definitions. New theme-owned
+roles enter through `ThemeDefinitionV1` and generated `--exa-*` variables;
+production components continue using the shipped authorities below until their
+T3/T4 migration packet proves Classic parity. Status, action, Consumption,
+readiness, and Project-identity ownership do not change with the ground.
+
 ### 1. Semantic chrome (shadcn variables, `globals.css`)
 
 Default for all standard UI: `bg-background`, `text-foreground`, `bg-card`, `border-border`, etc.
@@ -200,6 +209,12 @@ Never fork a parallel convention (a new fractional type scale, a fifth palette, 
 
 ### Amendment log
 
+- 2026-08-03 — ENG-032 T0: introduced the versioned theme substrate without
+  changing production appearance. Three generated built-ins now cover
+  foundation, HUD, status, Consumption, readiness, xterm, spatial, typography,
+  material, and bootstrap roles. Classic is the parity oracle and only
+  production-available definition; Air/Night remain gallery-only until T5. The
+  existing channel and type-scale rules remain authoritative.
 - 2026-08-02 — G0: initial kernel extracted from the shipped UI; named 12-rung type scale over the D39 chrome roles; off-scale register recorded; `/hud-gallery` merge/retire decisions written (execution = G1).
 - 2026-08-02 — G1 executed: the `/hud-gallery` decision list above is now reality. Retired the quick-capture, context-label, and keyswitch/tactile study sections; deleted `/hud-gallery/agent-field` and `/hud-gallery/agent-sources`; removed the 301-line `.tactile-key` block from `globals.css` (`TactileActionKey` re-verified at zero consumers before deletion); retired `/eval/t7-keyswitch` and its harness task with the study (production keyswitch buttons and their T8/T9 evals untouched); keyswitch direction note archived at `docs/archive/keyswitch-material-studies.md`; `AGENTS.md` workbench rule amended per the line above.
 - 2026-08-02 — ENG-026 N0 readiness grammar: one shared unbuilt-state family in `src/components/readiness/` — readiness neutral `#77839A` (same value as consumption's `FLUX.unknown`, kept outside every status/attention/consumption/identity channel per the channel-ownership rule) + dashed stroke at three scales (`ComingSoonMarker` pill, `AnnouncedChip` control, `Unbuilt` block), sentence-case **Coming soon** as the only phrase (no all-caps). Supersedes ENG-008 E4's local `designed, not built` tag. Type: chrome-micro on markers/tags, chrome-label on chips, chrome-title on unbuilt notes (the migration retired that file's `text-[13px]` literals). Do not draw dashed strokes in the neutral grey for any other purpose — dashes now mean *designed, not built*. Evidence: `/hud-gallery#readiness-grammar` and the ENG-026 milestone log screenshots.

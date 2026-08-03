@@ -560,9 +560,9 @@ export const architectureManifest = {
           id: 'appearance-runtime',
           label: 'Appearance Resolver',
           summary:
-            'Designed ENG-032 boundary: versioned presets plus device-local preferences resolve once for DOM, xterm, R3F, and Electron boot adapters.',
+            'ENG-032 T0 active build: validated Classic, Air, and Night definitions resolve once and generate DOM and Electron adapter inputs; preference and production renderer wiring follow.',
           layer: 'ui',
-          status: 'designed',
+          status: 'active-build',
           x: 330,
           y: 95,
           width: 210,

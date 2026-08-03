@@ -64,4 +64,19 @@ describe('HUD gallery', () => {
       screen.getByRole('link', { name: /Keyswitch material studies/ })
     ).toHaveAttribute('href', '#keyswitch-material-studies');
   });
+
+  it('keeps the generated application-theme contract reviewable', () => {
+    render(<HudGallery />);
+
+    expect(
+      screen.getByRole('heading', { name: 'Application themes' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /Application themes/ })
+    ).toHaveAttribute('href', '#theme-system');
+    expect(screen.getByTestId('theme-system-preview')).toHaveAttribute(
+      'data-exa-theme',
+      'exawatt-air-light'
+    );
+  });
 });
