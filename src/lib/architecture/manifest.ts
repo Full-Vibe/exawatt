@@ -562,7 +562,7 @@ export const architectureManifest = {
           id: 'appearance-runtime',
           label: 'Appearance Resolver',
           summary:
-            'ENG-032 T0–T3B active build: one validated device-local snapshot now projects through first paint, app chrome, Settings, Workspace/Roadmap/status, and live/retained xterm without remounting Agent state; Classic remains the sole production preset until T5.',
+            'ENG-032 T0–T3 active build: one validated device-local snapshot now projects through first paint, app chrome, Settings, Workspace/Roadmap/status, live/retained xterm, and Usage/Consumption without remounting Agent state; Classic remains the sole production preset until T5.',
           layer: 'ui',
           status: 'active-build',
           x: 330,

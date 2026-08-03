@@ -47,14 +47,16 @@ server to close (with bounded force-stop escalation) before declaring cleanup
 complete. This is a presentation boundary, not a second application or
 alternate data source.
 
-ENG-032's appearance boundary is in **active build** (decision `0026`). T0–T2 plus T3A/T3B
+ENG-032's appearance boundary is in **active build** (decision `0026`). T0–T3
 implement strict versioned definitions, Classic/Air/Night authored data, a
 deterministic validator/generator, one pure resolver, device-local Electron/web
 preference adapters, a production provider, first-paint/native bootstrap, and
 the gallery-accepted Air/Night visual family. Generated foundation, action, HUD,
 readiness, typography, material, status, and xterm roles now project through root
 app chrome, Settings, feedback, shared overlay primitives, Workspace, Roadmap,
-status glyphs, and live/retained terminals. Existing terminals update their
+status glyphs, live/retained terminals, and the Usage/Consumption capacity,
+attribution, drill, session, assurance, unit, and ambient-meter surfaces.
+Existing terminals update their
 palette in place without remounting or touching PTY/data state. Material filters and authored
 opaque fallbacks swap in place through CSS variables; renderer capability never
 changes theme truth.
@@ -65,8 +67,8 @@ root consume one generated/validated state path. `--safe-theme` bypasses stored
 appearance for one launch without mutating it. The temporary theme workbench
 resolves that same immutable snapshot into scoped DOM/material variables,
 ANSI/xterm data, and a concrete-sRGB on-demand R3F sibling with a bloom-free
-Air gate. Classic is still the only persistable production preset. T3C–T5
-finish projecting the accepted contract through production DOM, xterm, Fleet/R3F, and
+Air gate. Classic is still the only persistable production preset. T4–T5
+finish projecting the accepted contract through Fleet/R3F, launch/native, and
 selection adapters; those renderers do not merge theme state independently.
 The contract keeps action, status, Project identity, Consumption, and readiness
 channels distinct and accepts no executable CSS/JavaScript or remote assets.

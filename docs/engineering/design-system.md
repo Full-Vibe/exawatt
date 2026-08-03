@@ -273,6 +273,12 @@ Never fork a parallel convention (a new fractional type scale, a fifth palette, 
   the existing terminal's `options.theme`; they never remount, replay, refit,
   resize, or write to the PTY. Project/source identity remains data, and D40
   protocol metadata remains semantic state rather than presentation paint.
+- 2026-08-03 — ENG-032 T3C: generated Consumption/foundation/HUD/material roles
+  now own `/usage`, its capacity and attribution visualizations, drill and
+  session surfaces, assurance/unit ladder, ambient meter, and popovers. DOM
+  interpolation uses live CSS variables; concrete Classic FLUX remains only for
+  the pending spatial adapter. Consumption unknown stays a hatched data state
+  distinct from readiness, action, status, and Project identity.
 - 2026-08-02 — G0: initial kernel extracted from the shipped UI; named 12-rung type scale over the D39 chrome roles; off-scale register recorded; `/hud-gallery` merge/retire decisions written (execution = G1).
 - 2026-08-02 — G1 executed: the `/hud-gallery` decision list above is now reality. Retired the quick-capture, context-label, and keyswitch/tactile study sections; deleted `/hud-gallery/agent-field` and `/hud-gallery/agent-sources`; removed the 301-line `.tactile-key` block from `globals.css` (`TactileActionKey` re-verified at zero consumers before deletion); retired `/eval/t7-keyswitch` and its harness task with the study (production keyswitch buttons and their T8/T9 evals untouched); keyswitch direction note archived at `docs/archive/keyswitch-material-studies.md`; `AGENTS.md` workbench rule amended per the line above.
 - 2026-08-02 — ENG-026 N0 readiness grammar: one shared unbuilt-state family in `src/components/readiness/` — readiness neutral `#77839A` (same value as consumption's `FLUX.unknown`, kept outside every status/attention/consumption/identity channel per the channel-ownership rule) + dashed stroke at three scales (`ComingSoonMarker` pill, `AnnouncedChip` control, `Unbuilt` block), sentence-case **Coming soon** as the only phrase (no all-caps). Supersedes ENG-008 E4's local `designed, not built` tag. Type: chrome-micro on markers/tags, chrome-label on chips, chrome-title on unbuilt notes (the migration retired that file's `text-[13px]` literals). Do not draw dashed strokes in the neutral grey for any other purpose — dashes now mean *designed, not built*. Evidence: `/hud-gallery#readiness-grammar` and the ENG-026 milestone log screenshots.

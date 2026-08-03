@@ -6,14 +6,15 @@ discovery, and (once approved) the executable milestone detail.
 
 ## Current phase
 
-**Active build — T0 through T2 plus T3A/T3B landed; T3C and T4 are active.** The versioned
+**Active build — T0 through T3 landed; T4 is active.** The versioned
 contract, device-local resolver/runtime, strict Electron settings and
 first-paint bootstrap, and the gallery-accepted Air/Night visual family are
 implemented. Root app chrome, Settings, shared overlays, feedback, readiness,
-Workspace/Roadmap/status paint, and live plus retained xterm terminals now
-consume the same generated snapshot. Terminal palette changes update existing
+Workspace/Roadmap/status paint, live plus retained xterm terminals, and the
+Usage/Consumption surface now consume the same generated snapshot. Terminal
+palette changes update existing
 instances in place without remount, replay, resize, or data loss. The temporary
-workbench still exercises the pending Consumption and Fleet adapters. Production
+workbench still exercises the pending Fleet adapter. Production
 resolves only the shipped Classic appearance;
 Air and Night cannot be persisted or selected before the T5 rollout gate.
 
@@ -806,3 +807,13 @@ no packet privately extends the contract to solve a local color.
   separate from theme paint. Evidence: lifecycle/adapter tests, 560–1600px
   Workspace and terminal Electron evaluations, Air/Night theme matrix, full
   tests, lint, type-check, production build, and packaged Electron smoke.
+- 2026-08-03, T3C landed: percolated generated Consumption, foundation, HUD,
+  typography, and material roles through `/usage`, its capacity and attribution
+  visualizations, drill panel, session grid, assurance/unit treatments, and the
+  ambient-meter popover/gallery sibling. DOM interpolation and alpha stay live
+  through generated custom properties, while the concrete Classic FLUX map is
+  retained only for the pending T4 spatial adapter. Unknown Consumption remains
+  its own hatched data state rather than readiness, action, or status, and
+  Project/source identity remains data. Evidence: adapter/channel tests,
+  material-popover tests, mounted-surface repaint tests, Classic/Air/Night
+  screenshots, full tests, lint, type-check, and production build.
