@@ -30,7 +30,6 @@
 import {
   isOperatorEntrypoint,
   localLogAssurance,
-  planWindowAssurance,
   rollupByProject,
   rollupByRoadmapItem,
   rollupBySession,
