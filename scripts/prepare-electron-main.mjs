@@ -56,6 +56,7 @@ await stagePackage('node-pty');
 await stagePackage('electron-updater');
 await stagePackage('@supabase/ssr');
 await stagePackage('@supabase/supabase-js');
+await stagePackage('@exawatt/core');
 
 const { stdout: shaOutput } = await execFileAsync(
   'git',

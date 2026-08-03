@@ -257,6 +257,9 @@ const MARKETING_ROUTES = [
   '/sign-in',
   '/sign-up',
   '/architecture',
+  '/agentmaxxing',
+  '/operator',
+  '/run',
 ];
 
 export function isMarketingRoute(pathname: string): boolean {

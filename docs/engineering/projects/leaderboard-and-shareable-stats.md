@@ -129,7 +129,8 @@ Each public Run records:
 - elapsed milliseconds
 - active milliseconds for the tree
 - longest hands-off milliseconds
-- intervention count
+- intervention count when the source can observe operator messages; otherwise
+  unavailable, never a misleading zero
 - peak active members
 - agent-milliseconds (the exact basis for agent-hours)
 - raw token total and normalized tokens
@@ -430,3 +431,60 @@ transparent multi-axis rank, autonomous agent-hours as the default identity
 signal, one opt-in public profile, GitHub-seeded/provider-neutral identity, and
 a dark restrained public visual system.
 
+### 2026-08-03 — A1 foundation and A2/A3 runtime boundaries
+
+Implementation established a source-neutral `@exawatt/core` operator-statistics
+kernel rather than deriving leaderboard meaning inside React, Electron, or SQL.
+The kernel accepts sanitized activity facts, derives Run and local-day
+aggregates, ranks the four transparent axes, and validates a versioned
+aggregate-only upload payload with unknown fields rejected at every level. Its
+first installed-source adapter conservatively reconstructs activity intervals
+from timestamped Claude Code and Codex Consumption samples, caps inferred gaps,
+and labels derived evidence rather than claiming exact live turn truth.
+
+Electron main owns machine-local scanning behind one trusted, operator-triggered
+IPC method. The renderer receives only the publishable preview; public ids and
+idempotency keys are hashes, not local Session or harness identifiers. The
+hosted code path resolves the authenticated GitHub identity server-side and
+atomically replaces the caller's bounded day and Run projection through an RLS
+schema. Anonymous reads are limited to enabled profiles exposed by dedicated
+leaderboard, profile, and Run functions. Preview, publish, sync, and disable are
+separate actions; disabling changes public visibility without altering local
+history.
+
+A1's kernel and fixtures were implemented in this pass; the installed-source
+proof below closes the milestone. A2 stays active-build until the one-time
+GitHub OAuth App registration and provider configuration are live. A3 and A4
+closed after the Electron IPC and visual/browser proofs below. A5 owns the
+remaining integration, deployment, production URL, and dogfood installation.
+
+### 2026-08-03 — installed corpus and visual proof
+
+The read-only installed-source scan after the operator's explicit publication
+request found 12 post-opt-in Runs: 0 exact, 12 timestamp-derived, and all 12
+honestly marked partially unavailable because Codex does not report delegation
+and local Consumption records do not expose steering messages. The aggregate
+contained 2.55 autonomous agent-hours, a 17m 33s derived hands-off span, a
+cross-Session peak fleet of 10, and 49.1M normalized tokens. These values came
+from the same local adapter and pure kernel used by the publish preview; no
+fixture, prompt, response, path, Project, or provider Session id entered the
+measurement output.
+
+The shared profile/receipt treatment was mounted temporarily in
+`/hud-gallery`, reviewed through Playwright at 1440px and 390px, and retired
+after acceptance. The narrow view had no horizontal overflow. The activity
+field remained legible, the identity hierarchy held, and the amber high-score
+treatment stayed isolated to the shareable Run record rather than coloring the
+whole arena.
+
+The production migration was applied and its anonymous/owner boundaries were
+rechecked after application. Because GitHub exposes no API or CLI for creating
+an OAuth App and this project had no client credentials, the operator's first
+profile used an explicit service-boundary seed: the GitHub account verified by
+the authenticated local `gh` session plus the same post-consent aggregate the
+Electron adapter produced. This is an operator override, not the product sync
+path. The normal RPC still requires a real `auth.identities` GitHub link and
+rejects spoofed or non-GitHub callers. At seed time the public board contained
+exactly one enabled profile: `@jakesc`, ranked #1 on all four axes with 12 Runs,
+3.03 agent-hours, 20m 52s derived endurance, fleet peak 10, and 52.2M normalized
+tokens. One-time OAuth App registration remains the only A2 blocker.

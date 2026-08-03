@@ -15,11 +15,17 @@ const PUBLIC_PREFIXES = [
   '/api/conversations',
   '/api/context-labels',
   '/api/feedback',
+  // Bearer-authenticated aggregate sync. The route owns auth and its strict
+  // payload boundary; public leaderboard reads use Supabase's allowlisted RPCs.
+  '/api/operator-stats',
   '/api/oc',
   '/sign-in',
   '/sign-up',
   '/auth',
   '/architecture',
+  '/agentmaxxing',
+  '/operator',
+  '/run',
   // only /fleet/spatial exists — the broader /fleet prefix died with the
   // legacy trio (decision 0023); keep the public surface exactly as wide as
   // the routes it serves

@@ -19,6 +19,7 @@ import http from 'http';
 import path from 'path';
 import { handleTrusted, setTrustedRendererOrigin } from './ipc-security';
 import { registerSystemShortcutIPC } from './system-shortcuts';
+import { registerOperatorStatsIPC } from './operator-stats-ipc';
 import { randomUUID } from 'crypto';
 import { launchScreenUrl, type StartupStage } from './launch-screen';
 import {
@@ -896,6 +897,20 @@ function registerAuthIPC(): void {
     }
   );
   handleTrusted(
+    'auth:link-github',
+    async (_event, config: ElectronAuthStartConfig) => {
+      if (!authCoordinator) throw new Error('Authentication is not ready.');
+      try {
+        await authCoordinator.linkGithub(config);
+      } catch (error) {
+        recordAuthDiagnostic('auth.link_github_ipc_failure', {
+          error: safeElectronAuthError(error),
+        });
+        throw error;
+      }
+    }
+  );
+  handleTrusted(
     'auth:install-test-session',
     async (
       _event,
@@ -1351,6 +1366,7 @@ async function bootstrapCommandSurface(): Promise<void> {
   registerAppIPC();
   registerMenuIPC();
   registerSystemShortcutIPC();
+  registerOperatorStatsIPC();
   shutdownCoordinator = new runtime.shutdown.ShutdownCoordinator({
     countLive: () => {
       const live = ptySessions.list().filter(session => !session.exited);

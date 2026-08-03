@@ -33,6 +33,7 @@ interface ExchangeResult {
 
 interface ElectronAuthClient {
   signInWithGoogle(redirectTo: string): Promise<OAuthResult>;
+  linkGithub(redirectTo: string): Promise<OAuthResult>;
   exchangeCode(code: string): Promise<ExchangeResult>;
   installSession(tokens: {
     accessToken: string;
@@ -75,6 +76,11 @@ const createSupabaseAuthClient: AuthClientFactory = config => {
         provider: 'google',
         options: { skipBrowserRedirect: true, redirectTo },
       }),
+    linkGithub: redirectTo =>
+      client.auth.linkIdentity({
+        provider: 'github',
+        options: { skipBrowserRedirect: true, redirectTo },
+      }),
     exchangeCode: code => client.auth.exchangeCodeForSession(code),
     installSession: ({ accessToken, refreshToken }) =>
       client.auth.setSession({
@@ -112,10 +118,26 @@ export class ElectronAuthCoordinator {
   }
 
   async startGoogle(config: ElectronAuthStartConfig): Promise<void> {
+    return this.startFlow(config, 'google', client =>
+      client.signInWithGoogle(config.redirectTo)
+    );
+  }
+
+  async linkGithub(config: ElectronAuthStartConfig): Promise<void> {
+    return this.startFlow(config, 'github', client =>
+      client.linkGithub(config.redirectTo)
+    );
+  }
+
+  private async startFlow(
+    config: ElectronAuthStartConfig,
+    provider: 'google' | 'github',
+    authorize: (client: ElectronAuthClient) => Promise<OAuthResult>
+  ): Promise<void> {
     const flowId = randomUUID();
     this.recordDiagnostic('auth.flow.start', {
       flowId,
-      provider: 'google',
+      provider,
       rendererOrigin: this.expectedRendererOrigin,
       supabaseHost: safeHost(config.supabaseUrl),
     });
@@ -148,7 +170,7 @@ export class ElectronAuthCoordinator {
 
     let authorizationResult: OAuthResult;
     try {
-      authorizationResult = await client.signInWithGoogle(config.redirectTo);
+      authorizationResult = await authorize(client);
     } catch (error) {
       this.pendingClient = null;
       this.pendingFlowId = null;
@@ -205,7 +227,7 @@ export class ElectronAuthCoordinator {
         codeLength: code.length,
       });
       throw new Error(
-        'No Google sign-in is pending. Start the sign-in flow again.'
+        'No authentication flow is pending. Start the flow again.'
       );
     }
 

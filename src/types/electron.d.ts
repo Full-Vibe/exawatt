@@ -13,6 +13,7 @@ import type {
   AgentSourceState,
   PtyHarness,
 } from '@exawatt/core';
+import type { OperatorStatsPublishPayload } from '@exawatt/core';
 
 export type {
   AgentHarness,
@@ -663,6 +664,22 @@ declare global {
         off: (channel: string, handler: (...args: unknown[]) => void) => void;
       };
       agentSources?: ElectronAgentSourcesApi;
+      operatorStats?: {
+        scan: (
+          since: string,
+          timezone: string
+        ) => Promise<
+          Pick<
+            OperatorStatsPublishPayload,
+            | 'schemaVersion'
+            | 'consentVersion'
+            | 'enabled'
+            | 'timezone'
+            | 'days'
+            | 'runs'
+          >
+        >;
+      };
       pty?: ElectronPtyApi;
       workspace?: ElectronWorkspaceApi;
       roadmap?: ElectronRoadmapApi;
@@ -670,6 +687,11 @@ declare global {
       app?: ElectronAppApi;
       auth?: {
         startGoogle: (config: {
+          supabaseUrl: string;
+          supabaseAnonKey: string;
+          redirectTo: string;
+        }) => Promise<void>;
+        linkGithub: (config: {
           supabaseUrl: string;
           supabaseAnonKey: string;
           redirectTo: string;

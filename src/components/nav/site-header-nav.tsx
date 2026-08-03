@@ -23,6 +23,7 @@ import {
   User,
   LogOut,
   Network,
+  Trophy,
   Settings,
   Blocks,
   MessageSquareWarning,
@@ -127,6 +128,10 @@ export function SiteHeaderNav({
   const pathname = usePathname();
   const isHome = pathname === '/';
   const isArchitecture = pathname?.startsWith('/architecture');
+  const isAgentmaxxing =
+    pathname?.startsWith('/agentmaxxing') ||
+    pathname?.startsWith('/operator/') ||
+    pathname?.startsWith('/run/');
   const isComponentLibrary = pathname?.startsWith('/hud-gallery');
   const isWorkspace = pathname?.startsWith('/workspace');
   const isAdmin = isAdminEmail(userEmail);
@@ -228,6 +233,14 @@ export function SiteHeaderNav({
             <Link href="/architecture" className="text-chrome-title!">
               <Network className="h-3.5 w-3.5" />
               Architecture
+            </Link>
+          </Button>
+        )}
+        {!isAgentmaxxing && (
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/agentmaxxing" className="text-chrome-title!">
+              <Trophy className="h-3.5 w-3.5" />
+              Agentmaxxing
             </Link>
           </Button>
         )}

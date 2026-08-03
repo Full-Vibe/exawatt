@@ -39,6 +39,10 @@ contextBridge.exposeInMainWorld('electron', {
       action: 'authenticate' | 'choose-model' | 'install-guide'
     ) => ipcRenderer.invoke('agent-sources:act', adapterId, action),
   },
+  operatorStats: {
+    scan: (since: string, timezone: string) =>
+      ipcRenderer.invoke('operator-stats:scan', since, timezone),
+  },
   pty: {
     create: (options: unknown) => ipcRenderer.invoke('pty:create', options),
     listAgentModels: (harness: string, cwd: string) =>
@@ -283,6 +287,11 @@ contextBridge.exposeInMainWorld('electron', {
       supabaseAnonKey: string;
       redirectTo: string;
     }) => ipcRenderer.invoke('auth:start-google', config),
+    linkGithub: (config: {
+      supabaseUrl: string;
+      supabaseAnonKey: string;
+      redirectTo: string;
+    }) => ipcRenderer.invoke('auth:link-github', config),
     onComplete: subscribe<void>('auth:complete'),
     onError: subscribe<{
       name: string;

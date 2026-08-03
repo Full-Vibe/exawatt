@@ -49,6 +49,12 @@ function setup() {
     },
     error: null,
   });
+  const linkGithub = vi.fn().mockResolvedValue({
+    data: {
+      url: 'https://project.supabase.co/auth/v1/authorize?provider=github',
+    },
+    error: null,
+  });
   const installSession = vi.fn().mockResolvedValue({
     data: {
       session: {
@@ -60,6 +66,7 @@ function setup() {
   });
   const createAuthClient = vi.fn(() => ({
     signInWithGoogle,
+    linkGithub,
     exchangeCode,
     installSession,
   }));
@@ -81,6 +88,7 @@ function setup() {
     cookies,
     createAuthClient,
     signInWithGoogle,
+    linkGithub,
     exchangeCode,
     installSession,
     openExternal,
@@ -189,7 +197,16 @@ describe('ElectronAuthCoordinator', () => {
     );
     expect(exchangeCode).toHaveBeenCalledWith('one-time-code');
     await expect(coordinator.exchangeCode('replay')).rejects.toThrow(
-      'No Google sign-in is pending'
+      'No authentication flow is pending'
+    );
+  });
+
+  it('opens a GitHub identity-link flow through the same system-browser boundary', async () => {
+    const { coordinator, linkGithub, openExternal } = setup();
+    await coordinator.linkGithub(startConfig);
+    expect(linkGithub).toHaveBeenCalledWith(startConfig.redirectTo);
+    expect(openExternal).toHaveBeenCalledWith(
+      'https://project.supabase.co/auth/v1/authorize?provider=github'
     );
   });
 
@@ -254,7 +271,7 @@ describe('ElectronAuthCoordinator', () => {
       'browser unavailable'
     );
     await expect(coordinator.exchangeCode('orphaned-code')).rejects.toThrow(
-      'No Google sign-in is pending'
+      'No authentication flow is pending'
     );
   });
 

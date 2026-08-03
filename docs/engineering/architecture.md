@@ -167,6 +167,38 @@ receive no raw instruction, terminal output, local path, Project name,
 provider URL, or provider credential. Failure, offline use, quota, or safety
 rejection remains a complete deterministic Team tile.
 
+#### Public operator statistics projection
+
+ENG-035 adds an opt-in public projection over existing Session and Consumption
+facts; it does not add `Agentmaxxing` as a canonical object or make the hosted
+leaderboard the source of local truth. `@exawatt/core` owns source-neutral Run
+facts, deterministic Run/day derivation, Command/Endurance/Fleet/Energy rank
+semantics, activity-graph levels, and a strict versioned publish allowlist.
+Source adapters may improve their evidence over time without changing the
+public contract. The initial historical adapter derives conservative activity
+intervals from timestamped Claude Code and Codex Consumption samples and keeps
+reported, observed, derived, and unavailable assurance explicit.
+
+The desktop privilege boundary remains narrow and operator initiated. Electron
+main scans machine-local source logs only after the operator requests a preview,
+starts at the locally persisted opt-in instant, and sends the renderer only
+sanitized daily and Run aggregates. Local source identifiers are hashed before
+they become public idempotency keys and public Run ids; prompts, responses,
+code, repositories, Projects, branches, paths, filenames, diffs, and raw Session
+ids are absent from the IPC and network schemas. Previewing is local. Publishing
+is a separate authenticated action, and disabling public visibility does not
+delete or mutate local history.
+
+The hosted boundary accepts only the versioned allowlist after authenticated
+GitHub identity resolution. A server RPC atomically replaces that operator's
+bounded day and Run projection so retries cannot inflate totals. The underlying
+Supabase profile, day, and Run tables remain row-owned and unavailable to
+anonymous callers. Anonymous leaderboard, profile, and Run reads go through
+allowlisted security-definer functions that filter on the profile's enabled
+state. Public values are therefore recorded by Exawatt with stated assurance,
+not independently verified claims. GitHub seeds V1 identity, while the stored
+identity shape remains provider-neutral for later operator classes.
+
 #### Agency control spine
 
 Visibility, authorization, evidence, and enforcement form a cross-cutting spine
@@ -472,6 +504,11 @@ Built:
   authenticated server-owned structured labeling, durable last-good failure
   behavior, immediate correction, a repository gold corpus, and a reusable
   authenticated product-feedback intake with private optional screenshots
+- ENG-035 operator-statistics foundation: a pure source-neutral Run/day/rank
+  kernel, conservative Claude Code and Codex Consumption adapter, strict
+  aggregate-only payload parser, operator-triggered Electron-main scan IPC,
+  authenticated idempotent sync/disable API, and RLS-backed Supabase aggregate
+  schema with enabled-only anonymous leaderboard/profile/Run projections
 
 Implemented:
 
@@ -500,6 +537,9 @@ Planned:
 - secrets/configuration strategy
 - hosted OpenClaw / remote harnesses
 - multi-source fleet aggregation
+- exact live Run lifecycle adapters beyond the conservative timestamped
+  Consumption projection, and additional public identity providers beyond the
+  GitHub-seeded V1 boundary
 - Intel/universal desktop artifacts when supported-customer evidence requires
   them; the initial signed channel targets arm64
 

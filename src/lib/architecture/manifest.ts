@@ -511,6 +511,18 @@ export const architectureManifest = {
           height: 74,
         },
         {
+          id: 'operator-public-surfaces',
+          label: 'Operator Public Surfaces',
+          summary:
+            'Opt-in global ranks, public operator identity, activity field, and aggregate Run receipts; GitHub seeds V1 identity without becoming the profile model.',
+          layer: 'ui',
+          status: 'active-build',
+          x: 0,
+          y: 180,
+          width: 185,
+          height: 74,
+        },
+        {
           id: 'spatial-operations-board',
           label: 'Fleet Operations Board',
           summary:
@@ -667,6 +679,18 @@ export const architectureManifest = {
           height: 76,
         },
         {
+          id: 'operator-stats-projection',
+          label: 'Operator Stats Projection',
+          summary:
+            'Pure Run/day/rank derivation, conservative Consumption adaptation, versioned aggregate-only payload validation, and explicit evidence assurance.',
+          layer: 'coordination',
+          status: 'implemented',
+          x: 870,
+          y: 475,
+          width: 235,
+          height: 76,
+        },
+        {
           id: 'context-label-engine',
           label: 'Session Context Inference',
           summary:
@@ -754,7 +778,7 @@ export const architectureManifest = {
           id: 'supabase-data',
           label: 'Supabase Data + Artifacts',
           summary:
-            'Auth, inference and goal-visual quota, RLS-owned product feedback, private feedback and goal-visual images, hosted app data, and the anonymous signed desktop update channel.',
+            'Auth, inference and goal-visual quota, RLS-owned product feedback and operator aggregates, enabled-only public stat projections, private feedback and goal-visual images, hosted app data, and the anonymous signed desktop update channel.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 760,
@@ -801,7 +825,19 @@ export const architectureManifest = {
         { from: 'command-navigation', to: 'terminal-workspace' },
         { from: 'command-navigation', to: 'spatial-operations-board' },
         { from: 'command-navigation', to: 'consumption-surface' },
+        {
+          from: 'operator-public-surfaces',
+          to: 'operator-stats-projection',
+        },
+        {
+          from: 'operator-public-surfaces',
+          to: 'supabase-data',
+        },
         { from: 'consumption-surface', to: 'consumption-spine' },
+        {
+          from: 'operator-stats-projection',
+          to: 'consumption-spine',
+        },
         { from: 'consumption-spine', to: 'demo-harness' },
         { from: 'consumption-spine', to: 'source-adapters', style: 'dashed' },
         { from: 'terminal-workspace', to: 'fleet-provider' },
@@ -830,6 +866,10 @@ export const architectureManifest = {
         { from: 'electron-shell', to: 'openclaw-client' },
         { from: 'electron-shell', to: 'supabase-data' },
         { from: 'electron-shell', to: 'context-label-engine' },
+        {
+          from: 'electron-shell',
+          to: 'operator-stats-projection',
+        },
         { from: 'context-label-engine', to: 'supabase-data' },
         { from: 'context-label-engine', to: 'goal-visual-service' },
         { from: 'goal-visual-service', to: 'supabase-data' },
@@ -855,6 +895,7 @@ export const architectureManifest = {
     'Session context labels follow submitted operator intent, never PTY output volume; one hosted inference path improves a durable last-good label while failures retain it.',
     'Goal visuals are quiet projections of accepted Session context: semantic pivots own revision cadence, server-only generation owns provider credentials, and Demo/Live share deterministic fallback behavior.',
     'Product feedback is explicit authenticated evidence with row ownership and private attachments; inference evidence is not persisted as feedback automatically.',
+    'Public operator statistics are an opt-in aggregate projection over local Session and Consumption facts: preview stays local, uploads are allowlisted, and disabling public visibility leaves local history untouched.',
     'Agent sources are replaceable harnesses behind explicit adapters.',
     'A new Agent launch shows and pins the source-resolved model/effort pair; per-Agent overrides do not rewrite harness configuration, and dominant environment constraints stay explicit.',
     'Recent conversation discovery is Project-scoped, local-first, and source-neutral; exact identity reconciles Exawatt Session history with harness history before optional hosted title augmentation.',

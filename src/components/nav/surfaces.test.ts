@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { APP_SURFACES, isAppRoute, surfaceById, surfacesByTier } from './surfaces';
+import {
+  APP_SURFACES,
+  isAppRoute,
+  surfaceById,
+  surfacesByTier,
+} from './surfaces';
 
 describe('isAppRoute', () => {
   it.each([
@@ -24,6 +29,9 @@ describe('isAppRoute', () => {
     '/terms',
     '/sign-in',
     '/sign-up',
+    '/agentmaxxing',
+    '/operator/jake',
+    '/run/abc123def456',
     '/deck',
     // retired legacy demo trio (decision 0023)
     '/fleet',

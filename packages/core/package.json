@@ -7,18 +7,32 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "require": "./dist-cjs/index.js",
+      "import": "./src/index.ts",
       "default": "./src/index.ts"
     },
     "./server": {
       "types": "./dist/server.d.ts",
+      "require": "./dist-cjs/server.js",
+      "import": "./src/server.ts",
       "default": "./src/server.ts"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "server": [
+        "dist/server.d.ts"
+      ],
+      "*": [
+        "dist/index.d.ts"
+      ]
     }
   },
   "scripts": {
     "test": "vitest run",
     "test:run": "vitest run",
     "type-check": "tsc --noEmit",
-    "types:build": "tsc -p tsconfig.types.json"
+    "types:build": "tsc -p tsconfig.types.json && tsc -p tsconfig.runtime.json && node scripts/write-runtime-package.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

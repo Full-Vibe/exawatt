@@ -55,4 +55,5 @@ export type {
   SessionLink,
 } from './roadmap/types';
 export * from './consumption/index';
+export * from './operator-stats/index';
 export * from './demo/index';

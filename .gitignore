@@ -21,6 +21,7 @@
 # production
 /build
 /packages/core/dist/
+/packages/core/dist-cjs/
 
 # misc
 .DS_Store

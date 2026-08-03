@@ -76,8 +76,12 @@ describe('proxy offline authority', () => {
     '/architecture',
     '/api/context-labels',
     '/api/feedback',
+    '/api/operator-stats',
+    '/agentmaxxing?metric=command&window=week',
+    '/operator/jakesc',
+    '/run/run_0ba96afb076e97c3f76b5384',
     '/',
-  ])('never performs network I/O for public path %s', async (path) => {
+  ])('never performs network I/O for public path %s', async path => {
     const fetchSpy = vi.fn(() => {
       throw new Error('network call from a public-path navigation');
     });
@@ -104,9 +108,7 @@ describe('proxy offline authority', () => {
   });
 
   it('fails open on protected paths when validation cannot reach the network', async () => {
-    const fetchSpy = vi.fn(() =>
-      Promise.reject(new TypeError('fetch failed'))
-    );
+    const fetchSpy = vi.fn(() => Promise.reject(new TypeError('fetch failed')));
     vi.stubGlobal('fetch', fetchSpy);
 
     const response = await proxy(request('/admin', sessionCookie()));
