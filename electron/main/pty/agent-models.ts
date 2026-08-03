@@ -118,13 +118,24 @@ function claudeModel(
   };
 }
 
+// Claude Code has no catalog command, so this list is static and must be kept
+// in sync with `claude /model` by hand whenever a new alias ships.
 const CLAUDE_MODELS: AgentModelOption[] = [
   claudeModel(
     'default',
     'Account default',
     'Claude Code chooses the recommended model for your account.'
   ),
-  claudeModel('opus', 'Opus', 'Most capable Claude model for complex work.'),
+  claudeModel(
+    'opus',
+    'Opus',
+    'Balanced Claude model for everyday, complex work.'
+  ),
+  claudeModel(
+    'fable',
+    'Fable',
+    'Most capable Claude model for the hardest, longest-running work.'
+  ),
   claudeModel(
     'sonnet',
     'Sonnet',
