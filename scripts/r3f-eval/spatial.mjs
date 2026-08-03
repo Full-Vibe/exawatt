@@ -5,9 +5,10 @@
  * Run: EXA_BASE=http://localhost:7000 pnpm eval:spatial
  */
 import { chromium } from 'playwright-core';
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveQaBrowserLaunchOptions } from '../lib/qa-browser.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPORT_DIR = join(__dirname, 'spatial-report');
@@ -20,37 +21,6 @@ const HARD_FAIL = [
   'context lost',
   'WebGL context',
 ];
-
-function resolveChromium() {
-  try {
-    const expected = chromium.executablePath();
-    if (expected && existsSync(expected)) return undefined;
-  } catch {
-    // Try known Playwright caches below.
-  }
-  const home = process.env.HOME || '';
-  const roots = [
-    join(home, 'Library/Caches/ms-playwright'),
-    join(home, '.cache/ms-playwright'),
-  ];
-  for (const root of roots) {
-    if (!existsSync(root)) continue;
-    for (const directory of readdirSync(root)) {
-      if (!directory.startsWith('chromium')) continue;
-      for (const candidate of [
-        join(
-          root,
-          directory,
-          'chrome-mac/Chromium.app/Contents/MacOS/Chromium'
-        ),
-        join(root, directory, 'chrome-linux/chrome'),
-      ]) {
-        if (existsSync(candidate)) return candidate;
-      }
-    }
-  }
-  return null;
-}
 
 function check(condition, message) {
   if (!condition) throw new Error(message);
@@ -673,17 +643,9 @@ const scenarios = [
 ];
 
 mkdirSync(REPORT_DIR, { recursive: true });
-const executablePath = resolveChromium();
-if (executablePath === null) {
-  console.error(
-    '[spatial-eval] Chromium not found. Run: npx playwright install chromium'
-  );
-  process.exit(2);
-}
-
 const browser = await chromium.launch({
   headless: !HEADED,
-  executablePath: executablePath || undefined,
+  ...(await resolveQaBrowserLaunchOptions(chromium)),
 });
 const results = [];
 try {

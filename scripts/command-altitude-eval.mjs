@@ -1,56 +1,21 @@
 #!/usr/bin/env node
 
 import { chromium } from 'playwright-core';
-import { existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { resolveQaBrowserLaunchOptions } from './lib/qa-browser.mjs';
 
 const BASE = process.env.EXA_BASE || 'http://localhost:7000';
 const SCREENSHOT_DIR =
   process.env.NAV_SCREENSHOT_DIR || '/tmp/exawatt-command-altitude';
 
-function resolveChromium() {
-  try {
-    const expected = chromium.executablePath();
-    if (expected && existsSync(expected)) return undefined;
-  } catch {
-    // Fall through to cache scan.
-  }
-
-  const home = process.env.HOME || '';
-  const roots = [
-    join(home, 'Library/Caches/ms-playwright'),
-    join(home, '.cache/ms-playwright'),
-  ];
-  for (const root of roots) {
-    if (!existsSync(root)) continue;
-    for (const dir of readdirSync(root)) {
-      if (!dir.startsWith('chromium')) continue;
-      const candidates = [
-        join(root, dir, 'chrome-mac/Chromium.app/Contents/MacOS/Chromium'),
-        join(root, dir, 'chrome-linux/chrome'),
-      ];
-      for (const candidate of candidates) {
-        if (existsSync(candidate)) return candidate;
-      }
-    }
-  }
-  return null;
-}
-
 function requireState(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-const executablePath = resolveChromium();
-if (executablePath === null) {
-  throw new Error(
-    'Chromium is unavailable. Run `pnpm exec playwright install chromium`.'
-  );
-}
-
 const browser = await chromium.launch({
   headless: true,
-  executablePath: executablePath || undefined,
+  ...(await resolveQaBrowserLaunchOptions(chromium)),
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];

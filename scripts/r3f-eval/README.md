@@ -38,8 +38,10 @@ EXA_BASE=http://localhost:7090 pnpm eval:r3f
 # or start one first:  pnpm dev   (serves :7000)  ->  EXA_BASE=http://localhost:7000 pnpm eval:r3f
 ```
 
-Needs a Chromium once: `npx playwright install chromium` (the runner resolves it
-from the default `ms-playwright` cache, with fallbacks).
+Run `pnpm qa:browser:doctor` once. On macOS the runner uses the repository's
+stable signed-browser boundary (Google Chrome first, signed Brave fallback) so
+the network helper retains a durable Little Snitch identity. Other platforms
+retain Playwright's managed-browser behavior.
 
 ## Spatial Command full-route battery
 

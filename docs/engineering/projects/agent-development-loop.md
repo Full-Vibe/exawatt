@@ -27,6 +27,27 @@ wrong checkout.
 
 ## Findings log
 
+- 2026-08-03, Playwright 1.61's managed macOS browser revisions were all
+  ad-hoc signed: the outer Chrome for Testing app and its network-facing helper
+  had no Team Identifier, their designated requirements were CDHash-only, and
+  strict verification failed. Little Snitch 6.4.1 therefore stalled short-lived
+  browser connections behind approval alerts, while Playwright upgrades changed
+  both the cache path and CDHash. Three distinct browser PIDs on 2026-08-02 used
+  the exact same revision/path within 78 minutes, falsifying fresh bundle IDs as
+  the cause of same-revision repeats; process-pair/profile/pending-alert scope
+  remained external rule-state variables and is no longer an operator burden.
+  The agent loop now owns `scripts/lib/qa-browser.mjs`: on macOS it prefers
+  signed Google Chrome, falls back to signed Brave, verifies the main and
+  network-helper Team identity, and refuses managed Chrome for Testing unless
+  an agent explicitly opts into `EXAWATT_QA_BROWSER_ALLOW_UNSTABLE=1` for a
+  compatibility check. `pnpm worktree:setup` runs the identity-only doctor;
+  `pnpm qa:browser:smoke` drives hosted Exawatt or `EXA_BASE`. All checked-in
+  Chromium evals consume the same boundary. A recursive Developer ID re-sign
+  experiment passed cryptographic verification across Chrome 148/149 but broke
+  renderer startup because Chromium helpers need role-specific hardened-runtime
+  entitlements, so cache re-signing is rejected rather than shipped half-safe.
+  Full evidence and rerun commands live in incident `0002`.
+
 - 2026-08-02, rebasing across route removals left `.next/types/validator.ts`
   referring to pages that no longer existed. `pnpm type-check` then failed on
   generated history rather than the checked-out source until a production
@@ -98,7 +119,6 @@ Landed 2026-07-21:
 - eval-harness preflights in `withElectronApp`: the node-pty binding is asserted BEFORE launch (actionable remedy instead of the per-spawn `posix_spawnp` banner), and any `EXAWATT_DEV_URL` launch verifies the new dev-only `/api/dev-identity` route (public-prefixed, 404 outside development) — the harness refuses a dev server whose `repoRoot` realpath differs from the tree under test, fails fast with a start-a-dev-server remedy when nothing answers, and refuses an UNHEALTHY server (only a 404 identity-less older/prod tree is tolerated, with a warning) — the unhealthy case was diagnosed live during this pass when a stale `next-server` child survived its parent's kill after the D26 worktree was deleted and kept answering 500 on the port
 - bounded launch resilience: one sweep-orphans-and-retry on Playwright's "Process failed to launch!" (the observed transient), never more — a second failure surfaces
 - `scripts/electron-eval.test.mjs` (in `test:agent-delivery`) pins the preflight and identity-guard behaviors, including the WRONG TREE refusal and the tolerated identity-less (older/prod) server
-
 Exit criteria: a fresh worktree reaches a passing Electron eval with exactly `pnpm worktree:setup` + `pnpm dev -p <port>` + `EXA_BASE=... pnpm eval:...`, and pointing an eval at the wrong tree's dev server fails loudly instead of testing the wrong code — both validated 2026-07-21 (this item was itself landed from a worktree bootstrapped by the script; the split eval re-ran green through the guarded harness).
 
 Sequencing: independent; extend as new agent-loop friction is diagnosed (fold future findings here rather than into product items).

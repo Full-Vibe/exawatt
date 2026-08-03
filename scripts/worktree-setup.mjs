@@ -26,6 +26,11 @@ const mainCheckout = execSync('git worktree list --porcelain', { cwd: root })
 say('pnpm install');
 run('pnpm install --prefer-offline');
 
+if (process.platform === 'darwin') {
+  say('verifying stable signed QA browser identity');
+  run('pnpm qa:browser:doctor');
+}
+
 const env = prepareWorktreeEnv({
   root,
   mainCheckout,

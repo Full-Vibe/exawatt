@@ -8,36 +8,13 @@
  * Run: EXA_BASE=http://localhost:7100 pnpm eval:spatial:pointer
  */
 import { chromium } from 'playwright-core';
-import { existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { resolveQaBrowserLaunchOptions } from './lib/qa-browser.mjs';
 
 const BASE = process.env.EXA_BASE || 'http://localhost:7100';
 const OUT = '/tmp/exa-spatial-v24-nav';
 mkdirSync(OUT, { recursive: true });
-
-function resolveChromium() {
-  try {
-    const expected = chromium.executablePath();
-    if (expected && existsSync(expected)) return undefined;
-  } catch {}
-  const home = process.env.HOME || '';
-  for (const root of [
-    join(home, 'Library/Caches/ms-playwright'),
-    join(home, '.cache/ms-playwright'),
-  ]) {
-    if (!existsSync(root)) continue;
-    for (const dir of readdirSync(root)) {
-      if (!dir.startsWith('chromium')) continue;
-      for (const c of [
-        join(root, dir, 'chrome-mac/Chromium.app/Contents/MacOS/Chromium'),
-        join(root, dir, 'chrome-linux/chrome'),
-      ]) {
-        if (existsSync(c)) return c;
-      }
-    }
-  }
-  return null;
-}
 
 const results = [];
 const check = (name, ok) => {
@@ -47,7 +24,7 @@ const check = (name, ok) => {
 
 const browser = await chromium.launch({
   headless: true,
-  executablePath: resolveChromium() || undefined,
+  ...(await resolveQaBrowserLaunchOptions(chromium)),
 });
 
 // --- Main context: pointer navigation ---

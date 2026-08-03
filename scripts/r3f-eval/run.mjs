@@ -12,9 +12,10 @@
  * tasks T3–T6, a real-GPU/xvfb CI runner.
  */
 import { chromium } from 'playwright-core';
-import { existsSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { resolveQaBrowserLaunchOptions } from '../lib/qa-browser.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPORT_DIR = join(__dirname, 'report');
@@ -96,45 +97,11 @@ const HARD_FAIL = [
   'WebGL context',
 ];
 
-/** Resolve a Chromium executable: default cache, else known fallbacks. */
-function resolveChromium() {
-  // 1) playwright-core's expected path in the default ms-playwright cache
-  try {
-    const p = chromium.executablePath();
-    if (p && existsSync(p)) return undefined; // undefined => let playwright use it
-  } catch {
-    /* fall through */
-  }
-  // 2) scan common caches for any installed chromium
-  const home = process.env.HOME || '';
-  const roots = [
-    join(home, 'Library/Caches/ms-playwright'),
-    join(home, '.cache/ms-playwright'),
-    '/tmp/exa-pw/node_modules/playwright-core/.local-browsers',
-  ];
-  for (const root of roots) {
-    if (!existsSync(root)) continue;
-    for (const dir of readdirSync(root)) {
-      if (!dir.startsWith('chromium')) continue;
-      const candidates = [
-        join(root, dir, 'chrome-mac/Chromium.app/Contents/MacOS/Chromium'),
-        join(root, dir, 'chrome-linux/chrome'),
-      ];
-      for (const c of candidates) if (existsSync(c)) return c;
-    }
-  }
-  return null;
-}
-
 async function launch() {
-  const exe = resolveChromium();
-  if (exe === null) {
-    console.error(
-      '\n[r3f-eval] Chromium not found. Install it once:\n  npx playwright install chromium\n'
-    );
-    process.exit(2);
-  }
-  return chromium.launch({ headless: true, executablePath: exe || undefined });
+  return chromium.launch({
+    headless: true,
+    ...(await resolveQaBrowserLaunchOptions(chromium)),
+  });
 }
 
 async function runTask(browser, task) {
@@ -835,6 +802,16 @@ async function runTask(browser, task) {
       await homePage.bringToFront();
       await homePage.setViewportSize({ width: 1440, height: 900 });
       await homePage.emulateMedia({ reducedMotion: 'reduce' });
+      // Next's dev image optimizer can stall while negotiating AVIF/WebP on
+      // this large hero asset. Request the source PNG so `load` remains a
+      // deterministic readiness signal for the visual battery.
+      await homePage.route('**/_next/image?**', async route => {
+        const headers = {
+          ...route.request().headers(),
+          accept: '*/*',
+        };
+        await route.continue({ headers });
+      });
       await homePage.goto(EXA_BASE, {
         waitUntil: 'load',
         timeout: 30_000,

@@ -24,9 +24,10 @@
  * the window on a non-primary display; otherwise stay headless.
  */
 import { chromium } from 'playwright-core';
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveQaBrowserLaunchOptions } from './lib/qa-browser.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPORT_DIR = join(__dirname, 'r3f-eval', 'scale-report');
@@ -40,33 +41,6 @@ const HARD_FAIL = [
   'context lost',
   'WebGL context',
 ];
-
-function resolveChromium() {
-  try {
-    const expected = chromium.executablePath();
-    if (expected && existsSync(expected)) return undefined;
-  } catch {
-    // Fall through to known caches.
-  }
-  const home = process.env.HOME || '';
-  const roots = [
-    join(home, 'Library/Caches/ms-playwright'),
-    join(home, '.cache/ms-playwright'),
-  ];
-  for (const root of roots) {
-    if (!existsSync(root)) continue;
-    for (const directory of readdirSync(root)) {
-      if (!directory.startsWith('chromium')) continue;
-      for (const candidate of [
-        join(root, directory, 'chrome-mac/Chromium.app/Contents/MacOS/Chromium'),
-        join(root, directory, 'chrome-linux/chrome'),
-      ]) {
-        if (existsSync(candidate)) return candidate;
-      }
-    }
-  }
-  return null;
-}
 
 function check(condition, message) {
   if (!condition) throw new Error(message);
@@ -240,13 +214,11 @@ async function sampleMotion(page, { kind, durationMs }) {
 
 async function run() {
   mkdirSync(REPORT_DIR, { recursive: true });
-  const executablePath = resolveChromium();
-  check(executablePath !== null, 'No Playwright Chromium found');
   const args = ['--enable-precise-memory-info'];
   if (HEADED && WINDOW_POS) args.push(`--window-position=${WINDOW_POS}`);
   const browser = await chromium.launch({
     headless: !HEADED,
-    executablePath,
+    ...(await resolveQaBrowserLaunchOptions(chromium)),
     args,
   });
   const results = [];
