@@ -20,6 +20,14 @@ export type RibbonToken =
       project: Project;
       tab: WorkspaceTab;
       priority: number;
+      /** D42: inactive-Project tabs render as glyph chips, never unmount.
+       *  Presentation only — identity, ring membership, and menus are the
+       *  same tab either way. */
+      condensed?: boolean;
+      /** D23 dead-chip treatment: a stopped, unselected, non-condensed tab
+       *  collapses its title. Part of the width-presentation model so the
+       *  selection-invariant height can tell these widths apart. */
+      titleCollapsed?: boolean;
     };
 
 export interface PresentRibbonToken {
@@ -133,10 +141,18 @@ export function useRibbonPresence(
   return present;
 }
 
+/** A condensed chip is glyphs-only: status + harness marks and padding. */
+export const CONDENSED_TAB_WIDTH = 46;
+
+/** A dead chip with a collapsed title: glyphs, lifecycle badge, close. */
+export const DEAD_COLLAPSED_TAB_WIDTH = 112;
+
 export function estimateRibbonTokenWidth(token: RibbonToken): number {
   if (token.kind === 'project') {
     return Math.min(210, Math.max(80, token.project.name.length * 7.2 + 56));
   }
+  if (token.condensed) return CONDENSED_TAB_WIDTH;
+  if (token.titleCollapsed) return DEAD_COLLAPSED_TAB_WIDTH;
   const title = token.tab.title || 'New agent';
   return Math.min(250, Math.max(92, title.length * 7.2 + 74));
 }

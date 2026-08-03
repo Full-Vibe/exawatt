@@ -26,9 +26,20 @@ import { HarnessGlyph } from './harness-icons';
 import {
   layoutProjectRibbon,
   orderProjectsForRibbon,
+  RIBBON_ROW_GAP,
   RIBBON_ROW_HEIGHT,
+  ribbonHeightForRows,
+  stableRibbonRows,
   type RibbonTarget,
 } from './project-ribbon-layout';
+import {
+  DRAG_THRESHOLD_PX,
+  dropIndexForPointer,
+  placementForOrder,
+  reorderTokensForProjectDrag,
+  reorderTokensForTabDrag,
+  slotCenter,
+} from './ribbon-reorder';
 import {
   ColorSwatches,
   EditableChrome,
@@ -81,6 +92,78 @@ interface Editing {
   kind: 'group' | 'tab';
   id: string;
   value: string;
+}
+
+/**
+ * Ribbon token order and admission priority (D42). Every Project's tabs are
+ * ALWAYS tokens — inactive Projects' tabs condense to glyph chips instead of
+ * unmounting, so per-Agent state, tab count, and ordinal-hint anchors survive
+ * collapse. Admission: the active Project's own work outranks every inactive
+ * Project's chrome, so your own next tab can never be invisible while another
+ * Project's chrome is.
+ *
+ *   0 active Project header
+ *   1 active tab
+ *   2 active Project's remaining tabs
+ *   3 inactive Project headers with fault / needs-you
+ *   4 other inactive Project headers
+ *   5 inactive tabs that need the operator
+ *   6 other inactive tabs
+ */
+export function buildRibbonTokens({
+  orderedProjects,
+  projects,
+  activeDir,
+  projectSignals,
+  attention,
+}: {
+  orderedProjects: readonly Project[];
+  projects: readonly Project[];
+  activeDir: string | null;
+  projectSignals: ReadonlyMap<string, string>;
+  attention: Record<string, SessionAttentionSignal>;
+}): RibbonToken[] {
+  const next: RibbonToken[] = [];
+  orderedProjects.forEach(project => {
+    const sourceProjectIndex = projects.findIndex(
+      candidate => candidate.dir === project.dir
+    );
+    const activeProject = project.dir === activeDir;
+    const signal = projectSignals.get(project.dir) ?? 'quiet';
+    next.push({
+      key: `project:${project.dir}`,
+      kind: 'project',
+      project,
+      sourceProjectIndex,
+      priority: activeProject
+        ? 0
+        : signal === 'fault' || signal === 'needs-you'
+          ? 3
+          : 4,
+    });
+    const condensed = !activeProject && project.ribbonExpanded !== true;
+    project.tabs.forEach(tab => {
+      const needsYou =
+        !!tab.sessionId && attentionNeedsOperator(attention[tab.sessionId]);
+      const selected = activeProject && tab.id === project.activeTabId;
+      next.push({
+        key: `tab:${tab.id}`,
+        kind: 'tab',
+        project,
+        tab,
+        condensed,
+        // mirrors the render-time dead-chip condition exactly: the height
+        // model must know this width differs between selection states
+        titleCollapsed:
+          !condensed &&
+          !tabIsLive(tab) &&
+          tab.lifecycle !== 'draft' &&
+          !selected,
+        priority: selected ? 1 : activeProject ? 2 : needsYou ? 5 : 6,
+      });
+    });
+  });
+  return next;
 }
 
 const FALLBACK_RIBBON_WIDTH = 900;
@@ -180,14 +263,31 @@ export function TabStrip({
   const heldCloseTimers = useRef(
     new Map<string, ReturnType<typeof setTimeout>>()
   );
-  const [drag, setDrag] = useState<{
+  // Pointer-based rearrangement (D42): the real chip follows the pointer
+  // while siblings re-target live; HTML5 DnD (ghost image, inset drop line)
+  // is gone. `engaged` flips once the pointer crosses the drag threshold so
+  // plain clicks never enter drag mode.
+  const [pointerDrag, setPointerDrag] = useState<{
     kind: 'tab' | 'project';
+    key: string;
     id: string;
     dir: string;
+    engaged: boolean;
+    startX: number;
+    startY: number;
+    grabDX: number;
+    grabDY: number;
+    x: number;
+    y: number;
+    index: number;
   } | null>(null);
-  const [hint, setHint] = useState<{
-    key: string;
-    place: 'before' | 'after';
+  const pointerDragRef = useRef<typeof pointerDrag>(null);
+  const justDraggedRef = useRef(false);
+  const activeGestureCleanupRef = useRef<(() => void) | null>(null);
+  const dragGeometryRef = useRef<{
+    tokens: RibbonToken[];
+    orderedTokens: RibbonToken[];
+    layout: ReturnType<typeof layoutProjectRibbon>;
   } | null>(null);
 
   const dormant = dormantProjectDirs ?? EMPTY_SET;
@@ -213,48 +313,29 @@ export function TabStrip({
       ),
     [activity, attention, delegation, engaged, projects, summaries]
   );
-  const tokens = useMemo<RibbonToken[]>(() => {
-    const next: RibbonToken[] = [];
-    orderedProjects.forEach(project => {
-      const sourceProjectIndex = projects.findIndex(
-        candidate => candidate.dir === project.dir
-      );
-      const activeProject = project.dir === activeDir;
-      const projectSignal = projectSignals.get(project.dir) ?? 'quiet';
-      next.push({
-        key: `project:${project.dir}`,
-        kind: 'project',
-        project,
-        sourceProjectIndex,
-        priority: activeProject
-          ? 0
-          : projectSignal === 'fault' || projectSignal === 'needs-you'
-            ? 2
-            : 3,
-      });
-      if (activeProject || project.ribbonExpanded === true) {
-        project.tabs.forEach(tab =>
-          next.push({
-            key: `tab:${tab.id}`,
-            kind: 'tab',
-            project,
-            tab,
-            priority:
-              activeProject && tab.id === project.activeTabId
-                ? 1
-                : activeProject
-                  ? 4
-                  : 5,
-          })
-        );
-      }
-    });
-    return next;
-  }, [activeDir, orderedProjects, projectSignals, projects]);
-  const presentTokens = useRibbonPresence(tokens, heldCloseKeys);
+  const tokens = useMemo<RibbonToken[]>(
+    () =>
+      buildRibbonTokens({
+        orderedProjects,
+        projects,
+        activeDir,
+        projectSignals,
+        attention,
+      }),
+    [activeDir, attention, orderedProjects, projectSignals, projects]
+  );
+  // While a drag is engaged, the strip renders the HYPOTHETICAL order so
+  // siblings make room live; commit happens only on release.
+  const orderedTokens = useMemo(() => {
+    if (!pointerDrag?.engaged) return tokens;
+    return pointerDrag.kind === 'tab'
+      ? reorderTokensForTabDrag(tokens, pointerDrag.key, pointerDrag.index)
+      : reorderTokensForProjectDrag(tokens, pointerDrag.id, pointerDrag.index);
+  }, [pointerDrag, tokens]);
+  const presentTokens = useRibbonPresence(orderedTokens, heldCloseKeys);
   const currentKeys = useMemo(
-    () => new Set(tokens.map(token => token.key)),
-    [tokens]
+    () => new Set(orderedTokens.map(token => token.key)),
+    [orderedTokens]
   );
 
   const layoutEntries = useMemo(
@@ -274,11 +355,74 @@ export function TabStrip({
             itemWidths[entry.token.key] ??
             estimateRibbonTokenWidth(entry.token),
           priority: entry.token.priority,
+          parentId:
+            entry.token.kind === 'tab'
+              ? `project:${entry.token.project.dir}`
+              : undefined,
         })),
         containerWidth
       ),
     [containerWidth, itemWidths, layoutEntries]
   );
+
+  // The strip's outer height is SELECTION-INVARIANT (D42): reserve the rows
+  // the tallest hypothetical selection needs, so switching Projects can never
+  // resize the terminal below. Measured widths apply when a token's current
+  // presentation matches the hypothetical one; estimates cover the rest.
+  const stableRows = useMemo(() => {
+    // A token's measured width is only reusable in a variant whose visual
+    // presentation matches the currently rendered one — condensed chips,
+    // dead collapsed-title chips, and full tabs all have different widths.
+    const presentationOf = (token: RibbonToken) =>
+      token.kind === 'tab'
+        ? `${token.condensed === true}|${token.titleCollapsed === true}`
+        : 'project';
+    const currentPresentation = new Map(
+      tokens.map(token => [token.key, presentationOf(token)])
+    );
+    const liveProjects = projects.filter(
+      project => !exiting.has(project.dir)
+    );
+    const variants = liveProjects.map(candidate => {
+      // Selecting a dormant Project un-dorms it (it returns to its manual
+      // slot), and packing is order-sensitive — each hypothetical must
+      // model the order its own selection would produce.
+      const dormantForVariant = dormant.has(candidate.dir)
+        ? new Set([...dormant].filter(dir => dir !== candidate.dir))
+        : dormant;
+      return buildRibbonTokens({
+        orderedProjects: orderProjectsForRibbon(
+          liveProjects,
+          dormantForVariant
+        ),
+        projects,
+        activeDir: candidate.dir,
+        projectSignals,
+        attention,
+      }).map(token => ({
+        id: token.key,
+        width:
+          currentPresentation.get(token.key) === presentationOf(token)
+            ? (itemWidths[token.key] ?? estimateRibbonTokenWidth(token))
+            : estimateRibbonTokenWidth(token),
+        priority: token.priority,
+        parentId:
+          token.kind === 'tab' ? `project:${token.project.dir}` : undefined,
+      }));
+    });
+    return stableRibbonRows(variants, containerWidth);
+  }, [
+    attention,
+    containerWidth,
+    dormant,
+    exiting,
+    itemWidths,
+    projectSignals,
+    projects,
+    tokens,
+  ]);
+  const stripRows = Math.max(stableRows, layout.rows);
+  const stripHeight = ribbonHeightForRows(stripRows);
 
   useLayoutEffect(() => {
     for (const [key, target] of layout.targets) {
@@ -487,20 +631,208 @@ export function TabStrip({
     return ordinals;
   }, [projects]);
 
-  const endDrag = () => {
-    setDrag(null);
-    setHint(null);
-  };
-  const dropPlace = (event: React.DragEvent): 'before' | 'after' => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
-  };
-  const hintShadow = (key: string, color: string): string | undefined =>
-    hint?.key === key
-      ? hint.place === 'before'
-        ? `inset 3px 0 0 0 ${color}`
-        : `inset -3px 0 0 0 ${color}`
-      : undefined;
+  dragGeometryRef.current = { tokens, orderedTokens, layout };
+
+  const endPointerDrag = useCallback(
+    (commit: boolean) => {
+      const current = pointerDragRef.current;
+      pointerDragRef.current = null;
+      document.body.style.userSelect = '';
+      if (current?.engaged) {
+        // The release click must not select whatever chip sits under the
+        // pointer. The UA dispatches that click in the same input task as
+        // pointerup — BEFORE any queued timeout, but AFTER microtasks — so
+        // a macrotask clear covers the click and still resets promptly when
+        // no click follows (release outside the press target).
+        justDraggedRef.current = true;
+        setTimeout(() => {
+          justDraggedRef.current = false;
+        }, 0);
+        const geometry = dragGeometryRef.current;
+        if (commit && geometry) {
+          if (current.kind === 'tab') {
+            const ids = (list: RibbonToken[]) =>
+              list
+                .filter(
+                  token =>
+                    token.kind === 'tab' && token.project.dir === current.dir
+                )
+                .map(token => (token.kind === 'tab' ? token.tab.id : ''));
+            const placement = placementForOrder(
+              ids(geometry.tokens),
+              ids(geometry.orderedTokens),
+              current.id
+            );
+            if (placement) {
+              onReorderTab?.(current.id, placement.targetId, placement.place);
+            }
+          } else {
+            const dirs = (list: RibbonToken[]) =>
+              list
+                .filter(token => token.kind === 'project')
+                .map(token => token.project.dir);
+            const placement = placementForOrder(
+              dirs(geometry.tokens),
+              dirs(geometry.orderedTokens),
+              current.id
+            );
+            if (placement) {
+              onReorderProject?.(
+                current.id,
+                placement.targetId,
+                placement.place
+              );
+            }
+          }
+        }
+      }
+      setPointerDrag(null);
+    },
+    [onReorderProject, onReorderTab]
+  );
+
+  const beginPointerDrag = useCallback(
+    (
+      event: React.PointerEvent,
+      params: { kind: 'tab' | 'project'; key: string; id: string; dir: string }
+    ) => {
+      if (event.button !== 0 || editing || pointerDragRef.current) return;
+      if ((event.target as HTMLElement).closest('[data-ribbon-passive]')) {
+        return;
+      }
+      const rect = containerRef.current?.getBoundingClientRect();
+      const node = itemNodesRef.current.get(params.key);
+      if (!rect || !node) return;
+      const nodeRect = node.getBoundingClientRect();
+      const gesturePointerId = event.pointerId;
+      const start = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      };
+      const candidate = {
+        ...params,
+        engaged: false,
+        startX: start.x,
+        startY: start.y,
+        grabDX: event.clientX - nodeRect.left,
+        grabDY: event.clientY - nodeRect.top,
+        x: start.x,
+        y: start.y,
+        index: 0,
+      };
+      pointerDragRef.current = candidate;
+      setPointerDrag(candidate);
+      // Escape reverts the visuals immediately but the gesture stays armed
+      // until the REAL release, so the release click is still suppressed.
+      let canceled = false;
+
+      const suppressReleaseClick = () => {
+        // The UA dispatches the post-release click in the same input task
+        // as pointerup — before any queued timeout, after microtasks — so
+        // a macrotask clear covers the click and still resets promptly
+        // when no click follows.
+        justDraggedRef.current = true;
+        setTimeout(() => {
+          justDraggedRef.current = false;
+        }, 0);
+      };
+      const onMove = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== gesturePointerId) return;
+        const active = pointerDragRef.current;
+        const bounds = containerRef.current?.getBoundingClientRect();
+        if (!active || !bounds) return;
+        const x = moveEvent.clientX - bounds.left;
+        const y = moveEvent.clientY - bounds.top;
+        let engaged = active.engaged;
+        if (!engaged) {
+          if (
+            Math.hypot(x - active.startX, y - active.startY) <
+            DRAG_THRESHOLD_PX
+          ) {
+            pointerDragRef.current = { ...active, x, y };
+            return;
+          }
+          engaged = true;
+          document.body.style.userSelect = 'none';
+        }
+        const geometry = dragGeometryRef.current;
+        let index = active.index;
+        if (geometry) {
+          const siblings =
+            active.kind === 'tab'
+              ? geometry.orderedTokens.filter(
+                  token =>
+                    token.kind === 'tab' &&
+                    token.project.dir === active.dir &&
+                    token.key !== active.key
+                )
+              : geometry.orderedTokens.filter(
+                  token =>
+                    token.kind === 'project' && token.key !== active.key
+                );
+          const centers = siblings
+            .map(token => geometry.layout.targets.get(token.key))
+            .filter((target): target is RibbonTarget => !!target)
+            .map(slotCenter);
+          index = dropIndexForPointer(
+            centers,
+            { x, y },
+            RIBBON_ROW_HEIGHT + RIBBON_ROW_GAP
+          );
+        }
+        const next = { ...active, engaged, x, y, index };
+        pointerDragRef.current = next;
+        setPointerDrag(next);
+      };
+      const onKey = (keyEvent: KeyboardEvent) => {
+        if (keyEvent.key === 'Escape' && pointerDragRef.current?.engaged) {
+          keyEvent.stopPropagation();
+          canceled = true;
+          pointerDragRef.current = null;
+          document.body.style.userSelect = '';
+          setPointerDrag(null);
+        }
+      };
+      const onUp = (upEvent: PointerEvent) => {
+        if (upEvent.pointerId !== gesturePointerId) return;
+        cleanup();
+        if (canceled) {
+          suppressReleaseClick();
+          return;
+        }
+        endPointerDrag(true);
+      };
+      const onCancel = (cancelEvent: PointerEvent) => {
+        if (cancelEvent.pointerId !== gesturePointerId) return;
+        cleanup();
+        if (!canceled) endPointerDrag(false);
+      };
+      const cleanup = () => {
+        activeGestureCleanupRef.current = null;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onCancel);
+        window.removeEventListener('keydown', onKey, true);
+      };
+      activeGestureCleanupRef.current = cleanup;
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onCancel);
+      window.addEventListener('keydown', onKey, true);
+    },
+    [editing, endPointerDrag]
+  );
+
+  // Unmounting mid-gesture must release the window listeners and the
+  // user-select lock without committing anything through stale closures.
+  useEffect(
+    () => () => {
+      activeGestureCleanupRef.current?.();
+      pointerDragRef.current = null;
+      document.body.style.userSelect = '';
+    },
+    []
+  );
 
   const itemStyle = (
     entry: PresentRibbonToken,
@@ -521,6 +853,35 @@ export function TabStrip({
           itemWidths[entry.token.key] ?? estimateRibbonTokenWidth(entry.token),
       };
     const leaving = entry.phase === 'exiting' || projectExiting;
+    // The dragged chip tracks the pointer 1:1 — no transition, elevated,
+    // slightly lifted. Siblings keep the shared eased re-targeting.
+    if (pointerDrag?.engaged && pointerDrag.key === entry.token.key) {
+      const dragX = Math.max(
+        -8,
+        Math.min(pointerDrag.x - pointerDrag.grabDX, containerWidth - 24)
+      );
+      const dragY = Math.max(
+        -4,
+        Math.min(
+          pointerDrag.y - pointerDrag.grabDY,
+          stripHeight - RIBBON_ROW_HEIGHT + 4
+        )
+      );
+      return {
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        transformOrigin: 'left center',
+        transform: `translate3d(${dragX}px, ${dragY}px, 0) scale(1.03)`,
+        opacity: 1,
+        pointerEvents: 'none',
+        zIndex: 30,
+        cursor: 'grabbing',
+        boxShadow: '0 6px 18px rgba(0,0,0,0.5)',
+        transitionProperty: 'none',
+        willChange: 'transform',
+      };
+    }
     return {
       position: 'absolute',
       left: 0,
@@ -554,14 +915,15 @@ export function TabStrip({
       data-workspace-tab-strip
       data-ordinal-hints={ordinalHints ?? undefined}
       data-ribbon-rows={layout.rows}
+      data-ribbon-stable-rows={stripRows}
       data-ribbon-hidden={hiddenCurrentCount || undefined}
       className="relative min-w-0 overflow-hidden"
       style={{
-        height: layout.height,
+        // Never a height transition (D42): height moves only on data changes
+        // and SNAPS, so the terminal below absorbs exactly one resize per
+        // real change and zero per Project switch.
+        height: stripHeight,
         minHeight: projects.length > 0 ? RIBBON_ROW_HEIGHT : 0,
-        transition: reducedMotion
-          ? 'none'
-          : `height ${RIBBON_MOTION_MS}ms cubic-bezier(0.25, 1, 0.5, 1)`,
       }}
       onPointerLeave={() => releaseHeldClose()}
     >
@@ -658,32 +1020,20 @@ export function TabStrip({
               data-close-stabilized={heldCloseKeys.has(token.key) || undefined}
               inert={!visible}
               aria-hidden={!visible || undefined}
-              draggable={!editing && !projectExiting}
-              onDragStart={event => {
-                event.dataTransfer.effectAllowed = 'move';
-                setDrag({
+              onPointerDown={event => {
+                if (projectExiting || !onReorderProject) return;
+                beginPointerDrag(event, {
                   kind: 'project',
+                  key: token.key,
                   id: project.dir,
                   dir: project.dir,
                 });
               }}
-              onDragEnd={endDrag}
-              onDragOver={event => {
-                if (drag?.kind !== 'project' || drag.id === project.dir) return;
-                event.preventDefault();
-                event.dataTransfer.dropEffect = 'move';
-                setHint({ key: `p:${project.dir}`, place: dropPlace(event) });
-              }}
-              onDragLeave={() =>
-                setHint(current =>
-                  current?.key === `p:${project.dir}` ? null : current
-                )
-              }
-              onDrop={event => {
-                if (drag?.kind !== 'project' || drag.id === project.dir) return;
-                event.preventDefault();
-                onReorderProject?.(drag.id, project.dir, dropPlace(event));
-                endDrag();
+              onClickCapture={event => {
+                if (justDraggedRef.current) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }
               }}
               onContextMenu={event => {
                 event.preventDefault();
@@ -710,13 +1060,7 @@ export function TabStrip({
                   : dormantProject
                     ? 'rgba(138,160,190,0.018)'
                     : 'rgba(138,160,190,0.035)',
-                boxShadow: hintShadow(`p:${project.dir}`, color),
-                filter:
-                  drag?.kind === 'project' && drag.id === project.dir
-                    ? 'opacity(.5)'
-                    : dormantProject
-                      ? 'opacity(.62)'
-                      : undefined,
+                filter: dormantProject ? 'opacity(.62)' : undefined,
               }}
             >
               <EditableChrome
@@ -796,6 +1140,7 @@ export function TabStrip({
               {onToggleProjectExpanded && (
                 <button
                   type="button"
+                  data-ribbon-passive
                   disabled={project.tabs.length === 0}
                   aria-hidden={project.tabs.length === 0 || undefined}
                   tabIndex={visible && project.tabs.length > 0 ? 0 : -1}
@@ -830,6 +1175,7 @@ export function TabStrip({
         }
 
         const tab = token.tab;
+        const condensed = token.condensed === true;
         const on = groupActive && tab.id === project.activeTabId;
         const dead = !tabIsLive(tab);
         const summary = summaries[tab.durableSessionId];
@@ -945,51 +1291,27 @@ export function TabStrip({
             data-project-parent={project.dir}
             data-tab-id={tab.id}
             data-tab-harness={tab.harness}
+            data-tab-condensed={condensed || undefined}
             data-durable-session-id={tab.durableSessionId}
             data-active={on || undefined}
             data-close-stabilized={heldCloseKeys.has(token.key) || undefined}
             inert={!visible}
             aria-hidden={!visible || undefined}
-            draggable={!editing}
-            onDragStart={event => {
+            onPointerDown={event => {
+              if (!onReorderTab) return;
               event.stopPropagation();
-              event.dataTransfer.effectAllowed = 'move';
-              setDrag({ kind: 'tab', id: tab.id, dir: project.dir });
+              beginPointerDrag(event, {
+                kind: 'tab',
+                key: token.key,
+                id: tab.id,
+                dir: project.dir,
+              });
             }}
-            onDragEnd={event => {
-              event.stopPropagation();
-              endDrag();
-            }}
-            onDragOver={event => {
-              if (
-                drag?.kind !== 'tab' ||
-                drag.dir !== project.dir ||
-                drag.id === tab.id
-              ) {
-                return;
+            onClickCapture={event => {
+              if (justDraggedRef.current) {
+                event.preventDefault();
+                event.stopPropagation();
               }
-              event.preventDefault();
-              event.stopPropagation();
-              event.dataTransfer.dropEffect = 'move';
-              setHint({ key: `t:${tab.id}`, place: dropPlace(event) });
-            }}
-            onDragLeave={() =>
-              setHint(current =>
-                current?.key === `t:${tab.id}` ? null : current
-              )
-            }
-            onDrop={event => {
-              if (
-                drag?.kind !== 'tab' ||
-                drag.dir !== project.dir ||
-                drag.id === tab.id
-              ) {
-                return;
-              }
-              event.preventDefault();
-              event.stopPropagation();
-              onReorderTab?.(drag.id, tab.id, dropPlace(event));
-              endDrag();
             }}
             onContextMenu={event => {
               event.preventDefault();
@@ -1005,16 +1327,10 @@ export function TabStrip({
             className="group/tab flex h-7 w-max origin-left items-center overflow-hidden rounded-md border"
             style={{
               ...itemStyle(entry, projectExiting),
-              boxShadow: hintShadow(`t:${tab.id}`, color),
               borderColor: on ? `${color}9c` : 'rgba(138,160,190,0.17)',
               borderBottomColor: on ? color : `${color}38`,
               background: on ? `${color}15` : 'rgba(138,160,190,0.035)',
-              filter:
-                drag?.kind === 'tab' && drag.id === tab.id
-                  ? 'opacity(.5)'
-                  : dead
-                    ? 'opacity(.74)'
-                    : undefined,
+              filter: dead ? 'opacity(.74)' : undefined,
             }}
           >
             <EditableChrome
@@ -1043,7 +1359,9 @@ export function TabStrip({
                     ? 'needs your attention'
                     : SESSION_GLYPH_LABEL[glyphState]
               }`}
-              title={`${tab.cwd}${summary ? `\n${summary}` : ''}${
+              title={`${condensed ? `${display.primary}\n` : ''}${tab.cwd}${
+                summary ? `\n${summary}` : ''
+              }${
                 needsYou ? '\nneeds your attention (⌘J jumps here)' : ''
               }${
                 !dead && !needsYou ? `\n${SESSION_GLYPH_COPY[glyphState]}` : ''
@@ -1054,7 +1372,9 @@ export function TabStrip({
                   ? '⏎ starts · ⌘W discards'
                   : '⌘W closes — kept in Recently closed'
               }\ndouble-click to rename`}
-              className="relative flex h-full min-w-0 cursor-pointer items-center gap-1.5 px-2 font-mono text-chrome-title font-medium outline-none transition-transform duration-100 active:scale-[0.98] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan"
+              className={`relative flex h-full min-w-0 cursor-pointer items-center font-mono text-chrome-title font-medium outline-none transition-transform duration-100 active:scale-[0.98] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan ${
+                condensed ? 'gap-1 px-1.5' : 'gap-1.5 px-2'
+              }`}
               style={{ color: on ? HUD.text : HUD.textDim }}
             >
               {ordinal !== undefined && ordinalHints === 'tabs' && (
@@ -1070,7 +1390,7 @@ export function TabStrip({
                   fault={fault}
                 />
               ) : null}
-              {!dead && !isDraft && (
+              {!dead && !isDraft && !condensed && (
                 <DelegationDots color={color} delegation={tabDelegation} />
               )}
               {tab.id === pinnedTabId && (
@@ -1084,7 +1404,10 @@ export function TabStrip({
                 </span>
               )}
               {tab.harness !== 'shell' && !isDraft && (
-                <span className="shrink-0" style={{ color }}>
+                <span
+                  className={`shrink-0 ${condensed ? 'opacity-55' : ''}`}
+                  style={{ color }}
+                >
                   <HarnessGlyph harness={tab.harness} size={11} />
                 </span>
               )}
@@ -1102,7 +1425,7 @@ export function TabStrip({
                     onPick={next => onSetProjectColor(project.dir, next)}
                   />
                 </>
-              ) : (
+              ) : condensed ? null : (
                 <span
                   data-condensed={(dead && !isDraft && !on) || undefined}
                   className={`block overflow-hidden whitespace-nowrap font-sans leading-tight transition-[max-width,opacity] duration-200 motion-reduce:transition-none ${
@@ -1120,7 +1443,23 @@ export function TabStrip({
                   </span>
                 </span>
               )}
-              {dead && !isDraft && (
+              {dead && !isDraft && condensed && (
+                <span
+                  aria-hidden
+                  className="text-[9px] leading-none"
+                  style={{
+                    color:
+                      tab.lifecycle === 'interrupted'
+                        ? HUD.amber
+                        : tab.lifecycle === 'failed'
+                          ? HUD.red
+                          : HUD.textDim,
+                  }}
+                >
+                  ○
+                </span>
+              )}
+              {dead && !isDraft && !condensed && (
                 <span
                   aria-label={stoppedStatus}
                   className="shrink-0 border border-white/10 px-1 py-0.5 text-chrome-meta font-medium leading-none"
@@ -1137,39 +1476,44 @@ export function TabStrip({
                 </span>
               )}
             </EditableChrome>
-            {summary && isAgent && !isDraft && onRateContext && (
-              <ContextLabelFeedback
-                label={summary}
-                enabled={feedbackEnabled}
-                onRate={(sentiment, betterLabel) =>
-                  onRateContext({
-                    durableSessionId: tab.durableSessionId,
-                    label: summary,
-                    sentiment,
-                    betterLabel,
-                    projectName: project.name,
-                  })
-                }
-              />
+            {summary && isAgent && !isDraft && !condensed && onRateContext && (
+              <span data-ribbon-passive className="contents">
+                <ContextLabelFeedback
+                  label={summary}
+                  enabled={feedbackEnabled}
+                  onRate={(sentiment, betterLabel) =>
+                    onRateContext({
+                      durableSessionId: tab.durableSessionId,
+                      label: summary,
+                      sentiment,
+                      betterLabel,
+                      projectName: project.name,
+                    })
+                  }
+                />
+              </span>
             )}
-            <button
-              type="button"
-              tabIndex={visible ? 0 : -1}
-              onPointerDown={event => {
-                if (event.button === 0) armPointerClose(token.key);
-              }}
-              onClick={() => onCloseTab(tab.id)}
-              aria-label={`Close ${display.primary}`}
-              title={
-                isDraft
-                  ? 'Discard (⌘W)'
-                  : 'Close — kept in Recently closed for 14 days (⌘W)'
-              }
-              className="mr-0.5 grid size-6 shrink-0 cursor-pointer place-items-center rounded font-mono text-chrome-label font-normal opacity-45 outline-none transition-[opacity,background-color] duration-100 group-hover/tab:opacity-100 hover:bg-white/8 hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
-              style={{ color: HUD.textDim }}
-            >
-              ×
-            </button>
+            {!condensed && (
+              <button
+                type="button"
+                data-ribbon-passive
+                tabIndex={visible ? 0 : -1}
+                onPointerDown={event => {
+                  if (event.button === 0) armPointerClose(token.key);
+                }}
+                onClick={() => onCloseTab(tab.id)}
+                aria-label={`Close ${display.primary}`}
+                title={
+                  isDraft
+                    ? 'Discard (⌘W)'
+                    : 'Close — kept in Recently closed for 14 days (⌘W)'
+                }
+                className="mr-0.5 grid size-6 shrink-0 cursor-pointer place-items-center rounded font-mono text-chrome-label font-normal opacity-45 outline-none transition-[opacity,background-color] duration-100 group-hover/tab:opacity-100 hover:bg-white/8 hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                style={{ color: HUD.textDim }}
+              >
+                ×
+              </button>
+            )}
           </div>
         );
       })}

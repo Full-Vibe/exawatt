@@ -1,7 +1,8 @@
 # 0022 Adopt an elastic Project / Initiative ribbon
 
 Date: 2026-07-27
-Status: accepted, expected to evolve with the Initiative primitive
+Status: accepted, expected to evolve with the Initiative primitive.
+AMENDED 2026-08-02 by ENG-016 D42 — see the Amendment section below.
 
 ## Context
 
@@ -76,3 +77,32 @@ This decision amends decision `0013`'s 2026-07-22 close-last-Agent behavior and
 ENG-016 D37. Durable Project opening remains separate from Agent launch; only
 automatic deletion of the exhausted open group is reversed. It also evolves
 D20's arrangeable strip without changing its manual-order or keyboard contract.
+
+## Amendment (2026-08-02, ENG-016 D42)
+
+The first sustained dogfood round found that collapse-by-unmounting destroyed
+information (tab count, per-Agent needs-you/blocked, ordinal-hint anchors),
+that the animated strip height relayouted the terminal on every row-flipping
+switch, and that admission priorities could hide the active Project's own next
+tab while inactive chrome stayed. The disclosure and motion model evolves:
+
+- Inactive Projects' tabs CONDENSE in place to glyph chips (status + dimmed
+  source mark, identity in the tooltip) instead of unmounting. Selection is a
+  presentation change on stable nodes, not an exit/enter storm. The persisted
+  **Keep expanded** disclosure now means "full-width when inactive".
+- The strip's outer height is selection-invariant: it reserves the rows of
+  the tallest hypothetical selection (`stableRibbonRows`), changes only on
+  data changes, and SNAPS without a transition — zero terminal resizes per
+  switch, exactly one per row-flipping open/close.
+- Admission priority puts the active Project's remaining tabs ahead of every
+  inactive Project's chrome, and a tab is only admissible alongside its
+  Project header (no orphan chips).
+- Rearrangement is pointer-based: the real chip follows the pointer with
+  live sibling re-targeting through the same pure layout engine; HTML5
+  drag-and-drop and its inset drop line are deleted.
+
+The two-row budget, manual order, dormant empty-Project tail, explicit-close
+verbs, overview overflow route, and Reduced Motion contract stand unchanged.
+For inactive-Project tabs this narrows ENG-021 E1.1's visible-identity rule:
+condensed chips carry glyph identity plus tooltip; visible text identity is
+owed by the active and explicitly disclosed Projects' tabs.

@@ -5,6 +5,8 @@ import {
   RIBBON_OVERFLOW_WIDTH,
   RIBBON_ROW_HEIGHT,
   RIBBON_ROW_GAP,
+  ribbonHeightForRows,
+  stableRibbonRows,
 } from './project-ribbon-layout';
 
 const item = (id: string, width = 100, priority = 4) => ({
@@ -73,6 +75,48 @@ describe('layoutProjectRibbon', () => {
     expect(layout.height).toBe(RIBBON_ROW_HEIGHT * 2 + RIBBON_ROW_GAP);
     expect(layout.visibleIds.has('initiative-31')).toBe(true);
     expect(layout.hiddenIds.length).toBeGreaterThan(20);
+  });
+});
+
+describe('parent-dependent admission (D42)', () => {
+  it('never admits a tab whose Project header is hidden', () => {
+    // header is wide and low-priority; its chip is narrow and would fit
+    const items = [
+      item('keep-header', 100, 0),
+      { id: 'keep-tab', width: 100, priority: 1, parentId: 'keep-header' },
+      item('wide-header', 400, 4),
+      { id: 'orphan-tab', width: 30, priority: 6, parentId: 'wide-header' },
+    ];
+    const layout = layoutProjectRibbon(items, 240);
+    expect(layout.visibleIds.has('wide-header')).toBe(false);
+    expect(layout.visibleIds.has('orphan-tab')).toBe(false);
+    expect(layout.hiddenIds).toContain('orphan-tab');
+  });
+
+  it('admits the dependent normally once its parent fits', () => {
+    const items = [
+      item('header', 80, 0),
+      { id: 'tab', width: 80, priority: 2, parentId: 'header' },
+    ];
+    const layout = layoutProjectRibbon(items, 400);
+    expect(layout.visibleIds.has('tab')).toBe(true);
+  });
+});
+
+describe('stableRibbonRows (D42 selection-invariant height)', () => {
+  it('reserves the rows of the tallest hypothetical selection', () => {
+    const oneRow = [item('a', 100), item('b', 100)];
+    const twoRows = [item('a', 100), item('b', 100), item('c', 300)];
+    expect(stableRibbonRows([oneRow, twoRows], 320)).toBe(2);
+    expect(stableRibbonRows([oneRow], 320)).toBe(1);
+  });
+
+  it('is zero only when every variant is empty', () => {
+    expect(stableRibbonRows([[], []], 400)).toBe(0);
+    expect(ribbonHeightForRows(0)).toBe(0);
+    expect(ribbonHeightForRows(2)).toBe(
+      RIBBON_ROW_HEIGHT * 2 + RIBBON_ROW_GAP
+    );
   });
 });
 

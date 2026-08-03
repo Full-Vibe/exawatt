@@ -445,6 +445,27 @@ export function RibbonDogfoodBench() {
                     })
                   );
                 }}
+                onReorderProject={(dir, targetDir, place) => {
+                  beginGesture();
+                  setProjects(current => {
+                    const from = current.findIndex(
+                      project => project.dir === dir
+                    );
+                    if (from === -1) return current;
+                    const next = [...current];
+                    const [moved] = next.splice(from, 1);
+                    const anchor = next.findIndex(
+                      project => project.dir === targetDir
+                    );
+                    if (anchor === -1) return current;
+                    next.splice(
+                      place === 'before' ? anchor : anchor + 1,
+                      0,
+                      moved
+                    );
+                    return next;
+                  });
+                }}
                 onToggleProjectExpanded={dir =>
                   setProjects(current =>
                     current.map(project =>

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { TabStrip } from './tab-strip';
+import { buildRibbonTokens, TabStrip } from './tab-strip';
 import type { Project, WorkspaceTab } from './use-workspace-state';
 
 function tab(id: string): WorkspaceTab {
@@ -75,15 +75,26 @@ function ribbon({
 }
 
 describe('elastic Project ribbon behavior', () => {
-  it('auto-expands only the selected Project and keeps inactive work compact', () => {
+  it('expands the selected Project and condenses inactive work in place (D42)', () => {
     const projects = [
       project('/alpha', [tab('a1'), tab('a2')]),
       project('/beta', [tab('b1'), tab('b2')]),
     ];
     const { container } = ribbon({ projects, activeDir: '/alpha' });
     expect(container.querySelector('[data-tab-id="a1"]')).not.toBeNull();
-    expect(container.querySelector('[data-tab-id="a2"]')).not.toBeNull();
-    expect(container.querySelector('[data-tab-id="b1"]')).toBeNull();
+    expect(
+      container.querySelector('[data-tab-id="a1"][data-tab-condensed]')
+    ).toBeNull();
+    // inactive tabs stay RENDERED — count, per-Agent state, and ordinal
+    // anchors survive collapse — but condensed to glyph chips: no visible
+    // title, no close affordance
+    const b1 = container.querySelector('[data-tab-id="b1"]');
+    expect(b1).not.toBeNull();
+    expect(b1).toHaveAttribute('data-tab-condensed');
+    expect(b1?.textContent).not.toContain('Initiative b1');
+    expect(
+      b1?.querySelector('[aria-label="Close Initiative b1"]')
+    ).toBeNull();
     expect(container.querySelector('[data-project="beta"]')).toHaveAttribute(
       'data-ribbon-expanded',
       'false'
@@ -97,7 +108,10 @@ describe('elastic Project ribbon behavior', () => {
     ];
     const { container } = ribbon({ projects, activeDir: '/alpha' });
     expect(container.querySelector('[data-tab-id="a1"]')).not.toBeNull();
-    expect(container.querySelector('[data-tab-id="b1"]')).not.toBeNull();
+    const b1 = container.querySelector('[data-tab-id="b1"]');
+    expect(b1).not.toBeNull();
+    // a persisted disclosure keeps the inactive Project's tabs FULL-width
+    expect(b1).not.toHaveAttribute('data-tab-condensed');
     expect(container.querySelector('[data-project="beta"]')).toHaveAttribute(
       'data-ribbon-expanded',
       'true'
@@ -142,7 +156,7 @@ describe('elastic Project ribbon behavior', () => {
     ).toEqual(['alpha', 'beta', 'empty-a', 'empty-b']);
   });
 
-  it('rolls hidden Agent attention into a compact inactive Project signal', () => {
+  it('keeps per-Agent attention visible on condensed chips AND the Project signal', () => {
     const projects = [
       project('/alpha', [tab('a1')]),
       project('/beta', [tab('b1')]),
@@ -156,7 +170,11 @@ describe('elastic Project ribbon behavior', () => {
     expect(
       beta?.querySelector('[data-project-signal="needs-you"]')
     ).not.toBeNull();
-    expect(container.querySelector('[data-tab-id="b1"]')).toBeNull();
+    // D42: the belled Agent itself stays visible as a condensed chip whose
+    // own status glyph carries needs-you — not only the aggregate dot
+    const b1 = container.querySelector('[data-tab-id="b1"]');
+    expect(b1).toHaveAttribute('data-tab-condensed');
+    expect(b1?.querySelector('[data-attention]')).not.toBeNull();
   });
 
   it('admits a late attention-bearing Project ahead of quiet overflow', () => {
@@ -180,6 +198,84 @@ describe('elastic Project ribbon behavior', () => {
           (element as HTMLElement).style.opacity === '0'
       )
     ).toBe(true);
+  });
+
+  it('keeps the strip height identical across Project switches (D42)', () => {
+    const projects = [
+      project(
+        '/dense',
+        Array.from({ length: 6 }, (_, index) =>
+          tab(`dense-${index}-with-a-long-goal-label`)
+        )
+      ),
+      project('/sparse', [tab('solo')]),
+    ];
+    const { container, rerender } = ribbon({
+      projects,
+      activeDir: '/dense',
+    });
+    const strip = () =>
+      container.querySelector('[data-workspace-tab-strip]') as HTMLElement;
+    const before = strip().style.height;
+    const stableBefore = strip().getAttribute('data-ribbon-stable-rows');
+    rerender(
+      <TooltipProvider>
+        <TabStrip
+          projects={projects}
+          activeDir="/sparse"
+          pinnedTabId={null}
+          summaries={{}}
+          attention={{}}
+          activity={{}}
+          onSelectProject={vi.fn()}
+          onSelectTab={vi.fn()}
+          onCloseTab={vi.fn()}
+          onRenameTab={vi.fn()}
+          onRenameProject={vi.fn()}
+          onSetProjectColor={vi.fn()}
+          onToggleProjectExpanded={vi.fn()}
+        />
+      </TooltipProvider>
+    );
+    expect(strip().style.height).toBe(before);
+    expect(strip().getAttribute('data-ribbon-stable-rows')).toBe(stableBefore);
+    // and the height carries no transition to animate through
+    expect(strip().style.transition).toBe('');
+  });
+
+  it('models the dead-chip title collapse in the width presentation (D42)', () => {
+    // A stopped, unselected tab of an expanded-but-inactive Project renders
+    // with a collapsed title; when its Project is active AND it is selected,
+    // the title shows. The height model must see these as different widths
+    // or a pure selection change could flip the reserved rows.
+    const stopped: WorkspaceTab = {
+      ...tab('dead-1'),
+      sessionId: null,
+      resumeState: 'ended-resumable',
+      lifecycle: 'exited',
+    };
+    const projects = [
+      project('/alpha', [tab('a1')]),
+      { ...project('/beta', [stopped, tab('b2')], true), activeTabId: 'dead-1' },
+    ];
+    const inactive = buildRibbonTokens({
+      orderedProjects: projects,
+      projects,
+      activeDir: '/alpha',
+      projectSignals: new Map(),
+      attention: {},
+    }).find(token => token.key === 'tab:dead-1');
+    const active = buildRibbonTokens({
+      orderedProjects: projects,
+      projects,
+      activeDir: '/beta',
+      projectSignals: new Map(),
+      attention: {},
+    }).find(token => token.key === 'tab:dead-1');
+    expect(
+      inactive?.kind === 'tab' && inactive.titleCollapsed
+    ).toBe(true);
+    expect(active?.kind === 'tab' && active.titleCollapsed).toBe(false);
   });
 
   it('bounds dense active work to two rows with an overview affordance', () => {

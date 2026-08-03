@@ -16,6 +16,10 @@ export interface RibbonLayoutInput {
   width: number;
   /** Lower numbers survive overflow first. */
   priority: number;
+  /** Admission dependency: this item may only be visible while `parentId`
+   *  is (a tab never renders without its Project header). Parents must
+   *  carry a stricter priority than their dependents. */
+  parentId?: string;
 }
 
 export interface RibbonTarget {
@@ -117,6 +121,11 @@ export function layoutProjectRibbon(
   };
 
   for (const candidate of byPriority) {
+    // An orphan chip beside a hidden Project header reads as belonging to
+    // its visible neighbor; a dependent is only admissible with its parent.
+    if (candidate.item.parentId && !admitted.has(candidate.item.parentId)) {
+      continue;
+    }
     const proposed = new Set(admitted).add(candidate.item.id);
     const ordered = items.filter(item => proposed.has(item.id));
     if (pack([...ordered, overflow], width, maxRows)) {
@@ -145,6 +154,35 @@ export function layoutProjectRibbon(
     rows,
     height: rows * RIBBON_ROW_HEIGHT + (rows - 1) * RIBBON_ROW_GAP,
   };
+}
+
+/**
+ * The strip's outer height must be SELECTION-INVARIANT (D42): switching
+ * Projects may never resize the terminal below. Callers pass one item list
+ * per hypothetical selection (each Project active in turn); the reserved
+ * row count is the maximum any selection needs, so no switch can change it.
+ * Only data changes — open/close — move this number, and the container
+ * snaps rather than animating it.
+ */
+export function stableRibbonRows(
+  variants: ReadonlyArray<readonly RibbonLayoutInput[]>,
+  availableWidth: number,
+  options?: { maxRows?: number; overflowWidth?: number }
+): number {
+  return variants.reduce(
+    (rows, items) =>
+      items.length === 0
+        ? rows
+        : Math.max(
+            rows,
+            layoutProjectRibbon(items, availableWidth, options).rows
+          ),
+    0
+  );
+}
+
+export function ribbonHeightForRows(rows: number): number {
+  return rows <= 0 ? 0 : rows * RIBBON_ROW_HEIGHT + (rows - 1) * RIBBON_ROW_GAP;
 }
 
 /** Stable partition: manual order survives within each side of the divider. */
