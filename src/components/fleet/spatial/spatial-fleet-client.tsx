@@ -53,7 +53,8 @@ import {
 } from '@/components/status-light';
 import { useAppearance } from '@/components/appearance/appearance-provider';
 import {
-  spatialColorWithAlpha,
+  spatialFaultCallout,
+  spatialNeedsOperatorCallout,
   spatialThemeFromResolvedAppearance,
 } from './spatial-theme';
 
@@ -79,6 +80,14 @@ export function SpatialFleetClient() {
   const spatialTheme = useMemo(
     () => spatialThemeFromResolvedAppearance(resolvedAppearance),
     [resolvedAppearance]
+  );
+  const needsOperatorCallout = useMemo(
+    () => spatialNeedsOperatorCallout(spatialTheme),
+    [spatialTheme]
+  );
+  const faultCallout = useMemo(
+    () => spatialFaultCallout(spatialTheme),
+    [spatialTheme]
   );
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -831,23 +840,23 @@ export function SpatialFleetClient() {
                   <div
                     className="mt-4 rounded-md border p-3 text-sm"
                     style={{
-                      borderColor: spatialColorWithAlpha(
-                        spatialTheme.destructive,
-                        0.36
-                      ),
-                      background: spatialColorWithAlpha(
-                        spatialTheme.destructive,
-                        0.1
-                      ),
-                      color: spatialTheme.destructive,
+                      borderColor: needsOperatorCallout.border,
+                      background: needsOperatorCallout.background,
+                      color: needsOperatorCallout.text,
                     }}
                   >
                     <div className="flex items-center gap-2 font-semibold">
-                      <AlertTriangle className="h-4 w-4" />
+                      <AlertTriangle
+                        className="h-4 w-4"
+                        style={{ color: needsOperatorCallout.signal }}
+                      />
                       {inspectedAgent.blockerTitle ?? 'Needs operator'}
                     </div>
                     {inspectedAgent.blockerDescription && (
-                      <p className="mt-2 line-clamp-3 opacity-75">
+                      <p
+                        className="mt-2 line-clamp-3"
+                        style={{ color: needsOperatorCallout.detail }}
+                      >
                         {inspectedAgent.blockerDescription}
                       </p>
                     )}
@@ -859,15 +868,9 @@ export function SpatialFleetClient() {
                     role="alert"
                     className="mt-4 border p-3 text-sm leading-5"
                     style={{
-                      borderColor: spatialColorWithAlpha(
-                        spatialTheme.destructive,
-                        0.36
-                      ),
-                      background: spatialColorWithAlpha(
-                        spatialTheme.destructive,
-                        0.1
-                      ),
-                      color: spatialTheme.destructive,
+                      borderColor: faultCallout.border,
+                      background: faultCallout.background,
+                      color: faultCallout.text,
                     }}
                   >
                     {sessionHandoffError}

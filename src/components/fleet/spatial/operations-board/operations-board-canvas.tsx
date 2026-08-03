@@ -1338,6 +1338,7 @@ function StatusMarkLayer({
   const signalDisks = [...result, ...needsYou, ...fault];
   const geometries = useMemo(
     () => ({
+      backing: new THREE.CircleGeometry(0.34, 32),
       ring: new THREE.RingGeometry(0.18, 0.28, 32),
       offSegment: new THREE.RingGeometry(0.21, 0.27, 8, 1, 0, Math.PI / 4),
       rotor: new THREE.CircleGeometry(0.2, 24, -Math.PI / 2, Math.PI),
@@ -1378,6 +1379,25 @@ function StatusMarkLayer({
 
   return (
     <>
+      {agentPieces.length > 0 && (
+        <Instances
+          geometry={geometries.backing}
+          limit={1024}
+          range={agentPieces.length}
+          renderOrder={1}
+        >
+          <meshBasicMaterial toneMapped={false} depthWrite={false} />
+          {agentPieces.map(piece => (
+            <Instance
+              {...instance(piece)}
+              color={theme.markBacking}
+              key={`status-backing:${piece.id}`}
+              position={[piece.x, -piece.y, 0.91]}
+              raycast={() => null}
+            />
+          ))}
+        </Instances>
+      )}
       {rotating.length > 0 && (
         <Instances
           geometry={geometries.ring}
@@ -1431,8 +1451,7 @@ function StatusMarkLayer({
         >
           <meshBasicMaterial
             toneMapped={false}
-            transparent
-            opacity={0.48}
+            opacity={1}
             depthWrite={false}
           />
           {off.flatMap(piece =>

@@ -96,3 +96,29 @@ and ENG-036's type scale/channel separation remain authoritative.
 The full implementation sequence, file ownership, verification matrix, and
 rollout gates live in
 `docs/engineering/projects/theming-and-visual-identity.md` under ENG-032.
+
+## Amendment — renderer-only native material in V1
+
+The bounded T4 native-material spike closed on 2026-08-03 with **renderer-only
+material for V1**.
+
+Electron 43.1 exposes macOS `setVibrancy()` and Windows
+`setBackgroundMaterial()`, but these platform APIs paint behind the window or
+non-client area. On the signed-app-compatible macOS window shape, applying
+`under-window` vibrancy at runtime succeeded yet produced a byte-identical
+before/after capture: Exawatt's launch floor and operational renderer are
+intentionally opaque. Forcing the document root and window background
+transparent at runtime still exposed no native material because the window was
+not constructed as transparent and production content planes own opaque
+grounds. Windows system backdrop material is additionally limited to Windows
+11 22H2+, while Linux and hosted web have no equivalent output.
+
+Making native material visible would therefore require a construction-time
+transparent-window architecture plus translucent renderer roots, expanding the
+startup, active/inactive, capture, power, forced-color, and reduced-transparency
+contract far beyond a bounded adapter. That conflicts with V1's guaranteed
+opaque fallback and flash-free launch continuity. Exawatt will not patch around
+Electron with a lower-level transparent-window workaround. The generated
+`chrome`, `overlay`, and `raised` renderer roles remain the portable material
+output; every role retains its authored opaque fallback. Native material may be
+reconsidered only as a separately shaped window-architecture change.

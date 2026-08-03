@@ -6,17 +6,17 @@ discovery, and (once approved) the executable milestone detail.
 
 ## Current phase
 
-**Active build — T0 through T3 landed; T4 is active.** The versioned
+**Active build — T0 through T4 landed; T5 rollout is active.** The versioned
 contract, device-local resolver/runtime, strict Electron settings and
 first-paint bootstrap, and the gallery-accepted Air/Night visual family are
 implemented. Root app chrome, Settings, shared overlays, feedback, readiness,
 Workspace/Roadmap/status paint, live plus retained xterm terminals, and the
-Usage/Consumption surface now consume the same generated snapshot. Terminal
-palette changes update existing
-instances in place without remount, replay, resize, or data loss. The temporary
-workbench still exercises the pending Fleet adapter. Production
-resolves only the shipped Classic appearance;
-Air and Night cannot be persisted or selected before the T5 rollout gate.
+Usage/Consumption surface and Fleet Operations Board now consume the same
+generated snapshot. Terminal and Fleet theme changes update existing instances
+in place without remount, replay, resize, camera/filter/selection reset, or data
+loss. The temporary workbench now serves only the pending T5 rollout gate.
+Production resolves only the shipped Classic appearance; Air and Night cannot
+be persisted or selected before the T5 rollout gate.
 
 The originating operator signal is broader than dark-versus-light: the current
 fonts and colors feel “ultra-geeky” and insufficiently readable; users should be
@@ -818,3 +818,20 @@ no packet privately extends the contract to solve a local color.
   Project/source identity remains data. Evidence: adapter/channel tests,
   material-popover tests, mounted-surface repaint tests, Classic/Air/Night
   screenshots, full tests, lint, type-check, and production build.
+- 2026-08-03, T4 landed: replaced production Operations Board canvas and DOM
+  presentation constants with one pure concrete-sRGB adapter over the resolved
+  snapshot. Canvas, grids, Project zones, units, labels, selection, D40 status,
+  Consumption pressure, materials, and bloom now update in place; Project
+  identity remains a stable data palette corrected against the final tinted
+  zone. Air is complete without bloom. A review pass added a stable mark backing
+  so D40/Consumption colors meet 3:1 against their actual composited ground,
+  restored needs-you versus fault semantics in inspector callouts, and made
+  enhanced contrast materially strengthen WebGL paint. Theme changes preserve
+  the canvas, camera, filters, selection, Project truth, and Demo/Live source.
+  The bounded Electron 43.1 native-material spike closed renderer-only: macOS
+  `under-window` vibrancy was callable but byte-identical behind Exawatt's opaque
+  renderer, and a transparent-window architecture would violate the bounded V1
+  startup/accessibility contract. Evidence: adapter/callout/composition tests,
+  Classic/Air/Night screenshots, `eval:r3f` 100/100 (15 Operations Board calls,
+  zero warnings), all eight spatial scenarios, 10,000-unit scale evidence, and
+  an Air screenshot review after the contrast fix.

@@ -49,6 +49,8 @@ export interface SpatialThemeSnapshot {
   selectionWash: string;
   unit: string;
   unitMuted: string;
+  /** Stable ground directly beneath every D40/Consumption unit mark. */
+  markBacking: string;
   label: string;
   labelMuted: string;
   emissive: string;
@@ -119,6 +121,26 @@ export function spatialThemeFromResolvedAppearance(
 ): SpatialThemeSnapshot {
   const { theme } = resolved;
   const { spatial } = theme;
+  const enhanced = resolved.enhancedContrast;
+  const grid = enhanced
+    ? correctAccentContrast(spatial.grid, spatial.canvas, spatial.label, 3)
+    : spatial.grid;
+  const gridMajor = enhanced
+    ? correctAccentContrast(spatial.grid, spatial.canvas, spatial.label, 4.5)
+    : mixHexColors(spatial.grid, spatial.labelMuted, 0.18);
+  const zone = enhanced
+    ? mixHexColors(
+        spatial.zone,
+        spatial.label,
+        theme.appearance === 'light' ? 0.12 : 0.18
+      )
+    : spatial.zone;
+  const unit = enhanced
+    ? correctAccentContrast(spatial.unit, spatial.canvas, spatial.label, 4.5)
+    : spatial.unit;
+  const unitMuted = enhanced
+    ? correctAccentContrast(spatial.unitMuted, spatial.canvas, spatial.label, 3)
+    : spatial.unitMuted;
   const status = Object.freeze({
     off: theme.status.off,
     active: theme.status.active,
@@ -140,16 +162,20 @@ export function spatialThemeFromResolvedAppearance(
     enhancedContrast: resolved.enhancedContrast,
     reducedTransparency: resolved.reducedTransparency,
     canvas: spatial.canvas,
-    grid: spatial.grid,
-    gridMajor: mixHexColors(spatial.grid, spatial.labelMuted, 0.18),
-    zone: spatial.zone,
-    zoneHover: mixHexColors(spatial.zone, spatial.unitMuted, 0.36),
+    grid,
+    gridMajor,
+    zone,
+    zoneHover: mixHexColors(zone, unitMuted, enhanced ? 0.52 : 0.36),
     selection: spatial.selection,
-    selectionWash: spatialColorWithAlpha(spatial.selection, 0.1),
-    unit: spatial.unit,
-    unitMuted: spatial.unitMuted,
+    selectionWash: spatialColorWithAlpha(
+      spatial.selection,
+      enhanced ? 0.18 : 0.1
+    ),
+    unit,
+    unitMuted,
+    markBacking: spatial.canvas,
     label: spatial.label,
-    labelMuted: spatial.labelMuted,
+    labelMuted: enhanced ? spatial.label : spatial.labelMuted,
     emissive: spatial.emissive,
     emissiveActive: spatial.emissiveActive,
     focus: theme.foundation.focus,
@@ -175,6 +201,40 @@ export function spatialThemeFromResolvedAppearance(
       shadowSource,
       theme.appearance === 'light' ? 0.16 : 0.48
     ),
+  });
+}
+
+export interface SpatialCalloutTheme {
+  background: string;
+  border: string;
+  text: string;
+  detail: string;
+  signal: string;
+}
+
+/** D40 operator gates keep needs-you semantics without sacrificing body copy. */
+export function spatialNeedsOperatorCallout(
+  theme: SpatialThemeSnapshot
+): SpatialCalloutTheme {
+  return Object.freeze({
+    background: theme.material.raised.fallback,
+    border: theme.status['needs-you'],
+    text: theme.label,
+    detail: theme.labelMuted,
+    signal: theme.status['needs-you'],
+  });
+}
+
+/** Fault handoff messages use the authored solid destructive text pair. */
+export function spatialFaultCallout(
+  theme: SpatialThemeSnapshot
+): SpatialCalloutTheme {
+  return Object.freeze({
+    background: theme.destructive,
+    border: theme.destructive,
+    text: theme.destructiveText,
+    detail: theme.destructiveText,
+    signal: theme.destructiveText,
   });
 }
 

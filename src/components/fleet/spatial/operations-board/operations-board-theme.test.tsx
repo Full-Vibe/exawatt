@@ -111,7 +111,9 @@ describe('Operations Board appearance semantics', () => {
   it('projects one resolved snapshot into matching DOM and R3F siblings', () => {
     const air = resolveTheme('exawatt-air-light');
     const view = render(surface(air));
-    const root = view.container.querySelector('[data-spatial-board]')!;
+    const root = view.container.querySelector<HTMLElement>(
+      '[data-spatial-board]'
+    )!;
     const canvas = view.container.querySelector('[data-mocked-board-canvas]')!;
 
     expect(root).toHaveAttribute('data-spatial-theme', air.themeId);
@@ -135,7 +137,9 @@ describe('Operations Board appearance semantics', () => {
     const air = resolveTheme('exawatt-air-light');
     const night = resolveTheme('exawatt-night-dark');
     const view = render(surface(air));
-    const root = view.container.querySelector('[data-spatial-board]')!;
+    const root = view.container.querySelector<HTMLElement>(
+      '[data-spatial-board]'
+    )!;
     const canvas = view.container.querySelector('[data-mocked-board-canvas]')!;
 
     view.rerender(surface(night));

@@ -8,6 +8,8 @@ import type {
 } from '@/lib/appearance/types';
 import {
   SPATIAL_PROJECT_IDENTITY_PALETTE,
+  spatialFaultCallout,
+  spatialNeedsOperatorCallout,
   spatialPressureColor,
   spatialProjectIdentityColor,
   spatialProjectZoneFill,
@@ -90,6 +92,47 @@ describe('spatial theme adapter', () => {
     }
   });
 
+  it.each([
+    'exawatt-classic-dark',
+    'exawatt-air-light',
+    'exawatt-night-dark',
+  ] as const)(
+    'gives every D40 and Consumption mark a contrast-safe actual ground in %s',
+    themeId => {
+      const spatial = spatialThemeFromResolvedAppearance(resolved(themeId));
+      for (const [role, color] of Object.entries({
+        ...spatial.status,
+        ...spatial.consumption,
+      })) {
+        expect(
+          contrastRatio(color, spatial.markBacking),
+          `${themeId} ${role} against mark backing`
+        ).toBeGreaterThanOrEqual(3);
+      }
+    }
+  );
+
+  it.each([
+    'exawatt-classic-dark',
+    'exawatt-air-light',
+    'exawatt-night-dark',
+  ] as const)('uses readable semantic callout pairs in %s', themeId => {
+    const spatial = spatialThemeFromResolvedAppearance(resolved(themeId));
+    const needsOperator = spatialNeedsOperatorCallout(spatial);
+    const fault = spatialFaultCallout(spatial);
+
+    expect(needsOperator.signal).toBe(spatial.status['needs-you']);
+    expect(
+      contrastRatio(needsOperator.text, needsOperator.background)
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrastRatio(needsOperator.detail, needsOperator.background)
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(fault.text, fault.background)).toBeGreaterThanOrEqual(
+      4.5
+    );
+  });
+
   it('preserves the identity assignment and corrects every edge against its ground', () => {
     expect(SPATIAL_PROJECT_IDENTITY_PALETTE).toHaveLength(6);
     for (const themeId of Object.keys(THEME_REGISTRY) as BuiltInThemeId[]) {
@@ -128,5 +171,20 @@ describe('spatial theme adapter', () => {
     expect(overlaid.material.chrome.color).toMatch(/FF$/);
     expect(overlaid.canvas).toBe(base.canvas);
     expect(overlaid.status).toEqual(base.status);
+    expect(overlaid.grid).not.toBe(base.grid);
+    expect(overlaid.gridMajor).not.toBe(base.gridMajor);
+    expect(overlaid.zone).not.toBe(base.zone);
+    expect(overlaid.unit).not.toBe(base.unit);
+    expect(overlaid.unitMuted).not.toBe(base.unitMuted);
+    expect(overlaid.labelMuted).toBe(overlaid.label);
+    expect(
+      contrastRatio(overlaid.grid, overlaid.canvas)
+    ).toBeGreaterThanOrEqual(3);
+    expect(
+      contrastRatio(overlaid.gridMajor, overlaid.canvas)
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrastRatio(overlaid.unit, overlaid.canvas)
+    ).toBeGreaterThanOrEqual(4.5);
   });
 });
