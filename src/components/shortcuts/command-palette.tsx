@@ -784,7 +784,7 @@ export function CommandPalette({
                     />
                     <span className="truncate">{p.name}</span>
                     <span
-                      className="ml-auto truncate pl-2 text-[10px]"
+                      className="ml-auto truncate pl-2 text-chrome-micro"
                       style={{ color: HUD.textDim }}
                     >
                       {p.root_path}
@@ -810,7 +810,7 @@ export function CommandPalette({
                     />
                     <span className="truncate">{r.name}</span>
                     <span
-                      className="ml-auto truncate pl-2 text-[10px]"
+                      className="ml-auto truncate pl-2 text-chrome-micro"
                       style={{ color: HUD.textDim }}
                     >
                       {r.dir}

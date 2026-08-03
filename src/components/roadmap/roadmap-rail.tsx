@@ -169,7 +169,7 @@ function RoadmapStripSpine({
               data-strip-node="starving"
               title={node.label}
               aria-hidden
-              className="grid h-3.5 w-3.5 place-items-center rounded-full font-mono text-[9px] font-bold motion-safe:[animation:roadmap-node-pulse_2.4s_ease-in-out_infinite]"
+              className="grid h-3.5 w-3.5 place-items-center rounded-full font-mono text-chrome-nano font-bold motion-safe:[animation:roadmap-node-pulse_2.4s_ease-in-out_infinite]"
               style={
                 {
                   color: HUD.amber,
@@ -189,7 +189,7 @@ function RoadmapStripSpine({
               data-strip-node={`agg-${node.group}`}
               title={node.label}
               aria-hidden
-              className="font-mono text-[9px] leading-none"
+              className="font-mono text-chrome-nano leading-none"
               style={{
                 color: node.group === 'shipped' ? withAlpha(HUD.green, 0.65) : HUD.textDim,
               }}
@@ -259,7 +259,7 @@ function RoadmapSequenceBar({
       data-roadmap-sequence
       title={summary}
       aria-label={summary}
-      className="flex items-center gap-[3px] overflow-hidden font-mono text-[9px] leading-none"
+      className="flex items-center gap-1 overflow-hidden font-mono text-chrome-nano leading-none"
     >
       {nodes.map((node, i) => {
         if (node.kind === 'unmapped') return null; // header stays queue-only
@@ -660,7 +660,7 @@ export function RoadmapRail({
         {view.status === 'ok' && (
           <span
             data-strip-remaining
-            className="font-mono text-[10px]"
+            className="font-mono text-chrome-micro"
             style={{ color: healthAlert ? HUD.amber : HUD.textDim }}
           >
             {view.queueEmpty ? '!' : remaining}
@@ -730,7 +730,7 @@ export function RoadmapRail({
           </span>
           <span
             data-rail-focus-hint
-            className="hidden shrink-0 font-mono text-[10px] group-focus-within/rail:inline"
+            className="hidden shrink-0 font-mono text-chrome-micro group-focus-within/rail:inline"
             style={{ color: HUD.textMono }}
           >
             esc · {permanent ? 'back to tiles' : 'back to terminal'}
@@ -752,7 +752,7 @@ export function RoadmapRail({
           )}
         </div>
         {view.status === 'ok' && view.file && (
-          <div className="flex items-center gap-2 font-mono text-[10px]" style={{ color: HUD.textDim }}>
+          <div className="flex items-center gap-2 font-mono text-chrome-micro" style={{ color: HUD.textDim }}>
             <button
               type="button"
               tabIndex={-1}
@@ -802,7 +802,7 @@ export function RoadmapRail({
               >
                 ←
               </button>
-              <span className="min-w-0 truncate font-ui text-[11px]" style={{ color: HUD.textDim }}>
+              <span className="min-w-0 truncate font-ui text-chrome-meta" style={{ color: HUD.textDim }}>
                 Roadmap · {drilled.declaredId ?? drilled.title}
               </span>
             </div>
@@ -847,7 +847,7 @@ export function RoadmapRail({
                   <div className="pl-6 pr-2">
                     {(i === 0 || rows[i - 1].kind !== 'unmapped') && (
                       <p
-                        className="pb-1 pt-1.5 font-ui text-[11px] font-medium"
+                        className="pb-1 pt-1.5 font-ui text-chrome-meta font-medium"
                         style={{ color: HUD.amber }}
                       >
                         {view.unmappedSessions.length === 1
@@ -865,7 +865,7 @@ export function RoadmapRail({
                         onClick={() =>
                           row.session.tabId && onSelectSession(row.session.tabId)
                         }
-                        className="flex min-w-0 max-w-full items-center gap-1.5 rounded border border-dashed px-1.5 py-0.5 font-mono text-[10px] outline-none hover:bg-white/10"
+                        className="flex min-w-0 max-w-full items-center gap-1.5 rounded border border-dashed px-1.5 py-0.5 font-mono text-chrome-micro outline-none hover:bg-white/10"
                         style={{
                           borderColor: withAlpha(HUD.amber, i === sel ? 0.9 : 0.45),
                           color: HUD.text,
@@ -901,14 +901,14 @@ export function RoadmapRail({
                     data-selected={i === sel || undefined}
                     onClick={() => activateRow(row)}
                     onMouseEnter={() => setSel(i)}
-                    className="flex w-full cursor-default items-center gap-2 py-1 pl-6 pr-2 text-left font-ui text-[11px] outline-none"
+                    className="flex w-full cursor-default items-center gap-2 py-1 pl-6 pr-2 text-left font-ui text-chrome-meta outline-none"
                     style={{
                       color: row.group === 'shipped' ? HUD.green : HUD.textDim,
                       background: i === sel ? HUD.fillHi : 'transparent',
                       minHeight: 26,
                     }}
                   >
-                    <span aria-hidden className="text-[9px]">
+                    <span aria-hidden className="font-mono text-chrome-nano">
                       {(row.group === 'shipped' ? shippedOpen : parkedOpen) ? '▾' : '▸'}
                     </span>
                     {row.label}
@@ -917,7 +917,7 @@ export function RoadmapRail({
                   <>
                     {row.heading && (
                       <p
-                        className="pb-1 pl-6 pr-2 pt-2.5 font-ui text-[11px] font-medium"
+                        className="pb-1 pl-6 pr-2 pt-2.5 font-ui text-chrome-meta font-medium"
                         style={{ color: HUD.textDim }}
                       >
                         {row.heading}
@@ -940,12 +940,12 @@ export function RoadmapRail({
 
       {/* trust strip + rail keys: what is read, and that it is never written */}
       <div
-        className="flex shrink-0 flex-col gap-0.5 border-t px-3 py-1.5 font-mono text-[10px]"
+        className="flex shrink-0 flex-col gap-0.5 border-t px-3 py-1.5 font-mono text-chrome-micro"
         style={{ borderColor: 'rgba(80,230,255,0.12)', color: HUD.textDim }}
       >
         {view.status === 'ok' && view.trust && (
           <span
-            className="font-ui text-[11px]"
+            className="font-ui text-chrome-meta"
             style={{ color: (view.trust.warningCount > 0 || view.trust.unparsedLineCount > 0) ? HUD.amber : HUD.textDim }}
           >
             {trustLine(view)}
@@ -956,7 +956,7 @@ export function RoadmapRail({
           untriagedCount > 0 && (
             <span
               data-untriaged-feedback
-              className="font-ui text-[11px]"
+              className="font-ui text-chrome-meta"
               style={{ color: HUD.amber }}
               title="Filed feedback not yet folded into the roadmap — ask an agent to drain the inbox"
             >
@@ -965,7 +965,7 @@ export function RoadmapRail({
                 : `${untriagedCount} filed thoughts awaiting triage`}
             </span>
           )}
-        <span className="font-ui text-[11px]">
+        <span className="font-ui text-chrome-meta">
           Read-only — Exawatt reads this file, never writes it
         </span>
         <span>

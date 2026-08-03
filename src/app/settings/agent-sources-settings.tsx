@@ -118,7 +118,7 @@ function StatePill({ source }: { source: AgentSourceSnapshot }) {
   const tone = stateTone(source.state);
   return (
     <span
-      className="inline-flex min-h-7 items-center gap-2 rounded-full border px-2.5 font-ui text-[12px] font-medium"
+      className="inline-flex min-h-7 items-center gap-2 rounded-full border px-2.5 font-ui text-chrome-label font-medium"
       style={{
         color: tone.color,
         borderColor: `color-mix(in srgb, ${tone.color} 34%, transparent)`,
@@ -163,13 +163,13 @@ function ObservationTime({
         <button
           type="button"
           aria-label={`${prefix}${exact}`}
-          className="inline-flex min-h-7 max-w-full items-center gap-1 rounded px-1 font-ui text-[12px] text-[var(--settings-faint)] outline-none hover:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
+          className="inline-flex min-h-7 max-w-full items-center gap-1 rounded px-1 font-ui text-chrome-label text-[var(--settings-faint)] outline-none hover:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
         >
           {prefix ? <span>{prefix.trim()}</span> : null}
           <time dateTime={iso}>{relativeTime(timestamp, now)}</time>
         </button>
       </TooltipTrigger>
-      <TooltipContent className="border-[var(--settings-line-strong)] bg-[var(--settings-raised)] font-ui text-[12px] text-[var(--settings-soft)]">
+      <TooltipContent className="border-[var(--settings-line-strong)] bg-[var(--settings-raised)] font-ui text-chrome-label text-[var(--settings-soft)]">
         {exact}
       </TooltipContent>
     </Tooltip>
@@ -188,7 +188,7 @@ function InfoTip({ label }: { label: string }) {
           <Info aria-hidden size={14} />
         </button>
       </TooltipTrigger>
-      <TooltipContent className="max-w-80 border-[var(--settings-line-strong)] bg-[var(--settings-raised)] px-3 py-2 font-ui text-[12px] leading-[18px] text-[var(--settings-soft)] shadow-xl">
+      <TooltipContent className="max-w-80 border-[var(--settings-line-strong)] bg-[var(--settings-raised)] px-3 py-2 font-ui text-chrome-label leading-4.5 text-[var(--settings-soft)] shadow-xl">
         {label}
       </TooltipContent>
     </Tooltip>
@@ -212,17 +212,17 @@ function FactRow({
         : 'Declared';
   return (
     <div className="grid min-h-[66px] grid-cols-[minmax(112px,0.62fr)_minmax(0,1.38fr)] items-center gap-5 border-t border-[var(--settings-line)] py-3 max-[520px]:grid-cols-1 max-[520px]:gap-1.5">
-      <span className="font-ui text-[13px] text-[var(--settings-dim)]">
+      <span className="font-ui text-chrome-title text-[var(--settings-dim)]">
         {label}
       </span>
       <span className="min-w-0">
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="min-w-0 truncate font-ui text-[14px] font-medium text-[var(--settings-soft)]">
+          <span className="min-w-0 truncate font-ui text-sm font-medium text-[var(--settings-soft)]">
             {fact.value}
           </span>
           <InfoTip label={fact.detail} />
         </span>
-        <span className="mt-0.5 flex min-w-0 items-center gap-1 font-ui text-[12px] text-[var(--settings-faint)]">
+        <span className="mt-0.5 flex min-w-0 items-center gap-1 font-ui text-chrome-label text-[var(--settings-faint)]">
           <span className="truncate">
             {basisLabel} · {fact.provenance.label}
           </span>
@@ -244,10 +244,10 @@ function FactRow({
 function CapabilityRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex min-h-11 items-center justify-between gap-5 border-t border-[var(--settings-line)] py-2.5 max-[520px]:items-start">
-      <span className="font-ui text-[13px] text-[var(--settings-dim)]">
+      <span className="font-ui text-chrome-title text-[var(--settings-dim)]">
         {label}
       </span>
-      <span className="max-w-[62%] text-right font-ui text-[13px] font-medium text-[var(--settings-soft)]">
+      <span className="max-w-[62%] text-right font-ui text-chrome-title font-medium text-[var(--settings-soft)]">
         {value}
       </span>
     </div>
@@ -274,10 +274,10 @@ function RegistryRail({
     >
       <div className="flex min-h-[72px] items-center justify-between border-b border-[var(--settings-line)] px-5">
         <div>
-          <h2 className="font-display text-[17px] font-semibold tracking-[-0.01em] text-[var(--settings-text)]">
+          <h2 className="font-display text-base font-semibold tracking-[-0.01em] text-[var(--settings-text)]">
             Agent Sources
           </h2>
-          <p className="mt-0.5 font-ui text-[12px] text-[var(--settings-dim)]">
+          <p className="mt-0.5 font-ui text-chrome-label text-[var(--settings-dim)]">
             {sources.length} {sources.length === 1 ? 'adapter' : 'adapters'}
           </p>
         </div>
@@ -324,7 +324,7 @@ function RegistryRail({
               </span>
               <span className="min-w-0 flex-1">
                 <span
-                  className="block truncate font-ui text-[14px] font-medium"
+                  className="block truncate font-ui text-sm font-medium"
                   style={{
                     color: active
                       ? 'var(--settings-text)'
@@ -333,7 +333,7 @@ function RegistryRail({
                 >
                   {source.label}
                 </span>
-                <span className="mt-0.5 block truncate font-ui text-[12px] text-[var(--settings-dim)]">
+                <span className="mt-0.5 block truncate font-ui text-chrome-label text-[var(--settings-dim)]">
                   {source.connectionName}
                 </span>
               </span>
@@ -408,10 +408,10 @@ function SourceDetail({
             <SourceMark id={source.adapterId} size={22} />
           </span>
           <div className="min-w-0">
-            <p className="truncate font-ui text-[13px] text-[var(--settings-dim)]">
+            <p className="truncate font-ui text-chrome-title text-[var(--settings-dim)]">
               {source.connectionName}
             </p>
-            <h2 className="truncate font-display text-[22px] font-semibold tracking-[-0.02em] text-[var(--settings-text)]">
+            <h2 className="truncate font-display text-display font-semibold tracking-[-0.02em] text-[var(--settings-text)]">
               {source.label}
             </h2>
           </div>
@@ -419,7 +419,7 @@ function SourceDetail({
         <StatePill source={source} />
       </header>
 
-      <p className="mt-5 max-w-[68ch] font-ui text-[13px] leading-5 text-[var(--settings-dim)]">
+      <p className="mt-5 max-w-[68ch] font-ui text-chrome-title leading-5 text-[var(--settings-dim)]">
         {source.summary}
       </p>
 
@@ -434,10 +434,10 @@ function SourceDetail({
             <AlertCircle aria-hidden className="mt-0.5 shrink-0" size={18} />
           )}
           <div>
-            <p className="font-ui text-[14px] font-medium">
+            <p className="font-ui text-sm font-medium">
               {source.stateLabel}
             </p>
-            <p className="mt-1 max-w-xl font-ui text-[13px] leading-5 text-[var(--settings-dim)]">
+            <p className="mt-1 max-w-xl font-ui text-chrome-title leading-5 text-[var(--settings-dim)]">
               {attentionFact.detail}
             </p>
           </div>
@@ -450,7 +450,7 @@ function SourceDetail({
             type="button"
             disabled={busy}
             onClick={onAuthenticate}
-            className="flex min-h-10 items-center gap-2 rounded-lg bg-[var(--settings-amber)] px-3.5 font-ui text-[13px] font-medium text-[var(--settings-shell)] outline-none transition-[filter,transform] hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[var(--settings-amber)] motion-reduce:transition-none"
+            className="flex min-h-10 items-center gap-2 rounded-lg bg-[var(--settings-amber)] px-3.5 font-ui text-chrome-title font-medium text-[var(--settings-shell)] outline-none transition-[filter,transform] hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[var(--settings-amber)] motion-reduce:transition-none"
           >
             <ExternalLink aria-hidden size={15} />
             Sign in with {source.label}
@@ -461,7 +461,7 @@ function SourceDetail({
             type="button"
             disabled={busy}
             onClick={onInstall}
-            className="flex min-h-10 items-center gap-2 rounded-lg bg-[var(--settings-amber)] px-3.5 font-ui text-[13px] font-medium text-[var(--settings-shell)] outline-none transition-[filter,transform] hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[var(--settings-amber)] motion-reduce:transition-none"
+            className="flex min-h-10 items-center gap-2 rounded-lg bg-[var(--settings-amber)] px-3.5 font-ui text-chrome-title font-medium text-[var(--settings-shell)] outline-none transition-[filter,transform] hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[var(--settings-amber)] motion-reduce:transition-none"
           >
             <ExternalLink aria-hidden size={15} />
             Open installation guide
@@ -472,7 +472,7 @@ function SourceDetail({
             type="button"
             disabled={busy}
             onClick={onRecheck}
-            className="flex min-h-10 items-center gap-2 rounded-lg border border-[var(--settings-line-strong)] bg-[var(--settings-raised)] px-3.5 font-ui text-[13px] font-medium text-[var(--settings-soft)] outline-none transition-[background-color,transform] hover:bg-white/[0.07] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] motion-reduce:transition-none"
+            className="flex min-h-10 items-center gap-2 rounded-lg border border-[var(--settings-line-strong)] bg-[var(--settings-raised)] px-3.5 font-ui text-chrome-title font-medium text-[var(--settings-soft)] outline-none transition-[background-color,transform] hover:bg-white/[0.07] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] motion-reduce:transition-none"
           >
             <RefreshCw
               aria-hidden
@@ -487,7 +487,7 @@ function SourceDetail({
       {message && (
         <p
           role="status"
-          className="mt-3 max-w-xl font-ui text-[12px] leading-5"
+          className="mt-3 max-w-xl font-ui text-chrome-label leading-5"
           style={{
             color: message.ok ? 'var(--settings-teal)' : 'var(--settings-red)',
           }}
@@ -500,7 +500,7 @@ function SourceDetail({
         <div className="mb-3 flex items-center justify-between gap-4">
           <h3
             id="source-identity-heading"
-            className="font-display text-[15px] font-semibold text-[var(--settings-text)]"
+            className="font-display text-reading font-semibold text-[var(--settings-text)]"
           >
             Source identity
           </h3>
@@ -536,7 +536,7 @@ function SourceDetail({
       <section className="mt-8" aria-labelledby="source-model-heading">
         <h3
           id="source-model-heading"
-          className="mb-3 font-display text-[15px] font-semibold text-[var(--settings-text)]"
+          className="mb-3 font-display text-reading font-semibold text-[var(--settings-text)]"
         >
           Model availability
         </h3>
@@ -555,7 +555,7 @@ function SourceDetail({
       >
         <h3
           id="source-capabilities-heading"
-          className="mb-3 font-display text-[15px] font-semibold text-[var(--settings-text)]"
+          className="mb-3 font-display text-reading font-semibold text-[var(--settings-text)]"
         >
           Capabilities and assurance
         </h3>
@@ -607,15 +607,15 @@ function AddSourceView({
           <Plus aria-hidden size={21} />
         </span>
         <div>
-          <p className="font-ui text-[13px] text-[var(--settings-dim)]">
+          <p className="font-ui text-chrome-title text-[var(--settings-dim)]">
             Adapter catalog
           </p>
-          <h2 className="font-display text-[22px] font-semibold tracking-[-0.02em] text-[var(--settings-text)]">
+          <h2 className="font-display text-display font-semibold tracking-[-0.02em] text-[var(--settings-text)]">
             Browse Agent Sources
           </h2>
         </div>
       </div>
-      <p className="mt-5 max-w-[68ch] font-ui text-[13px] leading-5 text-[var(--settings-dim)]">
+      <p className="mt-5 max-w-[68ch] font-ui text-chrome-title leading-5 text-[var(--settings-dim)]">
         Exawatt discovers built-in adapters automatically. Select one to inspect
         its live status or open source-owned setup guidance; future adapters
         stay visibly separate.
@@ -624,7 +624,7 @@ function AddSourceView({
       <section className="mt-8" aria-labelledby="available-sources-heading">
         <h3
           id="available-sources-heading"
-          className="mb-3 font-display text-[15px] font-semibold text-[var(--settings-text)]"
+          className="mb-3 font-display text-reading font-semibold text-[var(--settings-text)]"
         >
           Available now
         </h3>
@@ -640,14 +640,14 @@ function AddSourceView({
                 <CatalogMark id={entry.adapterId} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block font-ui text-[14px] font-medium text-[var(--settings-soft)]">
+                <span className="block font-ui text-sm font-medium text-[var(--settings-soft)]">
                   {entry.label}
                 </span>
-                <span className="mt-0.5 block font-ui text-[12px] text-[var(--settings-dim)]">
+                <span className="mt-0.5 block font-ui text-chrome-label text-[var(--settings-dim)]">
                   {entry.description}
                 </span>
               </span>
-              <span className="shrink-0 font-ui text-[11px] font-medium text-[var(--settings-teal)]">
+              <span className="shrink-0 font-ui text-chrome-meta font-medium text-[var(--settings-teal)]">
                 {entry.availability === 'configured'
                   ? 'Configured'
                   : entry.availability === 'not-installed'
@@ -668,7 +668,7 @@ function AddSourceView({
         <div className="mb-3 flex items-center gap-2">
           <h3
             id="future-sources-heading"
-            className="font-display text-[15px] font-semibold text-[var(--settings-text)]"
+            className="font-display text-reading font-semibold text-[var(--settings-text)]"
           >
             Coming soon
           </h3>
@@ -684,14 +684,14 @@ function AddSourceView({
                 <CatalogMark id={entry.adapterId} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block font-ui text-[14px] font-medium text-[var(--settings-soft)]">
+                <span className="block font-ui text-sm font-medium text-[var(--settings-soft)]">
                   {entry.label}
                 </span>
-                <span className="mt-0.5 block font-ui text-[12px] text-[var(--settings-dim)]">
+                <span className="mt-0.5 block font-ui text-chrome-label text-[var(--settings-dim)]">
                   {entry.description}
                 </span>
               </span>
-              <span className="shrink-0 rounded-full border border-[var(--settings-line-strong)] px-2 py-1 font-ui text-[10px] uppercase tracking-[0.1em] text-[var(--settings-faint)]">
+              <span className="shrink-0 rounded-full border border-[var(--settings-line-strong)] px-2 py-1 font-mono text-chrome-micro uppercase tracking-[0.1em] text-[var(--settings-faint)]">
                 Soon
               </span>
             </div>

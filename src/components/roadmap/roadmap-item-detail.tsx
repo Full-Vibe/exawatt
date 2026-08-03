@@ -30,7 +30,7 @@ function deMarkdown(text: string): string {
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <p className="font-ui text-[11px] font-medium" style={{ color: HUD.textDim }}>
+    <p className="font-ui text-chrome-meta font-medium" style={{ color: HUD.textDim }}>
       {children}
     </p>
   );
@@ -155,7 +155,7 @@ export function RoadmapItemDetail({
                       retired dashed + struck out below */}
                   <span
                     aria-hidden
-                    className="absolute left-0.5 top-[5px] grid h-[14px] w-[14px] place-items-center rounded-full text-[9px] font-bold"
+                    className="absolute left-0.5 top-[5px] grid h-3.5 w-3.5 place-items-center rounded-full font-mono text-chrome-nano font-bold"
                     style={
                       m.done
                         ? { background: HUD.green, color: '#08120b' }
@@ -171,7 +171,7 @@ export function RoadmapItemDetail({
                   </span>
                   {m.id && (
                     <span
-                      className="shrink-0 font-mono text-[11px] leading-5"
+                      className="shrink-0 font-mono text-chrome-meta leading-5"
                       style={{
                         color: m.done || m.retired ? HUD.textDim : HUD.textMono,
                         textDecoration: m.retired ? 'line-through' : undefined,
@@ -218,7 +218,7 @@ export function RoadmapItemDetail({
                 type="button"
                 tabIndex={-1}
                 onClick={() => onOpenPath(docPath)}
-                className="max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-[10px] outline-none hover:bg-white/10"
+                className="max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-chrome-micro outline-none hover:bg-white/10"
                 style={{
                   color: HUD.textMono,
                   borderColor: 'rgba(80,230,255,0.25)',

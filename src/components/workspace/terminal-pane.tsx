@@ -497,7 +497,7 @@ export function TerminalPane({
             className="h-full w-56 bg-transparent text-sm text-zinc-100 outline-none"
             placeholder="Search"
           />
-          <span className="w-12 text-center font-mono text-[10px] text-zinc-500">
+          <span className="w-12 text-center font-mono text-chrome-micro text-zinc-500">
             {searchResult}
           </span>
           <button

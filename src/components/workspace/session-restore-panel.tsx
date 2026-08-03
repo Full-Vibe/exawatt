@@ -58,7 +58,7 @@ export function SessionRestorePanel({
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
         <span
           role="status"
-          className={`shrink-0 border px-1.5 py-0.5 font-mono text-[10px] ${
+          className={`shrink-0 border px-1.5 py-0.5 font-mono text-chrome-micro ${
             exact
               ? 'border-white/15 text-zinc-400'
               : 'border-amber-300/30 text-amber-200'
@@ -68,7 +68,7 @@ export function SessionRestorePanel({
         </span>
         <div className="min-w-48 flex-1">
           <p className="truncate text-xs font-medium">{tab.title}</p>
-          <p className="mt-0.5 text-[11px] leading-4 text-zinc-400">
+          <p className="mt-0.5 text-chrome-meta leading-4 text-zinc-400">
             {exact
               ? tab.harness === 'shell'
                 ? 'Saved terminal history is read-only. Start a new shell in the same directory.'
@@ -94,7 +94,7 @@ export function SessionRestorePanel({
           </Button>
         )}
         {candidateError && (
-          <span role="status" className="text-[10px] text-amber-300">
+          <span role="status" className="text-chrome-micro text-amber-300">
             Conversations unavailable
           </span>
         )}
@@ -118,11 +118,11 @@ export function SessionRestorePanel({
                   {candidate.label}
                 </span>
                 {candidate.description && (
-                  <span className="mt-1 line-clamp-2 block text-[11px] leading-4 text-zinc-400">
+                  <span className="mt-1 line-clamp-2 block text-chrome-meta leading-4 text-zinc-400">
                     {candidate.description}
                   </span>
                 )}
-                <span className="mt-1 block font-mono text-[10px] text-zinc-500">
+                <span className="mt-1 block font-mono text-chrome-micro text-zinc-500">
                   {new Date(candidate.updatedAt).toLocaleString()}
                 </span>
               </button>

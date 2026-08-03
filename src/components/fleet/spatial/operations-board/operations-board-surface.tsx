@@ -60,8 +60,8 @@ class BoardErrorBoundary extends Component<
 
 function KeyHint({ keyName, label }: { keyName: string; label: string }) {
   return (
-    <span className="flex items-center gap-1.5 whitespace-nowrap text-[10px] text-[oklch(0.6_0.012_210)]">
-      <kbd className="border border-[oklch(0.35_0.015_210)] bg-[oklch(0.14_0.009_215/0.94)] px-1.5 py-0.5 font-mono text-[9px] text-[oklch(0.73_0.035_190)]">
+    <span className="flex items-center gap-1.5 whitespace-nowrap text-chrome-micro text-[oklch(0.6_0.012_210)]">
+      <kbd className="border border-[oklch(0.35_0.015_210)] bg-[oklch(0.14_0.009_215/0.94)] px-1.5 py-0.5 font-mono text-chrome-nano text-[oklch(0.73_0.035_190)]">
         {keyName}
       </kbd>
       <span className="uppercase tracking-[0.12em]">{label}</span>
@@ -380,7 +380,7 @@ export function OperationsBoardSurface({
             <span className="block truncate text-xs font-semibold text-[oklch(0.92_0.025_28)]">
               {hero.title}
             </span>
-            <span className="mt-0.5 block truncate text-[10px] text-[oklch(0.72_0.05_28)]">
+            <span className="mt-0.5 block truncate text-chrome-micro text-[oklch(0.72_0.05_28)]">
               {hero.reason}
             </span>
           </button>
@@ -390,7 +390,7 @@ export function OperationsBoardSurface({
           <button
             type="button"
             onClick={() => triage(1)}
-            className="absolute bottom-16 left-3 z-10 min-h-11 border border-[oklch(0.52_0.1_28)] bg-[oklch(0.18_0.035_28/0.94)] px-2.5 py-1.5 font-mono text-[10px] text-[oklch(0.78_0.09_28)] outline-none transition-colors hover:bg-[oklch(0.22_0.045_28/0.98)] focus-visible:ring-2 focus-visible:ring-[oklch(0.68_0.12_28/0.4)] sm:bottom-3"
+            className="absolute bottom-16 left-3 z-10 min-h-11 border border-[oklch(0.52_0.1_28)] bg-[oklch(0.18_0.035_28/0.94)] px-2.5 py-1.5 font-mono text-chrome-micro text-[oklch(0.78_0.09_28)] outline-none transition-colors hover:bg-[oklch(0.22_0.045_28/0.98)] focus-visible:ring-2 focus-visible:ring-[oklch(0.68_0.12_28/0.4)] sm:bottom-3"
           >
             {attentionIds.length} need attention
           </button>
@@ -421,7 +421,7 @@ export function OperationsBoardSurface({
                 type="button"
                 aria-pressed={projection === option}
                 onClick={() => onProjectionChange(option)}
-                className={`min-h-11 px-2 text-[9px] font-semibold uppercase tracking-[0.08em] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:px-3 sm:text-[10px] sm:tracking-[0.1em] ${
+                className={`min-h-11 px-2 font-mono text-chrome-micro font-semibold uppercase tracking-[0.1em] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:px-3 ${
                   projection === option
                     ? 'bg-[oklch(0.32_0.055_185)] text-[oklch(0.92_0.025_185)]'
                     : 'text-[oklch(0.62_0.012_210)] hover:bg-[oklch(0.2_0.015_210)] hover:text-[oklch(0.82_0.015_210)]'
@@ -451,7 +451,7 @@ export function OperationsBoardSurface({
               type="button"
               aria-label="Recenter board"
               onClick={() => controller.current?.recenter()}
-              className="grid h-11 min-w-11 place-items-center border-x border-[oklch(0.3_0.012_210)] px-1 font-mono text-[8px] uppercase tracking-[0.06em] text-[oklch(0.68_0.025_190)] outline-none hover:bg-[oklch(0.21_0.015_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:px-2 sm:text-[9px] sm:tracking-[0.08em]"
+              className="grid h-11 min-w-11 place-items-center border-x border-[oklch(0.3_0.012_210)] px-1 font-mono text-chrome-micro uppercase tracking-[0.08em] text-[oklch(0.68_0.025_190)] outline-none hover:bg-[oklch(0.21_0.015_210)] focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:px-2"
             >
               Center
             </button>
@@ -478,7 +478,7 @@ export function OperationsBoardSurface({
           }}
         >
           <div className="board-control-enter border border-[oklch(0.48_0.055_185)] bg-[oklch(0.13_0.012_220/0.94)] px-4 py-2 text-center shadow-[0_16px_48px_oklch(0.04_0.01_220/0.55)]">
-            <span className="block font-mono text-[10px] uppercase tracking-[0.14em] text-[oklch(0.82_0.055_185)]">
+            <span className="block font-mono text-chrome-micro uppercase tracking-[0.14em] text-[oklch(0.82_0.055_185)]">
               Opening session
             </span>
             {(() => {
@@ -486,7 +486,7 @@ export function OperationsBoardSurface({
                 entry => entry.agentId === sessionTransitionAgentId
               );
               return piece ? (
-                <span className="mt-0.5 block max-w-56 truncate text-[11px] font-medium text-[oklch(0.9_0.01_210)]">
+                <span className="mt-0.5 block max-w-56 truncate text-chrome-meta font-medium text-[oklch(0.9_0.01_210)]">
                   {piece.label}
                 </span>
               ) : null;

@@ -956,7 +956,7 @@ export function AgentComposer({
                       <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
                         <span>{sourceOption.label}</span>
                         {!sourceOption.launchable && (
-                          <span className="text-[9px] uppercase tracking-[0.1em] text-hud-text-dim">
+                          <span className="text-chrome-micro uppercase tracking-[0.1em] text-hud-text-dim">
                             {sourceOption.stateLabel}
                           </span>
                         )}
@@ -1063,7 +1063,7 @@ export function AgentComposer({
               </SelectTrigger>
               <SelectContent className="w-[min(23rem,calc(100vw-1.5rem))] border-hud-cyan/25 bg-hud-deep shadow-xl">
                 <SelectGroup>
-                  <SelectLabel className="px-2 pb-1 pt-2 font-mono text-[11px] font-medium text-hud-text-dim">
+                  <SelectLabel className="px-2 pb-1 pt-2 font-mono text-chrome-meta font-medium text-hud-text-dim">
                     {sourceMeta.label} model
                   </SelectLabel>
                   {modelOptions.map(option => (
@@ -1079,12 +1079,12 @@ export function AgentComposer({
                             {option.label}
                           </span>
                           {option.id === modelCatalog?.effectiveModel && (
-                            <span className="text-[9px] uppercase tracking-[0.12em] text-hud-cyan">
+                            <span className="text-chrome-micro uppercase tracking-[0.12em] text-hud-cyan">
                               default
                             </span>
                           )}
                         </span>
-                        <span className="text-[11px] leading-4 text-hud-text-dim">
+                        <span className="text-chrome-meta leading-4 text-hud-text-dim">
                           {option.description}
                         </span>
                       </span>
@@ -1092,7 +1092,7 @@ export function AgentComposer({
                   ))}
                 </SelectGroup>
                 <SelectSeparator className="bg-hud-cyan/15" />
-                <p className="px-2 py-1.5 font-mono text-[11px] leading-4 text-hud-text-dim">
+                <p className="px-2 py-1.5 font-mono text-chrome-meta leading-4 text-hud-text-dim">
                   {model === modelCatalog?.effectiveModel
                     ? `Default from ${modelOriginLabel}.`
                     : `This override applies only to this Agent.`}
@@ -1159,7 +1159,7 @@ export function AgentComposer({
             </SelectTrigger>
             <SelectContent className="w-[min(21rem,calc(100vw-1.5rem))] border-hud-cyan/25 bg-hud-deep shadow-xl">
               <SelectGroup>
-                <SelectLabel className="px-2 pb-1 pt-2 font-mono text-[11px] font-medium text-hud-text-dim">
+                <SelectLabel className="px-2 pb-1 pt-2 font-mono text-chrome-meta font-medium text-hud-text-dim">
                   {modelLabel} effort
                 </SelectLabel>
                 {effortOptions.map(option => (
@@ -1175,12 +1175,12 @@ export function AgentComposer({
                           {option.label}
                         </span>
                         {option.id === defaultEffort && (
-                          <span className="text-[9px] uppercase tracking-[0.12em] text-hud-cyan">
+                          <span className="text-chrome-micro uppercase tracking-[0.12em] text-hud-cyan">
                             default
                           </span>
                         )}
                       </span>
-                      <span className="text-[11px] leading-4 text-hud-text-dim">
+                      <span className="text-chrome-meta leading-4 text-hud-text-dim">
                         {option.description}
                       </span>
                     </span>
@@ -1188,7 +1188,7 @@ export function AgentComposer({
                 ))}
               </SelectGroup>
               <SelectSeparator className="bg-hud-cyan/15" />
-              <p className="px-2 py-1.5 font-mono text-[11px] leading-4 text-hud-text-dim">
+              <p className="px-2 py-1.5 font-mono text-chrome-meta leading-4 text-hud-text-dim">
                 {effort === defaultEffort
                   ? `Default from ${effortOriginLabel}.`
                   : `This override applies only to this Agent.`}
@@ -1291,7 +1291,7 @@ export function AgentComposer({
               className="w-[min(22rem,calc(100vw-1.5rem))] border-hud-cyan/25 bg-hud-deep shadow-xl"
             >
               <SelectGroup>
-                <SelectLabel className="px-2 pb-1 pt-2 font-mono text-[11px] font-medium text-hud-text-dim">
+                <SelectLabel className="px-2 pb-1 pt-2 font-mono text-chrome-meta font-medium text-hud-text-dim">
                   {sourceMeta.label} permissions
                 </SelectLabel>
                 {sourceMeta.capabilities.permissionModes
@@ -1323,7 +1323,7 @@ export function AgentComposer({
                             >
                               {meta.label}
                             </span>
-                            <span className="text-[11px] leading-4 text-hud-text-dim">
+                            <span className="text-chrome-meta leading-4 text-hud-text-dim">
                               {meta.description}
                             </span>
                           </span>
@@ -1335,7 +1335,7 @@ export function AgentComposer({
               <SelectSeparator className="bg-hud-cyan/15" />
               <div
                 aria-live="polite"
-                className="px-2 py-1.5 font-mono text-[11px] leading-4"
+                className="px-2 py-1.5 font-mono text-chrome-meta leading-4"
                 style={{
                   color:
                     usedSafePreferenceFallback ||
@@ -1426,7 +1426,7 @@ export function AgentComposer({
               {worktree && !branchReady && (
                 <p
                   id={branchErrorId}
-                  className="mt-1 font-mono text-[10px]"
+                  className="mt-1 font-mono text-chrome-micro"
                   style={{ color: HUD.red }}
                 >
                   Enter a branch name before starting.
@@ -1434,7 +1434,7 @@ export function AgentComposer({
               )}
               {roadmapItems.length > 0 && (
                 <label
-                  className="mt-3 block font-mono text-[10px]"
+                  className="mt-3 block font-mono text-chrome-micro"
                   style={{ color: HUD.textDim }}
                 >
                   Working on
@@ -1517,7 +1517,7 @@ export function AgentComposer({
       <p
         data-composer-hints
         aria-hidden="true"
-        className="px-0.5 pt-0.5 font-mono text-[10px] leading-none"
+        className="px-0.5 pt-0.5 font-mono text-chrome-micro leading-none"
         style={{ color: HUD.textDim }}
       >
         ⏎ start · ↓ recent · ⌥↑↓ source · ⌘V image · ⇧⏎ newline
@@ -1525,7 +1525,7 @@ export function AgentComposer({
       {sourceActionMessage && (
         <div
           role="status"
-          className="mt-1 flex min-h-7 items-center justify-between gap-3 rounded border px-2.5 py-1 font-mono text-[10px] leading-4"
+          className="mt-1 flex min-h-7 items-center justify-between gap-3 rounded border px-2.5 py-1 font-mono text-chrome-micro leading-4"
           style={{
             color: sourceActionMessage.ok ? HUD.green : HUD.amber,
             borderColor: sourceActionMessage.ok

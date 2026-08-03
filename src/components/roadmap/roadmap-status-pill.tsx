@@ -32,7 +32,7 @@ export function RoadmapStatusPill({ status }: { status: RoadmapDisplayStatus }) 
   const color = ROADMAP_STATUS_COLOR[status];
   return (
     <span
-      className="inline-flex shrink-0 items-center rounded-sm border px-1.5 py-px font-ui text-[10px] font-medium leading-4"
+      className="inline-flex shrink-0 items-center rounded-sm border px-1.5 py-px font-ui text-chrome-micro font-medium leading-4"
       style={{
         color,
         borderColor: withAlpha(color, 0.4),
@@ -47,7 +47,7 @@ export function RoadmapStatusPill({ status }: { status: RoadmapDisplayStatus }) 
 export function RoadmapBlockedBadge() {
   return (
     <span
-      className="inline-flex shrink-0 items-center rounded-sm border px-1.5 py-px font-ui text-[10px] font-medium leading-4"
+      className="inline-flex shrink-0 items-center rounded-sm border px-1.5 py-px font-ui text-chrome-micro font-medium leading-4"
       style={{
         color: HUD.red,
         borderColor: withAlpha(HUD.red, 0.4),

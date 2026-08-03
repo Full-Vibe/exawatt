@@ -58,7 +58,7 @@ describe('SessionStateTileStudy', () => {
       within(nowRegion as HTMLElement).getByText(
         'Coordinating delegated review of the agreement'
       )
-    ).toHaveClass('font-sans', 'text-[15px]', 'leading-6');
+    ).toHaveClass('font-sans', 'text-reading', 'leading-6');
     expect(workingTile).toHaveClass('h-[272px]', 'w-[300px]');
     expect(screen.getAllByText('2 Agents').length).toBeGreaterThan(0);
     expect(screen.queryByText('Recovered')).not.toBeInTheDocument();

@@ -141,7 +141,7 @@ export function SessionOverviewCardContent({
               unclamp the line — measured as a clipped Next region. */}
           <span
             data-session-current
-            className={`mt-1 font-sans text-[15px] leading-6 ${
+            className={`mt-1 font-sans text-reading leading-6 ${
               delegation?.children.length ? 'line-clamp-1' : 'line-clamp-2'
             }`}
             style={{ color: HUD.text }}

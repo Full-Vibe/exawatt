@@ -234,14 +234,14 @@ export const RecentConversations = forwardRef<
         <div className="flex min-w-0 items-baseline gap-2">
           <h2
             id={`${sectionId}-heading`}
-            className="font-mono text-[11px] font-semibold tracking-[0.13em]"
+            className="font-mono text-chrome-meta font-semibold tracking-[0.13em]"
             style={{ color: HUD.textDim }}
           >
             Continue recent
           </h2>
           {rows.length > 0 && (
             <span
-              className="font-mono text-[10px]"
+              className="font-mono text-chrome-micro"
               style={{ color: HUD.textDim }}
             >
               {rows.length}
@@ -271,7 +271,7 @@ export const RecentConversations = forwardRef<
               }
             }}
             placeholder="Filter title, ID, or source"
-            className="h-8 w-full rounded border bg-transparent pl-8 pr-2 font-mono text-[11px] outline-none placeholder:text-hud-text-dim/70 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+            className="h-8 w-full rounded border bg-transparent pl-8 pr-2 font-mono text-chrome-meta outline-none placeholder:text-hud-text-dim/70 focus-visible:ring-1 focus-visible:ring-hud-cyan"
             style={{
               color: HUD.text,
               borderColor: HUD.strokeSoft,
@@ -284,7 +284,7 @@ export const RecentConversations = forwardRef<
       {state === 'loading' && (
         <div
           role="status"
-          className="flex h-16 items-center gap-2 px-3 font-mono text-[11px]"
+          className="flex h-16 items-center gap-2 px-3 font-mono text-chrome-meta"
           style={{ color: HUD.textDim }}
         >
           <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
@@ -293,7 +293,7 @@ export const RecentConversations = forwardRef<
       )}
       {state === 'unavailable' && (
         <p
-          className="px-1 py-4 font-mono text-[11px]"
+          className="px-1 py-4 font-mono text-chrome-meta"
           style={{ color: HUD.textDim }}
         >
           Recent conversations are unavailable. Starting a new Agent still
@@ -302,7 +302,7 @@ export const RecentConversations = forwardRef<
       )}
       {state === 'ready' && rows.length === 0 && (
         <p
-          className="px-1 py-4 font-mono text-[11px]"
+          className="px-1 py-4 font-mono text-chrome-meta"
           style={{ color: HUD.textDim }}
         >
           No Claude Code or Codex conversations found for this Project.
@@ -310,7 +310,7 @@ export const RecentConversations = forwardRef<
       )}
       {state === 'ready' && filtered.length === 0 && rows.length > 0 && (
         <p
-          className="px-1 py-4 font-mono text-[11px]"
+          className="px-1 py-4 font-mono text-chrome-meta"
           style={{ color: HUD.textDim }}
         >
           No conversations match “{query}”.
@@ -388,7 +388,7 @@ export const RecentConversations = forwardRef<
                   <span className="flex min-w-0 items-center gap-2 @max-[430px]:flex-col @max-[430px]:items-start @max-[430px]:gap-0">
                     <span
                       id={titleId}
-                      className="truncate text-[13px] font-medium leading-5"
+                      className="truncate text-chrome-title font-medium leading-5"
                       style={{ color: HUD.text }}
                     >
                       {conversation.title}
@@ -401,7 +401,7 @@ export const RecentConversations = forwardRef<
                       />
                     )}
                     <span
-                      className="ml-auto shrink-0 font-mono text-[10px] @max-[430px]:ml-0"
+                      className="ml-auto shrink-0 font-mono text-chrome-micro @max-[430px]:ml-0"
                       style={{ color: meta.color }}
                     >
                       {reopensExawatt ? 'Exawatt · ' : ''}
@@ -412,7 +412,7 @@ export const RecentConversations = forwardRef<
                     conversation.description !== conversation.title && (
                       <span
                         id={descriptionId}
-                        className="mt-0.5 block truncate text-[11px] leading-4"
+                        className="mt-0.5 block truncate text-chrome-meta leading-4"
                         style={{ color: HUD.textDim }}
                       >
                         {conversation.description}
@@ -420,7 +420,7 @@ export const RecentConversations = forwardRef<
                     )}
                   <span
                     id={detailsId}
-                    className="mt-0.5 block break-all font-mono text-[10px] leading-4"
+                    className="mt-0.5 block break-all font-mono text-chrome-micro leading-4"
                     style={{ color: HUD.textDim }}
                   >
                     <span>{conversation.id}</span>
@@ -445,7 +445,7 @@ export const RecentConversations = forwardRef<
                 onKeyDown={event => handleRowKeyDown(event, index)}
                 aria-label={`Start fresh from ${conversation.title}`}
                 title="Start a new Agent from this handoff"
-                className="my-1 mr-1.5 inline-flex min-h-11 shrink-0 items-center gap-1 rounded border border-transparent px-2 font-mono text-[10px] outline-none transition-[border-color,color] hover:border-hud-cyan/20 hover:text-hud-cyan disabled:opacity-50 focus-visible:border-hud-cyan/30 focus-visible:text-hud-cyan focus-visible:ring-1 focus-visible:ring-hud-cyan @max-[560px]:mb-2 @max-[560px]:ml-12 motion-reduce:transition-none"
+                className="my-1 mr-1.5 inline-flex min-h-11 shrink-0 items-center gap-1 rounded border border-transparent px-2 font-mono text-chrome-micro outline-none transition-[border-color,color] hover:border-hud-cyan/20 hover:text-hud-cyan disabled:opacity-50 focus-visible:border-hud-cyan/30 focus-visible:text-hud-cyan focus-visible:ring-1 focus-visible:ring-hud-cyan @max-[560px]:mb-2 @max-[560px]:ml-12 motion-reduce:transition-none"
                 style={{ color: HUD.textDim }}
               >
                 {opening === freshKey ? (
@@ -462,7 +462,7 @@ export const RecentConversations = forwardRef<
       {visible.length > 0 && (
         <p
           aria-hidden="true"
-          className="mt-2 px-0.5 font-mono text-[10px]"
+          className="mt-2 px-0.5 font-mono text-chrome-micro"
           style={{ color: HUD.textDim }}
         >
           ↑↓ choose · home/end jump · ⏎ continue · esc new task

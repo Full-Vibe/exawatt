@@ -381,7 +381,7 @@ describe('Sessions overview', () => {
     );
     expect(screen.getByText('Ready for instructions')).toHaveClass(
       'font-sans',
-      'text-[15px]',
+      'text-reading',
       'leading-6'
     );
     expect(screen.getByText('No plan reported')).toHaveClass(

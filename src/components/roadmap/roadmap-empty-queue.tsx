@@ -39,7 +39,7 @@ export function RoadmapEmptyQueue({
           type="button"
           tabIndex={-1}
           onClick={onOpenFile}
-          className="self-start rounded border px-2 py-1 font-mono text-[11px] outline-none hover:bg-white/10"
+          className="self-start rounded border px-2 py-1 font-mono text-chrome-meta outline-none hover:bg-white/10"
           style={{
             color: HUD.amber,
             borderColor: withAlpha(HUD.amber, 0.45),
@@ -63,7 +63,7 @@ export function RoadmapNoRoadmap({ checkedPaths }: { checkedPaths: string[] }) {
         {checkedPaths.map((p, i) => (
           <span key={p}>
             {i > 0 && ', '}
-            <span className="font-mono text-[11px]" style={{ color: HUD.textMono }}>
+            <span className="font-mono text-chrome-meta" style={{ color: HUD.textMono }}>
               {p}
             </span>
           </span>
@@ -84,7 +84,7 @@ export function RoadmapReadError({ error }: { error: string }) {
       <p className="font-display text-sm font-semibold" style={{ color: HUD.red }}>
         Could not read the roadmap
       </p>
-      <p className="font-mono text-[11px] leading-5" style={{ color: HUD.textDim }}>
+      <p className="font-mono text-chrome-meta leading-5" style={{ color: HUD.textDim }}>
         {error}
       </p>
     </div>

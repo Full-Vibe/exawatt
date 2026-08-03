@@ -638,7 +638,7 @@ export function ExposeOverlay({
                           No Sessions yet
                         </span>
                         <span
-                          className="mt-1 font-mono text-[10px]"
+                          className="mt-1 font-mono text-chrome-micro"
                           style={{ color: project.color }}
                         >
                           Open in Terminal

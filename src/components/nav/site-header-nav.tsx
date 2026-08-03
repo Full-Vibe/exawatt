@@ -54,7 +54,7 @@ function WorkspaceIdentityChip({
   return (
     <span
       data-active-tenant-workspace={workspace.id}
-      className="mr-1 inline-flex h-6 items-center gap-1.5 border border-teal-300/40 bg-teal-950/40 px-2 font-mono text-[11px] font-medium text-teal-200"
+      className="mr-1 inline-flex h-6 items-center gap-1.5 border border-teal-300/40 bg-teal-950/40 px-2 font-mono text-chrome-meta font-medium text-teal-200"
     >
       <KindIcon aria-hidden="true" className="h-3 w-3" />
       {workspace.name} Workspace
@@ -249,7 +249,7 @@ export function SiteHeaderNav({
                         <span className="flex min-w-0 flex-1 flex-col">
                           <span className="truncate">{workspace.name}</span>
                           {workspace.tagline && (
-                            <span className="truncate text-[11px] text-muted-foreground">
+                            <span className="truncate text-chrome-meta text-muted-foreground">
                               {workspace.tagline}
                             </span>
                           )}
@@ -258,7 +258,7 @@ export function SiteHeaderNav({
                           <Check className="ml-2 h-4 w-4 shrink-0 text-teal-300" />
                         )}
                         {comingSoon && (
-                          <span className="ml-2 shrink-0 border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          <span className="ml-2 shrink-0 border border-border px-1.5 py-0.5 text-chrome-micro text-muted-foreground">
                             Coming soon
                           </span>
                         )}

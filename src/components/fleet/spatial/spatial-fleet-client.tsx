@@ -514,7 +514,7 @@ export function SpatialFleetClient() {
           </>
         )}
         {scene.altitude !== 'fleet' && (
-          <span className="hidden text-[11px] text-zinc-600 sm:inline">
+          <span className="hidden text-chrome-meta text-zinc-600 sm:inline">
             Esc to zoom out
           </span>
         )}
@@ -539,7 +539,7 @@ export function SpatialFleetClient() {
                 }}
                 placeholder="Search agents…"
                 aria-label="Search agents"
-                className="w-24 rounded-sm bg-transparent text-[11px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus-visible:ring-1 focus-visible:ring-teal-400/70 sm:w-40"
+                className="w-24 rounded-sm bg-transparent text-chrome-meta text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus-visible:ring-1 focus-visible:ring-teal-400/70 sm:w-40"
               />
             </div>
             <div className="flex flex-wrap items-center gap-1">
@@ -548,7 +548,7 @@ export function SpatialFleetClient() {
                   key={status}
                   onClick={() => toggleStatus(status)}
                   aria-pressed={statusFilter.includes(status)}
-                  className={`rounded px-1.5 py-1 text-[10px] capitalize transition ${
+                  className={`rounded px-1.5 py-1 text-chrome-micro capitalize transition ${
                     statusFilter.includes(status)
                       ? 'bg-teal-600 text-white'
                       : 'text-zinc-400 hover:text-zinc-100'
@@ -563,7 +563,7 @@ export function SpatialFleetClient() {
                 onClick={() => {
                   updateFilters({ query: '', statuses: [] });
                 }}
-                className="rounded px-1.5 py-1 text-[10px] text-zinc-500 hover:text-zinc-200"
+                className="rounded px-1.5 py-1 text-chrome-micro text-zinc-500 hover:text-zinc-200"
                 title="Clear search and filters"
               >
                 clear
@@ -738,7 +738,7 @@ export function SpatialFleetClient() {
                       key={item.id}
                       className="rounded-md border border-zinc-800/70 bg-zinc-950/50 p-2.5"
                     >
-                      <p className="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                      <p className="truncate text-chrome-meta font-semibold uppercase tracking-[0.12em] text-zinc-500">
                         {item.agentName}
                       </p>
                       <p className="mt-0.5 line-clamp-2 text-sm text-zinc-300">

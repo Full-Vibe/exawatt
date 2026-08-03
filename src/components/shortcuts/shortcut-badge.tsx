@@ -18,7 +18,7 @@ export function ShortcutBadge({ keys, className, size = 'sm' }: ShortcutBadgePro
     <kbd
       className={cn(
         'inline-flex items-center gap-0.5 rounded border border-border bg-muted px-1.5 font-mono font-medium text-muted-foreground',
-        size === 'sm' ? 'text-[10px] py-0.5' : 'text-xs py-1',
+        size === 'sm' ? 'text-chrome-micro py-0.5' : 'text-xs py-1',
         className
       )}
       aria-label={accessible}

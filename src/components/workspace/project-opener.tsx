@@ -339,7 +339,7 @@ export function ProjectOpener({
                             {candidate.projectName}
                           </span>
                           <span
-                            className="block truncate font-mono text-[10px]"
+                            className="block truncate font-mono text-chrome-micro"
                             style={{ color: HUD.textDim }}
                           >
                             {candidate.projectDir}
@@ -448,7 +448,7 @@ export function ProjectOpener({
                         {project.name}
                       </span>
                       <span
-                        className="mt-1 block truncate font-mono text-[10px]"
+                        className="mt-1 block truncate font-mono text-chrome-micro"
                         style={{ color: HUD.textDim }}
                       >
                         {project.dir}
@@ -494,7 +494,7 @@ export function ProjectOpener({
               </button>
               {syncUnavailable && (
                 <span
-                  className="ml-auto font-mono text-[10px]"
+                  className="ml-auto font-mono text-chrome-micro"
                   style={{ color: HUD.textDim }}
                 >
                   Local Projects

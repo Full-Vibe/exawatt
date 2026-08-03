@@ -109,7 +109,7 @@ export function RoadmapItemCard({
             )}
             {item.milestonesTotal > 0 && (
               <span
-                className="ml-auto font-mono text-[10px]"
+                className="ml-auto font-mono text-chrome-micro"
                 title={`${milestoneFractionSentence(item.milestonesDone, item.milestonesTotal)} milestones`}
                 style={{ color: HUD.textDim }}
               >
@@ -141,13 +141,13 @@ export function RoadmapItemCard({
           {/* the blocker is more actionable than the next milestone */}
           {item.blocked && statusNoteProse(item.statusNote) ? (
             <p
-              className="line-clamp-2 font-ui text-[11.5px] leading-4"
+              className="line-clamp-2 font-ui text-chrome-label"
               style={{ color: HUD.amber }}
             >
               Blocked — {statusNoteProse(item.statusNote)}
             </p>
           ) : nextMilestone ? (
-            <p className="truncate font-ui text-[11.5px]" style={{ color: HUD.textDim }}>
+            <p className="truncate font-ui text-chrome-meta" style={{ color: HUD.textDim }}>
               Next up:{' '}
               <span style={{ color: HUD.text }}>
                 {cleanMilestoneTitle(nextMilestone.title)}
@@ -178,7 +178,7 @@ export function RoadmapItemCard({
       <SpineNode color={statusColor} variant={nodeVariant} />
       {item.declaredId && (
         <span
-          className="shrink-0 font-mono text-[11px]"
+          className="shrink-0 font-mono text-chrome-meta"
           style={{ color: compact ? withAlpha(HUD.textMono, 0.7) : HUD.textMono }}
         >
           {item.declaredId}
@@ -194,7 +194,7 @@ export function RoadmapItemCard({
       {item.hasWarnings && (
         <span
           title="parts of this item did not parse"
-          className="shrink-0 font-mono text-[10px]"
+          className="shrink-0 font-mono text-chrome-micro"
           style={{ color: HUD.amber }}
         >
           !
@@ -203,7 +203,7 @@ export function RoadmapItemCard({
       {item.chips.length > 0 && (
         <span
           title={`${item.chips.length} linked session${item.chips.length === 1 ? '' : 's'}`}
-          className="shrink-0 font-mono text-[10px]"
+          className="shrink-0 font-mono text-chrome-micro"
           style={{ color: statusColor }}
         >
           ▸{item.chips.length}
@@ -211,7 +211,7 @@ export function RoadmapItemCard({
       )}
       {item.milestonesTotal > 0 && (
         <span
-          className="ml-auto shrink-0 font-mono text-[10px]"
+          className="ml-auto shrink-0 font-mono text-chrome-micro"
           style={{ color: compact ? withAlpha(HUD.textDim, 0.7) : HUD.textDim }}
         >
           {item.milestonesDone}/{item.milestonesTotal}
