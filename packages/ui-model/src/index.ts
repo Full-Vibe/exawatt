@@ -13,6 +13,7 @@ import {
 } from '@exawatt/core';
 
 export * from './spatial-board';
+export * from './consumption-burn';
 export * from './roadmap-lens';
 export * from './roadmap-strip';
 export * from './roadmap-attention';

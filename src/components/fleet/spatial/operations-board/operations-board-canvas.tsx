@@ -20,11 +20,13 @@ import {
 import * as THREE from 'three';
 import type {
   SpatialBoardLayout,
+  SpatialBoardLens,
   SpatialBoardPiece,
   SpatialBoardProjection,
   SpatialBoardProjectZone,
   SpatialBoardRect,
 } from '@exawatt/ui-model';
+import { FLUX, pressureColor } from '@/components/consumption/flux';
 import {
   STATUS_LIGHT_ACTIVE_ROTATION_SECONDS,
   STATUS_LIGHT_META,
@@ -73,6 +75,37 @@ const PROJECT_ACCENTS = [
 
 function statusColor(status: SpatialBoardPiece['status']): string {
   return STATUS_LIGHT_META[statusLightStateForAgentStatus(status)].color;
+}
+
+/**
+ * Burn-lens palette (ENG-008): the consumption FLUX pressure ramp
+ * pre-sampled into a module-scope LUT (never allocated per frame), plus the
+ * neutral unknown for unreported usage. The ramp is violet→magenta by
+ * design-kernel channel ownership — a hot zone can never read as a status.
+ */
+const BURN_RAMP_STEPS = 32;
+const BURN_RAMP_COLORS = Array.from(
+  { length: BURN_RAMP_STEPS + 1 },
+  (_, index) => new THREE.Color(pressureColor((index / BURN_RAMP_STEPS) * 100))
+);
+const BURN_UNKNOWN_COLOR = new THREE.Color(FLUX.unknown);
+
+function burnRampColor(intensity: number | null | undefined): THREE.Color {
+  if (intensity == null || intensity < 0) return BURN_UNKNOWN_COLOR;
+  const clamped = Math.max(0, Math.min(1, intensity));
+  return BURN_RAMP_COLORS[Math.round(clamped * BURN_RAMP_STEPS)]!;
+}
+
+/** One color decision for every piece mark: status protocol by default, the
+ *  FLUX ramp under the burn lens. Shape always keeps carrying status (D30
+ *  redundant channels), so the lens swaps only the hue channel. */
+function pieceLensColor(
+  piece: SpatialBoardPiece,
+  lens: SpatialBoardLens
+): THREE.Color | string {
+  return lens === 'burn'
+    ? burnRampColor(piece.burnIntensity)
+    : statusColor(piece.status);
 }
 
 function hashId(id: string): number {
@@ -915,15 +948,24 @@ function ProjectHealthRail({ zone }: { zone: SpatialBoardProjectZone }) {
  *  drill affordance while the population field stays visible. */
 export type ZoneLabelTier = 'full' | 'compact';
 
+/** "12%" / "<1%" — the zone control is the exact-figure owner while the dot
+ *  field speaks in color. */
+function burnShareCopy(share: number): string {
+  const pct = Math.round(share * 100);
+  return pct < 1 ? '<1%' : `${pct}%`;
+}
+
 function ProjectControls({
   zones,
   altitude,
   labelTier,
+  lens,
   onDrillProject,
 }: {
   zones: SpatialBoardProjectZone[];
   altitude: SpatialBoardLayout['altitude'];
   labelTier: ZoneLabelTier;
+  lens: SpatialBoardLens;
   onDrillProject: (projectId: string) => void;
 }) {
   return zones.map(zone => {
@@ -945,6 +987,15 @@ function ProjectControls({
           {zone.blockedCount > 0 && (
             <span className="font-mono text-[9px] tabular-nums text-[oklch(0.72_0.13_28)]">
               {zone.blockedCount}!
+            </span>
+          )}
+          {lens === 'burn' && zone.burn && (
+            <span
+              className="font-mono text-[9px] tabular-nums"
+              style={{ color: pressureColor(zone.burn.intensity * 100) }}
+              title={`${burnShareCopy(zone.burn.share)} of the fleet's normalized token burn`}
+            >
+              {burnShareCopy(zone.burn.share)}
             </span>
           )}
         </span>
@@ -998,6 +1049,17 @@ function ProjectControls({
               {zone.blockedCount} blocked
             </span>
           )}
+          {lens === 'burn' &&
+            (zone.burn ? (
+              <span
+                style={{ color: pressureColor(zone.burn.intensity * 100) }}
+                title={`${burnShareCopy(zone.burn.share)} of the fleet's normalized token burn`}
+              >
+                {burnShareCopy(zone.burn.share)} of burn
+              </span>
+            ) : (
+              <span style={{ color: FLUX.unknown }}>usage unreported</span>
+            ))}
         </span>
         <ProjectHealthRail zone={zone} />
       </>
@@ -1161,9 +1223,11 @@ function DelegationSatelliteLayer({
 function StatusMarkLayer({
   pieces,
   active,
+  lens,
 }: {
   pieces: SpatialBoardPiece[];
   active: boolean;
+  lens: SpatialBoardLens;
 }) {
   const rotorRefs = useRef(new Map<string, THREE.Object3D>());
   const agentPieces = pieces.filter(piece => piece.kind === 'agent');
@@ -1214,7 +1278,7 @@ function StatusMarkLayer({
   const instance = (piece: SpatialBoardPiece) => ({
     position: [piece.x, -piece.y, 0.94] as [number, number, number],
     scale: [piece.size, piece.size, 1] as [number, number, number],
-    color: statusColor(piece.status),
+    color: pieceLensColor(piece, lens),
   });
 
   return (
@@ -1457,12 +1521,14 @@ function AgentPieceLayer({
   altitude,
   reduced,
   ambient,
+  lens,
   onSelectAgent,
 }: {
   pieces: SpatialBoardPiece[];
   altitude: SpatialBoardLayout['altitude'];
   reduced: boolean;
   ambient: boolean;
+  lens: SpatialBoardLens;
   onSelectAgent: (agentId: string) => void;
 }) {
   // Aggregate pieces render as the instanced population dot field (V3.1),
@@ -1555,9 +1621,9 @@ function AgentPieceLayer({
           );
         })}
       </Instances>
-      <StatusMarkLayer pieces={solid} active={ambient} />
+      <StatusMarkLayer pieces={solid} active={ambient} lens={lens} />
       <DelegationSatelliteLayer pieces={solid} active={ambient} />
-      <StoppedAgentOutlines pieces={visible} />
+      <StoppedAgentOutlines pieces={visible} lens={lens} />
       {selected && (
         <SelectionRing
           key={selected.id}
@@ -1589,10 +1655,12 @@ function PopulationDotLayer({
   zones,
   pieces,
   reduced,
+  lens,
 }: {
   zones: SpatialBoardProjectZone[];
   pieces: SpatialBoardPiece[];
   reduced: boolean;
+  lens: SpatialBoardLens;
 }) {
   const invalidate = useThree(state => state.invalidate);
   const field = useMemo(
@@ -1620,12 +1688,20 @@ function PopulationDotLayer({
       scratch.scale.setScalar(field.size[index]!);
       scratch.updateMatrix();
       mesh.setMatrixAt(index, scratch.matrix);
-      mesh.setColorAt(index, DOT_STATUS_COLORS[field.status[index]!]!);
+      // Parallel palettes, one mesh (ENG-008): the burn lens swaps the color
+      // source from the D40 status protocol to the FLUX ramp — geometry,
+      // packing, and instancing are untouched.
+      mesh.setColorAt(
+        index,
+        lens === 'burn'
+          ? burnRampColor(field.burn[index]!)
+          : DOT_STATUS_COLORS[field.status[index]!]!
+      );
     }
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     invalidate();
-  }, [field, invalidate, scratch]);
+  }, [field, invalidate, lens, scratch]);
 
   useFrame((state, delta) => {
     const material = materialRef.current;
@@ -1670,14 +1746,20 @@ function PopulationDotLayer({
 
 /** One dashed Line2 draw for every stopped Session-backed Agent. The DOM
  * controls remain the interaction/a11y owner; this layer is visual state. */
-function StoppedAgentOutlines({ pieces }: { pieces: SpatialBoardPiece[] }) {
+function StoppedAgentOutlines({
+  pieces,
+  lens,
+}: {
+  pieces: SpatialBoardPiece[];
+  lens: SpatialBoardLens;
+}) {
   const geometry = useMemo(() => {
     const points: Array<[number, number, number]> = [];
     const vertexColors: THREE.Color[] = [];
     for (const piece of pieces) {
       if (piece.kind !== 'agent' || piece.sessionState !== 'stopped') continue;
       const radius = piece.size * 0.52;
-      const color = new THREE.Color(statusColor(piece.status));
+      const color = new THREE.Color(pieceLensColor(piece, lens));
       for (let edge = 0; edge < 8; edge += 1) {
         const from = (edge / 8) * Math.PI * 2 + Math.PI / 8;
         const to = ((edge + 1) / 8) * Math.PI * 2 + Math.PI / 8;
@@ -1697,7 +1779,7 @@ function StoppedAgentOutlines({ pieces }: { pieces: SpatialBoardPiece[] }) {
       }
     }
     return { points, vertexColors };
-  }, [pieces]);
+  }, [lens, pieces]);
 
   if (geometry.points.length === 0) return null;
   return (
@@ -1785,6 +1867,7 @@ function AgentControls({
 export function OperationsBoardCanvas({
   layout,
   projection,
+  lens = 'status',
   controllerRef,
   onViewportChange,
   onDrillProject,
@@ -1794,6 +1877,7 @@ export function OperationsBoardCanvas({
 }: {
   layout: SpatialBoardLayout;
   projection: SpatialBoardProjection;
+  lens?: SpatialBoardLens;
   controllerRef: { current: OperationsBoardHandle | null };
   onViewportChange?: (viewport: OperationsBoardViewport) => void;
   onDrillProject: (projectId: string) => void;
@@ -1922,6 +2006,7 @@ export function OperationsBoardCanvas({
         altitude={layout.altitude}
         reduced={reduced}
         ambient={ambient}
+        lens={lens}
         onSelectAgent={onSelectAgent}
       />
       <PopulationDotLayer
@@ -1929,11 +2014,13 @@ export function OperationsBoardCanvas({
         zones={layout.zones}
         pieces={layout.pieces}
         reduced={reduced}
+        lens={lens}
       />
       <ProjectControls
         zones={visibleZones}
         altitude={layout.altitude}
         labelTier={labelTier}
+        lens={lens}
         onDrillProject={onDrillProject}
       />
       <AgentControls

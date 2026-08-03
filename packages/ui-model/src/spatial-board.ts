@@ -6,9 +6,17 @@ import {
   type FleetState,
   type ProjectCatalogEntry,
 } from '@exawatt/core';
+import { selectFleetBurn, type FleetBurnView } from './consumption-burn';
 
 export type SpatialBoardAltitude = 'fleet' | 'project' | 'agent';
 export type SpatialBoardProjection = 'top-down' | 'fixed-angle';
+/**
+ * Board color lens (ENG-008): `status` is the default D40 protocol coloring;
+ * `burn` recolors zones and population dots by normalized token share through
+ * the consumption FLUX channel. Presentation-only — attention semantics
+ * (triage order, needs-attention flags) never read the lens.
+ */
+export type SpatialBoardLens = 'status' | 'burn';
 export type SpatialBoardPieceKind = 'agent' | 'aggregate';
 export type SpatialBoardLabelVisibility = 'always' | 'selected' | 'hidden';
 
@@ -46,6 +54,17 @@ export interface SpatialBoardProjectZone {
   costRate: number;
   dominantStatus: AgentStatus;
   statusCounts: SpatialBoardStatusCounts;
+  /** Consumption burn rollup (ENG-008): null when no Agent in the zone
+   *  reports usage — absent, never zero. `share` is the zone's slice of the
+   *  board's normalized total; `intensity` is against the hottest zone so
+   *  the burn-lens choropleth uses the full ramp range. */
+  burn: SpatialBoardZoneBurn | null;
+}
+
+export interface SpatialBoardZoneBurn {
+  normalizedTokens: number;
+  share: number;
+  intensity: number;
 }
 
 /** One delegated child projected for the board (ENG-023 D3b): labels only. */
@@ -77,6 +96,11 @@ export interface SpatialBoardPiece {
   selected: boolean;
   needsAttention: boolean;
   labelVisibility: SpatialBoardLabelVisibility;
+  /** Burn-lens color figure (ENG-008): agent pieces carry their own
+   *  intensity against the hottest reporting Agent; aggregate pieces carry
+   *  their zone's intensity (per-dot identity does not survive aggregation).
+   *  Null when unreported — the lens renders it as the neutral unknown. */
+  burnIntensity: number | null;
   /** Present only while the source reports live children (ENG-023 D3b):
    *  presence is the signal, so unreported and zero read identically. */
   delegation?: {
@@ -428,7 +452,49 @@ function projectZone(
     costRate: group.summary.costRate,
     dominantStatus: dominantStatus(counts),
     statusCounts: counts,
+    burn: null, // attached by the layout's burn post-pass
   };
+}
+
+/**
+ * Attach zone burn rollups in place (ENG-008): each zone sums the reported
+ * per-agent normalized tokens of its Agents; `share` is against the board
+ * total, `intensity` against the hottest zone. Zones whose Agents all go
+ * unreported keep `burn: null` — the lens must render them as unknown.
+ */
+function attachZoneBurn(
+  zones: SpatialBoardProjectZone[],
+  burnView: FleetBurnView
+): void {
+  if (burnView.reportedCount === 0) return;
+  const totals = zones.map(zone => {
+    let normalized = 0;
+    let reported = false;
+    for (const agentId of zone.agentIds) {
+      const entry = burnView.byAgent.get(agentId);
+      if (!entry) continue;
+      normalized += entry.normalizedTokens;
+      reported = true;
+    }
+    return reported ? normalized : null;
+  });
+  const boardTotal = totals.reduce<number>(
+    (sum, value) => sum + (value ?? 0),
+    0
+  );
+  const maxZone = totals.reduce<number>(
+    (max, value) => Math.max(max, value ?? 0),
+    0
+  );
+  zones.forEach((zone, index) => {
+    const normalized = totals[index];
+    if (normalized === null) return;
+    zone.burn = {
+      normalizedTokens: normalized,
+      share: boardTotal > 0 ? round4(normalized / boardTotal) : 0,
+      intensity: maxZone > 0 ? round4(normalized / maxZone) : 0,
+    };
+  });
 }
 
 function fleetSlotPosition(
@@ -491,7 +557,8 @@ function individualPieces(
   selectedAgentId: string | null,
   visibleAgentIds: ReadonlySet<string> | undefined,
   labelLimit: number,
-  previousLayout: SpatialBoardLayout | null | undefined
+  previousLayout: SpatialBoardLayout | null | undefined,
+  burnView: FleetBurnView
 ): SpatialBoardPiece[] {
   const previousSlots = new Map<string, number>();
   if (previousLayout?.altitude === altitude) {
@@ -546,6 +613,7 @@ function individualPieces(
       visible: zone.visible && visibleAgent(agentId, visibleAgentIds),
       selected,
       needsAttention: agent.status === 'blocked' || agent.status === 'error',
+      burnIntensity: burnView.byAgent.get(agentId)?.intensity ?? null,
       labelVisibility: selected
         ? ('always' as const)
         : showByBudget
@@ -585,6 +653,7 @@ function aggregatePieces(
       visible: zone.visible,
       selected: false,
       needsAttention: status === 'blocked' || status === 'error',
+      burnIntensity: zone.burn?.intensity ?? null,
       labelVisibility: 'always',
     });
   }
@@ -704,6 +773,10 @@ export function selectSpatialBoardLayout(
     );
   });
 
+  // Burn attaches BEFORE pieces so aggregate pieces inherit zone intensity.
+  const burnView = selectFleetBurn(state);
+  attachZoneBurn(zones, burnView);
+
   const maxFleetPieces = options.maxFleetPieces ?? DEFAULTS.maxFleetPieces;
   const maxFleetPiecesPerZone =
     options.maxFleetPiecesPerZone ?? DEFAULTS.maxFleetPiecesPerZone;
@@ -729,7 +802,8 @@ export function selectSpatialBoardLayout(
             ? (options.fleetAgentLabelLimit ?? DEFAULTS.fleetAgentLabelLimit)
             : (options.projectAgentLabelLimit ??
                 DEFAULTS.projectAgentLabelLimit),
-          options.previousLayout
+          options.previousLayout,
+          burnView
         )
       );
     } else {

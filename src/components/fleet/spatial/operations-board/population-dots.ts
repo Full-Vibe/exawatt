@@ -75,6 +75,10 @@ export interface PopulationDotField {
   size: Float32Array;
   /** Index into POPULATION_STATUS_ORDER, per dot. */
   status: Uint8Array;
+  /** Burn-lens intensity per dot, 0..1 from the zone's aggregate piece
+   *  (ENG-008); -1 when the zone's usage is unreported (neutral unknown,
+   *  never a zero on the ramp). */
+  burn: Float32Array;
   /** Total population represented across all zones. */
   population: number;
   /** True when any zone had to downsample below its real population. */
@@ -86,6 +90,8 @@ export const POPULATION_STATUS_ORDER = STATUS_ORDER;
 interface ZoneBand {
   status: number;
   count: number;
+  /** 0..1 zone burn intensity; -1 = unreported. */
+  burn: number;
 }
 
 function largestRemainderShare(bands: ZoneBand[], capacity: number): number[] {
@@ -143,7 +149,11 @@ export function computePopulationDotField(
     const statusIndex = STATUS_INDEX.get(piece.status);
     if (statusIndex === undefined || piece.count <= 0) continue;
     const bands = bandsByZone.get(piece.projectId) ?? [];
-    bands.push({ status: statusIndex, count: piece.count });
+    bands.push({
+      status: statusIndex,
+      count: piece.count,
+      burn: piece.burnIntensity ?? -1,
+    });
     bandsByZone.set(piece.projectId, bands);
     population += piece.count;
   }
@@ -204,6 +214,7 @@ export function computePopulationDotField(
   const y = new Float32Array(emitted);
   const size = new Float32Array(emitted);
   const status = new Uint8Array(emitted);
+  const burn = new Float32Array(emitted);
   let cursor = 0;
   for (const plan of emitPlans) {
     let slot = 0;
@@ -216,11 +227,12 @@ export function computePopulationDotField(
         y[cursor] = plan.startY + row * plan.pitch;
         size[cursor] = plan.pitch * DOT_FILL;
         status[cursor] = plan.bands[band]!.status;
+        burn[cursor] = plan.bands[band]!.burn;
         cursor += 1;
         slot += 1;
       }
     }
   }
 
-  return { count: emitted, x, y, size, status, population, truncated };
+  return { count: emitted, x, y, size, status, burn, population, truncated };
 }

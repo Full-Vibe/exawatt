@@ -40,6 +40,7 @@ function zone(
       complete: 0,
       error: 0,
     },
+    burn: null,
   };
 }
 
@@ -65,6 +66,7 @@ function aggregate(
     visible,
     selected: false,
     needsAttention: false,
+    burnIntensity: null,
     labelVisibility: 'always',
   };
 }

@@ -45,6 +45,19 @@ export interface AgentMetrics {
   costRate: number; // $/hr rolling avg over last 10 min
   tokenRate: number; // tokens/min rolling avg
   costHistory: CostSnapshot[];
+  /**
+   * Consumption attribution (ENG-008): raw token total across every unit
+   * (input, output, cache read, cache write), inclusive of delegated runs.
+   * ABSENT when the source reports no usage breakdown — never zero, per the
+   * consumption honesty rule. The live local transport leaves it unset today.
+   */
+  rawTokens?: number;
+  /**
+   * Model-size-weighted token total — the E3 compute proxy from
+   * `consumption/model-weights.ts` — inclusive of delegated runs. Absent,
+   * never zero, when unreported.
+   */
+  normalizedTokens?: number;
 }
 
 export interface AgentActivity {

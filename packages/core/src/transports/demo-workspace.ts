@@ -29,6 +29,7 @@ import { INITIAL_AGENT_METRICS } from '../types/agent';
 import type { ProjectCatalogEntry } from '../types/project';
 import type { DemoFleetAgent, DemoFleetTier } from '../demo/types';
 import { DEMO_PROJECTS, DEMO_PROJECTS_BY_KEY } from '../demo/projects';
+import { demoAgentBurn } from '../demo/burn';
 import { demoFleetAgents } from '../demo/scale';
 
 export interface DemoWorkspaceTransportOptions {
@@ -65,6 +66,10 @@ function delegationFor(agent: DemoFleetAgent): AgentDelegation | undefined {
 export function demoWorkspaceAgent(agent: DemoFleetAgent): ExawattAgent {
   const project = DEMO_PROJECTS_BY_KEY.get(agent.projectKey);
   const delegation = delegationFor(agent);
+  // Per-agent burn (ENG-008): the fixture authors full usage, so the mapped
+  // Agent carries the raw and normalized totals through core's own E3 math.
+  // The live local transport reports neither field — absent, never zero.
+  const burn = demoAgentBurn(agent);
   return {
     id: agent.id,
     name: agent.name,
@@ -83,6 +88,8 @@ export function demoWorkspaceAgent(agent: DemoFleetAgent): ExawattAgent {
       turnCount: agent.turns,
       startedAt: agent.startedAtMs,
       duration: Math.max(0, agent.lastActivityAtMs - agent.startedAtMs),
+      rawTokens: burn.rawTokens,
+      normalizedTokens: burn.normalizedTokens,
     },
     lastActivityAt: agent.lastActivityAtMs,
     ...(agent.blocker

@@ -2,6 +2,12 @@
 
 import { Shapes } from 'lucide-react';
 import { HUD } from '@/components/hud';
+import {
+  FLUX,
+  exact,
+  pressureColor,
+  tokens,
+} from '@/components/consumption/flux';
 import { AnnouncedChip } from '@/components/readiness';
 import { HarnessGlyph } from './harness-icons';
 import { SessionGoalSummary } from './session-goal-summary';
@@ -13,6 +19,21 @@ import {
   type SessionGlyphState,
 } from './status-glyphs';
 import type { PtyHarness, SessionDelegation } from '@/types/electron';
+
+/**
+ * Per-Session consumption readout (ENG-008): raw tokens this Session
+ * (delegated runs included) plus its burn relative to the busiest Session in
+ * the Workspace. Sources that report no usage pass nothing — the row is
+ * omitted entirely, never rendered as zero.
+ */
+export interface SessionConsumptionReadout {
+  /** Raw tokens across all units, delegated runs included. */
+  rawTokens: number;
+  /** Slice of the Workspace's normalized token burn, 0..1. */
+  share: number;
+  /** Against the busiest Session in the Workspace, 0..1 — the bar length. */
+  intensity: number;
+}
 
 export interface SessionOverviewCardContentProps {
   title: string;
@@ -27,7 +48,8 @@ export interface SessionOverviewCardContentProps {
   /**
    * ENG-028 T1: the Agent Type name, when the data source declares one (the
    * Demo Workspace's authored desks). Live untyped Sessions leave it unset
-   * and get the empty Type slot; the chip is `announced` either way. Shell
+   * and the chip reads "Coding" — a true value, never the slot's own name
+   * (operator, 2026-08-03); the chip is `announced` either way. Shell
    * sessions never render it — a plain shell is not a worker.
    */
   agentType?: string | null;
@@ -37,6 +59,8 @@ export interface SessionOverviewCardContentProps {
   meaningfulChange?: string | null;
   next: string;
   nextProgress?: string | null;
+  /** Consumption readout (ENG-008); absent when the source reports none. */
+  consumption?: SessionConsumptionReadout | null;
 }
 
 /**
@@ -60,7 +84,17 @@ export function SessionOverviewCardContent({
   meaningfulChange,
   next,
   nextProgress,
+  consumption,
 }: SessionOverviewCardContentProps) {
+  // Monochrome until notable (design kernel): the FLUX channel lights only
+  // once a Session crosses into the ramp's warm territory; the ramp boundary
+  // (0.62) is the shared definition of "notable" — no second threshold.
+  const consumptionNotable = (consumption?.intensity ?? 0) > 0.62;
+  const consumptionColor = consumption
+    ? consumptionNotable
+      ? pressureColor(consumption.intensity * 100)
+      : HUD.textDim
+    : HUD.textDim;
   return (
     <>
       <div className="flex min-w-0 items-center justify-between gap-3">
@@ -80,7 +114,10 @@ export function SessionOverviewCardContent({
           </span>
           {/* ENG-028 T1: the Type slot — what kind of worker, not just which
               engine — announced until Types exist. Constant chip footprint;
-              strictly additive to the header row. */}
+              strictly additive to the header row. A chip shows a VALUE,
+              never its slot's name (operator, 2026-08-03): untyped live
+              Sessions read "Coding" — true of every Claude Code / Codex
+              Session today — while declaring sources name their Types. */}
           {harness !== 'shell' && (
             <AnnouncedChip
               size="micro"
@@ -88,7 +125,7 @@ export function SessionOverviewCardContent({
               className="shrink-0"
             >
               <Shapes aria-hidden className="h-2.5 w-2.5" />
-              {agentType ?? 'Type'}
+              {agentType ?? 'Coding'}
             </AnnouncedChip>
           )}
           {lifecycleLabel && (
@@ -216,6 +253,35 @@ export function SessionOverviewCardContent({
             </span>
           )}
         </span>
+        {consumption && (
+          <span
+            data-session-consumption
+            className="mt-2 flex items-center justify-between gap-3"
+            title={`${exact(consumption.rawTokens)} tokens this Session, delegated runs included · ${consumption.share < 0.01 ? '<1' : Math.round(consumption.share * 100)}% of the Workspace's normalized burn · bar is relative to the busiest Session`}
+          >
+            <span
+              className="font-mono text-chrome-meta tabular-nums"
+              style={{ color: consumptionColor }}
+            >
+              {tokens(consumption.rawTokens)} tokens
+            </span>
+            <span
+              aria-hidden="true"
+              className="h-[3px] w-16 shrink-0 overflow-hidden rounded-full"
+              style={{ background: FLUX.track }}
+            >
+              <span
+                className="block h-full rounded-full"
+                style={{
+                  width: `${Math.max(3, consumption.intensity * 100)}%`,
+                  background: consumptionNotable
+                    ? pressureColor(consumption.intensity * 100)
+                    : 'rgba(138, 160, 190, 0.55)',
+                }}
+              />
+            </span>
+          </span>
+        )}
       </div>
     </>
   );

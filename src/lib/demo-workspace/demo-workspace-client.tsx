@@ -50,6 +50,7 @@ import {
   demoShellActivity,
   demoShellAgents,
   demoShellAgentTypes,
+  demoShellConsumption,
   demoShellAttention,
   demoShellDelegation,
   demoShellEngaged,
@@ -77,6 +78,7 @@ export function DemoWorkspaceClient() {
   const delegation = useMemo(() => demoShellDelegation(), []);
   const roadmapByTab = useMemo(() => demoShellRoadmapByTab(), []);
   const agentTypeByTab = useMemo(() => demoShellAgentTypes(), []);
+  const consumptionByTab = useMemo(() => demoShellConsumption(), []);
   const sessionPaneRef = useRef<HTMLElement>(null);
 
   // Session resolution accepts the FULL fleet (base + scale tier): a
@@ -446,6 +448,7 @@ export function DemoWorkspaceClient() {
           delegation={delegation}
           roadmapByTab={roadmapByTab}
           agentTypeByTab={agentTypeByTab}
+          consumptionByTab={consumptionByTab}
           activeTabId={activeAgent?.id ?? null}
           activeProjectDir={activeProject?.dir ?? null}
           roadmapRead={demoRoadmapRead}

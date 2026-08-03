@@ -28,6 +28,7 @@ import {
   selectSpatialProjectZones,
   type Altitude,
   type SpatialBoardLayout,
+  type SpatialBoardLens,
   type SpatialBoardProjection,
 } from '@exawatt/ui-model';
 import { agentGoalDisplay } from './spatial-agent-copy';
@@ -79,6 +80,11 @@ export function SpatialFleetClient() {
     searchParams.get('projection') === 'fixed-angle'
       ? 'fixed-angle'
       : 'top-down';
+  // Consumption lens (ENG-008): status coloring is the default; the URL
+  // carries the burn lens like it carries the projection, so a lensed board
+  // address survives handoffs. Attention semantics never read it.
+  const lens: SpatialBoardLens =
+    searchParams.get('lens') === 'burn' ? 'burn' : 'status';
   const { fleetState, projects } = useFleet();
   const { isDemo } = useFleetConnection();
   const { connectToRealOC, canConnect } = useConnectToOC();
@@ -284,6 +290,19 @@ export function SpatialFleetClient() {
       const params = new URLSearchParams(searchParams.toString());
       if (next === 'fixed-angle') params.set('projection', next);
       else params.delete('projection');
+      const queryString = params.toString();
+      router.replace(`/fleet/spatial${queryString ? `?${queryString}` : ''}`, {
+        scroll: false,
+      });
+    },
+    [router, searchParams]
+  );
+
+  const changeLens = useCallback(
+    (next: SpatialBoardLens) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next === 'burn') params.set('lens', next);
+      else params.delete('lens');
       const queryString = params.toString();
       router.replace(`/fleet/spatial${queryString ? `?${queryString}` : ''}`, {
         scroll: false,
@@ -609,6 +628,7 @@ export function SpatialFleetClient() {
           <OperationsBoardSurface
             layout={boardLayout}
             projection={projection}
+            lens={lens}
             hero={
               scene.attention.hero
                 ? {
@@ -622,6 +642,7 @@ export function SpatialFleetClient() {
             onSelectAgent={handleSelectAgent}
             onOverview={overview}
             onProjectionChange={changeProjection}
+            onLensChange={changeLens}
             sessionTransitionAgentId={sessionHandoffAgentId}
             viewportStorageKey={viewportStorageKey}
           />

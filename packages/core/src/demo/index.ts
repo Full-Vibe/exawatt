@@ -32,6 +32,7 @@ export {
   rebuildScaleTierForTest,
   type DemoFleetOptions,
 } from './scale';
+export { demoAgentBurn, type DemoAgentBurn } from './burn';
 export {
   DEMO_CONSUMPTION_WINDOW_DAYS,
   demoWorkspaceConsumption,

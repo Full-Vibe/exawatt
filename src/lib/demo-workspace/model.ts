@@ -18,6 +18,7 @@ import {
   DEMO_ROADMAP_MARKDOWN,
   DEMO_TRANSCRIPTS,
   DEMO_WORKSPACE_NOW_MS,
+  demoAgentBurn,
   demoFleetAgents,
   demoProjectRoadmap,
   type DemoFleetAgent,
@@ -32,6 +33,7 @@ import type {
   SessionRowStatus,
 } from '@/components/workspace/switcher-rows';
 import type { PtyHarness, SessionDelegation } from '@/types/electron';
+import { computeAgentBurn, type AgentBurnEntry } from '@exawatt/ui-model';
 
 /** One stable "now" per app load: the whole demo tenant reads one clock. */
 const DEMO_SHELL_NOW_MS = Date.now();
@@ -136,6 +138,22 @@ export function demoShellAgentTypes(): Record<string, string> {
     const type = demoProjectFor(agent)?.agentType;
     if (type) out[agent.id] = type;
   }
+  return out;
+}
+
+/**
+ * tabId → per-Session consumption burn (ENG-008): the same core derivation
+ * (`demoAgentBurn`) and the same ui-model normalization the Fleet board's
+ * burn lens reads — no tile-private math. Base tier only, matching the
+ * exposé's scope; delegated runs ride inside each Session total.
+ */
+export function demoShellConsumption(): Record<string, AgentBurnEntry> {
+  const agents = demoShellAgents();
+  const view = computeAgentBurn(
+    agents.map(agent => ({ id: agent.id, ...demoAgentBurn(agent) }))
+  );
+  const out: Record<string, AgentBurnEntry> = {};
+  for (const [id, entry] of view.byAgent) out[id] = entry;
   return out;
 }
 

@@ -11,8 +11,10 @@ import {
 import Link from 'next/link';
 import type {
   SpatialBoardLayout,
+  SpatialBoardLens,
   SpatialBoardProjection,
 } from '@exawatt/ui-model';
+import { FLUX } from '@/components/consumption/flux';
 import { useAgentFieldGlide } from '@/components/hud/webgl/use-agent-field-glide';
 import {
   OperationsBoardCanvas,
@@ -137,22 +139,29 @@ export interface SpatialBoardHero {
 export function OperationsBoardSurface({
   layout,
   projection,
+  lens = 'status',
   hero = null,
   onDrillProject,
   onSelectAgent,
   onOverview,
   onProjectionChange,
+  onLensChange,
   sessionTransitionAgentId = null,
   viewportStorageKey = 'exawatt:spatial-viewport:v2:fleet:~:~:top-down',
   preserveDrawingBuffer = false,
 }: {
   layout: SpatialBoardLayout;
   projection: SpatialBoardProjection;
+  /** Board color lens (ENG-008): status protocol by default; `burn` recolors
+   *  the population field by normalized token share. Presentation-only —
+   *  attention triage below never reads it. */
+  lens?: SpatialBoardLens;
   hero?: SpatialBoardHero | null;
   onDrillProject: (projectId: string) => void;
   onSelectAgent: (agentId: string | null) => void;
   onOverview: () => void;
   onProjectionChange: (projection: SpatialBoardProjection) => void;
+  onLensChange?: (lens: SpatialBoardLens) => void;
   sessionTransitionAgentId?: string | null;
   viewportStorageKey?: string;
   preserveDrawingBuffer?: boolean;
@@ -320,13 +329,18 @@ export function OperationsBoardSurface({
           projection === 'top-down' ? 'fixed-angle' : 'top-down'
         );
         event.preventDefault();
+      } else if (event.key.toLowerCase() === 'b' && onLensChange) {
+        onLensChange(lens === 'status' ? 'burn' : 'status');
+        event.preventDefault();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     layout.altitude,
+    lens,
     onDrillProject,
+    onLensChange,
     onOverview,
     onProjectionChange,
     projection,
@@ -338,6 +352,7 @@ export function OperationsBoardSurface({
     <div
       data-spatial-board
       data-board-projection={projection}
+      data-board-lens={lens}
       data-board-projects={visibleZones.length}
       data-board-pieces={layout.stats.visiblePieceCount}
       data-board-status-lights={visibleLightStates}
@@ -349,6 +364,7 @@ export function OperationsBoardSurface({
           <OperationsBoardCanvas
             layout={layout}
             projection={projection}
+            lens={lens}
             controllerRef={controller}
             onViewportChange={updateViewport}
             onDrillProject={onDrillProject}
@@ -409,6 +425,7 @@ export function OperationsBoardSurface({
           <KeyHint keyName="drag ←↑↓→" label="pan" />
           <KeyHint keyName="pinch + −" label="zoom" />
           <KeyHint keyName="V" label="view" />
+          {onLensChange && <KeyHint keyName="B" label="burn" />}
           {attentionIds.length > 0 && <KeyHint keyName="N" label="attention" />}
           <KeyHint
             keyName={layout.altitude === 'fleet' ? '0' : 'Esc'}
@@ -437,6 +454,60 @@ export function OperationsBoardSurface({
               </button>
             ))}
           </div>
+
+          {onLensChange && (
+            <div className="flex flex-col items-stretch gap-1">
+              <div
+                className="flex border border-[oklch(0.34_0.014_210)] bg-[oklch(0.15_0.009_220/0.96)] p-1"
+                aria-label="Board color lens"
+              >
+                {(['status', 'burn'] as const).map(option => (
+                  <button
+                    key={option}
+                    type="button"
+                    data-board-lens-option={option}
+                    aria-pressed={lens === option}
+                    aria-label={
+                      option === 'burn'
+                        ? 'Color by token burn (normalized share)'
+                        : 'Color by agent status'
+                    }
+                    onClick={() => onLensChange(option)}
+                    className={`min-h-11 px-2 font-mono text-chrome-micro font-semibold uppercase tracking-[0.1em] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[oklch(0.7_0.09_185/0.4)] sm:px-3 ${
+                      lens === option
+                        ? option === 'burn'
+                          ? 'bg-[oklch(0.28_0.09_305)] text-[oklch(0.9_0.06_320)]'
+                          : 'bg-[oklch(0.32_0.055_185)] text-[oklch(0.92_0.025_185)]'
+                        : 'text-[oklch(0.62_0.012_210)] hover:bg-[oklch(0.2_0.015_210)] hover:text-[oklch(0.82_0.015_210)]'
+                    }`}
+                  >
+                    {option === 'status' ? 'Status' : 'Burn'}
+                  </button>
+                ))}
+              </div>
+              {lens === 'burn' && (
+                <div
+                  data-board-lens-legend
+                  className="hidden border border-[oklch(0.3_0.012_215)] bg-[oklch(0.14_0.009_220/0.94)] px-1.5 py-1 sm:block"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="block h-1 w-full"
+                    style={{
+                      background: `linear-gradient(90deg, ${FLUX.calm}, ${FLUX.mid}, ${FLUX.warm}, ${FLUX.hot})`,
+                    }}
+                  />
+                  <span
+                    className="mt-1 block font-mono text-chrome-nano tracking-[0.08em]"
+                    style={{ color: 'oklch(0.62 0.012 210)' }}
+                  >
+                    share of token burn ·{' '}
+                    <span style={{ color: FLUX.unknown }}>grey</span> unreported
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
           <BoardMiniMap
             layout={layout}
