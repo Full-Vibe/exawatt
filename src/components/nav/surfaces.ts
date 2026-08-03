@@ -1,4 +1,5 @@
 import { spatialReturnHref } from './spatial-return';
+import { CONSUMPTION_SURFACE_NAME } from '@/components/consumption/surface-name';
 
 /**
  * Navigation manifest (ENG-016 D8).
@@ -117,7 +118,9 @@ export const APP_SURFACES: AppSurface[] = [
     // ENG-008 E4. A VIEW, not a fourth command altitude — the spine stays
     // exactly Agent → Team → Fleet, and this sits beside Settings.
     id: 'consumption',
-    name: 'Consumption',
+    // display name shared with the page title and window title; the rename
+    // candidate ("Usage") is one constant + a route alias
+    name: CONSUMPTION_SURFACE_NAME,
     summary: 'What the fleet is spending, and on what',
     href: '/consumption',
     tier: 'app',

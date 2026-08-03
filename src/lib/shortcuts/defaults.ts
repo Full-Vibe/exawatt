@@ -1,4 +1,5 @@
 import type { ShortcutDefinition } from '@/types/shortcuts';
+import { CONSUMPTION_SURFACE_NAME } from '@/components/consumption/surface-name';
 
 /**
  * Default shortcut definitions (Phase 1: Navigation)
@@ -82,8 +83,8 @@ export const defaultShortcuts: ShortcutDefinition[] = [
   {
     id: 'go-consumption',
     keys: [{ key: 'g' }, { key: 'c' }],
-    label: 'Go to Consumption',
-    description: 'Navigate to the Consumption surface',
+    label: `Go to ${CONSUMPTION_SURFACE_NAME}`,
+    description: `Navigate to the ${CONSUMPTION_SURFACE_NAME} surface`,
     category: 'navigation',
     contexts: ['global'],
   },

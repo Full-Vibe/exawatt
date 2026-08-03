@@ -1,3 +1,5 @@
+import { CONSUMPTION_SURFACE_NAME } from '@/components/consumption/surface-name';
+
 export type ArchitectureZoomKey =
   | 'system'
   | 'layers'
@@ -534,9 +536,9 @@ export const architectureManifest = {
         },
         {
           id: 'consumption-surface',
-          label: 'Consumption Surface',
+          label: `${CONSUMPTION_SURFACE_NAME} Surface`,
           summary:
-            'Expository capacity, attribution, and cost-per-outcome narrative with the unit ladder, stated assurance, and visibly unbuilt allocation affordances.',
+            'Plan-window headroom and pace, attribution pivot and session grid drilling into modelled dollars, and ratio diagnostics — stated assurance throughout.',
           layer: 'ui',
           status: 'active-build',
           x: 945,
