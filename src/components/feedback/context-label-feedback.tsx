@@ -92,7 +92,8 @@ export function ContextLabelFeedback({
           </PopoverTrigger>
           <PopoverContent
             align="end"
-            className="w-80 border-[color:var(--hud-line)] bg-[color:var(--hud-panel)] p-4"
+            data-context-label-feedback-popover
+            className="w-80 border-hud-cyan/20 bg-hud-panel p-4 shadow-xl"
             onClick={event => event.stopPropagation()}
           >
             <form

@@ -49,6 +49,9 @@ describe('ContextLabelFeedback', () => {
       })
     );
     const input = await screen.findByLabelText('Better context');
+    expect(
+      document.querySelector('[data-context-label-feedback-popover]')
+    ).toHaveClass('border-hud-cyan/20', 'bg-hud-panel');
     fireEvent.change(input, {
       target: { value: 'Improve agent context summaries' },
     });
