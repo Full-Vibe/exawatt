@@ -47,6 +47,17 @@ server to close (with bounded force-stop escalation) before declaring cleanup
 complete. This is a presentation boundary, not a second application or
 alternate data source.
 
+ENG-032 adds a **designed, not yet implemented** appearance boundary (decision
+`0026`). Versioned declarative presets and device-local preferences resolve once
+into a complete semantic snapshot. Thin adapters project that snapshot into
+DOM/CSS, xterm, R3F/Three, and Electron boot/native chrome; those renderers do
+not merge theme state independently. The contract keeps action, status, Project
+identity, Consumption, and readiness channels distinct, and accepts no
+executable CSS/JavaScript or remote assets. Electron settings and a hosted-local
+browser adapter sit below the same provider contract. Demo and Live data remain
+irrelevant to appearance selection. Until ENG-032 T5 lands, the shipped
+implementation remains the forced-dark Classic baseline described below.
+
 The Electron shell presents Agent → Team → Fleet (decision `0023`) as one
 command-altitude navigation continuum. That shared navigation does not
 merge renderer ownership: xterm/DOM and R3F keep separate runtime boundaries and
@@ -439,6 +450,8 @@ Partial:
 
 Planned:
 
+- ENG-032 versioned application appearance resolver and built-in Classic/Air/
+  Night presets across DOM, xterm, Fleet R3F, and Electron boot/native chrome
 - Initiative model
 - scoped Decision model
 - Context Signals

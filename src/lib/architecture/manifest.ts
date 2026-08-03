@@ -60,7 +60,7 @@ export const architectureManifest = {
   title: 'Exawatt Architecture',
   summary:
     'Exawatt is a command interface for managing agent fleets across local, hosted, and third-party harnesses.',
-  lastReviewed: '2026-07-27',
+  lastReviewed: '2026-08-03',
   layers: [
     {
       key: 'ui',
@@ -557,6 +557,18 @@ export const architectureManifest = {
           height: 74,
         },
         {
+          id: 'appearance-runtime',
+          label: 'Appearance Resolver',
+          summary:
+            'Designed ENG-032 boundary: versioned presets plus device-local preferences resolve once for DOM, xterm, R3F, and Electron boot adapters.',
+          layer: 'ui',
+          status: 'designed',
+          x: 330,
+          y: 95,
+          width: 210,
+          height: 74,
+        },
+        {
           id: 'review-ui',
           label: 'Review UI',
           summary:
@@ -754,6 +766,26 @@ export const architectureManifest = {
         { from: 'next-app-shell', to: 'terminal-workspace' },
         { from: 'next-app-shell', to: 'spatial-operations-board' },
         { from: 'next-app-shell', to: 'command-navigation' },
+        {
+          from: 'next-app-shell',
+          to: 'appearance-runtime',
+          style: 'dashed',
+        },
+        {
+          from: 'appearance-runtime',
+          to: 'terminal-workspace',
+          style: 'dashed',
+        },
+        {
+          from: 'appearance-runtime',
+          to: 'spatial-operations-board',
+          style: 'dashed',
+        },
+        {
+          from: 'appearance-runtime',
+          to: 'electron-shell',
+          style: 'dashed',
+        },
         { from: 'command-navigation', to: 'terminal-workspace' },
         { from: 'command-navigation', to: 'spatial-operations-board' },
         { from: 'command-navigation', to: 'consumption-surface' },
@@ -795,6 +827,7 @@ export const architectureManifest = {
     'UI surfaces speak Exawatt nouns, not provider-specific vocabulary.',
     'DOM and Fleet Operations Board regimes share typed view models and command contracts.',
     'Agent, Team, and Fleet form one navigation continuum while keeping separate renderer boundaries.',
+    'Appearance is app-global and source-neutral: one validated snapshot feeds DOM, xterm, R3F, and Electron adapters while product-state color channels keep their meanings.',
     'Open Project identity spans the Agent, Team, and Fleet altitudes even before an Agent or Session exists; Agents join catalog-backed groups by stable source identity.',
     'The Agent altitude projects current Session tabs as Initiative-shaped work: selected Projects expand, manual inactive disclosure persists, dormant empties stable-partition to the tail, and subagent work aggregates instead of multiplying top-level tabs.',
     'Open Session identity spans the Agent, Team, and Fleet altitudes; PTYs add live runtime state but do not define whether a Session-backed Agent exists.',
