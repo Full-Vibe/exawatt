@@ -485,6 +485,12 @@ try {
         rebootAgents >= 150,
         `agents=${rebootAgents}`
       );
+      // evidence shot after the board's dynamic bundle actually paints
+      await page
+        .locator('[data-spatial-command] canvas')
+        .waitFor({ timeout: 15_000 })
+        .catch(() => {});
+      await page.waitForTimeout(1200);
       await page.screenshot({
         path: join(SCREENSHOT_DIR, 'demo-relaunch-restored.png'),
       });
