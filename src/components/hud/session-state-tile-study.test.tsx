@@ -30,7 +30,7 @@ describe('SessionStateTileStudy', () => {
       )
     ).not.toBeNull();
     expect(document.querySelectorAll('[data-session-state-tile]')).toHaveLength(
-      4
+      5
     );
     const workingTile = screen.getByRole('button', {
       name: 'Open Complete MMHC conversion and secure BAA at the Agent altitude',
@@ -56,12 +56,44 @@ describe('SessionStateTileStudy', () => {
     expect(nextRegion?.querySelector('[aria-hidden="true"]')).toBeNull();
     expect(
       within(nowRegion as HTMLElement).getByText(
-        'Preparing the scoped agreement execution checklist'
+        'Coordinating delegated review of the agreement'
       )
     ).toHaveClass('font-sans', 'text-[15px]', 'leading-6');
-    expect(workingTile).toHaveClass('h-[248px]', 'w-[300px]');
-    expect(screen.getByText('2 Agents')).toBeInTheDocument();
+    expect(workingTile).toHaveClass('h-[264px]', 'w-[300px]');
+    expect(screen.getAllByText('2 Agents').length).toBeGreaterThan(0);
     expect(screen.queryByText('Recovered')).not.toBeInTheDocument();
+  });
+
+  it('details a delegating fixture with the child rail (D3a)', () => {
+    renderStudy();
+
+    const delegating = screen.getByRole('button', {
+      name: 'Open Complete MMHC conversion and secure BAA at the Agent altitude',
+    });
+    const rail = delegating.querySelector('[data-session-delegation-rail]');
+    expect(rail).not.toBeNull();
+    // three children fit the row budget — all named, no summary row
+    expect(rail!.querySelectorAll('[data-delegation-child]')).toHaveLength(3);
+    expect(rail!.textContent).toContain('Map conversion checklist coverage');
+    expect(rail!.querySelector('[data-delegation-overflow]')).toBeNull();
+
+    // the fan-out fixture summarizes past the budget instead of growing
+    const fanout = screen.getByRole('button', {
+      name: 'Open Audit the RAF scheduler across surfaces at the Agent altitude',
+    });
+    const fanoutRail = fanout.querySelector('[data-session-delegation-rail]');
+    expect(
+      fanoutRail!.querySelectorAll('[data-delegation-child]')
+    ).toHaveLength(2);
+    expect(
+      fanoutRail!.querySelector('[data-delegation-overflow]')?.textContent
+    ).toBe('and 3 more working');
+
+    // a non-delegating tile keeps meaningfulChange and shows no rail
+    const plain = screen.getByRole('button', {
+      name: 'Open Fix auth redirect loop at the Agent altitude',
+    });
+    expect(plain.querySelector('[data-session-delegation-rail]')).toBeNull();
   });
 
   it('hands an activated tile to Terminal without creating inline detail', () => {

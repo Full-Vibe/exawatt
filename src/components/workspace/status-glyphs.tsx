@@ -14,7 +14,7 @@
  * evals, and every consumer keep working. All glyphs render in the same
  * GLYPH_BOX footprint: state changes never nudge the row.
  */
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { HUD } from '@/components/hud';
 import { StatusLight } from '@/components/status-light/status-light';
 import {
@@ -27,6 +27,8 @@ import {
   DELEGATION_DOT_CAP,
   FAULT_GLYPH_COPY,
   delegationCopy,
+  delegationElapsedLabel,
+  delegationRailRows,
   sessionGlyphCopy,
   sessionStatusLightState,
 } from './session-status';
@@ -161,6 +163,100 @@ export function DelegationDots({
         ))}
       </span>
     </StatusTooltip>
+  );
+}
+
+/** Slow shared clock for elapsed labels — minute granularity means a 30s
+ *  tick, not a stopwatch. Runs only while a rail is mounted. */
+function useSlowNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, [active]);
+  return now;
+}
+
+/**
+ * The Sessions-altitude child rail (ENG-023 D3a): one row per delegated
+ * child — breathing dot, the source's own agent kind, the child's spawn
+ * label, minute-granularity elapsed. Labels only; results never render here.
+ *
+ * Row count is capped (`delegationRailRows`), so the rail's vertical budget
+ * is a constant three rows and children arriving or finishing never move the
+ * tile grid. It appears with the first child and leaves with the last — the
+ * same conditional footprint as the dots it details.
+ */
+export function DelegationRail({
+  delegation,
+  color,
+}: {
+  delegation?: SessionDelegation | null;
+  /** Project color: the rail belongs to the tile's identity, not to status. */
+  color: string;
+}) {
+  const count = delegation?.children.length ?? 0;
+  const now = useSlowNow(count > 0);
+  if (count === 0) return null;
+  const { rows, overflow } = delegationRailRows(delegation);
+  return (
+    <div
+      data-session-delegation-rail
+      aria-label={delegationCopy(delegation) ?? undefined}
+      className="mt-1.5 flex min-w-0 flex-col gap-[3px]"
+    >
+      {rows.map((row, index) => (
+        <span
+          key={row.key}
+          data-delegation-child
+          className="flex min-w-0 items-center gap-1.5"
+        >
+          <span
+            aria-hidden="true"
+            className="delegation-dot shrink-0"
+            style={{
+              width: 3,
+              height: 3,
+              borderRadius: 9999,
+              background: color,
+              animationDelay: `${index * 320}ms`,
+            }}
+          />
+          <span
+            className="shrink-0 font-mono text-chrome-meta"
+            style={{ color: HUD.textDim }}
+          >
+            {row.agentType ?? 'agent'}
+          </span>
+          {row.description && (
+            <span
+              className="min-w-0 truncate font-sans text-xs leading-4"
+              style={{ color: HUD.text }}
+            >
+              {row.description}
+            </span>
+          )}
+          <span
+            suppressHydrationWarning
+            className="ml-auto shrink-0 font-mono text-xs tabular-nums"
+            style={{ color: HUD.textMono }}
+          >
+            {delegationElapsedLabel(now, row.startedAt)}
+          </span>
+        </span>
+      ))}
+      {overflow > 0 && (
+        <span
+          data-delegation-overflow
+          className="pl-[9px] font-sans text-xs leading-4"
+          style={{ color: HUD.textDim }}
+        >
+          and {overflow} more working
+        </span>
+      )}
+    </div>
   );
 }
 

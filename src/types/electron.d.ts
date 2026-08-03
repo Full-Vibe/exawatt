@@ -166,6 +166,10 @@ export interface PtySessionInfo {
 export interface DelegatedChild {
   id: string;
   agentType: string | null;
+  /** The operator-legible spawn label (ENG-023 D3a). Optional on the wire:
+   *  a main process predating D3a omits it, and a failed correlation sends
+   *  `null` — both read as "no label", never as an invented one. */
+  description?: string | null;
   startedAt: number;
 }
 

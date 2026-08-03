@@ -5,6 +5,7 @@ import { HarnessGlyph } from './harness-icons';
 import { SessionGoalSummary } from './session-goal-summary';
 import {
   DelegationDots,
+  DelegationRail,
   SessionStatusGlyph,
   type SessionAttentionSignal,
   type SessionGlyphState,
@@ -114,6 +115,10 @@ export function SessionOverviewCardContent({
         )}
       </div>
 
+      {/* With live children the current sentence yields its second line to
+          the child rail (ENG-023 D3a) — the team's labels are worth more at
+          comparison altitude than the tail of one sentence. The rail's row
+          budget is fixed, so the tile footprint never moves. */}
       <div data-session-now className="mt-3 min-w-0">
         <span
           className="block font-mono text-chrome-meta uppercase tracking-[0.14em]"
@@ -121,20 +126,29 @@ export function SessionOverviewCardContent({
         >
           Now
         </span>
+        {/* No `block` beside the clamp: line-clamp sets display:-webkit-box,
+            and a display:block utility can win the cascade and silently
+            unclamp the line — measured as a clipped Next region. */}
         <span
           data-session-current
-          className="mt-1 line-clamp-2 block font-sans text-[15px] leading-6"
+          className={`mt-1 font-sans text-[15px] leading-6 ${
+            delegation?.children.length ? 'line-clamp-1' : 'line-clamp-2'
+          }`}
           style={{ color: HUD.text }}
         >
           {current}
         </span>
-        {meaningfulChange && (
-          <span
-            className="mt-0.5 line-clamp-1 block font-sans text-sm leading-5"
-            style={{ color: HUD.textDim }}
-          >
-            {meaningfulChange}
-          </span>
+        {delegation?.children.length ? (
+          <DelegationRail delegation={delegation} color={color} />
+        ) : (
+          meaningfulChange && (
+            <span
+              className="mt-0.5 line-clamp-1 block font-sans text-sm leading-5"
+              style={{ color: HUD.textDim }}
+            >
+              {meaningfulChange}
+            </span>
+          )
         )}
       </div>
 

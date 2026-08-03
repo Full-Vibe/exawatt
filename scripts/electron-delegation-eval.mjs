@@ -66,6 +66,8 @@ try {
 
       // --- a delegating parent must not read as finished ----------------
       await send('turn');
+      // the spawn label precedes the child's start, as it does live (D3a)
+      await send('label Explore Map the Sessions tab layout');
       await send('spawn a1');
       await send('stop');
       await until(
@@ -101,6 +103,29 @@ try {
         'a Stop from inside a child leaves the parent delegating',
         (await dots.count()) === 1 && (await statusOf()) === 'working'
       );
+
+      // --- the Sessions tile details the team as a labeled rail (D3a) ---
+      await page.keyboard.press('Control+Meta+2');
+      await page.locator('[data-expose-tile]').first().waitFor();
+      const rail = page.locator('[data-session-delegation-rail]').first();
+      await rail.waitFor();
+      const railText = await rail.textContent();
+      check(
+        'the Sessions tile names the child and its spawn label',
+        railText.includes('Explore') &&
+          railText.includes('Map the Sessions tab layout')
+      );
+      check(
+        'the child prompt never reaches the Sessions surface',
+        !(await page.evaluate(() =>
+          document.body.innerHTML.includes('PRIVATE_PROMPT_BODY')
+        ))
+      );
+      await page.keyboard.press('Escape');
+      await page
+        .locator('[data-expose-tile]')
+        .first()
+        .waitFor({ state: 'detached' });
 
       // --- more children, stable geometry -------------------------------
       const widthBefore = await dots.evaluate(node => node.style.width);

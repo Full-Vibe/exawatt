@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   attentionNeedsOperator,
   delegationCopy,
+  delegationElapsedLabel,
+  delegationRailRows,
   mergeSessionAttentionMaps,
   mergeSessionAttentionSignals,
   orderedAttentionTargets,
@@ -274,5 +276,58 @@ describe('reported turn truth', () => {
       sessionStatusLightState({ state, attention: { kind: 'bell', since: 1 } })
     ).toBe('needs-you');
     expect(sessionStatusLightState({ state, fault: true })).toBe('fault');
+  });
+});
+
+/**
+ * The Sessions child rail projection (ENG-023 D3a). The row budget is a
+ * constant: children arriving or finishing may change what the rows say,
+ * never how much room the rail can take.
+ */
+describe('delegation rail rows', () => {
+  const child = (id: string, description: string | null = null) => ({
+    id,
+    agentType: 'Explore',
+    description,
+    startedAt: 1_000,
+  });
+
+  it('shows every child when they fit the row budget', () => {
+    const { rows, overflow } = delegationRailRows({
+      ownTurn: 'available',
+      blockedOn: null,
+      children: [child('a', 'First'), child('b'), child('c', 'Third')],
+    });
+    expect(rows.map(row => row.key)).toEqual(['a', 'b', 'c']);
+    expect(overflow).toBe(0);
+  });
+
+  it('summarizes past the budget instead of growing', () => {
+    const { rows, overflow } = delegationRailRows({
+      ownTurn: 'available',
+      blockedOn: null,
+      children: [child('a'), child('b'), child('c'), child('d'), child('e')],
+    });
+    // two labeled rows + the summary row = the same three-row footprint
+    expect(rows).toHaveLength(2);
+    expect(overflow).toBe(3);
+  });
+
+  it('projects nothing for absent or empty delegation', () => {
+    expect(delegationRailRows(null).rows).toEqual([]);
+    expect(delegationRailRows(undefined).overflow).toBe(0);
+  });
+});
+
+describe('delegation elapsed labels', () => {
+  it('renders minute granularity, never a stopwatch', () => {
+    const start = 1_000_000;
+    expect(delegationElapsedLabel(start + 30_000, start)).toBe('<1m');
+    expect(delegationElapsedLabel(start + 3 * 60_000 + 19_000, start)).toBe('3m');
+    expect(delegationElapsedLabel(start + 72 * 60_000, start)).toBe('1h 12m');
+  });
+
+  it('never goes negative on clock skew', () => {
+    expect(delegationElapsedLabel(0, 5_000)).toBe('<1m');
   });
 });

@@ -30,14 +30,24 @@ describe('claudeHookSettings', () => {
   it('never subscribes to per-tool events UNMATCHED', () => {
     // An unmatched PreToolUse/PostToolUse fires inside every child for every
     // tool call and would turn delegation into an activity ticker, which
-    // agent-state rules out. D4 needs exactly one tool — the one that stops
-    // and asks the operator — so every registration must carry a matcher that
-    // names it. This assertion is the guard on that decision.
-    for (const event of ['PreToolUse', 'PostToolUse']) {
-      for (const group of settings.hooks[event]) {
-        expect(group.matcher).toBe('AskUserQuestion');
-      }
+    // agent-state rules out. Every registration must carry a matcher naming
+    // the tools it wants: the operator gate (D4), and the delegation tools
+    // whose PreToolUse is the spawn label — one post per handoff, not an
+    // activity stream (D3a). This assertion is the guard on that decision.
+    const allowed = new Set(['AskUserQuestion', 'Agent|Task']);
+    for (const group of settings.hooks.PreToolUse) {
+      expect(allowed.has(group.matcher)).toBe(true);
     }
+    for (const group of settings.hooks.PostToolUse) {
+      expect(group.matcher).toBe('AskUserQuestion');
+    }
+  });
+
+  it('subscribes the spawn label matched to the delegation tools alone', () => {
+    const matchers = settings.hooks.PreToolUse.map(
+      (group: { matcher: string }) => group.matcher
+    );
+    expect(matchers).toContain('Agent|Task');
   });
 
   it('matches Notification to gates only, never to idle', () => {
@@ -72,6 +82,105 @@ describe('claudeHookEvent', () => {
     expect(claudeHookEvent({ hook_event_name: 'Stop' }, 1)).toEqual({
       kind: 'turn-end',
     });
+  });
+
+  it('maps a spawn label from the parent into child-label (D3a)', () => {
+    expect(
+      claudeHookEvent(
+        {
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Agent',
+          tool_use_id: 'toolu_spawn1',
+          tool_input: {
+            description: 'Map Sessions tab + subagent viz',
+            subagent_type: 'Explore',
+            prompt: 'a very long private prompt that must not ride along',
+          },
+        },
+        5_000
+      )
+    ).toEqual({
+      kind: 'child-label',
+      toolUseId: 'toolu_spawn1',
+      agentType: 'Explore',
+      description: 'Map Sessions tab + subagent viz',
+      at: 5_000,
+    });
+  });
+
+  it('accepts the Task spelling of the delegation tool', () => {
+    const event = claudeHookEvent(
+      {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Task',
+        tool_use_id: 'toolu_spawn2',
+        tool_input: { description: 'Fix flaky test' },
+      },
+      1
+    );
+    expect(event).toMatchObject({ kind: 'child-label', agentType: null });
+  });
+
+  it('never carries the child prompt, only the label', () => {
+    const event = claudeHookEvent(
+      {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Agent',
+        tool_use_id: 'toolu_spawn3',
+        tool_input: {
+          description: 'Short label',
+          prompt: 'PRIVATE_PROMPT_BODY',
+        },
+      },
+      1
+    );
+    expect(JSON.stringify(event)).not.toContain('PRIVATE_PROMPT_BODY');
+  });
+
+  it('truncates an oversized label at ingestion', () => {
+    const event = claudeHookEvent(
+      {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Agent',
+        tool_use_id: 'toolu_spawn4',
+        tool_input: { description: 'x'.repeat(400) },
+      },
+      1
+    );
+    expect(event?.kind).toBe('child-label');
+    if (event?.kind === 'child-label') {
+      expect(event.description.length).toBeLessThanOrEqual(140);
+      expect(event.description.endsWith('…')).toBe(true);
+    }
+  });
+
+  it("ignores a grandchild's spawn label — it is not this Session's child", () => {
+    expect(
+      claudeHookEvent(
+        {
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Agent',
+          tool_use_id: 'toolu_spawn5',
+          agent_id: 'child-1',
+          tool_input: { description: 'Grandchild work' },
+        },
+        1
+      )
+    ).toBeNull();
+  });
+
+  it('drops a spawn label with no description rather than inventing one', () => {
+    expect(
+      claudeHookEvent(
+        {
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Agent',
+          tool_use_id: 'toolu_spawn6',
+          tool_input: {},
+        },
+        1
+      )
+    ).toBeNull();
   });
 
   it('maps a child start with its kind and start time', () => {

@@ -60,6 +60,45 @@ describe('DelegationMonitor publication', () => {
     expect(monitor.getLive('pty-1')).toBeNull();
   });
 
+  it('broadcasts nothing for a label-only change, and never the staging list', () => {
+    const { monitor, published, send } = harness();
+    send({ kind: 'turn-start' });
+    const broadcasts = published.length;
+    // A staged spawn label (D3a) is main-process bookkeeping. Nothing an
+    // operator can see changed, so nothing may be broadcast.
+    send({
+      kind: 'child-label',
+      toolUseId: 't1',
+      agentType: 'Explore',
+      description: 'Map the Sessions tab',
+      at: 1,
+    });
+    expect(published.length).toBe(broadcasts);
+    expect(monitor.getLive('pty-1')).not.toHaveProperty('pending');
+
+    // The adopted label rides the child, which IS visible.
+    send({ kind: 'child-start', childId: 'a1', agentType: 'Explore', at: 2 });
+    const latest = published[published.length - 1] as {
+      children: Array<{ description: string | null }>;
+    };
+    expect(latest.children[0].description).toBe('Map the Sessions tab');
+    expect(latest).not.toHaveProperty('pending');
+  });
+
+  it('keeps an unchanged published reference across label-only edits', () => {
+    const { monitor, send } = harness();
+    send({ kind: 'turn-start' });
+    const before = monitor.getLive('pty-1');
+    send({
+      kind: 'child-label',
+      toolUseId: 't1',
+      agentType: 'Explore',
+      description: 'Map the Sessions tab',
+      at: 1,
+    });
+    expect(monitor.getLive('pty-1')).toBe(before);
+  });
+
   it('withdraws everything when the Session exits', () => {
     const { monitor, manager, published, send } = harness();
     send({ kind: 'turn-start' });

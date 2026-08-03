@@ -20,8 +20,31 @@ export interface DelegatedChild {
   id: string;
   /** the source's own agent kind ("Explore", "general-purpose", …) */
   agentType: string | null;
+  /**
+   * The operator-legible spawn label from `PreToolUse[Agent|Task]` (ENG-023
+   * D3a), adopted by correlation at child-start. `null` when the label was
+   * never observed or correlation failed — a missing label renders as absent,
+   * never invented. Labels only: results never enter this record.
+   */
+  description: string | null;
   startedAt: number;
 }
+
+/**
+ * A spawn label observed before its child's `SubagentStart` (ENG-023 D3a).
+ * `SubagentStart` does not carry the spawning `tool_use_id`, so labels stage
+ * here until a child-start adopts one by agent-type match, oldest first.
+ */
+export interface PendingChildLabel {
+  /** dedupe key — hook delivery is at-least-once */
+  toolUseId: string;
+  agentType: string | null;
+  description: string;
+  at: number;
+}
+
+/** Bounds the staging list; a fan-out beyond this simply loses labels. */
+const PENDING_LABEL_CAP = 16;
 
 /**
  * Why the Agent stopped and handed control back to the operator (ENG-023 D4).
@@ -53,12 +76,29 @@ export interface SessionDelegation {
   children: DelegatedChild[];
 }
 
+/**
+ * The reducer's full state: the published record plus internal label staging.
+ * `pending` never leaves the main process — the monitor projects it away
+ * before anything is broadcast, so surfaces cannot come to depend on it.
+ */
+export interface DelegationLedger extends SessionDelegation {
+  pending: PendingChildLabel[];
+}
+
 export type HarnessEvent =
   | { kind: 'turn-start' }
   | { kind: 'turn-end' }
   | { kind: 'blocked'; reason: SessionBlockedReason }
   /** Releases only a gate of this reason; omit to release whatever is open. */
   | { kind: 'unblocked'; reason?: SessionBlockedReason }
+  /** A spawn label from the parent, ahead of its child's start (D3a). */
+  | {
+      kind: 'child-label';
+      toolUseId: string;
+      agentType: string | null;
+      description: string;
+      at: number;
+    }
   | {
       kind: 'child-start';
       childId: string;
@@ -71,6 +111,11 @@ export const EMPTY_DELEGATION: SessionDelegation = {
   ownTurn: 'available',
   blockedOn: null,
   children: [],
+};
+
+export const EMPTY_LEDGER: DelegationLedger = {
+  ...EMPTY_DELEGATION,
+  pending: [],
 };
 
 /**
@@ -118,24 +163,36 @@ export function delegationBlocked(
  * event, and a child that ends twice must not drive the count negative.
  */
 export function applyHarnessEvent(
-  state: SessionDelegation,
+  state: DelegationLedger,
   event: HarnessEvent
-): SessionDelegation {
+): DelegationLedger {
   switch (event.kind) {
     // A turn boundary in EITHER direction also closes any open operator gate.
     // A new prompt means the last question was answered; a finished turn means
     // the Agent is no longer sitting behind one. Without this, a gate whose own
     // release event went missing would latch "needs you" forever — the exact
     // failure mode that makes a status indicator untrustworthy.
+    //
+    // Both boundaries also clear staged labels: a label whose child never
+    // started within the turn that spawned it has no future adopter, and
+    // letting it survive would mislabel the NEXT turn's first child.
     case 'turn-start':
-      if (state.ownTurn === 'generating' && !state.blockedOn)
+      if (
+        state.ownTurn === 'generating' &&
+        !state.blockedOn &&
+        state.pending.length === 0
+      )
         return state;
-      return { ...state, ownTurn: 'generating', blockedOn: null };
+      return { ...state, ownTurn: 'generating', blockedOn: null, pending: [] };
 
     case 'turn-end':
-      if (state.ownTurn === 'available' && !state.blockedOn)
+      if (
+        state.ownTurn === 'available' &&
+        !state.blockedOn &&
+        state.pending.length === 0
+      )
         return state;
-      return { ...state, ownTurn: 'available', blockedOn: null };
+      return { ...state, ownTurn: 'available', blockedOn: null, pending: [] };
 
     // FIRST report of a gate wins until something releases it. Measured on a
     // real Claude Code 2.1.220 session: one `AskUserQuestion` reports twice —
@@ -158,18 +215,62 @@ export function applyHarnessEvent(
       if (event.reason && state.blockedOn !== event.reason) return state;
       return { ...state, blockedOn: null };
 
+    // Stage a spawn label until its child starts (D3a). Deduped by
+    // tool_use_id because hook delivery is at-least-once; bounded because an
+    // unmatched label must age out of memory, not accumulate.
+    case 'child-label': {
+      if (state.pending.some(label => label.toolUseId === event.toolUseId))
+        return state;
+      const pending = [
+        ...state.pending,
+        {
+          toolUseId: event.toolUseId,
+          agentType: event.agentType,
+          description: event.description,
+          at: event.at,
+        },
+      ];
+      return {
+        ...state,
+        pending:
+          pending.length > PENDING_LABEL_CAP
+            ? pending.slice(pending.length - PENDING_LABEL_CAP)
+            : pending,
+      };
+    }
+
     case 'child-start': {
       // A repeated start for a known child keeps the ORIGINAL startedAt: the
       // elapsed time an operator reads must not reset because a hook retried.
       if (state.children.some(child => child.id === event.childId))
         return state;
+      // Adopt the oldest staged label whose agent type matches; with unknown
+      // types on either side, the oldest label at all. No match means no
+      // description — absent, never a guess from the wrong spawn.
+      const matched = state.pending.findIndex(
+        label =>
+          !!label.agentType &&
+          !!event.agentType &&
+          label.agentType === event.agentType
+      );
+      const adoptedIndex =
+        matched !== -1
+          ? matched
+          : state.pending.findIndex(
+              label => !label.agentType || !event.agentType
+            );
+      const adopted = adoptedIndex === -1 ? null : state.pending[adoptedIndex];
       return {
         ...state,
+        pending: adopted
+          ? state.pending.filter((_, index) => index !== adoptedIndex)
+          : state.pending,
         children: [
           ...state.children,
           {
             id: event.childId,
             agentType: event.agentType,
+            description: adopted?.description ?? null,
             startedAt: event.at,
           },
         ],

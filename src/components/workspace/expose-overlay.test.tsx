@@ -94,6 +94,66 @@ describe('Sessions overview', () => {
     expect(onPick).toHaveBeenCalledWith('/one', 'tab-c');
   });
 
+  it('details delegated children as a labeled rail, capped with a summary (D3a)', () => {
+    render(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        delegation={{
+          'session-b': {
+            ownTurn: 'available',
+            blockedOn: null,
+            children: [
+              {
+                id: 'c1',
+                agentType: 'Explore',
+                description: 'Map the Sessions tab',
+                startedAt: Date.now() - 3 * 60_000,
+              },
+              {
+                id: 'c2',
+                agentType: 'general-purpose',
+                description: null,
+                startedAt: Date.now() - 2 * 60_000,
+              },
+              {
+                id: 'c3',
+                agentType: 'Explore',
+                description: 'Trace the fleet provider',
+                startedAt: Date.now() - 60_000,
+              },
+              {
+                id: 'c4',
+                agentType: 'Explore',
+                description: 'Collect frame budgets',
+                startedAt: Date.now(),
+              },
+            ],
+          },
+        }}
+        activeTabId="tab-a"
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    const beta = screen.getByRole('button', { name: /Beta, One/ });
+    const rail = beta.querySelector('[data-session-delegation-rail]');
+    expect(rail).not.toBeNull();
+    // four children, three-row budget: two labeled rows plus the summary
+    expect(rail!.querySelectorAll('[data-delegation-child]')).toHaveLength(2);
+    expect(rail!.textContent).toContain('Explore');
+    expect(rail!.textContent).toContain('Map the Sessions tab');
+    expect(rail!.querySelector('[data-delegation-overflow]')?.textContent).toBe(
+      'and 2 more working'
+    );
+    // the rail is detail; the presence dots stay beside the light
+    expect(beta.querySelector('[data-delegation="4"]')).not.toBeNull();
+    // a tile without reported delegation renders no rail at all — absent, not empty
+    const alpha = screen.getByRole('button', { name: /Alpha, One/ });
+    expect(alpha.querySelector('[data-session-delegation-rail]')).toBeNull();
+  });
+
   it('shows an empty Project as a selectable group without inventing a Session', async () => {
     const onPickProject = vi.fn();
     const emptyProject: Project = {
@@ -323,7 +383,7 @@ describe('Sessions overview', () => {
       'font-sans',
       'text-sm'
     );
-    expect(tile).toHaveClass('h-[248px]');
+    expect(tile).toHaveClass('h-[264px]');
   });
 
   it('a ⌘T draft tile reads as a draft, never as stopped (D24)', () => {

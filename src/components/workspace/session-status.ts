@@ -247,6 +247,52 @@ export function delegationCopy(
 }
 
 /**
+ * The Sessions-altitude child rail (ENG-023 D3a) — one row per delegated
+ * child, capped so the rail's vertical budget is constant and the tile
+ * footprint never moves. With more children than rows, the last row becomes
+ * a summary; the full census stays in the presence-dot tooltip, where D1 put
+ * it. Render-free so Terminal's D2 rail can consume the same projection.
+ */
+export const DELEGATION_RAIL_ROW_CAP = 3;
+
+export interface DelegationRailRow {
+  key: string;
+  agentType: string | null;
+  description: string | null;
+  startedAt: number;
+}
+
+export function delegationRailRows(
+  delegation?: SessionDelegation | null
+): { rows: DelegationRailRow[]; overflow: number } {
+  const children = delegation?.children ?? [];
+  const shown =
+    children.length > DELEGATION_RAIL_ROW_CAP
+      ? children.slice(0, DELEGATION_RAIL_ROW_CAP - 1)
+      : children;
+  return {
+    rows: shown.map(child => ({
+      key: child.id,
+      agentType: child.agentType,
+      description: child.description ?? null,
+      startedAt: child.startedAt,
+    })),
+    overflow: children.length - shown.length,
+  };
+}
+
+/**
+ * Minute-granularity elapsed time for a child row. Seconds would make a tile
+ * grid tick like a stopwatch — motion without meaning at comparison altitude.
+ */
+export function delegationElapsedLabel(now: number, startedAt: number): string {
+  const minutes = Math.floor(Math.max(0, now - startedAt) / 60_000);
+  if (minutes < 1) return '<1m';
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+/**
  * Tooltip for the status light, corrected for delegation.
  *
  * "output streaming" is the wrong explanation for a Session that is quiet

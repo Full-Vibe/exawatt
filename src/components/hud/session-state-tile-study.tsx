@@ -8,7 +8,7 @@ import {
   type SessionAttentionSignal,
   type SessionGlyphState,
 } from '@/components/workspace/status-glyphs';
-import type { PtyHarness } from '@/types/electron';
+import type { PtyHarness, SessionDelegation } from '@/types/electron';
 
 type FixtureMode = 'populated' | 'loading' | 'empty' | 'error';
 type Filter = 'all' | 'attention' | 'working';
@@ -21,12 +21,18 @@ interface SessionStateFixture {
   harness: Exclude<PtyHarness, 'shell'>;
   glyphState: SessionGlyphState;
   attention?: SessionAttentionSignal;
+  /** harness-reported delegation (ENG-023 D3a) — drives dots and the rail */
+  delegation?: SessionDelegation;
   activity: string;
   meaningfulChange: string;
   planStep: string | null;
   planIndex: number | null;
   planTotal: number | null;
 }
+
+/** Fixture clock: child elapsed labels need plausible, stable start times. */
+const STUDY_NOW = Date.now();
+const minutesAgo = (minutes: number) => STUDY_NOW - minutes * 60_000;
 
 const SESSION_FIXTURES: SessionStateFixture[] = [
   {
@@ -50,11 +56,89 @@ const SESSION_FIXTURES: SessionStateFixture[] = [
     goal: 'Complete MMHC conversion and secure BAA',
     harness: 'claude',
     glyphState: 'working',
-    activity: 'Preparing the scoped agreement execution checklist',
+    // The delegating parent (ENG-023 D3a): its own turn is over, the team is
+    // not — dots beside the light, per-child rail in Now.
+    delegation: {
+      ownTurn: 'available',
+      blockedOn: null,
+      children: [
+        {
+          id: 'child-a',
+          agentType: 'Explore',
+          description: 'Map conversion checklist coverage',
+          startedAt: minutesAgo(4),
+        },
+        {
+          id: 'child-b',
+          agentType: 'general-purpose',
+          description: 'Draft the BAA execution summary',
+          startedAt: minutesAgo(3),
+        },
+        {
+          id: 'child-c',
+          agentType: 'Explore',
+          description: 'Trace signature-flow blockers',
+          startedAt: minutesAgo(1),
+        },
+      ],
+    },
+    activity: 'Coordinating delegated review of the agreement',
     meaningfulChange: 'Restored the exact prior Session and context',
     planStep: 'Secure agreement',
     planIndex: 2,
     planTotal: 4,
+  },
+  {
+    id: 'raf-fanout',
+    project: 'Lens',
+    projectColor: '#c8a55c',
+    goal: 'Audit the RAF scheduler across surfaces',
+    harness: 'claude',
+    glyphState: 'working',
+    // The fan-out shape: more children than rows, so the rail summarizes and
+    // the exact census stays in the presence-dot tooltip. One child has no
+    // spawn label — absent renders as absent, never invented.
+    delegation: {
+      ownTurn: 'generating',
+      blockedOn: null,
+      children: [
+        {
+          id: 'fan-1',
+          agentType: 'Explore',
+          description: 'Sweep RAF call sites in the renderer',
+          startedAt: minutesAgo(7),
+        },
+        {
+          id: 'fan-2',
+          agentType: 'code-reviewer',
+          description: null,
+          startedAt: minutesAgo(6),
+        },
+        {
+          id: 'fan-3',
+          agentType: 'Explore',
+          description: 'Compare scheduler drift across displays',
+          startedAt: minutesAgo(5),
+        },
+        {
+          id: 'fan-4',
+          agentType: 'general-purpose',
+          description: 'Reproduce the dropped-frame trace',
+          startedAt: minutesAgo(2),
+        },
+        {
+          id: 'fan-5',
+          agentType: 'Explore',
+          description: 'Collect frame budgets per surface',
+          startedAt: minutesAgo(1),
+        },
+      ],
+    },
+    activity: 'Fanning out the audit across five delegated agents',
+    meaningfulChange: 'Found two competing schedulers in the workspace',
+    planStep: 'Audit surfaces',
+    planIndex: 1,
+    planTotal: 3,
   },
   {
     id: 'raf-lens',
@@ -163,7 +247,7 @@ function SessionTile({
           onMove(-1);
         }
       }}
-      className="relative flex h-[248px] w-[300px] max-w-full flex-col overflow-hidden rounded border p-3 text-left outline-none transition-[background-color,border-color,transform] duration-150 active:scale-[0.985] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+      className="relative flex h-[264px] w-[300px] max-w-full flex-col overflow-hidden rounded border p-3 text-left outline-none transition-[background-color,border-color,transform] duration-150 active:scale-[0.985] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
       style={{
         color: HUD.text,
         borderColor: selected ? tile.projectColor : `${tile.projectColor}4d`,
@@ -178,6 +262,7 @@ function SessionTile({
         harness={tile.harness}
         glyphState={tile.glyphState}
         attention={tile.attention}
+        delegation={tile.delegation}
         current={tile.activity}
         meaningfulChange={tile.meaningfulChange}
         next={tile.planStep ?? 'No plan reported'}
@@ -195,7 +280,7 @@ function LoadingTile() {
   return (
     <div
       aria-hidden="true"
-      className="flex h-[248px] w-[300px] max-w-full animate-pulse flex-col rounded border border-white/10 p-3 motion-reduce:animate-none"
+      className="flex h-[264px] w-[300px] max-w-full animate-pulse flex-col rounded border border-white/10 p-3 motion-reduce:animate-none"
       style={{ background: 'rgba(7,12,20,0.94)' }}
     >
       <div className="h-3 w-28 rounded-sm bg-white/10" />

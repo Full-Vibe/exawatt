@@ -30,6 +30,20 @@ const HOOK_TIMEOUT_SECONDS = 2;
 const ASK_TOOL = 'AskUserQuestion';
 
 /**
+ * The delegation tools (ENG-023 D3a). `PreToolUse` matched to these fires in
+ * the PARENT once per spawn, carrying the operator-legible description the
+ * child was launched with. Spawn IS the `Delegated` meaningful Event, so this
+ * stays one POST per delegation — not an activity channel. Claude Code has
+ * named this tool both `Task` and `Agent` across versions; match both.
+ */
+const AGENT_TOOLS = new Set(['Agent', 'Task']);
+const AGENT_TOOLS_MATCHER = [...AGENT_TOOLS].join('|');
+
+/** Labels measured 29–36 chars on the operator corpus; this is generous
+ *  headroom, and anything longer is prompt content, which never rides. */
+const MAX_LABEL_LENGTH = 140;
+
+/**
  * Notification types that mean "the Agent stopped and is waiting on a human".
  *
  * `idle_prompt` is deliberately EXCLUDED. It fires when a session has simply
@@ -66,6 +80,10 @@ const SUBSCRIBED_EVENTS: readonly Subscription[] = [
   // answer — which is how a pending question came to read "result ready".
   { event: 'PreToolUse', matcher: ASK_TOOL },
   { event: 'PostToolUse', matcher: ASK_TOOL },
+  // Spawn labels (ENG-023 D3a): one post per delegation, in the parent, at
+  // the moment of handoff. NOT a per-tool subscription — the matcher scopes
+  // delivery to the delegation tools alone (a measured property, see D4).
+  { event: 'PreToolUse', matcher: AGENT_TOOLS_MATCHER },
   { event: 'Notification', matcher: Object.keys(BLOCKING_NOTIFICATIONS).join('|') },
   { event: 'Notification', matcher: [...RELEASING_NOTIFICATIONS].join('|') },
   { event: 'ElicitationResult' },
@@ -139,10 +157,33 @@ export function claudeHookEvent(
     // Operator gates are NOT gated on `insideChild`, unlike turn boundaries.
     // A child's turn is not its parent's, but a child's question is: there is
     // one terminal, and it is the operator who has to answer.
-    case 'PreToolUse':
-      return readString(record, 'tool_name') === ASK_TOOL
-        ? { kind: 'blocked', reason: 'question' }
-        : null;
+    case 'PreToolUse': {
+      const tool = readString(record, 'tool_name');
+      if (tool === ASK_TOOL) return { kind: 'blocked', reason: 'question' };
+      if (tool && AGENT_TOOLS.has(tool)) {
+        // A spawn INSIDE a child is a grandchild's label. The live model is a
+        // flat parent→children list, so adopting it here would mislabel the
+        // parent's next direct child; skipping it is the honest move.
+        if (insideChild) return null;
+        const toolUseId = readString(record, 'tool_use_id');
+        const input = record['tool_input'];
+        if (!toolUseId || !input || typeof input !== 'object') return null;
+        const inputRecord = input as Record<string, unknown>;
+        const description = readString(inputRecord, 'description');
+        if (!description) return null;
+        return {
+          kind: 'child-label',
+          toolUseId,
+          agentType: readString(inputRecord, 'subagent_type'),
+          description:
+            description.length > MAX_LABEL_LENGTH
+              ? `${description.slice(0, MAX_LABEL_LENGTH - 1)}…`
+              : description,
+          at,
+        };
+      }
+      return null;
+    }
     case 'PostToolUse':
       return readString(record, 'tool_name') === ASK_TOOL
         ? { kind: 'unblocked', reason: 'question' }

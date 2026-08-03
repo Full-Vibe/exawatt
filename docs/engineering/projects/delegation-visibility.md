@@ -453,6 +453,99 @@ is still blocked once the operator has looked at it. The tab keeps its
 `needs-you` light, so the state stays visible; changing the navigation queue's
 seen-semantics is a separate decision about `⌘J`, not a status-indicator fix.
 
+## D3 design pass — 2026-08-02: Sessions and Spatial visualization
+
+Operator request, same day as the V3 spatial pass: "we need way better subagent
+activity visualization in the Sessions tab, and Spatial should visualize way
+better too" — accompanied by a screenshot of Claude Code's own background-agent
+list (ctrl-o), which already shows per-child agent type, a live activity line,
+and elapsed time while Exawatt's tiles showed presence dots alone. The harness's
+own TUI out-informing the fleet surface is the gap this pass closes.
+
+### What the CLI list gets right, and what it gets wrong for this altitude
+
+The screenshot's list is the evidence base D3 starts from. Kept: one row per
+child; the agent type; an operator-legible description; elapsed time. Rejected
+for Sessions altitude, deliberately:
+
+- **Live token counters.** Consumption truth belongs to ENG-008's parse and its
+  delegated-share treatment. A per-child token ticker at comparison altitude is
+  activity exhaust with digits, and the live channel does not carry usage — a
+  fact worth preserving, not working around.
+- **Second-granularity timers.** A tile grid where five timers tick every
+  second is motion without meaning. Elapsed renders at minute granularity and
+  updates on a slow tick; the exact start time lives in the tooltip.
+- **A flat list detached from the parent.** The CLI shows children of one
+  session. Sessions altitude shows children **on the parent's tile**, because
+  the operator's question is "is this Session's team moving," not "enumerate
+  processes."
+
+### Sessions grammar — the child rail
+
+When a Session's reported delegation has live children, its tile's **Now**
+region carries a child rail under the current-activity sentence (which drops
+from two clamped lines to one — the rail is worth more than the second line):
+
+- one row per child, capped at three rows: with more than three children the
+  rail shows two rows plus a final "and N more working" line, so the rail's
+  vertical budget is a constant three rows and the tile's 248px footprint never
+  changes. The full census stays in the presence-dot tooltip, as D1 decided.
+- each row: a breathing dot in the Project color (the D1 dot, same 2600ms
+  breath, same reduced-motion park), the source's own agent type in mono
+  chrome-meta, the child's own description in readable sans, elapsed in
+  tabular mono at the right edge.
+- rows carry **labels only** — type, description, elapsed. No child results, no
+  tool names, no token counts. The D-D content boundary is unchanged.
+- the rail appears with the first child and leaves with the last, the same
+  conditional footprint as the dots. `meaningfulChange` yields its line while
+  the rail is present. Absent delegation capability renders nothing, as always.
+
+The header presence dots stay exactly as D1 shipped them: the rail is detail
+inside the tile, the dots remain the constant-footprint glance signal beside
+the light.
+
+### The description channel
+
+D2 named `PreToolUse` matched to `Agent|Task` as the description's source; this
+pass subscribes it. The hook fires in the PARENT at spawn — spawn IS the
+`Delegated` meaningful Event, so this is one POST per delegation and the
+no-activity-exhaust boundary holds (the D4 measurement proved matchers
+genuinely scope delivery).
+
+Correlation is heuristic by necessity: `SubagentStart` does not carry the
+spawning `tool_use_id`. The reducer keeps a small pending-label list per
+Session — `{toolUseId, agentType, description, at}`, deduped by `toolUseId`
+(hooks are at-least-once), capped, cleared at either turn boundary — and a
+`child-start` adopts the oldest pending entry whose `agent_type` matches (or
+the oldest entry when types are unknown). A mismatch leaves `description: null`
+and the row renders type-only: a missing label is absent, never invented.
+Descriptions are truncated at ingestion to label length; they never leave the
+label vocabulary.
+
+### Spatial grammar — delegation topology as detail, not organizing idea
+
+Per the V3 design pass, structure-and-belonging is NOT the board's purpose;
+delegation arrives as detail at Team/Agent altitude. The grammar:
+
+- a delegating Agent piece gains **satellites**: small instanced markers in an
+  arc beside the parent piece, one per child up to the shared cap, aggregated
+  beyond it. Satellites carry the active-status color, breathe under the V2.4
+  ambient gate, and park under reduced motion / low power / hidden tab.
+- at Team (project) altitude, satellites are visible per piece and the child's
+  type + description join the piece's DOM control tooltip (DOM owns text).
+- at Fleet altitude, satellites persist (instanced, budgeted) but carry no
+  labels; the aggregate story stays the piece's status.
+- entering a child (child zoom) is **not** in this slice: it depends on D2's
+  Terminal rail landing first so the zoom has a destination. The topology may
+  render before it is navigable.
+
+### Sequencing note
+
+This executes D3's Sessions and Spatial halves ahead of D2's Terminal rail —
+the operator asked for fleet-altitude legibility first, and the description
+channel this builds is exactly D2's input, so the Terminal rail inherits it.
+Child zoom remains open behind D2.
+
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 
 On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —

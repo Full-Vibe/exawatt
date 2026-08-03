@@ -12,7 +12,8 @@ import {
   applyHarnessEvent,
   delegationBusy,
   delegationIsLive,
-  EMPTY_DELEGATION,
+  EMPTY_LEDGER,
+  type DelegationLedger,
   type HarnessEvent,
   type SessionDelegation,
 } from './delegation-state';
@@ -29,7 +30,10 @@ interface ManagerLike {
 }
 
 export class DelegationMonitor extends EventEmitter {
-  private state = new Map<string, SessionDelegation>();
+  private state = new Map<string, DelegationLedger>();
+  /** Cached published shape per Session, so unchanged truth keeps an
+   *  unchanged reference and consumers can compare cheaply. */
+  private projections = new Map<string, SessionDelegation>();
 
   attach(channel: ChannelLike, manager?: ManagerLike): void {
     channel.on('event', (sessionId, event) => this.apply(sessionId, event));
@@ -38,16 +42,51 @@ export class DelegationMonitor extends EventEmitter {
   }
 
   apply(sessionId: string, event: HarnessEvent): void {
-    const before = this.state.get(sessionId) ?? EMPTY_DELEGATION;
+    const before = this.state.get(sessionId) ?? EMPTY_LEDGER;
     const after = applyHarnessEvent(before, event);
     if (after === before) return;
     this.state.set(sessionId, after);
-    this.publish(sessionId, after);
+    // Staged labels are main-process bookkeeping (D3a). A change that touched
+    // ONLY them is invisible to every surface, so nothing is broadcast — the
+    // ledger's published fields are all preserved by reference on such edits.
+    const visible =
+      before.ownTurn !== after.ownTurn ||
+      before.blockedOn !== after.blockedOn ||
+      before.children !== after.children;
+    if (!visible) return;
+    const projected = this.projection(sessionId);
+    this.emit(
+      'delegation',
+      sessionId,
+      delegationIsLive(projected) ? projected : null
+    );
+  }
+
+  /** The ledger projected to the published shape — `pending` never leaves
+   *  the main process. */
+  private projection(sessionId: string): SessionDelegation | null {
+    const ledger = this.state.get(sessionId);
+    if (!ledger) return null;
+    const cached = this.projections.get(sessionId);
+    if (
+      cached &&
+      cached.ownTurn === ledger.ownTurn &&
+      cached.blockedOn === ledger.blockedOn &&
+      cached.children === ledger.children
+    )
+      return cached;
+    const next: SessionDelegation = {
+      ownTurn: ledger.ownTurn,
+      blockedOn: ledger.blockedOn,
+      children: ledger.children,
+    };
+    this.projections.set(sessionId, next);
+    return next;
   }
 
   /** Internal truth, including settled records. Attention rules read this. */
   get(sessionId: string): SessionDelegation | null {
-    return this.state.get(sessionId) ?? null;
+    return this.projection(sessionId);
   }
 
   /**
@@ -56,12 +95,8 @@ export class DelegationMonitor extends EventEmitter {
    * stale reported answer.
    */
   getLive(sessionId: string): SessionDelegation | null {
-    const current = this.state.get(sessionId);
-    return delegationIsLive(current) ? (current ?? null) : null;
-  }
-
-  private publish(sessionId: string, state: SessionDelegation): void {
-    this.emit('delegation', sessionId, delegationIsLive(state) ? state : null);
+    const current = this.projection(sessionId);
+    return delegationIsLive(current) ? current : null;
   }
 
   /** "The team is working" — outstanding delegated children. */
@@ -78,6 +113,7 @@ export class DelegationMonitor extends EventEmitter {
     const existing = this.state.get(sessionId);
     if (!existing) return;
     this.state.delete(sessionId);
+    this.projections.delete(sessionId);
     this.emit('delegation', sessionId, null);
   }
 }

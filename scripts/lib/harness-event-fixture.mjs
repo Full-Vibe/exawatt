@@ -13,6 +13,7 @@ import { join } from 'node:path';
  * Commands the fixture Claude accepts on stdin:
  *   turn                 UserPromptSubmit    stop            Stop
  *   spawn <id>           SubagentStart       done <id>       SubagentStop
+ *   label <type> <desc>  PreToolUse[Agent] — the spawn label (ENG-023 D3a)
  *   child-stop <id>      Stop carrying agent_id (must not move the parent)
  *   ask                  PreToolUse[AskUserQuestion]  — the operator gate
  *   answer               PostToolUse[AskUserQuestion] — the gate closing
@@ -86,6 +87,7 @@ async function post(body) {
   } catch {}
 }
 let buffer = '';
+let labelSeq = 0;
 process.stdin.on('data', async chunk => {
   buffer += chunk.toString();
   let index;
@@ -97,6 +99,21 @@ process.stdin.on('data', async chunk => {
     const rest = space === -1 ? '' : line.slice(space + 1);
     if (command === 'spawn')
       await post({ hook_event_name: 'SubagentStart', agent_id: rest, agent_type: 'Explore' });
+    else if (command === 'label') {
+      // The real payload shape from PreToolUse matched to Agent|Task: the
+      // operator-legible description plus the private prompt, which must
+      // never reach a surface.
+      const cut = rest.indexOf(' ');
+      const type = cut === -1 ? rest : rest.slice(0, cut);
+      const desc = cut === -1 ? '' : rest.slice(cut + 1);
+      labelSeq += 1;
+      await post({
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Agent',
+        tool_use_id: 'toolu_label_' + labelSeq,
+        tool_input: { description: desc, subagent_type: type, prompt: 'PRIVATE_PROMPT_BODY' },
+      });
+    }
     else if (command === 'done')
       await post({ hook_event_name: 'SubagentStop', agent_id: rest, agent_type: 'Explore', last_assistant_message: 'PRIVATE_REPORT_BODY' });
     else if (command === 'turn') await post({ hook_event_name: 'UserPromptSubmit' });
