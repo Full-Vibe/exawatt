@@ -30,21 +30,47 @@ Command.displayName = CommandPrimitive.displayName;
 interface CommandDialogProps extends DialogProps {
   commandValue?: string;
   onCommandValueChange?: (value: string) => void;
+  commandTitle?: string;
+  commandDescription?: string;
 }
 
 const CommandDialog = ({
   children,
   commandValue,
   onCommandValueChange,
+  commandTitle = 'Command palette',
+  commandDescription = 'Search Projects, Sessions, settings, and commands.',
   ...props
 }: CommandDialogProps) => {
+  const restoreFocusRef = React.useRef<HTMLElement | null>(null);
+
   return (
     <Dialog {...props}>
-      <DialogContent className="overflow-hidden p-0">
+      <DialogContent
+        className="overflow-hidden p-0"
+        onOpenAutoFocus={() => {
+          const activeElement = document.activeElement;
+          restoreFocusRef.current =
+            activeElement instanceof HTMLElement &&
+            activeElement !== document.body &&
+            activeElement.isConnected
+              ? activeElement
+              : null;
+        }}
+        onCloseAutoFocus={event => {
+          const restoreTarget = restoreFocusRef.current;
+          restoreFocusRef.current = null;
+
+          if (!restoreTarget?.isConnected) return;
+
+          event.preventDefault();
+          restoreTarget.focus({ preventScroll: true });
+        }}
+      >
         {/* required for screen readers; visually hidden */}
-        <DialogTitle className="sr-only">Command palette</DialogTitle>
+        <DialogTitle className="sr-only">{commandTitle}</DialogTitle>
         <DialogDescription className="sr-only">
-          Search Projects, Sessions, settings, and commands.
+          {commandDescription}
         </DialogDescription>
         <Command
           value={commandValue}

@@ -5,9 +5,15 @@ import { Check } from 'lucide-react';
 import { useAppearance } from '@/components/appearance/appearance-provider';
 import { THEME_DEFINITIONS } from '@/generated/theme-registry';
 import type {
+  AppearanceAutoPairV1,
   AppearancePreferencesV1,
   ThemeDefinitionV1,
 } from '@/lib/appearance/types';
+import {
+  rememberedAutoPair,
+  selectAutoThemes,
+  selectManualTheme,
+} from '@/lib/appearance/selection';
 import {
   Select,
   SelectContent,
@@ -20,66 +26,6 @@ import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
 const AIR_THEME_ID = 'exawatt-air-light';
 const CLASSIC_THEME_ID = 'exawatt-classic-dark';
 const NIGHT_THEME_ID = 'exawatt-night-dark';
-
-export interface AppearanceAutoPair {
-  lightThemeId: string;
-  darkThemeId: string;
-}
-
-type PreferencesWithAutoPair = AppearancePreferencesV1 & {
-  autoPair?: AppearanceAutoPair;
-};
-
-const DEFAULT_AUTO_PAIR: AppearanceAutoPair = {
-  lightThemeId: AIR_THEME_ID,
-  darkThemeId: NIGHT_THEME_ID,
-};
-
-function rememberedAutoPair(
-  preferences: AppearancePreferencesV1
-): AppearanceAutoPair {
-  if (preferences.selection.mode === 'auto') {
-    return {
-      lightThemeId: preferences.selection.lightThemeId,
-      darkThemeId: preferences.selection.darkThemeId,
-    };
-  }
-  return (preferences as PreferencesWithAutoPair).autoPair ?? DEFAULT_AUTO_PAIR;
-}
-
-function persistAutoPair(
-  preferences: AppearancePreferencesV1,
-  autoPair: AppearanceAutoPair
-): AppearancePreferencesV1 {
-  return { ...preferences, autoPair } as AppearancePreferencesV1;
-}
-
-export function selectManualTheme(
-  preferences: AppearancePreferencesV1,
-  themeId: string
-): AppearancePreferencesV1 {
-  const autoPair = rememberedAutoPair(preferences);
-  return persistAutoPair(
-    {
-      ...preferences,
-      selection: { mode: 'manual', themeId },
-    },
-    autoPair
-  );
-}
-
-export function selectAutoThemes(
-  preferences: AppearancePreferencesV1,
-  autoPair: AppearanceAutoPair = rememberedAutoPair(preferences)
-): AppearancePreferencesV1 {
-  return persistAutoPair(
-    {
-      ...preferences,
-      selection: { mode: 'auto', ...autoPair },
-    },
-    autoPair
-  );
-}
 
 const BUILT_IN_THEME_IDS = [
   CLASSIC_THEME_ID,
@@ -154,11 +100,11 @@ function ThemeSelect({
   themes: ThemeDefinitionV1[];
   label: string;
   disabled: boolean;
-  onChange: (themeId: string) => void;
+  onChange: (themeId: AppearanceAutoPairV1[keyof AppearanceAutoPairV1]) => void;
 }) {
   return (
     <Select value={value} disabled={disabled} onValueChange={onChange}>
-      <SelectTrigger className="w-44" aria-label={label}>
+      <SelectTrigger className="w-44 max-[520px]:w-full" aria-label={label}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -177,32 +123,48 @@ export function AppearanceSettings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const preferencesRef = useRef(preferences);
+  const stablePreferencesRef = useRef(preferences);
+  const pendingPreferencesRef = useRef<AppearancePreferencesV1 | null>(null);
   const savingRef = useRef(false);
 
   useEffect(() => {
     preferencesRef.current = preferences;
+    stablePreferencesRef.current = preferences;
   }, [preferences]);
 
+  const drainCommits = useCallback(async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setError(null);
+    try {
+      while (pendingPreferencesRef.current) {
+        const next = pendingPreferencesRef.current;
+        pendingPreferencesRef.current = null;
+        await commitPreferences(next);
+        stablePreferencesRef.current = next;
+      }
+    } catch {
+      pendingPreferencesRef.current = null;
+      preferencesRef.current = stablePreferencesRef.current;
+      setError('Appearance could not be saved. Try again.');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }, [commitPreferences]);
+
   const commit = useCallback(
-    async (
+    (
       update: (current: AppearancePreferencesV1) => AppearancePreferencesV1
     ) => {
-      if (!ready || savingRef.current) return;
-      savingRef.current = true;
-      setSaving(true);
-      setError(null);
+      if (!ready) return;
       const next = update(preferencesRef.current);
-      try {
-        await commitPreferences(next);
-        preferencesRef.current = next;
-      } catch {
-        setError('Appearance could not be saved. Try again.');
-      } finally {
-        savingRef.current = false;
-        setSaving(false);
-      }
+      preferencesRef.current = next;
+      pendingPreferencesRef.current = next;
+      void drainCommits();
     },
-    [commitPreferences, ready]
+    [drainCommits, ready]
   );
 
   const themes = useMemo(
@@ -238,7 +200,8 @@ export function AppearanceSettings() {
         description="Follow the system appearance or keep one theme selected."
       >
         <div
-          className="flex shrink-0 rounded-md border border-[var(--settings-line-strong)] bg-[var(--settings-raised)] p-0.5"
+          className="flex shrink-0 self-start rounded-md border border-[var(--settings-line-strong)] bg-[var(--settings-raised)] p-0.5"
+          role="group"
           aria-label="Theme mode"
         >
           {(['auto', 'manual'] as const).map(mode => {
@@ -250,7 +213,7 @@ export function AppearanceSettings() {
                 aria-pressed={selected}
                 disabled={disabled}
                 onClick={() =>
-                  void commit(current =>
+                  commit(current =>
                     mode === 'auto'
                       ? selectAutoThemes(current)
                       : selectManualTheme(
@@ -281,9 +244,9 @@ export function AppearanceSettings() {
       {preferences.selection.mode === 'manual' ? (
         <SettingRow
           title="Theme"
-          description="Classic preserves the original Exawatt palette; Air and Night form the new visual family."
+          description="Choose Classic Dark, Air, or Night."
         >
-          <div className="grid w-full max-w-md grid-cols-3 gap-2">
+          <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-3">
             {themes.map(theme => (
               <ThemeCard
                 key={theme.id}
@@ -291,7 +254,7 @@ export function AppearanceSettings() {
                 selected={manualThemeId === theme.id}
                 disabled={disabled}
                 onSelect={() =>
-                  void commit(current => selectManualTheme(current, theme.id))
+                  commit(current => selectManualTheme(current, theme.id))
                 }
               />
             ))}
@@ -309,7 +272,7 @@ export function AppearanceSettings() {
               label="Light appearance"
               disabled={disabled}
               onChange={lightThemeId =>
-                void commit(current =>
+                commit(current =>
                   selectAutoThemes(current, { ...autoPair, lightThemeId })
                 )
               }
@@ -325,7 +288,7 @@ export function AppearanceSettings() {
               label="Dark appearance"
               disabled={disabled}
               onChange={darkThemeId =>
-                void commit(current =>
+                commit(current =>
                   selectAutoThemes(current, { ...autoPair, darkThemeId })
                 )
               }
@@ -343,7 +306,7 @@ export function AppearanceSettings() {
           disabled={disabled}
           label="Use system accent"
           onChange={system =>
-            void commit(current => ({
+            commit(current => ({
               ...current,
               accentSource: system ? 'system' : 'theme',
             }))
@@ -359,14 +322,17 @@ export function AppearanceSettings() {
           value={preferences.interfaceFont}
           disabled={disabled}
           onValueChange={interfaceFont =>
-            void commit(current => ({
+            commit(current => ({
               ...current,
               interfaceFont:
                 interfaceFont as AppearancePreferencesV1['interfaceFont'],
             }))
           }
         >
-          <SelectTrigger className="w-44" aria-label="Interface font">
+          <SelectTrigger
+            className="w-44 max-[520px]:w-full"
+            aria-label="Interface font"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -385,7 +351,7 @@ export function AppearanceSettings() {
           value={String(preferences.interfaceScale)}
           disabled={disabled}
           onValueChange={value =>
-            void commit(current => ({
+            commit(current => ({
               ...current,
               interfaceScale: Number(
                 value
@@ -393,7 +359,10 @@ export function AppearanceSettings() {
             }))
           }
         >
-          <SelectTrigger className="w-32" aria-label="Interface text size">
+          <SelectTrigger
+            className="w-32 max-[520px]:w-full"
+            aria-label="Interface text size"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -415,7 +384,7 @@ export function AppearanceSettings() {
           disabled={disabled}
           label="Enhanced contrast"
           onChange={enhanced =>
-            void commit(current => ({
+            commit(current => ({
               ...current,
               contrast: enhanced ? 'enhanced' : 'system',
             }))
@@ -432,7 +401,7 @@ export function AppearanceSettings() {
           disabled={disabled}
           label="Reduce transparency"
           onChange={reduced =>
-            void commit(current => ({
+            commit(current => ({
               ...current,
               transparency: reduced ? 'reduced' : 'system',
             }))

@@ -43,7 +43,7 @@ export function SettingRow({
   children?: ReactNode;
 }) {
   return (
-    <div className="flex min-h-[76px] items-center justify-between gap-5 py-3 max-[520px]:items-start">
+    <div className="flex min-h-[76px] items-center justify-between gap-5 py-3 max-[520px]:flex-col max-[520px]:items-stretch">
       <div>
         <p className="font-ui text-chrome-title font-medium text-[var(--settings-soft)]">
           {title}

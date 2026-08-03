@@ -9,10 +9,15 @@ import {
   CommandList,
   CommandShortcut,
 } from '@/components/ui/command';
-import { THEME_DEFINITIONS } from '@/generated/theme-registry';
+import {
+  PRODUCTION_THEME_IDS,
+  THEME_REGISTRY,
+} from '@/generated/theme-registry';
+
+const PRODUCTION_THEMES = PRODUCTION_THEME_IDS.map(id => THEME_REGISTRY[id]);
 
 export const BUILT_IN_THEME_IDS: ReadonlySet<string> = new Set(
-  THEME_DEFINITIONS.map(theme => theme.id)
+  PRODUCTION_THEME_IDS
 );
 
 export function ThemePickerCommand({
@@ -42,7 +47,7 @@ export function ThemePickerCommand({
       <CommandList data-theme-picker>
         <CommandEmpty>No themes found.</CommandEmpty>
         <CommandGroup heading="Themes">
-          {THEME_DEFINITIONS.map(theme => {
+          {PRODUCTION_THEMES.map(theme => {
             const current = theme.id === currentThemeId;
             return (
               <CommandItem

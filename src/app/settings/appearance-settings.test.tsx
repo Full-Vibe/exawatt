@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -7,11 +8,8 @@ import {
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppearancePreferencesV1 } from '@/lib/appearance/types';
-import {
-  AppearanceSettings,
-  selectAutoThemes,
-  selectManualTheme,
-} from './appearance-settings';
+import { selectAutoThemes, selectManualTheme } from '@/lib/appearance/selection';
+import { AppearanceSettings } from './appearance-settings';
 
 const { commitPreferences, appearance } = vi.hoisted(() => {
   const preferences: AppearancePreferencesV1 = {
@@ -127,7 +125,37 @@ describe('AppearanceSettings', () => {
     });
   });
 
-  it('serializes saves and reports a persistence failure', async () => {
+  it('coalesces rapid changes behind the active save without losing fields', async () => {
+    let releaseFirst: (() => void) | undefined;
+    commitPreferences
+      .mockImplementationOnce(
+        () =>
+          new Promise<undefined>(resolve => {
+            releaseFirst = () => resolve(undefined);
+          })
+      )
+      .mockResolvedValueOnce(undefined);
+    render(<AppearanceSettings />);
+
+    act(() => {
+      screen.getByRole('button', { name: 'Air' }).click();
+      screen.getByRole('switch', { name: 'Use system accent' }).click();
+    });
+
+    expect(commitPreferences).toHaveBeenCalledOnce();
+    await act(async () => releaseFirst?.());
+    await waitFor(() => expect(commitPreferences).toHaveBeenCalledTimes(2));
+
+    const calls = commitPreferences.mock.calls as unknown as Array<
+      [AppearancePreferencesV1]
+    >;
+    expect(calls[1][0]).toMatchObject({
+      selection: { mode: 'manual', themeId: 'exawatt-air-light' },
+      accentSource: 'system',
+    });
+  });
+
+  it('reports a persistence failure and re-enables controls', async () => {
     commitPreferences.mockRejectedValueOnce(new Error('disk unavailable'));
     render(<AppearanceSettings />);
 
@@ -137,5 +165,8 @@ describe('AppearanceSettings', () => {
       await screen.findByText('Appearance could not be saved. Try again.')
     ).toBeInTheDocument();
     expect(commitPreferences).toHaveBeenCalledOnce();
+    expect(
+      screen.getByRole('switch', { name: 'Use system accent' })
+    ).toBeEnabled();
   });
 });

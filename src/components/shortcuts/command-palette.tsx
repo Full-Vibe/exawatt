@@ -117,7 +117,7 @@ import {
   BUILT_IN_THEME_IDS,
   ThemePickerCommand,
 } from '@/components/appearance/theme-picker-command';
-import { selectManualTheme } from '@/app/settings/appearance-settings';
+import { selectManualTheme } from '@/lib/appearance/selection';
 import {
   buildWorkspacePaletteRows,
   type WorkspacePaletteRow,
@@ -900,6 +900,12 @@ export function CommandPalette({
       onOpenChange={handlePaletteOpenChange}
       commandValue={paletteMode === 'themes' ? themeValue : undefined}
       onCommandValueChange={paletteMode === 'themes' ? previewTheme : undefined}
+      commandTitle={paletteMode === 'themes' ? 'Change theme' : undefined}
+      commandDescription={
+        paletteMode === 'themes'
+          ? 'Preview and apply an application theme.'
+          : undefined
+      }
     >
       {paletteMode === 'themes' ? (
         <ThemePickerCommand
