@@ -410,24 +410,6 @@ try {
         )
       );
 
-      await page.goto(
-        `${process.env.EXA_BASE ?? 'http://localhost:7000'}/hud-gallery`,
-        { waitUntil: 'domcontentloaded' }
-      );
-      await page
-        .getByRole('heading', {
-          name: 'Session context label feedback',
-          exact: true,
-        })
-        .waitFor();
-      await page.screenshot({
-        path: join(screenshotDir, 'hud-gallery-context-feedback.png'),
-        fullPage: true,
-      });
-      check(
-        'HUD gallery contains the reusable context-feedback specimen',
-        (await page.locator('[data-context-label-feedback]').count()) > 0
-      );
       check(
         'renderer emitted no uncaught page errors',
         pageErrors.length === 0

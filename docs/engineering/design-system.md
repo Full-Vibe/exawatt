@@ -170,7 +170,7 @@ The gallery has been the de facto design system. With this document as the writt
 | `/hud-gallery/roadmap-lab` | **Keep** | deterministic review rig driving the shipped strip/rail through the real parser against canned states — exactly the workbench role |
 | `/hud-gallery/project-ribbon` + `/project-ribbon/bench` | **Keep** | active dogfood bench (ENG-016 D42, 2026-08-02 round) |
 
-G1 also amends `AGENTS.md`'s "canonical component workbench" rule: the workbench prototypes and renders; **this document is the source of design truth.** Until G1 lands, the gallery remains as-is; nothing here authorizes deleting code yet.
+G1 also amends `AGENTS.md`'s "canonical component workbench" rule: the workbench prototypes and renders; **this document is the source of design truth.** G1 executed this list on 2026-08-02 (see the amendment log); the table above stands as the record of what was decided and why.
 
 ---
 
@@ -186,4 +186,5 @@ Never fork a parallel convention (a new fractional type scale, a fifth palette, 
 ### Amendment log
 
 - 2026-08-02 — G0: initial kernel extracted from the shipped UI; named 12-rung type scale over the D39 chrome roles; off-scale register recorded; `/hud-gallery` merge/retire decisions written (execution = G1).
+- 2026-08-02 — G1 executed: the `/hud-gallery` decision list above is now reality. Retired the quick-capture, context-label, and keyswitch/tactile study sections; deleted `/hud-gallery/agent-field` and `/hud-gallery/agent-sources`; removed the 301-line `.tactile-key` block from `globals.css` (`TactileActionKey` re-verified at zero consumers before deletion); retired `/eval/t7-keyswitch` and its harness task with the study (production keyswitch buttons and their T8/T9 evals untouched); keyswitch direction note archived at `docs/archive/keyswitch-material-studies.md`; `AGENTS.md` workbench rule amended per the line above.
 - 2026-08-02 — review fixes: minted the four missing rung tokens in `globals.css` (`text-chrome-nano`, `text-reading`, `text-surface-title`, `text-display`) so the no-bracketed-sizes rule is satisfiable by the doc's own prescriptions (the app-wide bracketed-usage sweep remains P8); corrected measured counts (`rounded` 135, HUD atom importers 36, tactile-key dead CSS ~294 lines, raw 10–15px literals 295/217); added the substrate note pinning counts at `f3efd83`; fixed the quick-capture retire rationale (it imports production components — the drift risk is mounting context, not the components).

@@ -24,7 +24,6 @@ import {
   WebglComposedScene,
   WebglStatusLightsScene,
 } from '@/components/hud/webgl/scenes';
-import { KeySwitchStudy } from '@/components/hud/webgl/keyswitch-study';
 import {
   StatusLightDomSpecimens,
   StatusLightProtocolLegend,
@@ -33,106 +32,8 @@ import {
   FIXTURE_AGENTS,
   FIXTURE_METRICS,
 } from '@/components/hud/gallery-fixtures';
-import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
-import { QuickCaptureBar } from '@/components/feedback/quick-capture-bar';
-import type { QuickFeedbackKind } from '@/components/feedback/quick-feedback-events';
 import { SessionStateTileStudy } from '@/components/hud/session-state-tile-study';
 import { ProjectRibbonStudy } from '@/components/hud/project-ribbon-study';
-
-const STUDY_SCREENSHOT =
-  'data:image/svg+xml,' +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="40"><rect width="64" height="40" fill="#0b1220"/><rect x="4" y="4" width="56" height="6" fill="#164e63"/><rect x="4" y="14" width="40" height="4" fill="#1e293b"/><rect x="4" y="22" width="48" height="4" fill="#1e293b"/></svg>`
-  );
-
-function QuickCaptureStudy() {
-  const [kind, setKind] = useState<QuickFeedbackKind>('general');
-  const [message, setMessage] = useState('');
-  const [attach, setAttach] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  return (
-    <div className="flex max-w-3xl flex-col gap-4">
-      <p
-        className="max-w-[68ch] text-xs leading-relaxed"
-        style={{ color: HUD.textDim }}
-      >
-        ⌘⇧F from anywhere, including inside a terminal. Enter sends and the bar
-        closes optimistically; Esc dismisses but keeps the draft. The screenshot
-        is captured before the bar renders, so it never contains the capture UI.
-        ⌘1/⌘2/⌘3 switch kind, ⌘S toggles the screenshot.
-      </p>
-      <QuickCaptureBar
-        kind={kind}
-        onKindChange={setKind}
-        message={message}
-        onMessageChange={setMessage}
-        screenshot={STUDY_SCREENSHOT}
-        attachScreenshot={attach}
-        onAttachScreenshotChange={setAttach}
-        error={error}
-        onSubmit={() => {
-          setMessage('');
-          setError(null);
-        }}
-        onDismiss={() => setError('Send failed — draft kept')}
-      />
-      <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-        <span className="rounded border border-white/10 px-2 py-1">
-          Enter in the study clears (sends); Esc previews the failure state
-        </span>
-        <span className="rounded border border-white/10 px-2 py-1">
-          Signed out: verb disabled in ⌘K
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function ContextLabelFeedbackStudy() {
-  const [label, setLabel] = useState('Implement cmd+shift+t to reopen tabs');
-  return (
-    <div className="flex max-w-3xl flex-col gap-4">
-      <p
-        className="max-w-[68ch] text-xs leading-relaxed"
-        style={{ color: HUD.textDim }}
-      >
-        Votes appear on hover or keyboard focus in production. A correction is
-        optimistic: the tab changes immediately while the authenticated report
-        joins the general feedback queue.
-      </p>
-      <div className="group/tab flex w-fit items-center gap-1 rounded border border-fuchsia-400/50 bg-fuchsia-400/10 px-2 py-1">
-        <span className="size-3 rounded-full border border-emerald-300 text-center text-[8px] leading-[10px] text-emerald-300">
-          ✓
-        </span>
-        <span className="text-fuchsia-300">◉</span>
-        <span data-subtitle className="max-w-72 text-sm text-fuchsia-200">
-          {label}
-        </span>
-        <ContextLabelFeedback
-          label={label}
-          enabled
-          alwaysVisible
-          onRate={async (_sentiment, betterLabel) => {
-            if (betterLabel) setLabel(betterLabel);
-            return true;
-          }}
-        />
-        <span className="px-1 text-muted-foreground">×</span>
-      </div>
-      <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-        <span className="rounded border border-white/10 px-2 py-1">
-          Signed out: controls hidden
-        </span>
-        <span className="rounded border border-white/10 px-2 py-1">
-          Failure: last good label retained
-        </span>
-        <span className="rounded border border-white/10 px-2 py-1">
-          Image only: New agent
-        </span>
-      </div>
-    </div>
-  );
-}
 
 const TONES: HudTone[] = ['cyan', 'magenta', 'amber', 'red', 'green', 'idle'];
 const STATUSES: AgentStatus[] = [
@@ -169,21 +70,9 @@ const SECTIONS: Section[] = [
     showcase: <SessionStateTileStudy />,
   },
   {
-    id: 'quick-capture',
-    title: 'Quick feedback capture',
-    meta: 'review candidate · ⌘⇧F keyboard-first capture bar',
-    dom: <QuickCaptureStudy />,
-  },
-  {
-    id: 'context-label-feedback',
-    title: 'Session context label feedback',
-    meta: 'review candidate · fast vote + exact correction',
-    dom: <ContextLabelFeedbackStudy />,
-  },
-  {
     id: 'status-lights',
     title: 'Agent status lights',
-    meta: 'review candidate · five-state priority protocol',
+    meta: 'canon · D40 five-signal protocol',
     dom: <StatusLightDomSpecimens />,
     webgl: (
       <div className="flex max-w-3xl flex-col gap-5">
@@ -211,12 +100,6 @@ const SECTIONS: Section[] = [
         <StatusLightProtocolLegend compact />
       </div>
     ),
-  },
-  {
-    id: 'keyswitch-material-studies',
-    title: 'Translucent agent key / keyswitch',
-    meta: 'interactive physical study · cumulative material and geometry library',
-    showcase: <KeySwitchStudy />,
   },
   {
     id: 'frames',
@@ -560,16 +443,10 @@ export default function HudGallery() {
               </span>
             </div>
             <p className="mt-1 text-sm" style={{ color: HUD.textDim }}>
-              Canonical component specimens and physical WebGL studies. DOM wins
-              for crisp, keyboard-accessible chrome; WebGL is reserved for the
-              scalable agent world and reviewable material work.{' '}
-              <a
-                href="/hud-gallery/agent-field"
-                className="underline underline-offset-2"
-                style={{ color: HUD.cyan }}
-              >
-                Open the AgentField world →
-              </a>{' '}
+              The live workbench that renders the design system of record
+              (docs/engineering/design-system.md). DOM wins for crisp,
+              keyboard-accessible chrome; WebGL is reserved for the scalable
+              agent world and reviewable material work.{' '}
               <a
                 href="/hud-gallery/consumption-lab"
                 className="underline underline-offset-2"
@@ -578,11 +455,18 @@ export default function HudGallery() {
                 Open the Consumption lab →
               </a>{' '}
               <a
-                href="/hud-gallery/agent-sources"
+                href="/hud-gallery/roadmap-lab"
                 className="underline underline-offset-2"
                 style={{ color: HUD.cyan }}
               >
-                Open the Agent Sources lab →
+                Open the Roadmap lab →
+              </a>{' '}
+              <a
+                href="/hud-gallery/project-ribbon/bench"
+                className="underline underline-offset-2"
+                style={{ color: HUD.cyan }}
+              >
+                Open the Ribbon dogfood bench →
               </a>
             </p>
           </header>

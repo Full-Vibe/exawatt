@@ -56,8 +56,9 @@ Three surfaces (this worktree):
   `src/components/fleet/spatial/agent-field/agent-field-surface.tsx` — Fleet
   altitude uses one InstancedMesh of nodes + one of halos with per-instance
   picking; Project and Agent altitudes use readable semantic regimes over the
-  same stable data/navigation model. Demo chrome lives at
-  `/hud-gallery/agent-field`; the real route is `/fleet/spatial`.
+  same stable data/navigation model. The real route is `/fleet/spatial`; the
+  deterministic rigs are `/eval/t3-spatial-sparse` and `/eval/t4-agent-station`
+  (the old `/hud-gallery/agent-field` demo was retired in ENG-036 G1).
   `frameloop="demand"`.
 - **Spatial DOM chrome**
   `src/components/fleet/spatial/spatial-fleet-client.tsx` — URL altitude,
