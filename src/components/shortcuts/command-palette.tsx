@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   CommandDialog,
@@ -112,6 +112,12 @@ import type { CommandAltitude } from '@/components/nav/command-altitude';
 import type { PtyHarness, ClosedSessionEntry } from '@/types/electron';
 import { useShortcutRegistryVersion } from './use-effective-shortcut';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
+import { useAppearance } from '@/components/appearance/appearance-provider';
+import {
+  BUILT_IN_THEME_IDS,
+  ThemePickerCommand,
+} from '@/components/appearance/theme-picker-command';
+import { selectManualTheme } from '@/app/settings/appearance-settings';
 import {
   buildWorkspacePaletteRows,
   type WorkspacePaletteRow,
@@ -251,6 +257,21 @@ export function CommandPalette({
   const [closedSessions, setClosedSessions] = useState<ClosedSessionEntry[]>(
     []
   );
+  const {
+    preferences: appearancePreferences,
+    resolved: resolvedAppearance,
+    previewTheme: previewAppearanceTheme,
+    cancelPreview,
+    commitPreferences: commitAppearancePreferences,
+  } = useAppearance();
+  const [paletteMode, setPaletteMode] = useState<'commands' | 'themes'>(
+    'commands'
+  );
+  const [themeValue, setThemeValue] = useState('');
+  const [committedThemeId, setCommittedThemeId] = useState('');
+  const [themeSaving, setThemeSaving] = useState(false);
+  const [themeError, setThemeError] = useState<string | null>(null);
+  const previewOwned = useRef(false);
   const inElectron = typeof window !== 'undefined' && !!window.electron?.pty;
   // Demo tenant (ENG-027 W2): the palette lists the demo Workspace's
   // Sessions and drops every verb that reaches Personal truth or a PTY —
@@ -267,6 +288,14 @@ export function CommandPalette({
   // on one would silently do nothing
   useEffect(() => {
     if (!open) {
+      if (previewOwned.current) {
+        previewOwned.current = false;
+        cancelPreview();
+      }
+      setPaletteMode('commands');
+      setThemeValue('');
+      setCommittedThemeId('');
+      setThemeError(null);
       setSearch('');
       setSessions([]);
       setProjects([]);
@@ -274,7 +303,14 @@ export function CommandPalette({
       setClosedSessions([]);
       setRegistryFailed(false);
     }
-  }, [open]);
+  }, [cancelPreview, open]);
+
+  useEffect(
+    () => () => {
+      if (previewOwned.current) cancelPreview();
+    },
+    [cancelPreview]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -346,6 +382,62 @@ export function CommandPalette({
       });
     },
     [handleSelect, navigateCommandSurface, tenancy]
+  );
+
+  const enterThemePicker = useCallback(() => {
+    setPaletteMode('themes');
+    setSearch('');
+    setThemeError(null);
+    setThemeValue(resolvedAppearance.themeId);
+    setCommittedThemeId(resolvedAppearance.themeId);
+  }, [resolvedAppearance.themeId]);
+
+  const previewTheme = useCallback(
+    (themeId: string) => {
+      if (!BUILT_IN_THEME_IDS.has(themeId) || themeSaving) return;
+      setThemeValue(themeId);
+      setThemeError(null);
+      previewOwned.current = true;
+      previewAppearanceTheme(themeId);
+    },
+    [previewAppearanceTheme, themeSaving]
+  );
+
+  const commitTheme = useCallback(
+    async (themeId: string) => {
+      if (!BUILT_IN_THEME_IDS.has(themeId) || themeSaving) return;
+      setThemeSaving(true);
+      setThemeError(null);
+      try {
+        await commitAppearancePreferences(
+          selectManualTheme(appearancePreferences, themeId)
+        );
+        previewOwned.current = false;
+        setPaletteMode('commands');
+        onOpenChange(false);
+      } catch {
+        setThemeError('Theme could not be saved. Try again.');
+      } finally {
+        setThemeSaving(false);
+      }
+    },
+    [
+      appearancePreferences,
+      commitAppearancePreferences,
+      onOpenChange,
+      themeSaving,
+    ]
+  );
+
+  const handlePaletteOpenChange = useCallback(
+    (next: boolean) => {
+      if (!next && previewOwned.current) {
+        previewOwned.current = false;
+        cancelPreview();
+      }
+      onOpenChange(next);
+    },
+    [cancelPreview, onOpenChange]
   );
 
   /** switcher/launch requests land in the workspace: instantly when it is
@@ -650,6 +742,13 @@ export function CommandPalette({
       onSelect: () => handleSelect(() => requestQuickFeedback(kind)),
     });
     return [
+      {
+        id: 'action-change-theme',
+        label: 'Change theme…',
+        value: 'change theme appearance color scheme preset light dark',
+        icon: Palette,
+        onSelect: enterThemePicker,
+      },
       feedbackVerb(
         'action-feedback',
         'Send feedback',
@@ -683,7 +782,13 @@ export function CommandPalette({
         onSelect: () => handleSelect(onOpenHelpModal),
       },
     ];
-  }, [feedbackAuthed, handleSelect, onOpenHelpModal, shortcutVersion]);
+  }, [
+    enterThemePicker,
+    feedbackAuthed,
+    handleSelect,
+    onOpenHelpModal,
+    shortcutVersion,
+  ]);
 
   // Recent group (D9): resolve frecency ids against everything currently
   // offerable. Live sessions are excluded on purpose — the Sessions group
@@ -790,422 +895,454 @@ export function CommandPalette({
   ]);
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput
-        placeholder="Type a command or search..."
-        value={search}
-        onValueChange={setSearch}
-      />
-      <CommandList>
-        <CommandEmpty>No results found.</CommandEmpty>
+    <CommandDialog
+      open={open}
+      onOpenChange={handlePaletteOpenChange}
+      commandValue={paletteMode === 'themes' ? themeValue : undefined}
+      onCommandValueChange={paletteMode === 'themes' ? previewTheme : undefined}
+    >
+      {paletteMode === 'themes' ? (
+        <ThemePickerCommand
+          search={search}
+          currentThemeId={committedThemeId}
+          busy={themeSaving}
+          error={themeError}
+          onSearchChange={setSearch}
+          onSelect={themeId => void commitTheme(themeId)}
+        />
+      ) : (
+        <>
+          <CommandInput
+            placeholder="Type a command or search..."
+            value={search}
+            onValueChange={setSearch}
+          />
+          <CommandList>
+            <CommandEmpty>No results found.</CommandEmpty>
 
-        {!search && recentRows.length > 0 && (
-          <>
-            <CommandGroup heading="Recent">
-              {recentRows.map(row => (
-                <CommandItem
-                  key={`recent-use-${row.id}`}
-                  value={`recent ${row.id}`}
-                  onSelect={() => {
-                    recordPaletteUse(row.id);
-                    row.onSelect();
-                  }}
-                >
-                  {row.icon ? (
-                    <row.icon className="mr-2 h-4 w-4" />
-                  ) : row.harness ? (
-                    <span
-                      className="mr-2 shrink-0"
-                      style={{ color: HARNESS_META[row.harness].color }}
-                    >
-                      <HarnessGlyph harness={row.harness} size={13} />
-                    </span>
-                  ) : row.color ? (
-                    <span
-                      className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
-                      style={{ background: row.color }}
-                    />
-                  ) : (
-                    <History className="mr-2 h-4 w-4" />
-                  )}
-                  <span className="truncate">{row.label}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-            <CommandSeparator />
-          </>
-        )}
-
-        {workspaceRows.length > 0 && (
-          <>
-            <CommandGroup heading="Workspaces">
-              {workspaceRows.map(row => {
-                const Icon = WORKSPACE_ICONS[row.workspace.kind];
-                const disabled =
-                  row.action === 'current' || row.action === 'unavailable';
-                return (
-                  <CommandItem
-                    key={row.id}
-                    value={row.value}
-                    disabled={disabled}
-                    data-palette-workspace-current={
-                      row.action === 'current' ? row.workspace.id : undefined
-                    }
-                    data-palette-workspace-switch={
-                      row.action === 'switch' ? row.workspace.id : undefined
-                    }
-                    data-palette-workspace-preview={
-                      row.action === 'open-preview'
-                        ? row.workspace.id
-                        : undefined
-                    }
-                    onSelect={() => {
-                      recordPaletteUse(row.id);
-                      selectWorkspace(row);
-                    }}
-                  >
-                    <Icon className="mr-2 h-4 w-4 shrink-0" />
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate">{row.workspace.name}</span>
-                      {row.workspace.tagline && (
-                        <span className="truncate text-chrome-meta text-muted-foreground">
-                          {row.workspace.tagline}
-                        </span>
-                      )}
-                    </span>
-                    {row.action === 'current' && (
-                      <Check
-                        aria-hidden
-                        className="ml-2 h-3.5 w-3.5 shrink-0 text-primary"
-                      />
-                    )}
-                    {row.note && <CommandShortcut>{row.note}</CommandShortcut>}
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-            <CommandSeparator />
-          </>
-        )}
-
-        {(inElectron || inDemoTenant) && sessions.length > 0 && (
-          <>
-            <CommandGroup heading="Sessions">
-              {sessions.map(s => {
-                const status = STATUS_META[s.status];
-                return (
-                  <CommandItem
-                    key={s.id}
-                    value={`${s.searchValue} ${s.id}`}
-                    onSelect={() => openSession(s.id)}
-                    data-session-id={s.id}
-                  >
-                    <span
-                      className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
-                      style={{
-                        background: s.color,
-                        boxShadow: `0 0 5px ${s.color}`,
+            {!search && recentRows.length > 0 && (
+              <>
+                <CommandGroup heading="Recent">
+                  {recentRows.map(row => (
+                    <CommandItem
+                      key={`recent-use-${row.id}`}
+                      value={`recent ${row.id}`}
+                      onSelect={() => {
+                        recordPaletteUse(row.id);
+                        row.onSelect();
                       }}
-                    />
-                    {s.harness !== 'shell' && (
-                      <span
-                        className="mr-1.5 shrink-0"
-                        style={{ color: s.color }}
+                    >
+                      {row.icon ? (
+                        <row.icon className="mr-2 h-4 w-4" />
+                      ) : row.harness ? (
+                        <span
+                          className="mr-2 shrink-0"
+                          style={{ color: HARNESS_META[row.harness].color }}
+                        >
+                          <HarnessGlyph harness={row.harness} size={13} />
+                        </span>
+                      ) : row.color ? (
+                        <span
+                          className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
+                          style={{ background: row.color }}
+                        />
+                      ) : (
+                        <History className="mr-2 h-4 w-4" />
+                      )}
+                      <span className="truncate">{row.label}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+                <CommandSeparator />
+              </>
+            )}
+
+            {workspaceRows.length > 0 && (
+              <>
+                <CommandGroup heading="Workspaces">
+                  {workspaceRows.map(row => {
+                    const Icon = WORKSPACE_ICONS[row.workspace.kind];
+                    const disabled =
+                      row.action === 'current' ||
+                      row.action === 'unavailable';
+                    return (
+                      <CommandItem
+                        key={row.id}
+                        value={row.value}
+                        disabled={disabled}
+                        data-palette-workspace-current={
+                          row.action === 'current'
+                            ? row.workspace.id
+                            : undefined
+                        }
+                        data-palette-workspace-switch={
+                          row.action === 'switch'
+                            ? row.workspace.id
+                            : undefined
+                        }
+                        data-palette-workspace-preview={
+                          row.action === 'open-preview'
+                            ? row.workspace.id
+                            : undefined
+                        }
+                        onSelect={() => {
+                          recordPaletteUse(row.id);
+                          selectWorkspace(row);
+                        }}
                       >
-                        <HarnessGlyph harness={s.harness} size={12} />
-                      </span>
-                    )}
-                    <span className="min-w-0 flex-1 truncate">
-                      {s.title}
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {s.projectName}
-                        {s.roadmapItemId ? ` · ${s.roadmapItemId}` : ''}
-                        {s.subtitle ? ` · ${s.subtitle}` : ''}
-                      </span>
-                    </span>
-                    <span
-                      className="ml-3 inline-flex shrink-0 items-center gap-1.5 font-mono text-xs"
-                      data-session-status={s.status}
-                      style={{ color: status.color }}
-                    >
-                      {s.status === 'needs-you' ? (
-                        <AttentionMarker />
-                      ) : s.status === 'fault' ? (
-                        <StatusLight decorative size="compact" state="fault" />
-                      ) : s.status !== 'exited' ? (
-                        <SessionStatusGlyph state={s.status} />
-                      ) : null}
-                      <span>{status.label}</span>
-                    </span>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-            <CommandSeparator />
-          </>
-        )}
-
-        {personalVerbs && (
-          <>
-            <CommandGroup heading="Start Agent">
-              {AGENT_SOURCE_ORDER.map(source => (
-                <CommandItem
-                  key={`launch-${source}`}
-                  value={`start agent ${AGENT_SOURCE_META[source].label} new session task`}
-                  onSelect={() => {
-                    recordPaletteUse(`launch:${source}`);
-                    openAgentComposer(source);
-                  }}
-                >
-                  <span
-                    className="mr-2 shrink-0"
-                    style={{ color: AGENT_SOURCE_META[source].color }}
-                  >
-                    <HarnessGlyph harness={source} size={13} />
-                  </span>
-                  <span>
-                    Start Agent with {AGENT_SOURCE_META[source].label}
-                  </span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-            <CommandSeparator />
-            <CommandGroup heading="Tools">
-              <CommandItem
-                value={`open shell terminal active project ${workspaceAvailability.commands['launch-shell'].reason ?? ''}`}
-                onSelect={() => launchHarness('shell')}
-                disabled={
-                  !workspaceAvailability.commands['launch-shell'].available
-                }
-                title={
-                  workspaceAvailability.commands['launch-shell'].reason ??
-                  undefined
-                }
-              >
-                <SquareTerminal className="mr-2 h-3.5 w-3.5 shrink-0" />
-                <span>Open shell in the active Project</span>
-                {!workspaceAvailability.commands['launch-shell'].available && (
-                  <CommandShortcut>
-                    {workspaceAvailability.commands['launch-shell'].reason}
-                  </CommandShortcut>
-                )}
-              </CommandItem>
-            </CommandGroup>
-            <CommandSeparator />
-          </>
-        )}
-
-        {personalVerbs && (
-          <>
-            <CommandGroup heading="Projects">
-              {projects
-                .filter(p => p.root_path)
-                .map(p => (
-                  <CommandItem
-                    key={`project-${p.id}`}
-                    value={`project open ${p.name} ${p.root_path ?? ''}`}
-                    onSelect={() => {
-                      recordPaletteUse(`project:${p.root_path}`);
-                      openProject(p);
-                    }}
-                  >
-                    <span
-                      className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
-                      style={{ background: p.color ?? HUD.textDim }}
-                    />
-                    <span className="truncate">{p.name}</span>
-                    <span
-                      className="ml-auto truncate pl-2 text-chrome-micro"
-                      style={{ color: HUD.textDim }}
-                    >
-                      {p.root_path}
-                    </span>
-                  </CommandItem>
-                ))}
-              {/* local recency fallback (D8): Projects the registry doesn't
-                  cover right now — closed tabs, signed out, offline */}
-              {recents
-                .filter(r => !projects.some(p => p.root_path === r.dir))
-                .map(r => (
-                  <CommandItem
-                    key={`recent-${r.dir}`}
-                    value={`project open recent ${r.name} ${r.dir}`}
-                    onSelect={() => {
-                      recordPaletteUse(`project:${r.dir}`);
-                      openRecentProject(r.dir);
-                    }}
-                  >
-                    <span
-                      className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
-                      style={{ background: r.color ?? HUD.textDim }}
-                    />
-                    <span className="truncate">{r.name}</span>
-                    <span
-                      className="ml-auto truncate pl-2 text-chrome-micro"
-                      style={{ color: HUD.textDim }}
-                    >
-                      {r.dir}
-                    </span>
-                  </CommandItem>
-                ))}
-              {registryFailed && (
-                <CommandItem
-                  value="project sign in sync account"
-                  onSelect={() => handleSelect(() => router.push('/sign-in'))}
-                >
-                  <LogIn className="mr-2 h-3.5 w-3.5 shrink-0" />
-                  <span>Sign in to sync Projects across machines</span>
-                </CommandItem>
-              )}
-              <CommandItem
-                value="project add new open folder directory browse"
-                onSelect={addProject}
-              >
-                <FolderOpen className="mr-2 h-3.5 w-3.5 shrink-0" />
-                <span>Add project…</span>
-                {newProjectShortcut && (
-                  <CommandShortcut>
-                    {formatShortcutKeys(newProjectShortcut)}
-                  </CommandShortcut>
-                )}
-              </CommandItem>
-            </CommandGroup>
-            <CommandSeparator />
-          </>
-        )}
-        {workspaceVerbs &&
-          onWorkspaceRoute &&
-          tenantWorkspaceItems.length > 0 && (
-            <>
-              <CommandGroup heading="Workspace">
-                {tenantWorkspaceItems.map(item => (
-                  <CommandItem
-                    key={item.id}
-                    value={`${item.value} ${item.availability?.reason ?? ''}`}
-                    disabled={
-                      item.availability
-                        ? !item.availability.available
-                        : undefined
-                    }
-                    title={item.availability?.reason ?? undefined}
-                    onSelect={() => {
-                      recordPaletteUse(item.id);
-                      item.onSelect();
-                    }}
-                  >
-                    <item.icon className="mr-2 h-4 w-4" />
-                    <span>{item.label}</span>
-                    {item.availability && !item.availability.available ? (
-                      <CommandShortcut>
-                        {item.availability.reason}
-                      </CommandShortcut>
-                    ) : item.shortcut ? (
-                      <CommandShortcut>
-                        {formatShortcutKeys(item.shortcut)}
-                      </CommandShortcut>
-                    ) : null}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-              <CommandSeparator />
-            </>
-          )}
-        {personalVerbs && onWorkspaceRoute && closedSessions.length > 0 && (
-          <>
-            <CommandGroup heading="Recently closed">
-              {closedSessions.map(entry => (
-                <CommandItem
-                  key={entry.durableSessionId}
-                  value={`reopen closed ${entry.projectName} ${entry.goal ?? ''} ${entry.title} ${entry.harness}`}
-                  onSelect={() => {
-                    recordPaletteUse('ws-reopen-closed');
-                    handleSelect(() =>
-                      window.dispatchEvent(
-                        new CustomEvent(REOPEN_CLOSED_EVENT, {
-                          detail: {
-                            durableSessionId: entry.durableSessionId,
-                          },
-                        })
-                      )
+                        <Icon className="mr-2 h-4 w-4 shrink-0" />
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate">{row.workspace.name}</span>
+                          {row.workspace.tagline && (
+                            <span className="truncate text-chrome-meta text-muted-foreground">
+                              {row.workspace.tagline}
+                            </span>
+                          )}
+                        </span>
+                        {row.action === 'current' && (
+                          <Check
+                            aria-hidden
+                            className="ml-2 h-3.5 w-3.5 shrink-0 text-primary"
+                          />
+                        )}
+                        {row.note && (
+                          <CommandShortcut>{row.note}</CommandShortcut>
+                        )}
+                      </CommandItem>
                     );
+                  })}
+                </CommandGroup>
+                <CommandSeparator />
+              </>
+            )}
+
+            {(inElectron || inDemoTenant) && sessions.length > 0 && (
+              <>
+                <CommandGroup heading="Sessions">
+                  {sessions.map(s => {
+                    const status = STATUS_META[s.status];
+                    return (
+                      <CommandItem
+                        key={s.id}
+                        value={`${s.searchValue} ${s.id}`}
+                        onSelect={() => openSession(s.id)}
+                        data-session-id={s.id}
+                      >
+                        <span
+                          className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
+                          style={{
+                            background: s.color,
+                            boxShadow: `0 0 5px ${s.color}`,
+                          }}
+                        />
+                        {s.harness !== 'shell' && (
+                          <span
+                            className="mr-1.5 shrink-0"
+                            style={{ color: s.color }}
+                          >
+                            <HarnessGlyph harness={s.harness} size={12} />
+                          </span>
+                        )}
+                        <span className="min-w-0 flex-1 truncate">
+                          {s.title}
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {s.projectName}
+                            {s.roadmapItemId ? ` · ${s.roadmapItemId}` : ''}
+                            {s.subtitle ? ` · ${s.subtitle}` : ''}
+                          </span>
+                        </span>
+                        <span
+                          className="ml-3 inline-flex shrink-0 items-center gap-1.5 font-mono text-xs"
+                          data-session-status={s.status}
+                          style={{ color: status.color }}
+                        >
+                          {s.status === 'needs-you' ? (
+                            <AttentionMarker />
+                          ) : s.status === 'fault' ? (
+                            <StatusLight
+                              decorative
+                              size="compact"
+                              state="fault"
+                            />
+                          ) : s.status !== 'exited' ? (
+                            <SessionStatusGlyph state={s.status} />
+                          ) : null}
+                          <span>{status.label}</span>
+                        </span>
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+                <CommandSeparator />
+              </>
+            )}
+
+            {personalVerbs && (
+              <>
+                <CommandGroup heading="Start Agent">
+                  {AGENT_SOURCE_ORDER.map(source => (
+                    <CommandItem
+                      key={`launch-${source}`}
+                      value={`start agent ${AGENT_SOURCE_META[source].label} new session task`}
+                      onSelect={() => {
+                        recordPaletteUse(`launch:${source}`);
+                        openAgentComposer(source);
+                      }}
+                    >
+                      <span
+                        className="mr-2 shrink-0"
+                        style={{ color: AGENT_SOURCE_META[source].color }}
+                      >
+                        <HarnessGlyph harness={source} size={13} />
+                      </span>
+                      <span>
+                        Start Agent with {AGENT_SOURCE_META[source].label}
+                      </span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+                <CommandSeparator />
+                <CommandGroup heading="Tools">
+                  <CommandItem
+                    value={`open shell terminal active project ${workspaceAvailability.commands['launch-shell'].reason ?? ''}`}
+                    onSelect={() => launchHarness('shell')}
+                    disabled={
+                      !workspaceAvailability.commands['launch-shell'].available
+                    }
+                    title={
+                      workspaceAvailability.commands['launch-shell'].reason ??
+                      undefined
+                    }
+                  >
+                    <SquareTerminal className="mr-2 h-3.5 w-3.5 shrink-0" />
+                    <span>Open shell in the active Project</span>
+                    {!workspaceAvailability.commands['launch-shell']
+                      .available && (
+                      <CommandShortcut>
+                        {workspaceAvailability.commands['launch-shell'].reason}
+                      </CommandShortcut>
+                    )}
+                  </CommandItem>
+                </CommandGroup>
+                <CommandSeparator />
+              </>
+            )}
+
+            {personalVerbs && (
+              <>
+                <CommandGroup heading="Projects">
+                  {projects
+                    .filter(p => p.root_path)
+                    .map(p => (
+                      <CommandItem
+                        key={`project-${p.id}`}
+                        value={`project open ${p.name} ${p.root_path ?? ''}`}
+                        onSelect={() => {
+                          recordPaletteUse(`project:${p.root_path}`);
+                          openProject(p);
+                        }}
+                      >
+                        <span
+                          className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
+                          style={{ background: p.color ?? HUD.textDim }}
+                        />
+                        <span className="truncate">{p.name}</span>
+                        <span
+                          className="ml-auto truncate pl-2 text-chrome-micro"
+                          style={{ color: HUD.textDim }}
+                        >
+                          {p.root_path}
+                        </span>
+                      </CommandItem>
+                    ))}
+                  {/* local recency fallback (D8): Projects the registry doesn't
+                  cover right now — closed tabs, signed out, offline */}
+                  {recents
+                    .filter(r => !projects.some(p => p.root_path === r.dir))
+                    .map(r => (
+                      <CommandItem
+                        key={`recent-${r.dir}`}
+                        value={`project open recent ${r.name} ${r.dir}`}
+                        onSelect={() => {
+                          recordPaletteUse(`project:${r.dir}`);
+                          openRecentProject(r.dir);
+                        }}
+                      >
+                        <span
+                          className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
+                          style={{ background: r.color ?? HUD.textDim }}
+                        />
+                        <span className="truncate">{r.name}</span>
+                        <span
+                          className="ml-auto truncate pl-2 text-chrome-micro"
+                          style={{ color: HUD.textDim }}
+                        >
+                          {r.dir}
+                        </span>
+                      </CommandItem>
+                    ))}
+                  {registryFailed && (
+                    <CommandItem
+                      value="project sign in sync account"
+                      onSelect={() =>
+                        handleSelect(() => router.push('/sign-in'))
+                      }
+                    >
+                      <LogIn className="mr-2 h-3.5 w-3.5 shrink-0" />
+                      <span>Sign in to sync Projects across machines</span>
+                    </CommandItem>
+                  )}
+                  <CommandItem
+                    value="project add new open folder directory browse"
+                    onSelect={addProject}
+                  >
+                    <FolderOpen className="mr-2 h-3.5 w-3.5 shrink-0" />
+                    <span>Add project…</span>
+                    {newProjectShortcut && (
+                      <CommandShortcut>
+                        {formatShortcutKeys(newProjectShortcut)}
+                      </CommandShortcut>
+                    )}
+                  </CommandItem>
+                </CommandGroup>
+                <CommandSeparator />
+              </>
+            )}
+            {workspaceVerbs &&
+              onWorkspaceRoute &&
+              tenantWorkspaceItems.length > 0 && (
+                <>
+                  <CommandGroup heading="Workspace">
+                    {tenantWorkspaceItems.map(item => (
+                      <CommandItem
+                        key={item.id}
+                        value={`${item.value} ${item.availability?.reason ?? ''}`}
+                        disabled={
+                          item.availability
+                            ? !item.availability.available
+                            : undefined
+                        }
+                        title={item.availability?.reason ?? undefined}
+                        onSelect={() => {
+                          recordPaletteUse(item.id);
+                          item.onSelect();
+                        }}
+                      >
+                        <item.icon className="mr-2 h-4 w-4" />
+                        <span>{item.label}</span>
+                        {item.availability && !item.availability.available ? (
+                          <CommandShortcut>
+                            {item.availability.reason}
+                          </CommandShortcut>
+                        ) : item.shortcut ? (
+                          <CommandShortcut>
+                            {formatShortcutKeys(item.shortcut)}
+                          </CommandShortcut>
+                        ) : null}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                  <CommandSeparator />
+                </>
+              )}
+            {personalVerbs && onWorkspaceRoute && closedSessions.length > 0 && (
+              <>
+                <CommandGroup heading="Recently closed">
+                  {closedSessions.map(entry => (
+                    <CommandItem
+                      key={entry.durableSessionId}
+                      value={`reopen closed ${entry.projectName} ${entry.goal ?? ''} ${entry.title} ${entry.harness}`}
+                      onSelect={() => {
+                        recordPaletteUse('ws-reopen-closed');
+                        handleSelect(() =>
+                          window.dispatchEvent(
+                            new CustomEvent(REOPEN_CLOSED_EVENT, {
+                              detail: {
+                                durableSessionId: entry.durableSessionId,
+                              },
+                            })
+                          )
+                        );
+                      }}
+                    >
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      <span>
+                        Reopen {entry.projectName} · {entry.goal ?? entry.title}
+                      </span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+                <CommandSeparator />
+              </>
+            )}
+
+            {inElectron && onSpatialRoute && (
+              <>
+                <CommandGroup heading="Fleet">
+                  <CommandItem
+                    value="fleet spatial toggle projection top-down angled fixed view"
+                    onSelect={() => {
+                      recordPaletteUse('spatial-projection');
+                      toggleProjection();
+                    }}
+                  >
+                    <RotateCw className="mr-2 h-4 w-4" />
+                    <span>Toggle projection (top-down ↔ angled)</span>
+                    <CommandShortcut>V</CommandShortcut>
+                  </CommandItem>
+                </CommandGroup>
+                <CommandSeparator />
+              </>
+            )}
+
+            <CommandGroup heading="Navigation">
+              {navigationItems.map(item => (
+                <CommandItem
+                  key={item.id}
+                  value={item.value}
+                  onSelect={() => {
+                    recordPaletteUse(item.id);
+                    item.onSelect();
                   }}
                 >
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  <span>
-                    Reopen {entry.projectName} · {entry.goal ?? entry.title}
-                  </span>
+                  <item.icon className="mr-2 h-4 w-4" />
+                  <span>{item.label}</span>
+                  {item.shortcut ? (
+                    <CommandShortcut>
+                      {formatShortcutKeys(item.shortcut)}
+                    </CommandShortcut>
+                  ) : item.note ? (
+                    <CommandShortcut>{item.note}</CommandShortcut>
+                  ) : null}
                 </CommandItem>
               ))}
             </CommandGroup>
-            <CommandSeparator />
-          </>
-        )}
 
-        {inElectron && onSpatialRoute && (
-          <>
-            <CommandGroup heading="Fleet">
-              <CommandItem
-                value="fleet spatial toggle projection top-down angled fixed view"
-                onSelect={() => {
-                  recordPaletteUse('spatial-projection');
-                  toggleProjection();
-                }}
-              >
-                <RotateCw className="mr-2 h-4 w-4" />
-                <span>Toggle projection (top-down ↔ angled)</span>
-                <CommandShortcut>V</CommandShortcut>
-              </CommandItem>
+            <CommandSeparator />
+
+            <CommandGroup heading="Actions">
+              {actionItems.map(item => (
+                <CommandItem
+                  key={item.id}
+                  value={item.value}
+                  onSelect={() => {
+                    recordPaletteUse(item.id);
+                    item.onSelect();
+                  }}
+                >
+                  <item.icon className="mr-2 h-4 w-4" />
+                  <span>{item.label}</span>
+                  {item.shortcut && (
+                    <CommandShortcut>
+                      {formatShortcutKeys(item.shortcut)}
+                    </CommandShortcut>
+                  )}
+                </CommandItem>
+              ))}
             </CommandGroup>
-            <CommandSeparator />
-          </>
-        )}
-
-        <CommandGroup heading="Navigation">
-          {navigationItems.map(item => (
-            <CommandItem
-              key={item.id}
-              value={item.value}
-              onSelect={() => {
-                recordPaletteUse(item.id);
-                item.onSelect();
-              }}
-            >
-              <item.icon className="mr-2 h-4 w-4" />
-              <span>{item.label}</span>
-              {item.shortcut ? (
-                <CommandShortcut>
-                  {formatShortcutKeys(item.shortcut)}
-                </CommandShortcut>
-              ) : item.note ? (
-                <CommandShortcut>{item.note}</CommandShortcut>
-              ) : null}
-            </CommandItem>
-          ))}
-        </CommandGroup>
-
-        <CommandSeparator />
-
-        <CommandGroup heading="Actions">
-          {actionItems.map(item => (
-            <CommandItem
-              key={item.id}
-              value={item.value}
-              onSelect={() => {
-                recordPaletteUse(item.id);
-                item.onSelect();
-              }}
-            >
-              <item.icon className="mr-2 h-4 w-4" />
-              <span>{item.label}</span>
-              {item.shortcut && (
-                <CommandShortcut>
-                  {formatShortcutKeys(item.shortcut)}
-                </CommandShortcut>
-              )}
-            </CommandItem>
-          ))}
-        </CommandGroup>
-      </CommandList>
+          </CommandList>
+        </>
+      )}
     </CommandDialog>
   );
 }

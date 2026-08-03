@@ -57,6 +57,7 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import { AgentSourcesSettings } from './agent-sources-settings';
+import { AppearanceSettings } from './appearance-settings';
 
 type SettingsSection = 'agent-sources' | 'preferences';
 
@@ -409,11 +410,12 @@ export function SettingsClient() {
                   Preferences
                 </h2>
                 <p className="mt-1 font-ui text-chrome-title text-[var(--settings-dim)]">
-                  Personal controls for visuals, notifications, privacy, and
+                  Personal controls for appearance, notifications, privacy, and
                   keyboard behavior.
                 </p>
               </div>
 
+              <AppearanceSettings />
               <GoalVisualSettings />
               <NotificationsSettings />
               <ConversationPrivacySettings />

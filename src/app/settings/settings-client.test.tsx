@@ -20,6 +20,10 @@ vi.mock('@/app/actions/preferences', () => ({
   resetKeyboardShortcuts: vi.fn(async () => undefined),
 }));
 
+vi.mock('./appearance-settings', () => ({
+  AppearanceSettings: () => <div data-appearance-settings />,
+}));
+
 function editShortcut(label: string): HTMLElement {
   if (!screen.queryByText(label)) {
     fireEvent.click(screen.getByRole('button', { name: 'Preferences' }));
