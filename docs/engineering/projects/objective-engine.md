@@ -132,6 +132,19 @@ label. A sanitized regression case was added to
 `src/lib/context-labels/gold-cases.ts`; it retains the stale/current labels and
 the semantic transition without copying raw Session content.
 
+### Intake evidence — 2026-08-03
+
+Feedback row `aa94ab2b-d8aa-4983-8cd7-b8a15537ff19` is a label correction on
+the `exawatt` Project: the Session showed **Research subagent activity
+visualization design** and the operator replaced it with **Improve spatial
+UI**. The shown label read as a research framing of a single early
+instruction; the operator's correction names the work-world at the altitude
+they actually think in — the surface being improved, not the method being
+used. Gold-corpus candidate: an over-specific method-flavored label vs the
+operator's terser object-flavored one; a sanitized case needs the Session's
+instruction sequence to be reconstructed before it can be added, so this note
+records the candidate rather than the case.
+
 ### 2026-08-02 — E1.2 executable gold-corpus gate
 
 The corpus had become durable evidence but still depended on a reviewer to
