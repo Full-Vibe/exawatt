@@ -97,6 +97,7 @@ export function ExposeOverlay({
   engaged = {},
   delegation = {},
   roadmapByTab = {},
+  agentTypeByTab = {},
   activeTabId,
   activeProjectDir = null,
   roadmapRead,
@@ -120,6 +121,10 @@ export function ExposeOverlay({
     string,
     { label: string; fraction: string | null; inferred: boolean }
   >;
+  /** tabId → declared Agent Type name (ENG-028 T1): sources that declare
+   *  Types (the Demo Workspace) name the worker on the announced chip;
+   *  live untyped Sessions fall back to the empty Type slot. */
+  agentTypeByTab?: Record<string, string>;
   /** selection starts on the session the operator came from */
   activeTabId: string | null;
   /** selects an empty Project when there is no originating Session */
@@ -492,6 +497,7 @@ export function ExposeOverlay({
           glyphState={glyphState}
           attention={attentionSignal}
           delegation={tileDelegation}
+          agentType={agentTypeByTab[tile.tabId] ?? null}
           fault={fault}
           lifecycleLabel={tile.stateLabel}
           current={current}

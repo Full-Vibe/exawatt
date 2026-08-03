@@ -108,6 +108,18 @@ export function demoShellProjects(): Project[] {
   }).filter(project => project.tabs.length > 0);
 }
 
+/** tabId → authored Agent Type name (ENG-028 T1): the Demo Workspace is a
+ *  source that DECLARES Types, so its Team tiles name the worker on the
+ *  announced Type chip instead of showing the empty slot. */
+export function demoShellAgentTypes(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const agent of demoShellAgents()) {
+    const type = demoProjectFor(agent)?.agentType;
+    if (type) out[agent.id] = type;
+  }
+  return out;
+}
+
 /** durableSessionId → six-word context label (the D33 subtitle channel). */
 export function demoShellSummaries(): Record<string, string> {
   const out: Record<string, string> = {};

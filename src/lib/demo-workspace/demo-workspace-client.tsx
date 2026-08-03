@@ -33,6 +33,7 @@ import {
   demoRoadmapRead,
   demoShellActivity,
   demoShellAgents,
+  demoShellAgentTypes,
   demoShellAttention,
   demoShellDelegation,
   demoShellEngaged,
@@ -58,6 +59,7 @@ export function DemoWorkspaceClient() {
   const engaged = useMemo(() => demoShellEngaged(), []);
   const delegation = useMemo(() => demoShellDelegation(), []);
   const roadmapByTab = useMemo(() => demoShellRoadmapByTab(), []);
+  const agentTypeByTab = useMemo(() => demoShellAgentTypes(), []);
 
   const [activeId, setActiveId] = useState<string>(() => {
     const pending = consumePendingSessionJump();
@@ -183,6 +185,7 @@ export function DemoWorkspaceClient() {
           engaged={engaged}
           delegation={delegation}
           roadmapByTab={roadmapByTab}
+          agentTypeByTab={agentTypeByTab}
           activeTabId={activeAgent?.id ?? null}
           activeProjectDir={activeProject?.dir ?? null}
           roadmapRead={demoRoadmapRead}
