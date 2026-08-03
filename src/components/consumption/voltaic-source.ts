@@ -10,17 +10,18 @@
  * tenant's gate.
  */
 import {
-  DEMO_BASE_AGENTS,
   DEMO_PROJECTS,
   DEMO_PROJECTS_BY_KEY,
   DEMO_ROADMAP_MARKDOWN,
-  DEMO_WORKSPACE_NOW_MS,
   demoAgentSessionId,
+  demoFleetAgents,
   demoProjectRoadmap,
   demoWorkspaceConsumption,
   demoWorkspaceProjectResolver,
+  type DemoFleetAgent,
   type RoadmapItemStatus,
 } from '@exawatt/core';
+import { demoShellNowMs } from '@/lib/demo-workspace/model';
 import type {
   DemoConsumption,
   DemoProject,
@@ -64,10 +65,19 @@ function voltaicRoadmapItems(): DemoRoadmapItem[] {
   return items;
 }
 
+/** Deterministic human-touch count for one fixture Session. The fixtures do
+ *  not author interventions (the metric postdates them); this derivation is
+ *  stable, plausible against the measured E4 shape (0-6 per session), and
+ *  higher where the record shows a real operator gate. */
+function voltaicInterventions(agent: DemoFleetAgent): number {
+  const base = (agent.turns + agent.delegated.length) % 4;
+  return agent.blocker ? base + 2 : base;
+}
+
 /** Base-tier fixture Agents as session specs — the per-session identity the
  *  attribution and outcome acts render (title, model, branch, link). */
-function voltaicSessionSpecs(): DemoSessionSpec[] {
-  return DEMO_BASE_AGENTS.map(agent => {
+function voltaicSessionSpecs(agents: DemoFleetAgent[]): DemoSessionSpec[] {
+  return agents.map(agent => {
     const project = DEMO_PROJECTS_BY_KEY.get(agent.projectKey);
     return {
       id: demoAgentSessionId(agent),
@@ -82,6 +92,7 @@ function voltaicSessionSpecs(): DemoSessionSpec[] {
       startedAtMs: agent.startedAtMs,
       lastAtMs: agent.lastActivityAtMs,
       turns: agent.turns,
+      interventions: voltaicInterventions(agent),
       usage: agent.usage,
       delegated: agent.delegated.map(run => ({
         agentId: run.agentId,
@@ -98,12 +109,15 @@ function voltaicSessionSpecs(): DemoSessionSpec[] {
 let cached: DemoConsumption | null = null;
 
 /** The Demo Workspace's consumption view — Voltaic Grid Systems' fourteen
- *  days, deterministic and cached exactly like the fixture corpus itself. */
+ *  days, rebased onto the demo shell's clock (one "now" across the whole
+ *  tenant) and cached exactly like the fixture corpus itself. */
 export function voltaicConsumption(): DemoConsumption {
   if (cached) return cached;
-  const corpus = demoWorkspaceConsumption();
+  const nowMs = demoShellNowMs();
+  const corpus = demoWorkspaceConsumption({ nowMs });
+  const baseAgents = demoFleetAgents('base', { nowMs });
   const sessionLinks = new Map<string, { itemId: string; method: LinkMethod }>();
-  for (const agent of DEMO_BASE_AGENTS) {
+  for (const agent of baseAgents) {
     if (agent.roadmapItemId && agent.link) {
       sessionLinks.set(demoAgentSessionId(agent), {
         itemId: agent.roadmapItemId,
@@ -118,12 +132,12 @@ export function voltaicConsumption(): DemoConsumption {
     color: project.color,
   }));
   cached = buildDemoConsumption({
-    nowMs: DEMO_WORKSPACE_NOW_MS,
+    nowMs,
     samples: corpus.samples,
     planWindows: corpus.planWindows,
     projects,
     roadmap: voltaicRoadmapItems(),
-    sessionSpecs: voltaicSessionSpecs(),
+    sessionSpecs: voltaicSessionSpecs(baseAgents),
     projectResolver: demoWorkspaceProjectResolver,
     sessionLinks,
     burn: {

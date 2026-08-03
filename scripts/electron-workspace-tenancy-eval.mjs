@@ -1,21 +1,27 @@
 #!/usr/bin/env node
 
 /**
- * ENG-027 W1 acceptance eval: switching Workspaces leaves every live local
- * Session running and exactly where it was.
+ * ENG-027 W1+W2 acceptance eval: switching Workspaces leaves every live
+ * local Session running and exactly where it was — and the Demo tenant is
+ * REAL: Voltaic populates every altitude through the production surfaces.
  *
- * Proof shape:
+ * Proof shape (one launch):
  *   1. start a real shell PTY in the Personal Workspace, print a marker
- *   2. switch to an `available` non-personal Workspace through the REAL
- *      account-menu switcher (a test tenant registered via the dev-only
- *      registration event — the same path W2 uses to make Demo real)
- *   3. while the other Workspace is on screen, write to the PTY over IPC and
- *      see fresh output — the process is alive and responsive, not paused
- *   4. switch back; the pane re-adopts with BOTH markers replayed and
+ *   2. switch to a contentless non-personal tenant (registered bench) —
+ *      scoped view, PTY untouched and RESPONSIVE while away (W1 checks)
+ *   3. switch back; the pane re-adopts with the markers replayed and
  *      pty.list() identity byte-identical
- *
- * Also captures the visual evidence: the switcher with the Demo
- * `Coming soon` entry, the scoped non-personal view, and the restored shell.
+ *   4. switch to the REAL Demo tenant (W2): the demo shell renders readable
+ *      transcript content (never a PTY, never a blank pane), the preview
+ *      desk carries its ENG-026 marker, ⌘K lists Voltaic Sessions and
+ *      offers no launch verbs, the Team altitude fans out the 27 authored
+ *      Sessions, and the Fleet altitude shows the populated Voltaic board —
+ *      all while the live Personal PTY keeps executing
+ *   5. return to Personal — everything exactly as it was — then end the run
+ *      inside Demo
+ * Then a SECOND launch on the same userData proves the W1 review-fix
+ * composition: relaunching inside Demo restores Demo (never Personal's
+ * memory, never the gate placeholder, never the personal fleet).
  *
  * Run against THIS tree's dev server:
  *   pnpm dev -p <port>   then   EXA_BASE=http://localhost:<port> pnpm eval:electron:tenancy
@@ -44,6 +50,7 @@ const BENCH_WORKSPACE = {
 };
 const MARKER_BEFORE = 'ENG027_BEFORE_SWITCH';
 const MARKER_DURING = 'ENG027_ALIVE_WHILE_AWAY';
+const MARKER_DEMO = 'ENG027_ALIVE_IN_DEMO';
 
 const failures = [];
 function check(name, ok, detail = '') {
@@ -146,18 +153,18 @@ try {
         await waitForPtyBuffer(page, before.id, MARKER_BEFORE)
       );
 
-      // ---- the switcher: Personal active, Demo coming soon --------------
+      // ---- the switcher: Personal active, Demo REAL (W2) ----------------
       await openAccountMenu(page);
       const demoItem = page.locator('[data-workspace-switch="demo"]');
       await demoItem.waitFor();
       check(
-        'Demo entry is present and disabled (Coming soon)',
-        (await demoItem.getAttribute('data-disabled')) !== null ||
-          (await demoItem.getAttribute('aria-disabled')) === 'true'
+        'Demo entry is enabled (available since W2)',
+        (await demoItem.getAttribute('data-disabled')) === null &&
+          (await demoItem.getAttribute('aria-disabled')) !== 'true'
       );
       check(
-        'Demo entry carries Coming soon copy',
-        (await demoItem.innerText()).includes('Coming soon')
+        'Demo entry no longer reads Coming soon',
+        !(await demoItem.innerText()).includes('Coming soon')
       );
       await page.screenshot({
         path: join(SCREENSHOT_DIR, 'account-menu-switcher.png'),
@@ -260,8 +267,236 @@ try {
       await page.screenshot({
         path: join(SCREENSHOT_DIR, 'personal-restored.png'),
       });
+
+      // ================= W2: the REAL Demo tenant =========================
+      await openAccountMenu(page);
+      await page.locator('[data-workspace-switch="demo"]').click();
+      await page.locator('[data-demo-workspace]').waitFor();
+      check(
+        'Demo identity chip is visible',
+        (await page
+          .locator('[data-active-tenant-workspace="demo"]')
+          .count()) === 1
+      );
+      check(
+        'no terminal renders in the Demo tenant',
+        (await page.locator('.xterm-helper-textarea').count()) === 0
+      );
+      // Agent altitude: the default Session opens READABLE authored content
+      await page.locator('[data-demo-session-pane]').waitFor();
+      check(
+        'demo Session opens a readable transcript (pane content source)',
+        (await page.locator('[data-demo-transcript]').count()) === 1
+      );
+      await page.screenshot({
+        path: join(SCREENSHOT_DIR, 'demo-agent-altitude.png'),
+      });
+      // A preview desk carries the ENG-026 marker (readiness truth)
+      await page.locator('[data-demo-session="vg-res-nprr"]').click();
+      await page.locator('[data-demo-session-pane="vg-res-nprr"]').waitFor();
+      check(
+        'preview desk Session carries the shared Coming soon marker',
+        (await page
+          .locator(
+            '[data-demo-session-pane] [data-readiness="preview"]'
+          )
+          .count()) === 1
+      );
+      await page.screenshot({
+        path: join(SCREENSHOT_DIR, 'demo-preview-desk.png'),
+      });
+
+      // The live Personal PTY keeps EXECUTING while Demo is on screen
+      const duringDemo = await ptySessions(page);
+      check(
+        'pty.list() identity untouched inside Demo',
+        duringDemo.length === 1 &&
+          duringDemo[0].id === before.id &&
+          duringDemo[0].exitCode === null,
+        JSON.stringify(duringDemo.map(s => [s.id, s.exitCode]))
+      );
+      await page.evaluate(
+        async ({ id, text }) =>
+          window.electron?.pty?.write(id, `printf '${text}\\n'\n`),
+        { id: before.id, text: MARKER_DEMO }
+      );
+      check(
+        'live Session keeps executing while Demo is on screen',
+        await waitForPtyBuffer(page, before.id, MARKER_DEMO)
+      );
+
+      // ⌘K lists Voltaic Sessions and offers no PTY-reaching verbs
+      await page.keyboard.press('Meta+k');
+      await page.locator('[cmdk-root]').waitFor();
+      check(
+        'palette lists demo Sessions',
+        (await page.locator('[cmdk-root] [data-session-id^="vg-"]').count()) >
+          0
+      );
+      check(
+        'palette offers no launch verbs in Demo',
+        (await page
+          .locator('[cmdk-item]', { hasText: 'Start Agent with' })
+          .count()) === 0 &&
+          (await page
+            .locator('[cmdk-item]', { hasText: 'Open shell in' })
+            .count()) === 0
+      );
+      await page.screenshot({
+        path: join(SCREENSHOT_DIR, 'demo-command-palette.png'),
+      });
+      await page.keyboard.press('Escape');
+
+      // Team altitude: the exposé fans out the 27 authored Sessions
+      await page.locator('[data-command-altitude-level="sessions"]').click();
+      await page.locator('[data-expose]').waitFor();
+      const tileCount = await page.locator('[data-expose-tile]').count();
+      check(
+        'Team altitude shows the authored demo fleet (27 Sessions)',
+        tileCount === 27,
+        `tiles=${tileCount}`
+      );
+      const railText =
+        (await page.locator('[data-roadmap-rail]').count()) > 0
+          ? await page.locator('[data-roadmap-rail]').innerText()
+          : '';
+      check(
+        'roadmap rail renders the Voltaic roadmap in-tenant',
+        railText.length > 50,
+        railText.length === 0 ? 'rail not visible at this width' : ''
+      );
+      // let the exposé entrance transition finish before the evidence shot
+      await page.waitForTimeout(900);
+      await page.screenshot({
+        path: join(SCREENSHOT_DIR, 'demo-team-altitude.png'),
+      });
+
+      // Fleet altitude: the VOLTAIC board — populated, not the gate, not
+      // the personal fleet
+      await page.locator('[data-command-altitude-level="spatial"]').click();
+      await page.locator('[data-spatial-command]').waitFor();
+      const agentCount = Number(
+        await page
+          .locator('[data-spatial-command]')
+          .getAttribute('data-agent-count')
+      );
+      check(
+        'Fleet altitude shows the populated Voltaic board',
+        agentCount >= 150,
+        `agents=${agentCount}`
+      );
+      check(
+        'Demo identity chip still visible on the Fleet altitude',
+        (await page
+          .locator('[data-active-tenant-workspace="demo"]')
+          .count()) === 1
+      );
+      // let the board settle before the evidence shot
+      await page.waitForTimeout(1500);
+      await page.screenshot({
+        path: join(SCREENSHOT_DIR, 'demo-fleet-altitude.png'),
+      });
+
+      // ---- return to Personal: everything exactly as it was --------------
+      await openAccountMenu(page);
+      await page.locator('[data-workspace-switch="personal"]').click();
+      await page.locator('.xterm-helper-textarea').waitFor();
+      const replayedAll = await page.waitForFunction(
+        ({ id, markers }) => {
+          const terminal = window.__XTERMS__?.[id];
+          if (!terminal) return false;
+          const buffer = terminal.buffer.active;
+          let text = '';
+          for (let i = 0; i < buffer.length; i += 1) {
+            text += `${buffer.getLine(i)?.translateToString(true) ?? ''}\n`;
+          }
+          return markers.every(marker => text.includes(marker));
+        },
+        {
+          id: before.id,
+          markers: [MARKER_BEFORE, MARKER_DURING, MARKER_DEMO],
+        }
+      );
+      check(
+        'pane re-adopts with all three markers after the Demo round trip',
+        Boolean(replayedAll)
+      );
+      const afterDemo = await ptySessions(page);
+      check(
+        'pty.list() identity byte-identical after the Demo round trip',
+        afterDemo.length === 1 &&
+          afterDemo[0].id === before.id &&
+          afterDemo[0].harnessSessionId === before.harnessSessionId &&
+          afterDemo[0].exitCode === null,
+        JSON.stringify(afterDemo.map(s => [s.id, s.exitCode]))
+      );
+
+      // End the run INSIDE Demo so the relaunch phase can prove boot-restore
+      await openAccountMenu(page);
+      await page.locator('[data-workspace-switch="demo"]').click();
+      await page.locator('[data-active-tenant-workspace="demo"]').waitFor();
     },
-    { maxMs: 150_000, firstWindowMs: 45_000 }
+    { maxMs: 240_000, firstWindowMs: 45_000 }
+  );
+
+  // ============ relaunch: boot-restore INSIDE Demo (W1 review fix) ========
+  await withElectronApp(
+    {
+      args: ['.'],
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NODE_ENV: 'development',
+        EXAWATT_TEST: '1',
+        EXAWATT_USER_DATA: userData,
+        EXAWATT_DEV_URL: `${BASE}/workspace`,
+      },
+    },
+    async (app, page) => {
+      page.setDefaultTimeout(25_000);
+      await page.locator('[data-command-altitude]').waitFor();
+      await page.locator('[data-active-tenant-workspace="demo"]').waitFor();
+      check(
+        'relaunch restores the Demo tenant (identity chip present)',
+        (await page
+          .locator('[data-active-tenant-workspace="demo"]')
+          .count()) === 1
+      );
+      check(
+        'relaunch inside Demo never mounts the personal terminal',
+        (await page.locator('.xterm-helper-textarea').count()) === 0
+      );
+      // Demo content — the shell or the board, depending on the remembered
+      // surface — but never the contentless gate placeholder
+      const demoContent =
+        (await page.locator('[data-demo-workspace]').count()) +
+        (await page.locator('[data-spatial-command]').count());
+      check('relaunch lands on Demo content, not a placeholder', demoContent > 0);
+      // The Fleet altitude after a relaunch is the VOLTAIC board
+      await page.locator('[data-command-altitude-level="spatial"]').click();
+      await page.locator('[data-spatial-command]').waitFor();
+      const rebootAgents = Number(
+        await page
+          .locator('[data-spatial-command]')
+          .getAttribute('data-agent-count')
+      );
+      check(
+        'Fleet altitude after relaunch is the Voltaic board, not the personal fleet',
+        rebootAgents >= 150,
+        `agents=${rebootAgents}`
+      );
+      await page.screenshot({
+        path: join(SCREENSHOT_DIR, 'demo-relaunch-restored.png'),
+      });
+      // leave the persisted state clean for a human relaunch
+      await openAccountMenu(page);
+      await page.locator('[data-workspace-switch="personal"]').click();
+      await page
+        .locator('[data-active-tenant-workspace]')
+        .waitFor({ state: 'detached' })
+        .catch(() => {});
+    },
+    { maxMs: 120_000, firstWindowMs: 45_000 }
   );
 
   if (failures.length > 0) {
@@ -269,7 +504,7 @@ try {
     process.exit(1);
   }
   console.log(
-    'PASS workspace tenancy: switch away and back left the live Session running, responsive, and exactly where it was'
+    'PASS workspace tenancy: the bench and Demo round trips left the live Session running, responsive, and exactly where it was; Demo populated every altitude and survived a relaunch'
   );
   console.log(`[tenancy] screenshots: ${SCREENSHOT_DIR}`);
 } finally {

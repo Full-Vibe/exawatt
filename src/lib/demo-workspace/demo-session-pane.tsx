@@ -11,6 +11,7 @@
  * visible.
  */
 import { HUD } from '@/components/hud';
+import { ComingSoonMarker } from '@/components/readiness';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import {
   STATUS_LIGHT_META,
@@ -93,14 +94,11 @@ export function DemoSessionPane({ agent }: { agent: DemoFleetAgent }) {
         )}
         <span className="flex-1" />
         {agent.readiness === 'preview' && (
-          <span
-            data-demo-preview-marker
-            className="rounded-sm border px-1.5 py-0.5 font-mono text-[10px]"
-            style={{ borderColor: 'rgba(185,166,255,0.5)', color: '#B9A6FF' }}
-            title={`${project?.agentType ?? 'This'} desks preview the Agent Types direction (ENG-028); the capability does not ship today.`}
-          >
-            Preview · {project?.agentType ?? 'Agent Types'}
-          </span>
+          // The shared ENG-026 grammar — a preview desk shows the Agent
+          // Types direction and must never read as shipped capability.
+          <ComingSoonMarker
+            owner={`${project?.agentType ?? 'Agent Types'} Agent Type`}
+          />
         )}
         <span
           className="font-mono text-[10px]"
