@@ -138,11 +138,24 @@ try {
         await page.locator('[data-agent-composer]').waitFor();
       }
       await page.getByRole('button', { name: /Open shell in / }).click();
-      await page.waitForFunction(async () => {
-        const sessions = (await window.electron?.pty?.list()) ?? [];
-        return sessions.length === 1;
-      });
-      const [before] = await ptySessions(page);
+      // Bounded explicit poll — NOT waitForFunction with an async predicate:
+      // the returned Promise object is truthy on the first tick, so that
+      // form resolves before the spawn completes and the next read races.
+      const spawnDeadline = Date.now() + 15_000;
+      let before;
+      while (Date.now() < spawnDeadline) {
+        const sessions = await ptySessions(page);
+        if (sessions.length === 1) {
+          [before] = sessions;
+          break;
+        }
+        await page.waitForTimeout(150);
+      }
+      if (!before) {
+        throw new Error(
+          'TIMED OUT after 15s waiting for the Personal shell session to spawn'
+        );
+      }
       await page.evaluate(
         async ({ id, text }) =>
           window.electron?.pty?.write(id, `printf '${text}\\n'\n`),
