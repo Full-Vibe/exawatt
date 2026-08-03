@@ -420,6 +420,32 @@ shows only that dot, so it was the loudest remaining instance of the original
 bug. It now routes every tab through `sessionStatusLightState` and encodes the
 strongest light, so it inherits every correction automatically.
 
+### The eval fixture and fail-closed source truth — 2026-08-02
+
+`e21b4a2` made Agent Source truth fail closed: a source whose probes do not
+answer is not launchable. Correct for the product, and it silently broke every
+fixture-driven eval, because the fixture's fake harness answered no probes at
+all — its `claude` held every invocation open forever, including
+`claude --version` and `claude auth status --json`. Each eval run also LEAKED
+those hung processes, which accumulated across runs.
+
+The failure was almost undiagnosable from the outside: the composer's Start
+button simply stayed disabled, Playwright reported a bare 25s "element is not
+enabled", and nothing anywhere named the cause. `openFixtureSession` now reads
+the source registry before clicking Start and fails with the actual per-fact
+state, so the next person spends a minute on this rather than an hour.
+
+Two lessons worth keeping:
+
+- **A fake must answer what the real thing is asked, in the real shape.** A
+  first pass at this returned a plausible-looking auth JSON rather than the one
+  `parseClaudeAuthStatus` reads, so the source stayed degraded and the eval
+  stayed red for a reason no output mentioned.
+- **The fixture's fake binaries are emitted from template literals**, so an
+  escape written for the outer file rather than the generated one produces a
+  syntax error in the fake binary — which then fails EVERY probe at once and
+  looks exactly like a hung app.
+
 ### Deliberately out of scope
 
 `⌘J` still treats focus as "seen", so it will not walk back to a Session that

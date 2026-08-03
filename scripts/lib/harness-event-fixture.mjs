@@ -43,11 +43,22 @@ const argv = process.argv.slice(2);
 // those processes — observed accumulating across runs and degrading the
 // machine for every later run.
 if (argv.includes('--version')) {
-  process.stdout.write('9.9.9-fixture (Claude Code)\n');
+  process.stdout.write('9.9.9-fixture (Claude Code)\\n');
   process.exit(0);
 }
 if (argv[0] === 'auth') {
-  process.stdout.write(JSON.stringify({ status: 'authenticated', account: { email: 'fixture@example.com' } }) + '\n');
+  // The SHAPE the registry actually parses (\`parseClaudeAuthStatus\`), not a
+  // plausible-looking one: since source truth fails closed, an unparseable
+  // answer reads as "not signed in", the source goes degraded, and Start stays
+  // disabled forever with nothing in the eval output naming why.
+  process.stdout.write(
+    JSON.stringify({
+      loggedIn: true,
+      email: 'fixture@example.com',
+      subscriptionType: 'max',
+      authMethod: 'oauth',
+    }) + '\\n'
+  );
   process.exit(0);
 }
 if (argv.includes('-p')) process.exit(0);
@@ -179,6 +190,36 @@ export async function openFixtureSession(page, fixture) {
     );
   }, fixture.project);
   await page.locator('[data-agent-composer]').waitFor({ timeout: 90_000 });
+  // Source truth fails closed, so a fake harness that stops satisfying the
+  // Agent Source registry leaves Start disabled — and Playwright reports that
+  // as a bare 25s "element is not enabled" with nothing naming the cause.
+  // Read the registry directly and fail with the actual reason instead.
+  const launchable = await page.evaluate(async () => {
+    const snapshot = await window.electron?.agentSources?.list('launch', true);
+    return (snapshot?.sources ?? []).map(source => ({
+      harness: source.harness,
+      launchable: source.launchable,
+      stateLabel: source.stateLabel,
+      facts: Object.fromEntries(
+        Object.entries(source.facts ?? {}).map(([key, value]) => [
+          key,
+          `${value.state}: ${value.value}`,
+        ])
+      ),
+    }));
+  });
+  const claudeSource = launchable.find(source => source.harness === 'claude');
+  if (!claudeSource?.launchable) {
+    throw new Error(
+      `Fixture Claude is not launchable — Start will never enable.\n` +
+        `  state: ${claudeSource?.stateLabel ?? 'source missing entirely'}\n` +
+        Object.entries(claudeSource?.facts ?? {})
+          .map(([key, value]) => `  ${key}: ${value}`)
+          .join('\n') +
+        `\nThe fake harness in this fixture must answer whatever the Agent` +
+        ` Source registry probes (version, auth status).`
+    );
+  }
   await page.getByRole('button', { name: 'Start' }).click();
 
   const sessions = async () =>
