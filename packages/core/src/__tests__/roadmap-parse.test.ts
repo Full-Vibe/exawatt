@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { parseRoadmap } from '../roadmap/parse';
 
-const OPTS = { projectDir: '/repo', file: 'ROADMAP.md', now: () => 1_752_000_000_000 };
+const OPTS = {
+  projectDir: '/repo',
+  file: 'ROADMAP.md',
+  now: () => 1_752_000_000_000,
+};
 
 const CONFORMANT = `---
 exawatt-roadmap: v1
@@ -115,16 +120,40 @@ not a roadmap at all
 `;
 
 describe('parseRoadmap', () => {
+  it('keeps Exawatt own v2 roadmap declared and diagnostic-clean', () => {
+    const text = readFileSync(
+      new URL('../../../../docs/engineering/roadmap.md', import.meta.url),
+      'utf8'
+    );
+    const doc = parseRoadmap(text, {
+      projectDir: '/repo',
+      file: 'docs/engineering/roadmap.md',
+      now: () => 0,
+    });
+    expect(doc.convention).toBe('exawatt-v2');
+    expect(doc.conformance).toBe('declared');
+    expect(
+      doc.diagnostics.filter(diagnostic => diagnostic.level === 'warn')
+    ).toEqual([]);
+    expect(doc.unparsedLineCount).toBe(0);
+    expect(doc.items.filter(item => item.status === 'backlog')).toHaveLength(3);
+  });
+
   it('parses a declared-conformant roadmap fully', () => {
     const doc = parseRoadmap(CONFORMANT, OPTS);
     expect(doc.conformance).toBe('declared');
-    expect(doc.items.map((i) => i.id)).toEqual([
+    expect(doc.items.map(i => i.id)).toEqual([
       'ACME-003',
       'ACME-007',
       '~dark-mode',
       'ACME-001',
     ]);
-    expect(doc.items.map((i) => i.status)).toEqual(['now', 'next', 'later', 'shipped']);
+    expect(doc.items.map(i => i.status)).toEqual([
+      'now',
+      'next',
+      'later',
+      'shipped',
+    ]);
     expect(doc.unparsedLineCount).toBe(0);
     expect(doc.diagnostics).toEqual([]);
 
@@ -138,7 +167,11 @@ describe('parseRoadmap', () => {
     ]);
     expect(billing.milestones).toEqual([
       expect.objectContaining({ id: 'M1', title: 'schema', done: true }),
-      expect.objectContaining({ id: 'M2', title: 'export endpoint', done: false }),
+      expect.objectContaining({
+        id: 'M2',
+        title: 'export endpoint',
+        done: false,
+      }),
     ]);
 
     const darkMode = doc.items[2];
@@ -146,10 +179,36 @@ describe('parseRoadmap', () => {
     expect(darkMode.title).toBe('Dark mode');
   });
 
+  it('keeps Backlog compatible in v1 and distinct with provenance in v2', () => {
+    const v1 = parseRoadmap(
+      `---\nexawatt-roadmap: v1\n---\n\n## Backlog\n\n### ACME-009 Retry failed export\n\nStatus: bug · ACME-003 · quick-capture 2026-08-03\n`,
+      OPTS
+    );
+    expect(v1.items[0]).toMatchObject({ status: 'later', backlog: null });
+
+    const v2 = parseRoadmap(
+      `---\nexawatt-roadmap: v2\n---\n\n## Backlog\n\n### ACME-009 Retry failed export\n\nStatus: bug · ACME-003 · quick-capture 2026-08-03\n`,
+      OPTS
+    );
+    expect(v2.convention).toBe('exawatt-v2');
+    expect(v2.items[0]).toMatchObject({
+      status: 'backlog',
+      backlog: {
+        kind: 'bug',
+        ownerItemId: 'ACME-003',
+        provenance: 'quick-capture 2026-08-03',
+      },
+    });
+    expect(v2.diagnostics).toEqual([]);
+  });
+
   it('reads exawatt roadmap vocabulary without edits', () => {
-    const doc = parseRoadmap(EXAWATT_EXCERPT, { ...OPTS, file: 'docs/engineering/roadmap.md' });
+    const doc = parseRoadmap(EXAWATT_EXCERPT, {
+      ...OPTS,
+      file: 'docs/engineering/roadmap.md',
+    });
     expect(doc.conformance).toBe('detected');
-    expect(doc.items.map((i) => [i.id, i.status])).toEqual([
+    expect(doc.items.map(i => [i.id, i.status])).toEqual([
       ['ENG-016', 'now'],
       ['ENG-017', 'now'],
       ['ENG-018', 'next'],
@@ -160,17 +219,23 @@ describe('parseRoadmap', () => {
     // active-build → now via the alias table, with an info diagnostic
     expect(
       doc.diagnostics.some(
-        (d) => d.level === 'info' && d.message.includes('"active-build" read as "now"'),
-      ),
+        d =>
+          d.level === 'info' &&
+          d.message.includes('"active-build" read as "now"')
+      )
     ).toBe(true);
     expect(eng016.milestones).toHaveLength(2);
     expect(eng016.milestones[0]).toMatchObject({ id: 'D0', done: true });
     // "(activation-gated; implementation landed …)" is not a "(landed …)"
     // marker — D7 is gated, and the honest parse is not-done.
     expect(eng016.milestones[1]).toMatchObject({ id: 'D7', done: false });
-    expect(eng016.docPaths).toEqual(['docs/engineering/projects/daily-driver-adoption.md']);
+    expect(eng016.docPaths).toEqual([
+      'docs/engineering/projects/daily-driver-adoption.md',
+    ]);
     // Sequencing prose is description, not an error
-    expect(eng016.description.some((line) => line.startsWith('Sequencing:'))).toBe(true);
+    expect(
+      eng016.description.some(line => line.startsWith('Sequencing:'))
+    ).toBe(true);
 
     // planned is position-neutral: stays next per its section
     expect(doc.items[2].status).toBe('next');
@@ -180,25 +245,30 @@ describe('parseRoadmap', () => {
 
     // Operating Model prose outside queue sections is ignored silently
     expect(doc.unparsedLineCount).toBe(0);
-    expect(doc.diagnostics.filter((d) => d.level === 'warn')).toEqual([]);
+    expect(doc.diagnostics.filter(d => d.level === 'warn')).toEqual([]);
   });
 
   it('degrades honestly on a near-miss roadmap', () => {
     const doc = parseRoadmap(NEAR_MISS, OPTS);
     // The table under an unrecognized section is ignored; the one real item parses.
-    expect(doc.items.map((i) => i.id)).toEqual(['P1-01']);
+    expect(doc.items.map(i => i.id)).toEqual(['P1-01']);
     expect(doc.conformance).toBe('detected');
     // "Current priorities" matches the current→now section alias, so the
     // table lines inside it (4) plus the intro prose in ## Now (1) are
     // counted as unattached — reported, never guessed into items.
     expect(doc.unparsedLineCount).toBe(5);
     expect(
-      doc.diagnostics.some((d) => d.level === 'warn' && d.message.includes('not attached')),
+      doc.diagnostics.some(
+        d => d.level === 'warn' && d.message.includes('not attached')
+      )
     ).toBe(true);
     // Unknown status keeps the section default and warns
     expect(doc.items[0].status).toBe('now');
     expect(
-      doc.diagnostics.some((d) => d.level === 'warn' && d.message.includes('unknown status "someday"')),
+      doc.diagnostics.some(
+        d =>
+          d.level === 'warn' && d.message.includes('unknown status "someday"')
+      )
     ).toBe(true);
   });
 
@@ -211,22 +281,28 @@ describe('parseRoadmap', () => {
   it('warns on duplicate ids and anchors sources to 1-based lines', () => {
     const doc = parseRoadmap(
       `## Now\n\n### A-1 First\n\n### A-1 Second\n`,
-      OPTS,
+      OPTS
     );
     expect(doc.items).toHaveLength(2);
     expect(doc.items[0].source).toEqual({ file: 'ROADMAP.md', line: 3 });
     expect(
-      doc.diagnostics.some((d) => d.level === 'warn' && d.message.includes('duplicate item id "A-1"')),
+      doc.diagnostics.some(
+        d => d.level === 'warn' && d.message.includes('duplicate item id "A-1"')
+      )
     ).toBe(true);
   });
 
   it('keeps dotted milestone ids whole (W0.5, D1.2)', () => {
     const doc = parseRoadmap(
       `## Now\n\n### A-1 Thing\n\nMilestones:\n\n- W0.5 Spatial cockpit — replaced by exposé\n- [x] D1.2 Follow-up\n`,
-      OPTS,
+      OPTS
     );
     expect(doc.items[0].milestones).toEqual([
-      expect.objectContaining({ id: 'W0.5', title: 'Spatial cockpit — replaced by exposé', done: false }),
+      expect.objectContaining({
+        id: 'W0.5',
+        title: 'Spatial cockpit — replaced by exposé',
+        done: false,
+      }),
       expect.objectContaining({ id: 'D1.2', title: 'Follow-up', done: true }),
     ]);
   });
@@ -234,7 +310,7 @@ describe('parseRoadmap', () => {
   it('marks rescoped/retired/dropped/superseded/cut milestones as retired, not pending', () => {
     const doc = parseRoadmap(
       `## Now\n\n### A-1 Thing\n\nMilestones:\n\n- W0.5 Spatial cockpit (rescoped 2026-07 — replaced by exposé)\n- D2 Old plan (retired)\n- D3 Cut idea (dropped for D4)\n- [x] D4 Landed anyway (superseded note is ignored when done)\n- D5 Real next step\n`,
-      OPTS,
+      OPTS
     );
     expect(doc.items[0].milestones).toEqual([
       expect.objectContaining({ id: 'W0.5', done: false, retired: true }),

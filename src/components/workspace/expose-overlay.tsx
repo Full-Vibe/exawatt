@@ -40,6 +40,7 @@ import { tokens as formatTokens } from '@/components/consumption/flux';
 import { tabIsLive } from './use-workspace-state';
 import type { Project } from './use-workspace-state';
 import type { PtyHarness, SessionDelegation } from '@/types/electron';
+import type { RoadmapItemView } from '@exawatt/ui-model';
 import {
   RoadmapRail,
   ROADMAP_RAIL_FOCUS_EVENT,
@@ -96,7 +97,10 @@ const TILE_STATE_LABEL: Record<string, string> = {
   failed: 'failed',
 };
 
-const TILE_W = 300; // px — column math for ↑/↓ derives from this
+// Team is a comparison altitude: four tiles should fit beside the resting
+// roadmap rail on a common 1512px laptop viewport without shrinking type.
+const TILE_W = 272;
+const TILE_H = 252;
 
 export function ExposeOverlay({
   projects,
@@ -115,6 +119,9 @@ export function ExposeOverlay({
   roadmapRead,
   onPick,
   onPickProject = () => {},
+  onStartRoadmapAgent = async () => false,
+  onStartRoadmapRemediation = async () => false,
+  onAttachRoadmapSession = () => false,
   onClose,
 }: {
   projects: Project[];
@@ -157,6 +164,12 @@ export function ExposeOverlay({
   roadmapRead?: RoadmapReadSource;
   onPick: (dir: string, tabId: string) => void;
   onPickProject?: (dir: string) => void;
+  onStartRoadmapAgent?: (
+    dir: string,
+    item: RoadmapItemView
+  ) => Promise<boolean>;
+  onStartRoadmapRemediation?: (dir: string) => Promise<boolean>;
+  onAttachRoadmapSession?: (tabId: string, itemId: string) => boolean;
   onClose: () => void;
 }) {
   // stable order = model order (spatial memory: tiles never reshuffle)
@@ -286,11 +299,18 @@ export function ExposeOverlay({
           harness: t.harness,
           cwd: t.cwd,
           contextSummary: summaries[t.durableSessionId] ?? null,
+          initialTask: t.initialTask,
           needsAttention: attentionNeedsOperator(
             attention[t.sessionId as string]
           ),
+          startedAt: t.startedAt ?? null,
+          turnState: attentionNeedsOperator(attention[t.sessionId as string])
+            ? ('needs-you' as const)
+            : activity[t.sessionId as string]
+              ? ('working' as const)
+              : ('waiting' as const),
         })),
-    [selectedProject, summaries, attention]
+    [selectedProject, summaries, attention, activity]
   );
   const declaredLinks = useMemo(
     () =>
@@ -310,7 +330,11 @@ export function ExposeOverlay({
         })),
     [selectedProject]
   );
-  const { view: roadmapView } = useProjectRoadmap(
+  const {
+    view: roadmapView,
+    write: writeRoadmap,
+    undo: undoRoadmap,
+  } = useProjectRoadmap(
     railVisible ? selectedDir : null,
     roadmapSessions,
     declaredLinks,
@@ -507,9 +531,10 @@ export function ExposeOverlay({
           if (mouseArmed()) setSel(index);
         }}
         onFocus={() => setSel(index)}
-        className="relative isolate flex h-[272px] flex-col overflow-hidden rounded border p-3 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
+        className="relative isolate flex flex-col overflow-hidden rounded border p-2.5 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
         style={{
           width: TILE_W,
+          height: TILE_H,
           borderColor: selected ? tile.color : withThemeAlpha(tile.color, 0.27),
           background: HUD.bg.panelFill,
           boxShadow: selected
@@ -635,7 +660,7 @@ export function ExposeOverlay({
               </p>
             </div>
           )}
-          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-4">
             {projects.map(project => {
               const projectTiles = tiles.filter(
                 tile => tile.dir === project.dir
@@ -680,7 +705,7 @@ export function ExposeOverlay({
                       {projectTiles.length === 1 ? 'Session' : 'Sessions'}
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-3">
+                  <div className="flex flex-wrap gap-2.5">
                     {projectTiles.length > 0 ? (
                       projectTiles.map(sessionTile)
                     ) : (
@@ -700,7 +725,7 @@ export function ExposeOverlay({
                           if (mouseArmed()) setSel(emptyIndex);
                         }}
                         onFocus={() => setSel(emptyIndex)}
-                        className="flex min-h-32 flex-col justify-center rounded border p-3 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
+                        className="flex min-h-28 flex-col justify-center rounded border p-2.5 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
                         style={{
                           width: TILE_W,
                           borderColor: emptySelected
@@ -753,6 +778,21 @@ export function ExposeOverlay({
             )?.dir;
             if (dir) onPick(dir, tabId);
           }}
+          onStartAgent={item =>
+            selectedDir
+              ? onStartRoadmapAgent(selectedDir, item)
+              : Promise.resolve(false)
+          }
+          onStartRemediation={() =>
+            selectedDir
+              ? onStartRoadmapRemediation(selectedDir)
+              : Promise.resolve(false)
+          }
+          onAttachSession={(tabId, itemId) =>
+            onAttachRoadmapSession(tabId, itemId)
+          }
+          onWrite={writeRoadmap}
+          onUndo={undoRoadmap}
           overlay={!railDocks}
           permanent
           onExitFocus={exitRailFocus}

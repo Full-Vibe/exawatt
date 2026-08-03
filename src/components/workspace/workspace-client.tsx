@@ -83,11 +83,9 @@ import {
 import {
   findRoadmapSessionChip,
   deriveRoadmapBlockedSessions,
+  type RoadmapItemView,
 } from '@exawatt/ui-model';
-import {
-  WORKSPACE_HUD as HUD,
-  withThemeAlpha,
-} from './workspace-theme';
+import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import { PROJECT_PALETTE } from './project-colors';
 import { useProductFeedback } from '@/components/feedback/product-feedback-provider';
 import { setQuickFeedbackAttribution } from '@/components/feedback/quick-feedback-events';
@@ -102,7 +100,13 @@ import {
 } from 'lucide-react';
 import { middleTruncatePath } from './path-label';
 import { useProjectCloseLifecycle } from './use-project-close-lifecycle';
-import { isAgentSourceId } from './agent-sources';
+import {
+  DEFAULT_AGENT_PERMISSION_MODE,
+  isAgentSourceId,
+  loadAgentSourcePreferences,
+  permissionModeFor,
+  recommendAgentSource,
+} from './agent-sources';
 import {
   attentionNeedsOperator,
   mergeSessionAttentionMaps,
@@ -304,6 +308,7 @@ export function WorkspaceClient() {
     closeTab,
     createDraftTab,
     updateDraft,
+    attachRoadmapItem,
     reopenClosedSession,
     reopenLastClosedSession,
     resumeTab,
@@ -493,11 +498,18 @@ export function WorkspaceClient() {
           harness: t.harness,
           cwd: t.cwd,
           contextSummary: summaries[t.durableSessionId] ?? null,
+          initialTask: t.initialTask,
           needsAttention: attentionNeedsOperator(
             attention[t.sessionId as string]
           ),
+          startedAt: t.startedAt ?? null,
+          turnState: attentionNeedsOperator(attention[t.sessionId as string])
+            ? ('needs-you' as const)
+            : activity[t.sessionId as string]
+              ? ('working' as const)
+              : ('waiting' as const),
         })),
-    [activeProject, summaries, attention]
+    [activeProject, summaries, attention, activity]
   );
   // declared-at-launch links (S4): machine-local tab annotations that
   // override inference; a declared id the roadmap no longer contains falls
@@ -529,14 +541,17 @@ export function WorkspaceClient() {
   const launchRoadmapItems = useMemo(
     () =>
       roadmapView.status === 'ok'
-        ? [...roadmapView.now, ...roadmapView.next, ...roadmapView.later].map(
-            item => ({
-              id: item.id,
-              label: item.declaredId
-                ? `${item.declaredId} — ${item.title}`
-                : item.title,
-            })
-          )
+        ? [
+            ...roadmapView.now,
+            ...roadmapView.next,
+            ...roadmapView.later,
+            ...roadmapView.backlog,
+          ].map(item => ({
+            id: item.id,
+            label: item.declaredId
+              ? `${item.declaredId} — ${item.title}`
+              : item.title,
+          }))
         : [],
     [roadmapView]
   );
@@ -735,6 +750,57 @@ export function WorkspaceClient() {
       window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT))
     );
   }, [updateOverview]);
+
+  const startRoadmapAgent = useCallback(
+    async (dir: string, item: RoadmapItemView): Promise<boolean> => {
+      const preferenceLoad = await loadAgentSourcePreferences();
+      const source = recommendAgentSource(preferenceLoad.preferences, dir);
+      const permissionMode = permissionModeFor(
+        preferenceLoad.preferences,
+        dir,
+        source,
+        preferenceLoad.usedSafeFallback
+          ? 'prompt'
+          : DEFAULT_AGENT_PERMISSION_MODE
+      );
+      const label = item.declaredId ?? item.title;
+      const ok = await launch({
+        harness: source,
+        dir,
+        permissionMode,
+        roadmapItemId: item.id,
+        initialPrompt: `Execute ${label} — ${item.title}. Read the roadmap contract and linked project doc, start with the next unfinished milestone, keep canonical docs current, and complete the repository delivery loop.`,
+      });
+      if (ok) closeOverview();
+      return ok;
+    },
+    [closeOverview, launch]
+  );
+
+  const startRoadmapRemediation = useCallback(
+    async (dir: string): Promise<boolean> => {
+      const preferenceLoad = await loadAgentSourcePreferences();
+      const source = recommendAgentSource(preferenceLoad.preferences, dir);
+      const permissionMode = permissionModeFor(
+        preferenceLoad.preferences,
+        dir,
+        source,
+        preferenceLoad.usedSafeFallback
+          ? 'prompt'
+          : DEFAULT_AGENT_PERMISSION_MODE
+      );
+      const ok = await launch({
+        harness: source,
+        dir,
+        permissionMode,
+        initialPrompt:
+          'Adapt this repository to the published Exawatt roadmap convention v2. Preserve its product intent, add declared conformance, report ambiguous migration choices, and complete the repository delivery loop.',
+      });
+      if (ok) closeOverview();
+      return ok;
+    },
+    [closeOverview, launch]
+  );
 
   // ── Close grammar UI (D27): ⌘W closes like Chrome — the one confirm is
   // OUR modal (default-highlighted Close, tab/space/⏎ macOS semantics);
@@ -1560,6 +1626,9 @@ export function WorkspaceClient() {
           delegation={delegation}
           activeTabId={activeTab?.id ?? null}
           activeProjectDir={activeProject?.dir ?? null}
+          onStartRoadmapAgent={startRoadmapAgent}
+          onStartRoadmapRemediation={startRoadmapRemediation}
+          onAttachRoadmapSession={attachRoadmapItem}
           onPick={(dir, tabId) => {
             selectTab(dir, tabId);
             closeOverview();

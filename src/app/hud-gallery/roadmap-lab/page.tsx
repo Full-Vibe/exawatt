@@ -8,10 +8,14 @@
  * play session (see project doc). The lab renders the real strip + rail
  * against fixture states pushed through the real parser, so every designed
  * state is one click away. Prototypes below stay mock-only; nothing here
- * writes a roadmap file.
+ * writes a roadmap file; manipulation gestures resolve into inline fixture
+ * failures so pending and failure states can be inspected safely.
  */
 import { useMemo, useState } from 'react';
-import { RoadmapRail, type RoadmapRailMode } from '@/components/roadmap/roadmap-rail';
+import {
+  RoadmapRail,
+  type RoadmapRailMode,
+} from '@/components/roadmap/roadmap-rail';
 import { ROADMAP_LAB_STATES } from '@/components/roadmap/lab-fixtures';
 import { RoadmapFeedPrototypes } from './prototypes';
 
@@ -28,7 +32,8 @@ export default function RoadmapLabPage() {
   const [stateKey, setStateKey] = useState(ROADMAP_LAB_STATES[0].key);
   const [mode, setMode] = useState<RoadmapRailMode>('open');
   const state = useMemo(
-    () => ROADMAP_LAB_STATES.find(s => s.key === stateKey) ?? ROADMAP_LAB_STATES[0],
+    () =>
+      ROADMAP_LAB_STATES.find(s => s.key === stateKey) ?? ROADMAP_LAB_STATES[0],
     [stateKey]
   );
 
@@ -38,8 +43,8 @@ export default function RoadmapLabPage() {
       style={{ background: LAB.page, color: LAB.text }}
     >
       <header className="mb-6 flex max-w-3xl flex-col gap-1.5">
-        <h1 className="text-[20px] font-semibold">Roadmap lab</h1>
-        <p className="text-[13px] leading-5" style={{ color: LAB.sub }}>
+        <h1 className="text-xl font-semibold">Roadmap lab</h1>
+        <p className="text-sm leading-5" style={{ color: LAB.sub }}>
           The shipped roadmap strip and rail against canned roadmap states,
           rendered through the real parser. Pick a state, then drive the rail
           exactly as in the workspace — click or arrow-key into items, Enter
@@ -48,7 +53,7 @@ export default function RoadmapLabPage() {
       </header>
 
       <div className="mb-6 flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 text-[12.5px]" style={{ color: LAB.sub }}>
+        <span className="mr-1 text-xs" style={{ color: LAB.sub }}>
           Roadmap state:
         </span>
         {ROADMAP_LAB_STATES.map(s => (
@@ -57,24 +62,25 @@ export default function RoadmapLabPage() {
             type="button"
             data-lab-state={s.key}
             onClick={() => setStateKey(s.key)}
-            className="rounded-full border px-3 py-1 text-[12.5px] outline-none hover:bg-white/10 focus-visible:ring-2"
+            className="rounded-full border px-3 py-1 text-xs outline-none hover:bg-white/10 focus-visible:ring-2"
             style={{
               borderColor: s.key === stateKey ? LAB.accent : LAB.line,
               color: s.key === stateKey ? LAB.text : LAB.sub,
-              background: s.key === stateKey ? 'rgba(138,180,248,0.10)' : 'transparent',
+              background:
+                s.key === stateKey ? 'rgba(138,180,248,0.10)' : 'transparent',
             }}
           >
             {s.label}
           </button>
         ))}
-        <span className="ml-2 text-[12px]" style={{ color: LAB.faint }}>
+        <span className="ml-2 text-xs" style={{ color: LAB.faint }}>
           {state.blurb}
         </span>
       </div>
 
       <div className="flex items-start gap-8">
         <section className="flex flex-col gap-2">
-          <p className="text-[12.5px] font-medium" style={{ color: LAB.sub }}>
+          <p className="text-xs font-medium" style={{ color: LAB.sub }}>
             Collapsed strip — the resting posture
           </p>
           <div
@@ -83,7 +89,7 @@ export default function RoadmapLabPage() {
             style={{ borderColor: LAB.line, background: '#070b14' }}
           >
             <div
-              className="grid w-36 place-items-center text-[11px]"
+              className="grid w-36 place-items-center text-chrome-meta"
               style={{ color: LAB.faint }}
             >
               terminal stage
@@ -103,7 +109,7 @@ export default function RoadmapLabPage() {
         </section>
 
         <section className="flex flex-col gap-2">
-          <p className="text-[12.5px] font-medium" style={{ color: LAB.sub }}>
+          <p className="text-xs font-medium" style={{ color: LAB.sub }}>
             Open rail — ⌘B in the workspace
           </p>
           <div
@@ -112,7 +118,7 @@ export default function RoadmapLabPage() {
             style={{ borderColor: LAB.line, background: '#070b14' }}
           >
             <div
-              className="grid w-36 place-items-center text-[11px]"
+              className="grid w-36 place-items-center text-chrome-meta"
               style={{ color: LAB.faint }}
             >
               terminal stage

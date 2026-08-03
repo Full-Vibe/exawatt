@@ -150,6 +150,12 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('roadmap:read', projectDir),
     sessionEvidence: (cwd: string) =>
       ipcRenderer.invoke('roadmap:session-evidence', cwd),
+    activity: (projectDir: string) =>
+      ipcRenderer.invoke('roadmap:activity', projectDir),
+    writeState: (request: unknown) =>
+      ipcRenderer.invoke('roadmap:write-state', request),
+    undoState: (token: string) =>
+      ipcRenderer.invoke('roadmap:undo-state', token),
     watch: (projectDir: string) =>
       ipcRenderer.invoke('roadmap:watch', projectDir),
     unwatch: (projectDir: string) =>

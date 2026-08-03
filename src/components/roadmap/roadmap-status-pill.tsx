@@ -3,7 +3,7 @@
 /**
  * Normal-case status pill for the roadmap lens. Deliberately NOT the HUD
  * `StatusPill` atom — that one is all-caps, which the operator style rules
- * prohibit. Display vocabulary: active / next / later / shipped / parked,
+ * prohibit. Display vocabulary: active / next / later / backlog / shipped / parked,
  * with `blocked` as an orthogonal badge rendered by the caller.
  */
 import {
@@ -19,6 +19,7 @@ export const ROADMAP_STATUS_COLOR: Record<RoadmapDisplayStatus, string> = {
   active: HUD.cyan2,
   next: HUD.idle,
   later: HUD.idle,
+  backlog: HUD.idle,
   shipped: HUD.green,
   parked: HUD.idle,
 };
@@ -27,11 +28,16 @@ const STATUS_WORD: Record<RoadmapDisplayStatus, string> = {
   active: 'Active',
   next: 'Next',
   later: 'Later',
+  backlog: 'Backlog',
   shipped: 'Shipped',
   parked: 'Parked',
 };
 
-export function RoadmapStatusPill({ status }: { status: RoadmapDisplayStatus }) {
+export function RoadmapStatusPill({
+  status,
+}: {
+  status: RoadmapDisplayStatus;
+}) {
   const color = ROADMAP_STATUS_COLOR[status];
   return (
     <span

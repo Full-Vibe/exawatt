@@ -12,7 +12,7 @@ import type { RoadmapItemView, RoadmapLensView } from './roadmap-lens';
  * - blocked / starving / unmapped are the loud states; everything nominal
  *   stays quiet
  * - the spine reads top-to-bottom as the queue reads: shipped history, then
- *   now, next, later; parked never appears
+ *   now, next, later; backlog and parked never appear
  */
 
 export type RoadmapStripNode =
@@ -28,7 +28,12 @@ export type RoadmapStripNode =
       /** an attached session needs the operator */
       needsAttention: boolean;
     }
-  | { kind: 'aggregate'; group: 'shipped' | 'later'; count: number; label: string }
+  | {
+      kind: 'aggregate';
+      group: 'shipped' | 'later';
+      count: number;
+      label: string;
+    }
   | { kind: 'unmapped'; count: number; label: string }
   | { kind: 'starving'; label: string };
 
@@ -109,8 +114,13 @@ export function buildRoadmapStrip(
   let budget = maxNodes - nodes.length - view.now.length - view.next.length;
 
   // shipped: individually only if ≤2 AND they fit; else one aggregate slot
-  const shippedIndividually = view.shipped.length <= 2 && view.shipped.length <= budget;
-  budget -= shippedIndividually ? view.shipped.length : view.shipped.length > 0 ? 1 : 0;
+  const shippedIndividually =
+    view.shipped.length <= 2 && view.shipped.length <= budget;
+  budget -= shippedIndividually
+    ? view.shipped.length
+    : view.shipped.length > 0
+      ? 1
+      : 0;
 
   // later: fill remaining budget, reserving one slot for the "+N more" node
   // whenever anything is hidden

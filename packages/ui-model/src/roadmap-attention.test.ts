@@ -10,9 +10,17 @@ import {
 
 const DIR = '/p';
 
-function lens(md: string, sessions: RoadmapLensSessionInput[] = [], links: SessionLink[] = []) {
+function lens(
+  md: string,
+  sessions: RoadmapLensSessionInput[] = [],
+  links: SessionLink[] = []
+) {
   const doc = parseRoadmap(md, { projectDir: DIR, file: 'roadmap.md' });
-  return buildRoadmapLens({ read: { status: 'ok', doc, mtimeMs: 1 }, sessions, links });
+  return buildRoadmapLens({
+    read: { status: 'ok', doc, mtimeMs: 1 },
+    sessions,
+    links,
+  });
 }
 
 const session = (n: number): RoadmapLensSessionInput => ({
@@ -21,6 +29,8 @@ const session = (n: number): RoadmapLensSessionInput => ({
   title: `session ${n}`,
   harness: 'claude',
   needsAttention: false,
+  startedAt: null,
+  turnState: 'waiting',
 });
 
 const link = (n: number, itemId: string): SessionLink => ({
@@ -91,14 +101,14 @@ Status: shipped
 describe('orderedRoadmapJumpTargets', () => {
   it('orders oldest-blocked first and excludes the active session', () => {
     const map = {
-      's1': { since: 300 },
-      's2': { since: 100 },
-      's3': { since: 200 },
+      s1: { since: 300 },
+      s2: { since: 100 },
+      s3: { since: 200 },
     };
     expect(orderedRoadmapJumpTargets(map, null)).toEqual(['s2', 's3', 's1']);
     expect(orderedRoadmapJumpTargets(map, 's2')).toEqual(['s3', 's1']);
   });
   it('is empty when the only blocked session is already active', () => {
-    expect(orderedRoadmapJumpTargets({ 's1': { since: 1 } }, 's1')).toEqual([]);
+    expect(orderedRoadmapJumpTargets({ s1: { since: 1 } }, 's1')).toEqual([]);
   });
 });

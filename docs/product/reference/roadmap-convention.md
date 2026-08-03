@@ -1,10 +1,11 @@
-# Exawatt roadmap convention (v1)
+# Exawatt roadmap convention (v2)
 
 The Exawatt roadmap convention is a markdown grammar for a repo-canonical
 roadmap. A repo that follows it gets a live roadmap lens in Exawatt: the
 queue of work, what each agent session is executing, and what comes next —
 read directly from the repo's own docs. The roadmap stays canonical, durable,
-and malleable in the repo; Exawatt reads it and never writes it.
+and malleable in the repo. For explicitly conformant files, Exawatt may apply
+the narrow sequence/state edits defined below; it never commits them.
 
 The convention is deliberately plain markdown. Agents and humans author the
 roadmap exactly as they would without Exawatt; there is no sidecar file, no
@@ -20,20 +21,22 @@ root:
 3. `docs/ROADMAP.md`
 4. `roadmap.md`
 
-## Conformance marker (optional)
+## Conformance marker
 
 A frontmatter block may declare the convention explicitly:
 
 ```markdown
 ---
-exawatt-roadmap: v1
+exawatt-roadmap: v2
 ---
 ```
 
-With the marker, Exawatt treats the file as `declared` conformant. Without
-it, a file whose structure matches the grammar is `detected`. The marker is
-recommended once a repo adopts the convention — it makes intent unambiguous
-and lets future versions evolve safely.
+With a supported marker, Exawatt treats the file as `declared` conformant.
+Without it, a file whose structure matches the grammar is `detected` and
+remains view-only. The marker is therefore required for manipulation: it
+makes intent unambiguous and lets future versions evolve safely. Version 1
+remains readable and manipulable for its v1 states; only v2 gives Backlog its
+own state and storage grammar.
 
 ## Grammar
 
@@ -43,20 +46,23 @@ Level-2 headings partition the queue and set the default status of the items
 inside them. Recognized section names (case-insensitive; trailing decoration
 after the name is ignored):
 
-| Section heading | Default status |
-| --- | --- |
-| `## Now` (or `## Current`) | `now` |
-| `## Next` | `next` |
-| `## Later` (or `## Backlog`, `## Future`) | `later` |
-| `## Shipped` (or `## Done`, `## Completed`) | `shipped` |
-| `## Parked` (or `## Icebox`) | `parked` |
+| Section heading                             | Default status |
+| ------------------------------------------- | -------------- |
+| `## Now` (or `## Current`)                  | `now`          |
+| `## Next`                                   | `next`         |
+| `## Later` (or `## Future`)                 | `later`        |
+| `## Backlog`                                | `backlog`      |
+| `## Shipped` (or `## Done`, `## Completed`) | `shipped`      |
+| `## Parked` (or `## Icebox`)                | `parked`       |
 
 Content under any other level-2 heading (vision statements, operating
 models, status legends) is documentation, not queue state; Exawatt ignores
 it silently.
 
-The queue is linear in v1: within `now`/`next`/`later`, document order is
-queue order. One `now` item at a time is the intended shape — the lens
+The sequenced queue is linear: within `now`/`next`/`later`, document order is
+queue order. `backlog` is part of the same record set but is explicitly not
+sequenced work; it means accepted and owned, not scheduled and not dead. One
+`now` item at a time is the intended shape — the lens
 treats the first non-done item as the active station.
 
 ### Items
@@ -85,13 +91,14 @@ Status: active-build — design resolved 2026-07-11 (operator interview).
 
 Status token aliases (case-insensitive):
 
-| Canonical | Accepted tokens |
-| --- | --- |
-| `now` | `now`, `active`, `active-build`, `in-progress`, `building` |
-| `next` | `next` |
-| `later` | `later`, `backlog` |
+| Canonical | Accepted tokens                                            |
+| --------- | ---------------------------------------------------------- |
+| `now`     | `now`, `active`, `active-build`, `in-progress`, `building` |
+| `next`    | `next`                                                     |
+| `later`   | `later`                                                    |
+| `backlog` | `backlog` (v2 only)                                        |
 | `shipped` | `shipped`, `done`, `complete`, `completed`, `landed`, `✅` |
-| `parked` | `parked`, `stale`, `deferred`, `paused`, `on-hold` |
+| `parked`  | `parked`, `stale`, `deferred`, `paused`, `on-hold`         |
 
 Two tokens are position-neutral — they carry lifecycle information and keep
 the section's queue status:
@@ -102,6 +109,26 @@ the section's queue status:
 
 An unrecognized status token keeps the section default and surfaces as a
 diagnostic — Exawatt reports what it could not read instead of guessing.
+
+### Backlog items
+
+A v2 backlog item is deliberately short: one heading and one metadata line.
+It has no Scope or Exit criteria block.
+
+```markdown
+## Backlog
+
+### ACME-009 Retry failed export
+
+Status: bug · ACME-003 · quick-capture 2026-08-03
+```
+
+The metadata fields are `kind · owning item id · provenance`. Kind is a short
+repo-owned token such as `bug`, `small-fix`, or `incident-candidate`.
+Provenance names the evidence source and may include a date or source id. The
+lens displays the owning item and provenance on every backlog row. A v1 parser
+still sees `## Backlog` as `later`, so migration degrades safely without
+inventing or losing the record.
 
 ### Labeled blocks
 
@@ -146,7 +173,7 @@ never treated as an error.
 
 ```markdown
 ---
-exawatt-roadmap: v1
+exawatt-roadmap: v2
 ---
 
 # Acme roadmap
@@ -178,6 +205,12 @@ Milestones:
 
 ### Dark mode
 
+## Backlog
+
+### ACME-009 Retry failed export
+
+Status: bug · ACME-003 · quick-capture 2026-08-03
+
 ## Shipped
 
 ### ACME-001 Auth
@@ -188,20 +221,31 @@ Milestones:
 - Exawatt reads the roadmap and links live agent sessions to items by
   inference (branch, worktree, session goal, commit subjects) and by
   optional declare-at-launch. Link confidence is always visible.
-- Exawatt never writes the file, never reorders the queue, and never
-  assigns work in v1. The only edit path is opening the file in your
-  editor.
+- Exawatt may reorder items within a state, change a regular item's state
+  among `now` / `next` / `later` / `parked`, and tick checkbox milestones.
+  These are sequence/state edits only: it never edits prose and never creates
+  an item. Compact backlog records are reordered in place; creating one or
+  changing its metadata remains agent-authored because provenance is prose.
+- Writes require a supported `exawatt-roadmap` marker. A detected or partially
+  tolerated roadmap stays view-only. Every write re-reads and compares the
+  source content, refusing if it moved instead of attempting a merge.
+- Exawatt writes the markdown file and never runs git. The edit is an ordinary
+  working-tree change for the repo's human or agent workflow to review and
+  commit. Applied edits have a short, compare-guarded undo window.
+- Launching an agent from an item and attaching a running Session are local
+  Workspace annotations; they do not touch the roadmap file.
 - Unrecognized structure is reported honestly (`showing 7 recognized
-  items · 3 lines unrecognized`), never silently dropped or guessed at.
+items · 3 lines unrecognized`), never silently dropped or guessed at.
 
 ## Migrating an existing roadmap
 
 Written for the agent doing the adaptation:
 
-1. Partition existing content under the five queue sections. Work in
+1. Partition existing content under the six state sections. Work in
    flight goes under `## Now`, the ordered queue under `## Next` and
    `## Later`, history under `## Shipped`, deliberate deferrals under
-   `## Parked`.
+   `## Parked`; accepted but unsequenced defects and small fixes go under
+   `## Backlog` in the compact form above.
 2. Make each work item a `### <ID> <Title>` heading. Mint stable ids with
    a short repo prefix (`ACME-1`, `WEB-14`) if none exist; keep existing
    ids (ticket numbers, `P0-03`-style) if they match the id shape.
@@ -212,16 +256,25 @@ Written for the agent doing the adaptation:
    convert them. A table row becomes an item heading; a checklist becomes
    `Milestones:` under the item it details; a `### Phase N` heading
    becomes an item with an id.
-5. Add the `exawatt-roadmap: v1` frontmatter marker.
+5. Add the `exawatt-roadmap: v2` frontmatter marker.
 6. Keep everything else (vision, legends, decision logs) under its own
    non-queue headings — it is ignored and does no harm.
 
 The parser does not learn legacy formats; adaptation is a one-shot edit per
 repo, and the roadmap stays fully readable without Exawatt.
 
+### Migrating v1 to v2
+
+1. Change the marker from `v1` to `v2`.
+2. Keep scheduled work under `## Later`; move only accepted-but-unsequenced
+   records into `## Backlog`.
+3. Convert each backlog record to the compact `kind · owner · provenance`
+   metadata line. Do not discard its diagnostic narrative—keep that reasoning
+   in the owning item's project doc or incident record.
+
 ## Reserved for future versions
 
 - Multi-track roadmaps: a future frontmatter key may point at multiple
-  queue files or name parallel tracks. v1 is one linear queue per repo.
+  queue files or name parallel tracks. v2 is one linear queue per repo.
 - Non-code work classes (marketing, outreach, inbox queues) flow through
-  the same grammar when they arrive; nothing in v1 is code-specific.
+  the same grammar when they arrive; nothing in v2 is code-specific.

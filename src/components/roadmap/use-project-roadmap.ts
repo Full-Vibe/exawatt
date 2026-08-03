@@ -19,9 +19,15 @@ import {
   buildRoadmapLens,
   type RoadmapLensRead,
   type RoadmapLensSessionInput,
+  type RoadmapRecentChange,
   type RoadmapLensView,
 } from '@exawatt/ui-model';
-import type { RoadmapSessionEvidence } from '@/types/electron';
+import type {
+  RoadmapSessionEvidence,
+  RoadmapUndoResult,
+  RoadmapWriteAction,
+  RoadmapWriteResult,
+} from '@/types/electron';
 
 /** What the workspace knows about a live session in the focused Project. */
 export interface RoadmapSessionDescriptor {
@@ -31,12 +37,20 @@ export interface RoadmapSessionDescriptor {
   harness: string;
   cwd: string;
   contextSummary: string | null;
+  initialTask: string | null;
   needsAttention: boolean;
+  startedAt: number | null;
+  turnState: RoadmapLensSessionInput['turnState'];
 }
 
 export interface ProjectRoadmap {
   view: RoadmapLensView;
   refresh: () => void;
+  write: (
+    action: RoadmapWriteAction,
+    confirmed?: boolean
+  ) => Promise<RoadmapWriteResult>;
+  undo: (token: string) => Promise<RoadmapUndoResult>;
 }
 
 /** `roadmap:read`-shaped result an injected source resolves to. */
@@ -63,7 +77,10 @@ export function useProjectRoadmap(
   readSource?: RoadmapReadSource
 ): ProjectRoadmap {
   const [read, setRead] = useState<RoadmapLensRead>({ status: 'loading' });
-  const [evidence, setEvidence] = useState<Record<string, RoadmapSessionEvidence>>({});
+  const [evidence, setEvidence] = useState<
+    Record<string, RoadmapSessionEvidence>
+  >({});
+  const [recentChanges, setRecentChanges] = useState<RoadmapRecentChange[]>([]);
   // survives re-renders; bumped to invalidate in-flight reads on refresh
   const generation = useRef(0);
 
@@ -104,11 +121,33 @@ export function useProjectRoadmap(
       });
   }, [projectDir, readSource]);
 
+  const loadActivity = useCallback(() => {
+    const api = window.electron?.roadmap;
+    if (readSource || !projectDir || !api?.activity) {
+      setRecentChanges([]);
+      return;
+    }
+    void api
+      .activity(projectDir)
+      .then(setRecentChanges)
+      .catch(() => setRecentChanges([]));
+  }, [projectDir, readSource]);
+
   useEffect(() => {
     // show the shimmer only across project switches, not focus refreshes
     setRead({ status: 'loading' });
     load();
-  }, [load]);
+    loadActivity();
+  }, [load, loadActivity]);
+
+  // Commits do not necessarily touch the roadmap file. Keep the bounded
+  // recent-change trail live while the Project lens exists without adding a
+  // second watcher or treating git as project state.
+  useEffect(() => {
+    if (readSource || !projectDir) return;
+    const timer = window.setInterval(loadActivity, 30_000);
+    return () => window.clearInterval(timer);
+  }, [loadActivity, projectDir, readSource]);
 
   // git evidence per unique session cwd (worktrees carry their own branch)
   const cwdKey = useMemo(
@@ -125,7 +164,8 @@ export function useProjectRoadmap(
         .then(result =>
           setEvidence(prev =>
             prev[cwd]?.branch === result.branch &&
-            prev[cwd]?.commitSubjects.join('\n') === result.commitSubjects.join('\n')
+            prev[cwd]?.commitSubjects.join('\n') ===
+              result.commitSubjects.join('\n')
               ? prev
               : { ...prev, [cwd]: result }
           )
@@ -139,10 +179,11 @@ export function useProjectRoadmap(
     const onFocus = () => {
       load();
       loadEvidence();
+      loadActivity();
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [load, loadEvidence]);
+  }, [load, loadEvidence, loadActivity]);
 
   // live updates (S5): main watches the roadmap file's directory and
   // broadcasts; a change to THIS project's roadmap reparses immediately —
@@ -153,13 +194,16 @@ export function useProjectRoadmap(
     if (readSource || !projectDir || !api?.watch) return;
     void api.watch(projectDir).catch(() => {});
     const off = api.onFileChanged?.(({ projectDir: changed }) => {
-      if (changed === projectDir) load();
+      if (changed === projectDir) {
+        load();
+        loadActivity();
+      }
     });
     return () => {
       off?.();
       void api.unwatch(projectDir).catch(() => {});
     };
-  }, [projectDir, load, readSource]);
+  }, [projectDir, load, loadActivity, readSource]);
 
   const view = useMemo(() => {
     const inputs: RoadmapLensSessionInput[] = sessions.map(s => ({
@@ -168,6 +212,8 @@ export function useProjectRoadmap(
       title: s.title,
       harness: s.harness,
       needsAttention: s.needsAttention,
+      startedAt: s.startedAt,
+      turnState: s.turnState,
     }));
     let links: SessionLink[] = declaredLinks;
     if (read.status === 'ok' && projectDir) {
@@ -177,6 +223,7 @@ export function useProjectRoadmap(
         projectDir,
         title: s.title,
         contextSummary: s.contextSummary,
+        initialTask: s.initialTask,
         cwd: s.cwd,
         branch: evidence[s.cwd]?.branch ?? null,
         worktreeDirname: evidence[s.cwd]?.worktreeDirname ?? null,
@@ -190,8 +237,46 @@ export function useProjectRoadmap(
         ),
       ];
     }
-    return buildRoadmapLens({ read, sessions: inputs, links });
-  }, [read, sessions, declaredLinks, evidence, projectDir]);
+    return buildRoadmapLens({ read, sessions: inputs, links, recentChanges });
+  }, [read, sessions, declaredLinks, evidence, projectDir, recentChanges]);
 
-  return { view, refresh: load };
+  const write = useCallback(
+    async (
+      action: RoadmapWriteAction,
+      confirmed = false
+    ): Promise<RoadmapWriteResult> => {
+      const api = window.electron?.roadmap;
+      if (!api?.writeState || !projectDir || read.status !== 'ok') {
+        return {
+          status: 'failed',
+          message: 'Roadmap writes are unavailable',
+          permission: 'roadmap-state-write',
+        };
+      }
+      const result = await api.writeState({
+        projectDir,
+        file: read.doc.file,
+        expectedContentHash: read.doc.contentHash,
+        action,
+        confirmed,
+      });
+      if (result.status === 'applied') load();
+      return result;
+    },
+    [load, projectDir, read]
+  );
+
+  const undo = useCallback(
+    async (token: string): Promise<RoadmapUndoResult> => {
+      const result = (await window.electron?.roadmap?.undoState?.(token)) ?? {
+        status: 'failed' as const,
+        message: 'Roadmap undo is unavailable',
+      };
+      if (result.status === 'applied') load();
+      return result;
+    },
+    [load]
+  );
+
+  return { view, refresh: load, write, undo };
 }

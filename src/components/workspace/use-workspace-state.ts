@@ -95,6 +95,8 @@ export interface WorkspaceTab {
   /** the composer's goal statement (D21): persists with the layout and
    *  re-anchors the context summarizer when the Session resumes */
   initialTask: string | null;
+  /** PTY incarnation start time; present while live for roadmap elapsed time. */
+  startedAt?: number | null;
   /** draft tabs only (D24): the source the summon requested (palette
    *  "Start Agent with X"); null = use the recommendation */
   draftSource?: AgentSourceId | null;
@@ -250,6 +252,7 @@ export function tabFromPtySession(
     exitCode: session.exited ? (session.exitCode ?? 0) : null,
     roadmapItemId,
     initialTask,
+    startedAt: session.startedAt,
   };
 }
 
@@ -307,6 +310,7 @@ export interface PersistedV6 {
       /** goal statement + last goal subtitle (D21) — optional: pre-D21
        *  layouts lack them; both restore the context layer on relaunch */
       initialTask?: string | null;
+      startedAt?: number | null;
       contextSummary?: string | null;
       /** Last accepted visual survives restart; transitional states do not. */
       goalVisual?: GoalVisual | null;
@@ -769,6 +773,19 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     []
   );
 
+  /** S13.3 secondary path: attach a running Session to an item locally. */
+  const attachRoadmapItem = useCallback(
+    (tabId: string, roadmapItemId: string): boolean => {
+      const tab = stateRef.current.projects
+        .flatMap(project => project.tabs)
+        .find(candidate => candidate.id === tabId);
+      if (!tab || !tabIsLive(tab)) return false;
+      updateTab(tabId, { roadmapItemId });
+      return true;
+    },
+    [updateTab]
+  );
+
   // ---- mount: adopt live sessions, restore ended layout without spawning ----
   useEffect(() => {
     const api = window.electron?.pty;
@@ -1010,6 +1027,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
               return {
                 ...t,
                 initialTask,
+                startedAt: s.startedAt,
                 sessionId: s.id,
                 harnessSessionId:
                   s.harnessSessionId ?? observedIdentity ?? t.harnessSessionId,
@@ -1023,6 +1041,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
               return {
                 ...t,
                 initialTask,
+                startedAt: s.startedAt,
                 sessionId: null,
                 harnessSessionId:
                   s.harnessSessionId ?? observedIdentity ?? t.harnessSessionId,
@@ -1298,6 +1317,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
                 lifecycle: stopped ? ('stopped-clean' as const) : tab.lifecycle,
                 exitCode: tab.exitCode,
                 initialTask: tab.initialTask ?? null,
+                startedAt: tab.startedAt ?? null,
                 contextSummary:
                   summariesRef.current[tab.durableSessionId] ?? null,
                 goalVisual:
@@ -2502,6 +2522,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     closeTab,
     createDraftTab,
     updateDraft,
+    attachRoadmapItem,
     reopenClosedSession,
     reopenLastClosedSession,
     listClosedSessions,

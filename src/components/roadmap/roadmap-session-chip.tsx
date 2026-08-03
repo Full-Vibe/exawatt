@@ -13,11 +13,21 @@ import {
 import { HarnessGlyph } from '../workspace/harness-icons';
 import type { PtyHarness } from '@/types/electron';
 import type { RoadmapSessionChip as ChipModel } from '@exawatt/ui-model';
+import { StatusLight } from '@/components/status-light/status-light';
+import { useEffect, useState } from 'react';
 
 export function chipTooltip(chip: ChipModel): string {
   const method = chip.method === 'declared' ? 'declared at launch' : 'inferred';
   const evidence = chip.evidence.map(e => e.excerpt).join(' · ');
   return evidence ? `${method} — ${evidence}` : method;
+}
+
+function elapsedLabel(startedAt: number | null, now: number): string | null {
+  if (!startedAt) return null;
+  const minutes = Math.max(0, Math.floor((now - startedAt) / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
 }
 
 export function RoadmapSessionChipButton({
@@ -31,6 +41,18 @@ export function RoadmapSessionChipButton({
   selected: boolean;
   onJump: () => void;
 }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const elapsed = elapsedLabel(chip.startedAt, now);
+  const lightState =
+    chip.turnState === 'needs-you'
+      ? 'needs-you'
+      : chip.turnState === 'working'
+        ? 'active'
+        : 'off';
   return (
     <button
       type="button"
@@ -48,29 +70,21 @@ export function RoadmapSessionChipButton({
         boxShadow: selected ? `0 0 8px ${withAlpha(color, 0.35)}` : 'none',
       }}
     >
-      <span
-        aria-hidden
-        className="inline-block h-1.5 w-1.5 shrink-0 rotate-45"
-        style={{ background: color }}
-      />
+      <StatusLight decorative size="compact" state={lightState} />
       {chip.harness !== 'shell' && (
         <span className="shrink-0" style={{ color }}>
           <HarnessGlyph harness={chip.harness as PtyHarness} size={10} />
         </span>
       )}
       <span className="min-w-0 truncate">{chip.title}</span>
-      {chip.needsAttention && (
-        <span className="relative ml-0.5 inline-flex h-1.5 w-1.5 shrink-0">
-          <span
-            className="absolute inline-flex h-full w-full animate-ping rounded-full motion-reduce:animate-none"
-            style={{ background: HUD.amber, opacity: 0.6 }}
-          />
-          <span
-            className="relative inline-flex h-1.5 w-1.5 rounded-full"
-            style={{ background: HUD.amber }}
-          />
-        </span>
-      )}
+      <span className="shrink-0" style={{ color: HUD.textDim }}>
+        {chip.turnState === 'working'
+          ? 'working'
+          : chip.turnState === 'needs-you'
+            ? 'needs you'
+            : 'waiting'}
+        {elapsed ? ` · ${elapsed}` : ''}
+      </span>
     </button>
   );
 }

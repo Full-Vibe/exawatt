@@ -42,6 +42,7 @@ export { inferSessionLinks } from './roadmap/link';
 export type { SessionLinkCandidate } from './roadmap/link';
 export type {
   RoadmapItemStatus,
+  RoadmapBacklogMetadata,
   RoadmapSourceRef,
   RoadmapMilestone,
   RoadmapItem,

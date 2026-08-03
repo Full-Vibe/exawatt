@@ -460,9 +460,50 @@ export interface RoadmapSessionEvidence {
   commitSubjects: string[];
 }
 
+export interface RoadmapProjectChange {
+  hash: string;
+  subject: string;
+  committedAt: number;
+}
+
+export type RoadmapWritableStatus = 'now' | 'next' | 'later' | 'parked';
+
+export type RoadmapWriteAction =
+  | { kind: 'set-status'; itemId: string; status: RoadmapWritableStatus }
+  | { kind: 'move-item'; itemId: string; direction: 'up' | 'down' }
+  | { kind: 'set-milestone'; itemId: string; line: number; done: boolean };
+
+export interface RoadmapWriteRequest {
+  projectDir: string;
+  file: string;
+  expectedContentHash: string;
+  action: RoadmapWriteAction;
+  confirmed?: boolean;
+}
+
+export type RoadmapWriteResult =
+  | {
+      status: 'applied';
+      contentHash: string;
+      undoToken: string;
+      permission: 'roadmap-state-write';
+    }
+  | {
+      status: 'permission-required' | 'refused' | 'failed';
+      message: string;
+      permission: 'roadmap-state-write';
+    };
+
+export type RoadmapUndoResult =
+  | { status: 'applied'; contentHash: string }
+  | { status: 'refused' | 'failed'; message: string };
+
 export interface ElectronRoadmapApi {
   read: (projectDir: string) => Promise<RoadmapReadResult>;
   sessionEvidence: (cwd: string) => Promise<RoadmapSessionEvidence>;
+  activity: (projectDir: string) => Promise<RoadmapProjectChange[]>;
+  writeState: (request: RoadmapWriteRequest) => Promise<RoadmapWriteResult>;
+  undoState: (token: string) => Promise<RoadmapUndoResult>;
   watch: (projectDir: string) => Promise<void>;
   unwatch: (projectDir: string) => Promise<void>;
   onFileChanged: (

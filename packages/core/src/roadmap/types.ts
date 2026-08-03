@@ -1,15 +1,29 @@
 /**
- * Domain model for the Exawatt roadmap convention (v1).
+ * Domain model for the Exawatt roadmap convention (v1/v2).
  *
  * The convention is published in `docs/product/reference/roadmap-convention.md`
- * (decision 0011): a repo-canonical markdown roadmap that Exawatt reads and
- * never writes. The parser is tolerant within the published grammar and
+ * (decision 0011): a repo-canonical markdown roadmap that Exawatt parses;
+ * decision 0029 permits declared-only sequence/state edits. The parser is
+ * tolerant within the published grammar and
  * diagnostic-honest outside it — unrecognized structure becomes diagnostics,
  * never guessed items.
  */
 
-/** Queue position of an item. Linear v1: now → next → later, plus history. */
-export type RoadmapItemStatus = 'now' | 'next' | 'later' | 'shipped' | 'parked';
+/** Queue position of an item. Linear sequence plus an unsequenced backlog. */
+export type RoadmapItemStatus =
+  | 'now'
+  | 'next'
+  | 'later'
+  | 'backlog'
+  | 'shipped'
+  | 'parked';
+
+/** v2's compact backlog record: type, owning item, and visible provenance. */
+export interface RoadmapBacklogMetadata {
+  kind: string;
+  ownerItemId: string | null;
+  provenance: string | null;
+}
 
 /** A location in the source roadmap file. */
 export interface RoadmapSourceRef {
@@ -42,6 +56,8 @@ export interface RoadmapItem {
   ordinal: number;
   /** Free-form text after the status token on the `Status:` line. */
   statusNote: string | null;
+  /** Present for v2 backlog rows whose Status line follows the compact grammar. */
+  backlog: RoadmapBacklogMetadata | null;
   /** Prose and unlabeled bullets inside the item, in document order. */
   description: string[];
   scope: string[];
@@ -69,7 +85,7 @@ export interface RoadmapDoc {
   projectDir: string;
   /** Repo-relative path of the parsed file. */
   file: string;
-  convention: 'exawatt-v1';
+  convention: 'exawatt-v1' | 'exawatt-v2';
   conformance: RoadmapConformance;
   items: RoadmapItem[];
   diagnostics: RoadmapDiagnostic[];
@@ -92,6 +108,7 @@ export interface SessionLinkEvidence {
     | 'worktree-path'
     | 'session-title'
     | 'context-summary'
+    | 'roadmap-title-term'
     | 'commit-message';
   /** Human-readable excerpt, e.g. `branch "eng-017-roadmap-rail"`. */
   excerpt: string;

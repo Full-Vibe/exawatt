@@ -35,6 +35,7 @@ const ROADMAP_STATUS: Record<RoadmapItemStatus, DemoRoadmapItem['status']> = {
   now: 'active-build',
   next: 'next',
   later: 'planned',
+  backlog: 'planned',
   parked: 'planned',
   shipped: 'done',
 };
@@ -114,7 +115,10 @@ export function voltaicConsumption(): DemoConsumption {
   // The FULL fleet (W7): `/consumption` and the Fleet board's burn lens must
   // reconcile, so every board Agent owns identity and links here.
   const fleetAgents = demoFleetAgents('scale', { nowMs });
-  const sessionLinks = new Map<string, { itemId: string; method: LinkMethod }>();
+  const sessionLinks = new Map<
+    string,
+    { itemId: string; method: LinkMethod }
+  >();
   for (const agent of fleetAgents) {
     if (agent.roadmapItemId && agent.link) {
       sessionLinks.set(demoAgentSessionId(agent), {
@@ -142,8 +146,12 @@ export function voltaicConsumption(): DemoConsumption {
     burn: {
       // shaped like the fixture's history cadence: Codex many-and-smaller,
       // Claude fewer-and-larger; most-recent last
-      codex: [0.28, 0.41, 0.36, 0.49, 0.57, 0.52, 0.68, 0.61, 0.55, 0.7, 0.77, 0.65],
-      'claude-code': [0.52, 0.66, 0.74, 0.6, 0.86, 0.71, 0.47, 0.79, 0.9, 0.67, 0.58, 0.63],
+      codex: [
+        0.28, 0.41, 0.36, 0.49, 0.57, 0.52, 0.68, 0.61, 0.55, 0.7, 0.77, 0.65,
+      ],
+      'claude-code': [
+        0.52, 0.66, 0.74, 0.6, 0.86, 0.71, 0.47, 0.79, 0.9, 0.67, 0.58, 0.63,
+      ],
     },
     burnRates: { 'codex-primary': 8.1, 'codex-weekly': 0.78 },
     claudePlanNote:

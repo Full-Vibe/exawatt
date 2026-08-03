@@ -9,8 +9,9 @@
  * Keyboard-first: ⌘B summons (wired in the workspace shortcut layer), the
  * rail owns plain keys while focused (roving selection, Enter/→ drill,
  * Esc/← back out, `o` opens the file, `g` jumps to the now station).
- * Read-only is a trust posture: no edit affordances anywhere; the footer
- * names the file that is read and says nothing else.
+ * Manipulation appears only for explicitly conformant roadmap files. Every
+ * operation is shown inline and still delegates the actual compare/write to
+ * the main-process boundary from decision 0029.
  */
 import {
   useCallback,
@@ -32,6 +33,12 @@ import type {
   RoadmapLensView,
   RoadmapSessionChip,
 } from '@exawatt/ui-model';
+import type {
+  RoadmapUndoResult,
+  RoadmapWriteAction,
+  RoadmapWriteResult,
+} from '@/types/electron';
+import { Button } from '@/components/ui/button';
 import { buildRoadmapStrip } from '@exawatt/ui-model';
 import { RoadmapItemCard } from './roadmap-item-card';
 import { RoadmapSessionChipButton } from './roadmap-session-chip';
@@ -81,6 +88,7 @@ export function hasRoadmapRailSummon(): boolean {
 }
 
 export const ROADMAP_RAIL_WIDTH = 320;
+export const ROADMAP_RAIL_FOCUSED_WIDTH = 420;
 export const ROADMAP_STRIP_WIDTH = 36;
 
 /** machine-local view preference; repo state never lives here */
@@ -194,7 +202,10 @@ function RoadmapStripSpine({
               aria-hidden
               className="font-mono text-chrome-nano leading-none"
               style={{
-                color: node.group === 'shipped' ? withAlpha(HUD.green, 0.65) : HUD.textDim,
+                color:
+                  node.group === 'shipped'
+                    ? withAlpha(HUD.green, 0.65)
+                    : HUD.textDim,
               }}
             >
               {node.group === 'shipped' ? `✓${node.count}` : `+${node.count}`}
@@ -279,7 +290,9 @@ function RoadmapSequenceBar({
               key={`agg-${node.group}-${i}`}
               style={{
                 color:
-                  node.group === 'shipped' ? withAlpha(HUD.green, 0.6) : HUD.textDim,
+                  node.group === 'shipped'
+                    ? withAlpha(HUD.green, 0.6)
+                    : HUD.textDim,
               }}
             >
               {node.group === 'shipped' ? `✓${node.count}` : `+${node.count}`}
@@ -301,7 +314,11 @@ function RoadmapSequenceBar({
               opacity: node.role === 'later' ? 0.55 : 1,
             }}
           >
-            {node.role === 'shipped' ? '✓' : node.role === 'current' ? '●' : '○'}
+            {node.role === 'shipped'
+              ? '✓'
+              : node.role === 'current'
+                ? '●'
+                : '○'}
           </span>
         );
       })}
@@ -313,8 +330,10 @@ function trustLine(view: RoadmapLensView): string {
   const t = view.trust;
   if (!t) return '';
   const parts = [`${t.itemCount} item${t.itemCount === 1 ? '' : 's'}`];
-  if (t.warningCount > 0) parts.push(`${t.warningCount} warning${t.warningCount === 1 ? '' : 's'}`);
-  if (t.unparsedLineCount > 0) parts.push(`${t.unparsedLineCount} lines unrecognized`);
+  if (t.warningCount > 0)
+    parts.push(`${t.warningCount} warning${t.warningCount === 1 ? '' : 's'}`);
+  if (t.unparsedLineCount > 0)
+    parts.push(`${t.unparsedLineCount} lines unrecognized`);
   return parts.join(' · ');
 }
 
@@ -333,6 +352,18 @@ export function RoadmapRail({
   permanent = false,
   onExitFocus,
   untriagedFeedback,
+  onStartAgent = async () => false,
+  onStartRemediation = async () => false,
+  onAttachSession = () => false,
+  onWrite = async () => ({
+    status: 'failed',
+    message: 'Roadmap writes are unavailable',
+    permission: 'roadmap-state-write',
+  }),
+  onUndo = async () => ({
+    status: 'failed',
+    message: 'Roadmap undo is unavailable',
+  }),
 }: {
   view: RoadmapLensView;
   projectDir: string | null;
@@ -348,6 +379,14 @@ export function RoadmapRail({
   /** ENG-025 F2.1: operator inbox pressure. Omit to sample live Supabase
    *  state; the lab passes a fixture value. null hides the line. */
   untriagedFeedback?: number | null;
+  onStartAgent?: (item: RoadmapItemView) => Promise<boolean>;
+  onStartRemediation?: () => Promise<boolean>;
+  onAttachSession?: (tabId: string, itemId: string) => boolean;
+  onWrite?: (
+    action: RoadmapWriteAction,
+    confirmed?: boolean
+  ) => Promise<RoadmapWriteResult>;
+  onUndo?: (token: string) => Promise<RoadmapUndoResult>;
 }) {
   const color = projectColor ?? HUD.cyan;
   const liveUntriaged = useUntriagedFeedbackCount(
@@ -363,6 +402,15 @@ export function RoadmapRail({
   const [sel, setSel] = useState(0);
   // milestone roving inside the drill (S7, the deferred R2 level)
   const [msel, setMsel] = useState(0);
+  const [focused, setFocused] = useState(false);
+  const [writeState, setWriteState] = useState<
+    | { phase: 'idle' }
+    | { phase: 'pending'; action: RoadmapWriteAction }
+    | { phase: 'permission'; action: RoadmapWriteAction; message: string }
+    | { phase: 'applied'; undoToken: string; message: string }
+    | { phase: 'failed'; message: string }
+  >({ phase: 'idle' });
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => setMsel(0), [drillId]);
 
   // entrance stagger (exposé recipe): flag flips post-mount
@@ -385,7 +433,8 @@ export function RoadmapRail({
   useEffect(() => {
     const onFocusRail = () => rootRef.current?.focus();
     window.addEventListener(ROADMAP_RAIL_FOCUS_EVENT, onFocusRail);
-    return () => window.removeEventListener(ROADMAP_RAIL_FOCUS_EVENT, onFocusRail);
+    return () =>
+      window.removeEventListener(ROADMAP_RAIL_FOCUS_EVENT, onFocusRail);
   }, []);
 
   // a summon fired before this rail existed (⌘B / chip / starving jump from
@@ -457,6 +506,16 @@ export function RoadmapRail({
         heading: i === 0 ? 'Later' : undefined,
       });
     });
+    view.backlog.forEach((item, i) => {
+      list.push({
+        kind: 'item',
+        item,
+        variant: 'compact',
+        heading: i === 0 ? 'Backlog' : undefined,
+      });
+      for (const chip of item.chips)
+        list.push({ kind: 'chip', chip, itemId: item.id });
+    });
     if (view.parked.length > 0) {
       list.push({
         kind: 'group',
@@ -502,7 +561,10 @@ export function RoadmapRail({
       const prev = prevTops.current.get(key);
       if (!reduced && prev !== undefined && Math.abs(prev - top) > 4) {
         el.animate(
-          [{ transform: `translateY(${prev - top}px)` }, { transform: 'translateY(0)' }],
+          [
+            { transform: `translateY(${prev - top}px)` },
+            { transform: 'translateY(0)' },
+          ],
           { duration: 300, easing: 'cubic-bezier(0.16,1,0.3,1)' }
         );
       }
@@ -513,9 +575,14 @@ export function RoadmapRail({
   const drilled = useMemo<RoadmapItemView | null>(() => {
     if (!drillId || view.status !== 'ok') return null;
     return (
-      [...view.now, ...view.next, ...view.later, ...view.shipped, ...view.parked].find(
-        item => item.id === drillId
-      ) ?? null
+      [
+        ...view.now,
+        ...view.next,
+        ...view.later,
+        ...view.backlog,
+        ...view.shipped,
+        ...view.parked,
+      ].find(item => item.id === drillId) ?? null
     );
   }, [drillId, view]);
 
@@ -533,6 +600,47 @@ export function RoadmapRail({
 
   const focusTerminal = () =>
     window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
+
+  const mutate = useCallback(
+    async (action: RoadmapWriteAction, confirmed = false) => {
+      setWriteState({ phase: 'pending', action });
+      const result = await onWrite(action, confirmed);
+      if (result.status === 'permission-required') {
+        setWriteState({ phase: 'permission', action, message: result.message });
+      } else if (result.status === 'applied') {
+        if (undoTimer.current) clearTimeout(undoTimer.current);
+        setWriteState({
+          phase: 'applied',
+          undoToken: result.undoToken,
+          message: 'Roadmap updated',
+        });
+        undoTimer.current = setTimeout(
+          () => setWriteState({ phase: 'idle' }),
+          10_000
+        );
+      } else {
+        setWriteState({ phase: 'failed', message: result.message });
+      }
+    },
+    [onWrite]
+  );
+
+  const undo = useCallback(async () => {
+    if (writeState.phase !== 'applied') return;
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    const result = await onUndo(writeState.undoToken);
+    setWriteState(
+      result.status === 'applied'
+        ? { phase: 'applied', undoToken: '', message: 'Change undone' }
+        : { phase: 'failed', message: result.message }
+    );
+    if (result.status === 'applied') {
+      undoTimer.current = setTimeout(
+        () => setWriteState({ phase: 'idle' }),
+        2500
+      );
+    }
+  }, [onUndo, writeState]);
 
   const activateRow = (row: RailRow) => {
     if (row.kind === 'group') {
@@ -571,6 +679,11 @@ export function RoadmapRail({
       return;
     }
     if (drillId) {
+      if (key === 'a' && drilled) {
+        handled();
+        void onStartAgent(drilled);
+        return;
+      }
       if (key === 'o') {
         handled();
         openPath(view.file);
@@ -628,11 +741,18 @@ export function RoadmapRail({
             ? `[data-roadmap-unmapped="${CSS.escape(row.session.sessionId)}"]`
             : null;
     if (!selector) return;
-    rootRef.current?.querySelector(selector)?.scrollIntoView({ block: 'nearest' });
+    rootRef.current
+      ?.querySelector(selector)
+      ?.scrollIntoView({ block: 'nearest' });
   }, [sel, rows]);
 
   const remaining =
-    view.status === 'ok' ? view.now.length + view.next.length + view.later.length : 0;
+    view.status === 'ok'
+      ? view.now.length +
+        view.next.length +
+        view.later.length +
+        view.backlog.length
+      : 0;
   const healthAlert =
     view.status === 'ok' &&
     (view.queueEmpty ||
@@ -676,7 +796,8 @@ export function RoadmapRail({
   const stagger = (i: number): React.CSSProperties => ({
     opacity: entered ? 1 : 0,
     transform: entered ? 'none' : 'translateY(10px)',
-    transition: 'opacity 200ms cubic-bezier(0.16,1,0.3,1), transform 200ms cubic-bezier(0.16,1,0.3,1)',
+    transition:
+      'opacity 200ms cubic-bezier(0.16,1,0.3,1), transform 200ms cubic-bezier(0.16,1,0.3,1)',
     transitionDelay: entered ? `${Math.min(i * 18, 300)}ms` : '0ms',
   });
 
@@ -688,6 +809,11 @@ export function RoadmapRail({
       aria-label="Project roadmap"
       tabIndex={-1}
       onKeyDown={onKeyDown}
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={event => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+          setFocused(false);
+      }}
       // keyboard ownership must be VISIBLE (D27): while the rail holds
       // focus it wears an accent ring + an esc hint, so the drill →
       // rail-blur → out ladder gives feedback at every rung
@@ -695,7 +821,10 @@ export function RoadmapRail({
         overlay ? 'absolute inset-y-0 right-0 z-10' : ''
       }`}
       style={{
-        width: ROADMAP_RAIL_WIDTH,
+        width:
+          permanent && focused
+            ? ROADMAP_RAIL_FOCUSED_WIDTH
+            : ROADMAP_RAIL_WIDTH,
         borderColor: HUD.strokeFaint,
         background: HUD.bg.deep,
         boxShadow: overlay
@@ -715,7 +844,8 @@ export function RoadmapRail({
             className="pointer-events-none absolute inset-y-0 w-1/3 motion-reduce:hidden"
             style={{
               background: `linear-gradient(90deg, transparent, ${withAlpha(HUD.cyan, 0.16)}, transparent)`,
-              animation: 'roadmap-sweep 700ms cubic-bezier(0.16,1,0.3,1) forwards',
+              animation:
+                'roadmap-sweep 700ms cubic-bezier(0.16,1,0.3,1) forwards',
             }}
           />
         )}
@@ -758,7 +888,10 @@ export function RoadmapRail({
           )}
         </div>
         {view.status === 'ok' && view.file && (
-          <div className="flex items-center gap-2 font-mono text-chrome-micro" style={{ color: HUD.textDim }}>
+          <div
+            className="flex items-center gap-2 font-mono text-chrome-micro"
+            style={{ color: HUD.textDim }}
+          >
             <button
               type="button"
               tabIndex={-1}
@@ -769,16 +902,113 @@ export function RoadmapRail({
             >
               {view.file}
             </button>
-            {view.mtimeMs !== null && <span className="shrink-0">{formatUpdated(view.mtimeMs)}</span>}
+            {view.mtimeMs !== null && (
+              <span className="shrink-0">{formatUpdated(view.mtimeMs)}</span>
+            )}
+          </div>
+        )}
+        {view.status === 'ok' && view.trust && (
+          <div className="flex items-center gap-1.5">
+            <span
+              data-roadmap-readiness
+              className="rounded border px-1.5 py-0.5 font-ui text-chrome-meta"
+              style={{
+                color:
+                  view.trust.conformance === 'declared' ? HUD.green : HUD.amber,
+                borderColor:
+                  view.trust.conformance === 'declared'
+                    ? withAlpha(HUD.green, 0.4)
+                    : withAlpha(HUD.amber, 0.45),
+              }}
+              title={
+                view.trust.conformance === 'declared'
+                  ? `${view.trust.convention === 'exawatt-v2' ? 'Roadmap convention v2' : 'Roadmap convention v1'} · state and sequence controls ready`
+                  : [
+                      'Roadmap detected but not declared conformant; Exawatt will not write it.',
+                      ...view.trust.diagnostics.slice(0, 3),
+                    ].join('\n')
+              }
+            >
+              {view.trust.conformance === 'declared'
+                ? view.trust.convention === 'exawatt-v2'
+                  ? 'Ready · v2'
+                  : 'Ready · v1'
+                : 'View only · adaptation needed'}
+            </span>
+            {view.trust.conformance !== 'declared' && (
+              <button
+                type="button"
+                onClick={() => void onStartRemediation()}
+                className="rounded px-1.5 py-0.5 font-ui text-chrome-meta outline-none hover:bg-hud-fill-hi focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                style={{ color: HUD.cyan }}
+              >
+                Adapt with agent
+              </button>
+            )}
           </div>
         )}
         <RoadmapSequenceBar view={view} color={color} />
       </div>
 
+      {writeState.phase !== 'idle' && (
+        <div
+          data-roadmap-write-state={writeState.phase}
+          className="flex min-h-9 shrink-0 items-center gap-2 border-b px-3 py-1.5 font-ui text-chrome-label"
+          style={{
+            borderColor: HUD.strokeFaint,
+            color:
+              writeState.phase === 'failed' || writeState.phase === 'permission'
+                ? HUD.amber
+                : HUD.text,
+            background: HUD.fill,
+          }}
+        >
+          <span className="min-w-0 flex-1">
+            {writeState.phase === 'pending'
+              ? 'Applying roadmap change…'
+              : writeState.message}
+          </span>
+          {writeState.phase === 'permission' && (
+            <>
+              <Button
+                size="sm"
+                onClick={() => void mutate(writeState.action, true)}
+              >
+                Apply once
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setWriteState({ phase: 'idle' })}
+              >
+                Cancel
+              </Button>
+            </>
+          )}
+          {writeState.phase === 'applied' && writeState.undoToken && (
+            <Button size="sm" variant="ghost" onClick={() => void undo()}>
+              Undo
+            </Button>
+          )}
+          {writeState.phase === 'failed' && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setWriteState({ phase: 'idle' })}
+            >
+              Dismiss
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* body */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!projectDir ? (
-          <p className="px-3 py-4 text-xs leading-5" style={{ color: HUD.textDim }}>
+          <p
+            className="px-3 py-4 text-xs leading-5"
+            style={{ color: HUD.textDim }}
+          >
             Open a project to see its roadmap.
           </p>
         ) : view.status === 'loading' ? (
@@ -808,7 +1038,10 @@ export function RoadmapRail({
               >
                 ←
               </button>
-              <span className="min-w-0 truncate font-ui text-chrome-meta" style={{ color: HUD.textDim }}>
+              <span
+                className="min-w-0 truncate font-ui text-chrome-meta"
+                style={{ color: HUD.textDim }}
+              >
                 Roadmap · {drilled.declaredId ?? drilled.title}
               </span>
             </div>
@@ -818,6 +1051,11 @@ export function RoadmapRail({
               selectedMilestone={drilled.milestones.length > 0 ? msel : null}
               onOpenPath={openPath}
               onSelectSession={onSelectSession}
+              unmappedSessions={view.unmappedSessions}
+              manipulable={view.trust?.conformance === 'declared'}
+              onStartAgent={onStartAgent}
+              onAttachSession={onAttachSession}
+              onMutate={action => void mutate(action)}
             />
           </div>
         ) : view.queueEmpty ? (
@@ -869,14 +1107,20 @@ export function RoadmapRail({
                         data-selected={i === sel || undefined}
                         title="no roadmap item matched this session"
                         onClick={() =>
-                          row.session.tabId && onSelectSession(row.session.tabId)
+                          row.session.tabId &&
+                          onSelectSession(row.session.tabId)
                         }
                         className="flex min-w-0 max-w-full items-center gap-1.5 rounded border border-dashed px-1.5 py-0.5 font-mono text-chrome-micro outline-none hover:bg-hud-fill-hi"
                         style={{
-                          borderColor: withAlpha(HUD.amber, i === sel ? 0.9 : 0.45),
+                          borderColor: withAlpha(
+                            HUD.amber,
+                            i === sel ? 0.9 : 0.45
+                          ),
                           color: HUD.text,
                           background:
-                            i === sel ? withAlpha(HUD.amber, 0.1) : 'transparent',
+                            i === sel
+                              ? withAlpha(HUD.amber, 0.1)
+                              : 'transparent',
                         }}
                       >
                         <span
@@ -884,7 +1128,9 @@ export function RoadmapRail({
                           className="inline-block h-1.5 w-1.5 shrink-0 rotate-45"
                           style={{ background: HUD.amber }}
                         />
-                        <span className="min-w-0 truncate">{row.session.title}</span>
+                        <span className="min-w-0 truncate">
+                          {row.session.title}
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -897,7 +1143,9 @@ export function RoadmapRail({
                       chip={row.chip}
                       color={color}
                       selected={i === sel}
-                      onJump={() => row.chip.tabId && onSelectSession(row.chip.tabId)}
+                      onJump={() =>
+                        row.chip.tabId && onSelectSession(row.chip.tabId)
+                      }
                     />
                   </div>
                 ) : row.kind === 'group' ? (
@@ -915,7 +1163,9 @@ export function RoadmapRail({
                     }}
                   >
                     <span aria-hidden className="font-mono text-chrome-nano">
-                      {(row.group === 'shipped' ? shippedOpen : parkedOpen) ? '▾' : '▸'}
+                      {(row.group === 'shipped' ? shippedOpen : parkedOpen)
+                        ? '▾'
+                        : '▸'}
                     </span>
                     {row.label}
                   </button>
@@ -944,7 +1194,7 @@ export function RoadmapRail({
         )}
       </div>
 
-      {/* trust strip + rail keys: what is read, and that it is never written */}
+      {/* trust strip + rail keys: file provenance and manipulation posture */}
       <div
         className="flex shrink-0 flex-col gap-0.5 border-t px-3 py-1.5 font-mono text-chrome-micro"
         style={{ borderColor: HUD.strokeFaint, color: HUD.textDim }}
@@ -952,7 +1202,12 @@ export function RoadmapRail({
         {view.status === 'ok' && view.trust && (
           <span
             className="font-ui text-chrome-meta"
-            style={{ color: (view.trust.warningCount > 0 || view.trust.unparsedLineCount > 0) ? HUD.amber : HUD.textDim }}
+            style={{
+              color:
+                view.trust.warningCount > 0 || view.trust.unparsedLineCount > 0
+                  ? HUD.amber
+                  : HUD.textDim,
+            }}
           >
             {trustLine(view)}
           </span>
@@ -978,7 +1233,7 @@ export function RoadmapRail({
         )}
         <span>
           {permanent
-            ? '↑↓ move · ⏎ open · esc to Team'
+            ? '↑↓ move · ⏎ open · a start agent · esc to Team'
             : '↑↓ move · ⏎ open · esc back · ⌘B close'}
         </span>
       </div>

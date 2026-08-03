@@ -27,6 +27,7 @@ function candidate(over: Partial<SessionLinkCandidate>): SessionLinkCandidate {
     projectDir: '/repo',
     title: 'shell',
     contextSummary: null,
+    initialTask: null,
     cwd: '/repo',
     branch: null,
     worktreeDirname: null,
@@ -61,15 +62,53 @@ describe('inferSessionLinks', () => {
   });
 
   it('links by context summary and commit subject with medium confidence', () => {
-    const [viaSummary] = links({ contextSummary: 'Implementing ENG-018 resume flow' });
-    expect(viaSummary).toMatchObject({ itemId: 'ENG-018', confidence: 'medium' });
-    const [viaCommit] = links({ commitSubjects: ['ENG-016 S4: notifications'] });
-    expect(viaCommit).toMatchObject({ itemId: 'ENG-016', confidence: 'medium' });
+    const [viaSummary] = links({
+      contextSummary: 'Implementing ENG-018 resume flow',
+    });
+    expect(viaSummary).toMatchObject({
+      itemId: 'ENG-018',
+      confidence: 'medium',
+    });
+    const [viaCommit] = links({
+      commitSubjects: ['ENG-016 S4: notifications'],
+    });
+    expect(viaCommit).toMatchObject({
+      itemId: 'ENG-016',
+      confidence: 'medium',
+    });
   });
 
   it('falls back to normalized title containment with low confidence', () => {
     const [link] = links({ title: 'dark mode support everywhere — spike' });
-    expect(link).toMatchObject({ itemId: '~dark-mode-support-everywhere', confidence: 'low' });
+    expect(link).toMatchObject({
+      itemId: '~dark-mode-support-everywhere',
+      confidence: 'low',
+    });
+  });
+
+  it('links the reproduced live theming Session from its initial task term', () => {
+    const theming = parseRoadmap(
+      `## Now\n\n### ENG-032 Theming and visual identity\n`,
+      { projectDir: '/repo', file: 'ROADMAP.md', now: () => 0 }
+    );
+    const [link] = inferSessionLinks(
+      theming,
+      [
+        candidate({
+          title: 'Claude Code',
+          cwd: '/repo',
+          branch: 'master',
+          contextSummary: 'VSCode-like UI theming system for exawatt',
+          initialTask:
+            'Do you see our plans to have a VSCode-like UI theming system?',
+        }),
+      ],
+      () => 0
+    );
+    expect(link).toMatchObject({ itemId: 'ENG-032', confidence: 'low' });
+    expect(link.evidence).toContainEqual(
+      expect.objectContaining({ kind: 'roadmap-title-term' })
+    );
   });
 
   it('leaves ambiguous sessions unmapped', () => {

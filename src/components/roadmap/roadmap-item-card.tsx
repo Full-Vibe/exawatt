@@ -71,7 +71,9 @@ export function RoadmapItemCard({
       ? 'done'
       : item.isNowStation
         ? 'active'
-        : item.status === 'later' || item.status === 'parked'
+        : item.status === 'later' ||
+            item.status === 'backlog' ||
+            item.status === 'parked'
           ? 'dim'
           : 'open';
 
@@ -99,7 +101,9 @@ export function RoadmapItemCard({
               ? withAlpha(statusColor, 0.75)
               : withAlpha(statusColor, 0.35),
             background: HUD.bg.panelFill,
-            boxShadow: selected ? `0 0 14px ${withAlpha(statusColor, 0.33)}` : 'none',
+            boxShadow: selected
+              ? `0 0 14px ${withAlpha(statusColor, 0.33)}`
+              : 'none',
           }}
         >
           {selected && <CornerBrackets color={HUD.cyan} tone="cyan" active />}
@@ -107,7 +111,10 @@ export function RoadmapItemCard({
             <RoadmapStatusPill status={item.displayStatus} />
             {item.blocked && <RoadmapBlockedBadge />}
             {item.declaredId && (
-              <span className="font-mono text-xs" style={{ color: HUD.textMono }}>
+              <span
+                className="font-mono text-xs"
+                style={{ color: HUD.textMono }}
+              >
                 {item.declaredId}
               </span>
             )}
@@ -151,7 +158,10 @@ export function RoadmapItemCard({
               Blocked — {statusNoteProse(item.statusNote)}
             </p>
           ) : nextMilestone ? (
-            <p className="truncate font-ui text-chrome-meta" style={{ color: HUD.textDim }}>
+            <p
+              className="truncate font-ui text-chrome-meta"
+              style={{ color: HUD.textDim }}
+            >
               Next up:{' '}
               <span style={{ color: HUD.text }}>
                 {cleanMilestoneTitle(nextMilestone.title)}
@@ -174,25 +184,49 @@ export function RoadmapItemCard({
       onMouseEnter={onHover}
       className="relative flex w-full cursor-default items-center gap-2 py-1 pl-6 pr-2 text-left outline-none"
       style={{
-        minHeight: compact ? 28 : 40,
+        minHeight: item.status === 'backlog' ? 44 : compact ? 28 : 40,
         background: selected ? HUD.fillHi : 'transparent',
-        opacity: compact || item.status === 'later' ? 0.75 : 1,
+        opacity:
+          compact || item.status === 'later' || item.status === 'backlog'
+            ? 0.78
+            : 1,
       }}
     >
       <SpineNode color={statusColor} variant={nodeVariant} />
       {item.declaredId && (
         <span
           className="shrink-0 font-mono text-chrome-meta"
-          style={{ color: compact ? withAlpha(HUD.textMono, 0.7) : HUD.textMono }}
+          style={{
+            color: compact ? withAlpha(HUD.textMono, 0.7) : HUD.textMono,
+          }}
         >
           {item.declaredId}
         </span>
       )}
-      <span
-        className={`min-w-0 truncate text-xs leading-4 ${compact ? '' : 'font-medium'}`}
-        style={{ color: compact ? HUD.textDim : HUD.text }}
-      >
-        {item.title}
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span
+          className={`min-w-0 truncate text-xs leading-4 ${compact ? '' : 'font-medium'}`}
+          style={{
+            color:
+              item.status === 'backlog'
+                ? HUD.text
+                : compact
+                  ? HUD.textDim
+                  : HUD.text,
+          }}
+        >
+          {item.title}
+        </span>
+        {item.status === 'backlog' && item.backlog && (
+          <span
+            className="truncate font-mono text-chrome-micro"
+            style={{ color: HUD.textDim }}
+            title={`${item.backlog.kind} · ${item.backlog.ownerItemId ?? 'Unowned'}${item.backlog.provenance ? ` · ${item.backlog.provenance}` : ''}`}
+          >
+            {item.backlog.ownerItemId ?? 'Unowned'} ·{' '}
+            {item.backlog.provenance ?? item.backlog.kind}
+          </span>
+        )}
       </span>
       {item.blocked && <RoadmapBlockedBadge />}
       {item.hasWarnings && (

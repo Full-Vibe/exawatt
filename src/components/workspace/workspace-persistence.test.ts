@@ -468,6 +468,7 @@ describe('PTY tab adoption', () => {
       lifecycle: 'exited',
       exitCode: 0,
       titleKind: 'default',
+      startedAt: 100,
     });
   });
 });

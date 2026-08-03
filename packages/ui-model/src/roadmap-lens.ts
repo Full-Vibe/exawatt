@@ -1,5 +1,6 @@
 import type {
   RoadmapConformance,
+  RoadmapBacklogMetadata,
   RoadmapDoc,
   RoadmapItemStatus,
   RoadmapMilestone,
@@ -24,6 +25,9 @@ export interface RoadmapLensSessionInput {
   title: string;
   harness: string;
   needsAttention: boolean;
+  /** Main-process PTY start time; null for fixture or unavailable sources. */
+  startedAt: number | null;
+  turnState: 'working' | 'waiting' | 'needs-you';
 }
 
 export interface RoadmapSessionChip {
@@ -32,13 +36,27 @@ export interface RoadmapSessionChip {
   title: string;
   harness: string;
   needsAttention: boolean;
+  startedAt: number | null;
+  turnState: RoadmapLensSessionInput['turnState'];
   method: SessionLinkMethod;
   confidence: SessionLinkConfidence;
   evidence: SessionLinkEvidence[];
 }
 
 /** Normal-case pill vocabulary; `now` displays as `active`. */
-export type RoadmapDisplayStatus = 'active' | 'next' | 'later' | 'shipped' | 'parked';
+export type RoadmapDisplayStatus =
+  | 'active'
+  | 'next'
+  | 'later'
+  | 'backlog'
+  | 'shipped'
+  | 'parked';
+
+export interface RoadmapRecentChange {
+  hash: string;
+  subject: string;
+  committedAt: number;
+}
 
 export interface RoadmapItemView {
   id: string;
@@ -50,6 +68,7 @@ export interface RoadmapItemView {
   /** The single active station — first item in the now group. */
   isNowStation: boolean;
   statusNote: string | null;
+  backlog: RoadmapBacklogMetadata | null;
   description: string[];
   scope: string[];
   exitCriteria: string[];
@@ -62,14 +81,18 @@ export interface RoadmapItemView {
   /** Parser warnings anchored inside this item's line range. */
   hasWarnings: boolean;
   chips: RoadmapSessionChip[];
+  recentChanges: RoadmapRecentChange[];
 }
 
 export interface RoadmapLensTrust {
   file: string;
+  contentHash: string;
+  convention: RoadmapDoc['convention'];
   conformance: RoadmapConformance;
   itemCount: number;
   warningCount: number;
   unparsedLineCount: number;
+  diagnostics: string[];
 }
 
 export type RoadmapLensStatus = 'loading' | 'ok' | 'none' | 'error';
@@ -85,6 +108,7 @@ export interface RoadmapLensView {
   now: RoadmapItemView[];
   next: RoadmapItemView[];
   later: RoadmapItemView[];
+  backlog: RoadmapItemView[];
   shipped: RoadmapItemView[];
   parked: RoadmapItemView[];
   /** No unfinished work anywhere — the designed "no food" moment. */
@@ -105,12 +129,14 @@ export interface RoadmapLensInput {
   sessions?: RoadmapLensSessionInput[];
   /** Session→item links, declared and inferred, already merged (S3/S4). */
   links?: SessionLink[];
+  recentChanges?: RoadmapRecentChange[];
 }
 
 const DISPLAY_STATUS: Record<RoadmapItemStatus, RoadmapDisplayStatus> = {
   now: 'active',
   next: 'next',
   later: 'later',
+  backlog: 'backlog',
   shipped: 'shipped',
   parked: 'parked',
 };
@@ -125,6 +151,7 @@ function emptyView(status: RoadmapLensStatus): RoadmapLensView {
     now: [],
     next: [],
     later: [],
+    backlog: [],
     shipped: [],
     parked: [],
     queueEmpty: false,
@@ -138,7 +165,14 @@ export function findRoadmapSessionChip(
   view: RoadmapLensView,
   tabId: string
 ): { item: RoadmapItemView; chip: RoadmapSessionChip } | null {
-  for (const group of [view.now, view.next, view.later, view.shipped, view.parked]) {
+  for (const group of [
+    view.now,
+    view.next,
+    view.later,
+    view.backlog,
+    view.shipped,
+    view.parked,
+  ]) {
     for (const item of group) {
       const chip = item.chips.find(c => c.tabId === tabId);
       if (chip) return { item, chip };
@@ -148,24 +182,33 @@ export function findRoadmapSessionChip(
 }
 
 export function buildRoadmapLens(input: RoadmapLensInput): RoadmapLensView {
-  const { read, sessions = [], links = [] } = input;
+  const { read, sessions = [], links = [], recentChanges = [] } = input;
   if (read.status === 'loading') return emptyView('loading');
   if (read.status === 'none') {
-    return { ...emptyView('none'), checkedPaths: read.checked, unmappedSessions: sessions };
+    return {
+      ...emptyView('none'),
+      checkedPaths: read.checked,
+      unmappedSessions: sessions,
+    };
   }
   if (read.status === 'error') {
-    return { ...emptyView('error'), error: read.error, unmappedSessions: sessions };
+    return {
+      ...emptyView('error'),
+      error: read.error,
+      unmappedSessions: sessions,
+    };
   }
 
   const { doc } = read;
   const linkBySession = new Map<string, SessionLink>();
   for (const link of links) {
-    if (!linkBySession.has(link.sessionId)) linkBySession.set(link.sessionId, link);
+    if (!linkBySession.has(link.sessionId))
+      linkBySession.set(link.sessionId, link);
   }
 
   const chipsByItem = new Map<string, RoadmapSessionChip[]>();
   const unmappedSessions: RoadmapLensSessionInput[] = [];
-  const itemIds = new Set(doc.items.map((item) => item.id));
+  const itemIds = new Set(doc.items.map(item => item.id));
   for (const session of sessions) {
     const link = linkBySession.get(session.sessionId);
     if (!link || !itemIds.has(link.itemId)) {
@@ -178,6 +221,8 @@ export function buildRoadmapLens(input: RoadmapLensInput): RoadmapLensView {
       title: session.title,
       harness: session.harness,
       needsAttention: session.needsAttention,
+      startedAt: session.startedAt,
+      turnState: session.turnState,
       method: link.method,
       confidence: link.confidence,
       evidence: link.evidence,
@@ -191,8 +236,8 @@ export function buildRoadmapLens(input: RoadmapLensInput): RoadmapLensView {
   // exact item whose source the parser struggled with.
   const sorted = [...doc.items].sort((a, b) => a.source.line - b.source.line);
   const warnLines = doc.diagnostics
-    .filter((d) => d.level === 'warn')
-    .map((d) => d.source.line);
+    .filter(d => d.level === 'warn')
+    .map(d => d.source.line);
   const itemHasWarning = new Set<string>();
   for (const line of warnLines) {
     for (let i = sorted.length - 1; i >= 0; i--) {
@@ -204,7 +249,16 @@ export function buildRoadmapLens(input: RoadmapLensInput): RoadmapLensView {
     }
   }
 
-  const views = doc.items.map<RoadmapItemView>((item) => ({
+  const changesFor = (declaredId: string | null): RoadmapRecentChange[] => {
+    if (!declaredId) return [];
+    const escaped = declaredId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const boundary = new RegExp(`(^|[^A-Z0-9])${escaped}(?![0-9])`, 'i');
+    return recentChanges
+      .filter(change => boundary.test(change.subject))
+      .slice(0, 3);
+  };
+
+  const views = doc.items.map<RoadmapItemView>(item => ({
     id: item.id,
     declaredId: item.declaredId,
     title: item.title,
@@ -213,20 +267,22 @@ export function buildRoadmapLens(input: RoadmapLensInput): RoadmapLensView {
     blocked: item.blocked,
     isNowStation: false,
     statusNote: item.statusNote,
+    backlog: item.backlog,
     description: item.description,
     scope: item.scope,
     exitCriteria: item.exitCriteria,
     milestones: item.milestones,
-    milestonesDone: item.milestones.filter((m) => m.done).length,
-    milestonesTotal: item.milestones.filter((m) => !m.retired).length,
+    milestonesDone: item.milestones.filter(m => m.done).length,
+    milestonesTotal: item.milestones.filter(m => !m.retired).length,
     docPaths: item.docPaths,
     sourceLine: item.source.line,
     hasWarnings: itemHasWarning.has(item.id),
     chips: chipsByItem.get(item.id) ?? [],
+    recentChanges: changesFor(item.declaredId),
   }));
 
   const byStatus = (status: RoadmapItemStatus) =>
-    views.filter((v) => v.status === status);
+    views.filter(v => v.status === status);
   const now = byStatus('now');
   if (now.length > 0) now[0].isNowStation = true;
 
@@ -239,16 +295,23 @@ export function buildRoadmapLens(input: RoadmapLensInput): RoadmapLensView {
     now,
     next: byStatus('next'),
     later: byStatus('later'),
+    backlog: byStatus('backlog'),
     shipped: byStatus('shipped'),
     parked: byStatus('parked'),
-    queueEmpty: now.length === 0 && byStatus('next').length === 0 && byStatus('later').length === 0,
+    queueEmpty:
+      now.length === 0 &&
+      byStatus('next').length === 0 &&
+      byStatus('later').length === 0,
     unmappedSessions,
     trust: {
       file: doc.file,
+      contentHash: doc.contentHash,
+      convention: doc.convention,
       conformance: doc.conformance,
       itemCount: doc.items.length,
       warningCount: warnLines.length,
       unparsedLineCount: doc.unparsedLineCount,
+      diagnostics: doc.diagnostics.map(diagnostic => diagnostic.message),
     },
   };
 }

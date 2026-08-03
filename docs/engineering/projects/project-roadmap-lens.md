@@ -10,9 +10,11 @@ roadmap stays canonical, durable, and malleable in that Project's repo;
 Exawatt reads and visualizes it and never owns it. Deleting Exawatt loses no
 project state.
 
-The lens ships as a keyboard-first, read-only roadmap rail in the workspace,
+The lens ships as a keyboard-first roadmap rail in the workspace,
 scoped to the focused Project cluster, built on a shared parser and view-model
-that a future spatial/GPU expression consumes unchanged.
+that a future spatial/GPU expression consumes unchanged. Declared-conformant
+repos can opt into narrowly bounded sequence/state manipulation; Exawatt never
+owns the plan and never runs git.
 
 Source: operator dogfood interview 2026-07-10 and operator design interview
 2026-07-11. Durable product conclusions are in
@@ -30,9 +32,9 @@ Source: operator dogfood interview 2026-07-10 and operator design interview
   parallel yaml/json file. Agents author roadmaps as markdown; a second
   machine file would drift the day an agent edits the markdown, and read-only
   Exawatt could not resync it.
-- **Linear single queue in v1.** One sequential queue per Project,
-  deliberately enforcing canon linear execution. Multi-track roadmaps are
-  future; the spec reserves a frontmatter pointer.
+- **Linear single queue in v2.** One sequential queue per Project plus an
+  explicit Backlog state for accepted but unsequenced records. Multi-track
+  roadmaps are future; the spec reserves a frontmatter pointer.
 - **The queue is the spine; sessions decorate it.** Live sessions render as
   chips on the item they execute. Link confidence is a rest state: solid
   border for declared-at-launch, dashed for inferred, evidence on hover.
@@ -42,10 +44,10 @@ Source: operator dogfood interview 2026-07-10 and operator design interview
   can at worst mislink a badge, never invent an item. Precedence: declared >
   branch/worktree token (high) > title/context/commit id (medium) > fuzzy
   title (low).
-- **Read-only is a trust posture.** No editing, no assignment, no drag
-  handles, no checkboxes. The rail's footer states what file it reads and
-  that Exawatt never writes it. The only edit path is opening the file in the
-  OS editor. Queue management is explicitly the ENG-013 future arc.
+- **Conformance is the manipulation gate.** Detected/tolerated roadmaps are
+  view-only. Declared v1/v2 roadmaps may reorder, transition status, and tick
+  milestones under decision `0029`; no prose or item creation, no git, and no
+  merge on concurrent movement. Launch and attach remain local annotations.
 - **Declared links are view annotations.** Declare-at-launch ids persist on
   the tab in machine-local `workspace.json` (decision `0010` identity/layout
   split), never in the repo and never in Supabase.
@@ -342,7 +344,7 @@ lab is back to the real strip + rail against fixture states.
 - 2026-07-12, product-lens pass (drove the real app against the real exawatt
   roadmap): the hero card advertised **W0.5 — a rescoped milestone — as the
   next milestone** because the parser only knew done/pending. Convention v1
-  now defines *retired* milestones (`(rescoped …)`, `(retired …)`,
+  now defines _retired_ milestones (`(rescoped …)`, `(retired …)`,
   `(dropped …)`, `(superseded …)`, `(cut …)`): never advertised as next,
   excluded from progress fractions (they were not accomplished and are no
   longer owed), still visible struck-through in the drill view
@@ -406,7 +408,7 @@ lab is back to the real strip + rail against fixture states.
   `packages/ui-model/src/roadmap-strip.ts` (pure, 5 unit tests: current-by-
   attachment, now-station fallback, shipped-then-later compression, starving,
   blocked/attention flags) rendered by `RoadmapStripSpine`; `roadmap-node-
-  pulse` keyframes; header `RoadmapSequenceBar` (same model, 24-glyph cap);
+pulse` keyframes; header `RoadmapSequenceBar` (same model, 24-glyph cap);
   chips now render on every attached now/next row; fraction pills on all
   variants; next/later pills went neutral (color discipline); milestone
   roving in the drill (↑↓/jk, `data-roadmap-milestone`). Roadmap LAB landed
@@ -446,7 +448,7 @@ And the concrete failure that triggered it: an agent was actively working ENG-03
 
 **Detail: progressive prose, high-level first.** Selecting an item opens with what and why at the highest level — the operator's bar is **grokking it in under five seconds** — and deepens on demand. The current behavior (dumping status paragraph, scope bullets, exit criteria, and every milestone at once) is the thing being fixed. State (milestone checklist, attached agents, what is blocking, recent commits) outranks contract prose in the opening view; scope and exit criteria live one level down.
 
-**Backlog: one list, backlog is a state.** Researched 2026-08-03 rather than invented. The 2026 consensus is that roadmap and backlog are two layers of one planning system, not two documents, and the strongest practical rule is one tracker — do not split defects from work. Linear implements exactly this by making Backlog a *status* rather than a separate view. Applied here:
+**Backlog: one list, backlog is a state.** Researched 2026-08-03 rather than invented. The 2026 consensus is that roadmap and backlog are two layers of one planning system, not two documents, and the strongest practical rule is one tracker — do not split defects from work. Linear implements exactly this by making Backlog a _status_ rather than a separate view. Applied here:
 
 - everything is one queue; `backlog` is a state for items not yet sequenced
 - a defect with an owning item hangs off that item **and** appears in the backlog lane — one record, two ways in. The operator's "bugs on their item" and "a bug backlog" options were never alternatives
@@ -455,7 +457,7 @@ And the concrete failure that triggered it: an agent was actively working ENG-03
 
 **Home: the Team-altitude panel stays** (operator). No new tab, no new destination. The panel gets better rather than graduating into a surface.
 
-The column is narrow, and the panel now has to hold a queue, a backlog, item detail, and launch gestures. The operator relaxed the constraint rather than the scope: *"We can also x-expand the panel slightly when it has focus if we need more space."* So the panel is **ambient when glanced at and wider when focused** — the same lens at two densities, which is the pattern the app already uses between an altitude and its overview.
+The column is narrow, and the panel now has to hold a queue, a backlog, item detail, and launch gestures. The operator relaxed the constraint rather than the scope: _"We can also x-expand the panel slightly when it has focus if we need more space."_ So the panel is **ambient when glanced at and wider when focused** — the same lens at two densities, which is the pattern the app already uses between an altitude and its overview.
 
 Even expanded it is a column, not a page, so navigation stays single-focus: the queue is the resting view, selecting an item slides its detail over the list with a back gesture, and one thing is legible at a time. A permanently split column would halve the room for exactly the detail view the operator called unreadable.
 
@@ -467,13 +469,14 @@ An entry is a heading, the item it belongs to, and its provenance — no scope, 
 ## Backlog
 
 ### Codex tab shows finished while the agent is still working
+
 Status: bug · ENG-016 · quick-capture 2026-08-03
 ```
 
 Three consequences that must land together, because doing any one alone leaves the model incoherent:
 
-1. **The published convention and the parser need `backlog` as a queue status distinct from `later`.** Today `## Backlog` is a recognized *synonym* for `## Later` (`roadmap-convention.md` → Queue sections), so the distinction the operator asked for does not survive parsing. The change is additive and degrades gracefully — an older parser reading a newer file still resolves `later` — but the convention is **published** and other repos adopt it, so this is a versioned spec change with a migration note, not a private edit. Change the spec and the parser in the same slice; never ship a spec that describes behavior the parser lacks.
-2. **The ENG-025 triage protocol gains a target.** A small fix or incident candidate writes a backlog entry in the roadmap file *and* keeps its diagnostic narrative in the owning item's project doc. The entry is the machine-readable pointer; the doc note is the reasoning. The three rows triaged on 2026-08-03 into `daily-driver-adoption.md` are the worked example — each has real diagnostic content that does not belong in a one-line entry, and each is currently invisible to any UI.
+1. **The published convention and the parser need `backlog` as a queue status distinct from `later`.** Today `## Backlog` is a recognized _synonym_ for `## Later` (`roadmap-convention.md` → Queue sections), so the distinction the operator asked for does not survive parsing. The change is additive and degrades gracefully — an older parser reading a newer file still resolves `later` — but the convention is **published** and other repos adopt it, so this is a versioned spec change with a migration note, not a private edit. Change the spec and the parser in the same slice; never ship a spec that describes behavior the parser lacks.
+2. **The ENG-025 triage protocol gains a target.** A small fix or incident candidate writes a backlog entry in the roadmap file _and_ keeps its diagnostic narrative in the owning item's project doc. The entry is the machine-readable pointer; the doc note is the reasoning. The three rows triaged on 2026-08-03 into `daily-driver-adoption.md` are the worked example — each has real diagnostic content that does not belong in a one-line entry, and each is currently invisible to any UI.
 3. **The lens renders both as one record set**, with provenance visible on every backlog row so the operator can see at a glance what came from quick capture, what from triage, and what belongs to which item.
 
 **Assignment: launch from the item.** Select an item, press a key, an agent starts on it — pre-filled with the item as its task and **linked by construction**, so inference never has to guess. Attaching an already-running agent is the secondary path. This is S10's long-gated ASSIGN verb, and it inverts the linkage problem: today the lens guesses which item an agent is on; after this, the operator says so at launch.
@@ -486,11 +489,11 @@ Three consequences that must land together, because doing any one alone leaves t
 
 ### Boundary: what writes, and what does not
 
-RESOLVED 2026-08-03 by decision `0029` — the operator lifted the read-only gate: *"Yes indeed, manipulate roadmap state in the repo. Maybe pop a permission dialog with always allow / don't ask me again."*
+RESOLVED 2026-08-03 by decision `0029` — the operator lifted the read-only gate: _"Yes indeed, manipulate roadmap state in the repo. Maybe pop a permission dialog with always allow / don't ask me again."_
 
 - **launch-from-item and attach are LOCAL annotations**, exactly like S4's declare-at-launch (`workspace.json`). No repo file is touched.
 - **reordering, status changes, and milestone ticks now write the repo file**, under decision `0029`'s six constraints: sequence and state only (never prose, never item creation); declared conformance required; Exawatt writes the file and never runs git; permission rides the Project's launch policy behind its own seam; concurrent modification is refused rather than merged; and the operator sees the edit animate in place with an inline pending/applied/failed state and a short undo window.
-- **Read the decision before implementing.** Two things there are easy to get wrong: "commit" in the operator's phrasing means the write being applied, NOT authorization for Exawatt to run `git commit` (that would reverse ENG-019 and needs its own decision); and permission is *modeled* separately even though it *resolves* through the launch policy today, so the two can be split later without a refactor.
+- **Read the decision before implementing.** Two things there are easy to get wrong: "commit" in the operator's phrasing means the write being applied, NOT authorization for Exawatt to run `git commit` (that would reverse ENG-019 and needs its own decision); and permission is _modeled_ separately even though it _resolves_ through the launch policy today, so the two can be split later without a refactor.
 
 ### Repo readiness (S13.6) — mostly already built
 
@@ -504,9 +507,46 @@ Most of it does exist. `docs/product/reference/roadmap-convention.md` is the pub
 
 This milestone also carries S13.5's gate: conformance is what decides whether a roadmap is manipulable at all, so the badge is not decoration — it explains why the write gestures are or are not available.
 
-### Queued work (defects, not design)
+### Resolved defect
 
-- **S3 inference linking fails on a real case.** An agent working ENG-032 in a worktree showed as unmapped while the matcher looks for the declared id in branch, worktree, title, context summary, and commit subjects. Reproduce against the operator's live theming Session before changing the matcher — the cause may be worktree cwd resolution rather than the matcher itself. Launch-from-item (S13.3) reduces the blast radius but does not excuse the bug: Sessions Exawatt did not launch still depend on inference.
+- **S3 inference linking failed on a real case (fixed 2026-08-03).** The live
+  ENG-032 theming Session persisted and executed from the shared master cwd,
+  while its dynamically created theme worktrees existed elsewhere. Its branch,
+  worktree dirname, title, and commit history therefore carried no ENG-032
+  token; only the persisted initial task/context described a "theming system."
+  The closed-vocabulary matcher now admits a unique significant title term
+  from that evidence at low confidence and keeps ambiguity unmapped. The exact
+  live wording is pinned as a regression test.
+
+### 2026-08-03 — S13 human-consumable roadmap
+
+S13.1–S13.6 landed as one coherent slice after the shaped operator pass.
+
+- The Team-altitude rail remains home and expands from 320px to 420px only
+  while focused. Detail now opens with status, blockers, Sessions, milestones,
+  and recent item-referencing commits; scope, exit criteria, notes, and project
+  docs sit behind one disclosure. The sibling Session tiles tightened from
+  300×272 to 272×252 with a 10px gutter so four comparison tiles fit beside
+  the resting rail on a common 1512px laptop viewport without shrinking type.
+- Convention v2 makes `backlog` distinct from `later` while v1 retains the old
+  compatibility read. Compact backlog metadata preserves kind, owning item,
+  and provenance. The ENG-025 triage protocol and Exawatt's own three triaged
+  examples now produce the same grammar the parser and rail consume.
+- Start agent is the primary item verb and declares `roadmapItemId` at launch.
+  Attach running updates the same machine-local tab annotation. Liveness uses
+  main-owned start time and turn state; git activity is read for a bounded
+  recent-change trail.
+- The main process owns `roadmap-state-write`: declared conformance only,
+  sequence/state only, policy resolution behind its own named permission,
+  content-hash compare before every write, no git, and a ten-second guarded
+  undo. The renderer exposes pending, confirmation, applied, failed, and undo
+  states inline.
+- Readiness is visible as v1/v2 declared green or view-only warning. Parser
+  diagnostics stay on hover and the warning launches a prefilled convention-v2
+  remediation agent.
+- Verification pins v1/v2 parsing, backlog provenance, live inference,
+  declared-only/concurrent-change write refusal, no-git behavior, exact undo,
+  workspace persistence, and the production rail in `/hud-gallery/roadmap-lab`.
 
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 

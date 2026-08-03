@@ -112,7 +112,7 @@ describe('Sessions overview', () => {
       'durable-a'
     );
     expect(alpha.querySelector('[data-goal-visual-image]')).toBeNull();
-    expect(beta).toHaveClass('h-[272px]');
+    expect(beta).toHaveStyle({ height: '252px' });
   });
 
   it('shows source-reported Initiative truth without inventing it for other Sessions', () => {
@@ -455,7 +455,8 @@ describe('Sessions overview', () => {
       'font-sans',
       'text-sm'
     );
-    expect(tile).toHaveClass('h-[272px]');
+    expect(tile).toHaveClass('p-2.5');
+    expect(tile).toHaveStyle({ width: '272px', height: '252px' });
   });
 
   it('a ⌘T draft tile reads as a draft, never as stopped (D24)', () => {

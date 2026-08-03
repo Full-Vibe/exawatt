@@ -1,5 +1,6 @@
 import type {
   RoadmapConformance,
+  RoadmapBacklogMetadata,
   RoadmapDiagnostic,
   RoadmapDoc,
   RoadmapItem,
@@ -15,10 +16,25 @@ export interface ParseRoadmapOptions {
   now?: () => number;
 }
 
-const SECTION_ALIASES: Array<{ pattern: RegExp; status: RoadmapItemStatus }> = [
+const SECTION_ALIASES_V1: Array<{
+  pattern: RegExp;
+  status: RoadmapItemStatus;
+}> = [
   { pattern: /^(now|current)\b/i, status: 'now' },
   { pattern: /^next\b/i, status: 'next' },
   { pattern: /^(later|backlog|future)\b/i, status: 'later' },
+  { pattern: /^(shipped|done|completed)\b/i, status: 'shipped' },
+  { pattern: /^(parked|icebox)\b/i, status: 'parked' },
+];
+
+const SECTION_ALIASES_V2: Array<{
+  pattern: RegExp;
+  status: RoadmapItemStatus;
+}> = [
+  { pattern: /^(now|current)\b/i, status: 'now' },
+  { pattern: /^next\b/i, status: 'next' },
+  { pattern: /^(later|future)\b/i, status: 'later' },
+  { pattern: /^backlog\b/i, status: 'backlog' },
   { pattern: /^(shipped|done|completed)\b/i, status: 'shipped' },
   { pattern: /^(parked|icebox)\b/i, status: 'parked' },
 ];
@@ -31,7 +47,7 @@ const STATUS_ALIASES: Record<string, RoadmapItemStatus> = {
   building: 'now',
   next: 'next',
   later: 'later',
-  backlog: 'later',
+  backlog: 'backlog',
   shipped: 'shipped',
   done: 'shipped',
   complete: 'shipped',
@@ -58,7 +74,9 @@ const BULLET_LINE = /^[-*]\s+(.+)$/;
 const MILESTONE_CHECKBOX = /^\[( |x|X)\]\s+/;
 const MILESTONE_ID = /^([A-Z]{1,4}\d+(?:\.\d+)*)\b[\s:]*/;
 const MILESTONE_DONE_MARKER = /\((landed|shipped)[^)]*\)/i;
-const MILESTONE_RETIRED_MARKER = /\((rescoped|retired|dropped|superseded|cut)[^)]*\)/i;
+const MILESTONE_RETIRED_MARKER =
+  /\((rescoped|retired|dropped|superseded|cut)[^)]*\)/i;
+const BACKLOG_OWNER_ID = /^[A-Z][A-Z0-9]*-\d+$/;
 
 type LabeledBlock = 'scope' | 'exitCriteria' | 'milestones' | 'docPaths';
 
@@ -85,7 +103,11 @@ function fnv1a(text: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
-function parseMilestone(text: string, file: string, line: number): RoadmapMilestone {
+function parseMilestone(
+  text: string,
+  file: string,
+  line: number
+): RoadmapMilestone {
   let rest = text;
   let done = false;
   const checkbox = MILESTONE_CHECKBOX.exec(rest);
@@ -105,32 +127,58 @@ function parseMilestone(text: string, file: string, line: number): RoadmapMilest
   return { id, title, done, retired, source: { file, line } };
 }
 
+function parseBacklogMetadata(note: string): RoadmapBacklogMetadata | null {
+  const parts = note
+    .split('\u00b7')
+    .map(part => part.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return null;
+  const ownerIndex = parts.findIndex(part => BACKLOG_OWNER_ID.test(part));
+  if (ownerIndex === -1) return null;
+  return {
+    kind: parts[0],
+    ownerItemId: parts[ownerIndex],
+    provenance: parts.slice(ownerIndex + 1).join(' · ') || null,
+  };
+}
+
 /**
- * Parse a roadmap file per the published Exawatt roadmap convention v1
+ * Parse a roadmap file per the published Exawatt roadmap convention v1/v2
  * (`docs/product/reference/roadmap-convention.md`). Tolerant within the
  * grammar (alias tables), diagnostic-honest outside it: unrecognized
  * structure is counted and reported, never guessed into items.
  */
-export function parseRoadmap(text: string, options: ParseRoadmapOptions): RoadmapDoc {
+export function parseRoadmap(
+  text: string,
+  options: ParseRoadmapOptions
+): RoadmapDoc {
   const { projectDir, file } = options;
-  const lines = text.split('\n').map((line) => line.replace(/\r$/, ''));
+  const lines = text.split('\n').map(line => line.replace(/\r$/, ''));
 
   const items: RoadmapItem[] = [];
   const diagnostics: RoadmapDiagnostic[] = [];
   const seenIds = new Map<string, number>();
   let unparsedLineCount = 0;
 
-  let declaredConformance = false;
+  let declaredVersion: 'v1' | 'v2' | null = null;
   let bodyStart = 0;
   if (lines[0] === '---') {
     const close = lines.indexOf('---', 1);
     if (close > 0) {
-      declaredConformance = lines
+      const marker = lines
         .slice(1, close)
-        .some((line) => /^exawatt-roadmap:\s*v1\s*$/.test(line));
+        .map(line => /^exawatt-roadmap:\s*(v1|v2)\s*$/.exec(line))
+        .find(Boolean);
+      declaredVersion =
+        marker?.[1] === 'v2' ? 'v2' : marker?.[1] === 'v1' ? 'v1' : null;
       bodyStart = close + 1;
     }
   }
+  // Unmarked files stay tolerant and receive the current additive grammar.
+  // A declared v1 file retains v1's Backlog→Later semantics until migrated.
+  const convention = declaredVersion === 'v1' ? 'exawatt-v1' : 'exawatt-v2';
+  const sectionAliases =
+    convention === 'exawatt-v1' ? SECTION_ALIASES_V1 : SECTION_ALIASES_V2;
 
   let section: RoadmapItemStatus | null = null;
   let sectionOrphanWarned = false;
@@ -145,7 +193,9 @@ export function parseRoadmap(text: string, options: ParseRoadmapOptions): Roadma
 
     const sectionMatch = !line.startsWith('###') && SECTION_HEADING.exec(line);
     if (sectionMatch) {
-      const alias = SECTION_ALIASES.find(({ pattern }) => pattern.test(sectionMatch[1]));
+      const alias = sectionAliases.find(({ pattern }) =>
+        pattern.test(sectionMatch[1])
+      );
       section = alias ? alias.status : null;
       sectionOrphanWarned = false;
       item = null;
@@ -188,6 +238,7 @@ export function parseRoadmap(text: string, options: ParseRoadmapOptions): Roadma
         blocked: false,
         ordinal: items.length,
         statusNote: null,
+        backlog: null,
         description: [],
         scope: [],
         exitCriteria: [],
@@ -223,11 +274,28 @@ export function parseRoadmap(text: string, options: ParseRoadmapOptions): Roadma
       sawStatusLine = true;
       const note = statusMatch[1].trim();
       item.statusNote = note;
-      const token = note.split(/\s+/)[0].replace(/[.,;:]+$/, '').toLowerCase();
-      if (token === 'blocked') {
+      const token = note
+        .split(/\s+/)[0]
+        .replace(/[.,;:]+$/, '')
+        .toLowerCase();
+      if (item.status === 'backlog') {
+        item.backlog = parseBacklogMetadata(note);
+        // A compact backlog Status line describes the record, not its queue
+        // position. Keep the section's backlog state without warning.
+        if (!item.backlog && token !== 'backlog') {
+          diagnostics.push({
+            level: 'warn',
+            message: 'backlog status must include an owning item id',
+            source: { file, line: lineNo },
+          });
+        }
+      } else if (token === 'blocked') {
         item.blocked = true;
       } else if (!POSITION_NEUTRAL_TOKENS.has(token)) {
-        const mapped = STATUS_ALIASES[token];
+        const mapped =
+          token === 'backlog' && convention === 'exawatt-v1'
+            ? 'later'
+            : STATUS_ALIASES[token];
         if (mapped) {
           if (token !== mapped) {
             diagnostics.push({
@@ -274,7 +342,7 @@ export function parseRoadmap(text: string, options: ParseRoadmapOptions): Roadma
     item.description.push(trimmed);
   }
 
-  const conformance: RoadmapConformance = declaredConformance
+  const conformance: RoadmapConformance = declaredVersion
     ? 'declared'
     : items.length > 0
       ? 'detected'
@@ -283,7 +351,7 @@ export function parseRoadmap(text: string, options: ParseRoadmapOptions): Roadma
   return {
     projectDir,
     file,
-    convention: 'exawatt-v1',
+    convention,
     conformance,
     items,
     diagnostics,

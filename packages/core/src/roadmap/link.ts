@@ -20,6 +20,8 @@ export interface SessionLinkCandidate {
   projectDir: string;
   title: string;
   contextSummary: string | null;
+  /** Original operator task, before summarization; durable Session truth. */
+  initialTask?: string | null;
   cwd: string;
   branch: string | null;
   /** basename of the session cwd when it differs from the project root */
@@ -47,6 +49,26 @@ function normalizeTitle(text: string): string {
     .trim();
 }
 
+const GENERIC_TITLE_TERMS = new Set([
+  'agent',
+  'agents',
+  'app',
+  'build',
+  'feature',
+  'project',
+  'roadmap',
+  'support',
+  'system',
+  'work',
+  'workspace',
+]);
+
+function titleTerms(text: string): string[] {
+  return normalizeTitle(text)
+    .split(' ')
+    .filter(term => term.length >= 5 && !GENERIC_TITLE_TERMS.has(term));
+}
+
 interface Match {
   item: RoadmapItem;
   confidence: SessionLinkConfidence;
@@ -59,13 +81,22 @@ const CONFIDENCE_RANK: Record<SessionLinkConfidence, number> = {
   low: 1,
 };
 
-function matchCandidate(item: RoadmapItem, candidate: SessionLinkCandidate): Match | null {
+function matchCandidate(
+  item: RoadmapItem,
+  candidate: SessionLinkCandidate
+): Match | null {
   const evidence: SessionLinkEvidence[] = [];
   const idLower = item.declaredId?.toLowerCase() ?? null;
 
   if (idLower) {
-    if (candidate.branch && containsId(candidate.branch.toLowerCase(), idLower)) {
-      evidence.push({ kind: 'branch-name', excerpt: `branch "${candidate.branch}"` });
+    if (
+      candidate.branch &&
+      containsId(candidate.branch.toLowerCase(), idLower)
+    ) {
+      evidence.push({
+        kind: 'branch-name',
+        excerpt: `branch "${candidate.branch}"`,
+      });
     }
     if (
       candidate.worktreeDirname &&
@@ -77,7 +108,10 @@ function matchCandidate(item: RoadmapItem, candidate: SessionLinkCandidate): Mat
       });
     }
     if (containsId(candidate.title.toLowerCase(), idLower)) {
-      evidence.push({ kind: 'session-title', excerpt: `title "${candidate.title}"` });
+      evidence.push({
+        kind: 'session-title',
+        excerpt: `title "${candidate.title}"`,
+      });
     }
     if (
       candidate.contextSummary &&
@@ -92,7 +126,10 @@ function matchCandidate(item: RoadmapItem, candidate: SessionLinkCandidate): Mat
       containsId(s.toLowerCase(), idLower)
     );
     if (subject) {
-      evidence.push({ kind: 'commit-message', excerpt: `commit "${subject.slice(0, 72)}"` });
+      evidence.push({
+        kind: 'commit-message',
+        excerpt: `commit "${subject.slice(0, 72)}"`,
+      });
     }
   }
 
@@ -104,8 +141,35 @@ function matchCandidate(item: RoadmapItem, candidate: SessionLinkCandidate): Mat
     itemTitle.length >= 8 &&
     normalizeTitle(candidate.title).includes(itemTitle)
   ) {
-    evidence.push({ kind: 'session-title', excerpt: `title matches "${item.title}"` });
+    evidence.push({
+      kind: 'session-title',
+      excerpt: `title matches "${item.title}"`,
+    });
     fuzzyOnly = true;
+  }
+
+  // A live Session often creates its worktree after launch, so its durable
+  // cwd remains the Project root. Preserve the closed vocabulary while
+  // allowing a distinctive roadmap-title term in the operator task/context
+  // to recover that real case. Equal matches still become unmapped below.
+  if (evidence.length === 0) {
+    const corpus = new Set(
+      titleTerms(
+        [candidate.title, candidate.contextSummary, candidate.initialTask]
+          .filter((value): value is string => Boolean(value))
+          .join(' ')
+      )
+    );
+    const matchedTerms = titleTerms(item.title).filter(
+      term => term.length >= 7 && corpus.has(term)
+    );
+    if (matchedTerms.length > 0) {
+      evidence.push({
+        kind: 'roadmap-title-term',
+        excerpt: `task matches ${matchedTerms.join(', ')}`,
+      });
+      fuzzyOnly = true;
+    }
   }
 
   if (evidence.length === 0) return null;

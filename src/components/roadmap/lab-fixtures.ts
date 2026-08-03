@@ -37,6 +37,12 @@ function session(
     title,
     harness,
     needsAttention,
+    startedAt: Date.now() - n * 4 * 60_000,
+    turnState: needsAttention
+      ? 'needs-you'
+      : n % 2 === 0
+        ? 'working'
+        : 'waiting',
   };
 }
 
@@ -56,7 +62,12 @@ function link(
     evidence:
       method === 'declared'
         ? [{ kind: 'declared', excerpt: 'declared at launch' }]
-        : [{ kind: 'branch-name', excerpt: `worktree-${itemId.toLowerCase()}` }],
+        : [
+            {
+              kind: 'branch-name',
+              excerpt: `worktree-${itemId.toLowerCase()}`,
+            },
+          ],
     evaluatedAt: 0,
   };
 }
@@ -64,9 +75,13 @@ function link(
 function lens(
   markdown: string,
   sessions: RoadmapLensSessionInput[] = [],
-  links: SessionLink[] = []
+  links: SessionLink[] = [],
+  declared = true
 ): RoadmapLensView {
-  const doc = parseRoadmap(markdown, { projectDir: DIR, file: FILE });
+  const source = declared
+    ? `---\nexawatt-roadmap: v2\n---\n\n${markdown}`
+    : markdown;
+  const doc = parseRoadmap(source, { projectDir: DIR, file: FILE });
   return buildRoadmapLens({
     read: { status: 'ok', doc, mtimeMs: Date.now() - 4 * 60_000 },
     sessions,
@@ -74,27 +89,32 @@ function lens(
   });
 }
 
-const item = (
-  id: string,
-  title: string,
-  status: string,
-  body = ''
-) => `### ${id} ${title}\n\nStatus: ${status}\n${body}\n`;
+const item = (id: string, title: string, status: string, body = '') =>
+  `### ${id} ${title}\n\nStatus: ${status}\n${body}\n`;
 
 const MID_FLIGHT = `## Shipped
 
 ${item('APP-001', 'Repo consolidation', 'shipped')}
-${item('APP-002', 'Terminal workspace parity', 'shipped', `
+${item(
+  'APP-002',
+  'Terminal workspace parity',
+  'shipped',
+  `
 Milestones:
 
 - W1 PTY foundation (landed)
 - W2 Workspace parity (landed)
-`)}
+`
+)}
 ${item('APP-014', 'Signed updates', 'shipped')}
 
 ## Now
 
-${item('APP-018', 'Durable, resumable sessions', 'active-build', `
+${item(
+  'APP-018',
+  'Durable, resumable sessions',
+  'active-build',
+  `
 Scope:
 
 - detachable session backend surviving app restart
@@ -116,14 +136,20 @@ Milestones:
 Project doc:
 
 - docs/engineering/projects/durable-sessions.md
-`)}
-${item('APP-003', 'Unified agent source adapters', 'active-build', `
+`
+)}
+${item(
+  'APP-003',
+  'Unified agent source adapters',
+  'active-build',
+  `
 Milestones:
 
 - A1 Adapter boundary (landed)
 - A2 Claude Code adapter
 - A3 Codex adapter
-`)}
+`
+)}
 
 ## Next
 
@@ -136,6 +162,16 @@ ${item('APP-007', 'Context signals', 'later')}
 ${item('APP-010', 'Remote gateway on VPS', 'later')}
 ${item('APP-011', 'Multi-source fleet', 'later')}
 
+## Backlog
+
+### APP-091 Codex tab finishes before the agent does
+
+Status: bug · APP-018 · operator-triage 2026-08-03
+
+### APP-092 Restore focus after app update
+
+Status: small-fix · APP-018 · quick-capture 2026-08-02
+
 ## Parked
 
 ${item('APP-004', 'Spatial operations board', 'parked')}
@@ -147,12 +183,17 @@ ${item('APP-001', 'Repo consolidation', 'shipped')}
 
 ## Now
 
-${item('APP-018', 'Durable, resumable sessions', 'blocked — needs the operator to approve the PTY host entitlement', `
+${item(
+  'APP-018',
+  'Durable, resumable sessions',
+  'blocked — needs the operator to approve the PTY host entitlement',
+  `
 Milestones:
 
 - D1 Session host process (landed)
 - D2 Reattach on launch
-`)}
+`
+)}
 ${item('APP-003', 'Unified agent source adapters', 'active-build')}
 
 ## Next
@@ -178,13 +219,18 @@ ${Array.from({ length: 9 }, (_, i) =>
 
 ## Now
 
-${item('BIG-201', 'The current push', 'active-build', `
+${item(
+  'BIG-201',
+  'The current push',
+  'active-build',
+  `
 Milestones:
 
 - M1 First slice (landed)
 - M2 Second slice
 - M3 Third slice
-`)}
+`
+)}
 
 ## Next
 
@@ -201,12 +247,17 @@ ${Array.from({ length: 14 }, (_, i) =>
 
 const WARNINGS = `## Now
 
-${item('APP-018', 'Durable, resumable sessions', 'wip-ish', `
+${item(
+  'APP-018',
+  'Durable, resumable sessions',
+  'wip-ish',
+  `
 Milestones:
 
 - D1 Session host process (landed)
 - D2 Reattach on launch
-`)}
+`
+)}
 
 stray prose the parser cannot claim for any item
 another unrecognized line
@@ -253,7 +304,10 @@ export const ROADMAP_LAB_STATES: RoadmapLabState[] = [
     blurb: 'the now station is blocked with an agent attached — loudest state',
     view: lens(
       BLOCKED,
-      [session(1, 'Claude Code — PTY host', 'claude', true), session(2, 'Shell', 'shell')],
+      [
+        session(1, 'Claude Code — PTY host', 'claude', true),
+        session(2, 'Shell', 'shell'),
+      ],
       [link(1, 'APP-018')]
     ),
   },
@@ -270,13 +324,22 @@ export const ROADMAP_LAB_STATES: RoadmapLabState[] = [
     key: 'huge',
     label: 'Huge queue',
     blurb: '31 items — strip node compression and rail density',
-    view: lens(HUGE, [session(1, 'Claude Code', 'claude')], [link(1, 'BIG-201')]),
+    view: lens(
+      HUGE,
+      [session(1, 'Claude Code', 'claude')],
+      [link(1, 'BIG-201')]
+    ),
   },
   {
     key: 'warnings',
     label: 'Parse trouble',
     blurb: 'unknown status token, unclaimed lines, duplicate id — honesty UI',
-    view: lens(WARNINGS, [session(1, 'Claude Code', 'claude')], [link(1, 'APP-018')]),
+    view: lens(
+      WARNINGS,
+      [session(1, 'Claude Code', 'claude')],
+      [link(1, 'APP-018')],
+      false
+    ),
   },
   {
     key: 'fresh',
@@ -291,7 +354,12 @@ export const ROADMAP_LAB_STATES: RoadmapLabState[] = [
     view: buildRoadmapLens({
       read: {
         status: 'none',
-        checked: ['ROADMAP.md', 'docs/engineering/roadmap.md', 'docs/ROADMAP.md', 'roadmap.md'],
+        checked: [
+          'ROADMAP.md',
+          'docs/engineering/roadmap.md',
+          'docs/ROADMAP.md',
+          'roadmap.md',
+        ],
       },
       sessions: [session(1, 'Shell', 'shell')],
     }),
@@ -301,7 +369,10 @@ export const ROADMAP_LAB_STATES: RoadmapLabState[] = [
     label: 'Read error',
     blurb: 'the file exists but cannot be read',
     view: buildRoadmapLens({
-      read: { status: 'error', error: 'EACCES: permission denied, open roadmap.md' },
+      read: {
+        status: 'error',
+        error: 'EACCES: permission denied, open roadmap.md',
+      },
     }),
   },
 ];
