@@ -15,6 +15,7 @@ import type {
   AgentSourceState,
 } from '@exawatt/core';
 import { harnessDescriptor } from './harness-registry';
+import { parseOpencodeModelCatalog } from './agent-models';
 import {
   agentSourceDeclaration,
   FUTURE_AGENT_SOURCE_CATALOG,
@@ -58,11 +59,12 @@ function fact(
 async function loginShellCommand(
   shell: string,
   command: string,
-  timeout = 3_000
+  timeout = 3_000,
+  cwd = os.homedir()
 ): Promise<CommandResult> {
   try {
     const result = await execFileAsync(shell, ['-l', '-c', command], {
-      cwd: os.homedir(),
+      cwd,
       timeout,
       maxBuffer: 256 * 1024,
       encoding: 'utf8',
@@ -83,6 +85,34 @@ async function loginShellCommand(
       stderr: failed.stderr?.trim() ?? '',
     };
   }
+}
+
+export type OpencodeLaunchEnvironmentState = 'free' | 'occupied' | 'unknown';
+
+const OPENCODE_LAUNCH_ENVIRONMENT_SCRIPT =
+  "if [ -n \"${OPENCODE_CONFIG_CONTENT-}\" ]; then printf '%s\\n' occupied; else printf '%s\\n' free; fi";
+
+/**
+ * Replays the launch wrapper's exact non-empty seam predicate from the login
+ * shell in the workspace that will own the PTY. Shell startup and tools such
+ * as direnv can make this differ from the home-directory registry snapshot.
+ */
+export async function inspectOpencodeLaunchEnvironment(
+  shell: string,
+  cwd: string
+): Promise<OpencodeLaunchEnvironmentState> {
+  const result = await loginShellCommand(
+    shell,
+    `sh -c ${shellQuote(OPENCODE_LAUNCH_ENVIRONMENT_SCRIPT)}`,
+    8_000,
+    cwd
+  );
+  if (!result.ok) return 'unknown';
+  return result.stdout === 'free'
+    ? 'free'
+    : result.stdout === 'occupied'
+      ? 'occupied'
+      : 'unknown';
 }
 
 async function resolveExecutable(
@@ -106,7 +136,7 @@ async function resolveExecutable(
   const result = await loginShellCommand(
     shell,
     `command -v ${shellQuote(executable)}`,
-    2_000
+    8_000
   );
   if (!result.ok) return null;
   const resolved = result.stdout.split('\n')[0]?.trim();
@@ -230,6 +260,7 @@ async function inspectLocalHarness(
   harness: AgentHarness,
   shell: string
 ): Promise<AgentSourceSnapshot> {
+  if (harness === 'opencode') return inspectOpencode(shell);
   const observedAt = Date.now();
   const descriptor = harnessDescriptor(harness);
   const source = descriptor.source;
@@ -416,6 +447,240 @@ async function inspectLocalHarness(
       recheck: true,
       authenticate: !authenticated,
       chooseModel: harness === 'claude' && authenticated,
+      installGuide: true,
+    },
+  };
+}
+
+const ANSI_ESCAPE = /\u001b\[[0-?]*[ -/]*[@-~]/g;
+
+export function parseOpencodeAuthStatus(
+  raw: string,
+  commandSucceeded: boolean
+): { credentialCount: number } | null {
+  if (!commandSucceeded) return null;
+  const match = raw.replace(ANSI_ESCAPE, '').match(/(\d+)\s+credentials?\b/i);
+  if (!match) return null;
+  const credentialCount = Number(match[1]);
+  return Number.isSafeInteger(credentialCount) && credentialCount >= 0
+    ? { credentialCount }
+    : null;
+}
+
+export function parseOpencodeVersion(raw: string): {
+  version: string;
+  compatible: boolean;
+} | null {
+  const match = raw.match(/\b(\d+)\.(\d+)\.(\d+)\b/);
+  if (!match) return null;
+  const tuple = match.slice(1).map(Number);
+  const minimum = [1, 3, 4];
+  const compatible =
+    tuple.some(
+      (value, index) =>
+        value > minimum[index] &&
+        tuple
+          .slice(0, index)
+          .every((part, partIndex) => part === minimum[partIndex])
+    ) || tuple.every((value, index) => value === minimum[index]);
+  return { version: match[0], compatible };
+}
+
+async function inspectOpencode(shell: string): Promise<AgentSourceSnapshot> {
+  const observedAt = Date.now();
+  const descriptor = harnessDescriptor('opencode');
+  const source = descriptor.source;
+  const declaration = agentSourceDeclaration('opencode');
+  const commandEvidence = provenance(
+    'source-command',
+    'OpenCode CLI',
+    observedAt
+  );
+  const declarationEvidence = provenance(
+    'adapter-declaration',
+    'Built-in adapter declaration',
+    0
+  );
+  const executablePath = await resolveExecutable(shell, source.executable);
+  if (!executablePath) {
+    return {
+      ...declaration,
+      id: 'opencode-local',
+      configured: true,
+      launchable: false,
+      state: 'not-installed',
+      stateLabel: 'Not installed',
+      summary: 'OpenCode is supported here, but its CLI is not installed.',
+      observedAt,
+      facts: {
+        installation: fact(
+          'not-installed',
+          'Not installed',
+          'opencode was not found in the login-shell PATH.',
+          commandEvidence
+        ),
+        reachability: fact(
+          'unavailable',
+          'Unavailable',
+          'Local reachability requires the installed CLI.',
+          commandEvidence
+        ),
+        authentication: fact(
+          'unknown',
+          'Unknown',
+          'Provider authentication remains owned by OpenCode.',
+          commandEvidence
+        ),
+        identity: fact(
+          'unknown',
+          'Not exposed',
+          'No source identity was queried.',
+          commandEvidence
+        ),
+        compatibility: fact(
+          'unknown',
+          'Unknown',
+          'OpenCode 1.3.4 or newer is required.',
+          declarationEvidence
+        ),
+        modelDiscovery: fact(
+          'unavailable',
+          'Unavailable',
+          'Model discovery requires the installed source.',
+          commandEvidence
+        ),
+      },
+      actions: {
+        recheck: true,
+        authenticate: false,
+        chooseModel: false,
+        installGuide: true,
+      },
+    };
+  }
+
+  // OpenCode 1.3.4 startup is resource-intensive enough that concurrent CLI
+  // probes can make model discovery time out with a valid but partial stdout.
+  // Run them in order so no partial catalog is promoted into source truth.
+  const versionResult = await loginShellCommand(
+    shell,
+    sourceCommand(executablePath, source.versionArgs),
+    8_000
+  );
+  const launchEnvironmentState = await inspectOpencodeLaunchEnvironment(
+    shell,
+    os.homedir()
+  );
+  const authResult = await loginShellCommand(
+    shell,
+    sourceCommand(executablePath, source.authStatusArgs),
+    12_000
+  );
+  const modelsResult = await loginShellCommand(
+    shell,
+    sourceCommand(executablePath, ['models', '--verbose']),
+    20_000
+  );
+  const version = parseOpencodeVersion(
+    `${versionResult.stdout}\n${versionResult.stderr}`
+  );
+  const auth = parseOpencodeAuthStatus(
+    `${authResult.stdout}\n${authResult.stderr}`,
+    authResult.ok
+  );
+  const modelCount = modelsResult.ok
+    ? parseOpencodeModelCatalog(modelsResult.stdout).models.length
+    : 0;
+  const launchEnvironmentFree = launchEnvironmentState === 'free';
+  const state: AgentSourceState =
+    !versionResult.ok || !version
+      ? 'degraded'
+      : !version.compatible
+        ? 'incompatible'
+        : !launchEnvironmentFree
+          ? 'degraded'
+          : 'ready';
+  const credentialCount = auth?.credentialCount ?? null;
+  return {
+    ...declaration,
+    id: 'opencode-local',
+    configured: true,
+    launchable: state === 'ready',
+    state,
+    stateLabel: stateLabel(state),
+    summary:
+      state === 'ready'
+        ? 'Exawatt can start and resume local OpenCode Agents. Provider credentials and execution remain with OpenCode.'
+        : state === 'incompatible'
+          ? 'This OpenCode version predates the adapter contract verified by Exawatt.'
+          : 'OpenCode is installed, but Exawatt could not verify every launch prerequisite.',
+    observedAt,
+    facts: {
+      installation: fact(
+        'ready',
+        version?.version || versionResult.stdout || 'Installed',
+        `Detected at ${executablePath}.`,
+        commandEvidence
+      ),
+      reachability: fact(
+        versionResult.ok && launchEnvironmentFree ? 'ready' : 'degraded',
+        !versionResult.ok
+          ? 'Version check failed'
+          : launchEnvironmentFree
+            ? 'Local CLI responds'
+            : 'Launch configuration seam occupied',
+        !versionResult.ok
+          ? 'The executable exists, but its version command did not complete.'
+          : launchEnvironmentFree
+            ? 'Observed through opencode --version.'
+            : 'An existing OPENCODE_CONFIG_CONTENT value is preserved; Exawatt will not replace it to inject a launch agent.',
+        commandEvidence
+      ),
+      authentication: fact(
+        credentialCount === 0 ? 'ready' : 'unknown',
+        credentialCount === null
+          ? 'Unknown'
+          : credentialCount === 0
+            ? 'No provider credentials configured'
+            : `${credentialCount} provider credential${credentialCount === 1 ? '' : 's'}`,
+        credentialCount === 0
+          ? 'OpenCode reports no saved provider credential; its built-in catalog can still be available.'
+          : credentialCount === null
+            ? 'OpenCode credential presence could not be read.'
+            : 'OpenCode reports credential presence, not validity or expiry. Exawatt never reads the values.',
+        commandEvidence
+      ),
+      identity: fact(
+        'unknown',
+        'Not exposed',
+        'OpenCode lists provider credential records without exposing an account identity.',
+        commandEvidence
+      ),
+      compatibility: fact(
+        version ? (version.compatible ? 'ready' : 'incompatible') : 'unknown',
+        version
+          ? version.compatible
+            ? 'Compatible'
+            : 'Upgrade required'
+          : 'Unknown',
+        'The adapter contract was verified against OpenCode 1.3.4.',
+        version ? commandEvidence : declarationEvidence
+      ),
+      modelDiscovery: fact(
+        modelCount > 0 ? 'ready' : 'degraded',
+        modelCount > 0
+          ? `${modelCount} models reported`
+          : 'Catalog unavailable',
+        modelCount > 0
+          ? 'Observed from opencode models --verbose with provider and variant metadata.'
+          : 'OpenCode returned no parseable model records.',
+        commandEvidence
+      ),
+    },
+    actions: {
+      recheck: true,
+      authenticate: true,
+      chooseModel: false,
       installGuide: true,
     },
   };
@@ -776,6 +1041,7 @@ async function discoverAgentSources(
   const local = await Promise.all([
     inspectLocalHarness('claude', shell),
     inspectLocalHarness('codex', shell),
+    inspectLocalHarness('opencode', shell),
   ]);
   const sources =
     scope === 'launch'

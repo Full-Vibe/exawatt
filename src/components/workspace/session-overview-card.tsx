@@ -118,7 +118,9 @@ export function SessionOverviewCardContent({
                 ? 'Claude Code'
                 : harness === 'codex'
                   ? 'Codex'
-                  : 'Shell'
+                  : harness === 'opencode'
+                    ? 'OpenCode'
+                    : 'Shell'
             }
             className="inline-flex h-5 w-5 shrink-0 items-center justify-center"
             style={{ color }}

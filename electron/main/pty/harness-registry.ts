@@ -25,6 +25,21 @@ export interface HarnessEventChannelBinding {
   normalize: HarnessEventNormalizer;
 }
 
+/** A uniquely named source agent carrying one launch's model and policy. */
+export interface HarnessLaunchAgentBinding {
+  configuration: (
+    name: string,
+    mode: AgentPermissionMode,
+    model: string | null,
+    effort: string | null
+  ) => string;
+  invocation: (
+    invocation: string,
+    name: string,
+    configuration: string
+  ) => string;
+}
+
 /**
  * Whether a source reports the work it delegates, and how (ENG-023).
  *
@@ -54,9 +69,11 @@ export interface HarnessLaunchDescriptor {
   /** Subscribe this launch to Exawatt's harness event channel. Omitted by
    *  sources with no push mechanism, which simply launch unsubscribed. */
   eventChannel?: HarnessEventChannelBinding;
+  launchAgent?: HarnessLaunchAgentBinding;
   permissionFlags: (mode: AgentPermissionMode) => string;
   modelInvocation: (invocation: string, quotedModel: string) => string;
   effortInvocation: (invocation: string, effort: string) => string;
+  initialTaskInvocation: (invocation: string, quotedTask: string) => string;
   resumeInvocation: (invocation: string, sessionId: string) => string;
   freshInvocation: (invocation: string, sessionId: string | null) => string;
 }
@@ -71,6 +88,51 @@ const workspaceReviewFlags = (mode: AgentPermissionMode): string =>
     : mode === 'auto'
       ? `--sandbox workspace-write --ask-for-approval on-request -c 'approvals_reviewer="auto_review"'`
       : '--dangerously-bypass-approvals-and-sandbox';
+
+function opencodePermission(mode: AgentPermissionMode): Record<string, string> {
+  if (mode === 'prompt') {
+    // OpenCode uses the LAST matching ordered rule. Wildcard first, then the
+    // read-only exceptions, makes this launch agent ask for everything else.
+    return {
+      '*': 'ask',
+      read: 'allow',
+      glob: 'allow',
+      grep: 'allow',
+      list: 'allow',
+      question: 'allow',
+      todowrite: 'allow',
+      skill: 'allow',
+      plan_enter: 'allow',
+      plan_exit: 'allow',
+    };
+  }
+  if (mode === 'auto') {
+    return {
+      '*': 'allow',
+      external_directory: 'ask',
+      doom_loop: 'ask',
+    };
+  }
+  return { '*': 'allow' };
+}
+
+function opencodeLaunchAgentConfiguration(
+  name: string,
+  mode: AgentPermissionMode,
+  model: string | null,
+  effort: string | null
+): string {
+  return JSON.stringify({
+    agent: {
+      [name]: {
+        mode: 'primary',
+        ...(model ? { model } : {}),
+        ...(model && effort ? { variant: effort } : {}),
+        permission: opencodePermission(mode),
+      },
+    },
+  });
+}
 
 const descriptors = {
   claude: {
@@ -104,6 +166,8 @@ const descriptors = {
       `${invocation} --model ${quotedModel}`,
     effortInvocation: (invocation, effort) =>
       `${invocation} --effort ${shellQuote(effort)}`,
+    initialTaskInvocation: (invocation, quotedTask) =>
+      `${invocation} ${quotedTask}`,
     resumeInvocation: (invocation, sessionId) =>
       `${invocation} --resume ${sessionId}`,
     freshInvocation: (invocation, sessionId) =>
@@ -133,8 +197,47 @@ const descriptors = {
       `${invocation} --model ${quotedModel}`,
     effortInvocation: (invocation, effort) =>
       `${invocation} -c ${shellQuote(`model_reasoning_effort="${effort}"`)}`,
+    initialTaskInvocation: (invocation, quotedTask) =>
+      `${invocation} ${quotedTask}`,
     resumeInvocation: (invocation, sessionId) =>
       `${invocation} resume ${sessionId}`,
+    freshInvocation: invocation => invocation,
+  },
+  opencode: {
+    id: 'opencode',
+    source: {
+      ...agentSourceDeclaration('opencode'),
+      executable: 'opencode',
+      versionArgs: ['--version'],
+      authStatusArgs: ['auth', 'list'],
+      authLoginArgs: ['auth', 'login'],
+      authOwner: 'OpenCode',
+    },
+    // OpenCode creates the source identity only when the first turn is
+    // submitted. SessionManager captures it from `session list --format json`
+    // and thereafter resumes only with the exact `-s` identity.
+    allocatesFreshSessionId: false,
+    delegation: {
+      observable: false,
+      reason: 'OpenCode PTY does not report delegated work',
+    },
+    launchAgent: {
+      configuration: opencodeLaunchAgentConfiguration,
+      invocation: (invocation, name, configuration) =>
+        `sh -c ${shellQuote(
+          `if [ -n "\${OPENCODE_CONFIG_CONTENT-}" ]; then printf '%s\\n' '[exawatt] OpenCode launch cannot replace an existing OPENCODE_CONFIG_CONTENT value.' >&2; exit 78; fi; configuration=$1; shift; export OPENCODE_CONFIG_CONTENT="$configuration"; exec "$@"`
+        )} sh ${shellQuote(configuration)} ${invocation} --agent ${shellQuote(name)}`,
+    },
+    permissionFlags: () => '',
+    modelInvocation: (invocation, quotedModel) =>
+      `${invocation} -m ${quotedModel}`,
+    // Model and variant live on the unique launch agent. The 1.3.4 root TUI
+    // accepts --agent but not the headless-only --variant argv flag.
+    effortInvocation: invocation => invocation,
+    initialTaskInvocation: (invocation, quotedTask) =>
+      `${invocation} --prompt ${quotedTask}`,
+    resumeInvocation: (invocation, sessionId) =>
+      `${invocation} -s ${sessionId}`,
     freshInvocation: invocation => invocation,
   },
 } satisfies Record<AgentHarness, HarnessLaunchDescriptor>;

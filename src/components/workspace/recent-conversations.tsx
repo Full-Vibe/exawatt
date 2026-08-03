@@ -305,7 +305,8 @@ export const RecentConversations = forwardRef<
           className="px-1 py-4 font-mono text-chrome-meta"
           style={{ color: HUD.textDim }}
         >
-          No Claude Code or Codex conversations found for this Project.
+          No Claude Code, Codex, or OpenCode conversations found for this
+          Project.
         </p>
       )}
       {state === 'ready' && filtered.length === 0 && rows.length > 0 && (

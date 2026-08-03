@@ -37,11 +37,12 @@ Codex has the analogous seam through `model_providers` in `config.toml`.
 **A harness that is multi-provider by design.** `opencode` 1.3.4 is already
 installed and authenticated on the operator's machine against three providers.
 Its CLI surface maps almost one-to-one onto Exawatt's existing harness
-descriptor: `-m provider/model`, `--variant` for reasoning effort, `--agent`
-for a named worker, `-s <id>` for exact resume, `--prompt` for an initial task,
-`opencode models` for machine-readable catalog discovery, and `OPENCODE_CONFIG`
-pointing at a per-launch configuration document — the same injection shape
-Exawatt already uses for Claude Code's `--settings` event channel.
+descriptor: model and exact variant on a named primary agent selected with
+`--agent`, `-s <id>` for exact resume, `--prompt` for an initial task, and
+`opencode models --verbose` for parseable catalog discovery. S2's pre-build
+measurement corrected the initial assumption that root-TUI `--variant` and an
+Exawatt-owned `OPENCODE_CONFIG` document were safe universal seams; the
+implementation amendment below records the measured mechanism.
 
 ## Decision
 
@@ -62,7 +63,7 @@ not by injecting provider credentials into single-vendor harnesses.**
   compatible, and fresh.
 - Local inference is not a special mechanism. A local provider is an ordinary
   provider whose facts happen to include "no network egress"; it earns a
-  distinct *readout*, never a distinct code path.
+  distinct _readout_, never a distinct code path.
 
 ### Why not credential injection
 
@@ -79,7 +80,7 @@ not by injecting provider credentials into single-vendor harnesses.**
   would convert a clean observation boundary into a custody boundary in the
   service of an unsupported configuration.
 - The catalog convenience is real but small, and it is not lost: `opencode
-  models` is a first-class discovery contract of exactly the kind ENG-003
+models` is a first-class discovery contract of exactly the kind ENG-003
   already prefers over inference.
 
 ### What is deliberately left open
@@ -113,3 +114,25 @@ not by injecting provider credentials into single-vendor harnesses.**
   dollars. That is an opportunity (the first measured, rather than modelled,
   dollar figure in ENG-008's unit ladder) and it is deliberately sequenced
   after the launch path lands.
+
+## Implementation amendment — 2026-08-03
+
+Installed OpenCode 1.3.4 deep-merges a document named by `OPENCODE_CONFIG` with
+the global document, but that environment variable may already belong to the
+user and later project/content layers can override it. The root interactive TUI
+also does not accept `--variant`.
+
+Exawatt therefore inserts one collision-resistant primary agent through a
+guarded `OPENCODE_CONFIG_CONTENT` value and selects it with `--agent`. That
+agent carries the chosen `provider/model`, exact source-reported variant, and
+ordered permission policy. Measurement with global, user-owned
+`OPENCODE_CONFIG`, project, and launch-content layers preserved every unrelated
+sentinel in both user documents. If `OPENCODE_CONFIG_CONTENT` is already set,
+Exawatt preserves it and refuses launch. This amends the injection mechanism,
+not the decision to gain model freedom through a multi-provider harness with
+source-owned authentication.
+
+OpenCode persists that selected agent name on the first user message. S2 uses
+the collision-resistant name as a source-owned causal marker when exporting a
+new session candidate, so exact resume identity never depends on recency or a
+nearest-timestamp guess.

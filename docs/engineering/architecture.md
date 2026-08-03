@@ -272,7 +272,7 @@ renderer. Runtime observations remain main-process evidence. This prevents UI
 defaults, source probes, and launch code from becoming competing registries.
 Source-specific CLI/config/protocol inspection stays behind a renderer-safe IPC
 surface; Settings and the Agent composer consume the same normalized
-snapshots. Claude Code and Codex are launch-capable local records. Local
+snapshots. Claude Code, Codex, and OpenCode are launch-capable local records. Local
 OpenClaw reachability is established only by a successful gateway protocol
 status command, not by config presence or an open TCP port. Demo Mode is a
 built-in record whose facts use simulated provenance. The renderer receives
@@ -291,7 +291,16 @@ provenance.
 
 Discovery is evidence-bearing. Each catalog or capability snapshot names the
 source mechanism and observation time. Codex's supported machine-readable
-model command populates its live catalog. Claude Code exposes the account-aware
+model command populates its live catalog. OpenCode's bounded verbose catalog
+provides source-reported `provider/model` identity and records exact per-model
+variant keys. Its 1.3.4 root TUI has no `--variant` flag, so Electron creates a
+collision-resistant primary agent containing the selected model, exact
+variant, and ordered permission policy, injects it through a guarded
+`OPENCODE_CONFIG_CONTENT`, and selects it with `--agent`. Global config, a
+user-owned `OPENCODE_CONFIG`, and project config continue to merge; an existing
+content value is preserved and makes launch unavailable rather than being
+replaced. Exawatt does not read its full resolved config to recover a model
+because that document may contain provider settings. Claude Code exposes the account-aware
 rows from its native `/model` interface through an SDK `initialize` control
 response. If that live probe is unavailable, its adapter returns only observed
 configured values or an account-default sentinel and source-owned selection
@@ -349,7 +358,7 @@ Provider/runtime boundaries:
 - Agent Source / Harness adapters
 - local OpenClaw gateway
 - remote OpenClaw gateway
-- Codex / Claude Code adapters
+- Codex / Claude Code / OpenCode adapters
 - Demo Harness / Demo Scenario Source
 - custom harnesses
 - local machine
@@ -395,7 +404,7 @@ Built:
 - `/fleet/spatial` Fleet Operations Board (V2.0 active replacement of the
   superseded immersive 3D composition)
 - Electron agent terminal workspace with real `node-pty` sessions rendered by
-  xterm.js for Claude Code, Codex, and shells, behind a session-manager boundary
+  xterm.js for Claude Code, Codex, OpenCode, and shells, behind a session-manager boundary
 - Electron-main turn-state ownership that distinguishes Agent work from PTY
   transport noise: output may establish working before a turn settles, while a
   quiet/BEL boundary latches finished until guaranteed operator engagement.
@@ -406,13 +415,17 @@ Built:
   policy cross the launch boundary as data. Personal permission defaults are
   persisted by Project and harness; the PTY/source boundary translates
   `prompt`, `auto`, and `unrestricted` into current Claude Code and Codex
-  flags. The same boundary discovers Codex's live model catalog and reads
+  flags plus OpenCode's guarded unique launch agent. The same boundary
+  discovers Codex's and OpenCode's live model catalogs and reads
   Claude Code's account-aware catalog over its SDK control protocol, keeps the resolved pair
   visible beside the source, and passes per-Agent overrides as launch data
   without rewriting harness configuration. Claude's production path contains
   no hard-coded provider catalog: it mirrors the rows its own `/model` menu
   reports, falls back only to observed configured values or the honest account
   default when live discovery is unavailable, and never invents provider aliases.
+  OpenCode applies exact reported variants through that launch agent even
+  though the root TUI has no `--variant` flag; an unavailable catalog remains
+  explicitly source-default/unknown.
   Environment-owned effort constraints remain visible and non-editable because
   they outrank session flags. The workspace chrome uses a measured elastic-ribbon
   boundary: compact Project headers, selected and manually persisted disclosure,
@@ -445,10 +458,14 @@ Built:
   local process is alive.
 - exact harness conversation identity for Electron tabs: assigned Claude IDs,
   bounded/cached Codex rollout discovery with launch-time association for
-  parallel agents, explicit selection fallback, and no-spawn relaunch with
-  exact tab/Project/all resume actions
+  parallel agents, and OpenCode's fail-closed pre-turn snapshot followed by a
+  post-turn `session list` candidate export whose first user message must carry
+  that PTY's collision-resistant launch-agent name. Persisted source IDs drive
+  no-spawn relaunch with exact tab/Project/all resume actions; OpenCode resumes
+  only through `-s`, never `--continue` or a timing/recency guess
 - a source-neutral recent-conversation catalog in Electron main. Replaceable
-  Claude Code, Codex, and Exawatt Project-Session adapters normalize exact
+  Claude Code, Codex, and OpenCode provider adapters plus the Exawatt
+  Project-Session adapter normalize exact
   identity, Project ownership, title, handoff text, continuation capability,
   and recency. Exact provider identity reconciles duplicate source records;
   one unambiguous same-harness initial-task match can recover identity-less

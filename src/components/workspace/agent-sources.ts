@@ -99,6 +99,21 @@ export const AGENT_SOURCE_META: Record<AgentSourceId, AgentSourceMeta> = {
       },
     };
   })(),
+  opencode: (() => {
+    const declaration = agentSourceDeclaration('opencode');
+    return {
+      label: declaration.label,
+      color: declaration.color,
+      capabilities: {
+        interactive: declaration.capabilities.interactiveLaunch,
+        initialTask: declaration.capabilities.initialTask,
+        exactResume: declaration.capabilities.exactResume,
+        modelSelection: true,
+        effortSelection: true,
+        permissionModes: declaration.capabilities.permissionModes,
+      },
+    };
+  })(),
 };
 
 export const AGENT_SOURCE_ORDER = Object.keys(

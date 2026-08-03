@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { buildHarnessCommand } from './harness-command';
+import { harnessDescriptor } from './harness-registry';
 
 describe('buildHarnessCommand', () => {
   it('assigns and resumes exact Claude identities in the YOLO default', () => {
@@ -33,6 +38,187 @@ describe('buildHarnessCommand', () => {
       'codex --dangerously-bypass-approvals-and-sandbox resume 22222222-2222-4222-8222-222222222222'
     );
     expect(command).not.toContain('--last');
+  });
+
+  it('launches and exactly resumes OpenCode through its permission and model seams', () => {
+    const wiring = { launchAgentName: 'exawatt-test-launch' };
+    const fresh = buildHarnessCommand(
+      'opencode',
+      null,
+      false,
+      undefined,
+      'Review provider routing',
+      'prompt',
+      'openrouter/moonshotai/kimi-k3',
+      'high',
+      wiring
+    );
+    expect(fresh).toContain('OPENCODE_CONFIG_CONTENT');
+    expect(fresh).toContain(
+      " opencode --agent 'exawatt-test-launch' --prompt 'Review provider routing'"
+    );
+    expect(fresh).not.toContain(' --variant ');
+    expect(fresh).not.toContain(' -m ');
+
+    const resumed = buildHarnessCommand(
+      'opencode',
+      'ses_0365acf1bffe15qKmRP05YlcIu',
+      true,
+      undefined,
+      undefined,
+      'unrestricted',
+      'opencode/big-pickle',
+      undefined,
+      wiring
+    );
+    expect(resumed).toContain('OPENCODE_CONFIG_CONTENT');
+    expect(resumed).toContain(
+      " opencode --agent 'exawatt-test-launch' -s ses_0365acf1bffe15qKmRP05YlcIu"
+    );
+
+    const configuration = JSON.parse(
+      harnessDescriptor('opencode').launchAgent!.configuration(
+        wiring.launchAgentName,
+        'prompt',
+        'openrouter/moonshotai/kimi-k3',
+        'high'
+      )
+    ) as {
+      agent: Record<
+        string,
+        { model: string; variant: string; permission: Record<string, string> }
+      >;
+    };
+    expect(configuration.agent[wiring.launchAgentName]).toMatchObject({
+      model: 'openrouter/moonshotai/kimi-k3',
+      variant: 'high',
+    });
+  });
+
+  it('executes the OpenCode wrapper without replacing user OPENCODE_CONFIG', () => {
+    const fixtureRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'exawatt-opencode-config-')
+    );
+    const executable = path.join(fixtureRoot, 'opencode');
+    fs.writeFileSync(
+      executable,
+      '#!/bin/sh\nprintf \'%s\\n\' "$OPENCODE_CONFIG" "$OPENCODE_CONFIG_CONTENT" "$@"\n',
+      { mode: 0o755 }
+    );
+    const command = buildHarnessCommand(
+      'opencode',
+      null,
+      false,
+      executable,
+      'Review config ownership',
+      'prompt',
+      'fixture/model',
+      'high',
+      { launchAgentName: 'exawatt-test-config' }
+    );
+
+    try {
+      const output = execFileSync('/bin/sh', ['-c', command], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          OPENCODE_CONFIG: '/user/config/opencode.json',
+          OPENCODE_CONFIG_CONTENT: '',
+        },
+      }).trimEnd();
+      const [configPath, injectedContent, ...args] = output.split('\n');
+      expect(configPath).toBe('/user/config/opencode.json');
+      expect(JSON.parse(injectedContent)).toHaveProperty(
+        'agent.exawatt-test-config'
+      );
+      expect(args).toEqual([
+        '--agent',
+        'exawatt-test-config',
+        '--prompt',
+        'Review config ownership',
+      ]);
+    } finally {
+      fs.rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves non-empty user OPENCODE_CONFIG_CONTENT and refuses execution', () => {
+    const fixtureRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'exawatt-opencode-content-')
+    );
+    const executable = path.join(fixtureRoot, 'opencode');
+    const executionMarker = path.join(fixtureRoot, 'executed');
+    fs.writeFileSync(
+      executable,
+      `#!/bin/sh\nprintf invoked > ${executionMarker}\n`,
+      { mode: 0o755 }
+    );
+    const command = buildHarnessCommand(
+      'opencode',
+      null,
+      false,
+      executable,
+      undefined,
+      'unrestricted',
+      undefined,
+      undefined,
+      { launchAgentName: 'exawatt-test-content' }
+    );
+
+    try {
+      let refusal: NodeJS.ErrnoException | null = null;
+      try {
+        execFileSync('/bin/sh', ['-c', command], {
+          encoding: 'utf8',
+          stdio: 'pipe',
+          env: {
+            ...process.env,
+            OPENCODE_CONFIG_CONTENT: '{"user":"owned"}',
+          },
+        });
+      } catch (error) {
+        refusal = error as NodeJS.ErrnoException;
+      }
+      expect(refusal).not.toBeNull();
+      expect(
+        (refusal as NodeJS.ErrnoException & { status?: number }).status
+      ).toBe(78);
+      expect(String((refusal as { stderr?: string }).stderr)).toContain(
+        'cannot replace an existing OPENCODE_CONFIG_CONTENT value'
+      );
+      expect(fs.existsSync(executionMarker)).toBe(false);
+    } finally {
+      fs.rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('materializes explicit OpenCode permission policies per launch', () => {
+    const binding = harnessDescriptor('opencode').launchAgent!;
+    const permissions = (mode: 'prompt' | 'auto' | 'unrestricted') => {
+      const parsed = JSON.parse(
+        binding.configuration('exawatt-test-policy', mode, null, null)
+      ) as {
+        agent: Record<string, { permission: Record<string, string> }>;
+      };
+      return parsed.agent['exawatt-test-policy'].permission;
+    };
+    const prompt = permissions('prompt');
+    const auto = permissions('auto');
+    const unrestricted = permissions('unrestricted');
+    expect(prompt).toMatchObject({
+      '*': 'ask',
+      read: 'allow',
+      question: 'allow',
+    });
+    expect(auto).toMatchObject({
+      '*': 'allow',
+      external_directory: 'ask',
+      doom_loop: 'ask',
+    });
+    expect(unrestricted).toMatchObject({ '*': 'allow' });
+    expect(Object.keys(prompt)[0]).toBe('*');
+    expect(Object.keys(auto)[0]).toBe('*');
+    expect(Object.keys(unrestricted)).toEqual(['*']);
   });
 
   it('rejects missing or shell-injectable resume identities', () => {

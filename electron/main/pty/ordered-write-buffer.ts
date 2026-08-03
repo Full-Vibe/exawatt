@@ -22,4 +22,9 @@ export class OrderedWriteBuffer {
     this.pending = null;
     for (const data of pending) write(data);
   }
+
+  /** Fail a pre-submit gate without sending the held submit bytes. */
+  discard(): void {
+    this.pending = null;
+  }
 }

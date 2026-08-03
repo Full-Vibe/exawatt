@@ -12,4 +12,13 @@ describe('OrderedWriteBuffer', () => {
     expect(written).toEqual(['\r', 'n', 'ext']);
     expect(gate.hold('direct')).toBe(false);
   });
+
+  it('can fail closed without writing buffered submission bytes', () => {
+    const gate = new OrderedWriteBuffer();
+    gate.begin('\r');
+    expect(gate.hold('later')).toBe(true);
+    gate.discard();
+    expect(gate.active).toBe(false);
+    expect(gate.hold('direct')).toBe(false);
+  });
 });

@@ -2,9 +2,17 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import type { PtyHarness } from './session-manager';
 import type { ClosedSessionEntry } from './closed-session-ledger';
 import { listProjectWorktrees } from './project-resolve';
+
+const execFileAsync = promisify(execFile);
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
 
 export type ConversationHarness = Exclude<PtyHarness, 'shell'>;
 
@@ -38,7 +46,8 @@ export interface ConversationDraft extends RecentConversation {
 
 export interface ConversationCatalogAdapter {
   /** Sources served by this adapter. This is the registration seam for future
-   * harnesses; Project Session history deliberately serves both. */
+   * harnesses; Project Session history deliberately serves every launchable
+   * Agent harness. */
   readonly harnesses: readonly ConversationHarness[];
   list(cwd: string): Promise<ConversationDraft[]>;
 }
@@ -815,7 +824,7 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
  * when known so the catalog can reconcile both records without duplication.
  */
 export class ProjectSessionConversationAdapter implements ConversationCatalogAdapter {
-  readonly harnesses = ['claude', 'codex'] as const;
+  readonly harnesses = ['claude', 'codex', 'opencode'] as const;
 
   constructor(private readonly listSessions: () => ClosedSessionEntry[]) {}
 
@@ -823,7 +832,11 @@ export class ProjectSessionConversationAdapter implements ConversationCatalogAda
     const scope = await ProjectDirectoryScope.create(projectDir);
     const rows: ConversationDraft[] = [];
     for (const entry of this.listSessions()) {
-      if (entry.harness !== 'claude' && entry.harness !== 'codex') {
+      if (
+        entry.harness !== 'claude' &&
+        entry.harness !== 'codex' &&
+        entry.harness !== 'opencode'
+      ) {
         continue;
       }
       const launchDirectory = await scope.launchDirectory(entry.cwd);
@@ -867,6 +880,116 @@ export class ProjectSessionConversationAdapter implements ConversationCatalogAda
   }
 }
 
+export function parseOpencodeSessionList(raw: string): Array<{
+  id: string;
+  title: string;
+  directory: string;
+  created: number;
+  updated: number;
+}> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter(
+      (
+        entry
+      ): entry is {
+        id: string;
+        title: string;
+        directory: string;
+        created: number;
+        updated: number;
+      } =>
+        Boolean(entry) &&
+        typeof entry === 'object' &&
+        typeof entry.id === 'string' &&
+        /^[A-Za-z0-9_-]{8,128}$/.test(entry.id) &&
+        typeof entry.title === 'string' &&
+        typeof entry.directory === 'string' &&
+        Boolean(entry.directory) &&
+        typeof entry.created === 'number' &&
+        Number.isFinite(entry.created) &&
+        typeof entry.updated === 'number' &&
+        Number.isFinite(entry.updated)
+    )
+    .slice(0, 200);
+}
+
+export class OpenCodeConversationAdapter implements ConversationCatalogAdapter {
+  readonly harnesses = ['opencode'] as const;
+
+  constructor(
+    private readonly resolveShell: () => Promise<string> = async () =>
+      process.env.SHELL || '/bin/zsh'
+  ) {}
+
+  async list(projectDir: string): Promise<ConversationDraft[]> {
+    const shell = await this.resolveShell();
+    const testExecutable =
+      process.env.EXAWATT_TEST === '1' &&
+      process.env.EXAWATT_TEST_HARNESS_BIN &&
+      path.isAbsolute(process.env.EXAWATT_TEST_HARNESS_BIN)
+        ? path.join(process.env.EXAWATT_TEST_HARNESS_BIN, 'opencode')
+        : null;
+    const invocation = testExecutable ? shellQuote(testExecutable) : 'opencode';
+    const result = await execFileAsync(
+      shell,
+      [
+        '-l',
+        '-c',
+        `${invocation} --pure session list --format json --max-count 200`,
+      ],
+      {
+        cwd: projectDir,
+        timeout: 15_000,
+        maxBuffer: 2 * 1024 * 1024,
+        encoding: 'utf8',
+      }
+    );
+    const parsed = JSON.parse(result.stdout) as unknown;
+    if (!Array.isArray(parsed)) {
+      throw new Error('OpenCode session catalog returned invalid JSON');
+    }
+    const scope = await ProjectDirectoryScope.create(projectDir);
+    const rows = await Promise.all(
+      parseOpencodeSessionList(result.stdout).map(async session => ({
+        session,
+        launchDirectory: await scope.launchDirectory(session.directory),
+      }))
+    );
+    return rows
+      .filter(
+        (row): row is typeof row & { launchDirectory: string } =>
+          row.launchDirectory !== null
+      )
+      .map(({ session, launchDirectory }): ConversationDraft => {
+        const nativeTitle = usableNativeTitle(session.title);
+        return {
+          id: session.id,
+          harness: 'opencode',
+          cwd: launchDirectory,
+          startedAt: session.created,
+          updatedAt: session.updated,
+          title: nativeTitle ?? 'OpenCode session',
+          description: null,
+          titleSource: nativeTitle ? 'native' : 'fallback',
+          needsSummary: false,
+          providerSessionId: session.id,
+          continuation: { kind: 'provider' },
+          fingerprint: `opencode:${session.updated}`,
+          summaryInput: [],
+          providerIdentity: session.id,
+          correlationKey: null,
+        };
+      });
+  }
+}
+
 export interface ConversationCatalogOptions {
   adapters?: ConversationCatalogAdapter[];
   projectSessions?: () => ClosedSessionEntry[];
@@ -875,6 +998,7 @@ export interface ConversationCatalogOptions {
   fetch?: typeof fetch;
   hostedSummariesEnabled?: () => boolean;
   now?: () => number;
+  openCodeShell?: () => Promise<string>;
 }
 
 export class RecentConversationCatalog {
@@ -899,6 +1023,7 @@ export class RecentConversationCatalog {
     this.adapters = options.adapters ?? [
       new ClaudeConversationAdapter(),
       new CodexConversationAdapter(),
+      new OpenCodeConversationAdapter(options.openCodeShell),
       ...(options.projectSessions
         ? [new ProjectSessionConversationAdapter(options.projectSessions)]
         : []),

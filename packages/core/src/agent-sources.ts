@@ -7,7 +7,7 @@
  * successful probe.
  */
 
-export type AgentHarness = 'claude' | 'codex';
+export type AgentHarness = 'claude' | 'codex' | 'opencode';
 export type PtyHarness = 'shell' | AgentHarness;
 export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
 

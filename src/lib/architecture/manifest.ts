@@ -144,7 +144,7 @@ export const architectureManifest = {
           id: 'third-party-sources',
           label: 'Third-party harnesses',
           summary:
-            'Codex, Claude Code, custom harnesses, and partner agent sources.',
+            'Codex, Claude Code, OpenCode, custom harnesses, and partner agent sources.',
           layer: 'infrastructure',
           x: 830,
           y: 380,
@@ -198,7 +198,7 @@ export const architectureManifest = {
           id: 'agent-infrastructure-layer',
           label: 'Agent Infrastructure Layer',
           summary:
-            'Local OpenClaw, hosted OpenClaw, Codex, Claude Code, custom harnesses, gateways, and credentials.',
+            'Local OpenClaw, hosted OpenClaw, Codex, Claude Code, OpenCode, custom harnesses, gateways, and credentials.',
           layer: 'infrastructure',
           x: 115,
           y: 555,
@@ -441,7 +441,7 @@ export const architectureManifest = {
         },
         {
           id: 'harness-fleet',
-          label: 'OpenClaw / Codex / Claude Code / Custom',
+          label: 'OpenClaw / Codex / Claude Code / OpenCode / Custom',
           summary:
             'The set of local, hosted, third-party, and custom execution backends.',
           layer: 'infrastructure',
@@ -634,7 +634,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Registry + Adapters',
           summary:
-            'One generated declaration contract plus Electron-main runtime observations power Settings and the Agent composer. Observed, declared, and simulated evidence stay distinct; registry failure is fail-closed; OpenClaw uses a protocol probe; and Electron revalidates every Agent launch without exposing provider credentials.',
+            'One generated declaration contract plus Electron-main runtime observations power Settings and the Agent composer. Claude Code, Codex, and OpenCode are launch-capable local adapters; OpenCode uses a guarded unique launch agent for exact model, variant, and policy without replacing user config. Observed, declared, and simulated evidence stay distinct, and Electron revalidates every Agent launch without exposing provider credentials.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,

@@ -898,6 +898,7 @@ try {
         'palette separates Agent start from shell tools',
         paletteText.includes('Start Agent') &&
           paletteText.includes('Start Agent with Codex') &&
+          paletteText.includes('Start Agent with OpenCode') &&
           paletteText.includes('Tools') &&
           paletteText.includes('Open shell in the active Project')
       );

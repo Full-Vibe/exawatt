@@ -9,7 +9,7 @@ Related canon: decision `0016` (provider-first agency control), decision `0027`
 
 ## S2 — the `opencode` adapter
 
-Status: shaped 2026-08-03 (operator design pass), not started.
+Status: landed 2026-08-03.
 
 `opencode` is Exawatt's third launchable Agent Source and the engine through
 which non-Anthropic, non-OpenAI, and local models reach a Session. Decision
@@ -20,56 +20,101 @@ which non-Anthropic, non-OpenAI, and local models reach a Session. Decision
 Measured against the installed `opencode 1.3.4` on the operator's machine
 (2026-08-03), which is already authenticated against three providers:
 
-| Exawatt need               | `opencode` mechanism                                     |
-| -------------------------- | -------------------------------------------------------- |
-| interactive launch         | `opencode [project]` (TUI); `--prompt` seeds the first turn |
-| initial task               | `--prompt <text>` / `opencode run <message>`              |
-| model selection            | `-m provider/model`                                       |
-| effort selection           | `--variant <high\|max\|minimal\|…>` (provider-specific)   |
-| exact resume               | `-s <sessionID>` (`--fork` to branch instead of continue) |
-| catalog discovery          | `opencode models [provider]` — one `provider/model` per line |
-| provider/auth truth        | `opencode providers` (alias `auth`) — credential list      |
-| permissions                | `permission` map in a config document: `allow` / `ask` / `deny` per action, last match wins |
-| per-launch config          | `OPENCODE_CONFIG` env pointing at a config file; `OPENCODE_CONFIG_DIR` for agents/commands/modes/plugins |
-| named worker               | `--agent <name>`, `opencode agent list` / `create`        |
-| version                    | `opencode --version`                                      |
-| headless / protocol        | `opencode serve`, `opencode acp`, `--format json`         |
+| Exawatt need        | `opencode` 1.3.4 mechanism                                                                                         |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| interactive launch  | `opencode --agent <unique-launch-agent>`; `--prompt` seeds the first turn                                          |
+| initial task        | `--prompt <text>` / `opencode run <message>`                                                                       |
+| model selection     | launch-agent `model: provider/model` (`-m` also exists)                                                            |
+| effort selection    | launch-agent `variant: <exact catalog key>`; root TUI does **not** accept `--variant`                              |
+| exact resume        | `-s <sessionID>` (`--fork` branches instead of continuing)                                                         |
+| catalog discovery   | `opencode models --verbose`: `provider/model` plus a JSON record                                                   |
+| provider/auth truth | `opencode auth list` reports credential presence; `serve --pure` `/provider` distinguishes supported and connected |
+| permissions         | ordered `permission` map on the unique launch agent; last matching rule wins                                       |
+| per-launch config   | guarded `OPENCODE_CONFIG_CONTENT` containing only that unique agent                                                |
+| named worker        | `--agent <name>`, `opencode agent list` / `create`                                                                 |
+| version             | `opencode --version`                                                                                               |
+| headless / protocol | `opencode serve`, `opencode acp`, `--format json`                                                                  |
 
 `--agent` is the pre-existing hook for ENG-028 Agent Types: a Type that
 declares an `opencode` requirement can be satisfied by a real mechanism rather
 than a simulated one.
 
-### Verify before building — these are assumptions, not facts
+### Verification gate — measured before adapter work
 
-1. **Does `OPENCODE_CONFIG` merge with or replace the user's config?** Claude
-   Code's `--settings` was verified to MERGE (ENG-023 D1), which is what makes
-   per-launch injection safe for users who are not the operator. If `opencode`
-   replaces, per-launch permission control must be achieved another way and the
-   injection must not silently discard the operator's own providers, agents, and
-   MCP servers. **Nothing ships until this is measured, both directions.**
-2. **Is `opencode models` output stable and machine-parseable across
-   providers?** It is currently `provider/model` per line with no metadata; the
-   catalog contract needs display names, descriptions, and supported variants.
-   Determine whether a richer form exists (`--format json`, the `serve` HTTP
-   surface, or the models.dev catalog it reads) before parsing text.
-3. **Which variants does a given model actually accept?** `--variant` is
-   documented as provider-specific. Exawatt's effort picker must offer only what
-   the source will accept, or offer nothing and say so — never a list that
-   produces a launch failure.
-4. **Does a fresh session id exist before launch, or only after?** Claude Code
-   allocates (`allocatesFreshSessionId: true`), Codex does not. Determine
-   `opencode`'s behaviour; ENG-018's exact-resume contract depends on it and
-   `--continue`/recency-based attachment is forbidden.
-5. **Does `opencode` report delegation?** Until verified end-to-end it declares
-   `delegation: { observable: false, reason: … }`, exactly as Codex does. An
-   absent affordance, never an empty one.
-6. **What does authentication status look like when it is missing or expired?**
-   The registry's `action-required` state needs an observable fact, not an
-   inference from a failed launch.
-7. **Provider naming.** `opencode` reported `Provider not found: openrouter`
-   before OpenRouter is configured. The registry must distinguish "this source
-   is ready but that provider is not configured" from "this source is not
-   ready" — they are different facts with different recoveries.
+All seven assumptions were measured against the installed `opencode 1.3.4` on
+2026-08-03 before adapter code was written:
+
+1. **The first assumption is true in one direction and false as a universal
+   precedence claim.** With an ordinary global config plus a document named by
+   `OPENCODE_CONFIG`, 1.3.4 deep-merged both documents: unrelated global
+   provider, agent, MCP, model, and permission sentinels survived, injected
+   sentinels appeared, and the named document won direct collisions. The
+   reverse test then treated `OPENCODE_CONFIG` as user-owned input. Replacing
+   that environment variable would necessarily discard the user's named
+   document, and later project config and `OPENCODE_CONFIG_CONTENT` layers can
+   override it anyway. Source inspection and a four-layer matrix measured the
+   actual order as global → `OPENCODE_CONFIG` → project/config directories →
+   `OPENCODE_CONFIG_CONTENT` → managed config → `OPENCODE_PERMISSION`.
+
+   The shipping seam is therefore a collision-resistant primary agent inserted
+   by `OPENCODE_CONFIG_CONTENT`, selected with `--agent`. In a matrix containing
+   global config, a user-owned `OPENCODE_CONFIG`, project config, and Exawatt's
+   launch agent, every unrelated model/provider/agent/MCP sentinel survived and
+   the unique agent's model, variant, and ordered permission rules remained
+   intact. A real interactive TUI showed that exact agent, model, and variant.
+   An already-populated `OPENCODE_CONFIG_CONTENT` cannot be composed safely:
+   Exawatt preserves it, marks the source degraded for launch, and refuses the
+   spawn instead of replacing it. Both directions are thus answered: the
+   user's global and `OPENCODE_CONFIG` documents merge and survive; the one
+   later content seam Exawatt cannot merge is never overwritten.
+
+2. **The rich CLI catalog is parseable, but has a source-specific record
+   shape.** Plain `opencode models` returned 94 `provider/model` rows across the
+   four currently connected providers. `opencode models --verbose` returned
+   each ID followed by a pretty-printed JSON object containing name,
+   `providerID`, family, costs, limits, capabilities, and variants. The adapter
+   parses complete ID-plus-JSON records with hard output and row bounds. The
+   richer `opencode serve --pure` `/provider` endpoint was also verified, but
+   starting and owning a daemon is unnecessary for S2. A provider-filter miss
+   prints `Provider not found` and, importantly, exits zero in 1.3.4, so exit
+   status alone is not catalog truth.
+3. **Variants are exact per-model source data.** Verbose catalog records and the
+   `/provider` response agree on each model's accepted variant keys. The set
+   varies by provider and model; no global list and no default variant can be
+   inferred. The root 1.3.4 TUI rejects `--variant` and prints help, although
+   headless commands accept it. A unique primary-agent config carrying `model`
+   and `variant`, selected with `--agent`, was verified in the real TUI and is
+   the interactive mechanism. Exawatt exposes only keys reported for the
+   selected model and leaves effort unset when none are reported.
+4. **A fresh session ID exists only after the first turn begins.** Opening the
+   TUI produced no session. A first `run` event produced `ses_…`; passing that
+   exact ID to `-s` resumed it, and `session list --format json` reported stable
+   ID, directory, and timestamps. The adapter snapshots IDs before the first
+   submitted turn, then exports each new directory-matching candidate and
+   binds only the row whose first user message carries this launch's
+   collision-resistant agent name. That source-owned marker proves causality
+   even when other OpenCode sessions start concurrently. The ID is persisted
+   and resumed only with `-s`; recency, `--continue`, and nearest-timestamp
+   guesses are never used as identity.
+5. **Delegation is observable headlessly but not through the interactive PTY
+   contract.** A real Task-tool run emitted a child `sessionId` in JSON tool
+   metadata. The TUI PTY exposes no structured event channel, so the S2
+   declaration remains `observable: false` with the explicit reason “OpenCode
+   PTY does not report delegated work.” No empty delegation affordance ships.
+6. **Credential presence is observable; credential validity is not.** The real
+   `auth list` reported three source-owned credentials without their values; an
+   isolated profile reported zero while a built-in zero-cost model still ran.
+   An isolated invalid Anthropic credential was listed as present, and its
+   request failed with a 401 event while the CLI process still exited zero.
+   The registry may report credential presence and launch source-owned auth,
+   but it does not claim validity or infer expiry/action-required from the list.
+7. **Supported and connected providers are distinct facts.** The verified
+   `/provider` response separated 178 supported providers in `all` from the
+   four currently `connected`; OpenRouter was supported but unconnected.
+   `opencode models` reports the connected/built-in catalog, and an
+   unconfigured provider filter is not a source-readiness failure. S2 preserves
+   source-reported `provider/model` IDs; S3 owns the full supported-versus-
+   connected provider readout.
 
 ### Implementation shape
 
@@ -80,14 +125,18 @@ work is filling it out, not extending it:
   (adapterId, label, connection name, colour, install guide URL, capabilities);
   `pnpm agent-sources:generate` regenerates the shared declarations. **Do not
   hand-edit the generated file.**
-- `electron/main/pty/harness-registry.ts` gains a descriptor:
-  `permissionFlags` (via the injected config document rather than argv, if S2's
-  verification allows), `modelInvocation` (`-m`), `effortInvocation`
-  (`--variant`), `resumeInvocation` (`-s`), `freshInvocation`, and no
-  `eventChannel` until delegation reporting is verified.
+- `electron/main/pty/harness-registry.ts` owns a per-launch-agent binding. It
+  emits a unique primary agent carrying model, exact variant, and an ordered
+  permission map, injects it through guarded `OPENCODE_CONFIG_CONTENT`, and
+  selects it with `--agent`; exact resume adds `-s`. No event channel is
+  declared because delegation reporting is not observable through the PTY.
 - `electron/main/pty/agent-models.ts` gains `listOpencodeModels`, following the
   Codex path: read what the source reports, cache with provenance and
-  freshness, fall back to the exact configured value, and never invent rows.
+  freshness, and never invent rows. The shaped fallback-to-config assumption
+  was amended after verification: `opencode debug config` emits the full
+  resolved document and may include provider settings, so Exawatt does not read
+  it merely to recover a model. When catalog discovery fails, the result is an
+  explicit source-default/unknown state rather than a fabricated row.
 - `electron/main/pty/agent-source-registry.ts` gains `inspectOpencode`, keeping
   installation / reachability / authentication / identity / compatibility /
   model-discovery as the six independent facts the existing sources maintain.
@@ -102,16 +151,37 @@ work is filling it out, not extending it:
   source's own flow, launched and rechecked exactly as Claude Code's and
   Codex's are.
 - Exawatt never mutates the user's `~/.config/opencode/opencode.json`, the same
-  way it never mutates `~/.claude` or `~/.codex`. Per-launch documents live in
-  Exawatt's own state directory and are inspectable.
+  way it never mutates `~/.claude` or `~/.codex`. The small per-launch agent is
+  process-scoped, contains no provider credential, and is not persisted by
+  Exawatt. An occupied user `OPENCODE_CONFIG_CONTENT` value is preserved and
+  blocks launch rather than being replaced.
 - A model catalog is runtime evidence with provenance, never a product
   constant. No hardcoded list of open models ships in this repo.
+
+### Roadmap milestone log
+
+#### 2026-08-03 — S2 landed
+
+- Passed the seven-item pre-build verification gate against installed OpenCode
+  1.3.4. Bidirectional config testing corrected the original assumption:
+  `OPENCODE_CONFIG` merges but is not the final layer, while a guarded unique
+  agent in `OPENCODE_CONFIG_CONTENT` preserves both global and user-named
+  config; an occupied content seam fails closed.
+- Added OpenCode to the generated Agent Source declaration, runtime registry,
+  Settings, composer, native/palette launch paths, live verbose model catalog,
+  exact interactive effort variants, per-launch agent/permission config,
+  native recent-session rows, source-marker-proven post-first-turn exact
+  session binding, and `-s` resume. Successful catalog observations carry a
+  five-minute context-keyed cache with original freshness/provenance; failures
+  remain immediately retryable.
+- Kept provider credentials source-owned and delegation explicitly unavailable
+  at the PTY boundary. Provider plurality UI remains S3.
 
 ## S3 — provider and model plurality as observed truth
 
 Status: shaped 2026-08-03, follows S2.
 
-S2 makes one multi-provider source launchable. S3 makes the *provider* legible
+S2 makes one multi-provider source launchable. S3 makes the _provider_ legible
 without making it a second product boundary.
 
 - A provider is a fact a source reports about itself — configured or not,
@@ -126,7 +196,7 @@ without making it a second product boundary.
   whose endpoint is on this machine is marked as such — nothing leaves the
   machine, no billed dollars, and ENG-008's watts rung is the honest unit rather
   than an aspirational one. Per the operator (2026-08-03) the near-term job is
-  the *UI that shows the app supports this*, under the ENG-026 readiness
+  the _UI that shows the app supports this_, under the ENG-026 readiness
   grammar; running local inference is not itself a near-term requirement.
 - Exit posture is unchanged from ENG-003's existing criteria: every displayed
   catalog or effective model has a named source or an explicit unknown, and a

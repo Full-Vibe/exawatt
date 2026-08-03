@@ -21,6 +21,8 @@ export interface HarnessLaunchWiring {
   /** Settings document subscribing this launch to the harness event channel
    *  (ENG-023). Absent for sources with no push mechanism. */
   eventChannelSettingsPath?: string;
+  /** Collision-resistant source-agent identity for per-launch config. */
+  launchAgentName?: string;
 }
 
 export function buildHarnessCommand(
@@ -65,24 +67,55 @@ export function buildHarnessCommand(
   ) {
     throw new Error('Invalid Agent effort');
   }
+  if (selectedEffort && selectedEffort !== 'auto' && !selectedModel) {
+    throw new Error('Agent effort requires a selected model');
+  }
   const settingsPath = wiring.eventChannelSettingsPath;
   if (settingsPath && !path.isAbsolute(settingsPath)) {
     throw new Error('Event channel settings path must be absolute');
   }
   const descriptor = harnessDescriptor(harness);
   const command = executable ? shellQuote(executable) : descriptor.id;
-  const permissionInvocation = `${command} ${descriptor.permissionFlags(permissionMode)}`;
+  const launchAgentName = wiring.launchAgentName?.trim() ?? '';
+  if (
+    launchAgentName &&
+    !/^exawatt-[a-z0-9][a-z0-9-]{7,100}$/.test(launchAgentName)
+  ) {
+    throw new Error('Invalid harness launch agent name');
+  }
+  if (descriptor.launchAgent && !launchAgentName) {
+    throw new Error('Harness launch agent name is required');
+  }
+  const configuredCommand = descriptor.launchAgent
+    ? descriptor.launchAgent.invocation(
+        command,
+        launchAgentName,
+        descriptor.launchAgent.configuration(
+          launchAgentName,
+          permissionMode,
+          selectedModel || null,
+          selectedEffort && selectedEffort !== 'auto' ? selectedEffort : null
+        )
+      )
+    : command;
+  const permissionInvocation = [
+    configuredCommand,
+    descriptor.permissionFlags(permissionMode),
+  ]
+    .filter(Boolean)
+    .join(' ');
   // Subscribe BEFORE the Agent-shaped flags so the launch reads as
   // "this harness, wired to Exawatt, then asked to do X".
   const baseInvocation =
     settingsPath && descriptor.eventChannel
       ? descriptor.eventChannel.invocation(permissionInvocation, settingsPath)
       : permissionInvocation;
-  const modelInvocation = selectedModel
-    ? descriptor.modelInvocation(baseInvocation, shellQuote(selectedModel))
-    : baseInvocation;
+  const modelInvocation =
+    selectedModel && !descriptor.launchAgent
+      ? descriptor.modelInvocation(baseInvocation, shellQuote(selectedModel))
+      : baseInvocation;
   const invocation =
-    selectedEffort && selectedEffort !== 'auto'
+    selectedEffort && selectedEffort !== 'auto' && !descriptor.launchAgent
       ? descriptor.effortInvocation(modelInvocation, selectedEffort)
       : modelInvocation;
   if (resume) {
@@ -91,5 +124,7 @@ export function buildHarnessCommand(
     return descriptor.resumeInvocation(invocation, harnessSessionId);
   }
   const fresh = descriptor.freshInvocation(invocation, harnessSessionId);
-  return prompt ? `${fresh} ${shellQuote(prompt)}` : fresh;
+  return prompt
+    ? descriptor.initialTaskInvocation(fresh, shellQuote(prompt))
+    : fresh;
 }

@@ -62,6 +62,28 @@ export function OpenAIIcon({
   );
 }
 
+/** OpenCode's square O mark, reduced from the official favicon geometry.
+ *  https://opencode.ai/favicon.svg */
+export function OpenCodeIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg
+      data-slot="harness-glyph"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      aria-hidden="true"
+    >
+      <path
+        fill="currentColor"
+        fillRule="evenodd"
+        d="M4 2h16v20H4V2Zm4 4v12h8V6H8Z"
+        clipRule="evenodd"
+      />
+      <path fill="currentColor" opacity="0.38" d="M8 6h8v12H8z" />
+    </svg>
+  );
+}
+
 /** Official OpenClaw pixel lobster, reduced from the source's 16×16 grid.
  *  https://github.com/openclaw/openclaw/blob/main/docs/assets/pixel-lobster.svg */
 export function OpenClawIcon({ size = 16 }: { size?: number }) {
@@ -104,5 +126,6 @@ export function HarnessGlyph({
 }) {
   if (harness === 'claude') return <ClaudeIcon size={size} />;
   if (harness === 'codex') return <OpenAIIcon size={size} />;
+  if (harness === 'opencode') return <OpenCodeIcon size={size} />;
   return null;
 }

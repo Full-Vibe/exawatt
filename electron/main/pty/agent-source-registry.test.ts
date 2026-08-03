@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import {
   agentSourceLaunchError,
   localSourceState,
@@ -6,11 +9,30 @@ import {
   parseClaudeAuthStatus,
   parseCodexAuthStatus,
   parseOpenClawGatewayStatus,
+  parseOpencodeAuthStatus,
+  parseOpencodeVersion,
+  inspectOpencodeLaunchEnvironment,
   sourceOwnedActionCommand,
 } from './agent-source-registry';
 import type { AgentSourceRegistrySnapshot } from '@exawatt/core';
 
 describe('Agent Source registry truth', () => {
+  const originalOpencodeConfigContent = process.env.OPENCODE_CONFIG_CONTENT;
+  const originalExpectedOpencodeCwd = process.env.EXAWATT_TEST_OPENCODE_CWD;
+
+  afterEach(() => {
+    if (originalOpencodeConfigContent === undefined) {
+      delete process.env.OPENCODE_CONFIG_CONTENT;
+    } else {
+      process.env.OPENCODE_CONFIG_CONTENT = originalOpencodeConfigContent;
+    }
+    if (originalExpectedOpencodeCwd === undefined) {
+      delete process.env.EXAWATT_TEST_OPENCODE_CWD;
+    } else {
+      process.env.EXAWATT_TEST_OPENCODE_CWD = originalExpectedOpencodeCwd;
+    }
+  });
+
   it('keeps local installation, authentication, and degraded states distinct', () => {
     expect(
       localSourceState({
@@ -155,12 +177,77 @@ describe('Agent Source registry truth', () => {
     expect(parseCodexAuthStatus('transport failed', false)).toBeNull();
   });
 
+  it('treats OpenCode credential presence and validity as different facts', () => {
+    expect(parseOpencodeAuthStatus('└  0 credentials', true)).toEqual({
+      credentialCount: 0,
+    });
+    expect(
+      parseOpencodeAuthStatus('\u001b[0m└  3 credentials\u001b[0m', true)
+    ).toEqual({ credentialCount: 3 });
+    expect(parseOpencodeAuthStatus('└  1 credential', false)).toBeNull();
+    expect(parseOpencodeVersion('1.3.4')).toEqual({
+      version: '1.3.4',
+      compatible: true,
+    });
+    expect(parseOpencodeVersion('1.2.99')?.compatible).toBe(false);
+    expect(parseOpencodeVersion('2.0.0')?.compatible).toBe(true);
+    expect(parseOpencodeVersion('OpenCode current')).toBeNull();
+    expect(parseOpencodeVersion('\n1.3.4')).toEqual({
+      version: '1.3.4',
+      compatible: true,
+    });
+  });
+
+  it('matches the launch wrapper non-empty OpenCode config seam predicate', async () => {
+    delete process.env.OPENCODE_CONFIG_CONTENT;
+    await expect(
+      inspectOpencodeLaunchEnvironment('/bin/sh', process.cwd())
+    ).resolves.toBe('free');
+
+    process.env.OPENCODE_CONFIG_CONTENT = '';
+    await expect(
+      inspectOpencodeLaunchEnvironment('/bin/sh', process.cwd())
+    ).resolves.toBe('free');
+
+    process.env.OPENCODE_CONFIG_CONTENT = '{}';
+    await expect(
+      inspectOpencodeLaunchEnvironment('/bin/sh', process.cwd())
+    ).resolves.toBe('occupied');
+  });
+
+  it('runs the OpenCode config seam probe from the requested workspace', async () => {
+    const fixtureRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'exawatt-opencode-preflight-')
+    );
+    const workspace = path.join(fixtureRoot, 'workspace');
+    const shell = path.join(fixtureRoot, 'assert-cwd.sh');
+    fs.mkdirSync(workspace);
+    fs.writeFileSync(
+      shell,
+      '#!/bin/sh\n[ "$(pwd -P)" = "$EXAWATT_TEST_OPENCODE_CWD" ] || exit 91\nexec /bin/sh "$@"\n',
+      { mode: 0o755 }
+    );
+    process.env.EXAWATT_TEST_OPENCODE_CWD = fs.realpathSync(workspace);
+    delete process.env.OPENCODE_CONFIG_CONTENT;
+
+    try {
+      await expect(
+        inspectOpencodeLaunchEnvironment(shell, workspace)
+      ).resolves.toBe('free');
+    } finally {
+      fs.rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
   it('uses fixed source-owned commands for auth and catalog selection', () => {
     expect(sourceOwnedActionCommand('claude', 'authenticate')).toBe(
       "'claude' 'auth' 'login'"
     );
     expect(sourceOwnedActionCommand('codex', 'authenticate')).toBe(
       "'codex' 'login'"
+    );
+    expect(sourceOwnedActionCommand('opencode', 'authenticate')).toBe(
+      "'opencode' 'auth' 'login'"
     );
     expect(sourceOwnedActionCommand('claude', 'choose-model')).toBe("'claude'");
   });

@@ -1,10 +1,22 @@
 import os from 'os';
 import path from 'path';
+import fs from 'fs';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import type { PtyHarness } from './session-manager';
 import {
   CodexConversationAdapter,
   RecentConversationCatalog,
+  parseOpencodeSessionList,
 } from './conversation-catalog';
+
+export { parseOpencodeSessionList } from './conversation-catalog';
+
+const execFileAsync = promisify(execFile);
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
 
 export interface HarnessResumeCandidate {
   id: string;
@@ -34,6 +46,127 @@ export interface ReconciledResumeIdentity {
 
 const catalogs = new Map<string, RecentConversationCatalog>();
 
+async function listOpencodeResumeCandidates(
+  cwd: string,
+  shell: string,
+  timeoutMs = 15_000
+): Promise<HarnessResumeCandidate[]> {
+  const testExecutable =
+    process.env.EXAWATT_TEST === '1' &&
+    process.env.EXAWATT_TEST_HARNESS_BIN &&
+    path.isAbsolute(process.env.EXAWATT_TEST_HARNESS_BIN)
+      ? path.join(process.env.EXAWATT_TEST_HARNESS_BIN, 'opencode')
+      : null;
+  const invocation = testExecutable ? shellQuote(testExecutable) : 'opencode';
+  let stdout = '';
+  try {
+    const result = await execFileAsync(
+      shell,
+      [
+        '-l',
+        '-c',
+        `${invocation} --pure session list --format json --max-count 200`,
+      ],
+      {
+        cwd,
+        timeout: Math.max(1, Math.min(15_000, timeoutMs)),
+        maxBuffer: 2 * 1024 * 1024,
+        encoding: 'utf8',
+      }
+    );
+    stdout = result.stdout;
+  } catch {
+    throw new Error('OpenCode session catalog command failed');
+  }
+  try {
+    if (!Array.isArray(JSON.parse(stdout) as unknown)) {
+      throw new Error('not an array');
+    }
+  } catch {
+    throw new Error('OpenCode session catalog returned invalid JSON');
+  }
+  const canonicalCwd = await fs.promises
+    .realpath(cwd)
+    .catch(() => path.resolve(cwd));
+  const rows = await Promise.all(
+    parseOpencodeSessionList(stdout).map(async session => ({
+      session,
+      canonicalDirectory: await fs.promises
+        .realpath(session.directory)
+        .catch(() => path.resolve(session.directory)),
+    }))
+  );
+  return rows
+    .filter(row => row.canonicalDirectory === canonicalCwd)
+    .map(({ session, canonicalDirectory }) => ({
+      id: session.id,
+      cwd: canonicalDirectory,
+      startedAt: session.created,
+      updatedAt: session.updated,
+      label: session.title.trim() || 'OpenCode session',
+      description: null,
+    }))
+    .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+}
+
+/**
+ * Read the source-owned first-turn agent marker for one OpenCode session.
+ * S2 gives every launch a collision-resistant agent name, so this proves
+ * causal ownership without relying on directory, recency, or timing.
+ */
+export async function opencodeSessionAgent(
+  sessionId: string,
+  cwd: string,
+  shell: string,
+  timeoutMs = 15_000
+): Promise<string | null> {
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(sessionId)) {
+    throw new Error('Invalid OpenCode session identity');
+  }
+  const testExecutable =
+    process.env.EXAWATT_TEST === '1' &&
+    process.env.EXAWATT_TEST_HARNESS_BIN &&
+    path.isAbsolute(process.env.EXAWATT_TEST_HARNESS_BIN)
+      ? path.join(process.env.EXAWATT_TEST_HARNESS_BIN, 'opencode')
+      : null;
+  const invocation = testExecutable ? shellQuote(testExecutable) : 'opencode';
+  let stdout = '';
+  try {
+    const result = await execFileAsync(
+      shell,
+      ['-l', '-c', `${invocation} --pure export ${shellQuote(sessionId)}`],
+      {
+        cwd,
+        timeout: Math.max(1, Math.min(15_000, timeoutMs)),
+        maxBuffer: 2 * 1024 * 1024,
+        encoding: 'utf8',
+      }
+    );
+    stdout = result.stdout;
+  } catch {
+    throw new Error('OpenCode session export command failed');
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout) as unknown;
+  } catch {
+    throw new Error('OpenCode session export returned invalid JSON');
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const messages = (parsed as { messages?: unknown }).messages;
+  if (!Array.isArray(messages)) return null;
+  for (const message of messages) {
+    if (!message || typeof message !== 'object') continue;
+    const info = (message as { info?: unknown }).info;
+    if (!info || typeof info !== 'object') continue;
+    const record = info as { role?: unknown; agent?: unknown };
+    if (record.role === 'user') {
+      return typeof record.agent === 'string' ? record.agent : null;
+    }
+  }
+  return null;
+}
+
 function catalogFor(
   harness: Exclude<PtyHarness, 'shell'>,
   sessionsRoot = path.join(os.homedir(), '.codex', 'sessions')
@@ -62,9 +195,14 @@ export function invalidateResumeCandidates(
 export async function listResumeCandidates(
   harness: PtyHarness,
   cwd: string,
-  sessionsRoot = path.join(os.homedir(), '.codex', 'sessions')
+  sessionsRoot = path.join(os.homedir(), '.codex', 'sessions'),
+  shell = process.env.SHELL || '/bin/zsh',
+  timeoutMs = 15_000
 ): Promise<HarnessResumeCandidate[]> {
   if (harness === 'shell') return [];
+  if (harness === 'opencode') {
+    return listOpencodeResumeCandidates(cwd, shell, timeoutMs);
+  }
   // The third argument is the legacy Codex fixture/injection seam. Do not
   // reinterpret a custom Codex root as a Claude projects root.
   if (

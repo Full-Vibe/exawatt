@@ -5,10 +5,13 @@ import {
   formatAgentModelLabel,
   isValidAgentEffort,
   isValidAgentModel,
+  opencodeCatalogContext,
+  OpencodeModelCatalogCache,
   parseClaudeModelCatalog,
   parseCodexConfiguredEffort,
   parseCodexConfiguredModel,
   parseCodexModelCatalog,
+  parseOpencodeModelCatalog,
 } from './agent-models';
 
 /** Shape of a real `claude --output-format stream-json` initialize response. */
@@ -282,5 +285,144 @@ model_reasoning_effort = "low"
     expect(isValidAgentEffort('extra high')).toBe(false);
     expect(formatAgentEffortLabel('xhigh')).toBe('Extra high');
     expect(formatAgentModelLabel('gpt-5.6-sol')).toBe('GPT 5.6 Sol');
+  });
+
+  it('reads OpenCode verbose records and exposes only reported variants', () => {
+    const catalog = parseOpencodeModelCatalog(`opencode/big-pickle
+{
+  "id": "big-pickle",
+  "providerID": "opencode",
+  "name": "Big Pickle",
+  "family": "big-pickle",
+  "variants": {
+    "low": { "reasoningEffort": "low" },
+    "high": { "reasoningEffort": "high" }
+  }
+}
+openai/gpt-5.3-codex
+{
+  "id": "gpt-5.3-codex",
+  "providerID": "openai",
+  "name": "GPT-5.3 Codex",
+  "variants": {}
+}
+`);
+    expect(catalog.harness).toBe('opencode');
+    expect(catalog.catalogMode).toBe('live-catalog');
+    expect(catalog.effectiveModel).toBeNull();
+    expect(catalog.effectiveModelLabel).toBe('Source default');
+    expect(catalog.models.map(model => model.id)).toEqual([
+      'opencode/big-pickle',
+      'openai/gpt-5.3-codex',
+    ]);
+    expect(catalog.models[0].efforts.map(effort => effort.id)).toEqual([
+      'high',
+      'low',
+    ]);
+    expect(catalog.models[0].defaultEffort).toBeNull();
+    expect(catalog.models[1].efforts).toEqual([]);
+  });
+
+  it('keeps only an exact configured OpenCode fallback when discovery fails', () => {
+    const catalog = parseOpencodeModelCatalog(
+      'not a verbose catalog',
+      'private/provider-model'
+    );
+    expect(catalog.catalogMode).toBe('configured-values');
+    expect(catalog.effectiveModel).toBe('private/provider-model');
+    expect(catalog.models.map(model => model.id)).toEqual([
+      'private/provider-model',
+    ]);
+  });
+
+  it('caches a successful OpenCode observation without refreshing its age', async () => {
+    let now = 1_000;
+    let probes = 0;
+    const cache = new OpencodeModelCatalogCache(300, () => now);
+    const probe = async () => {
+      probes += 1;
+      return {
+        ...parseOpencodeModelCatalog(`fixture/model
+{"providerID":"fixture","name":"Fixture"}`),
+        observedAt: 900,
+      };
+    };
+
+    const observed = await cache.read('context', probe);
+    now = 1_200;
+    const cached = await cache.read('context', probe);
+
+    expect(probes).toBe(1);
+    expect(observed.catalogProvenance).toBe(
+      'Installed OpenCode CLI · opencode models --verbose'
+    );
+    expect(cached.catalogProvenance).toBe(
+      'Installed OpenCode CLI · opencode models --verbose · cached observation'
+    );
+    expect(cached.observedAt).toBe(900);
+
+    now = 1_301;
+    await cache.read('context', probe);
+    expect(probes).toBe(2);
+  });
+
+  it('does not cache an unavailable OpenCode catalog', async () => {
+    let probes = 0;
+    const cache = new OpencodeModelCatalogCache();
+    const probe = async () => {
+      probes += 1;
+      return parseOpencodeModelCatalog('catalog unavailable');
+    };
+
+    await cache.read('context', probe);
+    await cache.read('context', probe);
+    expect(probes).toBe(2);
+  });
+
+  it('shares one in-flight OpenCode catalog probe per context', async () => {
+    let probes = 0;
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    const cache = new OpencodeModelCatalogCache();
+    const probe = async () => {
+      probes += 1;
+      await gate;
+      return parseOpencodeModelCatalog(`fixture/model
+{"providerID":"fixture","name":"Fixture"}`);
+    };
+
+    const first = cache.read('context', probe);
+    const second = cache.read('context', probe);
+    expect(probes).toBe(1);
+    release?.();
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+  });
+
+  it('scopes OpenCode catalog evidence to its shell and config context', () => {
+    const base = opencodeCatalogContext('/project', '/bin/zsh', {
+      HOME: '/users/operator',
+      OPENCODE_CONFIG: '/configs/a.json',
+    });
+    expect(base).not.toBeNull();
+    expect(
+      opencodeCatalogContext('/project', '/bin/fish', {
+        HOME: '/users/operator',
+        OPENCODE_CONFIG: '/configs/a.json',
+      })
+    ).not.toBe(base);
+    expect(
+      opencodeCatalogContext('/project', '/bin/zsh', {
+        HOME: '/users/operator',
+        OPENCODE_CONFIG: '/configs/b.json',
+      })
+    ).not.toBe(base);
+    expect(
+      opencodeCatalogContext('/project', '/bin/zsh', {
+        HOME: '/users/operator',
+        OPENCODE_CONFIG_CONTENT: '{"provider":{"private":{}}}',
+      })
+    ).toBeNull();
   });
 });

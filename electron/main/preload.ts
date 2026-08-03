@@ -42,7 +42,7 @@ contextBridge.exposeInMainWorld('electron', {
     list: (scope: 'all' | 'launch' = 'all', refresh = false) =>
       ipcRenderer.invoke('agent-sources:list', scope, refresh),
     act: (
-      adapterId: 'claude' | 'codex' | 'openclaw' | 'demo',
+      adapterId: 'claude' | 'codex' | 'opencode' | 'openclaw' | 'demo',
       action: 'authenticate' | 'choose-model' | 'install-guide'
     ) => ipcRenderer.invoke('agent-sources:act', adapterId, action),
   },
@@ -104,7 +104,7 @@ contextBridge.exposeInMainWorld('electron', {
     reconcileResumeIdentities: (
       hints: Array<{
         durableSessionId: string;
-        harness: 'claude' | 'codex';
+        harness: 'claude' | 'codex' | 'opencode';
         cwd: string;
         initialTask: string | null;
         harnessSessionId: string | null;

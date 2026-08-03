@@ -5,6 +5,7 @@ import path from 'path';
 import {
   ClaudeConversationAdapter,
   CodexConversationAdapter,
+  OpenCodeConversationAdapter,
   ProjectSessionConversationAdapter,
   RecentConversationCatalog,
   redactHostedSummaryText,
@@ -624,5 +625,95 @@ describe('RecentConversationCatalog', () => {
         durableSessionId: 'durable-without-provider',
       },
     });
+  });
+
+  it('keeps retained OpenCode Sessions in the source-agnostic Project history', async () => {
+    const projectDir = await temporaryRoot('exawatt-opencode-project-');
+    const sessions = new ProjectSessionConversationAdapter(() => [
+      {
+        durableSessionId: 'durable-opencode',
+        title: 'OpenCode',
+        goal: 'Verify provider routing',
+        harness: 'opencode',
+        cwd: projectDir,
+        projectDir,
+        projectName: 'Project',
+        harnessSessionId: 'ses_opencode_exact',
+        initialTask: 'Route this through the selected provider.',
+        closedAt: 20,
+      },
+    ]);
+
+    const rows = await new RecentConversationCatalog({
+      adapters: [sessions],
+    }).listForHarness('opencode', projectDir);
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        id: 'ses_opencode_exact',
+        harness: 'opencode',
+        continuation: {
+          kind: 'exawatt-session',
+          durableSessionId: 'durable-opencode',
+        },
+      }),
+    ]);
+  });
+
+  it('accepts only bounded, non-narrative native OpenCode titles', async () => {
+    const projectDir = await temporaryRoot('exawatt-opencode-native-project-');
+    const binDir = await temporaryRoot('exawatt-opencode-native-bin-');
+    const fakeShell = path.join(binDir, 'fake-shell');
+    const sessionRows = [
+      {
+        id: 'ses_valid_title',
+        title: '  Verify\tprovider   routing  ',
+        directory: projectDir,
+        created: 10,
+        updated: 20,
+      },
+      {
+        id: 'ses_long_title',
+        title: 'x'.repeat(73),
+        directory: projectDir,
+        created: 11,
+        updated: 21,
+      },
+      {
+        id: 'ses_narrative_title',
+        title: 'I am reviewing the provider routing implementation',
+        directory: projectDir,
+        created: 12,
+        updated: 22,
+      },
+    ];
+    await fs.promises.writeFile(
+      fakeShell,
+      `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(sessionRows)}'\n`,
+      'utf8'
+    );
+    await fs.promises.chmod(fakeShell, 0o755);
+
+    const rows = await new OpenCodeConversationAdapter(
+      async () => fakeShell
+    ).list(projectDir);
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        id: 'ses_valid_title',
+        title: 'Verify provider routing',
+        titleSource: 'native',
+      }),
+      expect.objectContaining({
+        id: 'ses_long_title',
+        title: 'OpenCode session',
+        titleSource: 'fallback',
+      }),
+      expect.objectContaining({
+        id: 'ses_narrative_title',
+        title: 'OpenCode session',
+        titleSource: 'fallback',
+      }),
+    ]);
   });
 });

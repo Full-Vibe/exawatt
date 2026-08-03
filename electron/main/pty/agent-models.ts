@@ -15,6 +15,10 @@ const MODEL_ENV_KEYS = [
   'ANTHROPIC_CUSTOM_MODEL_OPTION_NAME',
   'ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION',
   'CLAUDE_CODE_EFFORT_LEVEL',
+  'XDG_CONFIG_HOME',
+  'OPENCODE_CONFIG',
+  'OPENCODE_CONFIG_DIR',
+  'OPENCODE_CONFIG_CONTENT',
 ] as const;
 
 function shellQuote(value: string): string {
@@ -78,6 +82,14 @@ interface CodexCatalogEntry {
   priority?: unknown;
   default_reasoning_level?: unknown;
   supported_reasoning_levels?: unknown;
+}
+
+interface OpencodeCatalogEntry {
+  id?: unknown;
+  providerID?: unknown;
+  name?: unknown;
+  family?: unknown;
+  variants?: unknown;
 }
 
 const CLAUDE_EFFORTS: AgentEffortOption[] = [
@@ -332,6 +344,113 @@ export function parseCodexModelCatalog(
         : configuredModel
           ? 'Codex configuration'
           : 'Codex model discovery unavailable',
+    observedAt: Date.now(),
+    selectionAction: null,
+  };
+}
+
+/** Parse the exact 1.3.4 `opencode models --verbose` stream: one
+ * `provider/model` line followed by one pretty-printed JSON model record.
+ * The installed binary emits those pairs directly from its provider catalog;
+ * JSON may span arbitrary lines, so completion is detected by successful
+ * parsing rather than indentation or brace counting. */
+export function parseOpencodeModelCatalog(
+  raw: string,
+  configuredModel: string | null = null
+): AgentModelCatalog {
+  const lines = raw.split(/\r?\n/);
+  const models: AgentModelOption[] = [];
+  for (let index = 0; index < lines.length && models.length < 2_000; index++) {
+    const modelId = lines[index]?.trim() ?? '';
+    if (!isValidAgentModel(modelId) || !modelId.includes('/')) continue;
+    let json = '';
+    let parsed: OpencodeCatalogEntry | null = null;
+    let end = index + 1;
+    for (; end < lines.length; end++) {
+      json += `${lines[end]}\n`;
+      try {
+        const candidate = JSON.parse(json) as unknown;
+        if (candidate && typeof candidate === 'object') {
+          parsed = candidate as OpencodeCatalogEntry;
+          break;
+        }
+      } catch {
+        // A pretty-printed record is incomplete until its closing brace.
+      }
+    }
+    if (!parsed) continue;
+    index = end;
+    const providerId = modelId.slice(0, modelId.indexOf('/'));
+    if (
+      typeof parsed.providerID === 'string' &&
+      parsed.providerID !== providerId
+    ) {
+      continue;
+    }
+    const variants =
+      parsed.variants && typeof parsed.variants === 'object'
+        ? Object.keys(parsed.variants as Record<string, unknown>)
+            .filter(isValidAgentEffort)
+            .sort()
+        : [];
+    const family =
+      typeof parsed.family === 'string' && parsed.family.trim()
+        ? parsed.family.trim()
+        : null;
+    models.push({
+      id: modelId,
+      label:
+        typeof parsed.name === 'string' && parsed.name.trim()
+          ? parsed.name.trim()
+          : formatAgentModelLabel(modelId.slice(modelId.indexOf('/') + 1)),
+      description: family
+        ? `${providerId} · ${family}`
+        : `Available through ${providerId} in the installed OpenCode CLI.`,
+      // The source reports accepted variants but no default variant. Never
+      // turn the first object key into a launch policy.
+      defaultEffort: null,
+      efforts: variants.map(variant => ({
+        id: variant,
+        label: formatAgentEffortLabel(variant),
+        description: `Reported for this model by the installed OpenCode CLI.`,
+      })),
+    });
+  }
+
+  const discoveredModelCount = models.length;
+  if (configuredModel && !models.some(model => model.id === configuredModel)) {
+    models.unshift({
+      id: configuredModel,
+      label: formatAgentModelLabel(configuredModel),
+      description: 'Selected in the active OpenCode configuration.',
+      defaultEffort: null,
+      efforts: [],
+    });
+  }
+  const effectiveModel = configuredModel;
+  const effective = models.find(model => model.id === effectiveModel);
+  return {
+    harness: 'opencode',
+    effectiveModel,
+    effectiveModelLabel: effective?.label ?? 'Source default',
+    effectiveModelSource: configuredModel ? 'config' : 'unavailable',
+    effectiveEffort: null,
+    effectiveEffortLabel: 'Model default',
+    effectiveEffortSource: 'unavailable',
+    effortLocked: false,
+    models,
+    catalogMode:
+      discoveredModelCount > 0
+        ? 'live-catalog'
+        : configuredModel
+          ? 'configured-values'
+          : 'unavailable',
+    catalogProvenance:
+      discoveredModelCount > 0
+        ? 'Installed OpenCode CLI · opencode models --verbose'
+        : configuredModel
+          ? 'OpenCode configuration'
+          : 'OpenCode model discovery unavailable',
     observedAt: Date.now(),
     selectionAction: null,
   };
@@ -777,13 +896,133 @@ async function listCodexModels(
   return parseCodexModelCatalog(stdout, configuredModel, configuredEffort);
 }
 
+const OPENCODE_CATALOG_TTL_MS = 5 * 60_000;
+
+interface OpencodeCatalogCacheEntry {
+  expiresAt: number;
+  catalog: AgentModelCatalog;
+}
+
+type OpencodeCatalogProbe = () => Promise<AgentModelCatalog>;
+
+/**
+ * Cache only complete source observations. The original observedAt remains the
+ * freshness boundary on a cache hit; opening the composer must not make old
+ * evidence look newly observed.
+ */
+export class OpencodeModelCatalogCache {
+  private readonly entries = new Map<string, OpencodeCatalogCacheEntry>();
+  private readonly inFlight = new Map<string, Promise<AgentModelCatalog>>();
+
+  constructor(
+    private readonly ttlMs = OPENCODE_CATALOG_TTL_MS,
+    private readonly now: () => number = Date.now
+  ) {}
+
+  async read(
+    context: string,
+    probe: OpencodeCatalogProbe
+  ): Promise<AgentModelCatalog> {
+    const cached = this.entries.get(context);
+    if (cached && cached.expiresAt > this.now()) {
+      return {
+        ...cached.catalog,
+        catalogProvenance: `${cached.catalog.catalogProvenance} · cached observation`,
+      };
+    }
+
+    const running = this.inFlight.get(context);
+    if (running) return running;
+
+    const observation = probe().finally(() => {
+      this.inFlight.delete(context);
+    });
+    this.inFlight.set(context, observation);
+    const catalog = await observation;
+    // A failed or empty probe stays retryable. It must not turn a transient
+    // source failure into five minutes of fabricated catalog certainty.
+    if (catalog.catalogMode === 'live-catalog') {
+      this.entries.set(context, {
+        expiresAt: this.now() + this.ttlMs,
+        catalog,
+      });
+    }
+    return catalog;
+  }
+}
+
+const opencodeCatalogCache = new OpencodeModelCatalogCache();
+
+/**
+ * OpenCode's catalog varies with Project-local configuration and login-shell
+ * config locations. Inline config may contain credentials and can change
+ * independently between calls, so it is neither retained nor reduced to a
+ * cache key: that context simply bypasses the cache.
+ */
+export function opencodeCatalogContext(
+  cwd: string,
+  shell: string,
+  environment: NodeJS.ProcessEnv
+): string | null {
+  if (environment.OPENCODE_CONFIG_CONTENT) return null;
+  return JSON.stringify([
+    shell,
+    path.resolve(cwd),
+    environment.HOME || '',
+    environment.XDG_CONFIG_HOME || '',
+    environment.OPENCODE_CONFIG || '',
+    environment.OPENCODE_CONFIG_DIR || '',
+  ]);
+}
+
+async function readOpencodeModelCatalog(
+  cwd: string,
+  shell: string
+): Promise<AgentModelCatalog> {
+  let stdout = '';
+  try {
+    const executable = testHarnessExecutable('opencode');
+    const catalogCommand = executable
+      ? `${shellQuote(executable)} models --verbose`
+      : 'opencode models --verbose';
+    const result = await execFileAsync(shell, ['-l', '-c', catalogCommand], {
+      cwd,
+      timeout: 20_000,
+      maxBuffer: 8 * 1024 * 1024,
+      encoding: 'utf8',
+    });
+    stdout = result.stdout;
+  } catch {
+    // A failed catalog probe leaves the source default explicit and adds no
+    // invented rows. Provider credentials remain entirely source-owned.
+  }
+  return parseOpencodeModelCatalog(stdout);
+}
+
+async function listOpencodeModels(
+  cwd: string,
+  shell: string,
+  environment: NodeJS.ProcessEnv
+): Promise<AgentModelCatalog> {
+  const context = opencodeCatalogContext(cwd, shell, environment);
+  return context
+    ? opencodeCatalogCache.read(context, () =>
+        readOpencodeModelCatalog(cwd, shell)
+      )
+    : readOpencodeModelCatalog(cwd, shell);
+}
+
 export async function listAgentModels(
   harness: Exclude<PtyHarness, 'shell'>,
   cwd: string,
   shell: string
 ): Promise<AgentModelCatalog> {
   const environment = await loginModelEnvironment(shell, cwd);
-  return harness === 'codex'
-    ? listCodexModels(cwd, shell, environment)
-    : listClaudeModels(cwd, shell, environment);
+  if (harness === 'codex') {
+    return listCodexModels(cwd, shell, environment);
+  }
+  if (harness === 'opencode') {
+    return listOpencodeModels(cwd, shell, environment);
+  }
+  return listClaudeModels(cwd, shell, environment);
 }

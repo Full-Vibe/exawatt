@@ -7,6 +7,7 @@ import { listAgentModels } from './pty/agent-models';
 import {
   agentSourceLaunchError,
   inspectAgentSources,
+  inspectOpencodeLaunchEnvironment,
 } from './pty/agent-source-registry';
 import { contextSummarizer } from './pty/context-summarizer';
 import { createDiagnosticsLog } from './diagnostics-log';
@@ -18,7 +19,7 @@ import {
   ClosedSessionLedger,
   type ClosedSessionEntry,
 } from './pty/closed-session-ledger';
-import { createWorktree } from './pty/project-resolve';
+import { createWorktree, expandTilde } from './pty/project-resolve';
 import { loadWorkspace, saveWorkspace } from './workspace-store';
 import {
   loadSettings,
@@ -79,6 +80,7 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       'conversation-summary-cache.json'
     ),
     projectSessions: () => closedLedger.list(),
+    openCodeShell: defaultShell,
     hostedSummariesEnabled: () =>
       loadSettings().conversationSummaries?.hosted !== false,
   });
@@ -276,7 +278,34 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
         const shellPath = await defaultShell();
         const readiness = await inspectAgentSources(shellPath, 'launch', false);
         const launchError = agentSourceLaunchError(readiness, options.harness);
-        if (launchError) throw new Error(launchError);
+        const source = readiness.sources.find(
+          candidate => candidate.harness === options.harness
+        );
+        const homeOnlyOpencodeSeamError =
+          options.harness === 'opencode' &&
+          source?.facts.reachability.value ===
+            'Launch configuration seam occupied';
+        if (launchError && !homeOnlyOpencodeSeamError) {
+          throw new Error(launchError);
+        }
+        if (options.harness === 'opencode') {
+          const launchCwd =
+            expandTilde((options.cwd ?? '').trim()) || os.homedir();
+          const launchEnvironment = await inspectOpencodeLaunchEnvironment(
+            shellPath,
+            launchCwd
+          );
+          if (launchEnvironment === 'occupied') {
+            throw new Error(
+              'OpenCode launch cannot replace the non-empty OPENCODE_CONFIG_CONTENT value active in this workspace. Remove it from the workspace shell environment and try again.'
+            );
+          }
+          if (launchEnvironment === 'unknown') {
+            throw new Error(
+              'OpenCode launch readiness could not verify OPENCODE_CONFIG_CONTENT in this workspace. Check the workspace shell environment and try again.'
+            );
+          }
+        }
       }
       const session = await ptySessions.create(options);
       // the composer's task is the goal — show it as the subtitle instantly;
@@ -312,7 +341,11 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       harness: Exclude<PtyCreateOptions['harness'], 'shell'>,
       cwd: string
     ) => {
-      if (harness !== 'claude' && harness !== 'codex') {
+      if (
+        harness !== 'claude' &&
+        harness !== 'codex' &&
+        harness !== 'opencode'
+      ) {
         throw new Error('Unsupported Agent Source');
       }
       if (typeof cwd !== 'string' || !cwd.trim() || cwd.includes('\0')) {
@@ -414,6 +447,7 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
         .list()
         .find(item => item.durableSessionId === durableSessionId);
       if (session && !session.exited) {
+        await ptySessions.settleProviderIdentity(session.id);
         await ptySessions.stop(session.id);
         // stop() awaits process-group death, but node-pty's exit callback
         // lands on a later tick — wait for the honest exited flag so the
@@ -436,15 +470,23 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   );
   handleTrusted(
     'pty:archive-session',
-    (_event, entry: Omit<ClosedSessionEntry, 'closedAt'>) => {
-      const live = ptySessions
+    async (_event, entry: Omit<ClosedSessionEntry, 'closedAt'>) => {
+      const runtime = ptySessions
         .list()
-        .some(
-          item =>
-            item.durableSessionId === entry.durableSessionId && !item.exited
-        );
-      if (live) throw new Error('cannot archive a running session');
-      const stamped = closedLedger.add(entry);
+        .find(item => item.durableSessionId === entry.durableSessionId);
+      if (runtime && !runtime.exited) {
+        throw new Error('cannot archive a running session');
+      }
+      if (runtime) await ptySessions.settleProviderIdentity(runtime.id);
+      const durableIdentity = ptySessions.durableProviderIdentity(
+        entry.durableSessionId,
+        entry.harness
+      );
+      const stamped = closedLedger.add(
+        durableIdentity
+          ? { ...entry, harnessSessionId: durableIdentity }
+          : entry
+      );
       conversationCatalog.invalidate();
       // without this, rehydration resurrects the closed tab from the
       // leftover exited record
@@ -571,8 +613,8 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   );
   handleTrusted(
     'pty:list-resume-candidates',
-    (_event, harness: PtyCreateOptions['harness'], cwd: string) =>
-      listResumeCandidates(harness, cwd)
+    async (_event, harness: PtyCreateOptions['harness'], cwd: string) =>
+      listResumeCandidates(harness, cwd, undefined, await defaultShell())
   );
   handleTrusted(
     'pty:reconcile-resume-identities',
@@ -588,7 +630,9 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
         if (
           typeof hint.durableSessionId !== 'string' ||
           !/^[A-Za-z0-9._-]{1,200}$/.test(hint.durableSessionId) ||
-          (hint.harness !== 'claude' && hint.harness !== 'codex') ||
+          (hint.harness !== 'claude' &&
+            hint.harness !== 'codex' &&
+            hint.harness !== 'opencode') ||
           typeof hint.cwd !== 'string' ||
           !hint.cwd ||
           hint.cwd.includes('\0') ||

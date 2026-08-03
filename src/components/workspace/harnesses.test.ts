@@ -6,6 +6,7 @@ describe('isDefaultHarnessTitle', () => {
     expect(isDefaultHarnessTitle('codex', 'Codex')).toBe(true);
     expect(isDefaultHarnessTitle('codex', 'codex')).toBe(true);
     expect(isDefaultHarnessTitle('claude', 'Claude Code')).toBe(true);
+    expect(isDefaultHarnessTitle('opencode', 'OpenCode')).toBe(true);
     expect(isDefaultHarnessTitle('shell', ' Shell ')).toBe(true);
   });
 

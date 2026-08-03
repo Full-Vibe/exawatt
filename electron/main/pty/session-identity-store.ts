@@ -25,7 +25,9 @@ function validRecord(value: unknown): value is SessionIdentityRecord {
   return (
     typeof record.durableSessionId === 'string' &&
     SAFE_DURABLE_ID.test(record.durableSessionId) &&
-    (record.harness === 'claude' || record.harness === 'codex') &&
+    (record.harness === 'claude' ||
+      record.harness === 'codex' ||
+      record.harness === 'opencode') &&
     typeof record.harnessSessionId === 'string' &&
     SAFE_PROVIDER_ID.test(record.harnessSessionId) &&
     typeof record.cwd === 'string' &&

@@ -39,6 +39,25 @@
       }
     },
     {
+      "adapterId": "opencode",
+      "harness": "opencode",
+      "label": "OpenCode",
+      "connectionName": "Local CLI",
+      "color": "#FAB283",
+      "installationGuideUrl": "https://opencode.ai/docs",
+      "description": "Use the locally installed multi-provider OpenCode CLI.",
+      "capabilities": {
+        "interactiveLaunch": true,
+        "initialTask": true,
+        "exactResume": true,
+        "modelSelection": "live-catalog",
+        "effortSelection": "live-catalog",
+        "permissionModes": ["prompt", "auto", "unrestricted"],
+        "delegationObservation": "OpenCode PTY does not report delegated work",
+        "enforcementOwner": "OpenCode"
+      }
+    },
+    {
       "adapterId": "openclaw",
       "harness": null,
       "label": "OpenClaw",

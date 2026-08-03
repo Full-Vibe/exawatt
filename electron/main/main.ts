@@ -840,6 +840,7 @@ function createMenu(): void {
       submenu: [
         menuCommand('Start Agent with Claude Code…', 'launch-claude'),
         menuCommand('Start Agent with Codex…', 'launch-codex'),
+        menuCommand('Start Agent with OpenCode…', 'launch-opencode'),
         { type: 'separator' },
         menuCommand('New Agent', 'new-agent'),
         menuCommand('Open Shell', 'launch-shell'),

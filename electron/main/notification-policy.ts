@@ -18,7 +18,9 @@ export function nativeNotificationCopy(session: PtySessionInfo): {
       ? 'Claude Code'
       : session.harness === 'codex'
         ? 'Codex'
-        : 'Session';
+        : session.harness === 'opencode'
+          ? 'OpenCode'
+          : 'Session';
   return {
     title: session.title || harness,
     body: `${harness} needs your attention in ${session.projectName}.`,

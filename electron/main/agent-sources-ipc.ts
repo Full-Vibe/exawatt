@@ -40,6 +40,7 @@ export function registerAgentSourcesIPC(): void {
       if (
         adapterId !== 'claude' &&
         adapterId !== 'codex' &&
+        adapterId !== 'opencode' &&
         adapterId !== 'openclaw' &&
         adapterId !== 'demo'
       ) {
@@ -63,7 +64,11 @@ export function registerAgentSourcesIPC(): void {
           message: `${declaration.label} installation guide opened.`,
         };
       }
-      if (adapterId !== 'claude' && adapterId !== 'codex') {
+      if (
+        adapterId !== 'claude' &&
+        adapterId !== 'codex' &&
+        adapterId !== 'opencode'
+      ) {
         throw new Error('This Agent Source does not expose that action');
       }
       if (action === 'choose-model' && adapterId !== 'claude') {

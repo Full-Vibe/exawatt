@@ -31,6 +31,7 @@ import {
 import {
   ClaudeIcon,
   OpenAIIcon,
+  OpenCodeIcon,
   OpenClawIcon,
 } from '@/components/workspace/harness-icons';
 import {
@@ -60,6 +61,7 @@ function SourceMark({
 }) {
   if (id === 'claude') return <ClaudeIcon size={size} />;
   if (id === 'codex') return <OpenAIIcon size={size} />;
+  if (id === 'opencode') return <OpenCodeIcon size={size} />;
   if (id === 'openclaw') return <OpenClawIcon size={size} />;
   return <Sparkles aria-hidden size={size} />;
 }
@@ -438,9 +440,7 @@ function SourceDetail({
             <AlertCircle aria-hidden className="mt-0.5 shrink-0" size={18} />
           )}
           <div>
-            <p className="font-ui text-sm font-medium">
-              {source.stateLabel}
-            </p>
+            <p className="font-ui text-sm font-medium">{source.stateLabel}</p>
             <p className="mt-1 max-w-xl font-ui text-chrome-title leading-5 text-[var(--settings-dim)]">
               {attentionFact.detail}
             </p>
@@ -589,7 +589,13 @@ function SourceDetail({
 }
 
 function CatalogMark({ id }: { id: AgentSourceCatalogEntry['adapterId'] }) {
-  if (id === 'claude' || id === 'codex' || id === 'openclaw' || id === 'demo') {
+  if (
+    id === 'claude' ||
+    id === 'codex' ||
+    id === 'opencode' ||
+    id === 'openclaw' ||
+    id === 'demo'
+  ) {
     return <SourceMark id={id} size={20} />;
   }
   return <Sparkles aria-hidden size={20} />;

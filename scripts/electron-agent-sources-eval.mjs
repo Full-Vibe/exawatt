@@ -70,6 +70,40 @@ if [ "$1" = "debug" ] && [ "$2" = "models" ]; then
 fi
 exit 1
 `,
+  opencode: `#!/bin/sh
+if [ "$1" = "--version" ]; then printf '1.3.4\n'; exit 0; fi
+if [ "$1" = "auth" ] && [ "$2" = "list" ]; then
+  printf '\\033[0m\n┌  Credentials\n│\n●  Fixture Provider api\n│\n└  1 credential\n'
+  exit 0
+fi
+if [ "$1" = "models" ] && [ "$2" = "--verbose" ]; then
+  printf '%s\n' 'fixture/eval-model' '{' '  "id": "eval-model",' '  "providerID": "fixture",' '  "name": "Eval Open Model",' '  "family": "eval",' '  "variants": {"low": {}, "high": {}}' '}'
+  exit 0
+fi
+state="$EXAWATT_TEST_HARNESS_BIN/opencode-session.json"
+agent_state="$EXAWATT_TEST_HARNESS_BIN/opencode-session-agent.txt"
+if [ "$1" = "--pure" ] && [ "$2" = "session" ] && [ "$3" = "list" ]; then
+  if [ -f "$state" ]; then cat "$state"; else printf '[]\n'; fi
+  exit 0
+fi
+if [ "$1" = "--pure" ] && [ "$2" = "export" ]; then
+  if [ ! -f "$agent_state" ]; then exit 1; fi
+  agent="$(cat "$agent_state")"
+  printf '{"info":{"id":"%s"},"messages":[{"info":{"role":"user","agent":"%s"},"parts":[]}]}\n' "$3" "$agent"
+  exit 0
+fi
+now="$(date +%s)000"
+previous=""
+for argument in "$@"; do
+  if [ "$previous" = "--agent" ]; then printf '%s' "$argument" > "$agent_state"; break; fi
+  previous="$argument"
+done
+printf '[{"id":"ses_eval_opencode_1234","title":"Agent Source launch eval","directory":"%s","created":%s,"updated":%s}]\n' "$PWD" "$now" "$now" > "$state"
+printf 'FAKE_OPENCODE_ARGS:'
+printf ' <%s>' "$@"
+printf '\nFAKE_OPENCODE_CONFIG_CONTENT:%s\n' "$OPENCODE_CONFIG_CONTENT"
+while IFS= read -r input; do printf 'FAKE_OPENCODE_INPUT:%s\n' "$input"; done
+`,
   openclaw: `#!/bin/sh
 if [ "$1" = "--version" ]; then printf 'OpenClaw 2026.8.0-eval\\n'; exit 0; fi
 exit 1
@@ -169,7 +203,7 @@ const launch = () => ({
 try {
   await withElectronApp(
     launch(),
-    async (_app, page) => {
+    async (app, page) => {
       page.setDefaultTimeout(20_000);
       const pageErrors = [];
       page.on('pageerror', error => pageErrors.push(error.message));
@@ -182,14 +216,17 @@ try {
         window.electron?.agentSources?.list('all')
       );
       check(
-        'registry returns four normalized source records',
-        registry?.sources.length === 4
+        'registry returns five normalized source records',
+        registry?.sources.length === 5
       );
       const claude = registry?.sources.find(
         source => source.adapterId === 'claude'
       );
       const codex = registry?.sources.find(
         source => source.adapterId === 'codex'
+      );
+      const opencode = registry?.sources.find(
+        source => source.adapterId === 'opencode'
       );
       const openclaw = registry?.sources.find(
         source => source.adapterId === 'openclaw'
@@ -212,6 +249,16 @@ try {
               installation: codex?.facts.installation,
               authentication: codex?.facts.authentication,
             })
+      );
+      const opencodeReady =
+        opencode?.state === 'ready' &&
+        opencode?.facts.modelDiscovery.value === '1 models reported' &&
+        opencode?.facts.authentication.state === 'unknown' &&
+        opencode?.facts.authentication.value === '1 provider credential';
+      check(
+        'OpenCode is ready with source-reported catalog and unclaimed credential validity',
+        opencodeReady,
+        opencodeReady ? '' : JSON.stringify(opencode)
       );
       check(
         'configured unreachable OpenClaw is degraded, not disconnected/absent',
@@ -370,8 +417,156 @@ try {
       );
       check(
         'composer scope contains only interactive local sources',
-        launchRegistry?.sources.length === 2 &&
+        launchRegistry?.sources.length === 3 &&
           launchRegistry.sources.every(source => source.harness !== null)
+      );
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.webContents.send(
+          'menu:command',
+          'launch-opencode'
+        );
+      });
+      await page.waitForFunction(() =>
+        document
+          .querySelector('[aria-label="Agent Source"]')
+          ?.textContent?.includes('OpenCode')
+      );
+      await page.getByLabel('Agent model').waitFor();
+      check(
+        'native OpenCode launch command opens the composer with OpenCode preselected',
+        (await page.getByLabel('Agent Source').innerText()).includes(
+          'OpenCode'
+        ) && (await page.locator('[data-agent-composer]').count()) === 1
+      );
+      await page.getByLabel('Agent model').click();
+      await page.getByRole('option', { name: /Eval Open Model/ }).click();
+      check(
+        'OpenCode model and exact variants reach the composer controls',
+        (await page.getByLabel('Agent model').innerText()).includes(
+          'Eval Open Model'
+        ) && !(await page.getByLabel('Agent effort').isDisabled())
+      );
+      await page.getByLabel('Agent effort').click();
+      await page.getByRole('option', { name: /^High\b/ }).click();
+      await page
+        .getByLabel('Initial task for the new Agent')
+        .fill('Verify the OpenCode launch adapter');
+      await page.getByRole('button', { name: 'Start', exact: true }).click();
+      const launched = await page.evaluate(async () => {
+        const deadline = Date.now() + 20_000;
+        while (Date.now() < deadline) {
+          const sessions = await window.electron?.pty?.list();
+          const session = sessions?.find(item => item.harness === 'opencode');
+          if (session?.harnessSessionId) {
+            return {
+              session,
+              buffer: await window.electron?.pty?.buffer(session.id),
+            };
+          }
+          await new Promise(resolveWait => setTimeout(resolveWait, 100));
+        }
+        return null;
+      });
+      check(
+        'OpenCode launch button creates a PTY and captures its exact identity',
+        launched?.session.harnessSessionId === 'ses_eval_opencode_1234'
+      );
+      const launchBuffer = launched?.buffer ?? '';
+      const configurationMatch = launchBuffer.match(
+        /FAKE_OPENCODE_CONFIG_CONTENT:(\{.*\})/
+      );
+      const launchConfiguration = configurationMatch
+        ? JSON.parse(configurationMatch[1])
+        : null;
+      const launchAgentName = launchConfiguration
+        ? Object.keys(launchConfiguration.agent ?? {})[0]
+        : null;
+      check(
+        'launch button carries model, exact variant, and ordered permission policy through the real PTY boundary',
+        Boolean(
+          launchAgentName &&
+          launchBuffer.includes(`<--agent> <${launchAgentName}>`) &&
+          launchBuffer.includes(
+            '<--prompt> <Verify the OpenCode launch adapter>'
+          ) &&
+          launchConfiguration.agent[launchAgentName].model ===
+            'fixture/eval-model' &&
+          launchConfiguration.agent[launchAgentName].variant === 'high' &&
+          Object.keys(
+            launchConfiguration.agent[launchAgentName].permission
+          )[0] === '*'
+        ),
+        launchBuffer
+      );
+      // The first composer loaded an empty recent-conversation snapshot before
+      // the fixture created its source session. Let that deliberately bounded
+      // cache expire, then summon a fresh composer through the same native menu
+      // path and prove the provider-owned row can drive an exact `-s` resume.
+      await page.waitForTimeout(10_500);
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.webContents.send(
+          'menu:command',
+          'launch-opencode'
+        );
+      });
+      const recentOpenCode = page.locator(
+        '[data-conversation-id="ses_eval_opencode_1234"]'
+      );
+      await recentOpenCode.waitFor();
+      check(
+        'captured OpenCode identity appears as a native provider conversation',
+        (await recentOpenCode.getAttribute('data-continuation')) ===
+          'provider' &&
+          (await recentOpenCode.getAttribute('data-title-source')) ===
+            'native' &&
+          (await recentOpenCode.innerText()).includes(
+            'Agent Source launch eval'
+          )
+      );
+      await recentOpenCode.locator('button').first().click();
+      const resumed = await page.evaluate(async originalSessionId => {
+        const deadline = Date.now() + 20_000;
+        while (Date.now() < deadline) {
+          const sessions = await window.electron?.pty?.list();
+          const session = sessions?.find(
+            item => item.harness === 'opencode' && item.id !== originalSessionId
+          );
+          if (session?.harnessSessionId === 'ses_eval_opencode_1234') {
+            return {
+              session,
+              buffer: await window.electron?.pty?.buffer(session.id),
+            };
+          }
+          await new Promise(resolveWait => setTimeout(resolveWait, 100));
+        }
+        return null;
+      }, launched?.session.id ?? '');
+      check(
+        'native OpenCode recent row resumes only its exact source identity with -s',
+        resumed?.session.harnessSessionId === 'ses_eval_opencode_1234' &&
+          resumed.buffer.includes('<-s> <ses_eval_opencode_1234>') &&
+          !resumed.buffer.includes('<--continue>'),
+        resumed?.buffer ?? 'No resumed OpenCode session'
+      );
+      const archived = await page.evaluate(async resumedSession => {
+        if (!resumedSession || !window.electron?.pty) return null;
+        await window.electron.pty.closeSession(resumedSession.durableSessionId);
+        return window.electron.pty.archiveSession({
+          durableSessionId: resumedSession.durableSessionId,
+          title: resumedSession.title,
+          goal: null,
+          harness: resumedSession.harness,
+          cwd: resumedSession.cwd,
+          projectDir: resumedSession.projectDir,
+          projectName: resumedSession.projectName,
+          harnessSessionId: null,
+          initialTask: null,
+        });
+      }, resumed?.session ?? null);
+      check(
+        'close and archive recover the settled main-owned exact OpenCode identity',
+        archived?.harnessSessionId === 'ses_eval_opencode_1234',
+        JSON.stringify(archived)
       );
       check(
         'renderer emitted no uncaught page errors',
@@ -379,7 +574,7 @@ try {
         pageErrors.join('; ')
       );
     },
-    { maxMs: 90_000 }
+    { maxMs: 150_000 }
   );
 } finally {
   rmSync(root, { recursive: true, force: true });

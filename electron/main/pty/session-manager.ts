@@ -21,6 +21,7 @@ import {
   invalidateResumeCandidates,
   listResumeCandidates,
   reconcileResumeIdentities as reconcilePersistedResumeIdentities,
+  opencodeSessionAgent,
   type ReconciledResumeIdentity,
   type ResumeIdentityHint,
 } from './resume-candidates';
@@ -35,6 +36,7 @@ import { harnessDescriptor } from './harness-registry';
 import { SessionIdentityStore } from './session-identity-store';
 
 const execFileAsync = promisify(execFile);
+const OPENCODE_IDENTITY_TIMEOUT_MS = 20_000;
 
 /**
  * PTY session manager — the terminal-hosting boundary (decision 0005).
@@ -161,6 +163,15 @@ interface Session {
    * first prompt must not be compared with the older PTY process timestamp. */
   codexIdentityBoundaryAt: number;
   codexInput: OrderedWriteBuffer;
+  /** OpenCode creates identity on the first submitted turn, not TUI launch. */
+  opencodeIdentityStarted: boolean;
+  opencodeIdentityBaseline: Set<string> | null;
+  opencodeIdentityBoundaryAt: number;
+  opencodeInput: OrderedWriteBuffer;
+  /** Collision-resistant source-owned marker persisted on the first OpenCode
+   * user message and used to prove the provider session belongs to this PTY. */
+  opencodeLaunchAgentName: string | null;
+  identityShell: string;
   /** The composer's first task, kept for goal-oriented context summaries
    *  (D18): the operator's own words are the best statement of the goal. */
   initialTask?: string;
@@ -178,7 +189,9 @@ export class PtySessionManager extends EventEmitter {
   private creating = 0;
   private creatingDurableIds = new Set<string>();
   private claimedCodexIds = new Set<string>();
-  private pendingCodexIdentities = new Set<Promise<void>>();
+  private claimedOpencodeIds = new Set<string>();
+  private pendingProviderIdentities = new Set<Promise<void>>();
+  private pendingProviderIdentityBySession = new Map<string, Promise<void>>();
 
   async configurePersistence(root: string): Promise<void> {
     this.history = new SessionHistoryStore(root);
@@ -225,8 +238,8 @@ export class PtySessionManager extends EventEmitter {
     return { eventChannelSettingsPath: settingsPath };
   }
 
-  /** Drop a Session's channel subscription and its token file. */
-  private unsubscribeFromEventChannel(id: string): void {
+  /** Drop one Session's ephemeral event configuration files. */
+  private cleanupHarnessWiring(id: string): void {
     harnessEventChannel.release(id);
     void this.hookSettings?.remove(id);
   }
@@ -299,6 +312,30 @@ export class PtySessionManager extends EventEmitter {
         codexIdentityBaseline = new Set();
       }
     }
+    let opencodeIdentityBaseline: Set<string> | null = null;
+    if (
+      options.harness === 'opencode' &&
+      !options.resumeSessionId &&
+      options.initialPrompt
+    ) {
+      try {
+        opencodeIdentityBaseline = new Set(
+          (await listResumeCandidates('opencode', cwd, undefined, shell)).map(
+            candidate => candidate.id
+          )
+        );
+      } catch (error) {
+        console.warn(
+          'OpenCode pre-launch identity baseline unavailable',
+          error
+        );
+        throw new Error(
+          `OpenCode launch requires an exact pre-turn session snapshot: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
     const id = `pty-${this.nextId++}`;
     const existing = Array.from(this.sessions.entries()).find(
       ([, session]) => session.info.durableSessionId === durableSessionId
@@ -329,39 +366,52 @@ export class PtySessionManager extends EventEmitter {
     // names one exact provider conversation; recency is never identity.
     // Subscribing before spawn is what makes the very first delegated child
     // observable; a channel joined after launch would miss it.
-    const wiring = await this.subscribeToEventChannel(id, options.harness);
-    const args =
-      options.harness === 'shell'
-        ? ['-l']
-        : [
-            '-l',
-            '-c',
-            buildHarnessCommand(
-              options.harness,
-              harnessSessionId,
-              !!options.resumeSessionId,
-              testHarnessExecutable,
-              options.initialPrompt,
-              options.permissionMode,
-              options.model,
-              options.effort,
-              wiring
-            ),
-          ];
+    const opencodeLaunchAgentName =
+      options.harness === 'opencode' ? `exawatt-${randomUUID()}` : null;
+    const wiring = {
+      ...(await this.subscribeToEventChannel(id, options.harness)),
+      ...(opencodeLaunchAgentName
+        ? { launchAgentName: opencodeLaunchAgentName }
+        : {}),
+    };
+    let proc: pty.IPty;
+    try {
+      const args =
+        options.harness === 'shell'
+          ? ['-l']
+          : [
+              '-l',
+              '-c',
+              buildHarnessCommand(
+                options.harness,
+                harnessSessionId,
+                !!options.resumeSessionId,
+                testHarnessExecutable,
+                options.initialPrompt,
+                options.permissionMode,
+                options.model,
+                options.effort,
+                wiring
+              ),
+            ];
 
-    const proc = pty.spawn(shell, args, {
-      name: 'xterm-256color',
-      cols,
-      rows,
-      cwd,
-      env: {
-        ...process.env,
-        // programs in the session must see the RESOLVED shell, not whatever
-        // environment the app was launched from
-        SHELL: shell,
-        TERM_PROGRAM: 'Exawatt',
-      } as Record<string, string>,
-    });
+      proc = pty.spawn(shell, args, {
+        name: 'xterm-256color',
+        cols,
+        rows,
+        cwd,
+        env: {
+          ...process.env,
+          // programs in the session must see the RESOLVED shell, not whatever
+          // environment the app was launched from
+          SHELL: shell,
+          TERM_PROGRAM: 'Exawatt',
+        } as Record<string, string>,
+      });
+    } catch (error) {
+      this.cleanupHarnessWiring(id);
+      throw error;
+    }
 
     const info: PtySessionInfo = {
       id,
@@ -391,6 +441,12 @@ export class PtySessionManager extends EventEmitter {
       codexIdentityBaseline,
       codexIdentityBoundaryAt: info.startedAt,
       codexInput: new OrderedWriteBuffer(),
+      opencodeIdentityStarted: false,
+      opencodeIdentityBaseline,
+      opencodeIdentityBoundaryAt: info.startedAt,
+      opencodeInput: new OrderedWriteBuffer(),
+      opencodeLaunchAgentName,
+      identityShell: shell,
       ...(statedTask ? { initialTask: statedTask } : {}),
     });
 
@@ -433,7 +489,7 @@ export class PtySessionManager extends EventEmitter {
       );
       // A dead process cannot report anything else, and its token is now
       // worthless — retire both before anyone can reuse the id.
-      this.unsubscribeFromEventChannel(id);
+      this.cleanupHarnessWiring(id);
       this.emit('exit', id, exitCode, durableSessionId);
     });
 
@@ -447,6 +503,12 @@ export class PtySessionManager extends EventEmitter {
       session.codexIdentityStarted = true;
       invalidateResumeCandidates('codex', cwd);
       this.beginCodexIdentityCapture(session);
+    } else if (options.harness === 'opencode' && options.initialPrompt) {
+      // `--prompt` submits before the PTY can receive a later write. Capture
+      // against the pre-spawn baseline so the exact source id is not lost.
+      session.opencodeIdentityStarted = true;
+      session.opencodeIdentityBoundaryAt = info.startedAt;
+      this.beginOpencodeIdentityCapture(session);
     }
 
     return { ...info };
@@ -531,6 +593,7 @@ export class PtySessionManager extends EventEmitter {
     const s = this.sessions.get(id);
     if (!s || s.info.exited) return;
     if (s.codexInput.hold(data)) return;
+    if (s.opencodeInput.hold(data)) return;
     if (
       s.info.harness === 'codex' &&
       !s.info.harnessSessionId &&
@@ -553,6 +616,18 @@ export class PtySessionManager extends EventEmitter {
       s.codexIdentityBoundaryAt = Date.now();
       s.codexInput.begin(data);
       this.beginCodexIdentityCapture(s);
+      return;
+    }
+    if (
+      s.info.harness === 'opencode' &&
+      !s.info.harnessSessionId &&
+      !s.opencodeIdentityStarted &&
+      /[\r\n]/.test(data)
+    ) {
+      s.opencodeIdentityStarted = true;
+      s.opencodeIdentityBoundaryAt = Date.now();
+      s.opencodeInput.begin(data);
+      this.beginOpencodeIdentityCapture(s);
       return;
     }
     s.proc.write(data);
@@ -603,8 +678,204 @@ export class PtySessionManager extends EventEmitter {
         session.codexIdentityStarted = false;
         console.error('Codex submission setup failed', error);
       })
-      .finally(() => this.pendingCodexIdentities.delete(task));
-    this.pendingCodexIdentities.add(task);
+      .finally(() => {
+        this.pendingProviderIdentities.delete(task);
+        if (
+          this.pendingProviderIdentityBySession.get(session.info.id) === task
+        ) {
+          this.pendingProviderIdentityBySession.delete(session.info.id);
+        }
+      });
+    this.pendingProviderIdentities.add(task);
+    this.pendingProviderIdentityBySession.set(session.info.id, task);
+  }
+
+  private async captureOpencodeIdentity(
+    session: Session,
+    before: Set<string>,
+    submittedAt = session.info.startedAt,
+    deadline = Date.now() + OPENCODE_IDENTITY_TIMEOUT_MS
+  ): Promise<'captured' | 'ambiguous' | 'timeout' | 'session-gone'> {
+    const info = session.info;
+    const launchAgentName = session.opencodeLaunchAgentName;
+    if (!launchAgentName) return 'ambiguous';
+    let retryDelayMs = 100;
+    while (
+      Date.now() < deadline &&
+      this.sessions.has(info.id) &&
+      !info.harnessSessionId
+    ) {
+      const current = this.sessions.get(info.id);
+      if (!current) return 'session-gone';
+      let candidates;
+      try {
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) break;
+        candidates = await listResumeCandidates(
+          'opencode',
+          info.cwd,
+          undefined,
+          current.identityShell,
+          remainingMs
+        );
+      } catch {
+        await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+        retryDelayMs = Math.min(1_600, retryDelayMs * 2);
+        continue;
+      }
+      const plausible = candidates.filter(
+        candidate =>
+          !before.has(candidate.id) &&
+          !this.claimedOpencodeIds.has(candidate.id) &&
+          candidate.updatedAt >= submittedAt - 2_000 &&
+          Math.abs(candidate.startedAt - submittedAt) <= 30_000
+      );
+      const causalMatches: typeof plausible = [];
+      for (const candidate of plausible) {
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) break;
+        try {
+          const agent = await opencodeSessionAgent(
+            candidate.id,
+            info.cwd,
+            current.identityShell,
+            remainingMs
+          );
+          if (agent === launchAgentName) causalMatches.push(candidate);
+        } catch {
+          // The first message can race the session-list row. Poll until the
+          // one absolute deadline rather than weakening to a timing guess.
+        }
+      }
+      if (causalMatches.length > 1) return 'ambiguous';
+      const match = causalMatches[0];
+      if (match) {
+        this.claimedOpencodeIds.add(match.id);
+        info.harnessSessionId = match.id;
+        await this.rememberIdentity(info);
+        this.emit(
+          'identity',
+          info.id,
+          info.durableSessionId,
+          info.harnessSessionId
+        );
+        return 'captured';
+      }
+      await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+      retryDelayMs = Math.min(1_600, retryDelayMs * 2);
+    }
+    return this.sessions.has(info.id) ? 'timeout' : 'session-gone';
+  }
+
+  private beginOpencodeIdentityCapture(session: Session): void {
+    let task!: Promise<void>;
+    task = (async () => {
+      const deadline = Date.now() + OPENCODE_IDENTITY_TIMEOUT_MS;
+      let before = session.opencodeIdentityBaseline;
+      try {
+        if (!before) {
+          const remainingMs = deadline - Date.now();
+          if (remainingMs <= 0) throw new Error('snapshot deadline elapsed');
+          before = new Set(
+            (
+              await listResumeCandidates(
+                'opencode',
+                session.info.cwd,
+                undefined,
+                session.identityShell,
+                remainingMs
+              )
+            ).map(candidate => candidate.id)
+          );
+          session.opencodeIdentityBaseline = before;
+        }
+      } catch (error) {
+        console.warn('OpenCode identity baseline unavailable', error);
+        session.opencodeInput.discard();
+        session.opencodeIdentityStarted = false;
+        const marker =
+          '\r\n\x1b[38;5;214m[exawatt] OpenCode session snapshot failed; your task was not submitted. Try again.\x1b[0m\r\n';
+        this.appendBuffer(session.info.id, marker);
+        this.emit(
+          'data',
+          session.info.id,
+          marker,
+          this.scrollback.cursor(session.info.durableSessionId),
+          session.info.durableSessionId
+        );
+        return;
+      }
+      session.opencodeInput.release(data => {
+        if (!session.info.exited && this.sessions.has(session.info.id)) {
+          session.proc.write(data);
+        }
+      });
+      if (
+        !this.sessions.has(session.info.id) ||
+        session.info.harnessSessionId
+      ) {
+        return;
+      }
+      try {
+        const result = await this.captureOpencodeIdentity(
+          session,
+          before ?? new Set<string>(),
+          session.opencodeIdentityBoundaryAt,
+          deadline
+        );
+        if (
+          result !== 'captured' &&
+          result !== 'session-gone' &&
+          this.sessions.has(session.info.id) &&
+          !session.info.harnessSessionId
+        ) {
+          const reason =
+            result === 'ambiguous'
+              ? 'multiple new sessions matched this turn'
+              : 'the provider session did not appear before the verification deadline';
+          const marker =
+            `\r\n\x1b[38;5;214m[exawatt] OpenCode identity was not verified: ${reason}. ` +
+            'This Session will not be offered as an exact resume target.\x1b[0m\r\n';
+          this.appendBuffer(session.info.id, marker);
+          this.emit(
+            'data',
+            session.info.id,
+            marker,
+            this.scrollback.cursor(session.info.durableSessionId),
+            session.info.durableSessionId
+          );
+        }
+      } catch (error) {
+        console.warn('OpenCode identity capture failed', error);
+        if (this.sessions.has(session.info.id)) {
+          const marker =
+            '\r\n\x1b[38;5;214m[exawatt] OpenCode identity verification failed. ' +
+            'This Session will not be offered as an exact resume target.\x1b[0m\r\n';
+          this.appendBuffer(session.info.id, marker);
+          this.emit(
+            'data',
+            session.info.id,
+            marker,
+            this.scrollback.cursor(session.info.durableSessionId),
+            session.info.durableSessionId
+          );
+        }
+      }
+    })()
+      .catch(error => {
+        session.opencodeIdentityStarted = false;
+        console.error('OpenCode submission setup failed', error);
+      })
+      .finally(() => {
+        this.pendingProviderIdentities.delete(task);
+        if (
+          this.pendingProviderIdentityBySession.get(session.info.id) === task
+        ) {
+          this.pendingProviderIdentityBySession.delete(session.info.id);
+        }
+      });
+    this.pendingProviderIdentities.add(task);
+    this.pendingProviderIdentityBySession.set(session.info.id, task);
   }
 
   /** operator rename (W0.4): keeps fleet/spatial names in step with the
@@ -681,7 +952,7 @@ export class PtySessionManager extends EventEmitter {
       );
     }
     this.sessions.delete(id);
-    this.unsubscribeFromEventChannel(id);
+    this.cleanupHarnessWiring(id);
     this.scrollback.delete(s.info.durableSessionId);
     await Promise.all([
       this.history?.delete(s.info.durableSessionId),
@@ -819,10 +1090,36 @@ export class PtySessionManager extends EventEmitter {
     return repaired;
   }
 
-  async settleProviderIdentities(timeoutMs = 2_000): Promise<void> {
-    if (this.pendingCodexIdentities.size === 0) return;
+  durableProviderIdentity(
+    durableSessionId: string,
+    harness: string
+  ): string | null {
+    const identity = this.identities?.get(durableSessionId);
+    return identity?.harness === harness ? identity.harnessSessionId : null;
+  }
+
+  async settleProviderIdentities(
+    timeoutMs = OPENCODE_IDENTITY_TIMEOUT_MS + 2_000
+  ): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (this.pendingProviderIdentities.size > 0) {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) return;
+      await Promise.race([
+        Promise.allSettled(Array.from(this.pendingProviderIdentities)),
+        new Promise(resolve => setTimeout(resolve, remainingMs)),
+      ]);
+    }
+  }
+
+  async settleProviderIdentity(
+    sessionId: string,
+    timeoutMs = OPENCODE_IDENTITY_TIMEOUT_MS + 2_000
+  ): Promise<void> {
+    const task = this.pendingProviderIdentityBySession.get(sessionId);
+    if (!task) return;
     await Promise.race([
-      Promise.allSettled(Array.from(this.pendingCodexIdentities)),
+      task,
       new Promise(resolve => setTimeout(resolve, timeoutMs)),
     ]);
   }
@@ -842,7 +1139,10 @@ export class PtySessionManager extends EventEmitter {
         target?.[1].proc.kill(signal);
       }
     );
-    for (const id of Array.from(this.sessions.keys())) this.sessions.delete(id);
+    for (const id of Array.from(this.sessions.keys())) {
+      this.cleanupHarnessWiring(id);
+      this.sessions.delete(id);
+    }
     await this.flushHistory();
   }
 

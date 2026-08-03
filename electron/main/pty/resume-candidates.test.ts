@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { listResumeCandidates } from './resume-candidates';
+import {
+  listResumeCandidates,
+  opencodeSessionAgent,
+  parseOpencodeSessionList,
+} from './resume-candidates';
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -47,6 +51,101 @@ async function projectDirectory() {
 }
 
 describe('listResumeCandidates', () => {
+  it('parses bounded exact OpenCode session identities without accepting malformed rows', () => {
+    expect(
+      parseOpencodeSessionList(
+        JSON.stringify([
+          {
+            id: 'ses_0365acf1bffe15qKmRP05YlcIu',
+            title: 'Provider routing',
+            directory: '/projects/exawatt',
+            created: 100,
+            updated: 200,
+          },
+          {
+            id: '../unsafe',
+            title: 'Unsafe',
+            directory: '/projects/exawatt',
+            created: 100,
+            updated: 200,
+          },
+        ])
+      )
+    ).toEqual([
+      {
+        id: 'ses_0365acf1bffe15qKmRP05YlcIu',
+        title: 'Provider routing',
+        directory: '/projects/exawatt',
+        created: 100,
+        updated: 200,
+      },
+    ]);
+  });
+
+  it('reads the source-owned OpenCode launch-agent marker from the first user turn', async () => {
+    const bin = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), 'exawatt-opencode-export-')
+    );
+    roots.push(bin);
+    const executable = path.join(bin, 'opencode');
+    await fs.promises.writeFile(
+      executable,
+      `#!/bin/sh
+printf '%s\n' '{"info":{"id":"ses_exact_marker"},"messages":[{"info":{"role":"user","agent":"exawatt-12345678"},"parts":[]}]}'
+`,
+      { mode: 0o755 }
+    );
+    const priorTest = process.env.EXAWATT_TEST;
+    const priorBin = process.env.EXAWATT_TEST_HARNESS_BIN;
+    process.env.EXAWATT_TEST = '1';
+    process.env.EXAWATT_TEST_HARNESS_BIN = bin;
+    try {
+      await expect(
+        opencodeSessionAgent(
+          'ses_exact_marker',
+          await projectDirectory(),
+          '/bin/sh'
+        )
+      ).resolves.toBe('exawatt-12345678');
+    } finally {
+      if (priorTest === undefined) delete process.env.EXAWATT_TEST;
+      else process.env.EXAWATT_TEST = priorTest;
+      if (priorBin === undefined) delete process.env.EXAWATT_TEST_HARNESS_BIN;
+      else process.env.EXAWATT_TEST_HARNESS_BIN = priorBin;
+    }
+  });
+
+  it('does not fabricate an OpenCode marker without a user message', async () => {
+    const bin = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), 'exawatt-opencode-export-empty-')
+    );
+    roots.push(bin);
+    await fs.promises.writeFile(
+      path.join(bin, 'opencode'),
+      `#!/bin/sh
+printf '%s\n' '{"info":{"id":"ses_no_user_marker"},"messages":[{"info":{"role":"assistant","agent":"exawatt-wrong"},"parts":[]}]}'
+`,
+      { mode: 0o755 }
+    );
+    const priorTest = process.env.EXAWATT_TEST;
+    const priorBin = process.env.EXAWATT_TEST_HARNESS_BIN;
+    process.env.EXAWATT_TEST = '1';
+    process.env.EXAWATT_TEST_HARNESS_BIN = bin;
+    try {
+      await expect(
+        opencodeSessionAgent(
+          'ses_no_user_marker',
+          await projectDirectory(),
+          '/bin/sh'
+        )
+      ).resolves.toBeNull();
+    } finally {
+      if (priorTest === undefined) delete process.env.EXAWATT_TEST;
+      else process.env.EXAWATT_TEST = priorTest;
+      if (priorBin === undefined) delete process.env.EXAWATT_TEST_HARNESS_BIN;
+      else process.env.EXAWATT_TEST_HARNESS_BIN = priorBin;
+    }
+  });
   it('returns exact Codex IDs for the requested cwd with useful labels', async () => {
     const cwd = await projectDirectory();
     const { root } = await rollout(
