@@ -53,7 +53,7 @@ The demo fleet must support the full altitude sweep across *different* Projects,
 - **W2 Demo source and pane content source** — the demo data source behind the existing fleet transport boundary plus the Terminal pane content source; demo tabs render transcripts and cannot spawn a PTY.
 - **W3 Demo fleet content** — the authored demo Workspace: Projects, roadmaps, Agents, Sessions, consumption. Authored as data, versioned in the repo, resettable.
 - **W4 Scale tier (data)** — the demo fleet authored or generated at the entity count the Spatial moment needs, with honest structure at that volume rather than cloned filler. This milestone owns the DATA only; ENG-004 V3.1 owns rendering it. See the contradiction note below.
-- **W5 Team Workspace preview** — team tenants appear in the switcher as ENG-026 `preview`, linking to the Team surface.
+- **W5 Organization Workspace preview** — shared tenants appear in the switcher as ENG-026 `preview`, linking to the Organization surface. Named Organization, not Team: decision `0023` gives **Team** to the middle command altitude, and two Teams in one product is a collision.
 
 ## Recorded contradiction: demo scale vs parked V2.1
 

@@ -18,11 +18,12 @@ The altitude ladder is **singular → group → everything**, in plain language,
 | Position | Name | What you are looking at |
 | --- | --- | --- |
 | near | **Agent** | one live Agent, its terminal, its work |
-| middle | **Work** *(provisional)* | everything you have going — your Projects and their Sessions |
+| middle | **Team** | your Projects and the Agents working them, together |
 | far | **Fleet** | all of it, at population scale |
 
 - **Agent** is adopted now for the near altitude. It mildly collides with `Agent` the canonical noun, and that is accepted: at that altitude you are always looking at exactly one Agent, so the label reads correctly in place.
-- **Work** is provisional. The operator's framing is a person → team → fleet ladder without using "person"; the middle name should eventually express *the set of things you have going* more concretely than "Work" does. Revisit in the broader brand/holistic pass, not piecemeal.
+- **Team** was chosen by the operator on 2026-08-02, replacing the provisional "Work". It says the person → team → fleet ladder literally and puts the agent-team thesis in the navigation itself. The known cost is accepted: it claims a collaboration model that does not fully exist yet, which vision principle 8's readiness grammar must therefore carry honestly at that altitude rather than implying agents already coordinate.
+- **Consequence — the human/enterprise surface cannot also be called Team.** ENG-026's surface map is amended: the members/permissions/spend surface for human colleagues is **Organization**, which also matches the Workspace tenancy vocabulary and the IT/SCIM framing in ENG-012. Two Teams in one product is exactly the kind of collision this decision exists to prevent.
 - Labels are manifest data (`src/components/nav/surfaces.ts` is the single typed source), so renaming is a one-file change and does not justify deferring.
 - **Blocker to resolve before the far altitude takes the name `Fleet`:** the legacy demo surface at `/fleet` is currently named "Fleet Command". Two names cannot both be Fleet. The legacy surfaces are already out of primary navigation and slated for retirement; retire or rename that surface as part of the rename, do not ship the collision.
 - Route paths are not part of this decision. `/workspace` and `/fleet/spatial` may keep their URLs; user-facing labels are what change.
