@@ -11,6 +11,30 @@ The system of record itself — the citable reference every UI change adheres to
 - **G2 Full system**: motion vocabulary, component contracts, IA principles extracted from decision records, recurring audit cadence.
 - **G3 Review gate**: checklist-with-visual-evidence gate; later automated as ENG-028 T3's Designer Type.
 
+## Surface audit — 2026-08-03 (visual, Demo Workspace)
+
+First post-demo-arc visual pass over the real Electron app in the Voltaic Demo Workspace (Agent, Team, Fleet, Workspace switcher) plus the signed-out web surface. Screenshots taken through `withElectronApp`; findings are composition-level, which is what G0–G3's token work could not reach by construction. This is the kind of pass G2's "recurring audit cadence" should institutionalize.
+
+**Fleet is the weakest surface, and it carries the demo's scale risk.** ENG-004 owns the fixes; recorded here because the diagnosis is design, not rendering.
+
+1. **The board reads as sparse, not vast.** 173 Agents (69 active / 16 blocked / 88 idle) render as ~170 small hexagons inside ten large project rectangles. Roughly 70% of each rectangle is empty — `demand-gen` is a wide box holding one row of eight hexes. The stated purpose (decision `0023` / ENG-004 V3 design pass) is an INSTRUMENT for situational awareness and a STAGE for scale. Emptiness delivers neither: the eye reads "a few things scattered around" exactly when the pitch is "look how much is running." Zone area should be a function of population, or population should fill its zone.
+2. **No legend, and more colors than named states.** The header names three states (active / blocked / idle) while the hexes use at least five fills. A viewer cannot learn the mapping from the surface, which contradicts D30's "learnable fixed-slot" principle that replaced hue-only signalling.
+3. **The blocked callout is excellent and mis-placed.** "SAML IdP metadata still missing from the utility's IT team — Credentials needed · 240m waiting · 4 stalled in partner-portal" is the single best piece of copy in the app: specific, human, actionable. It floats top-center, unanchored, while `partner-portal` sits in the second row. Attention callouts should point at their subject.
+4. **Three stacked chrome rows before content** (status strip, `Fleet` title + Demo chip, breadcrumb + search + filters), with "Fleet" appearing twice, consuming ~200px before the board starts.
+5. **The minimap conveys nothing.** Ten identical grey rectangles mirroring the layout with no population, status, or viewport indication.
+
+**Cross-surface findings (ENG-036 owns).**
+
+6. **The signed-out web surface is off-system.** `/sign-in` renders a shadcn `Card` with a bright cyan primary button and an `OR CONTINUE WITH` uppercase non-mono divider — a different visual language from the app it fronts. It is the first impression for every contributor, investor, or user who opens a link before installing, and it was outside P8's demo-path polish scope.
+7. **The Agent-altitude header right cluster is crowded.** Up to three meta chips (`Coming soon · <Type>`, `Push to cloud`, `read-only demo Session`) plus the consumption meter, `Architecture`, `Sign In`, and the avatar — seven zones competing with the Session title on the same row. Each chip is individually correct under the readiness grammar; collectively they exceed what one row can carry.
+8. **The consumption meter is unlabeled.** A bare bar and `84%` sits between the altitude tabs and the Workspace chip with no indication of what is 84% consumed, of what window, or for which Workspace.
+9. **Team cards leave large internal voids.** Cards stretch to row height, so a card without delegated children shows a tall empty gap between its state line and its NEXT block; a row containing one card produces a very tall card. Density should not be a function of the tallest sibling.
+
+**Amendment candidates (operator decision, not asserted defects).**
+
+10. **Project identity color as reading-copy color.** `SessionGoalSummary` tints the Session context cue with the Project identity color at `B0` alpha (`session-overview-card.tsx:160,176`). The kernel's channel-ownership rule says Project color is identity only. This was deliberate (the component's own docblock reasons about not competing with identity), and it may be right — but a Team grid of colored subtitles reads at a glance like a status channel. Either the rule gains an "identity may tint its own Session's context cue" clause, or the cue moves to a neutral reading color.
+11. **Uppercase on the Fleet board vs the operator's stated preference.** The kernel legalizes uppercase on mono micro-labels ≤11px with wide tracking (the HUD idiom). The Fleet board uses it heavily — the status strip, `TOP`/`ANGLE`, `STATUS`/`BURN`, and the keyboard hint bar. The operator's standing style preference is "no all-caps." The kernel and the preference disagree; one of them should move, and only the operator can say which.
+
 ## Roadmap milestone log
 
 - 2026-08-02, G0 Kernel (landed; demo-arc packet P1): `docs/engineering/design-system.md` created from a measured audit of the shipped UI at `f3efd83` — docs only, zero component changes. Findings that shaped the kernel:
