@@ -1,7 +1,7 @@
 'use client';
 import { useFleet, useFleetConnection } from '@/lib/fleet/fleet-provider';
 
-export function FleetMetricsBar() {
+export function FleetMetricsBar({ embedded = false }: { embedded?: boolean }) {
   const { metrics } = useFleet();
   const { status } = useFleetConnection();
   const isStale = status === 'disconnected' || status === 'error';
@@ -10,7 +10,13 @@ export function FleetMetricsBar() {
   const formatRate = (v: number) => `$${v.toFixed(2)}/hr`;
 
   return (
-    <div className="flex items-center gap-4 px-4 py-1.5 bg-zinc-950 border-b border-zinc-800 text-xs font-mono">
+    <div
+      className={`flex items-center gap-4 text-xs font-mono ${
+        embedded
+          ? 'min-w-0'
+          : 'border-b border-zinc-800 bg-zinc-950 px-4 py-1.5'
+      }`}
+    >
       <span className="text-teal-400">● {metrics.activeCount} ACTIVE</span>
       <span className="text-red-400">▲ {metrics.blockedCount} BLOCKED</span>
       <span className="text-zinc-500">○ {metrics.idleCount} IDLE</span>

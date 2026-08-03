@@ -77,8 +77,8 @@ The operator's framing:
 > where I can have all my units working against a given goal and I can select
 > them and re-vector them. It's a very zoomed-out view of tmux."
 
-With an explicit styling caveat: *"it doesn't have to be geeky and game-like
-though. I'm just giving you kind of the UI motif."* The RTS reference governs
+With an explicit styling caveat: _"it doesn't have to be geeky and game-like
+though. I'm just giving you kind of the UI motif."_ The RTS reference governs
 the **control and legibility model** — units, mass, selection, re-vectoring —
 not the aesthetic. Decision `0007`'s restraint holds in full.
 
@@ -86,7 +86,7 @@ Four rules follow.
 
 1. **Zoom decides individuality, and mass stays legible at every step.** Agents
    are drawn individually by default; they agglomerate into one another only
-   when the operator is *very* zoomed out. Density and mass must read clearly at
+   when the operator is _very_ zoomed out. Density and mass must read clearly at
    every altitude — an aggregate that hides how much is running defeats the
    purpose. This extends V3.1's label tiers into a stated policy and is the
    direct fix for the audit's "reads sparse, not vast" finding, together with
@@ -116,8 +116,8 @@ information.
 
 ### UX pass — 2026-08-02 (operator + hands-on drive): the V3.3 brief
 
-The operator's verdict on the shipped board: *"It's really chunky and clunky
-and rough around the edges. I don't really like using it at all."* The pass
+The operator's verdict on the shipped board: _"It's really chunky and clunky
+and rough around the edges. I don't really like using it at all."_ The pass
 drove every interaction at four fleet scales (demo S/M/L and the 173-agent
 Voltaic fleet) with frame timing, then put the findings to the operator. The
 evidence and the operator's answers together shape **V3.3 Feel & Fidelity**.
@@ -166,8 +166,11 @@ evidence and the operator's answers together shape **V3.3 Feel & Fidelity**.
   Comp named by the operator: StarCraft / Command & Conquer unit control.
 - **A tiled game board, not rectangles.** "Each agent should be kind of like
   an octagon or hexagon tile and then each of the projects should be a larger
-  version of that on the tiled game board, not just a big rectangle." One
-  tile family at two scales; zones sized by their population, no empty pools.
+  version of that on the tiled game board, not just a big rectangle." Gallery
+  review amended the hierarchy on 2026-08-03: Agents remain hex/oct tiles;
+  Projects become circular population boundaries. Zones still size to their
+  population with no empty pools, and the production world stays
+  WebGL/Three.js for future compatibility.
 - **Rendering pushed to earn the WebGL choice**: real tile materiality
   (bevel, depth, edge light), status subordinate to a visible body, scarce
   color at scale — within decision `0007`'s restrained-board constraints.
@@ -260,18 +263,21 @@ the canvas layer tree both touch). Every slice: read
   `__EVAL_GL__` frame gaps — no gap >100ms during the settle window);
   reduced-motion snaps; input is never blocked mid-transition.
 - **S3 — The tiled board (F4 tile family + F5 in-world identity).**
-  Scope: replace zone rectangles and cylinder pieces with the hex family from
-  the `board-tile-study` prototype — beveled hex agent tiles in socketed
-  positions on population-sized hex project plates, subordinate glowing
+  Scope: replace zone rectangles and cylinder pieces with the approved shape
+  hierarchy from the `board-tile-study` prototype — beveled hex Agent tiles
+  in socketed positions inside population-sized circular Project boundaries,
+  subordinate glowing
   status lamps (status stays the five-light protocol), scarce color at fleet
   scale (idle sinks toward the board); layout math for hex plates/sockets is
-  pure `ui-model` (`spatial-board.ts` grows a hex tiling policy, versioned,
-  stable slots preserved); piece labels switch to the durable context goal
+  pure `ui-model` (`spatial-board.ts` grows a circular-footprint + hex-slot
+  policy, versioned, stable slots preserved); piece labels switch to the durable context goal
   (`agent.goal`, already the ENG-021 context summary via the transport —
   NEVER the `cwd · harness-title` name) with the current activity sentence at
   Team/Agent altitude inside the label-budget rules; delegation satellites
   (ENG-023 D3b) re-anchor to the new tile geometry.
-  Acceptance: no rectangles remain at any altitude; a real 4-agent Project
+  Acceptance: no rectangular Project plates remain at any altitude; circular
+  Project outlines and hex Agent bodies remain distinct at every individual
+  resolution; a real 4-agent Project
   shows four DISTINCT goal labels; a 1-agent drill frames the tile, not an
   empty slab; `eval:spatial:scale` still meets V3.1's recorded budgets on the
   Voltaic fleet; the operator's gallery-review notes are reflected or
@@ -1372,7 +1378,7 @@ addresses are stable — the least-squares scale degenerates toward zero (a
 tiny distant board), so the pose instead matches **scale** (zones arrive at
 roughly card size, via the median card/zone area ratio) and **centroid**,
 and the per-card ghost flights carry the exact positions. Entry zoom is
-clamped to [fit, 2.2×fit]: the release always PULLS BACK, never dives in,
+clamped to [1.06×fit, 2.2×fit]: the release always PULLS BACK, never dives in,
 and matched zones never land far offscreen — real Team sections dwarf their
 zones, so an unclamped size match framed one giant zone and scattered the
 rest outside the viewport (Voltaic tuning, 2026-08-02).
@@ -1418,7 +1424,7 @@ deliberately not invented; ghosts crossfaded into their zones over the
 tenant-aware Voltaic board (10 Projects / 52 emitted pieces / 209-entity
 fleet) at the clamped 2.2×fit entry pose, then the camera pulled back to
 the 12.10 fit. Zero console errors. This run drove the two tuning changes
-recorded above (2.2×fit ceiling; 460ms in-out flight ease — the original
+recorded above (1.06×fit floor, 2.2×fit ceiling; 460ms in-out flight ease — the original
 front-loaded expo curve finished the travel in ~120ms and read as a pop).
 Frame-by-frame video of the crossfade and the entry/mid/settled
 screenshots live in `scripts/r3f-eval/spatial-report/`.
@@ -1486,14 +1492,14 @@ cover the DRIVEN motion window only — the idle settle tail is excluded, and
 gl.render pass bursts are collapsed into presented frames. Headed Chromium,
 real GPU, 1400×860, 60Hz-vsynced window; `pnpm eval:spatial:scale`):
 
-| Scenario | Agents | Emitted pieces | Layout | Glide render-interval p50/p95 | Render CPU p95 (glide/zoom) | Draw calls | JS heap | Parks |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Voltaic fleet (W4) | 173 / 10 Projects | 48 aggregates → dots | 1.1ms | 16.7 / 18.5ms | 0.4 / 2.5ms | 6 | 34MB | 0 frames |
-| Voltaic fleet, fixed-angle | 173 | 48 → dots | 1.2ms | 16.7 / 16.8ms | 0.4 / 2.4ms | 6 | 31MB | 0 frames |
-| Voltaic project drill (dispatch-engine) | 28 individual | 28 pieces + controls | 1.2ms | 16.7 / 16.9ms | 0.4 / 0.5ms | 13 | 39MB | n/a (rotors) |
-| Synthetic fleet | 1,000 / 26 | 148 → dots | 2.2ms | 16.7 / 18.0ms | 0.3 / 2.3ms | 6 | 36MB | 0 frames |
-| Synthetic fleet | 10,000 / 26 | 150 → dots | 10.2ms | 16.7 / 18.3ms | 0.3 / 2.3ms | 6 | 38MB | 0 frames |
-| Synthetic giant-Project drill | 3,334 in one Project | 6 → dots | 8.6ms | 16.7 / 17.7ms | 0.5 / 0.3ms | 6 | 36MB | n/a |
+| Scenario                                | Agents               | Emitted pieces       | Layout | Glide render-interval p50/p95 | Render CPU p95 (glide/zoom) | Draw calls | JS heap | Parks        |
+| --------------------------------------- | -------------------- | -------------------- | ------ | ----------------------------- | --------------------------- | ---------- | ------- | ------------ |
+| Voltaic fleet (W4)                      | 173 / 10 Projects    | 48 aggregates → dots | 1.1ms  | 16.7 / 18.5ms                 | 0.4 / 2.5ms                 | 6          | 34MB    | 0 frames     |
+| Voltaic fleet, fixed-angle              | 173                  | 48 → dots            | 1.2ms  | 16.7 / 16.8ms                 | 0.4 / 2.4ms                 | 6          | 31MB    | 0 frames     |
+| Voltaic project drill (dispatch-engine) | 28 individual        | 28 pieces + controls | 1.2ms  | 16.7 / 16.9ms                 | 0.4 / 0.5ms                 | 13         | 39MB    | n/a (rotors) |
+| Synthetic fleet                         | 1,000 / 26           | 148 → dots           | 2.2ms  | 16.7 / 18.0ms                 | 0.3 / 2.3ms                 | 6          | 36MB    | 0 frames     |
+| Synthetic fleet                         | 10,000 / 26          | 150 → dots           | 10.2ms | 16.7 / 18.3ms                 | 0.3 / 2.3ms                 | 6          | 38MB    | 0 frames     |
+| Synthetic giant-Project drill           | 3,334 in one Project | 6 → dots             | 8.6ms  | 16.7 / 17.7ms                 | 0.5 / 0.3ms                 | 6          | 36MB    | n/a          |
 
 Display-refresh caveat: interval percentiles are vsync-bound — a demand
 renderer that keeps up reads exactly the refresh interval (16.7ms at 60Hz,
@@ -1680,40 +1686,60 @@ selection). `eval:spatial:pointer` was already broken before this change —
 it drives the retired "Seed N demo fleet" dev controls; V3.3 S1 owns that
 harness's future.
 
-### V3.3 F7 + S3 composition review candidate (2026-08-03)
+### V3.3 F7 + S3 composition landed (2026-08-03)
 
-The gallery review boundary now treats F7 and the S3 tiled-board slice as one
+The gallery review boundary treats F7 and the S3 tiled-board slice as one
 composition problem, per the operator sequencing amendment. The existing F4
 tile-material study grew into `/hud-gallery#board-tiles`'s **Fleet board
-composition** bench; production `/fleet/spatial` remains untouched pending
-operator review.
+composition** bench. The operator approved the direction on 2026-08-03 with
+one amendment before production wiring: circular Project outlines replace the
+large Project hexes, Agent units remain hex tiles, and the production board
+must remain WebGL/Three.js for future compatibility.
 
-The candidate makes the doctrine inspectable at three explicit resolution
-tiers over one 173-Agent fixture:
+The accepted composition now ships through the production WebGL/Three.js board
+at three explicit resolution tiers:
 
 - **Unit detail** resolves distinct goal-first identity and current activity on
-  beveled Agent hexes inside a same-family Project plate.
-- **Fleet fit** renders all 173 Agents individually in population-sized hex
-  Projects; one instanced body field plus five instanced D40 mark fields keep
-  status subordinate and shape-redundant. Only Active rotates.
+  beveled Agent hexes inside a circular Project boundary.
+- **Fleet fit** renders the 173-Agent Voltaic fleet individually in
+  population-sized hex units inside population-sized
+  circular Projects. Individual Active units alone carry work motion; resting
+  states remain still.
 - **Very far** is the sole agglomerated tier. Project marks retain stable
   addresses while their area, exact count, active count, and needs-you count
-  preserve mass.
+  preserve mass. Fleets above the 240-visible-unit boundary enter this tier;
+  drilling a Project restores its individual units up to the existing
+  Project-detail budget.
 
-Attention stays anchored to the owning Partner portal unit/Project in all three
+Attention stays anchored to the owning Agent unit or Project in all three
 tiers. One top row replaces the audit's three-row preamble and names all five
 D40 states with counts, so the board teaches its marks without a manual. The
-minimap now sizes Projects by population, marks attention/fault, and shows a
-tier-specific viewport. The existing RTS reference remains a control and
-legibility model only: material, palette, fixed top-down framing, and stable
-automatic addresses continue to follow decisions `0007`, `0023`, and `0024`.
+minimap sizes Projects by population, marks active/urgent state, selection, and
+the viewport. Goal-first identity plus the latest non-status activity sentence
+replaces harness-title duplication at Project/Agent altitude. The existing RTS
+reference remains a control and legibility model only: material, palette,
+fixed top-down framing, and stable automatic addresses continue to follow
+decisions `0007`, `0023`, and `0024`.
 
-Verification candidate: isolated `/eval/t13-board-composition`; `pnpm
-eval:r3f` 100/100 with T13 painted at a max 20 draw calls and zero warnings or
-errors; targeted isolated captures for all three tiers likewise reported zero
-console/page errors. Operator acceptance or revision is the next gate before
-pure `ui-model` hex layout and the accepted R3F/DOM composition are wired into
-production S3.
+The pure layout is version 2: circular Project footprints expose square
+bounding boxes plus radius, use deterministic axial-hex slots, preserve stable
+centers across resize, and use circle intersection for selection. The renderer
+uses circular WebGL plates, beveled hex Agent bodies, and one instanced shader
+draw for shape-redundant D40 aggregate marks. The accepted
+`/hud-gallery#board-tiles` study and its isolated T13 route were retired after
+production wiring per ENG-036; production is now the only source of truth.
+
+Landing evidence: `pnpm type-check` and `pnpm lint`; 27 pure spatial-board
+tests, 11 population-packing tests, and the gallery isolation tests; `pnpm
+eval:r3f` 100/100 with zero warnings or errors; all desktop, mobile,
+reduced-motion, low-power, and handoff scenarios green in `eval:spatial`; and
+all `eval:spatial:scale` scenarios green. The real Voltaic fleet stays at 13
+draw calls with 173 individual units; 1k/10k very-far fixtures stay at 6 draw
+calls and park at zero frames. The repository's signed-browser doctor and
+hosted smoke check pass. The production pointer evaluator proves drag pan,
+pinch zoom, wheel pan, and Project drill, then reaches its known pre-existing
+failure at the retired `Seed medium demo fleet` control; V3.3 S1 still owns
+that harness migration.
 
 ### V2.1 Scale & Truth
 

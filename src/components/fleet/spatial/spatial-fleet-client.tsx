@@ -577,47 +577,7 @@ export function SpatialFleetClient() {
       data-spatial-shell-theme={resolvedAppearance.themeId}
       className="flex min-h-[calc(100svh-3rem)] flex-col overflow-x-hidden bg-background text-foreground xl:h-[calc(100svh-3rem)] xl:overflow-hidden"
     >
-      <FleetMetricsBar />
-
-      <header className="exa-material-chrome relative z-20 flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <Crosshair className="h-4 w-4 text-primary" />
-          <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">
-            Fleet
-          </h1>
-          <span className="rounded-full border border-border bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
-            {isDemo ? 'Demo' : 'Live'}
-          </span>
-        </div>
-
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          {canConnect && (
-            <Button onClick={connectToRealOC} size="sm">
-              <RadioTower className="h-4 w-4" />
-              Connect
-            </Button>
-          )}
-          <Button
-            type="button"
-            size="icon"
-            variant="outline"
-            className="grid h-11 w-11 place-items-center xl:hidden"
-            onClick={openHelpModal}
-            aria-label="Keyboard shortcuts"
-            aria-keyshortcuts={
-              helpKeys ? formatShortcutKeysAria(helpKeys) : undefined
-            }
-            title={`Keyboard shortcuts${helpShortcut ? ` · ${helpShortcut}` : ''}`}
-          >
-            <Keyboard className="h-4 w-4" />
-          </Button>
-        </div>
-      </header>
-
-      <nav
-        aria-label="Zoom altitude"
-        className="exa-material-chrome relative z-20 flex shrink-0 items-center gap-1 border-b border-border px-4 py-1.5 text-xs"
-      >
+      <header className="exa-material-chrome relative z-20 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-2">
         <span className="sr-only" aria-live="polite">
           {scene.altitude === 'agent' && inspectedAgent
             ? `Agent view: ${inspectedAgent.name}`
@@ -625,20 +585,26 @@ export function SpatialFleetClient() {
               ? `Project view: ${focusedZoneLabel}`
               : 'Fleet view'}
         </span>
-        <button
-          onClick={() =>
-            navigate({ altitude: 'fleet', project: null, agent: null })
-          }
-          className={`rounded px-2 py-1 transition ${
-            scene.altitude === 'fleet'
-              ? 'text-primary'
-              : 'text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          Fleet
-        </button>
+        <div className="flex min-w-0 items-center gap-2">
+          <Crosshair className="h-4 w-4 text-primary" />
+          <button
+            type="button"
+            onClick={() =>
+              navigate({ altitude: 'fleet', project: null, agent: null })
+            }
+            className="truncate text-left text-lg font-semibold tracking-tight text-foreground outline-none transition-colors hover:text-primary focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            Fleet
+          </button>
+          <span className="rounded-full border border-border bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
+            {isDemo ? 'Demo' : 'Live'}
+          </span>
+        </div>
         {scene.altitude !== 'fleet' && focusedZoneLabel && (
-          <>
+          <nav
+            aria-label="Zoom altitude"
+            className="flex min-w-0 items-center gap-1 text-xs"
+          >
             <span className="text-muted-foreground">›</span>
             <button
               onClick={() =>
@@ -656,24 +622,29 @@ export function SpatialFleetClient() {
             >
               {focusedZoneLabel}
             </button>
-          </>
-        )}
-        {scene.altitude === 'agent' && inspectedAgent && (
-          <>
-            <span className="text-muted-foreground">›</span>
-            <span
-              className="max-w-[40vw] truncate rounded px-2 py-1 text-primary"
-              title={inspectedAgent.name}
-            >
-              {inspectedAgent.name}
-            </span>
-          </>
+            {scene.altitude === 'agent' && inspectedAgent && (
+              <>
+                <span className="text-muted-foreground">›</span>
+                <span
+                  className="max-w-[24vw] truncate rounded px-2 py-1 text-primary"
+                  title={inspectedAgent.name}
+                >
+                  {inspectedAgent.name}
+                </span>
+              </>
+            )}
+          </nav>
         )}
         {scene.altitude !== 'fleet' && (
           <span className="hidden text-chrome-meta text-muted-foreground sm:inline">
             Esc to zoom out
           </span>
         )}
+
+        <div className="hidden h-5 w-px bg-border lg:block" />
+        <div className="hidden lg:block">
+          <FleetMetricsBar embedded />
+        </div>
 
         {scene.altitude !== 'agent' && (
           <div className="ml-auto flex flex-wrap items-center gap-1.5">
@@ -727,11 +698,37 @@ export function SpatialFleetClient() {
             )}
           </div>
         )}
-      </nav>
+        {canConnect && (
+          <Button
+            onClick={connectToRealOC}
+            size="sm"
+            className="fleet-action-button h-8"
+          >
+            <RadioTower className="h-4 w-4" />
+            Connect
+          </Button>
+        )}
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          className="fleet-action-button grid h-11 w-11 place-items-center p-0 xl:hidden"
+          onClick={openHelpModal}
+          aria-label="Keyboard shortcuts"
+          aria-keyshortcuts={
+            helpKeys ? formatShortcutKeysAria(helpKeys) : undefined
+          }
+          title={`Keyboard shortcuts${helpShortcut ? ` · ${helpShortcut}` : ''}`}
+        >
+          <Keyboard className="h-4 w-4" />
+        </Button>
+      </header>
 
       <main
-        className={`relative grid min-h-0 flex-1 xl:overflow-hidden ${
-          showSideRail ? 'xl:grid-cols-[minmax(0,1fr)_340px]' : ''
+        className={`relative grid flex-none xl:flex-1 xl:overflow-hidden ${
+          showSideRail
+            ? 'min-h-[calc(100svh+6rem)] xl:min-h-0 xl:grid-cols-[minmax(0,1fr)_340px]'
+            : 'min-h-0'
         }`}
       >
         <section

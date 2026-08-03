@@ -2,8 +2,9 @@
  * Population dot fields (ENG-004 V3.1 — demo-scale rendering).
  *
  * Pure expansion of the board model's aggregate pieces (status + count per
- * zone) into deterministic per-agent density dots packed inside their zone
- * rect. The renderer draws the whole field as ONE InstancedMesh, so the
+ * zone) into deterministic per-agent hex units packed inside their circular
+ * Project footprint. The renderer draws the whole field as a bounded set of
+ * InstancedMeshes, so the
  * fleet's felt population scales to tens of thousands without per-agent React
  * elements, DOM labels, or draw calls.
  *
@@ -61,9 +62,9 @@ const DOT_FILL = 0.62;
  *  zone-geometry change in `@exawatt/ui-model` re-sizes the dot region with it.
  *  The multipliers are the tuned V3.1 clearances: dots start below the DOM
  *  zone-header chip with breathing room, and sit slightly inside the plate. */
-const ZONE_PADDING_X = SPATIAL_BOARD_ZONE_METRICS.zonePadding * 0.8;
-const ZONE_HEADER = SPATIAL_BOARD_ZONE_METRICS.zoneHeaderHeight * 1.2;
-const ZONE_PADDING_BOTTOM = SPATIAL_BOARD_ZONE_METRICS.zonePadding * 0.45;
+const ZONE_PADDING = SPATIAL_BOARD_ZONE_METRICS.zonePadding * 0.8;
+const ZONE_LABEL_CLEARANCE =
+  SPATIAL_BOARD_ZONE_METRICS.zoneLabelClearance * 1.05;
 
 export interface PopulationDotField {
   /** Dots actually emitted (≤ population when truncated). */
@@ -164,9 +165,7 @@ export function computePopulationDotField(
     bands: ZoneBand[];
     shares: number[];
     pitch: number;
-    columns: number;
-    startX: number;
-    startY: number;
+    slots: Array<{ x: number; y: number }>;
   }> = [];
   let emitted = 0;
   let truncated = false;
@@ -174,39 +173,47 @@ export function computePopulationDotField(
     const zone = zoneById.get(zoneId)!;
     bands.sort((a, b) => a.status - b.status);
     const total = bands.reduce((sum, band) => sum + band.count, 0);
-    const regionWidth = Math.max(1, zone.rect.width - ZONE_PADDING_X * 2);
-    const regionHeight = Math.max(
-      1,
-      zone.rect.height - ZONE_HEADER - ZONE_PADDING_BOTTOM
-    );
     let pitch = PITCH_TIERS[PITCH_TIERS.length - 1]!;
-    let columns = 1;
+    let slots: Array<{ x: number; y: number }> = [];
     let capacity = 0;
     for (const tier of PITCH_TIERS) {
-      const cols = Math.max(1, Math.floor(regionWidth / tier));
-      const rows = Math.max(1, Math.floor(regionHeight / tier));
-      if (cols * rows >= total) {
+      const nextSlots: Array<{ x: number; y: number }> = [];
+      const centerX = zone.rect.x + zone.radius;
+      const centerY = zone.rect.y + zone.radius;
+      const usableRadius = Math.max(tier, zone.radius - ZONE_PADDING);
+      const minY = centerY - usableRadius + ZONE_LABEL_CLEARANCE;
+      const maxY = centerY + usableRadius;
+      const rowCount = Math.max(1, Math.floor((maxY - minY) / tier) + 1);
+      for (let row = 0; row < rowCount; row += 1) {
+        const y = minY + row * tier;
+        const dy = y - centerY;
+        const halfWidth = Math.sqrt(
+          Math.max(0, usableRadius * usableRadius - dy * dy)
+        );
+        const columns = Math.max(1, Math.floor((halfWidth * 2) / tier) + 1);
+        const offset = row % 2 === 0 ? 0 : tier * 0.5;
+        const startX = centerX - ((columns - 1) * tier) / 2 + offset;
+        for (let column = 0; column < columns; column += 1) {
+          const x = startX + column * tier;
+          const dx = x - centerX;
+          if (dx * dx + dy * dy > usableRadius * usableRadius) continue;
+          nextSlots.push({ x, y });
+        }
+      }
+      if (nextSlots.length >= total) {
         pitch = tier;
-        columns = cols;
-        capacity = cols * rows;
+        slots = nextSlots;
+        capacity = nextSlots.length;
         break;
       }
       pitch = tier;
-      columns = cols;
-      capacity = cols * rows;
+      slots = nextSlots;
+      capacity = nextSlots.length;
     }
     const shares = largestRemainderShare(bands, capacity);
     const zoneEmit = shares.reduce((sum, value) => sum + value, 0);
     if (zoneEmit < total) truncated = true;
-    const usedColumns = Math.min(columns, Math.max(1, zoneEmit));
-    const rows = Math.ceil(Math.max(1, zoneEmit) / columns);
-    const contentWidth = usedColumns * pitch;
-    const contentHeight = rows * pitch;
-    const startX =
-      zone.rect.x + ZONE_PADDING_X + (regionWidth - contentWidth) / 2 + pitch / 2;
-    const startY =
-      zone.rect.y + ZONE_HEADER + Math.max(0, (regionHeight - contentHeight) / 2) + pitch / 2;
-    emitPlans.push({ zone, bands, shares, pitch, columns, startX, startY });
+    emitPlans.push({ zone, bands, shares, pitch, slots });
     emitted += zoneEmit;
   }
 
@@ -221,10 +228,8 @@ export function computePopulationDotField(
     for (let band = 0; band < plan.bands.length; band++) {
       const share = plan.shares[band]!;
       for (let index = 0; index < share; index++) {
-        const column = slot % plan.columns;
-        const row = Math.floor(slot / plan.columns);
-        x[cursor] = plan.startX + column * plan.pitch;
-        y[cursor] = plan.startY + row * plan.pitch;
+        x[cursor] = plan.slots[slot]!.x;
+        y[cursor] = plan.slots[slot]!.y;
         size[cursor] = plan.pitch * DOT_FILL;
         status[cursor] = plan.bands[band]!.status;
         burn[cursor] = plan.bands[band]!.burn;

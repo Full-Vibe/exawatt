@@ -46,6 +46,8 @@ export interface SpatialBoardProjectZone {
   label: string;
   agentIds: string[];
   rect: SpatialBoardRect;
+  /** Circular Project footprint radius; `rect` is its square bounding box. */
+  radius: number;
   visible: boolean;
   selected: boolean;
   isAggregate: boolean;
@@ -90,6 +92,8 @@ export interface SpatialBoardPiece {
   agentId: string | null;
   label: string;
   summary: string;
+  /** Latest source-reported activity sentence; absent when unreported. */
+  activity?: string | null;
   status: AgentStatus;
   sessionState?: 'live' | 'stopped';
   count: number;
@@ -114,7 +118,7 @@ export interface SpatialBoardPiece {
 }
 
 export interface SpatialBoardLayout {
-  version: 1;
+  version: 2;
   altitude: SpatialBoardAltitude;
   focusedProjectId: string | null;
   selectedAgentId: string | null;
@@ -162,18 +166,16 @@ export interface SpatialBoardLayoutOptions {
 
 const BOARD = {
   columns: 4,
-  fleetZoneWidth: 24,
-  fleetZoneHeight: 11.5,
-  zoneGapX: 5,
-  zoneGapY: 5,
-  zoneHeaderHeight: 4,
-  zonePadding: 2,
+  fleetPitchX: 30,
+  fleetPitchY: 28,
+  fleetMinRadius: 7,
+  fleetMaxRadius: 14,
+  zoneLabelClearance: 3.2,
+  zonePadding: 1.4,
   fleetPieceSize: 2.2,
-  fleetPieceGap: 1.25,
-  projectPieceWidth: 5.2,
   projectPieceHeight: 2.15,
-  projectPieceGap: 1.6,
-  projectColumns: 6,
+  fleetHexPitch: 1.3,
+  projectHexPitch: 2.75,
 } as const;
 
 /**
@@ -182,10 +184,9 @@ const BOARD = {
  * these — never duplicate the numbers there).
  */
 export const SPATIAL_BOARD_ZONE_METRICS = {
-  zoneHeaderHeight: BOARD.zoneHeaderHeight,
+  zoneLabelClearance: BOARD.zoneLabelClearance,
   zonePadding: BOARD.zonePadding,
-  fleetZoneWidth: BOARD.fleetZoneWidth,
-  fleetZoneHeight: BOARD.fleetZoneHeight,
+  fleetMinRadius: BOARD.fleetMinRadius,
 } as const;
 
 /**
@@ -198,8 +199,11 @@ export const SPATIAL_DENSITY_ZONE_PITCH = 0.35;
 
 const DEFAULTS = {
   maxProjectZones: 24,
-  maxFleetPieces: 96,
-  maxFleetPiecesPerZone: 12,
+  // The 173-Agent reference and current Voltaic demo fleets remain fully
+  // individual. Larger fleets enter the fitted "very far" population field;
+  // drilling a Project restores hexes up to the focused-Project budget.
+  maxFleetPieces: 240,
+  maxFleetPiecesPerZone: 64,
   maxProjectPieces: 120,
   fleetAgentLabelLimit: 8,
   projectAgentLabelLimit: 32,
@@ -310,62 +314,86 @@ function stableSlots(
   return result;
 }
 
-function fleetZoneRect(slotIndex: number): SpatialBoardRect {
-  const pitchX = BOARD.fleetZoneWidth + BOARD.zoneGapX;
-  const pitchY = BOARD.fleetZoneHeight + BOARD.zoneGapY;
+function circleRect(x: number, y: number, radius: number): SpatialBoardRect {
   return {
-    x: (slotIndex % BOARD.columns) * pitchX,
-    y: Math.floor(slotIndex / BOARD.columns) * pitchY,
-    width: BOARD.fleetZoneWidth,
-    height: BOARD.fleetZoneHeight,
+    x: round4(x - radius),
+    y: round4(y - radius),
+    width: round4(radius * 2),
+    height: round4(radius * 2),
   };
+}
+
+function fleetZoneRadius(agentCount: number): number {
+  return round4(
+    Math.min(
+      BOARD.fleetMaxRadius,
+      Math.max(BOARD.fleetMinRadius, 5.8 + Math.sqrt(agentCount) * 1.15)
+    )
+  );
+}
+
+function fleetZoneRect(
+  slotIndex: number,
+  agentCount: number
+): SpatialBoardRect {
+  const column = slotIndex % BOARD.columns;
+  const row = Math.floor(slotIndex / BOARD.columns);
+  const centerX = BOARD.fleetMaxRadius + column * BOARD.fleetPitchX;
+  const centerY = BOARD.fleetMaxRadius + row * BOARD.fleetPitchY;
+  const radius = fleetZoneRadius(agentCount);
+  return circleRect(centerX, centerY, radius);
+}
+
+function hexRingForCount(count: number): number {
+  let ring = 0;
+  while (1 + 3 * ring * (ring + 1) < Math.max(1, count)) ring += 1;
+  return ring;
 }
 
 function projectZoneRect(agentCount: number): SpatialBoardRect {
-  const columns = Math.max(1, Math.min(BOARD.projectColumns, agentCount));
-  const rows = Math.max(1, Math.ceil(agentCount / BOARD.projectColumns));
-  const width =
-    columns * BOARD.projectPieceWidth +
-    Math.max(0, columns - 1) * BOARD.projectPieceGap +
-    BOARD.zonePadding * 2;
-  const height =
-    BOARD.zoneHeaderHeight +
-    rows * BOARD.projectPieceHeight +
-    Math.max(0, rows - 1) * BOARD.projectPieceGap +
-    BOARD.zonePadding * 2;
-  return {
-    x: 0,
-    y: 0,
-    width: round4(Math.max(BOARD.fleetZoneWidth, width)),
-    height: round4(Math.max(BOARD.fleetZoneHeight, height)),
-  };
+  const radius = Math.max(
+    7,
+    5.2 + hexRingForCount(agentCount) * BOARD.projectHexPitch * 1.5
+  );
+  return circleRect(radius, radius, radius);
 }
 
-/**
- * Zone footprint for a focused Project that exceeds the individual-piece
- * budget and therefore renders as aggregate density rather than one slot per
- * Agent (ENG-004 V3.1). Sizing for `agentCount` slots produced a footprint
- * thousands of units tall whose camera fit was an empty sliver; density
- * content only needs area proportional to the population, at a board-like
- * aspect, with a bounded ceiling.
- */
+/** Circular footprint for aggregate density at focused Project altitude. */
 function densityZoneRect(agentCount: number): SpatialBoardRect {
-  // One pitch² of area per rendered density dot, plus some slack.
-  const contentArea =
-    Math.min(agentCount, 4_000) * SPATIAL_DENSITY_ZONE_PITCH ** 2 * 1.2;
-  const aspect = 2.4;
-  const contentHeight = Math.max(
-    BOARD.fleetZoneHeight - BOARD.zoneHeaderHeight,
-    Math.sqrt(contentArea / aspect)
+  const contentRadius = Math.sqrt(
+    (Math.min(agentCount, 4_000) * SPATIAL_DENSITY_ZONE_PITCH ** 2 * 1.25) /
+      Math.PI
   );
-  const contentWidth = Math.max(BOARD.fleetZoneWidth, contentHeight * aspect);
+  const radius = Math.max(
+    BOARD.fleetMinRadius,
+    contentRadius + BOARD.zoneLabelClearance + BOARD.zonePadding
+  );
+  return circleRect(radius, radius, radius);
+}
+
+function axialSlotOffset(
+  slotIndex: number,
+  pitch: number
+): { x: number; y: number } {
+  if (slotIndex === 0) return { x: 0, y: 0 };
+  const ring = hexRingForCount(slotIndex + 1);
+  const coordinates: Array<{ q: number; r: number; distance: number }> = [];
+  for (let q = -ring; q <= ring; q += 1) {
+    const rMin = Math.max(-ring, -q - ring);
+    const rMax = Math.min(ring, -q + ring);
+    for (let r = rMin; r <= rMax; r += 1) {
+      const distance = Math.max(Math.abs(q), Math.abs(r), Math.abs(-q - r));
+      coordinates.push({ q, r, distance });
+    }
+  }
+  coordinates.sort((a, b) => {
+    if (a.distance !== b.distance) return a.distance - b.distance;
+    return Math.atan2(a.r, a.q) - Math.atan2(b.r, b.q);
+  });
+  const coordinate = coordinates[slotIndex]!;
   return {
-    x: 0,
-    y: 0,
-    width: round4(contentWidth + BOARD.zonePadding * 2),
-    height: round4(
-      contentHeight + BOARD.zoneHeaderHeight + BOARD.zonePadding * 2
-    ),
+    x: round4(pitch * Math.sqrt(3) * (coordinate.q + coordinate.r / 2)),
+    y: round4(pitch * 1.5 * coordinate.r),
   };
 }
 
@@ -434,6 +462,7 @@ function projectZone(
     label: group.label,
     agentIds: agents.map(agent => agent.id),
     rect,
+    radius: rect.width / 2,
     visible:
       isAggregate ||
       visible.length > 0 ||
@@ -505,24 +534,12 @@ function fleetSlotPosition(
   zone: SpatialBoardProjectZone,
   slotIndex: number
 ): { x: number; y: number } {
-  const columns = 4;
-  const row = Math.floor(slotIndex / columns);
-  const column = slotIndex % columns;
-  const contentWidth =
-    columns * BOARD.fleetPieceSize + (columns - 1) * BOARD.fleetPieceGap;
-  const startX = zone.rect.x + (zone.rect.width - contentWidth) / 2;
-  const startY =
-    zone.rect.y +
-    BOARD.zoneHeaderHeight +
-    BOARD.zonePadding +
-    BOARD.fleetPieceSize / 2;
+  const centerX = zone.rect.x + zone.radius;
+  const centerY = zone.rect.y + zone.radius + BOARD.zoneLabelClearance * 0.18;
+  const offset = axialSlotOffset(slotIndex, BOARD.fleetHexPitch);
   return {
-    x: round4(
-      startX +
-        column * (BOARD.fleetPieceSize + BOARD.fleetPieceGap) +
-        BOARD.fleetPieceSize / 2
-    ),
-    y: round4(startY + row * (BOARD.fleetPieceSize + BOARD.fleetPieceGap)),
+    x: round4(centerX + offset.x),
+    y: round4(centerY + offset.y),
   };
 }
 
@@ -530,27 +547,10 @@ function projectSlotPosition(
   zone: SpatialBoardProjectZone,
   slotIndex: number
 ): { x: number; y: number } {
-  const columns = Math.max(1, Math.min(BOARD.projectColumns, zone.agentCount));
-  const row = Math.floor(slotIndex / columns);
-  const column = slotIndex % columns;
-  const contentWidth =
-    columns * BOARD.projectPieceWidth +
-    Math.max(0, columns - 1) * BOARD.projectPieceGap;
-  const startX = zone.rect.x + (zone.rect.width - contentWidth) / 2;
-  const startY =
-    zone.rect.y +
-    BOARD.zoneHeaderHeight +
-    BOARD.zonePadding +
-    BOARD.projectPieceHeight / 2;
+  const offset = axialSlotOffset(slotIndex, BOARD.projectHexPitch);
   return {
-    x: round4(
-      startX +
-        column * (BOARD.projectPieceWidth + BOARD.projectPieceGap) +
-        BOARD.projectPieceWidth / 2
-    ),
-    y: round4(
-      startY + row * (BOARD.projectPieceHeight + BOARD.projectPieceGap)
-    ),
+    x: round4(zone.rect.x + zone.radius + offset.x),
+    y: round4(zone.rect.y + zone.radius + offset.y),
   };
 }
 
@@ -585,14 +585,19 @@ function individualPieces(
         : projectSlotPosition(zone, slotIndex);
     const showByBudget = index < labelLimit;
     const delegated = agent.delegation?.children ?? [];
+    const latestActivity = [...(agent.activities ?? [])]
+      .filter(activity => activity.type !== 'status_change')
+      .sort((a, b) => b.timestamp - a.timestamp)[0]
+      ?.content.trim();
     return {
       id,
       slotIndex,
       kind: 'agent' as const,
       projectId: zone.id,
       agentId,
-      label: agent.name,
-      summary: agent.goal,
+      label: agent.goal.trim() || agent.name,
+      summary: agent.name,
+      activity: latestActivity || null,
       status: agent.status,
       ...(agent.sessionState ? { sessionState: agent.sessionState } : {}),
       ...(delegated.length > 0
@@ -760,7 +765,7 @@ export function selectSpatialBoardLayout(
     const isAggregate = group.clusterId === 'aggregate:remaining-projects';
     const rect =
       altitude === 'fleet'
-        ? fleetZoneRect(slotIndex)
+        ? fleetZoneRect(slotIndex, group.agentIds.length)
         : group.agentIds.length > maxProjectPiecesBudget
           ? densityZoneRect(group.agentIds.length)
           : projectZoneRect(group.agentIds.length);
@@ -833,7 +838,7 @@ export function selectSpatialBoardLayout(
   ).length;
 
   return {
-    version: 1,
+    version: 2,
     altitude,
     focusedProjectId: altitude === 'fleet' ? null : focusedProjectId,
     selectedAgentId,
@@ -869,7 +874,8 @@ export function selectSpatialBoardLayout(
  *   individually (the RTS unit rule);
  * - a zone whose population renders as the aggregated dot field — no
  *   per-agent pieces to hit — is captured whole when the band INTERSECTS its
- *   rect (the RTS building rule; at fleet density the zone is the unit).
+ *   circular footprint (the RTS building rule; at fleet density the zone is
+ *   the unit).
  *   Zones that do render agent pieces are owned by the piece rule, so a band
  *   inside a focused Project never grabs the whole Project.
  *
@@ -903,9 +909,13 @@ export function selectSpatialBandAgentIds(
   for (const zone of layout.zones) {
     if (!zone.visible || zone.isAggregate || zone.agentCount === 0) continue;
     if (pieceOwnedZones.has(zone.id)) continue;
-    const { x, y, width, height } = zone.rect;
-    const intersects =
-      x < right && x + width > left && y < bottom && y + height > top;
+    const centerX = zone.rect.x + zone.radius;
+    const centerY = zone.rect.y + zone.radius;
+    const closestX = Math.max(left, Math.min(centerX, right));
+    const closestY = Math.max(top, Math.min(centerY, bottom));
+    const dx = centerX - closestX;
+    const dy = centerY - closestY;
+    const intersects = dx * dx + dy * dy <= zone.radius * zone.radius;
     if (!intersects) continue;
     for (const agentId of zone.agentIds) {
       if (visibleAgentIds && !visibleAgentIds.has(agentId)) continue;

@@ -287,9 +287,7 @@ async function runTask(browser, task) {
     }
 
     if (task.id === 't7-keyswitch') {
-      const variant = page.locator(
-        '[data-keyswitch-variant="original-satin"]'
-      );
+      const variant = page.locator('[data-keyswitch-variant="original-satin"]');
       await variant.click();
       await page.waitForFunction(
         () =>
@@ -1069,7 +1067,8 @@ async function runTask(browser, task) {
       const button = page.locator('[data-agent-start-key]');
       await button.focus();
       const focusable = await page.evaluate(
-        () => document.activeElement?.hasAttribute('data-agent-start-key') ?? false
+        () =>
+          document.activeElement?.hasAttribute('data-agent-start-key') ?? false
       );
       await page.screenshot({
         path: join(REPORT_DIR, 't9-agent-start-keyswitch-focused.png'),

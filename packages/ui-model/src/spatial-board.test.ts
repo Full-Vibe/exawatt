@@ -132,10 +132,12 @@ describe('selectSpatialBoardLayout', () => {
         projectCount
       );
       expect(layout.bounds.width).toBeLessThanOrEqual(111);
-      expect(layout.bounds.height).toBeLessThanOrEqual(37);
+      expect(layout.bounds.height).toBeLessThanOrEqual(60);
       for (const zone of layout.zones) {
         expect(Number.isFinite(zone.rect.x)).toBe(true);
         expect(Number.isFinite(zone.rect.y)).toBe(true);
+        expect(zone.rect.width).toBe(zone.radius * 2);
+        expect(zone.rect.height).toBe(zone.radius * 2);
       }
     }
   );
@@ -215,12 +217,20 @@ describe('selectSpatialBoardLayout', () => {
     const next = selectSpatialBoardLayout(nextState, {
       previousLayout: initial,
     });
-    expect(spatialBoardZoneForAgent(next, 'b')?.rect).toEqual(
-      spatialBoardZoneForAgent(initial, 'b')?.rect
-    );
-    expect(spatialBoardZoneForAgent(next, 'c')?.rect).toEqual(
-      spatialBoardZoneForAgent(initial, 'c')?.rect
-    );
+    const center = (
+      id: string,
+      layout: ReturnType<typeof selectSpatialBoardLayout>
+    ) => {
+      const zone = spatialBoardZoneForAgent(layout, id)!;
+      return {
+        x: zone.rect.x + zone.radius,
+        y: zone.rect.y + zone.radius,
+      };
+    };
+    // Population growth may resize the circular boundary; its stable address
+    // is the center/slot, not a frozen footprint.
+    expect(center('b', next)).toEqual(center('b', initial));
+    expect(center('c', next)).toEqual(center('c', initial));
     expect(spatialBoardPieceForAgent(next, 'beta-2')).toMatchObject({
       x: spatialBoardPieceForAgent(initial, 'beta-2')?.x,
       y: spatialBoardPieceForAgent(initial, 'beta-2')?.y,
@@ -252,6 +262,66 @@ describe('selectSpatialBoardLayout', () => {
     expect(layout.pieces.every(piece => piece.kind === 'aggregate')).toBe(true);
   });
 
+  it('keeps the 173-Agent review fleet individual inside circular Projects', () => {
+    const counts = [44, 37, 31, 25, 20, 16];
+    const agents = counts.flatMap((count, project) =>
+      Array.from({ length: count }, (_, member) =>
+        agent(
+          `review-${project}-${member}`,
+          `Review ${project}`,
+          member % 7 === 0 ? 'blocked' : member % 3 === 0 ? 'working' : 'idle'
+        )
+      )
+    );
+    const layout = selectSpatialBoardLayout(fleet(agents));
+    expect(layout.version).toBe(2);
+    expect(layout.stats.sourceAgentCount).toBe(173);
+    expect(layout.pieces).toHaveLength(173);
+    expect(layout.pieces.every(piece => piece.kind === 'agent')).toBe(true);
+    for (const zone of layout.zones) {
+      expect(zone.rect.width).toBe(zone.radius * 2);
+      expect(zone.rect.height).toBe(zone.radius * 2);
+      const centerX = zone.rect.x + zone.radius;
+      const centerY = zone.rect.y + zone.radius;
+      for (const piece of layout.pieces.filter(
+        item => item.projectId === zone.id
+      )) {
+        expect(Math.hypot(piece.x - centerX, piece.y - centerY)).toBeLessThan(
+          zone.radius
+        );
+      }
+    }
+  });
+
+  it('uses durable goals and latest source activity for in-world identity', () => {
+    const working = agent('a', 'Alpha', 'working');
+    working.name = 'opaque-harness-title';
+    working.goal = 'Repair callback ownership';
+    working.activities = [
+      {
+        id: 'old',
+        timestamp: 10,
+        type: 'tool_use',
+        content: 'reading the route table',
+      },
+      {
+        id: 'new',
+        timestamp: 20,
+        type: 'chat_message',
+        content: 'tracing the redirect chain',
+      },
+    ];
+    const layout = selectSpatialBoardLayout(fleet([working]), {
+      altitude: 'project',
+      focusedProjectId: 'project:Alpha',
+    });
+    expect(layout.pieces[0]).toMatchObject({
+      label: 'Repair callback ownership',
+      summary: 'opaque-harness-title',
+      activity: 'tracing the redirect chain',
+    });
+  });
+
   it('sizes an aggregated giant Project to density content, not one slot per Agent', () => {
     // ENG-004 V3.1: a 3,000+-Agent Project drilled at project altitude used to
     // emit a footprint thousands of units tall (rows for pieces that were
@@ -273,9 +343,9 @@ describe('selectSpatialBoardLayout', () => {
       altitude: 'project',
       focusedProjectId: 'project:Project 000',
     });
-    expect(
-      smallLayout.pieces.every(piece => piece.kind === 'agent')
-    ).toBe(true);
+    expect(smallLayout.pieces.every(piece => piece.kind === 'agent')).toBe(
+      true
+    );
   });
 
   it('budgets labels while keeping the selected Agent label visible', () => {
@@ -413,18 +483,24 @@ describe('selectSpatialBandAgentIds', () => {
     const layout = selectSpatialBoardLayout(state, {
       maxFleetPiecesPerZone: 12,
     });
-    expect(
-      layout.pieces.every(piece => piece.kind === 'aggregate')
-    ).toBe(true);
+    expect(layout.pieces.every(piece => piece.kind === 'aggregate')).toBe(true);
     const zone = layout.zones[0]!;
-    // Clipping a corner is enough — at fleet density the zone is the unit.
-    const corner = {
+    // Clipping the circular boundary is enough — at fleet density the zone
+    // is the unit, while an empty bounding-box corner is not part of it.
+    const edge = {
       x: zone.rect.x - 2,
-      y: zone.rect.y - 2,
+      y: zone.rect.y + zone.radius - 2,
       width: 4,
       height: 4,
     };
-    expect(selectSpatialBandAgentIds(layout, corner)).toHaveLength(40);
+    expect(selectSpatialBandAgentIds(layout, edge)).toHaveLength(40);
+    const emptyCorner = {
+      x: zone.rect.x - 1,
+      y: zone.rect.y - 1,
+      width: 2,
+      height: 2,
+    };
+    expect(selectSpatialBandAgentIds(layout, emptyCorner)).toHaveLength(0);
     // A band that misses the zone captures nothing.
     const outside = {
       x: zone.rect.x + zone.rect.width + 5,
@@ -448,9 +524,9 @@ describe('selectSpatialBandAgentIds', () => {
       width: zone.rect.width + 2,
       height: zone.rect.height + 2,
     };
-    expect(
-      selectSpatialBandAgentIds(layout, fullBand, visible)
-    ).toHaveLength(5);
+    expect(selectSpatialBandAgentIds(layout, fullBand, visible)).toHaveLength(
+      5
+    );
     // Focused Project altitude renders individual pieces, so the piece rule
     // owns the zone: a small band inside it grabs only what it covers.
     const focused = selectSpatialBoardLayout(state, {
@@ -518,8 +594,6 @@ describe('selectSpatialScopeActivity', () => {
       unreportedCount: 1,
     });
     // Nothing in scope reports → burn is null, never zero.
-    expect(
-      selectSpatialScopeActivity(state, new Set(['c'])).burn
-    ).toBeNull();
+    expect(selectSpatialScopeActivity(state, new Set(['c'])).burn).toBeNull();
   });
 });

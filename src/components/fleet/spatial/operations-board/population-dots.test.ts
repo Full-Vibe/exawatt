@@ -21,6 +21,7 @@ function zone(
     label: id,
     agentIds: [],
     rect,
+    radius: rect.width / 2,
     visible,
     selected: false,
     isAggregate: false,
@@ -71,7 +72,7 @@ function aggregate(
   };
 }
 
-const FLEET_RECT = { x: 0, y: 0, width: 24, height: 11.5 };
+const FLEET_RECT = { x: 0, y: 0, width: 24, height: 24 };
 
 describe('computePopulationDotField', () => {
   it('emits one dot per counted agent when the zone has capacity', () => {
@@ -93,7 +94,7 @@ describe('computePopulationDotField', () => {
   });
 
   it('keeps every dot inside its zone rect', () => {
-    const rect = { x: 29, y: 16.5, width: 24, height: 11.5 };
+    const rect = { x: 29, y: 16.5, width: 24, height: 24 };
     const zones = [zone('project:a', rect)];
     const pieces = [aggregate('project:a', 'idle', 200)];
     const field = computePopulationDotField(zones, pieces);
@@ -103,6 +104,9 @@ describe('computePopulationDotField', () => {
       expect(field.x[index]).toBeLessThan(rect.x + rect.width);
       expect(field.y[index]).toBeGreaterThan(rect.y);
       expect(field.y[index]).toBeLessThan(rect.y + rect.height);
+      const dx = field.x[index]! - (rect.x + rect.width / 2);
+      const dy = field.y[index]! - (rect.y + rect.height / 2);
+      expect(Math.hypot(dx, dy)).toBeLessThan(rect.width / 2);
     }
   });
 
@@ -209,8 +213,8 @@ describe('computePopulationDotField', () => {
   });
 
   it('bands each zone independently in a multi-zone field', () => {
-    const rectA = { x: 0, y: 0, width: 24, height: 11.5 };
-    const rectB = { x: 40, y: 20, width: 24, height: 11.5 };
+    const rectA = { x: 0, y: 0, width: 24, height: 24 };
+    const rectB = { x: 40, y: 20, width: 24, height: 24 };
     const zones = [zone('project:a', rectA), zone('project:b', rectB)];
     const pieces = [
       aggregate('project:a', 'working', 6),
@@ -230,9 +234,12 @@ describe('computePopulationDotField', () => {
       field.x[index]! < rect.x + rect.width &&
       field.y[index]! > rect.y &&
       field.y[index]! < rect.y + rect.height;
-    const statuses = (
-      rect: { x: number; y: number; width: number; height: number }
-    ) =>
+    const statuses = (rect: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }) =>
       Array.from({ length: field.count }, (_, index) => index)
         .filter(index => inRect(index, rect))
         .map(index => field.status[index]!);

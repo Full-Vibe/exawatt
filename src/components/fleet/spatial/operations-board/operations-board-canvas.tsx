@@ -52,6 +52,7 @@ import {
   spatialPressureColor,
   spatialProjectIdentityColor,
   spatialProjectZoneFill,
+  spatialNeedsOperatorCallout,
   spatialStatusColor,
   type SpatialThemeSnapshot,
 } from '../spatial-theme';
@@ -308,8 +309,9 @@ function BoardCameraRig({
       return false;
     }
     const canvasRect = gl.domElement.getBoundingClientRect();
-    // Entry zoom is bounded to [fit, 2.2×fit]: never farther than rest (the
-    // release must PULL BACK, not dive in), and never so close that matched
+    // Entry zoom is bounded to [1.06×fit, 2.2×fit]: the small lower inset
+    // guarantees a perceptible pull-back even when a new zone shape makes the
+    // raw scale solution equal the fit pose, and never lets matched
     // zones land far offscreen — real Team sections dwarf their zones, so an
     // unclamped size match reads as chaos, not carry (Voltaic tuning,
     // 2026-08-02). `targetForRect` has already run, so fitZoom is current.
@@ -322,7 +324,7 @@ function BoardCameraRig({
         left: canvasRect.left,
         top: canvasRect.top,
       },
-      { min: fitZoom.current, max: fitZoom.current * 2.2 }
+      { min: fitZoom.current * 1.06, max: fitZoom.current * 2.2 }
     );
     if (!solution) {
       fallback();
@@ -796,15 +798,8 @@ function BoardGrid({
     },
     [major, minor]
   );
-  const planeWidth = Math.max(160, bounds.width + 120);
-  const planeHeight = Math.max(120, bounds.height + 120);
-  const center = rectCenter(bounds);
   return (
     <>
-      <mesh position={[center.x, center.y, -1.2]} raycast={() => null}>
-        <planeGeometry args={[planeWidth, planeHeight]} />
-        <meshBasicMaterial color={theme.zone} />
-      </mesh>
       <lineSegments geometry={minor} raycast={() => null}>
         <lineBasicMaterial vertexColors transparent opacity={0.6} />
       </lineSegments>
@@ -815,9 +810,10 @@ function BoardGrid({
   );
 }
 
-/** All zone edges in ONE Line2 draw: per-vertex accent colors carry each
- *  Project's hue, while selection replaces identity with the selection role.
- *  Concrete sRGB values enter Three's color-managed working space once. */
+/** All circular Project edges in ONE Line2 draw: per-vertex accent colors carry each
+ *  Project's hue, while selection replaces identity with the theme's
+ *  selection role. Concrete sRGB values enter Three's color-managed working
+ *  space once. */
 function ZoneEdges({
   zones,
   theme,
@@ -834,16 +830,24 @@ function ZoneEdges({
           ? theme.selection
           : spatialProjectIdentityColor(theme, zone.id)
       );
-      const { x, y, width, height } = zone.rect;
+      const center = rectCenter(zone.rect);
       const z = 0.35;
-      const corners: Array<[number, number, number]> = [
-        [x, -y, z],
-        [x + width, -y, z],
-        [x + width, -(y + height), z],
-        [x, -(y + height), z],
-      ];
-      for (let edge = 0; edge < 4; edge += 1) {
-        points.push(corners[edge]!, corners[(edge + 1) % 4]!);
+      const segments = 64;
+      for (let edge = 0; edge < segments; edge += 1) {
+        const from = (edge / segments) * Math.PI * 2;
+        const to = ((edge + 1) / segments) * Math.PI * 2;
+        points.push(
+          [
+            center.x + Math.cos(from) * zone.radius,
+            center.y + Math.sin(from) * zone.radius,
+            z,
+          ],
+          [
+            center.x + Math.cos(to) * zone.radius,
+            center.y + Math.sin(to) * zone.radius,
+            z,
+          ]
+        );
         colors.push(accent, accent);
       }
     }
@@ -886,6 +890,12 @@ function ZoneLayer({
 }) {
   const materialRef = useRef<THREE.MeshLambertMaterial>(null);
   const entrance = useRef(reduced ? 1 : 0);
+  const geometry = useMemo(() => {
+    const next = new THREE.CylinderGeometry(0.5, 0.5, 1, 64);
+    next.rotateX(Math.PI / 2);
+    return next;
+  }, []);
+  useEffect(() => () => geometry.dispose(), [geometry]);
   useCursor(hoveredId != null);
   useFrame((state, delta) => {
     const material = materialRef.current;
@@ -903,8 +913,7 @@ function ZoneLayer({
   });
   return (
     <>
-      <Instances limit={32} range={zones.length}>
-        <boxGeometry args={[1, 1, 1]} />
+      <Instances geometry={geometry} limit={32} range={zones.length}>
         <meshLambertMaterial
           ref={materialRef}
           transparent
@@ -1022,8 +1031,8 @@ function ProjectControls({
       else onDrillProject(zone.id);
     };
     const position: [number, number, number] = [
-      zone.rect.x + 1.5,
-      -(zone.rect.y + 1.35),
+      zone.rect.x + zone.radius * 0.28,
+      -(zone.rect.y + 1.25),
       0.8,
     ];
     const accent = spatialProjectIdentityColor(theme, zone.id);
@@ -1662,7 +1671,7 @@ function AgentPieceLayer({
   const bodyRefs = useRef(new Map<string, THREE.Object3D>());
   const entranceClock = useRef<number | null>(reduced ? null : 0);
   const pieceGeometry = useMemo(() => {
-    const geometry = new THREE.CylinderGeometry(0.5, 0.56, 0.34, 8);
+    const geometry = new THREE.CylinderGeometry(0.5, 0.56, 0.34, 6);
     geometry.rotateX(Math.PI / 2);
     return geometry;
   }, []);
@@ -1773,6 +1782,179 @@ function AgentPieceLayer({
 
 const noopRaycast = () => null;
 
+function PopulationStatusMarks({
+  field,
+  lens,
+  ambient,
+  theme,
+}: {
+  field: ReturnType<typeof computePopulationDotField>;
+  lens: SpatialBoardLens;
+  ambient: boolean;
+  theme: SpatialThemeSnapshot;
+}) {
+  const invalidate = useThree(state => state.invalidate);
+  const capacity = useMemo(() => {
+    let size = 64;
+    while (size < field.count) size *= 2;
+    return size;
+  }, [field.count]);
+  const mesh = useRef<THREE.InstancedMesh>(null);
+  const material = useRef<THREE.ShaderMaterial>(null);
+  const scratch = useMemo(() => new THREE.Object3D(), []);
+  const activeCount = useMemo(() => {
+    const reviewing = POPULATION_STATUS_ORDER.indexOf('reviewing');
+    const working = POPULATION_STATUS_ORDER.indexOf('working');
+    let count = 0;
+    for (let index = 0; index < field.count; index += 1) {
+      if (field.status[index] === reviewing || field.status[index] === working)
+        count += 1;
+    }
+    return count;
+  }, [field]);
+  const geometry = useMemo(() => {
+    const next = new THREE.PlaneGeometry(1, 1);
+    next.setAttribute(
+      'instanceState',
+      new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1)
+    );
+    next.setAttribute(
+      'instanceMarkColor',
+      new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3)
+    );
+    return next;
+  }, [capacity]);
+  const shader = useMemo(
+    () => ({
+      uniforms: { uPhase: { value: 0 } },
+      vertexShader: `
+        attribute float instanceState;
+        attribute vec3 instanceMarkColor;
+        varying vec2 vMarkUv;
+        varying float vMarkState;
+        varying vec3 vMarkColor;
+        void main() {
+          vMarkUv = uv - 0.5;
+          vMarkState = instanceState;
+          vMarkColor = instanceMarkColor;
+          gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uPhase;
+        varying vec2 vMarkUv;
+        varying float vMarkState;
+        varying vec3 vMarkColor;
+        float segment(vec2 p, vec2 a, vec2 b) {
+          vec2 pa = p - a;
+          vec2 ba = b - a;
+          float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+          return length(pa - ba * h);
+        }
+        void main() {
+          vec2 p = vMarkUv;
+          float d = length(p);
+          float ink = 0.0;
+          float alpha = 0.96;
+          if (vMarkState < 0.5) {
+            float angle = atan(p.y, p.x);
+            ink = abs(d - 0.27) < 0.055 && angle < 2.55 ? 1.0 : 0.0;
+            alpha = 0.54;
+          } else if (vMarkState < 1.5) {
+            float c = cos(uPhase);
+            float s = sin(uPhase);
+            vec2 rotated = mat2(c, -s, s, c) * p;
+            ink = d < 0.31 && rotated.x > -0.02 ? 1.0 : 0.0;
+          } else if (vMarkState < 2.5) {
+            float check = min(
+              segment(p, vec2(-0.27, 0.01), vec2(-0.07, -0.20)),
+              segment(p, vec2(-0.07, -0.20), vec2(0.31, 0.23))
+            );
+            ink = check < 0.055 ? 1.0 : 0.0;
+          } else if (vMarkState < 3.5) {
+            ink = abs(d - 0.27) < 0.055 || d < 0.065 ? 1.0 : 0.0;
+          } else {
+            float cross = min(
+              segment(p, vec2(-0.24, -0.24), vec2(0.24, 0.24)),
+              segment(p, vec2(-0.24, 0.24), vec2(0.24, -0.24))
+            );
+            ink = cross < 0.055 ? 1.0 : 0.0;
+          }
+          if (ink < 0.5) discard;
+          gl_FragColor = vec4(vMarkColor, alpha);
+        }
+      `,
+    }),
+    []
+  );
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  useLayoutEffect(() => {
+    if (!mesh.current) return;
+    const states = geometry.getAttribute(
+      'instanceState'
+    ) as THREE.InstancedBufferAttribute;
+    const colors = geometry.getAttribute(
+      'instanceMarkColor'
+    ) as THREE.InstancedBufferAttribute;
+    const stateByStatus = [3, 4, 1, 1, 0, 2] as const;
+    mesh.current.count = field.count;
+    for (let index = 0; index < field.count; index += 1) {
+      scratch.position.set(field.x[index]!, -field.y[index]!, 0.92);
+      scratch.scale.setScalar(field.size[index]! * 1.42);
+      scratch.updateMatrix();
+      mesh.current.setMatrixAt(index, scratch.matrix);
+      states.setX(index, stateByStatus[field.status[index]!]!);
+      const color =
+        lens === 'burn'
+          ? new THREE.Color(
+              field.burn[index]! < 0
+                ? theme.consumption.unknown
+                : spatialPressureColor(theme, field.burn[index]!)
+            )
+          : new THREE.Color(
+              spatialStatusColor(
+                theme,
+                POPULATION_STATUS_ORDER[field.status[index]!]!
+              )
+            );
+      colors.setXYZ(index, color.r, color.g, color.b);
+    }
+    mesh.current.instanceMatrix.needsUpdate = true;
+    states.needsUpdate = true;
+    colors.needsUpdate = true;
+    invalidate();
+  }, [field, geometry, invalidate, lens, scratch, theme]);
+
+  useFrame((frame, delta) => {
+    if (!ambient || activeCount === 0 || !material.current) return;
+    material.current.uniforms.uPhase!.value =
+      (material.current.uniforms.uPhase!.value -
+        (Math.min(delta, 0.05) * Math.PI * 2) /
+          STATUS_LIGHT_ACTIVE_ROTATION_SECONDS) %
+      (Math.PI * 2);
+    frame.invalidate();
+  });
+
+  if (field.count === 0) return null;
+  return (
+    <instancedMesh
+      key={capacity}
+      ref={mesh}
+      args={[geometry, undefined, capacity]}
+      frustumCulled={false}
+      raycast={noopRaycast}
+      renderOrder={2}
+    >
+      <shaderMaterial
+        ref={material}
+        args={[shader]}
+        transparent
+        depthWrite={false}
+      />
+    </instancedMesh>
+  );
+}
 /**
  * Demo-scale population field (V3.1): every aggregate piece expands into
  * per-agent status dots packed inside its zone, drawn as ONE InstancedMesh
@@ -1809,15 +1991,8 @@ function PopulationDotLayer({
   const materialRef = useRef<THREE.MeshBasicMaterial>(null);
   const entrance = useRef(reduced ? 1 : 0);
   const scratch = useMemo(() => new THREE.Object3D(), []);
-  /** Palette conversion happens once per resolved snapshot, never per dot or
+  /** Palette conversion happens once per resolved snapshot, never per unit or
    * frame. Theme changes update the existing mesh's instance colors in place. */
-  const statusColors = useMemo(
-    () =>
-      POPULATION_STATUS_ORDER.map(
-        status => new THREE.Color(spatialStatusColor(theme, status))
-      ),
-    [theme]
-  );
   const burnColors = useMemo(
     () =>
       Array.from(
@@ -1831,6 +2006,13 @@ function PopulationDotLayer({
     () => new THREE.Color(theme.consumption.unknown),
     [theme]
   );
+  const unitColor = useMemo(() => new THREE.Color(theme.unit), [theme]);
+  const geometry = useMemo(() => {
+    const next = new THREE.CylinderGeometry(0.5, 0.56, 0.2, 6);
+    next.rotateX(Math.PI / 2);
+    return next;
+  }, []);
+  useEffect(() => () => geometry.dispose(), [geometry]);
 
   useLayoutEffect(() => {
     const mesh = meshRef.current;
@@ -1854,13 +2036,13 @@ function PopulationDotLayer({
                   Math.max(0, Math.min(1, field.burn[index]!)) * BURN_RAMP_STEPS
                 )
               ]!
-          : statusColors[field.status[index]!]!
+          : unitColor
       );
     }
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     invalidate();
-  }, [burnColors, burnUnknown, field, invalidate, lens, scratch, statusColors]);
+  }, [burnColors, burnUnknown, field, invalidate, lens, scratch, unitColor]);
 
   useFrame((state, delta) => {
     const material = materialRef.current;
@@ -1879,27 +2061,32 @@ function PopulationDotLayer({
 
   if (field.count === 0) return null;
   return (
-    <instancedMesh
-      key={capacity}
-      ref={meshRef}
-      args={[undefined, undefined, capacity]}
-      frustumCulled={false}
-      raycast={noopRaycast}
-      // Transparent-sort tie-break: dots and zone plates are both
-      // origin-anchored instanced meshes, so painter sorting cannot order
-      // them by depth. Explicit renderOrder keeps dots above plates in both
-      // projections (status marks use 2/3).
-      renderOrder={1}
-    >
-      <circleGeometry args={[0.5, 6]} />
-      <meshBasicMaterial
-        ref={materialRef}
-        toneMapped={false}
-        transparent
-        opacity={reduced ? 0.92 : 0}
-        depthWrite={false}
+    <>
+      <instancedMesh
+        key={capacity}
+        ref={meshRef}
+        args={[geometry, undefined, capacity]}
+        frustumCulled={false}
+        raycast={noopRaycast}
+        renderOrder={1}
+      >
+        <meshBasicMaterial
+          ref={materialRef}
+          toneMapped={false}
+          transparent
+          opacity={reduced ? 0.92 : 0}
+          depthWrite={false}
+        />
+      </instancedMesh>
+      {/* Very-far agglomeration preserves D40 shape and exact mass without
+          per-agent ambient motion; individual Active hexes own visible work. */}
+      <PopulationStatusMarks
+        field={field}
+        lens={lens}
+        ambient={false}
+        theme={theme}
       />
-    </instancedMesh>
+    </>
   );
 }
 
@@ -2016,20 +2203,25 @@ function MultiSelectionLayer({
         if (selection.has(agentId)) selectedCount += 1;
       }
       if (selectedCount < zone.visibleAgentCount) continue;
-      const inset = 0.5;
-      const x = zone.rect.x + inset;
-      const y = zone.rect.y + inset;
-      const width = zone.rect.width - inset * 2;
-      const height = zone.rect.height - inset * 2;
+      const center = rectCenter(zone.rect);
+      const radius = Math.max(0, zone.radius - 0.5);
       const z = 0.4;
-      const corners: Array<[number, number, number]> = [
-        [x, -y, z],
-        [x + width, -y, z],
-        [x + width, -(y + height), z],
-        [x, -(y + height), z],
-      ];
-      for (let edge = 0; edge < 4; edge += 1) {
-        result.push(corners[edge]!, corners[(edge + 1) % 4]!);
+      const segments = 48;
+      for (let edge = 0; edge < segments; edge += 1) {
+        const from = (edge / segments) * Math.PI * 2;
+        const to = ((edge + 1) / segments) * Math.PI * 2;
+        result.push(
+          [
+            center.x + Math.cos(from) * radius,
+            center.y + Math.sin(from) * radius,
+            z,
+          ],
+          [
+            center.x + Math.cos(to) * radius,
+            center.y + Math.sin(to) * radius,
+            z,
+          ]
+        );
       }
     }
     return result;
@@ -2102,7 +2294,7 @@ function AgentControls({
             data-board-session-state={piece.sessionState}
             data-board-status-light={lightState}
             data-board-delegation={delegated ? delegated.count : undefined}
-            aria-label={`${piece.label}, ${STATUS_LIGHT_META[lightState].label}${piece.sessionState === 'stopped' ? ', stopped session' : ''}${delegationCopy ? `, ${delegationCopy}` : ''}`}
+            aria-label={`${piece.label}${piece.activity ? `, ${piece.activity}` : ''}, ${STATUS_LIGHT_META[lightState].label}${piece.sessionState === 'stopped' ? ', stopped session' : ''}${delegationCopy ? `, ${delegationCopy}` : ''}`}
             onClick={event => {
               // Shift-activate (pointer or keyboard) toggles the Agent in
               // the multi-selection (V3.2); plain activate inspects it.
@@ -2123,6 +2315,9 @@ function AgentControls({
               }}
             >
               <span className="block truncate">{piece.label}</span>
+              <span className="mt-0.5 block truncate text-[8px] font-normal text-[oklch(0.63_0.015_210)] sm:text-[9px]">
+                {piece.activity ?? 'No recent activity reported'}
+              </span>
               {delegationCopy && (
                 <span
                   className="block truncate text-chrome-nano font-normal"
@@ -2147,10 +2342,95 @@ function InvalidateOnSpatialTheme({ theme }: { theme: SpatialThemeSnapshot }) {
   return null;
 }
 
+export interface OperationsBoardAttention {
+  agentId: string;
+  title: string;
+  reason: string;
+}
+
+/** Attention overlays structure: the callout leader terminates at the owning
+ * Agent hex (or its Project center only when the Agent is very-far
+ * agglomerated), so urgency never relocates the unit into screen chrome. */
+function AnchoredAttentionCallout({
+  layout,
+  attention,
+  onSelectAgent,
+  theme,
+}: {
+  layout: SpatialBoardLayout;
+  attention: OperationsBoardAttention;
+  onSelectAgent: (agentId: string) => void;
+  theme: SpatialThemeSnapshot;
+}) {
+  const calloutTheme = spatialNeedsOperatorCallout(theme);
+  const piece = layout.pieces.find(
+    entry => entry.visible && entry.agentId === attention.agentId
+  );
+  const zone = layout.zones.find(
+    entry => entry.visible && entry.agentIds.includes(attention.agentId)
+  );
+  if (!piece && !zone) return null;
+  const anchorX = piece?.x ?? zone!.rect.x + zone!.radius;
+  const anchorY = -(piece?.y ?? zone!.rect.y + zone!.radius);
+  const direction =
+    anchorX < layout.bounds.x + layout.bounds.width / 2 ? 1 : -1;
+  const offset = Math.max(4.5, (zone?.radius ?? 6) * 0.58);
+  const calloutX = anchorX + direction * offset;
+  const calloutY = anchorY + offset * 0.72;
+  return (
+    <>
+      <Line
+        points={[
+          [anchorX, anchorY, 1.08],
+          [calloutX, calloutY, 1.08],
+        ]}
+        color={calloutTheme.signal}
+        lineWidth={1.35}
+        toneMapped={false}
+        transparent
+        opacity={0.86}
+        depthWrite={false}
+        raycast={() => null}
+      />
+      <Html
+        position={[calloutX, calloutY, 1.12]}
+        center
+        style={{ pointerEvents: 'auto' }}
+      >
+        <button
+          type="button"
+          data-board-attention-anchor={attention.agentId}
+          onClick={() => onSelectAgent(attention.agentId)}
+          className="exa-material-raised board-control-enter w-48 border px-2.5 py-2 text-left outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring"
+          style={{
+            borderColor: calloutTheme.border,
+            background: calloutTheme.background,
+            boxShadow: `0 10px 28px ${theme.shadow}`,
+          }}
+        >
+          <span
+            className="block truncate text-[11px] font-semibold"
+            style={{ color: calloutTheme.text }}
+          >
+            {attention.title}
+          </span>
+          <span
+            className="mt-0.5 block truncate text-[9px]"
+            style={{ color: calloutTheme.detail }}
+          >
+            {attention.reason}
+          </span>
+        </button>
+      </Html>
+    </>
+  );
+}
+
 export function OperationsBoardCanvas({
   layout,
   projection,
   lens = 'status',
+  attention = null,
   controllerRef,
   onViewportChange,
   onDrillProject,
@@ -2167,6 +2447,7 @@ export function OperationsBoardCanvas({
   layout: SpatialBoardLayout;
   projection: SpatialBoardProjection;
   lens?: SpatialBoardLens;
+  attention?: OperationsBoardAttention | null;
   controllerRef: { current: OperationsBoardHandle | null };
   onViewportChange?: (viewport: OperationsBoardViewport) => void;
   onDrillProject: (projectId: string) => void;
@@ -2280,7 +2561,9 @@ export function OperationsBoardCanvas({
       aria-hidden="true"
       data-board-canvas-theme={theme.themeId}
     >
-      <color attach="background" args={[theme.canvas]} />
+      {/* The flat board ground is the scene clear itself: identical authored
+          theme color without spending a draw call on a full-screen plane. */}
+      <color attach="background" args={[theme.zone]} />
       <InvalidateOnSpatialTheme theme={theme} />
       {/* Soft key + fill: gives zone plates and piece bodies a readable
           top/side split in the fixed-angle projection. */}
@@ -2350,6 +2633,14 @@ export function OperationsBoardCanvas({
         onToggleAgentSelect={onToggleAgentSelect}
         theme={theme}
       />
+      {attention && layout.altitude !== 'agent' && (
+        <AnchoredAttentionCallout
+          layout={layout}
+          attention={attention}
+          onSelectAgent={onSelectAgent}
+          theme={theme}
+        />
+      )}
       {!lowPower && effectsReady && theme.bloom.enabled && (
         <Suspense fallback={null}>
           <OperationsBoardEffects bloom={theme.bloom} />

@@ -20,10 +20,6 @@ vi.mock('@/components/hud/session-state-tile-study', () => ({
   SessionStateTileStudy: () => null,
 }));
 
-vi.mock('@/components/hud/board-tile-study', () => ({
-  BoardTileStudy: () => null,
-}));
-
 vi.mock('@/components/hud/project-ribbon-study', () => ({
   ProjectRibbonStudy: () => null,
 }));
@@ -74,16 +70,5 @@ describe('HUD gallery', () => {
     expect(
       screen.queryByRole('link', { name: /Application themes/ })
     ).not.toBeInTheDocument();
-  });
-
-  it('keeps the Fleet board composition review candidate in the workbench', () => {
-    render(<HudGallery />);
-
-    expect(
-      screen.getByRole('heading', { name: 'Fleet board composition' })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('link', { name: /Fleet board composition/ })
-    ).toHaveAttribute('href', '#board-tiles');
   });
 });

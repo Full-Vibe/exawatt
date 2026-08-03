@@ -8,11 +8,11 @@ Created 2026-08-02 from the grooming session. Sized to the operator's stated par
 
 The operator named three risks (2026-08-02). Reliability was explicitly **not** among them — the daily driver is solid, so do not spend this arc's slack on hardening.
 
-| Risk | Answering work |
-| --- | --- |
-| "It looks unpolished up close" | P1 design kernel, then P8 polish on the surfaces actually shown |
-| "The story doesn't land" | P6 readiness grammar and surface map; the four user questions answered on screen |
-| "Nothing to show at scale" | P4 demo fleet content, P5 demo-scale rendering |
+| Risk                           | Answering work                                                                   |
+| ------------------------------ | -------------------------------------------------------------------------------- |
+| "It looks unpolished up close" | P1 design kernel, then P8 polish on the surfaces actually shown                  |
+| "The story doesn't land"       | P6 readiness grammar and surface map; the four user questions answered on screen |
+| "Nothing to show at scale"     | P4 demo fleet content, P5 demo-scale rendering                                   |
 
 ## Collision map
 
@@ -103,7 +103,7 @@ Everything else in wave 1 is file-disjoint by construction.
 
 - **Owns:** ENG-026 N3, N4, N5 — with ENG-028 T1 and ENG-029 C1 supplying content
 - **Depends on:** P6
-- **Scope:** Organization and Cloud previews, the `announced` *Push to cloud* affordance, the Coordination preview (broad strokes), and the Agent Type chip and surface.
+- **Scope:** Organization and Cloud previews, the `announced` _Push to cloud_ affordance, the Coordination preview (broad strokes), and the Agent Type chip and surface.
 - **Acceptance:** each of the four recurring user questions can be answered on screen without leaving the app.
 
 ## The spatial-feel stream (ENG-004 V3.3) — added 2026-08-02
@@ -134,15 +134,15 @@ absorbs it rather than the handoff waiting on S2.
   Runs ALONE on the spatial surface. P7 landed before it — absorb, don't
   rebuild.
 
-### S3 · The tiled board — hex family + in-world identity
+### S3 · The tiled board — circular Projects + hex Agent identity
 
-- **Owns:** ENG-004 V3.3 F4+F5; prototype: `/hud-gallery` → "Board tile
-  family" (`src/components/hud/board-tile-study.tsx`)
-- **Files:** `packages/ui-model/src/spatial-board.ts` (hex tiling policy),
+- **Owns:** ENG-004 V3.3 F4+F5+F7. The `/hud-gallery` composition prototype
+  was accepted with circular Project boundaries on 2026-08-03 and retired
+  when the production board shipped, per ENG-036 workbench policy.
+- **Files:** `packages/ui-model/src/spatial-board.ts` (circular-footprint + hex-slot policy),
   `operations-board-canvas.tsx` (tile rendering), transport `goal` labels
-- **May start:** immediately for the ui-model tiling policy + gallery
-  iteration; canvas adoption coordinates with whoever holds S1/S2. The
-  operator's gallery review shapes materials mid-flight (input, not gate).
+- **State:** landed. Production is the source of truth; do not recreate the
+  retired gallery study as a parallel specimen.
 
 ### S4 · Board chrome — the selection command panel
 

@@ -28,7 +28,10 @@ import {
 import { RECENTER_SPATIAL_EVENT } from '@/components/nav/command-altitude-events';
 import { altitudeHandoffActive } from '@/components/nav/altitude-handoff';
 import { parseStoredViewport } from '../spatial-navigation-state';
-import { statusLightStateForAgentStatus } from '@/components/status-light/protocol';
+import {
+  STATUS_LIGHT_META,
+  statusLightStateForAgentStatus,
+} from '@/components/status-light/protocol';
 import { useAppearance } from '@/components/appearance/appearance-provider';
 import { mixHexColors } from '@/lib/appearance/color';
 import { resolvedAppearanceCssVariables } from '@/lib/appearance/dom-adapter';
@@ -282,27 +285,41 @@ function BoardMiniMap({
     >
       <svg
         viewBox={`${bounds.x} ${bounds.y} ${width} ${height}`}
-        preserveAspectRatio="none"
+        preserveAspectRatio="xMidYMid meet"
         className="h-full w-full"
         aria-hidden="true"
       >
-        {layout.zones.map(zone => (
-          <rect
-            key={zone.id}
-            x={zone.rect.x}
-            y={zone.rect.y}
-            width={zone.rect.width}
-            height={zone.rect.height}
-            fill={zone.visible ? theme.zoneHover : theme.zone}
-            stroke={
-              zone.selected
-                ? theme.selection
-                : spatialProjectIdentityColor(theme, zone.id)
-            }
-            strokeWidth={0.45}
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
+        {layout.zones.map(zone => {
+          const urgent = zone.statusCounts.blocked + zone.statusCounts.error;
+          const active =
+            zone.statusCounts.working + zone.statusCounts.reviewing;
+          return (
+            <circle
+              key={zone.id}
+              cx={zone.rect.x + zone.radius}
+              cy={zone.rect.y + zone.radius}
+              r={zone.radius}
+              fill={
+                !zone.visible
+                  ? theme.zone
+                  : urgent > 0
+                    ? mixHexColors(theme.zone, theme.status.fault, 0.24)
+                    : active > 0
+                      ? mixHexColors(theme.zone, theme.status.active, 0.18)
+                      : theme.zoneHover
+              }
+              stroke={
+                zone.selected
+                  ? theme.selection
+                  : urgent > 0
+                    ? theme.status.fault
+                    : spatialProjectIdentityColor(theme, zone.id)
+              }
+              strokeWidth={urgent > 0 ? 0.8 : 0.45}
+              vectorEffect="non-scaling-stroke"
+            />
+          );
+        })}
         <rect
           ref={viewportRef}
           x={layout.cameraBounds.x}
@@ -323,6 +340,61 @@ export interface SpatialBoardHero {
   agentId: string;
   title: string;
   reason: string;
+}
+
+function BoardStatusLegend({
+  layout,
+  theme,
+}: {
+  layout: SpatialBoardLayout;
+  theme: SpatialThemeSnapshot;
+}) {
+  const counts = layout.zones.reduce(
+    (result, zone) => {
+      result.active += zone.statusCounts.working + zone.statusCounts.reviewing;
+      result['needs-you'] += zone.statusCounts.blocked;
+      result.fault += zone.statusCounts.error;
+      result.result += zone.statusCounts.complete;
+      result.off += zone.statusCounts.idle;
+      return result;
+    },
+    { active: 0, 'needs-you': 0, fault: 0, result: 0, off: 0 }
+  );
+  const symbols = {
+    active: '◐',
+    'needs-you': '◎',
+    fault: '×',
+    result: '✓',
+    off: '○',
+  } as const;
+  return (
+    <div
+      aria-label="Agent status mark legend"
+      className="exa-material-overlay absolute right-3 top-3 z-10 hidden flex-wrap items-center gap-x-2.5 gap-y-1 border px-2.5 py-1.5 lg:flex"
+      style={spatialMaterialFrame(theme)}
+    >
+      {(Object.keys(symbols) as Array<keyof typeof symbols>).map(state => (
+        <span key={state} className="flex items-center gap-1 text-chrome-micro">
+          <span
+            aria-hidden="true"
+            className="font-mono text-xs"
+            style={{ color: theme.status[state] }}
+          >
+            {symbols[state]}
+          </span>
+          <span style={{ color: theme.labelMuted }}>
+            {STATUS_LIGHT_META[state].label}
+          </span>
+          <span
+            className="font-mono tabular-nums"
+            style={{ color: theme.label }}
+          >
+            {counts[state]}
+          </span>
+        </span>
+      ))}
+    </div>
+  );
 }
 
 export function OperationsBoardSurface({
@@ -616,6 +688,7 @@ export function OperationsBoardSurface({
             layout={layout}
             projection={projection}
             lens={lens}
+            attention={hero}
             controllerRef={controller}
             onViewportChange={updateViewport}
             onDrillProject={onDrillProject}
@@ -683,35 +756,7 @@ export function OperationsBoardSurface({
               theme={theme}
             />
           )}
-        {hero && layout.altitude !== 'agent' && (
-          <button
-            type="button"
-            onClick={() => onSelectAgent(hero.agentId)}
-            className="exa-material-overlay absolute left-1/2 top-3 z-10 max-w-[min(30rem,calc(100%-2rem))] -translate-x-1/2 border px-3 py-2 text-left outline-none transition-[filter,transform] duration-150 hover:brightness-105 active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring"
-            style={{
-              ...spatialMaterialFrame(theme),
-              borderColor: theme.attention,
-              background: mixHexColors(
-                theme.material.overlay.fallback,
-                theme.attention,
-                theme.appearance === 'light' ? 0.08 : 0.14
-              ),
-            }}
-          >
-            <span
-              className="block truncate text-xs font-semibold"
-              style={{ color: theme.label }}
-            >
-              {hero.title}
-            </span>
-            <span
-              className="mt-0.5 block truncate text-chrome-micro"
-              style={{ color: theme.attention }}
-            >
-              {hero.reason}
-            </span>
-          </button>
-        )}
+        <BoardStatusLegend layout={layout} theme={theme} />
 
         {attentionIds.length > 0 && (
           <button

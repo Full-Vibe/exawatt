@@ -15,8 +15,9 @@
  *     headless cadence measures the harness, not the app — read renderCpu,
  *     draw calls, layout cost, and park there instead.
  *   - JS heap after settle
- *   - park-at-rest (fleet altitude has no rotors at aggregate density, so a
- *     settled 1s sample must render ~0 new frames)
+ *   - park-at-rest for very-far aggregate fleets. Individual Fleet fields
+ *     intentionally keep only Active D40 rotors moving; reduced-motion and
+ *     low-power parking stay covered by `eval:spatial`.
  *   - a screenshot per scenario (9-point non-blank variance gate)
  *
  * Run:  EXA_BASE=http://localhost:7090 pnpm eval:spatial:scale
@@ -53,22 +54,28 @@ function percentile(sorted, p) {
 
 const SCENARIOS = [
   // The REAL demo fleet (ENG-027 W3/W4, Voltaic) — canonical V3.1 numbers.
-  { id: 'voltaic-fleet', fleet: 'voltaic', altitude: 'fleet', park: true },
+  { id: 'voltaic-fleet', fleet: 'voltaic', altitude: 'fleet', park: false },
   {
     id: 'voltaic-fleet-angle',
     fleet: 'voltaic',
     altitude: 'fleet',
-    park: true,
+    park: false,
     projection: 'fixed-angle',
   },
   // Largest Voltaic Project (dispatch-engine, 28 Agents) — individual pieces
   // + DOM agent controls path.
   { id: 'voltaic-project', fleet: 'voltaic', altitude: 'project', park: false },
   // Synthetic headroom tiers beyond the authored fleet.
-  { id: 'fleet-150', agents: 150, altitude: 'fleet', park: true },
+  { id: 'fleet-150', agents: 150, altitude: 'fleet', park: false },
   { id: 'fleet-1000', agents: 1000, altitude: 'fleet', park: true },
   { id: 'fleet-10000', agents: 10000, altitude: 'fleet', park: true },
-  { id: 'fleet-10000-angle', agents: 10000, altitude: 'fleet', park: true, projection: 'fixed-angle' },
+  {
+    id: 'fleet-10000-angle',
+    agents: 10000,
+    altitude: 'fleet',
+    park: true,
+    projection: 'fixed-angle',
+  },
   // Lead Project holds ~1/3 of the fleet: the giant-Project drill.
   { id: 'project-1000', agents: 1000, altitude: 'project', park: false },
   { id: 'project-10000', agents: 10000, altitude: 'project', park: false },
@@ -324,8 +331,7 @@ async function run() {
       // Non-blank gate: 9-point variance on the drawing buffer.
       const blank = await page.evaluate(() => {
         const canvas = document.querySelector('canvas');
-        const gl2 =
-          canvas.getContext('webgl2') || canvas.getContext('webgl');
+        const gl2 = canvas.getContext('webgl2') || canvas.getContext('webgl');
         if (!gl2) return { unreadable: true };
         const { drawingBufferWidth: w, drawingBufferHeight: h } = gl2;
         const px = new Uint8Array(4);

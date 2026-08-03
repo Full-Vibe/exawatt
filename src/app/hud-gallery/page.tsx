@@ -34,7 +34,6 @@ import {
   FIXTURE_METRICS,
 } from '@/components/hud/gallery-fixtures';
 import { SessionStateTileStudy } from '@/components/hud/session-state-tile-study';
-import { BoardTileStudy } from '@/components/hud/board-tile-study';
 import { ProjectRibbonStudy } from '@/components/hud/project-ribbon-study';
 import { ReadinessGrammarStudy } from '@/components/readiness/gallery-study';
 import { AmbientMeterStudy } from '@/components/consumption/meter/gallery-study';
@@ -78,12 +77,6 @@ const SECTIONS: Section[] = [
     title: 'Elastic Project ribbon',
     meta: 'production component · two-row target-bounds layout + Initiative projection',
     showcase: <ProjectRibbonStudy />,
-  },
-  {
-    id: 'board-tiles',
-    title: 'Fleet board composition',
-    meta: 'V3.3 S3 + F7 review candidate · tiled board, mass, attention, learnability',
-    showcase: <BoardTileStudy />,
   },
   {
     id: 'session-state-tiles',
