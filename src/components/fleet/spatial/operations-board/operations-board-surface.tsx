@@ -20,6 +20,7 @@ import {
   type OperationsBoardViewport,
 } from './operations-board-canvas';
 import { RECENTER_SPATIAL_EVENT } from '@/components/nav/command-altitude-events';
+import { altitudeHandoffActive } from '@/components/nav/altitude-handoff';
 import { parseStoredViewport } from '../spatial-navigation-state';
 import { statusLightStateForAgentStatus } from '@/components/status-light/protocol';
 
@@ -199,6 +200,11 @@ export function OperationsBoardSurface({
   }, []);
 
   useEffect(() => {
+    // A Team→Fleet handoff owns the arrival camera (ENG-004 V3.0): the
+    // stored viewport must not yank the entry pose. Skipping the restore on
+    // a handoff that later falls back costs one remembered viewport — the
+    // fit pose is the correct fallback frame anyway.
+    if (altitudeHandoffActive()) return;
     const viewport = parseStoredViewport(
       window.sessionStorage.getItem(viewportStorageKey)
     );

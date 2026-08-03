@@ -575,6 +575,12 @@ export function ExposeOverlay({
                 <section
                   key={project.dir}
                   data-expose-project={project.dir}
+                  // Altitude-handoff capture hook (ENG-004 V3.0): identity
+                  // and screen position carry to the Fleet board; content
+                  // never does.
+                  data-handoff-card=""
+                  data-handoff-label={project.name}
+                  data-handoff-color={project.color}
                   aria-label={`${project.name}, ${projectTiles.length} Sessions`}
                 >
                   <div

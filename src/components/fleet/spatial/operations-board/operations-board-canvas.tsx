@@ -35,6 +35,17 @@ import {
   computePopulationDotField,
   POPULATION_STATUS_ORDER,
 } from './population-dots';
+import {
+  ALTITUDE_HANDOFF_CROSSFADE_MS,
+  ALTITUDE_HANDOFF_FALLBACK_EVENT,
+  ALTITUDE_HANDOFF_HOLD_MS,
+  ALTITUDE_HANDOFF_POSE_EVENT,
+  altitudeHandoffActive,
+  claimAltitudeHandoff,
+  lowPowerLikely,
+  solveEntryPose,
+  type HandoffPoseDetail,
+} from '@/components/nav/altitude-handoff';
 
 const OperationsBoardEffects = lazy(() => import('./operations-board-effects'));
 
@@ -115,7 +126,9 @@ function useReducedMotion(): boolean {
 function useLowPowerMode(): boolean {
   const [lowPower, setLowPower] = useState(false);
   useEffect(() => {
-    setLowPower((navigator.hardwareConcurrency || 8) <= 4);
+    // Shared predicate with the altitude handoff (V3.0): the same machine
+    // that renders low-power also skips the entry-pose choreography.
+    setLowPower(lowPowerLikely());
   }, []);
   return lowPower;
 }
@@ -202,6 +215,16 @@ function BoardCameraRig({
   const fitZoom = useRef(1);
   const lambda = useRef(FLIGHT_LAMBDA);
   const initialized = useRef(false);
+  /** Entry-pose hold (V3.0): while set, the camera stays on the handoff
+   *  pose so the card→zone crossfade happens over a still frame; the
+   *  pull-back to `fitRect` fires on release, unless the operator has
+   *  already taken the camera somewhere else (input always wins). */
+  const entryHold = useRef<{
+    fitRect: SpatialBoardRect;
+    pose: CameraTarget;
+  } | null>(null);
+  const holdTimer = useRef<number | null>(null);
+  const poseFrame = useRef<number | null>(null);
 
   const notifyViewport = useCallback(
     (value: CameraTarget) => {
@@ -266,16 +289,135 @@ function BoardCameraRig({
     [announceTargetViewport, size.height, size.width]
   );
 
+  const releaseEntryHold = useCallback(() => {
+    const hold = entryHold.current;
+    entryHold.current = null;
+    if (holdTimer.current !== null) {
+      window.clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+    if (!hold) return;
+    const settled = target.current;
+    const untouched =
+      Math.abs(settled.x - hold.pose.x) < 0.5 &&
+      Math.abs(settled.y - hold.pose.y) < 0.5 &&
+      Math.abs(settled.zoom - hold.pose.zoom) <
+        Math.max(0.01, hold.pose.zoom * 0.02);
+    // "Only then does the camera pull back" — but an operator who already
+    // moved the camera mid-crossfade is obeyed, never yanked to the fit.
+    if (untouched) targetForRect(hold.fitRect);
+    invalidate();
+  }, [invalidate, targetForRect]);
+
+  /** Claims a pending Team→Fleet snapshot and applies the entry pose. Every
+   *  decline dispatches the fallback event so the transition owner cuts —
+   *  a normal outcome, not an error. */
+  const tryEnterFromHandoff = useCallback((): boolean => {
+    if (!altitudeHandoffActive()) return false;
+    const fallback = () =>
+      window.dispatchEvent(new CustomEvent(ALTITUDE_HANDOFF_FALLBACK_EVENT));
+    if (projection !== 'top-down' || layout.altitude !== 'fleet') {
+      claimAltitudeHandoff(); // consume — this arrival cannot carry position
+      fallback();
+      return false;
+    }
+    const snapshot = claimAltitudeHandoff();
+    if (!snapshot) {
+      fallback(); // stale or viewport-mismatched: the budget was missed
+      return false;
+    }
+    const canvasRect = gl.domElement.getBoundingClientRect();
+    // Entry zoom is bounded to [fit, 4.5×fit]: never farther than rest (the
+    // release must PULL BACK, not dive in) and never beyond the rig's own
+    // zoom ceiling. `targetForRect` has already run, so fitZoom is current.
+    const solution = solveEntryPose(
+      snapshot,
+      layout.zones,
+      {
+        width: size.width,
+        height: size.height,
+        left: canvasRect.left,
+        top: canvasRect.top,
+      },
+      { min: fitZoom.current, max: fitZoom.current * 4.5 }
+    );
+    if (!solution) {
+      fallback();
+      return false;
+    }
+    const pose: CameraTarget = { ...solution.pose, tilt: 0 };
+    target.current = { ...pose };
+    current.current = { ...pose };
+    applyCamera(current.current);
+    notifyViewport(current.current);
+    entryHold.current = { fitRect: layout.cameraBounds, pose };
+    // Announce the pose only after the first PAINTED frame at it (double
+    // rAF): the card ghosts then hold still over the renderer swap and the
+    // shader-compile stall, and the crossfade plays over a live board. The
+    // hold clock starts with the crossfade, not with the claim. If the
+    // paint takes longer than the frame budget, the ghost layer's deadline
+    // cuts — that is the budget doing its job.
+    poseFrame.current = window.requestAnimationFrame(() => {
+      poseFrame.current = window.requestAnimationFrame(() => {
+        poseFrame.current = null;
+        holdTimer.current = window.setTimeout(
+          releaseEntryHold,
+          ALTITUDE_HANDOFF_HOLD_MS
+        );
+        window.dispatchEvent(
+          new CustomEvent<HandoffPoseDetail>(ALTITUDE_HANDOFF_POSE_EVENT, {
+            detail: {
+              targets: solution.targets,
+              crossfadeMs: ALTITUDE_HANDOFF_CROSSFADE_MS,
+            },
+          })
+        );
+      });
+    });
+    return true;
+  }, [
+    applyCamera,
+    gl,
+    layout.altitude,
+    layout.cameraBounds,
+    layout.zones,
+    notifyViewport,
+    projection,
+    releaseEntryHold,
+    size.height,
+    size.width,
+  ]);
+
+  useEffect(
+    () => () => {
+      if (holdTimer.current !== null) window.clearTimeout(holdTimer.current);
+      if (poseFrame.current !== null) {
+        window.cancelAnimationFrame(poseFrame.current);
+      }
+    },
+    []
+  );
+
   useLayoutEffect(() => {
+    if (entryHold.current) {
+      // A layout tick during the entry hold must not move the camera; the
+      // pull-back targets the freshest fit when the hold releases.
+      entryHold.current.fitRect = layout.cameraBounds;
+      return;
+    }
     targetForRect(layout.cameraBounds);
     if (!initialized.current || reduced) {
-      snapToTarget();
+      const entered =
+        !initialized.current && !reduced && tryEnterFromHandoff();
       initialized.current = true;
-      // Arrival dolly (V2.4): enter the board slightly wide and ease in, so
-      // regime entry reads as descending onto the map instead of a hard cut.
-      if (!reduced) {
-        current.current.zoom = target.current.zoom * 0.82;
-        applyCamera(current.current);
+      if (!entered) {
+        snapToTarget();
+        // Arrival dolly (V2.4): enter the board slightly wide and ease in, so
+        // regime entry reads as descending onto the map instead of a hard cut.
+        if (!reduced) {
+          current.current.zoom = target.current.zoom * 0.82;
+          applyCamera(current.current);
+        }
       }
     }
     invalidate();
@@ -286,6 +428,7 @@ function BoardCameraRig({
     reduced,
     snapToTarget,
     targetForRect,
+    tryEnterFromHandoff,
   ]);
 
   useEffect(() => {
@@ -1660,6 +1803,22 @@ export function OperationsBoardCanvas({
   const lowPower = useLowPowerMode();
   const pageVisible = usePageVisible();
   const ambient = !reduced && !lowPower && pageVisible;
+  // During a Team→Fleet handoff the lazy postprocessing chunk's shader
+  // compile is the single biggest main-thread stall — landing it mid
+  // crossfade cuts the flight short. Defer the bloom mount until the entry
+  // choreography has settled; outside a handoff it mounts immediately.
+  const [effectsReady, setEffectsReady] = useState(false);
+  useEffect(() => {
+    if (!altitudeHandoffActive()) {
+      setEffectsReady(true);
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setEffectsReady(true),
+      ALTITUDE_HANDOFF_HOLD_MS + ALTITUDE_HANDOFF_CROSSFADE_MS + 400
+    );
+    return () => window.clearTimeout(timer);
+  }, []);
   const [hoveredZoneId, setHoveredZoneId] = useState<string | null>(null);
   const visibleZones = layout.zones.filter(zone => zone.visible);
   // Zone-label budget: full cards only when every zone's projected width can
@@ -1780,7 +1939,7 @@ export function OperationsBoardCanvas({
         altitude={layout.altitude}
         onSelectAgent={onSelectAgent}
       />
-      {!lowPower && (
+      {!lowPower && effectsReady && (
         <Suspense fallback={null}>
           <OperationsBoardEffects />
         </Suspense>

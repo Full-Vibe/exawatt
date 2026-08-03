@@ -25,8 +25,20 @@ import {
   RECENTER_SPATIAL_EVENT,
 } from './command-altitude-events';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from '@/components/workspace/session-jump';
+import {
+  altitudeHandoffAllowed,
+  captureAltitudeCards,
+  prefersReducedMotion,
+  publishAltitudeHandoff,
+  type HandoffSnapshot,
+} from './altitude-handoff';
+import { AltitudeHandoffGhosts } from './altitude-handoff-ghosts';
 
-type TransitionPhase = 'departing' | 'traversing' | 'arriving';
+/** `handoff` (ENG-004 V3.0, decision 0023): Team → Fleet position handoff.
+ *  Card ghosts crossfade into board zones at the entry pose; every other
+ *  phase is the fast directional transition, which is also this phase's
+ *  guaranteed fallback. */
+type TransitionPhase = 'departing' | 'traversing' | 'arriving' | 'handoff';
 
 /** V2.4: transitions are DIRECTIONAL along the command-altitude continuum.
  *  Ascending (toward Spatial) pulls back — the frame rings contract like a
@@ -45,6 +57,8 @@ interface CommandTransition {
   target: CommandAltitude;
   direction: TransitionDirection;
   startedAt: number;
+  /** Present only while `phase === 'handoff'`. */
+  handoff?: HandoffSnapshot;
 }
 
 interface CommandNavigationContextValue {
@@ -129,6 +143,39 @@ export function CommandNavigationProvider({
         ALTITUDE_ORDER[currentAltitude ?? 'terminal']
           ? 'ascend'
           : 'descend';
+      // Team → Fleet position handoff (V3.0): capture the visible cards and
+      // let the board claim them for its entry pose. Any decline — reduced
+      // motion, low power, nothing to capture, or later a missed budget or
+      // unsolvable pose — takes the ordinary directional cut instead.
+      const handoff =
+        currentAltitude === 'sessions' &&
+        target === 'spatial' &&
+        altitudeHandoffAllowed()
+          ? captureAltitudeCards()
+          : null;
+      if (handoff) {
+        publishAltitudeHandoff(handoff);
+        setTransition({
+          phase: 'handoff',
+          target,
+          direction,
+          startedAt,
+          handoff,
+        });
+        frame.current = window.requestAnimationFrame(() => {
+          frame.current = null;
+          // Hard safety net: the ghost layer owns completion (pose or
+          // fallback); if it never reports, the transition still ends.
+          timer.current = window.setTimeout(() => {
+            setTransition(null);
+            targetPath.current = null;
+            timer.current = null;
+          }, 3_000);
+          if (options?.replace) router.replace(href);
+          else router.push(href);
+        });
+        return;
+      }
       setTransition({
         phase: 'departing',
         target,
@@ -220,14 +267,13 @@ export function CommandNavigationProvider({
     if (
       !transition ||
       transition.phase === 'arriving' ||
+      transition.phase === 'handoff' || // the ghost layer owns completion
       pathname !== targetPath.current
     ) {
       return;
     }
     clearScheduled();
-    const reduced = window.matchMedia(
-      '(prefers-reduced-motion: reduce)'
-    ).matches;
+    const reduced = prefersReducedMotion();
     const minimumTravel = reduced ? 20 : 130;
     const elapsed = performance.now() - transition.startedAt;
     timer.current = window.setTimeout(
@@ -271,10 +317,27 @@ export function CommandNavigationProvider({
         ? Grid2X2
         : SquareTerminal;
 
+  // Ends exactly the handoff it was created for: a stray late callback can
+  // never clear a newer transition (the safety timer and clearScheduled own
+  // the rest of the cleanup).
+  const completeHandoff = useCallback((snapshot: HandoffSnapshot) => {
+    setTransition(current =>
+      current?.phase === 'handoff' && current.handoff === snapshot
+        ? null
+        : current
+    );
+  }, []);
+
   return (
     <CommandNavigationContext.Provider value={value}>
       {children}
-      {transition && (
+      {transition?.phase === 'handoff' && transition.handoff && (
+        <AltitudeHandoffGhosts
+          snapshot={transition.handoff}
+          onDone={() => completeHandoff(transition.handoff!)}
+        />
+      )}
+      {transition && transition.phase !== 'handoff' && (
         <div
           data-command-transition={transition.phase}
           data-command-transition-target={transition.target}

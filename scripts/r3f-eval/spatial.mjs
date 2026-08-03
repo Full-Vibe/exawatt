@@ -470,6 +470,191 @@ async function runScenario(browser, scenario) {
   return result;
 }
 
+/**
+ * Team→Fleet altitude handoff (ENG-004 V3.0): drives the t11 fixture, which
+ * exercises the REAL capture → publish → ghost → claim → entry-pose →
+ * pull-back machinery over the Voltaic fleet. The fallback matrix is the
+ * feature: reduced motion, low power, and a missed frame budget must all
+ * cut, and input mid-transition must be obeyed.
+ */
+async function runHandoffScenario(browser, scenario) {
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 1000 },
+    reducedMotion: scenario.reduced ? 'reduce' : 'no-preference',
+  });
+  if (scenario.lowPower) {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'hardwareConcurrency', {
+        configurable: true,
+        value: 4,
+      });
+    });
+  }
+  const errors = [];
+  page.on('pageerror', error => errors.push(String(error.message || error)));
+  page.on('console', message => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+  const result = { name: scenario.name, passed: false, errors: [] };
+  try {
+    await page.goto(
+      `${EXA_BASE}/eval/t11-altitude-handoff${scenario.query ?? ''}`,
+      { waitUntil: 'load', timeout: 30_000 }
+    );
+    await page.waitForSelector('[data-enter-fleet]', { timeout: 20_000 });
+    // Let the card grid paint so capture sees settled rects.
+    await page.evaluate(
+      () =>
+        new Promise(resolve =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve))
+        )
+    );
+    await page.click('[data-enter-fleet]');
+
+    if (scenario.expect === 'pose') {
+      await page.waitForFunction(
+        () => window.__EVAL_HANDOFF__?.poseAt != null,
+        null,
+        { timeout: 10_000 }
+      );
+      // Ghost layer present, never intercepting input.
+      const ghosts = await page.evaluate(() => {
+        const layer = document.querySelector('[data-altitude-handoff]');
+        return {
+          present: Boolean(layer),
+          pointerEvents: layer
+            ? getComputedStyle(layer).pointerEvents
+            : null,
+          ghostCount: document.querySelectorAll(
+            '[data-altitude-handoff-ghost]'
+          ).length,
+        };
+      });
+      check(ghosts.present, 'Handoff ghosts did not render');
+      check(
+        ghosts.pointerEvents === 'none',
+        'Ghost layer must never block input'
+      );
+      await page.screenshot({ path: join(REPORT_DIR, 'handoff-entry.png') });
+      // Input mid-crossfade is obeyed immediately: the board's own keyboard
+      // model (digit = drill) responds while ghosts are still flying.
+      await page.keyboard.press('Digit1');
+      await page.waitForFunction(
+        () => window.__EVAL_HANDOFF__?.drilled != null,
+        null,
+        { timeout: 1_500 }
+      );
+      await page.waitForTimeout(160);
+      await page.screenshot({ path: join(REPORT_DIR, 'handoff-mid.png') });
+      await page.waitForFunction(
+        () => window.__EVAL_HANDOFF__?.outcome === 'pose',
+        null,
+        { timeout: 5_000 }
+      );
+      await page.waitForTimeout(1_500); // pull-back settles
+      const state = await page.evaluate(() => ({
+        ...window.__EVAL_HANDOFF__,
+        settledZoom: window.__EVAL_CAM__?.zoom ?? null,
+      }));
+      check(state.attempted, 'Handoff was not attempted');
+      check(
+        state.cardCount === 10,
+        `Expected 10 Voltaic cards, captured ${state.cardCount}`
+      );
+      check(
+        state.poseTargets === 10,
+        `Entry pose carried ${state.poseTargets}/10 card identities`
+      );
+      check(state.entryZoom != null, 'Entry zoom was not observed');
+      check(state.settledZoom != null, 'Settled zoom was not observed');
+      check(
+        Math.abs(state.settledZoom - state.entryZoom) >
+          Math.abs(state.entryZoom) * 0.02,
+        `Camera never pulled back (entry ${state.entryZoom}, settled ${state.settledZoom})`
+      );
+      check(
+        await page.evaluate(
+          () => document.querySelector('[data-altitude-handoff]') === null
+        ),
+        'Ghost layer did not clean up after the crossfade'
+      );
+      await page.screenshot({ path: join(REPORT_DIR, 'handoff-settled.png') });
+      result.detail = {
+        entryZoom: state.entryZoom,
+        settledZoom: state.settledZoom,
+        poseTargets: state.poseTargets,
+        drilled: state.drilled,
+      };
+    } else {
+      // Fallback matrix: the cut must fire and the board must still arrive.
+      await page.waitForFunction(
+        expectAttempted =>
+          window.__EVAL_HANDOFF__ &&
+          (expectAttempted
+            ? window.__EVAL_HANDOFF__.outcome !== null
+            : window.__EVAL_HANDOFF__.attempted === false &&
+              document
+                .querySelector('[data-handoff-fixture-phase]')
+                ?.getAttribute('data-handoff-fixture-phase') === 'board'),
+        scenario.expectAttempted ?? false,
+        { timeout: 10_000 }
+      );
+      const state = await page.evaluate(() => window.__EVAL_HANDOFF__);
+      if (scenario.expectAttempted) {
+        check(
+          state.outcome === 'fallback',
+          `Expected fallback outcome, got ${state.outcome}`
+        );
+        check(
+          state.poseAt === null,
+          'A missed budget must never still apply the pose'
+        );
+      } else {
+        check(
+          state.attempted === false,
+          `${scenario.name} must not attempt the handoff`
+        );
+      }
+      await waitForSpatialCanvas(page);
+      check(
+        await page.evaluate(
+          () => document.querySelector('[data-altitude-handoff]') === null
+        ),
+        'Fallback left the ghost layer behind'
+      );
+      const boardVisible = await page.evaluate(() =>
+        Boolean(document.querySelector('[data-spatial-board]'))
+      );
+      check(boardVisible, 'Fallback did not arrive at the board');
+      await page.screenshot({
+        path: join(REPORT_DIR, `${scenario.name}.png`),
+      });
+      result.detail = { attempted: state.attempted, outcome: state.outcome };
+    }
+    result.passed = true;
+  } catch (error) {
+    result.errors.push(String(error.message || error));
+  }
+  result.errors.push(...errors.slice(0, 8));
+  result.hardFail = result.errors.some(error =>
+    HARD_FAIL.some(fragment => error.includes(fragment))
+  );
+  if (result.errors.length > 0) result.passed = false;
+  await page.close();
+  return result;
+}
+
+const handoffScenarios = [
+  { name: 'handoff-pose', expect: 'pose' },
+  { name: 'handoff-reduced-motion', reduced: true },
+  { name: 'handoff-low-power', lowPower: true },
+  {
+    name: 'handoff-missed-budget',
+    query: '?claimDelay=1600',
+    expectAttempted: true,
+  },
+];
+
 const scenarios = [
   {
     name: 'desktop',
@@ -518,6 +703,9 @@ try {
   for (const scenario of scenarios) {
     results.push(await runScenario(browser, scenario));
   }
+  for (const scenario of handoffScenarios) {
+    results.push(await runHandoffScenario(browser, scenario));
+  }
 } finally {
   await browser.close();
 }
@@ -536,9 +724,11 @@ writeFileSync(
 console.log(`\nSpatial eval — ${EXA_BASE}`);
 console.log('─'.repeat(78));
 for (const result of results) {
+  const summary = result.detail
+    ? JSON.stringify(result.detail)
+    : `projects=${result.projectCount}  units=${result.unitCount}  idle=${result.idleFrames}  dpr=${result.pixelRatio}`;
   console.log(
-    `${result.passed ? 'PASS' : 'FAIL'}  ${result.name.padEnd(16)} ` +
-      `projects=${result.projectCount}  units=${result.unitCount}  idle=${result.idleFrames}  dpr=${result.pixelRatio}`
+    `${result.passed ? 'PASS' : 'FAIL'}  ${result.name.padEnd(22)} ${summary}`
   );
   if (result.errors.length) console.log(`      ${result.errors[0]}`);
 }
