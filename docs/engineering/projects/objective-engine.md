@@ -161,6 +161,11 @@ not a clear durable-purpose pivot. Temperature is zero because this is stable
 classification and retrieval copy, not creative generation. The live command
 loads `.env.local` explicitly, so a green provider run is evidence about the
 current configured model rather than the invoking shell's accidental exports.
+Repeated live verification also caught a nondeterministic output that replaced
+the explicit person anchor **Patty** with generic patient-record language.
+Named-entity retention is therefore explicit and mandatory when a person,
+company, product, or Project name distinguishes the work; low temperature is a
+stability aid, not a substitute for that semantic contract.
 
 ## Roadmap milestone log
 

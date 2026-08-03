@@ -157,6 +157,8 @@ describe('Session context-label contract', () => {
       'Sharing the same app, Project, or Session does not make two purposes the same context'
     );
     expect(body.system).toContain('Trustworthy agent sources and launch UX');
+    expect(body.system).toContain('Named-entity retention is mandatory');
+    expect(body.system).toContain('Flowsheet scraping for Patty');
     expect(body.temperature).toBe(0);
     expect(body.tool_choice.name).toBe('record_session_context');
     expect(body.tools[0].input_schema.properties.confidence).toEqual({
