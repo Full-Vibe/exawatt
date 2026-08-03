@@ -148,6 +148,26 @@ const BOARD = {
   projectColumns: 6,
 } as const;
 
+/**
+ * Zone metrics the renderer's density-dot packer must agree with
+ * (`operations-board/population-dots.ts` derives its dot-region insets from
+ * these — never duplicate the numbers there).
+ */
+export const SPATIAL_BOARD_ZONE_METRICS = {
+  zoneHeaderHeight: BOARD.zoneHeaderHeight,
+  zonePadding: BOARD.zonePadding,
+  fleetZoneWidth: BOARD.fleetZoneWidth,
+  fleetZoneHeight: BOARD.fleetZoneHeight,
+} as const;
+
+/**
+ * The dot pitch `densityZoneRect` budgets area for. Must be one of the
+ * renderer's PITCH_TIERS (population-dots pins this with a test): sizing a
+ * density zone for a pitch the renderer cannot select would silently missize
+ * every aggregated Project zone.
+ */
+export const SPATIAL_DENSITY_ZONE_PITCH = 0.35;
+
 const DEFAULTS = {
   maxProjectZones: 24,
   maxFleetPieces: 96,
@@ -302,8 +322,9 @@ function projectZoneRect(agentCount: number): SpatialBoardRect {
  * aspect, with a bounded ceiling.
  */
 function densityZoneRect(agentCount: number): SpatialBoardRect {
-  // ~0.123 world units² per rendered density dot (0.35 pitch), some slack.
-  const contentArea = Math.min(agentCount, 4_000) * 0.1225 * 1.2;
+  // One pitch² of area per rendered density dot, plus some slack.
+  const contentArea =
+    Math.min(agentCount, 4_000) * SPATIAL_DENSITY_ZONE_PITCH ** 2 * 1.2;
   const aspect = 2.4;
   const contentHeight = Math.max(
     BOARD.fleetZoneHeight - BOARD.zoneHeaderHeight,

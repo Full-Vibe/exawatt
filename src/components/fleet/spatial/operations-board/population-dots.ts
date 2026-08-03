@@ -14,9 +14,11 @@
  * the zone's DOM control still carries the exact count.
  */
 
-import type {
-  SpatialBoardPiece,
-  SpatialBoardProjectZone,
+import {
+  SPATIAL_BOARD_ZONE_METRICS,
+  SPATIAL_DENSITY_ZONE_PITCH,
+  type SpatialBoardPiece,
+  type SpatialBoardProjectZone,
 } from '@exawatt/ui-model';
 
 /** Matches the board model's aggregate emission order (attention first). */
@@ -37,14 +39,31 @@ const STATUS_INDEX = new Map<string, number>(
 
 /** Largest→smallest dot pitch (world units). The renderer keeps dots readable
  *  when zones are quiet (a handful of agents get substantial marks) and lets
- *  dense zones read as population texture. */
-const PITCH_TIERS = [1.7, 1.3, 1.0, 0.78, 0.62, 0.5, 0.42, 0.35, 0.28, 0.22] as const;
+ *  dense zones read as population texture. Includes the shared density-zone
+ *  sizing pitch so `densityZoneRect` can never budget for a pitch this packer
+ *  cannot select (pinned by a unit test). */
+export const PITCH_TIERS = [
+  1.7,
+  1.3,
+  1.0,
+  0.78,
+  0.62,
+  0.5,
+  0.42,
+  SPATIAL_DENSITY_ZONE_PITCH,
+  0.28,
+  0.22,
+] as const;
 /** Dot diameter as a fraction of pitch. */
 const DOT_FILL = 0.62;
 
-const ZONE_PADDING_X = 1.6;
-const ZONE_HEADER = 4.8;
-const ZONE_PADDING_BOTTOM = 0.9;
+/** Dot-region insets, derived from the board model's shared zone metrics so a
+ *  zone-geometry change in `@exawatt/ui-model` re-sizes the dot region with it.
+ *  The multipliers are the tuned V3.1 clearances: dots start below the DOM
+ *  zone-header chip with breathing room, and sit slightly inside the plate. */
+const ZONE_PADDING_X = SPATIAL_BOARD_ZONE_METRICS.zonePadding * 0.8;
+const ZONE_HEADER = SPATIAL_BOARD_ZONE_METRICS.zoneHeaderHeight * 1.2;
+const ZONE_PADDING_BOTTOM = SPATIAL_BOARD_ZONE_METRICS.zonePadding * 0.45;
 
 export interface PopulationDotField {
   /** Dots actually emitted (≤ population when truncated). */
@@ -84,6 +103,24 @@ function largestRemainderShare(bands: ZoneBand[], capacity: number): number[] {
     if (bands[entry.index]!.count === 0) continue;
     floored[entry.index]! += 1;
     remaining -= 1;
+  }
+  // Minority pin: an attention-critical minority must never vanish (1 blocked
+  // Agent among 10,000 idle would otherwise round to 0 dots). Every nonzero
+  // band renders at least one dot, taking the slot from the largest band.
+  // Bands arrive sorted attention-first, so if capacity is ever smaller than
+  // the band count, attention statuses are pinned first.
+  for (let index = 0; index < bands.length; index++) {
+    if (bands[index]!.count === 0 || floored[index]! > 0) continue;
+    let donor = -1;
+    for (let candidate = 0; candidate < bands.length; candidate++) {
+      if (candidate === index || floored[candidate]! < 2) continue;
+      if (donor === -1 || floored[candidate]! > floored[donor]!) {
+        donor = candidate;
+      }
+    }
+    if (donor === -1) continue; // capacity below the nonzero-band count
+    floored[donor]! -= 1;
+    floored[index]! += 1;
   }
   return floored;
 }

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type {
-  SpatialBoardPiece,
-  SpatialBoardProjectZone,
+import {
+  SPATIAL_DENSITY_ZONE_PITCH,
+  type SpatialBoardPiece,
+  type SpatialBoardProjectZone,
 } from '@exawatt/ui-model';
 import {
   computePopulationDotField,
+  PITCH_TIERS,
   POPULATION_STATUS_ORDER,
 } from './population-dots';
 
@@ -144,6 +146,117 @@ describe('computePopulationDotField', () => {
     ];
     const field = computePopulationDotField(zones, pieces);
     expect(field.count).toBe(0);
+  });
+
+  it('never drops a nonzero minority band when truncating', () => {
+    const zones = [zone('project:a', FLEET_RECT)];
+    // 1 blocked Agent among 10,000: proportional share rounds to 0 dots, but
+    // an attention-critical status must never disappear from the field.
+    const pieces = [
+      aggregate('project:a', 'blocked', 1),
+      aggregate('project:a', 'idle', 9_999),
+    ];
+    const field = computePopulationDotField(zones, pieces);
+    expect(field.truncated).toBe(true);
+    const blockedIndex = POPULATION_STATUS_ORDER.indexOf('blocked');
+    const blockedDots = Array.from(field.status).filter(
+      status => status === blockedIndex
+    ).length;
+    expect(blockedDots).toBeGreaterThanOrEqual(1);
+    // The pinned dot is banded first (attention-first status order).
+    expect(field.status[0]).toBe(blockedIndex);
+  });
+
+  it('pins every nonzero band, not just the first, at extreme skew', () => {
+    const zones = [zone('project:a', FLEET_RECT)];
+    const pieces = [
+      aggregate('project:a', 'blocked', 1),
+      aggregate('project:a', 'error', 1),
+      aggregate('project:a', 'reviewing', 1),
+      aggregate('project:a', 'working', 20_000),
+      aggregate('project:a', 'idle', 20_000),
+    ];
+    const field = computePopulationDotField(zones, pieces);
+    expect(field.truncated).toBe(true);
+    const seen = new Set(field.status);
+    for (const status of ['blocked', 'error', 'reviewing'] as const) {
+      expect(seen.has(POPULATION_STATUS_ORDER.indexOf(status))).toBe(true);
+    }
+  });
+
+  it('stays exact (untruncated) when population equals zone capacity', () => {
+    const zones = [zone('project:a', FLEET_RECT)];
+    // Discover the zone's geometric capacity at the smallest pitch by
+    // overfilling it, then refill with exactly that population.
+    const overfilled = computePopulationDotField(zones, [
+      aggregate('project:a', 'idle', 1_000_000),
+    ]);
+    expect(overfilled.truncated).toBe(true);
+    const capacity = overfilled.count;
+    const atCapacity = computePopulationDotField(zones, [
+      aggregate('project:a', 'idle', capacity),
+    ]);
+    expect(atCapacity.truncated).toBe(false);
+    expect(atCapacity.count).toBe(capacity);
+    expect(atCapacity.population).toBe(capacity);
+    const overCapacity = computePopulationDotField(zones, [
+      aggregate('project:a', 'idle', capacity + 1),
+    ]);
+    expect(overCapacity.truncated).toBe(true);
+    expect(overCapacity.count).toBeLessThanOrEqual(capacity);
+  });
+
+  it('bands each zone independently in a multi-zone field', () => {
+    const rectA = { x: 0, y: 0, width: 24, height: 11.5 };
+    const rectB = { x: 40, y: 20, width: 24, height: 11.5 };
+    const zones = [zone('project:a', rectA), zone('project:b', rectB)];
+    const pieces = [
+      aggregate('project:a', 'working', 6),
+      aggregate('project:a', 'blocked', 2),
+      aggregate('project:b', 'idle', 5),
+      aggregate('project:b', 'error', 3),
+    ];
+    const field = computePopulationDotField(zones, pieces);
+    expect(field.count).toBe(16);
+    expect(field.population).toBe(16);
+    expect(field.truncated).toBe(false);
+    const inRect = (
+      index: number,
+      rect: { x: number; y: number; width: number; height: number }
+    ) =>
+      field.x[index]! > rect.x &&
+      field.x[index]! < rect.x + rect.width &&
+      field.y[index]! > rect.y &&
+      field.y[index]! < rect.y + rect.height;
+    const statuses = (
+      rect: { x: number; y: number; width: number; height: number }
+    ) =>
+      Array.from({ length: field.count }, (_, index) => index)
+        .filter(index => inRect(index, rect))
+        .map(index => field.status[index]!);
+    const zoneA = statuses(rectA);
+    const zoneB = statuses(rectB);
+    expect(zoneA.length).toBe(8);
+    expect(zoneB.length).toBe(8);
+    // Every dot lands in exactly one zone, banded attention-first per zone.
+    const blocked = POPULATION_STATUS_ORDER.indexOf('blocked');
+    const working = POPULATION_STATUS_ORDER.indexOf('working');
+    const error = POPULATION_STATUS_ORDER.indexOf('error');
+    const idle = POPULATION_STATUS_ORDER.indexOf('idle');
+    expect(zoneA).toEqual([
+      ...Array(2).fill(blocked),
+      ...Array(6).fill(working),
+    ]);
+    expect(zoneB).toEqual([...Array(3).fill(error), ...Array(5).fill(idle)]);
+  });
+
+  it('keeps the shared density-zone sizing pitch selectable', () => {
+    // densityZoneRect budgets area at this pitch; the packer must be able to
+    // select it (and everything smaller) or density zones silently missize.
+    expect(PITCH_TIERS).toContain(SPATIAL_DENSITY_ZONE_PITCH);
+    expect(Math.min(...PITCH_TIERS)).toBeLessThanOrEqual(
+      SPATIAL_DENSITY_ZONE_PITCH
+    );
   });
 
   it('is deterministic for identical input', () => {

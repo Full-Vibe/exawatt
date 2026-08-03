@@ -92,8 +92,16 @@ function zoneFill(projectId: string): string {
   return fill;
 }
 
+/** Reads matchMedia synchronously on mount (guide rule 12): initializing to
+ *  `false` and correcting in an effect gave reduced-motion users one animated
+ *  entrance frame set — entrances must SNAP for them, so the first render
+ *  already needs the real preference. */
 function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false);
+  const [reduced, setReduced] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
   useEffect(() => {
     const query = window.matchMedia('(prefers-reduced-motion: reduce)');
     const update = () => setReduced(query.matches);
@@ -1654,15 +1662,26 @@ export function OperationsBoardCanvas({
   const ambient = !reduced && !lowPower && pageVisible;
   const [hoveredZoneId, setHoveredZoneId] = useState<string | null>(null);
   const visibleZones = layout.zones.filter(zone => zone.visible);
-  // Zone-label budget: full cards only when a zone's projected width can
-  // afford them. Hysteresis keeps the tier stable through damped zoom, and
-  // the state only flips at a boundary crossing (never per frame).
+  // Zone-label budget: full cards only when every zone's projected width can
+  // afford them, so the bound is the NARROWEST visible zone (one overflowing
+  // card is the failure the tier exists to prevent). Hysteresis keeps the
+  // tier stable through damped zoom, and the state only flips at a boundary
+  // crossing (never per frame). Recomputes on zoom AND on zone-width changes
+  // (layout ticks can resize zones without any camera motion).
   const [labelTier, setLabelTier] = useState<ZoneLabelTier>('full');
   const labelTierRef = useRef<ZoneLabelTier>('full');
   const zoneWidthRef = useRef(24);
-  zoneWidthRef.current = visibleZones[0]?.rect.width ?? 24;
-  const handleZoomChange = useCallback((zoom: number) => {
-    const projectedPx = zoneWidthRef.current * zoom;
+  const zoomRef = useRef(1);
+  const minZoneWidth =
+    visibleZones.length > 0
+      ? visibleZones.reduce(
+          (min, zone) => Math.min(min, zone.rect.width),
+          Number.POSITIVE_INFINITY
+        )
+      : 24;
+  zoneWidthRef.current = minZoneWidth;
+  const applyLabelTier = useCallback(() => {
+    const projectedPx = zoneWidthRef.current * zoomRef.current;
     const next: ZoneLabelTier =
       labelTierRef.current === 'full'
         ? projectedPx < 250
@@ -1676,6 +1695,16 @@ export function OperationsBoardCanvas({
       setLabelTier(next);
     }
   }, []);
+  const handleZoomChange = useCallback(
+    (zoom: number) => {
+      zoomRef.current = zoom;
+      applyLabelTier();
+    },
+    [applyLabelTier]
+  );
+  useEffect(() => {
+    applyLabelTier();
+  }, [minZoneWidth, applyLabelTier]);
   // Semantic address key: a new altitude (or focused Project) re-runs the
   // entrance choreography; live data ticks never do.
   const choreoKey = `${layout.altitude}:${layout.focusedProjectId ?? '~'}`;

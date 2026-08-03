@@ -38,7 +38,9 @@ const TASKS = [
   {
     id: 't5-operations-board',
     name: 'Spatial Operations Board',
-    drawCallMax: 12,
+    // Max-across-renders probe (not the last-render snapshot): observed 14
+    // during entrance+settle, +2 tolerance.
+    drawCallMax: 16,
     settleMs: 800,
   },
   {
@@ -71,9 +73,10 @@ const TASKS = [
   {
     id: 't10-board-scale',
     name: 'Demo-scale board (1k population field)',
-    // The whole 1,000-agent population renders as one InstancedMesh; the
-    // board stays within the same draw budget as the small-fleet fixture.
-    drawCallMax: 12,
+    // The whole 1,000-agent population renders as one InstancedMesh. Max
+    // observed across renders (incl. postprocessing passes) is 6; +2
+    // tolerance. Ratcheted from 12 once the field landed and was measured.
+    drawCallMax: 8,
     settleMs: 1_800,
   },
 ];
@@ -189,6 +192,22 @@ async function runTask(browser, task) {
       },
       { timeout: 15000 }
     );
+    // Track the MAX draw calls across every subsequent render, not just the
+    // last-render snapshot: with postprocessing, the final gl.render before
+    // sampling can be a cheap composite pass that underreports the scene's
+    // real draw count.
+    await page.evaluate(() => {
+      const gl = window.__EVAL_GL__;
+      if (!gl || gl.__origRender) return;
+      gl.__origRender = gl.render.bind(gl);
+      gl.__maxCalls = gl.info.render.calls;
+      gl.render = (...args) => {
+        const result = gl.__origRender(...args);
+        if (gl.info.render.calls > gl.__maxCalls)
+          gl.__maxCalls = gl.info.render.calls;
+        return result;
+      };
+    });
     // two more rAFs so the painted frame is composited before capture
     await page.evaluate(
       () =>
@@ -236,10 +255,12 @@ async function runTask(browser, task) {
       `pixels: variance=${(blank.variance ?? 0).toFixed(1)} range=${(blank.range ?? 0).toFixed(0)}`
     );
 
-    // draw calls
+    // draw calls: max observed across renders since the probe installed,
+    // falling back to the last-render snapshot if nothing rendered since.
     result.drawCalls = await page.evaluate(() => {
       const gl = window.__EVAL_GL__;
-      return gl && gl.info && gl.info.render ? gl.info.render.calls : null;
+      if (!gl || !gl.info || !gl.info.render) return null;
+      return Math.max(gl.__maxCalls ?? 0, gl.info.render.calls);
     });
     result.drawCallOk =
       task.drawCallMax === null

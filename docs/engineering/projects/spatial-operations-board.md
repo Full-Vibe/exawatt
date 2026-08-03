@@ -1132,22 +1132,29 @@ Rendering strategies, each with the budget it serves:
   entrance fade; at aggregate density there are no rotors, so the V2.4
   ambient gates hold and the settled scene renders zero frames.
 
-Measured numbers (canonical run: headed Chromium, real GPU, non-primary
-display, 1400×860, top-down and fixed-angle; `pnpm eval:spatial:scale`):
+Measured numbers (canonical run 2026-08-02, review-fixed sampler: percentiles
+cover the DRIVEN motion window only — the idle settle tail is excluded, and
+gl.render pass bursts are collapsed into presented frames. Headed Chromium,
+real GPU, 1400×860, 60Hz-vsynced window; `pnpm eval:spatial:scale`):
 
-| Scenario | Agents | Emitted pieces | Layout | Glide raf p50/p95 | Draw calls | JS heap | Parks |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Voltaic fleet (W4) | 173 / 10 Projects | 48 aggregates → dots | 1.4ms | 8.3 / 9.3ms | 6 | 35MB | 0 frames |
-| Voltaic fleet, fixed-angle | 173 | 48 → dots | 1.3ms | 8.3 / 9.2ms | 6 | 34MB | 0 frames |
-| Voltaic project drill (dispatch-engine) | 28 individual | 28 pieces + controls | 1.3ms | 8.3 / 9.2ms | 13 | 40MB | n/a (rotors) |
-| Synthetic fleet | 1,000 / 26 | 148 → dots | 2.4ms | 8.3 / 9.0ms | 6 | 37MB | 0 frames |
-| Synthetic fleet | 10,000 / 26 | 150 → dots | 11.5ms | 8.3 / 9.2ms | 6 | 37MB | 0 frames |
-| Synthetic giant-Project drill | 3,334 in one Project | 6 → dots | 9.8ms | 8.3 / 9.3ms | 6 | 35MB | n/a |
+| Scenario | Agents | Emitted pieces | Layout | Glide render-interval p50/p95 | Render CPU p95 (glide/zoom) | Draw calls | JS heap | Parks |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Voltaic fleet (W4) | 173 / 10 Projects | 48 aggregates → dots | 1.1ms | 16.7 / 18.5ms | 0.4 / 2.5ms | 6 | 34MB | 0 frames |
+| Voltaic fleet, fixed-angle | 173 | 48 → dots | 1.2ms | 16.7 / 16.8ms | 0.4 / 2.4ms | 6 | 31MB | 0 frames |
+| Voltaic project drill (dispatch-engine) | 28 individual | 28 pieces + controls | 1.2ms | 16.7 / 16.9ms | 0.4 / 0.5ms | 13 | 39MB | n/a (rotors) |
+| Synthetic fleet | 1,000 / 26 | 148 → dots | 2.2ms | 16.7 / 18.0ms | 0.3 / 2.3ms | 6 | 36MB | 0 frames |
+| Synthetic fleet | 10,000 / 26 | 150 → dots | 10.2ms | 16.7 / 18.3ms | 0.3 / 2.3ms | 6 | 38MB | 0 frames |
+| Synthetic giant-Project drill | 3,334 in one Project | 6 → dots | 8.6ms | 16.7 / 17.7ms | 0.5 / 0.3ms | 6 | 36MB | n/a |
 
-Wheel-zoom bursts match the glide numbers (p95 ≤ 9.3ms); `gl.render` CPU
-cost stays ≤0.1ms p95 at every scale. 10k dots ≈ 55.6k triangles — trivial
-GPU load. The 120Hz reference display's 8.3ms cadence means every scenario
-holds the 60fps/16.7ms budget with 2x headroom.
+Display-refresh caveat: interval percentiles are vsync-bound — a demand
+renderer that keeps up reads exactly the refresh interval (16.7ms at 60Hz,
+8.3ms at 120Hz), so cadence says "never missed vsync", not "costs 16.7ms".
+The app-cost truths are the render CPU column (≤0.5ms glide, ≤2.6ms during
+wheel-zoom bursts at every scale), layout cost, and draw calls. Wheel-zoom
+interval p95 stays ≤22ms at every scale. 10k dots ≈ 55.6k triangles —
+trivial GPU load. Headless runs gate correctness (park === 0, draw calls,
+blank/error checks) but their cadence measures Chromium's throttled
+begin-frame scheduler, not the app.
 
 Supporting scaffolding (measurement is a deliverable, not a byproduct):
 
@@ -1159,8 +1166,9 @@ Supporting scaffolding (measurement is a deliverable, not a byproduct):
   park-at-rest quiescence gate, 9-point blank gate, screenshots per
   scenario. Headless by default; `SCALE_HEADED=1 SCALE_WINDOW_POS=x,y` for
   real-GPU runs on a non-primary display.
-- `t10-board-scale` ratcheted into `pnpm eval:r3f` (1 draw call at rest for
-  the 1k board).
+- `t10-board-scale` ratcheted into `pnpm eval:r3f`: max draw calls across
+  renders (probe, not a last-render snapshot) is 6 for the 1k board
+  including postprocessing passes; gate is 8.
 - Demo scale tiers `xl` (1k) / `xxl` (10k) in `MockFleetTransport` and
   DemoControls drive the full route to demo scale; the synthetic project
   list now exceeds the 24-zone budget so the `+N more Projects` aggregate
@@ -1188,9 +1196,50 @@ Known limits, recorded not hidden:
 Verification: type-check, lint, 1,065 unit tests (23 new: dot-field packing
 and density-rect coverage), `eval:r3f` 100/100 across ten fixtures,
 `eval:spatial` 4/4 contexts, `eval:spatial:pointer` full pass, production
-build, and the scale eval above. Screenshot evidence for every scenario in
-the eval report; full-route XXL screenshots (10,000 agents through the real
-DemoControls) captured at fleet and project altitudes.
+build, and the scale eval above. Scale-report artifacts (screenshots per
+scenario, `results.json`) are regenerable with `pnpm eval:spatial:scale`
+rather than committed — rerun it for evidence instead of trusting a stale
+local report.
+
+2026-08-02 review fixes (same-day verified review of the V3.1 commits):
+
+- **Minority-status pin.** Largest-remainder downsampling could floor a
+  small band to zero dots (1 blocked Agent among 10,000 → 0 blocked dots) —
+  an attention-critical status silently vanished from the field. Every
+  nonzero band now renders at least one dot, taking the slot from the
+  largest band (attention-first when capacity is ever tighter than the band
+  count). Pinned by unit tests, alongside new exact-capacity-boundary and
+  multi-zone banding tests (population-dots tests 6 → 11).
+- **Measurement honesty.** The scale sampler folded a 900ms idle settle
+  tail into its cadence percentiles — on a 120Hz display the quoted
+  8.3ms p50 was the vsync interval, not a measurement. Percentiles now
+  cover the driven motion window only, gl.render pass bursts collapse into
+  presented frames, and the table above quotes render-interval p50/p95 and
+  render-CPU p95 with the display-refresh caveat stated.
+- **Gates match claims.** The park gate asserted `<= 1` while the doc
+  claims 0 — now `=== 0` (re-verified 9/9 headless; the harness also
+  records whether the pre-sample quiet window was reached so a failure
+  distinguishes "never settled" from "re-woke"). `eval:r3f` draw-call gates
+  now read a max-across-renders probe instead of the last-render snapshot
+  and are ratcheted to observed+2 (t10: 6 → gate 8; t5: 14 → gate 16).
+- **Label-tier bound.** Hysteresis keyed off the first visible zone's width
+  and only recomputed on zoom; it now uses the narrowest visible zone (the
+  zone whose card overflows first) and recomputes when zone widths change.
+- **Reduced-motion snap.** `useReducedMotion` initialized `false` and
+  corrected in an effect, so reduced-motion users got a ~0.3s entrance fade
+  (guide rule 12) in PopulationDotLayer and the preexisting
+  ZoneLayer/SelectionRing/AgentPieceLayer pattern. The hook now reads
+  matchMedia synchronously; entrances snap.
+- **Shared constants.** The dot packer's zone insets derive from
+  `SPATIAL_BOARD_ZONE_METRICS` and the density-zone sizing pitch is the
+  exported `SPATIAL_DENSITY_ZONE_PITCH` (ui-model), used by both
+  `densityZoneRect` (0.35² per dot) and the packer's PITCH_TIERS — a pitch
+  change can no longer silently missize density zones (test-pinned).
+- Also in this pass: `eval:navigation`'s status-filter click made exact
+  (the Team altitude label "…the Agents working them" substring-matched
+  `working` after decision 0023's rename), and the untriaged-feedback count
+  hook no longer issues a guaranteed-401 Supabase query when signed out
+  (console-error noise on every surface that mounts it).
 
 ### V2.1 Scale & Truth
 

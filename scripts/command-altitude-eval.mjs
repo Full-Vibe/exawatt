@@ -370,7 +370,9 @@ try {
   const spatialSearch = page.getByLabel('Search agents');
   await spatialSearch.fill('navigation');
   await page.waitForURL(url => url.searchParams.get('q') === 'navigation');
-  await page.getByRole('button', { name: 'working' }).click();
+  // exact: the Team altitude button's accessible name ("...the Agents working
+  // them") substring-matches 'working' under Playwright's default matching.
+  await page.getByRole('button', { name: 'working', exact: true }).click();
   await page.waitForURL(url => url.searchParams.get('status') === 'working');
   const filteredAddress =
     new URL(page.url()).pathname + new URL(page.url()).search;

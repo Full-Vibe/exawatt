@@ -19,6 +19,14 @@ export function useUntriagedFeedbackCount(enabled = true): number | null {
     const sample = async () => {
       try {
         const supabase = createClient();
+        // Signed out ⇒ no query: an unauthenticated REST call is a
+        // guaranteed 401 the browser logs as a console error on every
+        // surface that mounts this hook.
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData.session) {
+          if (!cancelled) setCount(null);
+          return;
+        }
         const { count: value, error } = await supabase
           .from('product_feedback')
           .select('*', { count: 'exact', head: true })

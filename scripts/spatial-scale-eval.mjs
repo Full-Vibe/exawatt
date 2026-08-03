@@ -7,7 +7,13 @@
  *   - layout selector cost (ms) and the emitted entity budget (stats)
  *   - draw calls per frame
  *   - render cadence + CPU render cost during a 600ms held-key glide and a
- *     wheel-zoom burst (p50/p95 frame intervals, p95 gl.render CPU ms)
+ *     wheel-zoom burst (p50/p95 frame intervals, p95 gl.render CPU ms).
+ *     Percentiles cover the DRIVEN motion window only — the idle settle tail
+ *     is excluded (it otherwise collapses cadence to the vsync interval).
+ *     Cadence numbers are bounded by the display/scheduler: headed runs cap
+ *     at the display refresh; headless Chromium throttles begin-frames, so
+ *     headless cadence measures the harness, not the app — read renderCpu,
+ *     draw calls, layout cost, and park there instead.
  *   - JS heap after settle
  *   - park-at-rest (fleet altitude has no rotors at aggregate density, so a
  *     settled 1s sample must render ~0 new frames)
@@ -168,29 +174,55 @@ async function sampleMotion(page, { kind, durationMs }) {
         };
         requestAnimationFrame(sample);
       });
-      const intervals = rafTimes
-        .slice(1)
-        .map((time, index) => time - rafTimes[index])
-        .sort((a, b) => a - b);
+      // Measurement honesty: percentiles come from the DRIVEN motion window
+      // only. The 900ms settle tail exists so damped follow-through can park,
+      // but a parked demand loop renders nothing — folding the tail's idle
+      // rAF ticks into the percentiles makes every cadence number collapse to
+      // the display's vsync interval (a tautology, not a measurement).
+      const motionEnd = start + durationMs;
       const renders = gl.__renders.slice();
-      const renderIntervals = renders
+      const motionRafTimes = rafTimes.filter(time => time <= motionEnd);
+      const intervals = motionRafTimes
         .slice(1)
-        .map((r, index) => r.at - renders[index].at)
+        .map((time, index) => time - motionRafTimes[index])
         .sort((a, b) => a - b);
-      const cpu = renders.map(r => r.cpuMs).sort((a, b) => a - b);
+      const motionRenders = renders.filter(r => r.at <= motionEnd);
+      // One presented frame can carry several gl.render invocations back to
+      // back (postprocessing passes; R3F's demand loop draining accumulated
+      // invalidations in a single tick). Collapse bursts (<2ms apart) into
+      // presented frames so frame intervals and per-frame CPU are real.
+      const frames = [];
+      for (const r of motionRenders) {
+        const last = frames[frames.length - 1];
+        if (last && r.at - last.end < 2) {
+          last.end = r.at;
+          last.cpuMs += r.cpuMs;
+        } else {
+          frames.push({ at: r.at, end: r.at, cpuMs: r.cpuMs });
+        }
+      }
+      const renderIntervals = frames
+        .slice(1)
+        .map((frame, index) => frame.at - frames[index].at)
+        .sort((a, b) => a - b);
+      const cpu = frames.map(frame => frame.cpuMs).sort((a, b) => a - b);
       const pick = (sorted, p) =>
         sorted.length === 0
           ? null
           : sorted[Math.max(0, Math.ceil(sorted.length * p) - 1)];
       return {
-        rafFrames: rafTimes.length,
+        rafFrames: motionRafTimes.length,
         rafP50Ms: pick(intervals, 0.5),
         rafP95Ms: pick(intervals, 0.95),
-        renderedFrames: renders.length,
+        renderPasses: motionRenders.length,
+        renderedFrames: frames.length,
         renderP50Ms: pick(renderIntervals, 0.5),
         renderP95Ms: pick(renderIntervals, 0.95),
         renderCpuP50Ms: pick(cpu, 0.5),
         renderCpuP95Ms: pick(cpu, 0.95),
+        // Damped follow-through after the input stops; parked scenes should
+        // drive this toward zero quickly.
+        tailRenderPasses: renders.length - motionRenders.length,
         // Postprocessing splits one visual frame into several gl.render pass
         // invocations; the scene pass carries the real object draw count, so
         // report the max observed.
@@ -285,7 +317,7 @@ async function run() {
         // Let the damped camera finish converging after the motion samples:
         // wait for a 400ms window with no renders (bounded), THEN take the
         // settled one-second park sample.
-        await page
+        result.quietReached = await page
           .waitForFunction(
             () => {
               const gl = window.__EVAL_GL__;
@@ -296,7 +328,12 @@ async function run() {
             },
             { timeout: 10_000, polling: 100 }
           )
-          .catch(() => undefined);
+          .then(
+            () => true,
+            // A scene still rendering after 10s is itself a park failure; the
+            // sample below will report the frame count with that context.
+            () => false
+          );
         result.park = await page.evaluate(async () => {
           const gl = window.__EVAL_GL__;
           const before = gl.__renders.length;
@@ -304,8 +341,11 @@ async function run() {
           return gl.__renders.length - before;
         });
         check(
-          result.park <= 1,
-          `${scenario.id}: expected parked scene, saw ${result.park} frames in a settled second`
+          result.park === 0,
+          `${scenario.id}: expected parked scene, saw ${result.park} frames in a settled second` +
+            (result.quietReached
+              ? ''
+              : ' (scene never went quiet for 400ms within 10s before sampling)')
         );
       }
 
@@ -369,7 +409,7 @@ async function run() {
           ? ` layout=${result.board.layoutMs.toFixed(1)}ms pieces=${result.board.stats.emittedPieceCount} labels=${result.board.stats.visibleLabelCount}`
           : '') +
         (result.glide
-          ? ` glide raf p50/p95=${result.glide.rafP50Ms?.toFixed(1)}/${result.glide.rafP95Ms?.toFixed(1)}ms cpu p95=${result.glide.renderCpuP95Ms?.toFixed(1)}ms calls=${result.glide.drawCalls}`
+          ? ` glide raf p50/p95=${result.glide.rafP50Ms?.toFixed(1)}/${result.glide.rafP95Ms?.toFixed(1)}ms render p50/p95=${result.glide.renderP50Ms?.toFixed(1)}/${result.glide.renderP95Ms?.toFixed(1)}ms cpu p95=${result.glide.renderCpuP95Ms?.toFixed(2)}ms calls=${result.glide.drawCalls}`
           : '') +
         (result.heapMB != null ? ` heap=${result.heapMB}MB` : '') +
         (result.park != null ? ` parkFrames=${result.park}` : '') +
