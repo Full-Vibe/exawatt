@@ -50,7 +50,7 @@ The demo fleet must support the full altitude sweep across *different* Projects,
 - **W1 Workspace as a real scope** — Workspace identity, the account-menu switcher, Workspace-scoped view state, and the hard guarantee that switching never disturbs live local Sessions. Personal only; the switcher shows Demo as `Coming soon` until W2.
 - **W2 Demo source and pane content source** — the demo data source behind the existing fleet transport boundary plus the Terminal pane content source; demo tabs render transcripts and cannot spawn a PTY.
 - **W3 Demo fleet content** — the authored demo Workspace: Projects, roadmaps, Agents, Sessions, consumption. Authored as data, versioned in the repo, resettable.
-- **W4 Scale tier** — the demo fleet at the density the Spatial moment needs, with measured frame budget. See the contradiction note below.
+- **W4 Scale tier (data)** — the demo fleet authored or generated at the entity count the Spatial moment needs, with honest structure at that volume rather than cloned filler. This milestone owns the DATA only; ENG-004 V3.1 owns rendering it. See the contradiction note below.
 - **W5 Team Workspace preview** — team tenants appear in the switcher as ENG-026 `preview`, linking to the Team surface.
 
 ## Recorded contradiction: demo scale vs parked V2.1
@@ -59,7 +59,9 @@ ENG-004 V2.1 (*Scale & Truth* — density and interaction budgets at 1k/10k, vie
 
 W4 needs part of that work: the demo's "zoom out to thousands" moment is precisely a rendering-density claim.
 
-Resolution (recorded, pending operator confirmation): W4 unparks only the **rendering-budget** half of V2.1 — instancing, culling, label budgets, and frame measurement against the demo fleet — and leaves the **truth** half parked, since Initiative-level aggregation and aggregate Project drill answer questions no demo asks. The demo asset reframing is the reason to do the rendering half, not a reason to skip it.
+Resolution: only the **rendering-budget** half of V2.1 unparks — instancing, culling, label budgets, and frame measurement against the demo fleet — and the **truth** half stays parked, since Initiative-level aggregation and aggregate Project drill answer questions no demo asks. The demo-asset reframing is the reason to do the rendering half, not a reason to skip it.
+
+That rendering work is **ENG-004 V3.1**, not this milestone. W4 produces the data; V3.1 makes it render at frame budget. Two milestones were briefly written claiming the same work on 2026-08-02 and were split the same day — an ownership collision is exactly the layer-cake failure `AGENTS.md` forbids, and parallel agents would have duplicated it.
 
 ## Open questions
 
