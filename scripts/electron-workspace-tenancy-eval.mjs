@@ -488,6 +488,26 @@ try {
         path: join(SCREENSHOT_DIR, 'demo-fleet-altitude.png'),
       });
 
+      // Closing fix (ENG-027): native-menu launch verbs are TENANT-GATED.
+      // Fire the real menu IPC inside Demo — the dispatch gate must drop
+      // them whole, and the launch-family request functions must store no
+      // pending slot that could fire against Personal after the switch back.
+      await app.evaluate(({ BrowserWindow }, commands) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        for (const command of commands) {
+          win?.webContents.send('menu:command', command);
+        }
+      }, ['launch-shell', 'launch-claude', 'new-agent']);
+      await page.waitForTimeout(500);
+      check(
+        'menu launch verbs are inert inside Demo (no terminal, tenant intact)',
+        (await page
+          .locator('[data-active-tenant-workspace="demo"]')
+          .count()) === 1 &&
+          (await page.locator('.xterm-helper-textarea').count()) === 0 &&
+          (await page.locator('[data-spatial-command]').count()) === 1
+      );
+
       // ---- return to Personal: everything exactly as it was --------------
       await openAccountMenu(page);
       await page.locator('[data-workspace-switch="personal"]').click();
@@ -520,6 +540,16 @@ try {
           afterDemo[0].harnessSessionId === before.harnessSessionId &&
           afterDemo[0].exitCode === null,
         JSON.stringify(afterDemo.map(s => [s.id, s.exitCode]))
+      );
+      // …and stays that way: a pending-launch slot leaked from Demo would
+      // fire on this mount (use-workspace-state replays it when ready) and
+      // spawn a second PTY within moments. Give it time, then re-list.
+      await page.waitForTimeout(1500);
+      const settled = await ptySessions(page);
+      check(
+        'no pending-launch slot leaked from Demo fires after the switch back',
+        settled.length === 1 && settled[0].id === before.id,
+        JSON.stringify(settled.map(s => [s.id, s.exitCode]))
       );
 
       // End the run INSIDE Demo so the relaunch phase can prove boot-restore
