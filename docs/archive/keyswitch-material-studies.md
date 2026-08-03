@@ -1,4 +1,9 @@
-# Keyswitch / translucent agent key material studies (retired 2026-08-02, ENG-036 G1)
+# Keyswitch / translucent agent key material studies (retirement interval, 2026-08-02)
+
+> Reactivated in `/hud-gallery` by operator review on 2026-08-02 under decision
+> `0025`. This archived note preserves why the bench was removed and what
+> stayed retired; active gallery state now lives in
+> `docs/engineering/design-system.md` and the decision record.
 
 Direction note archived when the `/hud-gallery` studies were retired per the
 design-system kernel's G0 decision list (`docs/engineering/design-system.md`,
@@ -26,9 +31,9 @@ The direction did ship — as two specific keys, not a component library:
 
 - `CommandKeySwitchButton` — the Smoke Low command key on the home hero
   (`src/app/_home-hero.tsx`), covered by `/eval/t8-home-keyswitch`.
-- `AgentStartKeySwitchButton` — the Start key in the workspace launch controls
-  (`src/components/workspace/launch-controls.tsx`), covered by
-  `/eval/t9-agent-start-keyswitch`.
+- `AgentStartKeySwitchButton` — retained as reusable R3F machinery and covered
+  by `/eval/t9-agent-start-keyswitch`; the workspace New Agent composer moved
+  back to the standard shadcn button on 2026-08-02.
 
 Shared machinery those keys still use lives on in
 `src/components/hud/webgl/keyswitch-study.tsx` (assembly, lighting, Smoke Low
@@ -36,11 +41,12 @@ variant), `keyswitch-geometry.ts`, `keyswitch-motion.ts` (brown-switch travel
 curve, 190 ms), and `keyswitch-audio.ts` (sound profiles) — all still under
 test.
 
-## Why it was retired
+## Why it was retired, and what stayed retired
 
 Material exploration with zero production consumers beyond the two shipped
 keys. The variant-browsing study duplicated review value the shipped keys and
 their evals already provide, and the dead DOM sibling kept ~294 lines of CSS
-in the global stylesheet. If the direction reactivates (e.g. more tactile
-action keys), start from the shipped keys and the shared machinery, not by
-resurrecting the study; per archive rules, that takes a new decision record.
+in the global stylesheet. Decision `0025` supplies the required new decision
+record and restores the R3F bench from the surviving shared machinery. It does
+not restore the unused DOM sibling or its global CSS. A lean T7 paint/variant
+gate replaces the retired exhaustive rig without reviving its full harness.

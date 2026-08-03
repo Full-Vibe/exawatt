@@ -50,6 +50,13 @@ const TASKS = [
     settleMs: 500,
   },
   {
+    id: 't7-keyswitch',
+    name: 'Interactive keyswitch material workbench',
+    // One complete mechanism + one-shot environment/contact-shadow bake.
+    drawCallMax: 60,
+    settleMs: 1_200,
+  },
+  {
     id: 't8-home-keyswitch',
     name: 'Homepage Smoke Low command keyswitch',
     // One complete mechanism + one-shot Drei environment/contact-shadow
@@ -310,6 +317,47 @@ async function runTask(browser, task) {
       result.notes.push(`operations-board: ${JSON.stringify(board)}`);
       if (!result.semanticOk)
         result.errors.push('Spatial Operations Board semantics failed');
+    }
+
+    if (task.id === 't7-keyswitch') {
+      const variant = page.locator(
+        '[data-keyswitch-variant="original-satin"]'
+      );
+      await variant.click();
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector('[data-keyswitch-study]')
+            ?.getAttribute('data-active-keyswitch-variant') ===
+          'original-satin',
+        undefined,
+        { timeout: 2_000 }
+      );
+      await page.waitForTimeout(350);
+
+      const study = await page.evaluate(() => {
+        const surface = document.querySelector('[data-keyswitch-study]');
+        return {
+          active: surface?.getAttribute('data-active-keyswitch-variant'),
+          materialCount: surface?.getAttribute('data-material-count'),
+          variantCount: document.querySelectorAll('[data-keyswitch-variant]')
+            .length,
+          assemblyCount: window.__EVAL_SCENE__
+            ? window.__EVAL_SCENE__.getObjectsByProperty(
+                'name',
+                'keyswitch-assembly'
+              ).length
+            : 0,
+        };
+      });
+      result.semanticOk =
+        study.active === 'original-satin' &&
+        study.materialCount === '7' &&
+        study.variantCount === 7 &&
+        study.assemblyCount === 1;
+      result.notes.push(`keyswitch-workbench: ${JSON.stringify(study)}`);
+      if (!result.semanticOk)
+        result.errors.push('Keyswitch material workbench semantics failed');
     }
 
     if (task.id === 't8-home-keyswitch') {

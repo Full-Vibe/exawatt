@@ -24,6 +24,7 @@ import {
   WebglComposedScene,
   WebglStatusLightsScene,
 } from '@/components/hud/webgl/scenes';
+import { KeySwitchStudy } from '@/components/hud/webgl/keyswitch-study';
 import {
   StatusLightDomSpecimens,
   StatusLightProtocolLegend,
@@ -114,6 +115,12 @@ const SECTIONS: Section[] = [
         <StatusLightProtocolLegend compact />
       </div>
     ),
+  },
+  {
+    id: 'keyswitch-material-studies',
+    title: 'Keyswitch material studies',
+    meta: 'active R3F workbench · physical command controls · decision 0025',
+    showcase: <KeySwitchStudy />,
   },
   {
     id: 'frames',
