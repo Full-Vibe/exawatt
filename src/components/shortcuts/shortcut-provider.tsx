@@ -90,19 +90,26 @@ export const WORKSPACE_MENU_AVAILABILITY_COMMAND_IDS: ReadonlySet<string> =
   new Set(WORKSPACE_MENU_AVAILABILITY_COMMANDS);
 
 /**
- * Menu verbs that operate the LIVE personal workspace — PTY launches, the
- * Agent composer, tab/Project mutation (ENG-027). One tenant gate at the
- * dispatch point covers them all: while a non-personal Workspace is active
- * these are dropped whole, so a Demo-tenant invocation can never store a
- * pending-launch slot that fires against Personal truth after switching
- * back. (`session-jump.ts` fails closed on the slot side as well.)
+ * Menu verbs that LAUNCH into the personal workspace — PTY spawns, the
+ * Agent composer, Project opening, closed-Session resurrection (ENG-027).
+ * One tenant gate at the dispatch point drops them whole while a
+ * non-personal Workspace is active, so a Demo-tenant invocation can never
+ * store a pending-launch slot that fires against Personal truth after
+ * switching back. (`session-jump.ts` fails closed on the slot side too.)
+ *
+ * Deliberately NOT the whole availability family: the remaining workspace
+ * verbs (movement, rename, split, attention) ride the availability
+ * snapshot, which the ACTIVE shell publishes as per-tenant truth — the
+ * Demo shell executes movement through its own adapter (D44) and resets
+ * the snapshot on unmount, so availability itself is their tenant gate.
  */
 export const LIVE_WORKSPACE_MENU_COMMANDS: ReadonlySet<string> = new Set([
   'new-agent',
   'launch-claude',
   'launch-codex',
   'open-project',
-  ...WORKSPACE_MENU_AVAILABILITY_COMMANDS,
+  'launch-shell',
+  'reopen-closed-tab',
 ]);
 
 interface ShortcutContextValue {
@@ -418,8 +425,12 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
       (typeof WORKSPACE_MENU_AVAILABILITY_COMMANDS)[number],
       boolean
     > = {
-      'launch-shell': commands['launch-shell'].available,
-      'reopen-closed-tab': commands['reopen-closed-tab'].available,
+      // Launch verbs carry the tenant gate into the menu itself: enabled-
+      // but-inert would be a lie, so a non-personal tenant greys them.
+      'launch-shell':
+        personalTenantActive && commands['launch-shell'].available,
+      'reopen-closed-tab':
+        personalTenantActive && commands['reopen-closed-tab'].available,
       'rename-tab': onWorkspaceRoute && commands['rename-tab'].available,
       'toggle-split': onWorkspaceRoute && commands['toggle-split'].available,
       'move-tab-left': onWorkspaceRoute && commands['move-tab-left'].available,
@@ -434,7 +445,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
         onWorkspaceRoute && commands['jump-attention'].available,
     };
     void api(availability);
-  }, [onWorkspaceRoute, workspaceAvailability]);
+  }, [onWorkspaceRoute, personalTenantActive, workspaceAvailability]);
 
   // Determine current contexts based on route
   useEffect(() => {

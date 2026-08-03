@@ -280,14 +280,17 @@ The demo-arc closing review verified findings against the landed W2; fixes:
   unknown id falls back to the default hero.
 - **PTY verbs tenant-gated at both ends.** The workspace command-availability
   snapshot (a module global) resets to the empty truth when the publishing
-  WorkspaceClient unmounts, so File-menu verbs grey out inside Demo; the
-  native-menu dispatch point drops the whole live-workspace verb set
-  (`LIVE_WORKSPACE_MENU_COMMANDS`) under any non-personal tenant; and the
-  launch-family request functions in `session-jump.ts` fail closed against a
-  module mirror of the active tenant kind (`src/lib/tenancy/active-tenant.ts`)
-  so a pending-launch slot can never be stored from Demo and fire against
-  Personal after switching back. Regression tests:
-  `session-jump.test.ts`, `workspace-command-availability.test.ts`.
+  WorkspaceClient unmounts — availability is per-tenant truth, published by
+  whichever shell is on screen (the Demo shell publishes its own for the D44
+  movement adapter); the native-menu dispatch point drops the launch family
+  (`LIVE_WORKSPACE_MENU_COMMANDS`: new-agent, launch-claude/codex,
+  open-project, launch-shell, reopen-closed-tab) under any non-personal
+  tenant; and the launch-family request functions in `session-jump.ts` fail
+  closed against a module mirror of the active tenant kind
+  (`src/lib/tenancy/active-tenant.ts`) so a pending-launch slot can never be
+  stored from Demo and fire against Personal after switching back.
+  Regression tests: `session-jump.test.ts`,
+  `workspace-command-availability.test.ts`.
 - **Interventions are authored fixture truth.** `DemoFleetAgent.interventions`
   is now a required authored field (base tier hand-authored, heroes match
   their transcripts' operator lines after the first — test-enforced; scale
