@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   dropIndexForPointer,
+  ribbonContentX,
   placementForOrder,
   reorderTokensForProjectDrag,
   reorderTokensForTabDrag,
@@ -67,29 +68,48 @@ const keys = (tokens: readonly RibbonToken[]) =>
 
 describe('dropIndexForPointer', () => {
   const centers = [
-    { id: 'a', x: 50, y: 0, row: 0 },
-    { id: 'b', x: 150, y: 0, row: 0 },
-    { id: 'c', x: 50, y: ROW, row: 1 },
+    { id: 'a', x: 50 },
+    { id: 'b', x: 150 },
+    { id: 'c', x: 260 },
   ];
 
-  it('counts siblings whose center precedes the pointer in reading order', () => {
-    expect(dropIndexForPointer(centers, { x: 10, y: 5 }, ROW)).toBe(0);
-    expect(dropIndexForPointer(centers, { x: 100, y: 5 }, ROW)).toBe(1);
-    expect(dropIndexForPointer(centers, { x: 400, y: 5 }, ROW)).toBe(2);
+  it('counts the siblings whose centre the pointer has passed', () => {
+    expect(dropIndexForPointer(centers, 10)).toBe(0);
+    expect(dropIndexForPointer(centers, 100)).toBe(1);
+    expect(dropIndexForPointer(centers, 200)).toBe(2);
+    expect(dropIndexForPointer(centers, 400)).toBe(3);
   });
 
-  it('is row-aware: a pointer on row two sits after every row-one sibling', () => {
-    expect(dropIndexForPointer(centers, { x: 10, y: ROW + 5 }, ROW)).toBe(2);
-    expect(dropIndexForPointer(centers, { x: 400, y: ROW + 5 }, ROW)).toBe(3);
+  it('is a function of x alone — the ribbon has no rows to reason about', () => {
+    // Regression: the row-derived index survived the two-row layout's
+    // retirement and read a pointer a few pixels BELOW the strip as "a row
+    // after everything", flinging the dragged chip to the end.
+    expect(dropIndexForPointer(centers, 100)).toBe(1);
+    expect(dropIndexForPointer([], 100)).toBe(0);
   });
 
-  it('derives centers from targets', () => {
+  it('derives centres from targets', () => {
     expect(slotCenter({ id: 'x', x: 100, y: 0, row: 0, width: 50 })).toEqual({
       id: 'x',
       x: 125,
-      y: 0,
-      row: 0,
     });
+  });
+});
+
+describe('ribbonContentX', () => {
+  const scroller = (left: number, scrollLeft: number) => ({
+    scrollLeft,
+    getBoundingClientRect: () => ({ left }),
+  });
+
+  it('converts a viewport x into the scroller content space', () => {
+    expect(ribbonContentX(300, scroller(100, 0))).toBe(200);
+  });
+
+  it('includes how far the row is scrolled', () => {
+    // Regression: hand-rolled `clientX - rect.left` made every drag a
+    // silent no-op once the ribbon scrolled.
+    expect(ribbonContentX(300, scroller(100, 250))).toBe(450);
   });
 });
 

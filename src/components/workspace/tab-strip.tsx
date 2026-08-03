@@ -37,12 +37,14 @@ import {
   type RibbonProjectInput,
   type RibbonTarget,
 } from './project-ribbon-layout';
+import { naturalContentWidth } from './natural-width';
 import {
   DRAG_THRESHOLD_PX,
   dropIndexForPointer,
   placementForOrder,
   reorderTokensForProjectDrag,
   reorderTokensForTabDrag,
+  ribbonContentX,
   slotCenter,
 } from './ribbon-reorder';
 import {
@@ -376,13 +378,12 @@ export function TabStrip({
     }
   }, [presentTokens]);
 
-  // Only Project headers are measured. The chrome fills the width the
-  // engine assigned (so the name truncates rather than overflowing), which
-  // means chrome.offsetWidth would just echo that assignment straight back
-  // into the engine. Measure the LABEL's untruncated scrollWidth and add
-  // the chrome's non-label overhead: that is a true natural width and
-  // cannot feed back. A folded header renders a count too, so it is
-  // skipped — its width is derived from the header's.
+  // Only Project headers are measured, and only through
+  // `naturalContentWidth`, which builds a width from parts that are
+  // content-sized by construction — see that module for why reading the
+  // chip's own box here is a closed loop rather than a measurement. A
+  // folded header renders a count too, so it is skipped: its width is
+  // derived from the header's.
   const measure = useCallback(() => {
     const width = containerRef.current?.clientWidth ?? 0;
     if (width > 0)
@@ -397,26 +398,12 @@ export function TabStrip({
         .closest('[data-ribbon-item="project"]')
         ?.getAttribute('data-project-dir');
       if (!dir) continue;
-      const label = node.querySelector<HTMLElement>('[data-project-label]');
-      if (!label) continue;
-      // Build the natural width from the PARTS — padding, gaps, and every
-      // sibling of the label — plus the label's untruncated text width.
-      // Reading the chrome's own box here would hand the engine back the
-      // width it just assigned, and the header would never fit its content.
-      const style = getComputedStyle(node);
-      const gap = Number.parseFloat(style.columnGap || '0') || 0;
-      const children = Array.from(node.children) as HTMLElement[];
-      const overhead =
-        (Number.parseFloat(style.paddingLeft) || 0) +
-        (Number.parseFloat(style.paddingRight) || 0) +
-        gap * Math.max(0, children.length - 1) +
-        children.reduce(
-          (total, child) =>
-            total + (child === label ? 0 : child.getBoundingClientRect().width),
-          0
-        );
-      const natural = Math.ceil(overhead + label.scrollWidth) + 2; // + borders
-      if (natural > 2) measured[dir] = natural;
+      const natural = naturalContentWidth(
+        node,
+        node.querySelector<HTMLElement>('[data-project-label]'),
+        2 // the chip's borders sit outside the chrome
+      );
+      if (natural !== null) measured[dir] = natural;
     }
     if (Object.keys(measured).length === 0) return;
     setHeaderWidths(current => {
@@ -718,17 +705,13 @@ export function TabStrip({
       // arrived) before arming a new one, so listener sets cannot stack.
       activeGestureCleanupRef.current?.();
       const scroller = scrollerRef.current;
-      const rect = scroller?.getBoundingClientRect();
       const node = itemNodesRef.current.get(params.key);
-      if (!scroller || !rect || !node) return;
+      if (!scroller || !node) return;
       const nodeRect = node.getBoundingClientRect();
       const gesturePointerId = event.pointerId;
-      // Targets are laid out in the scroller's CONTENT space, so pointer
-      // coordinates have to include scrollLeft — otherwise every drag is
-      // off by however far the row is scrolled, and lands nowhere.
       const start = {
-        x: event.clientX - rect.left + scroller.scrollLeft,
-        y: event.clientY - rect.top,
+        x: ribbonContentX(event.clientX, scroller),
+        y: event.clientY - scroller.getBoundingClientRect().top,
       };
       const candidate = {
         ...params,
@@ -761,10 +744,10 @@ export function TabStrip({
         if (moveEvent.pointerId !== gesturePointerId) return;
         const active = pointerDragRef.current;
         const liveScroller = scrollerRef.current;
-        const bounds = liveScroller?.getBoundingClientRect();
-        if (!active || !liveScroller || !bounds) return;
-        const x = moveEvent.clientX - bounds.left + liveScroller.scrollLeft;
-        const y = moveEvent.clientY - bounds.top;
+        if (!active || !liveScroller) return;
+        const x = ribbonContentX(moveEvent.clientX, liveScroller);
+        const y =
+          moveEvent.clientY - liveScroller.getBoundingClientRect().top;
         let engaged = active.engaged;
         if (!engaged) {
           if (
@@ -798,11 +781,7 @@ export function TabStrip({
             .map(token => geometry.layout.targets.get(token.key))
             .filter((target): target is RibbonTarget => !!target)
             .map(slotCenter);
-          // One row now: every sibling sits on row 0, so the drop index is
-          // decided purely by x. Passing the live y would let a pointer that
-          // drifts a few pixels below the strip read as "a row down" and
-          // fling the chip to the end.
-          index = dropIndexForPointer(centers, { x, y: 0 }, RIBBON_ROW_HEIGHT);
+          index = dropIndexForPointer(centers, x);
         }
         const next = { ...active, engaged, x, y, index };
         pointerDragRef.current = next;
@@ -1054,6 +1033,22 @@ export function TabStrip({
               target: { kind: 'project', id: project.dir },
             });
           const sourceOrdinal = token.sourceProjectIndex + 1;
+          // A folded Project's tabs have no chip of their own, so while ⌘ is
+          // held its container carries their ordinals — the span if it holds
+          // several, the single digit if it holds one. Without this, `⌘3`
+          // still selects a Session that nothing on screen can point at.
+          const foldedOrdinals = folded
+            ? project.tabs
+                .map(item => ordinalByTabId.get(item.id))
+                .filter((value): value is number => value !== undefined)
+                .sort((a, b) => a - b)
+            : [];
+          const foldedOrdinalHint =
+            ordinalHints === 'tabs' && foldedOrdinals.length > 0
+              ? foldedOrdinals.length === 1
+                ? `${foldedOrdinals[0]}`
+                : `${foldedOrdinals[0]}–${foldedOrdinals.at(-1)}`
+              : null;
           return (
             <div
               ref={node => setItemNode(token.key, node)}
@@ -1190,14 +1185,36 @@ export function TabStrip({
                 {folded && (
                   <span
                     data-project-folded-count={project.tabs.length}
-                    aria-label={`${project.tabs.length} Sessions`}
-                    className="shrink-0 rounded-sm px-1 font-mono text-chrome-meta leading-none"
+                    data-project-folded-ordinals={
+                      foldedOrdinalHint ?? undefined
+                    }
+                    aria-label={
+                      foldedOrdinalHint
+                        ? `${project.tabs.length} Sessions, ⌘${foldedOrdinalHint}`
+                        : `${project.tabs.length} Sessions`
+                    }
+                    className={`shrink-0 rounded-sm px-1 font-mono text-chrome-meta leading-none ${
+                      foldedOrdinalHint ? 'border' : ''
+                    }`}
                     style={{
                       color,
-                      background: `${color}1f`,
+                      // A count and a keycap must not look alike: a folded
+                      // one-Session Project would otherwise show a bare "1"
+                      // under ⌘ that reads as ordinal 1, which belongs to a
+                      // different Project. Ordinals wear the keycap chrome.
+                      background: foldedOrdinalHint
+                        ? 'rgba(8,13,22,0.94)'
+                        : `${color}1f`,
+                      borderColor: foldedOrdinalHint
+                        ? `${color}55`
+                        : undefined,
                     }}
                   >
-                    {project.tabs.length}
+                    {/* Hold ⌘ and a folded Project shows WHICH ordinals it
+                        holds instead of how many: the tabs themselves have
+                        no chip to hang a keycap on, and a reachable command
+                        with no visible hint is the D44 failure in miniature. */}
+                    {foldedOrdinalHint ?? project.tabs.length}
                   </span>
                 )}
                 {dormantProject && (

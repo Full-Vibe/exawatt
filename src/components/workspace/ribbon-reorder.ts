@@ -18,40 +18,52 @@ export const DRAG_THRESHOLD_PX = 4;
 export interface SlotCenter {
   id: string;
   x: number;
-  y: number;
-  row: number;
 }
 
 export function slotCenter(target: RibbonTarget): SlotCenter {
-  return {
-    id: target.id,
-    x: target.x + target.width / 2,
-    y: target.y,
-    row: target.row,
-  };
+  return { id: target.id, x: target.x + target.width / 2 };
 }
 
 /**
- * The insertion index the pointer implies among sibling slots, in reading
- * order (row, then x). A sibling counts as "before" the pointer when its
- * center precedes the pointer's position; crossing a neighbor's midpoint is
- * therefore the exact swap moment, which gives natural hysteresis once the
- * neighbor slides away.
+ * The ribbon's ONE coordinate space.
+ *
+ * Targets are laid out in the scroller's content space, which is offset from
+ * the viewport by the scroller's box AND by how far it is scrolled. Every
+ * consumer must convert through here rather than reaching for
+ * `clientX - someRect.left`: doing that by hand is what made drags silently
+ * no-op once the row was scrolled, and a second hand-rolled conversion would
+ * reintroduce it. Pass the scroller element; get content-space x.
+ */
+export function ribbonContentX(
+  clientX: number,
+  scroller: Pick<HTMLElement, 'scrollLeft'> & {
+    getBoundingClientRect(): { left: number };
+  }
+): number {
+  return clientX - scroller.getBoundingClientRect().left + scroller.scrollLeft;
+}
+
+/**
+ * The insertion index the pointer implies among sibling slots.
+ *
+ * The ribbon is a single row (D45), so this is a function of x alone. It
+ * used to take a row height and derive a row number, which survived the
+ * two-row layout's retirement and quietly meant "a pointer a few pixels
+ * below the strip belongs to a row after every sibling" — dragging with a
+ * slight downward drift flung the chip to the end. There is no row to
+ * reason about, so the concept is gone rather than defended against.
+ *
+ * A sibling counts as "before" the pointer when its center precedes it, so
+ * crossing a neighbour's midpoint is the exact swap moment — which gives
+ * natural hysteresis once that neighbour slides away.
  */
 export function dropIndexForPointer(
   siblings: readonly SlotCenter[],
-  pointer: { x: number; y: number },
-  rowHeight: number
+  pointerX: number
 ): number {
-  const pointerRow = Math.max(0, Math.floor(pointer.y / Math.max(1, rowHeight)));
   let index = 0;
   for (const sibling of siblings) {
-    if (
-      sibling.row < pointerRow ||
-      (sibling.row === pointerRow && sibling.x <= pointer.x)
-    ) {
-      index += 1;
-    }
+    if (sibling.x <= pointerX) index += 1;
   }
   return index;
 }

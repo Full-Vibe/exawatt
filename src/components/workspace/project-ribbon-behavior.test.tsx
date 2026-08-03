@@ -261,3 +261,23 @@ describe('D45 review-round regressions', () => {
     expect(label?.className).not.toContain('flex-1');
   });
 });
+
+describe('folded Projects stay reachable', () => {
+  it('carries its tabs’ ordinals while ⌘ is held, since they have no chip', () => {
+    const projects = Array.from({ length: 9 }, (_, index) =>
+      project(
+        `/project-${index}`,
+        Array.from({ length: 3 }, (_, tabIndex) =>
+          tab(`p${index}-t${tabIndex}`)
+        )
+      )
+    );
+    const { container } = ribbon({ projects, activeDir: projects[0].dir });
+    const folded = container.querySelector('[data-project-folded]');
+    expect(folded).not.toBeNull();
+    const badge = folded?.querySelector('[data-project-folded-count]');
+    // at rest the container reports how much work it holds
+    expect(badge?.getAttribute('data-project-folded-ordinals')).toBeNull();
+    expect(badge?.textContent).toBe('3');
+  });
+});
