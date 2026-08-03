@@ -285,6 +285,7 @@ export function WorkspaceClient() {
     activeTab,
     pinnedTabId,
     summaries,
+    goalVisuals,
     attention,
     activity,
     engaged,
@@ -1552,6 +1553,7 @@ export function WorkspaceClient() {
           roadmapByTab={roadmapByTab}
           projects={projects}
           summaries={summaries}
+          goalVisuals={goalVisuals}
           attention={mergedAttention}
           activity={activity}
           engaged={engaged}
