@@ -23,7 +23,7 @@ function Trigger() {
   const { navigateCommandSurface } = useCommandNavigation();
   return (
     <button onClick={() => navigateCommandSurface('/fleet/spatial')}>
-      Spatial
+      Fleet
     </button>
   );
 }
@@ -53,7 +53,7 @@ describe('CommandNavigationProvider', () => {
       </CommandNavigationProvider>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Spatial' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Fleet' }));
     expect(navigation.push).toHaveBeenCalledWith('/fleet/spatial');
     expect(document.querySelector('[data-command-transition]')).not.toBeNull();
 

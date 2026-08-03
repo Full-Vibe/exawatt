@@ -61,7 +61,7 @@ absence of Exawatt, this workflow IS "Exawatt v0."
    same project share a color and cluster adjacently; different projects
    get distinct colors.
 4. **The grander plan:** 10 agents → tens → hundreds → tens of thousands.
-   The 3D Fleet Command / spatial surface (ENG-004) is built for that scale
+   The Fleet altitude's 3D surface (ENG-004) is built for that scale
    and this arc grows into it — the terminal workspace is the near-term
    rung on the same ladder, not a fork. AMENDED 2026-07-03 (operator): the
    terminal workspace is a FIRST-CLASS UI REGIME, not a transitional one —

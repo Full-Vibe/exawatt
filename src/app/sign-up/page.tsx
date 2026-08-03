@@ -46,7 +46,7 @@ export default function SignUpPage() {
       setError(error.message);
       setLoading(false);
     } else {
-      router.push(window.electron?.isElectron ? '/workspace' : '/fleet');
+      router.push('/workspace');
       router.refresh();
     }
   };

@@ -14,39 +14,21 @@ Demo Mode lets investors, collaborators, and users experience Exawatt without li
 
 ## Current Implementation
 
-The current primary demo implementation is the mock fleet source behind `/fleet`, `/fleet/[agentId]`, and `/fleet/cron`.
-
-It demonstrates:
-
-- fleet health and source mode
-- agent status changes
-- focus/chat view
-- blocker creation and resolution
-- recurring heartbeats
-- token, cost, and activity signals
-
-The fleet demo is intentionally available without a live OpenClaw gateway. It should remain clearly labeled when using simulated data and should keep using the same UI-facing command hooks as Live Mode.
+The mock fleet source (`MockFleetTransport`) powers the Fleet altitude at `/fleet/spatial` when no live source is connected. It demonstrates agent status changes, attention, and fleet-scale motion without a live OpenClaw gateway, stays clearly labeled as simulated data, and drives the same UI-facing command hooks as Live Mode.
 
 Fleet surfaces start in Demo Mode by default so public demos do not emit live-source token probes, auth redirects, or connection errors on page load. Live OpenClaw auto-connect is opt-in via `NEXT_PUBLIC_EXAWATT_AUTO_CONNECT_OC=true`; otherwise, users enter Live Mode through the explicit Connect control.
 
-The legacy Supabase demo task flow is still retained. It powers `/dashboard` and `/board` with Supabase-backed projects, tasks, blockers, and activity events.
+The Consumption surface (`/consumption`, ENG-008) reads its own in-process demo corpus and is Electron-navigable and demo-sourced by design.
 
-Seeded tasks are marked with:
+### Retired: the legacy demo trio
 
-```json
-{
-  "demoFlow": "legacy-supabase-task-demo",
-  "seededBy": "seedDemoData"
-}
-```
-
-`resetDemo()` is scoped to the known legacy demo project set and must not delete arbitrary user tasks.
+The legacy demo surfaces — `/fleet` (Fleet Command), `/dashboard` (Lattice), and `/board` — and their Supabase-backed task simulation (`seedDemoData` / `resetDemo`, the `legacy-supabase-task-demo` flow) were retired with decision `0023` (2026-08-02). Retiring the trio freed the `Fleet` name for the far command altitude. Their purpose — showing the product without live agents — is superseded by the **Demo Workspace** (ENG-027), which runs demo content through the primary product surfaces instead of parallel demo-only pages.
 
 ## Future Architecture
 
-Demo Mode should evolve into a pluggable scenario source:
+Demo Mode should evolve into a pluggable scenario source behind the Demo Workspace (ENG-027):
 
-- legacy Supabase demo flow
+- versioned, resettable demo Workspace data (ENG-027 W3/W4)
 - local JSON scenarios
 - recorded live traces
 - generated simulations

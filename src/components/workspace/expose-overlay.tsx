@@ -545,7 +545,7 @@ export function ExposeOverlay({
                 No Projects open
               </p>
               <p className="font-mono text-xs" style={{ color: HUD.textDim }}>
-                Return to Terminal and open a Project.
+                Return to Agent and open a Project.
               </p>
             </div>
           )}
@@ -600,7 +600,7 @@ export function ExposeOverlay({
                         data-expose-empty-project={project.dir}
                         data-selected={emptySelected || undefined}
                         tabIndex={emptySelected ? 0 : -1}
-                        aria-label={`Open ${project.name} in Terminal, no Sessions yet`}
+                        aria-label={`Open ${project.name} at the Agent altitude, no Sessions yet`}
                         onClick={() => onPickProject(project.dir)}
                         onMouseEnter={() => {
                           if (mouseArmed()) setSel(emptyIndex);

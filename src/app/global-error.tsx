@@ -63,7 +63,7 @@ export default function GlobalError({
               cursor: 'pointer',
             }}
           >
-            Back to Terminal
+            Back to Agent
           </button>
         </div>
         {error.digest ? (

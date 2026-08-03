@@ -14,9 +14,9 @@ Examples:
 
 Good Initiatives give agents enough context to evolve, research, coordinate, and act without reducing them to task repeaters.
 
-## Terminal projection
+## Workspace projection
 
-The Terminal ribbon currently presents Session-backed tabs as
+The workspace ribbon currently presents Session-backed tabs as
 Initiative-shaped work because the operator needs to switch by goal, not by
 process. This is a migration projection: it is usually one-to-one with an Agent
 and Session today, while the durable Initiative primitive remains planned. A

@@ -33,7 +33,7 @@ describe('SessionStateTileStudy', () => {
       4
     );
     const workingTile = screen.getByRole('button', {
-      name: 'Open Complete MMHC conversion and secure BAA in Terminal',
+      name: 'Open Complete MMHC conversion and secure BAA at the Agent altitude',
     });
     expect(within(workingTile).queryByText('Working')).not.toBeInTheDocument();
     expect(
@@ -68,14 +68,14 @@ describe('SessionStateTileStudy', () => {
     renderStudy();
 
     const tile = screen.getByRole('button', {
-      name: 'Open Fix auth redirect loop in Terminal',
+      name: 'Open Fix auth redirect loop at the Agent altitude',
     });
     fireEvent.click(tile);
 
     expect(tile).not.toHaveAttribute('aria-expanded');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(
-      screen.getByText('Terminal · cortex-ehr / Fix auth redirect loop')
+      screen.getByText('Agent · cortex-ehr / Fix auth redirect loop')
     ).toBeInTheDocument();
   });
 
@@ -95,7 +95,7 @@ describe('SessionStateTileStudy', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(
       screen.getByRole('button', {
-        name: 'Open Fix auth redirect loop in Terminal',
+        name: 'Open Fix auth redirect loop at the Agent altitude',
       })
     ).toBeInTheDocument();
   });

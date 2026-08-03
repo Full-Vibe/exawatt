@@ -139,7 +139,7 @@ function SessionTile({
     <button
       ref={tileRef}
       type="button"
-      aria-label={`Open ${tile.goal} in Terminal`}
+      aria-label={`Open ${tile.goal} at the Agent altitude`}
       data-session-state-tile
       data-selected={selected || undefined}
       onClick={onOpen}
@@ -392,7 +392,7 @@ export function SessionStateTileStudy() {
                           onOpen={() => {
                             setSelectedId(tile.id);
                             setLastOpened(
-                              `Terminal · ${tile.project} / ${tile.goal}`
+                              `Agent · ${tile.project} / ${tile.goal}`
                             );
                           }}
                         />

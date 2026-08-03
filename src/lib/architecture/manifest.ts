@@ -497,20 +497,8 @@ export const architectureManifest = {
           height: 74,
         },
         {
-          id: 'fleet-ui',
-          label: 'Fleet UI',
-          summary:
-            'Agent fleet list, detail, chat, activity, cron, and operational surfaces.',
-          layer: 'ui',
-          status: 'active-build',
-          x: 330,
-          y: 95,
-          width: 210,
-          height: 74,
-        },
-        {
           id: 'terminal-workspace',
-          label: 'Terminal + Session Overview',
+          label: 'Agent + Team Workspace',
           summary:
             'Elastic two-row Project/Initiative ribbon, inert Project selection, intent-safe Agent drafts, semantically merged parent/delegated attention, keyboard-complete actions, grouped exposé, and direct live-or-stopped Session control.',
           layer: 'ui',
@@ -522,7 +510,7 @@ export const architectureManifest = {
         },
         {
           id: 'spatial-operations-board',
-          label: 'Spatial Operations Board',
+          label: 'Fleet Operations Board',
           summary:
             'R3F tactical board with stable catalog-backed Project zones, including zero-Agent state, semantic zoom, anchored live and dotted stopped Agents, attention, and exact Session handoff.',
           layer: 'ui',
@@ -536,7 +524,7 @@ export const architectureManifest = {
           id: 'command-navigation',
           label: 'Command Navigation',
           summary:
-            'Typed Terminal, Sessions, and Spatial route service with registry-derived gestures, context restore, and finite reduced-motion-safe handoffs.',
+            'Typed Agent, Team, and Fleet route service with registry-derived gestures, context restore, and finite reduced-motion-safe handoffs.',
           layer: 'ui',
           status: 'implemented',
           x: 705,
@@ -620,7 +608,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Registry + Adapters',
           summary:
-            'One generated declaration contract plus Electron-main runtime observations power Settings and the Terminal composer. Observed, declared, and simulated evidence stay distinct; registry failure is fail-closed; OpenClaw uses a protocol probe; and Electron revalidates every Agent launch without exposing provider credentials.',
+            'One generated declaration contract plus Electron-main runtime observations power Settings and the Agent composer. Observed, declared, and simulated evidence stay distinct; registry failure is fail-closed; OpenClaw uses a protocol probe; and Electron revalidates every Agent launch without exposing provider credentials.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,
@@ -772,7 +760,6 @@ export const architectureManifest = {
         { from: 'consumption-surface', to: 'consumption-spine' },
         { from: 'consumption-spine', to: 'demo-harness' },
         { from: 'consumption-spine', to: 'source-adapters', style: 'dashed' },
-        { from: 'fleet-ui', to: 'ui-model' },
         { from: 'terminal-workspace', to: 'fleet-provider' },
         { from: 'terminal-workspace', to: 'electron-shell' },
         { from: 'terminal-workspace', to: 'context-label-engine' },
@@ -806,11 +793,11 @@ export const architectureManifest = {
   ] satisfies ArchitectureZoomLevel[],
   principles: [
     'UI surfaces speak Exawatt nouns, not provider-specific vocabulary.',
-    'DOM and Spatial Operations Board regimes share typed view models and command contracts.',
-    'Terminal Focus, Session Overview, and Spatial Command form one navigation continuum while keeping separate renderer boundaries.',
-    'Open Project identity spans Terminal, Sessions, and Spatial even before an Agent or Session exists; Agents join catalog-backed groups by stable source identity.',
-    'Terminal projects current Session tabs as Initiative-shaped work: selected Projects expand, manual inactive disclosure persists, dormant empties stable-partition to the tail, and subagent work aggregates instead of multiplying top-level tabs.',
-    'Open Session identity spans Terminal, Sessions, and Spatial; PTYs add live runtime state but do not define whether a Session-backed Agent exists.',
+    'DOM and Fleet Operations Board regimes share typed view models and command contracts.',
+    'Agent, Team, and Fleet form one navigation continuum while keeping separate renderer boundaries.',
+    'Open Project identity spans the Agent, Team, and Fleet altitudes even before an Agent or Session exists; Agents join catalog-backed groups by stable source identity.',
+    'The Agent altitude projects current Session tabs as Initiative-shaped work: selected Projects expand, manual inactive disclosure persists, dormant empties stable-partition to the tail, and subagent work aggregates instead of multiplying top-level tabs.',
+    'Open Session identity spans the Agent, Team, and Fleet altitudes; PTYs add live runtime state but do not define whether a Session-backed Agent exists.',
     'Logical Sessions survive local process death through explicit, deterministic rehydration; local processes do not outlive Exawatt.',
     'Agent turn state is semantic main-process truth: finished is sticky across passive PTY redraws and only explicit operator engagement opens the next turn; shell activity remains output-driven.',
     'What a harness reports about itself outranks what Exawatt infers from its bytes, in both directions and at the source: quiescence never concludes a turn ended, delegated, or unblocked while the source says otherwise.',

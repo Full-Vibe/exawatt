@@ -7,7 +7,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Activity,
-  Clock3,
   Crosshair,
   Keyboard,
   RadioTower,
@@ -427,7 +426,7 @@ export function SpatialFleetClient() {
         <div className="flex min-w-0 items-center gap-2">
           <Crosshair className="h-4 w-4 text-teal-200" />
           <h1 className="truncate text-lg font-semibold tracking-tight text-zinc-50">
-            Spatial Command
+            Fleet
           </h1>
           <span className="rounded-full border border-zinc-800 bg-zinc-950/70 px-2 py-0.5 text-xs text-zinc-500">
             {isDemo ? 'Demo' : 'Live'}
@@ -435,12 +434,6 @@ export function SpatialFleetClient() {
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button asChild className="fleet-action-button h-8">
-            <Link href="/fleet/cron">
-              <Clock3 className="h-4 w-4" />
-              Heartbeats
-            </Link>
-          </Button>
           {canConnect && (
             <Button
               onClick={connectToRealOC}
@@ -587,7 +580,7 @@ export function SpatialFleetClient() {
       >
         <section
           className="relative h-[52svh] min-h-[360px] overflow-hidden sm:min-h-[420px] xl:h-auto"
-          aria-label="Fleet command surface"
+          aria-label="Fleet surface"
         >
           <OperationsBoardSurface
             layout={boardLayout}

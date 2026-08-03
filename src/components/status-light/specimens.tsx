@@ -187,7 +187,7 @@ function SessionTileSpecimen({ state }: { state: StatusLightState }) {
 export function SessionStatusSpecimens() {
   return (
     <div className="flex flex-col gap-2.5">
-      <SpecimenHeading>Sessions · diffuse state surface</SpecimenHeading>
+      <SpecimenHeading>Team · diffuse state surface</SpecimenHeading>
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         {STATUS_LIGHT_STATES.map(state => (
           <SessionTileSpecimen key={state} state={state} />

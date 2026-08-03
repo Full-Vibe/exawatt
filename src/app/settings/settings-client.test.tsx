@@ -57,7 +57,7 @@ describe('shortcut settings policy', () => {
 
   it('rejects a bare universal binding and accepts a Command binding', async () => {
     render(<SettingsClient />);
-    const capture = editShortcut('Terminal');
+    const capture = editShortcut('Agent');
 
     fireEvent.keyDown(capture, { key: 'm', code: 'KeyM' });
     expect(screen.getByText(/must include ⌘/)).toBeInTheDocument();
@@ -109,7 +109,7 @@ describe('shortcut settings policy', () => {
         window.electron!.shortcuts!.systemHotkeys as ReturnType<typeof vi.fn>
       ).toHaveBeenCalled()
     );
-    const capture = editShortcut('Terminal');
+    const capture = editShortcut('Agent');
     fireEvent.keyDown(capture, {
       key: '$',
       code: 'Digit4',
@@ -146,7 +146,7 @@ describe('shortcut settings policy', () => {
         window.electron!.shortcuts!.systemHotkeys as ReturnType<typeof vi.fn>
       ).toHaveBeenCalled()
     );
-    const capture = editShortcut('Terminal');
+    const capture = editShortcut('Agent');
     fireEvent.keyDown(capture, {
       key: '$',
       code: 'Digit4',
@@ -168,7 +168,7 @@ describe('shortcut settings policy', () => {
     // No Electron bridge: Apple defaults are only a likelihood, so ⇧⌘4
     // shows the unverified warning but stays saveable.
     render(<SettingsClient />);
-    const capture = editShortcut('Terminal');
+    const capture = editShortcut('Agent');
     fireEvent.keyDown(capture, {
       key: '$',
       code: 'Digit4',
@@ -181,7 +181,7 @@ describe('shortcut settings policy', () => {
 
   it('rejects a physical Project ordinal even when Option changes its character', () => {
     render(<SettingsClient />);
-    const capture = editShortcut('Terminal');
+    const capture = editShortcut('Agent');
 
     fireEvent.keyDown(capture, {
       key: '¢',

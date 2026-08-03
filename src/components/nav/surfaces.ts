@@ -4,31 +4,26 @@ import { spatialReturnHref } from './spatial-return';
  * Navigation manifest (ENG-016 D8).
  *
  * The single typed source of truth for the app's navigable surfaces. The
- * command palette's navigation groups, the go-chord targets, the header's
- * legacy menu, and the marketing-footer suppression all derive from this
- * list — the 2026-07-11 IA audit found five independently hardcoded (and
- * already diverged) copies of it. Add or rename a surface here, nowhere else.
+ * command palette's navigation groups, the go-chord targets, and the
+ * marketing-footer suppression all derive from this list — the 2026-07-11
+ * IA audit found five independently hardcoded (and already diverged) copies
+ * of it. Add or rename a surface here, nowhere else.
+ *
+ * Altitude names are decision 0023: Agent → Team → Fleet (singular → group →
+ * everything). Surface ids and route paths are internal addresses and keep
+ * their historical spellings; user-facing labels are what the decision owns.
+ * The legacy demo trio (/fleet, /dashboard, /board) retired with that
+ * decision — the Demo Workspace (ENG-027) supersedes its purpose.
  *
  * Tiers:
- * - `spine`  — the command-altitude continuum (Terminal → Sessions → Spatial),
- *   the primary Electron navigation. Spine affordances must never link into
- *   `legacy` surfaces.
+ * - `spine`  — the command-altitude continuum (Agent → Team → Fleet),
+ *   the primary Electron navigation.
  * - `app`    — first-class surfaces outside the continuum (Settings).
- * - `legacy` — demo-era surfaces kept reachable via the avatar menu and their
- *   go-chords, but out of primary navigation (ENG-016).
  */
-export type SurfaceTier = 'spine' | 'app' | 'legacy';
+export type SurfaceTier = 'spine' | 'app';
 
 export interface AppSurface {
-  id:
-    | 'terminal'
-    | 'sessions'
-    | 'spatial'
-    | 'settings'
-    | 'consumption'
-    | 'dashboard'
-    | 'board'
-    | 'fleet';
+  id: 'terminal' | 'sessions' | 'spatial' | 'settings' | 'consumption';
   /** canonical display name — every consumer must render exactly this */
   name: string;
   /** concise operational meaning used by navigation controls */
@@ -46,8 +41,8 @@ export interface AppSurface {
 export const APP_SURFACES: AppSurface[] = [
   {
     id: 'terminal',
-    name: 'Terminal',
-    summary: 'Focus one live Session',
+    name: 'Agent',
+    summary: 'One live Agent, its terminal, its work',
     href: '/workspace',
     tier: 'spine',
     shortcutId: 'go-workspace',
@@ -56,8 +51,8 @@ export const APP_SURFACES: AppSurface[] = [
   },
   {
     id: 'sessions',
-    name: 'Sessions',
-    summary: 'All open Sessions, live and stopped',
+    name: 'Team',
+    summary: 'Your Projects and the Agents working them',
     href: '/workspace?view=sessions',
     tier: 'spine',
     shortcutId: 'go-sessions',
@@ -66,13 +61,13 @@ export const APP_SURFACES: AppSurface[] = [
   },
   {
     id: 'spatial',
-    name: 'Spatial',
-    summary: 'Fleet command field',
+    name: 'Fleet',
+    summary: 'All of it, at population scale',
     href: '/fleet/spatial',
     tier: 'spine',
     shortcutId: 'go-spatial',
     gestureShortcutId: 'command-spatial',
-    keywords: ['map', 'board', 'fleet command', 'altitude', 'zoom'],
+    keywords: ['map', 'board', 'spatial', 'altitude', 'zoom'],
   },
   {
     id: 'settings',
@@ -85,7 +80,7 @@ export const APP_SURFACES: AppSurface[] = [
   },
   {
     // ENG-008 E4. A VIEW, not a fourth command altitude — the spine stays
-    // exactly Terminal → Sessions → Spatial, and this sits beside Settings.
+    // exactly Agent → Team → Fleet, and this sits beside Settings.
     id: 'consumption',
     name: 'Consumption',
     summary: 'What the fleet is spending, and on what',
@@ -106,33 +101,6 @@ export const APP_SURFACES: AppSurface[] = [
       'billing',
     ],
   },
-  {
-    id: 'dashboard',
-    name: 'Lattice',
-    summary: 'Legacy task dashboard',
-    href: '/dashboard',
-    tier: 'legacy',
-    shortcutId: 'go-dashboard',
-    keywords: ['dashboard', 'metrics', 'tasks', 'demo'],
-  },
-  {
-    id: 'board',
-    name: 'Board',
-    summary: 'Legacy task board',
-    href: '/board',
-    tier: 'legacy',
-    shortcutId: 'go-board',
-    keywords: ['kanban', 'tasks', 'swimlane', 'demo'],
-  },
-  {
-    id: 'fleet',
-    name: 'Fleet Command',
-    summary: 'Legacy fleet dashboard',
-    href: '/fleet',
-    tier: 'legacy',
-    shortcutId: 'go-fleet',
-    keywords: ['fleet', 'agents', 'heartbeats', 'demo'],
-  },
 ];
 
 export function surfacesByTier(tier: SurfaceTier): AppSurface[] {
@@ -143,7 +111,7 @@ export function surfaceForShortcut(shortcutId: string): AppSurface | undefined {
   return APP_SURFACES.find(s => s.shortcutId === shortcutId);
 }
 
-/** Navigation target for a surface. Spatial returns to the operator's exact
+/** Navigation target for a surface. Fleet returns to the operator's exact
  *  last board address (semantic position is part of the context key). */
 export function resolveSurfaceHref(surface: AppSurface): string {
   return surface.id === 'spatial' ? spatialReturnHref() : surface.href;

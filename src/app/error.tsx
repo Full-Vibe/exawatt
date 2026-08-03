@@ -37,7 +37,7 @@ export default function RouteError({
             window.location.href = '/workspace';
           }}
         >
-          Back to Terminal
+          Back to Agent
         </Button>
       </div>
       {error.digest ? (

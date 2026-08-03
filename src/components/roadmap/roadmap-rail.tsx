@@ -970,7 +970,7 @@ export function RoadmapRail({
         </span>
         <span>
           {permanent
-            ? '↑↓ move · ⏎ open · esc to Sessions'
+            ? '↑↓ move · ⏎ open · esc to Team'
             : '↑↓ move · ⏎ open · esc back · ⌘B close'}
         </span>
       </div>

@@ -65,7 +65,7 @@ survives tab switches and restarts. Once a recoverable entry expires, Exawatt re
 retained terminal history; provider-owned history remains governed by the
 provider.
 
-The tab is currently the Terminal ribbon's Initiative-shaped projection of this
+The tab is currently the workspace ribbon's Initiative-shaped projection of this
 Session. Closing the last tab does not implicitly close its Project: the empty
 Project remains open and later settles into the compact dormant tail. `⌘W` on
 that selected empty Project is the explicit Project close.

@@ -14,12 +14,9 @@ import {
 } from '@/components/ui/command';
 import { shortcutRegistry, formatShortcutKeys } from '@/lib/shortcuts';
 import {
-  LayoutDashboard,
-  LayoutGrid,
   SquareTerminal,
   Settings,
   HelpCircle,
-  Server,
   LayoutPanelTop,
   Milestone,
   PenLine,
@@ -156,9 +153,6 @@ const SURFACE_ICONS: Record<AppSurface['id'], LucideIcon> = {
   spatial: MapIcon,
   settings: Settings,
   consumption: Gauge,
-  dashboard: LayoutDashboard,
-  board: LayoutGrid,
-  fleet: Server,
 };
 
 export function CommandPalette({
@@ -406,8 +400,7 @@ export function CommandPalette({
   }, [dispatch, shortcutVersion, workspaceAvailability]);
 
   // Navigation rows derive from the manifest (ENG-016 D8): the palette, the
-  // go-chords, and the header must always agree on names and targets. Legacy
-  // surfaces render in their own group at the bottom.
+  // go-chords, and the header must always agree on names and targets.
   const surfaceItem = useCallback(
     (s: AppSurface): CommandItem => {
       void shortcutVersion;
@@ -439,10 +432,6 @@ export function CommandPalette({
   const navigationItems = useMemo<CommandItem[]>(
     () =>
       [...surfacesByTier('spine'), ...surfacesByTier('app')].map(surfaceItem),
-    [surfaceItem]
-  );
-  const legacyItems = useMemo<CommandItem[]>(
-    () => surfacesByTier('legacy').map(surfaceItem),
     [surfaceItem]
   );
   // Quick feedback (ENG-025 F1): the palette is the discoverable face of
@@ -520,7 +509,7 @@ export function CommandPalette({
   }
   const recentRows = useMemo(() => {
     const candidates = new Map<string, RecentCandidate>();
-    for (const item of [...navigationItems, ...legacyItems, ...actionItems]) {
+    for (const item of [...navigationItems, ...actionItems]) {
       candidates.set(item.id, {
         label: item.label,
         icon: item.icon,
@@ -585,7 +574,6 @@ export function CommandPalette({
     });
   }, [
     navigationItems,
-    legacyItems,
     actionItems,
     inElectron,
     projects,
@@ -902,9 +890,9 @@ export function CommandPalette({
 
         {inElectron && onSpatialRoute && (
           <>
-            <CommandGroup heading="Spatial">
+            <CommandGroup heading="Fleet">
               <CommandItem
-                value="spatial toggle projection top-down angled fixed view"
+                value="fleet spatial toggle projection top-down angled fixed view"
                 onSelect={() => {
                   recordPaletteUse('spatial-projection');
                   toggleProjection();
@@ -944,30 +932,6 @@ export function CommandPalette({
 
         <CommandGroup heading="Actions">
           {actionItems.map(item => (
-            <CommandItem
-              key={item.id}
-              value={item.value}
-              onSelect={() => {
-                recordPaletteUse(item.id);
-                item.onSelect();
-              }}
-            >
-              <item.icon className="mr-2 h-4 w-4" />
-              <span>{item.label}</span>
-              {item.shortcut && (
-                <CommandShortcut>
-                  {formatShortcutKeys(item.shortcut)}
-                </CommandShortcut>
-              )}
-            </CommandItem>
-          ))}
-        </CommandGroup>
-
-        <CommandSeparator />
-
-        {/* legacy demo surfaces: reachable, never primary (ENG-016) */}
-        <CommandGroup heading="Legacy">
-          {legacyItems.map(item => (
             <CommandItem
               key={item.id}
               value={item.value}

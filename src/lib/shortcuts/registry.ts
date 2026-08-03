@@ -203,7 +203,6 @@ class ShortcutRegistry {
       workspace: [],
       navigation: [],
       actions: [],
-      selection: [],
       view: [],
       help: [],
     };

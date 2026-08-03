@@ -95,7 +95,7 @@ describe('proxy offline authority', () => {
     });
     vi.stubGlobal('fetch', fetchSpy);
 
-    const response = await proxy(request('/dashboard'));
+    const response = await proxy(request('/admin'));
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(response.status).toBeGreaterThanOrEqual(300);
@@ -109,7 +109,7 @@ describe('proxy offline authority', () => {
     );
     vi.stubGlobal('fetch', fetchSpy);
 
-    const response = await proxy(request('/dashboard', sessionCookie()));
+    const response = await proxy(request('/admin', sessionCookie()));
 
     // A signed-in-but-offline user passes through instead of bouncing to
     // sign-in; the page's own data loads surface the offline state.
@@ -128,7 +128,7 @@ describe('proxy offline authority', () => {
     );
     vi.stubGlobal('fetch', fetchSpy);
 
-    const response = await proxy(request('/dashboard', sessionCookie()));
+    const response = await proxy(request('/admin', sessionCookie()));
 
     expect(response.status).toBeGreaterThanOrEqual(300);
     expect(response.status).toBeLessThan(400);

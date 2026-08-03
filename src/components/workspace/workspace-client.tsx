@@ -117,7 +117,7 @@ const KEY_HINTS: Array<{
   command?: WorkspaceContextCommand;
 }> = [
   { shortcutId: 'command-palette', label: 'commands' },
-  { shortcutId: 'command-sessions', label: 'sessions' },
+  { shortcutId: 'command-sessions', label: 'team' },
   { shortcutId: 'workspace-new-project', label: 'new project' },
   { shortcutId: 'workspace-new-agent', label: 'new agent' },
   {
@@ -145,7 +145,7 @@ const KEY_HINTS: Array<{
     label: 'rename',
     command: 'rename-tab',
   },
-  { shortcutId: 'command-spatial', label: 'spatial' },
+  { shortcutId: 'command-spatial', label: 'fleet' },
   { shortcutId: 'help-modal-slash', label: 'all keys' },
 ];
 

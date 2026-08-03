@@ -166,49 +166,6 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           case 'help-modal-slash':
             setHelpModalOpen(true);
             break;
-          case 'view-status':
-            window.dispatchEvent(
-              new CustomEvent('shortcut:view-change', { detail: 'status' })
-            );
-            break;
-          case 'view-project':
-            window.dispatchEvent(
-              new CustomEvent('shortcut:view-change', { detail: 'project' })
-            );
-            break;
-          case 'view-swimlane':
-            window.dispatchEvent(
-              new CustomEvent('shortcut:view-change', { detail: 'swimlane' })
-            );
-            break;
-
-          // Task navigation (Phase 2)
-          case 'task-next':
-          case 'task-next-arrow':
-            window.dispatchEvent(new CustomEvent('shortcut:task-next'));
-            break;
-          case 'task-prev':
-          case 'task-prev-arrow':
-            window.dispatchEvent(new CustomEvent('shortcut:task-prev'));
-            break;
-          case 'task-open':
-            window.dispatchEvent(new CustomEvent('shortcut:task-open'));
-            break;
-          case 'task-close':
-            window.dispatchEvent(new CustomEvent('shortcut:task-close'));
-            break;
-          case 'task-select-extend-down':
-            window.dispatchEvent(new CustomEvent('shortcut:task-extend-down'));
-            break;
-          case 'task-select-extend-up':
-            window.dispatchEvent(new CustomEvent('shortcut:task-extend-up'));
-            break;
-          case 'task-toggle-select':
-            window.dispatchEvent(new CustomEvent('shortcut:task-toggle'));
-            break;
-          case 'task-select-all':
-            window.dispatchEvent(new CustomEvent('shortcut:task-select-all'));
-            break;
         }
       },
     }));
@@ -383,13 +340,11 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
   useEffect(() => {
     const contexts: ShortcutCtx[] = [];
 
-    if (pathname?.startsWith('/board')) contexts.push('board');
-    if (pathname?.startsWith('/dashboard')) contexts.push('dashboard');
     if (commandPaletteOpen) contexts.push('command-palette');
     if (commandPaletteOpen || helpModalOpen) contexts.push('modal-open');
 
     shortcutRegistry.setContexts(contexts);
-  }, [pathname, commandPaletteOpen, helpModalOpen]);
+  }, [commandPaletteOpen, helpModalOpen]);
 
   // Global keyboard listener
   useEffect(() => {

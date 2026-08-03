@@ -757,9 +757,9 @@ function createMenu(): void {
       submenu: [
         menuCommand('Command Palette…', 'command-palette'),
         { type: 'separator' },
-        menuCommand('Terminal', 'go-terminal'),
-        menuCommand('Sessions', 'go-sessions'),
-        menuCommand('Spatial', 'go-spatial'),
+        menuCommand('Agent', 'go-terminal'),
+        menuCommand('Team', 'go-sessions'),
+        menuCommand('Fleet', 'go-spatial'),
         { type: 'separator' },
         menuCommand('Back', 'history-back'),
         menuCommand('Forward', 'history-forward'),

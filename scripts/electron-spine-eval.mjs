@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * Navigation-spine eval (ENG-016 D8): the altitude rail is present on every
- * Electron surface, spine affordances never link into legacy pages, go-chords
- * cover all three altitudes, ⌘[/⌘] traverse history while chrome owns focus,
- * and ⌘K is project-first (recents survive, add-project exists, signed-out
- * state is visible). Requires the dev server (`pnpm dev`) and a compiled
- * Electron main (`pnpm electron:compile`).
+ * Navigation-spine eval (ENG-016 D8, altitude names per decision 0023):
+ * the altitude rail (Agent · Team · Fleet) is present on every Electron
+ * surface, go-chords cover all three altitudes, the retired legacy demo trio
+ * stays gone, ⌘[/⌘] traverse history while chrome owns focus, and ⌘K is
+ * project-first (recents survive, add-project exists, signed-out state is
+ * visible). Requires the dev server (`pnpm dev`) and a compiled Electron
+ * main (`pnpm electron:compile`).
  */
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -86,9 +87,9 @@ await withElectronApp(
   // D19: the altitude family rides ⌃⌘digit (⌘digit = Session tabs since
   // D18; ⌘⇧3 was eaten by macOS screenshots)
   for (const [label, accelerator] of [
-    ['Terminal', 'Control+Command+1'],
-    ['Sessions', 'Control+Command+2'],
-    ['Spatial', 'Control+Command+3'],
+    ['Agent', 'Control+Command+1'],
+    ['Team', 'Control+Command+2'],
+    ['Fleet', 'Control+Command+3'],
   ]) {
     check(
       `Go>${label} displays ${accelerator} without registering it`,
@@ -114,18 +115,18 @@ await withElectronApp(
     window.electron.menu.syncAccelerators({ 'rename-tab': 'Command+E' })
   );
 
-  // legacy stays reachable via its chord — and the spine follows you there
+  // the spine follows you onto off-spine surfaces (Settings)
   await page.keyboard.press('KeyG');
   await page.waitForTimeout(120);
-  await page.keyboard.press('KeyF');
-  await page.waitForURL('**/fleet');
+  await page.keyboard.press('KeyS');
+  await page.waitForURL('**/settings');
   await page.waitForTimeout(800);
-  check('g f reaches /fleet', page.url().endsWith('/fleet'));
+  check('g s reaches /settings', page.url().endsWith('/settings'));
   check(
-    'rail visible on legacy /fleet',
+    'rail visible on off-spine /settings',
     await page.locator('[data-command-altitude]').isVisible()
   );
-  await page.screenshot({ path: join(OUT, 'fleet-with-rail.png') });
+  await page.screenshot({ path: join(OUT, 'settings-with-rail.png') });
 
   // bounded history: ⌘[ answers "where I just was", ⌘] re-advances.
   // Bounded URL waits, not fixed sleeps — under load navigation can take
@@ -138,15 +139,15 @@ await withElectronApp(
   check('cmd+[ goes back to /workspace', backOk);
   await page.keyboard.press('Meta+BracketRight');
   const forwardOk = await page
-    .waitForURL(url => url.pathname.endsWith('/fleet'), { timeout: 8000 })
+    .waitForURL(url => url.pathname.endsWith('/settings'), { timeout: 8000 })
     .then(() => true)
     .catch(() => false);
-  check('cmd+] goes forward to /fleet', forwardOk);
+  check('cmd+] goes forward to /settings', forwardOk);
 
-  // the rail is a live exit from legacy pages
+  // the rail is a live exit from off-spine pages
   await page.locator('[data-command-altitude-level="terminal"]').click();
   await page.waitForURL('**/workspace');
-  check('rail Terminal click works from /fleet', true);
+  check('rail Agent click works from /settings', true);
 
   // go-chords cover all three altitudes
   await page.keyboard.press('KeyG');
@@ -163,30 +164,33 @@ await withElectronApp(
   check('g m reaches spatial', page.url().includes('/fleet/spatial'));
 
   // D11: a focused search field keeps text, but modified global commands must
-  // still provide an escape path back to Terminal.
+  // still provide an escape path back to the Agent altitude.
   const spatialSearch = page.getByLabel('Search agents');
   await spatialSearch.fill('operator query');
   await page.keyboard.press('Control+Meta+1');
   await page.waitForURL('**/workspace');
-  check('ctrl+cmd+1 returns from focused Spatial search', true);
+  check('ctrl+cmd+1 returns from focused Fleet search', true);
   await page.keyboard.press('Control+Meta+3');
   await page.waitForURL('**/fleet/spatial');
 
-  // spine affordances never link into legacy: no "← Fleet" on Spatial
+  // no affordance links back into the retired legacy trio
   const backLink = await page.locator('a[href="/fleet"]').count();
-  check('spatial has no /fleet back link', backLink === 0);
-  await page.screenshot({ path: join(OUT, 'spatial-no-backlink.png') });
+  check('fleet surface has no legacy /fleet link', backLink === 0);
+  await page.screenshot({ path: join(OUT, 'fleet-no-backlink.png') });
 
-  // project-first ⌘K: spine vocabulary, Legacy group, add-project, signed-out row
+  // project-first ⌘K: spine vocabulary, no legacy group, add-project, signed-out row
   await page.keyboard.press('Control+Meta+1');
   await page.waitForTimeout(800);
   await page.keyboard.press('Meta+KeyK');
   await page.waitForTimeout(700);
   const paletteText = await page.locator('[cmdk-list]').innerText();
-  check('palette has Go to Terminal', paletteText.includes('Go to Terminal'));
-  check('palette has Go to Sessions', paletteText.includes('Go to Sessions'));
-  check('palette has Go to Spatial', paletteText.includes('Go to Spatial'));
-  check('palette has Legacy group', paletteText.includes('Legacy'));
+  check('palette has Go to Agent', paletteText.includes('Go to Agent'));
+  check('palette has Go to Team', paletteText.includes('Go to Team'));
+  check('palette has Go to Fleet', paletteText.includes('Go to Fleet'));
+  check(
+    'palette has no Legacy group (trio retired, decision 0023)',
+    !paletteText.includes('Legacy') && !paletteText.includes('Lattice')
+  );
   check('palette has Add project row', paletteText.includes('Add project'));
   check(
     'palette shows signed-out Projects state',
@@ -248,8 +252,8 @@ await withElectronApp(
 
   // per-surface titles via the metadata template
   check(
-    'workspace title is Terminal — Exawatt',
-    (await page.title()) === 'Terminal — Exawatt'
+    'workspace title is Agent — Exawatt',
+    (await page.title()) === 'Agent — Exawatt'
   );
 
   // registry-resolved workspace verb still fires: ⌘E opens the rename editor
@@ -285,19 +289,19 @@ await withElectronApp(
   await helpFilter.fill('projection');
   await page.waitForTimeout(300);
   check(
-    'help makes Spatial raw keys searchable',
+    'help makes Fleet raw keys searchable',
     (await page.locator('[data-help-category="view"]').innerText()).includes(
-      'Spatial: toggle projection'
+      'Fleet: toggle projection'
     )
   );
-  // chord gating: g d behind the open modal must not navigate
+  // chord gating: g m behind the open modal must not navigate
   await page.keyboard.press('Shift+Tab'); // leave the filter input
   await page.keyboard.press('KeyG');
   await page.waitForTimeout(120);
-  await page.keyboard.press('KeyD');
+  await page.keyboard.press('KeyM');
   await page.waitForTimeout(700);
   check(
-    'g d behind the help modal does not navigate',
+    'g m behind the help modal does not navigate',
     page.url().includes('/workspace')
   );
   await page.keyboard.press('Escape');
@@ -308,7 +312,7 @@ await withElectronApp(
   await page.waitForTimeout(600);
   await page
     .locator('[cmdk-item]')
-    .filter({ hasText: 'Go to Sessions' })
+    .filter({ hasText: 'Go to Team' })
     .first()
     .click();
   await page.waitForURL('**view=sessions**');
@@ -331,7 +335,7 @@ await withElectronApp(
   }
   const recentOk =
     paletteEmptyText.includes('Recent') &&
-    paletteEmptyText.includes('Go to Sessions');
+    paletteEmptyText.includes('Go to Team');
   if (!recentOk) {
     console.log(
       '[debug] palette text head:',
@@ -342,37 +346,29 @@ await withElectronApp(
   await page.keyboard.press('Escape');
   await page.waitForTimeout(300);
 
-  // legacy title — reach Fleet Command through the palette's Legacy group
-  // (plain-key chords correctly stay dead while the terminal or an input
-  // owns focus, so the palette is the honest keyboard path from here)
+  // Fleet altitude title via the metadata template
   await page
     .locator('[cmdk-root]')
     .waitFor({ state: 'detached', timeout: 5000 })
     .catch(() => {});
   await page.waitForTimeout(400);
-  await page.keyboard.press('Meta+KeyK');
-  await page.waitForTimeout(700);
-  await page
-    .locator('[cmdk-item]')
-    .filter({ hasText: 'Go to Fleet Command' })
-    .first()
-    .click();
-  await page.waitForURL('**/fleet');
+  await page.keyboard.press('Control+Meta+3');
+  await page.waitForURL('**/fleet/spatial**');
   await page.waitForTimeout(600);
   check(
-    'fleet title is Fleet Command — Exawatt',
-    (await page.title()) === 'Fleet Command — Exawatt'
+    'fleet title is Fleet — Exawatt',
+    (await page.title()) === 'Fleet — Exawatt'
   );
 
   // D10: the rename cycle must not produce nested-interactive markup warnings
   check('no nested-interactive markup warnings', markupWarnings.length === 0);
-  // Leave the app on Terminal so its workspace checkpoint owner can answer the
-  // normal coordinated-quit handshake used by ElectronApplication.close().
+  // Leave the app at the Agent altitude so its workspace checkpoint owner can
+  // answer the coordinated-quit handshake used by ElectronApplication.close().
   await page.keyboard.press('Control+Meta+1');
   await page.waitForURL('**/workspace');
   await page.locator('[data-workspace-underlay]').waitFor();
   await page.waitForTimeout(500);
-  check('ctrl+cmd+1 returns from legacy Fleet Command', true);
+  check('ctrl+cmd+1 returns from Fleet', true);
   },
   // this eval legitimately runs long (33 checks, several navigations)
   { maxMs: 480_000 }
@@ -383,6 +379,6 @@ if (failures.length > 0) {
   process.exit(1);
 }
 console.log(
-  'PASS navigation spine: rail everywhere, legacy buried, history live, ⌘K project-first'
+  'PASS navigation spine: rail everywhere, legacy retired, history live, ⌘K project-first'
 );
 console.log(`Screenshots: ${OUT}`);

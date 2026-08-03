@@ -5,7 +5,7 @@ import { TestAuthBridge } from '@/components/workspace/test-auth-bridge';
 import { WorkspaceScopeGate } from '@/lib/tenancy/workspace-scope-gate';
 
 export const metadata: Metadata = {
-  title: 'Terminal',
+  title: 'Agent',
   description: 'Agent terminal workspace',
 };
 

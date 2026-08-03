@@ -13,10 +13,6 @@ export type ShortcutKeys = KeyBinding | [KeyBinding, KeyBinding];
 /** Context in which a shortcut is active */
 export type ShortcutContext =
   | 'global' // Always active
-  | 'board' // On board view
-  | 'dashboard' // On dashboard view
-  | 'task-selected' // When a task is selected
-  | 'task-detail' // When task detail sheet is open
   | 'command-palette' // Inside command palette
   | 'modal-open' // When any modal is open
   // NEVER activated in the chord engine: workspace verbs are executed by the
@@ -30,7 +26,6 @@ export type ShortcutCategory =
   | 'workspace'
   | 'navigation'
   | 'actions'
-  | 'selection'
   | 'view'
   | 'help';
 
@@ -40,7 +35,7 @@ export type ShortcutBindingPolicy =
 
 /** Complete shortcut definition (without action - for registration) */
 export interface ShortcutDefinition {
-  id: string; // Unique identifier, e.g., 'go-dashboard'
+  id: string; // Unique identifier, e.g., 'go-workspace'
   keys: ShortcutKeys; // Key binding(s)
   label: string; // Human-readable label
   description?: string; // Detailed description

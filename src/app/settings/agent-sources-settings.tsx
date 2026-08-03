@@ -564,7 +564,7 @@ function SourceDetail({
           value={
             source.capabilities.interactiveLaunch
               ? 'Available'
-              : 'Not available in Terminal'
+              : 'No interactive terminal launch'
           }
         />
         <CapabilityRow

@@ -120,7 +120,7 @@ describe('Sessions overview', () => {
       screen.getByRole('region', { name: 'Empty, 0 Sessions' })
     ).toBeInTheDocument();
     const empty = screen.getByRole('button', {
-      name: 'Open Empty in Terminal, no Sessions yet',
+      name: 'Open Empty at the Agent altitude, no Sessions yet',
     });
     await waitFor(() => expect(empty).toHaveFocus());
     expect(screen.queryByText('No Projects open')).not.toBeInTheDocument();

@@ -12,18 +12,17 @@ User-facing surfaces:
 
 - Electron desktop app
 - Next.js web app
-- `/fleet`
-- `/fleet/spatial`
-- `/dashboard` and `/board` legacy demo surfaces
+- `/workspace` (Agent and Team altitudes)
+- `/fleet/spatial` (Fleet altitude)
 - `/architecture` public architecture map
 - future public `/docs` guides
 
 The UI layer supports multiple modular regimes over the same command model:
 
 - DOM operations UI for dense text, forms, chat, and accessibility-critical controls
-- Electron Terminal Focus and DOM Session Overview for direct xterm control and
+- Electron Agent altitude and DOM Team overview for direct xterm control and
   multi-session orientation
-- Spatial Operations Board for stable Project-grouped fleet observability,
+- Fleet Operations Board for stable Project-grouped fleet observability,
   semantic zoom, anchored Agent selection, attention scheduling, and visible
   Session handoff; R3F renders top-down and shallow fixed-angle projections over
   one source-agnostic board model
@@ -48,22 +47,22 @@ server to close (with bounded force-stop escalation) before declaring cleanup
 complete. This is a presentation boundary, not a second application or
 alternate data source.
 
-The Electron shell presents Terminal Focus → Session Overview → Spatial Command
-as one command-altitude navigation continuum. That shared navigation does not
+The Electron shell presents Agent → Team → Fleet (decision `0023`) as one
+command-altitude navigation continuum. That shared navigation does not
 merge renderer ownership: xterm/DOM and R3F keep separate runtime boundaries and
 meet through normalized session/fleet state. UI regimes may render and compose
 controls, but they should not translate harness payloads, own provider-specific
 state, or bypass typed command boundaries.
 
 `CommandNavigationProvider` is the shell-level route and transition boundary for
-cross-regime Terminal ↔ Spatial movement. Header clicks, registry shortcuts,
+cross-regime DOM ↔ WebGL movement. Header clicks, registry shortcuts,
 native menu commands, palette navigation, workspace gestures, and Agent handoff
 delegate route completion to it. The provider begins navigation immediately and
 owns only a finite transform/opacity overlay with reduced-motion parity; it does
-not own PTY lifetime, workspace selection, Spatial semantics, or camera state.
+not own PTY lifetime, workspace selection, Fleet-board semantics, or camera state.
 The surface manifest owns route identity, the shortcut registry owns effective
-keys, Spatial owns URL filters plus session-local camera return, and the
-workspace owns terminal/Sessions focus.
+keys, the Fleet board owns URL filters plus session-local camera return, and the
+workspace owns terminal/Team focus.
 
 Contextual workspace verbs add one deliberately small cross-process projection.
 The renderer derives command availability from restored Project, Session,
@@ -185,7 +184,7 @@ presentation, supported actions, and capability claims for both main and
 renderer. Runtime observations remain main-process evidence. This prevents UI
 defaults, source probes, and launch code from becoming competing registries.
 Source-specific CLI/config/protocol inspection stays behind a renderer-safe IPC
-surface; Settings and the Terminal composer consume the same normalized
+surface; Settings and the Agent composer consume the same normalized
 snapshots. Claude Code and Codex are launch-capable local records. Local
 OpenClaw reachability is established only by a successful gateway protocol
 status command, not by config presence or an open TCP port. Demo Mode is a
@@ -211,7 +210,7 @@ response. If that live probe is unavailable, its adapter returns only observed
 configured values or an account-default sentinel and source-owned selection
 action. Product code never promotes fixture aliases into source truth.
 
-The registry exposes global source/account facts. Terminal resolves a separate
+The registry exposes global source/account facts. The workspace resolves a separate
 Project-effective launch view by combining source facts, Project draft state,
 and environment policy. This separation prevents an account default in
 Settings from masquerading as the model a particular Agent will launch.
@@ -305,9 +304,7 @@ Built:
 - legacy Supabase demo task flow
 - `@exawatt/core` OpenClaw JSON-RPC client, adapters, FleetManager, and MockFleetTransport
 - `@exawatt/ui-model` typed UI-facing fleet selectors and command contracts
-- `/fleet` live/mock fleet UI
-- `/fleet/cron`
-- `/fleet/spatial` Spatial Operations Board (V2.0 active replacement of the
+- `/fleet/spatial` Fleet Operations Board (V2.0 active replacement of the
   superseded immersive 3D composition)
 - Electron agent terminal workspace with real `node-pty` sessions rendered by
   xterm.js for Claude Code, Codex, and shells, behind a session-manager boundary
@@ -329,7 +326,7 @@ Built:
   reports, falls back only to observed configured values or the honest account
   default when live discovery is unavailable, and never invents provider aliases.
   Environment-owned effort constraints remain visible and non-editable because
-  they outrank session flags. The Terminal chrome uses a measured elastic-ribbon
+  they outrank session flags. The workspace chrome uses a measured elastic-ribbon
   boundary: compact Project headers, selected and manually persisted disclosure,
   Initiative-shaped Session tabs, two-row target-bounds layout,
   priority-preserving overflow, pointer-close stability, and
@@ -341,14 +338,14 @@ Built:
 - a source-agnostic Project catalog derived from durable workspace state. The
   Electron workspace save broadcasts an authoritative change event through the
   preload boundary; FleetProvider refreshes the catalog and local Session
-  inventory so Terminal, Sessions, and Spatial render the same open Projects,
+  inventory so Agent, Team, and Fleet render the same open Projects,
   including zero-Agent/zero-Session Projects. Local Agents carry the stable
   directory-backed Project identity and join the existing group when started.
 - persisted project-grouped terminal sessions, attention state, keyboard-first
   command flows, split panes, and the exposé session overview
-- persistent command-altitude navigation between terminal focus, session
-  overview, and Spatial Command, with one route/transition command service,
-  direct routes, shared shortcuts, last-altitude restore, URL-backed Spatial
+- persistent command-altitude navigation between the Agent, Team, and Fleet
+  altitudes, with one route/transition command service,
+  direct routes, shared shortcuts, last-altitude restore, URL-backed Fleet
   filters, session-local camera return, existing-PTY Agent handoff, and exact
   semantic board-address return
 - `LocalSessionsTransport` normalization of a local Session inventory into the
@@ -356,7 +353,7 @@ Built:
   boundary merges live Electron-main PTYs with persisted open workspace tabs:
   live PTYs provide runtime activity, while tabs without a process remain
   explicit stopped Session-backed Agents with stable handoff identity. This
-  keeps Terminal, Sessions, and Spatial aligned without pretending a stopped
+  keeps Agent, Team, and Fleet aligned without pretending a stopped
   local process is alive.
 - exact harness conversation identity for Electron tabs: assigned Claude IDs,
   bounded/cached Codex rollout discovery with launch-time association for
@@ -437,7 +434,7 @@ Partial:
 
 - source/harness abstraction beyond OpenClaw/mock
 - architecture overview as a living map
-- Spatial Operations Board extraction into a standalone package
+- Fleet Operations Board extraction into a standalone package
 
 Planned:
 

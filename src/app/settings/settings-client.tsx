@@ -132,10 +132,9 @@ function SettingsNavigation({
 }
 
 const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
-  workspace: 'Terminal Workspace',
+  workspace: 'Workspace',
   navigation: 'Navigation',
   actions: 'Actions',
-  selection: 'Selection',
   view: 'View',
   help: 'Help',
 };
@@ -144,7 +143,6 @@ const CATEGORY_ORDER: ShortcutCategory[] = [
   'workspace',
   'navigation',
   'actions',
-  'selection',
   'view',
   'help',
 ];

@@ -59,10 +59,9 @@ const STATUS_LEGEND: Array<{
 ];
 
 const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
-  workspace: 'Terminal Workspace',
+  workspace: 'Workspace',
   navigation: 'Navigation',
   actions: 'Actions',
-  selection: 'Selection',
   view: 'View',
   help: 'Help',
 };
@@ -71,7 +70,6 @@ const CATEGORY_ORDER: ShortcutCategory[] = [
   'workspace',
   'navigation',
   'actions',
-  'selection',
   'view',
   'help',
 ];
@@ -99,37 +97,37 @@ const FIXED_FAMILIES: Array<{
   },
   {
     category: 'view',
-    label: 'Spatial: open Project 1–9',
+    label: 'Fleet: open Project 1–9',
     keys: { key: '1…9' },
   },
   {
     category: 'view',
-    label: 'Spatial: pan board',
+    label: 'Fleet: pan board',
     keys: { key: '← ↑ ↓ →' },
   },
   {
     category: 'view',
-    label: 'Spatial: zoom board',
+    label: 'Fleet: zoom board',
     keys: { key: '+ / −' },
   },
   {
     category: 'view',
-    label: 'Spatial: toggle projection',
+    label: 'Fleet: toggle projection',
     keys: { key: 'V' },
   },
   {
     category: 'view',
-    label: 'Spatial: recenter / overview',
+    label: 'Fleet: recenter / overview',
     keys: { key: '0' },
   },
   {
     category: 'view',
-    label: 'Spatial: next / previous attention',
+    label: 'Fleet: next / previous attention',
     keys: { key: 'N / P' },
   },
   {
     category: 'view',
-    label: 'Spatial: zoom out selection',
+    label: 'Fleet: zoom out selection',
     keys: { key: 'Escape' },
   },
 ];

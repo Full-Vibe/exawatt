@@ -1,7 +1,7 @@
 # 0023 Command-altitude names and the transition model
 
 Date: 2026-08-02
-Status: accepted; the middle-altitude name is provisional pending a holistic brand pass
+Status: accepted; the middle-altitude name is provisional pending a holistic brand pass. **Rename and legacy-trio retirement LANDED 2026-08-02** (demo-arc packet P2): the manifest, shortcut/menu labels, window titles, ⌘K and cheat-sheet copy, `AGENTS.md`, and product/engineering docs say Agent · Team · Fleet; `/fleet`, `/dashboard`, `/board` and their Supabase demo machinery are deleted, freeing the Fleet name. The transition model (V3.0 handoff) remains future work.
 
 ## Context
 

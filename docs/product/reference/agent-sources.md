@@ -48,7 +48,7 @@ Secrets/Credentials broker for Agent tool use.
 
 Global source facts and Project-effective launch configuration appear at their
 proper scopes. The registry can show the account identity and default; the
-Terminal composer shows the model and effort that the current Project will
+Agent composer shows the model and effort that the current Project will
 actually request. A provenance affordance explains whether a fact came from a
 source command, source configuration, Project settings, environment policy, or
 Demo fixture, and a relative freshness label exposes its formatted timestamp
@@ -64,17 +64,17 @@ connection that looks broken.
 
 Settings now auto-discovers four built-in records through one Electron-main
 registry boundary: local Claude Code, local Codex, the local OpenClaw gateway,
-and Demo Mode. Claude Code and Codex can launch from the Terminal composer when
+and Demo Mode. Claude Code and Codex can launch from the Agent composer when
 their installation and source-owned authentication are ready. OpenClaw's local
 installation and gateway configuration are reported independently, but
 reachability and authentication become ready only after its protocol-level
 gateway status command succeeds. Config presence and a listening port are not
-treated as proof. Gateway launch remains outside the current Terminal composer.
+treated as proof. Gateway launch remains outside the current Agent composer.
 Demo Mode uses the same record and fact shapes with every value marked as
 simulated.
 
 Recheck repeats source discovery. When a local CLI reports that sign-in is
-required, Settings can open that source's own login command in Terminal and
+required, Settings can open that source's own login command as a terminal tab and
 then reconcile through several bounded checks, waking immediately when the app
 regains focus. If authentication still is not ready, the visible recovery state
 ends with a manual Recheck action instead of pretending success. A missing CLI

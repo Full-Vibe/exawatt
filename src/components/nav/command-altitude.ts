@@ -1,5 +1,8 @@
 import { surfacesByTier } from './surfaces';
 
+/** Internal altitude ids. User-facing names are Agent / Team / Fleet
+ *  (decision 0023); ids keep their historical spellings because routes,
+ *  shortcut ids, and stored state address them. */
 export type CommandAltitude = 'terminal' | 'sessions' | 'spatial';
 
 export const COMMAND_ALTITUDE_HREFS = Object.fromEntries(

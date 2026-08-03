@@ -32,17 +32,18 @@ region unknown. The questions remain stable even when presentation changes.
 
 The same underlying truth should be projected differently by command altitude:
 
-- **Terminal** explains one Session. It owns transcript, commands, evidence,
+- **Agent** explains one Session. It owns transcript, commands, evidence,
   retries, tool detail, steering, and the complete Event history.
-- **Sessions** compares open Sessions. It should be a dense, stable set of
+- **Team** compares open Sessions. It should be a dense, stable set of
   comparable tiles or rows that lets an operator find attention, reorient, and
   choose where to zoom in.
-- **Spatial** allocates attention across Projects and larger fleets. It should
+- **Fleet** allocates attention across Projects and larger fleets. It should
   emphasize pressure, topology, delegation, and leverage rather than repeat the
-  Sessions table.
+  Team table.
 
-Sessions does not contain a second, expanded Agent-detail state. Focus or hover
-may select an item, but activating it navigates to that exact Session in Terminal.
+Team does not contain a second, expanded Agent-detail state. Focus or hover may
+select an item, but activating it navigates to that exact Session at the Agent
+altitude.
 Returning to Sessions should restore the prior Project, ordering, and row
 position so the zoom-out/zoom-in loop preserves orientation.
 
@@ -70,7 +71,7 @@ activity should be grouped rather than allowed to displace the reason the work
 matters.
 
 One present-tense activity sentence and one latest meaningful Event are enough
-at Sessions altitude. Unknown activity must remain unknown; Exawatt should not
+at the Team altitude. Unknown activity must remain unknown; Exawatt should not
 manufacture a narrative from terminal byte volume.
 
 Event kinds are domain vocabulary, not operator-facing eyebrow copy. A compact

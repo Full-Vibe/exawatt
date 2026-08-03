@@ -17,14 +17,11 @@ import {
   Building2,
   Check,
   Laptop,
-  LayoutDashboard,
-  LayoutGrid,
   MonitorPlay,
   User,
   LogOut,
   Network,
   Settings,
-  Server,
   SquareTerminal,
   Blocks,
   MessageSquareWarning,
@@ -33,7 +30,7 @@ import {
 import { signOut } from '@/app/actions/projects';
 import { isAdminEmail } from '@/lib/auth/admin';
 import { CommandAltitudeNav } from './command-altitude-nav';
-import { isAppRoute, surfacesByTier, type AppSurface } from './surfaces';
+import { isAppRoute } from './surfaces';
 import { useOptionalProductFeedback } from '@/components/feedback/product-feedback-provider';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import type { TenantWorkspaceKind } from '@/lib/tenancy/workspace-scope';
@@ -42,12 +39,6 @@ const WORKSPACE_KIND_ICONS: Record<TenantWorkspaceKind, LucideIcon> = {
   personal: Laptop,
   demo: MonitorPlay,
   organization: Building2,
-};
-
-const LEGACY_ICONS: Partial<Record<AppSurface['id'], LucideIcon>> = {
-  dashboard: LayoutDashboard,
-  board: LayoutGrid,
-  fleet: Server,
 };
 
 interface SiteHeaderNavProps {
@@ -134,7 +125,7 @@ export function SiteHeaderNav({
       )}
 
       {/* the navigation spine: present on every desktop surface so the way
-          back to Terminal is never hunted for (ENG-016 D8) */}
+          back to the Agent altitude is never hunted for (ENG-016 D8) */}
       {inElectron && <CommandAltitudeNav />}
 
       {/* Right: Auth-dependent links */}
@@ -272,21 +263,6 @@ export function SiteHeaderNav({
                 <MessageSquareWarning className="mr-2 h-4 w-4" />
                 Submit feedback
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-xs text-muted-foreground">
-                Legacy views
-              </DropdownMenuLabel>
-              {surfacesByTier('legacy').map(s => {
-                const Icon = LEGACY_ICONS[s.id] ?? Server;
-                return (
-                  <DropdownMenuItem key={s.id} asChild>
-                    <Link href={s.href}>
-                      <Icon className="mr-2 h-4 w-4" />
-                      {s.name}
-                    </Link>
-                  </DropdownMenuItem>
-                );
-              })}
               {isAuthenticated && (
                 <>
                   <DropdownMenuSeparator />
