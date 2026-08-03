@@ -55,6 +55,7 @@ The demo fleet must support the full altitude sweep across *different* Projects,
 - **W4 Scale tier (data)** (landed 2026-08-02 — see milestone log) — the demo fleet authored or generated at the entity count the Spatial moment needs, with honest structure at that volume rather than cloned filler. This milestone owns the DATA only; ENG-004 V3.1 owns rendering it. See the contradiction note below.
 - **W5 Organization Workspace preview** (landed 2026-08-03 — see milestone log) — shared tenants appear in the switcher as ENG-026 `preview`, linking to the Organization surface. Named Organization, not Team: decision `0023` gives **Team** to the middle command altitude, and two Teams in one product is a collision.
 - **W8 Identity and Initiative coherence** (landed 2026-08-03 — see milestone log) — one tenant name (**Demo**), one portrayed organization (**Voltaic Grid Systems**), and every demo Agent assigned to an authored Initiative surfaced at Agent and Team altitude. Numbered W8 because W6/W7 landed while W5 was still open.
+- **W9 ⌘K Workspace switching** (landed 2026-08-03 — see milestone log) — tenant rows mirror the Workspace switcher in the command palette: available tenants switch through the existing seam, previews navigate without activation, and current or unavailable tenants stay inert.
 
 ## Scale honesty (decided 2026-08-02)
 
@@ -362,15 +363,33 @@ preserve tenant and PTY identity. Type-check, lint, and the full test suite pass
 the switcher, Agent, Team, and Organization screenshots were inspected at the
 Electron evaluator's real desktop viewport.
 
+### 2026-08-03 — W9: ⌘K Workspace switching (landed)
+
+The palette now projects Workspace rows directly from the shared tenancy model
+instead of maintaining a second tenant list. Typing `personal`, `demo`, or the
+organization name finds the same Personal, Demo, and Organization rows shown
+in the account menu. Available rows call the existing `switchWorkspace` seam;
+the Organization preview opens its typed `/organization` destination without
+ever activating or persisting that tenant. The current row and any
+coming-soon row are visible but inert, so the palette cannot imply authority
+the tenancy layer does not have.
+
+The pure row projection is unit-tested across all four actions (current,
+switch, preview, unavailable). `pnpm eval:electron:tenancy` drives both
+Personal → Demo and Demo → Personal by typing into ⌘K while the standing live
+PTY round-trip checks continue to prove that Workspace switching has no Agent
+lifecycle side effects. The evaluator also captures the complete Workspace
+group with its current, available, and preview states.
+
 ## Open questions
 
-- ~~Does the operator want a keyboard gesture for Workspace switching, or is the account menu enough?~~ ANSWERED 2026-08-03 (feedback row `486a87e1-5a3b-40e0-9ff3-85799072f339`): yes — Workspace switching belongs in ⌘K. Operator: "Org switching should be available in Command K so I should be able to type a different organization or 'personal' and be able to switch to that org via Command K. In general everything that one can do as a first-class citizen in the UI should be in command-K and that should be a general invariant." The earlier hazard leaning is overruled; ⌘K switching still lands on the same tenant-gate path the account menu uses, so the no-lifecycle-side-effects guarantee is unchanged. Queued below.
+- ~~Does the operator want a keyboard gesture for Workspace switching, or is the account menu enough?~~ ANSWERED 2026-08-03 (feedback row `486a87e1-5a3b-40e0-9ff3-85799072f339`): yes — Workspace switching belongs in ⌘K. Operator: "Org switching should be available in Command K so I should be able to type a different organization or 'personal' and be able to switch to that org via Command K. In general everything that one can do as a first-class citizen in the UI should be in command-K and that should be a general invariant." The earlier hazard leaning is overruled; W9 landed on the same tenant-gate path the account menu uses, so the no-lifecycle-side-effects guarantee is unchanged.
 - Should the Demo Workspace be seeded from *recorded* real sessions (redacted) rather than authored fixtures? Recording is more convincing and more work; authored is controllable and safe. Leaning: authored for W3, recording as a later upgrade once the pane content source exists.
 - Whether a shared/read-only Workspace link is the natural first multiplayer primitive (ENG-034) once W2 lands.
 
-## Queued work (triage 2026-08-03)
+## Landed follow-up (triage 2026-08-03)
 
-- **⌘K Workspace switching** (feedback row `486a87e1`, operator): the palette
+- **⌘K Workspace switching** (W9, landed 2026-08-03; feedback row `486a87e1`, operator): the palette
   gets Workspace rows — type "personal", "demo", or an organization name and
   switch scope from ⌘K, through the exact `switchWorkspace` seam the account
   menu uses. Carries the operator's general invariant: every verb that is

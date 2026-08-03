@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
@@ -68,6 +69,8 @@ interface CommandNavigationContextValue {
   ) => void;
   activateCommandAltitude: (target: CommandAltitude) => void;
   /** ⌘[ / ⌘] (D27): walk recorded app locations — surfaces AND tabs */
+  canNavigateBack: boolean;
+  canNavigateForward: boolean;
   navigateBack: () => boolean;
   navigateForward: () => boolean;
 }
@@ -99,6 +102,9 @@ export function CommandNavigationProvider({
   const router = useRouter();
   const pathname = usePathname();
   const [transition, setTransition] = useState<CommandTransition | null>(null);
+  useSyncExternalStore(navHistory.subscribe, navHistory.getRevision, () => 0);
+  const canNavigateBack = navHistory.canBack();
+  const canNavigateForward = navHistory.canForward();
   const targetPath = useRef<string | null>(null);
   const frame = useRef<number | null>(null);
   const timer = useRef<number | null>(null);
@@ -299,12 +305,16 @@ export function CommandNavigationProvider({
   const value = useMemo(
     () => ({
       navigateCommandSurface,
+      canNavigateBack,
+      canNavigateForward,
       navigateBack,
       navigateForward,
       activateCommandAltitude,
     }),
     [
       activateCommandAltitude,
+      canNavigateBack,
+      canNavigateForward,
       navigateBack,
       navigateForward,
       navigateCommandSurface,

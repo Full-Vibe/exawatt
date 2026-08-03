@@ -220,6 +220,34 @@ try {
       await page.goBack();
       await page.locator('.xterm-helper-textarea').waitFor();
 
+      // W9: the palette mirrors the first-class Workspace IA. Available
+      // tenants switch through the same provider seam; previews keep their
+      // honest destination semantics and can never masquerade as activation.
+      await page.keyboard.press('Meta+KeyK');
+      await page.locator('[cmdk-list]').waitFor();
+      check(
+        'palette exposes Personal as the current Workspace',
+        (await page
+          .locator('[data-palette-workspace-current="personal"]')
+          .count()) === 1
+      );
+      check(
+        'palette exposes Demo as a switchable Workspace',
+        (await page
+          .locator('[data-palette-workspace-switch="demo"]')
+          .count()) === 1
+      );
+      check(
+        'palette keeps Organization as a navigable preview',
+        (await page
+          .locator('[data-palette-workspace-preview="organization-preview"]')
+          .count()) === 1
+      );
+      await page.screenshot({
+        path: join(SCREENSHOT_DIR, 'command-palette-workspaces.png'),
+      });
+      await page.keyboard.press('Escape');
+
       // ---- switch away through the real menu ----------------------------
       await openAccountMenu(page);
       await page
@@ -319,11 +347,12 @@ try {
       });
 
       // ================= W2: the REAL Demo tenant =========================
-      await openAccountMenu(page);
-      await page.locator('[data-workspace-switch="demo"]').click();
+      await page.keyboard.press('Meta+KeyK');
+      await page.getByPlaceholder('Type a command or search...').fill('demo');
+      await page.locator('[data-palette-workspace-switch="demo"]').click();
       await page.locator('[data-demo-workspace]').waitFor();
       check(
-        'Demo identity chip is visible',
+        'typing demo in cmd+K switches through the real tenancy seam',
         (await page
           .locator('[data-active-tenant-workspace="demo"]')
           .count()) === 1
@@ -591,8 +620,11 @@ try {
       );
 
       // ---- return to Personal: everything exactly as it was --------------
-      await openAccountMenu(page);
-      await page.locator('[data-workspace-switch="personal"]').click();
+      await page.keyboard.press('Meta+KeyK');
+      await page
+        .getByPlaceholder('Type a command or search...')
+        .fill('personal');
+      await page.locator('[data-palette-workspace-switch="personal"]').click();
       await page.locator('.xterm-helper-textarea').waitFor();
       const replayedAll = await page.waitForFunction(
         ({ id, markers }) => {

@@ -154,6 +154,7 @@ export function QuickCaptureBar({
                 !attachScreenshot && 'opacity-40'
               )}
             />
+            <span>Screenshot</span>
             {attachScreenshot && <Check className="size-3" />}
             <span className="font-mono text-chrome-micro text-muted-foreground">
               ⌘S

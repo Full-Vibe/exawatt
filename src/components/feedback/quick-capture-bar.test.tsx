@@ -57,6 +57,7 @@ describe('QuickCaptureBar', () => {
 
   it('toggles the pre-captured screenshot with ⌘S', () => {
     const props = renderBar();
+    expect(screen.getByText('Screenshot')).toBeVisible();
     fireEvent.keyDown(screen.getByLabelText('Feedback'), {
       key: 's',
       metaKey: true,

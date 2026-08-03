@@ -16,6 +16,8 @@ import {
 import {
   Building2,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Laptop,
   MonitorPlay,
   User,
@@ -38,6 +40,7 @@ import { useOptionalProductFeedback } from '@/components/feedback/product-feedba
 import { ComingSoonMarker } from '@/components/readiness';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import type { TenantWorkspaceKind } from '@/lib/tenancy/workspace-scope';
+import { useCommandNavigation } from './command-navigation-provider';
 
 const WORKSPACE_KIND_ICONS: Record<TenantWorkspaceKind, LucideIcon> = {
   personal: Laptop,
@@ -64,6 +67,49 @@ function WorkspaceIdentityChip({
       <KindIcon aria-hidden="true" className="h-3 w-3" />
       {workspace.name}
     </span>
+  );
+}
+
+/** D27's app-location history, exposed in the title bar through the same
+ * owner as ⌘[/⌘]. The controls are deliberately quiet chrome: familiar
+ * chevrons, no new color channel, and truthful disabled state. */
+function HeaderHistoryControls() {
+  const { canNavigateBack, canNavigateForward, navigateBack, navigateForward } =
+    useCommandNavigation();
+
+  return (
+    <nav
+      aria-label="Navigation history"
+      className="ml-1 inline-flex items-center gap-0.5"
+      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        data-navigation-back
+        aria-label="Back"
+        title="Back · ⌘["
+        disabled={!canNavigateBack}
+        onClick={navigateBack}
+        className="h-7 w-7 text-muted-foreground disabled:opacity-25"
+      >
+        <ChevronLeft aria-hidden className="h-3.5 w-3.5" strokeWidth={1.75} />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        data-navigation-forward
+        aria-label="Forward"
+        title="Forward · ⌘]"
+        disabled={!canNavigateForward}
+        onClick={navigateForward}
+        className="h-7 w-7 text-muted-foreground disabled:opacity-25"
+      >
+        <ChevronRight aria-hidden className="h-3.5 w-3.5" strokeWidth={1.75} />
+      </Button>
+    </nav>
   );
 }
 
@@ -107,36 +153,12 @@ export function SiteHeaderNav({
           : undefined
       }
     >
-      {/* Left: Logo → Home */}
-      {isHome ? (
-        <span
-          data-chrome-brand
-          className="inline-flex h-8 items-center gap-2 rounded-md px-3 text-chrome-title! font-semibold"
-        >
-          <Image
-            src="/icon.png"
-            alt=""
-            width={16}
-            height={16}
-            className="h-4 w-4"
-          />
-          Exawatt
-        </span>
-      ) : (
-        <Button
-          variant="ghost"
-          size="sm"
-          asChild
-          style={
-            inElectron
-              ? ({ WebkitAppRegion: 'no-drag' } as React.CSSProperties)
-              : undefined
-          }
-        >
-          <Link
-            href="/"
+      {/* Left: Logo → Home, then the visible twin of ⌘[/⌘]. */}
+      <div className="flex items-center gap-0.5">
+        {isHome ? (
+          <span
             data-chrome-brand
-            className="gap-2 text-chrome-title! font-semibold"
+            className="inline-flex h-8 items-center gap-2 rounded-md px-3 text-chrome-title! font-semibold"
           >
             <Image
               src="/icon.png"
@@ -146,9 +168,36 @@ export function SiteHeaderNav({
               className="h-4 w-4"
             />
             Exawatt
-          </Link>
-        </Button>
-      )}
+          </span>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            asChild
+            style={
+              inElectron
+                ? ({ WebkitAppRegion: 'no-drag' } as React.CSSProperties)
+                : undefined
+            }
+          >
+            <Link
+              href="/"
+              data-chrome-brand
+              className="gap-2 text-chrome-title! font-semibold"
+            >
+              <Image
+                src="/icon.png"
+                alt=""
+                width={16}
+                height={16}
+                className="h-4 w-4"
+              />
+              Exawatt
+            </Link>
+          </Button>
+        )}
+        {inElectron && <HeaderHistoryControls />}
+      </div>
 
       {/* the navigation spine: present on every desktop surface so the way
           back to the Agent altitude is never hunted for (ENG-016 D8) */}

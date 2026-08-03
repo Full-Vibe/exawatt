@@ -38,6 +38,22 @@ const CAP = 100;
 export class NavHistory {
   private stack: NavLocation[] = [];
   private index = -1;
+  private revision = 0;
+  private listeners = new Set<() => void>();
+
+  /** Reactive capability state for chrome controls. The history owner stays
+   * framework-neutral; React consumes this tiny external-store contract. */
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  getRevision = (): number => this.revision;
+
+  private notify(): void {
+    this.revision += 1;
+    for (const listener of this.listeners) listener();
+  }
 
   current(): NavLocation | null {
     return this.stack[this.index] ?? null;
@@ -60,23 +76,28 @@ export class NavHistory {
     this.stack.push(location);
     if (this.stack.length > CAP) this.stack.shift();
     this.index = this.stack.length - 1;
+    this.notify();
   }
 
   back(): NavLocation | null {
     if (!this.canBack()) return null;
     this.index -= 1;
+    this.notify();
     return this.current();
   }
 
   forward(): NavLocation | null {
     if (!this.canForward()) return null;
     this.index += 1;
+    this.notify();
     return this.current();
   }
 
   reset(): void {
+    if (this.stack.length === 0 && this.index === -1) return;
     this.stack = [];
     this.index = -1;
+    this.notify();
   }
 }
 

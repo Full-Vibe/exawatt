@@ -77,4 +77,26 @@ describe('NavHistory (D27 app-location back stack)', () => {
       sameLocation({ surface: '/workspace' }, { surface: '/workspace', tab: null })
     ).toBe(true);
   });
+
+  it('publishes capability changes for chrome controls', () => {
+    const h = new NavHistory();
+    const revisions: number[] = [];
+    const unsubscribe = h.subscribe(() => revisions.push(h.getRevision()));
+
+    h.visit(terminal);
+    h.visit(sessions);
+    expect(h.canBack()).toBe(true);
+    expect(h.canForward()).toBe(false);
+
+    h.back();
+    expect(h.canBack()).toBe(false);
+    expect(h.canForward()).toBe(true);
+
+    h.forward();
+    h.reset();
+    unsubscribe();
+    h.visit(settings);
+
+    expect(revisions).toEqual([1, 2, 3, 4, 5]);
+  });
 });

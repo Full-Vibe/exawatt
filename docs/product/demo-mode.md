@@ -14,12 +14,13 @@ Demo Mode lets investors, collaborators, and users experience Exawatt without li
 
 ## Current Implementation
 
-**The Demo Workspace (ENG-027, landed 2026-08-02) is the demo implementation.** Demo is a real tenant in the account-menu Workspace switcher. Selecting it runs the authored Voltaic Grid Systems fixtures (`@exawatt/core` demo module) through the production surfaces:
+**The Demo Workspace (ENG-027, landed 2026-08-02) is the demo implementation.** Demo is a real tenant in the account-menu and ⌘K Workspace switchers. Selecting it runs the authored Voltaic Grid Systems fixtures (`@exawatt/core` demo module) through the production surfaces:
 
 - the Fleet altitude renders the honest ~209-entity fleet through `DemoWorkspaceTransport` — the same `FleetManager`/UI-model contracts the live local transport feeds
 - the Agent and Team altitudes render the demo shell behind `WorkspaceScopeGate`: Sessions open a **pane content source** — authored hero transcripts or the honest session record — never a live PTY, never a simulated stream, never a blank pane
 - every demo Agent names one of four authored Initiatives; the active Agent context bar and Team cards project that source truth without inventing it for sources that do not report Initiatives
 - ⌘K lists the demo Sessions through the same row shapes; every verb that could reach a PTY or Personal truth is absent in the Demo tenant
+- ⌘K also projects the shared tenancy rows: available Workspaces switch through the production seam, while Organization previews navigate without activating
 - `/consumption` reads the Voltaic consumption corpus through the same core rollups; demo consumption structurally cannot contribute to Personal totals
 - switching Workspaces never touches live agents — proven end to end by `pnpm eval:electron:tenancy`
 

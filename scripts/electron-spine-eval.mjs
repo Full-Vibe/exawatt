@@ -60,6 +60,49 @@ await withElectronApp(
       .evaluate(element => getComputedStyle(element).webkitAppRegion)) ===
       'no-drag'
   );
+  const backButton = page.locator('[data-navigation-back]');
+  const forwardButton = page.locator('[data-navigation-forward]');
+  await backButton.waitFor();
+  check(
+    'title bar exposes subtle back/forward controls',
+    (await backButton.isVisible()) && (await forwardButton.isVisible())
+  );
+  check(
+    'history controls are no-drag click islands',
+    (await backButton.evaluate(
+      element => getComputedStyle(element.parentElement).webkitAppRegion
+    )) === 'no-drag'
+  );
+  check(
+    'back starts disabled at the history floor',
+    await backButton.isDisabled()
+  );
+
+  // F1 feedback chip grammar: the screenshot toggle is named in visible UI,
+  // not only through accessibility metadata.
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent('exawatt:test-feedback-auth', {
+        detail: { accessToken: 'test-jwt' },
+      })
+    );
+  });
+  await page.waitForTimeout(100);
+  await page.keyboard.press('Meta+Shift+KeyF');
+  const quickFeedback = page.getByRole('dialog', { name: 'Quick feedback' });
+  await quickFeedback.waitFor();
+  const screenshotToggle = quickFeedback.getByRole('button', {
+    name: 'Attach screenshot',
+  });
+  check(
+    'quick feedback visibly labels the Screenshot chip',
+    (await screenshotToggle.innerText()).includes('Screenshot') &&
+      (await screenshotToggle.innerText()).includes('⌘S')
+  );
+  await page.screenshot({
+    path: join(OUT, 'quick-feedback-screenshot-label.png'),
+  });
+  await page.keyboard.press('Escape');
 
   // the menu bar mirrors the app's verbs (W4): Go/Session menus exist,
   // Settings… registers ⌘, for real, renderer-owned combos display-only
@@ -127,6 +170,22 @@ await withElectronApp(
     await page.locator('[data-command-altitude]').isVisible()
   );
   await page.screenshot({ path: join(OUT, 'settings-with-rail.png') });
+
+  // The visible controls call the exact same app-location owner as ⌘[/⌘].
+  check(
+    'back enables after cross-surface navigation',
+    !(await backButton.isDisabled())
+  );
+  await backButton.click();
+  await page.waitForURL(url => url.pathname.endsWith('/workspace'));
+  check('top-bar Back returns to /workspace', true);
+  check(
+    'forward enables after visible Back',
+    !(await forwardButton.isDisabled())
+  );
+  await forwardButton.click();
+  await page.waitForURL(url => url.pathname.endsWith('/settings'));
+  check('top-bar Forward returns to /settings', true);
 
   // bounded history: ⌘[ answers "where I just was", ⌘] re-advances.
   // Bounded URL waits, not fixed sleeps — under load navigation can take

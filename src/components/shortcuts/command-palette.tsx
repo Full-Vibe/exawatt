@@ -37,7 +37,10 @@ import {
   Lightbulb,
   Gauge,
   Building2,
+  Check,
   Cloud,
+  Laptop,
+  MonitorPlay,
   Waypoints,
   Shapes,
   type LucideIcon,
@@ -82,10 +85,7 @@ import {
   SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
 } from '@/components/workspace/status-glyphs';
-import {
-  STATUS_LIGHT_META,
-  StatusLight,
-} from '@/components/status-light';
+import { STATUS_LIGHT_META, StatusLight } from '@/components/status-light';
 import { HARNESS_META, HARNESS_ORDER } from '@/components/workspace/harnesses';
 import {
   AGENT_SOURCE_META,
@@ -112,6 +112,10 @@ import type { CommandAltitude } from '@/components/nav/command-altitude';
 import type { PtyHarness, ClosedSessionEntry } from '@/types/electron';
 import { useShortcutRegistryVersion } from './use-effective-shortcut';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
+import {
+  buildWorkspacePaletteRows,
+  type WorkspacePaletteRow,
+} from './workspace-palette-rows';
 import {
   rankRecents,
   readPaletteUses,
@@ -203,6 +207,12 @@ const SURFACE_ICONS: Record<AppSurface['id'], LucideIcon> = {
   coordination: Waypoints,
   'agent-types': Shapes,
 };
+
+const WORKSPACE_ICONS = {
+  personal: Laptop,
+  demo: MonitorPlay,
+  organization: Building2,
+} as const;
 
 export function CommandPalette({
   open,
@@ -311,6 +321,31 @@ export function CommandPalette({
       setTimeout(callback, 50);
     },
     [onOpenChange]
+  );
+  const workspaceRows = useMemo(
+    () =>
+      tenancy?.hydrated
+        ? buildWorkspacePaletteRows(
+            tenancy.workspaces,
+            tenancy.activeWorkspace.id
+          )
+        : [],
+    [tenancy]
+  );
+  const selectWorkspace = useCallback(
+    (row: WorkspacePaletteRow) => {
+      if (!tenancy) return;
+      handleSelect(() => {
+        if (row.action === 'switch') {
+          tenancy.switchWorkspace(row.workspace.id);
+          return;
+        }
+        if (row.action === 'open-preview' && row.workspace.href) {
+          navigateCommandSurface(row.workspace.href);
+        }
+      });
+    },
+    [handleSelect, navigateCommandSurface, tenancy]
   );
 
   /** switcher/launch requests land in the workspace: instantly when it is
@@ -669,6 +704,14 @@ export function CommandPalette({
         onSelect: item.onSelect,
       });
     }
+    for (const row of workspaceRows) {
+      if (row.action !== 'switch' && row.action !== 'open-preview') continue;
+      candidates.set(row.id, {
+        label: row.workspace.name,
+        icon: WORKSPACE_ICONS[row.workspace.kind],
+        onSelect: () => selectWorkspace(row),
+      });
+    }
     if (inElectron && !inDemoTenant) {
       for (const h of HARNESS_ORDER) {
         if (
@@ -728,6 +771,8 @@ export function CommandPalette({
   }, [
     navigationItems,
     actionItems,
+    workspaceRows,
+    selectWorkspace,
     inElectron,
     inDemoTenant,
     projects,
@@ -786,6 +831,58 @@ export function CommandPalette({
                   <span className="truncate">{row.label}</span>
                 </CommandItem>
               ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
+
+        {workspaceRows.length > 0 && (
+          <>
+            <CommandGroup heading="Workspaces">
+              {workspaceRows.map(row => {
+                const Icon = WORKSPACE_ICONS[row.workspace.kind];
+                const disabled =
+                  row.action === 'current' || row.action === 'unavailable';
+                return (
+                  <CommandItem
+                    key={row.id}
+                    value={row.value}
+                    disabled={disabled}
+                    data-palette-workspace-current={
+                      row.action === 'current' ? row.workspace.id : undefined
+                    }
+                    data-palette-workspace-switch={
+                      row.action === 'switch' ? row.workspace.id : undefined
+                    }
+                    data-palette-workspace-preview={
+                      row.action === 'open-preview'
+                        ? row.workspace.id
+                        : undefined
+                    }
+                    onSelect={() => {
+                      recordPaletteUse(row.id);
+                      selectWorkspace(row);
+                    }}
+                  >
+                    <Icon className="mr-2 h-4 w-4 shrink-0" />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate">{row.workspace.name}</span>
+                      {row.workspace.tagline && (
+                        <span className="truncate text-chrome-meta text-muted-foreground">
+                          {row.workspace.tagline}
+                        </span>
+                      )}
+                    </span>
+                    {row.action === 'current' && (
+                      <Check
+                        aria-hidden
+                        className="ml-2 h-3.5 w-3.5 shrink-0 text-primary"
+                      />
+                    )}
+                    {row.note && <CommandShortcut>{row.note}</CommandShortcut>}
+                  </CommandItem>
+                );
+              })}
             </CommandGroup>
             <CommandSeparator />
           </>
