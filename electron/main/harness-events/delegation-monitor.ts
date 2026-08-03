@@ -29,11 +29,23 @@ interface ManagerLike {
   on(event: 'exit', handler: (id: string) => void): void;
 }
 
+/** Bounds the dropped-session memory; ids are per-launch UUIDs, never
+ *  reused, so this only needs to cover plausibly-in-flight stragglers. */
+const DROPPED_CAP = 256;
+
 export class DelegationMonitor extends EventEmitter {
   private state = new Map<string, DelegationLedger>();
   /** Cached published shape per Session, so unchanged truth keeps an
    *  unchanged reference and consumers can compare cheaply. */
   private projections = new Map<string, SessionDelegation>();
+  /**
+   * Sessions the manager already dropped. A hook POST is an in-flight HTTP
+   * request, so a kill mid-turn can land events AFTER `exit` fired; without
+   * this memory each one would recreate a Map entry that no second `exit`
+   * will ever clean — a slow leak carrying a live-looking record for a dead
+   * id. Insertion-ordered Set, trimmed at a cap.
+   */
+  private dropped = new Set<string>();
 
   attach(channel: ChannelLike, manager?: ManagerLike): void {
     channel.on('event', (sessionId, event) => this.apply(sessionId, event));
@@ -42,6 +54,7 @@ export class DelegationMonitor extends EventEmitter {
   }
 
   apply(sessionId: string, event: HarnessEvent): void {
+    if (this.dropped.has(sessionId)) return;
     const before = this.state.get(sessionId) ?? EMPTY_LEDGER;
     const after = applyHarnessEvent(before, event);
     if (after === before) return;
@@ -105,16 +118,22 @@ export class DelegationMonitor extends EventEmitter {
   }
 
   /**
-   * Forget a Session. Emits once when there was something to forget so every
-   * surface clears its dots; silent otherwise, because a Session that never
-   * delegated has no state to publish.
+   * Forget a Session. Emits once when the Session had ever PUBLISHED
+   * something so every surface clears its dots; silent otherwise — a ledger
+   * holding only internal bookkeeping (staged labels, tombstones) was never
+   * visible, so there is nothing to withdraw.
    */
   drop(sessionId: string): void {
+    this.dropped.add(sessionId);
+    if (this.dropped.size > DROPPED_CAP) {
+      const oldest = this.dropped.values().next().value;
+      if (oldest !== undefined) this.dropped.delete(oldest);
+    }
     const existing = this.state.get(sessionId);
     if (!existing) return;
     this.state.delete(sessionId);
     this.projections.delete(sessionId);
-    this.emit('delegation', sessionId, null);
+    if (delegationIsLive(existing)) this.emit('delegation', sessionId, null);
   }
 }
 

@@ -912,13 +912,21 @@ function crossGeometry(): THREE.ShapeGeometry {
  */
 /**
  * Delegation satellites (ENG-023 D3b): one small dot per live delegated
- * child, in a row tucked under the parent piece — the same dots-not-counts
- * grammar the DOM surfaces use, in the project's accent so they read as the
- * parent's team rather than as more status. One instanced draw for the whole
- * board; capped per piece upstream (`SPATIAL_DELEGATION_SATELLITE_CAP`), the
- * exact census stays in the DOM control copy. Breathes on the shared V2.4
- * ambient gate and parks still at base opacity otherwise.
+ * child, in a row above the parent piece (the space below belongs to the DOM
+ * control label) — the same dots-not-counts grammar the DOM surfaces use, in
+ * the project's accent so they read as the parent's team rather than as more
+ * status. One instanced draw for the whole board; capped per piece upstream
+ * (`SPATIAL_DELEGATION_SATELLITE_CAP`), the exact census stays in the DOM
+ * control copy. Breathes on the shared V2.4 ambient gate and parks still at
+ * base opacity otherwise.
  */
+/** Breath = 0.725 + 0.175·sin(phase); the park value sits ON that curve so
+ *  pausing and resuming the ambient gate is continuous, not a pop. */
+const SATELLITE_PARK_OPACITY = 0.85;
+const SATELLITE_PARK_PHASE = Math.asin(
+  (SATELLITE_PARK_OPACITY - 0.725) / 0.175
+);
+
 function DelegationSatelliteLayer({
   pieces,
   active,
@@ -927,7 +935,7 @@ function DelegationSatelliteLayer({
   active: boolean;
 }) {
   const material = useRef<THREE.MeshBasicMaterial>(null);
-  const phase = useRef(0);
+  const phase = useRef(SATELLITE_PARK_PHASE);
   const geometry = useMemo(() => new THREE.CircleGeometry(0.5, 16), []);
   useEffect(() => () => geometry.dispose(), [geometry]);
 
@@ -948,16 +956,21 @@ function DelegationSatelliteLayer({
   });
 
   // One slow breath for the whole constellation — 2.6s, matching the DOM
-  // dots. Base value is set on the off-branch so the gate flipping false can
-  // never freeze the dots mid-sine (the console3d Panel bug).
+  // dots. The off-branch settles opacity to the park value AND re-seeds the
+  // phase to the point on the sine that MAPS to it, so the gate flipping
+  // false can never freeze the dots mid-sine (the console3d Panel bug) and
+  // flipping back on resumes from the parked brightness instead of popping
+  // to an arbitrary point in the cycle.
   useFrame((state, delta) => {
     if (!material.current) return;
     if (!active || satellites.length === 0) {
-      material.current.opacity = 0.85;
+      material.current.opacity = SATELLITE_PARK_OPACITY;
+      phase.current = SATELLITE_PARK_PHASE;
       return;
     }
     phase.current += (Math.min(delta, 0.05) * Math.PI * 2) / 2.6;
-    material.current.opacity = 0.55 + 0.35 * (0.5 + 0.5 * Math.sin(phase.current));
+    material.current.opacity =
+      0.725 + 0.175 * Math.sin(phase.current);
     state.invalidate();
   });
 
@@ -965,7 +978,10 @@ function DelegationSatelliteLayer({
   return (
     <Instances
       geometry={geometry}
-      limit={512}
+      // The per-piece cap times the board's project-altitude piece budget
+      // (120): a full team zone must never silently truncate — drei no-ops
+      // writes past `limit` with no warning.
+      limit={600}
       range={satellites.length}
       renderOrder={2}
     >
@@ -973,7 +989,7 @@ function DelegationSatelliteLayer({
         ref={material}
         toneMapped={false}
         transparent
-        opacity={0.85}
+        opacity={SATELLITE_PARK_OPACITY}
         depthWrite={false}
       />
       {satellites.map(satellite => (

@@ -488,8 +488,12 @@ from two clamped lines to one — the rail is worth more than the second line):
 
 - one row per child, capped at three rows: with more than three children the
   rail shows two rows plus a final "and N more working" line, so the rail's
-  vertical budget is a constant three rows and the tile's 248px footprint never
-  changes. The full census stays in the presence-dot tooltip, as D1 decided.
+  vertical budget is a constant three rows inside one fixed tile footprint.
+  (The tile grew once, 248→272px, to hold the full stack — the one deliberate
+  geometry change of this pass.) The full census stays in the presence-dot
+  tooltip AND in the tile's accessible name, which — because the tile is an
+  `aria-label`ed button whose subtree is presentational to assistive tech —
+  is the only place a screen-reader user hears the team at all.
 - each row: a breathing dot in the Project color (the D1 dot, same 2600ms
   breath, same reduced-motion park), the source's own agent type in mono
   chrome-meta, the child's own description in readable sans, elapsed in
@@ -551,6 +555,69 @@ This executes D3's Sessions and Spatial halves ahead of D2's Terminal rail —
 the operator asked for fleet-altitude legibility first, and the description
 channel this builds is exactly D2's input, so the Terminal rail inherits it.
 Child zoom remains open behind D2.
+
+### Post-landing review — 2026-08-02
+
+A three-perspective adversarial pass over the landed D3a/D3b commits found
+seven defects worth fixing and several boundaries worth writing down. All
+fixes landed the same day.
+
+**Correlation must fail to ABSENT, and the first cut could fail to WRONG.**
+Three reducer defects shared that shape:
+
+1. A spawn label REDELIVERED after its child adopted it re-staged and was
+   adopted by the next same-type sibling — an invented label. The ledger now
+   tombstones adopted `tool_use_id`s (cleared at turn boundaries).
+2. The staging cap evicted the OLDEST label, so a 17-spawn fan-out shifted
+   the entire cohort onto its neighbors' labels. Correlation is positional:
+   the cap now drops the INCOMING label, so overflow goes unlabeled instead
+   of mislabeled.
+3. `SubagentStart`/`SubagentStop` are separate HTTP POSTs, so a stop can
+   outrun its start (or a start can be redelivered after the stop) — and the
+   resurrected child had no removal path, wedging the Session as "team
+   working" until process exit. Ended child ids are now tombstoned for the
+   turn; a genuinely resumed child re-admits at the next turn-start.
+
+**Other hardening from the same pass:** the monitor ignores hook stragglers
+that land after a Session dropped (in-flight POSTs after a kill would have
+recreated state nothing cleans) and no longer broadcasts a withdrawal for a
+Session that never published; the `Agent|Task` matcher is anchored
+(`^(Agent|Task)$`) so unanchored-regex matcher semantics cannot turn
+superstring tools (`TaskOutput`, …) into per-call POSTs; label truncation
+slices by code point, not UTF-16 unit; the delegation eval asserts the child
+prompt is absent from the `pty:list` IPC payload itself, not just the DOM.
+
+**Sessions tile:** the card's identity+Now regions now share one
+`overflow-hidden` clipping band above a Next region that is pinned by
+construction — extreme content (a two-line rename plus a context subtitle
+plus a full rail) clips the rail's tail rather than the plan line, and the
+context cue yields its second line while the rail is up. Reload no longer
+resurrects a settled rail (the delegation seed gained the same
+cleared-before-seed guard as attention and activity). A non-finite child
+start time renders no elapsed rather than `NaNm`. Rail rows carry hover
+tooltips with the full label and the exact start time, per agent-state's
+freshness rule.
+
+**Spatial:** the satellite instance buffer is sized to the layout's actual
+budget (120 project-altitude pieces × 5 satellites = 600; drei silently
+no-ops writes past `limit`), and the ambient park value sits ON the breath
+curve so gate transitions never pop. The transport change-key includes
+`agentType` with unit-separator framing so free-text labels cannot alias it,
+and `pty:delegation` refreshes coalesce through one 150ms trailing timer.
+
+**Recorded, not changed:**
+
+- At demo scale, aggregate pieces and density fields carry no delegation
+  signal — beyond the individual-piece budgets the board deliberately stops
+  showing topology. Aggregation semantics belong to V2.1's parked truth half,
+  not to this item.
+- The fleet transport still ignores the record's `ownTurn` (the tab strip
+  ranks it above byte inference; the board does not). Reported-turn parity
+  for the fleet surfaces is a separate ENG-015 S1.1 follow-up, noted in the
+  transport.
+- Rail descriptions render one tier below body type (text-xs). That is a
+  deliberate density trade inside a fixed three-row budget; the full text is
+  in the row tooltip.
 
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 

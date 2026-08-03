@@ -284,8 +284,11 @@ export function delegationRailRows(
 /**
  * Minute-granularity elapsed time for a child row. Seconds would make a tile
  * grid tick like a stopwatch — motion without meaning at comparison altitude.
+ * Returns '' for a non-finite start time (an older main process may omit
+ * wire fields): no elapsed is honest, "NaNm" is a bug on a status surface.
  */
 export function delegationElapsedLabel(now: number, startedAt: number): string {
+  if (!Number.isFinite(now) || !Number.isFinite(startedAt)) return '';
   const minutes = Math.floor(Math.max(0, now - startedAt) / 60_000);
   if (minutes < 1) return '<1m';
   if (minutes < 60) return `${minutes}m`;

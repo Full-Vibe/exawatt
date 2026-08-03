@@ -37,7 +37,11 @@ const ASK_TOOL = 'AskUserQuestion';
  * named this tool both `Task` and `Agent` across versions; match both.
  */
 const AGENT_TOOLS = new Set(['Agent', 'Task']);
-const AGENT_TOOLS_MATCHER = [...AGENT_TOOLS].join('|');
+/** Anchored on purpose: if the harness applies matchers as unanchored regex,
+ *  a bare `Task` would also fire for every superstring tool (`TaskOutput`,
+ *  `TaskCreate`, …) — each match a loopback POST inside the operator's turn.
+ *  The normalizer would drop them, but the latency is spent either way. */
+const AGENT_TOOLS_MATCHER = `^(${[...AGENT_TOOLS].join('|')})$`;
 
 /** Labels measured 29–36 chars on the operator corpus; this is generous
  *  headroom, and anything longer is prompt content, which never rides. */
@@ -171,13 +175,16 @@ export function claudeHookEvent(
         const inputRecord = input as Record<string, unknown>;
         const description = readString(inputRecord, 'description');
         if (!description) return null;
+        // Truncate by code POINT, not UTF-16 unit: slicing mid-surrogate
+        // would put a lone surrogate on the wire, rendering as `�…`.
+        const points = [...description];
         return {
           kind: 'child-label',
           toolUseId,
           agentType: readString(inputRecord, 'subagent_type'),
           description:
-            description.length > MAX_LABEL_LENGTH
-              ? `${description.slice(0, MAX_LABEL_LENGTH - 1)}…`
+            points.length > MAX_LABEL_LENGTH
+              ? `${points.slice(0, MAX_LABEL_LENGTH - 1).join('')}…`
               : description,
           at,
         };

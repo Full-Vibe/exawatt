@@ -150,6 +150,11 @@ export function sessionToAgent(
     blockerInfo: sessionBlocker(session),
     // Present only while children are live: presence IS the signal, so an
     // unreporting source and an empty team read identically as absent.
+    // Deliberately NOT adopted here: the record's `ownTurn`, which the tab
+    // strip ranks above byte inference (ENG-015 S1.1). Bringing the fleet
+    // board up to reported-turn parity is a separate decision — today a
+    // quietly-generating, non-delegating Session still reads `idle` here
+    // after the byte window, exactly as it did before delegation flowed.
     ...(session.delegation?.children.length
       ? { delegation: { children: session.delegation.children } }
       : {}),
@@ -267,12 +272,16 @@ export class LocalSessionsTransport {
       this.now(),
       this.opts.workingWindowMs
     );
-    // Delegation participates by child identity + label, so a child arriving,
-    // finishing, or gaining its spawn label re-emits without churning on
-    // every poll tick.
+    // Delegation participates by child identity + kind + label, so a child
+    // arriving, finishing, resolving its type, or gaining its spawn label
+    // re-emits without churning on every poll tick. Unit separators, not
+    // punctuation: description is free text and must not alias the key.
     const delegationKey = (agent.delegation?.children ?? [])
-      .map(child => `${child.id}/${child.description ?? ''}`)
-      .join(',');
+      .map(
+        child =>
+          `${child.id}\u001f${child.agentType ?? ''}\u001f${child.description ?? ''}`
+      )
+      .join('\u001e');
     const key = `${agent.status}:${agent.sessionState}:${agent.lastActivityAt}:${agent.name}:${agent.goal}:${agent.projectId ?? ''}:${agent.project}:${session.attention?.kind ?? ''}:${session.attention?.since ?? ''}:${delegationKey}`;
     if (this.emitted.get(session.id) === key) return; // nothing changed
     this.emitted.set(session.id, key);

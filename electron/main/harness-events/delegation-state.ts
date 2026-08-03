@@ -43,8 +43,21 @@ export interface PendingChildLabel {
   at: number;
 }
 
-/** Bounds the staging list; a fan-out beyond this simply loses labels. */
+/** Bounds the staging list. A fan-out beyond this loses the NEWEST labels
+ *  (see the cap rule at the `child-label` case): later children go unlabeled
+ *  rather than the whole cohort shifting onto its neighbors' labels. */
 const PENDING_LABEL_CAP = 16;
+
+/** Bounds the two tombstone lists. Both exist to absorb at-least-once
+ *  delivery and HTTP reordering; 64 comfortably covers a turn's cohort. */
+const TOMBSTONE_CAP = 64;
+
+function remember(list: readonly string[], id: string): string[] {
+  const next = [...list, id];
+  return next.length > TOMBSTONE_CAP
+    ? next.slice(next.length - TOMBSTONE_CAP)
+    : next;
+}
 
 /**
  * Why the Agent stopped and handed control back to the operator (ENG-023 D4).
@@ -77,12 +90,30 @@ export interface SessionDelegation {
 }
 
 /**
- * The reducer's full state: the published record plus internal label staging.
- * `pending` never leaves the main process — the monitor projects it away
- * before anything is broadcast, so surfaces cannot come to depend on it.
+ * The reducer's full state: the published record plus internal bookkeeping.
+ * Nothing below `children` leaves the main process — the monitor projects it
+ * away before anything is broadcast, so surfaces cannot come to depend on it.
  */
 export interface DelegationLedger extends SessionDelegation {
   pending: PendingChildLabel[];
+  /**
+   * `tool_use_id`s whose labels were already adopted by a child this turn.
+   * Hook delivery is at-least-once: without this, a REDELIVERED spawn label
+   * re-stages after adoption and the next same-type sibling adopts a label
+   * that belongs to someone else — an invented label, the one thing the
+   * correlation must never produce.
+   */
+  adoptedLabelIds: string[];
+  /**
+   * Child ids that already ended. `SubagentStart` and `SubagentStop` travel
+   * as separate HTTP POSTs, so a stop can arrive BEFORE its start (or a start
+   * can be redelivered after the stop). Without this tombstone the late start
+   * resurrects a child nothing will ever remove, and the Session reads "team
+   * working" until its process exits. Cleared at turn-start: a genuinely
+   * resumed child in a LATER turn re-admits; within the same cohort a
+   * reappearing id is treated as the duplicate it almost certainly is.
+   */
+  endedChildIds: string[];
 }
 
 export type HarnessEvent =
@@ -116,6 +147,8 @@ export const EMPTY_DELEGATION: SessionDelegation = {
 export const EMPTY_LEDGER: DelegationLedger = {
   ...EMPTY_DELEGATION,
   pending: [],
+  adoptedLabelIds: [],
+  endedChildIds: [],
 };
 
 /**
@@ -173,26 +206,45 @@ export function applyHarnessEvent(
     // release event went missing would latch "needs you" forever — the exact
     // failure mode that makes a status indicator untrustworthy.
     //
-    // Both boundaries also clear staged labels: a label whose child never
+    // Both boundaries also clear label bookkeeping: a label whose child never
     // started within the turn that spawned it has no future adopter, and
-    // letting it survive would mislabel the NEXT turn's first child.
+    // letting it survive would mislabel the NEXT turn's first child. The
+    // ended-child tombstones clear only at turn-START — children routinely
+    // outlive the parent's turn-end (the measured 74s case), so their
+    // duplicate-absorbing memory must too.
     case 'turn-start':
       if (
         state.ownTurn === 'generating' &&
         !state.blockedOn &&
-        state.pending.length === 0
+        state.pending.length === 0 &&
+        state.adoptedLabelIds.length === 0 &&
+        state.endedChildIds.length === 0
       )
         return state;
-      return { ...state, ownTurn: 'generating', blockedOn: null, pending: [] };
+      return {
+        ...state,
+        ownTurn: 'generating',
+        blockedOn: null,
+        pending: [],
+        adoptedLabelIds: [],
+        endedChildIds: [],
+      };
 
     case 'turn-end':
       if (
         state.ownTurn === 'available' &&
         !state.blockedOn &&
-        state.pending.length === 0
+        state.pending.length === 0 &&
+        state.adoptedLabelIds.length === 0
       )
         return state;
-      return { ...state, ownTurn: 'available', blockedOn: null, pending: [] };
+      return {
+        ...state,
+        ownTurn: 'available',
+        blockedOn: null,
+        pending: [],
+        adoptedLabelIds: [],
+      };
 
     // FIRST report of a gate wins until something releases it. Measured on a
     // real Claude Code 2.1.220 session: one `AskUserQuestion` reports twice —
@@ -216,26 +268,30 @@ export function applyHarnessEvent(
       return { ...state, blockedOn: null };
 
     // Stage a spawn label until its child starts (D3a). Deduped by
-    // tool_use_id because hook delivery is at-least-once; bounded because an
-    // unmatched label must age out of memory, not accumulate.
+    // tool_use_id against BOTH the staging list and the already-adopted set:
+    // delivery is at-least-once, and a duplicate arriving after adoption
+    // must vanish, not re-stage onto the next sibling. At the cap the
+    // INCOMING label is the one dropped — correlation is positional, so
+    // evicting the oldest would shift every later child onto its neighbor's
+    // label, while dropping the newest merely leaves the overflow unlabeled.
     case 'child-label': {
-      if (state.pending.some(label => label.toolUseId === event.toolUseId))
+      if (
+        state.pending.some(label => label.toolUseId === event.toolUseId) ||
+        state.adoptedLabelIds.includes(event.toolUseId)
+      )
         return state;
-      const pending = [
-        ...state.pending,
-        {
-          toolUseId: event.toolUseId,
-          agentType: event.agentType,
-          description: event.description,
-          at: event.at,
-        },
-      ];
+      if (state.pending.length >= PENDING_LABEL_CAP) return state;
       return {
         ...state,
-        pending:
-          pending.length > PENDING_LABEL_CAP
-            ? pending.slice(pending.length - PENDING_LABEL_CAP)
-            : pending,
+        pending: [
+          ...state.pending,
+          {
+            toolUseId: event.toolUseId,
+            agentType: event.agentType,
+            description: event.description,
+            at: event.at,
+          },
+        ],
       };
     }
 
@@ -244,6 +300,9 @@ export function applyHarnessEvent(
       // elapsed time an operator reads must not reset because a hook retried.
       if (state.children.some(child => child.id === event.childId))
         return state;
+      // A start for a child that already ENDED is a duplicate or a reordered
+      // POST — admitting it would create a child nothing ever removes.
+      if (state.endedChildIds.includes(event.childId)) return state;
       // Adopt the oldest staged label whose agent type matches; with unknown
       // types on either side, the oldest label at all. No match means no
       // description — absent, never a guess from the wrong spawn.
@@ -265,6 +324,9 @@ export function applyHarnessEvent(
         pending: adopted
           ? state.pending.filter((_, index) => index !== adoptedIndex)
           : state.pending,
+        adoptedLabelIds: adopted
+          ? remember(state.adoptedLabelIds, adopted.toolUseId)
+          : state.adoptedLabelIds,
         children: [
           ...state.children,
           {
@@ -278,13 +340,29 @@ export function applyHarnessEvent(
     }
 
     case 'child-end': {
+      // Tombstone FIRST, known child or not: a stop can outrun its start on
+      // the wire, and the memory is what keeps the late start from
+      // resurrecting the child. The `children` array reference is preserved
+      // when only the tombstone changes, so nothing is broadcast for it.
+      const alreadyEnded = state.endedChildIds.includes(event.childId);
       const remaining = state.children.filter(
         child => child.id !== event.childId
       );
-      // Unknown child: Exawatt may have attached mid-flight, or missed the
-      // start. Ignoring it is right — inventing a child to remove is not.
-      if (remaining.length === state.children.length) return state;
-      return { ...state, children: remaining };
+      if (remaining.length === state.children.length) {
+        return alreadyEnded
+          ? state
+          : {
+              ...state,
+              endedChildIds: remember(state.endedChildIds, event.childId),
+            };
+      }
+      return {
+        ...state,
+        children: remaining,
+        endedChildIds: alreadyEnded
+          ? state.endedChildIds
+          : remember(state.endedChildIds, event.childId),
+      };
     }
   }
 }

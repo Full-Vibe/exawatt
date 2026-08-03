@@ -14,6 +14,7 @@ import { HUD } from '@/components/hud';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import {
   attentionNeedsOperator,
+  delegationCopy,
   SESSION_GLYPH_LABEL,
   sessionDelegationBusy,
   sessionGlyphState,
@@ -427,6 +428,7 @@ export function ExposeOverlay({
       ownTurn: tileDelegation?.ownTurn,
     });
     const roadmap = roadmapByTab[tile.tabId];
+    const delegationCensus = delegationCopy(tileDelegation);
     const current = sessionCurrentStateCopy({
       harness: tile.harness,
       live: tile.live,
@@ -445,15 +447,20 @@ export function ExposeOverlay({
         data-expose-tab={tile.tabId}
         data-selected={selected || undefined}
         tabIndex={selected ? 0 : -1}
+        // The tile subtree is presentational to AT (an aria-label'd button),
+        // so the delegation census must ride the accessible name — it is the
+        // only place a screen-reader user hears the team at all (ENG-023).
         aria-label={`${display.primary}, ${tile.projectName}${needsYou ? ', needs attention' : ''}${
           tile.live && !needsYou ? `, ${SESSION_GLYPH_LABEL[glyphState]}` : ''
-        }${tile.stateLabel ? `, ${tile.stateLabel}` : ''}`}
+        }${tile.stateLabel ? `, ${tile.stateLabel}` : ''}${
+          delegationCensus ? `, ${delegationCensus}` : ''
+        }`}
         onClick={() => onPick(tile.dir, tile.tabId)}
         onMouseEnter={() => {
           if (mouseArmed()) setSel(index);
         }}
         onFocus={() => setSel(index)}
-        className="flex h-[264px] flex-col rounded border p-3 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
+        className="flex h-[272px] flex-col overflow-hidden rounded border p-3 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
         style={{
           width: TILE_W,
           borderColor: selected ? tile.color : `${tile.color}44`,

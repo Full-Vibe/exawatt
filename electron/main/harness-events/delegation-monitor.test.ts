@@ -107,4 +107,31 @@ describe('DelegationMonitor publication', () => {
     expect(monitor.get('pty-1')).toBeNull();
     expect(monitor.isBusy('pty-1')).toBe(false);
   });
+
+  it('ignores stragglers that land after the Session dropped', () => {
+    // A hook POST is an in-flight HTTP request; a kill mid-turn can land
+    // events after `exit`. They must not recreate state nothing will clean.
+    const { monitor, manager, send } = harness();
+    send({ kind: 'turn-start' });
+    manager.emit('exit', 'pty-1');
+    send({ kind: 'turn-start' });
+    send({ kind: 'child-start', childId: 'a1', agentType: 'Explore', at: 1 });
+    expect(monitor.get('pty-1')).toBeNull();
+    expect(monitor.isBusy('pty-1')).toBe(false);
+  });
+
+  it('drops a never-published Session silently', () => {
+    // A ledger holding only staged labels was never visible; withdrawing it
+    // would broadcast a null for a Session no surface has heard of.
+    const { manager, published, send } = harness();
+    send({
+      kind: 'child-label',
+      toolUseId: 't1',
+      agentType: 'Explore',
+      description: 'Staged only',
+      at: 1,
+    });
+    manager.emit('exit', 'pty-1');
+    expect(published).toEqual([]);
+  });
 });

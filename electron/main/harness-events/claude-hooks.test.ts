@@ -34,7 +34,7 @@ describe('claudeHookSettings', () => {
     // the tools it wants: the operator gate (D4), and the delegation tools
     // whose PreToolUse is the spawn label — one post per handoff, not an
     // activity stream (D3a). This assertion is the guard on that decision.
-    const allowed = new Set(['AskUserQuestion', 'Agent|Task']);
+    const allowed = new Set(['AskUserQuestion', '^(Agent|Task)$']);
     for (const group of settings.hooks.PreToolUse) {
       expect(allowed.has(group.matcher)).toBe(true);
     }
@@ -47,7 +47,7 @@ describe('claudeHookSettings', () => {
     const matchers = settings.hooks.PreToolUse.map(
       (group: { matcher: string }) => group.matcher
     );
-    expect(matchers).toContain('Agent|Task');
+    expect(matchers).toContain('^(Agent|Task)$');
   });
 
   it('matches Notification to gates only, never to idle', () => {

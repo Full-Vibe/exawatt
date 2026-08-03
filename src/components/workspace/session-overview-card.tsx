@@ -89,67 +89,78 @@ export function SessionOverviewCardContent({
         </span>
       </div>
 
-      <div className="mt-2 min-h-12 min-w-0">
-        {titleIsContext ? (
-          <SessionGoalSummary
-            summary={title}
-            color={color}
-            size="comparison"
-            className="max-w-full"
-          />
-        ) : (
+      {/* Identity and Now share one clipping band. The tile is a fixed
+          footprint, so when extreme content (a two-line rename, a context
+          subtitle, AND a full rail) exceeds it, the overflow is clipped HERE
+          — the Next region below sits outside the band and stays intact by
+          construction rather than by arithmetic. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="mt-2 min-h-12 min-w-0">
+          {titleIsContext ? (
+            <SessionGoalSummary
+              summary={title}
+              color={color}
+              size="comparison"
+              className="max-w-full"
+            />
+          ) : (
+            <span
+              data-session-overview-title
+              className="line-clamp-2 block font-sans text-base font-medium leading-6"
+              style={{ color: HUD.text }}
+            >
+              {title}
+            </span>
+          )}
+          {context && (
+            <SessionGoalSummary
+              summary={context}
+              color={color}
+              className={`mt-0.5 max-w-full text-sm leading-5${
+                // The context cue also yields its second line while the rail
+                // is up — identity stays present, the team gets the room.
+                delegation?.children.length ? ' line-clamp-1' : ''
+              }`}
+            />
+          )}
+        </div>
+
+        {/* With live children the current sentence yields its second line to
+            the child rail (ENG-023 D3a) — the team's labels are worth more at
+            comparison altitude than the tail of one sentence. The rail's row
+            budget is fixed, so the tile footprint never moves. */}
+        <div data-session-now className="mt-3 min-w-0">
           <span
-            data-session-overview-title
-            className="line-clamp-2 block font-sans text-base font-medium leading-6"
+            className="block font-mono text-chrome-meta uppercase tracking-[0.14em]"
+            style={{ color: HUD.textDim }}
+          >
+            Now
+          </span>
+          {/* No `block` beside the clamp: line-clamp sets display:-webkit-box,
+              and a display:block utility can win the cascade and silently
+              unclamp the line — measured as a clipped Next region. */}
+          <span
+            data-session-current
+            className={`mt-1 font-sans text-[15px] leading-6 ${
+              delegation?.children.length ? 'line-clamp-1' : 'line-clamp-2'
+            }`}
             style={{ color: HUD.text }}
           >
-            {title}
+            {current}
           </span>
-        )}
-        {context && (
-          <SessionGoalSummary
-            summary={context}
-            color={color}
-            className="mt-0.5 max-w-full text-sm leading-5"
-          />
-        )}
-      </div>
-
-      {/* With live children the current sentence yields its second line to
-          the child rail (ENG-023 D3a) — the team's labels are worth more at
-          comparison altitude than the tail of one sentence. The rail's row
-          budget is fixed, so the tile footprint never moves. */}
-      <div data-session-now className="mt-3 min-w-0">
-        <span
-          className="block font-mono text-chrome-meta uppercase tracking-[0.14em]"
-          style={{ color: HUD.textDim }}
-        >
-          Now
-        </span>
-        {/* No `block` beside the clamp: line-clamp sets display:-webkit-box,
-            and a display:block utility can win the cascade and silently
-            unclamp the line — measured as a clipped Next region. */}
-        <span
-          data-session-current
-          className={`mt-1 font-sans text-[15px] leading-6 ${
-            delegation?.children.length ? 'line-clamp-1' : 'line-clamp-2'
-          }`}
-          style={{ color: HUD.text }}
-        >
-          {current}
-        </span>
-        {delegation?.children.length ? (
-          <DelegationRail delegation={delegation} color={color} />
-        ) : (
-          meaningfulChange && (
-            <span
-              className="mt-0.5 line-clamp-1 block font-sans text-sm leading-5"
-              style={{ color: HUD.textDim }}
-            >
-              {meaningfulChange}
-            </span>
-          )
-        )}
+          {delegation?.children.length ? (
+            <DelegationRail delegation={delegation} color={color} />
+          ) : (
+            meaningfulChange && (
+              <span
+                className="mt-0.5 line-clamp-1 block font-sans text-sm leading-5"
+                style={{ color: HUD.textDim }}
+              >
+                {meaningfulChange}
+              </span>
+            )
+          )}
+        </div>
       </div>
 
       <div

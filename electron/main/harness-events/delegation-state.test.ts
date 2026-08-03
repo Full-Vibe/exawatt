@@ -83,8 +83,14 @@ describe('delegation state', () => {
       kind: 'turn-start',
     });
     expect(applyHarnessEvent(start, { kind: 'turn-start' })).toBe(start);
-    expect(applyHarnessEvent(start, { kind: 'child-end', childId: 'x' })).toBe(
-      start
+    // An end for an unknown child tombstones (internal), but a REPEAT of it
+    // is a true no-op.
+    const ghosted = applyHarnessEvent(start, {
+      kind: 'child-end',
+      childId: 'x',
+    });
+    expect(applyHarnessEvent(ghosted, { kind: 'child-end', childId: 'x' })).toBe(
+      ghosted
     );
   });
 
@@ -193,6 +199,100 @@ describe('delegation state', () => {
       at: 5,
     });
     expect(child.children[0].description).toBeNull();
+  });
+
+  it('a label redelivered AFTER adoption vanishes instead of re-staging', () => {
+    // At-least-once delivery: without the adopted tombstone, the duplicate
+    // re-stages and the next same-type sibling adopts a label that belongs
+    // to someone else — an invented label on an operator surface.
+    const label = {
+      kind: 'child-label' as const,
+      toolUseId: 't1',
+      agentType: 'Explore',
+      description: 'First child work',
+      at: 1,
+    };
+    const state = reduce([
+      { kind: 'turn-start' },
+      label,
+      { kind: 'child-start', childId: 'c1', agentType: 'Explore', at: 2 },
+      label, // duplicate delivery
+      { kind: 'child-start', childId: 'c2', agentType: 'Explore', at: 3 },
+    ]);
+    expect(state.children.map(child => child.description)).toEqual([
+      'First child work',
+      null,
+    ]);
+  });
+
+  it('drops the INCOMING label at the cap so overflow goes unlabeled, never shifted', () => {
+    // Correlation is positional: evicting the oldest would hand child 1 the
+    // label of child 2 and shift the entire cohort onto its neighbors.
+    const events: Parameters<typeof applyHarnessEvent>[1][] = [
+      { kind: 'turn-start' },
+    ];
+    for (let index = 1; index <= 17; index += 1) {
+      events.push({
+        kind: 'child-label',
+        toolUseId: `t${index}`,
+        agentType: 'Explore',
+        description: `Label ${index}`,
+        at: index,
+      });
+    }
+    events.push({
+      kind: 'child-start',
+      childId: 'c1',
+      agentType: 'Explore',
+      at: 100,
+    });
+    const state = reduce(events);
+    expect(state.children[0].description).toBe('Label 1');
+    expect(state.pending).toHaveLength(15);
+  });
+
+  it('a stop that outruns its start never leaves a phantom child', () => {
+    // SubagentStart/SubagentStop are separate HTTP POSTs and can reorder.
+    const state = reduce([
+      { kind: 'turn-start' },
+      { kind: 'child-end', childId: 'c1' }, // arrives first
+      { kind: 'child-start', childId: 'c1', agentType: 'Explore', at: 2 },
+    ]);
+    expect(state.children).toEqual([]);
+    expect(delegationBusy(state)).toBe(false);
+  });
+
+  it('a start redelivered after its stop does not resurrect the child', () => {
+    const state = reduce([
+      { kind: 'turn-start' },
+      { kind: 'child-start', childId: 'c1', agentType: 'Explore', at: 1 },
+      { kind: 'child-end', childId: 'c1' },
+      { kind: 'child-start', childId: 'c1', agentType: 'Explore', at: 1 },
+    ]);
+    expect(state.children).toEqual([]);
+  });
+
+  it('a child id ended last turn may genuinely start again next turn', () => {
+    // Agents are resumable; the tombstone protects one cohort, not forever.
+    const state = reduce([
+      { kind: 'turn-start' },
+      { kind: 'child-start', childId: 'c1', agentType: 'Explore', at: 1 },
+      { kind: 'child-end', childId: 'c1' },
+      { kind: 'turn-end' },
+      { kind: 'turn-start' },
+      { kind: 'child-start', childId: 'c1', agentType: 'Explore', at: 9 },
+    ]);
+    expect(state.children.map(child => child.id)).toEqual(['c1']);
+  });
+
+  it('a tombstone-only end preserves the children reference — nothing to broadcast', () => {
+    const before = reduce([{ kind: 'turn-start' }]);
+    const after = applyHarnessEvent(before, {
+      kind: 'child-end',
+      childId: 'ghost',
+    });
+    expect(after).not.toBe(before);
+    expect(after.children).toBe(before.children);
   });
 
   it('keeps published fields reference-stable on a label-only change', () => {

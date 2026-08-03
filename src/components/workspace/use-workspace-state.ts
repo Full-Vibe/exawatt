@@ -773,6 +773,11 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     // Same race guard for D29's working ride-along: a quiet transition after
     // main captured the list must not be overwritten by the stale snapshot.
     const quietBeforeSeed = new Set<string>();
+    // And for delegation (ENG-023 D3a): the last child ending between the
+    // snapshot and the seed merge publishes null, which deletes nothing from
+    // an empty map — without this guard the stale snapshot then resurrects a
+    // rail no future event will clear until the next spawn.
+    const settledBeforeSeed = new Set<string>();
 
     void (async () => {
       // the font settles here too: the revive loop below reads the spawn
@@ -871,7 +876,9 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         // Reload and late-attach adopt live delegation immediately (ENG-023);
         // otherwise the dots would wait for the next child to start or stop.
         // Already filtered by main; a settled Session simply carries none.
-        if (s.delegation) seededDelegation[s.id] = s.delegation;
+        if (s.delegation && !settledBeforeSeed.has(s.id)) {
+          seededDelegation[s.id] = s.delegation;
+        }
       }
       if (Object.keys(seeded).length > 0) {
         setSummaries(prev => ({ ...seeded, ...prev }));
@@ -1154,6 +1161,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     // child drops out of the record entirely, so surfaces read "no delegated
     // work" rather than "zero children" — absent is not the same as none.
     const offDelegation = api.onDelegation?.(({ id, delegation: next }) => {
+      if (next) settledBeforeSeed.delete(id);
+      else settledBeforeSeed.add(id);
       // Main decides what is worth publishing and sends null otherwise, so
       // the liveness rule lives in exactly one place. Re-deriving it here is
       // what let the switcher and the strip disagree about one Session.

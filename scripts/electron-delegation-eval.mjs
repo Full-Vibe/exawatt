@@ -121,6 +121,16 @@ try {
           document.body.innerHTML.includes('PRIVATE_PROMPT_BODY')
         ))
       );
+      // The boundary is the IPC payload, not the DOM: a prompt smuggled into
+      // the delegation record but not rendered must still fail here.
+      check(
+        'the child prompt never crosses IPC at all',
+        !(await page.evaluate(async () =>
+          JSON.stringify(
+            (await window.electron?.pty?.list()) ?? []
+          ).includes('PRIVATE_PROMPT_BODY')
+        ))
+      );
       await page.keyboard.press('Escape');
       await page
         .locator('[data-expose-tile]')

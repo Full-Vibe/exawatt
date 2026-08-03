@@ -148,11 +148,23 @@ export function FleetProvider({ children }: { children: ReactNode }) {
           localTransport.initialize(manager);
           localTransport.start();
           // Delegation truth is push (ENG-023): a child starting or finishing
-          // re-lists immediately, so the board's satellites track the harness
-          // instead of trailing the next poll tick.
+          // re-lists promptly, so the board's satellites track the harness
+          // instead of trailing the next poll tick. Coalesced through one
+          // short trailing timer — a parent fanning out N children in one
+          // turn must cost one list round trip, not N.
+          let delegationRefresh: ReturnType<typeof setTimeout> | undefined;
           offDelegation = pty.onDelegation?.(() => {
-            if (mounted) void localTransport.refresh();
+            if (!mounted) return;
+            clearTimeout(delegationRefresh);
+            delegationRefresh = setTimeout(() => {
+              if (mounted) void localTransport.refresh();
+            }, 150);
           });
+          const offDelegationListener = offDelegation;
+          offDelegation = () => {
+            clearTimeout(delegationRefresh);
+            offDelegationListener?.();
+          };
           offWorkspaceChanged = workspace?.onChanged?.(layout => {
             if (!mounted) return;
             const next = extractLocalWorkspaceProjects(layout);

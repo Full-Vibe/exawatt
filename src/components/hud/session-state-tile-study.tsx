@@ -5,6 +5,7 @@ import { ReloadIcon } from '@radix-ui/react-icons';
 import { HUD } from '@/components/hud';
 import { SessionOverviewCardContent } from '@/components/workspace/session-overview-card';
 import {
+  delegationCopy,
   type SessionAttentionSignal,
   type SessionGlyphState,
 } from '@/components/workspace/status-glyphs';
@@ -223,7 +224,12 @@ function SessionTile({
     <button
       ref={tileRef}
       type="button"
-      aria-label={`Open ${tile.goal} at the Agent altitude`}
+      // Mirrors production: the subtree is presentational, so the delegation
+      // census lives in the accessible name or nowhere (ENG-023 D3a).
+      aria-label={`Open ${tile.goal} at the Agent altitude${(() => {
+        const census = delegationCopy(tile.delegation);
+        return census ? `, ${census}` : '';
+      })()}`}
       data-session-state-tile
       data-selected={selected || undefined}
       onClick={onOpen}
@@ -247,7 +253,7 @@ function SessionTile({
           onMove(-1);
         }
       }}
-      className="relative flex h-[264px] w-[300px] max-w-full flex-col overflow-hidden rounded border p-3 text-left outline-none transition-[background-color,border-color,transform] duration-150 active:scale-[0.985] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+      className="relative flex h-[272px] w-[300px] max-w-full flex-col overflow-hidden rounded border p-3 text-left outline-none transition-[background-color,border-color,transform] duration-150 active:scale-[0.985] focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
       style={{
         color: HUD.text,
         borderColor: selected ? tile.projectColor : `${tile.projectColor}4d`,
@@ -280,7 +286,7 @@ function LoadingTile() {
   return (
     <div
       aria-hidden="true"
-      className="flex h-[264px] w-[300px] max-w-full animate-pulse flex-col rounded border border-white/10 p-3 motion-reduce:animate-none"
+      className="flex h-[272px] w-[300px] max-w-full animate-pulse flex-col rounded border border-white/10 p-3 motion-reduce:animate-none"
       style={{ background: 'rgba(7,12,20,0.94)' }}
     >
       <div className="h-3 w-28 rounded-sm bg-white/10" />

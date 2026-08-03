@@ -166,16 +166,15 @@ export function DelegationDots({
   );
 }
 
-/** Slow shared clock for elapsed labels — minute granularity means a 30s
- *  tick, not a stopwatch. Runs only while a rail is mounted. */
-function useSlowNow(active: boolean): number {
+/** Slow clock for elapsed labels — minute granularity means a 30s tick, not
+ *  a stopwatch. The rail mounts only while children exist, so the interval's
+ *  lifetime is exactly the rail's. */
+function useSlowNow(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!active) return;
-    setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(timer);
-  }, [active]);
+  }, []);
   return now;
 }
 
@@ -188,6 +187,11 @@ function useSlowNow(active: boolean): number {
  * is a constant three rows and children arriving or finishing never move the
  * tile grid. It appears with the first child and leaves with the last — the
  * same conditional footprint as the dots it details.
+ *
+ * No aria-label here: the rail lives inside tiles that are themselves
+ * `aria-label`ed buttons, whose subtree is presentational to assistive tech.
+ * The census travels in the OWNING button's accessible name instead
+ * (`delegationCopy`), which is where AT users actually hear it.
  */
 export function DelegationRail({
   delegation,
@@ -197,56 +201,67 @@ export function DelegationRail({
   /** Project color: the rail belongs to the tile's identity, not to status. */
   color: string;
 }) {
-  const count = delegation?.children.length ?? 0;
-  const now = useSlowNow(count > 0);
-  if (count === 0) return null;
+  const now = useSlowNow();
+  if ((delegation?.children.length ?? 0) === 0) return null;
   const { rows, overflow } = delegationRailRows(delegation);
   return (
     <div
       data-session-delegation-rail
-      aria-label={delegationCopy(delegation) ?? undefined}
       className="mt-1.5 flex min-w-0 flex-col gap-[3px]"
     >
-      {rows.map((row, index) => (
-        <span
-          key={row.key}
-          data-delegation-child
-          className="flex min-w-0 items-center gap-1.5"
-        >
-          <span
-            aria-hidden="true"
-            className="delegation-dot shrink-0"
-            style={{
-              width: 3,
-              height: 3,
-              borderRadius: 9999,
-              background: color,
-              animationDelay: `${index * 320}ms`,
-            }}
-          />
-          <span
-            className="shrink-0 font-mono text-chrome-meta"
-            style={{ color: HUD.textDim }}
+      {rows.map((row, index) => {
+        const elapsed = delegationElapsedLabel(now, row.startedAt);
+        return (
+          <StatusTooltip
+            key={row.key}
+            copy={`${row.description ?? row.agentType ?? 'delegated agent'}${
+              Number.isFinite(row.startedAt)
+                ? ` — started ${new Date(row.startedAt).toLocaleTimeString()}`
+                : ''
+            }`}
           >
-            {row.agentType ?? 'agent'}
-          </span>
-          {row.description && (
             <span
-              className="min-w-0 truncate font-sans text-xs leading-4"
-              style={{ color: HUD.text }}
+              data-delegation-child
+              className="flex min-w-0 items-center gap-1.5"
             >
-              {row.description}
+              <span
+                aria-hidden="true"
+                className="delegation-dot shrink-0"
+                style={{
+                  width: 3,
+                  height: 3,
+                  borderRadius: 9999,
+                  background: color,
+                  animationDelay: `${index * 320}ms`,
+                }}
+              />
+              <span
+                className="shrink-0 font-mono text-chrome-meta"
+                style={{ color: HUD.textDim }}
+              >
+                {row.agentType ?? 'agent'}
+              </span>
+              {row.description && (
+                <span
+                  className="min-w-0 truncate font-sans text-xs leading-4"
+                  style={{ color: HUD.text }}
+                >
+                  {row.description}
+                </span>
+              )}
+              {elapsed && (
+                <span
+                  suppressHydrationWarning
+                  className="ml-auto shrink-0 font-mono text-xs tabular-nums"
+                  style={{ color: HUD.textMono }}
+                >
+                  {elapsed}
+                </span>
+              )}
             </span>
-          )}
-          <span
-            suppressHydrationWarning
-            className="ml-auto shrink-0 font-mono text-xs tabular-nums"
-            style={{ color: HUD.textMono }}
-          >
-            {delegationElapsedLabel(now, row.startedAt)}
-          </span>
-        </span>
-      ))}
+          </StatusTooltip>
+        );
+      })}
       {overflow > 0 && (
         <span
           data-delegation-overflow

@@ -149,6 +149,11 @@ describe('Sessions overview', () => {
     );
     // the rail is detail; the presence dots stay beside the light
     expect(beta.querySelector('[data-delegation="4"]')).not.toBeNull();
+    // and the census rides the accessible name — the tile subtree is
+    // presentational to assistive tech, so this is where AT hears the team
+    expect(beta.getAttribute('aria-label')).toContain(
+      '4 delegated agents working'
+    );
     // a tile without reported delegation renders no rail at all — absent, not empty
     const alpha = screen.getByRole('button', { name: /Alpha, One/ });
     expect(alpha.querySelector('[data-session-delegation-rail]')).toBeNull();
@@ -383,7 +388,7 @@ describe('Sessions overview', () => {
       'font-sans',
       'text-sm'
     );
-    expect(tile).toHaveClass('h-[264px]');
+    expect(tile).toHaveClass('h-[272px]');
   });
 
   it('a ⌘T draft tile reads as a draft, never as stopped (D24)', () => {

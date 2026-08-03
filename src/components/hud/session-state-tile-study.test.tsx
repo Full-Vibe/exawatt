@@ -33,7 +33,7 @@ describe('SessionStateTileStudy', () => {
       5
     );
     const workingTile = screen.getByRole('button', {
-      name: 'Open Complete MMHC conversion and secure BAA at the Agent altitude',
+      name: /^Open Complete MMHC conversion and secure BAA at the Agent altitude/,
     });
     expect(within(workingTile).queryByText('Working')).not.toBeInTheDocument();
     expect(
@@ -59,7 +59,7 @@ describe('SessionStateTileStudy', () => {
         'Coordinating delegated review of the agreement'
       )
     ).toHaveClass('font-sans', 'text-[15px]', 'leading-6');
-    expect(workingTile).toHaveClass('h-[264px]', 'w-[300px]');
+    expect(workingTile).toHaveClass('h-[272px]', 'w-[300px]');
     expect(screen.getAllByText('2 Agents').length).toBeGreaterThan(0);
     expect(screen.queryByText('Recovered')).not.toBeInTheDocument();
   });
@@ -68,10 +68,15 @@ describe('SessionStateTileStudy', () => {
     renderStudy();
 
     const delegating = screen.getByRole('button', {
-      name: 'Open Complete MMHC conversion and secure BAA at the Agent altitude',
+      name: /^Open Complete MMHC conversion and secure BAA at the Agent altitude/,
     });
     const rail = delegating.querySelector('[data-session-delegation-rail]');
     expect(rail).not.toBeNull();
+    // The tile subtree is presentational to AT, so the census must ride the
+    // accessible name — the only place a screen-reader user hears the team.
+    expect(delegating.getAttribute('aria-label')).toContain(
+      '3 delegated agents working — Explore, general-purpose'
+    );
     // three children fit the row budget — all named, no summary row
     expect(rail!.querySelectorAll('[data-delegation-child]')).toHaveLength(3);
     expect(rail!.textContent).toContain('Map conversion checklist coverage');
@@ -79,7 +84,7 @@ describe('SessionStateTileStudy', () => {
 
     // the fan-out fixture summarizes past the budget instead of growing
     const fanout = screen.getByRole('button', {
-      name: 'Open Audit the RAF scheduler across surfaces at the Agent altitude',
+      name: /^Open Audit the RAF scheduler across surfaces at the Agent altitude/,
     });
     const fanoutRail = fanout.querySelector('[data-session-delegation-rail]');
     expect(
