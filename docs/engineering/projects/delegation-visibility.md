@@ -446,6 +446,21 @@ Two lessons worth keeping:
   syntax error in the fake binary — which then fails EVERY probe at once and
   looks exactly like a hung app.
 
+### Operator evidence — 2026-08-03: attention fired while children were live
+
+Feedback row `3142884d-a98a-489f-b00f-de66e5311ca8` reports a regression in the
+D1/D4 turn-truth contract: the Consumption-design Session showed the orange
+needs-attention indicator and entered the `⌘J` queue after the parent Claude
+agent finished its own turn, even though the parent was still waiting on three
+running subagents. Navigating there therefore surfaced busy delegated work,
+not a result or operator gate.
+
+This is active-work evidence for ENG-023, not a new attention mode. The shared
+derivation must continue to hold `working` while any child is live, must not
+raise a ready-result attention record at the parent's turn end, and must keep
+that Session out of `⌘J` unless an independent operator gate is genuinely open.
+Diagnosis and execution remain queued for the owning turn-truth pipeline.
+
 ### Deliberately out of scope
 
 `⌘J` still treats focus as "seen", so it will not walk back to a Session that
