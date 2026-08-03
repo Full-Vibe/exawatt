@@ -6,9 +6,9 @@ import {
   withThemeAlpha,
 } from './workspace-theme';
 import {
-  FLUX,
+  FLUX_CSS as FLUX,
   exact,
-  pressureColor,
+  pressureColorCss as pressureColor,
   tokens,
 } from '@/components/consumption/flux';
 import { AnnouncedChip } from '@/components/readiness';

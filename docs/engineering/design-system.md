@@ -275,7 +275,8 @@ Never fork a parallel convention (a new fractional type scale, a fifth palette, 
   protocol metadata remains semantic state rather than presentation paint.
 - 2026-08-03 — ENG-032 T3C: generated Consumption/foundation/HUD/material roles
   now own `/usage`, its capacity and attribution visualizations, drill and
-  session surfaces, assurance/unit ladder, ambient meter, and popovers. DOM
+  session surfaces, the Team Session-card burn carrier, assurance/unit ladder,
+  ambient meter, and popovers. DOM
   interpolation uses live CSS variables; concrete Classic FLUX remains only for
   the pending spatial adapter. Consumption unknown stays a hatched data state
   distinct from readiness, action, status, and Project identity.

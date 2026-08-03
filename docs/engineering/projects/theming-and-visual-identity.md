@@ -810,7 +810,8 @@ no packet privately extends the contract to solve a local color.
 - 2026-08-03, T3C landed: percolated generated Consumption, foundation, HUD,
   typography, and material roles through `/usage`, its capacity and attribution
   visualizations, drill panel, session grid, assurance/unit treatments, and the
-  ambient-meter popover/gallery sibling. DOM interpolation and alpha stay live
+  ambient-meter popover/gallery sibling, plus the Team Session card's embedded
+  burn readout. DOM interpolation and alpha stay live
   through generated custom properties, while the concrete Classic FLUX map is
   retained only for the pending T4 spatial adapter. Unknown Consumption remains
   its own hatched data state rather than readiness, action, or status, and
