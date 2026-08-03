@@ -172,17 +172,17 @@ describe('hosted Session context ownership', () => {
     service.setAccessToken('jwt');
     service.noteInput('live-1', 'Raw operator wording that must stay local\r');
     await vi.waitFor(() => expect(generateGoalVisual).toHaveBeenCalledOnce());
-    expect(generateGoalVisual).toHaveBeenCalledWith(
-      {
-        schemaVersion: 1,
-        projectKey: '/repo/exawatt',
-        label: 'Improve agent context summaries',
-      },
-      'jwt'
-    );
-    expect(JSON.stringify(generateGoalVisual.mock.calls[0][0])).not.toContain(
-      'Raw operator wording'
-    );
+    const [request, token] = generateGoalVisual.mock.calls[0];
+    expect(request).toEqual({
+      schemaVersion: 1,
+      projectKey: expect.stringMatching(/^project:[a-f0-9]{64}$/),
+      label: 'Improve agent context summaries',
+    });
+    expect(token).toBe('jwt');
+    const serializedRequest = JSON.stringify(request);
+    expect(serializedRequest).not.toContain('Raw operator wording');
+    expect(serializedRequest).not.toContain('/repo/exawatt');
+    expect(serializedRequest).not.toContain('Exawatt');
     expect(service.getGoalVisual('session-1')).toEqual({
       identityKey: 'goal-identity',
       revision: 1,

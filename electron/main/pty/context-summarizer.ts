@@ -81,8 +81,9 @@ export interface GoalVisual {
 
 export interface GoalVisualRequest {
   schemaVersion: 1;
+  /** One-way local project identity; never a filesystem path or project name. */
   projectKey: string;
-  /** Accepted six-word context label only; never raw instructions/output. */
+  /** Accepted durable context label only; never raw instructions/output. */
   label: string;
 }
 
@@ -150,6 +151,12 @@ function fallbackIdentityKey(projectKey: string, label: string): string {
     )
     .digest('hex')
     .slice(0, 32)}`;
+}
+
+function privateProjectKey(localProjectIdentity: string): string {
+  return `project:${createHash('sha256')
+    .update(localProjectIdentity, 'utf8')
+    .digest('hex')}`;
 }
 
 function validDataUrl(value: unknown): value is string {
@@ -661,11 +668,12 @@ export class ContextSummarizer extends EventEmitter {
     const session = this.manager
       ?.list()
       .find(item => item.durableSessionId === durableId);
-    const projectKey = session?.projectDir ?? session?.projectName;
-    if (!projectKey) {
+    const localProjectIdentity = session?.projectDir ?? session?.projectName;
+    if (!localProjectIdentity) {
       this.diagnoseFn('goal-visual.missing-project', { session: durableId });
       return;
     }
+    const projectKey = privateProjectKey(localProjectIdentity);
     const prior = this.goalVisuals.get(durableId);
     const revision = (prior?.revision ?? 0) + 1;
     const request: GoalVisualRequest = {
