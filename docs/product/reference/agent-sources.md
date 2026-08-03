@@ -30,8 +30,10 @@ execution or source-owned authentication into Exawatt; it gives Exawatt the
 minimum command and observation boundary required to operate that source.
 
 The registry reports installation, reachability, authentication, identity,
-version compatibility, capabilities, freshness, and provenance as separate
-facts. Its normalized roll-up states are `ready`, `connecting`, `action
+version compatibility, capabilities, freshness, provenance, and evidence basis
+as separate facts. `Observed` means a bounded runtime check ran, `Declared`
+means the adapter contract advertises the property, and `Simulated` identifies
+Demo evidence. Its normalized roll-up states are `ready`, `connecting`, `action
 required`, `degraded`, `unavailable`, `not installed`, `incompatible`, and
 `unknown`. A roll-up helps scanning; detail must retain the underlying facts so
 that, for example, installed-but-signed-out never collapses into a vague
@@ -50,12 +52,13 @@ Terminal composer shows the model and effort that the current Project will
 actually request. A provenance affordance explains whether a fact came from a
 source command, source configuration, Project settings, environment policy, or
 Demo fixture, and a relative freshness label exposes its formatted timestamp
-on hover.
+on hover and keyboard focus. Relative time refreshes while Settings remains
+open.
 
-The **Add source** flow separates sources Exawatt supports but cannot currently
-reach from future source types. `Not installed` or `Configure` is actionable
-now; `Coming later` is an honest product affordance, not a disabled connection
-that looks broken.
+The **Browse Agent Sources** flow separates sources Exawatt supports but cannot
+currently reach from future source types. `Inspect install` or `Configure` is
+actionable now; `Coming soon` is an honest product affordance, not a disabled
+connection that looks broken.
 
 ### Current desktop implementation
 
@@ -63,16 +66,27 @@ Settings now auto-discovers four built-in records through one Electron-main
 registry boundary: local Claude Code, local Codex, the local OpenClaw gateway,
 and Demo Mode. Claude Code and Codex can launch from the Terminal composer when
 their installation and source-owned authentication are ready. OpenClaw's local
-installation, gateway configuration, credential presence, and reachability are
-reported independently; gateway launch remains outside the current Terminal
-composer. Demo Mode uses the same record and fact shapes with every value
-marked as simulated.
+installation and gateway configuration are reported independently, but
+reachability and authentication become ready only after its protocol-level
+gateway status command succeeds. Config presence and a listening port are not
+treated as proof. Gateway launch remains outside the current Terminal composer.
+Demo Mode uses the same record and fact shapes with every value marked as
+simulated.
 
 Recheck repeats source discovery. When a local CLI reports that sign-in is
 required, Settings can open that source's own login command in Terminal and
-then re-observe status. Only the minimum identity exposed by the status command
-crosses to the renderer. Provider tokens, organization metadata, and OpenClaw
-connection secrets do not.
+then reconcile through several bounded checks, waking immediately when the app
+regains focus. If authentication still is not ready, the visible recovery state
+ends with a manual Recheck action instead of pretending success. A missing CLI
+opens its adapter-declared installation guide. Only the minimum identity
+exposed by a status command crosses to the renderer. Provider tokens,
+organization metadata, and OpenClaw connection secrets do not.
+
+If registry IPC fails, Settings keeps the last known facts as explicitly stale
+when possible, or shows the registry as unavailable. The composer does not
+launch from fallback declarations. Electron main validates source readiness at
+the launch boundary using main-owned evidence no more than five seconds old
+before spawning any Agent process.
 
 ## Launch contract
 

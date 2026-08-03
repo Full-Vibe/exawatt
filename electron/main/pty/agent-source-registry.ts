@@ -1,107 +1,26 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
-import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
-import type { AgentHarness, AgentPermissionMode } from './harness-types';
+import type {
+  AgentHarness,
+  AgentSourceActionResult,
+  AgentSourceCapabilities,
+  AgentSourceFact,
+  AgentSourceFactState,
+  AgentSourceProvenance,
+  AgentSourceRegistrySnapshot,
+  AgentSourceSnapshot,
+  AgentSourceState,
+} from '@exawatt/core';
 import { harnessDescriptor } from './harness-registry';
+import {
+  agentSourceDeclaration,
+  FUTURE_AGENT_SOURCE_CATALOG,
+} from './generated-agent-source-declarations';
 
 const execFileAsync = promisify(execFile);
-
-export type AgentSourceAdapterId = AgentHarness | 'openclaw' | 'demo';
-
-export type AgentSourceState =
-  | 'ready'
-  | 'connecting'
-  | 'action-required'
-  | 'degraded'
-  | 'unavailable'
-  | 'not-installed'
-  | 'incompatible'
-  | 'unknown';
-
-export type AgentSourceFactState =
-  | 'ready'
-  | 'action-required'
-  | 'degraded'
-  | 'unavailable'
-  | 'not-installed'
-  | 'incompatible'
-  | 'unknown'
-  | 'simulated';
-
-export interface AgentSourceProvenance {
-  kind: 'source-command' | 'source-config' | 'gateway-probe' | 'built-in';
-  label: string;
-  observedAt: number;
-}
-
-export interface AgentSourceFact {
-  state: AgentSourceFactState;
-  value: string;
-  detail: string;
-  provenance: AgentSourceProvenance;
-}
-
-export interface AgentSourceCapabilities {
-  interactiveLaunch: boolean;
-  initialTask: boolean;
-  exactResume: boolean;
-  modelSelection: 'live-catalog' | 'source-owned' | 'gateway' | 'scenario';
-  effortSelection: 'live-catalog' | 'configured-value' | 'gateway' | 'scenario';
-  permissionModes: readonly AgentPermissionMode[];
-  delegationObservation: string;
-  enforcementOwner: string;
-}
-
-export interface AgentSourceSnapshot {
-  id: string;
-  adapterId: AgentSourceAdapterId;
-  harness: AgentHarness | null;
-  label: string;
-  connectionName: string;
-  color: string;
-  configured: boolean;
-  launchable: boolean;
-  state: AgentSourceState;
-  stateLabel: string;
-  summary: string;
-  observedAt: number;
-  facts: {
-    installation: AgentSourceFact;
-    reachability: AgentSourceFact;
-    authentication: AgentSourceFact;
-    identity: AgentSourceFact;
-    compatibility: AgentSourceFact;
-    modelDiscovery: AgentSourceFact;
-  };
-  capabilities: AgentSourceCapabilities;
-  actions: {
-    recheck: boolean;
-    authenticate: boolean;
-    chooseModel: boolean;
-  };
-}
-
-export interface AgentSourceCatalogEntry {
-  adapterId: AgentSourceAdapterId | 'hosted-openclaw' | 'custom';
-  label: string;
-  description: string;
-  availability: 'configured' | 'not-installed' | 'configure' | 'coming-later';
-}
-
-export interface AgentSourceRegistrySnapshot {
-  sources: AgentSourceSnapshot[];
-  available: AgentSourceCatalogEntry[];
-  comingLater: AgentSourceCatalogEntry[];
-  observedAt: number;
-}
-
-export interface AgentSourceActionResult {
-  ok: boolean;
-  message: string;
-}
 
 interface CommandResult {
   ok: boolean;
@@ -127,7 +46,13 @@ function fact(
   detail: string,
   source: AgentSourceProvenance
 ): AgentSourceFact {
-  return { state, value, detail, provenance: source };
+  const basis =
+    source.kind === 'adapter-declaration'
+      ? 'declared'
+      : source.kind === 'simulation'
+        ? 'simulated'
+        : 'observed';
+  return { basis, state, value, detail, provenance: source };
 }
 
 async function loginShellCommand(
@@ -213,28 +138,6 @@ function stateLabel(state: AgentSourceState): string {
   }
 }
 
-function localCapabilities(harness: AgentHarness): AgentSourceCapabilities {
-  const descriptor = harnessDescriptor(harness);
-  return {
-    interactiveLaunch: true,
-    initialTask: true,
-    exactResume: true,
-    modelSelection:
-      descriptor.source.modelDiscovery === 'live-catalog'
-        ? 'live-catalog'
-        : 'source-owned',
-    effortSelection:
-      descriptor.source.modelDiscovery === 'live-catalog'
-        ? 'live-catalog'
-        : 'configured-value',
-    permissionModes: ['prompt', 'auto', 'unrestricted'],
-    delegationObservation: descriptor.delegation.observable
-      ? 'Source-reported lifecycle events'
-      : descriptor.delegation.reason,
-    enforcementOwner: descriptor.source.label,
-  };
-}
-
 export function parseClaudeAuthStatus(raw: string): {
   authenticated: boolean;
   identity: string;
@@ -316,19 +219,11 @@ export function localSourceState(input: {
 export function openClawSourceState(input: {
   executable: boolean;
   configured: boolean;
-  credentialPresent: boolean;
-  reachable: boolean;
+  protocolReady: boolean;
 }): AgentSourceState {
   if (!input.executable) return 'not-installed';
-  if (!input.configured || !input.credentialPresent) return 'action-required';
-  return input.reachable ? 'ready' : 'degraded';
-}
-
-export function openClawCredentialPresent(value: unknown): boolean {
-  if (typeof value === 'string') return value.length > 0;
-  // Recent OpenClaw configs can store a credential reference object rather
-  // than the secret itself. Presence is all this registry needs or retains.
-  return value !== null && typeof value === 'object';
+  if (!input.configured) return 'action-required';
+  return input.protocolReady ? 'ready' : 'degraded';
 }
 
 async function inspectLocalHarness(
@@ -338,6 +233,7 @@ async function inspectLocalHarness(
   const observedAt = Date.now();
   const descriptor = harnessDescriptor(harness);
   const source = descriptor.source;
+  const declaration = agentSourceDeclaration(harness);
   const executablePath = await resolveExecutable(shell, source.executable);
   const commandEvidence = provenance(
     'source-command',
@@ -345,20 +241,16 @@ async function inspectLocalHarness(
     observedAt
   );
   const unknownConfigEvidence = provenance(
-    'source-config',
-    `${source.label} configuration`,
-    observedAt
+    'adapter-declaration',
+    'Built-in adapter declaration',
+    0
   );
 
   if (!executablePath) {
     const state: AgentSourceState = 'not-installed';
     return {
+      ...declaration,
       id: `${harness}-local`,
-      adapterId: harness,
-      harness,
-      label: source.label,
-      connectionName: source.connectionName,
-      color: source.color,
       configured: true,
       launchable: false,
       state,
@@ -403,8 +295,12 @@ async function inspectLocalHarness(
           unknownConfigEvidence
         ),
       },
-      capabilities: localCapabilities(harness),
-      actions: { recheck: true, authenticate: false, chooseModel: false },
+      actions: {
+        recheck: true,
+        authenticate: false,
+        chooseModel: false,
+        installGuide: true,
+      },
     };
   }
 
@@ -448,15 +344,9 @@ async function inspectLocalHarness(
     authKnown,
     authenticated,
   });
-  const modelDiscovery = source.modelDiscovery;
-
   return {
+    ...declaration,
     id: `${harness}-local`,
-    adapterId: harness,
-    harness,
-    label: source.label,
-    connectionName: source.connectionName,
-    color: source.color,
     configured: true,
     launchable: executablePath !== null && authenticated,
     state,
@@ -511,26 +401,22 @@ async function inspectLocalHarness(
         versionResult.ok
           ? 'Exawatt has not declared a minimum compatible version for this source.'
           : 'Compatibility cannot be evaluated without a version response.',
-        commandEvidence
+        versionResult.ok ? unknownConfigEvidence : commandEvidence
       ),
       modelDiscovery: fact(
-        authenticated ? 'ready' : authKnown ? 'action-required' : 'unknown',
-        modelDiscovery === 'live-catalog'
-          ? 'Live source catalog'
-          : 'Configured value only',
-        modelDiscovery === 'live-catalog'
-          ? 'The installed CLI exposes a supported machine-readable catalog.'
-          : `The CLI does not expose its account-aware catalog. Exawatt reads exact configuration and leaves catalog selection with ${source.label}.`,
-        modelDiscovery === 'live-catalog'
-          ? commandEvidence
-          : unknownConfigEvidence
+        authenticated ? 'unknown' : authKnown ? 'action-required' : 'unknown',
+        authenticated ? 'Project-scoped' : 'Not checked',
+        authenticated
+          ? 'Catalog truth is observed for the active Project in the Agent composer, not inferred from global authentication.'
+          : 'Catalog discovery requires a source-owned sign-in and an active Project context.',
+        unknownConfigEvidence
       ),
     },
-    capabilities: localCapabilities(harness),
     actions: {
       recheck: true,
       authenticate: !authenticated,
       chooseModel: harness === 'claude' && authenticated,
+      installGuide: true,
     },
   };
 }
@@ -539,7 +425,6 @@ interface OpenClawObservation {
   lastTouchedVersion: string | null;
   host: string;
   port: number;
-  credentialPresent: boolean;
 }
 
 async function readOpenClawConfig(): Promise<OpenClawObservation | null> {
@@ -553,7 +438,6 @@ async function readOpenClawConfig(): Promise<OpenClawObservation | null> {
       gateway?: {
         host?: unknown;
         port?: unknown;
-        auth?: { token?: unknown };
       };
     };
     const rawHost = parsed.gateway?.host;
@@ -573,30 +457,111 @@ async function readOpenClawConfig(): Promise<OpenClawObservation | null> {
           : null,
       host,
       port,
-      credentialPresent: openClawCredentialPresent(parsed.gateway?.auth?.token),
     };
   } catch {
     return null;
   }
 }
 
-function gatewayReachable(host: string, port: number): Promise<boolean> {
-  return new Promise(resolve => {
-    const socket = net.createConnection({ host, port });
-    const finish = (reachable: boolean) => {
-      socket.removeAllListeners();
-      socket.destroy();
-      resolve(reachable);
+export interface OpenClawGatewayObservation {
+  protocolReady: boolean;
+  degraded: boolean;
+  configValid: boolean | null;
+  capability: string | null;
+  identity: string | null;
+  version: string | null;
+}
+
+/**
+ * OpenClaw has shipped two JSON envelopes for `gateway status`. Parse only
+ * bounded, non-secret fields from both. Command success is required: a JSON
+ * error payload or an open TCP port is not an authenticated protocol result.
+ */
+export function parseOpenClawGatewayStatus(
+  raw: string,
+  commandSucceeded: boolean
+): OpenClawGatewayObservation {
+  try {
+    const parsed = JSON.parse(raw) as {
+      ok?: unknown;
+      degraded?: unknown;
+      capability?: unknown;
+      cli?: { version?: unknown };
+      config?: { cli?: { valid?: unknown } };
+      gateway?: { version?: unknown };
+      rpc?: {
+        ok?: unknown;
+        capability?: unknown;
+        server?: { version?: unknown };
+      };
+      targets?: Array<{
+        connect?: { ok?: unknown; rpcOk?: unknown };
+        self?: { host?: unknown; version?: unknown } | null;
+      }>;
     };
-    socket.setTimeout(700);
-    socket.once('connect', () => finish(true));
-    socket.once('timeout', () => finish(false));
-    socket.once('error', () => finish(false));
-  });
+    const targets = Array.isArray(parsed.targets) ? parsed.targets : [];
+    const connectedTarget = targets.find(
+      target => target.connect?.rpcOk === true
+    );
+    const protocolReady =
+      commandSucceeded &&
+      (parsed.ok === true ||
+        parsed.rpc?.ok === true ||
+        connectedTarget !== undefined);
+    const self = connectedTarget?.self;
+    const identity =
+      typeof self?.host === 'string' && self.host.trim()
+        ? self.host.trim()
+        : null;
+    const targetVersion =
+      typeof self?.version === 'string' && self.version.trim()
+        ? self.version.trim()
+        : null;
+    const cliVersion =
+      typeof parsed.cli?.version === 'string' && parsed.cli.version.trim()
+        ? parsed.cli.version.trim()
+        : null;
+    const legacyServerVersion =
+      typeof parsed.rpc?.server?.version === 'string' &&
+      parsed.rpc.server.version.trim()
+        ? parsed.rpc.server.version.trim()
+        : null;
+    const gatewayVersion =
+      typeof parsed.gateway?.version === 'string' &&
+      parsed.gateway.version.trim()
+        ? parsed.gateway.version.trim()
+        : null;
+    const rawCapability = parsed.capability ?? parsed.rpc?.capability;
+    return {
+      protocolReady,
+      degraded: parsed.degraded === true,
+      configValid:
+        typeof parsed.config?.cli?.valid === 'boolean'
+          ? parsed.config.cli.valid
+          : null,
+      capability:
+        typeof rawCapability === 'string' && rawCapability.trim()
+          ? rawCapability.trim()
+          : null,
+      identity,
+      version:
+        targetVersion ?? legacyServerVersion ?? gatewayVersion ?? cliVersion,
+    };
+  } catch {
+    return {
+      protocolReady: false,
+      degraded: false,
+      configValid: null,
+      capability: null,
+      identity: null,
+      version: null,
+    };
+  }
 }
 
 async function inspectOpenClaw(shell: string): Promise<AgentSourceSnapshot> {
   const observedAt = Date.now();
+  const declaration = agentSourceDeclaration('openclaw');
   const commandEvidence = provenance(
     'source-command',
     'OpenClaw CLI',
@@ -607,47 +572,66 @@ async function inspectOpenClaw(shell: string): Promise<AgentSourceSnapshot> {
     '~/.openclaw/openclaw.json',
     observedAt
   );
+  const declarationEvidence = provenance(
+    'adapter-declaration',
+    'Built-in adapter declaration',
+    0
+  );
   const executable = await resolveExecutable(shell, 'openclaw');
-  const [versionResult, config] = await Promise.all([
+  const [versionResult, statusResult, config] = await Promise.all([
     executable
       ? loginShellCommand(shell, sourceCommand(executable, ['--version']))
       : Promise.resolve({ ok: false, stdout: '', stderr: '' }),
+    executable
+      ? loginShellCommand(
+          shell,
+          sourceCommand(executable, [
+            'gateway',
+            'status',
+            '--json',
+            '--timeout',
+            '1500',
+          ]),
+          4_500
+        )
+      : Promise.resolve({ ok: false, stdout: '', stderr: '' }),
     readOpenClawConfig(),
   ]);
+  const gateway = parseOpenClawGatewayStatus(
+    statusResult.stdout,
+    statusResult.ok
+  );
   const host = config?.host ?? '127.0.0.1';
   const port = config?.port ?? 18789;
-  const hasConnectionCredential = config?.credentialPresent ?? false;
-  const reachable = config ? await gatewayReachable(host, port) : false;
+  const configured = Boolean(config) || gateway.configValid === true;
   const state = openClawSourceState({
     executable: Boolean(executable),
-    configured: Boolean(config),
-    credentialPresent: hasConnectionCredential,
-    reachable,
+    configured,
+    protocolReady: gateway.protocolReady,
   });
-  const gatewayEvidence = provenance(
-    'gateway-probe',
-    `${host}:${port}`,
+  const protocolEvidence = provenance(
+    'source-protocol',
+    'OpenClaw gateway status',
     observedAt
   );
   const version =
-    versionResult.stdout || config?.lastTouchedVersion || 'Unknown';
+    versionResult.stdout ||
+    gateway.version ||
+    config?.lastTouchedVersion ||
+    'Unknown';
 
   return {
+    ...declaration,
     id: 'openclaw-local',
-    adapterId: 'openclaw',
-    harness: null,
-    label: 'OpenClaw',
-    connectionName: 'Local gateway',
-    color: '#8BB9ED',
-    configured: Boolean(config),
+    configured,
     launchable: false,
     state,
     stateLabel: stateLabel(state),
     summary:
       state === 'ready'
-        ? 'The local gateway is reachable. Fleet control remains behind the OpenClaw adapter, separate from the Terminal composer.'
+        ? 'OpenClaw accepted an authenticated protocol probe. Fleet control remains behind its adapter, separate from the Terminal composer.'
         : state === 'degraded'
-          ? 'OpenClaw is configured, but its local gateway is not currently reachable.'
+          ? 'OpenClaw is configured, but its gateway protocol could not be verified.'
           : state === 'not-installed'
             ? 'OpenClaw is supported, but its local CLI is not installed.'
             : 'OpenClaw needs a local gateway configuration before Exawatt can connect.',
@@ -662,76 +646,74 @@ async function inspectOpenClaw(shell: string): Promise<AgentSourceSnapshot> {
         commandEvidence
       ),
       reachability: fact(
-        !config ? 'unknown' : reachable ? 'ready' : 'degraded',
-        !config
+        !configured
+          ? 'unknown'
+          : gateway.protocolReady
+            ? gateway.degraded
+              ? 'degraded'
+              : 'ready'
+            : 'degraded',
+        !configured
           ? 'Not configured'
-          : reachable
-            ? 'Gateway responds'
-            : 'Unreachable',
-        config
-          ? `Probed ${host}:${port}; no connection secret crossed into the renderer.`
+          : gateway.protocolReady
+            ? 'Protocol handshake accepted'
+            : 'Protocol probe failed',
+        configured
+          ? `OpenClaw performed its WebSocket/RPC status probe for ${host}:${port}; no connection secret crossed into the renderer.`
           : 'No gateway endpoint is configured.',
-        gatewayEvidence
+        protocolEvidence
       ),
       authentication: fact(
-        !config
-          ? 'unknown'
-          : hasConnectionCredential
-            ? 'ready'
-            : 'action-required',
-        hasConnectionCredential
-          ? 'Connection credential present'
-          : 'Configure gateway',
-        'The gateway credential remains in the OpenClaw configuration and is never returned to the renderer.',
-        configEvidence
+        !configured ? 'unknown' : gateway.protocolReady ? 'ready' : 'unknown',
+        gateway.protocolReady ? 'Connection accepted' : 'Not verified',
+        gateway.protocolReady
+          ? 'The source-owned gateway status command completed its authenticated protocol probe.'
+          : 'Configuration presence does not prove that the gateway accepted its credential.',
+        gateway.protocolReady ? protocolEvidence : configEvidence
       ),
       identity: fact(
-        config ? 'ready' : 'unknown',
-        config ? `${host}:${port}` : 'Unknown',
-        'Local gateway endpoint; this is not an Agent identity.',
-        configEvidence
+        gateway.identity ? 'ready' : 'unknown',
+        gateway.identity ?? 'Not exposed',
+        gateway.identity
+          ? 'Minimum gateway identity returned by the authenticated protocol probe.'
+          : 'The endpoint is connection configuration, not source identity.',
+        gateway.identity ? protocolEvidence : configEvidence
       ),
       compatibility: fact(
-        versionResult.ok ? 'unknown' : 'unknown',
+        'unknown',
         versionResult.ok ? 'No minimum pinned' : 'Unknown',
         'Exawatt has not declared a minimum compatible OpenClaw version.',
-        commandEvidence
+        versionResult.ok ? declarationEvidence : commandEvidence
       ),
       modelDiscovery: fact(
-        reachable ? 'ready' : config ? 'degraded' : 'unknown',
-        reachable ? 'Gateway-advertised' : 'Unavailable',
-        'Model truth belongs to the connected gateway capability snapshot.',
-        gatewayEvidence
+        'unknown',
+        gateway.protocolReady ? 'Not queried here' : 'Unavailable',
+        gateway.protocolReady
+          ? 'Model truth belongs to a gateway capability snapshot; the global registry does not infer it from connectivity.'
+          : 'A verified gateway capability snapshot is not available.',
+        declarationEvidence
       ),
     },
-    capabilities: {
-      interactiveLaunch: false,
-      initialTask: true,
-      exactResume: true,
-      modelSelection: 'gateway',
-      effortSelection: 'gateway',
-      permissionModes: [],
-      delegationObservation: 'Gateway protocol events',
-      enforcementOwner: 'OpenClaw gateway',
+    actions: {
+      recheck: true,
+      authenticate: false,
+      chooseModel: false,
+      installGuide: true,
     },
-    actions: { recheck: true, authenticate: false, chooseModel: false },
   };
 }
 
 function demoSource(): AgentSourceSnapshot {
   const observedAt = Date.now();
+  const declaration = agentSourceDeclaration('demo');
   const evidence = provenance(
-    'built-in',
+    'simulation',
     'Exawatt Demo Scenario Source',
     observedAt
   );
   return {
+    ...declaration,
     id: 'demo-built-in',
-    adapterId: 'demo',
-    harness: null,
-    label: 'Demo Mode',
-    connectionName: 'Scenario source',
-    color: '#E7BD6A',
     configured: true,
     launchable: false,
     state: 'ready',
@@ -777,17 +759,12 @@ function demoSource(): AgentSourceSnapshot {
         evidence
       ),
     },
-    capabilities: {
-      interactiveLaunch: false,
-      initialTask: true,
-      exactResume: true,
-      modelSelection: 'scenario',
-      effortSelection: 'scenario',
-      permissionModes: [],
-      delegationObservation: 'Simulated lifecycle events',
-      enforcementOwner: 'No real enforcement (simulation)',
+    actions: {
+      recheck: false,
+      authenticate: false,
+      chooseModel: false,
+      installGuide: false,
     },
-    actions: { recheck: false, authenticate: false, chooseModel: false },
   };
 }
 
@@ -809,12 +786,7 @@ async function discoverAgentSources(
     available: sources.map(source => ({
       adapterId: source.adapterId,
       label: source.label,
-      description:
-        source.adapterId === 'demo'
-          ? 'Built-in source with clearly simulated provenance.'
-          : source.adapterId === 'openclaw'
-            ? 'Connect a local OpenClaw gateway.'
-            : `Use the locally installed ${source.label} CLI.`,
+      description: source.description,
       availability:
         source.state === 'not-installed'
           ? 'not-installed'
@@ -822,23 +794,7 @@ async function discoverAgentSources(
             ? 'configured'
             : 'configure',
     })),
-    comingLater:
-      scope === 'all'
-        ? [
-            {
-              adapterId: 'hosted-openclaw',
-              label: 'Hosted OpenClaw',
-              description: 'Connect a remote or managed gateway.',
-              availability: 'coming-later',
-            },
-            {
-              adapterId: 'custom',
-              label: 'Custom harness',
-              description: 'Bring another compatible Agent Source adapter.',
-              availability: 'coming-later',
-            },
-          ]
-        : [],
+    comingSoon: scope === 'all' ? [...FUTURE_AGENT_SOURCE_CATALOG] : [],
     observedAt,
   };
 }
@@ -874,7 +830,7 @@ function launchRegistryView(
     available: snapshot.available.filter(entry =>
       sources.some(source => source.adapterId === entry.adapterId)
     ),
-    comingLater: [],
+    comingSoon: [],
     observedAt: snapshot.observedAt,
   };
 }
@@ -909,6 +865,27 @@ export async function inspectAgentSources(
       registryInFlight.delete(scope);
     }
   }
+}
+
+export function agentSourceLaunchError(
+  snapshot: AgentSourceRegistrySnapshot,
+  harness: AgentHarness
+): string | null {
+  const source = snapshot.sources.find(
+    candidate => candidate.harness === harness
+  );
+  const label = source?.label ?? agentSourceDeclaration(harness).label;
+  if (!source) {
+    return `${label} status is unavailable. Recheck Settings → Agent Sources before launching.`;
+  }
+  if (source.launchable) return null;
+  if (source.state === 'not-installed') {
+    return `${label} is not installed. Open Settings → Agent Sources for the installation guide.`;
+  }
+  if (source.state === 'action-required') {
+    return `${label} requires sign-in. Open Settings → Agent Sources to authenticate and recheck.`;
+  }
+  return `${label} launch readiness could not be verified (${source.stateLabel.toLowerCase()}). Recheck Settings → Agent Sources.`;
 }
 
 export function sourceOwnedActionCommand(

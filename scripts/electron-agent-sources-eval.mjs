@@ -149,7 +149,8 @@ try {
       );
       check(
         'Demo source uses simulated provenance',
-        demo?.facts.identity.provenance.kind === 'built-in' &&
+        demo?.facts.identity.provenance.kind === 'simulation' &&
+          demo?.facts.identity.basis === 'simulated' &&
           demo?.facts.identity.state === 'simulated'
       );
       const serialized = JSON.stringify(registry);
@@ -164,7 +165,7 @@ try {
         'desktop registry/detail geometry is present',
         (
           await page
-            .locator('[aria-label="Configured Agent Sources"]')
+            .locator('[aria-label="Agent Source registry"]')
             .boundingBox()
         )?.width >= 280
       );
@@ -173,20 +174,24 @@ try {
         fullPage: true,
       });
 
-      await page.getByRole('button', { name: 'OpenClaw' }).click();
+      await page.getByRole('button', { name: /^OpenClaw,/ }).click();
       await page.getByRole('heading', { name: 'OpenClaw' }).waitFor();
       check(
         'degraded gateway detail keeps existing facts visible',
         (await page.getByText('Gateway responds').count()) === 0 &&
-          (await page.getByText('Unreachable').count()) > 0
+          (await page.getByText('Protocol probe failed').count()) > 0
       );
 
-      await page.getByRole('button', { name: 'Add Agent Source' }).click();
-      await page.getByRole('heading', { name: 'Add Agent Source' }).waitFor();
+      await page.getByRole('button', { name: 'Browse Agent Sources' }).click();
+      await page
+        .getByRole('heading', { name: 'Browse Agent Sources' })
+        .waitFor();
       check(
         'add flow separates supported-now and future adapters',
-        (await page.getByText('Available now').count()) === 1 &&
-          (await page.getByText('Coming later').count()) === 1
+        (await page.getByRole('heading', { name: 'Available now' }).count()) ===
+          1 &&
+          (await page.getByRole('heading', { name: 'Coming soon' }).count()) ===
+            1
       );
 
       await page.setViewportSize({ width: 760, height: 900 });

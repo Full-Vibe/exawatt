@@ -1,4 +1,5 @@
 export * from './types/index';
+export * from './agent-sources';
 export { TypedEmitter } from './events/emitter';
 export type { CoreEventMap, CoreEmitter } from './events/emitter';
 export {

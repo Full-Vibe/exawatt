@@ -19,10 +19,14 @@ tool. **⌘T** opens a new Agent tab; **⌘⌥T** opens a shell directly.
 Open **Settings → Agent Sources** to inspect the source registry. Local Claude
 Code and Codex show installation, sign-in, minimum account identity, version,
 model-discovery method, capabilities, and enforcement ownership without moving
-their credentials into Exawatt. Local OpenClaw reports gateway configuration
-and reachability separately, and Demo Mode labels its facts as simulated. Use
-**Recheck** after changing a CLI or gateway; a source-owned sign-in action opens
-in Terminal when the installed CLI requires it.
+their credentials into Exawatt. Facts identify whether they were observed,
+declared by the adapter, or simulated. Local OpenClaw reports gateway
+configuration separately and claims reachability only after its protocol status
+check succeeds. Demo Mode labels its facts as simulated. Use **Recheck** after
+changing a CLI or gateway. A source-owned sign-in action opens in Terminal and
+Settings checks again while the flow completes; a missing CLI links to its
+installation guide. Registry failures remain visibly stale or unavailable and
+cannot enable Agent launch.
 
 The ribbon keeps Project structure compact. The selected Project expands to
 show its Initiative-shaped Agent tabs; inactive Projects stay collapsed unless

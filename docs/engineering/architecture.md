@@ -179,17 +179,25 @@ adapter with user-scoped instance metadata: display name, endpoint or local
 installation, minimum exposed identity, credential owner, and last successful
 observation. Multiple records may use the same adapter.
 
-The production desktop path now implements that boundary in Electron main.
-Source-specific CLI/config/gateway inspection stays behind a renderer-safe IPC
+The production desktop path implements that boundary in Electron main. A
+versioned, generated declaration contract owns stable adapter identity,
+presentation, supported actions, and capability claims for both main and
+renderer. Runtime observations remain main-process evidence. This prevents UI
+defaults, source probes, and launch code from becoming competing registries.
+Source-specific CLI/config/protocol inspection stays behind a renderer-safe IPC
 surface; Settings and the Terminal composer consume the same normalized
-snapshots. Claude Code and Codex are launch-capable local records, local
-OpenClaw is a separately probed gateway record, and Demo Mode is a built-in
-record whose facts use simulated provenance. The renderer receives neither
-provider credentials nor OpenClaw connection secrets.
+snapshots. Claude Code and Codex are launch-capable local records. Local
+OpenClaw reachability is established only by a successful gateway protocol
+status command, not by config presence or an open TCP port. Demo Mode is a
+built-in record whose facts use simulated provenance. The renderer receives
+neither provider credentials nor OpenClaw connection secrets.
 
 The adapter reports independent installation, reachability, authentication,
-identity, compatibility, capability, freshness, and provenance facets. A pure
-view-model derivation produces the compact registry state (`ready`,
+identity, compatibility, capability, freshness, provenance, and evidence-basis
+facets. `Declared` says what an adapter contract supports, `observed` records a
+bounded runtime check, and `simulated` identifies Demo evidence; one basis may
+never be promoted into another. A pure view-model derivation produces the
+compact registry state (`ready`,
 `connecting`, `action required`, `degraded`, `unavailable`, `not installed`,
 `incompatible`, or `unknown`) without discarding the facts that explain it.
 Demo Mode enters below this boundary and emits the same contract with simulated
@@ -208,9 +216,20 @@ Project-effective launch view by combining source facts, Project draft state,
 and environment policy. This separation prevents an account default in
 Settings from masquerading as the model a particular Agent will launch.
 
+Registry transport failure is an explicit unavailable or stale state. Renderer
+fallback declarations are informational and never launch-capable. Electron
+main validates the selected source at every Agent-spawn boundary against
+main-owned evidence no more than five seconds old, so a stale or unavailable
+renderer cannot bypass launch truth without making ordinary launch incur two
+additional CLI probes.
+
 Local source authentication remains harness-owned: Electron may launch the
-source's supported sign-in flow and then re-observe status, but provider tokens
-do not cross into the renderer or Exawatt storage. Remote Gateway and future
+source's supported sign-in flow and then run a bounded, cancellable
+reconciliation loop that also wakes when the app regains focus. The loop ends
+only when the source is launchable or its retry budget is exhausted; provider
+tokens do not cross into the renderer or Exawatt storage. Missing local CLIs
+offer a fixed, adapter-declared installation guide rather than a nonfunctional
+connection action. Remote Gateway and future
 custom-source credentials may be held as narrowly scoped OS-keychain connection
 material behind Electron main. That is an explicit seam, not ENG-009's general
 Secrets/Credentials broker.

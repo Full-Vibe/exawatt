@@ -35,9 +35,9 @@ contextBridge.exposeInMainWorld('electron', {
     list: (scope: 'all' | 'launch' = 'all', refresh = false) =>
       ipcRenderer.invoke('agent-sources:list', scope, refresh),
     act: (
-      harness: 'claude' | 'codex',
-      action: 'authenticate' | 'choose-model'
-    ) => ipcRenderer.invoke('agent-sources:act', harness, action),
+      adapterId: 'claude' | 'codex' | 'openclaw' | 'demo',
+      action: 'authenticate' | 'choose-model' | 'install-guide'
+    ) => ipcRenderer.invoke('agent-sources:act', adapterId, action),
   },
   pty: {
     create: (options: unknown) => ipcRenderer.invoke('pty:create', options),

@@ -53,6 +53,7 @@ import type { LaunchOptions, WorkspaceDraftPatch } from './use-workspace-state';
 import type {
   AgentModelCatalog,
   AgentPermissionMode,
+  AgentSourceRegistryLoadStatus,
   AgentSourceRegistrySnapshot,
   RecentConversation,
 } from '@/types/electron';
@@ -219,10 +220,13 @@ export function AgentComposer({
     useState<AgentSourceRegistrySnapshot>(() =>
       fallbackAgentSourceRegistry('launch')
     );
-  const [sourceRegistryReady, setSourceRegistryReady] = useState(false);
-  const [sourceActionMessage, setSourceActionMessage] = useState<string | null>(
-    null
-  );
+  const [sourceRegistryStatus, setSourceRegistryStatus] = useState<
+    AgentSourceRegistryLoadStatus | 'loading'
+  >('loading');
+  const [sourceActionMessage, setSourceActionMessage] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
   const [modelCatalog, setModelCatalog] = useState<AgentModelCatalog | null>(
     null
   );
@@ -272,6 +276,7 @@ export function AgentComposer({
   const branchErrorId = useId();
   const preferencesReady = sourcePreferences !== null;
   const modelReady = modelCatalog !== null;
+  const sourceRegistryReady = sourceRegistryStatus === 'live';
   const controlsDisabled = launching !== null;
   const branchReady = !worktree || branch.trim().length > 0;
   // Source policy is the only asynchronous launch prerequisite. Model
@@ -393,7 +398,7 @@ export function AgentComposer({
     setEffort(initialEffortRef.current ?? null);
     setPermissionMode(DEFAULT_AGENT_PERMISSION_MODE);
     setUsedSafePreferenceFallback(false);
-    setSourceRegistryReady(false);
+    setSourceRegistryStatus('loading');
     setSourceActionMessage(null);
     setPermissionSaveState('idle');
     void loadAgentSourcePreferences().then(result => {
@@ -414,10 +419,13 @@ export function AgentComposer({
       );
       requestedSourceRef.current = null;
     });
-    void loadAgentSourceRegistry('launch').then(registry => {
+    void loadAgentSourceRegistry('launch').then(result => {
       if (cancelled) return;
-      setSourceRegistry(registry);
-      setSourceRegistryReady(true);
+      setSourceRegistry(result.snapshot);
+      setSourceRegistryStatus(result.status);
+      if (result.error) {
+        setSourceActionMessage({ ok: false, text: result.error.message });
+      }
     });
     // a (re)mount or Project change is not an operator edit: restore the
     // tab's saved draft directly instead of reporting a blank up (D28)
@@ -497,7 +505,9 @@ export function AgentComposer({
   chooseSourceRef.current = chooseSource;
 
   useEffect(() => {
-    if (!preferencesReady) return;
+    if (!preferencesReady || !sourceRegistryReady || !sourceMeta.launchable) {
+      return;
+    }
     let cancelled = false;
     const loadSeq = modelLoadSeq.current + 1;
     modelLoadSeq.current = loadSeq;
@@ -560,7 +570,30 @@ export function AgentComposer({
     return () => {
       cancelled = true;
     };
-  }, [effectiveSource, preferencesReady, projectDir]);
+  }, [
+    effectiveSource,
+    preferencesReady,
+    projectDir,
+    sourceMeta.launchable,
+    sourceRegistryReady,
+  ]);
+
+  const recheckSources = useCallback(async () => {
+    setSourceRegistryStatus('loading');
+    setSourceActionMessage(null);
+    const result = await loadAgentSourceRegistry(
+      'launch',
+      true,
+      sourceRegistry
+    );
+    setSourceRegistry(result.snapshot);
+    setSourceRegistryStatus(result.status);
+    setSourceActionMessage(
+      result.error
+        ? { ok: false, text: result.error.message }
+        : { ok: true, text: 'Agent Source status verified.' }
+    );
+  }, [sourceRegistry]);
 
   // ⌘T must land in the goal field every time (D21): focus after mount —
   // the draft pane mounts fresh on every summon
@@ -942,7 +975,11 @@ export function AgentComposer({
               onClick={() => {
                 setSourceActionMessage(null);
                 void runAgentSourceAction(effectiveSource, 'choose-model').then(
-                  result => setSourceActionMessage(result.message)
+                  result =>
+                    setSourceActionMessage({
+                      ok: result.ok,
+                      text: result.message,
+                    })
                 );
               }}
               aria-label={`Agent model: ${modelLabel}. Choose in ${sourceMeta.label}`}
@@ -1445,7 +1482,9 @@ export function AgentComposer({
                 : !preferencesReady
                   ? 'Loading launch preferences'
                   : !sourceRegistryReady
-                    ? 'Checking Agent Sources'
+                    ? sourceRegistryStatus === 'loading'
+                      ? 'Checking Agent Sources'
+                      : 'Agent Source status unavailable — recheck required'
                     : !sourceMeta.launchable
                       ? `${sourceMeta.label}: ${sourceMeta.stateLabel}`
                       : 'Enter a worktree branch name before starting'
@@ -1483,6 +1522,33 @@ export function AgentComposer({
       >
         ⏎ start · ↓ recent · ⌥↑↓ source · ⌘V image · ⇧⏎ newline
       </p>
+      {sourceActionMessage && (
+        <div
+          role="status"
+          className="mt-1 flex min-h-7 items-center justify-between gap-3 rounded border px-2.5 py-1 font-mono text-[10px] leading-4"
+          style={{
+            color: sourceActionMessage.ok ? HUD.green : HUD.amber,
+            borderColor: sourceActionMessage.ok
+              ? 'rgba(121, 199, 165, 0.28)'
+              : 'rgba(231, 189, 106, 0.32)',
+            background: sourceActionMessage.ok
+              ? 'rgba(121, 199, 165, 0.06)'
+              : 'rgba(231, 189, 106, 0.07)',
+          }}
+        >
+          <span>{sourceActionMessage.text}</span>
+          {!sourceRegistryReady && (
+            <button
+              type="button"
+              disabled={sourceRegistryStatus === 'loading'}
+              onClick={() => void recheckSources()}
+              className="shrink-0 rounded px-2 py-1 font-medium outline-none transition-colors hover:bg-white/[0.06] disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan"
+            >
+              {sourceRegistryStatus === 'loading' ? 'Checking…' : 'Recheck'}
+            </button>
+          )}
+        </div>
+      )}
       <span className="sr-only" aria-live="polite">
         {launching === 'agent'
           ? `Starting ${sourceMeta.label} with ${modelLabel} and ${permissionMeta.label} permissions.`
@@ -1490,7 +1556,7 @@ export function AgentComposer({
             ? `Opening a shell in ${projectName}.`
             : permissionSaveState === 'failed'
               ? 'This permission choice applies now but could not be saved.'
-              : (sourceActionMessage ?? '')}
+              : (sourceActionMessage?.text ?? '')}
       </span>
     </form>
   );

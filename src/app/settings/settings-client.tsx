@@ -123,7 +123,7 @@ function SettingsNavigation({
           <Blocks aria-hidden size={17} />
           <span>Context &amp; Tools</span>
           <span className="ml-auto rounded-full border border-[var(--settings-line)] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.1em]">
-            Later
+            Coming soon
           </span>
         </div>
       </nav>

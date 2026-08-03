@@ -38,13 +38,17 @@ import {
   runAgentSourceAction,
 } from '@/components/workspace/agent-sources';
 import type {
-  AgentHarness,
   AgentSourceAdapterId,
   AgentSourceCatalogEntry,
   AgentSourceFact,
+  AgentSourceRegistryLoadStatus,
   AgentSourceSnapshot,
   AgentSourceState,
 } from '@/types/electron';
+
+export const SOURCE_AUTH_RECHECK_DELAYS_MS = [
+  1_200, 2_500, 4_000, 6_000,
+] as const;
 
 function SourceMark({
   id,
@@ -130,14 +134,46 @@ function StatePill({ source }: { source: AgentSourceSnapshot }) {
   );
 }
 
-function relativeTime(timestamp: number): string {
+function relativeTime(timestamp: number, now: number): string {
   if (!timestamp) return 'not observed';
-  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1_000));
+  const seconds = Math.max(0, Math.round((now - timestamp) / 1_000));
   if (seconds < 10) return 'now';
   if (seconds < 60) return `${seconds}s ago`;
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
   return `${Math.round(minutes / 60)}h ago`;
+}
+
+function ObservationTime({
+  timestamp,
+  now,
+  prefix = '',
+}: {
+  timestamp: number;
+  now: number;
+  prefix?: string;
+}) {
+  const exact = timestamp
+    ? new Date(timestamp).toLocaleString()
+    : 'No live observation';
+  const iso = timestamp ? new Date(timestamp).toISOString() : undefined;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={`${prefix}${exact}`}
+          className="inline-flex min-h-7 max-w-full items-center gap-1 rounded px-1 font-ui text-[12px] text-[var(--settings-faint)] outline-none hover:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
+        >
+          {prefix ? <span>{prefix.trim()}</span> : null}
+          <time dateTime={iso}>{relativeTime(timestamp, now)}</time>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="border-[var(--settings-line-strong)] bg-[var(--settings-raised)] font-ui text-[12px] text-[var(--settings-soft)]">
+        {exact}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 function InfoTip({ label }: { label: string }) {
@@ -159,11 +195,21 @@ function InfoTip({ label }: { label: string }) {
   );
 }
 
-function FactRow({ label, fact }: { label: string; fact: AgentSourceFact }) {
-  const observed = new Date(fact.provenance.observedAt);
-  const timestamp = fact.provenance.observedAt
-    ? observed.toLocaleString()
-    : 'No live observation';
+function FactRow({
+  label,
+  fact,
+  now,
+}: {
+  label: string;
+  fact: AgentSourceFact;
+  now: number;
+}) {
+  const basisLabel =
+    fact.basis === 'observed'
+      ? 'Observed'
+      : fact.basis === 'simulated'
+        ? 'Simulated'
+        : 'Declared';
   return (
     <div className="grid min-h-[66px] grid-cols-[minmax(112px,0.62fr)_minmax(0,1.38fr)] items-center gap-5 border-t border-[var(--settings-line)] py-3 max-[520px]:grid-cols-1 max-[520px]:gap-1.5">
       <span className="font-ui text-[13px] text-[var(--settings-dim)]">
@@ -176,17 +222,20 @@ function FactRow({ label, fact }: { label: string; fact: AgentSourceFact }) {
           </span>
           <InfoTip label={fact.detail} />
         </span>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="mt-0.5 block w-fit max-w-full truncate font-ui text-[12px] text-[var(--settings-faint)]">
-              {fact.provenance.label} ·{' '}
-              {relativeTime(fact.provenance.observedAt)}
-            </span>
-          </TooltipTrigger>
-          <TooltipContent className="border-[var(--settings-line-strong)] bg-[var(--settings-raised)] font-ui text-[12px] text-[var(--settings-soft)]">
-            {timestamp}
-          </TooltipContent>
-        </Tooltip>
+        <span className="mt-0.5 flex min-w-0 items-center gap-1 font-ui text-[12px] text-[var(--settings-faint)]">
+          <span className="truncate">
+            {basisLabel} · {fact.provenance.label}
+          </span>
+          {fact.basis === 'observed' && (
+            <>
+              <span aria-hidden>·</span>
+              <ObservationTime
+                timestamp={fact.provenance.observedAt}
+                now={now}
+              />
+            </>
+          )}
+        </span>
       </span>
     </div>
   );
@@ -220,7 +269,7 @@ function RegistryRail({
 }) {
   return (
     <section
-      aria-label="Configured Agent Sources"
+      aria-label="Agent Source registry"
       className="border-b border-[var(--settings-line)] bg-[var(--settings-panel)] lg:border-r lg:border-b-0"
     >
       <div className="flex min-h-[72px] items-center justify-between border-b border-[var(--settings-line)] px-5">
@@ -229,12 +278,12 @@ function RegistryRail({
             Agent Sources
           </h2>
           <p className="mt-0.5 font-ui text-[12px] text-[var(--settings-dim)]">
-            {sources.length} {sources.length === 1 ? 'source' : 'sources'}
+            {sources.length} {sources.length === 1 ? 'adapter' : 'adapters'}
           </p>
         </div>
         <button
           type="button"
-          aria-label="Add Agent Source"
+          aria-label="Browse Agent Sources"
           aria-pressed={adding}
           onClick={onAdd}
           className="flex size-10 items-center justify-center rounded-lg border outline-none transition-colors hover:bg-white/[0.05] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)]"
@@ -257,8 +306,9 @@ function RegistryRail({
               key={source.id}
               type="button"
               onClick={() => onSelect(source.id)}
+              aria-label={`${source.label}, ${source.connectionName}, ${source.stateLabel}`}
               aria-pressed={active}
-              className="group flex min-h-[78px] min-w-0 items-center gap-3 rounded-lg border px-3 text-left outline-none transition-[background-color,border-color] duration-150 hover:bg-white/[0.035] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] motion-reduce:transition-none"
+              className="group relative flex min-h-[78px] min-w-0 items-center gap-3 rounded-lg border px-3 text-left outline-none transition-[background-color,border-color] duration-150 hover:bg-white/[0.035] focus-visible:ring-2 focus-visible:ring-[var(--settings-teal)] motion-reduce:transition-none"
               style={{
                 background: active ? 'rgba(255,255,255,0.052)' : 'transparent',
                 borderColor: active
@@ -290,6 +340,12 @@ function RegistryRail({
               <span className="hidden shrink-0 lg:block">
                 <StateGlyph state={source.state} />
               </span>
+              <span
+                aria-hidden
+                className="absolute top-2 right-2 size-1.5 rounded-full lg:hidden"
+                style={{ background: stateTone(source.state).color }}
+              />
+              <span className="sr-only">{source.stateLabel}</span>
             </button>
           );
         })}
@@ -301,21 +357,33 @@ function RegistryRail({
 function SourceDetail({
   source,
   busy,
+  checkingLabel,
   message,
+  now,
   onRecheck,
   onAuthenticate,
+  onInstall,
 }: {
   source: AgentSourceSnapshot;
   busy: boolean;
+  checkingLabel: string;
   message: { ok: boolean; text: string } | null;
+  now: number;
   onRecheck: () => void;
   onAuthenticate: () => void;
+  onInstall: () => void;
 }) {
   const needsAttention = source.state !== 'ready';
   const tone = stateTone(source.state);
+  const attentionFact =
+    source.state === 'not-installed'
+      ? source.facts.installation
+      : source.facts.authentication.state === 'action-required'
+        ? source.facts.authentication
+        : source.facts.reachability;
   const modelSelection =
     source.capabilities.modelSelection === 'live-catalog'
-      ? 'Live source catalog'
+      ? 'Project-scoped live catalog'
       : source.capabilities.modelSelection === 'source-owned'
         ? `Choose in ${source.label}`
         : source.capabilities.modelSelection === 'gateway'
@@ -323,7 +391,7 @@ function SourceDetail({
           : 'Scenario-defined';
   const effortSelection =
     source.capabilities.effortSelection === 'live-catalog'
-      ? 'Per-model source catalog'
+      ? 'Project-scoped per-model catalog'
       : source.capabilities.effortSelection === 'configured-value'
         ? 'Observed configured value'
         : source.capabilities.effortSelection === 'gateway'
@@ -370,9 +438,7 @@ function SourceDetail({
               {source.stateLabel}
             </p>
             <p className="mt-1 max-w-xl font-ui text-[13px] leading-5 text-[var(--settings-dim)]">
-              {source.facts.authentication.state === 'action-required'
-                ? source.facts.authentication.detail
-                : source.facts.reachability.detail}
+              {attentionFact.detail}
             </p>
           </div>
         </div>
@@ -390,6 +456,17 @@ function SourceDetail({
             Sign in with {source.label}
           </button>
         )}
+        {source.actions.installGuide && source.state === 'not-installed' && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onInstall}
+            className="flex min-h-10 items-center gap-2 rounded-lg bg-[var(--settings-amber)] px-3.5 font-ui text-[13px] font-medium text-[var(--settings-shell)] outline-none transition-[filter,transform] hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[var(--settings-amber)] motion-reduce:transition-none"
+          >
+            <ExternalLink aria-hidden size={15} />
+            Open installation guide
+          </button>
+        )}
         {source.actions.recheck && (
           <button
             type="button"
@@ -402,7 +479,7 @@ function SourceDetail({
               size={15}
               className={busy ? 'animate-spin motion-reduce:animate-none' : ''}
             />
-            {busy ? 'Checking…' : 'Recheck'}
+            {busy ? checkingLabel : 'Recheck'}
           </button>
         )}
       </div>
@@ -427,24 +504,33 @@ function SourceDetail({
           >
             Source identity
           </h3>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="font-ui text-[12px] text-[var(--settings-faint)]">
-                Checked {relativeTime(source.observedAt)}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent className="border-[var(--settings-line-strong)] bg-[var(--settings-raised)] font-ui text-[12px] text-[var(--settings-soft)]">
-              {source.observedAt
-                ? new Date(source.observedAt).toLocaleString()
-                : 'No live observation'}
-            </TooltipContent>
-          </Tooltip>
+          <ObservationTime
+            timestamp={source.observedAt}
+            now={now}
+            prefix="Checked "
+          />
         </div>
-        <FactRow label="Identity" fact={source.facts.identity} />
-        <FactRow label="Authentication" fact={source.facts.authentication} />
-        <FactRow label="Installation" fact={source.facts.installation} />
-        <FactRow label="Reachability" fact={source.facts.reachability} />
-        <FactRow label="Compatibility" fact={source.facts.compatibility} />
+        <FactRow label="Identity" fact={source.facts.identity} now={now} />
+        <FactRow
+          label="Authentication"
+          fact={source.facts.authentication}
+          now={now}
+        />
+        <FactRow
+          label="Installation"
+          fact={source.facts.installation}
+          now={now}
+        />
+        <FactRow
+          label="Reachability"
+          fact={source.facts.reachability}
+          now={now}
+        />
+        <FactRow
+          label="Compatibility"
+          fact={source.facts.compatibility}
+          now={now}
+        />
       </section>
 
       <section className="mt-8" aria-labelledby="source-model-heading">
@@ -452,9 +538,13 @@ function SourceDetail({
           id="source-model-heading"
           className="mb-3 font-display text-[15px] font-semibold text-[var(--settings-text)]"
         >
-          Model truth
+          Model availability
         </h3>
-        <FactRow label="Discovery" fact={source.facts.modelDiscovery} />
+        <FactRow
+          label="Registry observation"
+          fact={source.facts.modelDiscovery}
+          now={now}
+        />
         <CapabilityRow label="Model selection" value={modelSelection} />
         <CapabilityRow label="Reasoning effort" value={effortSelection} />
       </section>
@@ -503,11 +593,11 @@ function CatalogMark({ id }: { id: AgentSourceCatalogEntry['adapterId'] }) {
 
 function AddSourceView({
   available,
-  comingLater,
+  comingSoon,
   onSelect,
 }: {
   available: AgentSourceCatalogEntry[];
-  comingLater: AgentSourceCatalogEntry[];
+  comingSoon: AgentSourceCatalogEntry[];
   onSelect: (adapterId: AgentSourceAdapterId) => void;
 }) {
   return (
@@ -518,16 +608,17 @@ function AddSourceView({
         </span>
         <div>
           <p className="font-ui text-[13px] text-[var(--settings-dim)]">
-            Registry
+            Adapter catalog
           </p>
           <h2 className="font-display text-[22px] font-semibold tracking-[-0.02em] text-[var(--settings-text)]">
-            Add Agent Source
+            Browse Agent Sources
           </h2>
         </div>
       </div>
       <p className="mt-5 max-w-[68ch] font-ui text-[13px] leading-5 text-[var(--settings-dim)]">
-        Local sources are discovered automatically. Select one to inspect its
-        installation or configuration; future adapters stay visibly separate.
+        Exawatt discovers built-in adapters automatically. Select one to inspect
+        its live status or open source-owned setup guidance; future adapters
+        stay visibly separate.
       </p>
 
       <section className="mt-8" aria-labelledby="available-sources-heading">
@@ -579,12 +670,12 @@ function AddSourceView({
             id="future-sources-heading"
             className="font-display text-[15px] font-semibold text-[var(--settings-text)]"
           >
-            Coming later
+            Coming soon
           </h3>
           <InfoTip label="These adapters are part of Exawatt's source-agnostic architecture, but cannot be configured in this build." />
         </div>
         <div className="divide-y divide-[var(--settings-line)] border-y border-[var(--settings-line)]">
-          {comingLater.map(entry => (
+          {comingSoon.map(entry => (
             <div
               key={entry.adapterId}
               className="flex min-h-[68px] items-center gap-3 px-1 opacity-70"
@@ -601,7 +692,7 @@ function AddSourceView({
                 </span>
               </span>
               <span className="shrink-0 rounded-full border border-[var(--settings-line-strong)] px-2 py-1 font-ui text-[10px] uppercase tracking-[0.1em] text-[var(--settings-faint)]">
-                Later
+                Soon
               </span>
             </div>
           ))}
@@ -615,43 +706,94 @@ export function AgentSourcesSettings() {
   const [registry, setRegistry] = useState(() =>
     fallbackAgentSourceRegistry('all')
   );
+  const [registryStatus, setRegistryStatus] = useState<
+    AgentSourceRegistryLoadStatus | 'loading'
+  >('loading');
   const [selectedId, setSelectedId] = useState(
     () => registry.sources[0]?.id ?? ''
   );
   const [adding, setAdding] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [actionState, setActionState] = useState<
+    'idle' | 'checking' | 'opening-auth' | 'reconciling' | 'opening-guide'
+  >('idle');
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
     null
   );
+  const [now, setNow] = useState(() => Date.now());
   const mounted = useRef(true);
-  const refreshTimer = useRef<number | null>(null);
+  const latestRegistry = useRef(registry);
+  const latestRegistryStatus = useRef<
+    AgentSourceRegistryLoadStatus | 'loading'
+  >('loading');
+  const reconciliationGeneration = useRef(0);
+  const reconciliationWait = useRef<{
+    timer: number;
+    finish: () => void;
+  } | null>(null);
+  const busy = actionState !== 'idle';
+
+  const cancelReconciliation = useCallback(() => {
+    reconciliationGeneration.current += 1;
+    reconciliationWait.current?.finish();
+    reconciliationWait.current = null;
+    setActionState('idle');
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
+    const clock = window.setInterval(() => setNow(Date.now()), 30_000);
+    const wakeOnFocus = () => reconciliationWait.current?.finish();
+    window.addEventListener('focus', wakeOnFocus);
     return () => {
       mounted.current = false;
-      if (refreshTimer.current !== null) {
-        window.clearTimeout(refreshTimer.current);
-      }
+      window.clearInterval(clock);
+      window.removeEventListener('focus', wakeOnFocus);
+      reconciliationGeneration.current += 1;
+      reconciliationWait.current?.finish();
     };
   }, []);
 
-  const refresh = useCallback(async (force = true) => {
-    setBusy(true);
-    setMessage(null);
-    const next = await loadAgentSourceRegistry('all', force);
-    if (!mounted.current) return;
-    setRegistry(next);
-    setSelectedId(current =>
-      next.sources.some(source => source.id === current)
-        ? current
-        : (next.sources[0]?.id ?? '')
-    );
-    setBusy(false);
-  }, []);
+  const applyRegistry = useCallback(
+    (next: Awaited<ReturnType<typeof loadAgentSourceRegistry>>) => {
+      latestRegistry.current = next.snapshot;
+      latestRegistryStatus.current = next.status;
+      setRegistry(next.snapshot);
+      setRegistryStatus(next.status);
+      setSelectedId(current =>
+        next.snapshot.sources.some(source => source.id === current)
+          ? current
+          : (next.snapshot.sources[0]?.id ?? '')
+      );
+    },
+    []
+  );
+
+  const refresh = useCallback(
+    async (force = true, announce = true) => {
+      setActionState('checking');
+      if (announce) setMessage(null);
+      const next = await loadAgentSourceRegistry(
+        'all',
+        force,
+        latestRegistryStatus.current === 'live' ||
+          latestRegistryStatus.current === 'stale'
+          ? latestRegistry.current
+          : undefined
+      );
+      if (!mounted.current) return;
+      applyRegistry(next);
+      setActionState('idle');
+      if (next.error) {
+        setMessage({ ok: false, text: next.error.message });
+      } else if (announce) {
+        setMessage({ ok: true, text: 'Agent Source status verified.' });
+      }
+    },
+    [applyRegistry]
+  );
 
   useEffect(() => {
-    void refresh(false);
+    void refresh(false, false);
   }, [refresh]);
 
   const selected = useMemo(
@@ -659,9 +801,74 @@ export function AgentSourcesSettings() {
     [registry.sources, selectedId]
   );
 
+  const waitForReconciliation = useCallback((delay: number) => {
+    return new Promise<void>(resolve => {
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        window.clearTimeout(timer);
+        if (reconciliationWait.current?.finish === finish) {
+          reconciliationWait.current = null;
+        }
+        resolve();
+      };
+      const timer = window.setTimeout(finish, delay);
+      reconciliationWait.current = { timer, finish };
+    });
+  }, []);
+
+  const reconcileAuthentication = useCallback(
+    async (sourceId: string, generation: number) => {
+      setActionState('reconciling');
+      for (const delay of SOURCE_AUTH_RECHECK_DELAYS_MS) {
+        await waitForReconciliation(delay);
+        if (
+          !mounted.current ||
+          reconciliationGeneration.current !== generation
+        ) {
+          return;
+        }
+        const next = await loadAgentSourceRegistry(
+          'all',
+          true,
+          latestRegistry.current
+        );
+        if (
+          !mounted.current ||
+          reconciliationGeneration.current !== generation
+        ) {
+          return;
+        }
+        applyRegistry(next);
+        const source = next.snapshot.sources.find(
+          candidate => candidate.id === sourceId
+        );
+        if (next.status === 'live' && source?.launchable) {
+          setMessage({
+            ok: true,
+            text: `${source.label} is signed in and ready to launch.`,
+          });
+          setActionState('idle');
+          return;
+        }
+      }
+      if (mounted.current && reconciliationGeneration.current === generation) {
+        setMessage({
+          ok: false,
+          text: 'Sign-in is still open. Finish there, then use Recheck.',
+        });
+        setActionState('idle');
+      }
+    },
+    [applyRegistry, waitForReconciliation]
+  );
+
   const authenticate = useCallback(async () => {
     if (!selected?.harness) return;
-    setBusy(true);
+    cancelReconciliation();
+    const generation = reconciliationGeneration.current;
+    setActionState('opening-auth');
     setMessage(null);
     setRegistry(current => ({
       ...current,
@@ -677,14 +884,18 @@ export function AgentSourcesSettings() {
       ),
     }));
     const result = await runAgentSourceAction(
-      selected.harness as AgentHarness,
+      selected.adapterId,
       'authenticate'
     );
     if (!mounted.current) return;
-    setMessage({ ok: result.ok, text: result.message });
-    setBusy(false);
+    setMessage({
+      ok: result.ok,
+      text: result.ok
+        ? `${result.message} Waiting for source-owned sign-in…`
+        : result.message,
+    });
     if (result.ok) {
-      refreshTimer.current = window.setTimeout(() => void refresh(), 2_000);
+      void reconcileAuthentication(selected.id, generation);
     } else {
       setRegistry(current => ({
         ...current,
@@ -692,8 +903,23 @@ export function AgentSourcesSettings() {
           source.id === selected.id ? selected : source
         ),
       }));
+      setActionState('idle');
     }
-  }, [refresh, selected]);
+  }, [cancelReconciliation, reconcileAuthentication, selected]);
+
+  const openInstallGuide = useCallback(async () => {
+    if (!selected) return;
+    cancelReconciliation();
+    setActionState('opening-guide');
+    setMessage(null);
+    const result = await runAgentSourceAction(
+      selected.adapterId,
+      'install-guide'
+    );
+    if (!mounted.current) return;
+    setMessage({ ok: result.ok, text: result.message });
+    setActionState('idle');
+  }, [cancelReconciliation, selected]);
 
   const selectAdapter = useCallback(
     (adapterId: AgentSourceAdapterId) => {
@@ -701,26 +927,32 @@ export function AgentSourcesSettings() {
         candidate => candidate.adapterId === adapterId
       );
       if (!source) return;
+      cancelReconciliation();
       setSelectedId(source.id);
       setAdding(false);
       setMessage(null);
     },
-    [registry.sources]
+    [cancelReconciliation, registry.sources]
   );
 
   return (
     <TooltipProvider delayDuration={280}>
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[292px_minmax(0,1fr)]">
+      <div
+        data-agent-source-registry-status={registryStatus}
+        className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[292px_minmax(0,1fr)]"
+      >
         <RegistryRail
           sources={registry.sources}
           selectedId={selectedId}
           adding={adding}
           onSelect={id => {
+            cancelReconciliation();
             setSelectedId(id);
             setAdding(false);
             setMessage(null);
           }}
           onAdd={() => {
+            cancelReconciliation();
             setAdding(true);
             setMessage(null);
           }}
@@ -729,16 +961,28 @@ export function AgentSourcesSettings() {
           {adding ? (
             <AddSourceView
               available={registry.available}
-              comingLater={registry.comingLater}
+              comingSoon={registry.comingSoon}
               onSelect={selectAdapter}
             />
           ) : selected ? (
             <SourceDetail
               source={selected}
               busy={busy}
+              checkingLabel={
+                actionState === 'reconciling'
+                  ? 'Waiting for sign-in…'
+                  : actionState === 'opening-guide'
+                    ? 'Opening…'
+                    : 'Checking…'
+              }
               message={message}
-              onRecheck={() => void refresh()}
+              now={now}
+              onRecheck={() => {
+                cancelReconciliation();
+                void refresh();
+              }}
               onAuthenticate={() => void authenticate()}
+              onInstall={() => void openInstallGuide()}
             />
           ) : null}
         </div>

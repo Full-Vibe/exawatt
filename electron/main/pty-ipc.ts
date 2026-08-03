@@ -4,6 +4,10 @@ import { resolveContainedPath, isRepoRelativePath } from './contained-path';
 import { ptySessions } from './pty/session-manager';
 import { defaultShell, type PtyCreateOptions } from './pty/session-manager';
 import { listAgentModels } from './pty/agent-models';
+import {
+  agentSourceLaunchError,
+  inspectAgentSources,
+} from './pty/agent-source-registry';
 import { contextSummarizer } from './pty/context-summarizer';
 import { createDiagnosticsLog } from './diagnostics-log';
 import { attentionMonitor } from './pty/attention-monitor';
@@ -245,6 +249,12 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   // opaque "Error invoking remote method" strings — useless for UX
   handleTrusted('pty:create', async (_event, options: PtyCreateOptions) => {
     try {
+      if (options.harness !== 'shell') {
+        const shellPath = await defaultShell();
+        const readiness = await inspectAgentSources(shellPath, 'launch', false);
+        const launchError = agentSourceLaunchError(readiness, options.harness);
+        if (launchError) throw new Error(launchError);
+      }
       const session = await ptySessions.create(options);
       // the composer's task is the goal — show it as the subtitle instantly;
       // a resume re-anchors the goal persisted with the layout (D21)

@@ -143,6 +143,17 @@ aliases; and provider/gateway secrets do not cross the preload boundary. Local
 OpenClaw and Demo Mode use the same UI-facing shape without pretending either
 is a Terminal-launch source.
 
+The production boundary distinguishes adapter declarations from runtime
+observations. Stable identity, presentation, actions, and advertised
+capabilities come from one generated contract shared by main and renderer;
+installation, authentication, reachability, and compatibility are observed in
+Electron main. Demo evidence is simulated. A declaration is never promoted to
+observed readiness, renderer fallback is never launchable, and Electron main
+revalidates the selected source immediately before spawning an Agent. OpenClaw
+readiness requires a successful protocol status probe rather than configuration
+or raw-port presence. Source-owned sign-in uses bounded, cancellable
+reconciliation, while missing installations route to adapter-declared guides.
+
 - Today's UI can be useful without pretending Exawatt is the enforcement point.
 - Sources with sparse telemetry remain compatible, but the UI must show their
   lower assurance instead of silently filling gaps.

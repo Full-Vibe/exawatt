@@ -4,6 +4,10 @@ export interface ContextLabelGoldCase {
   instructions: string[];
   expectedLabel: string;
   expectedRelationship: 'same_context' | 'new_context';
+  /** Semantic anchors that must survive harmless wording variation. */
+  requiredLabelTerms: string[];
+  /** Fraction of meaningful expected-label tokens the prediction must retain. */
+  minimumLabelTokenRecall?: number;
   note: string;
 }
 
@@ -19,6 +23,7 @@ export const CONTEXT_LABEL_GOLD_CASES: ContextLabelGoldCase[] = [
     ],
     expectedLabel: 'Improve agent context summaries',
     expectedRelationship: 'new_context',
+    requiredLabelTerms: ['agent', 'context'],
     note: 'Primary stale-label screenshot regression.',
   },
   {
@@ -27,6 +32,8 @@ export const CONTEXT_LABEL_GOLD_CASES: ContextLabelGoldCase[] = [
     instructions: ['/var/folders/example/T/exawatt-clipboard/example.png'],
     expectedLabel: 'New agent',
     expectedRelationship: 'new_context',
+    requiredLabelTerms: ['new', 'agent'],
+    minimumLabelTokenRecall: 1,
     note: 'Attachment paths must never become visible context.',
   },
   {
@@ -38,6 +45,7 @@ export const CONTEXT_LABEL_GOLD_CASES: ContextLabelGoldCase[] = [
     ],
     expectedLabel: 'Trustworthy agent sources and launch UX',
     expectedRelationship: 'new_context',
+    requiredLabelTerms: ['agent', 'sources', 'launch'],
     note: 'A later multi-turn implementation initiative must replace an older product-area label.',
   },
   {
@@ -49,6 +57,8 @@ export const CONTEXT_LABEL_GOLD_CASES: ContextLabelGoldCase[] = [
     ],
     expectedLabel: 'MVP of Widget Checkout',
     expectedRelationship: 'same_context',
+    requiredLabelTerms: ['widget', 'checkout'],
+    minimumLabelTokenRecall: 1,
     note: 'Mechanical subtasks should not churn the work-world cue.',
   },
   {
@@ -59,6 +69,7 @@ export const CONTEXT_LABEL_GOLD_CASES: ContextLabelGoldCase[] = [
     ],
     expectedLabel: 'Investigate Northstar Health for listing',
     expectedRelationship: 'new_context',
+    requiredLabelTerms: ['northstar', 'listing'],
     note: 'A genuine unrelated instruction must replace stale context.',
   },
   {
@@ -69,6 +80,7 @@ export const CONTEXT_LABEL_GOLD_CASES: ContextLabelGoldCase[] = [
     ],
     expectedLabel: 'Flowsheet scraping for Patty',
     expectedRelationship: 'new_context',
+    requiredLabelTerms: ['flowsheet', 'patty'],
     note: 'Preserve the person and domain anchor that aid recall.',
   },
 ];

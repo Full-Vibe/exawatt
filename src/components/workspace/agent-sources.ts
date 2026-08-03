@@ -2,12 +2,19 @@ import type {
   AgentHarness,
   AgentModelCatalog,
   AgentPermissionMode,
+  AgentSourceAction,
   AgentSourceActionResult,
   AgentSourceAdapterId,
   AgentSourceCatalogEntry,
+  AgentSourceRegistryLoadResult,
   AgentSourceRegistrySnapshot,
   AgentSourceSnapshot,
 } from '@/types/electron';
+import {
+  agentSourceDeclaration,
+  AGENT_SOURCE_DECLARATIONS,
+  FUTURE_AGENT_SOURCE_CATALOG,
+} from '@/generated/agent-source-declarations';
 
 export type AgentSourceId = AgentHarness;
 
@@ -62,30 +69,36 @@ export interface AgentSourceMeta {
 }
 
 export const AGENT_SOURCE_META: Record<AgentSourceId, AgentSourceMeta> = {
-  claude: {
-    label: 'Claude Code',
-    color: '#D97757',
-    capabilities: {
-      interactive: true,
-      initialTask: true,
-      exactResume: true,
-      modelSelection: true,
-      effortSelection: true,
-      permissionModes: AGENT_PERMISSION_MODE_ORDER,
-    },
-  },
-  codex: {
-    label: 'Codex',
-    color: '#ECECEC',
-    capabilities: {
-      interactive: true,
-      initialTask: true,
-      exactResume: true,
-      modelSelection: true,
-      effortSelection: true,
-      permissionModes: AGENT_PERMISSION_MODE_ORDER,
-    },
-  },
+  claude: (() => {
+    const declaration = agentSourceDeclaration('claude');
+    return {
+      label: declaration.label,
+      color: declaration.color,
+      capabilities: {
+        interactive: declaration.capabilities.interactiveLaunch,
+        initialTask: declaration.capabilities.initialTask,
+        exactResume: declaration.capabilities.exactResume,
+        modelSelection: true,
+        effortSelection: true,
+        permissionModes: declaration.capabilities.permissionModes,
+      },
+    };
+  })(),
+  codex: (() => {
+    const declaration = agentSourceDeclaration('codex');
+    return {
+      label: declaration.label,
+      color: declaration.color,
+      capabilities: {
+        interactive: declaration.capabilities.interactiveLaunch,
+        initialTask: declaration.capabilities.initialTask,
+        exactResume: declaration.capabilities.exactResume,
+        modelSelection: true,
+        effortSelection: true,
+        permissionModes: declaration.capabilities.permissionModes,
+      },
+    };
+  })(),
 };
 
 export const AGENT_SOURCE_ORDER = Object.keys(
@@ -100,11 +113,12 @@ function fallbackFact(
   simulated = false
 ): AgentSourceSnapshot['facts']['installation'] {
   return {
+    basis: simulated ? 'simulated' : 'declared',
     state: simulated ? 'simulated' : 'unknown',
     value,
     detail,
     provenance: {
-      kind: 'built-in',
+      kind: simulated ? 'simulation' : 'adapter-declaration',
       label: simulated
         ? 'Exawatt Demo Scenario Source'
         : 'Renderer compatibility fallback',
@@ -114,20 +128,16 @@ function fallbackFact(
 }
 
 function fallbackLocalSource(id: AgentSourceId): AgentSourceSnapshot {
-  const meta = AGENT_SOURCE_META[id];
+  const declaration = agentSourceDeclaration(id);
   const fact = fallbackFact(
     'Unknown',
     'Open the Electron desktop app to inspect this local source.'
   );
   return {
+    ...declaration,
     id: `${id}-local`,
-    adapterId: id,
-    harness: id,
-    label: meta.label,
-    connectionName: 'Local',
-    color: meta.color,
-    configured: true,
-    launchable: true,
+    configured: false,
+    launchable: false,
     state: 'unknown',
     stateLabel: 'Unknown',
     summary:
@@ -142,35 +152,27 @@ function fallbackLocalSource(id: AgentSourceId): AgentSourceSnapshot {
       modelDiscovery: fact,
     },
     capabilities: {
-      interactiveLaunch: true,
-      initialTask: true,
-      exactResume: true,
-      modelSelection: id === 'codex' ? 'live-catalog' : 'source-owned',
-      effortSelection: id === 'codex' ? 'live-catalog' : 'configured-value',
-      permissionModes: meta.capabilities.permissionModes,
-      delegationObservation:
-        id === 'claude'
-          ? 'Source-reported lifecycle events'
-          : 'Codex does not report delegated work',
-      enforcementOwner: meta.label,
+      ...declaration.capabilities,
     },
-    actions: { recheck: false, authenticate: false, chooseModel: false },
+    actions: {
+      recheck: false,
+      authenticate: false,
+      chooseModel: false,
+      installGuide: false,
+    },
   };
 }
 
 function fallbackDemoSource(): AgentSourceSnapshot {
+  const declaration = agentSourceDeclaration('demo');
   const fact = fallbackFact(
     'Simulated',
     'Fixture data with explicit simulated provenance.',
     true
   );
   return {
+    ...declaration,
     id: 'demo-built-in',
-    adapterId: 'demo',
-    harness: null,
-    label: 'Demo Mode',
-    connectionName: 'Scenario source',
-    color: '#E7BD6A',
     configured: true,
     launchable: false,
     state: 'ready',
@@ -186,32 +188,24 @@ function fallbackDemoSource(): AgentSourceSnapshot {
       compatibility: fact,
       modelDiscovery: fact,
     },
-    capabilities: {
-      interactiveLaunch: false,
-      initialTask: true,
-      exactResume: true,
-      modelSelection: 'scenario',
-      effortSelection: 'scenario',
-      permissionModes: [],
-      delegationObservation: 'Simulated lifecycle events',
-      enforcementOwner: 'No real enforcement (simulation)',
+    actions: {
+      recheck: false,
+      authenticate: false,
+      chooseModel: false,
+      installGuide: false,
     },
-    actions: { recheck: false, authenticate: false, chooseModel: false },
   };
 }
 
 function fallbackOpenClawSource(): AgentSourceSnapshot {
+  const declaration = agentSourceDeclaration('openclaw');
   const fact = fallbackFact(
     'Unknown',
     'Open the Electron desktop app to inspect the local gateway.'
   );
   return {
+    ...declaration,
     id: 'openclaw-local',
-    adapterId: 'openclaw',
-    harness: null,
-    label: 'OpenClaw',
-    connectionName: 'Local gateway',
-    color: '#8BB9ED',
     configured: false,
     launchable: false,
     state: 'unknown',
@@ -226,34 +220,14 @@ function fallbackOpenClawSource(): AgentSourceSnapshot {
       compatibility: fact,
       modelDiscovery: fact,
     },
-    capabilities: {
-      interactiveLaunch: false,
-      initialTask: true,
-      exactResume: true,
-      modelSelection: 'gateway',
-      effortSelection: 'gateway',
-      permissionModes: [],
-      delegationObservation: 'Gateway protocol events',
-      enforcementOwner: 'OpenClaw gateway',
+    actions: {
+      recheck: false,
+      authenticate: false,
+      chooseModel: false,
+      installGuide: false,
     },
-    actions: { recheck: false, authenticate: false, chooseModel: false },
   };
 }
-
-const futureSourceCatalog: AgentSourceCatalogEntry[] = [
-  {
-    adapterId: 'hosted-openclaw',
-    label: 'Hosted OpenClaw',
-    description: 'Connect a remote or managed gateway.',
-    availability: 'coming-later',
-  },
-  {
-    adapterId: 'custom',
-    label: 'Custom harness',
-    description: 'Bring another compatible Agent Source adapter.',
-    availability: 'coming-later',
-  },
-];
 
 export function fallbackAgentSourceRegistry(
   scope: 'all' | 'launch' = 'all'
@@ -271,28 +245,50 @@ export function fallbackAgentSourceRegistry(
       description: source.summary,
       availability: source.configured ? 'configured' : 'configure',
     })),
-    comingLater: scope === 'all' ? futureSourceCatalog : [],
+    comingSoon: scope === 'all' ? [...FUTURE_AGENT_SOURCE_CATALOG] : [],
     observedAt: fallbackObservedAt,
   };
 }
 
 export async function loadAgentSourceRegistry(
   scope: 'all' | 'launch' = 'all',
-  refresh = false
-): Promise<AgentSourceRegistrySnapshot> {
+  refresh = false,
+  previous?: AgentSourceRegistrySnapshot
+): Promise<AgentSourceRegistryLoadResult> {
   const list =
     typeof window !== 'undefined' ? window.electron?.agentSources?.list : null;
-  if (!list) return fallbackAgentSourceRegistry(scope);
+  if (!list) {
+    return {
+      status: previous ? 'stale' : 'unavailable',
+      snapshot: previous ?? fallbackAgentSourceRegistry(scope),
+      error: {
+        code: 'bridge-unavailable',
+        message: 'Agent Source status requires the Electron desktop bridge.',
+      },
+    };
+  }
   try {
-    return await list(scope, refresh);
+    return {
+      status: 'live',
+      snapshot: await list(scope, refresh),
+      error: null,
+    };
   } catch {
-    return fallbackAgentSourceRegistry(scope);
+    return {
+      status: previous ? 'stale' : 'unavailable',
+      snapshot: previous ?? fallbackAgentSourceRegistry(scope),
+      error: {
+        code: 'observation-failed',
+        message:
+          'Exawatt could not verify Agent Source status. Recheck before launching.',
+      },
+    };
   }
 }
 
 export async function runAgentSourceAction(
-  harness: AgentHarness,
-  action: 'authenticate' | 'choose-model'
+  adapterId: AgentSourceAdapterId,
+  action: AgentSourceAction
 ): Promise<AgentSourceActionResult> {
   const act =
     typeof window !== 'undefined' ? window.electron?.agentSources?.act : null;
@@ -303,7 +299,7 @@ export async function runAgentSourceAction(
     };
   }
   try {
-    return await act(harness, action);
+    return await act(adapterId, action);
   } catch {
     return { ok: false, message: 'The source action could not be opened.' };
   }

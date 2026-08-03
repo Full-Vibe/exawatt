@@ -1,4 +1,5 @@
 import {
+  act as reactAct,
   cleanup,
   fireEvent,
   render,
@@ -13,6 +14,7 @@ describe('Agent Source Settings', () => {
   afterEach(() => {
     cleanup();
     Reflect.deleteProperty(window, 'electron');
+    vi.useRealTimers();
   });
 
   it('renders normalized source truth and separates current adapters from future ones', async () => {
@@ -35,6 +37,7 @@ describe('Agent Source Settings', () => {
                 recheck: true,
                 authenticate: true,
                 chooseModel: false,
+                installGuide: true,
               },
               facts: {
                 ...source.facts,
@@ -85,14 +88,122 @@ describe('Agent Source Settings', () => {
       expect(act).toHaveBeenCalledWith('claude', 'authenticate')
     );
     expect(
-      await screen.findByText('Claude Code sign-in opened in Terminal.')
+      await screen.findByText(/Claude Code sign-in opened in Terminal\./)
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add Agent Source' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Browse Agent Sources' })
+    );
     expect(screen.getByText('Available now')).toBeInTheDocument();
-    expect(screen.getByText('Coming later')).toBeInTheDocument();
+    expect(screen.getByText('Coming soon')).toBeInTheDocument();
     expect(screen.getByText('Hosted OpenClaw')).toBeInTheDocument();
-    expect(screen.getAllByText('Later').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Soon').length).toBeGreaterThan(0);
     expect(claude.label).toBe('Claude Code');
+  });
+
+  it('reconciles source-owned sign-in until the source is actually ready', async () => {
+    vi.useFakeTimers();
+    const base = fallbackAgentSourceRegistry('all');
+    const actionRequired = {
+      ...base,
+      sources: base.sources.map(source =>
+        source.adapterId === 'claude'
+          ? {
+              ...source,
+              state: 'action-required' as const,
+              stateLabel: 'Action required',
+              launchable: false,
+              actions: {
+                ...source.actions,
+                recheck: true,
+                authenticate: true,
+              },
+            }
+          : source
+      ),
+    };
+    const ready = {
+      ...actionRequired,
+      sources: actionRequired.sources.map(source =>
+        source.adapterId === 'claude'
+          ? {
+              ...source,
+              state: 'ready' as const,
+              stateLabel: 'Ready',
+              launchable: true,
+              actions: { ...source.actions, authenticate: false },
+            }
+          : source
+      ),
+    };
+    const list = vi
+      .fn()
+      .mockResolvedValueOnce(actionRequired)
+      .mockResolvedValueOnce(ready);
+    const act = vi.fn(async () => ({ ok: true, message: 'Sign-in opened.' }));
+    window.electron = {
+      isElectron: true,
+      platform: 'darwin',
+      agentSources: { list, act },
+    } as unknown as NonNullable<Window['electron']>;
+
+    render(<AgentSourcesSettings />);
+    await reactAct(async () => Promise.resolve());
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Sign in with Claude Code' })
+    );
+    await reactAct(async () => Promise.resolve());
+    expect(
+      screen.getByText(/Waiting for source-owned sign-in/)
+    ).toBeInTheDocument();
+
+    await reactAct(async () => {
+      await vi.advanceTimersByTimeAsync(1_200);
+    });
+    expect(list).toHaveBeenLastCalledWith('all', true);
+    expect(
+      screen.getByText('Claude Code is signed in and ready to launch.')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Claude Code, Local CLI, Ready' })
+    ).toBeInTheDocument();
+  });
+
+  it('shows a source-owned installation path for a missing CLI', async () => {
+    const base = fallbackAgentSourceRegistry('all');
+    const missing = {
+      ...base,
+      sources: base.sources.map(source =>
+        source.adapterId === 'claude'
+          ? {
+              ...source,
+              state: 'not-installed' as const,
+              stateLabel: 'Not installed',
+              actions: { ...source.actions, recheck: true, installGuide: true },
+            }
+          : source
+      ),
+    };
+    const act = vi.fn(async () => ({
+      ok: true,
+      message: 'Claude Code installation guide opened.',
+    }));
+    window.electron = {
+      isElectron: true,
+      platform: 'darwin',
+      agentSources: { list: vi.fn(async () => missing), act },
+    } as unknown as NonNullable<Window['electron']>;
+
+    render(<AgentSourcesSettings />);
+    const button = await screen.findByRole('button', {
+      name: 'Open installation guide',
+    });
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(act).toHaveBeenCalledWith('claude', 'install-guide')
+    );
+    expect(
+      screen.getByText('Claude Code installation guide opened.')
+    ).toBeInTheDocument();
   });
 });

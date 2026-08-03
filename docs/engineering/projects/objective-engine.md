@@ -129,6 +129,17 @@ label. A sanitized regression case was added to
 `src/lib/context-labels/gold-cases.ts`; it retains the stale/current labels and
 the semantic transition without copying raw Session content.
 
+### 2026-08-02 — E1.2 executable gold-corpus gate
+
+The corpus had become durable evidence but still depended on a reviewer to
+judge outputs by inspection. It now carries explicit semantic anchors and
+optional stability thresholds, and the repository evaluator reports per-case
+diagnostics for required concepts, pivots, and output hygiene. The bounded test
+suite executes every committed case without provider access. An opt-in live
+command runs the production Anthropic request and parser against the same cases
+when credentials are intentionally available; local verification never turns a
+fixture into a claim about current provider behavior.
+
 ## Roadmap milestone log
 
 ### 2026-07-26 — E1.1 Session comparison and titleless-tab incident

@@ -620,7 +620,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Registry + Adapters',
           summary:
-            'Electron-main source registry and source-first adapters powering production Settings and the Terminal composer: normalized local Claude, Codex, OpenClaw, and Demo facts; live model/effort evidence where supported; source-owned auth actions; and no provider credentials in the renderer.',
+            'One generated declaration contract plus Electron-main runtime observations power Settings and the Terminal composer. Observed, declared, and simulated evidence stay distinct; registry failure is fail-closed; OpenClaw uses a protocol probe; and Electron revalidates every Agent launch without exposing provider credentials.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,

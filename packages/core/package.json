@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -15,7 +16,8 @@
   },
   "scripts": {
     "test:run": "vitest run",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "types:build": "tsc -p tsconfig.types.json"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

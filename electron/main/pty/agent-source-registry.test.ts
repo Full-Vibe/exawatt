@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  agentSourceLaunchError,
   localSourceState,
-  openClawCredentialPresent,
   openClawSourceState,
   parseClaudeAuthStatus,
   parseCodexAuthStatus,
+  parseOpenClawGatewayStatus,
   sourceOwnedActionCommand,
 } from './agent-source-registry';
+import type { AgentSourceRegistrySnapshot } from '@exawatt/core';
 
 describe('Agent Source registry truth', () => {
   it('keeps local installation, authentication, and degraded states distinct', () => {
@@ -57,35 +59,70 @@ describe('Agent Source registry truth', () => {
       openClawSourceState({
         executable: true,
         configured: false,
-        credentialPresent: false,
-        reachable: false,
+        protocolReady: false,
       })
     ).toBe('action-required');
     expect(
       openClawSourceState({
         executable: true,
         configured: true,
-        credentialPresent: true,
-        reachable: false,
+        protocolReady: false,
       })
     ).toBe('degraded');
     expect(
       openClawSourceState({
         executable: true,
         configured: true,
-        credentialPresent: true,
-        reachable: true,
+        protocolReady: true,
       })
     ).toBe('ready');
   });
 
-  it('recognizes inline and referenced OpenClaw credentials without reading a value', () => {
-    expect(openClawCredentialPresent('opaque-secret')).toBe(true);
+  it('requires successful OpenClaw protocol status instead of trusting JSON or a port', () => {
     expect(
-      openClawCredentialPresent({ source: 'keychain', id: 'gateway' })
-    ).toBe(true);
-    expect(openClawCredentialPresent('')).toBe(false);
-    expect(openClawCredentialPresent(null)).toBe(false);
+      parseOpenClawGatewayStatus(
+        JSON.stringify({
+          ok: true,
+          degraded: false,
+          capability: 'full',
+          targets: [
+            {
+              connect: { ok: true, rpcOk: true },
+              self: { host: 'studio-gateway', version: '2026.6.11' },
+            },
+          ],
+        }),
+        true
+      )
+    ).toMatchObject({
+      protocolReady: true,
+      identity: 'studio-gateway',
+      capability: 'full',
+      version: '2026.6.11',
+    });
+    expect(
+      parseOpenClawGatewayStatus(JSON.stringify({ ok: true }), false)
+        .protocolReady
+    ).toBe(false);
+    expect(
+      parseOpenClawGatewayStatus(JSON.stringify({}), true).protocolReady
+    ).toBe(false);
+    expect(
+      parseOpenClawGatewayStatus(
+        JSON.stringify({
+          rpc: {
+            ok: true,
+            capability: 'operator',
+            server: { version: '2026.6.11' },
+          },
+        }),
+        true
+      )
+    ).toMatchObject({
+      protocolReady: true,
+      capability: 'operator',
+      version: '2026.6.11',
+    });
   });
 
   it('returns only the minimum Claude identity and never forwards org metadata', () => {
@@ -126,5 +163,31 @@ describe('Agent Source registry truth', () => {
       "'codex' 'login'"
     );
     expect(sourceOwnedActionCommand('claude', 'choose-model')).toBe("'claude'");
+  });
+
+  it('turns source observations into actionable main-process launch errors', () => {
+    const snapshot = {
+      sources: [
+        {
+          harness: 'claude',
+          label: 'Claude Code',
+          state: 'action-required',
+          stateLabel: 'Action required',
+          launchable: false,
+        },
+      ],
+    } as AgentSourceRegistrySnapshot;
+    expect(agentSourceLaunchError(snapshot, 'claude')).toContain(
+      'requires sign-in'
+    );
+    expect(
+      agentSourceLaunchError(
+        {
+          ...snapshot,
+          sources: [{ ...snapshot.sources[0], launchable: true }],
+        },
+        'claude'
+      )
+    ).toBeNull();
   });
 });

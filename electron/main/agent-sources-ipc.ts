@@ -1,3 +1,5 @@
+import { shell } from 'electron';
+import type { AgentSourceAction, AgentSourceAdapterId } from '@exawatt/core';
 import { handleTrusted } from './ipc-security';
 import {
   inspectAgentSources,
@@ -5,6 +7,7 @@ import {
 } from './pty/agent-source-registry';
 import { defaultShell } from './pty/session-manager';
 import type { AgentHarness } from './pty/harness-types';
+import { agentSourceDeclaration } from './pty/generated-agent-source-declarations';
 
 /**
  * Renderer-safe Agent Source control plane (ENG-003 S1).
@@ -31,19 +34,42 @@ export function registerAgentSourcesIPC(): void {
     'agent-sources:act',
     async (
       _event,
-      harness: AgentHarness,
-      action: 'authenticate' | 'choose-model'
+      adapterId: AgentSourceAdapterId,
+      action: AgentSourceAction
     ) => {
-      if (harness !== 'claude' && harness !== 'codex') {
+      if (
+        adapterId !== 'claude' &&
+        adapterId !== 'codex' &&
+        adapterId !== 'openclaw' &&
+        adapterId !== 'demo'
+      ) {
         throw new Error('Unsupported Agent Source');
       }
-      if (action !== 'authenticate' && action !== 'choose-model') {
+      if (
+        action !== 'authenticate' &&
+        action !== 'choose-model' &&
+        action !== 'install-guide'
+      ) {
         throw new Error('Unsupported Agent Source action');
       }
-      if (action === 'choose-model' && harness !== 'claude') {
+      if (action === 'install-guide') {
+        const declaration = agentSourceDeclaration(adapterId);
+        if (!declaration.installationGuideUrl) {
+          throw new Error('This Agent Source has no installation guide');
+        }
+        await shell.openExternal(declaration.installationGuideUrl);
+        return {
+          ok: true,
+          message: `${declaration.label} installation guide opened.`,
+        };
+      }
+      if (adapterId !== 'claude' && adapterId !== 'codex') {
+        throw new Error('This Agent Source does not expose that action');
+      }
+      if (action === 'choose-model' && adapterId !== 'claude') {
         throw new Error('This source exposes its model catalog in Exawatt');
       }
-      return launchSourceOwnedAction(harness, action);
+      return launchSourceOwnedAction(adapterId as AgentHarness, action);
     }
   );
 }

@@ -1,100 +1,34 @@
-export {};
+import type {
+  AgentHarness,
+  AgentPermissionMode,
+  AgentSourceAction,
+  AgentSourceActionResult,
+  AgentSourceAdapterId,
+  AgentSourceCatalogEntry,
+  AgentSourceFact,
+  AgentSourceRegistryLoadResult,
+  AgentSourceRegistryLoadStatus,
+  AgentSourceRegistrySnapshot,
+  AgentSourceSnapshot,
+  AgentSourceState,
+  PtyHarness,
+} from '@exawatt/core';
 
-export type AgentHarness = 'claude' | 'codex';
-export type PtyHarness = 'shell' | AgentHarness;
-export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
-
-export type AgentSourceAdapterId = AgentHarness | 'openclaw' | 'demo';
-export type AgentSourceState =
-  | 'ready'
-  | 'connecting'
-  | 'action-required'
-  | 'degraded'
-  | 'unavailable'
-  | 'not-installed'
-  | 'incompatible'
-  | 'unknown';
-export type AgentSourceFactState =
-  | 'ready'
-  | 'action-required'
-  | 'degraded'
-  | 'unavailable'
-  | 'not-installed'
-  | 'incompatible'
-  | 'unknown'
-  | 'simulated';
-
-export interface AgentSourceProvenance {
-  kind: 'source-command' | 'source-config' | 'gateway-probe' | 'built-in';
-  label: string;
-  observedAt: number;
-}
-
-export interface AgentSourceFact {
-  state: AgentSourceFactState;
-  value: string;
-  detail: string;
-  provenance: AgentSourceProvenance;
-}
-
-export interface AgentSourceCapabilities {
-  interactiveLaunch: boolean;
-  initialTask: boolean;
-  exactResume: boolean;
-  modelSelection: 'live-catalog' | 'source-owned' | 'gateway' | 'scenario';
-  effortSelection: 'live-catalog' | 'configured-value' | 'gateway' | 'scenario';
-  permissionModes: readonly AgentPermissionMode[];
-  delegationObservation: string;
-  enforcementOwner: string;
-}
-
-export interface AgentSourceSnapshot {
-  id: string;
-  adapterId: AgentSourceAdapterId;
-  harness: AgentHarness | null;
-  label: string;
-  connectionName: string;
-  color: string;
-  configured: boolean;
-  launchable: boolean;
-  state: AgentSourceState;
-  stateLabel: string;
-  summary: string;
-  observedAt: number;
-  facts: {
-    installation: AgentSourceFact;
-    reachability: AgentSourceFact;
-    authentication: AgentSourceFact;
-    identity: AgentSourceFact;
-    compatibility: AgentSourceFact;
-    modelDiscovery: AgentSourceFact;
-  };
-  capabilities: AgentSourceCapabilities;
-  actions: {
-    recheck: boolean;
-    authenticate: boolean;
-    chooseModel: boolean;
-  };
-}
-
-export interface AgentSourceCatalogEntry {
-  adapterId: AgentSourceAdapterId | 'hosted-openclaw' | 'custom';
-  label: string;
-  description: string;
-  availability: 'configured' | 'not-installed' | 'configure' | 'coming-later';
-}
-
-export interface AgentSourceRegistrySnapshot {
-  sources: AgentSourceSnapshot[];
-  available: AgentSourceCatalogEntry[];
-  comingLater: AgentSourceCatalogEntry[];
-  observedAt: number;
-}
-
-export interface AgentSourceActionResult {
-  ok: boolean;
-  message: string;
-}
+export type {
+  AgentHarness,
+  AgentPermissionMode,
+  AgentSourceAction,
+  AgentSourceActionResult,
+  AgentSourceAdapterId,
+  AgentSourceCatalogEntry,
+  AgentSourceFact,
+  AgentSourceRegistryLoadResult,
+  AgentSourceRegistryLoadStatus,
+  AgentSourceRegistrySnapshot,
+  AgentSourceSnapshot,
+  AgentSourceState,
+  PtyHarness,
+} from '@exawatt/core';
 
 export interface ElectronAgentSourcesApi {
   list: (
@@ -102,8 +36,8 @@ export interface ElectronAgentSourcesApi {
     refresh?: boolean
   ) => Promise<AgentSourceRegistrySnapshot>;
   act: (
-    harness: AgentHarness,
-    action: 'authenticate' | 'choose-model'
+    adapterId: AgentSourceAdapterId,
+    action: AgentSourceAction
   ) => Promise<AgentSourceActionResult>;
 }
 
