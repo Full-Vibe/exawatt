@@ -72,15 +72,50 @@ export type ElectronAppearanceSelectionV1 =
       darkThemeId: ThemeBootstrapId;
     };
 
+export interface ElectronAppearanceAutoPairV1 {
+  lightThemeId: ThemeBootstrapId;
+  darkThemeId: ThemeBootstrapId;
+}
+
 export interface ElectronAppearancePreferencesV1 {
   schemaVersion: 1;
   selection: ElectronAppearanceSelectionV1;
+  autoPair?: ElectronAppearanceAutoPairV1;
   accentSource: 'theme' | 'system';
   interfaceFont: 'theme' | 'system' | 'geist';
   interfaceScale: 90 | 100 | 110 | 120;
   contrast: 'system' | 'enhanced';
   transparency: 'system' | 'reduced';
 }
+
+const DEFAULT_ELECTRON_AUTO_PAIR: ElectronAppearanceAutoPairV1 = {
+  lightThemeId: 'exawatt-air-light',
+  darkThemeId: 'exawatt-night-dark',
+};
+
+export const DEFAULT_ELECTRON_APPEARANCE_PREFERENCES: ElectronAppearancePreferencesV1 =
+  {
+    schemaVersion: 1,
+    selection: { mode: 'auto', ...DEFAULT_ELECTRON_AUTO_PAIR },
+    autoPair: DEFAULT_ELECTRON_AUTO_PAIR,
+    accentSource: 'theme',
+    interfaceFont: 'theme',
+    interfaceScale: 100,
+    contrast: 'system',
+    transparency: 'system',
+  };
+
+export const CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES: ElectronAppearancePreferencesV1 =
+  {
+    schemaVersion: 1,
+    selection: { mode: 'manual', themeId: 'exawatt-classic-dark' },
+    autoPair: DEFAULT_ELECTRON_AUTO_PAIR,
+    accentSource: 'theme',
+    interfaceFont: 'theme',
+    interfaceScale: 100,
+    contrast: 'system',
+    transparency: 'system',
+  };
 
 const AGENT_PERMISSION_MODES = new Set<AgentPermissionMode>([
   'prompt',
@@ -124,7 +159,7 @@ export function parseAppearancePreferences(
   const candidate = raw as Record<string, unknown>;
   if (
     candidate.schemaVersion !== 1 ||
-    !hasExactKeys(candidate, [
+    (!hasExactKeys(candidate, [
       'schemaVersion',
       'selection',
       'accentSource',
@@ -132,7 +167,17 @@ export function parseAppearancePreferences(
       'interfaceScale',
       'contrast',
       'transparency',
-    ])
+    ]) &&
+      !hasExactKeys(candidate, [
+        'schemaVersion',
+        'selection',
+        'autoPair',
+        'accentSource',
+        'interfaceFont',
+        'interfaceScale',
+        'contrast',
+        'transparency',
+      ]))
   )
     return null;
 
@@ -168,6 +213,37 @@ export function parseAppearancePreferences(
     return null;
   }
 
+  let autoPair: ElectronAppearanceAutoPairV1;
+  const rawAutoPair = candidate.autoPair;
+  if (rawAutoPair === undefined) {
+    autoPair =
+      selection.mode === 'auto'
+        ? {
+            lightThemeId: selection.lightThemeId,
+            darkThemeId: selection.darkThemeId,
+          }
+        : { ...DEFAULT_ELECTRON_AUTO_PAIR };
+  } else if (rawAutoPair && typeof rawAutoPair === 'object') {
+    const pair = rawAutoPair as Record<string, unknown>;
+    if (
+      !hasExactKeys(pair, ['lightThemeId', 'darkThemeId']) ||
+      !isThemeId(pair.lightThemeId) ||
+      !isThemeId(pair.darkThemeId) ||
+      THEME_BOOTSTRAP_REGISTRY[pair.lightThemeId].appearance !== 'light' ||
+      THEME_BOOTSTRAP_REGISTRY[pair.darkThemeId].appearance !== 'dark' ||
+      (selection.mode === 'auto' &&
+        (pair.lightThemeId !== selection.lightThemeId ||
+          pair.darkThemeId !== selection.darkThemeId))
+    )
+      return null;
+    autoPair = {
+      lightThemeId: pair.lightThemeId,
+      darkThemeId: pair.darkThemeId,
+    };
+  } else {
+    return null;
+  }
+
   const accentSource = candidate.accentSource;
   const interfaceFont = candidate.interfaceFont;
   const interfaceScale = candidate.interfaceScale;
@@ -191,6 +267,7 @@ export function parseAppearancePreferences(
   return {
     schemaVersion: 1,
     selection,
+    autoPair,
     accentSource,
     interfaceFont,
     interfaceScale,
@@ -206,7 +283,10 @@ export function isPersistableAppearancePreferences(
     preferences.selection.mode === 'manual'
       ? [preferences.selection.themeId]
       : [preferences.selection.lightThemeId, preferences.selection.darkThemeId];
-  return ids.every(
+  const autoPairIds = preferences.autoPair
+    ? [preferences.autoPair.lightThemeId, preferences.autoPair.darkThemeId]
+    : [];
+  return [...ids, ...autoPairIds].every(
     id => THEME_BOOTSTRAP_REGISTRY[id].availability === 'production'
   );
 }
@@ -381,11 +461,41 @@ function settingsFile(): string {
 }
 
 export function loadSettings(): ExawattSettings {
+  let raw: unknown;
   try {
-    return parseSettings(JSON.parse(fs.readFileSync(settingsFile(), 'utf8')));
-  } catch {
-    return {}; // no file / bad JSON → pure defaults
+    raw = JSON.parse(fs.readFileSync(settingsFile(), 'utf8'));
+  } catch (error) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === 'ENOENT'
+    ) {
+      return {};
+    }
+    return {
+      appearance: structuredClone(
+        CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES
+      ),
+    };
   }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {
+      appearance: structuredClone(
+        CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES
+      ),
+    };
+  }
+  const settings = parseSettings(raw);
+  if (
+    Object.prototype.hasOwnProperty.call(raw, 'appearance') &&
+    !settings.appearance
+  ) {
+    settings.appearance = structuredClone(
+      CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES
+    );
+  }
+  return settings;
 }
 
 function writeSettings(settings: ExawattSettings): void {

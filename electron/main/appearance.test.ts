@@ -16,7 +16,7 @@ const CLASSIC: ElectronAppearancePreferencesV1 = {
 };
 
 describe('resolveNativeAppearance', () => {
-  it('resolves the only production theme and its native source', () => {
+  it('resolves an explicit Classic preference and its native source', () => {
     expect(
       resolveNativeAppearance(CLASSIC, { dark: false, safeTheme: false })
     ).toMatchObject({
@@ -26,8 +26,8 @@ describe('resolveNativeAppearance', () => {
     });
   });
 
-  it('does not expose gallery-only Auto choices', () => {
-    const future: ElectronAppearancePreferencesV1 = {
+  it('resolves the promoted Auto pair from the OS appearance', () => {
+    const automatic: ElectronAppearancePreferencesV1 = {
       ...CLASSIC,
       selection: {
         mode: 'auto',
@@ -36,8 +36,28 @@ describe('resolveNativeAppearance', () => {
       },
     };
     expect(
-      resolveNativeAppearance(future, { dark: false, safeTheme: false }).themeId
-    ).toBe('exawatt-classic-dark');
+      resolveNativeAppearance(automatic, { dark: false, safeTheme: false })
+        .themeId
+    ).toBe('exawatt-air-light');
+    expect(
+      resolveNativeAppearance(automatic, { dark: true, safeTheme: false })
+        .themeId
+    ).toBe('exawatt-night-dark');
+  });
+
+  it('uses Auto Air/Night only when the preference is genuinely missing', () => {
+    expect(
+      resolveNativeAppearance(undefined, { dark: false, safeTheme: false })
+    ).toMatchObject({
+      themeId: 'exawatt-air-light',
+      themeSource: 'system',
+    });
+    expect(
+      resolveNativeAppearance(undefined, { dark: true, safeTheme: false })
+    ).toMatchObject({
+      themeId: 'exawatt-night-dark',
+      themeSource: 'system',
+    });
   });
 
   it('forces Classic for one safe-theme launch without changing settings', () => {
@@ -53,7 +73,7 @@ describe('resolveNativeAppearance', () => {
   });
 
   it('returns to system source before resolving Auto after Manual', () => {
-    const future: ElectronAppearancePreferencesV1 = {
+    const automatic: ElectronAppearancePreferencesV1 = {
       ...CLASSIC,
       selection: {
         mode: 'auto',
@@ -75,10 +95,8 @@ describe('resolveNativeAppearance', () => {
         return source !== 'system';
       },
     };
-    applyNativeAppearancePreference(future, native, { safeTheme: false });
-    // Gallery availability still falls back to Classic in T1, but the OS read
-    // happened from system mode rather than inheriting the preceding Manual.
+    applyNativeAppearancePreference(automatic, native, { safeTheme: false });
     expect(sourcesAtRead).toEqual(['system']);
-    expect(source).toBe('dark');
+    expect(source).toBe('system');
   });
 });

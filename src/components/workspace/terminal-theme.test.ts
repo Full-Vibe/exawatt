@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { THEME_REGISTRY } from '@/generated/theme-registry';
-import { DEFAULT_APPEARANCE_PREFERENCES } from '@/lib/appearance/resolve-appearance';
-import { resolveAppearance } from '@/lib/appearance/resolve-appearance';
+import {
+  CLASSIC_RECOVERY_APPEARANCE_PREFERENCES,
+  DEFAULT_APPEARANCE_PREFERENCES,
+  resolveAppearance,
+} from '@/lib/appearance/resolve-appearance';
 import {
   XTERM_MINIMUM_CONTRAST_RATIO,
   xtermThemeForAppearance,
@@ -24,7 +27,7 @@ describe('xterm appearance adapter', () => {
   it('uses the current resolved snapshot for preview and Auto changes', () => {
     const classic = resolveAppearance(
       THEME_REGISTRY,
-      DEFAULT_APPEARANCE_PREFERENCES,
+      CLASSIC_RECOVERY_APPEARANCE_PREFERENCES,
       {
         dark: true,
         highContrast: false,

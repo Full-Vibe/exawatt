@@ -90,11 +90,16 @@ describe('appearance preferences (ENG-032 T1)', () => {
     contrast: 'system',
     transparency: 'system',
   } as const;
+  const defaultAutoPair = {
+    lightThemeId: 'exawatt-air-light',
+    darkThemeId: 'exawatt-night-dark',
+  } as const;
+  const normalizedClassic = { ...classic, autoPair: defaultAutoPair };
 
   it('parses a valid preference without disturbing unrelated settings', () => {
     expect(
       parseSettings({ terminal: { fontSize: 15 }, appearance: classic })
-    ).toEqual({ terminal: { fontSize: 15 }, appearance: classic });
+    ).toEqual({ terminal: { fontSize: 15 }, appearance: normalizedClassic });
   });
 
   it('rejects corrupt, unknown, and wrongly paired appearance data only', () => {
@@ -118,12 +123,26 @@ describe('appearance preferences (ENG-032 T1)', () => {
       })
     ).toBeNull();
     expect(
+      parseAppearancePreferences({
+        ...classic,
+        selection: {
+          mode: 'auto',
+          lightThemeId: 'exawatt-air-light',
+          darkThemeId: 'exawatt-night-dark',
+        },
+        autoPair: {
+          lightThemeId: 'exawatt-air-light',
+          darkThemeId: 'exawatt-classic-dark',
+        },
+      })
+    ).toBeNull();
+    expect(
       parseAppearancePreferences({ ...classic, injectedCss: 'body{}' })
     ).toBeNull();
   });
 
-  it('keeps gallery themes readable for forward compatibility but not persistable', () => {
-    const future = parseAppearancePreferences({
+  it('promotes all three built-ins to persistable production themes', () => {
+    const automatic = parseAppearancePreferences({
       ...classic,
       selection: {
         mode: 'auto',
@@ -131,8 +150,34 @@ describe('appearance preferences (ENG-032 T1)', () => {
         darkThemeId: 'exawatt-night-dark',
       },
     });
-    expect(future).not.toBeNull();
-    expect(isPersistableAppearancePreferences(future!)).toBe(false);
-    expect(isPersistableAppearancePreferences(classic)).toBe(true);
+    expect(automatic).toMatchObject({
+      selection: {
+        mode: 'auto',
+        lightThemeId: 'exawatt-air-light',
+        darkThemeId: 'exawatt-night-dark',
+      },
+      autoPair: defaultAutoPair,
+    });
+    expect(isPersistableAppearancePreferences(automatic!)).toBe(true);
+    expect(isPersistableAppearancePreferences(normalizedClassic)).toBe(true);
+  });
+
+  it('normalizes a legacy Manual preference with a remembered Auto pair', () => {
+    expect(parseAppearancePreferences(classic)).toEqual(normalizedClassic);
+    expect(
+      parseAppearancePreferences({
+        ...classic,
+        autoPair: {
+          lightThemeId: 'exawatt-air-light',
+          darkThemeId: 'exawatt-classic-dark',
+        },
+      })
+    ).toMatchObject({
+      selection: classic.selection,
+      autoPair: {
+        lightThemeId: 'exawatt-air-light',
+        darkThemeId: 'exawatt-classic-dark',
+      },
+    });
   });
 });

@@ -191,6 +191,11 @@ export const ThemeDefinitionSchema = z
     }
   });
 
+const autoPair = z.strictObject({
+  lightThemeId: z.string().regex(/^exawatt-[a-z0-9-]+$/),
+  darkThemeId: z.string().regex(/^exawatt-[a-z0-9-]+$/),
+});
+
 const selection = z.discriminatedUnion('mode', [
   z.strictObject({
     mode: z.literal('manual'),
@@ -203,20 +208,55 @@ const selection = z.discriminatedUnion('mode', [
   }),
 ]);
 
-export const AppearancePreferencesSchema = z.strictObject({
-  schemaVersion: z.literal(APPEARANCE_SCHEMA_VERSION),
-  selection,
-  accentSource: z.enum(['theme', 'system']),
-  interfaceFont: z.enum(['theme', 'system', 'geist']),
-  interfaceScale: z.union([
-    z.literal(90),
-    z.literal(100),
-    z.literal(110),
-    z.literal(120),
-  ]),
-  contrast: z.enum(['system', 'enhanced']),
-  transparency: z.enum(['system', 'reduced']),
-});
+export const AppearancePreferencesSchema = z
+  .strictObject({
+    schemaVersion: z.literal(APPEARANCE_SCHEMA_VERSION),
+    selection,
+    autoPair: autoPair.optional(),
+    accentSource: z.enum(['theme', 'system']),
+    interfaceFont: z.enum(['theme', 'system', 'geist']),
+    interfaceScale: z.union([
+      z.literal(90),
+      z.literal(100),
+      z.literal(110),
+      z.literal(120),
+    ]),
+    contrast: z.enum(['system', 'enhanced']),
+    transparency: z.enum(['system', 'reduced']),
+  })
+  .superRefine((preferences, context) => {
+    if (
+      preferences.selection.mode === 'auto' &&
+      preferences.autoPair &&
+      (preferences.autoPair.lightThemeId !==
+        preferences.selection.lightThemeId ||
+        preferences.autoPair.darkThemeId !== preferences.selection.darkThemeId)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['autoPair'],
+        message: 'must match the active Auto selection',
+      });
+    }
+  })
+  .transform(preferences => {
+    const selectedAutoPair =
+      preferences.selection.mode === 'auto'
+        ? {
+            lightThemeId: preferences.selection.lightThemeId,
+            darkThemeId: preferences.selection.darkThemeId,
+          }
+        : undefined;
+    return {
+      ...preferences,
+      autoPair:
+        preferences.autoPair ??
+        selectedAutoPair ?? {
+          lightThemeId: 'exawatt-air-light',
+          darkThemeId: 'exawatt-night-dark',
+        },
+    };
+  });
 
 export function parseThemeDefinition(value) {
   return ThemeDefinitionSchema.parse(value);
@@ -300,7 +340,8 @@ export function validateThemeContrast(theme) {
     ]),
     ['terminal.background/foreground', theme.terminal.foreground, theme.terminal.background, 4.5],
     ['bootstrap.background/foreground', theme.bootstrap.foreground, theme.bootstrap.background, 4.5],
-    ...(theme.availability === 'gallery'
+    // Air and Night keep the stricter T2 acceptance gates after T5 promotion.
+    ...(theme.id !== 'exawatt-classic-dark'
       ? [
           [
             'foundation.surface/inputBoundary',

@@ -24,6 +24,16 @@ export function parseProductionAppearancePreferences(
   const parsed = AppearancePreferencesSchema.safeParse(raw);
   if (!parsed.success) return null;
 
+  const pair = parsed.data.autoPair;
+  if (
+    !pair ||
+    !productionIds.has(pair.lightThemeId) ||
+    !productionIds.has(pair.darkThemeId) ||
+    registry[pair.lightThemeId]?.appearance !== 'light' ||
+    registry[pair.darkThemeId]?.appearance !== 'dark'
+  )
+    return null;
+
   const selection = parsed.data.selection;
   if (selection.mode === 'manual') {
     return productionIds.has(selection.themeId) ? parsed.data : null;

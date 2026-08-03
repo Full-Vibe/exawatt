@@ -1,5 +1,8 @@
 import type { ElectronSettingsApi } from '@/types/electron';
-import { DEFAULT_APPEARANCE_PREFERENCES } from './resolve-appearance';
+import {
+  CLASSIC_RECOVERY_APPEARANCE_PREFERENCES,
+  DEFAULT_APPEARANCE_PREFERENCES,
+} from './resolve-appearance';
 import { parseProductionAppearancePreferences } from './preferences';
 import type { AppearancePreferencesV1 } from './types';
 
@@ -17,26 +20,34 @@ export interface AppearancePreferenceSource {
   ) => () => void;
 }
 
-function fallback(): AppearancePreferencesV1 {
+function defaultPreferences(): AppearancePreferencesV1 {
   return structuredClone(DEFAULT_APPEARANCE_PREFERENCES);
 }
 
+function recoveryPreferences(): AppearancePreferencesV1 {
+  return structuredClone(CLASSIC_RECOVERY_APPEARANCE_PREFERENCES);
+}
+
 export function readAppearanceMirror(
-  storage: Pick<Storage, 'getItem' | 'removeItem'> = window.localStorage
+  storage: Pick<Storage, 'getItem' | 'setItem'> = window.localStorage
 ): AppearancePreferencesV1 | null {
   try {
     const raw = storage.getItem(APPEARANCE_MIRROR_STORAGE_KEY);
-    if (!raw) return null;
+    if (raw === null) return null;
     const parsed = parseProductionAppearancePreferences(JSON.parse(raw));
-    if (!parsed) storage.removeItem(APPEARANCE_MIRROR_STORAGE_KEY);
-    return parsed;
+    if (parsed) return parsed;
+    const recovery = recoveryPreferences();
+    storage.setItem(APPEARANCE_MIRROR_STORAGE_KEY, JSON.stringify(recovery));
+    return recovery;
   } catch {
     try {
-      storage.removeItem(APPEARANCE_MIRROR_STORAGE_KEY);
+      const recovery = recoveryPreferences();
+      storage.setItem(APPEARANCE_MIRROR_STORAGE_KEY, JSON.stringify(recovery));
+      return recovery;
     } catch {
-      // A blocked storage surface still gets the in-memory Classic fallback.
+      // A blocked storage surface still gets the in-memory recovery state.
     }
-    return null;
+    return recoveryPreferences();
   }
 }
 
@@ -61,29 +72,35 @@ function electronSource(
     kind: 'electron',
     async load() {
       const current = await settings.get();
-      return (
-        parseProductionAppearancePreferences(current.appearance) ?? fallback()
-      );
+      return current.appearance === undefined
+        ? defaultPreferences()
+        : (parseProductionAppearancePreferences(current.appearance) ??
+            recoveryPreferences());
     },
     async save(preferences) {
       const parsed = parseProductionAppearancePreferences(preferences);
       if (!parsed) throw new Error('Cannot save an unavailable appearance');
       const current = await settings.setAppearance(parsed);
       return (
-        parseProductionAppearancePreferences(current.appearance) ?? fallback()
+        parseProductionAppearancePreferences(current.appearance) ??
+        recoveryPreferences()
       );
     },
     subscribe(handler) {
       return settings.onChanged(current => {
-        const parsed = parseProductionAppearancePreferences(current.appearance);
-        if (parsed) handler(parsed);
+        handler(
+          current.appearance === undefined
+            ? defaultPreferences()
+            : (parseProductionAppearancePreferences(current.appearance) ??
+                recoveryPreferences())
+        );
       });
     },
   };
 }
 
 function webSource(): AppearancePreferenceSource {
-  const load = () => readAppearanceMirror() ?? fallback();
+  const load = () => readAppearanceMirror() ?? defaultPreferences();
   return {
     kind: 'web',
     async load() {

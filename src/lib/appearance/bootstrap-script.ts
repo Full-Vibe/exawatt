@@ -3,7 +3,10 @@ import {
   THEME_REGISTRY,
 } from '@/generated/theme-registry';
 import { APPEARANCE_MIRROR_STORAGE_KEY } from './preference-source';
-import { DEFAULT_APPEARANCE_PREFERENCES } from './resolve-appearance';
+import {
+  CLASSIC_RECOVERY_APPEARANCE_PREFERENCES,
+  DEFAULT_APPEARANCE_PREFERENCES,
+} from './resolve-appearance';
 
 const bootstrapThemes = Object.fromEntries(
   PRODUCTION_THEME_IDS.map(themeId => [
@@ -23,22 +26,33 @@ const bootstrapThemes = Object.fromEntries(
 export const APPEARANCE_BOOTSTRAP_SCRIPT = `(() => {
   const key = ${JSON.stringify(APPEARANCE_MIRROR_STORAGE_KEY)};
   const themes = ${JSON.stringify(bootstrapThemes)};
-  const fallback = ${JSON.stringify(DEFAULT_APPEARANCE_PREFERENCES)};
+  const defaultPreferences = ${JSON.stringify(DEFAULT_APPEARANCE_PREFERENCES)};
+  const recoveryPreferences = ${JSON.stringify(CLASSIC_RECOVERY_APPEARANCE_PREFERENCES)};
   const exactKeys = (value, keys) => value && typeof value === 'object' && Object.keys(value).sort().join('|') === keys.slice().sort().join('|');
   const valid = value => {
-    if (!exactKeys(value, ['schemaVersion', 'selection', 'accentSource', 'interfaceFont', 'interfaceScale', 'contrast', 'transparency']) || value.schemaVersion !== 1 || !value.selection) return false;
+    const preferenceKeys = ['schemaVersion', 'selection', 'accentSource', 'interfaceFont', 'interfaceScale', 'contrast', 'transparency'];
+    const keysAreValid = exactKeys(value, preferenceKeys) || exactKeys(value, [...preferenceKeys, 'autoPair']);
+    if (!keysAreValid || value.schemaVersion !== 1 || !value.selection) return false;
     const s = value.selection;
     const selectionIsValid = s.mode === 'manual'
       ? exactKeys(s, ['mode', 'themeId']) && Boolean(themes[s.themeId])
       : s.mode === 'auto' && exactKeys(s, ['mode', 'lightThemeId', 'darkThemeId']) && themes[s.lightThemeId]?.appearance === 'light' && themes[s.darkThemeId]?.appearance === 'dark';
-    return selectionIsValid && ['theme', 'system'].includes(value.accentSource) && ['theme', 'system', 'geist'].includes(value.interfaceFont) && [90, 100, 110, 120].includes(value.interfaceScale) && ['system', 'enhanced'].includes(value.contrast) && ['system', 'reduced'].includes(value.transparency);
+    const pair = value.autoPair;
+    const pairIsValid = pair === undefined || (exactKeys(pair, ['lightThemeId', 'darkThemeId']) && themes[pair.lightThemeId]?.appearance === 'light' && themes[pair.darkThemeId]?.appearance === 'dark');
+    const autoPairMatches = s.mode !== 'auto' || pair === undefined || (pair.lightThemeId === s.lightThemeId && pair.darkThemeId === s.darkThemeId);
+    return selectionIsValid && pairIsValid && autoPairMatches && ['theme', 'system'].includes(value.accentSource) && ['theme', 'system', 'geist'].includes(value.interfaceFont) && [90, 100, 110, 120].includes(value.interfaceScale) && ['system', 'enhanced'].includes(value.contrast) && ['system', 'reduced'].includes(value.transparency);
   };
-  let preferences = fallback;
+  let preferences = defaultPreferences;
   try {
-    const stored = JSON.parse(localStorage.getItem(key) || 'null');
-    if (valid(stored)) preferences = stored;
-    else if (stored) localStorage.removeItem(key);
-  } catch { try { localStorage.removeItem(key); } catch {} }
+    const raw = localStorage.getItem(key);
+    if (raw !== null) {
+      try {
+        const stored = JSON.parse(raw);
+        if (valid(stored)) preferences = stored;
+        else { preferences = recoveryPreferences; localStorage.setItem(key, JSON.stringify(recoveryPreferences)); }
+      } catch { preferences = recoveryPreferences; try { localStorage.setItem(key, JSON.stringify(recoveryPreferences)); } catch {} }
+    }
+  } catch { preferences = recoveryPreferences; }
   const selection = preferences.selection;
   const matches = query => typeof matchMedia === 'function' && matchMedia(query).matches;
   const dark = matches('(prefers-color-scheme: dark)');

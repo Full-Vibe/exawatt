@@ -1,6 +1,9 @@
 import { correctAccentContrast } from './color';
 import {
+  AIR_THEME_ID,
   CLASSIC_THEME_ID,
+  NIGHT_THEME_ID,
+  type AppearanceAutoPairV1,
   type AppearanceOsSignals,
   type AppearancePreferencesV1,
   type AppearancePreview,
@@ -9,18 +12,39 @@ import {
   type ThemeRegistry,
 } from './types';
 
+export const DEFAULT_APPEARANCE_AUTO_PAIR: AppearanceAutoPairV1 = {
+  lightThemeId: AIR_THEME_ID,
+  darkThemeId: NIGHT_THEME_ID,
+};
+
 export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferencesV1 = {
   schemaVersion: 1,
   selection: {
-    mode: 'manual',
-    themeId: CLASSIC_THEME_ID,
+    mode: 'auto',
+    ...DEFAULT_APPEARANCE_AUTO_PAIR,
   },
+  autoPair: DEFAULT_APPEARANCE_AUTO_PAIR,
   accentSource: 'theme',
   interfaceFont: 'theme',
   interfaceScale: 100,
   contrast: 'system',
   transparency: 'system',
 };
+
+export const CLASSIC_RECOVERY_APPEARANCE_PREFERENCES: AppearancePreferencesV1 =
+  {
+    schemaVersion: 1,
+    selection: {
+      mode: 'manual',
+      themeId: CLASSIC_THEME_ID,
+    },
+    autoPair: DEFAULT_APPEARANCE_AUTO_PAIR,
+    accentSource: 'theme',
+    interfaceFont: 'theme',
+    interfaceScale: 100,
+    contrast: 'system',
+    transparency: 'system',
+  };
 
 function validTheme(
   registry: ThemeRegistry,

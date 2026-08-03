@@ -15,10 +15,14 @@ import {
   validateThemeContrast,
 } from '../../../themes/contract.mjs';
 import {
+  AIR_THEME_ID,
   CLASSIC_THEME_ID,
+  CLASSIC_RECOVERY_APPEARANCE_PREFERENCES,
   contrastRatio,
   DEFAULT_APPEARANCE_PREFERENCES,
+  NIGHT_THEME_ID,
   resolveAppearance,
+  type AppearancePreferencesV1,
   type AppearanceOsSignals,
   type ThemeDefinitionV1,
 } from '.';
@@ -39,11 +43,12 @@ describe('ThemeDefinitionV1', () => {
       expect(validateThemeContrast(theme)).toEqual([]);
       expect(validateThemeChannels(theme)).toEqual([]);
     }
-    expect(PRODUCTION_THEME_IDS).toEqual([CLASSIC_THEME_ID]);
-    expect(GALLERY_THEME_IDS).toEqual([
-      'exawatt-air-light',
-      'exawatt-night-dark',
+    expect(PRODUCTION_THEME_IDS).toEqual([
+      AIR_THEME_ID,
+      CLASSIC_THEME_ID,
+      NIGHT_THEME_ID,
     ]);
+    expect(GALLERY_THEME_IDS).toEqual([]);
   });
 
   it('rejects semantic-channel collisions independently of D40 shape redundancy', () => {
@@ -56,7 +61,9 @@ describe('ThemeDefinitionV1', () => {
     expect(validateThemeChannels(unsafe)).toEqual(
       expect.arrayContaining([
         expect.stringContaining('status.fault duplicates status.active'),
-        expect.stringContaining('channels.status.fault duplicates channels.status.active'),
+        expect.stringContaining(
+          'channels.status.fault duplicates channels.status.active'
+        ),
         expect.stringContaining(
           'channels.consumption.hot duplicates channels.foundation.action'
         ),
@@ -64,8 +71,8 @@ describe('ThemeDefinitionV1', () => {
     );
   });
 
-  it('holds gallery control boundaries and spatial marks above non-text contrast', () => {
-    for (const id of GALLERY_THEME_IDS) {
+  it('holds the Air/Night control boundaries and spatial marks above non-text contrast', () => {
+    for (const id of [AIR_THEME_ID, NIGHT_THEME_ID]) {
       const theme = THEME_REGISTRY[id];
       expect(
         contrastRatio(theme.foundation.input, theme.foundation.surface)
@@ -77,9 +84,9 @@ describe('ThemeDefinitionV1', () => {
         contrastRatio(theme.spatial.selection, theme.spatial.zone)
       ).toBeGreaterThanOrEqual(3);
       for (const color of Object.values(theme.status)) {
-        expect(contrastRatio(color, theme.spatial.canvas)).toBeGreaterThanOrEqual(
-          3
-        );
+        expect(
+          contrastRatio(color, theme.spatial.canvas)
+        ).toBeGreaterThanOrEqual(3);
       }
     }
   });
@@ -162,7 +169,7 @@ describe('ThemeDefinitionV1', () => {
     );
     expect(globals).toContain("[data-exa-font='system']");
     expect(globals).toContain(
-      '--font-ui: -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif'
+      "--font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
     );
   });
 });
@@ -176,6 +183,71 @@ describe('AppearancePreferencesV1 and resolver', () => {
       AppearancePreferencesSchema.safeParse({
         ...DEFAULT_APPEARANCE_PREFERENCES,
         interfaceScale: 137,
+      }).success
+    ).toBe(false);
+  });
+
+  it('defaults missing preferences to Auto Air/Night and keeps Classic for recovery', () => {
+    expect(DEFAULT_APPEARANCE_PREFERENCES.selection).toEqual({
+      mode: 'auto',
+      lightThemeId: AIR_THEME_ID,
+      darkThemeId: NIGHT_THEME_ID,
+    });
+    expect(
+      resolveAppearance(
+        THEME_REGISTRY,
+        DEFAULT_APPEARANCE_PREFERENCES,
+        LIGHT_OS
+      ).themeId
+    ).toBe(AIR_THEME_ID);
+    expect(
+      resolveAppearance(THEME_REGISTRY, DEFAULT_APPEARANCE_PREFERENCES, {
+        ...LIGHT_OS,
+        dark: true,
+      }).themeId
+    ).toBe(NIGHT_THEME_ID);
+    expect(
+      resolveAppearance(
+        THEME_REGISTRY,
+        CLASSIC_RECOVERY_APPEARANCE_PREFERENCES,
+        LIGHT_OS
+      ).themeId
+    ).toBe(CLASSIC_THEME_ID);
+  });
+
+  it('normalizes legacy V1 records without losing their Auto pair', () => {
+    const legacyManual = structuredClone(
+      CLASSIC_RECOVERY_APPEARANCE_PREFERENCES
+    ) as AppearancePreferencesV1;
+    delete legacyManual.autoPair;
+    expect(AppearancePreferencesSchema.parse(legacyManual).autoPair).toEqual({
+      lightThemeId: AIR_THEME_ID,
+      darkThemeId: NIGHT_THEME_ID,
+    });
+
+    const legacyAuto = structuredClone(
+      DEFAULT_APPEARANCE_PREFERENCES
+    ) as AppearancePreferencesV1;
+    legacyAuto.selection = {
+      mode: 'auto',
+      lightThemeId: AIR_THEME_ID,
+      darkThemeId: CLASSIC_THEME_ID,
+    };
+    delete legacyAuto.autoPair;
+    expect(AppearancePreferencesSchema.parse(legacyAuto).autoPair).toEqual({
+      lightThemeId: AIR_THEME_ID,
+      darkThemeId: CLASSIC_THEME_ID,
+    });
+  });
+
+  it('rejects a stale remembered pair while Auto is active', () => {
+    expect(
+      AppearancePreferencesSchema.safeParse({
+        ...DEFAULT_APPEARANCE_PREFERENCES,
+        autoPair: {
+          lightThemeId: AIR_THEME_ID,
+          darkThemeId: CLASSIC_THEME_ID,
+        },
       }).success
     ).toBe(false);
   });

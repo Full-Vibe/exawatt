@@ -2,7 +2,10 @@ import {
   THEME_BOOTSTRAP_REGISTRY,
   type ThemeBootstrapId,
 } from './generated-theme-bootstrap';
-import type { ElectronAppearancePreferencesV1 } from './settings-store';
+import {
+  DEFAULT_ELECTRON_APPEARANCE_PREFERENCES,
+  type ElectronAppearancePreferencesV1,
+} from './settings-store';
 
 export const CLASSIC_BOOTSTRAP_THEME_ID: ThemeBootstrapId =
   'exawatt-classic-dark';
@@ -49,7 +52,7 @@ export function resolveNativeAppearance(
   options: { dark: boolean; safeTheme: boolean }
 ): NativeAppearanceResolution {
   const classic = THEME_BOOTSTRAP_REGISTRY[CLASSIC_BOOTSTRAP_THEME_ID];
-  if (options.safeTheme || !appearance) {
+  if (options.safeTheme) {
     return {
       themeId: CLASSIC_BOOTSTRAP_THEME_ID,
       themeSource: 'dark',
@@ -57,11 +60,13 @@ export function resolveNativeAppearance(
     };
   }
 
-  if (appearance.selection.mode === 'manual') {
-    const selected = productionTheme(appearance.selection.themeId);
+  const preferences = appearance ?? DEFAULT_ELECTRON_APPEARANCE_PREFERENCES;
+
+  if (preferences.selection.mode === 'manual') {
+    const selected = productionTheme(preferences.selection.themeId);
     return selected
       ? {
-          themeId: appearance.selection.themeId,
+          themeId: preferences.selection.themeId,
           themeSource: selected.appearance,
           bootstrap: selected,
         }
@@ -72,8 +77,8 @@ export function resolveNativeAppearance(
         };
   }
 
-  const light = productionTheme(appearance.selection.lightThemeId);
-  const dark = productionTheme(appearance.selection.darkThemeId);
+  const light = productionTheme(preferences.selection.lightThemeId);
+  const dark = productionTheme(preferences.selection.darkThemeId);
   if (
     !light ||
     !dark ||
@@ -87,8 +92,8 @@ export function resolveNativeAppearance(
     };
   }
   const themeId = options.dark
-    ? appearance.selection.darkThemeId
-    : appearance.selection.lightThemeId;
+    ? preferences.selection.darkThemeId
+    : preferences.selection.lightThemeId;
   return {
     themeId,
     themeSource: 'system',
@@ -106,10 +111,11 @@ export function applyNativeAppearancePreference(
   native: NativeThemeAdapter,
   options: { safeTheme: boolean; systemDarkOverride?: boolean }
 ): NativeAppearanceResolution {
-  if (!options.safeTheme && appearance?.selection.mode === 'auto') {
+  const preferences = appearance ?? DEFAULT_ELECTRON_APPEARANCE_PREFERENCES;
+  if (!options.safeTheme && preferences.selection.mode === 'auto') {
     native.themeSource = 'system';
   }
-  const resolved = resolveNativeAppearance(appearance, {
+  const resolved = resolveNativeAppearance(preferences, {
     dark: options.systemDarkOverride ?? native.shouldUseDarkColors,
     safeTheme: options.safeTheme,
   });

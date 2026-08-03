@@ -8,7 +8,7 @@ export const THEME_DEFINITIONS = [
     "label": "Air",
     "author": "Exawatt",
     "appearance": "light",
-    "availability": "gallery",
+    "availability": "production",
     "foundation": {
       "canvas": "#F3F5F2",
       "surface": "#FAFBF8",
@@ -330,7 +330,7 @@ export const THEME_DEFINITIONS = [
     "label": "Night",
     "author": "Exawatt",
     "appearance": "dark",
-    "availability": "gallery",
+    "availability": "production",
     "foundation": {
       "canvas": "#0B100E",
       "surface": "#111814",
@@ -494,5 +494,5 @@ export const THEME_REGISTRY = {
 } as const satisfies ThemeRegistry;
 
 export type BuiltInThemeId = keyof typeof THEME_REGISTRY;
-export const PRODUCTION_THEME_IDS = ['exawatt-classic-dark'] as const;
-export const GALLERY_THEME_IDS = ['exawatt-air-light', 'exawatt-night-dark'] as const;
+export const PRODUCTION_THEME_IDS = ['exawatt-air-light', 'exawatt-classic-dark', 'exawatt-night-dark'] as const;
+export const GALLERY_THEME_IDS = [] as const;

@@ -13,8 +13,8 @@ const CHECK = process.argv.includes('--check');
 
 const EXPECTED = {
   'exawatt-classic-dark': { appearance: 'dark', availability: 'production' },
-  'exawatt-air-light': { appearance: 'light', availability: 'gallery' },
-  'exawatt-night-dark': { appearance: 'dark', availability: 'gallery' },
+  'exawatt-air-light': { appearance: 'light', availability: 'production' },
+  'exawatt-night-dark': { appearance: 'dark', availability: 'production' },
 };
 
 function formatIssue(issue) {

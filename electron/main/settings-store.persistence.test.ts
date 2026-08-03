@@ -9,7 +9,11 @@ vi.mock('electron', () => ({
   app: { getPath: () => electronState.userData },
 }));
 
-import { loadSettings, setAppearancePreferences } from './settings-store';
+import {
+  CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES,
+  loadSettings,
+  setAppearancePreferences,
+} from './settings-store';
 
 const classic = {
   schemaVersion: 1,
@@ -20,6 +24,7 @@ const classic = {
   contrast: 'system',
   transparency: 'system',
 } as const;
+const normalizedClassic = CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES;
 
 beforeEach(() => {
   electronState.userData = fs.mkdtempSync(
@@ -38,11 +43,11 @@ describe('appearance settings persistence', () => {
 
     expect(setAppearancePreferences(classic)).toEqual({
       terminal: { fontSize: 15 },
-      appearance: classic,
+      appearance: normalizedClassic,
     });
     expect(loadSettings()).toEqual({
       terminal: { fontSize: 15 },
-      appearance: classic,
+      appearance: normalizedClassic,
     });
     expect(
       fs
@@ -51,7 +56,7 @@ describe('appearance settings persistence', () => {
     ).toEqual([]);
   });
 
-  it('rejects unavailable themes without touching the settings file', () => {
+  it('rejects unknown themes without touching the settings file', () => {
     const file = path.join(electronState.userData, 'settings.json');
     fs.writeFileSync(
       file,
@@ -62,9 +67,32 @@ describe('appearance settings persistence', () => {
     expect(() =>
       setAppearancePreferences({
         ...classic,
-        selection: { mode: 'manual', themeId: 'exawatt-air-light' },
+        selection: { mode: 'manual', themeId: 'exawatt-remote-dark' },
       })
     ).toThrow('Invalid or unavailable');
     expect(fs.readFileSync(file, 'utf8')).toBe(before);
+  });
+
+  it('distinguishes a missing preference from corrupt settings', () => {
+    const file = path.join(electronState.userData, 'settings.json');
+
+    expect(loadSettings()).toEqual({});
+    fs.writeFileSync(file, JSON.stringify({ terminal: { fontSize: 15 } }));
+    expect(loadSettings()).toEqual({ terminal: { fontSize: 15 } });
+
+    fs.writeFileSync(file, '{');
+    expect(loadSettings()).toEqual({ appearance: normalizedClassic });
+
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        terminal: { fontSize: 15 },
+        appearance: { ...classic, injectedCss: 'body{}' },
+      })
+    );
+    expect(loadSettings()).toEqual({
+      terminal: { fontSize: 15 },
+      appearance: normalizedClassic,
+    });
   });
 });

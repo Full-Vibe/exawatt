@@ -4,7 +4,7 @@
   "label": "Night",
   "author": "Exawatt",
   "appearance": "dark",
-  "availability": "gallery",
+  "availability": "production",
   "foundation": {
     "canvas": "#0B100E",
     "surface": "#111814",

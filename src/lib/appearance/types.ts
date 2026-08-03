@@ -189,9 +189,19 @@ export type AppearanceSelectionV1 =
       darkThemeId: string;
     };
 
+export interface AppearanceAutoPairV1 {
+  lightThemeId: string;
+  darkThemeId: string;
+}
+
 export interface AppearancePreferencesV1 {
   schemaVersion: 1;
   selection: AppearanceSelectionV1;
+  /**
+   * The remembered Auto pair is independent of the active selection. Legacy
+   * V1 records omit it and are normalized at persistence boundaries.
+   */
+  autoPair?: AppearanceAutoPairV1;
   accentSource: 'theme' | 'system';
   interfaceFont: 'theme' | 'system' | 'geist';
   interfaceScale: 90 | 100 | 110 | 120;

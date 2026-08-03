@@ -518,6 +518,7 @@ export interface AppearancePreferencesV1 {
   selection:
     | { mode: 'manual'; themeId: string }
     | { mode: 'auto'; lightThemeId: string; darkThemeId: string };
+  autoPair?: { lightThemeId: string; darkThemeId: string };
   accentSource: 'theme' | 'system';
   interfaceFont: 'theme' | 'system' | 'geist';
   interfaceScale: 90 | 100 | 110 | 120;

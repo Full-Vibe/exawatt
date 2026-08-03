@@ -1,10 +1,14 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { DEFAULT_APPEARANCE_PREFERENCES } from '@/lib/appearance';
+import {
+  CLASSIC_RECOVERY_APPEARANCE_PREFERENCES,
+  selectManualTheme,
+} from '@/lib/appearance';
+import { APPEARANCE_MIRROR_STORAGE_KEY } from '@/lib/appearance/preference-source';
 import { AppearanceProvider, useAppearance } from './appearance-provider';
 
-const classic = structuredClone(DEFAULT_APPEARANCE_PREFERENCES);
+const classic = structuredClone(CLASSIC_RECOVERY_APPEARANCE_PREFERENCES);
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -66,14 +70,24 @@ describe('AppearanceProvider', () => {
     expect(setAppearance).toHaveBeenCalledWith(classic);
   });
 
-  it('rejects gallery-only choices at the production provider boundary', async () => {
+  it('commits the promoted Air theme at the production provider boundary', async () => {
     const view = renderHook(() => useAppearance(), { wrapper });
     await waitFor(() => expect(view.result.current.ready).toBe(true));
-    await expect(
-      view.result.current.commitPreferences({
-        ...classic,
-        selection: { mode: 'manual', themeId: 'exawatt-air-light' },
-      })
-    ).rejects.toThrow('unavailable appearance');
+    await act(() =>
+      view.result.current.commitPreferences(
+        selectManualTheme(classic, 'exawatt-air-light')
+      )
+    );
+    expect(view.result.current.resolved.themeId).toBe('exawatt-air-light');
+  });
+
+  it('keeps corrupt browser state on Classic through hydration', async () => {
+    window.localStorage.setItem(APPEARANCE_MIRROR_STORAGE_KEY, '{');
+
+    const view = renderHook(() => useAppearance(), { wrapper });
+    await waitFor(() => expect(view.result.current.ready).toBe(true));
+
+    expect(view.result.current.preferences).toEqual(classic);
+    expect(view.result.current.resolved.themeId).toBe('exawatt-classic-dark');
   });
 });

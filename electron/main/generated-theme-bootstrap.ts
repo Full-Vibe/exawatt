@@ -2,7 +2,7 @@
 export const THEME_BOOTSTRAP_REGISTRY = {
   "exawatt-air-light": {
     "appearance": "light",
-    "availability": "gallery",
+    "availability": "production",
     "background": "#F3F5F2",
     "foreground": "#18211D",
     "signal": "#087F6E",
@@ -38,7 +38,7 @@ export const THEME_BOOTSTRAP_REGISTRY = {
   },
   "exawatt-night-dark": {
     "appearance": "dark",
-    "availability": "gallery",
+    "availability": "production",
     "background": "#0B100E",
     "foreground": "#E8F0EB",
     "signal": "#60BFA7",

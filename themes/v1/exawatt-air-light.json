@@ -4,7 +4,7 @@
   "label": "Air",
   "author": "Exawatt",
   "appearance": "light",
-  "availability": "gallery",
+  "availability": "production",
   "foundation": {
     "canvas": "#F3F5F2",
     "surface": "#FAFBF8",
