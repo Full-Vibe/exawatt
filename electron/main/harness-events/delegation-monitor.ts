@@ -11,6 +11,7 @@ import { EventEmitter } from 'events';
 import {
   applyHarnessEvent,
   delegationBusy,
+  delegationIsLive,
   EMPTY_DELEGATION,
   type HarnessEvent,
   type SessionDelegation,
@@ -41,11 +42,26 @@ export class DelegationMonitor extends EventEmitter {
     const after = applyHarnessEvent(before, event);
     if (after === before) return;
     this.state.set(sessionId, after);
-    this.emit('delegation', sessionId, after);
+    this.publish(sessionId, after);
   }
 
+  /** Internal truth, including settled records. Attention rules read this. */
   get(sessionId: string): SessionDelegation | null {
     return this.state.get(sessionId) ?? null;
+  }
+
+  /**
+   * What SURFACES may see. A settled record is published as null so every
+   * surface returns to inference together instead of one of them holding a
+   * stale reported answer.
+   */
+  getLive(sessionId: string): SessionDelegation | null {
+    const current = this.state.get(sessionId);
+    return delegationIsLive(current) ? (current ?? null) : null;
+  }
+
+  private publish(sessionId: string, state: SessionDelegation): void {
+    this.emit('delegation', sessionId, delegationIsLive(state) ? state : null);
   }
 
   /** "The team is working" — outstanding delegated children. */
@@ -62,7 +78,7 @@ export class DelegationMonitor extends EventEmitter {
     const existing = this.state.get(sessionId);
     if (!existing) return;
     this.state.delete(sessionId);
-    this.emit('delegation', sessionId, EMPTY_DELEGATION);
+    this.emit('delegation', sessionId, null);
   }
 }
 

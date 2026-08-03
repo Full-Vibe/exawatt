@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyHarnessEvent,
   delegationBusy,
+  delegationIsLive,
   EMPTY_DELEGATION,
   type SessionDelegation,
 } from './delegation-state';
@@ -92,5 +93,42 @@ describe('delegation state', () => {
     // the capability, not this state, is what makes that distinction.
     expect(delegationBusy(null)).toBe(false);
     expect(delegationBusy(undefined)).toBe(false);
+  });
+});
+
+/**
+ * One rule, one place (ENG-015 S1.1 review). This predicate briefly existed in
+ * both the main process and the renderer and they drifted: main retained
+ * settled records forever while the renderer dropped them, so after a turn
+ * ended the ⌘K switcher answered "result ready" from the reported fact while
+ * the tab strip answered "working" from inference.
+ */
+describe('what surfaces may see', () => {
+  const child = { id: 'a1', agentType: 'Explore', startedAt: 1 };
+
+  it('publishes a Session whose own turn is running', () => {
+    expect(delegationIsLive({ ownTurn: 'generating', children: [] })).toBe(
+      true
+    );
+  });
+
+  it('publishes a Session with delegated children, turn over or not', () => {
+    expect(delegationIsLive({ ownTurn: 'available', children: [child] })).toBe(
+      true
+    );
+    expect(delegationIsLive({ ownTurn: 'generating', children: [child] })).toBe(
+      true
+    );
+  });
+
+  it('publishes nothing once a Session has settled', () => {
+    // This is the case that diverged. Both surfaces must return to inference
+    // at the same instant rather than one holding a stale reported answer.
+    expect(delegationIsLive({ ownTurn: 'available', children: [] })).toBe(
+      false
+    );
+    expect(delegationIsLive(EMPTY_DELEGATION)).toBe(false);
+    expect(delegationIsLive(null)).toBe(false);
+    expect(delegationIsLive(undefined)).toBe(false);
   });
 });

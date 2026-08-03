@@ -417,7 +417,7 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       working: attentionMonitor.isWorking(s.id),
       // Ride-along so a reload or late attach sees live children immediately
       // instead of waiting for the next delegation change (ENG-023).
-      delegation: delegationMonitor.get(s.id),
+      delegation: delegationMonitor.getLive(s.id),
     }))
   );
   handleTrusted('pty:buffer', (_event, id: string) => ptySessions.buffer(id));

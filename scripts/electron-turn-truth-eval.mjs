@@ -147,8 +147,12 @@ try {
           `cycle ${turn} start`
         );
         await send('stop');
+        // A settled Session WITHDRAWS its reported state (publishes null) so
+        // every surface returns to inference together, so assert the
+        // user-visible result rather than a lingering `available`.
         await until(
-          async () => (await ownTurnOf()) === 'available',
+          async () =>
+            (await status()) === 'done' && (await ownTurnOf()) === 'unreported',
           `cycle ${turn} end`
         );
       }

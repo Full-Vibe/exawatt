@@ -314,6 +314,17 @@ Two defects the permutation testing found, both fixed here:
    unanswered question or block still needs the operator, and more output does
    not answer it.
 
+Post-landing review found a third defect, of a different kind: the liveness
+rule ("is there anything reported worth showing?") had been written twice — in
+the main process and again in the renderer — and the two drifted. Main retained
+settled records forever while the renderer dropped them, so once a turn ended
+and the operator began typing a follow-up, the ⌘K switcher answered "result
+ready" from the reported fact while the tab strip answered "working" from
+inference. One question, two answers, on surfaces the repo deliberately drives
+from one derivation. The rule now lives only in `delegationIsLive`, the monitor
+publishes `null` for a settled Session, and every surface returns to inference
+at the same instant. Surfaces no longer decide what is worth showing.
+
 Verification: `pnpm eval:electron:turn-truth` drives the permutations in the
 real app over a fixture harness that speaks the actual hook payloads;
 `attention-monitor.test.ts` and `session-status.test.ts` own the state matrix,

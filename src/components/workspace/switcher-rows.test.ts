@@ -258,7 +258,10 @@ describe('extractRoadmapItemIds', () => {
             { sessionId: 'pty-2', roadmapItemId: null },
           ],
         },
-        { dir: '/p/b', tabs: [{ sessionId: 'pty-3', roadmapItemId: 'APP-003' }] },
+        {
+          dir: '/p/b',
+          tabs: [{ sessionId: 'pty-3', roadmapItemId: 'APP-003' }],
+        },
       ],
     };
     expect(extractRoadmapItemIds(layout)).toEqual({
@@ -272,7 +275,10 @@ describe('extractRoadmapItemIds', () => {
     const layout = {
       v: 4,
       projects: [
-        { dir: '/p/a', tabs: [{ sessionId: 'pty-1', roadmapItemId: 'APP-018' }] },
+        {
+          dir: '/p/a',
+          tabs: [{ sessionId: 'pty-1', roadmapItemId: 'APP-018' }],
+        },
       ],
     };
     const rows = buildSessionRows([session()], layout, 100_000);
@@ -351,5 +357,44 @@ describe('sessionRowStatus with delegated work', () => {
         NOW
       )
     ).toBe('fault');
+  });
+});
+
+/**
+ * The switcher and the strip must answer one question the same way
+ * (ENG-015 S1.1 review). Main now publishes only live reported state, so a
+ * settled Session carries none and BOTH surfaces fall back to inference.
+ */
+describe('sessionRowStatus agrees with the strip on a settled Session', () => {
+  const NOW = 100_000;
+
+  it('falls back to inference when nothing is reported', () => {
+    // The divergence: main used to keep {ownTurn:'available'} forever, so the
+    // switcher said "done" while the strip said "working" for the same tab.
+    expect(
+      sessionRowStatus(
+        session({ working: true, engaged: true, delegation: null }),
+        NOW
+      )
+    ).toBe('working');
+    expect(
+      sessionRowStatus(
+        session({ working: false, engaged: true, delegation: null }),
+        NOW
+      )
+    ).toBe('done');
+  });
+
+  it('uses the reported turn while one is live', () => {
+    expect(
+      sessionRowStatus(
+        session({
+          working: false,
+          engaged: true,
+          delegation: { ownTurn: 'generating', children: [] },
+        }),
+        NOW
+      )
+    ).toBe('working');
   });
 });

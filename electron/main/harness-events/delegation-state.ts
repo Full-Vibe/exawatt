@@ -50,6 +50,26 @@ export const EMPTY_DELEGATION: SessionDelegation = {
   children: [],
 };
 
+/**
+ * Is there anything reported worth publishing?
+ *
+ * The rule lives HERE and nowhere else. It briefly existed in both the main
+ * process and the renderer, and they drifted: main retained settled records
+ * forever while the renderer dropped them, so after a turn ended the ⌘K
+ * switcher read "result ready" from the reported fact while the tab strip read
+ * "working" from inference. One fact, two answers. A non-live record is
+ * published as `null`, which hands the question back to inference on every
+ * surface at the same instant.
+ */
+export function delegationIsLive(
+  delegation: SessionDelegation | null | undefined
+): boolean {
+  return (
+    !!delegation &&
+    (delegation.children.length > 0 || delegation.ownTurn === 'generating')
+  );
+}
+
 /** The Session has outstanding delegated work — "the team is working". */
 export function delegationBusy(
   delegation: SessionDelegation | null | undefined

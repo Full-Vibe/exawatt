@@ -297,9 +297,14 @@ export interface ElectronPtyApi {
   ) => () => void;
   /** fires once per session, on the first work it is given (D22) */
   onEngaged: (handler: (payload: { id: string }) => void) => () => void;
-  /** harness-reported delegation changes (ENG-023); absent on older preloads */
+  /** Harness-reported delegation changes (ENG-023); absent on older preloads.
+   *  `null` means the Session has nothing live to report and every surface
+   *  should fall back to inference — main owns that decision. */
   onDelegation?: (
-    handler: (payload: { id: string; delegation: SessionDelegation }) => void
+    handler: (payload: {
+      id: string;
+      delegation: SessionDelegation | null;
+    }) => void
   ) => () => void;
   onNotificationClick: (
     handler: (payload: { id: string }) => void

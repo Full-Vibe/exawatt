@@ -870,13 +870,8 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         if (s.engaged) seededEngaged[s.id] = true;
         // Reload and late-attach adopt live delegation immediately (ENG-023);
         // otherwise the dots would wait for the next child to start or stop.
-        if (
-          s.delegation &&
-          (s.delegation.children.length > 0 ||
-            s.delegation.ownTurn === 'generating')
-        ) {
-          seededDelegation[s.id] = s.delegation;
-        }
+        // Already filtered by main; a settled Session simply carries none.
+        if (s.delegation) seededDelegation[s.id] = s.delegation;
       }
       if (Object.keys(seeded).length > 0) {
         setSummaries(prev => ({ ...seeded, ...prev }));
@@ -1159,20 +1154,17 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     // child drops out of the record entirely, so surfaces read "no delegated
     // work" rather than "zero children" — absent is not the same as none.
     const offDelegation = api.onDelegation?.(({ id, delegation: next }) => {
+      // Main decides what is worth publishing and sends null otherwise, so
+      // the liveness rule lives in exactly one place. Re-deriving it here is
+      // what let the switcher and the strip disagree about one Session.
       setDelegation(prev => {
-        // The record carries BOTH reported facts, so it is kept while either
-        // is live: children outstanding, or the Session's own turn running.
-        // Dropping it on "no children" would discard the turn truth that
-        // corrects the glyph (ENG-015 S1.1).
-        const live =
-          !!next && (next.children.length > 0 || next.ownTurn === 'generating');
-        if (!live) {
+        if (!next) {
           if (!(id in prev)) return prev;
           const cleared = { ...prev };
           delete cleared[id];
           return cleared;
         }
-        return { ...prev, [id]: next! };
+        return { ...prev, [id]: next };
       });
     });
     const offAttention = api.onAttention?.(({ id, attention: att }) => {
