@@ -12,16 +12,23 @@ Scope of G0: type scale, spacing steps, color roles, status iconography, and the
 
 ### Families
 
-Declared in `src/app/layout.tsx` and mapped in `src/app/globals.css` `@theme`:
+Declared in `src/app/layout.tsx` and mapped in `src/app/globals.css` `@theme`.
+ENG-032 T2 adds a resolved `data-exa-typography` profile under the global
+`data-exa-font` override:
 
-| Utility | Face | Where it is used |
+| Utility / profile | Face | Where it is used |
 | --- | --- | --- |
-| `font-sans` | Exo 2 | body default; marketing/site surfaces only |
-| `font-ui` | Geist Sans | application chrome — the workspace, settings, panels (163 uses) |
-| `font-display` | Geist Sans | headings inside HUD/app surfaces (56 uses) |
+| Classic theme default | Exo 2 shell/body + Geist UI/display | compatibility rendering of the shipped product |
+| Air theme default | system shell/UI + Geist display | lighter native-feeling application chrome |
+| Night theme default | Geist shell/UI/display | calm dark application chrome |
+| System override | system shell/UI/display | app-global interface-family override |
+| Geist override | Geist shell/UI/display | deterministic bundled interface-family override |
 | `font-mono` | Geist Mono | metrics, ordinals, tracked micro-labels, code (302 uses) |
 
-Rule already in force: app surfaces set `font-ui` on their root; numbers and micro-labels go `font-mono`; Exo 2 never appears inside the application chrome.
+App surfaces set `font-ui` on their root; numbers and micro-labels go
+`font-mono`. Terminal typography remains a separate setting and never follows
+the interface profile. No preset adds a font binary, local-font permission, or
+runtime network fetch.
 
 ### The named scale
 
@@ -43,6 +50,12 @@ The core of the scale is the **D39 chrome type roles**, already tokens in `globa
 | marketing | 24+ | `text-2xl` … `text-4xl` | marketing/site pages only, never app chrome |
 
 Weights: `font-medium` for labels/controls, `font-semibold` for titles/headings (164/163 uses — the two workhorses); `font-bold` is rare and stays rare. Uppercase is legal **only** on mono micro-labels ≤ 11px with wide tracking (`tracking-[0.1em]`–`[0.18em]`) — the established HUD label idiom; never on sentences or headings.
+
+The app-global interface scale multiplies every application rung from
+`text-chrome-nano` through `text-display`, including Tailwind's `text-xs`,
+`text-sm`, `text-base`, and `text-lg` control/body rungs. Nano is clamped to the
+9px floor. Marketing sizes, spacing, geometry, motion, and terminal metrics do
+not scale with this preference.
 
 ### Off-scale register (measured 2026-08-02)
 
@@ -100,6 +113,13 @@ type-rung scale, and accessibility overlays; production components keep their
 remaining scoped authorities below until their T3/T4 migration packet proves
 Classic parity. Status, action, Consumption, readiness, and Project-identity
 ownership do not change with the ground.
+
+ENG-032 transition note (T2, 2026-08-03): Air and Night are one accepted visual
+family but remain gallery-only. The workbench freezes their type/material
+profiles, renders full status/Consumption/readiness/action/Project channel
+separation, and compares DOM with a concrete-sRGB bloom-free R3F sibling. It
+does not change spacing, geometry, motion, production defaults, or Demo/Live
+state ownership.
 
 ### 1. Semantic chrome (shadcn variables, `globals.css`)
 
@@ -195,6 +215,7 @@ The gallery has been the de facto design system. With this document as the writt
 | `/hud-gallery` — Quick feedback capture study | **Retire** | shipped app-wide (ENG-025 F2, mounted via shortcut provider); the gallery section imports the production components, so it cannot drift from them — only from their real mounting context — and duplicates a live surface for no review value |
 | `/hud-gallery` — Session context label feedback study | **Retire** | shipped in the tab strip; same drift argument |
 | `/hud-gallery` — R3F keyswitch material studies | **Keep** — restored by operator review (decision `0025`) | active material workbench for physical command controls; the production home command key and T8/T9 rigs retain the shared R3F machinery. The unused DOM `.tactile-key` sibling and global CSS remain retired |
+| `/hud-gallery#theme-system` + `/hud-gallery/theme-system` | **Keep through ENG-032 T5, then retire** | temporary Air/Night contract and evaluator workbench; once production adapters and picker ship, a study of shipped state would drift |
 | `/hud-gallery/agent-field` | **Retire** | pre–Operations-Board scale demo; the shared R3F machinery it exercises is already production (`operations-board-surface`), and `/eval/t3-spatial-sparse` + `/eval/t4-agent-station` are the deterministic rigs. ENG-004 V3.1 (P5) does demo-scale work on the real surface, not here |
 | `/hud-gallery/agent-sources` | **Retire** | graduated to production `/settings` (settings shell + `agent-sources-settings.tsx`); the 1,182-line lab duplicates a shipped surface and carries its own off-scale type (17/22/25/28px) |
 | `/hud-gallery/consumption-lab` | **Keep until ENG-008 E5 lands, then fold into the main gallery** | active fixture-driven review rig for the in-flight consumption surface (pinned clock, corpus/direction switching); retire when the live source swap makes `/consumption` reviewable directly |
@@ -229,6 +250,15 @@ Never fork a parallel convention (a new fractional type scale, a fifth palette, 
   is the default. Interface scale multiplies named type rungs only—never root
   font size, spacing, terminal metrics, geometry, or motion. First-paint and
   native Electron chrome use the same generated bootstrap subset.
+- 2026-08-03 — ENG-032 T2: accepted the Air/Night visual family in the scoped
+  workbench and froze the three first-party typography profiles. The complete
+  application type ladder now follows the bounded interface scale with a 9px
+  nano floor; system/Geist overrides cover shell, UI, and display while mono
+  and terminal typography stay independent. Expanded text/control/spatial
+  contrast and exact channel-collision gates, canonical D40 marks, full
+  Consumption/readiness specimens, opaque material fallbacks, ANSI-16, and a
+  bloom-free concrete-sRGB R3F sibling are reviewable. Air/Night remain
+  gallery-only until T5.
 - 2026-08-02 — G0: initial kernel extracted from the shipped UI; named 12-rung type scale over the D39 chrome roles; off-scale register recorded; `/hud-gallery` merge/retire decisions written (execution = G1).
 - 2026-08-02 — G1 executed: the `/hud-gallery` decision list above is now reality. Retired the quick-capture, context-label, and keyswitch/tactile study sections; deleted `/hud-gallery/agent-field` and `/hud-gallery/agent-sources`; removed the 301-line `.tactile-key` block from `globals.css` (`TactileActionKey` re-verified at zero consumers before deletion); retired `/eval/t7-keyswitch` and its harness task with the study (production keyswitch buttons and their T8/T9 evals untouched); keyswitch direction note archived at `docs/archive/keyswitch-material-studies.md`; `AGENTS.md` workbench rule amended per the line above.
 - 2026-08-02 — ENG-026 N0 readiness grammar: one shared unbuilt-state family in `src/components/readiness/` — readiness neutral `#77839A` (same value as consumption's `FLUX.unknown`, kept outside every status/attention/consumption/identity channel per the channel-ownership rule) + dashed stroke at three scales (`ComingSoonMarker` pill, `AnnouncedChip` control, `Unbuilt` block), sentence-case **Coming soon** as the only phrase (no all-caps). Supersedes ENG-008 E4's local `designed, not built` tag. Type: chrome-micro on markers/tags, chrome-label on chips, chrome-title on unbuilt notes (the migration retired that file's `text-[13px]` literals). Do not draw dashed strokes in the neutral grey for any other purpose — dashes now mean *designed, not built*. Evidence: `/hud-gallery#readiness-grammar` and the ENG-026 milestone log screenshots.

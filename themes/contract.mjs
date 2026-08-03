@@ -254,7 +254,19 @@ export function contrastRatio(foreground, background) {
 export function validateThemeContrast(theme) {
   const checks = [
     ['foundation.canvas/text', theme.foundation.text, theme.foundation.canvas, 4.5],
+    [
+      'foundation.canvas/textMuted',
+      theme.foundation.textMuted,
+      theme.foundation.canvas,
+      4.5,
+    ],
     ['foundation.surface/text', theme.foundation.text, theme.foundation.surface, 4.5],
+    [
+      'foundation.surface/textMuted',
+      theme.foundation.textMuted,
+      theme.foundation.surface,
+      4.5,
+    ],
     ['foundation.overlay/text', theme.foundation.text, theme.foundation.overlay, 4.5],
     ['foundation.input/text', theme.foundation.text, theme.foundation.input, 4.5],
     ['foundation.action/actionText', theme.foundation.actionText, theme.foundation.action, 4.5],
@@ -266,8 +278,56 @@ export function validateThemeContrast(theme) {
     ],
     ['hud.void/text', theme.hud.text, theme.hud.void, 4.5],
     ['hud.panel/text', theme.hud.text, theme.hud.panel, 4.5],
+    ['spatial.canvas/label', theme.spatial.label, theme.spatial.canvas, 4.5],
+    [
+      'spatial.canvas/labelMuted',
+      theme.spatial.labelMuted,
+      theme.spatial.canvas,
+      4.5,
+    ],
+    [
+      'spatial.canvas/selection',
+      theme.spatial.selection,
+      theme.spatial.canvas,
+      3,
+    ],
+    ['foundation.canvas/focus', theme.foundation.focus, theme.foundation.canvas, 3],
+    ...Object.entries(theme.status).map(([state, color]) => [
+      `status.${state}/foundation.surface`,
+      color,
+      theme.foundation.surface,
+      3,
+    ]),
     ['terminal.background/foreground', theme.terminal.foreground, theme.terminal.background, 4.5],
     ['bootstrap.background/foreground', theme.bootstrap.foreground, theme.bootstrap.background, 4.5],
+    ...(theme.availability === 'gallery'
+      ? [
+          [
+            'foundation.surface/inputBoundary',
+            theme.foundation.input,
+            theme.foundation.surface,
+            3,
+          ],
+          [
+            'foundation.surface/borderStrong',
+            theme.foundation.borderStrong,
+            theme.foundation.surface,
+            3,
+          ],
+          [
+            'spatial.zone/selection',
+            theme.spatial.selection,
+            theme.spatial.zone,
+            3,
+          ],
+          ...Object.entries(theme.status).map(([state, color]) => [
+            `status.${state}/spatial.canvas`,
+            color,
+            theme.spatial.canvas,
+            3,
+          ]),
+        ]
+      : []),
   ];
   return checks.flatMap(([path, foreground, background, minimum]) => {
     const ratio = contrastRatio(foreground, background);
@@ -275,4 +335,45 @@ export function validateThemeContrast(theme) {
       ? []
       : [`${path} contrast ${ratio.toFixed(2)} is below ${minimum}`];
   });
+}
+
+/**
+ * Exact-color separation is a contract guard, not a claim that color alone is
+ * sufficient. The UI must still repeat D40 states with shape/icon/text.
+ */
+export function validateThemeChannels(theme) {
+  const errors = [];
+  const uniqueGroup = (group, entries) => {
+    const seen = new Map();
+    for (const [role, color] of entries) {
+      const earlier = seen.get(color);
+      if (earlier) {
+        errors.push(`${group}.${role} duplicates ${group}.${earlier} (${color})`);
+      } else {
+        seen.set(color, role);
+      }
+    }
+  };
+
+  const statuses = Object.entries(theme.status);
+  uniqueGroup('status', statuses);
+  uniqueGroup('consumption', [
+    ['calm', theme.consumption.calm],
+    ['mid', theme.consumption.mid],
+    ['warm', theme.consumption.warm],
+    ['hot', theme.consumption.hot],
+  ]);
+
+  const reserved = [
+    ['foundation.action', theme.foundation.action],
+    ['hud.attention', theme.hud.amber],
+    ['readiness.neutral', theme.readiness.neutral],
+    ['consumption.calm', theme.consumption.calm],
+    ['consumption.mid', theme.consumption.mid],
+    ['consumption.warm', theme.consumption.warm],
+    ['consumption.hot', theme.consumption.hot],
+    ...statuses.map(([role, color]) => [`status.${role}`, color]),
+  ];
+  uniqueGroup('channels', reserved);
+  return errors;
 }

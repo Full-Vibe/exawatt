@@ -13,7 +13,13 @@ const SIZE = {
 
 export type StatusLightSize = keyof typeof SIZE;
 
-function ActiveMark({ size }: { size: number }) {
+function ActiveMark({
+  size,
+  animated,
+}: {
+  size: number;
+  animated: boolean;
+}) {
   return (
     <svg
       aria-hidden="true"
@@ -30,10 +36,14 @@ function ActiveMark({ size }: { size: number }) {
         strokeWidth="1.6"
       />
       <g
-        className="status-light-active-rotor"
-        style={{
-          animationDuration: `${STATUS_LIGHT_ACTIVE_ROTATION_SECONDS}s`,
-        }}
+        className={animated ? 'status-light-active-rotor' : undefined}
+        style={
+          animated
+            ? {
+                animationDuration: `${STATUS_LIGHT_ACTIVE_ROTATION_SECONDS}s`,
+              }
+            : undefined
+        }
       >
         <path d="M8 8V1.6a6.4 6.4 0 0 1 0 12.8Z" fill="currentColor" />
       </g>
@@ -41,8 +51,16 @@ function ActiveMark({ size }: { size: number }) {
   );
 }
 
-function StateMark({ state, size }: { state: StatusLightState; size: number }) {
-  if (state === 'active') return <ActiveMark size={size} />;
+export function StatusLightMark({
+  state,
+  size,
+  animated = true,
+}: {
+  state: StatusLightState;
+  size: number;
+  animated?: boolean;
+}) {
+  if (state === 'active') return <ActiveMark animated={animated} size={size} />;
   if (state === 'result') {
     return <CircleCheck aria-hidden="true" size={size} strokeWidth={1.7} />;
   }
@@ -106,7 +124,7 @@ export function StatusLight({
         boxShadow: glow,
       }}
     >
-      <StateMark size={iconSize} state={state} />
+      <StatusLightMark size={iconSize} state={state} />
     </span>
   );
 }

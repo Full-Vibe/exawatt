@@ -17,3 +17,4 @@ export declare function contrastRatio(
   background: string
 ): number;
 export declare function validateThemeContrast(theme: ThemeDefinitionV1): string[];
+export declare function validateThemeChannels(theme: ThemeDefinitionV1): string[];

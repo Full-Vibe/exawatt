@@ -3,6 +3,35 @@ import type { ResolvedAppearance } from './types';
 const set = (root: HTMLElement, name: string, value: string | number) =>
   root.style.setProperty(name, String(value));
 
+/**
+ * Runtime-only values layered over the generated preset block. Keeping this
+ * projection pure lets gallery specimens and the production root consume the
+ * exact same resolved accessibility/material snapshot.
+ */
+export function resolvedAppearanceCssVariables(
+  resolved: ResolvedAppearance
+): Readonly<Record<string, string | number>> {
+  const { foundation, hud, material } = resolved.theme;
+  const variables: Record<string, string | number> = {
+    '--exa-interface-scale': resolved.interfaceScale / 100,
+    '--exa-foundation-action': foundation.action,
+    '--exa-foundation-text-muted': foundation.textMuted,
+    '--exa-foundation-text-faint': foundation.textFaint,
+    '--exa-foundation-border': foundation.border,
+    '--exa-hud-text-dim': hud.textDim,
+    '--exa-hud-stroke-soft': hud.strokeSoft,
+    '--exa-hud-stroke-faint': hud.strokeFaint,
+  };
+  for (const [role, recipe] of Object.entries(material)) {
+    variables[`--exa-material-${role}-tint`] = recipe.tint;
+    variables[`--exa-material-${role}-opacity`] = recipe.opacity;
+    variables[`--exa-material-${role}-blur`] = `${recipe.blur}px`;
+    variables[`--exa-material-${role}-saturation`] = recipe.saturation;
+    variables[`--exa-material-${role}-fallback`] = recipe.fallback;
+  }
+  return Object.freeze(variables);
+}
+
 export function applyResolvedAppearance(
   root: HTMLElement,
   resolved: ResolvedAppearance
@@ -16,23 +45,12 @@ export function applyResolvedAppearance(
     ? 'reduced'
     : 'standard';
   root.dataset.exaFont = resolved.interfaceFont;
+  root.dataset.exaTypography = resolved.theme.typography.profile;
   root.classList.toggle('dark', resolved.appearance === 'dark');
   root.classList.toggle('light', resolved.appearance === 'light');
-  set(root, '--exa-interface-scale', resolved.interfaceScale / 100);
-
-  const { foundation, hud, material } = resolved.theme;
-  set(root, '--exa-foundation-action', foundation.action);
-  set(root, '--exa-foundation-text-muted', foundation.textMuted);
-  set(root, '--exa-foundation-text-faint', foundation.textFaint);
-  set(root, '--exa-foundation-border', foundation.border);
-  set(root, '--exa-hud-text-dim', hud.textDim);
-  set(root, '--exa-hud-stroke-soft', hud.strokeSoft);
-  set(root, '--exa-hud-stroke-faint', hud.strokeFaint);
-  for (const [role, recipe] of Object.entries(material)) {
-    set(root, `--exa-material-${role}-tint`, recipe.tint);
-    set(root, `--exa-material-${role}-opacity`, recipe.opacity);
-    set(root, `--exa-material-${role}-blur`, `${recipe.blur}px`);
-    set(root, `--exa-material-${role}-saturation`, recipe.saturation);
-    set(root, `--exa-material-${role}-fallback`, recipe.fallback);
+  for (const [name, value] of Object.entries(
+    resolvedAppearanceCssVariables(resolved)
+  )) {
+    set(root, name, value);
   }
 }

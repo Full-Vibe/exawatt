@@ -7,7 +7,7 @@ export {
   statusLightStateForAgentStatus,
 } from './protocol';
 export type { StatusLightSignals, StatusLightState } from './protocol';
-export { StatusLight } from './status-light';
+export { StatusLight, StatusLightMark } from './status-light';
 export type { StatusLightSize } from './status-light';
 export {
   AgentTabStatusSpecimens,

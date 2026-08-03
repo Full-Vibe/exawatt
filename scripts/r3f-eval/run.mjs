@@ -79,6 +79,12 @@ const TASKS = [
     drawCallMax: 8,
     settleMs: 1_800,
   },
+  {
+    id: 't12-theme-system',
+    name: 'Air theme spatial contract',
+    drawCallMax: 28,
+    settleMs: 500,
+  },
 ];
 
 // Substrings that mean a real WebGL/shader failure -> hard gate.
@@ -208,6 +214,9 @@ async function runTask(browser, task) {
         return result;
       };
     });
+    if (task.id === 't12-theme-system') {
+      await page.evaluate(() => window.__EVAL_INVALIDATE__?.());
+    }
     // two more rAFs so the painted frame is composited before capture
     await page.evaluate(
       () =>
@@ -317,6 +326,42 @@ async function runTask(browser, task) {
       result.notes.push(`operations-board: ${JSON.stringify(board)}`);
       if (!result.semanticOk)
         result.errors.push('Spatial Operations Board semantics failed');
+    }
+
+    if (task.id === 't12-theme-system') {
+      const themeSpatial = await page.evaluate(() => {
+        const root = document.querySelector('[data-theme-spatial-study]');
+        const scene = window.__EVAL_SCENE__;
+        let unitCount = 0;
+        let statusCount = 0;
+        scene?.traverse(object => {
+          if (object.name.startsWith('theme-agent-')) unitCount += 1;
+          if (object.name.startsWith('theme-status-')) statusCount += 1;
+        });
+        return {
+          themeId: root?.getAttribute('data-theme-id'),
+          bloom: root?.getAttribute('data-theme-spatial-bloom'),
+          unitCount,
+          statusCount,
+          zoneCount: scene?.getObjectsByProperty('name', 'theme-project-zone')
+            .length,
+          selectionCount: scene?.getObjectsByProperty(
+            'name',
+            'theme-selected-agent-ring'
+          ).length,
+        };
+      });
+      result.semanticOk =
+        themeSpatial.themeId === 'exawatt-air-light' &&
+        themeSpatial.bloom === 'off' &&
+        themeSpatial.unitCount === 5 &&
+        themeSpatial.statusCount === 5 &&
+        themeSpatial.zoneCount === 1 &&
+        themeSpatial.selectionCount === 1;
+      result.notes.push(`theme-spatial: ${JSON.stringify(themeSpatial)}`);
+      if (!result.semanticOk) {
+        result.errors.push('Air theme spatial semantics failed');
+      }
     }
 
     if (task.id === 't7-keyswitch') {

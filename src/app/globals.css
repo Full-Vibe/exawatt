@@ -46,8 +46,21 @@
      h1, display for hero numbers and top-level headings on dense surfaces.
      See docs/engineering/design-system.md — new code cites these utilities,
      never bracketed pixel sizes. */
-  --text-chrome-nano: calc(0.5625rem * var(--exa-interface-scale, 1));
+  --text-chrome-nano: max(
+    0.5625rem,
+    calc(0.5625rem * var(--exa-interface-scale, 1))
+  );
   --text-chrome-nano--line-height: 1;
+  /* Tailwind's standard application rungs participate in the same bounded
+     preference. Marketing sizes (2xl+) and terminal metrics remain fixed. */
+  --text-xs: calc(0.75rem * var(--exa-interface-scale, 1));
+  --text-xs--line-height: calc(1rem * var(--exa-interface-scale, 1));
+  --text-sm: calc(0.875rem * var(--exa-interface-scale, 1));
+  --text-sm--line-height: calc(1.25rem * var(--exa-interface-scale, 1));
+  --text-base: calc(1rem * var(--exa-interface-scale, 1));
+  --text-base--line-height: calc(1.5rem * var(--exa-interface-scale, 1));
+  --text-lg: calc(1.125rem * var(--exa-interface-scale, 1));
+  --text-lg--line-height: calc(1.75rem * var(--exa-interface-scale, 1));
   --text-reading: calc(0.9375rem * var(--exa-interface-scale, 1));
   --text-surface-title: calc(1.25rem * var(--exa-interface-scale, 1));
   --text-display: calc(1.375rem * var(--exa-interface-scale, 1));
@@ -170,17 +183,43 @@
   --ring: var(--exa-foundation-focus);
 }
 
+[data-exa-typography='classic'] {
+  --exa-theme-interface-font: var(--font-exo2);
+  --exa-theme-ui-font: var(--font-geist-sans);
+  --exa-theme-display-font: var(--font-geist-sans);
+}
+
+[data-exa-typography='air'] {
+  --exa-theme-interface-font:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --exa-theme-ui-font:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --exa-theme-display-font: var(--font-geist-sans);
+}
+
+[data-exa-typography='night'] {
+  --exa-theme-interface-font: var(--font-geist-sans);
+  --exa-theme-ui-font: var(--font-geist-sans);
+  --exa-theme-display-font: var(--font-geist-sans);
+}
+
 [data-exa-font='theme'] {
-  --exa-interface-font: var(--font-exo2);
+  --exa-interface-font: var(--exa-theme-interface-font, var(--font-exo2));
+  --font-ui: var(--exa-theme-ui-font, var(--font-geist-sans));
+  --font-display: var(--exa-theme-display-font, var(--font-geist-sans));
 }
 
 [data-exa-font='system'] {
   --exa-interface-font:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 [data-exa-font='geist'] {
   --exa-interface-font: var(--font-geist-sans);
+  --font-ui: var(--font-geist-sans);
+  --font-display: var(--font-geist-sans);
 }
 
 body {

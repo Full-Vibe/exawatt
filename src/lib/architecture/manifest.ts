@@ -562,7 +562,7 @@ export const architectureManifest = {
           id: 'appearance-runtime',
           label: 'Appearance Resolver',
           summary:
-            'ENG-032 T0–T1 active build: validated device-local preferences resolve once through the production provider and generated first-paint/Electron bootstrap; Classic is the sole production preset until T5.',
+            'ENG-032 T0–T2 active build: validated device-local preferences resolve once through generated first-paint/Electron bootstrap; the gallery-accepted contract has scoped DOM/xterm/R3F specimens, while Classic remains the sole production preset until T5.',
           layer: 'ui',
           status: 'active-build',
           x: 330,

@@ -11,6 +11,7 @@ import {
 import {
   AppearancePreferencesSchema,
   ThemeDefinitionSchema,
+  validateThemeChannels,
   validateThemeContrast,
 } from '../../../themes/contract.mjs';
 import {
@@ -36,12 +37,51 @@ describe('ThemeDefinitionV1', () => {
     for (const theme of THEME_DEFINITIONS) {
       expect(ThemeDefinitionSchema.parse(theme)).toEqual(theme);
       expect(validateThemeContrast(theme)).toEqual([]);
+      expect(validateThemeChannels(theme)).toEqual([]);
     }
     expect(PRODUCTION_THEME_IDS).toEqual([CLASSIC_THEME_ID]);
     expect(GALLERY_THEME_IDS).toEqual([
       'exawatt-air-light',
       'exawatt-night-dark',
     ]);
+  });
+
+  it('rejects semantic-channel collisions independently of D40 shape redundancy', () => {
+    const unsafe = structuredClone(
+      THEME_REGISTRY['exawatt-air-light']
+    ) as unknown as ThemeDefinitionV1;
+    unsafe.status.fault = unsafe.status.active;
+    unsafe.consumption.hot = unsafe.foundation.action;
+
+    expect(validateThemeChannels(unsafe)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('status.fault duplicates status.active'),
+        expect.stringContaining('channels.status.fault duplicates channels.status.active'),
+        expect.stringContaining(
+          'channels.consumption.hot duplicates channels.foundation.action'
+        ),
+      ])
+    );
+  });
+
+  it('holds gallery control boundaries and spatial marks above non-text contrast', () => {
+    for (const id of GALLERY_THEME_IDS) {
+      const theme = THEME_REGISTRY[id];
+      expect(
+        contrastRatio(theme.foundation.input, theme.foundation.surface)
+      ).toBeGreaterThanOrEqual(3);
+      expect(
+        contrastRatio(theme.foundation.borderStrong, theme.foundation.surface)
+      ).toBeGreaterThanOrEqual(3);
+      expect(
+        contrastRatio(theme.spatial.selection, theme.spatial.zone)
+      ).toBeGreaterThanOrEqual(3);
+      for (const color of Object.values(theme.status)) {
+        expect(contrastRatio(color, theme.spatial.canvas)).toBeGreaterThanOrEqual(
+          3
+        );
+      }
+    }
   });
 
   it('rejects unsafe values and unknown theme properties with a role path', () => {
@@ -95,6 +135,10 @@ describe('ThemeDefinitionV1', () => {
       path.join(process.cwd(), 'src/generated/themes.css'),
       'utf8'
     );
+    const globals = readFileSync(
+      path.join(process.cwd(), 'src/app/globals.css'),
+      'utf8'
+    );
     for (const theme of THEME_DEFINITIONS) {
       expect(css).toContain(`[data-exa-theme='${theme.id}']`);
       expect(css).toContain(
@@ -113,6 +157,13 @@ describe('ThemeDefinitionV1', () => {
         signal: theme.bootstrap.signal,
       });
     }
+    expect(globals).toContain(
+      '--text-sm: calc(0.875rem * var(--exa-interface-scale, 1))'
+    );
+    expect(globals).toContain("[data-exa-font='system']");
+    expect(globals).toContain(
+      '--font-ui: -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif'
+    );
   });
 });
 

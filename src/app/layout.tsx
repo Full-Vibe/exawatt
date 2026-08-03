@@ -51,6 +51,7 @@ export default function RootLayout({
       data-exa-contrast="standard"
       data-exa-transparency="standard"
       data-exa-font="theme"
+      data-exa-typography="classic"
       suppressHydrationWarning
     >
       <head>

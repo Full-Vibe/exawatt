@@ -65,7 +65,7 @@ const SECTIONS: Section[] = [
   {
     id: 'theme-system',
     title: 'Application themes',
-    meta: 'ENG-032 T0 · generated V1 contract · gallery-only preview',
+    meta: 'ENG-032 T2 · Air/Night acceptance workbench · gallery-only',
     showcase: <ThemeSystemStudy />,
   },
   {

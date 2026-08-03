@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   parseThemeDefinition,
+  validateThemeChannels,
   validateThemeContrast,
 } from '../themes/contract.mjs';
 
@@ -43,6 +44,9 @@ async function loadThemes() {
       }
       for (const contrastError of validateThemeContrast(theme)) {
         errors.push(`${file}: ${contrastError}`);
+      }
+      for (const channelError of validateThemeChannels(theme)) {
+        errors.push(`${file}: ${channelError}`);
       }
       themes.push(theme);
     } catch (error) {

@@ -6,13 +6,13 @@ discovery, and (once approved) the executable milestone detail.
 
 ## Current phase
 
-**Active build — T0 and T1 landed; T2 is next.** The versioned contract, three
-authored built-ins, deterministic generator, pure resolver, Classic parity
-oracle, device-local preference adapters, production provider, strict Electron
-settings IPC, and first-paint/native bootstrap are implemented. Production
-still resolves only the shipped Classic appearance; Air and Night cannot be
-persisted. This document does not authorize skipping
-`/hud-gallery` review or switching the production default before T5.
+**Active build — T0 through T2 landed; T3 and T4 are next.** The versioned
+contract, device-local resolver/runtime, strict Electron settings and
+first-paint bootstrap, and the gallery-accepted Air/Night visual family are
+implemented. The temporary workbench exercises one resolved snapshot through
+DOM variables, material fallbacks, ANSI data, and a concrete-sRGB bloom-free
+R3F sibling. Production still resolves only the shipped Classic appearance;
+Air and Night cannot be persisted or selected before the T5 rollout gate.
 
 The originating operator signal is broader than dark-versus-light: the current
 fonts and colors feel “ultra-geeky” and insufficiently readable; users should be
@@ -291,12 +291,13 @@ and gallery-reviewed display names:
 
 | Stable ID | Role | Initial typography posture |
 | --- | --- | --- |
-| `exawatt-classic-dark` | compatibility rendering of the current dark product | current Exo 2 display + Geist UI + Geist Mono |
-| `exawatt-air-light` | new light, airy, selectively translucent direction | system/Geist sans; no “space” display face |
-| `exawatt-night-dark` | calmer dark sibling to Air, not a neon reskin of Classic | Geist-led sans + existing mono |
+| `exawatt-classic-dark` | compatibility rendering of the current dark product | Exo 2 shell/body default + Geist UI/display + Geist Mono data |
+| `exawatt-air-light` | new light, airy, selectively translucent direction | system shell/UI + Geist display + Geist Mono data |
+| `exawatt-night-dark` | calmer dark sibling to Air, not a neon reskin of Classic | Geist shell/UI/display + Geist Mono data |
 
 The IDs are persistence/API state and must not be renamed casually. Display
-names and exact font choice remain gallery judgments until T2 acceptance.
+names and these first-party profile mappings were accepted at T2; operators
+may still override the interface family globally without changing a preset.
 
 ### Interaction contract
 
@@ -761,3 +762,18 @@ no packet privately extends the contract to solve a local color.
   lint/type/Electron compile, mocked-light and mocked-dark Electron relaunches,
   safe-theme recovery, identical deterministic screenshots, and the offline
   altitude evaluator.
+- 2026-08-03, T2 landed: accepted and froze the T0-authored Air/Night family in
+  the scoped `/hud-gallery#theme-system` and `/hud-gallery/theme-system`
+  workbench without changing production availability. One resolver snapshot
+  now drives foundation/channel matrices, the complete D40 shape-label-color
+  protocol, all 90/100/110/120 application type rungs, three material recipes
+  plus opaque fallbacks, real shadcn control recipes, command chrome, ANSI-16,
+  and matching DOM/R3F Fleet specimens. Air/Night control boundaries, spatial
+  labels/selection/statuses, ordinary text, and exact semantic-channel
+  collisions are generation gates; Project identity remains a separate
+  ground-corrected fixture, not theme state. The R3F specimen takes only
+  concrete sRGB values, renders on demand with no bloom or theme-owned motion,
+  and has a draw-call/scene-semantic ratchet. Verification passed focused and
+  gallery tests, `theme:check`, lint, type-check, the full R3F evaluator, and
+  Playwright captures for Air/Night layered, opaque, and enhanced states at
+  100%, exact 560×400/900×700/1400×900 viewports, and 90/120% narrow layouts.

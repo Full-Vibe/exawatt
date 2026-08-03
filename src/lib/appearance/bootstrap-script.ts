@@ -8,7 +8,10 @@ import { DEFAULT_APPEARANCE_PREFERENCES } from './resolve-appearance';
 const bootstrapThemes = Object.fromEntries(
   PRODUCTION_THEME_IDS.map(themeId => [
     themeId,
-    { appearance: THEME_REGISTRY[themeId].appearance },
+    {
+      appearance: THEME_REGISTRY[themeId].appearance,
+      typography: THEME_REGISTRY[themeId].typography.profile,
+    },
   ])
 );
 
@@ -47,6 +50,7 @@ export const APPEARANCE_BOOTSTRAP_SCRIPT = `(() => {
   root.dataset.exaContrast = preferences.contrast === 'enhanced' || matches('(prefers-contrast: more)') || matches('(forced-colors: active)') || matches('(inverted-colors: inverted)') ? 'enhanced' : 'standard';
   root.dataset.exaTransparency = preferences.transparency === 'reduced' || matches('(prefers-reduced-transparency: reduce)') ? 'reduced' : 'standard';
   root.dataset.exaFont = preferences.interfaceFont;
+  root.dataset.exaTypography = theme.typography;
   root.style.setProperty('--exa-interface-scale', String(preferences.interfaceScale / 100));
   root.classList.toggle('dark', theme.appearance === 'dark');
   root.classList.toggle('light', theme.appearance === 'light');
