@@ -522,6 +522,13 @@ export async function loadAgentSourcePreferences(): Promise<AgentSourcePreferenc
   }
 }
 
+/**
+ * Ceiling on how long the composer will wait for a source to describe itself.
+ * Comfortably above the main process's own probe deadlines, so this only fires
+ * when the bridge itself fails to answer — never as a second, tighter race.
+ */
+const MODEL_CATALOG_DEADLINE_MS = 25_000;
+
 export async function loadAgentModelCatalog(
   source: AgentSourceId,
   projectDir: string
@@ -529,7 +536,19 @@ export async function loadAgentModelCatalog(
   const listModels = window.electron?.pty?.listAgentModels;
   if (listModels) {
     try {
-      return await listModels(source, projectDir);
+      // A never-settling bridge call used to leave the effort control spinning
+      // on "Detecting…" for the rest of the session (ENG-016 D49). The UI's
+      // readiness must not depend on a promise it does not control: an
+      // unanswered catalog resolves to the honest "unavailable" shape below,
+      // which every control already knows how to render.
+      const timeout = new Promise<null>(resolve => {
+        setTimeout(() => resolve(null), MODEL_CATALOG_DEADLINE_MS);
+      });
+      const catalog = await Promise.race([
+        listModels(source, projectDir),
+        timeout,
+      ]);
+      if (catalog) return catalog;
     } catch {
       // The launch remains available when an older bridge or CLI cannot
       // describe its catalog; the UI labels that uncertainty explicitly.

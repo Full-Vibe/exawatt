@@ -1,11 +1,79 @@
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { PtyHarness } from './session-manager';
 
-const execFileAsync = promisify(execFile);
+/**
+ * `execFile`'s own `timeout` is not a deadline (ENG-016 D49).
+ *
+ * It sends SIGTERM to the process it spawned — the LOGIN SHELL — and then
+ * keeps waiting for stdio EOF. A grandchild like `claude` or `opencode`
+ * inherits those pipes, survives its parent's SIGTERM, and holds stdout open,
+ * so the promise never settles. Upstream, `pty:listAgentModels` never
+ * answered, the composer's `modelCatalog` stayed null, and the effort control
+ * span "Detecting…" for the rest of the session (operator, 2026-08-04).
+ *
+ * This wrapper spawns a detached process GROUP and, at the deadline, kills the
+ * whole group and resolves with whatever was read. A probe that misses its
+ * deadline is a probe that failed: callers already degrade to configured
+ * values with honest provenance.
+ */
+async function execWithDeadline(
+  shell: string,
+  command: string,
+  options: { cwd: string; timeout: number; maxBuffer: number }
+): Promise<{ stdout: string; timedOut: boolean }> {
+  const child = spawn(shell, ['-l', '-c', command], {
+    cwd: options.cwd,
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stdout = '';
+  let overflowed = false;
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', chunk => {
+    if (overflowed) return;
+    stdout += String(chunk);
+    if (stdout.length > options.maxBuffer) {
+      overflowed = true;
+      stdout = stdout.slice(0, options.maxBuffer);
+    }
+  });
+  // stderr is drained but discarded: an unread pipe fills and blocks the child.
+  child.stderr.resume();
+
+  const killGroup = () => {
+    if (child.pid === undefined) return;
+    try {
+      // Negative pid targets the whole detached group, so a grandchild that
+      // outlives its shell cannot keep the pipes — or this promise — open.
+      process.kill(-child.pid, 'SIGKILL');
+    } catch {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // Already gone.
+      }
+    }
+  };
+
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (timedOut: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (timedOut) killGroup();
+      resolve({ stdout, timedOut });
+    };
+    const timer = setTimeout(() => finish(true), options.timeout);
+    timer.unref?.();
+    child.on('close', () => finish(false));
+    child.on('error', () => finish(false));
+  });
+}
+
 const MODEL_ENV_KEYS = [
   'HOME',
   'CODEX_HOME',
@@ -727,11 +795,10 @@ async function loginModelEnvironment(
     key => `printf '${key}=%s\\n' "\${${key}-}"`
   ).join('; ');
   try {
-    const result = await execFileAsync(shell, ['-l', '-c', printCommand], {
+    const result = await execWithDeadline(shell, printCommand, {
       cwd,
       timeout: 2_000,
       maxBuffer: 64 * 1024,
-      encoding: 'utf8',
     });
     const resolved: NodeJS.ProcessEnv = { ...process.env };
     for (const line of result.stdout.split('\n')) {
@@ -781,13 +848,12 @@ async function readClaudeModelOptions(
     `${invocation} --safe-mode --input-format stream-json ` +
     `--output-format stream-json --verbose -p`;
   try {
-    const result = await execFileAsync(shell, ['-l', '-c', catalogCommand], {
+    const result = await execWithDeadline(shell, catalogCommand, {
       cwd,
       timeout: 20_000,
       maxBuffer: 5 * 1024 * 1024,
-      encoding: 'utf8',
     });
-    return parseClaudeModelCatalog(result.stdout);
+    return result.timedOut ? null : parseClaudeModelCatalog(result.stdout);
   } catch {
     // Older CLIs, a failed launch, or a slow cold start leave the catalog
     // unknown; the caller then reports the configured values it can see
@@ -883,11 +949,10 @@ async function listCodexModels(
     const catalogCommand = executable
       ? `${shellQuote(executable)} debug models`
       : 'codex debug models';
-    const result = await execFileAsync(shell, ['-l', '-c', catalogCommand], {
+    const result = await execWithDeadline(shell, catalogCommand, {
       cwd,
       timeout: 5_000,
       maxBuffer: 5 * 1024 * 1024,
-      encoding: 'utf8',
     });
     stdout = result.stdout;
   } catch {
@@ -985,11 +1050,10 @@ async function readOpencodeModelCatalog(
     const catalogCommand = executable
       ? `${shellQuote(executable)} models --verbose`
       : 'opencode models --verbose';
-    const result = await execFileAsync(shell, ['-l', '-c', catalogCommand], {
+    const result = await execWithDeadline(shell, catalogCommand, {
       cwd,
       timeout: 20_000,
       maxBuffer: 8 * 1024 * 1024,
-      encoding: 'utf8',
     });
     stdout = result.stdout;
   } catch {
