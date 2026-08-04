@@ -113,6 +113,8 @@ export interface AgentModelCatalog {
   catalogProvenance: string;
   observedAt: number;
   selectionAction: 'choose-in-source' | null;
+  /** True when this came from the disk cache rather than a fresh probe. */
+  servedFromCache?: boolean;
 }
 
 /** `blocked` is a reported operator gate (ENG-023 D4) — a question, a
@@ -252,7 +254,9 @@ export interface ElectronPtyApi {
   create: (options: PtyCreateOptions) => Promise<PtyCreateResult>;
   listAgentModels: (
     harness: Exclude<PtyHarness, 'shell'>,
-    cwd: string
+    cwd: string,
+    /** Skip the cache and wait for a fresh probe. */
+    refresh?: boolean
   ) => Promise<AgentModelCatalog>;
   /** Write terminal data; operatorEngaged is true only when a real key event
    * preceded it, allowing main to open the Agent turn before the PTY write. */

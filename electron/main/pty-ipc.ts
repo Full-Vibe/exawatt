@@ -3,7 +3,11 @@ import { handleTrusted } from './ipc-security';
 import { resolveContainedPath, isRepoRelativePath } from './contained-path';
 import { ptySessions } from './pty/session-manager';
 import { defaultShell, type PtyCreateOptions } from './pty/session-manager';
-import { listAgentModels } from './pty/agent-models';
+import {
+  listAgentModels,
+  setAgentModelCatalogCache,
+} from './pty/agent-models';
+import { AgentModelCatalogCache } from './pty/agent-model-catalog-cache';
 import {
   agentSourceLaunchError,
   inspectAgentSources,
@@ -53,6 +57,14 @@ import {
   shouldDeliverNativeNotification,
 } from './notification-policy';
 import { broadcastToWindows } from './window-broadcast';
+
+// Engines and their model lists change on the order of days, but the composer
+// re-probed all of them on every entry (ENG-016 D49). The cache is installed at
+// module load: main.ts overrides userData before importing any IPC module, so
+// `app.getPath` is already the right directory here.
+setAgentModelCatalogCache(
+  new AgentModelCatalogCache(() => app.getPath('userData'))
+);
 
 /**
  * IPC surface for PTY sessions (decision 0005). Invocations are namespaced
@@ -344,7 +356,8 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     async (
       _event,
       harness: Exclude<PtyCreateOptions['harness'], 'shell'>,
-      cwd: string
+      cwd: string,
+      refresh = false
     ) => {
       if (
         harness !== 'claude' &&
@@ -356,7 +369,7 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       if (typeof cwd !== 'string' || !cwd.trim() || cwd.includes('\0')) {
         throw new Error('Invalid Project directory');
       }
-      return listAgentModels(harness, cwd, await defaultShell());
+      return listAgentModels(harness, cwd, await defaultShell(), refresh === true);
     }
   );
   handleTrusted(

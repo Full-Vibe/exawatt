@@ -12,6 +12,10 @@
  *   - no second control row, no duplicated Customize icon (findings 6, 7)
  *   - no co-visible "All configurations" and "Customize" (finding 5)
  *   - no `Shapes` link, no "Optional name" field (findings 8, 9)
+ *
+ * `drawer` picks how the detail view announces itself. Both mechanics host the
+ * identical fields; only the closed face differs, which is the whole point of
+ * keeping WHAT and WHERE apart in `setup-detail.tsx`.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -19,13 +23,28 @@ import { LoaderCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { SetupRow } from './setup-row';
-import { SetupDetailPanel, type DetailAxis } from './setup-detail';
+import {
+  SetupDetailHandle,
+  SetupDetailPanel,
+  SetupDetailSummary,
+  type DetailAxis,
+} from './setup-detail';
 import type { SetupChipVariant } from './setup-chip';
 import {
   setupAccessibleLabel,
   type LauncherRowState,
   type LauncherSetup,
 } from './launcher-model';
+
+/**
+ * `peek`   — a collapsed summary of the current setup is always visible; it IS
+ *            the drawer, closed. Nothing is hidden, so nothing has to be found.
+ * `handle` — a grip tab hangs under the selected chip and slides with the
+ *            selection. Lighter at rest, one more thing to notice.
+ */
+export type LauncherDrawer = 'peek' | 'handle';
+
+export const LAUNCHER_DRAWERS: readonly LauncherDrawer[] = ['peek', 'handle'];
 
 export interface AgentLauncherProps {
   setups: readonly LauncherSetup[];
@@ -39,13 +58,14 @@ export interface AgentLauncherProps {
   onSelect: (id: string) => void;
   onOpenCatalog: () => void;
   onStart: () => void;
+  drawer?: LauncherDrawer;
   launching?: boolean;
   /** Blocks Start with a stated reason; never silently disabled. */
   blockedReason?: string | null;
   variant?: SetupChipVariant;
   placeholderCount?: number;
-  /** Bench escape hatch: force the detail panel open for a screenshot. */
-  forceDetailOpen?: boolean;
+  /** Bench escape hatch: open the detail panel for a screenshot. */
+  defaultDetailOpen?: boolean;
   className?: string;
 }
 
@@ -60,30 +80,30 @@ export function AgentLauncher({
   onSelect,
   onOpenCatalog,
   onStart,
+  drawer = 'peek',
   launching = false,
   blockedReason,
   variant,
   placeholderCount,
-  forceDetailOpen,
+  defaultDetailOpen = false,
   className,
 }: AgentLauncherProps) {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [open, setOpen] = useState(defaultDetailOpen);
   const [notchPosition, setNotchPosition] = useState<number | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const taskRef = useRef<HTMLTextAreaElement>(null);
 
-  const open = forceDetailOpen === true || expandedId !== null;
-  const anchorId = forceDetailOpen ? (expandedId ?? selectedId) : expandedId;
   const selected = setups.find(setup => setup.id === selectedId) ?? null;
+  const ready = state === 'ready' && selected !== null && axes.length > 0;
 
-  // The selection moving is what the notch follows, so the measurement is tied
-  // to the anchor rather than to the open/close transition.
+  // The notch and the handle both follow the SELECTION, not the open state, so
+  // switching chips slides them rather than making them disappear and return.
   useLayoutEffect(() => {
     const row = rowRef.current;
-    if (!row || anchorId === null) return;
+    if (!row || !selectedId) return;
     const measure = () => {
       const chip = row.querySelector<HTMLElement>(
-        `[data-setup-id="${CSS.escape(anchorId)}"]`
+        `[data-setup-id="${CSS.escape(selectedId)}"]`
       );
       if (!chip) return;
       const rowBox = row.getBoundingClientRect();
@@ -98,33 +118,28 @@ export function AgentLauncher({
     const observer = new ResizeObserver(measure);
     observer.observe(row);
     return () => observer.disconnect();
-  }, [anchorId, setups]);
+  }, [selectedId, setups]);
 
-  // A setup leaving the row must not strand an open panel pointing at nothing.
   useEffect(() => {
-    if (expandedId && !setups.some(setup => setup.id === expandedId)) {
-      setExpandedId(null);
-    }
-  }, [expandedId, setups]);
+    if (state !== 'ready') setOpen(false);
+  }, [state]);
 
-  const toggleDetail = useCallback((id: string) => {
-    setExpandedId(current => (current === id ? null : id));
-  }, []);
-
+  const toggleDetail = useCallback(() => setOpen(current => !current), []);
   const startBlocked = Boolean(blockedReason) || launching || selected === null;
 
   return (
     <form
       data-agent-launcher
+      data-drawer={drawer}
       className={cn('flex w-full min-w-0 flex-col gap-2', className)}
       onSubmit={event => {
         event.preventDefault();
         if (!startBlocked) onStart();
       }}
       onKeyDown={event => {
-        if (event.key === 'Escape' && expandedId) {
+        if (event.key === 'Escape' && open) {
           event.stopPropagation();
-          setExpandedId(null);
+          setOpen(false);
           requestAnimationFrame(() => taskRef.current?.focus());
         }
       }}
@@ -147,47 +162,62 @@ export function AgentLauncher({
         className="max-h-40 min-h-11 w-full resize-none rounded-md border border-hud-stroke-soft bg-hud-surface-input px-3 py-2 font-mono text-xs leading-5 text-hud-text outline-none transition-colors [field-sizing:content] placeholder:text-hud-text-dim/80 hover:border-hud-cyan/40 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
       />
 
-      <div ref={rowRef} className="flex min-w-0 items-stretch gap-2">
-        <SetupRow
-          setups={setups}
-          selectedId={selectedId}
-          expandedId={open ? anchorId : null}
-          state={state}
-          variant={variant}
-          placeholderCount={placeholderCount}
-          onSelect={id => {
-            onSelect(id);
-            // Selecting a different chip while the panel is open re-anchors it
-            // rather than closing and reopening: the notch slides across.
-            setExpandedId(current => (current === null ? null : id));
-          }}
-          onToggleDetail={toggleDetail}
-          onOpenCatalog={onOpenCatalog}
-          className="flex-1"
-        />
-        <div className="flex shrink-0 flex-col justify-stretch gap-2">
-          <Button
-            type="submit"
-            data-launcher-start
-            aria-busy={launching}
-            disabled={startBlocked}
-            title={blockedReason ?? undefined}
-            className="h-full min-w-24 motion-reduce:transition-none"
-          >
-            {launching ? (
-              <LoaderCircle
-                aria-hidden="true"
-                className="animate-spin motion-reduce:animate-none"
-              />
-            ) : null}
-            {launching ? 'Starting…' : 'Start'}
-          </Button>
+      <div className="flex min-w-0 items-stretch gap-2">
+        <div ref={rowRef} className="flex min-w-0 flex-1 items-stretch">
+          <SetupRow
+            setups={setups}
+            selectedId={selectedId}
+            expandedId={open ? selectedId : null}
+            state={state}
+            variant={variant}
+            placeholderCount={placeholderCount}
+            onSelect={onSelect}
+            onToggleDetail={toggleDetail}
+            onOpenCatalog={onOpenCatalog}
+            className="flex-1"
+          />
         </div>
+        <Button
+          type="submit"
+          data-launcher-start
+          aria-busy={launching}
+          disabled={startBlocked}
+          title={blockedReason ?? undefined}
+          className="min-w-24 shrink-0 self-stretch motion-reduce:transition-none"
+        >
+          {launching ? (
+            <LoaderCircle
+              aria-hidden="true"
+              className="animate-spin motion-reduce:animate-none"
+            />
+          ) : null}
+          {launching ? 'Starting…' : 'Start'}
+        </Button>
       </div>
 
+      {drawer === 'handle' ? (
+        <SetupDetailHandle
+          open={open}
+          notchPosition={notchPosition}
+          onToggle={toggleDetail}
+          disabled={!ready}
+        />
+      ) : (
+        <SetupDetailSummary
+          axes={axes}
+          open={open}
+          onToggle={toggleDetail}
+          disabled={!ready}
+        />
+      )}
+
       <SetupDetailPanel
-        open={open && axes.length > 0}
+        open={open && ready}
         notchPosition={notchPosition}
+        // Both mechanics already anchor themselves — the handle slides to the
+        // selected chip, the summary is a full-width face. A notch on top of
+        // either is a second pointer at the same thing.
+        showNotch={false}
         axes={axes}
         footnote={detailFootnote}
       />

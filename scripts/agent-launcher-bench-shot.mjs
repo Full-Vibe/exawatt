@@ -13,7 +13,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveQaBrowserLaunchOptions } from './lib/qa-browser.mjs';
 
-const BASE = process.env.EXA_BASE || 'http://localhost:7049';
+const BASE = process.env.EXA_BASE || 'http://localhost:7050';
 const OUT = process.env.EXA_LAUNCHER_SHOTS || '/tmp/exawatt-launcher-bench';
 const VARIANTS = (process.env.EXA_LAUNCHER_VARIANTS || 'role-tag').split(',');
 const APPEARANCE_KEY = 'exawatt.appearance.v1';
@@ -58,6 +58,11 @@ await page.goto(`${BASE}/hud-gallery/agent-launcher`, {
 });
 await page.waitForSelector('[data-launcher-bench]');
 
+const DRAWERS = (process.env.EXA_LAUNCHER_DRAWERS || 'peek').split(',');
+
+for (const drawer of DRAWERS) {
+  await page.click(`[data-bench-drawer="${drawer}"]`);
+  await page.waitForTimeout(250);
 for (const variant of VARIANTS) {
   await page.click(`[data-bench-variant="${variant}"]`);
   await page.waitForTimeout(450);
@@ -69,14 +74,63 @@ for (const variant of VARIANTS) {
   for (const id of cases) {
     const element = await page.$(`[data-bench-case="${id}"]`);
     if (!element) continue;
-    await element.screenshot({ path: join(OUT, `${variant}--${id}.png`) });
+    await element.screenshot({
+      path: join(OUT, `${drawer}--${variant}--${id}.png`),
+    });
   }
 
   await page.screenshot({
-    path: join(OUT, `${variant}--contact-sheet.png`),
+    path: join(OUT, `${drawer}--${variant}--contact-sheet.png`),
     fullPage: true,
   });
-  console.log(`[launcher-bench] ${variant}: ${cases.length} cases`);
+  console.log(`[launcher-bench] ${drawer}/${variant}: ${cases.length} cases`);
+}
+}
+
+// Gate: the skeleton must be the real chip, not a lookalike. The operator
+// asked for this explicitly — a placeholder that is one pixel shorter still
+// makes the row jump on settle, which is the finding the state exists to fix.
+await page.click('[data-bench-drawer="peek"]');
+await page.waitForTimeout(250);
+const geometry = await page.evaluate(() => {
+  const box = selector => {
+    const node = document.querySelector(selector);
+    if (!node) return null;
+    const { width, height } = node.getBoundingClientRect();
+    return { width: Math.round(width), height: Math.round(height) };
+  };
+  const lineCount = selector =>
+    document.querySelector(selector)?.children.length ?? -1;
+  return {
+    pending: box('[data-bench-case="settling"] [data-setup-chip][data-pending]'),
+    real: box('[data-bench-case="trained"] [data-setup-chip]:not([data-pending])'),
+    pendingLines: lineCount(
+      '[data-bench-case="settling"] [data-setup-chip][data-pending]'
+    ),
+    realLines: lineCount(
+      '[data-bench-case="trained"] [data-setup-chip]:not([data-pending])'
+    ),
+  };
+});
+
+if (!geometry.pending || !geometry.real) {
+  errors.push('[gate] could not measure both a pending and a real chip');
+} else {
+  if (geometry.pending.height !== geometry.real.height) {
+    errors.push(
+      `[gate] skeleton/real chip height diverged: ${geometry.pending.height} vs ${geometry.real.height}`
+    );
+  }
+  if (geometry.pendingLines !== geometry.realLines) {
+    errors.push(
+      `[gate] skeleton/real chip line count diverged: ${geometry.pendingLines} vs ${geometry.realLines}`
+    );
+  }
+  if (errors.length === 0) {
+    console.log(
+      `[launcher-bench] gate ok: skeleton and real chip both ${geometry.real.height}px, ${geometry.realLines} lines`
+    );
+  }
 }
 
 await browser.close();

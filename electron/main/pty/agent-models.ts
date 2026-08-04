@@ -3,6 +3,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { PtyHarness } from './session-manager';
+import {
+  AgentModelCatalogCache,
+  catalogCacheKey,
+} from './agent-model-catalog-cache';
 
 /**
  * `execFile`'s own `timeout` is not a deadline (ENG-016 D49).
@@ -135,6 +139,8 @@ export interface AgentModelCatalog {
   catalogProvenance: string;
   observedAt: number;
   selectionAction: 'choose-in-source' | null;
+  /** True when this came from the disk cache rather than a fresh probe. */
+  servedFromCache?: boolean;
 }
 
 interface CodexReasoningLevel {
@@ -1076,7 +1082,7 @@ async function listOpencodeModels(
     : readOpencodeModelCatalog(cwd, shell);
 }
 
-export async function listAgentModels(
+async function probeAgentModels(
   harness: Exclude<PtyHarness, 'shell'>,
   cwd: string,
   shell: string
@@ -1089,4 +1095,52 @@ export async function listAgentModels(
     return listOpencodeModels(cwd, shell, environment);
   }
   return listClaudeModels(cwd, shell, environment);
+}
+
+let catalogCache: AgentModelCatalogCache | null = null;
+
+/** Injected by the main process once userData is known; testable by design. */
+export function setAgentModelCatalogCache(
+  cache: AgentModelCatalogCache | null
+): void {
+  catalogCache = cache;
+}
+
+const revalidating = new Set<string>();
+
+/**
+ * Read an engine's catalog, stale-while-revalidate (ENG-016 D49).
+ *
+ * A fresh cached catalog is returned without touching the CLI at all. A stale
+ * one is returned immediately AND re-probed in the background, so the common
+ * case is instant and the data still converges. `refresh` forces a probe and
+ * waits for it — that is what the engine menu's Refresh action calls.
+ */
+export async function listAgentModels(
+  harness: Exclude<PtyHarness, 'shell'>,
+  cwd: string,
+  shell: string,
+  refresh = false
+): Promise<AgentModelCatalog> {
+  const cache = catalogCache;
+  if (!cache) return probeAgentModels(harness, cwd, shell);
+
+  const key = catalogCacheKey(harness, cwd, shell);
+  if (!refresh) {
+    const cached = await cache.read(key);
+    if (cached) {
+      if (!cached.fresh && !revalidating.has(key)) {
+        revalidating.add(key);
+        void probeAgentModels(harness, cwd, shell)
+          .then(catalog => cache.write(key, catalog))
+          .catch(() => undefined)
+          .finally(() => revalidating.delete(key));
+      }
+      return { ...cached.catalog, servedFromCache: true };
+    }
+  }
+
+  const catalog = await probeAgentModels(harness, cwd, shell);
+  void cache.write(key, catalog).catch(() => undefined);
+  return catalog;
 }

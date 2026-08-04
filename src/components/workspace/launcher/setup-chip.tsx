@@ -3,20 +3,25 @@
 /**
  * One whole Agent setup, as a selectable card (ENG-016 D49).
  *
- * The chip is tall on purpose (finding 1). Every fact gets its OWN full-width
- * line with a reserved height, so nothing competes for horizontal space and
- * every chip in the row is the same height by construction — the first cut of
- * this redesign put the role tag beside the engine name and immediately
- * reproduced the `Cl…` truncation the round exists to kill.
+ * Line structure, top to bottom, each owning its full width with a reserved
+ * height so every chip is the same height by construction:
  *
- * The harness glyph wears its brand colour and nothing else: no plate, no
- * border box (finding 3).
+ *   role      quiet     what kind of worker (ENG-028's axis, Coding for now)
+ *   engine    quiet     which harness runs it
+ *   MODEL     ANCHOR    the thing actually chosen between, plus its variant
+ *   vendor    quiet     who serves the model — only when the engine does not
+ *                       imply it, and marked so it can never be mistaken for
+ *                       the capability tag beside the model name
+ *   thinking  quiet     reasoning effort
+ *   why       quietest  provenance for the row's ordering
  *
- * `variant` is a design-iteration seam for the gallery, not a runtime feature.
+ * `pending` renders the SAME structure with shimmer blocks instead of text.
+ * The skeleton IS this component, so it cannot drift from what it stands in
+ * for — the previous round hand-drew it and the row still jumped on settle.
  */
 
 import { forwardRef } from 'react';
-import { Pin, TerminalSquare } from 'lucide-react';
+import { Cloud, HardDrive, Pin, TerminalSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { HarnessGlyph } from '../harness-icons';
 import {
@@ -24,30 +29,65 @@ import {
   reasonLabel,
   setupAccessibleLabel,
   type LauncherSetup,
+  type LauncherVendor,
 } from './launcher-model';
 
-export type SetupChipVariant = 'role-lede' | 'role-footer' | 'quiet';
+export type SetupChipVariant = 'role-lede' | 'quiet';
 
 export const SETUP_CHIP_VARIANTS: readonly SetupChipVariant[] = [
   'role-lede',
-  'role-footer',
   'quiet',
 ];
 
-function EngineGlyph({ setup }: { setup: LauncherSetup }) {
+export function EngineGlyph({
+  engine,
+  size = 13,
+}: {
+  engine: LauncherSetup['engine'];
+  size?: number;
+}) {
   return (
     <span
       aria-hidden="true"
       data-engine-glyph
-      className="inline-flex size-3.5 shrink-0 items-center justify-center"
-      style={{ color: setup.engine.color }}
+      className="inline-flex shrink-0 items-center justify-center"
+      style={{ color: engine.color, width: size, height: size }}
     >
-      {setup.engine.harness === 'shell' ? (
-        <TerminalSquare size={14} strokeWidth={1.8} />
+      {engine.harness === 'shell' ? (
+        <TerminalSquare size={size} strokeWidth={1.8} />
       ) : (
-        <HarnessGlyph harness={setup.engine.harness} size={14} />
+        <HarnessGlyph harness={engine.harness} size={size} />
       )}
     </span>
+  );
+}
+
+/**
+ * The vendor is identity — who actually serves this model — so it wears a mark
+ * the way the engine does. Local inference gets a different mark from a hosted
+ * provider, because that difference is the point of engine plurality (`0027`).
+ */
+export function VendorGlyph({ vendor }: { vendor: LauncherVendor }) {
+  const Icon = vendor.kind === 'local' ? HardDrive : Cloud;
+  return (
+    <Icon
+      aria-hidden="true"
+      data-vendor-glyph
+      strokeWidth={1.8}
+      className="size-3 shrink-0 text-hud-text-dim"
+    />
+  );
+}
+
+function Shimmer({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        'block animate-pulse rounded bg-hud-text-dim/15 motion-reduce:animate-none',
+        className
+      )}
+    />
   );
 }
 
@@ -55,10 +95,12 @@ export interface SetupChipProps {
   setup: LauncherSetup;
   selected: boolean;
   expanded: boolean;
+  /** Renders the same structure as shimmer blocks. Inert: no click, no focus. */
+  pending?: boolean;
   variant?: SetupChipVariant;
   tabIndex?: number;
-  onSelect: (id: string) => void;
-  onToggleDetail: (id: string) => void;
+  onSelect?: (id: string) => void;
+  onToggleDetail?: (id: string) => void;
   onKeyDown?: (event: React.KeyboardEvent<HTMLButtonElement>) => void;
 }
 
@@ -68,6 +110,7 @@ export const SetupChip = forwardRef<HTMLButtonElement, SetupChipProps>(
       setup,
       selected,
       expanded,
+      pending = false,
       variant = 'role-lede',
       tabIndex,
       onSelect,
@@ -77,7 +120,6 @@ export const SetupChip = forwardRef<HTMLButtonElement, SetupChipProps>(
     ref
   ) {
     const role = LAUNCHER_ROLE_LABEL[setup.role];
-    const headline = setup.name ?? setup.engine.label;
     const provenance = setup.available
       ? reasonLabel(setup)
       : (setup.unavailableReason ?? 'Unavailable');
@@ -86,76 +128,111 @@ export const SetupChip = forwardRef<HTMLButtonElement, SetupChipProps>(
       <button
         ref={ref}
         type="button"
-        role="radio"
-        aria-checked={selected}
-        // `radio` does not support aria-expanded, and selection is this
-        // control's primary semantic. The panel's open state is announced
-        // through the launcher's live region instead.
-        aria-label={setupAccessibleLabel(setup)}
-        title={setupAccessibleLabel(setup)}
-        aria-disabled={setup.available ? undefined : true}
-        tabIndex={tabIndex}
+        role={pending ? 'presentation' : 'radio'}
+        aria-hidden={pending || undefined}
+        aria-checked={pending ? undefined : selected}
+        aria-label={pending ? undefined : setupAccessibleLabel(setup)}
+        title={pending ? undefined : setupAccessibleLabel(setup)}
+        aria-disabled={!pending && !setup.available ? true : undefined}
+        disabled={pending}
+        tabIndex={pending ? -1 : tabIndex}
         data-setup-chip
         data-setup-id={setup.id}
-        data-selected={selected || undefined}
-        data-expanded={expanded || undefined}
-        data-unavailable={setup.available ? undefined : true}
+        data-pending={pending || undefined}
+        data-selected={(!pending && selected) || undefined}
+        data-expanded={(!pending && expanded) || undefined}
+        data-unavailable={(!pending && !setup.available) || undefined}
         data-variant={variant}
-        onClick={() => (selected ? onToggleDetail(setup.id) : onSelect(setup.id))}
-        onKeyDown={onKeyDown}
+        onClick={
+          pending
+            ? undefined
+            : () => (selected ? onToggleDetail?.(setup.id) : onSelect?.(setup.id))
+        }
+        onKeyDown={pending ? undefined : onKeyDown}
         className={cn(
           'group/setup relative flex min-w-0 flex-1 basis-0 flex-col items-start rounded-lg border px-3 py-2.5 text-left outline-none',
           'border-hud-stroke-faint bg-hud-surface-input',
-          'transition-[border-color,background-color,box-shadow] duration-200 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none',
-          'hover:border-hud-cyan/45 hover:bg-hud-fill',
+          'transition-[border-color,background-color] duration-200 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none',
+          !pending && 'hover:border-hud-cyan/45 hover:bg-hud-fill',
           'focus-visible:ring-2 focus-visible:ring-hud-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-hud-void',
-          selected && 'border-hud-cyan/70 bg-hud-fill-hi',
-          !setup.available && 'opacity-55'
+          !pending && selected && 'border-hud-cyan/70 bg-hud-fill-hi',
+          !pending && !setup.available && 'opacity-55',
+          pending && 'cursor-default'
         )}
       >
-        {/* Role — the "what kind of worker" axis. Quiet: it is identical on
-            every chip until ENG-028 ships more than one Type, and a line that
-            repeats four times must not shout. */}
         {variant === 'role-lede' ? (
-          <span className="h-3.5 w-full truncate font-mono text-chrome-micro leading-[0.875rem] text-hud-text-dim/70">
-            {role}
+          <span className="flex h-3.5 w-full items-center font-mono text-chrome-micro leading-[0.875rem] text-hud-text-dim/70">
+            {pending ? <Shimmer className="h-2 w-10" /> : role}
           </span>
         ) : null}
 
-        <span className="flex h-5 w-full min-w-0 items-center gap-2">
-          <EngineGlyph setup={setup} />
-          <span className="min-w-0 flex-1 truncate font-ui text-chrome-label font-semibold text-hud-text">
-            {headline}
-          </span>
-          {setup.pinned ? (
-            <Pin
-              aria-hidden="true"
-              fill="currentColor"
-              className="size-3 shrink-0 text-hud-text-dim"
-            />
+        <span className="flex h-4 w-full min-w-0 items-center gap-1.5">
+          {pending ? (
+            <Shimmer className="h-2.5 w-24 max-w-[75%]" />
+          ) : (
+            <>
+              <EngineGlyph engine={setup.engine} />
+              <span className="min-w-0 flex-1 truncate font-mono text-chrome-meta text-hud-text-dim">
+                {setup.engine.label}
+              </span>
+              {setup.pinned ? (
+                <Pin
+                  aria-hidden="true"
+                  fill="currentColor"
+                  className="size-3 shrink-0 text-hud-text-dim"
+                />
+              ) : null}
+            </>
+          )}
+        </span>
+
+        {/* The anchor. The model is what the operator chooses between, so it is
+            the only line carrying weight. */}
+        <span className="mt-1 flex h-5 w-full min-w-0 items-baseline gap-1.5">
+          {pending ? (
+            <Shimmer className="h-3.5 w-4/5" />
+          ) : (
+            <>
+              <span className="min-w-0 truncate font-ui text-chrome-label font-semibold text-hud-text">
+                {setup.model ?? 'Choose a model'}
+              </span>
+              {setup.modelVariant ? (
+                <span className="shrink-0 font-mono text-chrome-micro text-hud-text-dim">
+                  {setup.modelVariant}
+                </span>
+              ) : null}
+            </>
+          )}
+        </span>
+
+        {/* Vendor: identity, marked, structurally distinct from the capability
+            tag beside the model name above. */}
+        <span className="flex h-3.5 w-full min-w-0 items-center gap-1 font-mono text-chrome-micro leading-[0.875rem] text-hud-text-dim">
+          {!pending && setup.vendor ? (
+            <>
+              <VendorGlyph vendor={setup.vendor} />
+              <span className="min-w-0 truncate">{setup.vendor.label}</span>
+            </>
           ) : null}
         </span>
 
-        {/* The model is the fact truncation used to eat (finding 2): its own
-            line, full width, and the secondary note gets a line of its own
-            rather than competing for the same one. */}
-        <span className="mt-1.5 h-4 w-full truncate font-mono text-chrome-meta leading-4 text-hud-text">
-          {setup.model ?? 'Engine default'}
-        </span>
-        <span className="h-3.5 w-full truncate font-mono text-chrome-micro leading-[0.875rem] text-hud-text-dim">
-          {setup.modelNote ?? ''}
+        <span className="mt-1 flex h-3.5 w-full items-center font-mono text-chrome-micro leading-[0.875rem] text-hud-text-dim">
+          {pending ? (
+            <Shimmer className="h-2 w-1/2" />
+          ) : setup.thinking ? (
+            `${setup.thinking} thinking`
+          ) : (
+            'Engine default'
+          )}
         </span>
 
-        <span className="mt-1.5 h-3.5 w-full truncate font-mono text-chrome-micro leading-[0.875rem] text-hud-text-dim">
-          {setup.thinking ? `${setup.thinking} thinking` : 'Engine default'}
-        </span>
         <span
           className={cn(
-            'h-3.5 w-full truncate font-mono text-chrome-micro leading-[0.875rem]',
+            'flex h-3.5 w-full items-center truncate font-mono text-chrome-micro leading-[0.875rem]',
             setup.available ? 'text-hud-text-dim/65' : 'text-hud-amber/80'
           )}
         >
-          {variant === 'role-footer' ? `${role} · ${provenance}` : provenance}
+          {pending ? null : provenance}
         </span>
       </button>
     );

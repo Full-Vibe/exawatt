@@ -22,42 +22,28 @@ export const MAX_ROW_SETUPS = 4;
 export const MIN_ROW_SETUPS = 2;
 
 /**
- * Mirrors SetupChip's line structure EXACTLY — same padding, same reserved
- * line heights, same gaps. If the placeholder is shorter than the real chip,
- * the row still jumps when it settles, which is the finding this state exists
- * to fix.
+ * The skeleton is the real chip.
+ *
+ * Hand-drawing a placeholder is how the last round still ended up with a row
+ * that jumped on settle: the two structures drifted the moment the chip gained
+ * a line. `SetupChip pending` renders the identical element tree with shimmer
+ * blocks instead of text, so divergence is impossible by construction rather
+ * than by discipline.
  */
-function PlaceholderChip({ index }: { index: number }) {
-  const bar = 'animate-pulse rounded bg-hud-text-dim/15 motion-reduce:animate-none';
-  return (
-    <span
-      aria-hidden="true"
-      data-setup-placeholder
-      className="flex min-w-0 flex-1 basis-0 flex-col items-start rounded-lg border border-hud-stroke-faint bg-hud-surface-input px-3 py-2.5"
-      style={{ animationDelay: `${index * 90}ms` }}
-    >
-      <span className="flex h-3.5 items-center">
-        <span className={cn('h-2 w-12', bar)} />
-      </span>
-      <span className="flex h-5 w-full items-center gap-2">
-        <span className={cn('size-3.5 shrink-0 rounded-sm', bar)} />
-        <span className={cn('h-3 w-24 max-w-[70%]', bar)} />
-      </span>
-      <span className="mt-1.5 flex h-4 w-full items-center">
-        <span className={cn('h-3 w-4/5', bar)} />
-      </span>
-      <span className="flex h-3.5 w-full items-center">
-        <span className={cn('h-2 w-1/3', bar)} />
-      </span>
-      <span className="mt-1.5 flex h-3.5 w-full items-center">
-        <span className={cn('h-2 w-3/5', bar)} />
-      </span>
-      <span className="flex h-3.5 w-full items-center">
-        <span className={cn('h-2 w-1/4', bar)} />
-      </span>
-    </span>
-  );
-}
+const PENDING_SETUP: LauncherSetup = {
+  id: '__pending__',
+  role: 'coding',
+  name: null,
+  engine: { harness: 'claude', label: '', color: 'transparent' },
+  model: null,
+  modelVariant: null,
+  vendor: null,
+  thinking: null,
+  reason: 'default',
+  launchCount: 0,
+  pinned: false,
+  available: true,
+};
 
 export interface SetupRowProps {
   setups: readonly LauncherSetup[];
@@ -113,7 +99,14 @@ export function SetupRow({
     >
       {state === 'settling'
         ? Array.from({ length: placeholderCount }, (_, index) => (
-            <PlaceholderChip key={index} index={index} />
+            <SetupChip
+              key={`pending-${index}`}
+              setup={PENDING_SETUP}
+              selected={false}
+              expanded={false}
+              pending
+              variant={variant}
+            />
           ))
         : setups.map(setup => (
             <SetupChip

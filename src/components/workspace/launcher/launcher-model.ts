@@ -31,6 +31,17 @@ export interface LauncherEngine {
   color: string;
 }
 
+/**
+ * Who actually serves the model. Distinct from the engine: OpenCode is the
+ * engine, OpenRouter or a local Ollama is the vendor. Null when the engine
+ * implies it — Claude Code is always Anthropic, and saying so is noise.
+ */
+export interface LauncherVendor {
+  label: string;
+  /** Local inference is a materially different fact from a hosted provider. */
+  kind: 'hosted' | 'local';
+}
+
 export interface LauncherSetup {
   id: string;
   role: LauncherRole;
@@ -39,8 +50,13 @@ export interface LauncherSetup {
   engine: LauncherEngine;
   /** Null while the engine has not reported a model yet. */
   model: string | null;
-  /** Secondary model fact, e.g. "1M context". Never the whole identity. */
-  modelNote: string | null;
+  /**
+   * A capability of the model itself, e.g. "1M context". Sits beside the model
+   * name because it qualifies it. Deliberately NOT the same channel as the
+   * vendor, which is identity and carries its own mark.
+   */
+  modelVariant: string | null;
+  vendor: LauncherVendor | null;
   /** Reasoning effort label, e.g. "High". Null when the engine has none. */
   thinking: string | null;
   reason: LauncherReason;
@@ -88,7 +104,8 @@ export function setupAccessibleLabel(setup: LauncherSetup): string {
     LAUNCHER_ROLE_LABEL[setup.role],
     setup.engine.label,
     setup.model,
-    setup.modelNote,
+    setup.modelVariant,
+    setup.vendor ? `served by ${setup.vendor.label}` : null,
     setup.thinking ? `${setup.thinking} thinking` : null,
   ]
     .filter(Boolean)
