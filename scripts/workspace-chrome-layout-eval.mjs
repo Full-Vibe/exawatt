@@ -159,6 +159,46 @@ const persistedLayout = {
   ],
 };
 
+const launchSourceRegistry = {
+  sources: [
+    ['claude', 'Claude Code', '#DD896F'],
+    ['codex', 'Codex', '#ECECEC'],
+  ].map(([id, label, color]) => ({
+    id: `${id}-local`,
+    adapterId: id,
+    harness: id,
+    label,
+    connectionName: 'Local CLI',
+    color,
+    configured: true,
+    launchable: true,
+    state: 'ready',
+    stateLabel: 'Ready',
+    summary: `${label} fixture`,
+    observedAt: 1,
+    capabilities: {
+      interactiveLaunch: true,
+      initialTask: true,
+      exactResume: true,
+      modelSelection: 'live-catalog',
+      effortSelection: 'live-catalog',
+      permissionModes: ['prompt', 'auto', 'unrestricted'],
+      delegationObservation: 'Fixture lifecycle',
+      enforcementOwner: label,
+    },
+    actions: {
+      recheck: true,
+      authenticate: false,
+      chooseModel: true,
+      installGuide: false,
+    },
+    facts: {},
+  })),
+  available: [],
+  comingSoon: [],
+  observedAt: 1,
+};
+
 mkdirSync(SCREENSHOT_DIR, { recursive: true });
 const browser = await chromium.launch({
   headless: true,
@@ -185,7 +225,7 @@ page.on('console', message => {
 });
 
 await page.addInitScript(
-  ({ sessions, layout }) => {
+  ({ sessions, layout, sourceRegistry }) => {
     const off = () => () => undefined;
     // A late eval step reloads while one session is already working. This
     // exercises D29's pty:list hydration path without weakening the initial
@@ -200,6 +240,10 @@ await page.addInitScript(
     window.electron = {
       isElectron: true,
       platform: 'darwin',
+      agentSources: {
+        list: async () => sourceRegistry,
+        act: async () => ({ ok: true, message: 'Fixture action complete.' }),
+      },
       settings: {
         get: async () => ({}),
         set: async () => undefined,
@@ -219,6 +263,30 @@ await page.addInitScript(
       },
       pty: {
         create: async () => ({ ok: true, session: sessions[0] }),
+        listAgentModels: async harness => ({
+          harness,
+          effectiveModel: `eval-${harness}`,
+          effectiveModelLabel:
+            harness === 'claude' ? 'Eval Claude' : 'Eval Codex',
+          effectiveModelSource: 'harness-recommended',
+          effectiveEffort: null,
+          effectiveEffortLabel: 'Model default',
+          effectiveEffortSource: 'unavailable',
+          effortLocked: false,
+          models: [
+            {
+              id: `eval-${harness}`,
+              label: harness === 'claude' ? 'Eval Claude' : 'Eval Codex',
+              description: 'Deterministic layout fixture.',
+              defaultEffort: null,
+              efforts: [],
+            },
+          ],
+          catalogMode: 'live-catalog',
+          catalogProvenance: 'Workspace chrome fixture',
+          observedAt: 1,
+          selectionAction: null,
+        }),
         write: async () => undefined,
         engage: async () => undefined,
         resize: async () => undefined,
@@ -291,7 +359,11 @@ await page.addInitScript(
       },
     };
   },
-  { sessions: liveSessions, layout: persistedLayout }
+  {
+    sessions: liveSessions,
+    layout: persistedLayout,
+    sourceRegistry: launchSourceRegistry,
+  }
 );
 
 try {
@@ -341,34 +413,76 @@ try {
       const taskElement = document.querySelector(
         '[aria-label="Initial task for the new Agent"]'
       );
-      const sourceElement = document.querySelector(
-        '[aria-label="Agent Source"]'
+      const configurationRibbon = document.querySelector(
+        '[data-launch-configuration-ribbon]'
       );
-      const modelElement = document.querySelector('[aria-label="Agent model"]');
-      const effortElement = document.querySelector(
-        '[aria-label="Agent effort"]'
+      const configurationViewport = document.querySelector(
+        '[data-launch-configuration-viewport]'
       );
-      const permissionElement = document.querySelector(
-        '[aria-label="Agent permissions"]'
+      const selectedConfiguration = document.querySelector(
+        '[data-launch-configuration-ribbon] [role="radio"][aria-checked="true"]'
       );
-      const optionsElement = document.querySelector(
-        '[aria-label="Agent launch options"]'
+      const startElement = document.querySelector('[data-agent-start-button]');
+      const customizeElement = document.querySelector(
+        '[data-agent-composer] button[aria-label="Customize"]'
+      );
+      const allElement = document.querySelector(
+        '[data-agent-composer] button[aria-label="All launch configurations"]'
       );
       if (
         !(chromeElement instanceof HTMLElement) ||
         !(panelElement instanceof HTMLElement) ||
         !(taskElement instanceof HTMLTextAreaElement) ||
-        !(sourceElement instanceof HTMLElement) ||
-        !(modelElement instanceof HTMLElement) ||
-        !(effortElement instanceof HTMLElement) ||
-        !(permissionElement instanceof HTMLElement) ||
-        !(optionsElement instanceof HTMLElement)
+        !(configurationRibbon instanceof HTMLElement) ||
+        !(configurationViewport instanceof HTMLElement) ||
+        !(selectedConfiguration instanceof HTMLElement) ||
+        !(startElement instanceof HTMLButtonElement) ||
+        !(customizeElement instanceof HTMLButtonElement) ||
+        !(allElement instanceof HTMLButtonElement)
       ) {
-        throw new Error('Workspace chrome fixture did not render');
+        const missing = [
+          ['chrome', chromeElement instanceof HTMLElement],
+          ['composer', panelElement instanceof HTMLElement],
+          ['task', taskElement instanceof HTMLTextAreaElement],
+          ['configuration ribbon', configurationRibbon instanceof HTMLElement],
+          [
+            'configuration viewport',
+            configurationViewport instanceof HTMLElement,
+          ],
+          [
+            'selected configuration',
+            selectedConfiguration instanceof HTMLElement,
+          ],
+          ['Start', startElement instanceof HTMLButtonElement],
+          ['Customize', customizeElement instanceof HTMLButtonElement],
+          ['All configurations', allElement instanceof HTMLButtonElement],
+        ]
+          .filter(([, present]) => !present)
+          .map(([name]) => name);
+        throw new Error(
+          `Workspace chrome fixture did not render: ${missing.join(', ')}; launcher=${JSON.stringify(
+            {
+              ribbonText: configurationRibbon?.textContent,
+              radios:
+                configurationRibbon?.querySelectorAll('[role="radio"]').length,
+              controls: Array.from(
+                panelElement?.querySelectorAll('button') ?? []
+              ).map(button => button.getAttribute('aria-label')),
+            }
+          )}`
+        );
       }
       const chromeRect = chromeElement.getBoundingClientRect();
       const panelRect = panelElement.getBoundingClientRect();
       const taskRect = taskElement.getBoundingClientRect();
+      const configurationRect = configurationRibbon.getBoundingClientRect();
+      const configurationViewportRect =
+        configurationViewport.getBoundingClientRect();
+      const selectedConfigurationRect =
+        selectedConfiguration.getBoundingClientRect();
+      const startRect = startElement.getBoundingClientRect();
+      const customizeRect = customizeElement.getBoundingClientRect();
+      const allRect = allElement.getBoundingClientRect();
       const subtitleElement = document.querySelector('[data-subtitle]');
       const readFontSize = selector => {
         const element = document.querySelector(selector);
@@ -403,13 +517,38 @@ try {
           width: panelRect.width,
           viewportWidth: window.innerWidth,
         },
-        sourceWidth: sourceElement.getBoundingClientRect().width,
-        modelWidth: modelElement.getBoundingClientRect().width,
-        effortWidth: effortElement.getBoundingClientRect().width,
-        permissionWidth: permissionElement.getBoundingClientRect().width,
-        options: {
-          left: optionsElement.getBoundingClientRect().left,
-          right: optionsElement.getBoundingClientRect().right,
+        configuration: {
+          left: configurationRect.left,
+          right: configurationRect.right,
+          width: configurationRect.width,
+          viewportWidth: configurationViewportRect.width,
+          viewportScrollWidth: configurationViewport.scrollWidth,
+        },
+        selectedConfiguration: {
+          label: selectedConfiguration.getAttribute('aria-label'),
+          left: selectedConfigurationRect.left,
+          right: selectedConfigurationRect.right,
+          viewportLeft: configurationViewportRect.left,
+          viewportRight: configurationViewportRect.right,
+          visible:
+            selectedConfigurationRect.width > 0 &&
+            selectedConfigurationRect.height > 0 &&
+            getComputedStyle(selectedConfiguration).visibility !== 'hidden',
+        },
+        start: {
+          left: startRect.left,
+          right: startRect.right,
+          width: startRect.width,
+        },
+        customize: {
+          left: customizeRect.left,
+          right: customizeRect.right,
+          width: customizeRect.width,
+        },
+        all: {
+          left: allRect.left,
+          right: allRect.right,
+          width: allRect.width,
         },
         task: {
           width: taskRect.width,
@@ -465,32 +604,47 @@ try {
         `Agent task placeholder is clipped at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
-    if (metrics.sourceWidth < 135) {
+    if (metrics.configuration.width < 180) {
       throw new Error(
-        `Agent Source collapsed at ${width}px: ${JSON.stringify(metrics)}`
+        `Launch Configuration ribbon collapsed at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
-    if (metrics.modelWidth < (width === 560 ? 151 : 167)) {
+    if (metrics.start.width < 79) {
       throw new Error(
-        `Agent model collapsed at ${width}px: ${JSON.stringify(metrics)}`
+        `Start control collapsed at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
-    if (metrics.effortWidth < (width === 560 ? 95 : 111)) {
+    if (metrics.customize.width < 31 || metrics.all.width < 31) {
       throw new Error(
-        `Agent effort collapsed at ${width}px: ${JSON.stringify(metrics)}`
-      );
-    }
-    if (metrics.permissionWidth < 79) {
-      throw new Error(
-        `Agent permission policy collapsed at ${width}px: ${JSON.stringify(metrics)}`
+        `Launch disclosure controls collapsed at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
     if (
-      metrics.options.left < metrics.panel.left - 1 ||
-      metrics.options.right > metrics.panel.right + 1
+      !metrics.selectedConfiguration.visible ||
+      !metrics.selectedConfiguration.label ||
+      metrics.selectedConfiguration.left <
+        metrics.selectedConfiguration.viewportLeft - 1 ||
+      metrics.selectedConfiguration.right >
+        metrics.selectedConfiguration.viewportRight + 1
     ) {
       throw new Error(
-        `Agent launch options are clipped at ${width}px: ${JSON.stringify(metrics)}`
+        `Selected Launch Configuration is not visible at ${width}px: ${JSON.stringify(metrics)}`
+      );
+    }
+    if (
+      [
+        metrics.configuration,
+        metrics.start,
+        metrics.customize,
+        metrics.all,
+      ].some(
+        control =>
+          control.left < metrics.panel.left - 1 ||
+          control.right > metrics.panel.right + 1
+      )
+    ) {
+      throw new Error(
+        `Agent launch row is clipped at ${width}px: ${JSON.stringify(metrics)}`
       );
     }
     // subtitles no longer yield to the composer: the strip owns its row and
@@ -1099,6 +1253,11 @@ try {
   if (!(await page.locator('[data-agent-composer]').count())) {
     await page.locator('[data-composer-toggle]').click();
     await page.locator('[data-agent-composer]').waitFor();
+  }
+  const launchCustomization = page.locator('[data-launch-customize]');
+  if (!(await launchCustomization.isVisible())) {
+    await page.getByRole('button', { name: 'Customize' }).click();
+    await launchCustomization.waitFor({ state: 'visible' });
   }
   const permissionTrigger = page.getByLabel('Agent permissions');
   await permissionTrigger.focus();

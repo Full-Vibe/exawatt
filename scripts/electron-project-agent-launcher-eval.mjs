@@ -220,6 +220,14 @@ async function waitForBuffer(page, sessionId, fragment) {
   );
 }
 
+async function showLaunchCustomization(page) {
+  const customization = page.locator('[data-launch-customize]');
+  if (await customization.isVisible().catch(() => false)) return customization;
+  await page.getByRole('button', { name: 'Customize' }).click();
+  await customization.waitFor({ state: 'visible' });
+  return customization;
+}
+
 let completed = false;
 try {
   await withElectronApp(
@@ -459,6 +467,41 @@ try {
       await page.keyboard.press('Control+Meta+1');
       await page.waitForURL('**/workspace**');
       await page.locator('[data-agent-composer]').waitFor();
+
+      const launchRibbon = page.locator('[data-launch-configuration-ribbon]');
+      const selectedConfiguration = launchRibbon.locator(
+        '[role="radio"][aria-checked="true"]'
+      );
+      check(
+        'the composer keeps the primary launch path lightweight',
+        (await page.getByLabel('Initial task for the new Agent').isVisible()) &&
+          (await launchRibbon.isVisible()) &&
+          (await selectedConfiguration.count()) === 1 &&
+          (await selectedConfiguration.isVisible()) &&
+          (await page.getByRole('button', { name: 'Start' }).isVisible()) &&
+          (await page.getByRole('button', { name: 'Customize' }).isVisible()) &&
+          (await page
+            .getByRole('button', { name: 'All launch configurations' })
+            .isVisible()) &&
+          (await page.getByLabel('Agent Source').isHidden())
+      );
+      await page
+        .getByRole('button', { name: 'All launch configurations' })
+        .click();
+      const allConfigurations = page.locator(
+        '[data-all-launch-configurations]'
+      );
+      await allConfigurations.waitFor();
+      check(
+        'All configurations discloses the complete launch catalog',
+        (await allConfigurations.innerText()).includes('All configurations') &&
+          (await allConfigurations.getByRole('button').count()) > 1
+      );
+      await page
+        .getByRole('button', { name: 'All launch configurations' })
+        .click();
+      await allConfigurations.waitFor({ state: 'detached' });
+      await showLaunchCustomization(page);
 
       const firstTask = "Review the user's auth flow";
       await page.waitForFunction(() =>
@@ -723,6 +766,7 @@ try {
       // while the composer was always-open.)
       await page.locator('[data-composer-toggle]').click();
       await page.locator('[data-agent-composer]').waitFor();
+      await showLaunchCustomization(page);
       const sourceTrigger = page.getByLabel('Agent Source');
       check(
         'Agent Source trigger owns exactly one harness glyph',
@@ -906,6 +950,7 @@ try {
         .getByText('Start Agent with Claude Code', { exact: true })
         .click();
       await page.getByLabel('Initial task for the new Agent').waitFor();
+      await showLaunchCustomization(page);
       await page.waitForFunction(
         () =>
           document
@@ -951,6 +996,7 @@ try {
         ledger.length === 2
       );
       await page.locator('[data-agent-composer]').waitFor();
+      await showLaunchCustomization(page);
       check(
         'closing the last Agent leaves the empty Project selected',
         await page.locator('[data-project="alpha"]').isVisible()
@@ -1058,6 +1104,7 @@ try {
       await closeTab(page, 'Codex');
       await waitForClosedSessionCount(page, 2);
       await page.locator('[data-agent-composer]').waitFor();
+      await showLaunchCustomization(page);
       check(
         'source recommendation survives the close and restore cycle',
         (await page.getByLabel('Agent Source').innerText()).includes('Codex')
@@ -1218,6 +1265,7 @@ try {
       );
       await alphaTile.click();
       await page.locator('[data-agent-composer]').waitFor();
+      await showLaunchCustomization(page);
       check(
         'source recommendation survives a full app restart',
         (await page.getByLabel('Agent Source').innerText()).includes('Codex')
