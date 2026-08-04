@@ -159,6 +159,18 @@ const persistedLayout = {
   ],
 };
 
+const fixtureSourceFact = {
+  basis: 'observed',
+  state: 'ready',
+  value: 'Ready',
+  detail: 'Deterministic workspace layout fixture.',
+  provenance: {
+    kind: 'source-command',
+    label: 'Workspace layout evaluator',
+    observedAt: 1,
+  },
+};
+
 const launchSourceRegistry = {
   sources: [
     ['claude', 'Claude Code', '#DD896F'],
@@ -192,7 +204,14 @@ const launchSourceRegistry = {
       chooseModel: true,
       installGuide: false,
     },
-    facts: {},
+    facts: {
+      installation: fixtureSourceFact,
+      reachability: fixtureSourceFact,
+      authentication: fixtureSourceFact,
+      identity: fixtureSourceFact,
+      compatibility: fixtureSourceFact,
+      modelDiscovery: fixtureSourceFact,
+    },
   })),
   available: [],
   comingSoon: [],

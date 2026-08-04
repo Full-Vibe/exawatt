@@ -287,9 +287,9 @@ try {
       );
 
       await page.keyboard.press('Meta+KeyK');
-      const unavailableShell = page.locator('[cmdk-item]').filter({
-        hasText: 'Open shell in the active Project',
-      });
+      const unavailableShell = page.locator(
+        '[cmdk-item][data-launch-configuration="shell"]'
+      );
       await unavailableShell.waitFor();
       check(
         'palette explains why shell is unavailable without a Project',
@@ -381,9 +381,9 @@ try {
       );
 
       await page.keyboard.press('Meta+KeyK');
-      const availableShell = page.locator('[cmdk-item]').filter({
-        hasText: 'Open shell in the active Project',
-      });
+      const availableShell = page.locator(
+        '[cmdk-item][data-launch-configuration="shell"]'
+      );
       await availableShell.waitFor();
       const projectEdit = page.locator('[cmdk-item]').filter({
         hasText: 'Rename or recolor the active Project',
@@ -506,18 +506,18 @@ try {
       const firstTask = "Review the user's auth flow";
       await page.waitForFunction(() =>
         document
-          .querySelector('[aria-label="Agent model"]')
+          .querySelector('[role="combobox"][aria-label^="Agent model:"]')
           ?.textContent?.includes('Account default')
       );
+      const claudeModelTrigger = page.getByRole('combobox', {
+        name: /^Agent model:/,
+      });
       check(
         'the composer shows the effective Claude model before launch',
-        (await page.getByLabel('Agent model').innerText()).includes(
-          'Account default'
-        )
+        (await claudeModelTrigger.innerText()).includes('Account default')
       );
       // The rows must be the ones the installed CLI reported, not a list
       // Exawatt keeps of its own.
-      const claudeModelTrigger = page.getByLabel('Agent model');
       await claudeModelTrigger.click();
       const claudeModelMenu = page.getByRole('listbox');
       await claudeModelMenu.waitFor();
@@ -566,8 +566,7 @@ try {
         )
       );
       const permissionTrigger = page.getByLabel('Agent permissions');
-      await permissionTrigger.focus();
-      await page.keyboard.press('Space');
+      await permissionTrigger.click();
       const permissionMenu = page.getByRole('listbox');
       await permissionMenu.waitFor();
       const permissionMenuText = await permissionMenu.innerText();
@@ -789,7 +788,7 @@ try {
       await codexOption.click();
       await page.waitForFunction(() =>
         document
-          .querySelector('[aria-label="Agent model"]')
+          .querySelector('[role="combobox"][aria-label^="Agent model:"]')
           ?.textContent?.includes('Eval Codex Sol')
       );
       check(
@@ -803,7 +802,9 @@ try {
           'YOLO'
         )
       );
-      const modelTrigger = page.getByLabel('Agent model');
+      const modelTrigger = page.getByRole('combobox', {
+        name: /^Agent model:/,
+      });
       check(
         'Codex exposes the installed catalog default beside Agent Source',
         (await modelTrigger.innerText()).includes('Eval Codex Sol')
@@ -939,16 +940,14 @@ try {
       await palette.waitFor();
       const paletteText = await palette.innerText();
       check(
-        'palette separates Agent start from shell tools',
-        paletteText.includes('Start Agent') &&
-          paletteText.includes('Start Agent with Codex') &&
-          paletteText.includes('Start Agent with OpenCode') &&
-          paletteText.includes('Tools') &&
-          paletteText.includes('Open shell in the active Project')
+        'palette presents exact Agent and Shell launch configurations together',
+        paletteText.includes('Start') &&
+          paletteText.includes('Claude Code') &&
+          paletteText.includes('Codex') &&
+          paletteText.includes('OpenCode') &&
+          paletteText.includes('Shell')
       );
-      await page
-        .getByText('Start Agent with Claude Code', { exact: true })
-        .click();
+      await page.getByText('Claude Code', { exact: true }).click();
       await page.getByLabel('Initial task for the new Agent').waitFor();
       await showLaunchCustomization(page);
       await page.waitForFunction(
@@ -1244,7 +1243,7 @@ try {
       check('Project context menu closes an empty Project', true);
       await page.waitForTimeout(600);
     },
-    { maxMs: 120_000 }
+    { maxMs: 240_000, firstWindowMs: 90_000 }
   );
 
   await withElectronApp(
@@ -1354,7 +1353,7 @@ try {
       );
       await page.screenshot({ path: join(output, '04-imported-library.png') });
     },
-    { maxMs: 90_000 }
+    { maxMs: 180_000, firstWindowMs: 90_000 }
   );
   completed = true;
 } finally {

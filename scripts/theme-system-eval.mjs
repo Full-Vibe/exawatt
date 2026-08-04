@@ -283,7 +283,8 @@ async function assertRootAppearance(
     `material saturation is empty: ${detail}`
   );
   assert(
-    state.material.opacity === (reducedMaterial ? '1' : theme.chromeOpacity),
+    Number(state.material.opacity) ===
+      Number(reducedMaterial ? '1' : theme.chromeOpacity),
     `material opacity mismatch: ${detail}`
   );
   assert(
@@ -512,16 +513,16 @@ async function assertAppearanceControlsAndLayout() {
   });
   await assertRootAppearance(THEMES[0], { font: 'geist' });
 
-  assert.equal(
-    await appearance.getByRole('switch', { name: 'Enhanced contrast' }).count(),
-    0,
+  assert(
+    (await appearance
+      .getByRole('switch', { name: 'Enhanced contrast' })
+      .count()) === 0,
     'Appearance must not expose the retired Enhanced contrast override'
   );
-  assert.equal(
-    await appearance
+  assert(
+    (await appearance
       .getByRole('switch', { name: 'Reduce transparency' })
-      .count(),
-    0,
+      .count()) === 0,
     'Appearance must not expose the retired Reduce transparency override'
   );
 

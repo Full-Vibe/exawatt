@@ -108,6 +108,7 @@ import {
 } from '@/lib/shortcuts/fixed-families';
 import type { CommandAltitude } from '@/components/nav/command-altitude';
 import type { ClosedSessionEntry } from '@/types/electron';
+import type { CloneSessionTarget } from '@/components/workspace/session-clone';
 import { useShortcutRegistryVersion } from './use-effective-shortcut';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 import { useAppearance } from '@/components/appearance/appearance-provider';
@@ -160,7 +161,7 @@ interface CommandPaletteProps {
   onOpenHelpModal: () => void;
   /** Ranked Project selector output. Persistence remains outside the palette. */
   launchConfigurations?: readonly CommandPaletteLaunchConfiguration[];
-  cloneTargets?: readonly import('@/components/workspace/session-clone').CloneSessionTarget[];
+  cloneTargets?: readonly CloneSessionTarget[];
 }
 
 interface CommandItem {
@@ -480,9 +481,9 @@ export function CommandPalette({
     [handleSelect, navigateCommandSurface]
   );
   const cloneActiveAgent = useCallback(
-    (target: (typeof cloneTargets)[number]) =>
+    (target: CloneSessionTarget) =>
       handleSelect(() => requestCloneActiveAgent(target)),
-    [cloneTargets, handleSelect]
+    [handleSelect]
   );
   /** open a known Project (⌘K Projects): if its directory is missing on this
    *  machine (a synced Project from another machine), prompt to locate it and
