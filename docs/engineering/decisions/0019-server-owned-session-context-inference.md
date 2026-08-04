@@ -5,9 +5,10 @@ Status: accepted
 
 Amended 2026-08-03 by decision `0031`, pending ENG-030 OS1: the bounded
 evidence, structured-result, stale-response, and durable-last-good contracts
-survive, but one proprietary Exawatt-hosted endpoint is no longer the target
-architecture. The open client moves to local/source-owned or explicitly
-configured inference and removes the baked hosted default before OSS release.
+survive. The Exawatt-hosted implementation may remain available to official and
+OSS clients, including as a disclosed default, provided it is independently
+disableable/configurable, non-blocking, and backed by deterministic fallback.
+OS1 must choose default-on versus opt-in explicitly and document the boundary.
 
 ## Context
 
