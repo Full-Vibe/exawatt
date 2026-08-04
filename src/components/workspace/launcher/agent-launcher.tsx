@@ -213,7 +213,9 @@ export function AgentLauncher({
         {state === 'settling'
           ? 'Checking which engines are available.'
           : selected
-            ? `Selected ${setupAccessibleLabel(selected)}.`
+            ? `Selected ${setupAccessibleLabel(selected)}.${
+                open ? ' Adjusting this setup.' : ''
+              }`
             : ''}
       </span>
     </form>

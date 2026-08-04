@@ -88,7 +88,9 @@ export const SetupChip = forwardRef<HTMLButtonElement, SetupChipProps>(
         type="button"
         role="radio"
         aria-checked={selected}
-        aria-expanded={expanded}
+        // `radio` does not support aria-expanded, and selection is this
+        // control's primary semantic. The panel's open state is announced
+        // through the launcher's live region instead.
         aria-label={setupAccessibleLabel(setup)}
         title={setupAccessibleLabel(setup)}
         aria-disabled={setup.available ? undefined : true}
