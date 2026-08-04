@@ -423,6 +423,43 @@ Exit criteria:
 
 ## Findings log
 
+- 2026-08-04 (partner conversation `2026-08-04-dan-rosenberg`, operator-accepted
+  the same day — roadmap amendment recorded): **the public arena must lead with
+  output, not input.** Dan Rosenberg is a creative director and positioned the
+  objection explicitly as a marketing one: "I am probably the most
+  marketing-minded regular person that you're going to talk to about this, who's
+  going to tell you people don't think that way. The token thing is probably
+  going to work for internal things, but as soon as you make that a public
+  focus, people are like, oh, you're wasting money." Three distinct problems
+  with the A0/A1 axes as a PUBLIC surface:
+  - *It reads as spend, not capability.* "If anything, it's just kind of saying,
+    look at how much money I spent, look at how much energy I've used." The
+    audience already believes each prompt boils off bottles of water — accurate
+    or not, that is the frame the number lands in.
+  - *It is gameable in a way the design pass never addressed.* "If I'm just
+    having agents twiddling their thumbs, technically they're still — I'm
+    commanding them for hours, right?" Command agent-hours integrates active
+    Agents over time; an Agent that is up and idle still accrues. This is a
+    measurement objection, not only a copy objection.
+  - *Output is the claim people actually respond to.* "Instead of saying you
+    spent 51 hours, you can say we launched 20 projects in a month… 51 hours is
+    the amount of time you've been in the game." Plus the portfolio corollary:
+    "you can tell me you launched 20 projects, but if they're all [garbage] I'm
+    going to know you're not that good" — hence a visible list of the launches
+    and a props/upvote axis.
+
+  Operator direction from the same call: cheap proxies first (commits,
+  publishes, releases — things Exawatt can plausibly observe), harder outcome
+  measures (users made happy) stay unshaped. Internal and among-friends
+  competition on hours is untouched — the operator and a friend are actively
+  trash-talking over Endurance, and that loop works. What changes is the public
+  headline and, consequently, the A1 public-metrics table. Open question the
+  design pass must answer honestly: Exawatt observes agent activity, not
+  launches, so either it earns a real signal (git/release/deploy observation
+  under the existing assurance ladder) or it declines the claim — a
+  self-reported "projects launched" counter would be the exact
+  unverified-value failure decision `0029` forbids.
+
 - 2026-08-04 (operator quick capture `26d8caed`, FIX-003, queued): the
   `/leaderboard` axis copy is unintelligible to a visitor — and to the
   operator. "Command: 51h" reads as nonsense (Command as a duration label),

@@ -658,6 +658,38 @@ Implementation record (landed 2026-07-10):
     turns must not masquerade as measured durations. Keep copy minimal; this
     surface is already fighting text overload.
 
+- 2026-08-04 (partner conversation `2026-08-04-dan-rosenberg`, routed as
+  feedback by the operator — evidence for S4.1, not a decision):
+  - **A first-time viewer read the goal-visual backdrops as noise.** Dan
+    Rosenberg saw the landed S4.1 tiles cold and returned to them unprompted
+    three times: "the backgrounds are harder to follow… for me they're not
+    really saying much, they're kind of just visual noise", "the background
+    being random is making it harder for me to pop", and — the sharpest one —
+    "it makes me want to look for a meaning in them." An image that invites a
+    search for meaning it does not carry costs attention rather than restoring
+    it, which is the opposite of the S4 context-paging job. His alternative:
+    a symbol or emoji, "a little clearer and easier to see", and color as the
+    primary differentiator BEFORE imagery ("before you do image, I would focus
+    on color… okay, green means this, red means that"). Note this was the
+    abstract-landscape v2 language, before the operator's 2026-08-04 Graphic
+    Form pick — Graphic Form is a partial answer to exactly this objection, so
+    the fair test is to re-run a cold viewer against the shipped language
+    rather than treat the objection as already answered or already fatal.
+  - **What survives the objection is the mechanism, not the goal.** The
+    operator's rationale is recognition-over-recall — "if you see Alice in the
+    hallway, your brain instantly remembers she's working on this thing" — and
+    that is untouched. The falsifiable claim S4.1 still owes evidence for is
+    that a GENERATED IMAGE is the artifact which does it; per-tile color and a
+    stable symbol are the cheaper rivals and have never been tried head to
+    head. The operator's own dogfood remains the deciding evidence (he is the
+    one paging between eight to ten contexts; Dan saw the tiles once), but a
+    cold viewer finding them noise is real signal against the imagery arm.
+  - **Keep the system loose.** Dan's structural note, worth holding for
+    whatever wins: "if there's a way down the road to keep this as loose and
+    open-ended as possible" — Notion-style, where an operator builds the
+    tagging/color scheme that works for them — "because inevitably someone is
+    going to say I don't like working that way."
+
 - 2026-08-04 (partner conversation `2026-08-04-kevin-ridsdale`):
   - **Bell icons and sound alerts fail as attention signals (evidence for
     S1).** Kevin has built both a bell-icon tab badge and audio alerts in his

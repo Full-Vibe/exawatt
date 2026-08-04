@@ -209,6 +209,8 @@ Every user-visible string is written for a production user of a top-tier product
 
 Honesty markers are product UI and stay: **Coming soon**, Demo banners, "not recorded", "unreported", assurance facet labels. They state facts in short form; they do not editorialize about them.
 
+**Machine-authored operator text is in scope too** (partner conversation `2026-08-04-dan-rosenberg`, operator-accepted 2026-08-04). Prose the product generates rather than an author writing it — context labels, recaps, roadmap item copy, summaries an Agent renders into a surface — obeys the same Voice rules plus one more: **the first line carries the conclusion.** A generated block leads with what it is or what happened, in a phrase, before any supporting detail; supporting detail may follow, but never first. Length is not evidence of rigor. The failure this rule names is specific and was observed cold by a first-time viewer of the Team and Roadmap altitudes: dense, unranked, generated text where "there's a lot of good info here, but I don't even know where to look." That is a hierarchy defect, not a density preference — the fix is ranking the content, not deleting it. `AGENTS.md` carries the same contract for text agents write outside the product.
+
 ---
 
 ## Building a new page — the short answer
@@ -302,6 +304,17 @@ Air/Classic/Night and 90–120% writes produce only an initial and final root
 snapshot, never an intermediate layout storm.
 
 ### Amendment log
+
+- 2026-08-04 — Voice extended to machine-authored operator text (partner
+  conversation `2026-08-04-dan-rosenberg`, operator-accepted): generated prose
+  — context labels, recaps, roadmap copy, Agent-rendered summaries — now owes a
+  conclusion-first opening line and the same production register as authored
+  strings. Added because a professional creative director reading the Team and
+  Roadmap altitudes cold could not find an entry point ("I don't even know
+  where to look"), and because the operator's own live reaction to the roadmap
+  view was the same. No new type, color, or spacing rungs; this is a content
+  ordering rule enforced through the existing Voice section. `AGENTS.md` gained
+  the matching contract for agent output outside the product.
 
 - 2026-08-04 — ENG-032 T5.4 cross-context appearance incident closure:
   external web/Electron preference and OS/native streams now settle for 250 ms
