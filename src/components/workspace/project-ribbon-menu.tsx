@@ -149,6 +149,9 @@ export interface StripMenuItem {
   /** Muted right-aligned micro note, e.g. `Coming soon` on a preview-surface
    *  entry point (the ⌘K preview-row pattern). */
   note?: string;
+  /** A compact drill-in keeps secondary target selection inside the same
+   * keyboard-complete menu instead of opening a heavyweight dialog. */
+  children?: StripMenuItem[];
 }
 
 export type MenuCloseFocus = 'none' | 'trigger' | 'next' | 'previous';
@@ -172,6 +175,31 @@ export function StripContextMenu({
   const rootRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [position, setPosition] = useState({ x, y });
+  const [path, setPath] = useState<StripMenuItem[]>([]);
+  const pathDepthRef = useRef(0);
+  const visibleItems = path.at(-1)?.children ?? items;
+
+  const openChildren = (item: StripMenuItem) => {
+    if (!item.children?.length) return false;
+    setPath(current => [...current, item]);
+    setActiveIndex(0);
+    return true;
+  };
+
+  const goBack = () => {
+    if (path.length === 0) return false;
+    setPath(current => current.slice(0, -1));
+    setActiveIndex(0);
+    return true;
+  };
+
+  useLayoutEffect(() => {
+    if (pathDepthRef.current === path.length) return;
+    pathDepthRef.current = path.length;
+    rootRef.current
+      ?.querySelector<HTMLElement>('[data-menu-item-index="0"]')
+      ?.focus();
+  }, [path]);
 
   useLayoutEffect(() => {
     const rect = rootRef.current?.getBoundingClientRect();
@@ -214,7 +242,7 @@ export function StripContextMenu({
         event.stopPropagation();
         if (event.key === 'Escape') {
           event.preventDefault();
-          onClose('trigger');
+          if (!goBack()) onClose('trigger');
           return;
         }
         const buttons = Array.from(
@@ -225,6 +253,19 @@ export function StripContextMenu({
         if (event.key === 'Tab') {
           event.preventDefault();
           onClose(event.shiftKey ? 'previous' : 'next');
+          return;
+        }
+        if (event.key === 'ArrowLeft') {
+          if (goBack()) event.preventDefault();
+          return;
+        }
+        if (event.key === 'ArrowRight') {
+          const index = Number(
+            (document.activeElement as HTMLElement)?.dataset.menuItemIndex
+          );
+          if (Number.isInteger(index) && openChildren(visibleItems[index])) {
+            event.preventDefault();
+          }
           return;
         }
         if (
@@ -250,7 +291,21 @@ export function StripContextMenu({
         }
       }}
     >
-      {items.map((item, index) =>
+      {path.length > 0 && (
+        <button
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          onFocus={() => setActiveIndex(-1)}
+          onClick={() => goBack()}
+          className="flex cursor-pointer items-baseline gap-3 border-b border-hud-stroke-faint px-3 py-1.5 text-left font-mono text-chrome-label outline-none hover:bg-hud-fill-hi focus-visible:bg-hud-fill-hi"
+          style={{ color: HUD.textDim }}
+        >
+          <span aria-hidden>‹</span>
+          <span className="min-w-0 flex-1">{path.at(-1)?.label}</span>
+        </button>
+      )}
+      {visibleItems.map((item, index) =>
         item.announcedComing ? (
           // ENG-026 announced affordance: not a menuitem, so arrow keys and
           // the focus loop skip it; `inert` keeps the promise that it cannot
@@ -272,10 +327,12 @@ export function StripContextMenu({
             key={item.label}
             type="button"
             role="menuitem"
+            data-menu-item-index={index}
             tabIndex={index === activeIndex ? 0 : -1}
             onFocus={() => setActiveIndex(index)}
             onPointerMove={() => setActiveIndex(index)}
             onClick={() => {
+              if (openChildren(item)) return;
               onClose(item.focusAfterSelect ?? 'trigger');
               item.onSelect?.();
             }}
@@ -283,6 +340,7 @@ export function StripContextMenu({
             style={{ color: item.danger ? color : HUD.text }}
           >
             <span className="min-w-0 flex-1">{item.label}</span>
+            {item.children?.length ? <span aria-hidden>›</span> : null}
             {item.note && (
               <span
                 className="shrink-0 text-chrome-micro"

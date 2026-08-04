@@ -101,6 +101,7 @@ import {
   permissionModeFor,
   recommendLaunchableAgentSource,
 } from './agent-sources';
+import { availableSessionCloneTargets } from './session-clone';
 import {
   attentionNeedsOperator,
   mergeSessionAttentionMaps,
@@ -295,6 +296,7 @@ export function WorkspaceClient() {
     setError,
     dismissReentryRecap,
     launch,
+    cloneSession,
     launchHere,
     openProject,
     importProjects,
@@ -323,6 +325,19 @@ export function WorkspaceClient() {
     setProjectColor,
     ready,
   } = useWorkspaceState({ getInitialSize });
+  const [cloneTargets, setCloneTargets] = useState<
+    Array<{ id: 'claude' | 'codex' | 'opencode'; label: string }>
+  >([]);
+  useEffect(() => {
+    let current = true;
+    void loadAgentSourceRegistry('launch').then(result => {
+      if (!current || result.status !== 'live') return;
+      setCloneTargets(availableSessionCloneTargets(result.snapshot));
+    });
+    return () => {
+      current = false;
+    };
+  }, []);
 
   const moveTabWithFeedback = useCallback(
     (delta: 1 | -1): boolean => {
@@ -1222,6 +1237,8 @@ export function WorkspaceClient() {
               delegation={delegation}
               onTogglePinTab={togglePinTab}
               onResumeTab={id => void resumeTab(id)}
+              cloneTargets={cloneTargets}
+              onCloneTab={(id, target) => void cloneSession(id, target)}
               onNewAgent={dir => createDraftTab(dir)}
               onCloseProject={requestProjectClose}
               onRevealPath={cwd =>

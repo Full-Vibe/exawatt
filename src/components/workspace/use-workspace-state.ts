@@ -50,10 +50,13 @@ import { useClosedSessionCount } from './use-closed-session-count';
 import {
   DEFAULT_AGENT_PERMISSION_MODE,
   isAgentSourceId,
+  launchSourceSnapshots,
   loadAgentSourcePreferences,
+  loadAgentSourceRegistry,
   permissionModeFor,
   type AgentSourceId,
 } from './agent-sources';
+import { sessionClonePrompt, tabCanClone } from './session-clone';
 import {
   openRepositoryProject,
   listProjects,
@@ -1593,6 +1596,71 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     [addSession, syncProjectIdentity]
   );
 
+  /**
+   * Start a new Agent Session from bounded Exawatt-owned context. Clone never
+   * supplies resumeSessionId (provider continuity) and never mutates or closes
+   * the originating Session.
+   */
+  const cloneSession = useCallback(
+    async (tabId: string, target: AgentSourceId): Promise<boolean> => {
+      const project = stateRef.current.projects.find(group =>
+        group.tabs.some(tab => tab.id === tabId)
+      );
+      const tab = project?.tabs.find(candidate => candidate.id === tabId);
+      const contextSummary = tab
+        ? (summariesRef.current[tab.durableSessionId] ?? null)
+        : null;
+      if (
+        !project ||
+        !tab ||
+        !tabCanClone(tab, {
+          engaged: !!(tab.sessionId && engagedRef.current[tab.sessionId]),
+          contextSummary,
+        })
+      ) {
+        setError('Only started Agent Sessions can be cloned.');
+        return false;
+      }
+
+      const [preferenceLoad, registryLoad] = await Promise.all([
+        loadAgentSourcePreferences(),
+        loadAgentSourceRegistry('launch', true),
+      ]);
+      const targetReady = launchSourceSnapshots(registryLoad.snapshot).some(
+        source => source.harness === target && source.launchable
+      );
+      if (registryLoad.status !== 'live' || !targetReady) {
+        setError(
+          registryLoad.error?.message ??
+            'That Agent Source is not available for a new Session.'
+        );
+        return false;
+      }
+
+      const permissionMode = permissionModeFor(
+        preferenceLoad.preferences,
+        project.dir,
+        target,
+        preferenceLoad.usedSafeFallback
+          ? 'prompt'
+          : DEFAULT_AGENT_PERMISSION_MODE
+      );
+      return launch({
+        harness: target,
+        dir: tab.cwd,
+        permissionMode,
+        initialPrompt: sessionClonePrompt({
+          target,
+          initialTask: tab.initialTask,
+          contextSummary,
+        }),
+        statedTask: tab.initialTask ?? contextSummary ?? undefined,
+        roadmapItemId: tab.roadmapItemId ?? undefined,
+      });
+    },
+    [launch]
+  );
+
   /** ⌘T (D24): a new tab exists the moment you ask for it — a draft tab
    *  in the active (or given) Project whose pane is the composer. One
    *  draft per Project; asking again selects it. Returns null when no
@@ -2535,6 +2603,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     dismissReentryRecap,
     ready,
     launch,
+    cloneSession,
     launchHere,
     openProject,
     importProjects,

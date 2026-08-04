@@ -53,6 +53,8 @@ function strip({
   feedbackEnabled = false,
   onRateContext,
   onCloseProject,
+  cloneTargets,
+  onCloneTab,
   exitingProjectDirs,
 }: {
   tabs: WorkspaceTab[];
@@ -64,6 +66,8 @@ function strip({
   feedbackEnabled?: boolean;
   onRateContext?: ComponentProps<typeof TabStrip>['onRateContext'];
   onCloseProject?: (dir: string) => void;
+  cloneTargets?: Array<{ id: 'claude' | 'codex' | 'opencode'; label: string }>;
+  onCloneTab?: (tabId: string, target: 'claude' | 'codex' | 'opencode') => void;
   exitingProjectDirs?: ReadonlySet<string>;
 }) {
   const view = (
@@ -94,6 +98,8 @@ function strip({
           onRateContext={onRateContext}
           onTogglePinTab={vi.fn()}
           onResumeTab={vi.fn()}
+          cloneTargets={cloneTargets}
+          onCloneTab={onCloneTab}
           onCloseProject={onCloseProject}
           onSelectProject={vi.fn()}
           onSelectTab={vi.fn()}
@@ -454,6 +460,54 @@ describe('TabStrip turn-state glyphs (D22)', () => {
     expect(menu).toHaveTextContent('Rename…');
     expect(menu).toHaveTextContent('Pin in split');
     expect(menu).toHaveTextContent('Close');
+  });
+
+  it('clones a started Agent through a keyboard-complete target drill-in', async () => {
+    const onCloneTab = vi.fn();
+    strip({
+      tabs: [tab({ id: 'a' })],
+      engaged: { 'session-a': true },
+      cloneTargets: [
+        { id: 'codex', label: 'Codex' },
+        { id: 'opencode', label: 'OpenCode' },
+      ],
+      onCloneTab,
+    });
+    fireEvent.keyDown(
+      screen.getByRole('button', { name: 'New agent — result ready' }),
+      { key: 'ContextMenu' }
+    );
+    const clone = screen.getByRole('menuitem', { name: 'Clone to…' });
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowDown' });
+    expect(clone).toHaveFocus();
+    fireEvent.keyDown(clone, { key: 'ArrowRight' });
+    await waitFor(() =>
+      expect(screen.getByRole('menuitem', { name: 'Codex' })).toHaveFocus()
+    );
+    fireEvent.click(screen.getByRole('menuitem', { name: 'OpenCode' }));
+    expect(onCloneTab).toHaveBeenCalledWith('a', 'opencode');
+  });
+
+  it('does not offer Clone to for shells or unstarted Agents', () => {
+    strip({
+      tabs: [
+        tab({ id: 'a' }),
+        tab({ id: 'sh', harness: 'shell', title: 'Shell' }),
+      ],
+      cloneTargets: [{ id: 'codex', label: 'Codex' }],
+      onCloneTab: vi.fn(),
+    });
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'New agent — new' }), {
+      key: 'ContextMenu',
+    });
+    expect(screen.queryByRole('menuitem', { name: 'Clone to…' })).toBeNull();
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Shell — quiet' }), {
+      key: 'ContextMenu',
+    });
+    expect(screen.queryByRole('menuitem', { name: 'Clone to…' })).toBeNull();
   });
 
   it('an agent tab menu carries the announced Push to cloud row and the Cloud entry; a shell tab does not (ENG-026 N3)', () => {

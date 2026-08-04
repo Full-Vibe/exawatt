@@ -30,6 +30,7 @@ import {
 import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import type { SessionDelegation } from '@/types/electron';
+import type { AgentSourceId } from './agent-sources';
 import { HarnessGlyph } from './harness-icons';
 import {
   DEFAULT_RIBBON_POLICY,
@@ -80,6 +81,7 @@ import {
   ProjectRibbonSignalMark,
 } from './project-ribbon-signal';
 import { sessionDisplayCopy } from './session-display-copy';
+import { tabCanClone } from './session-clone';
 import {
   EDIT_ACTIVE_PROJECT_EVENT,
   FOCUS_ACTIVE_TERMINAL_EVENT,
@@ -144,6 +146,12 @@ const FALLBACK_RIBBON_WIDTH = 900;
 const EMPTY_SET: ReadonlySet<string> = new Set();
 const EMPTY_ACTIVITY: Record<string, boolean> = {};
 const EMPTY_DELEGATION: Record<string, SessionDelegation> = {};
+const EMPTY_CLONE_TARGETS: readonly CloneSessionTarget[] = [];
+
+export interface CloneSessionTarget {
+  id: AgentSourceId;
+  label: string;
+}
 
 export function TabStrip({
   projects,
@@ -156,6 +164,8 @@ export function TabStrip({
   delegation = EMPTY_DELEGATION,
   onTogglePinTab,
   onResumeTab,
+  cloneTargets = EMPTY_CLONE_TARGETS,
+  onCloneTab,
   onNewAgent,
   onCloseProject,
   onRevealPath,
@@ -183,6 +193,8 @@ export function TabStrip({
   delegation?: Record<string, SessionDelegation>;
   onTogglePinTab?: (tabId: string) => void;
   onResumeTab?: (tabId: string) => void;
+  cloneTargets?: readonly CloneSessionTarget[];
+  onCloneTab?: (tabId: string, target: AgentSourceId) => void;
   onNewAgent?: (dir: string) => void;
   onCloseProject?: (dir: string) => void;
   onRevealPath?: (cwd: string) => void;
@@ -1337,6 +1349,22 @@ export function TabStrip({
                 onSelect: () =>
                   setEditing({ kind: 'tab', id: tab.id, value: tab.title }),
               },
+              ...(onCloneTab &&
+              cloneTargets.length > 0 &&
+              tabCanClone(tab, {
+                engaged: !!(tab.sessionId && engaged[tab.sessionId]),
+                contextSummary: summary,
+              })
+                ? [
+                    {
+                      label: 'Clone to…',
+                      children: cloneTargets.map(target => ({
+                        label: target.label,
+                        onSelect: () => onCloneTab(tab.id, target.id),
+                      })),
+                    },
+                  ]
+                : []),
               ...(tabIsPinnable(tab) && onTogglePinTab
                 ? [
                     {
