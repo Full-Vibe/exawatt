@@ -4,6 +4,10 @@ import {
   parseAppearancePreferences,
   parseSettings,
 } from './settings-store';
+import {
+  emptyLaunchConfigurationPool,
+  launchConfigurationId,
+} from '@exawatt/core';
 
 describe('parseSettings', () => {
   it('defaults notifications off when absent or malformed', () => {
@@ -61,6 +65,44 @@ describe('parseSettings', () => {
         '/project': { codex: 'auto', claude: 'unrestricted' },
       },
     });
+  });
+
+  it('parses Launch Configuration state independently of other settings', () => {
+    const configuration = {
+      sourceId: 'codex-work',
+      modelId: 'gpt-5.3-codex',
+      effort: 'xhigh',
+    };
+    const parsed = parseSettings({
+      terminal: { fontSize: 15 },
+      launchConfigurations: {
+        schemaVersion: 1,
+        configurations: [{ id: 'forged', ...configuration, createdAt: 1 }],
+        projects: {
+          '/project': {
+            usage: { forged: { launchCount: 1, lastLaunchedAt: 2 } },
+            pins: ['forged'],
+          },
+        },
+      },
+    });
+    expect(parsed.terminal).toEqual({ fontSize: 15 });
+    expect(parsed.launchConfigurations?.configurations[0].id).toBe(
+      launchConfigurationId(configuration)
+    );
+    expect(parsed.launchConfigurations?.projects['/project']).toEqual({
+      usage: {
+        [launchConfigurationId(configuration)]: {
+          launchCount: 1,
+          lastLaunchedAt: 2,
+        },
+      },
+      pins: [launchConfigurationId(configuration)],
+    });
+    expect(
+      parseSettings({ launchConfigurations: { schemaVersion: 999 } })
+        .launchConfigurations
+    ).toEqual(emptyLaunchConfigurationPool());
   });
 });
 

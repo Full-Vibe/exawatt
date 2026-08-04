@@ -5,6 +5,17 @@ import {
   THEME_BOOTSTRAP_REGISTRY,
   type ThemeBootstrapId,
 } from './generated-theme-bootstrap';
+import {
+  deleteLaunchConfiguration as deleteConfiguration,
+  emptyLaunchConfigurationPool,
+  parseLaunchConfigurationPool,
+  recordLaunchConfigurationSuccess as recordConfigurationSuccess,
+  renameLaunchConfiguration as renameConfiguration,
+  saveNamedLaunchConfiguration as saveNamedConfiguration,
+  setLaunchConfigurationPinned as setConfigurationPinned,
+  type AgentLaunchConfigurationInput,
+  type LaunchConfigurationPoolV1,
+} from '@exawatt/core';
 
 export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
 
@@ -61,6 +72,7 @@ export interface ExawattSettings {
     sourceRecency: Record<string, number>;
     projectPermissionModes: Record<string, Record<string, AgentPermissionMode>>;
   };
+  launchConfigurations?: LaunchConfigurationPoolV1;
   appearance?: ElectronAppearancePreferencesV1;
 }
 
@@ -452,6 +464,11 @@ export function parseSettings(raw: unknown): ExawattSettings {
       projectPermissionModes,
     };
   }
+  if (Object.prototype.hasOwnProperty.call(raw, 'launchConfigurations')) {
+    settings.launchConfigurations = parseLaunchConfigurationPool(
+      (raw as { launchConfigurations?: unknown }).launchConfigurations
+    );
+  }
   const appearance = parseAppearancePreferences(
     (raw as { appearance?: unknown }).appearance
   );
@@ -505,10 +522,110 @@ function writeSettings(settings: ExawattSettings): void {
   const file = settingsFile();
   const staging = `${file}.tmp-${process.pid}`;
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(staging, `${JSON.stringify(settings, null, 2)}\n`, {
-    mode: 0o600,
-  });
-  fs.renameSync(staging, file);
+  try {
+    fs.writeFileSync(staging, `${JSON.stringify(settings, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    fs.renameSync(staging, file);
+  } finally {
+    try {
+      fs.unlinkSync(staging);
+    } catch (error) {
+      if (
+        !error ||
+        typeof error !== 'object' ||
+        !('code' in error) ||
+        error.code !== 'ENOENT'
+      ) {
+        throw error;
+      }
+    }
+  }
+}
+
+function launchConfigurationPool(
+  settings: ExawattSettings
+): LaunchConfigurationPoolV1 {
+  return settings.launchConfigurations ?? emptyLaunchConfigurationPool();
+}
+
+export function recordLaunchConfigurationSuccess(
+  projectDir: string,
+  rawTarget: unknown,
+  launchedAt = Date.now()
+): ExawattSettings {
+  const settings = loadSettings();
+  settings.launchConfigurations = recordConfigurationSuccess(
+    launchConfigurationPool(settings),
+    projectDir,
+    rawTarget as AgentLaunchConfigurationInput | { kind: 'shell' },
+    launchedAt
+  );
+  writeSettings(settings);
+  return settings;
+}
+
+export function saveNamedLaunchConfiguration(
+  rawConfiguration: unknown,
+  name: unknown,
+  savedAt = Date.now()
+): ExawattSettings {
+  const settings = loadSettings();
+  settings.launchConfigurations = saveNamedConfiguration(
+    launchConfigurationPool(settings),
+    rawConfiguration as AgentLaunchConfigurationInput,
+    name as string,
+    savedAt
+  );
+  writeSettings(settings);
+  return settings;
+}
+
+export function renameLaunchConfiguration(
+  id: unknown,
+  name: unknown
+): ExawattSettings {
+  if (typeof id !== 'string')
+    throw new Error('Invalid Launch Configuration id');
+  const settings = loadSettings();
+  settings.launchConfigurations = renameConfiguration(
+    launchConfigurationPool(settings),
+    id,
+    name as string
+  );
+  writeSettings(settings);
+  return settings;
+}
+
+export function deleteLaunchConfiguration(id: unknown): ExawattSettings {
+  if (typeof id !== 'string')
+    throw new Error('Invalid Launch Configuration id');
+  const settings = loadSettings();
+  settings.launchConfigurations = deleteConfiguration(
+    launchConfigurationPool(settings),
+    id
+  );
+  writeSettings(settings);
+  return settings;
+}
+
+export function setLaunchConfigurationPinned(
+  projectDir: string,
+  id: unknown,
+  pinned: unknown
+): ExawattSettings {
+  if (typeof id !== 'string' || typeof pinned !== 'boolean') {
+    throw new Error('Invalid Launch Configuration pin');
+  }
+  const settings = loadSettings();
+  settings.launchConfigurations = setConfigurationPinned(
+    launchConfigurationPool(settings),
+    projectDir,
+    id,
+    pinned
+  );
+  writeSettings(settings);
+  return settings;
 }
 
 export function setAttentionNotifications(enabled: boolean): ExawattSettings {

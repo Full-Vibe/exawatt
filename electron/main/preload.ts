@@ -207,6 +207,33 @@ contextBridge.exposeInMainWorld('electron', {
         source,
         permissionMode
       ),
+    recordLaunchConfigurationSuccess: (projectDir: string, target: unknown) =>
+      ipcRenderer.invoke(
+        'settings:record-launch-configuration-success',
+        projectDir,
+        target
+      ),
+    saveNamedLaunchConfiguration: (configuration: unknown, name: string) =>
+      ipcRenderer.invoke(
+        'settings:save-named-launch-configuration',
+        configuration,
+        name
+      ),
+    renameLaunchConfiguration: (id: string, name: string) =>
+      ipcRenderer.invoke('settings:rename-launch-configuration', id, name),
+    deleteLaunchConfiguration: (id: string) =>
+      ipcRenderer.invoke('settings:delete-launch-configuration', id),
+    setLaunchConfigurationPinned: (
+      projectDir: string,
+      id: string,
+      pinned: boolean
+    ) =>
+      ipcRenderer.invoke(
+        'settings:set-launch-configuration-pinned',
+        projectDir,
+        id,
+        pinned
+      ),
     onChanged: subscribe<{
       terminal?: {
         fontFamily?: string;
@@ -223,6 +250,7 @@ contextBridge.exposeInMainWorld('electron', {
         sourceRecency: Record<string, number>;
         projectPermissionModes: Record<string, Record<string, string>>;
       };
+      launchConfigurations?: import('@exawatt/core').LaunchConfigurationPoolV1;
       appearance?: {
         schemaVersion: 1;
         selection:

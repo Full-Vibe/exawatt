@@ -23,12 +23,17 @@ import { createWorktree, expandTilde } from './pty/project-resolve';
 import { loadWorkspace, saveWorkspace } from './workspace-store';
 import {
   loadSettings,
+  deleteLaunchConfiguration,
   recordAgentSourceUse,
+  recordLaunchConfigurationSuccess,
+  renameLaunchConfiguration,
+  saveNamedLaunchConfiguration,
   setAgentPermissionMode,
   setAttentionNotifications,
   setDockBadge,
   setGoalVisualsEnabled,
   setHostedConversationSummaries,
+  setLaunchConfigurationPinned,
   setAppearancePreferences,
 } from './settings-store';
 import { applyNativeAppearancePreference } from './appearance';
@@ -760,6 +765,46 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
         source,
         permissionMode as import('./settings-store').AgentPermissionMode
       );
+      broadcast('settings:changed', settings);
+      return settings;
+    }
+  );
+  handleTrusted(
+    'settings:record-launch-configuration-success',
+    (_event, projectDir: string, target: unknown) => {
+      const settings = recordLaunchConfigurationSuccess(projectDir, target);
+      broadcast('settings:changed', settings);
+      return settings;
+    }
+  );
+  handleTrusted(
+    'settings:save-named-launch-configuration',
+    (_event, configuration: unknown, name: unknown) => {
+      const settings = saveNamedLaunchConfiguration(configuration, name);
+      broadcast('settings:changed', settings);
+      return settings;
+    }
+  );
+  handleTrusted(
+    'settings:rename-launch-configuration',
+    (_event, id: unknown, name: unknown) => {
+      const settings = renameLaunchConfiguration(id, name);
+      broadcast('settings:changed', settings);
+      return settings;
+    }
+  );
+  handleTrusted(
+    'settings:delete-launch-configuration',
+    (_event, id: unknown) => {
+      const settings = deleteLaunchConfiguration(id);
+      broadcast('settings:changed', settings);
+      return settings;
+    }
+  );
+  handleTrusted(
+    'settings:set-launch-configuration-pinned',
+    (_event, projectDir: string, id: unknown, pinned: unknown) => {
+      const settings = setLaunchConfigurationPinned(projectDir, id, pinned);
       broadcast('settings:changed', settings);
       return settings;
     }

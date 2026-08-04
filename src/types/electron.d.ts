@@ -11,6 +11,8 @@ import type {
   AgentSourceRegistrySnapshot,
   AgentSourceSnapshot,
   AgentSourceState,
+  AgentLaunchConfigurationInput,
+  LaunchConfigurationPoolV1,
   PtyHarness,
 } from '@exawatt/core';
 import type { OperatorStatsPublishPayload } from '@exawatt/core';
@@ -28,6 +30,8 @@ export type {
   AgentSourceRegistrySnapshot,
   AgentSourceSnapshot,
   AgentSourceState,
+  AgentLaunchConfigurationInput,
+  LaunchConfigurationPoolV1,
   PtyHarness,
 } from '@exawatt/core';
 
@@ -553,6 +557,7 @@ export interface ExawattSettings {
     sourceRecency: Record<string, number>;
     projectPermissionModes: Record<string, Record<string, AgentPermissionMode>>;
   };
+  launchConfigurations?: LaunchConfigurationPoolV1;
   appearance?: AppearancePreferencesV1;
 }
 
@@ -576,6 +581,24 @@ export interface ElectronSettingsApi {
     projectDir: string,
     source: string,
     permissionMode: AgentPermissionMode
+  ) => Promise<ExawattSettings>;
+  recordLaunchConfigurationSuccess: (
+    projectDir: string,
+    target: AgentLaunchConfigurationInput | { kind: 'shell' }
+  ) => Promise<ExawattSettings>;
+  saveNamedLaunchConfiguration: (
+    configuration: AgentLaunchConfigurationInput,
+    name: string
+  ) => Promise<ExawattSettings>;
+  renameLaunchConfiguration: (
+    id: string,
+    name: string
+  ) => Promise<ExawattSettings>;
+  deleteLaunchConfiguration: (id: string) => Promise<ExawattSettings>;
+  setLaunchConfigurationPinned: (
+    projectDir: string,
+    id: string,
+    pinned: boolean
   ) => Promise<ExawattSettings>;
   onChanged: (handler: (settings: ExawattSettings) => void) => () => void;
 }
