@@ -8,7 +8,18 @@ import {
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultShortcuts, shortcutRegistry } from '@/lib/shortcuts';
+import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { SettingsClient } from './settings-client';
+
+// Notifications settings read the goal-visual preference, mounted app-wide
+// in layout.tsx — the test harness mirrors that mounting context.
+function renderSettings() {
+  return render(
+    <GoalVisualPreferenceProvider>
+      <SettingsClient />
+    </GoalVisualPreferenceProvider>
+  );
+}
 
 const { updateKeyboardShortcuts } = vi.hoisted(() => ({
   updateKeyboardShortcuts: vi.fn(async () => undefined),
@@ -60,7 +71,7 @@ describe('shortcut settings policy', () => {
   });
 
   it('rejects a bare universal binding and accepts a Command binding', async () => {
-    render(<SettingsClient />);
+    renderSettings();
     const capture = editShortcut('Agent');
 
     fireEvent.keyDown(capture, { key: 'm', code: 'KeyM' });
@@ -107,7 +118,7 @@ describe('shortcut settings policy', () => {
         shortcuts: { systemHotkeys: vi.fn(async () => ({})) },
       },
     });
-    render(<SettingsClient />);
+    renderSettings();
     await waitFor(() =>
       expect(
         window.electron!.shortcuts!.systemHotkeys as ReturnType<typeof vi.fn>
@@ -144,7 +155,7 @@ describe('shortcut settings policy', () => {
         },
       },
     });
-    render(<SettingsClient />);
+    renderSettings();
     await waitFor(() =>
       expect(
         window.electron!.shortcuts!.systemHotkeys as ReturnType<typeof vi.fn>
@@ -171,7 +182,7 @@ describe('shortcut settings policy', () => {
   it('warns without blocking when system prefs cannot be read (web fallback)', () => {
     // No Electron bridge: Apple defaults are only a likelihood, so ⇧⌘4
     // shows the unverified warning but stays saveable.
-    render(<SettingsClient />);
+    renderSettings();
     const capture = editShortcut('Agent');
     fireEvent.keyDown(capture, {
       key: '$',
@@ -184,7 +195,7 @@ describe('shortcut settings policy', () => {
   });
 
   it('rejects a physical Project ordinal even when Option changes its character', () => {
-    render(<SettingsClient />);
+    renderSettings();
     const capture = editShortcut('Agent');
 
     fireEvent.keyDown(capture, {

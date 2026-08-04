@@ -8,13 +8,18 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { ExposeOverlay } from './expose-overlay';
 import type { Project } from './use-workspace-state';
 
 function render(ui: ReactElement) {
   return testingRender(ui, {
+    // the overlay reads the goal-visual preference, mounted app-wide in
+    // layout.tsx — the test harness mirrors that mounting context
     wrapper: ({ children }: { children: ReactNode }) => (
-      <TooltipProvider>{children}</TooltipProvider>
+      <GoalVisualPreferenceProvider>
+        <TooltipProvider>{children}</TooltipProvider>
+      </GoalVisualPreferenceProvider>
     ),
   });
 }
