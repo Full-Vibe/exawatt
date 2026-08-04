@@ -12,6 +12,33 @@ import type { PtyHarness } from '@/types/electron';
 import { personalTenantActive } from '@/lib/tenancy/active-tenant';
 import type { AgentSourceId } from './agent-sources';
 
+/**
+ * Exact composer selection carried across route changes. This intentionally
+ * lives beside the request boundary instead of persistence: callers can focus
+ * the composer with either a durable configuration identity, a complete
+ * snapshot, or both. Source-only requests remain valid for native menu and
+ * legacy shortcut callers.
+ */
+export type AgentComposerConfigurationSnapshot =
+  | {
+      kind: 'agent';
+      source: AgentSourceId;
+      model: string | null;
+      effort: string | null;
+      agentTypeId?: string | null;
+    }
+  | { kind: 'shell' };
+
+export interface AgentComposerConfigurationRequest {
+  configurationId?: string;
+  configuration?: AgentComposerConfigurationSnapshot;
+}
+
+export type AgentComposerRequest =
+  | AgentSourceId
+  | AgentComposerConfigurationRequest
+  | null;
+
 export const SESSION_JUMP_EVENT = 'exawatt:open-session';
 export const LAUNCH_EVENT = 'exawatt:launch';
 /** Open a known Project by directory, resolving it without creating a PTY. */
@@ -59,7 +86,7 @@ let pendingSession: Pending<string> | null = null;
 let pendingLaunch: Pending<PtyHarness> | null = null;
 let pendingOpenProject: Pending<string> | null = null;
 let pendingProjectPicker: Pending<true> | null = null;
-let pendingAgentComposer: Pending<AgentSourceId | null> | null = null;
+let pendingAgentComposer: Pending<AgentComposerRequest> | null = null;
 let pendingReopenLastClosed: Pending<true> | null = null;
 
 function take<T>(slot: Pending<T> | null): T | null {
@@ -163,23 +190,33 @@ export function consumePendingProjectPicker(): boolean {
 }
 
 export function requestAgentComposer(
-  source: AgentSourceId | null = null
+  request: AgentComposerRequest = null
 ): void {
   if (!launchVerbsAvailable()) return;
-  pendingAgentComposer = { value: source, at: Date.now() };
+  pendingAgentComposer = { value: request, at: Date.now() };
   window.dispatchEvent(
-    new CustomEvent(FOCUS_AGENT_COMPOSER_EVENT, { detail: source })
+    new CustomEvent(FOCUS_AGENT_COMPOSER_EVENT, { detail: request })
   );
 }
 
-export function consumePendingAgentComposer():
-  | AgentSourceId
-  | null
+export function consumePendingAgentComposerRequest():
+  | AgentComposerRequest
   | undefined {
   if (!pendingAgentComposer) return undefined;
   const slot = pendingAgentComposer;
   pendingAgentComposer = null;
   return Date.now() - slot.at <= AGENT_COMPOSER_TTL_MS ? slot.value : undefined;
+}
+
+/** Source-only compatibility for existing callers while they migrate. */
+export function consumePendingAgentComposer():
+  | AgentSourceId
+  | null
+  | undefined {
+  return consumePendingAgentComposerRequest() as
+    | AgentSourceId
+    | null
+    | undefined;
 }
 
 export function hasPendingAgentComposer(): boolean {

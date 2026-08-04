@@ -48,7 +48,6 @@ import {
 } from 'lucide-react';
 import {
   requestSessionJump,
-  requestLaunch,
   requestOpenProject,
   requestProjectPicker,
   requestAgentComposer,
@@ -88,12 +87,8 @@ import {
   SessionStatusGlyph,
 } from '@/components/workspace/status-glyphs';
 import { STATUS_LIGHT_META, StatusLight } from '@/components/status-light';
-import { HARNESS_META, HARNESS_ORDER } from '@/components/workspace/harnesses';
-import {
-  AGENT_SOURCE_META,
-  AGENT_SOURCE_ORDER,
-  type AgentSourceId,
-} from '@/components/workspace/agent-sources';
+import { HARNESS_META } from '@/components/workspace/harnesses';
+import { AGENT_SOURCE_META } from '@/components/workspace/agent-sources';
 import { useOptionalProductFeedback } from '@/components/feedback/product-feedback-provider';
 import {
   requestQuickFeedback,
@@ -111,7 +106,7 @@ import {
   getWorkspaceFixedFamily,
 } from '@/lib/shortcuts/fixed-families';
 import type { CommandAltitude } from '@/components/nav/command-altitude';
-import type { PtyHarness, ClosedSessionEntry } from '@/types/electron';
+import type { ClosedSessionEntry } from '@/types/electron';
 import { useShortcutRegistryVersion } from './use-effective-shortcut';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
 import { useAppearance } from '@/components/appearance/appearance-provider';
@@ -162,6 +157,8 @@ interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenHelpModal: () => void;
+  /** Ranked Project selector output. Persistence remains outside the palette. */
+  launchConfigurations?: readonly CommandPaletteLaunchConfiguration[];
 }
 
 interface CommandItem {
@@ -231,6 +228,7 @@ export function CommandPalette({
   open,
   onOpenChange,
   onOpenHelpModal,
+  launchConfigurations: suppliedLaunchConfigurations,
 }: CommandPaletteProps) {
   const router = useRouter();
   const { navigateCommandSurface, activateCommandAltitude } =
@@ -297,6 +295,10 @@ export function CommandPalette({
     tenancy?.activeWorkspace.id === DEMO_WORKSPACE_ID;
   const personalVerbs = inElectron && !inDemoTenant;
   const workspaceVerbs = inElectron || inDemoTenant;
+  const launchConfigurations = useMemo(
+    () => commandPaletteLaunchConfigurations(suppliedLaunchConfigurations),
+    [suppliedLaunchConfigurations]
+  );
 
   // Reset search AND session rows when closing — stale rows on reopen can
   // list dead sessions or wrong statuses until the refetch lands, and Enter
@@ -466,18 +468,10 @@ export function CommandPalette({
       }),
     [handleSelect, navigateCommandSurface]
   );
-  const openAgentComposer = useCallback(
-    (source: AgentSourceId) =>
+  const openLaunchConfiguration = useCallback(
+    (configuration: CommandPaletteLaunchConfiguration) =>
       handleSelect(() => {
-        requestAgentComposer(source);
-        if (!inWorkspace()) navigateCommandSurface('/workspace');
-      }),
-    [handleSelect, navigateCommandSurface]
-  );
-  const launchHarness = useCallback(
-    (harness: PtyHarness) =>
-      handleSelect(() => {
-        requestLaunch(harness);
+        requestAgentComposer(commandPaletteConfigurationRequest(configuration));
         if (!inWorkspace()) navigateCommandSurface('/workspace');
       }),
     [handleSelect, navigateCommandSurface]
@@ -854,7 +848,7 @@ export function CommandPalette({
   interface RecentCandidate {
     label: string;
     icon?: React.ComponentType<{ className?: string }>;
-    harness?: PtyHarness;
+    launchConfiguration?: CommandPaletteLaunchConfiguration;
     color?: string;
     onSelect: () => void;
   }
@@ -876,21 +870,18 @@ export function CommandPalette({
       });
     }
     if (inElectron && !inDemoTenant) {
-      for (const h of HARNESS_ORDER) {
+      for (const configuration of launchConfigurations) {
         if (
-          h === 'shell' &&
+          configuration.configuration.kind === 'shell' &&
           !workspaceAvailability.commands['launch-shell'].available
         ) {
           continue;
         }
-        candidates.set(`launch:${h}`, {
-          label:
-            h === 'shell'
-              ? 'Open shell in the active Project'
-              : `Start Agent with ${HARNESS_META[h].label}`,
-          harness: h,
-          onSelect: () =>
-            h === 'shell' ? launchHarness(h) : openAgentComposer(h),
+        const key = commandPaletteConfigurationKey(configuration);
+        candidates.set(`launch:${key}`, {
+          label: configuration.label,
+          launchConfiguration: configuration,
+          onSelect: () => openLaunchConfiguration(configuration),
         });
       }
       for (const p of projects) {
@@ -943,8 +934,8 @@ export function CommandPalette({
     onWorkspaceRoute,
     onSpatialRoute,
     tenantWorkspaceItems,
-    launchHarness,
-    openAgentComposer,
+    launchConfigurations,
+    openLaunchConfiguration,
     openProject,
     openRecentProject,
     toggleProjection,
@@ -1001,13 +992,26 @@ export function CommandPalette({
                     >
                       {row.icon ? (
                         <row.icon className="mr-2 h-4 w-4" />
-                      ) : row.harness ? (
+                      ) : row.launchConfiguration?.configuration.kind ===
+                        'agent' ? (
                         <SourceIdentityMark
                           className="mr-2"
-                          color={HARNESS_META[row.harness].color}
+                          color={
+                            AGENT_SOURCE_META[
+                              row.launchConfiguration.configuration.source
+                            ].color
+                          }
                         >
-                          <HarnessGlyph harness={row.harness} size={13} />
+                          <HarnessGlyph
+                            harness={
+                              row.launchConfiguration.configuration.source
+                            }
+                            size={13}
+                          />
                         </SourceIdentityMark>
+                      ) : row.launchConfiguration?.configuration.kind ===
+                        'shell' ? (
+                        <SquareTerminal className="mr-2 h-4 w-4" />
                       ) : row.color ? (
                         <span
                           className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"

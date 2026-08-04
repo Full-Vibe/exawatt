@@ -18,6 +18,7 @@ import {
   REOPEN_LAST_CLOSED_EVENT,
   SESSION_JUMP_EVENT,
   consumePendingAgentComposer,
+  consumePendingAgentComposerRequest,
   consumePendingLaunch,
   consumePendingOpenProject,
   consumePendingProjectPicker,
@@ -90,6 +91,46 @@ describe('session-jump launch verbs under tenant scope', () => {
     expect(consumePendingOpenProject()).toBe('/tmp/project');
     expect(consumePendingProjectPicker()).toBe(true);
     expect(consumePendingReopenLastClosed()).toBe(true);
+  });
+
+  it('carries an exact launch configuration through both delivery paths', () => {
+    publishActiveTenantKind('personal');
+    const request = {
+      configurationId: 'project:reviewer',
+      configuration: {
+        kind: 'agent' as const,
+        source: 'codex' as const,
+        model: 'gpt-5',
+        effort: 'high',
+        agentTypeId: 'reviewer',
+      },
+    };
+    let detail: unknown;
+    const capture = (event: Event) => {
+      detail = (event as CustomEvent).detail;
+    };
+    window.addEventListener(FOCUS_AGENT_COMPOSER_EVENT, capture, {
+      once: true,
+    });
+
+    requestAgentComposer(request);
+
+    expect(detail).toEqual(request);
+    expect(consumePendingAgentComposerRequest()).toEqual(request);
+  });
+
+  it('carries Shell as a configuration selection without launching it', () => {
+    publishActiveTenantKind('personal');
+    const request = {
+      configurationId: 'project:shell',
+      configuration: { kind: 'shell' as const },
+    };
+
+    requestAgentComposer(request);
+
+    expect(seen).toEqual([FOCUS_AGENT_COMPOSER_EVENT]);
+    expect(consumePendingAgentComposerRequest()).toEqual(request);
+    expect(consumePendingLaunch()).toBeNull();
   });
 
   it('stores no pending slot and fires no event from the Demo tenant', () => {
