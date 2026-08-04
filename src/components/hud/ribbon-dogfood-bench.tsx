@@ -22,11 +22,16 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { TabStrip } from '@/components/workspace/tab-strip';
 import { DEFAULT_RIBBON_POLICY } from '@/components/workspace/project-ribbon-layout';
 import { nextTabInRing, tabAtOrdinal } from '@/components/workspace/tab-ring';
+import {
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha,
+} from '@/components/workspace/workspace-theme';
 import type {
   Project,
   WorkspaceTab,
 } from '@/components/workspace/use-workspace-state';
 import type { SessionAttentionSignal } from '@/components/workspace/session-status';
+import type { SessionDelegation } from '@/types/electron';
 
 const COLORS = [
   '#66A3FF',
@@ -89,11 +94,11 @@ function initialProjects(): Project[] {
     benchProject(
       'exawatt',
       [
-        'Close Projects with animation',
-        'Fix Sessions rendering',
-        'Define initiative model',
-        'Review keyboard navigation',
-        'Design subagent topology',
+        'VSCode-Like Theme Across Exawatt Surfaces',
+        'Fix Sessions Rendering Across Every Altitude',
+        'Define the Durable Initiative Model',
+        'Review Keyboard Navigation and Focus',
+        'Design Clear Subagent Activity Topology',
       ],
       3
     ),
@@ -103,6 +108,24 @@ function initialProjects(): Project[] {
     }),
   ];
 }
+
+/** The real strip commonly carries delegated-child truth beside status.
+ *  Keep one worst-case active tab in the bench so readability cannot pass by
+ *  measuring a cleaner fixture than production. */
+const BENCH_DELEGATION: Record<string, SessionDelegation> = {
+  'session-bench-7': {
+    ownTurn: 'available',
+    blockedOn: null,
+    children: [
+      {
+        id: 'bench-child-1',
+        agentType: 'Explore',
+        description: 'Audit the ribbon geometry',
+        startedAt: 0,
+      },
+    ],
+  },
+};
 
 type TabVisibility = 'visible' | 'overflow-hidden' | 'not-rendered';
 
@@ -173,9 +196,11 @@ function FakeTerminalStage({
       data-bench-stage-rows={grid.rows}
       className="min-h-0 flex-1 overflow-hidden px-2 py-1 font-mono text-[11px] leading-[17px] transition-colors"
       style={{
-        color: 'rgba(160,190,220,0.5)',
-        background: flash ? 'rgba(255,59,139,0.08)' : 'transparent',
-        boxShadow: flash ? 'inset 0 0 0 1px rgba(255,59,139,0.8)' : 'none',
+        color: withThemeAlpha(HUD.textDim, 0.72),
+        background: flash ? withThemeAlpha(HUD.magenta, 0.08) : 'transparent',
+        boxShadow: flash
+          ? `inset 0 0 0 1px ${withThemeAlpha(HUD.magenta, 0.8)}`
+          : 'none',
       }}
     >
       {lines.map((line, index) => (
@@ -428,12 +453,18 @@ export function RibbonDogfoodBench() {
         <div
           ref={benchRef}
           data-bench-root
-          className="flex flex-col overflow-hidden rounded-lg border border-white/10 bg-[#080d16]"
-          style={{ width: benchWidth, height: 380 }}
+          className="flex flex-col overflow-hidden rounded-lg border"
+          style={{
+            width: benchWidth,
+            height: 380,
+            color: HUD.text,
+            background: HUD.bg.deep,
+            borderColor: HUD.strokeFaint,
+          }}
         >
           <div
             className="flex shrink-0 items-start gap-2 border-b px-3 py-2"
-            style={{ borderColor: 'rgba(80,230,255,0.15)' }}
+            style={{ borderColor: HUD.strokeFaint }}
           >
             <div className="min-w-0 flex-1">
               <TabStrip
@@ -445,6 +476,9 @@ export function RibbonDogfoodBench() {
                 attention={attention}
                 activity={activity}
                 engaged={engaged}
+                delegation={BENCH_DELEGATION}
+                feedbackEnabled
+                onRateContext={async () => true}
                 onSelectProject={index => {
                   const project = projects[index];
                   if (!project) return;
@@ -578,7 +612,7 @@ export function RibbonDogfoodBench() {
               type="range"
               data-bench-min-tab
               min={72}
-              max={200}
+              max={420}
               step={2}
               value={minTab}
               onChange={event => {
@@ -594,7 +628,7 @@ export function RibbonDogfoodBench() {
               type="range"
               data-bench-comfort-tab
               min={72}
-              max={280}
+              max={440}
               step={2}
               value={comfortTab}
               onChange={event =>

@@ -126,16 +126,16 @@ describe('single-row Project ribbon (D45)', () => {
     });
 
     // The stored provider titles are deliberately short. The long context
-    // labels are what actually paint, so both tabs should claim the 232px
+    // labels are what actually paint, so both tabs should claim the 400px
     // natural-width ceiling instead of leaving the rest of the row blank.
     expect(
       (container.querySelector('[data-tab-id="a1"]') as HTMLElement).style
         .width
-    ).toBe('232px');
+    ).toBe('400px');
     expect(
       (container.querySelector('[data-tab-id="a2"]') as HTMLElement).style
         .width
-    ).toBe('232px');
+    ).toBe('400px');
   });
 
   it('has exactly one row whose height never changes with selection', () => {

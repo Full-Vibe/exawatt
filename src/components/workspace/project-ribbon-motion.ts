@@ -148,7 +148,7 @@ export function estimateRibbonTokenWidth(
     return Math.min(196, Math.max(72, token.project.name.length * 7.2 + 34));
   }
   const title = visibleLabel || token.tab.title || 'New agent';
-  return Math.min(232, Math.max(92, title.length * 7.2 + 74));
+  return Math.min(400, Math.max(92, title.length * 7.2 + 74));
 }
 
 export function ribbonTargetTransform(target: RibbonTarget, scale = 1): string {

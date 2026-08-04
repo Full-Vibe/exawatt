@@ -1436,7 +1436,7 @@ export function TabStrip({
                 openTabMenu(trigger, { x: event.clientX, y: event.clientY });
               }
             }}
-            className="group/tab flex h-7 w-max origin-left items-center overflow-hidden rounded-md border"
+            className="group/tab relative flex h-7 w-max origin-left items-center overflow-hidden rounded-md border"
             style={{
               ...itemStyle(entry, projectExiting),
               borderColor: on
@@ -1493,7 +1493,7 @@ export function TabStrip({
                   ? '⏎ starts · ⌘W discards'
                   : '⌘W closes — kept in Recently closed'
               }\ndouble-click to rename`}
-              className={`relative flex h-full min-w-0 cursor-pointer items-center font-mono text-chrome-title font-medium outline-none transition-transform duration-100 active:scale-[0.98] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan ${
+              className={`relative flex h-full min-w-0 flex-1 cursor-pointer items-center overflow-hidden font-mono text-chrome-title font-medium outline-none transition-transform duration-100 active:scale-[0.98] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan ${
                 condensed ? 'gap-1 px-1.5' : 'gap-1.5 px-2'
               }`}
               style={{ color: on ? HUD.text : HUD.textDim }}
@@ -1554,7 +1554,10 @@ export function TabStrip({
                 // grows the chip feeds the width model and shifts layout —
                 // identity lives in the tooltip and aria-label, exactly as
                 // on condensed chips.
-                <span className="block max-w-52 overflow-hidden whitespace-nowrap font-sans leading-tight">
+                <span
+                  data-tab-label
+                  className="block min-w-0 flex-1 truncate font-sans leading-tight"
+                >
                   <span
                     data-subtitle={
                       display.primaryKind === 'context' || undefined
@@ -1598,10 +1601,23 @@ export function TabStrip({
               )}
             </EditableChrome>
             {summary && isAgent && !isDraft && !condensed && onRateContext && (
-              <span data-ribbon-passive className="contents">
+              <div
+                data-ribbon-passive
+                data-tab-feedback-overlay
+                className="pointer-events-none absolute inset-y-0 right-7 z-10 flex items-center pl-2 opacity-0 transition-opacity duration-100 group-hover/tab:pointer-events-auto group-hover/tab:opacity-100 group-focus-within/tab:pointer-events-auto group-focus-within/tab:opacity-100 motion-reduce:transition-none"
+                style={{
+                  background: on
+                    ? withThemeAlpha(color, 0.15)
+                    : HUD.bg.panelFill,
+                  boxShadow: `-10px 0 8px -4px ${
+                    on ? withThemeAlpha(color, 0.15) : HUD.bg.panelFill
+                  }`,
+                }}
+              >
                 <ContextLabelFeedback
                   label={summary}
                   enabled={feedbackEnabled}
+                  alwaysVisible
                   onRate={(sentiment, betterLabel) =>
                     onRateContext({
                       durableSessionId: tab.durableSessionId,
@@ -1612,7 +1628,7 @@ export function TabStrip({
                     })
                   }
                 />
-              </span>
+              </div>
             )}
             {!condensed && (
               <button

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import type { ComponentProps } from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 // the strip navigates to the Cloud preview from the tab menu (ENG-026 N3);
@@ -49,6 +50,8 @@ function strip({
   activity = {},
   engaged = {},
   delegation = {},
+  feedbackEnabled = false,
+  onRateContext,
   onCloseProject,
   exitingProjectDirs,
 }: {
@@ -58,6 +61,8 @@ function strip({
   activity?: Record<string, boolean>;
   engaged?: Record<string, boolean>;
   delegation?: Record<string, SessionDelegation>;
+  feedbackEnabled?: boolean;
+  onRateContext?: ComponentProps<typeof TabStrip>['onRateContext'];
   onCloseProject?: (dir: string) => void;
   exitingProjectDirs?: ReadonlySet<string>;
 }) {
@@ -85,6 +90,8 @@ function strip({
           activity={activity}
           engaged={engaged}
           delegation={nextDelegation}
+          feedbackEnabled={feedbackEnabled}
+          onRateContext={onRateContext}
           onTogglePinTab={vi.fn()}
           onResumeTab={vi.fn()}
           onCloseProject={onCloseProject}
@@ -108,6 +115,28 @@ function strip({
       result.rerender(view(tabs, next)),
   };
 }
+
+describe('TabStrip title allocation', () => {
+  it('keeps authenticated feedback out of the title flex budget', () => {
+    const { container } = strip({
+      tabs: [tab({ id: 'a' })],
+      summaries: {
+        'durable-a': 'VSCode-Like Theme Across Exawatt Surfaces',
+      },
+      feedbackEnabled: true,
+      onRateContext: vi.fn(async () => true),
+    });
+    const chrome = container.querySelector('[data-tab-chrome]');
+    const label = container.querySelector('[data-tab-label]');
+    const overlay = container.querySelector('[data-tab-feedback-overlay]');
+    expect(chrome).toHaveClass('flex-1', 'overflow-hidden');
+    expect(label).toHaveClass('min-w-0', 'flex-1', 'truncate');
+    expect(overlay).toHaveClass('absolute', 'opacity-0');
+    expect(overlay?.parentElement).toBe(
+      container.querySelector('[data-ribbon-item="initiative"]')
+    );
+  });
+});
 
 describe('TabStrip turn-state glyphs (D22)', () => {
   it('a streaming session spins', () => {

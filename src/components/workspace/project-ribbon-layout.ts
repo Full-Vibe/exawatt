@@ -60,13 +60,16 @@ export interface RibbonLayoutPolicy {
  *  touching the algorithm (operator, 2026-08-03: "build it well enough that
  *  we can test and change our minds after playing with it"). */
 export const DEFAULT_RIBBON_POLICY: RibbonLayoutPolicy = {
-  // A tab keeps its status glyph, ~9 characters of title, and a close
-  // button that floats in on hover once it is this tight (see tab-strip).
-  minTabWidth: 118,
-  // Defaults to the floor: today's behaviour exactly, so the dial changes
-  // nothing until it is deliberately turned.
-  comfortTabWidth: 118,
-  maxTabWidth: 232,
+  // Four useful words, status/delegation truth, and the active close control
+  // are the minimum readable tab. The row scrolls before titles collapse
+  // back into the ambiguous one-to-three-word chips rejected in dogfood.
+  minTabWidth: 380,
+  // Defaults to the floor: equal-width tabs shrink together, then the row
+  // scrolls instead of sacrificing the title budget.
+  comfortTabWidth: 380,
+  // Sparse Projects may spend the surrounding whitespace on substantially
+  // more of the title while every active-Project tab remains equal width.
+  maxTabWidth: 400,
   foldedProjectWidth: 124,
   columnGap: RIBBON_COLUMN_GAP,
   groupGap: RIBBON_GROUP_GAP,

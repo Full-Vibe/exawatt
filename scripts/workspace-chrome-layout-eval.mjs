@@ -522,7 +522,11 @@ try {
 
   // ── Turn-state legibility: spinning / finished / unstarted render
   // distinctly, and even the unstarted Agent retains a visible title.
-  await page.setViewportSize({ width: 1312, height: 700 });
+  // Turn-state parity needs every individual status trigger mounted. The
+  // production readability floor intentionally folds inactive Projects at
+  // ordinary widths, so run this semantic sweep in a wide viewport; density
+  // and folded-summary truth are covered by the ribbon evals.
+  await page.setViewportSize({ width: 2400, height: 700 });
   const strip = page.locator('[data-workspace-tab-strip]');
   const settle = () =>
     page.evaluate(
@@ -883,14 +887,22 @@ try {
   await page.locator('[cmdk-input]').fill('settings');
   await page.getByText('Go to Settings').waitFor();
   // session rows outrank navigation in the list — arrow down to Settings
-  for (let i = 0; i < 8; i += 1) {
+  const settingsWalkBudget = (await page.locator('[cmdk-item]').count()) + 1;
+  let selectedSettings = false;
+  for (let i = 0; i < settingsWalkBudget; i += 1) {
     const selected = await page.evaluate(
       () =>
         document.querySelector('[cmdk-item][aria-selected="true"]')
           ?.textContent ?? ''
     );
-    if (selected.includes('Go to Settings')) break;
+    if (selected.includes('Go to Settings')) {
+      selectedSettings = true;
+      break;
+    }
     await page.keyboard.press('ArrowDown');
+  }
+  if (!selectedSettings) {
+    throw new Error('Keyboard walk never selected Go to Settings');
   }
   await page.keyboard.press('Enter');
   // SPA pushState: assert the location directly (waitForURL can hang on
@@ -1223,7 +1235,9 @@ try {
   // The stopped pane must not impersonate an interactive terminal. Its action
   // is scoped to this Agent and retained output is explicitly read-only. Keep
   // this navigation last so it cannot perturb the back-stack assertions above.
-  await page.getByRole('button', { name: 'gpagent', exact: true }).click();
+  // At the readable floor an inactive Project may be folded, so disclose the
+  // fixture's owning Project before addressing its stopped tab directly.
+  await page.getByRole('button', { name: 'exawatt', exact: true }).click();
   await page.locator('[data-tab-id="frozen-tab"]').click();
   const stoppedPane = page.locator('[data-session-restore="frozen-tab"]');
   await stoppedPane.waitFor();

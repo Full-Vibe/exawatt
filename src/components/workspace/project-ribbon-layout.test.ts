@@ -21,7 +21,7 @@ const project = (
   active,
   tabs: Array.from({ length: tabCount }, (_, index) => ({
     id: `${dir}-${index}`,
-    openWidth: 200,
+    openWidth: 400,
     miniWidth: 40,
   })),
 });
@@ -57,11 +57,11 @@ describe('layoutRibbonRow', () => {
   it('shrinks the active tabs before folding anyone (Chrome order)', () => {
     const projects = [project('/a', 4, true), project('/b', 2)];
     const roomy = layoutRibbonRow(projects, 2000);
-    const tight = layoutRibbonRow(projects, 900);
+    const tight = layoutRibbonRow(projects, 1850);
     const widthOf = (layout: ReturnType<typeof layoutRibbonRow>, id: string) =>
       layout.targets.get(`tab:${id}`)?.width ?? 0;
-    expect(widthOf(roomy, '/a-0')).toBe(200);
-    expect(widthOf(tight, '/a-0')).toBeLessThan(200);
+    expect(widthOf(roomy, '/a-0')).toBe(400);
+    expect(widthOf(tight, '/a-0')).toBeLessThan(400);
     expect(widthOf(tight, '/a-0')).toBeGreaterThanOrEqual(
       DEFAULT_RIBBON_POLICY.minTabWidth
     );
@@ -129,6 +129,19 @@ describe('layoutRibbonRow', () => {
     const next = layout.targets.get('project:/b')!;
     expect(tab.x).toBe(header.x + header.width + RIBBON_COLUMN_GAP);
     expect(next.x).toBe(tab.x + tab.width + RIBBON_GROUP_GAP);
+  });
+
+  it('gives every active-Project tab the same Chrome-style width', () => {
+    const active = project('/a', 3, true);
+    active.tabs[0].openWidth = 180;
+    active.tabs[1].openWidth = 310;
+    active.tabs[2].openWidth = 700;
+    const layout = layoutRibbonRow([active, project('/b', 2)], 1400);
+    const widths = active.tabs.map(
+      tab => layout.targets.get(`tab:${tab.id}`)?.width
+    );
+    expect(new Set(widths).size).toBe(1);
+    expect(widths[0]).toBeGreaterThanOrEqual(DEFAULT_RIBBON_POLICY.minTabWidth);
   });
 
   it('places in manual order regardless of which Project is active', () => {
