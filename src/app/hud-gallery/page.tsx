@@ -35,7 +35,6 @@ import {
 } from '@/components/hud/gallery-fixtures';
 import { SessionStateTileStudy } from '@/components/hud/session-state-tile-study';
 import { ProjectRibbonStudy } from '@/components/hud/project-ribbon-study';
-import { LaunchConfigurationRibbonStudy } from '@/components/hud/launch-configuration-ribbon-study';
 import { ReadinessGrammarStudy } from '@/components/readiness/gallery-study';
 
 const TONES: HudTone[] = ['cyan', 'magenta', 'amber', 'red', 'green', 'idle'];
@@ -60,12 +59,6 @@ interface Section {
 }
 
 const SECTIONS: Section[] = [
-  {
-    id: 'launch-configuration-ribbon',
-    title: 'Launch Configuration ribbon',
-    meta: 'review candidate · task-first Agent launcher',
-    showcase: <LaunchConfigurationRibbonStudy />,
-  },
   {
     id: 'readiness-grammar',
     title: 'Readiness grammar',

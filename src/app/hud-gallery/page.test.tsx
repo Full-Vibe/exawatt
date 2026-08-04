@@ -24,12 +24,6 @@ vi.mock('@/components/hud/project-ribbon-study', () => ({
   ProjectRibbonStudy: () => null,
 }));
 
-vi.mock('@/components/hud/launch-configuration-ribbon-study', () => ({
-  LaunchConfigurationRibbonStudy: () => (
-    <div data-testid="launch-configuration-ribbon-study" />
-  ),
-}));
-
 vi.mock('@/components/readiness/gallery-study', () => ({
   ReadinessGrammarStudy: () => null,
 }));
@@ -61,20 +55,6 @@ describe('HUD gallery', () => {
     expect(
       screen.getByRole('link', { name: /Keyswitch material studies/ })
     ).toHaveAttribute('href', '#keyswitch-material-studies');
-  });
-
-  it('keeps the Launch Configuration ribbon reviewable before integration', () => {
-    render(<HudGallery />);
-
-    expect(
-      screen.getByRole('heading', { name: 'Launch Configuration ribbon' })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByTestId('launch-configuration-ribbon-study')
-    ).toBeVisible();
-    expect(
-      screen.getByRole('link', { name: /Launch Configuration ribbon/ })
-    ).toHaveAttribute('href', '#launch-configuration-ribbon');
   });
 
   it('retires the shipped application-theme study from the workbench', () => {
