@@ -104,7 +104,7 @@ export default async function RunPage({ params }: RunPageProps) {
             </strong>
           </div>
           <div className={styles.record}>
-            <span className={styles.proofLabel}>Energy</span>
+            <span className={styles.proofLabel}>Tokens</span>
             <strong className={styles.recordValue}>
               {formatTokens(run.normalizedTokens)}
             </strong>
@@ -124,7 +124,7 @@ export default async function RunPage({ params }: RunPageProps) {
             </span>
             <span>{formatDuration(run.activeMs)} active</span>
             <span>{run.sources.join(' + ') || 'source unavailable'}</span>
-            <span>{run.outcome}</span>
+            {run.outcome !== 'unknown' ? <span>{run.outcome}</span> : null}
           </p>
           <ShareButton label={`${handsOff} hands-off by @${run.handle}`} />
         </div>

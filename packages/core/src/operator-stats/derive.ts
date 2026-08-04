@@ -185,11 +185,21 @@ export function aggregateOperatorDays(
   );
 }
 
-function peakConcurrentMembers(facts: readonly OperatorRunFacts[]): number {
+function peakConcurrentMembers(
+  facts: readonly OperatorRunFacts[],
+  window?: { started: number; ended: number }
+): number {
   const events: SweepEvent[] = [];
   for (const run of facts) {
-    const started = instant(run.startedAt, 'run start');
-    const ended = instant(run.endedAt, 'run end');
+    const started = Math.max(
+      instant(run.startedAt, 'run start'),
+      window?.started ?? Number.NEGATIVE_INFINITY
+    );
+    const ended = Math.min(
+      instant(run.endedAt, 'run end'),
+      window?.ended ?? Number.POSITIVE_INFINITY
+    );
+    if (ended <= started) continue;
     for (const interval of clippedIntervals(run.activity, started, ended)) {
       events.push({ at: interval.startMs, delta: interval.activeMembers });
       events.push({ at: interval.endMs, delta: -interval.activeMembers });
@@ -219,7 +229,15 @@ export function deriveOperatorStatsSnapshot(
   // Throws for invalid IANA zones instead of silently falling back.
   new Intl.DateTimeFormat('en', { timeZone: timezone }).format();
   const runs = facts
-    .map(deriveOperatorRun)
+    .map(run => ({
+      ...deriveOperatorRun(run),
+      // A public Run reports the whole fleet Exawatt was commanding while it
+      // was live, including other concurrent top-level Sessions.
+      peakActiveMembers: peakConcurrentMembers(facts, {
+        started: instant(run.startedAt, 'run start'),
+        ended: instant(run.endedAt, 'run end'),
+      }),
+    }))
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
   const days = aggregateOperatorDays(runs, timezone);
   for (const day of days) {

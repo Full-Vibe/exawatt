@@ -117,12 +117,12 @@ Fleet metrics aggregate overlapping Runs across the operator.
 
 There is no opaque Exawatt score. One table ranks four transparent axes:
 
-| Axis | Rank value | Meaning |
-| --- | --- | --- |
-| Command | autonomous agent-hours | Integral of active reported/observed Agents over time. Twelve Agents for two hours = 24 agent-hours. Default axis. |
-| Endurance | longest hands-off span | Longest continuous active span inside a Run without operator input. |
-| Fleet | peak concurrent Agents | Maximum simultaneously active top-level Agents and reported descendants. |
-| Energy | normalized tokens | ENG-008 `weightedTokens`; raw token totals remain visible context, never the only status signal. |
+| Axis      | Rank value             | Meaning                                                                                                            |
+| --------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Command   | autonomous agent-hours | Integral of active reported/observed Agents over time. Twelve Agents for two hours = 24 agent-hours. Default axis. |
+| Endurance | longest hands-off span | Longest continuous active span inside a Run without operator input.                                                |
+| Fleet     | peak concurrent Agents | Maximum simultaneously active top-level Agents and reported descendants.                                           |
+| Tokens    | normalized tokens      | ENG-008 `weightedTokens`; raw token totals remain visible context, never the only status signal.                   |
 
 Each public Run records:
 
@@ -131,7 +131,7 @@ Each public Run records:
 - longest hands-off milliseconds
 - intervention count when the source can observe operator messages; otherwise
   unavailable, never a misleading zero
-- peak active members
+- peak active members across every concurrent Session in Exawatt while the Run was live
 - agent-milliseconds (the exact basis for agent-hours)
 - raw token total and normalized tokens
 - contributing Agent Source ids and assurance facets
@@ -379,7 +379,7 @@ components to public surfaces and retire the study in the same milestone.
 
 Acceptance:
 
-- Command/Endurance/Fleet/Energy and week/all-time share one URL-addressable
+- Command/Endurance/Fleet/Tokens and week/all-time share one URL-addressable
   ranking grammar
 - the real operator appears as #1 of 1 after publishing
 - activity field, rank table, and receipts work at narrow/mobile widths, 200%
@@ -407,16 +407,16 @@ Exit criteria:
 
 ## Verification matrix
 
-| Layer | Required proof |
-| --- | --- |
-| Pure derivation | focused Vitest contract/fixture suite plus full `pnpm test:run` |
-| Payload/privacy | schema validation, forbidden-key recursion test, size/bounds tests |
-| Supabase | migration/RLS integration eval against linked project or isolated local stack |
-| API | unauthenticated/authenticated/other-user/disable/idempotent retry route tests |
-| UI | component tests for tabs, table semantics, graph focus, consent, partial/empty/error |
-| Visual | Playwright screenshots of leaderboard/profile/Run at desktop and mobile; contrast and 200% zoom review |
-| Electron | own-worktree dev server plus identity-checked eval of local snapshot → consent → sync |
-| Delivery | `agent:land` with all relevant verifies and `--dogfood`; signed-out production URL check after deployment |
+| Layer           | Required proof                                                                                            |
+| --------------- | --------------------------------------------------------------------------------------------------------- |
+| Pure derivation | focused Vitest contract/fixture suite plus full `pnpm test:run`                                           |
+| Payload/privacy | schema validation, forbidden-key recursion test, size/bounds tests                                        |
+| Supabase        | migration/RLS integration eval against linked project or isolated local stack                             |
+| API             | unauthenticated/authenticated/other-user/disable/idempotent retry route tests                             |
+| UI              | component tests for tabs, table semantics, graph focus, consent, partial/empty/error                      |
+| Visual          | Playwright screenshots of leaderboard/profile/Run at desktop and mobile; contrast and 200% zoom review    |
+| Electron        | own-worktree dev server plus identity-checked eval of local snapshot → consent → sync                     |
+| Delivery        | `agent:land` with all relevant verifies and `--dogfood`; signed-out production URL check after deployment |
 
 ## Roadmap milestone log
 

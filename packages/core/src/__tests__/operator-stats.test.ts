@@ -138,6 +138,7 @@ describe('operator stats derivation', () => {
       iso(4)
     );
     expect(snapshot.runs).toHaveLength(2);
+    expect(snapshot.runs.map(item => item.peakActiveMembers)).toEqual([2, 2]);
     expect(snapshot.records.agentMs).toBe(4 * hour);
     expect(snapshot.records.peakFleet).toBe(2);
     expect(snapshot.days[0].peakFleet).toBe(2);

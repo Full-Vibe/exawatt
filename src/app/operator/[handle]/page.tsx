@@ -117,7 +117,7 @@ export default async function OperatorPage({ params }: OperatorPageProps) {
             <strong className={styles.recordValue}>{records.peakFleet}</strong>
           </div>
           <div className={styles.record}>
-            <span className={styles.proofLabel}>Energy</span>
+            <span className={styles.proofLabel}>Tokens</span>
             <strong className={styles.recordValue}>
               {formatTokens(records.tokens)}
             </strong>
@@ -151,7 +151,11 @@ export default async function OperatorPage({ params }: OperatorPageProps) {
                   >
                     <span>
                       <span className={styles.handle}>{run.localDate}</span>
-                      <span className={styles.displayName}>{run.outcome}</span>
+                      {run.outcome !== 'unknown' ? (
+                        <span className={styles.displayName}>
+                          {run.outcome}
+                        </span>
+                      ) : null}
                     </span>
                     <span className={styles.metricPrimary}>
                       {formatDuration(run.longestHandsOffMs)} hands-off
@@ -160,7 +164,7 @@ export default async function OperatorPage({ params }: OperatorPageProps) {
                       Fleet {run.peakActiveMembers}
                     </span>
                     <span className={styles.metric}>
-                      {formatAgentHours(run.agentMs)} command
+                      {formatAgentHours(run.agentMs)}
                     </span>
                     <span className={styles.metric}>
                       {formatTokens(run.normalizedTokens)} tokens
