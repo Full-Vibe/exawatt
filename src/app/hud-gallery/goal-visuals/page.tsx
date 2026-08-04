@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { GoalVisualLayoutStudy } from '@/components/hud/goal-visual-layout-study';
+import { GoalVisualLanguageStudy } from '@/components/hud/goal-visual-layout-study';
 import { WORKSPACE_HUD as HUD } from '@/components/workspace/workspace-theme';
 
 export default function GoalVisualBenchPage() {
@@ -21,7 +21,7 @@ export default function GoalVisualBenchPage() {
               HUD Gallery / Team
             </p>
             <h1 className="mt-1 text-surface-title font-semibold">
-              Agent tile image geometry
+              Agent tile visual languages
             </h1>
           </div>
           <Link
@@ -32,7 +32,7 @@ export default function GoalVisualBenchPage() {
             HUD gallery
           </Link>
         </header>
-        <GoalVisualLayoutStudy />
+        <GoalVisualLanguageStudy />
       </div>
     </main>
   );

@@ -266,11 +266,15 @@ Operator review then reopened the gallery path on 2026-08-03 specifically for
 geometry, not prompt tuning. `/hud-gallery/goal-visuals` now renders the real
 272×252 Team content hierarchy against five treatments — full field, top-right
 corner field, header banner, right ribbon, and horizon band — and compares the
-corner candidate across three stable goal identities. The bench requests its
-three private v2 rasters through the same authenticated hosted boundary as Team
-and falls back deterministically when signed out or unavailable. It is an
-active review candidate only; once one geometry ships, retire the study rather
-than keeping a duplicate of production.
+corner candidate across three stable goal identities. The operator selected
+full-card geometry and rejected natural-environment scenes as the visual
+language on 2026-08-04. The bench is now fixed to full-card geometry and compares
+material macro, aerial structure, and graphic form, with three variants of each.
+Its nine fixed, server-owned study recipes use the same authenticated FAL,
+cache, and quota boundary as Team without sending private goal or Project text
+to the provider. This is a language study only: the live Team prompt remains
+unchanged until the operator picks a family. Once that family ships, retire the
+study rather than keeping a duplicate of production.
 
 ### S5 Durable Projects
 

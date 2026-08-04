@@ -4,30 +4,30 @@
   gap: 48px;
 }
 
+.summary,
 .section {
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
-.sectionHeader {
+.summary {
+  gap: 2px;
+}
+
+.languageHeader {
   display: flex;
-  align-items: flex-end;
+  width: min(100%, 856px);
+  align-items: baseline;
   justify-content: space-between;
-  gap: 24px;
+  gap: 16px;
+  border-bottom: 1px solid var(--exa-hud-divider, rgba(80, 230, 255, 0.1));
+  padding-bottom: 8px;
 }
 
-.scenePicker {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.geometryGrid,
-.identityRow {
+.languageGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(272px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(272px, 272px));
   gap: 24px 20px;
 }
 
@@ -71,6 +71,7 @@
 .sceneFrame {
   position: absolute;
   z-index: 1;
+  inset: 0;
   overflow: hidden;
   pointer-events: none;
 }
@@ -78,26 +79,6 @@
 .sceneFrame::after {
   position: absolute;
   inset: 0;
-  content: '';
-}
-
-.sceneImage {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  filter: saturate(0.58) contrast(1.08) brightness(0.82);
-}
-
-.fullField {
-  inset: 0;
-}
-
-.fullField .sceneImage {
-  opacity: 0.32;
-  transform: scale(1.035);
-}
-
-.fullField::after {
   background:
     linear-gradient(
       180deg,
@@ -109,123 +90,21 @@
       color-mix(in srgb, var(--exa-hud-panel, #0b1220) 42%, transparent),
       transparent 64%
     );
+  content: '';
 }
 
-.cornerField {
-  top: 0;
-  right: 0;
-  width: 52%;
-  height: 46%;
-  clip-path: polygon(16px 0, 100% 0, 100% 100%, 0 100%, 0 16px);
-}
-
-.cornerField .sceneImage {
-  opacity: 0.56;
-}
-
-.cornerField::after {
-  background:
-    linear-gradient(0deg, var(--exa-hud-panel, #0b1220) 0%, transparent 48%),
-    linear-gradient(90deg, var(--exa-hud-panel, #0b1220) 0%, transparent 46%);
-}
-
-.headerBanner {
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 88px;
-}
-
-.headerBanner .sceneImage {
-  opacity: 0.46;
-}
-
-.headerBanner::after {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--exa-hud-panel, #0b1220) 8%, transparent) 0%,
-      var(--exa-hud-panel, #0b1220) 100%
-    ),
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--exa-hud-panel, #0b1220) 62%, transparent),
-      transparent 72%
-    );
-}
-
-.rightRibbon {
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 39%;
-}
-
-.rightRibbon .sceneImage {
-  opacity: 0.44;
-}
-
-.rightRibbon::after {
-  background:
-    linear-gradient(90deg, var(--exa-hud-panel, #0b1220) 0%, transparent 58%),
-    linear-gradient(
-      180deg,
-      transparent 35%,
-      color-mix(in srgb, var(--exa-hud-panel, #0b1220) 78%, transparent) 100%
-    );
-}
-
-.horizonBand {
-  top: 82px;
-  right: 0;
-  left: 0;
-  height: 64px;
-}
-
-.horizonBand .sceneImage {
-  opacity: 0.42;
-}
-
-.horizonBand::after {
-  background:
-    linear-gradient(
-      180deg,
-      var(--exa-hud-panel, #0b1220) 0%,
-      transparent 30%,
-      transparent 68%,
-      var(--exa-hud-panel, #0b1220) 100%
-    ),
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--exa-hud-panel, #0b1220) 60%, transparent),
-      transparent 72%
-    );
+.sceneImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(0.58) contrast(1.08) brightness(0.82);
+  opacity: 0.32;
+  transform: scale(1.035);
 }
 
 :global([data-exa-theme='exawatt-air-light']) .sceneImage {
   filter: saturate(0.48) contrast(1.1) brightness(0.98);
-}
-
-:global([data-exa-theme='exawatt-air-light']) .fullField .sceneImage {
   opacity: 0.24;
-}
-
-:global([data-exa-theme='exawatt-air-light']) .cornerField .sceneImage,
-:global([data-exa-theme='exawatt-air-light']) .headerBanner .sceneImage,
-:global([data-exa-theme='exawatt-air-light']) .rightRibbon .sceneImage,
-:global([data-exa-theme='exawatt-air-light']) .horizonBand .sceneImage {
-  opacity: 0.38;
-}
-
-@media (max-width: 760px) {
-  .sectionHeader {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .scenePicker {
-    justify-content: flex-start;
-  }
 }
 
 @media (prefers-contrast: more),

@@ -12,7 +12,7 @@ vi.mock('@/lib/supabase/client', () => ({
 
 import GoalVisualBenchPage from './page';
 
-describe('Agent tile image geometry bench', () => {
+describe('Agent tile visual language bench', () => {
   beforeEach(() => {
     getSession.mockResolvedValue({ data: { session: null } });
   });
@@ -21,7 +21,7 @@ describe('Agent tile image geometry bench', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders five comparable treatments and the cross-goal corner set', async () => {
+  it('holds full-card geometry constant across three visual languages', async () => {
     render(
       <TooltipProvider>
         <GoalVisualBenchPage />
@@ -29,25 +29,24 @@ describe('Agent tile image geometry bench', () => {
     );
 
     expect(
-      screen.getByRole('heading', { name: 'Agent tile image geometry' })
-    ).toBeInTheDocument();
-    expect(screen.getByText('Full field')).toBeVisible();
-    expect(screen.getByText('Corner field')).toBeVisible();
-    expect(screen.getByText('Header banner')).toBeVisible();
-    expect(screen.getByText('Right ribbon')).toBeVisible();
-    expect(screen.getByText('Horizon band')).toBeVisible();
-    expect(
-      document.querySelectorAll('[data-goal-visual-geometry]')
-    ).toHaveLength(8);
-    expect(
-      screen.getByRole('heading', { name: 'Corner field across goals' })
+      screen.getByRole('heading', { name: 'Agent tile visual languages' })
     ).toBeInTheDocument();
     expect(
-      await screen.findByText(/Sign in for generated scenes/)
+      screen.getByRole('heading', { name: 'Material macro' })
+    ).toBeVisible();
+    expect(
+      screen.getByRole('heading', { name: 'Aerial structure' })
+    ).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Graphic form' })).toBeVisible();
+    expect(
+      document.querySelectorAll('[data-goal-visual-language]')
+    ).toHaveLength(9);
+    expect(
+      await screen.findByText(/Sign in for generated studies/)
     ).toBeVisible();
   });
 
-  it('loads the three stable scenes through the authenticated hosted boundary', async () => {
+  it('loads nine fixed studies through the authenticated hosted boundary', async () => {
     getSession.mockResolvedValue({
       data: { session: { access_token: 'bench-token' } },
     });
@@ -70,8 +69,8 @@ describe('Agent tile image geometry bench', () => {
       </TooltipProvider>
     );
 
-    expect(await screen.findByText(/3 scenes ready/)).toBeVisible();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(await screen.findByText(/9 studies ready/)).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledTimes(9);
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/goal-visuals',
       expect.objectContaining({
@@ -81,6 +80,6 @@ describe('Agent tile image geometry bench', () => {
         }),
       })
     );
-    expect(container.querySelectorAll('img')).toHaveLength(8);
+    expect(container.querySelectorAll('img')).toHaveLength(9);
   });
 });

@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { useEffect, useState } from 'react';
 import { SessionOverviewCardContent } from '@/components/workspace/session-overview-card';
 import {
   goalVisualFallbackBackground,
@@ -14,67 +13,62 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import styles from './goal-visual-layout-study.module.css';
 
-const SCENES = [
+const GOALS = [
   {
     id: 'continuity',
     shortLabel: 'Continuity',
     label: 'Reduce context switching across active agent work',
-    projectKey: 'hud-gallery:goal-visual-layouts:continuity',
     color: '#66A3FF',
   },
   {
     id: 'launch',
     shortLabel: 'Launch configuration',
     label: 'Prepare the Exawatt agent launch configuration',
-    projectKey: 'hud-gallery:goal-visual-layouts:launch',
     color: '#FF3B8B',
   },
   {
     id: 'consumption',
     shortLabel: 'Consumption',
     label: 'Unify consumption visibility across AI platforms',
-    projectKey: 'hud-gallery:goal-visual-layouts:consumption',
     color: '#79F2A6',
   },
 ] as const;
 
-const GEOMETRIES = [
+const LANGUAGES = [
   {
-    id: 'fullField',
-    label: 'Full field',
-    note: 'Current baseline',
+    id: 'material',
+    label: 'Material macro',
+    note: 'resin · paper · metal',
   },
   {
-    id: 'cornerField',
-    label: 'Corner field',
-    note: 'Top-right candidate',
+    id: 'aerial',
+    label: 'Aerial structure',
+    note: 'salt · river · clay',
   },
   {
-    id: 'headerBanner',
-    label: 'Header banner',
-    note: 'Wide identity crest',
-  },
-  {
-    id: 'rightRibbon',
-    label: 'Right ribbon',
-    note: 'Persistent edge',
-  },
-  {
-    id: 'horizonBand',
-    label: 'Horizon band',
-    note: 'Quiet middle strip',
+    id: 'graphic',
+    label: 'Graphic form',
+    note: 'screenprint · cut paper · ink',
   },
 ] as const;
 
-type SceneId = (typeof SCENES)[number]['id'];
-type GeometryId = (typeof GEOMETRIES)[number]['id'];
+const STUDY_PROJECT_PREFIX = 'hud-gallery:goal-visual-languages:v1:';
 
-interface LoadedScene {
+const STUDIES = LANGUAGES.flatMap(language =>
+  GOALS.map((goal, variant) => ({
+    id: `${language.id}:${variant}`,
+    projectKey: `${STUDY_PROJECT_PREFIX}${language.id}:${variant}`,
+    languageId: language.id,
+    goal,
+  }))
+);
+
+interface LoadedStudy {
   identityKey: string;
   dataUrl: string;
 }
 
-function isLoadedScene(value: unknown): value is LoadedScene {
+function isLoadedStudy(value: unknown): value is LoadedStudy {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const candidate = value as Record<string, unknown>;
   return (
@@ -85,35 +79,35 @@ function isLoadedScene(value: unknown): value is LoadedScene {
   );
 }
 
-function GoalVisualGeometryTile({
-  geometry,
-  scene,
+function FullCardStudyTile({
+  study,
   loaded,
 }: {
-  geometry: GeometryId;
-  scene: (typeof SCENES)[number];
-  loaded?: LoadedScene;
+  study: (typeof STUDIES)[number];
+  loaded?: LoadedStudy;
 }) {
-  const identity = loaded?.identityKey ?? `bench:${scene.id}`;
+  const { goal } = study;
+  const identity = loaded?.identityKey ?? `bench:${study.id}:${goal.id}`;
   const positionHash = goalVisualHash(identity);
   const objectPosition = `${46 + (positionHash % 9)}% ${46 + ((positionHash >>> 9) % 9)}%`;
 
   return (
     <div
-      data-goal-visual-geometry={geometry}
+      data-goal-visual-language={study.languageId}
+      data-goal-visual-study={study.id}
       className={styles.tile}
       style={{
-        borderColor: withThemeAlpha(scene.color, 0.34),
+        borderColor: withThemeAlpha(goal.color, 0.34),
         background: HUD.bg.panelFill,
       }}
     >
       <div
         aria-hidden="true"
-        className={`${styles.sceneFrame} ${styles[geometry]}`}
+        className={styles.sceneFrame}
         style={{
           background: loaded
             ? HUD.bg.panel
-            : goalVisualFallbackBackground(identity, scene.color),
+            : goalVisualFallbackBackground(identity, goal.color),
         }}
       >
         {loaded && (
@@ -130,9 +124,9 @@ function GoalVisualGeometryTile({
       </div>
       <div className={styles.tileContent}>
         <SessionOverviewCardContent
-          title={scene.label}
+          title={goal.label}
           titleIsContext
-          color={scene.color}
+          color={goal.color}
           harness="codex"
           glyphState="done"
           agentType="Coding"
@@ -145,10 +139,9 @@ function GoalVisualGeometryTile({
   );
 }
 
-export function GoalVisualLayoutStudy() {
-  const [activeScene, setActiveScene] = useState<SceneId>('continuity');
-  const [loadedScenes, setLoadedScenes] = useState<
-    Partial<Record<SceneId, LoadedScene>>
+export function GoalVisualLanguageStudy() {
+  const [loadedStudies, setLoadedStudies] = useState<
+    Record<string, LoadedStudy>
   >({});
   const [loadState, setLoadState] = useState<
     'loading' | 'ready' | 'signed-out' | 'unavailable'
@@ -167,7 +160,7 @@ export function GoalVisualLayoutStudy() {
           return;
         }
         const entries = await Promise.all(
-          SCENES.map(async scene => {
+          STUDIES.map(async study => {
             const response = await fetch('/api/goal-visuals', {
               method: 'POST',
               headers: {
@@ -176,21 +169,21 @@ export function GoalVisualLayoutStudy() {
               },
               body: JSON.stringify({
                 schemaVersion: 1,
-                projectKey: scene.projectKey,
-                label: scene.label,
+                projectKey: study.projectKey,
+                label: study.goal.label,
               }),
             });
-            if (!response.ok) return [scene.id, null] as const;
+            if (!response.ok) return [study.id, null] as const;
             const value: unknown = await response.json();
-            return [scene.id, isLoadedScene(value) ? value : null] as const;
+            return [study.id, isLoadedStudy(value) ? value : null] as const;
           })
         );
         if (cancelled) return;
-        const next: Partial<Record<SceneId, LoadedScene>> = {};
-        for (const [id, scene] of entries) {
-          if (scene) next[id] = scene;
+        const next: Record<string, LoadedStudy> = {};
+        for (const [id, study] of entries) {
+          if (study) next[id] = study;
         }
-        setLoadedScenes(next);
+        setLoadedStudies(next);
         setLoadState(Object.keys(next).length > 0 ? 'ready' : 'unavailable');
       } catch {
         if (!cancelled) setLoadState('unavailable');
@@ -202,95 +195,63 @@ export function GoalVisualLayoutStudy() {
     };
   }, []);
 
-  const scene = useMemo(
-    () => SCENES.find(candidate => candidate.id === activeScene) ?? SCENES[0],
-    [activeScene]
-  );
   const statusCopy =
     loadState === 'loading'
-      ? 'Loading scenes'
+      ? 'Loading studies'
       : loadState === 'ready'
-        ? `${Object.keys(loadedScenes).length} scenes ready`
+        ? `${Object.keys(loadedStudies).length} studies ready`
         : loadState === 'signed-out'
-          ? 'Sign in for generated scenes'
+          ? 'Sign in for generated studies'
           : 'Deterministic fallbacks';
 
   return (
     <div className={styles.study}>
-      <section aria-labelledby="geometry-heading" className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <h2 id="geometry-heading" className="text-lg font-semibold">
-              Same scene, five geometries
+      <div className={styles.summary}>
+        <h2 className="text-lg font-semibold">Full-card comparison</h2>
+        <p className="text-chrome-meta text-muted-foreground">
+          Three visual languages · three goal identities · {statusCopy}
+        </p>
+      </div>
+
+      {LANGUAGES.map(language => (
+        <section
+          key={language.id}
+          aria-labelledby={`language-${language.id}`}
+          className={styles.section}
+        >
+          <div className={styles.languageHeader}>
+            <h2
+              id={`language-${language.id}`}
+              className="text-lg font-semibold"
+            >
+              {language.label}
             </h2>
-            <p className="text-chrome-meta text-muted-foreground">
-              Production tile geometry · {statusCopy}
-            </p>
+            <span className="font-mono text-chrome-meta text-muted-foreground">
+              {language.note}
+            </span>
           </div>
-          <div aria-label="Scene" className={styles.scenePicker} role="group">
-            {SCENES.map(candidate => (
-              <Button
-                key={candidate.id}
-                type="button"
-                size="sm"
-                variant={candidate.id === activeScene ? 'default' : 'outline'}
-                aria-pressed={candidate.id === activeScene}
-                onClick={() => setActiveScene(candidate.id)}
-              >
-                {candidate.shortLabel}
-              </Button>
-            ))}
+          <div className={styles.languageGrid}>
+            {STUDIES.filter(study => study.languageId === language.id).map(
+              study => (
+                <article key={study.id} className={styles.specimen}>
+                  <div className={styles.specimenLabel}>
+                    <h3 className="text-sm font-semibold">
+                      {study.goal.shortLabel}
+                    </h3>
+                    <span className="font-mono text-chrome-meta text-muted-foreground">
+                      full card
+                    </span>
+                  </div>
+                  <FullCardStudyTile
+                    study={study}
+                    loaded={loadedStudies[study.id]}
+                  />
+                </article>
+              )
+            )}
           </div>
-        </div>
-
-        <div className={styles.geometryGrid}>
-          {GEOMETRIES.map(geometry => (
-            <article key={geometry.id} className={styles.specimen}>
-              <div className={styles.specimenLabel}>
-                <h3 className="text-sm font-semibold">{geometry.label}</h3>
-                <span className="font-mono text-chrome-meta text-muted-foreground">
-                  {geometry.note}
-                </span>
-              </div>
-              <GoalVisualGeometryTile
-                geometry={geometry.id}
-                scene={scene}
-                loaded={loadedScenes[scene.id]}
-              />
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section aria-labelledby="identity-heading" className={styles.section}>
-        <div>
-          <h2 id="identity-heading" className="text-lg font-semibold">
-            Corner field across goals
-          </h2>
-          <p className="text-chrome-meta text-muted-foreground">
-            One geometry · three stable goal identities
-          </p>
-        </div>
-        <div className={styles.identityRow}>
-          {SCENES.map(candidate => (
-            <article key={candidate.id} className={styles.specimen}>
-              <div className={styles.specimenLabel}>
-                <h3 className="text-sm font-semibold">
-                  {candidate.shortLabel}
-                </h3>
-                <span className="font-mono text-chrome-meta text-muted-foreground">
-                  top right
-                </span>
-              </div>
-              <GoalVisualGeometryTile
-                geometry="cornerField"
-                scene={candidate}
-                loaded={loadedScenes[candidate.id]}
-              />
-            </article>
-          ))}
-        </div>
-      </section>
+        </section>
+      ))}
     </div>
   );
 }
