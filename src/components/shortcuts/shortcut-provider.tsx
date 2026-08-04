@@ -48,7 +48,9 @@ import {
   requestAgentComposer,
   requestReopenLastClosed,
   LAUNCH_CONFIGURATION_CATALOG_EVENT,
+  CLONE_TARGET_CATALOG_EVENT,
 } from '@/components/workspace/session-jump';
+import type { CloneSessionTarget } from '@/components/workspace/session-clone';
 import {
   commandPaletteLaunchConfigurationCatalog,
   type CommandPaletteLaunchConfiguration,
@@ -158,6 +160,9 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
   const [launchConfigurations, setLaunchConfigurations] = useState<
     readonly CommandPaletteLaunchConfiguration[] | undefined
   >(undefined);
+  const [cloneTargets, setCloneTargets] = useState<
+    readonly CloneSessionTarget[]
+  >([]);
   const workspaceAvailability = useWorkspaceCommandAvailability();
   const onWorkspaceRoute = pathname?.startsWith('/workspace') ?? false;
   // Tenant scope for the live-workspace verb gate (ENG-027). The pre-hydration
@@ -193,6 +198,19 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
       window.removeEventListener(
         LAUNCH_CONFIGURATION_CATALOG_EVENT,
         receiveCatalog
+      );
+  }, []);
+
+  useLayoutEffect(() => {
+    const receiveCloneTargets = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail;
+      setCloneTargets(Array.isArray(detail) ? detail : []);
+    };
+    window.addEventListener(CLONE_TARGET_CATALOG_EVENT, receiveCloneTargets);
+    return () =>
+      window.removeEventListener(
+        CLONE_TARGET_CATALOG_EVENT,
+        receiveCloneTargets
       );
   }, []);
 
@@ -566,6 +584,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             onOpenChange={handleCommandPaletteChange}
             onOpenHelpModal={handleOpenHelpModal}
             launchConfigurations={launchConfigurations}
+            cloneTargets={cloneTargets}
           />
           <ShortcutHelpModal
             open={helpModalOpen}

@@ -11,6 +11,7 @@
 import type { PtyHarness } from '@/types/electron';
 import { personalTenantActive } from '@/lib/tenancy/active-tenant';
 import type { AgentSourceId } from './agent-sources';
+import type { CloneSessionTarget } from './session-clone';
 
 /**
  * Exact composer selection carried across route changes. This intentionally
@@ -49,6 +50,8 @@ export const FOCUS_AGENT_COMPOSER_EVENT = 'exawatt:focus-agent-composer';
  * surfaces. Empty detail clears stale rows when the composer unmounts. */
 export const LAUNCH_CONFIGURATION_CATALOG_EVENT =
   'exawatt:launch-configuration-catalog';
+export const CLONE_TARGET_CATALOG_EVENT = 'exawatt:clone-target-catalog';
+export const CLONE_ACTIVE_AGENT_EVENT = 'exawatt:clone-active-agent';
 /** tab-strip listens: open the inline rename editor for the active tab */
 export const RENAME_ACTIVE_EVENT = 'exawatt:rename-active';
 /** Open the active Project's combined rename/color editor. */
@@ -200,6 +203,13 @@ export function requestAgentComposer(
   pendingAgentComposer = { value: request, at: Date.now() };
   window.dispatchEvent(
     new CustomEvent(FOCUS_AGENT_COMPOSER_EVENT, { detail: request })
+  );
+}
+
+export function requestCloneActiveAgent(target: CloneSessionTarget): void {
+  if (!launchVerbsAvailable()) return;
+  window.dispatchEvent(
+    new CustomEvent(CLONE_ACTIVE_AGENT_EVENT, { detail: target })
   );
 }
 

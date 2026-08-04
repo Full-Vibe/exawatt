@@ -60,6 +60,7 @@ import {
   MOVE_ACTIVE_TAB_EVENT,
   REOPEN_CLOSED_EVENT,
   OPEN_ROADMAP_EVENT,
+  requestCloneActiveAgent,
 } from '@/components/workspace/session-jump';
 import {
   useWorkspaceCommandAvailability,
@@ -159,6 +160,7 @@ interface CommandPaletteProps {
   onOpenHelpModal: () => void;
   /** Ranked Project selector output. Persistence remains outside the palette. */
   launchConfigurations?: readonly CommandPaletteLaunchConfiguration[];
+  cloneTargets?: readonly import('@/components/workspace/session-clone').CloneSessionTarget[];
 }
 
 interface CommandItem {
@@ -229,6 +231,7 @@ export function CommandPalette({
   onOpenChange,
   onOpenHelpModal,
   launchConfigurations: suppliedLaunchConfigurations,
+  cloneTargets = [],
 }: CommandPaletteProps) {
   const router = useRouter();
   const { navigateCommandSurface, activateCommandAltitude } =
@@ -475,6 +478,11 @@ export function CommandPalette({
         if (!inWorkspace()) navigateCommandSurface('/workspace');
       }),
     [handleSelect, navigateCommandSurface]
+  );
+  const cloneActiveAgent = useCallback(
+    (target: (typeof cloneTargets)[number]) =>
+      handleSelect(() => requestCloneActiveAgent(target)),
+    [cloneTargets, handleSelect]
   );
   /** open a known Project (⌘K Projects): if its directory is missing on this
    *  machine (a synced Project from another machine), prompt to locate it and
@@ -1221,6 +1229,27 @@ export function CommandPalette({
                       </CommandShortcut>
                     )}
                   </CommandItem>
+                </CommandGroup>
+                <CommandSeparator />
+              </>
+            )}
+
+            {personalVerbs && cloneTargets.length > 0 && (
+              <>
+                <CommandGroup heading="Clone active Agent to">
+                  {cloneTargets.map(target => (
+                    <CommandItem
+                      key={`clone-${target.id}`}
+                      value={`clone active agent new session handoff ${target.label} ${target.source} ${target.modelId} ${target.effort ?? ''}`}
+                      onSelect={() => cloneActiveAgent(target)}
+                    >
+                      <CopyPlus className="mr-2 h-3.5 w-3.5 shrink-0" />
+                      <span>{target.label}</span>
+                      <CommandShortcut>
+                        starts a new Agent with a handoff
+                      </CommandShortcut>
+                    </CommandItem>
+                  ))}
                 </CommandGroup>
                 <CommandSeparator />
               </>

@@ -69,6 +69,8 @@ import {
   REOPEN_CLOSED_EVENT,
   REOPEN_LAST_CLOSED_EVENT,
   consumePendingReopenLastClosed,
+  CLONE_ACTIVE_AGENT_EVENT,
+  CLONE_TARGET_CATALOG_EVENT,
 } from './session-jump';
 import { useEffectiveShortcut, useShortcuts } from '@/components/shortcuts';
 import { formatShortcutKeys } from '@/lib/shortcuts';
@@ -104,6 +106,7 @@ import {
 } from './agent-sources';
 import {
   availableSessionCloneTargets,
+  tabCanClone,
   type CloneSessionTarget,
 } from './session-clone';
 import { loadLaunchConfigurationPool } from '@/lib/launch-configurations';
@@ -367,6 +370,37 @@ export function WorkspaceClient() {
       current = false;
     };
   }, [activeProject?.dir]);
+
+  useEffect(() => {
+    const activeCloneable =
+      activeTab &&
+      tabCanClone(activeTab, {
+        engaged: !!(activeTab.sessionId && engaged[activeTab.sessionId]),
+        contextSummary: summaries[activeTab?.durableSessionId ?? ''],
+      });
+    window.dispatchEvent(
+      new CustomEvent(CLONE_TARGET_CATALOG_EVENT, {
+        detail: activeCloneable ? cloneTargets : [],
+      })
+    );
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent(CLONE_TARGET_CATALOG_EVENT, { detail: [] })
+      );
+    };
+  }, [activeTab, cloneTargets, engaged, summaries]);
+
+  useEffect(() => {
+    const cloneActive = (event: Event) => {
+      if (!activeTab) return;
+      const target = (event as CustomEvent<CloneSessionTarget>).detail;
+      if (!target) return;
+      void cloneSession(activeTab.id, target);
+    };
+    window.addEventListener(CLONE_ACTIVE_AGENT_EVENT, cloneActive);
+    return () =>
+      window.removeEventListener(CLONE_ACTIVE_AGENT_EVENT, cloneActive);
+  }, [activeTab, cloneSession]);
 
   const moveTabWithFeedback = useCallback(
     (delta: 1 | -1): boolean => {
