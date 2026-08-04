@@ -474,6 +474,13 @@ export default function HudGallery() {
                 style={{ color: HUD.cyan }}
               >
                 Open the Ribbon dogfood bench →
+              </a>{' '}
+              <a
+                href="/hud-gallery/goal-visuals"
+                className="underline underline-offset-2"
+                style={{ color: HUD.cyan }}
+              >
+                Open the Agent tile image bench →
               </a>
             </p>
           </header>

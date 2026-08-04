@@ -67,4 +67,12 @@ describe('HUD gallery', () => {
       screen.queryByRole('link', { name: /Application themes/ })
     ).not.toBeInTheDocument();
   });
+
+  it('links the active Agent tile image geometry bench', () => {
+    render(<HudGallery />);
+
+    expect(
+      screen.getByRole('link', { name: 'Open the Agent tile image bench →' })
+    ).toHaveAttribute('href', '/hud-gallery/goal-visuals');
+  });
 });

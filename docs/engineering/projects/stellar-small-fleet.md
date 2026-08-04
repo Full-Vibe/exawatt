@@ -262,6 +262,16 @@ use theme-specific restrained filters, and retain localized HUD-panel scrims
 over the text-heavy regions. The design-system HUD ground, Project-identity
 channel, accessibility suppression, and 260ms house easing remain unchanged.
 
+Operator review then reopened the gallery path on 2026-08-03 specifically for
+geometry, not prompt tuning. `/hud-gallery/goal-visuals` now renders the real
+272×252 Team content hierarchy against five treatments — full field, top-right
+corner field, header banner, right ribbon, and horizon band — and compares the
+corner candidate across three stable goal identities. The bench requests its
+three private v2 rasters through the same authenticated hosted boundary as Team
+and falls back deterministically when signed out or unavailable. It is an
+active review candidate only; once one geometry ships, retire the study rather
+than keeping a duplicate of production.
+
 ### S5 Durable Projects
 
 Status: landed 2026-07-10 — scoped same day (operator); all phases complete.
