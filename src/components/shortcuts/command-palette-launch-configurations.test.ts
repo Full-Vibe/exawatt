@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   commandPaletteConfigurationKey,
   commandPaletteConfigurationRequest,
+  commandPaletteLaunchConfigurationCatalog,
   commandPaletteLaunchConfigurations,
 } from './command-palette-launch-configurations';
 
@@ -57,5 +58,43 @@ describe('command palette launch configurations', () => {
     };
 
     expect(commandPaletteLaunchConfigurations([shell])).toEqual([shell]);
+  });
+
+  it('preserves exact dynamic rows from the active Project catalog event', () => {
+    const rows = [
+      {
+        configurationId: 'project:reviewer',
+        label: 'Reviewer',
+        configuration: {
+          kind: 'agent' as const,
+          source: 'codex' as const,
+          model: 'gpt-5',
+          effort: 'high',
+          agentTypeId: 'reviewer',
+        },
+      },
+      {
+        configurationId: 'project:shell',
+        label: 'Shell',
+        configuration: { kind: 'shell' as const },
+      },
+    ];
+    const event = new CustomEvent('catalog', { detail: rows });
+
+    expect(commandPaletteLaunchConfigurationCatalog(event)).toBe(rows);
+    expect(commandPaletteLaunchConfigurations(rows)).toEqual(rows);
+  });
+
+  it('clears empty or malformed catalog events', () => {
+    expect(
+      commandPaletteLaunchConfigurationCatalog(
+        new CustomEvent('catalog', { detail: [] })
+      )
+    ).toBeUndefined();
+    expect(
+      commandPaletteLaunchConfigurationCatalog(
+        new CustomEvent('catalog', { detail: null })
+      )
+    ).toBeUndefined();
   });
 });

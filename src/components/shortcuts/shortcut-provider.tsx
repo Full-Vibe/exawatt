@@ -4,6 +4,7 @@ import React, {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useState,
   useCallback,
   useMemo,
@@ -46,7 +47,12 @@ import {
   requestProjectPicker,
   requestAgentComposer,
   requestReopenLastClosed,
+  LAUNCH_CONFIGURATION_CATALOG_EVENT,
 } from '@/components/workspace/session-jump';
+import {
+  commandPaletteLaunchConfigurationCatalog,
+  type CommandPaletteLaunchConfiguration,
+} from './command-palette-launch-configurations';
 import type { PtyHarness } from '@/types/electron';
 import { requestQuickFeedback } from '@/components/feedback/quick-feedback-events';
 import { useCommandNavigation } from '@/components/nav/command-navigation-provider';
@@ -149,6 +155,9 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [pendingChord, setPendingChord] = useState<KeyBinding | null>(null);
   const [initialized, setInitialized] = useState(false);
+  const [launchConfigurations, setLaunchConfigurations] = useState<
+    readonly CommandPaletteLaunchConfiguration[] | undefined
+  >(undefined);
   const workspaceAvailability = useWorkspaceCommandAvailability();
   const onWorkspaceRoute = pathname?.startsWith('/workspace') ?? false;
   // Tenant scope for the live-workspace verb gate (ENG-027). The pre-hydration
@@ -172,6 +181,19 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
       setInitialized(true);
     }
     loadPreferences();
+  }, []);
+
+  // Subscribe before descendant passive effects publish their initial catalog.
+  useLayoutEffect(() => {
+    const receiveCatalog = (event: Event) => {
+      setLaunchConfigurations(commandPaletteLaunchConfigurationCatalog(event));
+    };
+    window.addEventListener(LAUNCH_CONFIGURATION_CATALOG_EVENT, receiveCatalog);
+    return () =>
+      window.removeEventListener(
+        LAUNCH_CONFIGURATION_CATALOG_EVENT,
+        receiveCatalog
+      );
   }, []);
 
   // Create and register default shortcuts with actions
@@ -543,6 +565,7 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
             open={commandPaletteOpen}
             onOpenChange={handleCommandPaletteChange}
             onOpenHelpModal={handleOpenHelpModal}
+            launchConfigurations={launchConfigurations}
           />
           <ShortcutHelpModal
             open={helpModalOpen}

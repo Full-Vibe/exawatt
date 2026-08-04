@@ -15,6 +15,18 @@ export interface CommandPaletteLaunchConfiguration {
   searchValue?: string;
 }
 
+/** Decode the workspace's ephemeral catalog event without retaining invalid
+ * or explicitly cleared detail. The returned rows keep their exact snapshots
+ * and ordering from the active Project selector. */
+export function commandPaletteLaunchConfigurationCatalog(
+  event: Event
+): readonly CommandPaletteLaunchConfiguration[] | undefined {
+  const detail = (event as CustomEvent<unknown>).detail;
+  return Array.isArray(detail) && detail.length > 0
+    ? (detail as readonly CommandPaletteLaunchConfiguration[])
+    : undefined;
+}
+
 /**
  * The palette can consume the same ranked selector as the composer without
  * knowing where configurations are persisted. Until that selector is
