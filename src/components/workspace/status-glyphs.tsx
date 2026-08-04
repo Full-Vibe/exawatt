@@ -138,24 +138,27 @@ export function DelegationDots({
         data-delegation={running}
         role="img"
         // Gap wider than the dot so a cluster reads as separate workers rather
-        // than as an ellipsis after the title. Width is the cap, always, so
-        // children arriving and finishing never resize the row.
-        style={{
-          width: DELEGATION_DOT_CAP * 3 + (DELEGATION_DOT_CAP - 1) * 3,
-          ...(color ? { color } : {}),
-        }}
+        // than as an ellipsis after the title.
+        //
+        // The cluster is exactly as wide as the children it is reporting. It
+        // used to reserve all five slots so a spawn could not resize the row —
+        // but under the D45 engine a tab's width comes from the layout policy
+        // and the title flexes inside it, so the cluster CANNOT resize
+        // anything. All the empty slots bought was a band of dead space
+        // between the status glyph and the title, on the narrow tabs that can
+        // least afford it (operator, 2026-08-04).
+        style={color ? { color } : undefined}
       >
-        {Array.from({ length: DELEGATION_DOT_CAP }, (_, index) => (
+        {Array.from({ length: lit }, (_, index) => (
           <span
             aria-hidden="true"
-            className={index < lit ? 'delegation-dot' : undefined}
+            className="delegation-dot"
             key={index}
             style={{
               width: 3,
               height: 3,
               borderRadius: 9999,
-              // Unlit slots hold the width without implying spare capacity.
-              background: index < lit ? 'currentColor' : 'transparent',
+              background: 'currentColor',
               // stagger so a cluster breathes as separate workers
               animationDelay: `${index * 320}ms`,
             }}

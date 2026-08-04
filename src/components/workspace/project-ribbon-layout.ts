@@ -60,16 +60,23 @@ export interface RibbonLayoutPolicy {
  *  touching the algorithm (operator, 2026-08-03: "build it well enough that
  *  we can test and change our minds after playing with it"). */
 export const DEFAULT_RIBBON_POLICY: RibbonLayoutPolicy = {
-  // Four useful words, status/delegation truth, and the active close control
-  // are the minimum readable tab. The row scrolls before titles collapse
-  // back into the ambiguous one-to-three-word chips rejected in dogfood.
-  minTabWidth: 380,
-  // Defaults to the floor: equal-width tabs shrink together, then the row
-  // scrolls instead of sacrificing the title budget.
-  comfortTabWidth: 380,
-  // Sparse Projects may spend the surrounding whitespace on substantially
-  // more of the title while every active-Project tab remains equal width.
-  maxTabWidth: 400,
+  // Chrome's model (operator, 2026-08-04, superseding the 380–400px band):
+  // a tab is as wide as its title wants up to a cap, shrinks with its
+  // siblings as the row fills, and only scrolls once the floor is reached.
+  //
+  // The floor is set from what is LEFT for the title, not from the tab box.
+  // An Agent tab also carries a status glyph, the delegated-child dots, and
+  // the active tab's close control — about 84px of chrome once the harness
+  // glyph has dropped out. At 132px that left 35px of title, roughly four
+  // characters; this is the width at which a delegating tab still shows a
+  // couple of real words.
+  minTabWidth: 180,
+  // Above the floor: quiet Projects fold to protect roughly this much title
+  // before the row gives up and scrolls.
+  comfortTabWidth: 208,
+  // Chrome parity. Past this a tab is spending space it cannot use — the
+  // title has already fit and the rest is dead padding.
+  maxTabWidth: 240,
   foldedProjectWidth: 124,
   columnGap: RIBBON_COLUMN_GAP,
   groupGap: RIBBON_GROUP_GAP,

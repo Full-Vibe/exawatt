@@ -471,23 +471,49 @@ export function TabStrip({
     );
   }, []);
 
-  // Keep the active Project reachable without hunting: when the row scrolls,
-  // bring the selection into view. Instant under Reduced Motion.
+  // Keep the selection reachable without hunting: when the row scrolls, bring
+  // the selected tab into view. Instant under Reduced Motion.
+  //
+  // What gets revealed is the SELECTED TAB, not its whole Project block. The
+  // block spans the header plus every sibling tab, so once a Project is wider
+  // than the viewport — the common case as soon as a few tabs are open — the
+  // "scroll left to reach the start" branch always won and dragged the row
+  // back to the Project header, hiding the tab that had just been selected or
+  // created (operator, 2026-08-04: ⌘T scrolled the new tab away; clicking any
+  // tab jumped to the first one). The header comes along only when both still
+  // fit on screen together.
+  const revealedRef = useRef<string | null>(null);
+  const activeProject = projects.find(item => item.dir === activeDir);
+  const revealKey = activeDir
+    ? `${activeDir}:${activeProject?.activeTabId ?? ''}:${containerWidth}`
+    : null;
   useEffect(() => {
     const node = scrollerRef.current;
-    if (!node || !activeDir) return;
+    if (!node || !activeDir || !revealKey) return;
     // Never scroll under a drag: the layout recomputes on every pointer
     // move, and auto-scrolling then would fight the hand holding the chip.
     if (pointerDragRef.current?.engaged) return;
-    const target = layout.targets.get(`project:${activeDir}`);
-    if (!target) return;
-    const activeProject = projects.find(item => item.dir === activeDir);
+    // Only a selection change, a new tab, or a resize may move the row.
+    // Re-asserting on every unrelated re-render (an activity ping, a context
+    // label arriving) would yank the row out from under a hand that had
+    // scrolled somewhere else on purpose.
+    if (revealedRef.current === revealKey) return;
+    const header = layout.targets.get(`project:${activeDir}`);
+    if (!header) return;
     const activeTabTarget = activeProject?.activeTabId
       ? layout.targets.get(`tab:${activeProject.activeTabId}`)
       : undefined;
-    const from = target.x;
-    const to =
-      (activeTabTarget ?? target).x + (activeTabTarget ?? target).width;
+    // A folded Project draws no tab chips, so its header IS the reveal
+    // target. But a selected tab that simply has not been laid out yet must
+    // not be mistaken for one — leave the row alone and retry next layout.
+    const folded = presentationFor(activeDir) === 'folded';
+    if (activeProject?.activeTabId && !activeTabTarget && !folded) return;
+    revealedRef.current = revealKey;
+    const reveal = activeTabTarget ?? header;
+    const to = reveal.x + reveal.width;
+    // Show the Project header alongside its selected tab when the pair fits;
+    // otherwise the tab alone is what must be on screen.
+    const from = to - header.x <= node.clientWidth - 24 ? header.x : reveal.x;
     const viewLeft = node.scrollLeft;
     const viewRight = viewLeft + node.clientWidth;
     let next = viewLeft;
@@ -503,7 +529,14 @@ export function TabStrip({
     } else {
       node.scrollLeft = next;
     }
-  }, [activeDir, layout, projects, reducedMotion]);
+  }, [
+    activeDir,
+    activeProject?.activeTabId,
+    layout,
+    presentationFor,
+    reducedMotion,
+    revealKey,
+  ]);
 
   useEffect(syncScrollEdges, [syncScrollEdges, layout, containerWidth]);
 
@@ -1176,7 +1209,7 @@ export function TabStrip({
                     }${
                       sourceOrdinal <= 9 ? ` · ⌘⌥${sourceOrdinal} selects` : ''
                     } · ${PROJECT_RIBBON_SIGNAL_COPY[signal]}`}
-                    className="relative flex h-full w-full cursor-pointer items-center gap-1 px-1.5 font-mono text-chrome-label font-medium outline-none transition-[filter,transform] duration-100 hover:brightness-150 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan"
+                    className="relative flex h-full w-full cursor-pointer items-center gap-1 px-1.5 text-left font-mono text-chrome-label font-medium outline-none transition-[filter,transform] duration-100 hover:brightness-150 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan"
                     style={{ color: groupActive ? color : HUD.textDim }}
                   >
                     <span
@@ -1286,7 +1319,13 @@ export function TabStrip({
             // ~24px goes back to the title instead of to chrome you are not
             // using. The reveal is absolutely positioned, so it costs no reflow.
             const tabWidth = layout.targets.get(token.key)?.width ?? 0;
-            const tightTab = !condensed && tabWidth > 0 && tabWidth < 168;
+            // Below this a tab spends its remaining width on the title: the
+            // harness glyph drops out and the close control stops reserving a
+            // column on inactive tabs. Set so that a tab just above the
+            // threshold never shows LESS title than one just below it — the
+            // glyph costs 17px, so it may only return once the tab can pay
+            // for it and still beat the trimmed presentation.
+            const tightTab = !condensed && tabWidth > 0 && tabWidth < 200;
             const floatingClose = tightTab && !on;
             const dead = !tabIsLive(tab);
             const summary = summaries[tab.durableSessionId];
@@ -1461,6 +1500,16 @@ export function TabStrip({
                     event.stopPropagation();
                   }
                 }}
+                // Chrome's third tab verb, alongside ⌘W and the × control:
+                // middle-click closes whatever is under the pointer, without
+                // selecting it first. Closing a tab you are not on is the
+                // whole point, so this must not route through onSelectTab.
+                onAuxClick={event => {
+                  if (event.button !== 1) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onCloseTab(tab.id);
+                }}
                 onContextMenu={event => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -1528,9 +1577,16 @@ export function TabStrip({
                   }\n${
                     isDraft
                       ? '⏎ starts · ⌘W discards'
-                      : '⌘W closes — kept in Recently closed'
+                      : '⌘W or middle-click closes — kept in Recently closed'
                   }\ndouble-click to rename`}
-                  className={`relative flex h-full min-w-0 flex-1 cursor-pointer items-center overflow-hidden font-mono text-chrome-title font-medium outline-none transition-transform duration-100 active:scale-[0.98] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan ${
+                  // `text-left` is load-bearing, not decoration: the chrome is
+                  // a <button>, and the UA stylesheet centers button text. In
+                  // a tab wider than its title that centered the label, so a
+                  // short title floated in the middle with padding on both
+                  // sides while a long one ellipsized (operator, 2026-08-04).
+                  // Titles are read by their first words; they start at the
+                  // same x in every tab, whatever the tab's width.
+                  className={`relative flex h-full min-w-0 flex-1 cursor-pointer items-center overflow-hidden text-left font-mono text-chrome-title font-medium outline-none transition-transform duration-100 active:scale-[0.98] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan ${
                     condensed ? 'gap-1 px-1.5' : 'gap-1.5 px-2'
                   }`}
                   style={{ color: on ? HUD.text : HUD.textDim }}
@@ -1640,15 +1696,27 @@ export function TabStrip({
                     </span>
                   )}
                 </EditableChrome>
+                {/* Context rating is a passenger on the tab, never a rival to
+                it. Two rules keep it from eating the selection target:
+                  · only its BUTTONS take pointer events — the backdrop that
+                    keeps them readable stays transparent to clicks. It used
+                    to turn `pointer-events-auto` wholesale on hover, so ~50px
+                    across the middle of every hovered Agent tab silently
+                    swallowed the click that was meant to select it.
+                  · it rides the ACTIVE tab only. On the tab you are already
+                    on, a click is a no-op and the label under review is the
+                    one you are reading; on every other tab the whole face
+                    stays what it should be — a target that selects it. */}
                 {summary &&
                   isAgent &&
                   !isDraft &&
                   !condensed &&
+                  on &&
                   onRateContext && (
                     <div
                       data-ribbon-passive
                       data-tab-feedback-overlay
-                      className="pointer-events-none absolute inset-y-0 right-7 z-10 flex items-center pl-2 opacity-0 transition-opacity duration-100 group-hover/tab:pointer-events-auto group-hover/tab:opacity-100 group-focus-within/tab:pointer-events-auto group-focus-within/tab:opacity-100 motion-reduce:transition-none"
+                      className="pointer-events-none absolute inset-y-0 right-7 z-10 flex items-center pl-2 opacity-0 transition-opacity duration-100 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100 motion-reduce:transition-none [&_button]:pointer-events-none group-hover/tab:[&_button]:pointer-events-auto group-focus-within/tab:[&_button]:pointer-events-auto"
                       style={{
                         background: on
                           ? withThemeAlpha(color, 0.15)

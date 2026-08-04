@@ -179,6 +179,33 @@ export function StripContextMenu({
   const pathDepthRef = useRef(0);
   const visibleItems = path.at(-1)?.children ?? items;
 
+  /**
+   * The one ordered list of rows a pointer or an arrow key can land on, in
+   * paint order: the drill-out row, then every operable item. `announced`
+   * rows are not in it — they are readable but cannot be operated.
+   *
+   * Everything navigational indexes into THIS list. Arrow keys used to walk
+   * the DOM's `[role="menuitem"]` buttons while `tabIndex` was assigned from
+   * each item's position in `visibleItems`; inside a submenu the drill-out
+   * row shifted those two apart by one, so the roving tabstop landed on the
+   * wrong row and Tab re-entered the menu somewhere the operator never left.
+   */
+  const rows = [
+    ...(path.length > 0 ? [{ key: 'back', item: null }] : []),
+    ...visibleItems
+      .filter(item => !item.announcedComing)
+      .map(item => ({ key: item.label, item })),
+  ];
+  const activeRowKey = rows[activeIndex]?.key ?? null;
+  const rowIndexOf = (item: StripMenuItem) =>
+    rows.findIndex(row => row.item === item);
+  const focusRow = (index: number) => {
+    setActiveIndex(index);
+    rootRef.current
+      ?.querySelector<HTMLElement>(`[data-menu-row-index="${index}"]`)
+      ?.focus();
+  };
+
   const openChildren = (item: StripMenuItem) => {
     if (!item.children?.length) return false;
     setPath(current => [...current, item]);
@@ -196,9 +223,10 @@ export function StripContextMenu({
   useLayoutEffect(() => {
     if (pathDepthRef.current === path.length) return;
     pathDepthRef.current = path.length;
-    rootRef.current
-      ?.querySelector<HTMLElement>('[data-menu-item-index="0"]')
-      ?.focus();
+    // Entering a submenu lands on its first ACTION, not on the drill-out row
+    // that sits above it — arriving on "go back" makes the drill-in feel like
+    // it did nothing.
+    focusRow(path.length > 0 ? 1 : 0);
   }, [path]);
 
   useLayoutEffect(() => {
@@ -220,8 +248,21 @@ export function StripContextMenu({
         onClose('none');
       }
     };
-    document.addEventListener('mousedown', closeAway);
-    return () => document.removeEventListener('mousedown', closeAway);
+    // Arm on the NEXT task, not synchronously. The menu opens from
+    // `contextmenu`, and the gesture that opened it still has a `mousedown`
+    // (trackpad secondary click) or `mouseup` to deliver. The menu's top-left
+    // corner sits exactly under the pointer, so whether that trailing event
+    // counted as "outside" was a coin flip on a one-pixel border — the menu
+    // sometimes vanished the instant it appeared and the operator had to
+    // right-click a second time (2026-08-04).
+    const arm = setTimeout(
+      () => document.addEventListener('mousedown', closeAway),
+      0
+    );
+    return () => {
+      clearTimeout(arm);
+      document.removeEventListener('mousedown', closeAway);
+    };
   }, [onClose]);
 
   return (
@@ -245,11 +286,6 @@ export function StripContextMenu({
           if (!goBack()) onClose('trigger');
           return;
         }
-        const buttons = Array.from(
-          rootRef.current?.querySelectorAll<HTMLButtonElement>(
-            '[role="menuitem"]'
-          ) ?? []
-        );
         if (event.key === 'Tab') {
           event.preventDefault();
           onClose(event.shiftKey ? 'previous' : 'next');
@@ -260,12 +296,8 @@ export function StripContextMenu({
           return;
         }
         if (event.key === 'ArrowRight') {
-          const index = Number(
-            (document.activeElement as HTMLElement)?.dataset.menuItemIndex
-          );
-          if (Number.isInteger(index) && openChildren(visibleItems[index])) {
-            event.preventDefault();
-          }
+          const item = rows[activeIndex]?.item;
+          if (item && openChildren(item)) event.preventDefault();
           return;
         }
         if (
@@ -275,19 +307,16 @@ export function StripContextMenu({
           event.key === 'End'
         ) {
           event.preventDefault();
-          const index = buttons.indexOf(
-            document.activeElement as HTMLButtonElement
-          );
-          const nextIndex =
+          if (rows.length === 0) return;
+          const current = Math.max(0, activeIndex);
+          focusRow(
             event.key === 'Home'
               ? 0
               : event.key === 'End'
-                ? buttons.length - 1
-                : (Math.max(0, index) +
-                    (event.key === 'ArrowDown' ? 1 : buttons.length - 1)) %
-                  buttons.length;
-          setActiveIndex(nextIndex);
-          buttons[nextIndex]?.focus();
+                ? rows.length - 1
+                : (current + (event.key === 'ArrowDown' ? 1 : rows.length - 1)) %
+                  rows.length
+          );
         }
       }}
     >
@@ -295,17 +324,26 @@ export function StripContextMenu({
         <button
           type="button"
           role="menuitem"
-          tabIndex={-1}
-          onFocus={() => setActiveIndex(-1)}
+          data-menu-row-index={0}
+          data-menu-active={activeRowKey === 'back' || undefined}
+          tabIndex={activeIndex === 0 ? 0 : -1}
+          onFocus={() => setActiveIndex(0)}
+          onPointerMove={() => setActiveIndex(0)}
           onClick={() => goBack()}
-          className="flex cursor-pointer items-baseline gap-3 border-b border-hud-stroke-faint px-3 py-1.5 text-left font-mono text-chrome-label outline-none hover:bg-hud-fill-hi focus-visible:bg-hud-fill-hi"
-          style={{ color: HUD.textDim }}
+          className="flex cursor-pointer items-baseline gap-3 border-b border-hud-stroke-faint px-3 py-1.5 text-left font-mono text-chrome-label outline-none"
+          style={{
+            color: HUD.textDim,
+            background:
+              activeRowKey === 'back'
+                ? withThemeAlpha(color, 0.18)
+                : 'transparent',
+          }}
         >
           <span aria-hidden>‹</span>
           <span className="min-w-0 flex-1">{path.at(-1)?.label}</span>
         </button>
       )}
-      {visibleItems.map((item, index) =>
+      {visibleItems.map(item =>
         item.announcedComing ? (
           // ENG-026 announced affordance: not a menuitem, so arrow keys and
           // the focus loop skip it; `inert` keeps the promise that it cannot
@@ -327,17 +365,34 @@ export function StripContextMenu({
             key={item.label}
             type="button"
             role="menuitem"
-            data-menu-item-index={index}
-            tabIndex={index === activeIndex ? 0 : -1}
-            onFocus={() => setActiveIndex(index)}
-            onPointerMove={() => setActiveIndex(index)}
+            data-menu-row-index={rowIndexOf(item)}
+            data-menu-active={activeRowKey === item.label || undefined}
+            tabIndex={activeIndex === rowIndexOf(item) ? 0 : -1}
+            onFocus={() => setActiveIndex(rowIndexOf(item))}
+            onPointerMove={() => setActiveIndex(rowIndexOf(item))}
             onClick={() => {
               if (openChildren(item)) return;
               onClose(item.focusAfterSelect ?? 'trigger');
               item.onSelect?.();
             }}
-            className="flex cursor-pointer items-baseline gap-3 px-3 py-1.5 text-left font-mono text-chrome-label outline-none transition-[background-color] duration-75 hover:bg-hud-fill-hi focus-visible:bg-hud-fill-hi"
-            style={{ color: item.danger ? color : HUD.text }}
+            // One highlight, driven by the row the operator is ON — whether
+            // they got there with the pointer or the arrow keys. It used to
+            // be `hover:` plus `focus-visible:`, and `focus-visible` does not
+            // match focus moved programmatically out of a pointer-opened
+            // menu, so arrowing through a right-click menu highlighted
+            // nothing at all and the menu read as keyboard-dead.
+            className="relative flex cursor-pointer items-baseline gap-3 px-3 py-1.5 text-left font-mono text-chrome-label outline-none transition-[background-color] duration-75"
+            style={{
+              color: item.danger ? color : HUD.text,
+              background:
+                activeRowKey === item.label
+                  ? withThemeAlpha(color, 0.18)
+                  : 'transparent',
+              boxShadow:
+                activeRowKey === item.label
+                  ? `inset 2px 0 0 ${color}`
+                  : undefined,
+            }}
           >
             <span className="min-w-0 flex-1">{item.label}</span>
             {item.children?.length ? <span aria-hidden>›</span> : null}

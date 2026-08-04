@@ -167,12 +167,32 @@ try {
       `Active tabs are not equal width: ${JSON.stringify(readability)}`
     );
   }
-  const unreadable = readability.filter(
-    item => item.title.split(/\s+/).length >= 4 && item.visibleWords < 4
+  // The four-full-words floor is retired with the 380–400px band (operator,
+  // 2026-08-04: "the tabs are still too wide… expand only when there's
+  // enough space, kind of like Google Chrome tabs"). What holds now is the
+  // Chrome contract: equal widths inside the policy band, and a title that
+  // starts at the same x in every tab so it is read from its first word.
+  const BAND = { min: 180, max: 240 }; // DEFAULT_RIBBON_POLICY
+  const outOfBand = readability.filter(
+    item => item.tabWidth < BAND.min - 1 || item.tabWidth > BAND.max + 1
   );
-  if (unreadable.length > 0) {
+  if (outOfBand.length > 0) {
     throw new Error(
-      `Active tabs expose fewer than four full title words: ${JSON.stringify(unreadable)}`
+      `Active tabs fall outside the ${BAND.min}–${BAND.max}px band: ${JSON.stringify(outOfBand)}`
+    );
+  }
+  const centred = await page.evaluate(() =>
+    [
+      ...document.querySelectorAll(
+        '[data-ribbon-item="initiative"][data-project-parent="/workspace/exawatt"]:not([aria-hidden="true"]) [data-tab-chrome]'
+      ),
+    ]
+      .map(node => getComputedStyle(node).textAlign)
+      .filter(align => align !== 'left' && align !== 'start')
+  );
+  if (centred.length > 0) {
+    throw new Error(
+      `Tab titles are not start-aligned: ${JSON.stringify(centred)}`
     );
   }
   await page
@@ -183,11 +203,11 @@ try {
     path: join(SCREENSHOT_DIR, 'gate2-readability-idle.png'),
   });
 
-  const feedbackTab = page
-    .locator(
-      '[data-ribbon-item="initiative"][data-project-parent="/workspace/exawatt"]'
-    )
-    .nth(1);
+  // Context rating rides the ACTIVE tab only — everywhere else the tab face
+  // must stay a selection target, so there is nothing there to reveal.
+  const feedbackTab = page.locator(
+    '[data-ribbon-item="initiative"][data-project-parent="/workspace/exawatt"][data-active]'
+  );
   const labelWidthBeforeHover = await feedbackTab
     .locator('[data-tab-label]')
     .evaluate(node => node.getBoundingClientRect().width);
@@ -210,12 +230,93 @@ try {
       `Context feedback reflowed or failed to reveal: ${JSON.stringify({ overlayState, labelWidthBeforeHover, labelWidthAfterHover })}`
     );
   }
+  // The overlay's BACKDROP — the wash that keeps the rating buttons legible
+  // over the title — must never take a click. It used to flip
+  // `pointer-events-auto` on its whole box, so ~50px across the middle of a
+  // hovered Agent tab silently swallowed the click meant to select the tab
+  // (operator, 2026-08-04: "unresponsive"). The buttons themselves are of
+  // course still hit targets; nothing else in that box is.
+  const probeFace = node => {
+    const box = node
+      .querySelector('[data-tab-chrome]')
+      .getBoundingClientRect();
+    return [0.15, 0.3, 0.5, 0.7, 0.85]
+      .map(fraction => {
+        const hit = document.elementFromPoint(
+          box.left + box.width * fraction,
+          box.top + box.height / 2
+        );
+        const overlay = hit?.closest('[data-tab-feedback-overlay]');
+        return {
+          fraction,
+          // dead = inside the overlay but not on one of its buttons
+          dead: Boolean(overlay) && !hit?.closest('button'),
+        };
+      })
+      .filter(probe => probe.dead);
+  };
+  const swallowed = await feedbackTab.evaluate(probeFace);
+  if (swallowed.length > 0) {
+    throw new Error(
+      `Context feedback backdrop is swallowing clicks: ${JSON.stringify(swallowed)}`
+    );
+  }
+
+  // An INACTIVE tab keeps its whole face as a selection target: there is no
+  // rating overlay on it at all, hovered or not.
+  const inactiveTab = page.locator(
+    '[data-ribbon-item="initiative"][data-project-parent="/workspace/exawatt"]:not([data-active])'
+  );
+  await inactiveTab.first().hover();
+  await page.waitForTimeout(200);
+  const inactiveDead = await inactiveTab.first().evaluate(node => ({
+    hasOverlay: Boolean(node.querySelector('[data-tab-feedback-overlay]')),
+  }));
+  if (inactiveDead.hasOverlay) {
+    throw new Error(
+      `An inactive tab is carrying the rating overlay: ${JSON.stringify(inactiveDead)}`
+    );
+  }
+  await feedbackTab.hover();
+  await page.waitForTimeout(160);
   await page.locator('[data-workspace-tab-strip]').screenshot({
     path: join(SCREENSHOT_DIR, 'gate2-readability-feedback.png'),
   });
   await page
     .locator('[data-bench-stage]')
     .hover({ position: { x: 20, y: 20 } });
+
+  // ── Gate 2b: selecting a tab reveals THAT TAB, never the Project head ──
+  // The reveal used to span the whole Project block, so once a Project was
+  // wider than the row the "scroll left to the start" branch always won and
+  // dragged the selection off screen — ⌘T's new tab and any click on a
+  // right-hand tab both jumped back to the first one (operator, 2026-08-04).
+  const lastActiveTab = page
+    .locator(
+      '[data-ribbon-item="initiative"][data-project-parent="/workspace/exawatt"]'
+    )
+    .last();
+  const lastBox = await lastActiveTab.boundingBox();
+  await page.mouse.click(lastBox.x + 14, lastBox.y + lastBox.height / 2);
+  await page.waitForTimeout(600);
+  const reveal = await page.evaluate(() => {
+    const scroller = document.querySelector('[data-ribbon-scroller]');
+    const active = document.querySelector(
+      '[data-ribbon-item="initiative"][data-active]'
+    );
+    if (!scroller || !active) return null;
+    const a = active.getBoundingClientRect();
+    const s = scroller.getBoundingClientRect();
+    return {
+      id: active.getAttribute('data-tab-id'),
+      fullyVisible: a.left >= s.left - 1 && a.right <= s.right + 1,
+    };
+  });
+  if (!reveal?.fullyVisible) {
+    throw new Error(
+      `Selecting a tab scrolled it out of view: ${JSON.stringify(reveal)}`
+    );
+  }
 
   // ── Gate 3: hold-⌘ reveals a VISIBLE keycap on every ordinal tab ──
   await page.keyboard.down('Meta');

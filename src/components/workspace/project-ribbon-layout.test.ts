@@ -56,17 +56,60 @@ describe('layoutRibbonRow', () => {
 
   it('shrinks the active tabs before folding anyone (Chrome order)', () => {
     const projects = [project('/a', 4, true), project('/b', 2)];
-    const roomy = layoutRibbonRow(projects, 2000);
-    const tight = layoutRibbonRow(projects, 1850);
-    const widthOf = (layout: ReturnType<typeof layoutRibbonRow>, id: string) =>
-      layout.targets.get(`tab:${id}`)?.width ?? 0;
-    expect(widthOf(roomy, '/a-0')).toBe(400);
-    expect(widthOf(tight, '/a-0')).toBeLessThan(400);
-    expect(widthOf(tight, '/a-0')).toBeGreaterThanOrEqual(
-      DEFAULT_RIBBON_POLICY.minTabWidth
-    );
+    const policy = DEFAULT_RIBBON_POLICY;
+    const widthOf = (available: number) =>
+      layoutRibbonRow(projects, available).targets.get('tab:/a-0')?.width ?? 0;
+
+    // With room to spare a tab takes the cap and not a pixel more: past it
+    // the title has already fit and the rest would be dead padding.
+    expect(widthOf(2000)).toBe(policy.maxTabWidth);
+
+    // Squeezing the row walks tabs DOWN to the floor rather than snapping
+    // between two sizes — the elastic half of the Chrome model.
+    const sweep = [1600, 1400, 1200, 1000, 700].map(widthOf);
+    expect(sweep).toEqual([...sweep].sort((a, b) => b - a));
+    expect(Math.min(...sweep)).toBe(policy.minTabWidth);
+    expect(
+      sweep.some(w => w > policy.minTabWidth && w < policy.maxTabWidth)
+    ).toBe(true);
+
     // nobody folded merely so the tabs could stay wide
-    expect(tight.presentation.get('/b')).toBe('mini');
+    expect(layoutRibbonRow(projects, 1400).presentation.get('/b')).toBe('mini');
+  });
+
+  it('never draws a tab wider than the title it has to show', () => {
+    // A Project of shortish titles must not inflate to the cap and strand its
+    // labels in padding — the cap is a ceiling, not a target. The floor still
+    // wins underneath it: a tab is never drawn narrower than minTabWidth.
+    const policy = DEFAULT_RIBBON_POLICY;
+    const wanted = Math.round((policy.minTabWidth + policy.maxTabWidth) / 2);
+    const modest: RibbonProjectInput = {
+      dir: '/modest',
+      headerWidth: 100,
+      foldedWidth: 120,
+      active: true,
+      tabs: [
+        { id: 'modest-0', openWidth: wanted, miniWidth: 40 },
+        { id: 'modest-1', openWidth: wanted, miniWidth: 40 },
+      ],
+    };
+    const layout = layoutRibbonRow([modest], 4000);
+    expect(layout.targets.get('tab:modest-0')?.width).toBe(wanted);
+    expect(layout.targets.get('tab:modest-1')?.width).toBe(wanted);
+
+    // …and a Project whose titles want less than the floor still gets the
+    // floor, not a strip of unreadable slivers.
+    const tiny = layoutRibbonRow(
+      [
+        {
+          ...modest,
+          dir: '/tiny',
+          tabs: [{ id: 'tiny-0', openWidth: 60, miniWidth: 40 }],
+        },
+      ],
+      4000
+    );
+    expect(tiny.targets.get('tab:tiny-0')?.width).toBe(policy.minTabWidth);
   });
 
   it('folds — never evicts — once shrinking is exhausted', () => {
@@ -91,7 +134,9 @@ describe('layoutRibbonRow', () => {
     const counts = [5, 1, 2, 1];
     const modeByActive = dirs.map(activeDir =>
       layoutRibbonRow(
-        dirs.map((dir, index) => project(dir, counts[index], dir === activeDir)),
+        dirs.map((dir, index) =>
+          project(dir, counts[index], dir === activeDir)
+        ),
         700
       )
     );
@@ -179,12 +224,11 @@ describe('orderProjectsForRibbon', () => {
 });
 
 describe('the comfort dial (D45 tuning)', () => {
-  const shape = (activeIdx: number) =>
-    [
-      project('/a', 5, activeIdx === 0),
-      project('/b', 2, activeIdx === 1),
-      project('/c', 2, activeIdx === 2),
-    ];
+  const shape = (activeIdx: number) => [
+    project('/a', 5, activeIdx === 0),
+    project('/b', 2, activeIdx === 1),
+    project('/c', 2, activeIdx === 2),
+  ];
 
   it('at the floor, shrinks tabs and scrolls rather than folding', () => {
     const layout = layoutRibbonRow(shape(0), 900, {

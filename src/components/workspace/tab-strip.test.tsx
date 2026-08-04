@@ -12,6 +12,7 @@ vi.mock('next/navigation', () => ({
 import { TabStrip } from './tab-strip';
 import type { CloneSessionTarget } from './session-clone';
 import type { SessionAttentionSignal } from './status-glyphs';
+import { DELEGATION_DOT_CAP } from './session-status';
 import type { Project, WorkspaceTab } from './use-workspace-state';
 import type { SessionDelegation } from '@/types/electron';
 import { EDIT_ACTIVE_PROJECT_EVENT } from './session-jump';
@@ -57,6 +58,8 @@ function strip({
   cloneTargets,
   onCloneTab,
   exitingProjectDirs,
+  onCloseTab = vi.fn(),
+  onSelectTab = vi.fn(),
 }: {
   tabs: WorkspaceTab[];
   summaries?: Record<string, string>;
@@ -70,6 +73,8 @@ function strip({
   cloneTargets?: CloneSessionTarget[];
   onCloneTab?: (tabId: string, target: CloneSessionTarget) => void;
   exitingProjectDirs?: ReadonlySet<string>;
+  onCloseTab?: (tabId: string) => void;
+  onSelectTab?: (dir: string, tabId: string) => void;
 }) {
   const view = (
     nextTabs: WorkspaceTab[],
@@ -103,8 +108,8 @@ function strip({
           onCloneTab={onCloneTab}
           onCloseProject={onCloseProject}
           onSelectProject={vi.fn()}
-          onSelectTab={vi.fn()}
-          onCloseTab={vi.fn()}
+          onSelectTab={onSelectTab}
+          onCloseTab={onCloseTab}
           onRenameTab={vi.fn()}
           onRenameProject={vi.fn()}
           onSetProjectColor={vi.fn()}
@@ -662,22 +667,66 @@ describe('TabStrip delegated work (ENG-023)', () => {
     );
   });
 
-  it('keeps a constant width as children come and go', () => {
-    // The cluster exists precisely because children start and finish. If its
-    // width tracked the count, every spawn would resize the tab and shove the
-    // rest of the strip sideways.
+  it('never resizes the tab as children come and go', () => {
+    // The cluster exists precisely because children start and finish, and a
+    // spawn must not shove the rest of the strip sideways. That invariant now
+    // lives in the LAYOUT — a tab's width comes from the policy and the title
+    // flexes inside it — so the cluster is free to be exactly as wide as the
+    // children it reports. It used to reserve all five slots instead, which
+    // bought a band of dead space between the glyph and the title on every
+    // tab with one or two children.
     const { container, rerenderDelegation } = strip({
       tabs: [tab({ id: 'a' })],
       delegation: { 'session-a': delegating(1) },
     });
-    const measure = () =>
-      (container.querySelector('[data-delegation]') as HTMLElement).style.width;
-    const oneChild = measure();
-    expect(oneChild).toBeTruthy();
+    const tabWidth = () =>
+      (container.querySelector('[data-tab-id="a"]') as HTMLElement).style.width;
+    const dots = () =>
+      container.querySelectorAll('[data-delegation] > span').length;
+
+    const settled = tabWidth();
+    expect(settled).toBeTruthy();
+    expect(dots()).toBe(1);
+
     rerenderDelegation({ 'session-a': delegating(4) });
-    expect(measure()).toBe(oneChild);
+    expect(tabWidth()).toBe(settled);
+    expect(dots()).toBe(4);
+
+    // past the cap the cluster stops growing; the exact count stays in the
+    // accessible name
     rerenderDelegation({ 'session-a': delegating(19) });
-    expect(measure()).toBe(oneChild);
+    expect(tabWidth()).toBe(settled);
+    expect(dots()).toBe(DELEGATION_DOT_CAP);
+  });
+
+  it('closes an unselected tab on middle-click without selecting it first', () => {
+    // Chrome's third tab verb. Closing a tab you are NOT on is the whole
+    // point, so it must not route through selection on the way.
+    const onCloseTab = vi.fn();
+    const onSelectTab = vi.fn();
+    const { container } = strip({
+      tabs: [tab({ id: 'a' }), tab({ id: 'b' })],
+      onCloseTab,
+      onSelectTab,
+    });
+    const second = container.querySelector('[data-tab-id="b"]') as HTMLElement;
+    fireEvent(
+      second,
+      new MouseEvent('auxclick', { button: 1, bubbles: true, cancelable: true })
+    );
+    expect(onCloseTab).toHaveBeenCalledWith('b');
+    expect(onSelectTab).not.toHaveBeenCalled();
+  });
+
+  it('leaves the other mouse buttons to selection and the context menu', () => {
+    const onCloseTab = vi.fn();
+    const { container } = strip({ tabs: [tab({ id: 'a' })], onCloseTab });
+    const only = container.querySelector('[data-tab-id="a"]') as HTMLElement;
+    fireEvent(
+      only,
+      new MouseEvent('auxclick', { button: 2, bubbles: true, cancelable: true })
+    );
+    expect(onCloseTab).not.toHaveBeenCalled();
   });
 
   it('adds no empty flex child to a tab that is not delegating', () => {

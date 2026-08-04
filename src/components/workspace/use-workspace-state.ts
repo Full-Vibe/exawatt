@@ -685,6 +685,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   goalVisualsRef.current = goalVisuals;
   const engagedRef = useRef(engaged);
   engagedRef.current = engaged;
+  /** Clone requests currently spawning, keyed `tabId:targetId`. A ref, not
+   *  state: it exists to make a duplicate request a no-op, and re-rendering
+   *  the workspace on it would only add churn. */
+  const cloningRef = useRef(new Set<string>());
   const activityRef = useRef(activity);
   activityRef.current = activity;
   const resumeInFlightRef = useRef<Set<string>>(new Set());
@@ -1606,8 +1610,15 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    * Start a new Agent Session from bounded Exawatt-owned context. Clone never
    * supplies resumeSessionId (provider continuity) and never mutates or closes
    * the originating Session.
+   *
+   * Clone reads preferences, the source registry, and the model catalog before
+   * it can spawn anything, so seconds pass with the menu already closed and no
+   * new tab yet. The operator reads that gap as "nothing happened" and asks
+   * again — and used to get a second billed Agent for it (2026-08-04). One
+   * clone per (tab, target) may be in flight; a repeat is dropped, not
+   * duplicated.
    */
-  const cloneSession = useCallback(
+  const cloneSessionOnce = useCallback(
     async (tabId: string, target: CloneSessionTarget): Promise<boolean> => {
       const project = stateRef.current.projects.find(group =>
         group.tabs.some(tab => tab.id === tabId)
@@ -1682,6 +1693,20 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       return cloned;
     },
     [launch]
+  );
+
+  const cloneSession = useCallback(
+    async (tabId: string, target: CloneSessionTarget): Promise<boolean> => {
+      const inFlightKey = `${tabId}:${target.id}`;
+      if (cloningRef.current.has(inFlightKey)) return false;
+      cloningRef.current.add(inFlightKey);
+      try {
+        return await cloneSessionOnce(tabId, target);
+      } finally {
+        cloningRef.current.delete(inFlightKey);
+      }
+    },
+    [cloneSessionOnce]
   );
 
   /** ⌘T (D24): a new tab exists the moment you ask for it — a draft tab

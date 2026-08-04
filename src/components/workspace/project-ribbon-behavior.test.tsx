@@ -9,6 +9,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 import { TabStrip } from './tab-strip';
+import { DEFAULT_RIBBON_POLICY } from './project-ribbon-layout';
 import type { Project, WorkspaceTab } from './use-workspace-state';
 
 function tab(id: string): WorkspaceTab {
@@ -126,16 +127,18 @@ describe('single-row Project ribbon (D45)', () => {
     });
 
     // The stored provider titles are deliberately short. The long context
-    // labels are what actually paint, so both tabs should claim the 400px
-    // natural-width ceiling instead of leaving the rest of the row blank.
+    // labels are what actually paint, so both tabs should claim the full
+    // width cap instead of budgeting from "Codex" and leaving the rest of
+    // the row blank.
+    const cap = `${DEFAULT_RIBBON_POLICY.maxTabWidth}px`;
     expect(
       (container.querySelector('[data-tab-id="a1"]') as HTMLElement).style
         .width
-    ).toBe('400px');
+    ).toBe(cap);
     expect(
       (container.querySelector('[data-tab-id="a2"]') as HTMLElement).style
         .width
-    ).toBe('400px');
+    ).toBe(cap);
   });
 
   it('has exactly one row whose height never changes with selection', () => {
