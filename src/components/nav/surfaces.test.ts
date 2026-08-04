@@ -4,6 +4,7 @@ import {
   isAppRoute,
   surfaceById,
   surfacesByTier,
+  usesDarkPublicChrome,
 } from './surfaces';
 
 describe('isAppRoute', () => {
@@ -40,6 +41,22 @@ describe('isAppRoute', () => {
   ])('does not classify public route %s as an app surface', pathname => {
     expect(isAppRoute(pathname)).toBe(false);
   });
+});
+
+describe('usesDarkPublicChrome', () => {
+  it.each(['/', '/architecture', '/architecture/agent-sources'])(
+    'keeps authored dark public chrome on %s',
+    pathname => {
+      expect(usesDarkPublicChrome(pathname)).toBe(true);
+    }
+  );
+
+  it.each(['/settings', '/hud-gallery', '/privacy'])(
+    'leaves app appearance in control on %s',
+    pathname => {
+      expect(usesDarkPublicChrome(pathname)).toBe(false);
+    }
+  );
 });
 
 describe('readiness (ENG-026 N0/N1)', () => {

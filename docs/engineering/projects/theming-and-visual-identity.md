@@ -6,7 +6,7 @@ discovery, and (once approved) the executable milestone detail.
 
 ## Current phase
 
-**Production closure — T0 through T5.1 assembled and verified.** The versioned
+**Production closure — T0 through T5.2 assembled and verified.** The versioned
 contract, device-local resolver/runtime, strict Electron settings and
 first-paint bootstrap now expose Classic, Air, and Night through production
 Appearance settings, the account-avatar menu, and the **Change theme…** command.
@@ -691,6 +691,7 @@ no packet privately extends the contract to solve a local color.
 | Schema or future marketplace payload escapes visual scope | hostile/unknown-field fixtures; JSON-only validator; no URL/CSS/code acceptance                       |
 | Corrupt or stale device preference bricks startup         | parser/property tests, Classic fallback, `--safe-theme`, unrelated-setting preservation               |
 | First-paint flash or native/renderer disagreement         | launch → hydration screenshots under light/dark Auto and Manual; `color-scheme` assertion             |
+| Client-navigation paint discontinuity                     | real control, forced-cold pending route, body/header pixel samples under Auto Air/Night                |
 | Theme change disrupts active work                         | PTY ID/output/rows/cols unchanged; no spawn/stop/resize IPC; camera/filter/selection unchanged        |
 | Cross-surface drift                                       | one fixture rendered through DOM, xterm, and R3F adapters; generated-token completeness test          |
 | Status/action/identity collision                          | channel distinctness checks plus D40 shape/icon/text tests in every preset                            |
@@ -866,3 +867,14 @@ no packet privately extends the contract to solve a local color.
   brand marks from semantic readable text. Legacy V1 flags normalize to
   `system`, so hidden preferences cannot strand an operator in an unselectable
   state.
+- 2026-08-03, T5.2 navigation-paint incident closure: reproduced the live
+  homepage Command-key path under Auto/Air frame by frame. Two independent
+  full-screen curtains intentionally painted Air's `rgb(243, 245, 242)` canvas
+  over a dark source and dark destination; the existing R3F evaluator asserted
+  their opacity rather than visual continuity. Retired both curtains and the
+  720 ms route delay, kept the physical key release, added a dark Architecture
+  pending floor, and moved Home/Architecture chrome from page-local CSS to one
+  opaque route-stable owner. `eval:navigation-paint` now forces a 600 ms cold
+  route and decodes real body/header pixels; the fixed worktree held dark over
+  11 sampled frames, while `eval:r3f` remained 100/100. Incident `0003` records
+  the five-whys, control, and falsified hydration/reload/network hypotheses.

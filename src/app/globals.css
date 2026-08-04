@@ -84,6 +84,11 @@
 }
 
 :root {
+  /* Fixed public exhibition surfaces are outside the app appearance canvas.
+     These explicit grounds stay stable while Auto may resolve Air underneath. */
+  --exa-public-exhibition-canvas: #08090a;
+  --exa-public-exhibition-chrome: #0d0d0d;
+  --exa-public-exhibition-footer: #0a0a0c;
   --background: #ffffff;
   --foreground: #0a0a0a;
   --card: #ffffff;
@@ -225,6 +230,49 @@
 body {
   background: var(--background);
   color: var(--foreground);
+}
+
+/* The marketing home and public architecture map are authored against a dark
+   exhibition ground. Own their shared chrome here instead of injecting route-
+   local styles: both pathname states resolve to the same presentation during
+   client navigation, so React never exposes the active app theme between
+   unmounting one page and mounting the next. */
+[data-public-dark-chrome='true'] {
+  --exa-interface-font:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+#site-header[data-public-dark-chrome='true'] {
+  background: var(--exa-public-exhibition-chrome) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: white !important;
+  --exa-material-role-filter: none !important;
+}
+
+#site-header[data-public-dark-chrome='true'] button,
+#site-header[data-public-dark-chrome='true'] a {
+  color: white !important;
+}
+
+#site-header[data-public-dark-chrome='true'] .bg-muted {
+  background: rgba(255, 255, 255, 0.15) !important;
+}
+
+#site-footer[data-public-dark-chrome='true'] {
+  background: var(--exa-public-exhibition-footer);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+#site-footer[data-public-dark-chrome='true'] a {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+#site-footer[data-public-dark-chrome='true'] a:hover {
+  color: white;
 }
 
 /* Shared material projection. Themes own tint/opacity/blur/saturation plus an

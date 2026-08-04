@@ -674,9 +674,6 @@ async function runTask(browser, task) {
       await interactionPage.mouse.up();
       const releaseRequestedUrl = interactionPage.url();
       const releaseRequestedState = await interactionPage.evaluate(() => {
-        const curtain = document.querySelector(
-          '[data-architecture-transition-curtain="exit"]'
-        );
         return {
           position: window.__EVAL_SCENE__?.getObjectByName(
             'keyswitch-cap-smoke-low'
@@ -684,9 +681,9 @@ async function runTask(browser, task) {
           navigation: document
             .querySelector('[data-home-architecture-keyswitch]')
             ?.getAttribute('data-navigation-state'),
-          curtainOpacity: curtain
-            ? Number(getComputedStyle(curtain).opacity)
-            : 0,
+          transitionCurtainCount: document.querySelectorAll(
+            '[data-architecture-transition-curtain]'
+          ).length,
         };
       });
       await interactionPage.waitForFunction(
@@ -697,58 +694,11 @@ async function runTask(browser, task) {
       const navigationBoundary = await interactionPage.evaluate(
         () => window.__EVAL_NAV_BOUNDARY__
       );
-      await interactionPage.waitForFunction(
-        () => {
-          const curtain = document.querySelector(
-            '[data-architecture-transition-curtain="exit"]'
-          );
-          return !!curtain && Number(getComputedStyle(curtain).opacity) > 0.8;
-        },
-        undefined,
-        { timeout: 2_000 }
-      );
-      const outgoingCurtain = await interactionPage.evaluate(() => {
-        const curtain = document.querySelector(
-          '[data-architecture-transition-curtain="exit"]'
-        );
-        return {
-          state: curtain?.getAttribute('data-state'),
-          opacity: curtain ? Number(getComputedStyle(curtain).opacity) : 0,
-        };
-      });
       await interactionPage.waitForURL('**/architecture', { timeout: 5_000 });
       const navigatedUrl = interactionPage.url();
-      await interactionPage.waitForSelector(
-        '[data-architecture-transition-curtain="entry"]',
-        { timeout: 2_000 }
-      );
-      const incomingCurtain = await interactionPage.evaluate(() => {
-        const curtain = document.querySelector(
-          '[data-architecture-transition-curtain="entry"]'
-        );
-        return {
-          state: curtain?.getAttribute('data-state'),
-          opacity: curtain ? Number(getComputedStyle(curtain).opacity) : 0,
-        };
-      });
-      await interactionPage.waitForFunction(
-        () => {
-          const curtain = document.querySelector(
-            '[data-architecture-transition-curtain="entry"]'
-          );
-          return !!curtain && Number(getComputedStyle(curtain).opacity) < 0.05;
-        },
-        undefined,
-        { timeout: 2_000 }
-      );
-      const incomingCurtainSettledOpacity = await interactionPage.evaluate(
-        () => {
-          const curtain = document.querySelector(
-            '[data-architecture-transition-curtain="entry"]'
-          );
-          return curtain ? Number(getComputedStyle(curtain).opacity) : 1;
-        }
-      );
+      const transitionCurtainCount = await interactionPage
+        .locator('[data-architecture-transition-curtain]')
+        .count();
       await interactionPage.close();
 
       const homePage = page;
@@ -1019,11 +969,8 @@ async function runTask(browser, task) {
         ['releasing', 'navigating'].includes(
           releaseRequestedState.navigation
         ) &&
-        releaseRequestedState.curtainOpacity < 0.25 &&
-        outgoingCurtain.state === 'covering' &&
-        outgoingCurtain.opacity > 0.8 &&
-        incomingCurtain.opacity > 0.35 &&
-        incomingCurtainSettledOpacity < 0.05 &&
+        releaseRequestedState.transitionCurtainCount === 0 &&
+        transitionCurtainCount === 0 &&
         Math.abs(navigationBoundary.position) < 0.008 &&
         navigationBoundary.delayMs > 0 &&
         navigatedUrl.endsWith('/architecture') &&
@@ -1052,9 +999,7 @@ async function runTask(browser, task) {
           longHeldState,
           releaseRequestedUrl,
           releaseRequestedState,
-          outgoingCurtain,
-          incomingCurtain,
-          incomingCurtainSettledOpacity,
+          transitionCurtainCount,
           navigationBoundary,
           navigatedUrl,
         })}`

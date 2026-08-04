@@ -154,3 +154,22 @@ its deterministic server default over that frame. The document root paints the
 resolved ground, and the public marketing home pins one system font rather than
 following app typography. Theme selection remains app-global and is available
 from Settings, **Change theme…**, and the avatar dropdown.
+
+## Amendment — client-navigation paint continuity
+
+ENG-032 T5.2 corrects the rollout's too-narrow definition of first-paint
+continuity. The invariant covers the complete renderer lifecycle: bootstrap,
+hydration, theme change, pending navigation, route commit, and shared-chrome
+handoff. A theme's foundation canvas is not a generic transition color when a
+surface authors a different ground, and using it for a full-viewport fade does
+not give themes motion ownership.
+
+The public marketing home and public Architecture map are fixed-dark exhibition
+surfaces rather than app-theme canvases. Their shared header/footer and
+Architecture pending floor therefore use one route-stable opaque dark owner;
+the active app appearance remains unchanged underneath and resumes on app
+surfaces. The redundant homepage exit and Architecture entry curtains are
+retired. Future full-screen route covers default to disallowed unless one owner
+spans the handoff, the ground is explicitly compatible with both surfaces, and
+real browser pixels pass under Auto light and dark. Incident `0003` records the
+production evidence and five-whys.

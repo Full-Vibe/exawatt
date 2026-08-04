@@ -37,7 +37,7 @@ import {
 } from 'lucide-react';
 import { signOut } from '@/app/actions/projects';
 import { ALTITUDE_ICONS, CommandAltitudeNav } from './command-altitude-nav';
-import { APP_SURFACES, isAppRoute } from './surfaces';
+import { APP_SURFACES, isAppRoute, usesDarkPublicChrome } from './surfaces';
 import {
   AMBIENT_CHROME_METER_ENABLED,
   AmbientChromeMeter,
@@ -220,6 +220,7 @@ export function SiteHeaderNav({
   const pathname = usePathname();
   const isHome = pathname === '/';
   const isArchitecture = pathname?.startsWith('/architecture');
+  const darkPublicChrome = usesDarkPublicChrome(pathname ?? '');
   const isLeaderboard =
     pathname?.startsWith('/leaderboard') ||
     pathname?.startsWith('/operator/') ||
@@ -236,6 +237,7 @@ export function SiteHeaderNav({
   return (
     <header
       id="site-header"
+      data-public-dark-chrome={darkPublicChrome ? 'true' : undefined}
       className="exa-material-chrome sticky top-0 z-40 flex h-12 items-center justify-between border-b px-4 md:px-6"
       // desktop app: hiddenInset title bar — clear the macOS traffic lights
       // and let the header double as the window drag strip

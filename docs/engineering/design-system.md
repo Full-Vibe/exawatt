@@ -254,7 +254,33 @@ This system is agentically malleable the same way decision records are. A UI cha
 
 Never fork a parallel convention (a new fractional type scale, a fifth palette, a second button recipe) without recording it here — the consumption fractional scale and the 17→23 size drift are the cautionary precedents.
 
+### Route paint continuity
+
+Flash-free paint is a renderer-lifecycle invariant, not only a startup rule.
+Client navigation between surfaces must not expose the root default, an
+unrelated theme ground, or route-local shared-chrome styles between unmount and
+mount. Shared chrome belongs to a route-stable owner; a fixed-ground public
+surface owns an explicit opaque loading fallback. Themes never acquire motion
+or transition ownership by being used as a full-viewport decorative cover.
+
+The default cross-route treatment is no full-screen transition. A future cover
+requires one owner across the complete handoff, a ground explicitly compatible
+with both surfaces, reduced-motion behavior, and browser-pixel evidence under
+Auto light and dark. Initial-load screenshots and final-state DOM assertions do
+not satisfy this gate; drive the real control and sample the pending/commit
+frames.
+
 ### Amendment log
+
+- 2026-08-03 — ENG-032 T5.2 navigation-paint incident closure: retired the
+  two-owner homepage → Architecture exit/entry curtain after production pixel
+  evidence proved it painted Air's near-white canvas over two dark public
+  surfaces. The physical Command-key release survives and navigates directly;
+  Architecture gains a dark pending floor; and Home/Architecture share one
+  route-stable opaque public-chrome owner instead of page-injected CSS. The new
+  `eval:navigation-paint` gate samples actual body/header pixels through a
+  forced-cold client navigation. Incident `0003` carries the five-whys and
+  falsified hypotheses.
 
 - 2026-08-03 — ENG-032 post-rollout hardening: the first-paint bootstrap remains
   authoritative until React adopts its saved/OS snapshot; the public home pins

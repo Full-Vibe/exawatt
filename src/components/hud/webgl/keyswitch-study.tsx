@@ -20,11 +20,6 @@ import {
   useCursor,
 } from '@react-three/drei';
 import * as THREE from 'three';
-import {
-  ARCHITECTURE_EXIT_DURATION_MS,
-  ARCHITECTURE_EXIT_HOLD_MS,
-  ArchitectureExitCurtain,
-} from '@/components/nav/architecture-transition';
 import { STATUS_LIGHT_META } from '@/components/status-light/protocol';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import {
@@ -1518,10 +1513,8 @@ export function CommandKeySwitchButton({
   interactive?: boolean;
 }) {
   const router = useRouter();
-  const reducedMotion = usePrefersReducedMotion();
   const [pressed, setPressed] = useState(false);
   const [awaitingRelease, setAwaitingRelease] = useState(false);
-  const [curtainActive, setCurtainActive] = useState(false);
   const [navigationState, setNavigationState] = useState<
     'idle' | 'releasing' | 'navigating'
   >('idle');
@@ -1533,18 +1526,8 @@ export function CommandKeySwitchButton({
   const pointerReleaseInside = useRef(true);
   const keyboardPressed = useRef(false);
   const keyboardNavigationPending = useRef(false);
-  const navigationTimer = useRef<number | null>(null);
   const navigationInteractive = interactive && navigationState === 'idle';
   const playSound = useKeySwitchAudio(true);
-
-  useEffect(
-    () => () => {
-      if (navigationTimer.current !== null) {
-        window.clearTimeout(navigationTimer.current);
-      }
-    },
-    []
-  );
 
   const setPhysicalPressed = useCallback(
     (nextPressed: boolean) => {
@@ -1615,15 +1598,9 @@ export function CommandKeySwitchButton({
       root.current?.setAttribute('data-navigation-state', 'navigating');
       setNavigationState('navigating');
       setAwaitingRelease(false);
-      setCurtainActive(true);
-      navigationTimer.current = window.setTimeout(
-        () => router.push('/architecture'),
-        reducedMotion
-          ? 0
-          : ARCHITECTURE_EXIT_DURATION_MS + ARCHITECTURE_EXIT_HOLD_MS
-      );
+      router.push('/architecture');
     },
-    [reducedMotion, router]
+    [router]
   );
 
   return (
@@ -1760,10 +1737,6 @@ export function CommandKeySwitchButton({
       >
         <span className="sr-only">Command</span>
       </button>
-      <ArchitectureExitCurtain
-        active={curtainActive}
-        reducedMotion={reducedMotion}
-      />
     </div>
   );
 }

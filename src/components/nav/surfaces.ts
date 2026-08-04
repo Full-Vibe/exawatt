@@ -268,3 +268,10 @@ export function isMarketingRoute(pathname: string): boolean {
     p => pathname === p || pathname.startsWith(`${p}/`)
   );
 }
+
+/** Public exhibition surfaces with an authored dark ground. Their shared
+ * chrome follows the surface rather than the app appearance so navigation
+ * between them never exposes a mismatched light frame. */
+export function usesDarkPublicChrome(pathname: string): boolean {
+  return pathname === '/' || pathname.startsWith('/architecture');
+}
