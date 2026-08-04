@@ -118,11 +118,34 @@ export const CLAUDE_MODEL_CATALOG: AgentModelCatalog = {
   selectionAction: null,
 };
 
+export const OPENCODE_MODEL_CATALOG: AgentModelCatalog = {
+  ...CODEX_MODEL_CATALOG,
+  harness: 'opencode',
+  effectiveModel: 'openrouter/moonshotai/kimi-k3',
+  effectiveModelLabel: 'Kimi K3',
+  models: [
+    {
+      id: 'openrouter/moonshotai/kimi-k3',
+      label: 'Kimi K3',
+      description: 'OpenRouter coding model.',
+      defaultEffort: 'high',
+      efforts: TEST_EFFORTS,
+    },
+  ],
+  catalogProvenance: 'Installed OpenCode CLI',
+};
+
 export function installComposerTestHarness() {
   const recordAgentSourceUse = vi.fn();
   const setAgentPermissionMode = vi.fn();
 
   beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+    global.ResizeObserver = class ResizeObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
     recordAgentSourceUse.mockReset().mockResolvedValue({});
     setAgentPermissionMode.mockReset().mockResolvedValue({});
     window.electron = {
@@ -137,7 +160,11 @@ export function installComposerTestHarness() {
       },
       pty: {
         listAgentModels: vi.fn(async harness =>
-          harness === 'codex' ? CODEX_MODEL_CATALOG : CLAUDE_MODEL_CATALOG
+          harness === 'codex'
+            ? CODEX_MODEL_CATALOG
+            : harness === 'opencode'
+              ? OPENCODE_MODEL_CATALOG
+              : CLAUDE_MODEL_CATALOG
         ),
         listRecentConversations: vi.fn().mockResolvedValue([]),
       },

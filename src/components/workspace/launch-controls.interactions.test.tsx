@@ -122,19 +122,22 @@ describe('Agent composer · interactions and drafts', () => {
       'No Claude Code, Codex, or OpenCode conversations found for this Project.'
     );
     const task = screen.getByLabelText('Initial task for the new Agent');
+    const selected = (name: RegExp) =>
+      expect(screen.getByRole('radio', { name })).toHaveAttribute(
+        'aria-checked',
+        'true'
+      );
 
     fireEvent.keyDown(task, { key: 'ArrowDown', altKey: true });
-    expect(screen.getByLabelText('Agent Source')).toHaveTextContent('Codex');
+    selected(/Codex/);
     fireEvent.keyDown(task, { key: 'ArrowDown', altKey: true });
-    expect(screen.getByLabelText('Agent Source')).toHaveTextContent('OpenCode');
+    selected(/OpenCode/);
     fireEvent.keyDown(task, { key: 'ArrowDown', altKey: true });
-    expect(screen.getByLabelText('Agent Source')).toHaveTextContent(
-      'Claude Code'
-    );
+    selected(/Claude Code/);
     fireEvent.keyDown(task, { key: 'ArrowUp', altKey: true });
-    expect(screen.getByLabelText('Agent Source')).toHaveTextContent('OpenCode');
+    selected(/OpenCode/);
     fireEvent.keyDown(task, { key: 'ArrowUp', altKey: true });
-    expect(screen.getByLabelText('Agent Source')).toHaveTextContent('Codex');
+    selected(/Codex/);
     await waitFor(() =>
       expect(screen.getByLabelText('Agent model')).toHaveTextContent(
         'GPT-5.6-Sol'
@@ -144,7 +147,7 @@ describe('Agent composer · interactions and drafts', () => {
     // with text present, arrows are caret keys — the source stays put
     fireEvent.change(task, { target: { value: 'Fix the intake flow' } });
     fireEvent.keyDown(task, { key: 'ArrowDown' });
-    expect(screen.getByLabelText('Agent Source')).toHaveTextContent('Codex');
+    selected(/Codex/);
   });
 
   it('does not launch when Enter is confirming IME composition', async () => {
@@ -220,12 +223,12 @@ describe('Agent composer · interactions and drafts', () => {
     fireEvent.change(task, { target: { value: '' } });
     fireEvent.keyDown(task, { key: 'ArrowUp', altKey: true });
     fireEvent.keyDown(task, { key: 'ArrowUp', altKey: true });
-    expect(onDraftChange).toHaveBeenCalledWith(
-      expect.objectContaining({ draftSource: expect.any(String) })
-    );
     await waitFor(() =>
-      expect(screen.getByLabelText('Agent model')).toHaveTextContent(
-        'GPT-5.6-Sol'
+      expect(onDraftChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          draftSource: 'codex',
+          draftModel: 'gpt-5.6-sol',
+        })
       )
     );
     await screen.findByText(
@@ -281,6 +284,7 @@ describe('Agent composer · interactions and drafts', () => {
       expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
     );
 
+    fireEvent.click(screen.getByRole('button', { name: 'Customize' }));
     fireEvent.click(
       screen.getByRole('button', { name: 'Agent launch options' })
     );
@@ -305,5 +309,4 @@ describe('Agent composer · interactions and drafts', () => {
       draftTouched: true,
     });
   });
-
 });

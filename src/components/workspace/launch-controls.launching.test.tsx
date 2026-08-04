@@ -85,9 +85,8 @@ describe('Agent composer · launching', () => {
     fireEvent.change(screen.getByLabelText('Initial task for the new Agent'), {
       target: { value: 'Do not send this to a shell' },
     });
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Open shell in Project' })
-    );
+    fireEvent.click(screen.getByRole('radio', { name: 'Shell in Project' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open shell' }));
     await waitFor(() =>
       expect(onLaunch).toHaveBeenCalledWith({
         harness: 'shell',
@@ -349,5 +348,4 @@ describe('Agent composer · launching', () => {
     expect(screen.getByLabelText('Agent permissions')).toHaveTextContent('Ask');
     expect(onLaunch).not.toHaveBeenCalled();
   });
-
 });

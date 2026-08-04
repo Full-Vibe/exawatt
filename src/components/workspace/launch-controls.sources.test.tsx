@@ -157,6 +157,7 @@ describe('Agent composer · sources and policy', () => {
       />
     );
 
+    fireEvent.click(screen.getByRole('button', { name: 'Customize' }));
     const modelAction = await screen.findByRole('button', {
       name: 'Agent model: Account default. Choose in Claude Code',
     });
@@ -283,5 +284,4 @@ describe('Agent composer · sources and policy', () => {
       ).toHaveFocus()
     );
   });
-
 });
