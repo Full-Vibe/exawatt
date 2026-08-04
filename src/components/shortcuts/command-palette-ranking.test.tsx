@@ -219,6 +219,24 @@ describe('⌘K ranking (ENG-016)', () => {
     expect(visibleRows()[0].textContent).toContain('Go to Coordination');
   });
 
+  it('ranks the public Leaderboard destination first by its own name', async () => {
+    // Leaderboard is a marketing route that joins ⌘K through the manifest's
+    // commandPalette eligibility (ENG-035); ranking must treat it exactly
+    // like an app surface.
+    renderPalette();
+    await typeQuery('leaderboard');
+
+    const rows = visibleRows();
+    expect(rows[0].textContent).toContain('Go to Leaderboard');
+    await waitFor(() =>
+      expect(rows[0].getAttribute('aria-selected')).toBe('true')
+    );
+    fireEvent.keyDown(paletteInput(), { key: 'Enter' });
+    await waitFor(() =>
+      expect(navigateCommandSurface).toHaveBeenCalledWith('/leaderboard')
+    );
+  });
+
   it('ranks a Session first for a partial session-name query', async () => {
     renderPalette();
     await typeQuery('promet');
