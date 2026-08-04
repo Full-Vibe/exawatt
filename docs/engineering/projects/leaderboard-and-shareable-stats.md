@@ -421,6 +421,23 @@ Exit criteria:
 | Electron        | own-worktree dev server plus identity-checked local snapshot → consent → sync and `⌘K` → Leaderboard evals |
 | Delivery        | `agent:land` with all relevant verifies and `--dogfood`; signed-out production URL check after deployment |
 
+## Findings log
+
+- 2026-08-04 (operator quick capture `26d8caed`, FIX-003, queued): the
+  `/leaderboard` axis copy is unintelligible to a visitor — and to the
+  operator. "Command: 51h" reads as nonsense (Command as a duration label),
+  "Endurance" and "Fleet" are unexplained jargon. Direction from the capture:
+  self-explanatory labels — "Peak fleet size" instead of "Fleet",
+  "Tokens used" instead of "Tokens" — and every axis must make sense to
+  someone who has never seen Exawatt. One semantics change rides along: the
+  fleet-size axis should count subagents, not just top-level Agents; ENG-023's
+  delegation tree is the truth source, and the A1 measurement contract needs a
+  deliberate amendment (it changes public numbers, so it cannot slip in as a
+  copy fix). The capture also asked for a retro: this copy shipped through the
+  A4 gallery study without tripping any gate, which is exactly the failure
+  ENG-036's production-voice authority exists to catch — extend its copy gate
+  to public web surfaces, not just the app.
+
 ## Roadmap milestone log
 
 ### 2026-08-03 — A0 design pass

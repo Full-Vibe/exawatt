@@ -730,6 +730,24 @@ no packet privately extends the contract to solve a local color.
 - pixel-identical native material on macOS, Windows, Linux, and hosted web;
 - account sync or a Supabase appearance schema.
 
+## Findings log
+
+- 2026-08-04 (partner conversation `2026-08-04-kevin-ridsdale`, FIX-004,
+  queued): **CRT theme preset.** Operator committed in-call ("this transcript
+  will be canon — let's make a CRT theme") after Kevin noted the product's
+  palette lineage traces to CRT terminals. A fourth first-party preset through
+  the landed T0–T5 pipeline: phosphor-dark color and typography via the same
+  data-only schema, decision `0026` gates unchanged. Kevin's explicit
+  constraint, adopted as the design boundary: no pixel-shader distortion,
+  scanline, or color-fringing effects — "that stuff is played out." Convenient
+  corollary: the theme contract already forbids arbitrary shaders/CSS, so the
+  honest version is the only expressible one.
+- 2026-08-04 (operator quick capture `95019e25`, BUG-005, queued): the
+  downloaded .app showed the wrong icon — the geometric mark is not applied
+  consistently across every icon surface (app bundle, dock, DMG/installer,
+  tray, web favicon). Audit the packaging configs (`electron-builder*.yml`)
+  and asset set; visual identity claims one mark everywhere.
+
 ## Roadmap milestone log
 
 - 2026-08-03, discovery pass 1: audited the current DOM/CSS, xterm, Electron,

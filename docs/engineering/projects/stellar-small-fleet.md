@@ -640,6 +640,39 @@ Implementation record (landed 2026-07-10):
   compile and production Next build pass; both navigation evaluators pass; the
   full Spatial desktop/mobile/reduced-motion/low-power battery remains green.
 
+## Findings log
+
+- 2026-08-04 (operator quick capture, triaged from `product_feedback`):
+  - **Team arrow keys should move spatially (`d74f5009`, FIX-002, queued).** In
+    the Team altitude (`/workspace?view=sessions`), Up/Down currently step
+    next/previous through the flat session order. The operator wants spatial
+    movement: Up/Down moves between grid rows, Left/Right within a row —
+    matching what the 2-D tile layout visually promises.
+  - **Agent worked-for and idle-for durations (`ffa2db86`, idea, evidence for
+    S1.1/S4 — not yet queued).** The operator wants a first-party, subtle
+    per-session readout of how long the agent's last turn ran (harnesses
+    already surface it, e.g. Claude Code's "✻ Cogitated for 38m 47s") plus how
+    long the session has been idle since, with the exact timestamp on hover.
+    Hard constraint from the capture: only show it if the value is trustworthy
+    — S1.1's reported turn boundaries are the honest source, and inferred
+    turns must not masquerade as measured durations. Keep copy minimal; this
+    surface is already fighting text overload.
+
+- 2026-08-04 (partner conversation `2026-08-04-kevin-ridsdale`):
+  - **Bell icons and sound alerts fail as attention signals (evidence for
+    S1).** Kevin has built both a bell-icon tab badge and audio alerts in his
+    own tooling and reports "neither of them really work"; he recommends a
+    solid whole-tab color change instead. Independent corroboration that S1's
+    badge/sound channel may undershoot — worth a deliberate look at
+    higher-contrast tab-level color as the primary needs-you signal.
+  - **Evaluate Nano Banana for goal visuals (FIX-005, queued, S4.1).** Kevin
+    flagged a new hyper-fast Nano Banana variant as likely faster/cheaper and
+    higher quality than the current server-side `fal-ai/fast-sdxl` prototype
+    behind S4.1's tile backdrops. Bounded evaluation: quality at the chosen
+    visual language, latency vs the ~200ms budget, cost, and whether the
+    private goal-to-scene derivation boundary (FAL never sees goal text)
+    survives the provider swap.
+
 ## Progress log
 
 S5 Durable Projects (P1–P5 landed 2026-07-10):

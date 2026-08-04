@@ -166,6 +166,27 @@ does not carry the source instruction sequence. A sanitized executable case
 must reconstruct that sequence from the attributed durable Session before it is
 added; this drain records the evidence and does not invent missing inputs.
 
+### Intake evidence — 2026-08-04
+
+Feedback row `30d6ab23-d5c5-4ac2-b16f-a0a6b6301b33` is a label correction on
+the `exawatt` Project: the Session showed **VSCode-like UI theming system for
+exawatt** and the operator replaced it with **VSCode-like UI theming system**.
+The signal is narrow and clean: the label restated the Project name, which the
+tab strip already displays as enclosing context — labels must not repeat
+identity the surrounding surface carries. This is a new correction class
+(redundant-context suffix) distinct from the 2026-08-03 altitude corrections.
+Gold-corpus candidate on the same terms as prior rows: the instruction
+sequence must be reconstructed from the durable Session before an executable
+case is added.
+
+Corroborating external evidence (partner conversation
+`2026-08-04-kevin-ridsdale`): Kevin independently hits the same failure class
+in his commit-message-writing skill — summaries drift to describe the last
+small tweak instead of the encompassing intent ("implement giant feature and
+add unit test" territory). Both parties read it as an ergonomic-writing gap in
+current models rather than a prompting bug, which supports E1's bet on a
+correction loop plus gold corpus over prompt tuning alone.
+
 ### 2026-08-02 — E1.2 executable gold-corpus gate
 
 The corpus had become durable evidence but still depended on a reviewer to
