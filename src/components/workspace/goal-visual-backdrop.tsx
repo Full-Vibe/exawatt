@@ -90,7 +90,7 @@ export function GoalVisualBackdrop({
   const dataUrl =
     visual?.state === 'ready' ? rasterDataUrl(visual.dataUrl) : null;
   const positionHash = goalVisualHash(identity);
-  const position = `${38 + (positionHash % 25)}% ${38 + ((positionHash >>> 9) % 25)}%`;
+  const position = `${46 + (positionHash % 9)}% ${46 + ((positionHash >>> 9) % 9)}%`;
 
   return (
     <span

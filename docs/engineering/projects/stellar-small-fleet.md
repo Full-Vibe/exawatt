@@ -153,10 +153,11 @@ changes the image. Similar-but-not-identical variants remain an optional later
 experiment.
 
 **Visual contract.** The image fills the existing 300×272 Team tile behind its
-content and consumes no new layout space. Start with subdued abstract scenes:
-one memorable silhouette or spatial composition, muted low-frequency detail,
-and no people, faces, text, logos, UI, or literal code imagery. A controlled
-scrim protects the header and goal / Now / Next / Consumption hierarchy.
+content and consumes no new layout space. Use subdued natural environments:
+one memorable organic silhouette, medium tonal separation, restrained color,
+low-frequency detail, and no people, faces, text, logos, UI, architecture, or
+literal code imagery. A localized scrim protects the left identity column and
+lower goal / Now / Next / Consumption hierarchy without erasing the scene.
 Project color may tint identity but never becomes status; D40 lights remain
 the strongest peripheral signal. High-contrast and reduced-transparency modes
 may suppress the image. Reduced motion hard-cuts; otherwise a completed asset
@@ -173,11 +174,13 @@ truth or deleting cached assets.
 provider because iteration is fast; it is not the product boundary or a
 durable vendor commitment. The FAL credential is a server-only secret and
 must never enter renderer code, Electron main, a packaged application, logs,
-or committed env. The authenticated Exawatt server sends only the accepted
+or committed env. The authenticated Exawatt server accepts only the durable
 label plus a non-sensitive identity key — never raw instructions or terminal
-output — prevents FAL request-payload retention, enables the safety checker,
-and downloads an accepted result immediately into Exawatt-controlled private
-storage. The product must not depend on FAL's public output URL or retention.
+output — and derives a generic natural-scene recipe and seed. Only that recipe
+reaches FAL; the label and Project identity do not. The route prevents FAL
+request-payload retention, enables the safety checker, and downloads an
+accepted result immediately into Exawatt-controlled private storage. The
+product must not depend on FAL's public output URL or retention.
 Provider failure, sign-out, offline use, quota exhaustion, or safety rejection
 leaves a deterministic Project-tinted fallback; generation never blocks Team.
 
@@ -246,6 +249,18 @@ it redirected Electron's valid POST to `/sign-in` and the preserved POST
 returned `405`. The route now bypasses cookie middleware and continues to own
 bearer validation, matching `/api/context-labels`; the proxy test names the
 endpoint so this cross-layer failure cannot silently return.
+
+The first live generated set was rejected by the operator the same day. The
+literal `software agent work-world` prompt plus accepted goal text repeatedly
+produced washed-out pseudo-interfaces, windows, and grids; the global 70–90%
+scrim reduced the raster to a few percent of its original contrast while the
+Project-tinted fallback remained underneath. Generation v2 invalidates the v1
+cache and converts the private goal identity into a deterministic natural
+scene family, palette, atmosphere, composition, and seed without sending the
+goal text to FAL. Ready rasters now replace rather than stack with the fallback,
+use theme-specific restrained filters, and retain localized HUD-panel scrims
+over the text-heavy regions. The design-system HUD ground, Project-identity
+channel, accessibility suppression, and 260ms house easing remain unchanged.
 
 ### S5 Durable Projects
 

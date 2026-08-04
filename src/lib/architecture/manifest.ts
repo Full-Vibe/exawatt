@@ -893,7 +893,7 @@ export const architectureManifest = {
     'Independent attention sources compose semantically: human gates outrank quiet results, and one merged projection drives markers, availability, and navigation.',
     'Attention records what the operator has not yet seen; the status light records what is currently true. Focusing a Session changes the first and never the second.',
     'Session context labels follow submitted operator intent, never PTY output volume; one hosted inference path improves a durable last-good label while failures retain it.',
-    'Goal visuals are quiet projections of accepted Session context: semantic pivots own revision cadence, server-only generation owns provider credentials, Demo/Live share deterministic fallback behavior, and one app-global device preference gates Electron and hosted renderers.',
+    'Goal visuals are quiet projections of accepted Session context: semantic pivots own revision cadence, a private identity derives the provider-facing natural scene without transmitting goal text, Demo/Live share deterministic fallback behavior, and one app-global device preference gates Electron and hosted renderers.',
     'Product feedback is explicit authenticated evidence with row ownership and private attachments; inference evidence is not persisted as feedback automatically.',
     'Public operator statistics are an opt-in aggregate projection over local Session and Consumption facts: preview stays local, uploads are allowlisted, and disabling public visibility leaves local history untouched.',
     'Session-continuity diagnostics are local, explainable projections over evidence; hosted systems may aggregate them but never replace their semantics with an opaque health score.',

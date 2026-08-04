@@ -174,13 +174,15 @@ fallback, while Demo supplies the same contract without network I/O.
 
 Live generation crosses an authenticated hosted boundary with only the
 accepted label and a one-way Project identity. The FAL prototype credential
-stays server-side. The hosted route derives a deterministic identity and seed,
-checks per-user quota and a private Supabase cache, disables provider payload
-retention, safety-checks the request, downloads a bounded result from a trusted
-provider host, and immediately stores it privately. Electron and renderer
-receive no raw instruction, terminal output, local path, Project name,
-provider URL, or provider credential. Failure, offline use, quota, or safety
-rejection remains a complete deterministic Team tile.
+stays server-side. The hosted route derives a deterministic identity, seed,
+natural scene family, palette, atmosphere, and composition; only that generic
+recipe and seed reach FAL, never the accepted label. The route checks per-user
+quota and a private Supabase cache, disables provider payload retention,
+safety-checks the request, downloads a bounded result from a trusted provider
+host, and immediately stores it privately. Electron and renderer receive no
+raw instruction, terminal output, local path, Project name, provider URL, or
+provider credential. Failure, offline use, quota, or safety rejection remains
+a complete deterministic Team tile.
 
 #### Public operator statistics projection
 
