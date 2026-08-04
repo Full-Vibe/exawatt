@@ -3,6 +3,12 @@
 Date: 2026-07-24
 Status: accepted
 
+Amended 2026-08-03 by decision `0031`, pending ENG-030 OS1: the bounded
+evidence, structured-result, stale-response, and durable-last-good contracts
+survive, but one proprietary Exawatt-hosted endpoint is no longer the target
+architecture. The open client moves to local/source-owned or explicitly
+configured inference and removes the baked hosted default before OSS release.
+
 ## Context
 
 The first Session subtitle implementation periodically sent terminal

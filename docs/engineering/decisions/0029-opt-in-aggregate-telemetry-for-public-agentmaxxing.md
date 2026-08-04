@@ -4,6 +4,12 @@
 Date: 2026-08-03
 Status: accepted
 
+Amended 2026-08-03 by decision `0031`: this decision continues to govern the
+explicit publication of public Operator identity and Run aggregates. Its
+rejection of default-on analytics no longer applies to the separate,
+content-excluding PostHog product-analytics stream accepted for production and OSS
+builds.
+
 ## Context
 
 Exawatt has never uploaded general product telemetry. ENG-008 reads Claude Code
@@ -107,8 +113,10 @@ replace it without rewriting measurement semantics.
 
 ## Alternatives considered
 
-- **Default-on anonymized analytics.** Rejected: it does not produce the public
-  identity the user wants and violates the product's trust posture.
+- **Default-on anonymized analytics as the mechanism for public profiles.**
+  Rejected: it does not produce the public identity the user wants. Decision
+  `0031` later accepts a separately allowlisted, configurable PostHog stream for
+  ordinary product analytics; public profile publication remains opt-in.
 - **Raw transcripts with server-side aggregation.** Rejected: needless content
   exposure and lock-in; all required measurements can be derived locally.
 - **GitHub as the permanent profile schema.** Rejected: the operator class will
@@ -117,4 +125,3 @@ replace it without rewriting measurement semantics.
   understand and test. One exact boundary and one master switch are safer.
 - **Tamper-proof attestation before launch.** Rejected: high cost before a real
   adversary exists, and most harness facts are not cryptographically signed.
-
