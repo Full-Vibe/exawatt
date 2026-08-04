@@ -17,13 +17,9 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
       id: 'vitest-related',
       command: 'pnpm',
       args: [
-        'exec',
-        'vitest',
-        'related',
+        'run',
+        'test:related',
         ...related,
-        '--run',
-        '--maxWorkers=25%',
-        '--passWithNoTests',
       ],
     });
   }

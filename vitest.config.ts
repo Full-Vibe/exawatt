@@ -1,37 +1,14 @@
-import react from '@vitejs/plugin-react';
-import path from 'path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
-  plugins: [react()],
   test: {
-    // shared per-project defaults — no root-level include: tests run ONLY
-    // through projects, and each project's include governs its scope
-    // (extends CONCATENATES arrays, so a root include would leak into every
-    // project and double-run or over-collect)
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: ['./vitest.setup.ts'],
+    // Keep execution regimes explicit. Node-only tests avoid React transforms,
+    // jest-dom setup, and one jsdom instance per isolated test file.
     projects: [
-      './packages/*',
-      // the app itself: renderer (src) + electron main-process units — the
-      // packages glob alone silently skipped these
-      {
-        extends: true,
-        test: {
-          name: 'app',
-          include: [
-            'src/**/*.{test,spec}.{ts,tsx}',
-            'electron/**/*.{test,spec}.ts',
-          ],
-          exclude: ['**/node_modules/**'],
-        },
-      },
+      './packages/core/vitest.config.ts',
+      './packages/ui-model/vitest.config.ts',
+      './vitest.config.app-node.ts',
+      './vitest.config.app-dom.ts',
     ],
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
   },
 });

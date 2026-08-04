@@ -301,6 +301,27 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-08-04, unit-test throughput was separated into dedicated execution
+  regimes instead of one root-level jsdom project. Electron and pure TypeScript
+  app tests now run in Node; eight browser-contract `.ts` suites carry an
+  explicit `.dom.test.ts` name beside the React suites. Core and UI-model use
+  the threads pool, while only UI-model disables isolation: randomized-order
+  stress stayed green there, but the same experiment in core exposed leaked
+  module mocks and was rejected. The 1,389-line Agent composer suite was split
+  by launching, source/model policy, interaction/draft, and recent-conversation
+  behavior, cutting its measured local Vitest duration from 10.31s to 4.06s
+  under the same worker cap.
+
+  CI now uses both CPUs on the dedicated private runner instead of inheriting
+  the local fleet-safe 25% cap, and restores Node's compile cache. Local full,
+  changed, and related commands keep the composable cap and share that cache;
+  the H10 related-test floor calls the same cached command. `test:changed` is an
+  immediate dependency-graph feedback loop, not a claim that file-level
+  relatedness is the final architecture. ENG-039 records the larger accepted
+  direction: explicit source modules own their public contracts, runtime
+  boundaries, and layered suites, and verification eventually closes over the
+  module graph.
+
 - 2026-08-03, the contention-first H7–H10 implementation landed behind the
   existing `pnpm agent:land` entrypoint without a new public command or hosted
   dependency. Delivery state now lives under the common Git directory as

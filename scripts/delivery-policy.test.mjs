@@ -26,10 +26,16 @@ test('the cheap type floor cannot be weakened by the caller', () => {
 });
 
 test('provider composition changes receive related consumer tests', () => {
-  assert.deepEqual(ids(['src/components/ExposeOverlay.tsx']), [
+  const checks = classifyDeliveryPolicy(['src/components/ExposeOverlay.tsx']);
+  assert.deepEqual(checks.map(check => check.id), [
     'type-check',
     'test:agent-delivery',
     'vitest-related',
+  ]);
+  assert.deepEqual(checks.at(-1).args, [
+    'run',
+    'test:related',
+    'src/components/ExposeOverlay.tsx',
   ]);
 });
 
