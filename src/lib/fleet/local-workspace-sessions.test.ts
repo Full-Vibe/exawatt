@@ -24,6 +24,28 @@ const live = (over: Partial<PtySessionInfo> = {}): PtySessionInfo => ({
 });
 
 describe('mergeLocalWorkspaceSessions', () => {
+  it('preserves the terminal tabs reported activity and turn truth for Fleet', () => {
+    const [result] = mergeLocalWorkspaceSessions(
+      [
+        live({
+          working: false,
+          engaged: true,
+          delegation: {
+            ownTurn: 'available',
+            blockedOn: null,
+            children: [],
+          },
+        }),
+      ],
+      null
+    );
+    expect(result).toMatchObject({
+      working: false,
+      engaged: true,
+      delegation: { ownTurn: 'available', children: [] },
+    });
+  });
+
   it('keeps live PTYs and adds persisted tabs that have no process', () => {
     const result = mergeLocalWorkspaceSessions([live()], {
       v: 5,

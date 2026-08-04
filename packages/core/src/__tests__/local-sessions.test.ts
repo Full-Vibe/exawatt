@@ -47,6 +47,88 @@ describe('sessionStatus', () => {
     ).toBe('idle');
   });
 
+  it('lets reported Session truth outrank stale byte activity', () => {
+    expect(
+      sessionStatus(
+        {
+          exited: false,
+          exitCode: null,
+          harness: 'claude',
+          working: false,
+          engaged: true,
+        },
+        9_900,
+        10_000,
+        15_000
+      )
+    ).toBe('complete');
+    expect(
+      sessionStatus(
+        {
+          exited: false,
+          exitCode: null,
+          harness: 'claude',
+          working: true,
+          engaged: true,
+          attention: { kind: 'turn-end', since: 9_000 },
+        },
+        0,
+        50_000,
+        15_000
+      )
+    ).toBe('working');
+    expect(
+      sessionStatus(
+        {
+          exited: false,
+          exitCode: null,
+          harness: 'shell',
+          working: false,
+          engaged: true,
+        },
+        9_900,
+        10_000,
+        15_000
+      )
+    ).toBe('idle');
+  });
+
+  it('uses reported turn and operator-gate truth before source activity', () => {
+    const base = {
+      exited: false,
+      exitCode: null,
+      harness: 'claude',
+      working: false,
+      engaged: true,
+    };
+    expect(
+      sessionStatus(
+        {
+          ...base,
+          delegation: { ownTurn: 'generating', children: [] },
+        },
+        0,
+        50_000,
+        15_000
+      )
+    ).toBe('working');
+    expect(
+      sessionStatus(
+        {
+          ...base,
+          delegation: {
+            ownTurn: 'generating',
+            blockedOn: 'question',
+            children: [],
+          },
+        },
+        0,
+        50_000,
+        15_000
+      )
+    ).toBe('blocked');
+  });
+
   it('separates an explicit human gate from a quiet result boundary', () => {
     const attention = { kind: 'bell', since: 9_500 };
     expect(

@@ -10,14 +10,15 @@ import {
   type ReactNode,
 } from 'react';
 import Link from 'next/link';
-import type {
-  SpatialBoardLayout,
-  SpatialBoardLens,
-  SpatialBoardProjection,
-  SpatialBoardRect,
-  SpatialScopeActivity,
+import {
+  selectSpatialDirectionalAgentId,
+  type SpatialSelectionDirection,
+  type SpatialBoardLayout,
+  type SpatialBoardLens,
+  type SpatialBoardProjection,
+  type SpatialBoardRect,
+  type SpatialScopeActivity,
 } from '@exawatt/ui-model';
-import { exact, tokens } from '@/components/consumption/flux';
 import { AnnouncedChip } from '@/components/readiness';
 import { useAgentFieldGlide } from '@/components/hud/webgl/use-agent-field-glide';
 import {
@@ -28,10 +29,7 @@ import {
 import { RECENTER_SPATIAL_EVENT } from '@/components/nav/command-altitude-events';
 import { altitudeHandoffActive } from '@/components/nav/altitude-handoff';
 import { parseStoredViewport } from '../spatial-navigation-state';
-import {
-  STATUS_LIGHT_META,
-  statusLightStateForAgentStatus,
-} from '@/components/status-light/protocol';
+import { statusLightStateForAgentStatus } from '@/components/status-light/protocol';
 import { useAppearance } from '@/components/appearance/appearance-provider';
 import { mixHexColors } from '@/lib/appearance/color';
 import { resolvedAppearanceCssVariables } from '@/lib/appearance/dom-adapter';
@@ -227,28 +225,6 @@ function ScopeReadout({
           theme={theme}
         />
       </div>
-      {activity.burn && (
-        <div
-          data-board-scope-burn
-          className="flex items-baseline gap-1.5 text-chrome-micro"
-          title={`${exact(activity.burn.rawTokens)} raw tokens, session to date, across ${activity.burn.reportedCount} reporting ${activity.burn.reportedCount === 1 ? 'Agent' : 'Agents'}${activity.burn.unreportedCount > 0 ? ` · ${activity.burn.unreportedCount} unreported` : ''}`}
-        >
-          <span
-            className="font-mono tabular-nums"
-            style={{ color: theme.label }}
-          >
-            {tokens(activity.burn.rawTokens)}
-          </span>
-          {/* the figure states its basis and window like every consumption
-              readout: raw units, each Agent's session to date */}
-          <span style={{ color: theme.labelMuted }}>raw · session</span>
-          {activity.burn.unreportedCount > 0 && (
-            <span style={{ color: theme.consumption.unknown }}>
-              {activity.burn.unreportedCount} unreported
-            </span>
-          )}
-        </div>
-      )}
       {selection && (
         <AnnouncedChip
           coming={`direct all ${selectionCount} selected Agents at once`}
@@ -290,15 +266,16 @@ function BoardMiniMap({
         aria-hidden="true"
       >
         {layout.zones.map(zone => {
+          const minimapRadius = zone.minimapRect.width / 2;
           const urgent = zone.statusCounts.blocked + zone.statusCounts.error;
           const active =
             zone.statusCounts.working + zone.statusCounts.reviewing;
           return (
             <circle
               key={zone.id}
-              cx={zone.rect.x + zone.radius}
-              cy={zone.rect.y + zone.radius}
-              r={zone.radius}
+              cx={zone.minimapRect.x + minimapRadius}
+              cy={zone.minimapRect.y + minimapRadius}
+              r={minimapRadius}
               fill={
                 !zone.visible
                   ? theme.zone
@@ -336,77 +313,15 @@ function BoardMiniMap({
   );
 }
 
-export interface SpatialBoardHero {
-  agentId: string;
-  title: string;
-  reason: string;
-}
-
-function BoardStatusLegend({
-  layout,
-  theme,
-}: {
-  layout: SpatialBoardLayout;
-  theme: SpatialThemeSnapshot;
-}) {
-  const counts = layout.zones.reduce(
-    (result, zone) => {
-      result.active += zone.statusCounts.working + zone.statusCounts.reviewing;
-      result['needs-you'] += zone.statusCounts.blocked;
-      result.fault += zone.statusCounts.error;
-      result.result += zone.statusCounts.complete;
-      result.off += zone.statusCounts.idle;
-      return result;
-    },
-    { active: 0, 'needs-you': 0, fault: 0, result: 0, off: 0 }
-  );
-  const symbols = {
-    active: '◐',
-    'needs-you': '◎',
-    fault: '×',
-    result: '✓',
-    off: '○',
-  } as const;
-  return (
-    <div
-      aria-label="Agent status mark legend"
-      className="exa-material-overlay absolute right-3 top-3 z-10 hidden flex-wrap items-center gap-x-2.5 gap-y-1 border px-2.5 py-1.5 lg:flex"
-      style={spatialMaterialFrame(theme)}
-    >
-      {(Object.keys(symbols) as Array<keyof typeof symbols>).map(state => (
-        <span key={state} className="flex items-center gap-1 text-chrome-micro">
-          <span
-            aria-hidden="true"
-            className="font-mono text-xs"
-            style={{ color: theme.status[state] }}
-          >
-            {symbols[state]}
-          </span>
-          <span style={{ color: theme.labelMuted }}>
-            {STATUS_LIGHT_META[state].label}
-          </span>
-          <span
-            className="font-mono tabular-nums"
-            style={{ color: theme.label }}
-          >
-            {counts[state]}
-          </span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
 export function OperationsBoardSurface({
   layout,
   projection,
   lens = 'status',
-  hero = null,
   onDrillProject,
   onSelectAgent,
+  onMoveAgentSelection,
   onOverview,
   onProjectionChange,
-  onLensChange,
   multiSelection,
   onToggleAgentSelect,
   onToggleZoneSelect,
@@ -424,12 +339,11 @@ export function OperationsBoardSurface({
    *  the population field by normalized token share. Presentation-only —
    *  attention triage below never reads it. */
   lens?: SpatialBoardLens;
-  hero?: SpatialBoardHero | null;
   onDrillProject: (projectId: string) => void;
   onSelectAgent: (agentId: string | null) => void;
+  onMoveAgentSelection?: (agentId: string) => void;
   onOverview: () => void;
   onProjectionChange: (projection: SpatialBoardProjection) => void;
-  onLensChange?: (lens: SpatialBoardLens) => void;
   /** Multi-selection (V3.2): real, ephemeral, client-owned. Selection is the
    *  shipped mechanism; the only announced part is the Direct verb. */
   multiSelection?: ReadonlySet<string>;
@@ -460,6 +374,7 @@ export function OperationsBoardSurface({
   const viewportRect = useRef<SVGRectElement | null>(null);
   const bandOverlay = useRef<HTMLDivElement | null>(null);
   const pendingViewport = useRef<OperationsBoardViewport | null>(null);
+  const didRestoreViewport = useRef(false);
   const viewportSaveTimer = useRef<number | null>(null);
   const visibleZones = useMemo(
     () => layout.zones.filter(zone => zone.visible),
@@ -500,6 +415,8 @@ export function OperationsBoardSurface({
   }, []);
 
   useEffect(() => {
+    if (didRestoreViewport.current) return;
+    didRestoreViewport.current = true;
     // A Team→Fleet handoff owns the arrival camera (ENG-004 V3.0): the
     // stored viewport must not yank the entry pose. Skipping the restore on
     // a handoff that later falls back costs one remembered viewport — the
@@ -635,18 +552,29 @@ export function OperationsBoardSurface({
           projection === 'top-down' ? 'fixed-angle' : 'top-down'
         );
         event.preventDefault();
-      } else if (event.key.toLowerCase() === 'b' && onLensChange) {
-        onLensChange(lens === 'status' ? 'burn' : 'status');
+      } else if (event.key.startsWith('Arrow')) {
+        const direction = event.key
+          .slice('Arrow'.length)
+          .toLowerCase() as SpatialSelectionDirection;
+        const agentId = selectSpatialDirectionalAgentId(
+          layout,
+          layout.selectedAgentId,
+          direction
+        );
+        if (agentId) {
+          onMoveAgentSelection?.(agentId);
+          controller.current?.focusAgent(agentId);
+        }
         event.preventDefault();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
-    layout.altitude,
+    layout,
     lens,
     onDrillProject,
-    onLensChange,
+    onMoveAgentSelection,
     onOverview,
     onProjectionChange,
     onToggleZoneSelect,
@@ -688,7 +616,6 @@ export function OperationsBoardSurface({
             layout={layout}
             projection={projection}
             lens={lens}
-            attention={hero}
             controllerRef={controller}
             onViewportChange={updateViewport}
             onDrillProject={onDrillProject}
@@ -746,18 +673,14 @@ export function OperationsBoardSurface({
           sessionTransitionAgentId ? 'pointer-events-none opacity-0' : ''
         }`}
       >
-        {scopeActivity &&
-          ((multiSelection && multiSelection.size > 0) ||
-            (layout.altitude === 'fleet' && scopeActivity.agentCount > 0)) && (
-            <ScopeReadout
-              activity={scopeActivity}
-              selectionCount={multiSelection?.size ?? 0}
-              onClearSelection={onClearMultiSelect}
-              theme={theme}
-            />
-          )}
-        <BoardStatusLegend layout={layout} theme={theme} />
-
+        {scopeActivity && multiSelection && multiSelection.size > 0 && (
+          <ScopeReadout
+            activity={scopeActivity}
+            selectionCount={multiSelection?.size ?? 0}
+            onClearSelection={onClearMultiSelect}
+            theme={theme}
+          />
+        )}
         {attentionIds.length > 0 && (
           <button
             type="button"
@@ -780,13 +703,13 @@ export function OperationsBoardSurface({
           {layout.altitude === 'fleet' && (
             <KeyHint keyName="1–9" label="Project" theme={theme} />
           )}
-          <KeyHint keyName="drag ←↑↓→" label="pan" theme={theme} />
+          <KeyHint keyName="←↑↓→" label="Agents" theme={theme} />
+          <KeyHint keyName="drag WASD" label="pan" theme={theme} />
           <KeyHint keyName="pinch + −" label="zoom" theme={theme} />
           {onBandSelect && (
-            <KeyHint keyName="⇧ drag" label="select" theme={theme} />
+            <KeyHint keyName="drag" label="select" theme={theme} />
           )}
           <KeyHint keyName="V" label="view" theme={theme} />
-          {onLensChange && <KeyHint keyName="B" label="burn" theme={theme} />}
           {attentionIds.length > 0 && (
             <KeyHint keyName="N" label="attention" theme={theme} />
           )}
@@ -823,70 +746,6 @@ export function OperationsBoardSurface({
               </button>
             ))}
           </div>
-
-          {onLensChange && (
-            <div className="flex flex-col items-stretch gap-1">
-              <div
-                className="exa-material-chrome flex border p-1"
-                aria-label="Board color lens"
-                style={spatialMaterialFrame(theme)}
-              >
-                {(['status', 'burn'] as const).map(option => (
-                  <button
-                    key={option}
-                    type="button"
-                    data-board-lens-option={option}
-                    aria-pressed={lens === option}
-                    aria-label={
-                      option === 'burn'
-                        ? 'Color by token burn (normalized share)'
-                        : 'Color by agent status'
-                    }
-                    onClick={() => onLensChange(option)}
-                    className="min-h-11 px-2 font-mono text-chrome-micro font-semibold uppercase tracking-[0.1em] outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
-                    style={
-                      lens === option
-                        ? {
-                            background:
-                              option === 'burn'
-                                ? theme.consumption.mid
-                                : theme.selection,
-                            color: theme.material.chrome.fallback,
-                          }
-                        : { color: theme.labelMuted }
-                    }
-                  >
-                    {option === 'status' ? 'Status' : 'Burn'}
-                  </button>
-                ))}
-              </div>
-              {lens === 'burn' && (
-                <div
-                  data-board-lens-legend
-                  className="exa-material-chrome hidden border px-1.5 py-1 sm:block"
-                  style={spatialMaterialFrame(theme)}
-                >
-                  <span
-                    aria-hidden="true"
-                    className="block h-1 w-full"
-                    style={{
-                      background: `linear-gradient(90deg, ${theme.consumption.calm}, ${theme.consumption.mid}, ${theme.consumption.warm}, ${theme.consumption.hot})`,
-                    }}
-                  />
-                  <span
-                    className="mt-1 block font-mono text-chrome-nano tracking-[0.08em]"
-                    style={{ color: theme.labelMuted }}
-                  >
-                    share of normalized burn ·{' '}
-                    <span style={{ color: theme.consumption.unknown }}>
-                      grey
-                    </span>{' '}
-                    unreported
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
 
           <BoardMiniMap
             layout={layout}

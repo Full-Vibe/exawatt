@@ -93,8 +93,9 @@ Four rules follow.
    F4's population-sized zones.
 2. **Structure organizes; attention overlays and never relocates.** Projects
    hold stable positions so spatial memory survives. Attention is expressed
-   through prominence, weight, color, and callouts **anchored to their subject**
-   — never by moving a zone. The audit found the hero blocked callout floating
+   through prominence, weight, color, and the stable attention queue — never
+   by moving a zone. If a future treatment uses a callout, it must be
+   **anchored to its subject**. The audit found the hero blocked callout floating
    top-center while `partner-portal`, its subject, sat two rows away; an
    unanchored callout is the failure mode this rule forbids.
 3. **Work visibly happens.** At rest the board should convey that a population
@@ -1712,7 +1713,9 @@ at three explicit resolution tiers:
   Project-detail budget.
 
 Attention stays anchored to the owning Agent unit or Project in all three
-tiers. One top row replaces the audit's three-row preamble and names all five
+tiers through its redundant status mark; the stable needs-you queue and
+minimap carry navigation, with no bell popup obscuring the board. The single
+header status strip replaces the audit's three-row preamble and names all five
 D40 states with counts, so the board teaches its marks without a manual. The
 minimap sizes Projects by population, marks active/urgent state, selection, and
 the viewport. Goal-first identity plus the latest non-status activity sentence
@@ -1736,10 +1739,48 @@ reduced-motion, low-power, and handoff scenarios green in `eval:spatial`; and
 all `eval:spatial:scale` scenarios green. The real Voltaic fleet stays at 13
 draw calls with 173 individual units; 1k/10k very-far fixtures stay at 6 draw
 calls and park at zero frames. The repository's signed-browser doctor and
-hosted smoke check pass. The production pointer evaluator proves drag pan,
-pinch zoom, wheel pan, and Project drill, then reaches its known pre-existing
-failure at the retired `Seed medium demo fleet` control; V3.3 S1 still owns
-that harness migration.
+hosted smoke check pass. This evidence was superseded by the production-review
+correction below, which migrates the stale pointer evaluator with the control
+change it now proves.
+
+### V3.3 operator correction — controls, continuity, and shared truth (2026-08-03)
+
+Direct production review amended the F7/S3 landing without reopening its
+approved shape hierarchy or WebGL/Three.js boundary:
+
+- the bell/hero popup is retired; Agent/Project marks, minimap urgency, and the
+  stable needs-you queue carry attention without covering units;
+- the standalone in-board D40 legend is retired into the existing header
+  metrics strip, which now names and counts all five canonical states;
+- arrows walk the nearest visible Agent by pure board-coordinate selection and
+  the camera follows; WASD is the secondary keyboard pan binding, while
+  plus/minus retain zoom;
+- plain primary click-drag draws the selection band and never pans; middle
+  drag, WASD, and trackpad/wheel own pan, while a still click continues to
+  activate the underlying Project or Agent;
+- the default surface has one fleet-wide status strip. The duplicate in-board
+  legend is gone, the scope summary appears only for a real multi-selection,
+  and its unexplained token-burn figure plus the Status/Burn color-lens control
+  are removed from the primary board;
+- Project centers remain the same spatial address at Fleet, Project, and Agent
+  altitude. Focusing one Project retains every neighboring Project in the same
+  WebGL world at Fleet resolution; the minimap always renders those fixed Fleet
+  footprints and overlays the live viewport. Stored viewports restore only on
+  route entry, never during an altitude change; camera focus is issued only
+  when the semantic address or fit actually changes, so live/layout/projection
+  rerenders cannot snap an operator pan back to focus. Zone, Agent, and
+  population layers survive navigation, and the Agent field inverse-morphs
+  from the actual previous frame instead of restarting at the Project origin.
+  The radial/floral stagger remains an arrival animation and does not replay
+  on semantic zoom;
+- local Fleet status consumes the same source-owned working/settled and
+  reported-turn facts as terminal tabs. Recent byte timing is now only the
+  fallback for sources that report no activity truth, eliminating blue-active
+  Fleet units for Sessions whose terminal tabs already show a green result.
+
+This lands F1 and F2 plus F3's primary pointer-grammar flip. F3's explicit
+clamp-feedback polish and the remainder of S4's selection-panel consolidation
+stay open; this correction does not claim those slices complete.
 
 ### V2.1 Scale & Truth
 

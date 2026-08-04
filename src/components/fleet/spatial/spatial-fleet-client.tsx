@@ -30,7 +30,6 @@ import {
   selectSpatialScopeActivity,
   type Altitude,
   type SpatialBoardLayout,
-  type SpatialBoardLens,
   type SpatialBoardProjection,
   type SpatialBoardRect,
 } from '@exawatt/ui-model';
@@ -102,11 +101,6 @@ export function SpatialFleetClient() {
     searchParams.get('projection') === 'fixed-angle'
       ? 'fixed-angle'
       : 'top-down';
-  // Consumption lens (ENG-008): status coloring is the default; the URL
-  // carries the burn lens like it carries the projection, so a lensed board
-  // address survives handoffs. Attention semantics never read it.
-  const lens: SpatialBoardLens =
-    searchParams.get('lens') === 'burn' ? 'burn' : 'status';
   const { fleetState, projects } = useFleet();
   const { isDemo } = useFleetConnection();
   const { connectToRealOC, canConnect } = useConnectToOC();
@@ -393,19 +387,6 @@ export function SpatialFleetClient() {
     [router, searchParams]
   );
 
-  const changeLens = useCallback(
-    (next: SpatialBoardLens) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (next === 'burn') params.set('lens', next);
-      else params.delete('lens');
-      const queryString = params.toString();
-      router.replace(`/fleet/spatial${queryString ? `?${queryString}` : ''}`, {
-        scroll: false,
-      });
-    },
-    [router, searchParams]
-  );
-
   // Clicking an agent drills to the agent (with its owning Project as the
   // focused context); clicking empty space releases the working set first,
   // then ascends (the RTS deselect-before-zoom-out order).
@@ -422,6 +403,20 @@ export function SpatialFleetClient() {
       }
     },
     [ascend, clearMultiSelect, fieldZones, multiSelection.size, navigate]
+  );
+
+  const moveAgentSelection = useCallback(
+    (agentId: string) => {
+      const owner =
+        fieldZones.find(zone => zone.agentIds.includes(agentId))?.clusterId ??
+        null;
+      navigate({
+        altitude: scene.altitude,
+        project: scene.altitude === 'fleet' ? null : owner,
+        agent: agentId,
+      });
+    },
+    [fieldZones, navigate, scene.altitude]
   );
 
   // Escape releases the multi-selection first, then ascends one altitude —
@@ -738,21 +733,11 @@ export function SpatialFleetClient() {
           <OperationsBoardSurface
             layout={boardLayout}
             projection={projection}
-            lens={lens}
-            hero={
-              scene.attention.hero
-                ? {
-                    agentId: scene.attention.hero.agentId,
-                    title: scene.attention.hero.title,
-                    reason: scene.attention.hero.reason,
-                  }
-                : null
-            }
             onDrillProject={drillToProject}
             onSelectAgent={handleSelectAgent}
+            onMoveAgentSelection={moveAgentSelection}
             onOverview={overview}
             onProjectionChange={changeProjection}
-            onLensChange={changeLens}
             multiSelection={multiSelection}
             onToggleAgentSelect={toggleAgentSelect}
             onToggleZoneSelect={toggleZoneSelect}

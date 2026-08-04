@@ -111,16 +111,16 @@ async function sampleMotion(page, { kind, durationMs }) {
       if (kind === 'glide') {
         document.body.dispatchEvent(
           new KeyboardEvent('keydown', {
-            key: 'ArrowRight',
-            code: 'ArrowRight',
+            key: 'd',
+            code: 'KeyD',
             bubbles: true,
           })
         );
         setTimeout(() => {
           document.body.dispatchEvent(
             new KeyboardEvent('keyup', {
-              key: 'ArrowRight',
-              code: 'ArrowRight',
+              key: 'd',
+              code: 'KeyD',
               bubbles: true,
             })
           );

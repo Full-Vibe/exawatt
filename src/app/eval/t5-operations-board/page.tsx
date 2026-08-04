@@ -174,11 +174,6 @@ export default function OperationsBoardEvalPage() {
         <OperationsBoardSurface
           layout={layout}
           projection="top-down"
-          hero={{
-            agentId: 'relay-auth',
-            title: 'Authentication needs operator input',
-            reason: 'Credentials needed · blocks Relay',
-          }}
           onDrillProject={() => undefined}
           onSelectAgent={() => undefined}
           onOverview={() => undefined}

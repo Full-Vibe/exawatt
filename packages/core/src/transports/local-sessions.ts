@@ -13,6 +13,7 @@
  *   alive, explicit bell / human gate -> 'blocked'
  *   alive, delegated children outstanding -> 'working' (ENG-023: a Session
  *     whose team is running never reads as finished at fleet altitude)
+ *   alive, source-reported working / settled -> 'working' / 'complete'
  *   alive, quiet turn boundary -> 'complete' (result ready)
  *   alive, output within workingWindowMs -> 'working'
  *   alive, quiet  -> 'idle'
@@ -54,7 +55,18 @@ export interface LocalSessionSnapshot {
   attention?: LocalSessionAttention | null;
   /** harness-reported delegated children (ENG-023) — absent when the source
    *  does not report delegation, never an empty stand-in for zero */
-  delegation?: AgentDelegation | null;
+  delegation?:
+    | (AgentDelegation & {
+        ownTurn?: 'generating' | 'available';
+        blockedOn?: string | null;
+      })
+    | null;
+  /** Main/source-owned activity truth. Undefined preserves compatibility
+   *  with sources that only expose byte activity. */
+  working?: boolean;
+  /** Whether an Agent Session has ever been given work. Shells do not have
+   *  turns; undefined preserves the legacy byte-inference posture. */
+  engaged?: boolean;
 }
 
 export interface LocalSessionsSource {
@@ -91,8 +103,9 @@ function basename(p: string): string {
 export function sessionStatus(
   session: Pick<
     LocalSessionSnapshot,
-    'exited' | 'exitCode' | 'attention' | 'delegation'
-  >,
+    'exited' | 'exitCode' | 'attention' | 'delegation' | 'working' | 'engaged'
+  > &
+    Partial<Pick<LocalSessionSnapshot, 'harness'>>,
   lastActivityAt: number,
   now: number,
   workingWindowMs: number
@@ -106,7 +119,14 @@ export function sessionStatus(
   // a Session whose team is working never reads as finished (ENG-023).
   if (session.attention && session.attention.kind !== 'turn-end')
     return 'blocked';
+  if (session.delegation?.blockedOn) return 'blocked';
   if ((session.delegation?.children.length ?? 0) > 0) return 'working';
+  if (session.delegation?.ownTurn === 'generating') return 'working';
+  if (session.delegation?.ownTurn === 'available') return 'complete';
+  if (session.working !== undefined) {
+    if (session.working) return 'working';
+    return session.harness !== 'shell' && session.engaged ? 'complete' : 'idle';
+  }
   if (session.attention?.kind === 'turn-end') return 'complete';
   return now - lastActivityAt <= workingWindowMs ? 'working' : 'idle';
 }
@@ -149,12 +169,9 @@ export function sessionToAgent(
     lastActivityAt,
     blockerInfo: sessionBlocker(session),
     // Present only while children are live: presence IS the signal, so an
-    // unreporting source and an empty team read identically as absent.
-    // Deliberately NOT adopted here: the record's `ownTurn`, which the tab
-    // strip ranks above byte inference (ENG-015 S1.1). Bringing the fleet
-    // board up to reported-turn parity is a separate decision — today a
-    // quietly-generating, non-delegating Session still reads `idle` here
-    // after the byte window, exactly as it did before delegation flowed.
+    // unreporting source and an empty team read identically as absent. Turn
+    // truth is consumed above to keep Fleet and terminal tabs in lockstep,
+    // but is not widened into the source-agnostic Agent contract.
     ...(session.delegation?.children.length
       ? { delegation: { children: session.delegation.children } }
       : {}),

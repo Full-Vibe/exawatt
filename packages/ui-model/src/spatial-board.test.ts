@@ -3,6 +3,7 @@ import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
 import {
   selectSpatialBandAgentIds,
   selectSpatialBoardLayout,
+  selectSpatialDirectionalAgentId,
   selectSpatialScopeActivity,
   spatialBoardPieceForAgent,
   spatialBoardZoneForAgent,
@@ -322,6 +323,40 @@ describe('selectSpatialBoardLayout', () => {
     });
   });
 
+  it('keeps neighboring Projects and a fixed-world minimap during semantic focus', () => {
+    const state = fleet([
+      agent('a1', 'Alpha'),
+      agent('a2', 'Alpha'),
+      agent('b1', 'Beta'),
+      agent('b2', 'Beta'),
+    ]);
+    const overview = selectSpatialBoardLayout(state);
+    const focused = selectSpatialBoardLayout(state, {
+      altitude: 'project',
+      focusedProjectId: 'project:Alpha',
+      previousLayout: overview,
+    });
+    expect(focused.zones).toHaveLength(overview.zones.length);
+    expect(focused.minimap.bounds).toEqual(overview.minimap.bounds);
+    const overviewBeta = overview.zones.find(
+      zone => zone.id === 'project:Beta'
+    )!;
+    const focusedBeta = focused.zones.find(zone => zone.id === 'project:Beta')!;
+    expect(focusedBeta.rect).toEqual(overviewBeta.rect);
+    expect(focusedBeta.minimapRect).toEqual(overviewBeta.minimapRect);
+    expect(
+      focused.pieces.some(piece => piece.projectId === 'project:Beta')
+    ).toBe(true);
+    expect(
+      focused.pieces
+        .filter(piece => piece.projectId === 'project:Beta')
+        .every(piece => piece.kind === 'aggregate')
+    ).toBe(true);
+    expect(focused.cameraBounds).toEqual(
+      focused.zones.find(zone => zone.id === 'project:Alpha')!.rect
+    );
+  });
+
   it('sizes an aggregated giant Project to density content, not one slot per Agent', () => {
     // ENG-004 V3.1: a 3,000+-Agent Project drilled at project altitude used to
     // emit a footprint thousands of units tall (rows for pieces that were
@@ -399,6 +434,50 @@ describe('selectSpatialBoardLayout', () => {
         selectedAgentId: 'missing',
       }).altitude
     ).toBe('fleet');
+  });
+});
+
+describe('selectSpatialDirectionalAgentId', () => {
+  it('walks visible Agents by board direction and holds at an edge', () => {
+    const layout = selectSpatialBoardLayout(
+      fleet([
+        agent('a', 'Alpha'),
+        agent('b', 'Alpha'),
+        agent('c', 'Alpha'),
+        agent('d', 'Alpha'),
+      ]),
+      { altitude: 'project', focusedProjectId: 'project:Alpha' }
+    );
+    const center = layout.pieces.find(piece => piece.slotIndex === 0)!;
+    const right = selectSpatialDirectionalAgentId(
+      layout,
+      center.agentId,
+      'right'
+    );
+    expect(right).not.toBe(center.agentId);
+    expect(
+      layout.pieces.find(piece => piece.agentId === right)!.x
+    ).toBeGreaterThan(center.x);
+
+    const rightmost = [...layout.pieces].sort((a, b) => b.x - a.x)[0]!;
+    expect(
+      selectSpatialDirectionalAgentId(layout, rightmost.agentId, 'right')
+    ).toBe(rightmost.agentId);
+  });
+
+  it('starts from the visible camera center and ignores filtered pieces', () => {
+    const state = fleet([
+      agent('a', 'Alpha'),
+      agent('b', 'Alpha'),
+      agent('c', 'Alpha'),
+    ]);
+    const layout = selectSpatialBoardLayout(state, {
+      altitude: 'project',
+      focusedProjectId: 'project:Alpha',
+      visibleAgentIds: new Set(['a', 'b']),
+    });
+    const selected = selectSpatialDirectionalAgentId(layout, null, 'down');
+    expect(selected).not.toBe('c');
   });
 });
 

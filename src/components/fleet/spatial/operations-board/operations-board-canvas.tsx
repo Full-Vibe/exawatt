@@ -52,7 +52,6 @@ import {
   spatialPressureColor,
   spatialProjectIdentityColor,
   spatialProjectZoneFill,
-  spatialNeedsOperatorCallout,
   spatialStatusColor,
   type SpatialThemeSnapshot,
 } from '../spatial-theme';
@@ -181,6 +180,12 @@ function BoardCameraRig({
   const { size, invalidate, gl } = useThree();
   const get = useThree(state => state.get);
   const cameraRef = useRef<THREE.OrthographicCamera | null>(null);
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+  const cameraBoundsX = layout.cameraBounds.x;
+  const cameraBoundsY = layout.cameraBounds.y;
+  const cameraBoundsWidth = layout.cameraBounds.width;
+  const cameraBoundsHeight = layout.cameraBounds.height;
   const initialTilt = projection === 'fixed-angle' ? 1 : 0;
   const target = useRef<CameraTarget>({
     x: 0,
@@ -270,6 +275,10 @@ function BoardCameraRig({
     },
     [announceTargetViewport, size.height, size.width]
   );
+  const targetForRectRef = useRef(targetForRect);
+  targetForRectRef.current = targetForRect;
+  const snapToTargetRef = useRef(snapToTarget);
+  snapToTargetRef.current = snapToTarget;
 
   const releaseEntryHold = useCallback(() => {
     const hold = entryHold.current;
@@ -295,10 +304,11 @@ function BoardCameraRig({
    *  decline dispatches the fallback event so the transition owner cuts —
    *  a normal outcome, not an error. */
   const tryEnterFromHandoff = useCallback((): boolean => {
+    const activeLayout = layoutRef.current;
     if (!altitudeHandoffActive()) return false;
     const fallback = () =>
       window.dispatchEvent(new CustomEvent(ALTITUDE_HANDOFF_FALLBACK_EVENT));
-    if (projection !== 'top-down' || layout.altitude !== 'fleet') {
+    if (projection !== 'top-down' || activeLayout.altitude !== 'fleet') {
       claimAltitudeHandoff(); // consume — this arrival cannot carry position
       fallback();
       return false;
@@ -317,7 +327,7 @@ function BoardCameraRig({
     // 2026-08-02). `targetForRect` has already run, so fitZoom is current.
     const solution = solveEntryPose(
       snapshot,
-      layout.zones,
+      activeLayout.zones,
       {
         width: size.width,
         height: size.height,
@@ -335,7 +345,7 @@ function BoardCameraRig({
     current.current = { ...pose };
     applyCamera(current.current);
     notifyViewport(current.current);
-    entryHold.current = { fitRect: layout.cameraBounds, pose };
+    entryHold.current = { fitRect: activeLayout.cameraBounds, pose };
     // Announce the pose only after the first PAINTED frame at it (double
     // rAF): the card ghosts then hold still over the renderer swap and the
     // shader-compile stall, and the crossfade plays over a live board. The
@@ -363,15 +373,14 @@ function BoardCameraRig({
   }, [
     applyCamera,
     gl,
-    layout.altitude,
-    layout.cameraBounds,
-    layout.zones,
     notifyViewport,
     projection,
     releaseEntryHold,
     size.height,
     size.width,
   ]);
+  const tryEnterFromHandoffRef = useRef(tryEnterFromHandoff);
+  tryEnterFromHandoffRef.current = tryEnterFromHandoff;
 
   useEffect(
     () => () => {
@@ -384,18 +393,25 @@ function BoardCameraRig({
   );
 
   useLayoutEffect(() => {
+    const cameraBounds = {
+      x: cameraBoundsX,
+      y: cameraBoundsY,
+      width: cameraBoundsWidth,
+      height: cameraBoundsHeight,
+    };
     if (entryHold.current) {
       // A layout tick during the entry hold must not move the camera; the
       // pull-back targets the freshest fit when the hold releases.
-      entryHold.current.fitRect = layout.cameraBounds;
+      entryHold.current.fitRect = cameraBounds;
       return;
     }
-    targetForRect(layout.cameraBounds);
+    targetForRectRef.current(cameraBounds);
     if (!initialized.current || reduced) {
-      const entered = !initialized.current && !reduced && tryEnterFromHandoff();
+      const entered =
+        !initialized.current && !reduced && tryEnterFromHandoffRef.current();
       initialized.current = true;
       if (!entered) {
-        snapToTarget();
+        snapToTargetRef.current();
         // Arrival dolly (V2.4): enter the board slightly wide and ease in, so
         // regime entry reads as descending onto the map instead of a hard cut.
         if (!reduced) {
@@ -408,11 +424,16 @@ function BoardCameraRig({
   }, [
     applyCamera,
     invalidate,
-    layout.cameraBounds,
+    layout.altitude,
+    cameraBoundsHeight,
+    cameraBoundsWidth,
+    cameraBoundsX,
+    cameraBoundsY,
+    layout.focusedProjectId,
+    layout.selectedAgentId,
     reduced,
-    snapToTarget,
-    targetForRect,
-    tryEnterFromHandoff,
+    size.height,
+    size.width,
   ]);
 
   useEffect(() => {
@@ -423,9 +444,9 @@ function BoardCameraRig({
     invalidate();
   }, [announceTargetViewport, invalidate, projection, reduced, snapToTarget]);
 
-  // Direct pointer navigation (V2.4): drag pans; trackpad scroll pans;
-  // pinch (ctrl/meta + wheel) zooms anchored at the cursor. All of it moves
-  // the same damped target the keyboard glide uses — one input model.
+  // RTS pointer navigation (V3.3): primary drag band-selects; middle drag,
+  // WASD, and trackpad scroll pan; pinch (ctrl/meta + wheel) zooms anchored
+  // at the cursor. All camera inputs move the same damped target.
   useEffect(() => {
     const element = gl.domElement;
     const clampZoom = (zoom: number) =>
@@ -445,7 +466,7 @@ function BoardCameraRig({
     let dragging = false;
     let lastX = 0;
     let lastY = 0;
-    // Shift-drag draws a selection band instead of panning (V3.2). The
+    // Primary drag draws a selection band (V3.3). The
     // overlay div is DOM (pixel-crisp, outside the canvas); its transform is
     // written directly per move — never through React state (guide rule 14).
     let banding = false;
@@ -469,7 +490,7 @@ function BoardCameraRig({
     };
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0 && event.button !== 1) return;
-      if (event.shiftKey && event.button === 0 && onBandSelect) {
+      if (event.button === 0 && onBandSelect) {
         banding = true;
         bandStartX = event.clientX;
         bandStartY = event.clientY;
@@ -508,7 +529,7 @@ function BoardCameraRig({
         const moved =
           Math.abs(event.clientX - bandStartX) >= 4 ||
           Math.abs(event.clientY - bandStartY) >= 4;
-        // A still shift-click falls through to the piece/zone handlers.
+        // A still click falls through to the piece/zone handlers.
         if (!moved || !onBandSelect) return;
         const from = worldAt(bandStartX, bandStartY);
         const to = worldAt(event.clientX, event.clientY);
@@ -1159,7 +1180,7 @@ function ProjectControls({
     );
     return (
       <Html key={zone.id} position={position} style={{ pointerEvents: 'auto' }}>
-        {altitude === 'fleet' && !zone.isAggregate ? (
+        {!zone.isAggregate ? (
           <button
             type="button"
             data-board-zone={zone.id}
@@ -1669,7 +1690,13 @@ function AgentPieceLayer({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const bodyMat = useRef<THREE.MeshLambertMaterial>(null);
   const bodyRefs = useRef(new Map<string, THREE.Object3D>());
+  const motionGroup = useRef<THREE.Group>(null);
+  const previousAltitude = useRef(altitude);
+  const previousPositions = useRef(
+    new Map(visible.map(piece => [piece.id, { x: piece.x, y: -piece.y }]))
+  );
   const entranceClock = useRef<number | null>(reduced ? null : 0);
+  const invalidate = useThree(state => state.invalidate);
   const pieceGeometry = useMemo(() => {
     const geometry = new THREE.CylinderGeometry(0.5, 0.56, 0.34, 6);
     geometry.rotateX(Math.PI / 2);
@@ -1683,12 +1710,82 @@ function AgentPieceLayer({
   );
   useCursor(hoveredId != null);
 
-  // Entrance choreography (V2.4): pieces scale in with a slotIndex stagger
-  // while the materials fade up. Runs once per MOUNT (the layer is keyed by
-  // semantic address), then hands scale authority back to the props.
+  // Carry the unit field through semantic altitude changes. The new layout is
+  // first transformed back onto the ACTUAL previous frame, then that inverse
+  // transform damps to identity. This keeps the selected Project under the
+  // operator instead of teleporting through the old origin.
+  useLayoutEffect(() => {
+    const group = motionGroup.current;
+    const next = new Map(
+      visible.map(piece => [piece.id, { x: piece.x, y: -piece.y }])
+    );
+    if (group && !reduced && previousAltitude.current !== altitude) {
+      const common = visible.filter(piece =>
+        previousPositions.current.has(piece.id)
+      );
+      if (common.length > 0) {
+        let nextX = 0;
+        let nextY = 0;
+        let priorX = 0;
+        let priorY = 0;
+        for (const piece of common) {
+          const prior = previousPositions.current.get(piece.id)!;
+          nextX += piece.x;
+          nextY += -piece.y;
+          priorX += group.position.x + group.scale.x * prior.x;
+          priorY += group.position.y + group.scale.y * prior.y;
+        }
+        nextX /= common.length;
+        nextY /= common.length;
+        priorX /= common.length;
+        priorY /= common.length;
+        let numerator = 0;
+        let denominator = 0;
+        for (const piece of common) {
+          const prior = previousPositions.current.get(piece.id)!;
+          const actualX = group.position.x + group.scale.x * prior.x;
+          const actualY = group.position.y + group.scale.y * prior.y;
+          const dx = piece.x - nextX;
+          const dy = -piece.y - nextY;
+          numerator += dx * (actualX - priorX) + dy * (actualY - priorY);
+          denominator += dx * dx + dy * dy;
+        }
+        const scale = THREE.MathUtils.clamp(
+          denominator > 0.0001 ? numerator / denominator : 1,
+          0.35,
+          2.85
+        );
+        group.scale.set(scale, scale, 1);
+        group.position.set(priorX - scale * nextX, priorY - scale * nextY, 0);
+        invalidate();
+      }
+    }
+    previousAltitude.current = altitude;
+    previousPositions.current = next;
+  }, [altitude, invalidate, reduced, visible]);
+
+  // Entrance choreography (V2.4): pieces scale in with a radial slot stagger
+  // while the material fades up. Because the layer now survives altitude
+  // changes, this remains a board/data arrival signature and never replays on
+  // Fleet → Project → Agent navigation.
   useFrame((state, delta) => {
+    const group = motionGroup.current;
+    let fieldMoving = false;
+    if (group && !reduced) {
+      const dt = Math.min(delta, 0.05);
+      const x = THREE.MathUtils.damp(group.position.x, 0, 7.5, dt);
+      const y = THREE.MathUtils.damp(group.position.y, 0, 7.5, dt);
+      const scale = THREE.MathUtils.damp(group.scale.x, 1, 7.5, dt);
+      fieldMoving =
+        Math.abs(x) > 0.001 ||
+        Math.abs(y) > 0.001 ||
+        Math.abs(scale - 1) > 0.0005;
+      group.position.set(fieldMoving ? x : 0, fieldMoving ? y : 0, 0);
+      group.scale.set(fieldMoving ? scale : 1, fieldMoving ? scale : 1, 1);
+    }
     if (entranceClock.current === null) {
       if (bodyMat.current) bodyMat.current.opacity = 1;
+      if (fieldMoving) state.invalidate();
       return;
     }
     entranceClock.current += Math.min(delta, 0.05);
@@ -1716,7 +1813,7 @@ function AgentPieceLayer({
 
   const selected = visible.find(piece => piece.selected);
   return (
-    <>
+    <group ref={motionGroup}>
       <Instances geometry={pieceGeometry} limit={256} range={solid.length}>
         <meshLambertMaterial
           ref={bodyMat}
@@ -1776,7 +1873,7 @@ function AgentPieceLayer({
           theme={theme}
         />
       )}
-    </>
+    </group>
   );
 }
 
@@ -2249,19 +2346,27 @@ function MultiSelectionLayer({
 function AgentControls({
   pieces,
   altitude,
+  focusedProjectId,
   onSelectAgent,
   onToggleAgentSelect,
   theme,
 }: {
   pieces: SpatialBoardPiece[];
   altitude: SpatialBoardLayout['altitude'];
+  focusedProjectId: string | null;
   onSelectAgent: (agentId: string) => void;
   onToggleAgentSelect?: (agentId: string) => void;
   theme: SpatialThemeSnapshot;
 }) {
   if (altitude === 'fleet') return null;
   return pieces
-    .filter(piece => piece.kind === 'agent' && piece.visible && piece.agentId)
+    .filter(
+      piece =>
+        piece.kind === 'agent' &&
+        piece.visible &&
+        piece.agentId &&
+        piece.projectId === focusedProjectId
+    )
     .map(piece => {
       const always = piece.labelVisibility === 'always';
       const lightState = statusLightStateForAgentStatus(piece.status);
@@ -2345,95 +2450,10 @@ function InvalidateOnSpatialTheme({ theme }: { theme: SpatialThemeSnapshot }) {
   return null;
 }
 
-export interface OperationsBoardAttention {
-  agentId: string;
-  title: string;
-  reason: string;
-}
-
-/** Attention overlays structure: the callout leader terminates at the owning
- * Agent hex (or its Project center only when the Agent is very-far
- * agglomerated), so urgency never relocates the unit into screen chrome. */
-function AnchoredAttentionCallout({
-  layout,
-  attention,
-  onSelectAgent,
-  theme,
-}: {
-  layout: SpatialBoardLayout;
-  attention: OperationsBoardAttention;
-  onSelectAgent: (agentId: string) => void;
-  theme: SpatialThemeSnapshot;
-}) {
-  const calloutTheme = spatialNeedsOperatorCallout(theme);
-  const piece = layout.pieces.find(
-    entry => entry.visible && entry.agentId === attention.agentId
-  );
-  const zone = layout.zones.find(
-    entry => entry.visible && entry.agentIds.includes(attention.agentId)
-  );
-  if (!piece && !zone) return null;
-  const anchorX = piece?.x ?? zone!.rect.x + zone!.radius;
-  const anchorY = -(piece?.y ?? zone!.rect.y + zone!.radius);
-  const direction =
-    anchorX < layout.bounds.x + layout.bounds.width / 2 ? 1 : -1;
-  const offset = Math.max(4.5, (zone?.radius ?? 6) * 0.58);
-  const calloutX = anchorX + direction * offset;
-  const calloutY = anchorY + offset * 0.72;
-  return (
-    <>
-      <Line
-        points={[
-          [anchorX, anchorY, 1.08],
-          [calloutX, calloutY, 1.08],
-        ]}
-        color={calloutTheme.signal}
-        lineWidth={1.35}
-        toneMapped={false}
-        transparent
-        opacity={0.86}
-        depthWrite={false}
-        raycast={() => null}
-      />
-      <Html
-        position={[calloutX, calloutY, 1.12]}
-        center
-        style={{ pointerEvents: 'auto' }}
-      >
-        <button
-          type="button"
-          data-board-attention-anchor={attention.agentId}
-          onClick={() => onSelectAgent(attention.agentId)}
-          className="exa-material-raised board-control-enter w-48 border px-2.5 py-2 text-left outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring"
-          style={{
-            borderColor: calloutTheme.border,
-            background: calloutTheme.background,
-            boxShadow: `0 10px 28px ${theme.shadow}`,
-          }}
-        >
-          <span
-            className="block truncate text-[11px] font-semibold"
-            style={{ color: calloutTheme.text }}
-          >
-            {attention.title}
-          </span>
-          <span
-            className="mt-0.5 block truncate text-[9px]"
-            style={{ color: calloutTheme.detail }}
-          >
-            {attention.reason}
-          </span>
-        </button>
-      </Html>
-    </>
-  );
-}
-
 export function OperationsBoardCanvas({
   layout,
   projection,
   lens = 'status',
-  attention = null,
   controllerRef,
   onViewportChange,
   onDrillProject,
@@ -2450,7 +2470,6 @@ export function OperationsBoardCanvas({
   layout: SpatialBoardLayout;
   projection: SpatialBoardProjection;
   lens?: SpatialBoardLens;
-  attention?: OperationsBoardAttention | null;
   controllerRef: { current: OperationsBoardHandle | null };
   onViewportChange?: (viewport: OperationsBoardViewport) => void;
   onDrillProject: (projectId: string) => void;
@@ -2533,9 +2552,6 @@ export function OperationsBoardCanvas({
   useEffect(() => {
     applyLabelTier();
   }, [minZoneWidth, applyLabelTier]);
-  // Semantic address key: a new altitude (or focused Project) re-runs the
-  // entrance choreography; live data ticks never do.
-  const choreoKey = `${layout.altitude}:${layout.focusedProjectId ?? '~'}`;
   return (
     <Canvas
       orthographic
@@ -2585,7 +2601,6 @@ export function OperationsBoardCanvas({
       />
       <BoardGrid bounds={layout.bounds} theme={theme} />
       <ZoneLayer
-        key={`zones:${choreoKey}`}
         zones={visibleZones}
         reduced={reduced}
         onDrillProject={onDrillProject}
@@ -2595,7 +2610,6 @@ export function OperationsBoardCanvas({
         theme={theme}
       />
       <AgentPieceLayer
-        key={`pieces:${choreoKey}`}
         pieces={layout.pieces}
         altitude={layout.altitude}
         reduced={reduced}
@@ -2606,7 +2620,6 @@ export function OperationsBoardCanvas({
         theme={theme}
       />
       <PopulationDotLayer
-        key={`dots:${choreoKey}`}
         zones={layout.zones}
         pieces={layout.pieces}
         reduced={reduced}
@@ -2632,18 +2645,11 @@ export function OperationsBoardCanvas({
       <AgentControls
         pieces={layout.pieces}
         altitude={layout.altitude}
+        focusedProjectId={layout.focusedProjectId}
         onSelectAgent={onSelectAgent}
         onToggleAgentSelect={onToggleAgentSelect}
         theme={theme}
       />
-      {attention && layout.altitude !== 'agent' && (
-        <AnchoredAttentionCallout
-          layout={layout}
-          attention={attention}
-          onSelectAgent={onSelectAgent}
-          theme={theme}
-        />
-      )}
       {!lowPower && effectsReady && theme.bloom.enabled && (
         <Suspense fallback={null}>
           <OperationsBoardEffects bloom={theme.bloom} />

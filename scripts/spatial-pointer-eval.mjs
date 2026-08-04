@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Spatial pointer-navigation eval (ENG-004 V2.4): drag pans, plain wheel
- * pans, pinch (ctrl/meta+wheel) zooms at the cursor, click-vs-drag guards
- * keep zone drilling intact, M/L demo scales render, and reduced motion
- * parks the demand scene (byte-identical canvas across 900ms).
+ * Spatial pointer-navigation eval (ENG-004 V3.3): primary drag band-selects,
+ * plain wheel pans, pinch (ctrl/meta+wheel) zooms at the cursor,
+ * click-vs-drag guards keep zone drilling intact, and reduced motion parks
+ * the demand scene (byte-identical canvas across 900ms).
  *
  * Run: EXA_BASE=http://localhost:7100 pnpm eval:spatial:pointer
  */
@@ -49,19 +49,30 @@ const viewportOf = () => {
 
 const before = await page.evaluate(viewportOf);
 
-// drag-pan on empty board space
-await page.mouse.move(700, 750);
+// Primary drag draws a full-board selection band and does not move the camera.
+const canvasBox = await page.locator('canvas').boundingBox();
+await page.mouse.move(canvasBox.x + 12, canvasBox.y + canvasBox.height - 12);
 await page.mouse.down();
-await page.mouse.move(560, 640, { steps: 8 });
+await page.mouse.move(canvasBox.x + canvasBox.width - 12, canvasBox.y + 12, {
+  steps: 12,
+});
 await page.mouse.up();
 await page.waitForTimeout(700);
 const afterDrag = await page.evaluate(viewportOf);
 check(
-  'drag pans the camera',
+  'primary drag keeps the camera fixed',
   !!before &&
     !!afterDrag &&
-    (Math.abs(afterDrag.centerX - before.centerX) > 1 ||
-      Math.abs(afterDrag.centerY - before.centerY) > 1)
+    Math.abs(afterDrag.centerX - before.centerX) < 0.2 &&
+    Math.abs(afterDrag.centerY - before.centerY) < 0.2
+);
+check(
+  'primary drag band-selects Agents',
+  Number(
+    await page
+      .locator('[data-spatial-board]')
+      .getAttribute('data-board-multi-count')
+  ) > 0
 );
 
 // pinch-zoom (ctrl+wheel) zooms in at cursor
@@ -99,15 +110,6 @@ await page.waitForFunction(() =>
 check('zone click still drills after drag wiring', true);
 await page.screenshot({ path: join(OUT, 'after-drill.png') });
 
-// M and L demo scales render aggregates without errors
-await page.keyboard.press('Escape');
-await page.waitForTimeout(600);
-for (const scale of ['medium', 'large']) {
-  await page.getByRole('button', { name: `Seed ${scale} demo fleet` }).click();
-  await page.waitForTimeout(1800);
-  await page.screenshot({ path: join(OUT, `fleet-${scale}.png`) });
-  check(`${scale} scale renders`, true);
-}
 check('no page errors in nav probe', errors.length === 0);
 if (errors.length) console.log(errors.slice(0, 5));
 await page.close();
@@ -143,5 +145,9 @@ await rmPage.close();
 
 await browser.close();
 const failed = results.filter(([, ok]) => !ok);
-console.log(failed.length === 0 ? 'NAV PROBE PASSED' : `FAILED: ${failed.map(([n]) => n).join(' | ')}`);
+console.log(
+  failed.length === 0
+    ? 'NAV PROBE PASSED'
+    : `FAILED: ${failed.map(([n]) => n).join(' | ')}`
+);
 process.exit(failed.length === 0 ? 0 : 1);

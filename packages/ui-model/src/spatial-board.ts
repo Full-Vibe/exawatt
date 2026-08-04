@@ -48,6 +48,8 @@ export interface SpatialBoardProjectZone {
   rect: SpatialBoardRect;
   /** Circular Project footprint radius; `rect` is its square bounding box. */
   radius: number;
+  /** Fixed Fleet-address footprint used by the minimap at every altitude. */
+  minimapRect: SpatialBoardRect;
   visible: boolean;
   selected: boolean;
   isAggregate: boolean;
@@ -350,12 +352,23 @@ function hexRingForCount(count: number): number {
   return ring;
 }
 
-function projectZoneRect(agentCount: number): SpatialBoardRect {
+function projectZoneRect(
+  slotIndex: number,
+  agentCount: number
+): SpatialBoardRect {
   const radius = Math.max(
     7,
     5.2 + hexRingForCount(agentCount) * BOARD.projectHexPitch * 1.5
   );
-  return circleRect(radius, radius, radius);
+  // Semantic altitude changes resolution, not address. Keep the focused
+  // Project on its Fleet-lattice center so the camera and contents can carry
+  // their current viewport through Fleet → Project → Agent.
+  const fleetRect = fleetZoneRect(slotIndex, agentCount);
+  return circleRect(
+    fleetRect.x + fleetRect.width / 2,
+    fleetRect.y + fleetRect.height / 2,
+    radius
+  );
 }
 
 /** Circular footprint for aggregate density at focused Project altitude. */
@@ -463,6 +476,7 @@ function projectZone(
     agentIds: agents.map(agent => agent.id),
     rect,
     radius: rect.width / 2,
+    minimapRect: fleetZoneRect(slotIndex, agents.length),
     visible:
       isAggregate ||
       visible.length > 0 ||
@@ -671,6 +685,7 @@ function aggregatePieces(
 
 function cameraBoundsFor(
   altitude: SpatialBoardAltitude,
+  focusedProjectId: string | null,
   zones: SpatialBoardProjectZone[],
   pieces: SpatialBoardPiece[],
   selectedAgentId: string | null,
@@ -687,6 +702,10 @@ function cameraBoundsFor(
         height: padding * 2,
       };
     }
+  }
+  if (altitude === 'project' && focusedProjectId) {
+    const focused = zones.find(zone => zone.id === focusedProjectId);
+    if (focused?.visible) return focused.rect;
   }
   const visibleRects = zones
     .filter(zone => zone.visible)
@@ -743,17 +762,19 @@ export function selectSpatialBoardLayout(
       ...allGroups.slice(0, maxProjectZones),
       aggregateGroups(hidden, state),
     ];
-  } else if (altitude !== 'fleet') {
-    groups = allGroups.filter(group => group.clusterId === focusedProjectId);
   }
 
   const previousZoneSlots = new Map<string, number>();
-  if (options.previousLayout?.altitude === altitude) {
+  if (options.previousLayout) {
     for (const zone of options.previousLayout.zones) {
       previousZoneSlots.set(zone.id, zone.slotIndex);
     }
   }
-  const zoneSlots = stableSlots(
+  const addressSlots = stableSlots(
+    allGroups.map(group => group.clusterId),
+    previousZoneSlots
+  );
+  const fleetSlots = stableSlots(
     groups.map(group => group.clusterId),
     previousZoneSlots
   );
@@ -761,14 +782,17 @@ export function selectSpatialBoardLayout(
     options.maxProjectPieces ?? DEFAULTS.maxProjectPieces;
   const zones = groups.map(group => {
     const slotIndex =
-      altitude === 'fleet' ? zoneSlots.get(group.clusterId)! : 0;
-    const isAggregate = group.clusterId === 'aggregate:remaining-projects';
-    const rect =
       altitude === 'fleet'
-        ? fleetZoneRect(slotIndex, group.agentIds.length)
-        : group.agentIds.length > maxProjectPiecesBudget
-          ? densityZoneRect(group.agentIds.length)
-          : projectZoneRect(group.agentIds.length);
+        ? fleetSlots.get(group.clusterId)!
+        : addressSlots.get(group.clusterId)!;
+    const isAggregate = group.clusterId === 'aggregate:remaining-projects';
+    const detailed =
+      altitude !== 'fleet' && group.clusterId === focusedProjectId;
+    const rect = !detailed
+      ? fleetZoneRect(slotIndex, group.agentIds.length)
+      : group.agentIds.length > maxProjectPiecesBudget
+        ? densityZoneRect(group.agentIds.length)
+        : projectZoneRect(slotIndex, group.agentIds.length);
     return projectZone(
       group,
       state,
@@ -793,21 +817,27 @@ export function selectSpatialBoardLayout(
   const showFleetIndividuals = sourceAgentCount <= maxFleetPieces;
   const pieces: SpatialBoardPiece[] = [];
   for (const zone of zones) {
+    const detailed = altitude !== 'fleet' && zone.id === focusedProjectId;
+    if (altitude !== 'fleet' && !detailed) {
+      pieces.push(...aggregatePieces(zone, 'fleet'));
+      continue;
+    }
+    const pieceAltitude = detailed ? altitude : 'fleet';
     const individualLimit =
-      altitude === 'fleet' ? maxFleetPiecesPerZone : maxProjectPieces;
+      pieceAltitude === 'fleet' ? maxFleetPiecesPerZone : maxProjectPieces;
     const showIndividuals =
       !zone.isAggregate &&
       zone.agentCount <= individualLimit &&
-      (altitude !== 'fleet' || showFleetIndividuals);
+      (pieceAltitude !== 'fleet' || showFleetIndividuals);
     if (showIndividuals) {
       pieces.push(
         ...individualPieces(
           zone,
           state,
-          altitude,
+          pieceAltitude,
           selectedAgentId,
           options.visibleAgentIds,
-          altitude === 'fleet'
+          pieceAltitude === 'fleet'
             ? (options.fleetAgentLabelLimit ?? DEFAULTS.fleetAgentLabelLimit)
             : (options.projectAgentLabelLimit ??
                 DEFAULTS.projectAgentLabelLimit),
@@ -816,13 +846,15 @@ export function selectSpatialBoardLayout(
         )
       );
     } else {
-      pieces.push(...aggregatePieces(zone, altitude));
+      pieces.push(...aggregatePieces(zone, pieceAltitude));
     }
   }
 
   const bounds = boundsOf(zones.map(zone => zone.rect));
+  const minimapBounds = boundsOf(zones.map(zone => zone.minimapRect));
   const cameraBounds = cameraBoundsFor(
     altitude,
+    focusedProjectId,
     zones,
     pieces,
     selectedAgentId,
@@ -847,7 +879,7 @@ export function selectSpatialBoardLayout(
     bounds,
     cameraBounds,
     minimap: {
-      bounds,
+      bounds: minimapBounds,
       visibleZoneIds: zones.filter(zone => zone.visible).map(zone => zone.id),
     },
     stats: {
@@ -923,6 +955,61 @@ export function selectSpatialBandAgentIds(
     }
   }
   return [...captured];
+}
+
+export type SpatialSelectionDirection = 'up' | 'down' | 'left' | 'right';
+
+/**
+ * Arrow-key selection for the RTS board. Candidates live in the pressed
+ * half-plane; distance is weighted by angular deviation so a nearby diagonal
+ * Agent wins only when it is still a legible move in that direction.
+ */
+export function selectSpatialDirectionalAgentId(
+  layout: SpatialBoardLayout,
+  currentAgentId: string | null,
+  direction: SpatialSelectionDirection
+): string | null {
+  const candidates = layout.pieces.filter(
+    (piece): piece is SpatialBoardPiece & { agentId: string } =>
+      piece.kind === 'agent' && piece.visible && Boolean(piece.agentId)
+  );
+  if (candidates.length === 0) return null;
+  const current = currentAgentId
+    ? candidates.find(piece => piece.agentId === currentAgentId)
+    : undefined;
+  const origin = current ?? {
+    x: layout.cameraBounds.x + layout.cameraBounds.width / 2,
+    y: layout.cameraBounds.y + layout.cameraBounds.height / 2,
+  };
+  const axis =
+    direction === 'left'
+      ? { x: -1, y: 0 }
+      : direction === 'right'
+        ? { x: 1, y: 0 }
+        : direction === 'up'
+          ? { x: 0, y: -1 }
+          : { x: 0, y: 1 };
+  let best: (typeof candidates)[number] | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (const candidate of candidates) {
+    if (candidate.agentId === currentAgentId) continue;
+    const dx = candidate.x - origin.x;
+    const dy = candidate.y - origin.y;
+    const forward = dx * axis.x + dy * axis.y;
+    if (forward <= 0.001) continue;
+    const distance = Math.hypot(dx, dy);
+    const perpendicular = Math.abs(dx * axis.y - dy * axis.x);
+    const score = distance * (1 + (perpendicular / distance) * 2.25);
+    if (
+      score < bestScore - 0.0001 ||
+      (Math.abs(score - bestScore) <= 0.0001 &&
+        candidate.agentId.localeCompare(best?.agentId ?? '') < 0)
+    ) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+  return best?.agentId ?? current?.agentId ?? null;
 }
 
 /**

@@ -28,11 +28,10 @@ export const CAMERA_VELOCITY_EPSILON = 0.0008;
 
 const ZERO_AXIS: CameraVelocity = { panX: 0, panY: 0, dolly: 0, orbit: 0 };
 const AXES: Record<string, CameraVelocity> = {
-  arrowleft: { panX: -1, panY: 0, dolly: 0, orbit: 0 },
-  arrowright: { panX: 1, panY: 0, dolly: 0, orbit: 0 },
-  // Operator-confirmed: ArrowUp moves the upper map into view.
-  arrowup: { panX: 0, panY: -1, dolly: 0, orbit: 0 },
-  arrowdown: { panX: 0, panY: 1, dolly: 0, orbit: 0 },
+  a: { panX: -1, panY: 0, dolly: 0, orbit: 0 },
+  d: { panX: 1, panY: 0, dolly: 0, orbit: 0 },
+  w: { panX: 0, panY: -1, dolly: 0, orbit: 0 },
+  s: { panX: 0, panY: 1, dolly: 0, orbit: 0 },
   '+': { panX: 0, panY: 0, dolly: 1, orbit: 0 },
   '=': { panX: 0, panY: 0, dolly: 1, orbit: 0 },
   '-': { panX: 0, panY: 0, dolly: -1, orbit: 0 },

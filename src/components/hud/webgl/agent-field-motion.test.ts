@@ -10,7 +10,8 @@ import {
 
 describe('AgentField camera input model', () => {
   it('recognizes only supported camera keys', () => {
-    expect(isCameraKey('ArrowLeft')).toBe(true);
+    expect(isCameraKey('A')).toBe(true);
+    expect(isCameraKey('ArrowLeft')).toBe(false);
     expect(isCameraKey('Q')).toBe(true);
     expect(isCameraKey('+')).toBe(true);
     expect(isCameraKey('n')).toBe(false);
@@ -18,7 +19,7 @@ describe('AgentField camera input model', () => {
 
   it('normalizes diagonal pan speed', () => {
     const target = composeCameraTarget(
-      new Set(['arrowright', 'arrowdown']),
+      new Set(['d', 's']),
       createCameraVelocity()
     );
     expect(Math.hypot(target.panX, target.panY)).toBeCloseTo(
@@ -29,10 +30,7 @@ describe('AgentField camera input model', () => {
 
   it('accelerates over frames instead of applying an instantaneous tap kick', () => {
     const current = createCameraVelocity();
-    const target = composeCameraTarget(
-      new Set(['arrowright']),
-      createCameraVelocity()
-    );
+    const target = composeCameraTarget(new Set(['d']), createCameraVelocity());
 
     stepCameraVelocity(current, target, 1 / 60);
     expect(current.panX).toBeGreaterThan(0);

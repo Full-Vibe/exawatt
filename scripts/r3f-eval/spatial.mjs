@@ -55,8 +55,8 @@ async function measureGlide(page) {
           const start = performance.now();
           document.body.dispatchEvent(
             new KeyboardEvent('keydown', {
-              key: 'ArrowRight',
-              code: 'ArrowRight',
+              key: 'd',
+              code: 'KeyD',
               bubbles: true,
             })
           );
@@ -64,8 +64,8 @@ async function measureGlide(page) {
             () =>
               document.body.dispatchEvent(
                 new KeyboardEvent('keyup', {
-                  key: 'ArrowRight',
-                  code: 'ArrowRight',
+                  key: 'd',
+                  code: 'KeyD',
                   bubbles: true,
                 })
               ),
@@ -93,9 +93,9 @@ async function measureGlide(page) {
         })
     );
   } else {
-    await page.keyboard.down('ArrowRight');
+    await page.keyboard.down('d');
     await page.waitForTimeout(500);
-    await page.keyboard.up('ArrowRight');
+    await page.keyboard.up('d');
     await page.waitForTimeout(1_000);
   }
   const sample = await page.evaluate(() => {
@@ -144,7 +144,54 @@ async function openProject(page) {
     'button[data-board-agent][data-board-status-light]'
   );
   await units.first().waitFor({ state: 'visible' });
+  await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(() =>
+    new URL(location.href).searchParams.has('agent')
+  );
+  check(
+    new URL(page.url()).searchParams.get('altitude') === 'project',
+    'Arrow selection changed semantic altitude instead of selecting an Agent'
+  );
   return { projectCount, units };
+}
+
+async function checkPersistentProjectWorld(page, projectCount) {
+  const projects = page.locator('button[aria-label^="Open Project "]');
+  check(
+    (await projects.count()) === projectCount,
+    'Project focus removed neighboring Projects from the board'
+  );
+  const minimap = page.getByRole('button', {
+    name: 'Recenter board from minimap',
+  });
+  check(
+    (await minimap.locator('svg circle').count()) === projectCount,
+    'Project focus removed neighboring Projects from the minimap'
+  );
+  const viewport = minimap.locator('svg rect').last();
+  const readViewport = async () => ({
+    x: Number(await viewport.getAttribute('x')),
+    y: Number(await viewport.getAttribute('y')),
+  });
+  const before = await readViewport();
+  await page.locator('canvas').hover({ position: { x: 50, y: 50 } });
+  await page.mouse.wheel(260, 0);
+  await page.waitForTimeout(700);
+  const panned = await readViewport();
+  check(
+    Math.abs(panned.x - before.x) > 0.5,
+    'Project focus swallowed a horizontal pan'
+  );
+  await page.getByRole('button', { name: 'Angle' }).click();
+  await page.getByRole('button', { name: 'Top' }).click();
+  await page.waitForTimeout(700);
+  const afterRerender = await readViewport();
+  check(
+    Math.abs(afterRerender.x - panned.x) < 0.5 &&
+      Math.abs(afterRerender.y - panned.y) < 0.5,
+    'A board rerender snapped the camera back to the focused Project'
+  );
+  return { before, panned, afterRerender };
 }
 
 /**
@@ -359,6 +406,12 @@ async function runScenario(browser, scenario) {
 
     const { projectCount, units } = await openProject(page);
     result.projectCount = projectCount;
+    if (scenario.tools) {
+      result.projectWorld = await checkPersistentProjectWorld(
+        page,
+        projectCount
+      );
+    }
     await page.waitForTimeout(1_000);
     if (!scenario.mobile) await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({
@@ -479,12 +532,9 @@ async function runHandoffScenario(browser, scenario) {
         const layer = document.querySelector('[data-altitude-handoff]');
         return {
           present: Boolean(layer),
-          pointerEvents: layer
-            ? getComputedStyle(layer).pointerEvents
-            : null,
-          ghostCount: document.querySelectorAll(
-            '[data-altitude-handoff-ghost]'
-          ).length,
+          pointerEvents: layer ? getComputedStyle(layer).pointerEvents : null,
+          ghostCount: document.querySelectorAll('[data-altitude-handoff-ghost]')
+            .length,
         };
       });
       check(ghosts.present, 'Handoff ghosts did not render');

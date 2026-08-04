@@ -22,6 +22,7 @@ function zone(
     agentIds: [],
     rect,
     radius: rect.width / 2,
+    minimapRect: rect,
     visible,
     selected: false,
     isAggregate: false,

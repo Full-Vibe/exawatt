@@ -3,7 +3,8 @@
 /**
  * Held-key camera GLIDE for the AgentField world.
  *
- * Arrows (pan), +/− (zoom) and Q/E (orbit) move continuously while held:
+ * WASD (pan), +/− (zoom) and Q/E (orbit) move continuously while held.
+ * Arrow keys belong exclusively to spatial Agent selection:
  * a rAF loop damps velocity toward the pressed-key target and decays after
  * release, so movement has one coherent acceleration/deceleration model.
  *
