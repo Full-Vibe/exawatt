@@ -173,3 +173,11 @@ retired. Future full-screen route covers default to disallowed unless one owner
 spans the handoff, the ground is explicitly compatible with both surfaces, and
 real browser pixels pass under Auto light and dark. Incident `0003` records the
 production evidence and five-whys.
+
+ENG-032 T5.3 completes that public boundary. A fixed exhibition surface also
+owns one interface family and 100% type scale across its content, shared chrome,
+and pending UI; it never inherits the mutable app-theme typography profile or
+interface-scale overlay. App surfaces still consume those preferences globally.
+This is not a ban on theme typography—it prevents a surface explicitly outside
+the app appearance canvas from taking layout inputs from that canvas. Incident
+`0004` records the metric reproduction and adversarial theme/scale gate.

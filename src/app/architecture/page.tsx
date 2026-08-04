@@ -406,7 +406,10 @@ export default function ArchitecturePage() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--exa-public-exhibition-canvas)] text-neutral-100">
+    <main
+      className="min-h-screen bg-[var(--exa-public-exhibition-canvas)] text-neutral-100"
+      data-public-exhibition-surface="true"
+    >
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <header className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div>

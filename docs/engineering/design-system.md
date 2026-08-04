@@ -270,7 +270,30 @@ Auto light and dark. Initial-load screenshots and final-state DOM assertions do
 not satisfy this gate; drive the real control and sample the pending/commit
 frames.
 
+### Public exhibition presentation boundary
+
+Home and the public Architecture map are fixed exhibition surfaces outside the
+app appearance canvas. Their semantic boundary owns the whole presentation—not
+only a dark background: System sans, 100% type scale, route-stable opaque shared
+chrome, and a same-ground pending state. Explicit `font-mono` roles remain Geist
+Mono. App-global theme family/scale changes may continue underneath but must not
+change any public-exhibition text metric.
+
+Do not implement this through a route-local `<style>` element or by pinning one
+text node. Content, header/footer, and pending UI opt into the shared semantic
+boundary. `eval:typography-stability` must hold identical computed metrics while
+Air/Classic/Night and 90/100/120% app-root inputs are deliberately perturbed.
+
 ### Amendment log
+
+- 2026-08-03 — ENG-032 T5.3 public typography incident closure: completed the
+  fixed public-exhibition boundary after production metric evidence showed
+  Architecture still inherited app-theme families and interface scale. Home,
+  Architecture, shared chrome, and the Architecture pending state now own one
+  System/100% presentation; Home's route-local style owner retired. The new
+  `eval:typography-stability` gate samples computed metrics and raster hashes,
+  then adversarially cycles all three typography profiles and 90–120% scale.
+  Incident `0004` carries the five-whys and exact before/after metrics.
 
 - 2026-08-03 — ENG-032 T5.2 navigation-paint incident closure: retired the
   two-owner homepage → Architecture exit/entry curtain after production pixel

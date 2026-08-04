@@ -232,17 +232,36 @@ body {
   color: var(--foreground);
 }
 
-/* The marketing home and public architecture map are authored against a dark
-   exhibition ground. Own their shared chrome here instead of injecting route-
-   local styles: both pathname states resolve to the same presentation during
-   client navigation, so React never exposes the active app theme between
-   unmounting one page and mounting the next. */
+/* Home and the public Architecture map are fixed exhibition surfaces, not app
+   appearance canvases. Their complete typographic presentation is therefore
+   insulated from app-theme previews, Auto changes, and saved interface scale.
+   Keep this boundary semantic and route-stable; a page-local <style> owner can
+   disappear during App Router handoff and recreate the exact split ownership
+   this selector prevents. */
+[data-public-exhibition-surface='true'],
 [data-public-dark-chrome='true'] {
+  --exa-interface-scale: 1;
   --exa-interface-font:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+@media (max-height: 520px) {
+  .home-hero-content {
+    gap: 1rem;
+  }
+
+  .home-hero-title {
+    font-size: 2.25rem;
+    line-height: 2.5rem;
+  }
+
+  .home-hero-copy {
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
 }
 
 #site-header[data-public-dark-chrome='true'] {

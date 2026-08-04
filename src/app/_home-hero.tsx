@@ -45,6 +45,7 @@ export function HomeHero() {
       className="relative -mt-12 flex min-h-screen items-center justify-center bg-black pt-12"
       data-background-ready={backgroundReady ? 'true' : 'false'}
       data-home-hero
+      data-public-exhibition-surface="true"
     >
       <HeroBg
         onFadeInComplete={() => setBackgroundReady(true)}

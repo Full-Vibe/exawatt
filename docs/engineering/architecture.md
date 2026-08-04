@@ -47,7 +47,7 @@ server to close (with bounded force-stop escalation) before declaring cleanup
 complete. This is a presentation boundary, not a second application or
 alternate data source.
 
-ENG-032's appearance boundary is **implemented** (decision `0026`). T0–T5.2
+ENG-032's appearance boundary is **implemented** (decision `0026`). T0–T5.3
 provide strict versioned Classic/Air/Night definitions, a deterministic
 validator/generator, one pure resolver, device-local Electron/web preference
 adapters, production Settings, account-menu, and command-palette selection, first-paint/native
@@ -84,10 +84,12 @@ Consumption, and readiness channels distinct and accepts no executable
 CSS/JavaScript or remote assets.
 Demo and Live data remain irrelevant to appearance selection.
 Client-navigation continuity is part of that projection boundary, not a second
-theme owner. Fixed-dark public exhibition surfaces keep route-stable opaque
-chrome and a same-ground pending frame; app theme canvases never become
-decorative full-viewport transition paint. Incident `0003` records the
-home-to-Architecture failure that established this invariant.
+theme owner. Fixed-dark public exhibition surfaces own a complete presentation
+boundary: route-stable opaque chrome, a same-ground pending frame, one fixed
+interface family, and fixed type scale. App theme canvases never become
+decorative full-viewport transition paint, and app font/scale changes never
+reflow those public surfaces. Incidents `0003` and `0004` record the paint and
+typography failures that established this invariant.
 
 The Electron shell presents Agent → Team → Fleet (decision `0023`) as one
 command-altitude navigation continuum. That shared navigation does not

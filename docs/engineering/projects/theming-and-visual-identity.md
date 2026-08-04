@@ -6,7 +6,7 @@ discovery, and (once approved) the executable milestone detail.
 
 ## Current phase
 
-**Production closure — T0 through T5.2 assembled and verified.** The versioned
+**Production closure — T0 through T5.3 assembled and verified.** The versioned
 contract, device-local resolver/runtime, strict Electron settings and
 first-paint bootstrap now expose Classic, Air, and Night through production
 Appearance settings, the account-avatar menu, and the **Change theme…** command.
@@ -878,3 +878,14 @@ no packet privately extends the contract to solve a local color.
   route and decodes real body/header pixels; the fixed worktree held dark over
   11 sampled frames, while `eval:r3f` remained 100/100. Incident `0003` records
   the five-whys, control, and falsified hydration/reload/network hypotheses.
+- 2026-08-03, T5.3 public-typography incident closure: the operator's captures
+  showed every Architecture sans role changing while its explicit 11px Geist
+  Mono eyebrow stayed fixed. The controlled production case reproduced the
+  exact ownership split: Air/100%, Classic/120%, and Night/90% changed the
+  brand 13→15.6→11.7px and summary 18→21.6→16.2px while mono stayed 11px.
+  The public boundary had fixed canvas/chrome paint but still inherited app
+  font/scale. Home, Architecture, shared chrome, and pending UI now share a
+  complete System/100% presentation owner; Home's route-local `<style>` is
+  gone. `eval:typography-stability` holds one computed/raster state and then
+  adversarially cycles every production family/scale input. Incident `0004`
+  records the five-whys and falsified provider/font/viewport hypotheses.
