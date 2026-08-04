@@ -61,10 +61,11 @@ process. **⌘K** also exposes each recoverable Session by name.
 
 Draft tabs and never-started Agents contain no durable conversation and keep the
 fast discard behavior. A draft becomes durable UI state after any explicit
-composer choice, not only non-blank task text; its complete launch configuration
-survives tab switches and restarts. Once a recoverable entry expires, Exawatt reaps its
-retained terminal history; provider-owned history remains governed by the
-provider.
+composer choice, not only non-blank task text; its exact launch snapshot survives
+tab switches and restarts. The snapshot is not itself a reusable Launch
+Configuration and does not train Project ranking. Once a recoverable entry
+expires, Exawatt reaps its retained terminal history; provider-owned history
+remains governed by the provider.
 
 The tab is currently the workspace ribbon's Initiative-shaped projection of this
 Session. Closing the last tab does not implicitly close its Project: the empty
@@ -93,6 +94,21 @@ offline use leaves the local fallback in place and never blocks a new Agent or
 exact resume. Provider or generated metadata that narrates the model's process
 (for example, “Based on my exploration…”) is discarded in favor of the saved
 operator goal.
+
+## Cloning to another Agent
+
+A started Agent Session's context menu and **⌘K** expose **Clone to…** and each
+available Agent Launch Configuration. The selected target is exact: configured
+Agent Source, source-native model, and effort or variant. Shell and unavailable
+configurations are excluded.
+
+Clone creates a distinct new Agent and Session. Exawatt gives it a bounded,
+Exawatt-owned goal/context handoff derived from the original Session, leaves the
+original untouched, and passes no provider conversation or resume identity.
+There is no live process migration, shared conversation state, automatic
+failover, or source substitution. The new Session succeeds or fails as an
+ordinary fresh launch, and only success updates that Project's Launch
+Configuration frecency.
 
 ## Local data
 

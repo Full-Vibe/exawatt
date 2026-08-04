@@ -502,7 +502,7 @@ export const architectureManifest = {
           id: 'terminal-workspace',
           label: 'Agent + Team Workspace',
           summary:
-            'Elastic two-row Project/Initiative ribbon, inert Project selection, intent-safe Agent drafts, semantically merged parent/delegated attention, compact goal-visual Team tiles, keyboard-complete Session control, and a convention-v2 roadmap lens with linked liveness, backlog provenance, launch/attach, and capability-honest sequence/state controls.',
+            'Single-row Project/Initiative ribbon, lightweight task + Launch Configuration ribbon + Start, exact source/model/effort selection, direct Shell, fresh-Session Clone, semantically merged attention, keyboard-complete Session control, and a convention-v2 roadmap lens.',
           layer: 'ui',
           status: 'implemented',
           x: 205,
@@ -622,7 +622,7 @@ export const architectureManifest = {
           id: 'ui-model',
           label: 'UI Model',
           summary:
-            'Pure typed selectors, view models, spatial layout data, and command contracts shared by UI regimes.',
+            'Pure typed selectors, Launch Configuration Agent/Shell variants, Project ranking and pins, view models, spatial layout data, and command contracts shared by UI regimes.',
           layer: 'coordination',
           status: 'active-build',
           x: 80,
@@ -742,7 +742,7 @@ export const architectureManifest = {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
-            'Immediate launch frame, trusted IPC, serialized workspace/history, durable provider identity, native-network PKCE, atomic delivery, signed updates, and parser-validated per-file roadmap transactions with real-path containment, guarded undo, and no git.',
+            'Immediate launch frame, trusted IPC, serialized workspace/history and versioned Launch Configuration settings, durable provider identity, native-network PKCE, atomic delivery, signed updates, and parser-validated roadmap transactions.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 75,
@@ -901,7 +901,8 @@ export const architectureManifest = {
     'Agent sources are replaceable harnesses behind explicit adapters.',
     'Coding is the first dogfood workload, not the Agent boundary; compatible non-coding sources use the same command and evidence contracts.',
     'Source entitlement and Consumption are separate: a compatible subscription-backed harness does not require Exawatt API billing, and unreported plan headroom stays unknown.',
-    'A new Agent launch shows and pins the source-resolved model/effort pair; per-Agent overrides do not rewrite harness configuration, and dominant environment constraints stay explicit.',
+    'A Launch Configuration is one exact configured source/model/effort choice; only successful launches train per-Project frecency, Project pins stay local, and unavailable choices never silently substitute.',
+    'Shell is a distinct peer launch target with no Agent identity or composer task; Clone creates a fresh Agent Session with bounded handoff text, preserves the original, and carries no provider resume identity.',
     'Recent conversation discovery is Project-scoped, local-first, and source-neutral; exact identity reconciles Exawatt Session history with harness history before optional hosted title augmentation.',
     'Launch permission policy is source-agnostic and provider-enforced today; adapters translate visible personal Project defaults without silent escalation.',
     'Activity assurance is composable: reported, observed, authorized, enforced, and verified are independent claims, and unknowns stay visible.',

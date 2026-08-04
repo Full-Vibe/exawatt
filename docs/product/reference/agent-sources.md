@@ -10,6 +10,7 @@ Examples:
 - hosted OpenClaw
 - Codex
 - Claude Code
+- OpenCode
 - custom harnesses
 - Demo Scenario Source
 
@@ -56,12 +57,12 @@ headroom that the source does not report.
 
 Global source facts and Project-effective launch configuration appear at their
 proper scopes. The registry can show the account identity and default; the
-Agent composer shows the model and effort that the current Project will
-actually request. A provenance affordance explains whether a fact came from a
-source command, source configuration, Project settings, environment policy, or
-Demo fixture, and a relative freshness label exposes its formatted timestamp
-on hover and keyboard focus. Relative time refreshes while Settings remains
-open.
+Agent composer's selected Launch Configuration shows the configured source,
+model, and effort that the current Project will actually request. A provenance
+affordance explains whether a fact came from a source command, source
+configuration, Project settings, environment policy, or Demo fixture, and a
+relative freshness label exposes its formatted timestamp on hover and keyboard
+focus. Relative time refreshes while Settings remains open.
 
 The **Browse Agent Sources** flow separates sources Exawatt supports but cannot
 currently reach from future source types. `Inspect install` or `Configure` is
@@ -70,10 +71,11 @@ connection that looks broken.
 
 ### Current desktop implementation
 
-Settings now auto-discovers four built-in records through one Electron-main
+Settings now auto-discovers five built-in records through one Electron-main
 registry boundary: local Claude Code, local Codex, the local OpenClaw gateway,
-and Demo Mode. Claude Code and Codex can launch from the Agent composer when
-their installation and source-owned authentication are ready. OpenClaw's local
+local OpenCode, and Demo Mode. Claude Code, Codex, and OpenCode can launch from
+the Agent composer when their installation and source-owned authentication are
+ready. OpenClaw's local
 installation and gateway configuration are reported independently, but
 reachability and authentication become ready only after its protocol-level
 gateway status command succeeds. Config presence and a listening port are not
@@ -99,9 +101,11 @@ before spawning any Agent process.
 ## Launch contract
 
 Project selection and Agent launch are separate commands. An open Project may
-have zero Sessions. Starting an Agent may include an optional initial task and a
-visible source choice; the source adapter decides how that request maps to a
-local process, remote Agent, or provider Session.
+have zero Sessions. The launch surface is intentionally only an optional task,
+one Launch Configuration ribbon, and Start. Each Agent configuration carries
+the exact configured Agent Source, source-native model, and effort or variant;
+the source adapter decides how that request maps to a local process, remote
+Agent, or provider Session.
 
 Closing a Project does not delete its source-agnostic identity. After the last
 Agent closes, the open zero-Session Project remains valid and moves to a compact
@@ -112,30 +116,43 @@ active Agent tab, or the active Project when it has no tabs. `⌘⇧T` restores 
 newest recoverable Session without starting it; direct shell launch uses
 `⌘⌥T`.
 
-The first composer edit creates a draft tab carrying the complete launch
-configuration. Untouched catalog/default hydration remains ephemeral;
-operator-authored task, source, model, effort, worktree/branch, and roadmap-link
-choices persist together.
+The first composer edit creates a draft tab carrying the exact launch snapshot.
+Untouched catalog/default hydration remains ephemeral; operator-authored task,
+source, model, effort, permission, worktree/branch, and roadmap-link choices
+persist together. That draft is not a reusable Launch Configuration. Only a
+successful launch or explicit friendly name structurally deduplicates or adds
+the Agent choice to the app-wide pool, and only successful launch changes the
+active Project's frecency. Selection, editing, naming, failed starts, and
+abandoned work do not train rank. Pins are Project-local and remain above the
+learned order.
 
-Near-term Claude Code and Codex Sessions are PTY-backed. That transport is an
-implementation detail, not a requirement for future sources. Shells remain
-secondary Project tools.
+Near-term Claude Code, Codex, and OpenCode Sessions are PTY-backed. That
+transport is an implementation detail, not a requirement for future sources.
+Shells remain
+secondary Project tools even though Shell appears as a peer ribbon and `⌘K`
+choice. Its shape is distinct: no Agent Source, model, effort, Type, or Agent
+permission, no composer task text, and no cross-source Clone target.
 
 Coding is likewise the current dogfood workload, not a source-category
 boundary. Research, marketing, operations, and other non-coding Agents should
 enter through the same launch and observation contracts whenever their source
 exposes compatible commands and evidence.
 
-Source recommendations are personal and reversible. Exawatt may remember the
-last source used per Project and fall back to personal recency, but must not
-silently hard-code one provider for every user or Project.
+Launch recommendations are personal and reversible. One reusable Agent pool is
+ranked by successful launches separately for each Project, and each Project may
+pin its preferred Agent configurations or Shell. Exawatt must not silently
+hard-code one provider for every user or Project.
 
-Model and reasoning-effort choice are also visible and source-owned. Before a
-new local Agent starts, the composer resolves the selected harness's effective
-model/effort pair and exposes its available choices. Codex supplies its
-installed model catalog, each model's supported efforts and default, and the
-configured pair. Claude Code answers the same question over its SDK control
-protocol: the rows Exawatt lists are the rows its own `/model` menu renders,
+Model and reasoning-effort choice are visible, exact, and source-owned. The
+selected ribbon item shows the effective pair; **Customize** exposes configured
+source, searchable model, effort, launch modifiers, and optional friendly name,
+while **All configurations…** exposes the complete reusable catalog and its
+Project pin/manage actions. Agent Types remain a coming-soon axis; naming a
+configuration does not create a Type. Before a new local Agent starts, the
+composer resolves the selected harness's effective model/effort pair. Codex
+supplies its installed model catalog, each model's supported efforts and
+default, and the configured pair. Claude Code answers the same question over
+its SDK control protocol: the rows Exawatt lists are the rows its own `/model` menu renders,
 carrying each row's launch value and accepted effort levels, so the two lists
 cannot diverge and Exawatt adds nothing of its own to them. Changing models immediately
 reconciles effort to that model's valid choices and default. Exawatt pins the
@@ -147,6 +164,14 @@ a harness cannot describe an exact value or live catalog, Exawatt labels the
 harness default honestly and lets the harness remain the authority instead of
 inventing one. Cached catalog values carry source provenance and freshness;
 hard-coded provider catalogs are fixtures only and never product truth.
+
+The common keyboard contract is likewise whole-configuration based: `⌘T`, type,
+Enter starts the selected Agent; `⌘T`, `⌥↑/↓`, type, Enter cycles to another
+Agent configuration without moving task focus; and `⌘⌥T` opens Shell directly.
+The ribbon remains reachable through standard Left/Right and Home/End controls,
+and `⌘K` exposes the same catalog. An unavailable configuration remains visible
+and inspectable with its missing fact but blocks Start. Selection is never
+silently translated to a different source, model, or effort.
 
 Launch permission policy is also visible, personal, and reversible. Exawatt
 uses one source-agnostic three-level contract:

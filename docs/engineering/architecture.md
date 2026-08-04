@@ -339,6 +339,33 @@ Project-effective launch view by combining source facts, Project draft state,
 and environment policy. This separation prevents an account default in
 Settings from masquerading as the model a particular Agent will launch.
 
+#### Launch Configuration runtime
+
+The shared Launch Configuration domain in `@exawatt/core` owns a versioned
+app-wide pool with stable Agent/Shell variants, structural deduplication,
+deterministic per-Project usage, and Project-local pins. Electron main persists
+that state atomically in the desktop settings store and exposes validated IPC;
+the renderer adapter never becomes a second storage owner. Only a confirmed
+successful Agent or Shell launch records usage. Selection, edits, explicit
+naming, failed starts, and abandoned composer work do not train frecency.
+
+The workspace combines that pool with the normalized Agent Source registry and
+source-native model catalogs to produce one Project-ranked selector. The task,
+ribbon, Customize, All catalog, `⌘K`, and launch request use the same exact
+configuration identity and launch translation. Configured source, model, and
+effort/variant are identity; permission, worktree/branch, and roadmap
+association remain per-launch modifiers. Readiness is revalidated at spawn, and
+an unavailable saved configuration remains inspectable rather than being
+silently translated to another source or model. Agent Type remains a future
+axis; a friendly configuration name is not a Type.
+
+Shell is a distinct union variant presented beside Agents. It has no source,
+model, effort, Type, or Agent permission and the composer never sends task text
+to it. Session Clone uses the same available Agent targets but a separate
+fresh-launch handoff boundary: a bounded Exawatt-owned goal/context prompt
+starts a distinct Session, preserves the original, and carries no provider
+resume identity. Shell and unavailable configurations cannot be Clone targets.
+
 Registry transport failure is an explicit unavailable or stale state. Renderer
 fallback declarations are informational and never launch-capable. Electron
 main validates the selected source at every Agent-spawn boundary against
@@ -444,9 +471,11 @@ Built:
   quiet/BEL boundary latches finished until guaranteed operator engagement.
   Shells remain output-driven because they have no Agent turn contract
 - inert persisted Projects independent of Session tabs; a curated Project
-  chooser with reviewed parent-folder import; and a compact source-aware Agent
-  composer whose optional first task and source-agnostic launch-permission
-  policy cross the launch boundary as data. Personal permission defaults are
+  chooser with reviewed parent-folder import; and a lightweight task + Launch
+  Configuration ribbon + Start composer. Its selected configuration carries an
+  exact configured source/model/effort identity; Customize carries
+  source-agnostic launch-permission, worktree/branch, roadmap, and naming
+  controls beside that identity. Personal permission defaults are
   persisted by Project and harness; the PTY/source boundary translates
   `prompt`, `auto`, and `unrestricted` into current Claude Code and Codex
   flags plus OpenCode's guarded unique launch agent. The same boundary
@@ -461,14 +490,16 @@ Built:
   though the root TUI has no `--variant` flag; an unavailable catalog remains
   explicitly source-default/unknown.
   Environment-owned effort constraints remain visible and non-editable because
-  they outrank session flags. The workspace chrome uses a measured elastic-ribbon
-  boundary: compact Project headers, selected and manually persisted disclosure,
-  Initiative-shaped Session tabs, two-row target-bounds layout,
-  priority-preserving overflow, pointer-close stability, and
-  reduced-motion-safe transitions. Empty Projects remain open objects and
-  stable-partition into a dormant tail after a short inactive dwell; only an
-  explicit close removes the open group. The first authored change promotes
-  task, source, model, effort, worktree/branch, and roadmap link into one
+  they outrank session flags. Successful launches alone train a Project-ranked
+  app-wide Launch Configuration pool; Project pins, All/Customize, exact
+  unavailable states, direct Shell, shared palette entries, and fresh-Session
+  Clone sit on that one domain. The workspace chrome uses a measured
+  single-row boundary: Projects fold before anything disappears, active tabs
+  shrink before last-resort horizontal scrolling, and pointer-close stability
+  and reduced-motion-safe transitions remain intact. Empty Projects remain open
+  objects and stable-partition into a dormant tail after a short inactive dwell;
+  only an explicit close removes the open group. The first authored change
+  promotes task, source, model, effort, worktree/branch, and roadmap link into one
   persisted draft-tab record
 - a source-agnostic Project catalog derived from durable workspace state. The
   Electron workspace save broadcasts an authoritative change event through the

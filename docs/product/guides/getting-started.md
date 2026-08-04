@@ -10,16 +10,40 @@ Use **Open Project** to select a known Project, browse to one folder, or review
 folders from an optional parent-directory import. Opening a Project only changes
 the working context; it does not start a shell or Agent.
 
-Inside a Project, the Agent composer accepts an optional first task and shows the
-Agent Source that will run it. Exawatt remembers the last source used in each
-Project, while keeping the choice visible and changeable. A blank task starts an
-interactive Agent Session. Plain shells remain available as a separate Project
-tool. **⌘T** opens a new Agent tab; **⌘⌥T** opens a shell directly.
+Inside a Project, the new-Agent page stays deliberately small: an optional first
+task, one **Launch Configuration** ribbon, and **Start**. Each Agent choice is an
+exact configured source, source-native model, and effort or variant. A blank task
+starts an interactive Agent Session. The fast paths are:
+
+- **⌘T**, type, **Enter** to start the selected Agent.
+- **⌘T**, use **⌥↑/↓** before typing to cycle the whole Agent choice, then type
+  and press **Enter**.
+- **⌘⌥T** to open Shell directly, then type the shell command and press
+  **Enter** in the terminal.
+
+The ribbon also supports Left/Right and Home/End. **Customize** exposes the
+configured source, searchable model, effort, launch policy, worktree/branch,
+roadmap association, and an optional friendly name without turning the page
+into an Agent builder. **All configurations…** opens the complete catalog and
+its Pin, Rename, and Delete actions; the same Agent and Shell choices are
+searchable from **⌘K**. Agent Types remain a clearly marked coming-soon concept,
+and naming a configuration does not create one.
+
+Exawatt learns the order separately in each Project. Only a successful Agent or
+Shell launch changes that Project's frecency; selecting, editing, naming,
+abandoning, or failing to start does not. Pins are Project-local and remain
+above the learned order. Unavailable configurations stay visible with the exact
+missing fact and cannot Start; Exawatt never substitutes another model or
+source silently.
+
+Shell is a peer choice in the ribbon but remains a distinct Project tool. It
+has no Agent Source, model, effort, Agent Type, or Agent permission, receives no
+task text, and cannot be a Clone target.
 
 Open **Settings → Agent Sources** to inspect the source registry. Local Claude
-Code and Codex show installation, sign-in, minimum account identity, version,
-model-discovery method, capabilities, and enforcement ownership without moving
-their credentials into Exawatt. Facts identify whether they were observed,
+Code, Codex, and OpenCode show installation, sign-in, minimum account identity,
+version, model-discovery method, capabilities, and enforcement ownership without
+moving their credentials into Exawatt. Facts identify whether they were observed,
 declared by the adapter, or simulated. Local OpenClaw reports gateway
 configuration separately and claims reachability only after its protocol status
 check succeeds. Demo Mode labels its facts as simulated. Use **Recheck** after
@@ -29,16 +53,15 @@ installation guide. Registry failures remain visibly stale or unavailable and
 cannot enable Agent launch.
 
 Exawatt uses the local harness account you already signed in with. When Claude
-Code or Codex is entitled through a compatible subscription plan, you do not
+Code, Codex, or OpenCode is entitled through a compatible source-owned account,
+you do not
 need to switch to API billing or add a separate provider token to Exawatt;
 normal provider plan limits still apply. Exawatt never turns an observed token
 count into a claim about billing or remaining plan capacity.
 
-The ribbon keeps Project structure compact. The selected Project expands to
-show its Initiative-shaped Agent tabs; inactive Projects stay collapsed unless
-you use the small diamond or **Keep expanded** menu action. That preference
-survives restart. The ribbon uses at most two rows; **+N** opens the existing
-overview when more work exists than fits.
+The Project ribbon stays one row high. Projects fold into counted containers,
+the active Project's tabs shrink when needed, and the row scrolls only as a last
+resort; no Project or Agent disappears from the strip.
 
 Closing the last Agent leaves the empty Project and composer open. After a short
 inactive dwell, its compact header slides into the dormant tail instead of
@@ -57,7 +80,7 @@ shell process; press it repeatedly to restore older closed Sessions. The same
 entries remain individually selectable from **⌘K**. Empty drafts and Agents
 that never received work are discarded instead of entering recovery history.
 
-The adjacent model and effort selectors show the capability pair that will be
+The selected Launch Configuration shows the exact capability pair that will be
 requested for the new Agent. Exawatt resolves Codex's live catalog,
 model-specific effort levels, and configured defaults. For Claude Code it asks
 the installed CLI for the same rows its native `/model` menu renders — the
@@ -65,13 +88,16 @@ account-aware catalog, each row's `--model` value, and the effort levels that
 model accepts — so the two lists cannot drift. It does not ship a provider list
 that can go stale or rewrite either harness's configuration. Changing a value overrides
 only this new Agent; both
-choices stay with a saved draft while you move between tabs. Effort trades
+choices stay with the existing composer draft while you move between tabs.
+Successfully launching or explicitly naming the choice adds its structurally
+deduplicated identity to the reusable pool; merely editing the draft does not.
+Effort trades
 speed and spend for reasoning depth, and changing models updates its valid
 choices and default. Worktree/branch and roadmap-link choices are part of the
 same saved draft rather than transient popover state.
 
-The adjacent permission selector controls how much autonomy the new Agent
-receives:
+The permission choice under **Customize** controls how much autonomy the new
+Agent receives:
 
 - **Ask first:** keep operator approval in the loop.
 - **Auto-review:** let the harness's safety reviewer handle routine actions and
@@ -100,6 +126,13 @@ Session needs you, it leaves the current Terminal in place. Commands that need
 a Project, Session, split target, or recovery entry are hidden from the passive
 key legend or shown disabled with a short reason in the command palette and
 macOS Session menu.
+
+A started Agent tab's context menu and **⌘K** offer **Clone to…** with the exact
+available Agent configurations. Clone starts a distinct new Agent Session with
+a bounded, Exawatt-owned goal/context handoff. The original Session remains
+untouched, and Exawatt passes no provider resume identity or live conversation
+state to the new source. This is a fresh handoff, not migration, failover, or
+resume.
 
 ## Quitting and returning
 
