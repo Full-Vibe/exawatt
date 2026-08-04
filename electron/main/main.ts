@@ -973,7 +973,17 @@ function registerAppIPC(): void {
   // synchronous read is intentional here: it lets Electron's durable settings,
   // including one-launch safe mode, win before any renderer pixels are chosen.
   ipcMain.on('app:appearance-bootstrap', event => {
-    assertTrustedIpcSender(event);
+    // Unlike handleTrusted (ipcMain.handle), Electron does not catch a throw
+    // from a plain ipcMain.on listener — it becomes an uncaught main-process
+    // exception and surfaces as the native crash dialog. A rejected sender
+    // here (e.g. querying event.senderFrame mid-navigation) must fail closed
+    // into the renderer's existing first-paint recovery theme instead.
+    try {
+      assertTrustedIpcSender(event);
+    } catch {
+      event.returnValue = undefined;
+      return;
+    }
     event.returnValue = rendererAppearanceBootstrapSnapshot(
       loadSettings().appearance,
       safeThemeLaunch,
