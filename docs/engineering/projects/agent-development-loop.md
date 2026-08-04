@@ -295,6 +295,37 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-08-03, the contention-first H7–H10 implementation landed behind the
+  existing `pnpm agent:land` entrypoint without a new public command or hosted
+  dependency. Delivery state now lives under the common Git directory as
+  monotonic FIFO tickets with atomic per-ticket transitions, ownership epochs,
+  heartbeats, dead-PID-only recovery, immutable per-attempt remote refs, and a
+  v1 JSONL metric stream. The head lander rebases in its own bootstrapped
+  worktree, republishes the new immutable attempt, reruns the repository-owned
+  floor on that exact tree, and holds the legacy delivery lock only for the
+  final fetch/non-force push. The shared `master` checkout is best-effort
+  post-integration state and a dirty checkout cannot reject a landing. A
+  guarded `--direct` path requires the operator-only
+  `EXAWATT_AGENT_LAND_ALLOW_DIRECT=1` switch.
+
+  Dogfood is now a separate latest-state consumer: an integrated landing writes
+  one superseding request, starts a short-lived detached worker, and returns.
+  The worker waits for queue drain or the ten-minute ceiling, builds an
+  immutable integrated SHA under the independent installation lock, and checks
+  the desired SHA immediately before staging and before the atomic swap. The
+  existing signed snapshot, packaged smoke, atomic replacement, and
+  stage-without-restart contracts remain intact.
+
+  Local validation covered 32 concurrent admissions, CAS fencing and one
+  terminal result, no takeover of a live owner, dead-owner recovery with its
+  remote attempt preserved, a real two-lander FIFO race with automatic rebase,
+  a dirty shared checkout, queue-drain and ceiling behavior, supersedence during
+  a build, conditional policy composition, and CI cancellation. H7's ten green
+  current-master Linux runs, H8's ten-candidate production burst, H9's
+  production killed-head/sustained-load evidence, and H11's 30 representative
+  landings remain observation work; implementation success is not being
+  mistaken for those exit criteria.
+
 - 2026-08-03, the H7 flake sweep removed wall-clock guesses from the affected
   filesystem and process-lifecycle unit tests. Session-history overlap tests
   now wait for the mocked atomic rename to begin before racing a newer write or
@@ -401,7 +432,7 @@ Landed 2026-07-21:
 - eval-harness preflights in `withElectronApp`: the node-pty binding is asserted BEFORE launch (actionable remedy instead of the per-spawn `posix_spawnp` banner), and any `EXAWATT_DEV_URL` launch verifies the new dev-only `/api/dev-identity` route (public-prefixed, 404 outside development) — the harness refuses a dev server whose `repoRoot` realpath differs from the tree under test, fails fast with a start-a-dev-server remedy when nothing answers, and refuses an UNHEALTHY server (only a 404 identity-less older/prod tree is tolerated, with a warning) — the unhealthy case was diagnosed live during this pass when a stale `next-server` child survived its parent's kill after the D26 worktree was deleted and kept answering 500 on the port
 - bounded launch resilience: one sweep-orphans-and-retry on Playwright's "Process failed to launch!" (the observed transient), never more — a second failure surfaces
 - `scripts/electron-eval.test.mjs` (in `test:agent-delivery`) pins the preflight and identity-guard behaviors, including the WRONG TREE refusal and the tolerated identity-less (older/prod) server
-Exit criteria: a fresh worktree reaches a passing Electron eval with exactly `pnpm worktree:setup` + `pnpm dev -p <port>` + `EXA_BASE=... pnpm eval:...`, and pointing an eval at the wrong tree's dev server fails loudly instead of testing the wrong code — both validated 2026-07-21 (this item was itself landed from a worktree bootstrapped by the script; the split eval re-ran green through the guarded harness).
+  Exit criteria: a fresh worktree reaches a passing Electron eval with exactly `pnpm worktree:setup` + `pnpm dev -p <port>` + `EXA_BASE=... pnpm eval:...`, and pointing an eval at the wrong tree's dev server fails loudly instead of testing the wrong code — both validated 2026-07-21 (this item was itself landed from a worktree bootstrapped by the script; the split eval re-ran green through the guarded harness).
 
 Sequencing: independent; extend as new agent-loop friction is diagnosed (fold future findings here rather than into product items).
 

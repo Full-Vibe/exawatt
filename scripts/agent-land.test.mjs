@@ -64,6 +64,7 @@ test('parses repeated verification and delivery options', () => {
       '--dogfood',
     ]),
     {
+      direct: false,
       dogfood: true,
       help: false,
       keepBranch: false,
@@ -102,7 +103,11 @@ test('lands a verified agent branch through a remote fast-forward', async () => 
         {
           name: 'agent-land-fixture',
           private: true,
-          scripts: { 'verify-ok': 'node -e "process.exit(0)"' },
+          scripts: {
+            'type-check': 'node -e "process.exit(0)"',
+            'test:agent-delivery': 'node -e "process.exit(0)"',
+            'verify-ok': 'node -e "process.exit(0)"',
+          },
         },
         null,
         2
@@ -143,7 +148,7 @@ test('lands a verified agent branch through a remote fast-forward', async () => 
     deliveryLock = null;
     const output = await landing.completion;
 
-    assert.match(output, /pushed=true/);
+    assert.match(output, /pushed=refs\/heads\/agent-attempts\//);
     assert.match(output, /installed=not-requested/);
     assert.equal(await git(main, 'rev-parse', 'HEAD'), expected);
     assert.equal(await git(main, 'rev-parse', 'origin/master'), expected);
@@ -159,6 +164,83 @@ test('lands a verified agent branch through a remote fast-forward', async () => 
       await readFile(path.join(main, 'change.txt'), 'utf8'),
       'landed\n'
     );
+  } finally {
+    await deliveryLock?.release();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('serves concurrent landers in FIFO order, rebases the later tree, and ignores dirty shared master', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'exawatt-agent-fifo-'));
+  const remote = path.join(directory, 'remote.git');
+  const main = path.join(directory, 'main');
+  const firstPath = path.join(directory, 'first');
+  const secondPath = path.join(directory, 'second');
+  let deliveryLock;
+
+  try {
+    await git(directory, 'init', '--bare', '--initial-branch=master', remote);
+    await git(directory, 'clone', remote, main);
+    await git(main, 'config', 'user.name', 'Agent Test');
+    await git(main, 'config', 'user.email', 'agent@example.com');
+    await writeFile(
+      path.join(main, 'package.json'),
+      `${JSON.stringify({
+        name: 'agent-land-fifo-fixture',
+        private: true,
+        scripts: {
+          'type-check': 'node -e "process.exit(0)"',
+          'test:agent-delivery': 'node -e "process.exit(0)"',
+        },
+      })}\n`
+    );
+    await git(main, 'add', 'package.json');
+    await git(main, 'commit', '-m', 'Initial');
+    await git(main, 'push', '-u', 'origin', 'master');
+    await git(main, 'worktree', 'add', firstPath, '-b', 'agent/first');
+    await git(main, 'worktree', 'add', secondPath, '-b', 'agent/second');
+    for (const [worktree, file, value] of [
+      [firstPath, 'first.txt', 'first\n'],
+      [secondPath, 'second.txt', 'second\n'],
+    ]) {
+      await git(worktree, 'config', 'user.name', 'Agent Test');
+      await git(worktree, 'config', 'user.email', 'agent@example.com');
+      await writeFile(path.join(worktree, file), value);
+      await git(worktree, 'add', file);
+      await git(worktree, 'commit', '-m', `Add ${file}`);
+    }
+
+    await writeFile(path.join(main, 'operator-note.txt'), 'leave me alone\n');
+    const initialMain = await git(main, 'rev-parse', 'HEAD');
+    deliveryLock = await acquireDeliveryLock(main, { log() {} });
+
+    const first = runStreaming(process.execPath, [script], firstPath);
+    await waitFor(() => first.output().includes('admitted ticket 1'));
+    const second = runStreaming(process.execPath, [script], secondPath);
+    await waitFor(() => second.output().includes('admitted ticket 2'));
+    await deliveryLock.release();
+    deliveryLock = null;
+
+    const firstOutput = await first.completion;
+    const secondOutput = await second.completion;
+    assert.match(firstOutput, /admitted ticket 1/);
+    assert.match(secondOutput, /admitted ticket 2/);
+    assert.match(secondOutput, /rebase onto/);
+    assert.equal(await git(main, 'rev-parse', 'HEAD'), initialMain);
+    assert.match(
+      await git(main, 'status', '--porcelain'),
+      /operator-note\.txt/
+    );
+
+    await git(main, 'fetch', 'origin', 'master');
+    const remoteFiles = await git(
+      main,
+      'ls-tree',
+      '--name-only',
+      'origin/master'
+    );
+    assert.match(remoteFiles, /first\.txt/);
+    assert.match(remoteFiles, /second\.txt/);
   } finally {
     await deliveryLock?.release();
     await rm(directory, { recursive: true, force: true });
