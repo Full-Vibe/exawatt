@@ -1,7 +1,10 @@
 packages:
-  - 'packages/*'
+  - packages/*
 
 onlyBuiltDependencies:
   - electron
   - node-pty
   - '@electron/rebuild'
+
+patchedDependencies:
+  cmdk: patches/cmdk.patch

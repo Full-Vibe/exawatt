@@ -129,6 +129,7 @@ import {
   readPaletteUses,
   recordPaletteUse,
 } from './palette-recents';
+import { paletteFilter, paletteValue } from './palette-filter';
 
 /** Shared live-status language with palette-specific HUD colors. */
 const STATUS_META: Record<SessionRowStatus, { label: string; color: string }> =
@@ -166,7 +167,10 @@ interface CommandPaletteProps {
 interface CommandItem {
   id: string;
   label: string;
+  /** cmdk value: primary display name + unique suffix (`paletteValue`) */
   value: string;
+  /** auxiliary search terms — cmdk's `keywords`, scored below name bands */
+  keywords?: string[];
   shortcut?: ShortcutKeys;
   icon: React.ComponentType<{ className?: string }>;
   onSelect: () => void;
@@ -237,6 +241,14 @@ export function CommandPalette({
     'workspace-new-project'
   );
   const [search, setSearch] = useState('');
+  // The results list must never open a new query mid-scroll: ranking moves
+  // the best group to the top, and a scroll position left over from an
+  // earlier keystroke can hide the selected first row above the fold.
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const searchAndRescroll = useCallback((value: string) => {
+    setSearch(value);
+    listRef.current?.scrollTo?.({ top: 0 });
+  }, []);
   // live sessions for the switcher (S2) — desktop app only, fetched fresh
   // each time the palette opens
   const [sessions, setSessions] = useState<SessionRow[]>([]);
@@ -540,7 +552,11 @@ export function CommandPalette({
       {
         id: WORKSPACE_PALETTE_ROW_ID.rename,
         label: 'Rename the active tab',
-        value: 'rename tab title active',
+        value: paletteValue(
+          'Rename the active tab',
+          WORKSPACE_PALETTE_ROW_ID.rename
+        ),
+        keywords: ['rename', 'tab', 'title', 'active'],
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-rename'),
         icon: PenLine,
         availability: workspaceAvailability.commands['rename-tab'],
@@ -549,7 +565,11 @@ export function CommandPalette({
       {
         id: WORKSPACE_PALETTE_ROW_ID.color,
         label: 'Rename or recolor the active Project',
-        value: 'rename color project swatch recolor palette hue',
+        value: paletteValue(
+          'Rename or recolor the active Project',
+          WORKSPACE_PALETTE_ROW_ID.color
+        ),
+        keywords: ['rename', 'color', 'project', 'swatch', 'recolor', 'hue'],
         icon: Palette,
         availability: workspaceAvailability.commands['rename-project'],
         // the Project editor owns both its name and identity color
@@ -558,7 +578,11 @@ export function CommandPalette({
       {
         id: WORKSPACE_PALETTE_ROW_ID.split,
         label: 'Split: pin / unpin the active tab',
-        value: 'split pane pin unpin side by side watch',
+        value: paletteValue(
+          'Split: pin / unpin the active tab',
+          WORKSPACE_PALETTE_ROW_ID.split
+        ),
+        keywords: ['split', 'pane', 'pin', 'unpin', 'side by side', 'watch'],
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-split'),
         icon: Columns2,
         availability: workspaceAvailability.commands['toggle-split'],
@@ -567,7 +591,11 @@ export function CommandPalette({
       {
         id: WORKSPACE_PALETTE_ROW_ID.jump,
         label: 'Jump to the Session needing you',
-        value: 'jump attention needs you blocked waiting',
+        value: paletteValue(
+          'Jump to the Session needing you',
+          WORKSPACE_PALETTE_ROW_ID.jump
+        ),
+        keywords: ['jump', 'attention', 'needs you', 'blocked', 'waiting'],
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-jump-attention'),
         icon: BellRing,
         availability: workspaceAvailability.commands['jump-attention'],
@@ -576,7 +604,20 @@ export function CommandPalette({
       {
         id: WORKSPACE_PALETTE_ROW_ID.roadmap,
         label: 'Open the Project roadmap',
-        value: 'roadmap plan queue milestones next up shipped blocked sessions',
+        value: paletteValue(
+          'Open the Project roadmap',
+          WORKSPACE_PALETTE_ROW_ID.roadmap
+        ),
+        keywords: [
+          'roadmap',
+          'plan',
+          'queue',
+          'milestones',
+          'next up',
+          'shipped',
+          'blocked',
+          'sessions',
+        ],
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-roadmap'),
         icon: Milestone,
         availability: workspaceAvailability.commands['open-roadmap'],
@@ -585,7 +626,8 @@ export function CommandPalette({
       {
         id: WORKSPACE_PALETTE_ROW_ID.moveTabLeft,
         label: 'Move tab left',
-        value: 'move tab left reorder arrange shift nudge order',
+        value: paletteValue('Move tab left', WORKSPACE_PALETTE_ROW_ID.moveTabLeft),
+        keywords: ['move', 'tab', 'left', 'reorder', 'arrange', 'shift', 'nudge', 'order'],
         // fixed arrangement family (D20) — displayed, not rebindable
         shortcut: MOVE_TAB_LEFT_KEYS,
         icon: ArrowLeftToLine,
@@ -603,7 +645,8 @@ export function CommandPalette({
       {
         id: WORKSPACE_PALETTE_ROW_ID.moveTabRight,
         label: 'Move tab right',
-        value: 'move tab right reorder arrange shift nudge order',
+        value: paletteValue('Move tab right', WORKSPACE_PALETTE_ROW_ID.moveTabRight),
+        keywords: ['move', 'tab', 'right', 'reorder', 'arrange', 'shift', 'nudge', 'order'],
         shortcut: MOVE_TAB_RIGHT_KEYS,
         icon: ArrowRightToLine,
         availability: workspaceAvailability.commands['move-tab-right'],
@@ -620,7 +663,8 @@ export function CommandPalette({
       {
         id: WORKSPACE_PALETTE_ROW_ID.moveProjectLeft,
         label: 'Move Project left',
-        value: 'move project left reorder arrange shift nudge order',
+        value: paletteValue('Move Project left', WORKSPACE_PALETTE_ROW_ID.moveProjectLeft),
+        keywords: ['move', 'project', 'left', 'reorder', 'arrange', 'shift', 'nudge', 'order'],
         shortcut: MOVE_PROJECT_LEFT_KEYS,
         icon: ArrowLeftToLine,
         availability: workspaceAvailability.commands['move-project-left'],
@@ -637,7 +681,8 @@ export function CommandPalette({
       {
         id: WORKSPACE_PALETTE_ROW_ID.moveProjectRight,
         label: 'Move Project right',
-        value: 'move project right reorder arrange shift nudge order',
+        value: paletteValue('Move Project right', WORKSPACE_PALETTE_ROW_ID.moveProjectRight),
+        keywords: ['move', 'project', 'right', 'reorder', 'arrange', 'shift', 'nudge', 'order'],
         shortcut: MOVE_PROJECT_RIGHT_KEYS,
         icon: ArrowRightToLine,
         availability: workspaceAvailability.commands['move-project-right'],
@@ -654,7 +699,11 @@ export function CommandPalette({
       {
         id: WORKSPACE_PALETTE_ROW_ID.close,
         label: 'Close the active tab or empty Project',
-        value: 'close tab agent empty project kill session end',
+        value: paletteValue(
+          'Close the active tab or empty Project',
+          WORKSPACE_PALETTE_ROW_ID.close
+        ),
+        keywords: ['close', 'tab', 'agent', 'empty', 'project', 'kill', 'session', 'end'],
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-close-tab'),
         icon: XCircle,
         availability: workspaceAvailability.commands['close-tab'],
@@ -683,10 +732,13 @@ export function CommandPalette({
       return {
         id: `nav-${s.id}`,
         label: `Go to ${s.name}`,
-        // Name first: typing a surface's name must rank its nav row at the
-        // top. A value starting with the verb ("go …") loses the prefix
-        // match to any item whose value happens to start with the name.
-        value: `${s.name} go ${s.keywords.join(' ')}`,
+        // Value is the surface's NAME (plus a unique suffix): the ranking
+        // filter's structural bands score exact/prefix/word matches on the
+        // name above every fuzzy hit. Aux terms ride in `keywords`; "go" is
+        // one of them so typing the verb lists navigation, and the filter
+        // separately re-scores "go to X" phrasings with the verb stripped.
+        value: paletteValue(s.name, `nav-${s.id}`),
+        keywords: ['go', ...s.keywords],
         icon: SURFACE_ICONS[s.id],
         shortcut: shortcutId
           ? shortcutRegistry.getEffectiveKeys(shortcutId)
@@ -729,14 +781,15 @@ export function CommandPalette({
     const feedbackVerb = (
       id: string,
       label: string,
-      value: string,
+      keywords: string[],
       icon: LucideIcon,
       kind: QuickFeedbackKind,
       withShortcut: boolean
     ): CommandItem => ({
       id,
       label,
-      value,
+      value: paletteValue(label, id),
+      keywords,
       icon,
       shortcut: withShortcut
         ? shortcutRegistry.getEffectiveKeys('quick-feedback')
@@ -748,14 +801,15 @@ export function CommandPalette({
       {
         id: 'action-change-theme',
         label: 'Change theme…',
-        value: 'change theme appearance color scheme preset light dark',
+        value: paletteValue('Change theme…', 'action-change-theme'),
+        keywords: ['change', 'theme', 'appearance', 'color', 'scheme', 'preset', 'light', 'dark'],
         icon: Palette,
         onSelect: enterThemePicker,
       },
       feedbackVerb(
         'action-feedback',
         'Send feedback',
-        'send feedback comment note tell us',
+        ['send', 'feedback', 'comment', 'note', 'tell us'],
         MessageSquarePlus,
         'general',
         true
@@ -763,7 +817,7 @@ export function CommandPalette({
       feedbackVerb(
         'action-feedback-bug',
         'Report a bug',
-        'report bug broken issue problem wrong crash',
+        ['report', 'bug', 'broken', 'issue', 'problem', 'wrong', 'crash'],
         Bug,
         'bug',
         false
@@ -771,7 +825,7 @@ export function CommandPalette({
       feedbackVerb(
         'action-feedback-idea',
         'Suggest an idea',
-        'suggest idea feature request enhancement improve wish',
+        ['suggest', 'idea', 'feature', 'request', 'enhancement', 'improve', 'wish'],
         Lightbulb,
         'idea',
         false
@@ -779,7 +833,8 @@ export function CommandPalette({
       {
         id: 'action-help',
         label: 'Keyboard Shortcuts',
-        value: 'keyboard shortcuts help keys hotkeys cheat sheet',
+        value: paletteValue('Keyboard Shortcuts', 'action-help'),
+        keywords: ['keyboard', 'shortcuts', 'help', 'keys', 'hotkeys', 'cheat sheet'],
         icon: HelpCircle,
         shortcut: shortcutRegistry.getEffectiveKeys('help-modal'),
         onSelect: () => handleSelect(onOpenHelpModal),
@@ -903,6 +958,9 @@ export function CommandPalette({
       onOpenChange={handlePaletteOpenChange}
       commandValue={paletteMode === 'themes' ? themeValue : undefined}
       onCommandValueChange={paletteMode === 'themes' ? previewTheme : undefined}
+      // structural ranking bands (ENG-016) — commands mode only; the theme
+      // picker keeps cmdk's default scoring over its plain values
+      commandFilter={paletteMode === 'themes' ? undefined : paletteFilter}
       commandTitle={paletteMode === 'themes' ? 'Change theme' : undefined}
       commandDescription={
         paletteMode === 'themes'
@@ -924,9 +982,9 @@ export function CommandPalette({
           <CommandInput
             placeholder="Type a command or search..."
             value={search}
-            onValueChange={setSearch}
+            onValueChange={searchAndRescroll}
           />
-          <CommandList>
+          <CommandList ref={listRef}>
             <CommandEmpty>No results found.</CommandEmpty>
 
             {!search && recentRows.length > 0 && (
@@ -977,6 +1035,7 @@ export function CommandPalette({
                       <CommandItem
                         key={row.id}
                         value={row.value}
+                        keywords={row.keywords}
                         disabled={disabled}
                         data-palette-workspace-current={
                           row.action === 'current'
@@ -1030,7 +1089,12 @@ export function CommandPalette({
                     return (
                       <CommandItem
                         key={s.id}
-                        value={`${s.searchValue} ${s.id}`}
+                        value={paletteValue(s.title, s.id)}
+                        keywords={[
+                          s.projectName,
+                          ...(s.roadmapItemId ? [s.roadmapItemId] : []),
+                          ...(s.subtitle ? [s.subtitle] : []),
+                        ]}
                         onSelect={() => openSession(s.id)}
                         data-session-id={s.id}
                       >
@@ -1089,7 +1153,18 @@ export function CommandPalette({
                   {AGENT_SOURCE_ORDER.map(source => (
                     <CommandItem
                       key={`launch-${source}`}
-                      value={`start agent ${AGENT_SOURCE_META[source].label} new session task`}
+                      value={paletteValue(
+                        `Start Agent with ${AGENT_SOURCE_META[source].label}`,
+                        `launch-${source}`
+                      )}
+                      keywords={[
+                        AGENT_SOURCE_META[source].label,
+                        'start',
+                        'agent',
+                        'new',
+                        'session',
+                        'task',
+                      ]}
                       onSelect={() => {
                         recordPaletteUse(`launch:${source}`);
                         openAgentComposer(source);
@@ -1110,7 +1185,20 @@ export function CommandPalette({
                 <CommandSeparator />
                 <CommandGroup heading="Tools">
                   <CommandItem
-                    value={`open shell terminal active project ${workspaceAvailability.commands['launch-shell'].reason ?? ''}`}
+                    value={paletteValue(
+                      'Open shell in the active Project',
+                      'tool-shell'
+                    )}
+                    keywords={[
+                      'open',
+                      'shell',
+                      'terminal',
+                      'active',
+                      'project',
+                      ...(workspaceAvailability.commands['launch-shell'].reason
+                        ? [workspaceAvailability.commands['launch-shell'].reason]
+                        : []),
+                    ]}
                     onSelect={() => launchHarness('shell')}
                     disabled={
                       !workspaceAvailability.commands['launch-shell'].available
@@ -1142,7 +1230,12 @@ export function CommandPalette({
                     .map(p => (
                       <CommandItem
                         key={`project-${p.id}`}
-                        value={`project open ${p.name} ${p.root_path ?? ''}`}
+                        value={paletteValue(p.name, `project-${p.id}`)}
+                        keywords={[
+                          'project',
+                          'open',
+                          ...(p.root_path ? [p.root_path] : []),
+                        ]}
                         onSelect={() => {
                           recordPaletteUse(`project:${p.root_path}`);
                           openProject(p);
@@ -1168,7 +1261,8 @@ export function CommandPalette({
                     .map(r => (
                       <CommandItem
                         key={`recent-${r.dir}`}
-                        value={`project open recent ${r.name} ${r.dir}`}
+                        value={paletteValue(r.name, `recent-${r.dir}`)}
+                        keywords={['project', 'open', 'recent', r.dir]}
                         onSelect={() => {
                           recordPaletteUse(`project:${r.dir}`);
                           openRecentProject(r.dir);
@@ -1189,7 +1283,11 @@ export function CommandPalette({
                     ))}
                   {registryFailed && (
                     <CommandItem
-                      value="project sign in sync account"
+                      value={paletteValue(
+                        'Sign in to sync Projects across machines',
+                        'project-sign-in'
+                      )}
+                      keywords={['project', 'sign in', 'sync', 'account']}
                       onSelect={() =>
                         handleSelect(() => router.push('/sign-in'))
                       }
@@ -1199,7 +1297,16 @@ export function CommandPalette({
                     </CommandItem>
                   )}
                   <CommandItem
-                    value="project add new open folder directory browse"
+                    value={paletteValue('Add project…', 'project-add')}
+                    keywords={[
+                      'project',
+                      'add',
+                      'new',
+                      'open',
+                      'folder',
+                      'directory',
+                      'browse',
+                    ]}
                     onSelect={addProject}
                   >
                     <FolderOpen className="mr-2 h-3.5 w-3.5 shrink-0" />
@@ -1222,7 +1329,13 @@ export function CommandPalette({
                     {tenantWorkspaceItems.map(item => (
                       <CommandItem
                         key={item.id}
-                        value={`${item.value} ${item.availability?.reason ?? ''}`}
+                        value={item.value}
+                        keywords={[
+                          ...(item.keywords ?? []),
+                          ...(item.availability?.reason
+                            ? [item.availability.reason]
+                            : []),
+                        ]}
                         disabled={
                           item.availability
                             ? !item.availability.available
@@ -1257,7 +1370,18 @@ export function CommandPalette({
                   {closedSessions.map(entry => (
                     <CommandItem
                       key={entry.durableSessionId}
-                      value={`reopen closed ${entry.projectName} ${entry.goal ?? ''} ${entry.title} ${entry.harness}`}
+                      value={paletteValue(
+                        `Reopen ${entry.projectName} · ${entry.goal ?? entry.title}`,
+                        `closed-${entry.durableSessionId}`
+                      )}
+                      keywords={[
+                        'reopen',
+                        'closed',
+                        entry.projectName,
+                        entry.title,
+                        entry.harness,
+                        ...(entry.goal ? [entry.goal] : []),
+                      ]}
                       onSelect={() => {
                         recordPaletteUse('ws-reopen-closed');
                         handleSelect(() =>
@@ -1286,7 +1410,20 @@ export function CommandPalette({
               <>
                 <CommandGroup heading="Fleet">
                   <CommandItem
-                    value="fleet spatial toggle projection top-down angled fixed view"
+                    value={paletteValue(
+                      'Toggle projection (top-down ↔ angled)',
+                      'spatial-projection'
+                    )}
+                    keywords={[
+                      'fleet',
+                      'spatial',
+                      'toggle',
+                      'projection',
+                      'top-down',
+                      'angled',
+                      'fixed',
+                      'view',
+                    ]}
                     onSelect={() => {
                       recordPaletteUse('spatial-projection');
                       toggleProjection();
@@ -1306,6 +1443,7 @@ export function CommandPalette({
                 <CommandItem
                   key={item.id}
                   value={item.value}
+                  keywords={item.keywords}
                   onSelect={() => {
                     recordPaletteUse(item.id);
                     item.onSelect();
@@ -1331,6 +1469,7 @@ export function CommandPalette({
                 <CommandItem
                   key={item.id}
                   value={item.value}
+                  keywords={item.keywords}
                   onSelect={() => {
                     recordPaletteUse(item.id);
                     item.onSelect();

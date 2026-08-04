@@ -2,6 +2,7 @@ import type {
   TenantWorkspace,
   TenantWorkspaceId,
 } from '@/lib/tenancy/workspace-scope';
+import { paletteValue } from './palette-filter';
 
 export type WorkspacePaletteAction =
   | 'current'
@@ -13,7 +14,10 @@ export interface WorkspacePaletteRow {
   id: string;
   workspace: TenantWorkspace;
   action: WorkspacePaletteAction;
+  /** cmdk value: workspace name + unique suffix (`paletteValue`) */
   value: string;
+  /** auxiliary search terms for cmdk's `keywords` prop */
+  keywords: string[];
   note?: string;
 }
 
@@ -39,14 +43,17 @@ export function buildWorkspacePaletteRows(
       id: `workspace:${workspace.id}`,
       workspace,
       action,
-      value: [
-        workspace.name,
+      value: paletteValue(workspace.name, `workspace:${workspace.id}`),
+      keywords: [
         workspace.kind,
-        workspace.tagline,
-        'workspace tenant organization account switch open',
-      ]
-        .filter(Boolean)
-        .join(' '),
+        ...(workspace.tagline ? [workspace.tagline] : []),
+        'workspace',
+        'tenant',
+        'organization',
+        'account',
+        'switch',
+        'open',
+      ],
       note: current
         ? 'Current'
         : workspace.availability === 'preview' ||

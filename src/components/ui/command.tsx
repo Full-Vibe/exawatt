@@ -27,9 +27,15 @@ const Command = React.forwardRef<
 ));
 Command.displayName = CommandPrimitive.displayName;
 
+type CommandFilter = NonNullable<
+  React.ComponentPropsWithoutRef<typeof CommandPrimitive>['filter']
+>;
+
 interface CommandDialogProps extends DialogProps {
   commandValue?: string;
   onCommandValueChange?: (value: string) => void;
+  /** custom ranking filter forwarded to the cmdk root */
+  commandFilter?: CommandFilter;
   commandTitle?: string;
   commandDescription?: string;
 }
@@ -38,6 +44,7 @@ const CommandDialog = ({
   children,
   commandValue,
   onCommandValueChange,
+  commandFilter,
   commandTitle = 'Command palette',
   commandDescription = 'Search Projects, Sessions, settings, and commands.',
   ...props
@@ -75,6 +82,7 @@ const CommandDialog = ({
         <Command
           value={commandValue}
           onValueChange={onCommandValueChange}
+          filter={commandFilter}
           className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5"
         >
           {children}
