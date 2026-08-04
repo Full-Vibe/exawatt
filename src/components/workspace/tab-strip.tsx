@@ -1427,108 +1427,113 @@ export function TabStrip({
                 items: tabMenuItems,
                 target: { kind: 'tab', id: tab.id },
               });
-            }}
-            onClickCapture={event => {
-              if (justDraggedRef.current) {
-                event.preventDefault();
-                event.stopPropagation();
-              }
-            }}
-            onContextMenu={event => {
-              event.preventDefault();
-              event.stopPropagation();
-              const trigger =
-                event.currentTarget.querySelector<HTMLElement>(
-                  '[data-tab-chrome]'
-                );
-              if (trigger) {
-                openTabMenu(trigger, { x: event.clientX, y: event.clientY });
-              }
-            }}
-            className="group/tab relative flex h-7 w-max origin-left items-center overflow-hidden rounded-md border"
-            style={{
-              ...itemStyle(entry, projectExiting),
-              borderColor: on
-                ? withThemeAlpha(color, 0.61)
-                : withThemeAlpha(HUD.textDim, 0.17),
-              borderBottomColor: on
-                ? color
-                : withThemeAlpha(color, 0.22),
-              background: draggingSelf
-                ? HUD.bg.panelFill
-                : on
-                  ? withThemeAlpha(color, 0.08)
-                  : withThemeAlpha(HUD.textDim, 0.035),
-              filter: dead ? 'opacity(.74)' : undefined,
-            }}
-          >
-            <EditableChrome
-              data-tab-chrome
-              editing={editing?.kind === 'tab' && editing.id === tab.id}
-              aria-current={on ? 'true' : undefined}
-              tabIndex={visible ? 0 : -1}
-              onClick={() => onSelectTab(project.dir, tab.id)}
-              onDoubleClick={() =>
-                setEditing({ kind: 'tab', id: tab.id, value: tab.title })
-              }
-              onKeyDown={event => {
-                if (!isContextMenuKey(event)) return;
-                event.preventDefault();
-                event.stopPropagation();
-                openTabMenu(
-                  event.currentTarget,
-                  keyboardMenuPoint(event.currentTarget)
-                );
-              }}
-              aria-label={`${display.primary}${
-                display.context ? ` — ${display.context}` : ''
-              } — ${
-                dead
-                  ? stoppedStatus.toLowerCase()
-                  : needsYou
-                    ? 'needs your attention'
-                    : SESSION_GLYPH_LABEL[glyphState]
-              }`}
-              title={`${condensed ? `${display.primary}\n` : ''}${tab.cwd}${
-                summary ? `\n${summary}` : ''
-              }${
-                needsYou ? '\nneeds your attention (⌘J jumps here)' : ''
-              }${
-                !dead && !needsYou ? `\n${SESSION_GLYPH_COPY[glyphState]}` : ''
-              }${dead ? `\n${tab.resumeState.replace('-', ' ')}` : ''}${
-                ordinal ? `\n⌘${ordinal} selects` : ''
-              }\n${
-                isDraft
-                  ? '⏎ starts · ⌘W discards'
-                  : '⌘W closes — kept in Recently closed'
-              }\ndouble-click to rename`}
-              className={`relative flex h-full min-w-0 flex-1 cursor-pointer items-center overflow-hidden font-mono text-chrome-title font-medium outline-none transition-transform duration-100 active:scale-[0.98] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan ${
-                condensed ? 'gap-1 px-1.5' : 'gap-1.5 px-2'
-              }`}
-              style={{ color: on ? HUD.text : HUD.textDim }}
-            >
-              {ordinal !== undefined && ordinalHints === 'tabs' && (
-                <span data-tab-ordinal={ordinal} className="contents">
-                  <OrdinalKeycap value={ordinal} color={color} />
-                </span>
-              )}
-              {!dead || isDraft || fault ? (
-                <SessionStatusGlyph
-                  state={isDraft ? 'fresh' : glyphState}
-                  attention={attentionSignal}
-                  delegation={tabDelegation}
-                  fault={fault}
-                />
-              ) : null}
-              {!dead && !isDraft && !condensed && (
-                <DelegationDots color={color} delegation={tabDelegation} />
-              )}
-              {tab.id === pinnedTabId && (
-                <span
-                  data-pinned
-                  title="Pinned in split view (⌘D unpins)"
-                  className="text-[10px] leading-none"
-                  style={{ color }}
+
+            return (
+              <div
+                ref={node => setItemNode(token.key, node)}
+                key={token.key}
+                data-ribbon-item="initiative"
+                data-ribbon-key={token.key}
+                data-project-parent={project.dir}
+                data-tab-id={tab.id}
+                data-tab-harness={tab.harness}
+                data-tab-condensed={condensed || undefined}
+                data-durable-session-id={tab.durableSessionId}
+                data-active={on || undefined}
+                data-close-stabilized={
+                  heldCloseKeys.has(token.key) || undefined
+                }
+                inert={!visible}
+                aria-hidden={!visible || undefined}
+                onPointerDown={event => {
+                  if (!onReorderTab) return;
+                  event.stopPropagation();
+                  beginPointerDrag(event, {
+                    kind: 'tab',
+                    key: token.key,
+                    id: tab.id,
+                    dir: project.dir,
+                  });
+                }}
+                onClickCapture={event => {
+                  if (justDraggedRef.current) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }
+                }}
+                onContextMenu={event => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const trigger =
+                    event.currentTarget.querySelector<HTMLElement>(
+                      '[data-tab-chrome]'
+                    );
+                  if (trigger) {
+                    openTabMenu(trigger, {
+                      x: event.clientX,
+                      y: event.clientY,
+                    });
+                  }
+                }}
+                className="group/tab relative flex h-7 w-max origin-left items-center overflow-hidden rounded-md border"
+                style={{
+                  ...itemStyle(entry, projectExiting),
+                  borderColor: on
+                    ? withThemeAlpha(color, 0.61)
+                    : withThemeAlpha(HUD.textDim, 0.17),
+                  borderBottomColor: on ? color : withThemeAlpha(color, 0.22),
+                  background: draggingSelf
+                    ? HUD.bg.panelFill
+                    : on
+                      ? withThemeAlpha(color, 0.08)
+                      : withThemeAlpha(HUD.textDim, 0.035),
+                  filter: dead ? 'opacity(.74)' : undefined,
+                }}
+              >
+                <EditableChrome
+                  data-tab-chrome
+                  editing={editing?.kind === 'tab' && editing.id === tab.id}
+                  aria-current={on ? 'true' : undefined}
+                  tabIndex={visible ? 0 : -1}
+                  onClick={() => onSelectTab(project.dir, tab.id)}
+                  onDoubleClick={() =>
+                    setEditing({ kind: 'tab', id: tab.id, value: tab.title })
+                  }
+                  onKeyDown={event => {
+                    if (!isContextMenuKey(event)) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openTabMenu(
+                      event.currentTarget,
+                      keyboardMenuPoint(event.currentTarget)
+                    );
+                  }}
+                  aria-label={`${display.primary}${
+                    display.context ? ` — ${display.context}` : ''
+                  } — ${
+                    dead
+                      ? stoppedStatus.toLowerCase()
+                      : needsYou
+                        ? 'needs your attention'
+                        : SESSION_GLYPH_LABEL[glyphState]
+                  }`}
+                  title={`${condensed ? `${display.primary}\n` : ''}${tab.cwd}${
+                    summary ? `\n${summary}` : ''
+                  }${needsYou ? '\nneeds your attention (⌘J jumps here)' : ''}${
+                    !dead && !needsYou
+                      ? `\n${SESSION_GLYPH_COPY[glyphState]}`
+                      : ''
+                  }${dead ? `\n${tab.resumeState.replace('-', ' ')}` : ''}${
+                    ordinal ? `\n⌘${ordinal} selects` : ''
+                  }\n${
+                    isDraft
+                      ? '⏎ starts · ⌘W discards'
+                      : '⌘W closes — kept in Recently closed'
+                  }\ndouble-click to rename`}
+                  className={`relative flex h-full min-w-0 flex-1 cursor-pointer items-center overflow-hidden font-mono text-chrome-title font-medium outline-none transition-transform duration-100 active:scale-[0.98] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan ${
+                    condensed ? 'gap-1 px-1.5' : 'gap-1.5 px-2'
+                  }`}
+                  style={{ color: on ? HUD.text : HUD.textDim }}
                 >
                   {ordinal !== undefined && ordinalHints === 'tabs' && (
                     <span data-tab-ordinal={ordinal} className="contents">
@@ -1561,38 +1566,128 @@ export function TabStrip({
                   the width that decides when Projects fold — Claude vs
                   Codex stays legible on the Project you are in, in the
                   tooltip, and in ⌘K (operator, 2026-08-03). */}
-              {tab.harness !== 'shell' && !isDraft && !tightTab && !condensed && (
-                <span className="shrink-0" style={{ color }}>
-                  <HarnessGlyph harness={tab.harness} size={11} />
-                </span>
-              )}
-              {editing?.kind === 'tab' && editing.id === tab.id ? (
-                <>
-                  <RenameInput
-                    value={editing.value}
-                    color={color}
-                    onChange={value => setEditing({ ...editing, value })}
-                    onCommit={commitEditing}
-                    onCancel={settleEditing}
-                  />
-                  <ColorSwatches
-                    current={color}
-                    onPick={next => onSetProjectColor(project.dir, next)}
-                  />
-                </>
-              ) : condensed || (dead && !isDraft && !on) ? null : (
-                // A stopped unselected chip drops its title entirely (D42
-                // review round, amends the D23 hover-unfurl): a reveal that
-                // grows the chip feeds the width model and shifts layout —
-                // identity lives in the tooltip and aria-label, exactly as
-                // on condensed chips.
-                <span
-                  data-tab-label
-                  className="block min-w-0 flex-1 truncate font-sans leading-tight"
-                >
-                  <span
-                    data-subtitle={
-                      display.primaryKind === 'context' || undefined
+                  {tab.harness !== 'shell' &&
+                    !isDraft &&
+                    !tightTab &&
+                    !condensed && (
+                      <span className="shrink-0" style={{ color }}>
+                        <HarnessGlyph harness={tab.harness} size={11} />
+                      </span>
+                    )}
+                  {editing?.kind === 'tab' && editing.id === tab.id ? (
+                    <>
+                      <RenameInput
+                        value={editing.value}
+                        color={color}
+                        onChange={value => setEditing({ ...editing, value })}
+                        onCommit={commitEditing}
+                        onCancel={settleEditing}
+                      />
+                      <ColorSwatches
+                        current={color}
+                        onPick={next => onSetProjectColor(project.dir, next)}
+                      />
+                    </>
+                  ) : condensed || (dead && !isDraft && !on) ? null : (
+                    // A stopped unselected chip drops its title entirely (D42
+                    // review round, amends the D23 hover-unfurl): a reveal that
+                    // grows the chip feeds the width model and shifts layout —
+                    // identity lives in the tooltip and aria-label, exactly as
+                    // on condensed chips.
+                    <span
+                      data-tab-label
+                      className="block min-w-0 flex-1 truncate font-sans leading-tight"
+                    >
+                      <span
+                        data-subtitle={
+                          display.primaryKind === 'context' || undefined
+                        }
+                      >
+                        {display.primary}
+                      </span>
+                    </span>
+                  )}
+                  {dead && !isDraft && condensed && (
+                    <span
+                      aria-hidden
+                      className="text-[9px] leading-none"
+                      style={{
+                        color:
+                          tab.lifecycle === 'interrupted'
+                            ? HUD.amber
+                            : tab.lifecycle === 'failed'
+                              ? HUD.red
+                              : HUD.textDim,
+                      }}
+                    >
+                      ○
+                    </span>
+                  )}
+                  {dead && !isDraft && !condensed && (
+                    <span
+                      aria-label={stoppedStatus}
+                      className="shrink-0 border border-hud-stroke-faint px-1 py-0.5 text-chrome-meta font-medium leading-none"
+                      style={{
+                        color:
+                          tab.lifecycle === 'interrupted'
+                            ? HUD.amber
+                            : tab.lifecycle === 'failed'
+                              ? HUD.red
+                              : HUD.textDim,
+                      }}
+                    >
+                      {stoppedStatus}
+                    </span>
+                  )}
+                </EditableChrome>
+                {summary &&
+                  isAgent &&
+                  !isDraft &&
+                  !condensed &&
+                  onRateContext && (
+                    <div
+                      data-ribbon-passive
+                      data-tab-feedback-overlay
+                      className="pointer-events-none absolute inset-y-0 right-7 z-10 flex items-center pl-2 opacity-0 transition-opacity duration-100 group-hover/tab:pointer-events-auto group-hover/tab:opacity-100 group-focus-within/tab:pointer-events-auto group-focus-within/tab:opacity-100 motion-reduce:transition-none"
+                      style={{
+                        background: on
+                          ? withThemeAlpha(color, 0.15)
+                          : HUD.bg.panelFill,
+                        boxShadow: `-10px 0 8px -4px ${
+                          on ? withThemeAlpha(color, 0.15) : HUD.bg.panelFill
+                        }`,
+                      }}
+                    >
+                      <ContextLabelFeedback
+                        label={summary}
+                        enabled={feedbackEnabled}
+                        alwaysVisible
+                        onRate={(sentiment, betterLabel) =>
+                          onRateContext({
+                            durableSessionId: tab.durableSessionId,
+                            label: summary,
+                            sentiment,
+                            betterLabel,
+                            projectName: project.name,
+                          })
+                        }
+                      />
+                    </div>
+                  )}
+                {!condensed && (
+                  <button
+                    type="button"
+                    data-ribbon-passive
+                    tabIndex={visible ? 0 : -1}
+                    onPointerDown={event => {
+                      if (event.button === 0) armPointerClose(token.key);
+                    }}
+                    onClick={() => onCloseTab(tab.id)}
+                    aria-label={`Close ${display.primary}`}
+                    title={
+                      isDraft
+                        ? 'Discard (⌘W)'
+                        : 'Close — kept in Recently closed for 14 days (⌘W)'
                     }
                     className={`grid size-5 shrink-0 cursor-pointer place-items-center rounded font-mono text-chrome-label font-normal outline-none transition-[opacity,background-color] duration-100 hover:bg-hud-fill-hi hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan ${
                       floatingClose
@@ -1617,117 +1712,12 @@ export function TabStrip({
                         : {}),
                     }}
                   >
-                    {display.primary}
-                  </span>
-                </span>
-              )}
-              {dead && !isDraft && condensed && (
-                <span
-                  aria-hidden
-                  className="text-[9px] leading-none"
-                  style={{
-                    color:
-                      tab.lifecycle === 'interrupted'
-                        ? HUD.amber
-                        : tab.lifecycle === 'failed'
-                          ? HUD.red
-                          : HUD.textDim,
-                  }}
-                >
-                  ○
-                </span>
-              )}
-              {dead && !isDraft && !condensed && (
-                <span
-                  aria-label={stoppedStatus}
-                  className="shrink-0 border border-hud-stroke-faint px-1 py-0.5 text-chrome-meta font-medium leading-none"
-                  style={{
-                    color:
-                      tab.lifecycle === 'interrupted'
-                        ? HUD.amber
-                        : tab.lifecycle === 'failed'
-                          ? HUD.red
-                          : HUD.textDim,
-                  }}
-                >
-                  {stoppedStatus}
-                </span>
-              )}
-            </EditableChrome>
-            {summary && isAgent && !isDraft && !condensed && onRateContext && (
-              <div
-                data-ribbon-passive
-                data-tab-feedback-overlay
-                className="pointer-events-none absolute inset-y-0 right-7 z-10 flex items-center pl-2 opacity-0 transition-opacity duration-100 group-hover/tab:pointer-events-auto group-hover/tab:opacity-100 group-focus-within/tab:pointer-events-auto group-focus-within/tab:opacity-100 motion-reduce:transition-none"
-                style={{
-                  background: on
-                    ? withThemeAlpha(color, 0.15)
-                    : HUD.bg.panelFill,
-                  boxShadow: `-10px 0 8px -4px ${
-                    on ? withThemeAlpha(color, 0.15) : HUD.bg.panelFill
-                  }`,
-                }}
-              >
-                <ContextLabelFeedback
-                  label={summary}
-                  enabled={feedbackEnabled}
-                  alwaysVisible
-                  onRate={(sentiment, betterLabel) =>
-                    onRateContext({
-                      durableSessionId: tab.durableSessionId,
-                      label: summary,
-                      sentiment,
-                      betterLabel,
-                      projectName: project.name,
-                    })
-                  }
-                />
+                    ×
+                  </button>
+                )}
               </div>
-            )}
-            {!condensed && (
-              <button
-                type="button"
-                data-ribbon-passive
-                tabIndex={visible ? 0 : -1}
-                onPointerDown={event => {
-                  if (event.button === 0) armPointerClose(token.key);
-                }}
-                onClick={() => onCloseTab(tab.id)}
-                aria-label={`Close ${display.primary}`}
-                title={
-                  isDraft
-                    ? 'Discard (⌘W)'
-                    : 'Close — kept in Recently closed for 14 days (⌘W)'
-                }
-                className={`grid size-5 shrink-0 cursor-pointer place-items-center rounded font-mono text-chrome-label font-normal outline-none transition-[opacity,background-color] duration-100 hover:bg-hud-fill-hi hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan ${
-                  floatingClose
-                    ? 'absolute inset-y-0 right-1 my-auto opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100'
-                    : 'mr-1 opacity-45 group-hover/tab:opacity-100'
-                }`}
-                style={{
-                  color: HUD.textDim,
-                  // A revealed floating close sits over the title's tail;
-                  // the chip-coloured backdrop keeps both readable.
-                  ...(floatingClose
-                    ? {
-                        background: on
-                          ? withThemeAlpha(color, 0.15)
-                          : HUD.bg.panelFill,
-                        boxShadow: `-8px 0 8px -4px ${
-                          on
-                            ? withThemeAlpha(color, 0.15)
-                            : HUD.bg.panelFill
-                        }`,
-                      }
-                    : {}),
-                }}
-              >
-                ×
-              </button>
-            )}
-          </div>
-        );
-      })}
+            );
+          })}
         </div>
       </div>
 

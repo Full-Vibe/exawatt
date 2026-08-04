@@ -44,6 +44,7 @@ import {
   Waypoints,
   Shapes,
   Trophy,
+  CopyPlus,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -127,6 +128,12 @@ import {
   recordPaletteUse,
 } from './palette-recents';
 import { paletteFilter, paletteValue } from './palette-filter';
+import {
+  commandPaletteConfigurationKey,
+  commandPaletteConfigurationRequest,
+  commandPaletteLaunchConfigurations,
+  type CommandPaletteLaunchConfiguration,
+} from './command-palette-launch-configurations';
 
 /** Shared live-status language with palette-specific HUD colors. */
 const STATUS_META: Record<SessionRowStatus, { label: string; color: string }> =
@@ -629,8 +636,20 @@ export function CommandPalette({
       {
         id: WORKSPACE_PALETTE_ROW_ID.moveTabLeft,
         label: 'Move tab left',
-        value: paletteValue('Move tab left', WORKSPACE_PALETTE_ROW_ID.moveTabLeft),
-        keywords: ['move', 'tab', 'left', 'reorder', 'arrange', 'shift', 'nudge', 'order'],
+        value: paletteValue(
+          'Move tab left',
+          WORKSPACE_PALETTE_ROW_ID.moveTabLeft
+        ),
+        keywords: [
+          'move',
+          'tab',
+          'left',
+          'reorder',
+          'arrange',
+          'shift',
+          'nudge',
+          'order',
+        ],
         // fixed arrangement family (D20) — displayed, not rebindable
         shortcut: MOVE_TAB_LEFT_KEYS,
         icon: ArrowLeftToLine,
@@ -648,8 +667,20 @@ export function CommandPalette({
       {
         id: WORKSPACE_PALETTE_ROW_ID.moveTabRight,
         label: 'Move tab right',
-        value: paletteValue('Move tab right', WORKSPACE_PALETTE_ROW_ID.moveTabRight),
-        keywords: ['move', 'tab', 'right', 'reorder', 'arrange', 'shift', 'nudge', 'order'],
+        value: paletteValue(
+          'Move tab right',
+          WORKSPACE_PALETTE_ROW_ID.moveTabRight
+        ),
+        keywords: [
+          'move',
+          'tab',
+          'right',
+          'reorder',
+          'arrange',
+          'shift',
+          'nudge',
+          'order',
+        ],
         shortcut: MOVE_TAB_RIGHT_KEYS,
         icon: ArrowRightToLine,
         availability: workspaceAvailability.commands['move-tab-right'],
@@ -666,8 +697,20 @@ export function CommandPalette({
       {
         id: WORKSPACE_PALETTE_ROW_ID.moveProjectLeft,
         label: 'Move Project left',
-        value: paletteValue('Move Project left', WORKSPACE_PALETTE_ROW_ID.moveProjectLeft),
-        keywords: ['move', 'project', 'left', 'reorder', 'arrange', 'shift', 'nudge', 'order'],
+        value: paletteValue(
+          'Move Project left',
+          WORKSPACE_PALETTE_ROW_ID.moveProjectLeft
+        ),
+        keywords: [
+          'move',
+          'project',
+          'left',
+          'reorder',
+          'arrange',
+          'shift',
+          'nudge',
+          'order',
+        ],
         shortcut: MOVE_PROJECT_LEFT_KEYS,
         icon: ArrowLeftToLine,
         availability: workspaceAvailability.commands['move-project-left'],
@@ -684,8 +727,20 @@ export function CommandPalette({
       {
         id: WORKSPACE_PALETTE_ROW_ID.moveProjectRight,
         label: 'Move Project right',
-        value: paletteValue('Move Project right', WORKSPACE_PALETTE_ROW_ID.moveProjectRight),
-        keywords: ['move', 'project', 'right', 'reorder', 'arrange', 'shift', 'nudge', 'order'],
+        value: paletteValue(
+          'Move Project right',
+          WORKSPACE_PALETTE_ROW_ID.moveProjectRight
+        ),
+        keywords: [
+          'move',
+          'project',
+          'right',
+          'reorder',
+          'arrange',
+          'shift',
+          'nudge',
+          'order',
+        ],
         shortcut: MOVE_PROJECT_RIGHT_KEYS,
         icon: ArrowRightToLine,
         availability: workspaceAvailability.commands['move-project-right'],
@@ -706,7 +761,16 @@ export function CommandPalette({
           'Close the active tab or empty Project',
           WORKSPACE_PALETTE_ROW_ID.close
         ),
-        keywords: ['close', 'tab', 'agent', 'empty', 'project', 'kill', 'session', 'end'],
+        keywords: [
+          'close',
+          'tab',
+          'agent',
+          'empty',
+          'project',
+          'kill',
+          'session',
+          'end',
+        ],
         shortcut: shortcutRegistry.getEffectiveKeys('workspace-close-tab'),
         icon: XCircle,
         availability: workspaceAvailability.commands['close-tab'],
@@ -805,7 +869,16 @@ export function CommandPalette({
         id: 'action-change-theme',
         label: 'Change theme…',
         value: paletteValue('Change theme…', 'action-change-theme'),
-        keywords: ['change', 'theme', 'appearance', 'color', 'scheme', 'preset', 'light', 'dark'],
+        keywords: [
+          'change',
+          'theme',
+          'appearance',
+          'color',
+          'scheme',
+          'preset',
+          'light',
+          'dark',
+        ],
         icon: Palette,
         onSelect: enterThemePicker,
       },
@@ -828,7 +901,15 @@ export function CommandPalette({
       feedbackVerb(
         'action-feedback-idea',
         'Suggest an idea',
-        ['suggest', 'idea', 'feature', 'request', 'enhancement', 'improve', 'wish'],
+        [
+          'suggest',
+          'idea',
+          'feature',
+          'request',
+          'enhancement',
+          'improve',
+          'wish',
+        ],
         Lightbulb,
         'idea',
         false
@@ -837,7 +918,14 @@ export function CommandPalette({
         id: 'action-help',
         label: 'Keyboard Shortcuts',
         value: paletteValue('Keyboard Shortcuts', 'action-help'),
-        keywords: ['keyboard', 'shortcuts', 'help', 'keys', 'hotkeys', 'cheat sheet'],
+        keywords: [
+          'keyboard',
+          'shortcuts',
+          'help',
+          'keys',
+          'hotkeys',
+          'cheat sheet',
+        ],
         icon: HelpCircle,
         shortcut: shortcutRegistry.getEffectiveKeys('help-modal'),
         onSelect: () => handleSelect(onOpenHelpModal),
@@ -1162,74 +1250,66 @@ export function CommandPalette({
 
             {personalVerbs && (
               <>
-                <CommandGroup heading="Start Agent">
-                  {AGENT_SOURCE_ORDER.map(source => (
-                    <CommandItem
-                      key={`launch-${source}`}
-                      value={paletteValue(
-                        `Start Agent with ${AGENT_SOURCE_META[source].label}`,
-                        `launch-${source}`
-                      )}
-                      keywords={[
-                        AGENT_SOURCE_META[source].label,
-                        'start',
-                        'agent',
-                        'new',
-                        'session',
-                        'task',
-                      ]}
-                      onSelect={() => {
-                        recordPaletteUse(`launch:${source}`);
-                        openAgentComposer(source);
-                      }}
-                    >
-                      <SourceIdentityMark
-                        className="mr-2"
-                        color={AGENT_SOURCE_META[source].color}
+                <CommandGroup heading="Start">
+                  {launchConfigurations.map(configuration => {
+                    const key = commandPaletteConfigurationKey(configuration);
+                    const snapshot = configuration.configuration;
+                    const shellUnavailable =
+                      snapshot.kind === 'shell' &&
+                      !workspaceAvailability.commands['launch-shell'].available;
+                    return (
+                      <CommandItem
+                        key={`launch-${key}`}
+                        value={paletteValue(
+                          configuration.label,
+                          `launch-${key}`
+                        )}
+                        keywords={[
+                          'start',
+                          'launch',
+                          'configuration',
+                          'new',
+                          'session',
+                          'task',
+                          ...(configuration.searchValue
+                            ? [configuration.searchValue]
+                            : []),
+                        ]}
+                        onSelect={() => {
+                          recordPaletteUse(`launch:${key}`);
+                          openLaunchConfiguration(configuration);
+                        }}
+                        disabled={shellUnavailable}
+                        title={
+                          shellUnavailable
+                            ? (workspaceAvailability.commands['launch-shell']
+                                .reason ?? undefined)
+                            : undefined
+                        }
+                        data-launch-configuration={key}
                       >
-                        <HarnessGlyph harness={source} size={13} />
-                      </SourceIdentityMark>
-                      <span>
-                        Start Agent with {AGENT_SOURCE_META[source].label}
-                      </span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-                <CommandSeparator />
-                <CommandGroup heading="Tools">
-                  <CommandItem
-                    value={paletteValue(
-                      'Open shell in the active Project',
-                      'tool-shell'
-                    )}
-                    keywords={[
-                      'open',
-                      'shell',
-                      'terminal',
-                      'active',
-                      'project',
-                      ...(workspaceAvailability.commands['launch-shell'].reason
-                        ? [workspaceAvailability.commands['launch-shell'].reason]
-                        : []),
-                    ]}
-                    onSelect={() => launchHarness('shell')}
-                    disabled={
-                      !workspaceAvailability.commands['launch-shell'].available
-                    }
-                    title={
-                      workspaceAvailability.commands['launch-shell'].reason ??
-                      undefined
-                    }
-                  >
-                    <SquareTerminal className="mr-2 h-3.5 w-3.5 shrink-0" />
-                    <span>Open shell in the active Project</span>
-                    {!workspaceAvailability.commands['launch-shell']
-                      .available && (
-                      <CommandShortcut>
-                        {workspaceAvailability.commands['launch-shell'].reason}
-                      </CommandShortcut>
-                    )}
-                  </CommandItem>
+                        {snapshot.kind === 'agent' ? (
+                          <SourceIdentityMark
+                            className="mr-2"
+                            color={AGENT_SOURCE_META[snapshot.source].color}
+                          >
+                            <HarnessGlyph harness={snapshot.source} size={13} />
+                          </SourceIdentityMark>
+                        ) : (
+                          <SquareTerminal className="mr-2 h-3.5 w-3.5 shrink-0" />
+                        )}
+                        <span>{configuration.label}</span>
+                        {shellUnavailable && (
+                          <CommandShortcut>
+                            {
+                              workspaceAvailability.commands['launch-shell']
+                                .reason
+                            }
+                          </CommandShortcut>
+                        )}
+                      </CommandItem>
+                    );
+                  })}
                 </CommandGroup>
                 <CommandSeparator />
               </>
