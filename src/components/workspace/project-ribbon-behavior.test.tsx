@@ -43,12 +43,14 @@ function view({
   projects,
   activeDir,
   dormantProjectDirs,
+  summaries = {},
   attention = {},
   activity = {},
 }: {
   projects: Project[];
   activeDir: string;
   dormantProjectDirs?: ReadonlySet<string>;
+  summaries?: Record<string, string>;
   attention?: Record<string, { kind?: 'bell'; since: number }>;
   activity?: Record<string, boolean>;
 }) {
@@ -58,7 +60,7 @@ function view({
         projects={projects}
         activeDir={activeDir}
         pinnedTabId={null}
-        summaries={{}}
+        summaries={summaries}
         attention={attention}
         activity={activity}
         dormantProjectDirs={dormantProjectDirs}
@@ -98,6 +100,42 @@ describe('single-row Project ribbon (D45)', () => {
     expect(b1).toHaveAttribute('data-tab-condensed');
     expect(b1?.textContent).not.toContain('Initiative b1');
     expect(b1?.querySelector('[aria-label="Close Initiative b1"]')).toBeNull();
+  });
+
+  it('uses the visible context labels to spend available width', () => {
+    const first = {
+      ...tab('a1'),
+      title: 'Codex',
+      titleKind: 'default' as const,
+    };
+    const second = {
+      ...tab('a2'),
+      title: 'Claude Code',
+      titleKind: 'default' as const,
+    };
+    const projects = [project('/alpha', [first, second])];
+    const { container } = ribbon({
+      projects,
+      activeDir: '/alpha',
+      summaries: {
+        [first.durableSessionId]:
+          'Unify appearance settings across every application surface',
+        [second.durableSessionId]:
+          'Analyze workspace ribbon readability after the tab improvements',
+      },
+    });
+
+    // The stored provider titles are deliberately short. The long context
+    // labels are what actually paint, so both tabs should claim the 232px
+    // natural-width ceiling instead of leaving the rest of the row blank.
+    expect(
+      (container.querySelector('[data-tab-id="a1"]') as HTMLElement).style
+        .width
+    ).toBe('232px');
+    expect(
+      (container.querySelector('[data-tab-id="a2"]') as HTMLElement).style
+        .width
+    ).toBe('232px');
   });
 
   it('has exactly one row whose height never changes with selection', () => {

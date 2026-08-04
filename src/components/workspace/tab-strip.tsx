@@ -353,14 +353,28 @@ export function TabStrip({
       }
       const block = blocks.at(-1);
       if (!block || block.dir !== token.project.dir) continue;
+      const visibleLabel = sessionDisplayCopy({
+        harness: token.tab.harness,
+        title: token.tab.title,
+        titleKind: token.tab.titleKind,
+        lifecycle: token.tab.lifecycle,
+        summary: summaries[token.tab.durableSessionId],
+      }).primary;
       block.tabs.push({
         id: token.tab.id,
-        openWidth: estimateRibbonTokenWidth(token),
+        openWidth: estimateRibbonTokenWidth(token, visibleLabel),
         miniWidth: CONDENSED_TAB_WIDTH,
       });
     }
     return layoutRibbonRow(blocks, containerWidth, layoutPolicy);
-  }, [activeDir, containerWidth, headerWidths, layoutEntries, layoutPolicy]);
+  }, [
+    activeDir,
+    containerWidth,
+    headerWidths,
+    layoutEntries,
+    layoutPolicy,
+    summaries,
+  ]);
   const presentationFor = useCallback(
     (dir: string): ProjectPresentation =>
       layout.presentation.get(dir) ?? (dir === activeDir ? 'open' : 'mini'),
