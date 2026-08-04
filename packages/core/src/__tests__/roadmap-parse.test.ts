@@ -136,7 +136,16 @@ describe('parseRoadmap', () => {
       doc.diagnostics.filter(diagnostic => diagnostic.level === 'warn')
     ).toEqual([]);
     expect(doc.unparsedLineCount).toBe(0);
-    expect(doc.items.filter(item => item.status === 'backlog')).toHaveLength(10);
+    // The COUNT of backlog rows is live editorial state: it changes whenever
+    // anyone grooms the roadmap, and pinning it fails the suite for unrelated
+    // work (it has now been re-pinned twice in one day). What this test is
+    // for is that the v2 backlog section still parses into well-formed items.
+    const backlog = doc.items.filter(item => item.status === 'backlog');
+    expect(backlog.length).toBeGreaterThan(0);
+    for (const item of backlog) {
+      expect(item.id).toMatch(/\S/);
+      expect(item.title).toMatch(/\S/);
+    }
   });
 
   it('parses a declared-conformant roadmap fully', () => {
