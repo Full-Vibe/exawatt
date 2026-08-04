@@ -211,9 +211,12 @@ not independently verified claims. GitHub seeds V1 identity, while the stored
 identity shape remains provider-neutral for later operator classes.
 
 A device-local preference defaults goal visuals on and gates both sides of the
-projection. Off suppresses future hosted requests in Electron main and removes
-the backdrop in Team without deleting cached assets or changing accepted goal
-truth; on resumes from the private cache or current accepted goal.
+projection. Electron persists the preference in its settings store and stops
+future hosted requests in main; hosted web persists it in versioned browser
+storage. Both sources drive the same app-global renderer snapshot, so off
+removes the backdrop in Team without deleting cached assets or changing
+accepted goal truth; on resumes from the private cache or current accepted
+goal.
 
 #### Agency control spine
 

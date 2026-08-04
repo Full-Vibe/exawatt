@@ -11,6 +11,7 @@ import { CommandNavigationProvider } from '@/components/nav/command-navigation-p
 import { ProductFeedbackProvider } from '@/components/feedback/product-feedback-provider';
 import { WorkspaceTenancyProvider } from '@/lib/tenancy/tenancy-provider';
 import { AppearanceProvider } from '@/components/appearance/appearance-provider';
+import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { APPEARANCE_BOOTSTRAP_SCRIPT } from '@/lib/appearance/bootstrap-script';
 
 const exo2 = Exo_2({
@@ -62,26 +63,28 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased">
         <AppearanceProvider>
-          <TooltipProvider>
-            <CommandNavigationProvider>
-              {/* Workspace tenancy (ENG-027 W1) scopes everything below it —
-                the header switcher and every surface read the active tenant */}
-              <WorkspaceTenancyProvider>
-                {/* Feedback sits above ShortcutProvider so the ⌘K palette can
-                read auth state for its quick-feedback verbs (ENG-025 F1) */}
-                <ProductFeedbackProvider>
-                  <ShortcutProvider>
-                    <FleetProvider>
-                      <SiteHeader />
-                      <UpdateReadyNotice />
-                      {children}
-                    </FleetProvider>
-                  </ShortcutProvider>
-                </ProductFeedbackProvider>
-              </WorkspaceTenancyProvider>
-            </CommandNavigationProvider>
-          </TooltipProvider>
-          <SiteFooter />
+          <GoalVisualPreferenceProvider>
+            <TooltipProvider>
+              <CommandNavigationProvider>
+                {/* Workspace tenancy (ENG-027 W1) scopes everything below it —
+                  the header switcher and every surface read the active tenant */}
+                <WorkspaceTenancyProvider>
+                  {/* Feedback sits above ShortcutProvider so the ⌘K palette can
+                  read auth state for its quick-feedback verbs (ENG-025 F1) */}
+                  <ProductFeedbackProvider>
+                    <ShortcutProvider>
+                      <FleetProvider>
+                        <SiteHeader />
+                        <UpdateReadyNotice />
+                        {children}
+                      </FleetProvider>
+                    </ShortcutProvider>
+                  </ProductFeedbackProvider>
+                </WorkspaceTenancyProvider>
+              </CommandNavigationProvider>
+            </TooltipProvider>
+            <SiteFooter />
+          </GoalVisualPreferenceProvider>
         </AppearanceProvider>
       </body>
     </html>

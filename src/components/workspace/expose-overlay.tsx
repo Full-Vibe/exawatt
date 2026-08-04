@@ -36,6 +36,7 @@ import {
   GoalVisualBackdrop,
   type GoalVisualReadout,
 } from './goal-visual-backdrop';
+import { useGoalVisualPreference } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { tokens as formatTokens } from '@/components/consumption/flux';
 import { tabIsLive } from './use-workspace-state';
 import type { Project } from './use-workspace-state';
@@ -172,19 +173,7 @@ export function ExposeOverlay({
   onAttachRoadmapSession?: (tabId: string, itemId: string) => boolean;
   onClose: () => void;
 }) {
-  const [goalVisualsEnabled, setGoalVisualsEnabled] = useState(true);
-  useEffect(() => {
-    const api = window.electron?.settings;
-    if (!api) return;
-    void api
-      .get()
-      .then(settings =>
-        setGoalVisualsEnabled(settings.goalVisuals?.enabled !== false)
-      );
-    return api.onChanged?.(settings =>
-      setGoalVisualsEnabled(settings.goalVisuals?.enabled !== false)
-    );
-  }, []);
+  const { enabled: goalVisualsEnabled } = useGoalVisualPreference();
 
   // stable order = model order (spatial memory: tiles never reshuffle)
   const tiles = useMemo<Tile[]>(

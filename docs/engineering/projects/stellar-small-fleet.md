@@ -162,6 +162,13 @@ the strongest peripheral signal. High-contrast and reduced-transparency modes
 may suppress the image. Reduced motion hard-cuts; otherwise a completed asset
 may crossfade once. The image is non-interactive.
 
+**Operator control.** One app-global device preference defaults on and is
+visible in Settings on both Electron and hosted web. Electron remains
+authoritative for the main-process generation gate; hosted web uses versioned
+browser storage. Both sources feed the same Team renderer snapshot, so the
+switch hides or restores every backdrop immediately without mutating goal
+truth or deleting cached assets.
+
 **Generation and privacy boundary.** `fal-ai/fast-sdxl` is the first prototype
 provider because iteration is fast; it is not the product boundary or a
 durable vendor commitment. The FAL credential is a server-only secret and

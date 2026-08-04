@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { ExawattSettings } from '@/types/electron';
 import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
+import { useGoalVisualPreference } from '@/components/goal-visuals/goal-visual-preference-provider';
 
 /** Hosted labeling is automatic by default, but never invisible: Settings
  * names the processor, the bounded/redacted payload, and the local-only
@@ -46,20 +47,7 @@ export function ConversationPrivacySettings() {
 }
 
 export function GoalVisualSettings() {
-  const [settings, setSettings] = useState<ExawattSettings | null>(null);
-  const [available, setAvailable] = useState(false);
-
-  useEffect(() => {
-    const api = window.electron?.settings;
-    if (!api) return;
-    setAvailable(true);
-    void api.get().then(setSettings);
-    const off = api.onChanged?.(next => setSettings(next));
-    return () => off?.();
-  }, []);
-
-  if (!available) return null;
-  const enabled = settings?.goalVisuals?.enabled !== false;
+  const { enabled, ready, setEnabled } = useGoalVisualPreference();
 
   return (
     <SettingsGroup
@@ -73,10 +61,9 @@ export function GoalVisualSettings() {
       >
         <SettingSwitch
           checked={enabled}
+          disabled={!ready}
           label="Goal backgrounds"
-          onChange={next =>
-            void window.electron?.settings?.setGoalVisualsEnabled(next)
-          }
+          onChange={next => void setEnabled(next)}
         />
       </SettingRow>
     </SettingsGroup>
