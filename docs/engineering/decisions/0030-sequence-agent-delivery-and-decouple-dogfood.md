@@ -52,7 +52,7 @@ of scripts an agent happened to run.
 
 Keep the queue transport replaceable, but build the first authoritative backend
 locally. On 2026-08-03 the operator rejected buying queue infrastructure and
-chose a lightweight owned coordinator over the same-day Mergify recommendation:
+chose a lightweight owned coordination layer over the same-day Mergify recommendation:
 *"No I don't want to buy anything, we can build the lightweight infra we
 need."* This rejects the hosted dependency as well as a paid GitHub upgrade;
 Mergify's free tier does not change the selected direction.
@@ -62,7 +62,7 @@ ownership epochs, terminal results, and metrics under the common Git
 directory, with compare-and-swap state transitions so every ticket reaches
 exactly one terminal result. There is no coordinator: the head lander
 integrates in its own bootstrapped worktree. When the base moved, it rebases
-there, pushes a new lease-protected immutable attempt ref for its ticket,
+there, pushes a new creation-only immutable attempt ref for its ticket,
 runs the floor on that exact tree, and advances `master` with a non-force
 push; the integrated SHA must equal the ticket's current pushed attempt.
 Takeover of a head ticket requires a dead owner pid — a live pid with a
@@ -103,12 +103,18 @@ fire (see the Amendment section).
 Retain an explicit operator-only guarded direct fast-forward path for incidents
 and rollback. It is a recovery mechanism, not a second normal delivery path.
 
+The implemented operational contract, state layout, metrics, and recovery
+procedures are maintained in
+[`docs/engineering/agent-delivery.md`](../agent-delivery.md). This decision
+continues to own why the system has this shape; the runbook owns how the current
+implementation behaves.
+
 ## Consequences
 
 - Agents stop spending context on repeated wait/rebase/full-verify loops; a
   failed candidate reports once and the next queue entry proceeds.
 - Pull requests are unnecessary for machine-only delivery. Immutable remote
-  candidate branches plus local ticket/result records provide the traceability
+  attempt refs plus local ticket/result records provide the traceability
   this first mile needs without adding a second operator inbox.
 - GitHub Free cannot enforce branch protection for this private repository, so
   the repository contract prevents ordinary direct pushes and the remote's
@@ -200,7 +206,7 @@ The amended first mile therefore:
    selected by changed-path policy); the author's expensive matrix is never
    rerun there. The rebase happens in the author's own bootstrapped worktree
    — the only checkout guaranteed clean and dependency-complete — and every
-   push of the candidate is a new lease-protected immutable attempt ref, so
+   push of the candidate is a new creation-only immutable attempt ref, so
    published history is never rewritten and the integrated SHA always
    equals the ticket's current pushed attempt
 4. takes the shared `master` checkout off the landing path entirely — it

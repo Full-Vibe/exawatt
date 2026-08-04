@@ -118,7 +118,7 @@ sequencer is retained as a measured contingency, not built as the first mile.
 
 An agent verifies the repository-defined floor for its changed paths in its
 own worktree, in parallel with every other author, pushes the immutable
-`agent/*` branch, and takes a FIFO ticket. Expensive verification stays out
+`agent-attempts/*` ref, and takes a FIFO ticket. Expensive verification stays out
 here, where it serializes no one. Pull requests are a possible future
 envelope for status and human review, but are not the architecture.
 
@@ -132,7 +132,7 @@ tests chosen by changed-path policy) on the rebased tree — the scope that
 would have caught all three audited composition failures. The mechanism is
 explicit: the rebase happens in the author's own bootstrapped worktree, the
 only checkout guaranteed clean and dependency-complete; every push of the
-candidate is a new lease-protected immutable attempt ref, so published
+candidate is a new creation-only immutable attempt ref, so published
 history is never rewritten and the integrated SHA always equals the
 ticket's current pushed attempt. There is no separate gate checkout — a
 fresh detached worktree would need its own dependency bootstrap and would
@@ -173,9 +173,9 @@ remote writers eventually):
 - FIFO tickets, heartbeats, terminal results, and append-only metrics live
   under the repository's common Git directory, shared by every worktree but
   never committed
-- every submitted candidate is pushed first to its immutable remote `agent/*`
-  branch, so a local process crash cannot lose the code even though queue order
-  itself is local
+- every submitted candidate is pushed first to an immutable remote attempt ref
+  under `agent-attempts/*`, so a local process crash cannot lose the code even
+  though queue order itself is local; published attempts are never force-updated
 - a very short queue-admission critical section allocates monotonic tickets;
   verification and integration never run while that admission lock is held
 - there is no coordinator (amended 2026-08-03): the `agent:land` process at
@@ -214,6 +214,12 @@ coordinator process, queue UI, pull-request automation, or second package
 command. The implementation is a ticket store, head-of-queue integration
 inside `agent:land`, the changed-path floor, and tests behind the existing
 command.
+
+The authoritative operator/agent runbook is
+[`docs/engineering/agent-delivery.md`](../agent-delivery.md). It records the
+implemented state layout, exact check classifier, ticket lifecycle, status
+vocabulary, metrics schema, dogfood supersedence boundary, and safe recovery
+actions; this project doc remains the roadmap narrative and measurement record.
 
 GitHub Actions stays within the repository's included Free-plan minutes as
 repaired, batched, post-integration evidence: a Linux run on the latest

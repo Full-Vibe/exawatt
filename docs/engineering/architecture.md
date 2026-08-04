@@ -529,15 +529,22 @@ Built:
   its initial snapshot and treats in-flight close state only as a temporary
   availability overlay, preventing stale hydration and periodic cleanup from
   drifting command enablement
-- self-contained Electron packaging and transactional local delivery. Dogfood
-  builds run from a detached snapshot of one committed clean-`master` SHA while
-  a repository-scoped delivery lock prevents another agent from advancing the
-  shared checkout. A second install-target lock serializes separate clones.
-  The expected Exawatt Developer ID Team, secure timestamp, hardened runtime,
-  main identifier, nested helpers, and archived native code are strict-verified
-  before a same-volume atomic app exchange; the previous bundle remains the
-  rollback object until post-swap verification succeeds, and the next run can
-  recover any interrupted transaction. The running app is never restarted;
+- self-contained Electron packaging and transactional local delivery. Agent
+  integration is a machine-local FIFO over the clone's common Git directory:
+  each author publishes immutable attempt refs, the head rebases and proves the
+  exact tree in its own bootstrapped worktree, and a repository-scoped delivery
+  lock covers only the final non-force `master` push. The shared `master`
+  checkout is a best-effort mirror, never merge authority. Dogfood is a separate
+  superseding consumer outside that lock: queue drain or a ten-minute ceiling
+  selects the newest requested integrated SHA, and the build runs from its
+  detached immutable snapshot. A separate install-target lock serializes app
+  replacement across clones. The expected Exawatt Developer ID Team, secure
+  timestamp, hardened runtime, main identifier, nested helpers, and archived
+  native code are strict-verified before a same-volume atomic app exchange; the
+  previous bundle remains the rollback object until post-swap verification
+  succeeds, and the next run can recover any interrupted transaction. The
+  running app is never restarted. See
+  [`agent-delivery.md`](agent-delivery.md) and decision `0030`;
 - deep terminal fundamentals and opt-in native attention notifications;
   immediate measured startup feedback backed by real bootstrap milestones,
   deferred command-module loading, warm renderer prestart, and bounded renderer

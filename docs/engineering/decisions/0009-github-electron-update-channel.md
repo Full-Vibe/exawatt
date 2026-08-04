@@ -2,7 +2,7 @@
 # 0009 Deliver signed desktop updates through a public artifact channel
 
 Date: 2026-07-10
-Status: accepted; amended 2026-07-20
+Status: accepted; amended 2026-07-20 and 2026-08-03
 
 ## Context
 
@@ -85,6 +85,17 @@ never silently restart it while sessions are live.
   recovery deterministically keeps, restores, or completes the one verified
   bundle after interruption. Unsigned legacy apps may migrate once, but an
   uninspectable app or stable signer mismatch is left untouched.
+- AMENDED 2026-08-03 by decision `0030`: dogfood no longer holds the
+  repository-scoped delivery lock or requires the shared `master` checkout to
+  remain fixed. `agent:land` first proves and integrates the exact candidate,
+  then writes a superseding request for that immutable integrated SHA. A
+  detached worker builds its Git snapshot outside the integration path and
+  rereads the newest request before staging and before atomic replacement, so a
+  stale build cannot replace the app. The target-scoped installation lock,
+  signed build/smoke requirements, atomic exchange, rollback object, and
+  interrupted-transaction recovery remain unchanged. This amendment supersedes
+  only the July 20 repository-lock coupling; it does not weaken artifact or app
+  replacement integrity.
 - The first release target is arm64, matching the operator's current Mac and
   the project's build-one-mile rule. Intel/universal artifacts are added before
   supporting Intel customers rather than blocking current dogfood activation.
