@@ -538,7 +538,7 @@ export const architectureManifest = {
           id: 'command-navigation',
           label: 'Command Navigation',
           summary:
-            'Typed Agent, Team, and Fleet route service with registry-derived gestures, context restore, and finite reduced-motion-safe handoffs.',
+            'Typed destination registry with independent route-presentation and command-discovery contracts, plus context restore and finite reduced-motion-safe Agent, Team, and Fleet handoffs.',
           layer: 'ui',
           status: 'implemented',
           x: 705,
@@ -825,6 +825,7 @@ export const architectureManifest = {
         { from: 'command-navigation', to: 'terminal-workspace' },
         { from: 'command-navigation', to: 'spatial-operations-board' },
         { from: 'command-navigation', to: 'consumption-surface' },
+        { from: 'command-navigation', to: 'operator-public-surfaces' },
         {
           from: 'operator-public-surfaces',
           to: 'operator-stats-projection',

@@ -104,9 +104,12 @@ native menu commands, palette navigation, workspace gestures, and Agent handoff
 delegate route completion to it. The provider begins navigation immediately and
 owns only a finite transform/opacity overlay with reduced-motion parity; it does
 not own PTY lifetime, workspace selection, Fleet-board semantics, or camera state.
-The surface manifest owns route identity, the shortcut registry owns effective
-keys, the Fleet board owns URL filters plus session-local camera return, and the
-workspace owns terminal/Team focus.
+The surface manifest owns destination identity, canonical hrefs, route
+presentation, and command-palette eligibility as independent fields. Its app
+subset drives app chrome and go-chords; public destinations such as Leaderboard
+can therefore remain public website routes while joining the Electron palette.
+The shortcut registry owns effective keys, the Fleet board owns URL filters
+plus session-local camera return, and the workspace owns terminal/Team focus.
 
 Contextual workspace verbs add one deliberately small cross-process projection.
 The renderer derives command availability from restored Project, Session,

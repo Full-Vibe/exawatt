@@ -372,8 +372,9 @@ Acceptance:
 
 ### A4 — public arena, profile, and Run receipt
 
-Build `/leaderboard`, `/operator/[handle]`, and `/run/[id]`; add the production
-navigation entry and metadata/OpenGraph URLs. Prototype the materially new
+Build `/leaderboard`, `/operator/[handle]`, and `/run/[id]`; add production
+navigation entries in the public header and Electron `⌘K`, plus
+metadata/OpenGraph URLs. Prototype the materially new
 profile/receipt visual state in `/hud-gallery` first, then percolate accepted
 components to public surfaces and retire the study in the same milestone.
 
@@ -386,6 +387,8 @@ Acceptance:
   zoom, keyboard-only, and reduced motion
 - empty/error/partial states are intentional
 - a Run URL shares through native share or clipboard fallback
+- typing `leaderboard` in Electron `⌘K` shows and executes the Leaderboard row
+  without changing `/leaderboard` from public to app-route presentation
 
 ### A5 — dogfood proof and closure
 
@@ -413,9 +416,9 @@ Exit criteria:
 | Payload/privacy | schema validation, forbidden-key recursion test, size/bounds tests                                        |
 | Supabase        | migration/RLS integration eval against linked project or isolated local stack                             |
 | API             | unauthenticated/authenticated/other-user/disable/idempotent retry route tests                             |
-| UI              | component tests for tabs, table semantics, graph focus, consent, partial/empty/error                      |
+| UI              | component tests for tabs, table semantics, graph focus, consent, partial/empty/error; destination-manifest contract test |
 | Visual          | Playwright screenshots of leaderboard/profile/Run at desktop and mobile; contrast and 200% zoom review    |
-| Electron        | own-worktree dev server plus identity-checked eval of local snapshot → consent → sync                     |
+| Electron        | own-worktree dev server plus identity-checked local snapshot → consent → sync and `⌘K` → Leaderboard evals |
 | Delivery        | `agent:land` with all relevant verifies and `--dogfood`; signed-out production URL check after deployment |
 
 ## Roadmap milestone log
@@ -488,3 +491,24 @@ rejects spoofed or non-GitHub callers. At seed time the public board contained
 exactly one enabled profile: `@jakesc`, ranked #1 on all four axes with 12 Runs,
 3.03 agent-hours, 20m 52s derived endurance, fleet peak 10, and 52.2M normalized
 tokens. One-time OAuth App registration remains the only A2 blocker.
+
+### 2026-08-03 — A4 command-discovery correction
+
+Immediate dogfood found that the built Leaderboard did not appear in `⌘K`.
+The palette projected only `APP_SURFACES`; Leaderboard had deliberately been
+classified as a public route, so the A4 implementation's header link satisfied
+the ambiguous phrase “production navigation entry” while leaving no command
+row. The acceptance and verification matrix named public-page behavior but not
+Electron discovery, and the manifest tests could validate only destinations
+already registered. This was an execution-contract and navigation-model gap,
+not cmdk's separately recorded fuzzy-ranking defect.
+
+The correction makes the navigation manifest a registry of product
+destinations rather than app routes alone. Route presentation and palette
+eligibility are explicit independent fields; `APP_SURFACES` is now a derived
+subset, while Leaderboard stays a marketing route and joins the palette through
+the same registry. Unit coverage locks that classification/eligibility pair,
+and the Electron navigation evaluator searches the rendered palette, executes
+**Go to Leaderboard**, verifies `/leaderboard`, and requires its public footer.
+Future milestone contracts must name each required discovery face explicitly;
+“navigation entry” alone is not acceptance language.

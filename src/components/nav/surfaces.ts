@@ -4,11 +4,14 @@ import { CONSUMPTION_SURFACE_NAME } from '@/components/consumption/surface-name'
 /**
  * Navigation manifest (ENG-016 D8).
  *
- * The single typed source of truth for the app's navigable surfaces. The
- * command palette's navigation groups, the go-chord targets, and the
- * marketing-footer suppression all derive from this list — the 2026-07-11
- * IA audit found five independently hardcoded (and already diverged) copies
- * of it. Add or rename a surface here, nowhere else.
+ * The single typed source of truth for navigable product destinations. Route
+ * classification and command-palette eligibility are independent facts: a
+ * public destination such as Leaderboard can be reachable from the Electron
+ * palette without inheriting app chrome. The command palette's navigation
+ * group, go-chord targets, and marketing-footer suppression derive from this
+ * list — the 2026-07-11 IA audit found five independently hardcoded (and
+ * already diverged) copies of it. Add or rename a destination here, nowhere
+ * else.
  *
  * Altitude names are decision 0023: Agent → Team → Fleet (singular → group →
  * everything). Surface ids and route paths are internal addresses and keep
@@ -42,75 +45,102 @@ export type SurfaceTier = 'spine' | 'app';
 
 export type SurfaceReadiness = 'live' | 'preview' | 'announced';
 
-export interface AppSurface {
-  id:
-    | 'terminal'
-    | 'sessions'
-    | 'spatial'
-    | 'settings'
-    | 'consumption'
-    | 'organization'
-    | 'cloud'
-    | 'coordination'
-    | 'agent-types';
+export type AppSurfaceId =
+  | 'terminal'
+  | 'sessions'
+  | 'spatial'
+  | 'settings'
+  | 'consumption'
+  | 'organization'
+  | 'cloud'
+  | 'coordination'
+  | 'agent-types';
+
+export type PublicSurfaceId = 'leaderboard';
+
+interface NavigationSurfaceBase {
+  id: AppSurfaceId | PublicSurfaceId;
   /** canonical display name — every consumer must render exactly this */
   name: string;
   /** concise operational meaning used by navigation controls */
   summary: string;
   href: string;
-  tier: SurfaceTier;
   readiness: SurfaceReadiness;
+  /** Explicit discovery contract. Route presentation never implies whether a
+   * destination belongs in the command palette. */
+  commandPalette: boolean;
+  /** extra palette search terms */
+  keywords: string[];
+}
+
+export interface AppSurface extends NavigationSurfaceBase {
+  id: AppSurfaceId;
+  routeClass: 'app';
+  tier: SurfaceTier;
   /** registry shortcut id whose go-chord navigates here. Preview surfaces
    *  earn a chord when they flip `live`; the scarce letters stay with the
    *  surfaces the operator actually lives in. */
   shortcutId?: string;
   /** direct gesture advertised when moving to this surface */
   gestureShortcutId?: string;
-  /** extra palette search terms */
-  keywords: string[];
 }
 
-export const APP_SURFACES: AppSurface[] = [
+export interface PublicSurface extends NavigationSurfaceBase {
+  id: PublicSurfaceId;
+  routeClass: 'marketing';
+}
+
+export type NavigationSurface = AppSurface | PublicSurface;
+
+export const NAVIGATION_SURFACES: NavigationSurface[] = [
   {
     id: 'terminal',
+    routeClass: 'app',
     name: 'Agent',
     summary: 'One live Agent, its terminal, its work',
     href: '/workspace',
     tier: 'spine',
     readiness: 'live',
+    commandPalette: true,
     shortcutId: 'go-workspace',
     gestureShortcutId: 'command-terminal',
     keywords: ['workspace', 'terminal', 'agents', 'launch'],
   },
   {
     id: 'sessions',
+    routeClass: 'app',
     name: 'Team',
     summary: 'Your Projects and the Agents working them',
     href: '/workspace?view=sessions',
     tier: 'spine',
     readiness: 'live',
+    commandPalette: true,
     shortcutId: 'go-sessions',
     gestureShortcutId: 'command-sessions',
     keywords: ['overview', 'expose', 'grid', 'tiles', 'all sessions'],
   },
   {
     id: 'spatial',
+    routeClass: 'app',
     name: 'Fleet',
     summary: 'All of it, at population scale',
     href: '/fleet/spatial',
     tier: 'spine',
     readiness: 'live',
+    commandPalette: true,
     shortcutId: 'go-spatial',
     gestureShortcutId: 'command-spatial',
     keywords: ['map', 'board', 'spatial', 'altitude', 'zoom'],
   },
   {
     id: 'settings',
+    routeClass: 'app',
     name: 'Settings',
     summary: 'Preferences and shortcuts',
     href: '/settings',
     tier: 'app',
     readiness: 'live',
+    commandPalette: true,
     shortcutId: 'go-settings',
     keywords: ['preferences', 'config', 'customize', 'shortcuts'],
   },
@@ -118,6 +148,7 @@ export const APP_SURFACES: AppSurface[] = [
     // ENG-008 E4. A VIEW, not a fourth command altitude — the spine stays
     // exactly Agent → Team → Fleet, and this sits beside Settings.
     id: 'consumption',
+    routeClass: 'app',
     // Display name shared with the page title and window title. Renamed
     // "Usage" 2026-08-03 (operator + naming research); the id keeps its
     // historical spelling per the ids-are-addresses rule above. The old
@@ -129,6 +160,7 @@ export const APP_SURFACES: AppSurface[] = [
     // ENG-008 E4 shipped it demo-sourced; E5 swaps the source and this line
     // flips to `live`. That flip is the whole deployment.
     readiness: 'preview',
+    commandPalette: true,
     shortcutId: 'go-consumption',
     keywords: [
       'tokens',
@@ -154,11 +186,13 @@ export const APP_SURFACES: AppSurface[] = [
     // Organization, not Team: decision 0023 gives Team to the middle
     // command altitude.
     id: 'organization',
+    routeClass: 'app',
     name: 'Organization',
     summary: 'People, Workspaces, and spend across your org',
     href: '/organization',
     tier: 'app',
     readiness: 'preview',
+    commandPalette: true,
     keywords: [
       'team',
       'members',
@@ -173,21 +207,25 @@ export const APP_SURFACES: AppSurface[] = [
   {
     // ENG-033 — one-click hosted agents, any source the user wants.
     id: 'cloud',
+    routeClass: 'app',
     name: 'Cloud',
     summary: 'Agents running on hosted plans, beside your local ones',
     href: '/cloud',
     tier: 'app',
     readiness: 'preview',
+    commandPalette: true,
     keywords: ['hosted', 'remote', 'push to cloud', 'plans', 'always on'],
   },
   {
     // ENG-029 — shared context and handoff between a Project's agents.
     id: 'coordination',
+    routeClass: 'app',
     name: 'Coordination',
     summary: "How a Project's Agents share context and hand off",
     href: '/coordination',
     tier: 'app',
     readiness: 'preview',
+    commandPalette: true,
     keywords: [
       'handoff',
       'blackboard',
@@ -202,11 +240,13 @@ export const APP_SURFACES: AppSurface[] = [
   {
     // ENG-028 — the portable Type is the worker; the harness is the engine.
     id: 'agent-types',
+    routeClass: 'app',
     name: 'Agent Types',
     summary: 'What kind of worker an Agent is, portable across harnesses',
     href: '/agent-types',
     tier: 'app',
     readiness: 'preview',
+    commandPalette: true,
     keywords: [
       'types',
       'roles',
@@ -217,7 +257,47 @@ export const APP_SURFACES: AppSurface[] = [
       'defaults',
     ],
   },
+  {
+    // ENG-035 A4. A public product destination, not an app surface: it keeps
+    // public chrome/footer semantics while remaining one command away for an
+    // operator inside Electron.
+    id: 'leaderboard',
+    routeClass: 'marketing',
+    name: 'Leaderboard',
+    summary:
+      'Global operator rankings across Command, Endurance, Fleet, and Tokens',
+    href: '/leaderboard',
+    readiness: 'live',
+    commandPalette: true,
+    keywords: [
+      'agentmaxxing',
+      'operator',
+      'ranking',
+      'rank',
+      'command',
+      'endurance',
+      'tokens',
+      'public',
+      'stats',
+    ],
+  },
 ];
+
+function isAppSurface(surface: NavigationSurface): surface is AppSurface {
+  return surface.routeClass === 'app';
+}
+
+export const APP_SURFACES: AppSurface[] =
+  NAVIGATION_SURFACES.filter(isAppSurface);
+
+/** Destinations discoverable through ⌘K, independent of whether their route
+ * uses app or public presentation. Announced destinations remain inert and
+ * therefore cannot enter an executable command surface. */
+export function commandPaletteSurfaces(): NavigationSurface[] {
+  return NAVIGATION_SURFACES.filter(
+    surface => surface.commandPalette && surface.readiness !== 'announced'
+  );
+}
 
 export function surfacesByTier(tier: SurfaceTier): AppSurface[] {
   return APP_SURFACES.filter(s => s.tier === tier);
@@ -234,7 +314,7 @@ export function surfaceById(id: AppSurface['id']): AppSurface {
 
 /** Navigation target for a surface. Fleet returns to the operator's exact
  *  last board address (semantic position is part of the context key). */
-export function resolveSurfaceHref(surface: AppSurface): string {
+export function resolveSurfaceHref(surface: NavigationSurface): string {
   return surface.id === 'spatial' ? spatialReturnHref() : surface.href;
 }
 
@@ -257,9 +337,11 @@ const MARKETING_ROUTES = [
   '/sign-in',
   '/sign-up',
   '/architecture',
-  '/leaderboard',
   '/operator',
   '/run',
+  ...NAVIGATION_SURFACES.filter(
+    surface => surface.routeClass === 'marketing'
+  ).map(surface => surface.href.split('?')[0]),
 ];
 
 export function isMarketingRoute(pathname: string): boolean {

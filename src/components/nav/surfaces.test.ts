@@ -1,11 +1,47 @@
 import { describe, expect, it } from 'vitest';
 import {
   APP_SURFACES,
+  NAVIGATION_SURFACES,
+  commandPaletteSurfaces,
   isAppRoute,
+  isMarketingRoute,
   surfaceById,
   surfacesByTier,
   usesDarkPublicChrome,
 } from './surfaces';
+
+describe('navigation destination contract', () => {
+  it('keeps destination identity and hrefs unique in the one manifest', () => {
+    expect(new Set(NAVIGATION_SURFACES.map(surface => surface.id)).size).toBe(
+      NAVIGATION_SURFACES.length
+    );
+    expect(new Set(NAVIGATION_SURFACES.map(surface => surface.href)).size).toBe(
+      NAVIGATION_SURFACES.length
+    );
+  });
+
+  it('makes Leaderboard commandable without changing its public presentation', () => {
+    const leaderboard = NAVIGATION_SURFACES.find(
+      surface => surface.id === 'leaderboard'
+    );
+
+    expect(leaderboard).toMatchObject({
+      routeClass: 'marketing',
+      href: '/leaderboard',
+      readiness: 'live',
+      commandPalette: true,
+    });
+    expect(commandPaletteSurfaces()).toContain(leaderboard);
+    expect(isAppRoute('/leaderboard')).toBe(false);
+    expect(isMarketingRoute('/leaderboard')).toBe(true);
+  });
+
+  it('never exposes inert announced destinations as executable palette rows', () => {
+    expect(commandPaletteSurfaces()).not.toContainEqual(
+      expect.objectContaining({ readiness: 'announced' })
+    );
+  });
+});
 
 describe('isAppRoute', () => {
   it.each([

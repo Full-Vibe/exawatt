@@ -43,6 +43,7 @@ import {
   MonitorPlay,
   Waypoints,
   Shapes,
+  Trophy,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -75,9 +76,9 @@ import type {
   RecentProject,
 } from '@/components/workspace/switcher-rows';
 import {
-  surfacesByTier,
+  commandPaletteSurfaces,
   resolveSurfaceHref,
-  type AppSurface,
+  type NavigationSurface,
 } from '@/components/nav/surfaces';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
@@ -203,7 +204,7 @@ export const WORKSPACE_PALETTE_ROW_IDS: ReadonlySet<string> = new Set(
 );
 
 /** palette icon per manifest surface — the manifest stays render-free */
-const SURFACE_ICONS: Record<AppSurface['id'], LucideIcon> = {
+const SURFACE_ICONS: Record<NavigationSurface['id'], LucideIcon> = {
   terminal: SquareTerminal,
   sessions: LayoutPanelTop,
   spatial: MapIcon,
@@ -213,6 +214,7 @@ const SURFACE_ICONS: Record<AppSurface['id'], LucideIcon> = {
   cloud: Cloud,
   coordination: Waypoints,
   'agent-types': Shapes,
+  leaderboard: Trophy,
 };
 
 const WORKSPACE_ICONS = {
@@ -668,12 +670,16 @@ export function CommandPalette({
     [inDemoTenant, workspaceItems]
   );
 
-  // Navigation rows derive from the manifest (ENG-016 D8): the palette, the
-  // go-chords, and the header must always agree on names and targets.
+  // Navigation rows derive from the manifest (ENG-016 D8): route presentation
+  // and palette discovery are independent, so public product destinations can
+  // remain commandable without becoming app surfaces.
   const surfaceItem = useCallback(
-    (s: AppSurface): CommandItem => {
+    (s: NavigationSurface): CommandItem => {
       void shortcutVersion;
-      const shortcutId = s.gestureShortcutId ?? s.shortcutId;
+      const shortcutId =
+        s.routeClass === 'app'
+          ? (s.gestureShortcutId ?? s.shortcutId)
+          : undefined;
       return {
         id: `nav-${s.id}`,
         label: `Go to ${s.name}`,
@@ -692,7 +698,7 @@ export function CommandPalette({
         note: s.readiness === 'preview' ? 'Coming soon' : undefined,
         onSelect: () =>
           handleSelect(() => {
-            if (s.tier === 'spine') {
+            if (s.routeClass === 'app' && s.tier === 'spine') {
               activateCommandAltitude(s.id as CommandAltitude);
             } else {
               navigateCommandSurface(resolveSurfaceHref(s));
@@ -708,11 +714,7 @@ export function CommandPalette({
     ]
   );
   const navigationItems = useMemo<CommandItem[]>(
-    () =>
-      [...surfacesByTier('spine'), ...surfacesByTier('app')]
-        // `announced` surfaces have no page behind them and never join ⌘K.
-        .filter(s => s.readiness !== 'announced')
-        .map(surfaceItem),
+    () => commandPaletteSurfaces().map(surfaceItem),
     [surfaceItem]
   );
   // Quick feedback (ENG-025 F1): the palette is the discoverable face of

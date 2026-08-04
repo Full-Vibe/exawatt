@@ -247,6 +247,10 @@ await withElectronApp(
   check('palette has Go to Team', paletteText.includes('Go to Team'));
   check('palette has Go to Fleet', paletteText.includes('Go to Fleet'));
   check(
+    'palette has public Leaderboard destination',
+    paletteText.includes('Go to Leaderboard')
+  );
+  check(
     'palette has no Legacy group (trio retired, decision 0023)',
     !paletteText.includes('Legacy') && !paletteText.includes('Lattice')
   );
@@ -256,7 +260,29 @@ await withElectronApp(
     paletteText.includes('Sign in to sync Projects')
   );
   await page.screenshot({ path: join(OUT, 'palette-project-first.png') });
-  await page.keyboard.press('Escape');
+
+  // ENG-035: public route presentation and command discovery are independent.
+  // Search and execute the real row so a manifest-only assertion cannot hide
+  // a palette wiring regression.
+  await page.getByPlaceholder('Type a command or search...').fill('leaderboard');
+  const leaderboardRow = page
+    .locator('[cmdk-item]')
+    .filter({ hasText: 'Go to Leaderboard' })
+    .first();
+  check(
+    'Leaderboard is searchable in the palette',
+    await leaderboardRow.isVisible()
+  );
+  await leaderboardRow.click();
+  await page.waitForURL('**/leaderboard');
+  await page.locator('#site-footer').waitFor();
+  check(
+    'Leaderboard keeps public route presentation after palette navigation',
+    await page.locator('#site-footer').isVisible()
+  );
+  await page.goBack({ waitUntil: 'domcontentloaded' });
+  await page.waitForURL('**/workspace');
+  await page.locator('[data-command-altitude]').waitFor();
 
   // Recents survive independently of live PTYs. Seed one stopped Session in
   // the isolated workspace store; reload proves the durable navigation state
@@ -429,7 +455,7 @@ await withElectronApp(
   await page.waitForTimeout(500);
   check('ctrl+cmd+1 returns from Fleet', true);
   },
-  // this eval legitimately runs long (33 checks, several navigations)
+  // this eval legitimately runs long (36 checks, several navigations)
   { maxMs: 480_000 }
 );
 
