@@ -4,6 +4,10 @@ import {
   GitBranch,
   ExternalLink,
   LoaderCircle,
+  MoreHorizontal,
+  Pin,
+  PinOff,
+  Save,
   Settings2,
   Shapes,
   ShieldCheck,
@@ -61,14 +65,46 @@ import type {
   RecentConversation,
 } from '@/types/electron';
 import {
-  consumePendingAgentComposer,
+  consumePendingAgentComposerRequest,
   FOCUS_AGENT_COMPOSER_EVENT,
+  LAUNCH_CONFIGURATION_CATALOG_EVENT,
+  type AgentComposerRequest,
 } from './session-jump';
 import {
   RecentConversations,
   type ConversationOpenMode,
   type RecentConversationsHandle,
 } from './recent-conversations';
+import {
+  createAgentLaunchConfiguration,
+  launchConfigurationId,
+  rankLaunchTargets,
+  SHELL_LAUNCH_TARGET,
+  type AgentLaunchConfiguration,
+  type AgentLaunchConfigurationInput,
+  type LaunchConfigurationPoolV1,
+  type LaunchTarget,
+} from '@exawatt/core';
+import {
+  deleteLaunchConfiguration,
+  loadLaunchConfigurationPool,
+  recordLaunchConfigurationSuccess,
+  renameLaunchConfiguration,
+  saveNamedLaunchConfiguration,
+  setLaunchConfigurationPinned,
+} from '@/lib/launch-configurations';
+import {
+  LaunchConfigurationRibbon,
+  type LaunchConfigurationRibbonItem,
+} from './launch-configuration-ribbon';
+import { ModelPicker } from './model-picker';
+import type { CommandPaletteLaunchConfiguration } from '@/components/shortcuts/command-palette-launch-configurations';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 const UNRESOLVED_MODEL_VALUE = '__exawatt-unresolved-model__';
 
@@ -251,6 +287,23 @@ export function AgentComposer({
     initialRoadmapItemId ?? ''
   );
   const [launching, setLaunching] = useState<'agent' | 'shell' | null>(null);
+  const [selectedTargetKind, setSelectedTargetKind] = useState<
+    'agent' | 'shell'
+  >('agent');
+  const [configurationPool, setConfigurationPool] =
+    useState<LaunchConfigurationPoolV1 | null>(null);
+  const [frozenTargets, setFrozenTargets] = useState<LaunchTarget[]>([
+    SHELL_LAUNCH_TARGET,
+  ]);
+  const [catalogsBySource, setCatalogsBySource] = useState<
+    Partial<Record<AgentSourceId, AgentModelCatalog>>
+  >({});
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [allConfigurationsOpen, setAllConfigurationsOpen] = useState(false);
+  const [configurationName, setConfigurationName] = useState('');
+  const [configurationMessage, setConfigurationMessage] = useState<
+    string | null
+  >(null);
   // D24: the composer IS the pane of a draft tab (or an empty Project) —
   // always open; ⌘T creates/selects the draft tab that hosts it.
   const branchEditSeq = useRef(0);
@@ -369,6 +422,210 @@ export function AgentComposer({
       : permissionMode === 'auto'
         ? HUD.green
         : HUD.textDim;
+  const currentConfigurationInput: AgentLaunchConfigurationInput | null = model
+    ? {
+        sourceId: sourceMeta.id,
+        modelId: model,
+        effort,
+        labels: {
+          source: sourceMeta.label,
+          model: modelLabel,
+          effort: effortLabel,
+        },
+      }
+    : null;
+  const currentConfigurationId = currentConfigurationInput
+    ? launchConfigurationId(currentConfigurationInput)
+    : `draft:${effectiveSource}`;
+  const projectPins = new Set(
+    configurationPool?.projects[projectDir]?.pins ?? []
+  );
+  const catalogTargets: AgentLaunchConfiguration[] = [];
+  const seenTargetIds = new Set<string>();
+  for (const target of frozenTargets) {
+    if (target.kind === 'agent' && !seenTargetIds.has(target.id)) {
+      catalogTargets.push(target);
+      seenTargetIds.add(target.id);
+    }
+  }
+  for (const sourceId of launchableSourceOrder) {
+    const catalog = catalogsBySource[sourceId];
+    if (!catalog?.effectiveModel) continue;
+    const option = catalog.models.find(
+      candidate => candidate.id === catalog.effectiveModel
+    );
+    const sourceSnapshot = sourceSnapshots.find(
+      candidate => candidate.harness === sourceId
+    );
+    try {
+      const target = createAgentLaunchConfiguration(
+        {
+          sourceId: sourceSnapshot?.id ?? sourceId,
+          modelId: catalog.effectiveModel,
+          effort: catalog.effectiveEffort,
+          labels: {
+            source: sourceSnapshot?.label ?? sourceId,
+            model: option?.label ?? catalog.effectiveModelLabel,
+            effort: catalog.effectiveEffortLabel,
+          },
+        },
+        0
+      );
+      if (!seenTargetIds.has(target.id)) {
+        catalogTargets.push(target);
+        seenTargetIds.add(target.id);
+      }
+    } catch {
+      // A malformed source-owned identity is not made selectable.
+    }
+  }
+  if (currentConfigurationInput && !seenTargetIds.has(currentConfigurationId)) {
+    catalogTargets.unshift(
+      createAgentLaunchConfiguration(currentConfigurationInput)
+    );
+    seenTargetIds.add(currentConfigurationId);
+  }
+
+  const targetAvailability = (
+    target: AgentLaunchConfiguration
+  ): { available: boolean; reason?: string } => {
+    const snapshot = sourceSnapshots.find(
+      candidate => candidate.id === target.sourceId
+    );
+    if (!snapshot) {
+      return {
+        available: false,
+        reason: `Agent Source ${target.labels.source ?? target.sourceId} is not installed.`,
+      };
+    }
+    if (!snapshot?.launchable) {
+      return {
+        available: false,
+        reason: snapshot
+          ? `${snapshot.label}: ${snapshot.stateLabel}`
+          : `Agent Source ${target.sourceId} is unavailable.`,
+      };
+    }
+    const catalog = catalogsBySource[snapshot.harness];
+    if (!catalog) {
+      return { available: false, reason: 'Checking model availability…' };
+    }
+    const exactModelAvailable =
+      target.modelId === catalog.effectiveModel ||
+      catalog.models.some(option => option.id === target.modelId);
+    return exactModelAvailable
+      ? { available: true }
+      : {
+          available: false,
+          reason: `${target.labels.model ?? target.modelId} is not available from ${snapshot.label}.`,
+        };
+  };
+
+  const ribbonTargets: Array<{
+    target: LaunchTarget;
+    item: LaunchConfigurationRibbonItem;
+    available: boolean;
+  }> = catalogTargets.map(target => {
+    const availability = targetAvailability(target);
+    const sourceLabel = target.labels.source ?? target.sourceId;
+    const modelDisplay = target.labels.model ?? target.modelId;
+    const effortDisplay = target.labels.effort ?? target.effort;
+    const label = target.name ?? modelDisplay;
+    const identity = [
+      sourceLabel,
+      modelDisplay,
+      effortDisplay,
+      target.labels.type,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      target,
+      available: availability.available,
+      item: {
+        id: target.id,
+        label,
+        detail: target.name
+          ? [modelDisplay, effortDisplay].filter(Boolean).join(' · ')
+          : effortDisplay || undefined,
+        accessibleLabel: target.name ? `${target.name}: ${identity}` : identity,
+        source:
+          sourceSnapshots.find(candidate => candidate.id === target.sourceId)
+            ?.harness ?? 'claude',
+        named: Boolean(target.name),
+        pinned: projectPins.has(target.id),
+        available: availability.available,
+        unavailableReason: availability.reason,
+      },
+    };
+  });
+  ribbonTargets.push({
+    target: SHELL_LAUNCH_TARGET,
+    available: true,
+    item: {
+      id: SHELL_LAUNCH_TARGET.id,
+      label: 'Shell',
+      accessibleLabel: `Shell in ${projectName}`,
+      source: 'shell',
+      pinned: projectPins.has(SHELL_LAUNCH_TARGET.id),
+      available: true,
+    },
+  });
+  const selectedTargetId =
+    selectedTargetKind === 'shell'
+      ? SHELL_LAUNCH_TARGET.id
+      : currentConfigurationId;
+  const selectedRibbonTarget = ribbonTargets.find(
+    entry => entry.item.id === selectedTargetId
+  );
+  const lastPublishedCatalogRef = useRef('');
+
+  useEffect(() => {
+    const rows: CommandPaletteLaunchConfiguration[] = [];
+    for (const entry of ribbonTargets) {
+      if (entry.target.kind === 'shell') {
+        rows.push({
+          configurationId: entry.target.id,
+          configuration: { kind: 'shell' },
+          label: entry.item.label,
+          searchValue: entry.item.accessibleLabel,
+        });
+        continue;
+      }
+      const agentTarget = entry.target;
+      const snapshot = sourceSnapshots.find(
+        source => source.id === agentTarget.sourceId
+      );
+      if (!snapshot) continue;
+      rows.push({
+        configurationId: agentTarget.id,
+        configuration: {
+          kind: 'agent',
+          source: snapshot.harness,
+          model: agentTarget.modelId,
+          effort: agentTarget.effort,
+          agentTypeId: agentTarget.typeId,
+        },
+        label: entry.item.label,
+        searchValue: entry.item.accessibleLabel,
+      });
+    }
+    const signature = JSON.stringify(rows);
+    if (signature === lastPublishedCatalogRef.current) return;
+    lastPublishedCatalogRef.current = signature;
+    window.dispatchEvent(
+      new CustomEvent(LAUNCH_CONFIGURATION_CATALOG_EVENT, { detail: rows })
+    );
+  });
+
+  useEffect(
+    () => () => {
+      window.dispatchEvent(
+        new CustomEvent(LAUNCH_CONFIGURATION_CATALOG_EVENT, { detail: [] })
+      );
+    },
+    []
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -404,6 +661,26 @@ export function AgentComposer({
     setSourceRegistryStatus('loading');
     setSourceActionMessage(null);
     setPermissionSaveState('idle');
+    setSelectedTargetKind('agent');
+    setConfigurationName('');
+    setConfigurationMessage(null);
+    setCatalogsBySource({});
+    setConfigurationPool(null);
+    setFrozenTargets([SHELL_LAUNCH_TARGET]);
+    void loadLaunchConfigurationPool()
+      .then(pool => {
+        if (cancelled) return;
+        setConfigurationPool(pool);
+        // Freeze ordering for this composer entry. Success updates persistence,
+        // but nothing jumps under the operator's keyboard or pointer.
+        setFrozenTargets(rankLaunchTargets(pool, projectDir));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setConfigurationMessage(
+          'Saved launch configurations are unavailable for this visit.'
+        );
+      });
     void loadAgentSourcePreferences().then(result => {
       if (cancelled) return;
       const { preferences, usedSafeFallback } = result;
@@ -507,6 +784,34 @@ export function AgentComposer({
   const chooseSourceRef = useRef<typeof chooseSource | null>(null);
   chooseSourceRef.current = chooseSource;
 
+  const applyAgentSelection = useCallback(
+    (
+      nextSource: AgentSourceId,
+      nextModel: string | null,
+      nextEffort: string | null
+    ) => {
+      if (nextModel) {
+        modelChoicesRef.current[nextSource] = nextModel;
+        if (nextEffort) {
+          effortChoicesRef.current[effortChoiceKey(nextSource, nextModel)] =
+            nextEffort;
+        }
+      } else {
+        delete modelChoicesRef.current[nextSource];
+      }
+      setSelectedTargetKind('agent');
+      chooseSource(nextSource);
+      setModel(nextModel);
+      setEffort(nextEffort);
+      onDraftChangeRef.current?.({
+        draftSource: nextSource,
+        draftModel: nextModel,
+        draftEffort: nextEffort,
+      });
+    },
+    [chooseSource]
+  );
+
   useEffect(() => {
     if (!preferencesReady || !sourceRegistryReady || !sourceMeta.launchable) {
       return;
@@ -565,6 +870,10 @@ export function AgentComposer({
       setModel(selectedModel);
       setEffort(selectedEffort);
       setModelCatalog(catalog);
+      setCatalogsBySource(current => ({
+        ...current,
+        [effectiveSource]: catalog,
+      }));
       onDraftChangeRef.current?.({
         draftModel: selectedModel,
         draftEffort: selectedEffort,
@@ -578,6 +887,35 @@ export function AgentComposer({
     preferencesReady,
     projectDir,
     sourceMeta.launchable,
+    sourceRegistryReady,
+  ]);
+
+  // Prime each launchable source's exact default identity in parallel. This
+  // makes Option-arrow cycling a whole-configuration gesture without making
+  // the first Enter wait for every provider catalog.
+  useEffect(() => {
+    if (!preferencesReady || !sourceRegistryReady) return;
+    let cancelled = false;
+    const sources = launchSourceSnapshots(sourceRegistry)
+      .filter(snapshot => snapshot.launchable)
+      .map(snapshot => snapshot.harness);
+    for (const sourceId of sources) {
+      if (catalogsBySource[sourceId]) continue;
+      void loadAgentModelCatalog(sourceId, projectDir).then(catalog => {
+        if (cancelled || catalog.harness !== sourceId) return;
+        setCatalogsBySource(current =>
+          current[sourceId] ? current : { ...current, [sourceId]: catalog }
+        );
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    catalogsBySource,
+    preferencesReady,
+    projectDir,
+    sourceRegistry,
     sourceRegistryReady,
   ]);
 
@@ -606,20 +944,48 @@ export function AgentComposer({
   }, []);
 
   useEffect(() => {
-    const focus = (sourceOverride?: AgentSourceId | null) => {
-      if (sourceOverride) chooseSource(sourceOverride);
+    const focus = (request?: AgentComposerRequest) => {
+      if (typeof request === 'string') {
+        applyAgentSelection(request, null, null);
+      } else if (request?.configuration?.kind === 'shell') {
+        setSelectedTargetKind('shell');
+      } else if (request?.configuration?.kind === 'agent') {
+        applyAgentSelection(
+          request.configuration.source,
+          request.configuration.model,
+          request.configuration.effort
+        );
+      } else if (request?.configurationId) {
+        const target = frozenTargets.find(
+          candidate => candidate.id === request.configurationId
+        );
+        if (target?.kind === 'shell') {
+          setSelectedTargetKind('shell');
+        } else if (target?.kind === 'agent') {
+          const snapshot = sourceSnapshots.find(
+            candidate => candidate.id === target.sourceId
+          );
+          if (snapshot) {
+            applyAgentSelection(
+              snapshot.harness,
+              target.modelId,
+              target.effort
+            );
+          }
+        }
+      }
       requestAnimationFrame(() => taskRef.current?.focus());
     };
     const onFocus = (event: Event) => {
-      consumePendingAgentComposer();
-      focus((event as CustomEvent<AgentSourceId | null>).detail);
+      consumePendingAgentComposerRequest();
+      focus((event as CustomEvent<AgentComposerRequest>).detail);
     };
     window.addEventListener(FOCUS_AGENT_COMPOSER_EVENT, onFocus);
-    const pending = consumePendingAgentComposer();
+    const pending = consumePendingAgentComposerRequest();
     if (pending !== undefined) focus(pending);
     return () =>
       window.removeEventListener(FOCUS_AGENT_COMPOSER_EVENT, onFocus);
-  }, [chooseSource]);
+  }, [applyAgentSelection, frozenTargets, sourceSnapshots]);
 
   useEffect(() => {
     if (
@@ -682,9 +1048,15 @@ export function AgentComposer({
   );
 
   const launchAgent = async () => {
-    if (controlsDisabled || !sourcePreferences || !launchReady) {
+    if (
+      controlsDisabled ||
+      !sourcePreferences ||
+      !launchReady ||
+      (model !== null && selectedRibbonTarget?.available !== true)
+    ) {
       return;
     }
+    const launchedConfiguration = currentConfigurationInput;
     setLaunching('agent');
     const branchSeqAtLaunch = branchEditSeq.current;
     let ok = false;
@@ -711,6 +1083,15 @@ export function AgentComposer({
     if (!ok) return;
     void rememberAgentSource(projectDir, effectiveSource);
     void persistPermissionMode(effectiveSource, permissionMode);
+    if (launchedConfiguration) {
+      void recordLaunchConfigurationSuccess(projectDir, launchedConfiguration)
+        .then(setConfigurationPool)
+        .catch(() =>
+          setConfigurationMessage(
+            'Agent started, but its launch ranking could not be saved.'
+          )
+        );
+    }
     setTask('');
     if (worktree && branchEditSeq.current === branchSeqAtLaunch) {
       setBranch(defaultBranch());
@@ -720,14 +1101,27 @@ export function AgentComposer({
   const openShell = async () => {
     if (controlsDisabled) return;
     setLaunching('shell');
+    let ok = false;
     try {
-      await onLaunch({ harness: 'shell', dir: projectDir });
+      ok = await onLaunch({ harness: 'shell', dir: projectDir });
     } catch {
       // The workspace-level launch owner surfaces the actionable error.
     } finally {
       setLaunching(null);
     }
+    if (ok) {
+      void recordLaunchConfigurationSuccess(projectDir, { kind: 'shell' })
+        .then(setConfigurationPool)
+        .catch(() =>
+          setConfigurationMessage(
+            'Shell opened, but its launch ranking could not be saved.'
+          )
+        );
+    }
   };
+
+  const launchSelected = () =>
+    selectedTargetKind === 'shell' ? openShell() : launchAgent();
 
   const openRecentConversation = async (
     conversation: RecentConversation,
@@ -822,7 +1216,7 @@ export function AgentComposer({
       onKeyDownCapture={() => onUserInteractionRef.current?.()}
       onSubmit={event => {
         event.preventDefault();
-        void launchAgent();
+        void launchSelected();
       }}
       className="flex w-full min-w-0 flex-col gap-1.5"
     >
@@ -862,7 +1256,7 @@ export function AgentComposer({
           }
           if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
-            void launchAgent();
+            void launchSelected();
             return;
           }
           // The empty composer opens into local history with ↓. Source
@@ -874,13 +1268,51 @@ export function AgentComposer({
             event.altKey
           ) {
             event.preventDefault();
-            const order = launchableSourceOrder;
-            if (order.length < 2) return;
-            const index = order.indexOf(effectiveSource);
+            const order = ribbonTargets.filter(
+              entry => entry.target.kind === 'agent' && entry.available
+            );
+            if (order.length < 2) {
+              if (launchableSourceOrder.length < 2) return;
+              const sourceIndex =
+                launchableSourceOrder.indexOf(effectiveSource);
+              const sourceStep =
+                event.key === 'ArrowDown'
+                  ? 1
+                  : launchableSourceOrder.length - 1;
+              const nextSource =
+                launchableSourceOrder[
+                  ((sourceIndex < 0 ? 0 : sourceIndex) + sourceStep) %
+                    launchableSourceOrder.length
+                ];
+              reportDraftIntent({
+                draftSource: nextSource,
+                draftModel: null,
+                draftEffort: null,
+              });
+              applyAgentSelection(nextSource, null, null);
+              return;
+            }
+            const index = order.findIndex(
+              entry => entry.item.id === selectedTargetId
+            );
             const step = event.key === 'ArrowDown' ? 1 : order.length - 1;
-            const nextSource = order[(index + step) % order.length];
-            reportDraftIntent({ draftSource: nextSource });
-            chooseSource(nextSource);
+            const next = order[((index < 0 ? 0 : index) + step) % order.length];
+            if (next.target.kind !== 'agent') return;
+            const nextTarget = next.target;
+            const snapshot = sourceSnapshots.find(
+              candidate => candidate.id === nextTarget.sourceId
+            );
+            if (!snapshot) return;
+            reportDraftIntent({
+              draftSource: snapshot.harness,
+              draftModel: nextTarget.modelId,
+              draftEffort: nextTarget.effort,
+            });
+            applyAgentSelection(
+              snapshot.harness,
+              nextTarget.modelId,
+              nextTarget.effort
+            );
             return;
           }
           if (event.key === 'ArrowDown' && task === '') {
@@ -897,7 +1329,260 @@ export function AgentComposer({
         }}
       />
 
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-1">
+      <div className="flex min-w-0 items-center gap-2">
+        <LaunchConfigurationRibbon
+          className="min-w-0 flex-1"
+          items={ribbonTargets.map(entry => entry.item)}
+          selectedId={selectedTargetId}
+          onSelect={id => {
+            const entry = ribbonTargets.find(
+              candidate => candidate.item.id === id
+            );
+            if (!entry) return;
+            if (entry.target.kind === 'shell') {
+              setSelectedTargetKind('shell');
+              return;
+            }
+            const agentTarget = entry.target;
+            const snapshot = sourceSnapshots.find(
+              candidate => candidate.id === agentTarget.sourceId
+            );
+            if (!snapshot) return;
+            applyAgentSelection(
+              snapshot.harness,
+              agentTarget.modelId,
+              agentTarget.effort
+            );
+          }}
+          onCustomize={() => {
+            setCustomizeOpen(open => !open);
+            setAllConfigurationsOpen(false);
+          }}
+          onShowAll={() => {
+            setAllConfigurationsOpen(open => !open);
+            setCustomizeOpen(false);
+          }}
+          alwaysShowAll={ribbonTargets.length > 1}
+          allLabel="All configurations…"
+        />
+        <Button
+          type="submit"
+          aria-busy={launching !== null}
+          aria-label={
+            launching === 'shell'
+              ? 'Opening shell…'
+              : launching === 'agent'
+                ? 'Starting…'
+                : selectedTargetKind === 'shell'
+                  ? 'Open shell'
+                  : 'Start'
+          }
+          data-agent-start-button
+          disabled={
+            controlsDisabled ||
+            (selectedTargetKind === 'agent' &&
+              (!launchReady ||
+                (model !== null && selectedRibbonTarget?.available !== true)))
+          }
+          className="min-w-20 shrink-0 motion-reduce:transition-none"
+        >
+          {launching !== null && (
+            <LoaderCircle
+              aria-hidden="true"
+              className="animate-spin motion-reduce:animate-none"
+            />
+          )}
+          {launching === 'shell'
+            ? 'Opening…'
+            : launching === 'agent'
+              ? 'Starting…'
+              : selectedTargetKind === 'shell'
+                ? 'Open shell'
+                : 'Start'}
+        </Button>
+      </div>
+
+      {allConfigurationsOpen && (
+        <div
+          data-all-launch-configurations
+          className="rounded-md border p-1.5"
+          style={{ borderColor: HUD.strokeSoft, background: HUD.bg.deep }}
+        >
+          <p className="px-2 py-1 font-mono text-chrome-meta text-hud-text-dim">
+            All configurations
+          </p>
+          <div className="flex max-h-56 flex-col overflow-y-auto">
+            {ribbonTargets.map(entry => {
+              const persistent =
+                entry.target.kind === 'agent' &&
+                configurationPool?.configurations.some(
+                  configuration => configuration.id === entry.target.id
+                );
+              const pinned = projectPins.has(entry.target.id);
+              return (
+                <div
+                  key={entry.target.id}
+                  className="flex min-w-0 items-center gap-1 rounded px-1 py-0.5 hover:bg-hud-fill"
+                >
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+                    aria-label={entry.item.accessibleLabel}
+                    onClick={() => {
+                      if (entry.target.kind === 'shell') {
+                        setSelectedTargetKind('shell');
+                      } else {
+                        const agentTarget = entry.target;
+                        const snapshot = sourceSnapshots.find(
+                          source => source.id === agentTarget.sourceId
+                        );
+                        if (snapshot) {
+                          applyAgentSelection(
+                            snapshot.harness,
+                            agentTarget.modelId,
+                            agentTarget.effort
+                          );
+                        }
+                      }
+                      setAllConfigurationsOpen(false);
+                    }}
+                  >
+                    <span style={{ color: HUD.text }}>{entry.item.label}</span>
+                    {entry.item.detail ? (
+                      <span className="ml-2 text-hud-text-dim">
+                        {entry.item.detail}
+                      </span>
+                    ) : null}
+                    {!entry.available ? (
+                      <span className="ml-2 text-hud-amber">Unavailable</span>
+                    ) : null}
+                  </button>
+                  {(entry.target.kind === 'shell' || persistent) && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Manage ${entry.item.label}`}
+                          className="h-8 w-8 shrink-0"
+                        >
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            void setLaunchConfigurationPinned(
+                              projectDir,
+                              entry.target.id,
+                              !pinned
+                            )
+                              .then(setConfigurationPool)
+                              .catch(() =>
+                                setConfigurationMessage(
+                                  'That pin could not be saved.'
+                                )
+                              );
+                          }}
+                        >
+                          {pinned ? (
+                            <PinOff className="h-3.5 w-3.5" />
+                          ) : (
+                            <Pin className="h-3.5 w-3.5" />
+                          )}
+                          {pinned
+                            ? 'Unpin in this Project'
+                            : 'Pin in this Project'}
+                        </DropdownMenuItem>
+                        {entry.target.kind === 'agent' && persistent && (
+                          <>
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                if (entry.target.kind !== 'agent') return;
+                                const agentTarget = entry.target;
+                                const nextName = window.prompt(
+                                  'Configuration name',
+                                  agentTarget.name ?? ''
+                                );
+                                if (!nextName?.trim()) return;
+                                void renameLaunchConfiguration(
+                                  agentTarget.id,
+                                  nextName
+                                )
+                                  .then(pool => {
+                                    setConfigurationPool(pool);
+                                    setFrozenTargets(current =>
+                                      current.map(target =>
+                                        target.kind === 'agent' &&
+                                        target.id === agentTarget.id
+                                          ? (pool.configurations.find(
+                                              configuration =>
+                                                configuration.id === target.id
+                                            ) ?? target)
+                                          : target
+                                      )
+                                    );
+                                  })
+                                  .catch(() =>
+                                    setConfigurationMessage(
+                                      'That name could not be saved.'
+                                    )
+                                  );
+                              }}
+                            >
+                              Rename
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onSelect={() => {
+                                if (
+                                  !window.confirm(
+                                    `Delete ${entry.item.label}? Launch history for it will also be removed.`
+                                  )
+                                ) {
+                                  return;
+                                }
+                                void deleteLaunchConfiguration(entry.target.id)
+                                  .then(pool => {
+                                    setConfigurationPool(pool);
+                                    setFrozenTargets(current =>
+                                      current.filter(
+                                        target => target.id !== entry.target.id
+                                      )
+                                    );
+                                  })
+                                  .catch(() =>
+                                    setConfigurationMessage(
+                                      'That configuration could not be deleted.'
+                                    )
+                                  );
+                              }}
+                            >
+                              Delete
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div
+        data-launch-customize
+        hidden={!customizeOpen}
+        className={
+          customizeOpen
+            ? 'flex min-w-0 flex-wrap items-center justify-between gap-1 rounded-md border p-2'
+            : 'hidden'
+        }
+        style={{ borderColor: HUD.strokeSoft, background: HUD.surfaceInput }}
+      >
         <div className="flex min-w-0 items-center gap-1 @max-[520px]:flex-wrap">
           <Select
             value={effectiveSource}
@@ -906,8 +1591,13 @@ export function AgentComposer({
             }
             onValueChange={value => {
               if (!isAgentSourceId(value)) return;
-              reportDraftIntent({ draftSource: value });
-              selectSource(value);
+              delete modelChoicesRef.current[value];
+              reportDraftIntent({
+                draftSource: value,
+                draftModel: null,
+                draftEffort: null,
+              });
+              applyAgentSelection(value, null, null);
             }}
           >
             <SelectTrigger
@@ -973,8 +1663,9 @@ export function AgentComposer({
           </Select>
 
           {modelCatalog?.selectionAction === 'choose-in-source' ? (
-            <button
+            <Button
               type="button"
+              variant="outline"
               disabled={!modelReady || controlsDisabled}
               onClick={() => {
                 setSourceActionMessage(null);
@@ -987,23 +1678,15 @@ export function AgentComposer({
                 );
               }}
               aria-label={`Agent model: ${modelLabel}. Choose in ${sourceMeta.label}`}
-              title={`${modelLabel} · choose in ${sourceMeta.label}`}
-              className="flex h-9 w-[168px] shrink-0 items-center justify-between gap-2 rounded border px-2 font-mono text-xs outline-none transition-[border-color,filter] duration-150 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan @max-[560px]:w-[152px] motion-reduce:transition-none"
-              style={{
-                color: HUD.text,
-                borderColor: HUD.strokeSoft,
-                background: HUD.bg.deep,
-              }}
+              className="h-9 max-w-48 shrink-0 justify-between gap-2 font-mono text-xs"
             >
-              <span className="min-w-0 truncate">{modelLabel}</span>
+              <span className="truncate">{modelLabel}</span>
               <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
-            </button>
+            </Button>
           ) : (
-            <Select
-              value={model ?? UNRESOLVED_MODEL_VALUE}
-              disabled={
-                !modelReady || controlsDisabled || modelOptions.length === 0
-              }
+            <ModelPicker
+              models={modelOptions}
+              value={model}
               onValueChange={value => {
                 const nextModel = modelOptions.find(
                   option => option.id === value
@@ -1022,6 +1705,7 @@ export function AgentComposer({
                 if (nextEffort) {
                   effortChoicesRef.current[nextEffortKey] = nextEffort;
                 }
+                setSelectedTargetKind('agent');
                 setModel(value);
                 setEffort(nextEffort);
                 onDraftChangeRef.current?.({
@@ -1033,77 +1717,155 @@ export function AgentComposer({
                   draftEffort: nextEffort,
                 });
               }}
-            >
-              <SelectTrigger
-                aria-label="Agent model"
-                title={
-                  modelReady
-                    ? `Agent model: ${modelLabel}. Default from ${modelOriginLabel}.`
-                    : `Detecting ${sourceMeta.label} model`
-                }
-                className="h-9 w-[168px] shrink-0 rounded border px-2 font-mono text-xs shadow-none transition-[border-color,filter] duration-150 hover:brightness-110 focus:ring-hud-cyan data-[state=open]:brightness-110 @max-[560px]:w-[152px] motion-reduce:transition-none"
+              sourceLabel={sourceMeta.label}
+              catalogProvenance={
+                modelCatalog?.catalogProvenance ??
+                `Detecting ${sourceMeta.label} models…`
+              }
+              defaultModelId={modelCatalog?.effectiveModel}
+              defaultModelDescription={`Default from ${modelOriginLabel}.`}
+              loading={!modelReady}
+              disabled={controlsDisabled}
+              className="w-[min(18rem,48vw)]"
+            />
+          )}
+
+          <div className="hidden" hidden aria-hidden="true">
+            {modelCatalog?.selectionAction === 'choose-in-source' ? (
+              <button
+                type="button"
+                disabled={!modelReady || controlsDisabled}
+                onClick={() => {
+                  setSourceActionMessage(null);
+                  void runAgentSourceAction(
+                    effectiveSource,
+                    'choose-model'
+                  ).then(result =>
+                    setSourceActionMessage({
+                      ok: result.ok,
+                      text: result.message,
+                    })
+                  );
+                }}
+                aria-label={`Agent model: ${modelLabel}. Choose in ${sourceMeta.label}`}
+                title={`${modelLabel} · choose in ${sourceMeta.label}`}
+                className="flex h-9 w-[168px] shrink-0 items-center justify-between gap-2 rounded border px-2 font-mono text-xs outline-none transition-[border-color,filter] duration-150 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-1 focus-visible:ring-hud-cyan @max-[560px]:w-[152px] motion-reduce:transition-none"
                 style={{
                   color: HUD.text,
                   borderColor: HUD.strokeSoft,
                   background: HUD.bg.deep,
                 }}
               >
-                {modelReady ? (
-                  <span className="min-w-0 truncate">
-                    <SelectValue>{modelLabel}</SelectValue>
-                  </span>
-                ) : (
-                  <span
-                    className="flex min-w-0 items-center gap-1.5 truncate"
-                    style={{ color: HUD.textDim }}
-                  >
-                    <LoaderCircle
-                      aria-hidden="true"
-                      className="h-3 w-3 shrink-0 animate-spin motion-reduce:animate-none"
-                    />
-                    Detecting…
-                  </span>
-                )}
-              </SelectTrigger>
-              <SelectContent className="w-[min(23rem,calc(100vw-1.5rem))] border-hud-cyan/25 bg-hud-deep shadow-xl">
-                <SelectGroup>
-                  <SelectLabel className="px-2 pb-1 pt-2 font-mono text-chrome-meta font-medium text-hud-text-dim">
-                    {sourceMeta.label} model
-                  </SelectLabel>
-                  {modelOptions.map(option => (
-                    <SelectItem
-                      key={option.id}
-                      value={option.id}
-                      textValue={`${option.label} ${option.description}`}
-                      className="items-start py-2.5 pl-2 pr-8 font-mono [&>span:first-child]:top-3"
+                <span className="min-w-0 truncate">{modelLabel}</span>
+                <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
+              </button>
+            ) : (
+              <Select
+                value={model ?? UNRESOLVED_MODEL_VALUE}
+                disabled={
+                  !modelReady || controlsDisabled || modelOptions.length === 0
+                }
+                onValueChange={value => {
+                  const nextModel = modelOptions.find(
+                    option => option.id === value
+                  );
+                  if (!nextModel) return;
+                  const nextEffortKey = effortChoiceKey(effectiveSource, value);
+                  const nextEffort = modelCatalog?.effortLocked
+                    ? (modelCatalog.effectiveEffort ?? null)
+                    : (effortChoicesRef.current[nextEffortKey] ??
+                      (value === modelCatalog?.effectiveModel
+                        ? modelCatalog.effectiveEffort
+                        : null) ??
+                      nextModel.defaultEffort ??
+                      null);
+                  modelChoicesRef.current[effectiveSource] = value;
+                  if (nextEffort) {
+                    effortChoicesRef.current[nextEffortKey] = nextEffort;
+                  }
+                  setModel(value);
+                  setEffort(nextEffort);
+                  onDraftChangeRef.current?.({
+                    draftModel: value,
+                    draftEffort: nextEffort,
+                  });
+                  reportDraftIntent({
+                    draftModel: value,
+                    draftEffort: nextEffort,
+                  });
+                }}
+              >
+                <SelectTrigger
+                  aria-label="Agent model"
+                  title={
+                    modelReady
+                      ? `Agent model: ${modelLabel}. Default from ${modelOriginLabel}.`
+                      : `Detecting ${sourceMeta.label} model`
+                  }
+                  className="h-9 w-[168px] shrink-0 rounded border px-2 font-mono text-xs shadow-none transition-[border-color,filter] duration-150 hover:brightness-110 focus:ring-hud-cyan data-[state=open]:brightness-110 @max-[560px]:w-[152px] motion-reduce:transition-none"
+                  style={{
+                    color: HUD.text,
+                    borderColor: HUD.strokeSoft,
+                    background: HUD.bg.deep,
+                  }}
+                >
+                  {modelReady ? (
+                    <span className="min-w-0 truncate">
+                      <SelectValue>{modelLabel}</SelectValue>
+                    </span>
+                  ) : (
+                    <span
+                      className="flex min-w-0 items-center gap-1.5 truncate"
+                      style={{ color: HUD.textDim }}
                     >
-                      <span className="flex min-w-0 flex-col gap-0.5">
-                        <span className="flex items-baseline gap-2">
-                          <span className="text-xs font-semibold text-hud-text">
-                            {option.label}
-                          </span>
-                          {option.id === modelCatalog?.effectiveModel && (
-                            <span className="text-chrome-micro uppercase tracking-[0.12em] text-hud-cyan">
-                              default
+                      <LoaderCircle
+                        aria-hidden="true"
+                        className="h-3 w-3 shrink-0 animate-spin motion-reduce:animate-none"
+                      />
+                      Detecting…
+                    </span>
+                  )}
+                </SelectTrigger>
+                <SelectContent className="w-[min(23rem,calc(100vw-1.5rem))] border-hud-cyan/25 bg-hud-deep shadow-xl">
+                  <SelectGroup>
+                    <SelectLabel className="px-2 pb-1 pt-2 font-mono text-chrome-meta font-medium text-hud-text-dim">
+                      {sourceMeta.label} model
+                    </SelectLabel>
+                    {modelOptions.map(option => (
+                      <SelectItem
+                        key={option.id}
+                        value={option.id}
+                        textValue={`${option.label} ${option.description}`}
+                        className="items-start py-2.5 pl-2 pr-8 font-mono [&>span:first-child]:top-3"
+                      >
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span className="flex items-baseline gap-2">
+                            <span className="text-xs font-semibold text-hud-text">
+                              {option.label}
                             </span>
-                          )}
+                            {option.id === modelCatalog?.effectiveModel && (
+                              <span className="text-chrome-micro uppercase tracking-[0.12em] text-hud-cyan">
+                                default
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-chrome-meta leading-4 text-hud-text-dim">
+                            {option.description}
+                          </span>
                         </span>
-                        <span className="text-chrome-meta leading-4 text-hud-text-dim">
-                          {option.description}
-                        </span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-                <SelectSeparator className="bg-hud-cyan/15" />
-                <p className="px-2 py-1.5 font-mono text-chrome-meta leading-4 text-hud-text-dim">
-                  {model === modelCatalog?.effectiveModel
-                    ? `Default from ${modelOriginLabel}.`
-                    : `This override applies only to this Agent.`}
-                </p>
-              </SelectContent>
-            </Select>
-          )}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                  <SelectSeparator className="bg-hud-cyan/15" />
+                  <p className="px-2 py-1.5 font-mono text-chrome-meta leading-4 text-hud-text-dim">
+                    {model === modelCatalog?.effectiveModel
+                      ? `Default from ${modelOriginLabel}.`
+                      : `This override applies only to this Agent.`}
+                  </p>
+                </SelectContent>
+              </Select>
+            )}
+          </div>
 
           <Select
             value={effort ?? UNRESOLVED_MODEL_VALUE}
@@ -1474,6 +2236,70 @@ export function AgentComposer({
             </PopoverContent>
           </Popover>
 
+          <div
+            className="flex h-9 min-w-40 items-center gap-1 rounded border px-1.5"
+            style={{ borderColor: HUD.strokeSoft }}
+          >
+            <input
+              value={configurationName}
+              maxLength={80}
+              onChange={event => setConfigurationName(event.target.value)}
+              aria-label="Name this launch configuration"
+              placeholder="Optional name"
+              className="min-w-0 flex-1 bg-transparent px-1 font-mono text-xs outline-none placeholder:text-hud-text-dim"
+              style={{ color: HUD.text }}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={!currentConfigurationInput || !configurationName.trim()}
+              aria-label="Save configuration name"
+              title="Save as a named configuration"
+              className="h-7 w-7 shrink-0"
+              onClick={() => {
+                if (!currentConfigurationInput || !configurationName.trim())
+                  return;
+                void saveNamedLaunchConfiguration(
+                  currentConfigurationInput,
+                  configurationName
+                )
+                  .then(pool => {
+                    setConfigurationPool(pool);
+                    const saved = pool.configurations.find(
+                      target => target.id === currentConfigurationId
+                    );
+                    if (saved) {
+                      setFrozenTargets(current => {
+                        const exists = current.some(
+                          target => target.id === saved.id
+                        );
+                        return exists
+                          ? current.map(target =>
+                              target.id === saved.id ? saved : target
+                            )
+                          : [
+                              ...current.filter(
+                                target => target.kind === 'agent'
+                              ),
+                              saved,
+                              SHELL_LAUNCH_TARGET,
+                            ];
+                      });
+                    }
+                    setConfigurationMessage('Named configuration saved.');
+                  })
+                  .catch(() =>
+                    setConfigurationMessage(
+                      'That configuration name could not be saved.'
+                    )
+                  );
+              }}
+            >
+              <Save className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+
           {/* Agent Types preview's contextual anchor (ENG-026 N5 / ENG-028):
               the composer source row is where "what kind of worker" will be
               chosen, beside "which engine". Real navigation to the designed
@@ -1491,7 +2317,7 @@ export function AgentComposer({
           </Link>
         </div>
 
-        <div className="ml-auto flex shrink-0 items-center gap-1 @max-[520px]:w-full">
+        <div className="hidden" hidden aria-hidden="true">
           <Button
             type="submit"
             aria-busy={launching === 'agent'}
@@ -1551,8 +2377,18 @@ export function AgentComposer({
         className="px-0.5 pt-0.5 font-mono text-chrome-micro leading-none"
         style={{ color: HUD.textDim }}
       >
-        ⏎ start · ↓ recent · ⌥↑↓ source · ⌘V image · ⇧⏎ newline
+        ⏎ start · ↓ recent · ⌥↑↓ configuration · ⌘⌥T shell · ⌘V image · ⇧⏎
+        newline
       </p>
+      {configurationMessage && (
+        <p
+          role="status"
+          className="px-0.5 pt-1 font-mono text-chrome-meta"
+          style={{ color: HUD.textDim }}
+        >
+          {configurationMessage}
+        </p>
+      )}
       {sourceActionMessage && (
         <div
           role="status"

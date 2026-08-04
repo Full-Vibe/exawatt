@@ -1,7 +1,14 @@
-import type { AgentSourceRegistrySnapshot } from '@/types/electron';
+import type {
+  AgentModelCatalog,
+  AgentSourceRegistrySnapshot,
+} from '@/types/electron';
 import type { AgentSourceId } from './agent-sources';
 import { AGENT_SOURCE_META, launchSourceSnapshots } from './agent-sources';
 import type { WorkspaceTab } from './use-workspace-state';
+import {
+  launchConfigurationId,
+  type AgentLaunchConfiguration,
+} from '@exawatt/core';
 
 const MAX_HANDOFF_CHARS = 2_400;
 const MAX_FIELD_CHARS = 1_000;
@@ -19,12 +26,70 @@ export function tabCanClone(
   );
 }
 
+export interface CloneSessionTarget {
+  id: string;
+  sourceId: string;
+  source: AgentSourceId;
+  modelId: string;
+  effort: string | null;
+  label: string;
+}
+
 export function availableSessionCloneTargets(
-  registry: AgentSourceRegistrySnapshot
-): Array<{ id: AgentSourceId; label: string }> {
-  return launchSourceSnapshots(registry)
-    .filter(source => source.launchable)
-    .map(source => ({ id: source.harness, label: source.label }));
+  registry: AgentSourceRegistrySnapshot,
+  configurations: readonly AgentLaunchConfiguration[] = [],
+  catalogs: Partial<Record<AgentSourceId, AgentModelCatalog>> = {}
+): CloneSessionTarget[] {
+  const sources = launchSourceSnapshots(registry).filter(
+    source => source.launchable
+  );
+  const targets: CloneSessionTarget[] = [];
+  const seen = new Set<string>();
+  for (const configuration of configurations) {
+    const source = sources.find(
+      candidate => candidate.id === configuration.sourceId
+    );
+    if (!source) continue;
+    const catalog = catalogs[source.harness];
+    if (
+      !catalog ||
+      (configuration.modelId !== catalog.effectiveModel &&
+        !catalog.models.some(model => model.id === configuration.modelId))
+    ) {
+      continue;
+    }
+    targets.push({
+      id: configuration.id,
+      sourceId: source.id,
+      source: source.harness,
+      modelId: configuration.modelId,
+      effort: configuration.effort,
+      label:
+        configuration.name ??
+        configuration.labels.model ??
+        configuration.modelId,
+    });
+    seen.add(configuration.id);
+  }
+  for (const source of sources) {
+    const catalog = catalogs[source.harness];
+    if (!catalog?.effectiveModel) continue;
+    const id = launchConfigurationId({
+      sourceId: source.id,
+      modelId: catalog.effectiveModel,
+      effort: catalog.effectiveEffort,
+    });
+    if (seen.has(id)) continue;
+    targets.push({
+      id,
+      sourceId: source.id,
+      source: source.harness,
+      modelId: catalog.effectiveModel,
+      effort: catalog.effectiveEffort,
+      label: catalog.effectiveModelLabel,
+    });
+  }
+  return targets;
 }
 
 function bounded(value: string | null | undefined): string | null {

@@ -23,10 +23,7 @@ import {
   type CSSProperties,
 } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  WORKSPACE_HUD as HUD,
-  withThemeAlpha,
-} from './workspace-theme';
+import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import { ContextLabelFeedback } from '@/components/feedback/context-label-feedback';
 import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import type { SessionDelegation } from '@/types/electron';
@@ -81,7 +78,7 @@ import {
   ProjectRibbonSignalMark,
 } from './project-ribbon-signal';
 import { sessionDisplayCopy } from './session-display-copy';
-import { tabCanClone } from './session-clone';
+import { tabCanClone, type CloneSessionTarget } from './session-clone';
 import {
   EDIT_ACTIVE_PROJECT_EVENT,
   FOCUS_ACTIVE_TERMINAL_EVENT,
@@ -148,11 +145,6 @@ const EMPTY_ACTIVITY: Record<string, boolean> = {};
 const EMPTY_DELEGATION: Record<string, SessionDelegation> = {};
 const EMPTY_CLONE_TARGETS: readonly CloneSessionTarget[] = [];
 
-export interface CloneSessionTarget {
-  id: AgentSourceId;
-  label: string;
-}
-
 export function TabStrip({
   projects,
   activeDir,
@@ -194,7 +186,7 @@ export function TabStrip({
   onTogglePinTab?: (tabId: string) => void;
   onResumeTab?: (tabId: string) => void;
   cloneTargets?: readonly CloneSessionTarget[];
-  onCloneTab?: (tabId: string, target: AgentSourceId) => void;
+  onCloneTab?: (tabId: string, target: CloneSessionTarget) => void;
   onNewAgent?: (dir: string) => void;
   onCloseProject?: (dir: string) => void;
   onRevealPath?: (cwd: string) => void;
@@ -494,7 +486,8 @@ export function TabStrip({
       ? layout.targets.get(`tab:${activeProject.activeTabId}`)
       : undefined;
     const from = target.x;
-    const to = (activeTabTarget ?? target).x + (activeTabTarget ?? target).width;
+    const to =
+      (activeTabTarget ?? target).x + (activeTabTarget ?? target).width;
     const viewLeft = node.scrollLeft;
     const viewRight = viewLeft + node.clientWidth;
     let next = viewLeft;
@@ -503,7 +496,10 @@ export function TabStrip({
     if (next === viewLeft) return;
     // jsdom (and any host without smooth scrolling) has no scrollTo
     if (typeof node.scrollTo === 'function') {
-      node.scrollTo({ left: next, behavior: reducedMotion ? 'auto' : 'smooth' });
+      node.scrollTo({
+        left: next,
+        behavior: reducedMotion ? 'auto' : 'smooth',
+      });
     } else {
       node.scrollLeft = next;
     }
@@ -782,13 +778,11 @@ export function TabStrip({
         const liveScroller = scrollerRef.current;
         if (!active || !liveScroller) return;
         const x = ribbonContentX(moveEvent.clientX, liveScroller);
-        const y =
-          moveEvent.clientY - liveScroller.getBoundingClientRect().top;
+        const y = moveEvent.clientY - liveScroller.getBoundingClientRect().top;
         let engaged = active.engaged;
         if (!engaged) {
           if (
-            Math.hypot(x - active.startX, y - active.startY) <
-            DRAG_THRESHOLD_PX
+            Math.hypot(x - active.startX, y - active.startY) < DRAG_THRESHOLD_PX
           ) {
             pointerDragRef.current = { ...active, x, y };
             return;
@@ -997,225 +991,233 @@ export function TabStrip({
           className="relative h-full"
           style={{ width: Math.max(layout.contentWidth, containerWidth) }}
         >
-      {presentTokens.map(entry => {
-        const token = entry.token;
-        const project = token.project;
-        const color = project.color;
-        const groupActive = project.dir === activeDir;
-        const mode = presentationFor(project.dir);
-        const folded = mode === 'folded';
-        // A floating chip crosses siblings; its resting translucent wash
-        // would overprint their text into mush — go opaque while lifted.
-        const draggingSelf =
-          pointerDrag?.engaged === true && pointerDrag.key === token.key;
-        const projectExiting = exiting.has(project.dir);
-        const visible = !projectExiting && entry.phase !== 'exiting';
+          {presentTokens.map(entry => {
+            const token = entry.token;
+            const project = token.project;
+            const color = project.color;
+            const groupActive = project.dir === activeDir;
+            const mode = presentationFor(project.dir);
+            const folded = mode === 'folded';
+            // A floating chip crosses siblings; its resting translucent wash
+            // would overprint their text into mush — go opaque while lifted.
+            const draggingSelf =
+              pointerDrag?.engaged === true && pointerDrag.key === token.key;
+            const projectExiting = exiting.has(project.dir);
+            const visible = !projectExiting && entry.phase !== 'exiting';
 
-        // A folded Project draws one counted container; its tabs are not
-        // rendered at all, and the count is what keeps the work visible.
-        if (token.kind === 'tab' && folded) return null;
+            // A folded Project draws one counted container; its tabs are not
+            // rendered at all, and the count is what keeps the work visible.
+            if (token.kind === 'tab' && folded) return null;
 
-        if (token.kind === 'project') {
-          const dormantProject = dormant.has(project.dir);
-          const signal = projectSignals.get(project.dir) ?? 'quiet';
-          const projectMenuItems: StripMenuItem[] = [
-            ...(onNewAgent
-              ? [
-                  {
-                    label: 'New agent',
-                    focusAfterSelect: 'none' as const,
-                    onSelect: () => onNewAgent(project.dir),
-                  },
-                ]
-              : []),
-            {
-              label: 'Rename / color…',
-              focusAfterSelect: 'none',
-              onSelect: () =>
-                setEditing({
-                  kind: 'group',
-                  id: project.dir,
-                  value: project.name,
-                }),
-            },
-            ...(onRevealPath
-              ? [
-                  {
-                    label: 'Reveal in Finder',
-                    onSelect: () => onRevealPath(project.dir),
-                  },
-                ]
-              : []),
-            ...(onCloseProject
-              ? [
-                  {
-                    label: 'Close project',
-                    danger: true,
-                    focusAfterSelect: 'none' as const,
-                    onSelect: () => onCloseProject(project.dir),
-                  },
-                ]
-              : []),
-          ];
-          const openProjectMenu = (
-            trigger: HTMLElement,
-            point: { x: number; y: number }
-          ) =>
-            openMenu({
-              trigger,
-              ...point,
-              color,
-              label: `${project.name} Project actions`,
-              items: projectMenuItems,
-              target: { kind: 'project', id: project.dir },
-            });
-          const sourceOrdinal = token.sourceProjectIndex + 1;
-          // A folded Project's tabs have no chip of their own, so while ⌘ is
-          // held its container carries their ordinals — the span if it holds
-          // several, the single digit if it holds one. Without this, `⌘3`
-          // still selects a Session that nothing on screen can point at.
-          const foldedOrdinals = folded
-            ? project.tabs
-                .map(item => ordinalByTabId.get(item.id))
-                .filter((value): value is number => value !== undefined)
-                .sort((a, b) => a - b)
-            : [];
-          const foldedOrdinalHint =
-            ordinalHints === 'tabs' && foldedOrdinals.length > 0
-              ? foldedOrdinals.length === 1
-                ? `${foldedOrdinals[0]}`
-                : `${foldedOrdinals[0]}–${foldedOrdinals.at(-1)}`
-              : null;
-          return (
-            <div
-              ref={node => setItemNode(token.key, node)}
-              key={token.key}
-              data-ribbon-item="project"
-              data-ribbon-key={token.key}
-              data-project={project.name}
-              data-project-dir={project.dir}
-              data-active-project={groupActive || undefined}
-              data-project-mode={mode}
-              data-project-folded={folded || undefined}
-              data-project-dormant={dormantProject || undefined}
-              data-project-exiting={projectExiting || undefined}
-              data-close-stabilized={heldCloseKeys.has(token.key) || undefined}
-              inert={!visible}
-              aria-hidden={!visible || undefined}
-              onPointerDown={event => {
-                if (projectExiting || !onReorderProject) return;
-                beginPointerDrag(event, {
-                  kind: 'project',
-                  key: token.key,
-                  id: project.dir,
-                  dir: project.dir,
+            if (token.kind === 'project') {
+              const dormantProject = dormant.has(project.dir);
+              const signal = projectSignals.get(project.dir) ?? 'quiet';
+              const projectMenuItems: StripMenuItem[] = [
+                ...(onNewAgent
+                  ? [
+                      {
+                        label: 'New agent',
+                        focusAfterSelect: 'none' as const,
+                        onSelect: () => onNewAgent(project.dir),
+                      },
+                    ]
+                  : []),
+                {
+                  label: 'Rename / color…',
+                  focusAfterSelect: 'none',
+                  onSelect: () =>
+                    setEditing({
+                      kind: 'group',
+                      id: project.dir,
+                      value: project.name,
+                    }),
+                },
+                ...(onRevealPath
+                  ? [
+                      {
+                        label: 'Reveal in Finder',
+                        onSelect: () => onRevealPath(project.dir),
+                      },
+                    ]
+                  : []),
+                ...(onCloseProject
+                  ? [
+                      {
+                        label: 'Close project',
+                        danger: true,
+                        focusAfterSelect: 'none' as const,
+                        onSelect: () => onCloseProject(project.dir),
+                      },
+                    ]
+                  : []),
+              ];
+              const openProjectMenu = (
+                trigger: HTMLElement,
+                point: { x: number; y: number }
+              ) =>
+                openMenu({
+                  trigger,
+                  ...point,
+                  color,
+                  label: `${project.name} Project actions`,
+                  items: projectMenuItems,
+                  target: { kind: 'project', id: project.dir },
                 });
-              }}
-              onClickCapture={event => {
-                if (justDraggedRef.current) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                }
-              }}
-              onContextMenu={event => {
-                event.preventDefault();
-                const trigger = event.currentTarget.querySelector<HTMLElement>(
-                  '[data-project-chrome]'
-                );
-                if (trigger) {
-                  openProjectMenu(trigger, {
-                    x: event.clientX,
-                    y: event.clientY,
-                  });
-                }
-              }}
-              className="group/project flex h-7 origin-left items-center overflow-hidden rounded-md border"
-              style={{
-                ...itemStyle(entry, projectExiting),
-                borderColor: groupActive
-                  ? withThemeAlpha(color, 0.46)
-                  : dormantProject
-                    ? withThemeAlpha(HUD.textDim, 0.09)
-                    : withThemeAlpha(HUD.textDim, 0.15),
-                background: draggingSelf
-                  ? HUD.bg.panelFill
-                  : groupActive
-                    ? withThemeAlpha(color, 0.07)
-                    : dormantProject
-                      ? withThemeAlpha(HUD.textDim, 0.018)
-                      : withThemeAlpha(HUD.textDim, 0.035),
-                filter: dormantProject ? 'opacity(.62)' : undefined,
-              }}
-            >
-              <EditableChrome
-                data-project-chrome
-                editing={
-                  editing?.kind === 'group' && editing.id === project.dir
-                }
-                aria-label={project.name}
-                aria-current={groupActive ? 'true' : undefined}
-                tabIndex={visible ? 0 : -1}
-                onClick={() => onSelectProject(token.sourceProjectIndex)}
-                onDoubleClick={() =>
-                  setEditing({
-                    kind: 'group',
-                    id: project.dir,
-                    value: project.name,
-                  })
-                }
-                onKeyDown={event => {
-                  if (!isContextMenuKey(event)) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  openProjectMenu(
-                    event.currentTarget,
-                    keyboardMenuPoint(event.currentTarget)
-                  );
-                }}
-                title={`${project.dir}${
-                  folded ? `\n${project.tabs.length} Sessions — select to open` : ''
-                }${
-                  sourceOrdinal <= 9 ? ` · ⌘⌥${sourceOrdinal} selects` : ''
-                } · ${PROJECT_RIBBON_SIGNAL_COPY[signal]}`}
-                className="relative flex h-full w-full cursor-pointer items-center gap-1 px-1.5 font-mono text-chrome-label font-medium outline-none transition-[filter,transform] duration-100 hover:brightness-150 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan"
-                style={{ color: groupActive ? color : HUD.textDim }}
-              >
-                <span
-                  aria-hidden
-                  className="inline-block h-3.5 w-[3px] shrink-0 rounded-full"
-                  style={{ background: color, boxShadow: `0 0 4px ${color}66` }}
-                />
-                {ordinalHints === 'projects' && sourceOrdinal <= 9 && (
-                  <span
-                    data-project-ordinal={sourceOrdinal}
-                    className="contents"
+              const sourceOrdinal = token.sourceProjectIndex + 1;
+              // A folded Project's tabs have no chip of their own, so while ⌘ is
+              // held its container carries their ordinals — the span if it holds
+              // several, the single digit if it holds one. Without this, `⌘3`
+              // still selects a Session that nothing on screen can point at.
+              const foldedOrdinals = folded
+                ? project.tabs
+                    .map(item => ordinalByTabId.get(item.id))
+                    .filter((value): value is number => value !== undefined)
+                    .sort((a, b) => a - b)
+                : [];
+              const foldedOrdinalHint =
+                ordinalHints === 'tabs' && foldedOrdinals.length > 0
+                  ? foldedOrdinals.length === 1
+                    ? `${foldedOrdinals[0]}`
+                    : `${foldedOrdinals[0]}–${foldedOrdinals.at(-1)}`
+                  : null;
+              return (
+                <div
+                  ref={node => setItemNode(token.key, node)}
+                  key={token.key}
+                  data-ribbon-item="project"
+                  data-ribbon-key={token.key}
+                  data-project={project.name}
+                  data-project-dir={project.dir}
+                  data-active-project={groupActive || undefined}
+                  data-project-mode={mode}
+                  data-project-folded={folded || undefined}
+                  data-project-dormant={dormantProject || undefined}
+                  data-project-exiting={projectExiting || undefined}
+                  data-close-stabilized={
+                    heldCloseKeys.has(token.key) || undefined
+                  }
+                  inert={!visible}
+                  aria-hidden={!visible || undefined}
+                  onPointerDown={event => {
+                    if (projectExiting || !onReorderProject) return;
+                    beginPointerDrag(event, {
+                      kind: 'project',
+                      key: token.key,
+                      id: project.dir,
+                      dir: project.dir,
+                    });
+                  }}
+                  onClickCapture={event => {
+                    if (justDraggedRef.current) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }
+                  }}
+                  onContextMenu={event => {
+                    event.preventDefault();
+                    const trigger =
+                      event.currentTarget.querySelector<HTMLElement>(
+                        '[data-project-chrome]'
+                      );
+                    if (trigger) {
+                      openProjectMenu(trigger, {
+                        x: event.clientX,
+                        y: event.clientY,
+                      });
+                    }
+                  }}
+                  className="group/project flex h-7 origin-left items-center overflow-hidden rounded-md border"
+                  style={{
+                    ...itemStyle(entry, projectExiting),
+                    borderColor: groupActive
+                      ? withThemeAlpha(color, 0.46)
+                      : dormantProject
+                        ? withThemeAlpha(HUD.textDim, 0.09)
+                        : withThemeAlpha(HUD.textDim, 0.15),
+                    background: draggingSelf
+                      ? HUD.bg.panelFill
+                      : groupActive
+                        ? withThemeAlpha(color, 0.07)
+                        : dormantProject
+                          ? withThemeAlpha(HUD.textDim, 0.018)
+                          : withThemeAlpha(HUD.textDim, 0.035),
+                    filter: dormantProject ? 'opacity(.62)' : undefined,
+                  }}
+                >
+                  <EditableChrome
+                    data-project-chrome
+                    editing={
+                      editing?.kind === 'group' && editing.id === project.dir
+                    }
+                    aria-label={project.name}
+                    aria-current={groupActive ? 'true' : undefined}
+                    tabIndex={visible ? 0 : -1}
+                    onClick={() => onSelectProject(token.sourceProjectIndex)}
+                    onDoubleClick={() =>
+                      setEditing({
+                        kind: 'group',
+                        id: project.dir,
+                        value: project.name,
+                      })
+                    }
+                    onKeyDown={event => {
+                      if (!isContextMenuKey(event)) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openProjectMenu(
+                        event.currentTarget,
+                        keyboardMenuPoint(event.currentTarget)
+                      );
+                    }}
+                    title={`${project.dir}${
+                      folded
+                        ? `\n${project.tabs.length} Sessions — select to open`
+                        : ''
+                    }${
+                      sourceOrdinal <= 9 ? ` · ⌘⌥${sourceOrdinal} selects` : ''
+                    } · ${PROJECT_RIBBON_SIGNAL_COPY[signal]}`}
+                    className="relative flex h-full w-full cursor-pointer items-center gap-1 px-1.5 font-mono text-chrome-label font-medium outline-none transition-[filter,transform] duration-100 hover:brightness-150 active:scale-[0.97] motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hud-cyan"
+                    style={{ color: groupActive ? color : HUD.textDim }}
                   >
-                    <OrdinalKeycap value={sourceOrdinal} color={color} />
-                  </span>
-                )}
-                {editing?.kind === 'group' && editing.id === project.dir ? (
-                  <>
-                    <RenameInput
-                      value={editing.value}
-                      color={color}
-                      onChange={value => setEditing({ ...editing, value })}
-                      onCommit={commitEditing}
-                      onCancel={settleEditing}
+                    <span
+                      aria-hidden
+                      className="inline-block h-3.5 w-[3px] shrink-0 rounded-full"
+                      style={{
+                        background: color,
+                        boxShadow: `0 0 4px ${color}66`,
+                      }}
                     />
-                    <ColorSwatches
-                      current={color}
-                      onPick={next => onSetProjectColor(project.dir, next)}
-                    />
-                  </>
-                ) : (
-                  <span
-                    data-project-label
-                    className="min-w-0 shrink truncate whitespace-nowrap text-left"
-                  >
-                    {project.name}
-                  </span>
-                )}
-                {/* The Project dot summarises its Agents, so it earns its
+                    {ordinalHints === 'projects' && sourceOrdinal <= 9 && (
+                      <span
+                        data-project-ordinal={sourceOrdinal}
+                        className="contents"
+                      >
+                        <OrdinalKeycap value={sourceOrdinal} color={color} />
+                      </span>
+                    )}
+                    {editing?.kind === 'group' && editing.id === project.dir ? (
+                      <>
+                        <RenameInput
+                          value={editing.value}
+                          color={color}
+                          onChange={value => setEditing({ ...editing, value })}
+                          onCommit={commitEditing}
+                          onCancel={settleEditing}
+                        />
+                        <ColorSwatches
+                          current={color}
+                          onPick={next => onSetProjectColor(project.dir, next)}
+                        />
+                      </>
+                    ) : (
+                      <span
+                        data-project-label
+                        className="min-w-0 shrink truncate whitespace-nowrap text-left"
+                      >
+                        {project.name}
+                      </span>
+                    )}
+                    {/* The Project dot summarises its Agents, so it earns its
                     place only when those Agents are not on screen — a
                     folded Project, whose chips are not drawn. Otherwise it
                     repeats the chips beside it. An empty Project has no
@@ -1224,227 +1226,206 @@ export function TabStrip({
                     moment its last tab closed, breaking the pointer-close
                     stability window that keeps close targets under the
                     cursor. */}
-                {folded && <ProjectRibbonSignalMark signal={signal} />}
-                {/* A folded Project is a container holding children: the
+                    {folded && <ProjectRibbonSignalMark signal={signal} />}
+                    {/* A folded Project is a container holding children: the
                     count is what keeps that work visible when its chips
                     cannot be drawn. */}
-                {folded && (
-                  <span
-                    data-project-folded-count={project.tabs.length}
-                    data-project-folded-ordinals={
-                      foldedOrdinalHint ?? undefined
-                    }
-                    aria-label={
-                      foldedOrdinalHint
-                        ? `${project.tabs.length} Sessions, ⌘${foldedOrdinalHint}`
-                        : `${project.tabs.length} Sessions`
-                    }
-                    className={`shrink-0 rounded-sm px-1 font-mono text-chrome-meta leading-none ${
-                      foldedOrdinalHint ? 'border' : ''
-                    }`}
-                    style={{
-                      color,
-                      // A count and a keycap must not look alike: a folded
-                      // one-Session Project would otherwise show a bare "1"
-                      // under ⌘ that reads as ordinal 1, which belongs to a
-                      // different Project. Ordinals wear the keycap chrome.
-                      background: foldedOrdinalHint
-                        ? HUD.bg.panelFill
-                        : withThemeAlpha(color, 0.12),
-                      borderColor: foldedOrdinalHint
-                        ? withThemeAlpha(color, 0.33)
-                        : undefined,
-                    }}
-                  >
-                    {/* Hold ⌘ and a folded Project shows WHICH ordinals it
+                    {folded && (
+                      <span
+                        data-project-folded-count={project.tabs.length}
+                        data-project-folded-ordinals={
+                          foldedOrdinalHint ?? undefined
+                        }
+                        aria-label={
+                          foldedOrdinalHint
+                            ? `${project.tabs.length} Sessions, ⌘${foldedOrdinalHint}`
+                            : `${project.tabs.length} Sessions`
+                        }
+                        className={`shrink-0 rounded-sm px-1 font-mono text-chrome-meta leading-none ${
+                          foldedOrdinalHint ? 'border' : ''
+                        }`}
+                        style={{
+                          color,
+                          // A count and a keycap must not look alike: a folded
+                          // one-Session Project would otherwise show a bare "1"
+                          // under ⌘ that reads as ordinal 1, which belongs to a
+                          // different Project. Ordinals wear the keycap chrome.
+                          background: foldedOrdinalHint
+                            ? HUD.bg.panelFill
+                            : withThemeAlpha(color, 0.12),
+                          borderColor: foldedOrdinalHint
+                            ? withThemeAlpha(color, 0.33)
+                            : undefined,
+                        }}
+                      >
+                        {/* Hold ⌘ and a folded Project shows WHICH ordinals it
                         holds instead of how many: the tabs themselves have
                         no chip to hang a keycap on, and a reachable command
                         with no visible hint is the D44 failure in miniature. */}
-                    {foldedOrdinalHint ?? project.tabs.length}
-                  </span>
-                )}
-                {dormantProject && (
-                  <span aria-hidden className="shrink-0 text-[9px] opacity-60">
-                    ○
-                  </span>
-                )}
-              </EditableChrome>
-            </div>
-          );
-        }
+                        {foldedOrdinalHint ?? project.tabs.length}
+                      </span>
+                    )}
+                    {dormantProject && (
+                      <span
+                        aria-hidden
+                        className="shrink-0 text-[9px] opacity-60"
+                      >
+                        ○
+                      </span>
+                    )}
+                  </EditableChrome>
+                </div>
+              );
+            }
 
-        const tab = token.tab;
-        const condensed = mode === 'mini';
-        const on = groupActive && tab.id === project.activeTabId;
-        // Chrome's rule: once tabs are shrunk, only the tab you are on
-        // keeps a permanent close button — the rest reveal it on hover, so
-        // ~24px goes back to the title instead of to chrome you are not
-        // using. The reveal is absolutely positioned, so it costs no reflow.
-        const tabWidth = layout.targets.get(token.key)?.width ?? 0;
-        const tightTab = !condensed && tabWidth > 0 && tabWidth < 168;
-        const floatingClose = tightTab && !on;
-        const dead = !tabIsLive(tab);
-        const summary = summaries[tab.durableSessionId];
-        const attentionSignal =
-          !dead && tab.sessionId ? attention[tab.sessionId] : undefined;
-        const needsYou = attentionNeedsOperator(attentionSignal);
-        const working = !dead && !!(tab.sessionId && activity[tab.sessionId]);
-        const isAgent = tab.harness !== 'shell';
-        const isDraft = tab.lifecycle === 'draft';
-        const fault = tab.lifecycle === 'failed';
-        const started =
-          !!(tab.sessionId && engaged[tab.sessionId]) || !!summary;
-        const tabDelegation = tab.sessionId
-          ? delegation[tab.sessionId]
-          : undefined;
-        const glyphState = sessionGlyphState({
-          working,
-          agent: isAgent,
-          started,
-          delegatedBusy: sessionDelegationBusy(tabDelegation),
-          blocked: sessionReportedBlocked(tabDelegation),
-          ownTurn: tabDelegation?.ownTurn,
-        });
-        const display = sessionDisplayCopy({
-          harness: tab.harness,
-          title: tab.title,
-          titleKind: tab.titleKind,
-          lifecycle: tab.lifecycle,
-          summary,
-        });
-        const ordinal = ordinalByTabId.get(tab.id);
-        const stoppedStatus =
-          tab.lifecycle === 'interrupted'
-            ? 'Interrupted'
-            : tab.lifecycle === 'failed'
-              ? 'Failed'
-              : tab.lifecycle === 'exited'
-                ? 'Exited'
-                : 'Stopped';
-        const tabMenuItems: StripMenuItem[] = isDraft
-          ? [
-              {
-                label: 'Discard',
-                danger: true,
-                onSelect: () => onCloseTab(tab.id),
-              },
-            ]
-          : [
-              ...(dead &&
-              onResumeTab &&
-              (tab.harnessSessionId || tab.harness === 'shell')
-                ? [
-                    {
-                      label:
-                        tab.harness === 'shell'
-                          ? 'Start New Shell'
-                          : 'Resume This Agent',
-                      onSelect: () => onResumeTab(tab.id),
-                    },
-                  ]
-                : []),
-              {
-                label: 'Rename…',
-                focusAfterSelect: 'none',
-                onSelect: () =>
-                  setEditing({ kind: 'tab', id: tab.id, value: tab.title }),
-              },
-              ...(onCloneTab &&
-              cloneTargets.length > 0 &&
-              tabCanClone(tab, {
-                engaged: !!(tab.sessionId && engaged[tab.sessionId]),
-                contextSummary: summary,
-              })
-                ? [
-                    {
-                      label: 'Clone to…',
-                      children: cloneTargets.map(target => ({
-                        label: target.label,
-                        onSelect: () => onCloneTab(tab.id, target.id),
-                      })),
-                    },
-                  ]
-                : []),
-              ...(tabIsPinnable(tab) && onTogglePinTab
-                ? [
-                    {
-                      label:
-                        tab.id === pinnedTabId
-                          ? 'Unpin from split'
-                          : 'Pin in split',
-                      onSelect: () => onTogglePinTab(tab.id),
-                    },
-                  ]
-                : []),
-              ...(onRevealPath
-                ? [
-                    {
-                      label: 'Reveal in Finder',
-                      onSelect: () => onRevealPath(tab.cwd),
-                    },
-                  ]
-                : []),
-              // ENG-026 N3 / ENG-033: the per-Agent Push to cloud control,
-              // announced where it will really live, with the Cloud preview
-              // surface's contextual entry point beside it (the ⌘K
-              // preview-row pattern: real navigation, muted Coming soon).
-              ...(tab.harness !== 'shell'
-                ? [
-                    {
-                      label: 'Push to cloud',
-                      announcedComing:
-                        'run this Agent on an Exawatt-hosted plan (Cloud)',
-                    },
-                    {
-                      label: 'Cloud',
-                      note: 'Coming soon',
-                      onSelect: () => router.push('/cloud'),
-                    },
-                  ]
-                : []),
-              {
-                label: 'Close',
-                danger: true,
-                focusAfterSelect: 'none',
-                onSelect: () => onCloseTab(tab.id),
-              },
-            ];
-        const openTabMenu = (
-          trigger: HTMLElement,
-          point: { x: number; y: number }
-        ) =>
-          openMenu({
-            trigger,
-            ...point,
-            color,
-            label: `${display.primary} Session actions`,
-            items: tabMenuItems,
-            target: { kind: 'tab', id: tab.id },
-          });
-
-        return (
-          <div
-            ref={node => setItemNode(token.key, node)}
-            key={token.key}
-            data-ribbon-item="initiative"
-            data-ribbon-key={token.key}
-            data-project-parent={project.dir}
-            data-tab-id={tab.id}
-            data-tab-harness={tab.harness}
-            data-tab-condensed={condensed || undefined}
-            data-durable-session-id={tab.durableSessionId}
-            data-active={on || undefined}
-            data-close-stabilized={heldCloseKeys.has(token.key) || undefined}
-            inert={!visible}
-            aria-hidden={!visible || undefined}
-            onPointerDown={event => {
-              if (!onReorderTab) return;
-              event.stopPropagation();
-              beginPointerDrag(event, {
-                kind: 'tab',
-                key: token.key,
-                id: tab.id,
-                dir: project.dir,
+            const tab = token.tab;
+            const condensed = mode === 'mini';
+            const on = groupActive && tab.id === project.activeTabId;
+            // Chrome's rule: once tabs are shrunk, only the tab you are on
+            // keeps a permanent close button — the rest reveal it on hover, so
+            // ~24px goes back to the title instead of to chrome you are not
+            // using. The reveal is absolutely positioned, so it costs no reflow.
+            const tabWidth = layout.targets.get(token.key)?.width ?? 0;
+            const tightTab = !condensed && tabWidth > 0 && tabWidth < 168;
+            const floatingClose = tightTab && !on;
+            const dead = !tabIsLive(tab);
+            const summary = summaries[tab.durableSessionId];
+            const attentionSignal =
+              !dead && tab.sessionId ? attention[tab.sessionId] : undefined;
+            const needsYou = attentionNeedsOperator(attentionSignal);
+            const working =
+              !dead && !!(tab.sessionId && activity[tab.sessionId]);
+            const isAgent = tab.harness !== 'shell';
+            const isDraft = tab.lifecycle === 'draft';
+            const fault = tab.lifecycle === 'failed';
+            const started =
+              !!(tab.sessionId && engaged[tab.sessionId]) || !!summary;
+            const tabDelegation = tab.sessionId
+              ? delegation[tab.sessionId]
+              : undefined;
+            const glyphState = sessionGlyphState({
+              working,
+              agent: isAgent,
+              started,
+              delegatedBusy: sessionDelegationBusy(tabDelegation),
+              blocked: sessionReportedBlocked(tabDelegation),
+              ownTurn: tabDelegation?.ownTurn,
+            });
+            const display = sessionDisplayCopy({
+              harness: tab.harness,
+              title: tab.title,
+              titleKind: tab.titleKind,
+              lifecycle: tab.lifecycle,
+              summary,
+            });
+            const ordinal = ordinalByTabId.get(tab.id);
+            const stoppedStatus =
+              tab.lifecycle === 'interrupted'
+                ? 'Interrupted'
+                : tab.lifecycle === 'failed'
+                  ? 'Failed'
+                  : tab.lifecycle === 'exited'
+                    ? 'Exited'
+                    : 'Stopped';
+            const tabMenuItems: StripMenuItem[] = isDraft
+              ? [
+                  {
+                    label: 'Discard',
+                    danger: true,
+                    onSelect: () => onCloseTab(tab.id),
+                  },
+                ]
+              : [
+                  ...(dead &&
+                  onResumeTab &&
+                  (tab.harnessSessionId || tab.harness === 'shell')
+                    ? [
+                        {
+                          label:
+                            tab.harness === 'shell'
+                              ? 'Start New Shell'
+                              : 'Resume This Agent',
+                          onSelect: () => onResumeTab(tab.id),
+                        },
+                      ]
+                    : []),
+                  {
+                    label: 'Rename…',
+                    focusAfterSelect: 'none',
+                    onSelect: () =>
+                      setEditing({ kind: 'tab', id: tab.id, value: tab.title }),
+                  },
+                  ...(onCloneTab &&
+                  cloneTargets.length > 0 &&
+                  tabCanClone(tab, {
+                    engaged: !!(tab.sessionId && engaged[tab.sessionId]),
+                    contextSummary: summary,
+                  })
+                    ? [
+                        {
+                          label: 'Clone to…',
+                          children: cloneTargets.map(target => ({
+                            label: target.label,
+                            onSelect: () => onCloneTab(tab.id, target),
+                          })),
+                        },
+                      ]
+                    : []),
+                  ...(tabIsPinnable(tab) && onTogglePinTab
+                    ? [
+                        {
+                          label:
+                            tab.id === pinnedTabId
+                              ? 'Unpin from split'
+                              : 'Pin in split',
+                          onSelect: () => onTogglePinTab(tab.id),
+                        },
+                      ]
+                    : []),
+                  ...(onRevealPath
+                    ? [
+                        {
+                          label: 'Reveal in Finder',
+                          onSelect: () => onRevealPath(tab.cwd),
+                        },
+                      ]
+                    : []),
+                  // ENG-026 N3 / ENG-033: the per-Agent Push to cloud control,
+                  // announced where it will really live, with the Cloud preview
+                  // surface's contextual entry point beside it (the ⌘K
+                  // preview-row pattern: real navigation, muted Coming soon).
+                  ...(tab.harness !== 'shell'
+                    ? [
+                        {
+                          label: 'Push to cloud',
+                          announcedComing:
+                            'run this Agent on an Exawatt-hosted plan (Cloud)',
+                        },
+                        {
+                          label: 'Cloud',
+                          note: 'Coming soon',
+                          onSelect: () => router.push('/cloud'),
+                        },
+                      ]
+                    : []),
+                  {
+                    label: 'Close',
+                    danger: true,
+                    focusAfterSelect: 'none',
+                    onSelect: () => onCloseTab(tab.id),
+                  },
+                ];
+            const openTabMenu = (
+              trigger: HTMLElement,
+              point: { x: number; y: number }
+            ) =>
+              openMenu({
+                trigger,
+                ...point,
+                color,
+                label: `${display.primary} Session actions`,
+                items: tabMenuItems,
+                target: { kind: 'tab', id: tab.id },
               });
             }}
             onClickCapture={event => {
@@ -1549,10 +1530,33 @@ export function TabStrip({
                   className="text-[10px] leading-none"
                   style={{ color }}
                 >
-                  ◧
-                </span>
-              )}
-              {/* A glyph chip carries ONE mark: what this Agent is doing.
+                  {ordinal !== undefined && ordinalHints === 'tabs' && (
+                    <span data-tab-ordinal={ordinal} className="contents">
+                      <OrdinalKeycap value={ordinal} color={color} />
+                    </span>
+                  )}
+                  {!dead || isDraft || fault ? (
+                    <SessionStatusGlyph
+                      state={isDraft ? 'fresh' : glyphState}
+                      attention={attentionSignal}
+                      delegation={tabDelegation}
+                      fault={fault}
+                    />
+                  ) : null}
+                  {!dead && !isDraft && !condensed && (
+                    <DelegationDots color={color} delegation={tabDelegation} />
+                  )}
+                  {tab.id === pinnedTabId && (
+                    <span
+                      data-pinned
+                      title="Pinned in split view (⌘D unpins)"
+                      className="text-[10px] leading-none"
+                      style={{ color }}
+                    >
+                      ◧
+                    </span>
+                  )}
+                  {/* A glyph chip carries ONE mark: what this Agent is doing.
                   The source swirl beside it read as noise at 40px and cost
                   the width that decides when Projects fold — Claude vs
                   Codex stays legible on the Project you are in, in the
@@ -1590,6 +1594,28 @@ export function TabStrip({
                     data-subtitle={
                       display.primaryKind === 'context' || undefined
                     }
+                    className={`grid size-5 shrink-0 cursor-pointer place-items-center rounded font-mono text-chrome-label font-normal outline-none transition-[opacity,background-color] duration-100 hover:bg-hud-fill-hi hover:!opacity-100 focus-visible:opacity-100 motion-reduce:transition-none focus-visible:ring-1 focus-visible:ring-hud-cyan ${
+                      floatingClose
+                        ? 'absolute inset-y-0 right-1 my-auto opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100'
+                        : 'mr-1 opacity-45 group-hover/tab:opacity-100'
+                    }`}
+                    style={{
+                      color: HUD.textDim,
+                      // A revealed floating close sits over the title's tail;
+                      // the chip-coloured backdrop keeps both readable.
+                      ...(floatingClose
+                        ? {
+                            background: on
+                              ? withThemeAlpha(color, 0.15)
+                              : HUD.bg.panelFill,
+                            boxShadow: `-8px 0 8px -4px ${
+                              on
+                                ? withThemeAlpha(color, 0.15)
+                                : HUD.bg.panelFill
+                            }`,
+                          }
+                        : {}),
+                    }}
                   >
                     {display.primary}
                   </span>

@@ -53,10 +53,16 @@ import {
   launchSourceSnapshots,
   loadAgentSourcePreferences,
   loadAgentSourceRegistry,
+  loadAgentModelCatalog,
   permissionModeFor,
   type AgentSourceId,
 } from './agent-sources';
-import { sessionClonePrompt, tabCanClone } from './session-clone';
+import {
+  sessionClonePrompt,
+  tabCanClone,
+  type CloneSessionTarget,
+} from './session-clone';
+import { recordLaunchConfigurationSuccess } from '@/lib/launch-configurations';
 import {
   openRepositoryProject,
   listProjects,
@@ -1602,7 +1608,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
    * the originating Session.
    */
   const cloneSession = useCallback(
-    async (tabId: string, target: AgentSourceId): Promise<boolean> => {
+    async (tabId: string, target: CloneSessionTarget): Promise<boolean> => {
       const project = stateRef.current.projects.find(group =>
         group.tabs.some(tab => tab.id === tabId)
       );
@@ -1622,14 +1628,21 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
         return false;
       }
 
-      const [preferenceLoad, registryLoad] = await Promise.all([
+      const [preferenceLoad, registryLoad, modelCatalog] = await Promise.all([
         loadAgentSourcePreferences(),
         loadAgentSourceRegistry('launch', true),
+        loadAgentModelCatalog(target.source, project.dir),
       ]);
       const targetReady = launchSourceSnapshots(registryLoad.snapshot).some(
-        source => source.harness === target && source.launchable
+        source =>
+          source.id === target.sourceId &&
+          source.harness === target.source &&
+          source.launchable
       );
-      if (registryLoad.status !== 'live' || !targetReady) {
+      const modelReady =
+        target.modelId === modelCatalog.effectiveModel ||
+        modelCatalog.models.some(model => model.id === target.modelId);
+      if (registryLoad.status !== 'live' || !targetReady || !modelReady) {
         setError(
           registryLoad.error?.message ??
             'That Agent Source is not available for a new Session.'
@@ -1640,23 +1653,33 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
       const permissionMode = permissionModeFor(
         preferenceLoad.preferences,
         project.dir,
-        target,
+        target.source,
         preferenceLoad.usedSafeFallback
           ? 'prompt'
           : DEFAULT_AGENT_PERMISSION_MODE
       );
-      return launch({
-        harness: target,
+      const cloned = await launch({
+        harness: target.source,
         dir: tab.cwd,
         permissionMode,
+        model: target.modelId,
+        effort: target.effort ?? undefined,
         initialPrompt: sessionClonePrompt({
-          target,
+          target: target.source,
           initialTask: tab.initialTask,
           contextSummary,
         }),
         statedTask: tab.initialTask ?? contextSummary ?? undefined,
         roadmapItemId: tab.roadmapItemId ?? undefined,
       });
+      if (cloned) {
+        void recordLaunchConfigurationSuccess(project.dir, {
+          sourceId: target.sourceId,
+          modelId: target.modelId,
+          effort: target.effort,
+        }).catch(() => undefined);
+      }
+      return cloned;
     },
     [launch]
   );

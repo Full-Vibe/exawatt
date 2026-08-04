@@ -10,6 +10,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 import { TabStrip } from './tab-strip';
+import type { CloneSessionTarget } from './session-clone';
 import type { SessionAttentionSignal } from './status-glyphs';
 import type { Project, WorkspaceTab } from './use-workspace-state';
 import type { SessionDelegation } from '@/types/electron';
@@ -66,8 +67,8 @@ function strip({
   feedbackEnabled?: boolean;
   onRateContext?: ComponentProps<typeof TabStrip>['onRateContext'];
   onCloseProject?: (dir: string) => void;
-  cloneTargets?: Array<{ id: 'claude' | 'codex' | 'opencode'; label: string }>;
-  onCloneTab?: (tabId: string, target: 'claude' | 'codex' | 'opencode') => void;
+  cloneTargets?: CloneSessionTarget[];
+  onCloneTab?: (tabId: string, target: CloneSessionTarget) => void;
   exitingProjectDirs?: ReadonlySet<string>;
 }) {
   const view = (
@@ -468,8 +469,22 @@ describe('TabStrip turn-state glyphs (D22)', () => {
       tabs: [tab({ id: 'a' })],
       engaged: { 'session-a': true },
       cloneTargets: [
-        { id: 'codex', label: 'Codex' },
-        { id: 'opencode', label: 'OpenCode' },
+        {
+          id: 'codex-config',
+          sourceId: 'codex-local',
+          source: 'codex',
+          modelId: 'gpt-5.6-sol',
+          effort: 'high',
+          label: 'Codex',
+        },
+        {
+          id: 'opencode-config',
+          sourceId: 'opencode-local',
+          source: 'opencode',
+          modelId: 'openrouter/kimi',
+          effort: null,
+          label: 'OpenCode',
+        },
       ],
       onCloneTab,
     });
@@ -485,7 +500,10 @@ describe('TabStrip turn-state glyphs (D22)', () => {
       expect(screen.getByRole('menuitem', { name: 'Codex' })).toHaveFocus()
     );
     fireEvent.click(screen.getByRole('menuitem', { name: 'OpenCode' }));
-    expect(onCloneTab).toHaveBeenCalledWith('a', 'opencode');
+    expect(onCloneTab).toHaveBeenCalledWith(
+      'a',
+      expect.objectContaining({ id: 'opencode-config', source: 'opencode' })
+    );
   });
 
   it('does not offer Clone to for shells or unstarted Agents', () => {
@@ -494,7 +512,16 @@ describe('TabStrip turn-state glyphs (D22)', () => {
         tab({ id: 'a' }),
         tab({ id: 'sh', harness: 'shell', title: 'Shell' }),
       ],
-      cloneTargets: [{ id: 'codex', label: 'Codex' }],
+      cloneTargets: [
+        {
+          id: 'codex-config',
+          sourceId: 'codex-local',
+          source: 'codex',
+          modelId: 'gpt-5.6-sol',
+          effort: 'high',
+          label: 'Codex',
+        },
+      ],
       onCloneTab: vi.fn(),
     });
 
@@ -595,7 +622,8 @@ describe('TabStrip delegated work (ENG-023)', () => {
       startedAt: index,
     }));
   const delegating = (count: number, kind?: string): SessionDelegation => ({
-    ownTurn: 'available', blockedOn: null,
+    ownTurn: 'available',
+    blockedOn: null,
     children: children(count, kind),
   });
 

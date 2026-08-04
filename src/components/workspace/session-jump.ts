@@ -45,6 +45,10 @@ export const LAUNCH_EVENT = 'exawatt:launch';
 export const OPEN_PROJECT_EVENT = 'exawatt:open-project';
 export const OPEN_PROJECT_PICKER_EVENT = 'exawatt:open-project-picker';
 export const FOCUS_AGENT_COMPOSER_EVENT = 'exawatt:focus-agent-composer';
+/** Active Project publishes the exact frozen ribbon catalog to global command
+ * surfaces. Empty detail clears stale rows when the composer unmounts. */
+export const LAUNCH_CONFIGURATION_CATALOG_EVENT =
+  'exawatt:launch-configuration-catalog';
 /** tab-strip listens: open the inline rename editor for the active tab */
 export const RENAME_ACTIVE_EVENT = 'exawatt:rename-active';
 /** Open the active Project's combined rename/color editor. */

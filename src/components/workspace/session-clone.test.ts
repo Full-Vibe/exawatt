@@ -73,8 +73,31 @@ describe('sessionClonePrompt', () => {
       launchable: source.harness === 'codex',
     }));
 
-    expect(availableSessionCloneTargets(registry)).toEqual([
-      { id: 'codex', label: 'Codex' },
+    expect(
+      availableSessionCloneTargets(registry, [], {
+        codex: {
+          harness: 'codex',
+          effectiveModel: 'gpt-5.6-sol',
+          effectiveModelLabel: 'GPT-5.6-Sol',
+          effectiveModelSource: 'config',
+          effectiveEffort: 'high',
+          effectiveEffortLabel: 'High',
+          effectiveEffortSource: 'config',
+          effortLocked: false,
+          models: [],
+          catalogMode: 'configured-values',
+          catalogProvenance: 'test',
+          observedAt: 1,
+          selectionAction: null,
+        },
+      })
+    ).toEqual([
+      expect.objectContaining({
+        source: 'codex',
+        modelId: 'gpt-5.6-sol',
+        effort: 'high',
+        label: 'GPT-5.6-Sol',
+      }),
     ]);
   });
 });

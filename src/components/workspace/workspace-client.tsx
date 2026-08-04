@@ -98,10 +98,15 @@ import {
   isAgentSourceId,
   loadAgentSourcePreferences,
   loadAgentSourceRegistry,
+  loadAgentModelCatalog,
   permissionModeFor,
   recommendLaunchableAgentSource,
 } from './agent-sources';
-import { availableSessionCloneTargets } from './session-clone';
+import {
+  availableSessionCloneTargets,
+  type CloneSessionTarget,
+} from './session-clone';
+import { loadLaunchConfigurationPool } from '@/lib/launch-configurations';
 import {
   attentionNeedsOperator,
   mergeSessionAttentionMaps,
@@ -325,19 +330,43 @@ export function WorkspaceClient() {
     setProjectColor,
     ready,
   } = useWorkspaceState({ getInitialSize });
-  const [cloneTargets, setCloneTargets] = useState<
-    Array<{ id: 'claude' | 'codex' | 'opencode'; label: string }>
-  >([]);
+  const [cloneTargets, setCloneTargets] = useState<CloneSessionTarget[]>([]);
   useEffect(() => {
+    if (!activeProject?.dir) {
+      setCloneTargets([]);
+      return;
+    }
     let current = true;
-    void loadAgentSourceRegistry('launch').then(result => {
+    void loadAgentSourceRegistry('launch').then(async result => {
       if (!current || result.status !== 'live') return;
-      setCloneTargets(availableSessionCloneTargets(result.snapshot));
+      const sources = result.snapshot.sources.filter(
+        source => source.launchable && source.harness !== null
+      );
+      const [pool, catalogEntries] = await Promise.all([
+        loadLaunchConfigurationPool(),
+        Promise.all(
+          sources.map(
+            async source =>
+              [
+                source.harness!,
+                await loadAgentModelCatalog(source.harness!, activeProject.dir),
+              ] as const
+          )
+        ),
+      ]);
+      if (!current) return;
+      setCloneTargets(
+        availableSessionCloneTargets(
+          result.snapshot,
+          pool.configurations,
+          Object.fromEntries(catalogEntries)
+        )
+      );
     });
     return () => {
       current = false;
     };
-  }, []);
+  }, [activeProject?.dir]);
 
   const moveTabWithFeedback = useCallback(
     (delta: 1 | -1): boolean => {

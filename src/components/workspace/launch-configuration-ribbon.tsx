@@ -112,6 +112,15 @@ export function LaunchConfigurationRibbon({
     if (defaultFocusId !== null) setFocusId(defaultFocusId);
   }, [defaultFocusId]);
 
+  useEffect(() => {
+    if (!selectedId) return;
+    requestAnimationFrame(() => {
+      itemRefs.current
+        .get(selectedId)
+        ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    });
+  }, [selectedId]);
+
   const measureOverflow = useCallback(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -234,7 +243,7 @@ export function LaunchConfigurationRibbon({
                         'group/config inline-flex h-8 max-w-56 shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2 text-chrome-label font-medium text-foreground outline-none transition-[background-color,border-color,color,opacity] duration-200 hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background motion-reduce:transition-none',
                         selected &&
                           'border-primary bg-primary/10 text-foreground hover:bg-primary/15',
-                        !available && 'border-dashed opacity-60',
+                        !available && 'opacity-60',
                         '@max-[768px]:max-w-44 @max-[520px]:max-w-36'
                       )}
                     >
