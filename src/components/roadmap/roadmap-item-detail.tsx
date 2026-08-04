@@ -94,6 +94,7 @@ export function RoadmapItemDetail({
   selectedMilestone = null,
   unmappedSessions,
   manipulable,
+  writeBusy,
   onOpenPath,
   onSelectSession,
   onStartAgent,
@@ -105,6 +106,7 @@ export function RoadmapItemDetail({
   selectedMilestone?: number | null;
   unmappedSessions: RoadmapLensSessionInput[];
   manipulable: boolean;
+  writeBusy: boolean;
   onOpenPath: (path: string) => void;
   onSelectSession: (tabId: string) => void;
   onStartAgent: (item: RoadmapItemView) => Promise<boolean>;
@@ -113,24 +115,38 @@ export function RoadmapItemDetail({
 }) {
   const [attachOpen, setAttachOpen] = useState(false);
   const [launching, setLaunching] = useState(false);
+  const [launchFailed, setLaunchFailed] = useState(false);
   const [now, setNow] = useState(Date.now());
   const statusColor = ROADMAP_STATUS_COLOR[item.displayStatus];
+  const hasWriteTarget =
+    manipulable && Boolean(item.declaredId) && item.hasUniqueDeclaredId;
+  const canChangeStatus =
+    hasWriteTarget &&
+    WRITABLE_STATUSES.some(status => status.value === item.status);
+  const canReorder =
+    hasWriteTarget &&
+    item.status === item.sectionStatus &&
+    (canChangeStatus || item.status === 'backlog');
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
 
   const launch = async () => {
+    setLaunchFailed(false);
     setLaunching(true);
     try {
-      await onStartAgent(item);
+      setLaunchFailed(!(await onStartAgent(item)));
     } finally {
       setLaunching(false);
     }
   };
 
   return (
-    <div className="flex flex-col gap-3 px-3 pb-3">
+    <div
+      className="flex flex-col gap-3 px-3 pb-3"
+      aria-busy={writeBusy || undefined}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <RoadmapStatusPill status={item.displayStatus} />
         {item.blocked && <RoadmapBlockedBadge />}
@@ -164,13 +180,9 @@ export function RoadmapItemDetail({
         >
           <span>{item.backlog.kind}</span>
           <span aria-hidden>·</span>
-          <span>{item.backlog.ownerItemId ?? 'Unowned'}</span>
-          {item.backlog.provenance && (
-            <>
-              <span aria-hidden>·</span>
-              <span>{item.backlog.provenance}</span>
-            </>
-          )}
+          <span>{item.backlog.ownerItemId}</span>
+          <span aria-hidden>·</span>
+          <span>{item.backlog.provenance}</span>
         </div>
       ) : item.blocked && statusNoteProse(item.statusNote) ? (
         <p className="text-xs leading-5" style={{ color: HUD.amber }}>
@@ -191,11 +203,12 @@ export function RoadmapItemDetail({
             Attach running
           </Button>
         )}
-        {manipulable && item.declaredId && (
+        {canChangeStatus && item.declaredId && (
           <>
             <select
               aria-label="Roadmap status"
               value={item.status}
+              disabled={writeBusy}
               onChange={event =>
                 onMutate({
                   kind: 'set-status',
@@ -203,24 +216,25 @@ export function RoadmapItemDetail({
                   status: event.target.value as RoadmapWritableStatus,
                 })
               }
-              className="h-8 rounded-md border bg-transparent px-2 font-ui text-chrome-label outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan"
+              className="h-8 rounded-md border bg-transparent px-2 font-ui text-chrome-label outline-none focus-visible:ring-1 focus-visible:ring-hud-cyan disabled:cursor-wait disabled:opacity-60"
               style={{ borderColor: HUD.strokeSoft, color: HUD.text }}
             >
-              {item.status === 'backlog' && (
-                <option value="backlog" disabled>
-                  Backlog
-                </option>
-              )}
               {WRITABLE_STATUSES.map(status => (
                 <option key={status.value} value={status.value}>
                   {status.label}
                 </option>
               ))}
             </select>
+          </>
+        )}
+        {canReorder && item.declaredId && (
+          <>
             <Button
               size="sm"
               variant="ghost"
               aria-label="Move item up"
+              disabled={writeBusy || !item.canMoveUp}
+              title={item.canMoveUp ? 'Move item up' : 'First in this state'}
               onClick={() =>
                 onMutate({
                   kind: 'move-item',
@@ -235,6 +249,8 @@ export function RoadmapItemDetail({
               size="sm"
               variant="ghost"
               aria-label="Move item down"
+              disabled={writeBusy || !item.canMoveDown}
+              title={item.canMoveDown ? 'Move item down' : 'Last in this state'}
               onClick={() =>
                 onMutate({
                   kind: 'move-item',
@@ -246,6 +262,33 @@ export function RoadmapItemDetail({
               ↓
             </Button>
           </>
+        )}
+        {manipulable && item.declaredId && !item.hasUniqueDeclaredId && (
+          <span
+            className="font-ui text-chrome-meta"
+            style={{ color: HUD.amber }}
+            title="Resolve duplicate item ids in the roadmap before changing state."
+          >
+            Duplicate id · view only
+          </span>
+        )}
+        {hasWriteTarget && item.status !== item.sectionStatus && (
+          <span
+            className="font-ui text-chrome-meta"
+            style={{ color: HUD.textDim }}
+            title="Move the item into its displayed section before reordering it."
+          >
+            Section mismatch · reorder unavailable
+          </span>
+        )}
+        {launchFailed && (
+          <span
+            role="status"
+            className="font-ui text-chrome-meta"
+            style={{ color: HUD.amber }}
+          >
+            Agent could not start · check Agent Sources
+          </span>
         )}
       </div>
 
@@ -306,7 +349,7 @@ export function RoadmapItemDetail({
             {item.milestones.map((milestone, index) => {
               const roved = selectedMilestone === index;
               const canToggle =
-                manipulable && Boolean(item.declaredId) && !milestone.retired;
+                hasWriteTarget && !writeBusy && !milestone.retired;
               return (
                 <li
                   key={index}

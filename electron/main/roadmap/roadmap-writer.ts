@@ -1,7 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import {
+  parseRoadmap,
+  resolveRoadmapSectionStatus,
+  type RoadmapDoc,
+  type RoadmapItem,
+  type RoadmapItemStatus,
+} from '@exawatt/core';
 import { loadSettings, type AgentPermissionMode } from '../settings-store';
+import { isRepoRelativePath, resolveContainedPath } from '../contained-path';
 
 export const ROADMAP_STATE_WRITE_PERMISSION = 'roadmap-state-write' as const;
 
@@ -60,8 +68,8 @@ interface UndoEntry {
 
 const UNDO_WINDOW_MS = 10_000;
 const undoEntries = new Map<string, UndoEntry>();
+const fileOperationQueues = new Map<string, Promise<unknown>>();
 const ITEM_ID = /^[A-Z][A-Z0-9]*-\d+$/;
-const ITEM_HEADING = /^###\s+([A-Z][A-Z0-9]*-\d+)\b/;
 const SECTION_HEADING = /^##\s+(.+?)\s*$/;
 const DONE_PROSE = /\((landed|shipped)[^)]*\)|✅/i;
 const WRITABLE_STATUSES = new Set<RoadmapWritableStatus>([
@@ -77,6 +85,12 @@ interface ItemBlock {
   end: number;
   sectionStart: number;
   sectionStatus: RoadmapWritableStatus | 'backlog' | 'shipped' | null;
+}
+
+interface TextLayout {
+  lines: string[];
+  eol: '\n' | '\r\n';
+  hadFinalNewline: boolean;
 }
 
 function contentHash(text: string): string {
@@ -97,6 +111,8 @@ function validatedRequest(value: unknown): RoadmapWriteRequest {
     typeof input.projectDir !== 'string' ||
     typeof input.file !== 'string' ||
     typeof input.expectedContentHash !== 'string' ||
+    !/^[0-9a-f]{8}$/.test(input.expectedContentHash) ||
+    (input.confirmed !== undefined && typeof input.confirmed !== 'boolean') ||
     !action ||
     typeof action !== 'object'
   ) {
@@ -114,6 +130,7 @@ function validatedRequest(value: unknown): RoadmapWriteRequest {
       candidate.direction !== 'down') ||
     (candidate.kind === 'set-milestone' &&
       (!Number.isInteger(candidate.line) ||
+        (candidate.line as number) < 1 ||
         typeof candidate.done !== 'boolean')) ||
     !['set-status', 'move-item', 'set-milestone'].includes(
       candidate.kind as string
@@ -124,74 +141,104 @@ function validatedRequest(value: unknown): RoadmapWriteRequest {
   return value as RoadmapWriteRequest;
 }
 
-function assertProjectPath(projectDir: string, file: string): string {
+async function resolveProjectRoadmapPath(
+  projectDir: string,
+  file: string
+): Promise<string> {
   if (
     !path.isAbsolute(projectDir) ||
     projectDir.includes('\0') ||
-    !file ||
-    file.includes('\0') ||
-    path.isAbsolute(file)
+    !isRepoRelativePath(file)
   ) {
     throw new Error('Invalid roadmap path');
   }
-  const root = path.resolve(projectDir);
-  const resolved = path.resolve(root, file);
-  if (!resolved.startsWith(root + path.sep))
+  const realRoot = await fs.promises.realpath(projectDir);
+  const lexicalTarget = path.resolve(realRoot, file);
+  if (!resolveContainedPath(realRoot, lexicalTarget)) {
     throw new Error('Roadmap path escaped Project');
-  return resolved;
-}
-
-function sectionStatus(name: string, v2: boolean): ItemBlock['sectionStatus'] {
-  if (/^(now|current)\b/i.test(name)) return 'now';
-  if (/^next\b/i.test(name)) return 'next';
-  if (/^(later|future)\b/i.test(name)) return 'later';
-  if (/^backlog\b/i.test(name)) return v2 ? 'backlog' : 'later';
-  if (/^(shipped|done|completed)\b/i.test(name)) return 'shipped';
-  if (/^(parked|icebox)\b/i.test(name)) return 'parked';
-  return null;
-}
-
-function outline(lines: string[], v2: boolean): ItemBlock[] {
-  const starts: Array<Omit<ItemBlock, 'end'>> = [];
-  let activeSectionStart = -1;
-  let activeStatus: ItemBlock['sectionStatus'] = null;
-  for (let index = 0; index < lines.length; index++) {
-    const section =
-      !lines[index].startsWith('###') && SECTION_HEADING.exec(lines[index]);
-    if (section) {
-      activeSectionStart = index;
-      activeStatus = sectionStatus(section[1], v2);
-      continue;
-    }
-    const item = ITEM_HEADING.exec(lines[index]);
-    if (item && activeStatus) {
-      starts.push({
-        id: item[1],
-        start: index,
-        sectionStart: activeSectionStart,
-        sectionStatus: activeStatus,
-      });
-    }
   }
-  return starts.map((item, index) => {
-    const nextItem = starts[index + 1]?.start ?? lines.length;
+  const realTarget = await fs.promises.realpath(lexicalTarget);
+  const contained = resolveContainedPath(realRoot, realTarget);
+  if (!contained || contained === realRoot) {
+    throw new Error('Roadmap path escaped Project');
+  }
+  const stat = await fs.promises.stat(contained);
+  if (!stat.isFile()) throw new Error('Roadmap path is not a file');
+  return contained;
+}
+
+function serializeFileOperation<T>(
+  filePath: string,
+  operation: () => Promise<T>
+): Promise<T> {
+  const previous = fileOperationQueues.get(filePath) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(operation);
+  fileOperationQueues.set(filePath, current);
+  return current.finally(() => {
+    if (fileOperationQueues.get(filePath) === current) {
+      fileOperationQueues.delete(filePath);
+    }
+  });
+}
+
+async function atomicWriteText(filePath: string, text: string): Promise<void> {
+  const stat = await fs.promises.stat(filePath);
+  const temporary = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.exawatt-${process.pid}-${randomUUID()}.tmp`
+  );
+  let handle: fs.promises.FileHandle | null = null;
+  try {
+    handle = await fs.promises.open(temporary, 'wx', stat.mode);
+    await handle.writeFile(text, 'utf8');
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    await fs.promises.rename(temporary, filePath);
+  } finally {
+    await handle?.close().catch(() => {});
+    await fs.promises.rm(temporary, { force: true }).catch(() => {});
+  }
+}
+
+function splitText(text: string): TextLayout {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const hadFinalNewline = text.endsWith(eol);
+  const lines = text.split(/\r?\n/);
+  if (hadFinalNewline) lines.pop();
+  return { lines, eol, hadFinalNewline };
+}
+
+function outline(lines: string[], doc: RoadmapDoc): ItemBlock[] {
+  return doc.items.map((item, index) => {
+    const start = item.source.line - 1;
+    let sectionStart = -1;
+    for (let line = start - 1; line >= 0; line--) {
+      if (!lines[line].startsWith('###') && SECTION_HEADING.test(lines[line])) {
+        sectionStart = line;
+        break;
+      }
+    }
+    if (sectionStart < 0) {
+      throw new Error(`Roadmap item ${item.id} has no queue section`);
+    }
+    const next = doc.items[index + 1];
+    const nextItem = next ? next.source.line - 1 : lines.length;
     let nextSection = lines.length;
-    for (let line = item.start + 1; line < lines.length; line++) {
+    for (let line = start + 1; line < lines.length; line++) {
       if (!lines[line].startsWith('###') && SECTION_HEADING.test(lines[line])) {
         nextSection = line;
         break;
       }
     }
-    return { ...item, end: Math.min(nextItem, nextSection) };
+    return {
+      id: item.id,
+      start,
+      end: Math.min(nextItem, nextSection),
+      sectionStart,
+      sectionStatus: item.sectionStatus,
+    };
   });
-}
-
-function conventionVersion(text: string): 'v1' | 'v2' | null {
-  const block = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
-  if (!block) return null;
-  const frontmatter = block[1];
-  const marker = /^exawatt-roadmap:\s*(v1|v2)\s*$/m.exec(frontmatter);
-  return marker?.[1] === 'v2' ? 'v2' : marker?.[1] === 'v1' ? 'v1' : null;
 }
 
 export function resolveRoadmapWritePermission(projectDir: string): {
@@ -237,15 +284,52 @@ function setStatusLine(
   return next;
 }
 
+function uniqueWriteTarget(doc: RoadmapDoc, itemId: string): RoadmapItem {
+  const matches = doc.items.filter(item => item.declaredId === itemId);
+  if (matches.length === 0) {
+    throw new Error(`Roadmap item ${itemId} was not found`);
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `Roadmap item ${itemId} is duplicated; resolve the ids before writing`
+    );
+  }
+  return matches[0];
+}
+
+function blockForItem(blocks: ItemBlock[], item: RoadmapItem): ItemBlock {
+  const block = blocks.find(
+    candidate =>
+      candidate.start === item.source.line - 1 &&
+      candidate.id === item.declaredId
+  );
+  if (!block) throw new Error(`Roadmap item ${item.id} source moved`);
+  return block;
+}
+
+function isWritableQueueStatus(
+  status: RoadmapItemStatus
+): status is RoadmapWritableStatus {
+  return WRITABLE_STATUSES.has(status as RoadmapWritableStatus);
+}
+
+function isReorderableStatus(status: RoadmapItemStatus): boolean {
+  return isWritableQueueStatus(status) || status === 'backlog';
+}
+
 function rewriteStatus(
   lines: string[],
-  itemId: string,
-  status: RoadmapWritableStatus,
-  v2: boolean
+  doc: RoadmapDoc,
+  item: RoadmapItem,
+  status: RoadmapWritableStatus
 ): string[] {
-  const blocks = outline(lines, v2);
-  const block = blocks.find(candidate => candidate.id === itemId);
-  if (!block) throw new Error(`Roadmap item ${itemId} was not found`);
+  if (!isWritableQueueStatus(item.status)) {
+    throw new Error(
+      `${item.id} is ${item.status}; only Now, Next, Later, and Parked items can change state`
+    );
+  }
+  const blocks = outline(lines, doc);
+  const block = blockForItem(blocks, item);
   const rewritten = setStatusLine(lines.slice(block.start, block.end), status);
   if (block.sectionStatus === status) {
     return [
@@ -256,7 +340,11 @@ function rewriteStatus(
   }
 
   const without = [...lines.slice(0, block.start), ...lines.slice(block.end)];
-  const remaining = outline(without, v2);
+  const remainingDoc = parseRoadmap(without.join('\n'), {
+    projectDir: doc.projectDir,
+    file: doc.file,
+  });
+  const remaining = outline(without, remainingDoc);
   const targetBlocks = remaining.filter(
     candidate => candidate.sectionStatus === status
   );
@@ -266,7 +354,10 @@ function rewriteStatus(
   } else {
     const targetHeading = without.findIndex(line => {
       const heading = !line.startsWith('###') && SECTION_HEADING.exec(line);
-      return Boolean(heading && sectionStatus(heading[1], v2) === status);
+      return Boolean(
+        heading &&
+        resolveRoadmapSectionStatus(heading[1], doc.convention) === status
+      );
     });
     if (targetHeading >= 0) {
       insertAt = targetHeading + 1;
@@ -285,18 +376,37 @@ function rewriteStatus(
 
 function rewriteMove(
   lines: string[],
-  itemId: string,
-  direction: 'up' | 'down',
-  v2: boolean
+  doc: RoadmapDoc,
+  item: RoadmapItem,
+  direction: 'up' | 'down'
 ): string[] {
-  const blocks = outline(lines, v2);
-  const index = blocks.findIndex(candidate => candidate.id === itemId);
-  if (index === -1) throw new Error(`Roadmap item ${itemId} was not found`);
-  const block = blocks[index];
+  if (!isReorderableStatus(item.status)) {
+    throw new Error(`${item.id} is not in a reorderable queue state`);
+  }
+  if (item.status !== item.sectionStatus) {
+    throw new Error(
+      `${item.id} has a Status override; align its section before reordering`
+    );
+  }
+  const blocks = outline(lines, doc);
+  const block = blockForItem(blocks, item);
+  const index = blocks.indexOf(block);
   const neighbor = blocks[index + (direction === 'up' ? -1 : 1)];
   if (!neighbor || neighbor.sectionStart !== block.sectionStart) {
     throw new Error(
-      `Roadmap item ${itemId} is already at the ${direction === 'up' ? 'top' : 'bottom'} of its state`
+      `Roadmap item ${item.id} is already at the ${direction === 'up' ? 'top' : 'bottom'} of its state`
+    );
+  }
+  const neighborItem = doc.items.find(
+    candidate => candidate.source.line === neighbor.start + 1
+  );
+  if (
+    !neighborItem ||
+    neighborItem.status !== item.status ||
+    neighborItem.sectionStatus !== item.sectionStatus
+  ) {
+    throw new Error(
+      'Source order does not match the visible state; align Status overrides before reordering'
     );
   }
   const first = direction === 'up' ? neighbor : block;
@@ -311,16 +421,21 @@ function rewriteMove(
 
 function rewriteMilestone(
   lines: string[],
-  itemId: string,
+  item: RoadmapItem,
   lineNumber: number,
   done: boolean,
-  v2: boolean
+  doc: RoadmapDoc
 ): string[] {
-  const block = outline(lines, v2).find(candidate => candidate.id === itemId);
+  const block = blockForItem(outline(lines, doc), item);
   const index = lineNumber - 1;
-  if (!block || index <= block.start || index >= block.end) {
+  if (index <= block.start || index >= block.end) {
     throw new Error('Milestone source moved');
   }
+  const milestone = item.milestones.find(
+    candidate => candidate.source.line === lineNumber
+  );
+  if (!milestone) throw new Error('Milestone source is not in Milestones');
+  if (milestone.retired) throw new Error('Retired milestones are read-only');
   const source = lines[index];
   if (!/^\s*[-*]\s+/.test(source))
     throw new Error('Milestone source is not a bullet');
@@ -346,21 +461,19 @@ function rewriteMilestone(
 function applyAction(
   text: string,
   action: RoadmapWriteAction,
-  version: 'v1' | 'v2'
+  doc: RoadmapDoc
 ): string {
   if (!ITEM_ID.test(action.itemId))
     throw new Error('Only items with declared ids are manipulable');
-  const hadFinalNewline = text.endsWith('\n');
-  const lines = text.split('\n');
-  if (hadFinalNewline) lines.pop();
-  const v2 = version === 'v2';
+  const item = uniqueWriteTarget(doc, action.itemId);
+  const { lines, eol, hadFinalNewline } = splitText(text);
   const rewritten =
     action.kind === 'set-status'
-      ? rewriteStatus(lines, action.itemId, action.status, v2)
+      ? rewriteStatus(lines, doc, item, action.status)
       : action.kind === 'move-item'
-        ? rewriteMove(lines, action.itemId, action.direction, v2)
-        : rewriteMilestone(lines, action.itemId, action.line, action.done, v2);
-  return rewritten.join('\n') + (hadFinalNewline ? '\n' : '');
+        ? rewriteMove(lines, doc, item, action.direction)
+        : rewriteMilestone(lines, item, action.line, action.done, doc);
+  return rewritten.join(eol) + (hadFinalNewline ? eol : '');
 }
 
 export async function writeRoadmapState(
@@ -385,48 +498,59 @@ export async function writeRoadmapState(
     };
   }
   try {
-    const filePath = assertProjectPath(request.projectDir, request.file);
-    const before = await fs.promises.readFile(filePath, 'utf8');
-    const version = conventionVersion(before);
-    if (!version) {
+    const filePath = await resolveProjectRoadmapPath(
+      request.projectDir,
+      request.file
+    );
+    return await serializeFileOperation(filePath, async () => {
+      const before = await fs.promises.readFile(filePath, 'utf8');
+      if (contentHash(before) !== request.expectedContentHash) {
+        return {
+          status: 'refused' as const,
+          message: 'Roadmap changed before the edit; refreshed instead',
+          permission: permission.permission,
+        };
+      }
+      const doc = parseRoadmap(before, {
+        projectDir: request.projectDir,
+        file: request.file,
+      });
+      if (doc.conformance !== 'declared') {
+        return {
+          status: 'refused' as const,
+          message: 'Roadmap writes require declared Exawatt conformance',
+          permission: permission.permission,
+        };
+      }
+      const after = applyAction(before, request.action, doc);
+      if (after === before) throw new Error('Roadmap edit produced no change');
+      const immediatelyBeforeWrite = await fs.promises.readFile(
+        filePath,
+        'utf8'
+      );
+      if (contentHash(immediatelyBeforeWrite) !== request.expectedContentHash) {
+        return {
+          status: 'refused' as const,
+          message: 'Roadmap changed while applying the edit; refreshed instead',
+          permission: permission.permission,
+        };
+      }
+      await atomicWriteText(filePath, after);
+      const afterHash = contentHash(after);
+      const undoToken = randomUUID();
+      undoEntries.set(undoToken, {
+        filePath,
+        before,
+        afterHash,
+        expiresAt: Date.now() + UNDO_WINDOW_MS,
+      });
       return {
-        status: 'refused',
-        message: 'Roadmap writes require declared Exawatt conformance',
+        status: 'applied' as const,
+        contentHash: afterHash,
+        undoToken,
         permission: permission.permission,
       };
-    }
-    if (contentHash(before) !== request.expectedContentHash) {
-      return {
-        status: 'refused',
-        message: 'Roadmap changed before the edit; refreshed instead',
-        permission: permission.permission,
-      };
-    }
-    const after = applyAction(before, request.action, version);
-    if (after === before) throw new Error('Roadmap edit produced no change');
-    const immediatelyBeforeWrite = await fs.promises.readFile(filePath, 'utf8');
-    if (contentHash(immediatelyBeforeWrite) !== request.expectedContentHash) {
-      return {
-        status: 'refused',
-        message: 'Roadmap changed while applying the edit; refreshed instead',
-        permission: permission.permission,
-      };
-    }
-    await fs.promises.writeFile(filePath, after, 'utf8');
-    const afterHash = contentHash(after);
-    const undoToken = randomUUID();
-    undoEntries.set(undoToken, {
-      filePath,
-      before,
-      afterHash,
-      expiresAt: Date.now() + UNDO_WINDOW_MS,
     });
-    return {
-      status: 'applied',
-      contentHash: afterHash,
-      undoToken,
-      permission: permission.permission,
-    };
   } catch (cause) {
     return {
       status: 'failed',
@@ -448,15 +572,20 @@ export async function undoRoadmapState(
     return { status: 'refused', message: 'Undo window expired' };
   }
   try {
-    const current = await fs.promises.readFile(entry.filePath, 'utf8');
-    if (contentHash(current) !== entry.afterHash) {
+    return await serializeFileOperation(entry.filePath, async () => {
+      const current = await fs.promises.readFile(entry.filePath, 'utf8');
+      if (contentHash(current) !== entry.afterHash) {
+        return {
+          status: 'refused' as const,
+          message: 'Roadmap changed after the edit; undo refused',
+        };
+      }
+      await atomicWriteText(entry.filePath, entry.before);
       return {
-        status: 'refused',
-        message: 'Roadmap changed after the edit; undo refused',
+        status: 'applied' as const,
+        contentHash: contentHash(entry.before),
       };
-    }
-    await fs.promises.writeFile(entry.filePath, entry.before, 'utf8');
-    return { status: 'applied', contentHash: contentHash(entry.before) };
+    });
   } catch (cause) {
     return {
       status: 'failed',

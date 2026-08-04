@@ -502,7 +502,7 @@ export const architectureManifest = {
           id: 'terminal-workspace',
           label: 'Agent + Team Workspace',
           summary:
-            'Elastic two-row Project/Initiative ribbon, inert Project selection, intent-safe Agent drafts, semantically merged parent/delegated attention, compact goal-visual Team tiles, keyboard-complete Session control, and a convention-v2 roadmap lens with linked liveness, backlog provenance, launch/attach, and declared-only sequence/state controls.',
+            'Elastic two-row Project/Initiative ribbon, inert Project selection, intent-safe Agent drafts, semantically merged parent/delegated attention, compact goal-visual Team tiles, keyboard-complete Session control, and a convention-v2 roadmap lens with linked liveness, backlog provenance, launch/attach, and capability-honest sequence/state controls.',
           layer: 'ui',
           status: 'implemented',
           x: 205,
@@ -742,7 +742,7 @@ export const architectureManifest = {
           id: 'electron-shell',
           label: 'Electron Shell',
           summary:
-            'Immediate launch frame, trusted IPC, serialized workspace/history, durable provider identity, native-network PKCE, atomic delivery, signed updates, and declared-only compare-before-write roadmap state with guarded undo and no git.',
+            'Immediate launch frame, trusted IPC, serialized workspace/history, durable provider identity, native-network PKCE, atomic delivery, signed updates, and parser-validated per-file roadmap transactions with real-path containment, guarded undo, and no git.',
           layer: 'infrastructure',
           status: 'implemented',
           x: 75,

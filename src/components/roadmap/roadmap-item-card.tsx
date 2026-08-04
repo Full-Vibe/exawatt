@@ -88,6 +88,7 @@ export function RoadmapItemCard({
         type="button"
         tabIndex={-1}
         data-roadmap-row={item.id}
+        data-roadmap-source-line={item.sourceLine}
         data-selected={selected || undefined}
         onClick={onDrill}
         onMouseEnter={onHover}
@@ -179,6 +180,7 @@ export function RoadmapItemCard({
       type="button"
       tabIndex={-1}
       data-roadmap-row={item.id}
+      data-roadmap-source-line={item.sourceLine}
       data-selected={selected || undefined}
       onClick={onDrill}
       onMouseEnter={onHover}

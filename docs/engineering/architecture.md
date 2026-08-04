@@ -544,8 +544,10 @@ Built:
 - roadmap lens (ENG-017): a Team-altitude rail rendering each Project's
   repo-canonical roadmap through the convention-v2 `@exawatt/core` parser and
   pure `@exawatt/ui-model` view. Electron main owns validated read/watch/git-
-  activity IPC plus declared-only sequence/state writes with compare/refuse,
-  a named policy seam, guarded undo, and no git operation (decision `0029`)
+  activity IPC plus declared-only sequence/state transactions: parser-validated
+  targets, real-path containment, per-file serialization, compare/refuse,
+  atomic replacement, a named policy seam, guarded undo, and no git operation
+  (decision `0029`)
 - ENG-021 E1 Session-context inference: operator-submission-triggered evidence,
   authenticated server-owned structured labeling, durable last-good failure
   behavior, immediate correction, a repository gold corpus, and a reusable

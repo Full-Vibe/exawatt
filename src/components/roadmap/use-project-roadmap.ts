@@ -83,6 +83,7 @@ export function useProjectRoadmap(
   const [recentChanges, setRecentChanges] = useState<RoadmapRecentChange[]>([]);
   // survives re-renders; bumped to invalidate in-flight reads on refresh
   const generation = useRef(0);
+  const activityGeneration = useRef(0);
 
   const load = useCallback(() => {
     const api = window.electron?.roadmap;
@@ -123,14 +124,19 @@ export function useProjectRoadmap(
 
   const loadActivity = useCallback(() => {
     const api = window.electron?.roadmap;
+    const gen = ++activityGeneration.current;
     if (readSource || !projectDir || !api?.activity) {
       setRecentChanges([]);
       return;
     }
     void api
       .activity(projectDir)
-      .then(setRecentChanges)
-      .catch(() => setRecentChanges([]));
+      .then(changes => {
+        if (gen === activityGeneration.current) setRecentChanges(changes);
+      })
+      .catch(() => {
+        if (gen === activityGeneration.current) setRecentChanges([]);
+      });
   }, [projectDir, readSource]);
 
   useEffect(() => {

@@ -36,7 +36,7 @@ export type {
   LocalSessionsSource,
   LocalSessionsOptions,
 } from './transports/local-sessions';
-export { parseRoadmap } from './roadmap/parse';
+export { parseRoadmap, resolveRoadmapSectionStatus } from './roadmap/parse';
 export type { ParseRoadmapOptions } from './roadmap/parse';
 export { inferSessionLinks } from './roadmap/link';
 export type { SessionLinkCandidate } from './roadmap/link';
@@ -48,6 +48,7 @@ export type {
   RoadmapItem,
   RoadmapDiagnostic,
   RoadmapConformance,
+  RoadmapConvention,
   RoadmapDoc,
   SessionLinkMethod,
   SessionLinkConfidence,

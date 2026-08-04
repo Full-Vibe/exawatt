@@ -59,6 +59,13 @@ describe('inferSessionLinks', () => {
     expect(
       inferSessionLinks(short, [candidate({ branch: 'eng-017-rail' })], () => 0)
     ).toEqual([]);
+    expect(
+      inferSessionLinks(
+        doc,
+        [candidate({ branch: 'eng-017abc-roadmap' })],
+        () => 0
+      )
+    ).toEqual([]);
   });
 
   it('links by context summary and commit subject with medium confidence', () => {

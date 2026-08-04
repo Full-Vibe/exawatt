@@ -30,12 +30,15 @@ export function RoadmapEmptyQueue({
           boxShadow: `0 0 8px ${withAlpha(HUD.amber, 0.5)}`,
         }}
       />
-      <p className="font-display text-sm font-semibold" style={{ color: HUD.amber }}>
+      <p
+        className="font-display text-sm font-semibold"
+        style={{ color: HUD.amber }}
+      >
         Queue empty
       </p>
       <p className="text-xs leading-5" style={{ color: HUD.textDim }}>
-        Nothing is next in this project. Agents here will idle when they
-        finish{shippedCount > 0 ? ` — ${shippedCount} shipped so far` : ''}.
+        Nothing is next in this project. Agents here will idle when they finish
+        {shippedCount > 0 ? ` — ${shippedCount} shipped so far` : ''}.
       </p>
       {onOpenFile && (
         <button
@@ -58,7 +61,10 @@ export function RoadmapEmptyQueue({
 export function RoadmapNoRoadmap({ checkedPaths }: { checkedPaths: string[] }) {
   return (
     <div className="flex flex-col gap-2 px-3 py-4">
-      <p className="font-display text-sm font-semibold" style={{ color: HUD.text }}>
+      <p
+        className="font-display text-sm font-semibold"
+        style={{ color: HUD.text }}
+      >
         No roadmap found in this repo
       </p>
       <p className="text-xs leading-5" style={{ color: HUD.textDim }}>
@@ -66,7 +72,10 @@ export function RoadmapNoRoadmap({ checkedPaths }: { checkedPaths: string[] }) {
         {checkedPaths.map((p, i) => (
           <span key={p}>
             {i > 0 && ', '}
-            <span className="font-mono text-chrome-meta" style={{ color: HUD.textMono }}>
+            <span
+              className="font-mono text-chrome-meta"
+              style={{ color: HUD.textMono }}
+            >
               {p}
             </span>
           </span>
@@ -74,8 +83,8 @@ export function RoadmapNoRoadmap({ checkedPaths }: { checkedPaths: string[] }) {
         .
       </p>
       <p className="text-xs leading-5" style={{ color: HUD.textDim }}>
-        Exawatt reads the repo&apos;s roadmap; it never writes one. The
-        convention lives in docs/product/reference/roadmap-convention.md.
+        Add a roadmap in one of these locations to activate the lens. Exawatt
+        won&apos;t invent project work.
       </p>
     </div>
   );
@@ -84,10 +93,16 @@ export function RoadmapNoRoadmap({ checkedPaths }: { checkedPaths: string[] }) {
 export function RoadmapReadError({ error }: { error: string }) {
   return (
     <div className="flex flex-col gap-2 px-3 py-4">
-      <p className="font-display text-sm font-semibold" style={{ color: HUD.red }}>
+      <p
+        className="font-display text-sm font-semibold"
+        style={{ color: HUD.red }}
+      >
         Could not read the roadmap
       </p>
-      <p className="font-mono text-chrome-meta leading-5" style={{ color: HUD.textDim }}>
+      <p
+        className="font-mono text-chrome-meta leading-5"
+        style={{ color: HUD.textDim }}
+      >
         {error}
       </p>
     </div>

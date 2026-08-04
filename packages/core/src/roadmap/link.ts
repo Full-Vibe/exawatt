@@ -29,7 +29,7 @@ export interface SessionLinkCandidate {
   commitSubjects: string[];
 }
 
-/** id present with boundaries: "eng-017" must not match inside "eng-0170" */
+/** id present with boundaries: "eng-017" must not match inside another token. */
 function containsId(text: string, idLower: string): boolean {
   let from = 0;
   for (;;) {
@@ -37,7 +37,7 @@ function containsId(text: string, idLower: string): boolean {
     if (at === -1) return false;
     const before = at === 0 ? '' : text[at - 1];
     const after = text[at + idLower.length] ?? '';
-    if (!/[a-z0-9]/.test(before) && !/[0-9]/.test(after)) return true;
+    if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) return true;
     from = at + 1;
   }
 }

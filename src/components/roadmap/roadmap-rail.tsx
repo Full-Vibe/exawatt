@@ -123,9 +123,13 @@ type RailRow =
   | { kind: 'chip'; chip: RoadmapSessionChip; itemId: string }
   | { kind: 'unmapped'; session: RoadmapLensSessionInput };
 
+function itemViewKey(item: RoadmapItemView): string {
+  return `${item.id}:${item.sourceLine}`;
+}
+
 function rowKey(row: RailRow): string {
   return row.kind === 'item'
-    ? row.item.id
+    ? itemViewKey(row.item)
     : row.kind === 'chip'
       ? `c-${row.chip.sessionId}`
       : row.kind === 'unmapped'
@@ -411,6 +415,8 @@ export function RoadmapRail({
     | { phase: 'failed'; message: string }
   >({ phase: 'idle' });
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mutationInFlight = useRef(false);
+  const writeScope = useRef(0);
   useEffect(() => setMsel(0), [drillId]);
 
   // entrance stagger (exposé recipe): flag flips post-mount
@@ -423,6 +429,10 @@ export function RoadmapRail({
 
   // project switch re-scopes the rail: drill resets, selection returns home
   useEffect(() => {
+    writeScope.current += 1;
+    mutationInFlight.current = false;
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setWriteState({ phase: 'idle' });
     setDrillId(null);
     setSel(0);
     setShippedOpen(false);
@@ -582,7 +592,8 @@ export function RoadmapRail({
         ...view.backlog,
         ...view.shipped,
         ...view.parked,
-      ].find(item => item.id === drillId) ?? null
+      ].find(item => itemViewKey(item) === drillId || item.id === drillId) ??
+      null
     );
   }, [drillId, view]);
 
@@ -603,23 +614,35 @@ export function RoadmapRail({
 
   const mutate = useCallback(
     async (action: RoadmapWriteAction, confirmed = false) => {
+      if (mutationInFlight.current) return;
+      mutationInFlight.current = true;
+      const scope = writeScope.current;
       setWriteState({ phase: 'pending', action });
-      const result = await onWrite(action, confirmed);
-      if (result.status === 'permission-required') {
-        setWriteState({ phase: 'permission', action, message: result.message });
-      } else if (result.status === 'applied') {
-        if (undoTimer.current) clearTimeout(undoTimer.current);
-        setWriteState({
-          phase: 'applied',
-          undoToken: result.undoToken,
-          message: 'Roadmap updated',
-        });
-        undoTimer.current = setTimeout(
-          () => setWriteState({ phase: 'idle' }),
-          10_000
-        );
-      } else {
-        setWriteState({ phase: 'failed', message: result.message });
+      try {
+        const result = await onWrite(action, confirmed);
+        if (scope !== writeScope.current) return;
+        if (result.status === 'permission-required') {
+          setWriteState({
+            phase: 'permission',
+            action,
+            message: result.message,
+          });
+        } else if (result.status === 'applied') {
+          if (undoTimer.current) clearTimeout(undoTimer.current);
+          setWriteState({
+            phase: 'applied',
+            undoToken: result.undoToken,
+            message: 'Roadmap updated',
+          });
+          undoTimer.current = setTimeout(
+            () => setWriteState({ phase: 'idle' }),
+            10_000
+          );
+        } else {
+          setWriteState({ phase: 'failed', message: result.message });
+        }
+      } finally {
+        if (scope === writeScope.current) mutationInFlight.current = false;
       }
     },
     [onWrite]
@@ -651,12 +674,21 @@ export function RoadmapRail({
     } else if (row.kind === 'unmapped') {
       if (row.session.tabId) onSelectSession(row.session.tabId);
     } else {
-      setDrillId(row.item.id);
+      setDrillId(itemViewKey(row.item));
     }
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return; // workspace verbs pass through
+    const target = e.target as HTMLElement;
+    if (
+      target !== e.currentTarget &&
+      target.closest(
+        'button, input, select, textarea, a, [contenteditable="true"], [role="button"], [role="menuitem"]'
+      )
+    ) {
+      return;
+    }
     const key = e.key;
     const handled = () => {
       e.preventDefault();
@@ -734,7 +766,7 @@ export function RoadmapRail({
     if (!rootRef.current?.contains(document.activeElement)) return;
     const selector =
       row.kind === 'item'
-        ? `[data-roadmap-row="${CSS.escape(row.item.id)}"]`
+        ? `[data-roadmap-row="${CSS.escape(row.item.id)}"][data-roadmap-source-line="${row.item.sourceLine}"]`
         : row.kind === 'chip'
           ? `[data-roadmap-chip="${CSS.escape(row.chip.sessionId)}"]`
           : row.kind === 'unmapped'
@@ -1046,6 +1078,7 @@ export function RoadmapRail({
               </span>
             </div>
             <RoadmapItemDetail
+              key={itemViewKey(drilled)}
               item={drilled}
               color={color}
               selectedMilestone={drilled.milestones.length > 0 ? msel : null}
@@ -1053,6 +1086,10 @@ export function RoadmapRail({
               onSelectSession={onSelectSession}
               unmappedSessions={view.unmappedSessions}
               manipulable={view.trust?.conformance === 'declared'}
+              writeBusy={
+                writeState.phase === 'pending' ||
+                writeState.phase === 'permission'
+              }
               onStartAgent={onStartAgent}
               onAttachSession={onAttachSession}
               onMutate={action => void mutate(action)}
@@ -1183,7 +1220,7 @@ export function RoadmapRail({
                       item={row.item}
                       variant={row.variant}
                       selected={i === sel}
-                      onDrill={() => setDrillId(row.item.id)}
+                      onDrill={() => setDrillId(itemViewKey(row.item))}
                       onHover={() => setSel(i)}
                     />
                   </>

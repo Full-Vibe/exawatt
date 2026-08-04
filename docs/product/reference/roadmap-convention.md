@@ -226,9 +226,17 @@ Status: bug · ACME-003 · quick-capture 2026-08-03
   These are sequence/state edits only: it never edits prose and never creates
   an item. Compact backlog records are reordered in place; creating one or
   changing its metadata remains agent-authored because provenance is prose.
+  Shipped history is read-only. An item whose `Status:` override disagrees
+  with its containing section must be aligned before it can be reordered.
+- Declared ids are write addresses and therefore must be unique. A duplicated
+  id remains visible with a parser warning, but every copy is view-only until
+  the ambiguity is resolved.
 - Writes require a supported `exawatt-roadmap` marker. A detected or partially
   tolerated roadmap stays view-only. Every write re-reads and compares the
-  source content, refusing if it moved instead of attempting a merge.
+  source content, refusing if it moved instead of attempting a merge. Exawatt
+  resolves the Project and roadmap through their real filesystem paths,
+  rejects symlink escapes, serializes edits per file, and replaces the file
+  atomically while preserving its line-ending convention.
 - Exawatt writes the markdown file and never runs git. The edit is an ordinary
   working-tree change for the repo's human or agent workflow to review and
   commit. Applied edits have a short, compare-guarded undo window.

@@ -104,8 +104,9 @@ import {
   DEFAULT_AGENT_PERMISSION_MODE,
   isAgentSourceId,
   loadAgentSourcePreferences,
+  loadAgentSourceRegistry,
   permissionModeFor,
-  recommendAgentSource,
+  recommendLaunchableAgentSource,
 } from './agent-sources';
 import {
   attentionNeedsOperator,
@@ -753,8 +754,22 @@ export function WorkspaceClient() {
 
   const startRoadmapAgent = useCallback(
     async (dir: string, item: RoadmapItemView): Promise<boolean> => {
-      const preferenceLoad = await loadAgentSourcePreferences();
-      const source = recommendAgentSource(preferenceLoad.preferences, dir);
+      const [preferenceLoad, registryLoad] = await Promise.all([
+        loadAgentSourcePreferences(),
+        loadAgentSourceRegistry('launch'),
+      ]);
+      const source = recommendLaunchableAgentSource(
+        preferenceLoad.preferences,
+        dir,
+        registryLoad.snapshot
+      );
+      if (!source) {
+        setError(
+          registryLoad.error?.message ??
+            'No Agent Source is ready. Configure one in Agent Sources.'
+        );
+        return false;
+      }
       const permissionMode = permissionModeFor(
         preferenceLoad.preferences,
         dir,
@@ -774,13 +789,27 @@ export function WorkspaceClient() {
       if (ok) closeOverview();
       return ok;
     },
-    [closeOverview, launch]
+    [closeOverview, launch, setError]
   );
 
   const startRoadmapRemediation = useCallback(
     async (dir: string): Promise<boolean> => {
-      const preferenceLoad = await loadAgentSourcePreferences();
-      const source = recommendAgentSource(preferenceLoad.preferences, dir);
+      const [preferenceLoad, registryLoad] = await Promise.all([
+        loadAgentSourcePreferences(),
+        loadAgentSourceRegistry('launch'),
+      ]);
+      const source = recommendLaunchableAgentSource(
+        preferenceLoad.preferences,
+        dir,
+        registryLoad.snapshot
+      );
+      if (!source) {
+        setError(
+          registryLoad.error?.message ??
+            'No Agent Source is ready. Configure one in Agent Sources.'
+        );
+        return false;
+      }
       const permissionMode = permissionModeFor(
         preferenceLoad.preferences,
         dir,
@@ -794,12 +823,12 @@ export function WorkspaceClient() {
         dir,
         permissionMode,
         initialPrompt:
-          'Adapt this repository to the published Exawatt roadmap convention v2. Preserve its product intent, add declared conformance, report ambiguous migration choices, and complete the repository delivery loop.',
+          "Adapt this repository to the Exawatt roadmap convention v2. Preserve its product intent and existing evidence. Use frontmatter `exawatt-roadmap: v2`; H2 queue sections Now, Next, Later, Backlog, Shipped, and Parked; H3 items with stable `<PREFIX>-<digits>` ids; optional Status, Scope, Exit criteria, Milestones, and Project doc blocks. Backlog records use exactly `Status: kind · OWNING-ID · provenance`. Keep ambiguous choices visible in the roadmap or linked project docs, then complete this repository's delivery loop.",
       });
       if (ok) closeOverview();
       return ok;
     },
-    [closeOverview, launch]
+    [closeOverview, launch, setError]
   );
 
   // ── Close grammar UI (D27): ⌘W closes like Chrome — the one confirm is

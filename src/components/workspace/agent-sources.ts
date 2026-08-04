@@ -427,6 +427,32 @@ export function recommendAgentSource(
   )[0];
 }
 
+/**
+ * Resolve a one-click launch against observed source truth. Preferences rank
+ * candidates, but can never select a source the live registry says cannot
+ * launch. Returns null when the operator needs to configure a source first.
+ */
+export function recommendLaunchableAgentSource(
+  state: AgentSourcePreferenceState,
+  projectDir: string,
+  registry: AgentSourceRegistrySnapshot
+): AgentSourceId | null {
+  const launchable = new Set(
+    launchSourceSnapshots(registry)
+      .filter(source => source.launchable)
+      .map(source => source.harness)
+  );
+  const projectChoice = state.projectLastUsed[projectDir];
+  if (projectChoice && launchable.has(projectChoice)) return projectChoice;
+  return (
+    [...AGENT_SOURCE_ORDER]
+      .filter(source => launchable.has(source))
+      .sort(
+        (a, b) => (state.sourceRecency[b] ?? 0) - (state.sourceRecency[a] ?? 0)
+      )[0] ?? null
+  );
+}
+
 export function permissionModeFor(
   state: AgentSourcePreferenceState,
   projectDir: string,

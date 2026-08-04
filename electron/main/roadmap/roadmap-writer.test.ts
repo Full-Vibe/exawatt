@@ -24,6 +24,21 @@ async function fixture(version: 'v1' | 'v2' | null = 'v2') {
   };
 }
 
+async function textFixture(text: string) {
+  const projectDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'exawatt-roadmap-')
+  );
+  roots.push(projectDir);
+  const file = 'ROADMAP.md';
+  await fs.promises.writeFile(path.join(projectDir, file), text);
+  return {
+    projectDir,
+    file,
+    text,
+    hash: parseRoadmap(text, { projectDir, file }).contentHash,
+  };
+}
+
 afterEach(async () => {
   await Promise.all(
     roots.splice(0).map(root => fs.promises.rm(root, { recursive: true }))
@@ -61,7 +76,7 @@ describe('roadmap state writer', () => {
     ).toBe(setup.text);
   });
 
-  it('refuses undeclared and concurrently changed roadmaps', async () => {
+  it('refuses undeclared and externally changed roadmaps', async () => {
     const undeclared = await fixture(null);
     expect(
       await writeRoadmapState({
@@ -83,11 +98,39 @@ describe('roadmap state writer', () => {
         action: {
           kind: 'set-milestone',
           itemId: 'ACME-001',
-          line: 12,
+          line: 11,
           done: true,
         },
       })
     ).toMatchObject({ status: 'refused' });
+  });
+
+  it('serializes simultaneous writes so stale actions cannot overwrite each other', async () => {
+    const setup = await fixture();
+    const requests = [
+      writeRoadmapState({
+        ...setup,
+        expectedContentHash: setup.hash,
+        action: { kind: 'set-status', itemId: 'ACME-003', status: 'later' },
+      }),
+      writeRoadmapState({
+        ...setup,
+        expectedContentHash: setup.hash,
+        action: { kind: 'set-status', itemId: 'ACME-003', status: 'parked' },
+      }),
+    ];
+    const results = await Promise.all(requests);
+    expect(results.map(result => result.status).sort()).toEqual([
+      'applied',
+      'refused',
+    ]);
+    const changed = await fs.promises.readFile(
+      path.join(setup.projectDir, setup.file),
+      'utf8'
+    );
+    expect(
+      changed.includes('Status: later') !== changed.includes('Status: parked')
+    ).toBe(true);
   });
 
   it('reorders only within one state and toggles a source-anchored milestone', async () => {
@@ -126,6 +169,38 @@ describe('roadmap state writer', () => {
     ).toContain('- [x] M1 First slice');
   });
 
+  it('treats id-less items as real reorder neighbors', async () => {
+    const setup = await textFixture(`---
+exawatt-roadmap: v2
+---
+
+## Next
+
+### ACME-001 First
+
+### Middle without id
+
+### ACME-002 Third
+`);
+    expect(
+      await writeRoadmapState({
+        ...setup,
+        expectedContentHash: setup.hash,
+        action: { kind: 'move-item', itemId: 'ACME-002', direction: 'up' },
+      })
+    ).toMatchObject({ status: 'applied' });
+    const changed = await fs.promises.readFile(
+      path.join(setup.projectDir, setup.file),
+      'utf8'
+    );
+    expect(changed.indexOf('ACME-001')).toBeLessThan(
+      changed.indexOf('ACME-002')
+    );
+    expect(changed.indexOf('ACME-002')).toBeLessThan(
+      changed.indexOf('Middle without id')
+    );
+  });
+
   it('refuses undo after another writer moves the file', async () => {
     const setup = await fixture();
     const result = await writeRoadmapState({
@@ -162,6 +237,158 @@ describe('roadmap state writer', () => {
     });
   });
 
+  it('keeps compact backlog metadata read-only while allowing in-place reorder', async () => {
+    const setup = await textFixture(`---
+exawatt-roadmap: v2
+---
+
+## Backlog
+
+### ACME-010 First defect
+
+Status: bug · ACME-001 · quick-capture 2026-08-03
+
+### ACME-011 Second defect
+
+Status: small-fix · ACME-001 · review 2026-08-03
+`);
+    expect(
+      await writeRoadmapState({
+        ...setup,
+        expectedContentHash: setup.hash,
+        action: { kind: 'set-status', itemId: 'ACME-010', status: 'next' },
+      })
+    ).toMatchObject({
+      status: 'failed',
+      message: expect.stringContaining('only Now, Next, Later, and Parked'),
+    });
+    const move = await writeRoadmapState({
+      ...setup,
+      expectedContentHash: setup.hash,
+      action: { kind: 'move-item', itemId: 'ACME-011', direction: 'up' },
+    });
+    expect(move.status).toBe('applied');
+    const changed = await fs.promises.readFile(
+      path.join(setup.projectDir, setup.file),
+      'utf8'
+    );
+    expect(changed.indexOf('ACME-011')).toBeLessThan(
+      changed.indexOf('ACME-010')
+    );
+    expect(changed).toContain(
+      'Status: small-fix · ACME-001 · review 2026-08-03'
+    );
+  });
+
+  it('refuses ambiguous item ids and bullets outside Milestones', async () => {
+    const duplicate = await textFixture(`---
+exawatt-roadmap: v2
+---
+
+## Now
+
+### ACME-001 First
+
+### ACME-001 Second
+`);
+    expect(
+      await writeRoadmapState({
+        ...duplicate,
+        expectedContentHash: duplicate.hash,
+        action: { kind: 'set-status', itemId: 'ACME-001', status: 'next' },
+      })
+    ).toMatchObject({
+      status: 'failed',
+      message: expect.stringContaining('duplicated'),
+    });
+
+    const scope = await textFixture(`---
+exawatt-roadmap: v2
+---
+
+## Now
+
+### ACME-001 First
+
+Scope:
+
+- Must remain prose
+`);
+    expect(
+      await writeRoadmapState({
+        ...scope,
+        expectedContentHash: scope.hash,
+        action: {
+          kind: 'set-milestone',
+          itemId: 'ACME-001',
+          line: 11,
+          done: true,
+        },
+      })
+    ).toMatchObject({
+      status: 'failed',
+      message: expect.stringContaining('not in Milestones'),
+    });
+  });
+
+  it('refuses malformed confirmation values and symlink escapes', async () => {
+    const setup = await fixture();
+    expect(
+      await writeRoadmapState({
+        ...setup,
+        expectedContentHash: setup.hash,
+        confirmed: 'yes',
+        action: { kind: 'set-status', itemId: 'ACME-003', status: 'later' },
+      })
+    ).toMatchObject({ status: 'failed' });
+
+    const outside = await fixture();
+    const projectDir = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), 'exawatt-roadmap-link-')
+    );
+    roots.push(projectDir);
+    await fs.promises.symlink(
+      path.join(outside.projectDir, outside.file),
+      path.join(projectDir, 'ROADMAP.md')
+    );
+    expect(
+      await writeRoadmapState({
+        projectDir,
+        file: 'ROADMAP.md',
+        expectedContentHash: outside.hash,
+        action: { kind: 'set-status', itemId: 'ACME-003', status: 'later' },
+      })
+    ).toMatchObject({
+      status: 'failed',
+      message: expect.stringContaining('escaped Project'),
+    });
+  });
+
+  it('refuses reordering when a Status override disagrees with its section', async () => {
+    const setup = await textFixture(`---
+exawatt-roadmap: v2
+---
+
+## Now
+
+### ACME-001 Displayed elsewhere
+
+Status: next
+
+### ACME-002 Current
+`);
+    expect(
+      await writeRoadmapState({
+        ...setup,
+        expectedContentHash: setup.hash,
+        action: { kind: 'move-item', itemId: 'ACME-001', direction: 'down' },
+      })
+    ).toMatchObject({
+      status: 'failed',
+      message: expect.stringContaining('align its section'),
+    });
+  });
+
   it('recognizes declared conformance without normalizing CRLF files', async () => {
     const setup = await fixture('v2');
     const crlf = setup.text.replace(/\n/g, '\r\n');
@@ -176,6 +403,14 @@ describe('roadmap state writer', () => {
       action: { kind: 'move-item', itemId: 'ACME-002', direction: 'up' },
     });
     expect(result.status).toBe('applied');
+    expect(
+      (
+        await fs.promises.readFile(
+          path.join(setup.projectDir, setup.file),
+          'utf8'
+        )
+      ).replace(/\r\n/g, '')
+    ).not.toContain('\n');
     expect(
       await fs.promises.readFile(
         path.join(setup.projectDir, setup.file),

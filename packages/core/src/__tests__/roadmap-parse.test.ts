@@ -136,7 +136,7 @@ describe('parseRoadmap', () => {
       doc.diagnostics.filter(diagnostic => diagnostic.level === 'warn')
     ).toEqual([]);
     expect(doc.unparsedLineCount).toBe(0);
-    expect(doc.items.filter(item => item.status === 'backlog')).toHaveLength(3);
+    expect(doc.items.filter(item => item.status === 'backlog')).toHaveLength(4);
   });
 
   it('parses a declared-conformant roadmap fully', () => {
@@ -200,6 +200,29 @@ describe('parseRoadmap', () => {
       },
     });
     expect(v2.diagnostics).toEqual([]);
+  });
+
+  it('diagnoses malformed v2 backlog metadata instead of guessing fields', () => {
+    for (const status of [
+      'bug · ACME-003',
+      'ACME-003 · provenance',
+      'bug · provenance · ACME-003',
+      'bug · ACME-003 ·',
+    ]) {
+      const doc = parseRoadmap(
+        `---\nexawatt-roadmap: v2\n---\n\n## Backlog\n\n### ACME-009 Retry export\n\nStatus: ${status}\n`,
+        OPTS
+      );
+      expect(doc.items[0].backlog).toBeNull();
+      expect(doc.diagnostics).toContainEqual(
+        expect.objectContaining({
+          level: 'warn',
+          message: expect.stringContaining(
+            'kind · owning item id · provenance'
+          ),
+        })
+      );
+    }
   });
 
   it('reads exawatt roadmap vocabulary without edits', () => {

@@ -1,5 +1,6 @@
 import type {
   RoadmapConformance,
+  RoadmapConvention,
   RoadmapBacklogMetadata,
   RoadmapDiagnostic,
   RoadmapDoc,
@@ -38,6 +39,15 @@ const SECTION_ALIASES_V2: Array<{
   { pattern: /^(shipped|done|completed)\b/i, status: 'shipped' },
   { pattern: /^(parked|icebox)\b/i, status: 'parked' },
 ];
+
+export function resolveRoadmapSectionStatus(
+  heading: string,
+  convention: RoadmapConvention
+): RoadmapItemStatus | null {
+  const aliases =
+    convention === 'exawatt-v1' ? SECTION_ALIASES_V1 : SECTION_ALIASES_V2;
+  return aliases.find(({ pattern }) => pattern.test(heading))?.status ?? null;
+}
 
 const STATUS_ALIASES: Record<string, RoadmapItemStatus> = {
   now: 'now',
@@ -132,13 +142,18 @@ function parseBacklogMetadata(note: string): RoadmapBacklogMetadata | null {
     .split('\u00b7')
     .map(part => part.trim())
     .filter(Boolean);
-  if (parts.length < 2) return null;
-  const ownerIndex = parts.findIndex(part => BACKLOG_OWNER_ID.test(part));
-  if (ownerIndex === -1) return null;
+  if (
+    parts.length !== 3 ||
+    !parts[0] ||
+    !BACKLOG_OWNER_ID.test(parts[1]) ||
+    !parts[2]
+  ) {
+    return null;
+  }
   return {
     kind: parts[0],
-    ownerItemId: parts[ownerIndex],
-    provenance: parts.slice(ownerIndex + 1).join(' · ') || null,
+    ownerItemId: parts[1],
+    provenance: parts[2],
   };
 }
 
@@ -177,8 +192,6 @@ export function parseRoadmap(
   // Unmarked files stay tolerant and receive the current additive grammar.
   // A declared v1 file retains v1's Backlog→Later semantics until migrated.
   const convention = declaredVersion === 'v1' ? 'exawatt-v1' : 'exawatt-v2';
-  const sectionAliases =
-    convention === 'exawatt-v1' ? SECTION_ALIASES_V1 : SECTION_ALIASES_V2;
 
   let section: RoadmapItemStatus | null = null;
   let sectionOrphanWarned = false;
@@ -193,10 +206,7 @@ export function parseRoadmap(
 
     const sectionMatch = !line.startsWith('###') && SECTION_HEADING.exec(line);
     if (sectionMatch) {
-      const alias = sectionAliases.find(({ pattern }) =>
-        pattern.test(sectionMatch[1])
-      );
-      section = alias ? alias.status : null;
+      section = resolveRoadmapSectionStatus(sectionMatch[1], convention);
       sectionOrphanWarned = false;
       item = null;
       block = null;
@@ -234,6 +244,7 @@ export function parseRoadmap(
         id,
         declaredId,
         title,
+        sectionStatus: section,
         status: section,
         blocked: false,
         ordinal: items.length,
@@ -282,10 +293,11 @@ export function parseRoadmap(
         item.backlog = parseBacklogMetadata(note);
         // A compact backlog Status line describes the record, not its queue
         // position. Keep the section's backlog state without warning.
-        if (!item.backlog && token !== 'backlog') {
+        if (!item.backlog) {
           diagnostics.push({
             level: 'warn',
-            message: 'backlog status must include an owning item id',
+            message:
+              'backlog status must be "kind · owning item id · provenance"',
             source: { file, line: lineNo },
           });
         }

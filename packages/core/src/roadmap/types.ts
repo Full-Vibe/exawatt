@@ -21,8 +21,8 @@ export type RoadmapItemStatus =
 /** v2's compact backlog record: type, owning item, and visible provenance. */
 export interface RoadmapBacklogMetadata {
   kind: string;
-  ownerItemId: string | null;
-  provenance: string | null;
+  ownerItemId: string;
+  provenance: string;
 }
 
 /** A location in the source roadmap file. */
@@ -49,6 +49,8 @@ export interface RoadmapItem {
   /** Id as written in the heading ("ENG-017"); null for id-less items. */
   declaredId: string | null;
   title: string;
+  /** Status established by the containing queue section, before `Status:` overrides. */
+  sectionStatus: RoadmapItemStatus;
   status: RoadmapItemStatus;
   /** Orthogonal to queue position (`Status: blocked …`). */
   blocked: boolean;
@@ -80,12 +82,13 @@ export interface RoadmapDiagnostic {
  * but nothing in it matches the convention.
  */
 export type RoadmapConformance = 'declared' | 'detected' | 'none';
+export type RoadmapConvention = 'exawatt-v1' | 'exawatt-v2';
 
 export interface RoadmapDoc {
   projectDir: string;
   /** Repo-relative path of the parsed file. */
   file: string;
-  convention: 'exawatt-v1' | 'exawatt-v2';
+  convention: RoadmapConvention;
   conformance: RoadmapConformance;
   items: RoadmapItem[];
   diagnostics: RoadmapDiagnostic[];

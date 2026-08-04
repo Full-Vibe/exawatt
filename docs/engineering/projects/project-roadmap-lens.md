@@ -548,6 +548,24 @@ S13.1–S13.6 landed as one coherent slice after the shaped operator pass.
   declared-only/concurrent-change write refusal, no-git behavior, exact undo,
   workspace persistence, and the production rail in `/hud-gallery/roadmap-lab`.
 
+### 2026-08-03 — S13 post-land hardening review
+
+The exact landed slice received a write-boundary and interaction review before
+dogfood. The follow-up made the core parser the writer's semantic authority and
+turned compare/refuse into a serialized, atomic, real-path-contained file
+transaction. Ambiguous ids, prose bullets, compact backlog metadata, shipped
+history, and section/status disagreement now fail closed. CRLF/LF form survives
+insertions as well as moves.
+
+The lens now exposes those capabilities honestly: duplicate ids are visibly
+view-only, backlog can reorder without pretending to be promotable, shipped
+detail has no invalid status selector, mutations disable while pending, and
+form controls retain native keyboard ownership. Activity refreshes are scoped
+to the selected Project, and one-click item/remediation launches rank only
+Agent Sources the live registry reports launchable. The remediation prompt
+carries the versioned grammar because the target repository cannot read
+Exawatt's own documentation tree.
+
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 
 On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —

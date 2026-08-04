@@ -62,6 +62,8 @@ export interface RoadmapItemView {
   id: string;
   declaredId: string | null;
   title: string;
+  /** Physical queue section; differs from status when a Status line overrides it. */
+  sectionStatus: RoadmapItemStatus;
   status: RoadmapItemStatus;
   displayStatus: RoadmapDisplayStatus;
   blocked: boolean;
@@ -80,6 +82,10 @@ export interface RoadmapItemView {
   sourceLine: number;
   /** Parser warnings anchored inside this item's line range. */
   hasWarnings: boolean;
+  /** The declared id resolves to exactly one source block. */
+  hasUniqueDeclaredId: boolean;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
   chips: RoadmapSessionChip[];
   recentChanges: RoadmapRecentChange[];
 }
@@ -252,16 +258,27 @@ export function buildRoadmapLens(input: RoadmapLensInput): RoadmapLensView {
   const changesFor = (declaredId: string | null): RoadmapRecentChange[] => {
     if (!declaredId) return [];
     const escaped = declaredId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const boundary = new RegExp(`(^|[^A-Z0-9])${escaped}(?![0-9])`, 'i');
+    const boundary = new RegExp(`(^|[^A-Z0-9])${escaped}(?![A-Z0-9])`, 'i');
     return recentChanges
       .filter(change => boundary.test(change.subject))
       .slice(0, 3);
   };
 
+  const declaredIdCounts = new Map<string, number>();
+  for (const item of doc.items) {
+    if (item.declaredId) {
+      declaredIdCounts.set(
+        item.declaredId,
+        (declaredIdCounts.get(item.declaredId) ?? 0) + 1
+      );
+    }
+  }
+
   const views = doc.items.map<RoadmapItemView>(item => ({
     id: item.id,
     declaredId: item.declaredId,
     title: item.title,
+    sectionStatus: item.sectionStatus,
     status: item.status,
     displayStatus: DISPLAY_STATUS[item.status],
     blocked: item.blocked,
@@ -277,9 +294,37 @@ export function buildRoadmapLens(input: RoadmapLensInput): RoadmapLensView {
     docPaths: item.docPaths,
     sourceLine: item.source.line,
     hasWarnings: itemHasWarning.has(item.id),
+    hasUniqueDeclaredId:
+      item.declaredId !== null && declaredIdCounts.get(item.declaredId) === 1,
+    canMoveUp: false,
+    canMoveDown: false,
     chips: chipsByItem.get(item.id) ?? [],
     recentChanges: changesFor(item.declaredId),
   }));
+
+  const reorderableStatuses = new Set<RoadmapItemStatus>([
+    'now',
+    'next',
+    'later',
+    'backlog',
+    'parked',
+  ]);
+  const canSwap = (
+    item: RoadmapItemView,
+    neighbor: RoadmapItemView | undefined
+  ) =>
+    Boolean(
+      neighbor &&
+      item.hasUniqueDeclaredId &&
+      reorderableStatuses.has(item.status) &&
+      item.status === item.sectionStatus &&
+      neighbor.status === item.status &&
+      neighbor.sectionStatus === item.sectionStatus
+    );
+  for (let index = 0; index < views.length; index++) {
+    views[index].canMoveUp = canSwap(views[index], views[index - 1]);
+    views[index].canMoveDown = canSwap(views[index], views[index + 1]);
+  }
 
   const byStatus = (status: RoadmapItemStatus) =>
     views.filter(v => v.status === status);
