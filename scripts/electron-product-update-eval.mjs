@@ -424,10 +424,13 @@ try {
   if ((await sessions(page)).length !== 0) {
     throw new Error('Updated relaunch spawned work without operator action');
   }
-  const resumeBanner = page
-    .getByRole('region', { name: 'Saved Agent recovery' });
+  const resumeBanner = page.getByRole('region', {
+    name: 'Saved Agent recovery',
+  });
   await resumeBanner.waitFor({ timeout: 20_000 });
-  await resumeBanner.getByRole('button', { name: 'Resume 4 Agents' }).click();
+  await resumeBanner
+    .getByRole('button', { name: /Resume 4 agents in /i })
+    .click();
   const resumed = await waitForSessions(page, 4);
   if (resumed.some(session => session.harness === 'shell')) {
     throw new Error('Workspace recovery restarted the shell');

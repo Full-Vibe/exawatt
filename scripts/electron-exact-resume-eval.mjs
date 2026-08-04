@@ -20,9 +20,13 @@ const root = mkdtempSync(join(tmpdir(), 'exawatt-exact-resume-'));
 const userData = join(root, 'userData');
 const fakeBin = join(root, 'bin');
 const projectDir = join(root, 'project');
+const otherProjectDir = join(root, 'other-project');
+const screenshots = resolve('.artifacts', 'exact-resume');
 mkdirSync(userData, { recursive: true });
 mkdirSync(fakeBin, { recursive: true });
 mkdirSync(projectDir, { recursive: true });
+mkdirSync(otherProjectDir, { recursive: true });
+mkdirSync(screenshots, { recursive: true });
 
 const fakeClaude = join(fakeBin, 'claude');
 writeFileSync(
@@ -68,7 +72,10 @@ async function summonComposer(page) {
   if ((await page.locator('[data-agent-composer]').count()) > 0) return;
   const toggle = page.locator('[data-composer-toggle][aria-expanded="false"]');
   if ((await toggle.count()) > 0) await toggle.click();
-  else await page.getByRole('button', { name: 'New Agent' }).click();
+  else
+    await page
+      .getByRole('button', { name: 'New Agent', exact: true })
+      .click();
   await page.locator('[data-agent-composer]').waitFor();
 }
 
@@ -116,6 +123,29 @@ try {
       `Expected four distinct Claude IDs; got ${originalIds.join(', ')}`
     );
   }
+
+  await page.evaluate(dir => {
+    window.dispatchEvent(
+      new CustomEvent('exawatt:open-project', { detail: dir })
+    );
+  }, otherProjectDir);
+  await page.locator('[data-agent-composer]').waitFor();
+  for (let count = 5; count <= 6; count++) {
+    await summonComposer(page);
+    await page.getByRole('button', { name: 'Start' }).click();
+    await waitForSessionCount(page, count);
+  }
+  const otherIds = await page.evaluate(async dir => {
+    const sessions = (await window.electron?.pty?.list()) ?? [];
+    return sessions
+      .filter(session => session.projectDir === dir || session.cwd === dir)
+      .map(session => session.harnessSessionId);
+  }, otherProjectDir);
+  if (otherIds.length !== 2 || new Set(otherIds).size !== 2) {
+    throw new Error(
+      `Expected two distinct IDs in the second Project; got ${otherIds.join(', ')}`
+    );
+  }
   await page.waitForTimeout(700);
   await app.close();
   app = null;
@@ -123,12 +153,13 @@ try {
   const persisted = JSON.parse(
     readFileSync(join(userData, 'workspace.json'), 'utf8')
   );
-  const persistedIds = persisted.projects[0].tabs.map(
-    tab => tab.harnessSessionId
+  const persistedIds = persisted.projects.flatMap(project =>
+    project.tabs.map(tab => tab.harnessSessionId)
   );
-  if (JSON.stringify(persistedIds) !== JSON.stringify(originalIds)) {
+  const expectedIds = [...originalIds, ...otherIds];
+  if (JSON.stringify(persistedIds) !== JSON.stringify(expectedIds)) {
     throw new Error(
-      'Workspace did not persist the four exact Claude identities'
+      'Workspace did not persist all six exact Claude identities'
     );
   }
 
@@ -144,8 +175,47 @@ try {
   );
   if (before !== 0)
     throw new Error(`Relaunch silently spawned ${before} sessions`);
-  await resumeBanner.getByRole('button', { name: 'Resume 4 Agents' }).click();
-  await waitForSessionCount(page, 4);
+  const scope = resumeBanner.getByRole('button', {
+    name: 'Choose resume scope',
+  });
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.screenshot({
+    path: join(screenshots, 'project-default-1200.png'),
+  });
+  await scope.click();
+  await page.getByRole('menuitem', { name: 'Resume this agent' }).waitFor();
+  await page
+    .getByRole('menuitem', { name: 'Resume 2 agents in this project' })
+    .waitFor();
+  await page.getByRole('menuitem', { name: 'Resume all 6 agents' }).waitFor();
+  await page.screenshot({
+    path: join(screenshots, 'scope-menu-1200.png'),
+  });
+  await page.setViewportSize({ width: 800, height: 600 });
+  await page.screenshot({
+    path: join(screenshots, 'scope-menu-800.png'),
+  });
+  await page.keyboard.press('Escape');
+
+  await resumeBanner
+    .getByRole('button', { name: /Resume 2 agents in other-project/i })
+    .click();
+  await waitForSessionCount(page, 2);
+
+  const scopedIds = await page.evaluate(async () => {
+    const sessions = (await window.electron?.pty?.list()) ?? [];
+    return sessions.map(session => session.harnessSessionId);
+  });
+  if (JSON.stringify(scopedIds) !== JSON.stringify(otherIds)) {
+    throw new Error(
+      `Project recovery crossed its boundary: ${scopedIds.join(', ')}`
+    );
+  }
+
+  await resumeBanner
+    .getByRole('button', { name: 'Resume all 4 agents' })
+    .click();
+  await waitForSessionCount(page, 6);
 
   const resumed = await page.evaluate(async () => {
     const pty = window.electron?.pty;
@@ -158,7 +228,10 @@ try {
     );
   });
   const resumedIds = resumed.map(item => item.id);
-  if (JSON.stringify(resumedIds) !== JSON.stringify(originalIds)) {
+  if (
+    JSON.stringify([...resumedIds].sort()) !==
+    JSON.stringify([...expectedIds].sort())
+  ) {
     throw new Error(`Resume identity mismatch: ${resumedIds.join(', ')}`);
   }
   for (const item of resumed) {
@@ -172,7 +245,7 @@ try {
   await app.close();
   app = null;
   console.log(
-    'PASS exact resume: four tabs -> four saved IDs -> four exact resumes'
+    'PASS exact resume: Project scope resumed two exact IDs while four stayed paused, then all six resumed'
   );
 } finally {
   await app?.close().catch(() => undefined);

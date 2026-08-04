@@ -353,7 +353,7 @@ try {
   await page.screenshot({ path: join(screenshots, 'restored-800x600.png') });
   await page.getByRole('button', { name: 'Start New Shell' }).click();
   await waitForSessions(page, 1);
-  await ready.getByRole('button', { name: 'Resume 4 Agents' }).click();
+  await ready.getByRole('button', { name: /Resume 4 agents in /i }).click();
   await waitForSessions(page, 5);
   console.log('[eng-018] workspace Agent recovery completed');
   const resumed = await sessions(page);

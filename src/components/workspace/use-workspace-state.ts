@@ -269,6 +269,17 @@ export interface Project {
   activeTabId: string | null;
 }
 
+export function resumableAgentTabsInProject(
+  projects: Project[],
+  projectDir: string
+): WorkspaceTab[] {
+  return (
+    projects
+      .find(project => project.dir === projectDir)
+      ?.tabs.filter(tabCanResumeAsAgent) ?? []
+  );
+}
+
 /** Current persisted layout (v6). v6 makes tab-title ownership explicit. */
 export interface PersistedV6 {
   v: 6;
@@ -2036,6 +2047,15 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     void resumeTabs(stateRef.current.projects.flatMap(project => project.tabs));
   }, [resumeTabs]);
 
+  const resumeProject = useCallback(
+    (projectDir: string) => {
+      void resumeTabs(
+        resumableAgentTabsInProject(stateRef.current.projects, projectDir)
+      );
+    },
+    [resumeTabs]
+  );
+
   /** launch in the active project's directory (fallback: last used) —
    *  the one dir-resolution path for ⌘T, palette commands, and buttons */
   const launchHere = useCallback(
@@ -2527,6 +2547,7 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
     reopenLastClosedSession,
     listClosedSessions,
     resumeTab,
+    resumeProject,
     resumeAll,
     selectProject,
     selectTab,

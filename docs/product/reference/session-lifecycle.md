@@ -33,10 +33,11 @@ agent** rather than exposing an image or temporary-file URI.
 ## Relaunch
 
 Relaunch restores Projects, tabs, status, and retained terminal history without
-starting work. The workspace recovery bar names the exact action, such as
-**Resume 4 Agents**, and starts only eligible agent Sessions sequentially. It
-never starts shells. A stopped shell offers **Start New Shell** instead. An
-individual stopped Agent offers **Resume This Agent**.
+starting work. The workspace recovery bar defaults to the selected Project and
+names its eligible-Agent count. Its scope menu can narrow recovery to the
+selected Agent or broaden it to all Projects. Every scope starts eligible agent
+Sessions sequentially and never starts shells. A stopped shell offers **Start
+New Shell** instead. An individual stopped Agent offers **Resume This Agent**.
 
 Claude Code and Codex resume only by the exact provider conversation identity
 saved for that Session. Exawatt does not guess from the latest conversation or

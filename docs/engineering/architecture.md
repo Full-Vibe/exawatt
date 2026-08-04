@@ -486,7 +486,10 @@ Built:
   post-turn `session list` candidate export whose first user message must carry
   that PTY's collision-resistant launch-agent name. Persisted source IDs drive
   no-spawn relaunch with exact tab/Project/all resume actions; OpenCode resumes
-  only through `-s`, never `--continue` or a timing/recency guess
+  only through `-s`, never `--continue` or a timing/recency guess. The recovery
+  bar makes the selected Project the one-click default and nests the distinct
+  Agent/all-Projects scopes in one menu, so Project recovery does not restart
+  unrelated work or create three competing controls
 - a source-neutral recent-conversation catalog in Electron main. Replaceable
   Claude Code, Codex, and OpenCode provider adapters plus the Exawatt
   Project-Session adapter normalize exact

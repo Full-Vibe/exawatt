@@ -886,7 +886,7 @@ export const architectureManifest = {
     'Open Project identity spans the Agent, Team, and Fleet altitudes even before an Agent or Session exists; Agents join catalog-backed groups by stable source identity.',
     'The Agent altitude projects current Session tabs as Initiative-shaped work: selected Projects expand, manual inactive disclosure persists, dormant empties stable-partition to the tail, and subagent work aggregates instead of multiplying top-level tabs.',
     'Open Session identity spans the Agent, Team, and Fleet altitudes; PTYs add live runtime state but do not define whether a Session-backed Agent exists.',
-    'Logical Sessions survive local process death through explicit, deterministic rehydration; local processes do not outlive Exawatt.',
+    'Logical Sessions survive local process death through explicit, deterministic rehydration; recovery defaults to the selected Project with Agent and all-Projects as nested alternate scopes, and local processes do not outlive Exawatt.',
     'Agent turn state is semantic main-process truth: finished is sticky across passive PTY redraws and only explicit operator engagement opens the next turn; shell activity remains output-driven.',
     'What a harness reports about itself outranks what Exawatt infers from its bytes, in both directions and at the source: quiescence never concludes a turn ended, delegated, or unblocked while the source says otherwise.',
     'Waiting on the operator is its own reported fact, independent of turn state and of delegation: an Agent asking a question is mid-turn, producing nothing, and answerable only by a human.',

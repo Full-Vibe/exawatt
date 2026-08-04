@@ -337,7 +337,7 @@ try {
     }
     const banner = page.getByRole('region', { name: 'Saved Agent recovery' });
     await banner.waitFor();
-    await banner.getByRole('button', { name: 'Resume 3 Agents' }).click();
+    await banner.getByRole('button', { name: /Resume 3 agents in /i }).click();
     await waitFor(
       page,
       async () => (await sessions(page)).length === 3,

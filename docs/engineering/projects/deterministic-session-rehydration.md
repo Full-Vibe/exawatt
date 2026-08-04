@@ -32,9 +32,10 @@ starting work. The operator resumes agents explicitly.
 - Codex discovery reads bounded rollout prefixes, tolerates provider file churn,
   and associates parallel launches by provider launch time while preserving PTY
   input order.
-- Workspace recovery is explicit, sequential, and agents-only. Its one action
-  names the exact count (for example, **Resume 4 Agents**) and never starts
-  shells.
+- Workspace recovery is explicit, sequential, and agents-only. The recovery
+  bar defaults to the selected Project; its one scope menu narrows to the
+  selected Agent or broadens to all Projects. Every action names its count and
+  never starts shells.
 - Exact resume never guesses from latest conversation or cwd.
 - Legacy identity-less Sessions repair automatically only through a one-to-one
   exact opening-task match. Ambiguous matches remain operator-selected.
@@ -47,9 +48,11 @@ starting work. The operator resumes agents explicitly.
   stop N agents?” with a one-sentence persistence/resume explanation and Cancel
   / Quit and Stop actions. Shell counts appear when relevant.
 - No-process quit has no prompt. Cancel changes nothing.
-- Relaunch has no modal. One contextual recovery notice offers **Resume N
-  Agents** and reports any Sessions that still need reconnection. Individual
-  panes offer **Resume This Agent**; shells offer **Start New Shell**.
+- Relaunch has no modal. One contextual recovery notice reports paused and
+  reconnectable Agents. Its split control resumes the selected Project in one
+  click; the attached menu holds the distinct Agent and all-Projects scopes.
+  Individual panes offer **Resume This Agent**; shells offer **Start New
+  Shell**.
 - A stopped pane labels retained terminal output as saved, read-only history.
   Missing identity is a first-class **Reconnect needed** state, never a
   live-looking terminal with only an exit marker as explanation.
@@ -71,6 +74,10 @@ starting work. The operator resumes agents explicitly.
    failures.
 5. S4 proof (landed 2026-07-11): packaged UI checks, process/orphan checks, crash recovery,
    authenticated provider round trips, and a signed multi-agent version-to-version update.
+6. S5 scoped recovery (landed 2026-08-03; ENG-016 D47 / decision `0032`):
+   restore Project-level recovery without restoring three competing controls;
+   selected Project is the split control's default, Agent/all are its distinct
+   alternate scopes, and other Projects remain paused.
 
 Each packet is independently reviewed, tested, committed, rebased, and
 integrated before the next packet proceeds.

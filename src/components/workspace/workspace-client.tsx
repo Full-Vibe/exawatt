@@ -47,6 +47,7 @@ import {
   tabIsLive,
 } from './use-workspace-state';
 import { SessionRestorePanel } from './session-restore-panel';
+import { ResumeRecoveryBar } from './resume-recovery-bar';
 import { RetainedTerminalPane } from './retained-terminal-pane';
 import {
   useWorkspaceShortcuts,
@@ -89,15 +90,7 @@ import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import { PROJECT_PALETTE } from './project-colors';
 import { useProductFeedback } from '@/components/feedback/product-feedback-provider';
 import { setQuickFeedbackAttribution } from '@/components/feedback/quick-feedback-events';
-import {
-  Bell,
-  BellOff,
-  FolderOpen,
-  Play,
-  SquareTerminal,
-  X,
-  Plus,
-} from 'lucide-react';
+import { Bell, BellOff, FolderOpen, SquareTerminal, Plus } from 'lucide-react';
 import { middleTruncatePath } from './path-label';
 import { useProjectCloseLifecycle } from './use-project-close-lifecycle';
 import {
@@ -313,6 +306,7 @@ export function WorkspaceClient() {
     reopenClosedSession,
     reopenLastClosedSession,
     resumeTab,
+    resumeProject,
     resumeAll,
     selectProject,
     selectTab,
@@ -424,6 +418,11 @@ export function WorkspaceClient() {
         .length,
     [projects]
   );
+  const activeProjectReadyCount = useMemo(
+    () => activeProject?.tabs.filter(tabCanResumeAsAgent).length ?? 0,
+    [activeProject]
+  );
+  const activeTabCanResume = !!activeTab && tabCanResumeAsAgent(activeTab);
   const reconnectableAgents = useMemo(
     () =>
       projects.flatMap(project =>
@@ -1303,48 +1302,22 @@ export function WorkspaceClient() {
         </div>
 
         {stoppedAgentCount > 0 && !resumeNoticeDismissed && (
-          <div
-            role="region"
-            aria-label="Saved Agent recovery"
-            className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 font-mono text-xs"
-            style={{
-              borderColor: withThemeAlpha(HUD.cyan, 0.18),
-              background: withThemeAlpha(HUD.cyan, 0.06),
-              color: HUD.textDim,
+          <ResumeRecoveryBar
+            readyAgentCount={readyAgentCount}
+            reconnectableAgentCount={reconnectableAgents.length}
+            activeProjectName={activeProject?.name ?? null}
+            activeProjectReadyCount={activeProjectReadyCount}
+            activeTabCanResume={activeTabCanResume}
+            progress={resumeBatchProgress}
+            onResumeActiveTab={() => {
+              if (activeTab) void resumeTab(activeTab.id);
             }}
-          >
-            <span role="status" className="min-w-0 flex-1">
-              {resumeBatchProgress
-                ? `Resuming ${resumeBatchProgress.completed} of ${resumeBatchProgress.total} saved agents…`
-                : readyAgentCount > 0
-                  ? `${readyAgentCount} saved ${readyAgentCount === 1 ? 'agent is' : 'agents are'} ready to resume${reconnectableAgents.length > 0 ? ` · ${reconnectableAgents.length} ${reconnectableAgents.length === 1 ? 'needs' : 'need'} reconnection` : ''}`
-                  : `${reconnectableAgents.length} saved ${reconnectableAgents.length === 1 ? 'agent needs its' : 'agents need their'} conversation reconnected`}
-            </span>
-            {readyAgentCount > 0 && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!!resumeBatchProgress}
-                onClick={resumeAll}
-                className="h-7 font-mono"
-              >
-                <Play className="h-3.5 w-3.5" />
-                {resumeBatchProgress
-                  ? 'Resuming…'
-                  : `Resume ${readyAgentCount} ${readyAgentCount === 1 ? 'Agent' : 'Agents'}`}
-              </Button>
-            )}
-            <button
-              type="button"
-              aria-label="Dismiss resume notice"
-              title="Dismiss"
-              onClick={() => setResumeNoticeDismissed(true)}
-              className="grid h-7 w-7 place-items-center outline-none hover:bg-hud-fill-hi focus-visible:ring-1 focus-visible:ring-hud-cyan"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
+            onResumeActiveProject={() => {
+              if (activeProject) resumeProject(activeProject.dir);
+            }}
+            onResumeAll={resumeAll}
+            onDismiss={() => setResumeNoticeDismissed(true)}
+          />
         )}
 
         {/* middle band: [context bar + errors + stage] beside the roadmap

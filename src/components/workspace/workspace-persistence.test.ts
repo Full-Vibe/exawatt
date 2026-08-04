@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   parsePersisted,
+  resumableAgentTabsInProject,
   tabCanResumeAsAgent,
   tabFromPtySession,
+  type Project,
   type WorkspaceTab,
 } from './use-workspace-state';
 
@@ -435,6 +437,29 @@ describe('workspace Agent recovery eligibility', () => {
     expect(tabCanResumeAsAgent({ ...stopped, harnessSessionId: null })).toBe(
       false
     );
+  });
+
+  it('keeps Project recovery inside the selected Project boundary', () => {
+    const project = (dir: string, tabs: WorkspaceTab[]): Project => ({
+      dir,
+      name: dir.slice(1),
+      color: '#19E6FF',
+      tabs,
+      activeTabId: tabs[0]?.id ?? null,
+    });
+    const other = { ...stopped, id: 'tab-2', cwd: '/other' };
+    const projects = [
+      project('/project', [
+        stopped,
+        { ...stopped, id: 'shell', harness: 'shell' },
+      ]),
+      project('/other', [other]),
+    ];
+
+    expect(
+      resumableAgentTabsInProject(projects, '/project').map(tab => tab.id)
+    ).toEqual(['tab-1']);
+    expect(projects[1].tabs[0]).toBe(other);
   });
 });
 

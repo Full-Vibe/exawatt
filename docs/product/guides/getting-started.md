@@ -105,11 +105,12 @@ macOS Session menu.
 
 When local Sessions are running, quitting Exawatt asks before stopping them.
 Their layout, exact agent conversation identity, and retained terminal history
-return on the next launch, but nothing resumes automatically. Use the workspace
-recovery action, such as **Resume 4 Agents**, or **Resume This Agent** in one
-stopped pane. A stopped shell offers **Start New Shell**. If an older Session is
-missing its exact provider identity, Exawatt labels it **Reconnect needed**
-instead of guessing.
+return on the next launch, but nothing resumes automatically. The recovery bar
+resumes the selected Project by default, leaving other Projects paused. Its
+scope menu can instead resume the selected Agent or every eligible Agent across
+all Projects. A stopped pane also offers **Resume This Agent**; a stopped shell
+offers **Start New Shell**. If an older Session is missing its exact provider
+identity, Exawatt labels it **Reconnect needed** instead of guessing.
 
 See the [Session lifecycle reference](../reference/session-lifecycle.md) for the
 state and persistence contract.
