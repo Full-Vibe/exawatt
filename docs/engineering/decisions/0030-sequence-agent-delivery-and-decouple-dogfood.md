@@ -1,7 +1,9 @@
 # 0030 Sequence agent delivery and decouple dogfood
 
 Date: 2026-08-03
-Status: accepted; local queue backend selected by operator 2026-08-03
+Status: accepted; local queue backend selected by operator 2026-08-03; amended
+2026-08-03 to a contention-first backend — the elected-coordinator sequencer
+is retained as a measured contingency, not the first mile
 
 ## Context
 
@@ -118,3 +120,66 @@ and rollback. It is a recovery mechanism, not a second normal delivery path.
 - **Dogfood every integrated commit.** Rejected: installation is a latest-state
   artifact, and rebuilding intermediate master states adds latency without
   improving integration safety.
+
+## Amendment — 2026-08-03: contention-first backend
+
+A same-day review checked the selected backend against the audit's own
+arithmetic and reordered the mechanism. The decision's contracts are
+unchanged: three stages, one serialized `master` mutation, a repository-owned
+verification floor that callers cannot weaken, supersedent dogfood, and no
+purchased or hosted dependency.
+
+Two observations drove the amendment:
+
+- The dominant measured cost is contention, not composition. Stale-base and
+  dirty-checkout stops occurred 113 times in the sample against two observed
+  composition failures — and both composition failures (the `rawTokens`
+  type-check break and the roadmap parser own-corpus expectation) were
+  catchable by cheap always-on checks run on the rebased tree, not only by an
+  Electron or hosted Linux matrix.
+- A width-one sequencer running the full policy matrix serializes more work
+  through the critical path than the current design, where expensive
+  verification runs in parallel outside the lock. At the audit's peak of 78
+  landings in a day, even five serial gate minutes per candidate is 6.5 hours
+  of queue, and per-candidate hosted gating is arithmetically impossible
+  inside Free-plan minutes (about thirteen four-to-six-minute runs per day
+  against 78 landings).
+
+The amended first mile therefore:
+
+1. removes dogfood from the delivery critical section first, not last — its
+   builds dominated the 2.2-minute median lock hold, and without them a
+   landing holds the lock for seconds, which is what makes every other stop
+   rare
+2. replaces the elected short-lived coordinator with a FIFO ticket queue
+   under the common Git directory in which the lander at the head of the
+   queue integrates its own candidate; a stale head ticket (dead pid or stale
+   heartbeat) may be taken over by any waiter, and the remote's
+   non-fast-forward refusal remains the guard that makes a botched takeover a
+   retry, never a wrong `master`
+3. keeps exact-tree evidence but scopes it to the cheap repository floor,
+   rerun at the head of the queue only when the base moved since the
+   candidate's verification (generated route types, type-check, fast tests
+   selected by changed-path policy); the author's expensive matrix is never
+   rerun there
+4. takes the shared `master` checkout off the landing path entirely — it
+   receives a best-effort non-blocking sync after integration — eliminating
+   the audit's 23 dirty-checkout stops
+5. treats hosted Linux CI as repaired, batched, post-integration evidence
+   inside included minutes: a run on the latest integrated `master` with
+   obsolete runs cancelled, never a per-candidate serial gate, and never a
+   holder of merge authority in this plan
+
+The elected-coordinator sequencer with an adaptive speculative window is
+retained verbatim above as the measured contingency: the ticket store is
+deliberately the backend seam it would consume. Its activation triggers are
+(a) the 30-landing verdict milestone still showing stale-base loops, red
+integrations, or a p95 queue wait above the declared bound, or (b) the
+arrival of remote writers — operator 2026-08-03: all writers share this Mac
+for now, remote writers eventually — which ends the local queue's authority.
+
+Dogfood semantics confirmed by the operator 2026-08-03: keep the existing
+stage-without-restart install. The app bundle is replaced atomically on disk,
+the running instance keeps running, and the in-app notice offers a restart at
+the operator's convenience. The detached coalesced installer changes when the
+build runs, not what installation does.

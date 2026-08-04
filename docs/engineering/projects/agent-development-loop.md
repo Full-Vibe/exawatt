@@ -14,12 +14,14 @@ Native-binding, environment, and wrong-tree failures surface as actionable
 remedies instead of bare platform errors or, worse, a green run against the
 wrong checkout.
 
-The active follow-up makes delivery composable at fleet scale: agents prepare
-and submit independently, one fair sequencer verifies each exact candidate
-state, integration never waits on a dogfood build, and one repository policy
-chooses the verification floor. `pnpm agent:land` remains the sole public
-delivery entrypoint; queue, policy, and post-integration work are internal
-modules rather than new package-script verbs.
+The active follow-up makes delivery composable at fleet scale by removing the
+measured contention rather than serializing verification: dogfood leaves the
+delivery critical section, a FIFO ticket makes the wait fair and the lock
+hold seconds long, and a cheap repository-owned floor reruns on the exact
+tree at the head of the queue when the base moved. Expensive verification
+stays parallel in the authors' worktrees. `pnpm agent:land` remains the sole
+public delivery entrypoint; queue, policy, and post-integration work are
+internal modules rather than new package-script verbs.
 
 ## Ownership boundaries
 
@@ -32,12 +34,12 @@ modules rather than new package-script verbs.
 - Launch resilience is bounded to the one observed Playwright transient. A
   second failure surfaces rather than retrying into a loop.
 - Authorship and submission stay decentralized. Mutation of one ordered Git
-  ref is necessarily sequenced; the sequencer is infrastructure, not a lead
-  agent and not an owner of product decisions.
-- Candidate, gate, and post-integration work are separate pipelines. A
-  candidate may fail without blocking other authors; a gate proves the exact
-  tree to be integrated; dogfood consumes integrated commits without holding
-  the integration critical section.
+  ref is necessarily sequenced; the FIFO ticket order is infrastructure, not
+  a lead agent and not an owner of product decisions.
+- Candidate, integration, and post-integration work are separate pipelines. A
+  candidate may fail without blocking other authors; the exact-tree floor at
+  the head of the queue proves the tree to be integrated; dogfood consumes
+  integrated commits without holding the integration critical section.
 - Repository-owned policy provides a conservative verification floor from the
   changed paths. Callers may add evidence but cannot select a weaker floor.
 - Preserve the existing immutable build snapshot, atomic app replacement, and
@@ -86,8 +88,9 @@ After ten consecutive green runs, later integrated commits failed on two real
 cross-change contracts: `ExposeOverlay` was rendered without the newly required
 goal-visual preference provider, and a roadmap backlog addition did not update
 the parser's own-corpus expectation. The Linux gate found both only after
-`master` moved. H7 repairs the baseline and H9 moves this composition evidence
-to the exact pre-integration tree; they do not remove the hosted check.
+`master` moved. H7 repairs the baseline and H10 moves this composition
+evidence to the exact pre-integration tree via the cheap changed-path floor;
+the hosted check remains as batched post-integration evidence.
 
 The earlier note below about two green branches composing a red master was
 directionally correct but proposed only a cheap post-fetch check or advisory
@@ -96,42 +99,56 @@ exists, is unfair, and holds an unrelated artifact build; another check inside
 that lock would serialize more expensive work without creating a durable
 queue or a repository-owned verification policy.
 
-## Accepted delivery architecture — 2026-08-03
+## Accepted delivery architecture — 2026-08-03, amended same day
 
-Decision `0030` adopts a three-stage delivery model.
+Decision `0030` adopts a three-stage delivery model. Its same-day amendment
+reordered the mechanism after checking the design against the audit's own
+arithmetic: the dominant measured cost is contention (113 stale-base and
+dirty-checkout stops) rather than composition (two failures, both catchable
+by cheap always-on checks on the rebased tree), and a width-one sequencer
+running full matrices would put MORE work on the critical path than today's
+parallel verification outside the lock — 78 landings on the peak day at even
+five serial gate minutes is 6.5 hours of queue. The elected-coordinator
+sequencer is retained as a measured contingency, not built as the first mile.
 
 ### Candidate: decentralized and cheap to abandon
 
-`pnpm agent:land` validates a clean `agent/*` worktree, derives the required
-checks from repository policy, runs the fast candidate floor, pushes the
-immutable branch, and submits a queue record. Submission gives the candidate a
-stable identity and position; it does not hold a terminal or the delivery
-lock while earlier work runs. Pull requests are a useful envelope for status,
-diffs, and future human review, but are not the architecture itself.
+An agent verifies the repository-defined floor for its changed paths in its
+own worktree, in parallel with every other author, pushes the immutable
+`agent/*` branch, and takes a FIFO ticket. Expensive verification stays out
+here, where it serializes no one. Pull requests are a possible future
+envelope for status and human review, but are not the architecture.
 
-### Gate: fair and exact
+### Integrate: fair, short, and exact where it matters
 
-One FIFO sequencer constructs the candidate on the current accepted base and
-runs the integration gate on that exact tree. Only the sequencer advances
-`master`. A failing candidate is removed with actionable evidence and the next
-candidate proceeds; other authors do not rebase and repeat a full matrix merely
-because an earlier candidate landed.
+Tickets are served strictly in order. The lander at the head of the queue
+holds the delivery lock for seconds: fetch, ancestor check, non-fast-forward
+push. Only if `origin/master` moved since the candidate's verification does
+it rerun the cheap exact-tree floor (generated route types, type-check, fast
+tests chosen by changed-path policy) on the rebased tree — the scope that
+would have caught both audited composition failures. A failing floor is a
+terminal candidate result with actionable evidence; the next ticket proceeds,
+and no other author rebases or repeats a matrix because of it. The shared
+`master` checkout is off this path entirely: it receives a best-effort
+non-blocking sync after integration and can no longer stop a landing by
+being dirty.
 
-Start with a speculative window of one and no batching. The present CI failure
-rate makes wider speculation mostly waste. After the gate is trustworthy, it
-may grow an adaptive speculative window: expand after sustained green runs and
-contract immediately after a failure, following the proven merge-train/Zuul
-shape rather than fixing concurrency at today's unusually high load.
+`agent:land` blocks until its ticket reaches a terminal result so it reports
+`integrated` precisely. Blocking is cheap because waiting is idle — no
+rebasing, no reverification — and holds are seconds.
 
 ### Post: supersedent artifacts
 
-Dogfood is requested by Electron-facing candidates but built outside the
-integration lock from an immutable integrated snapshot. The coordinator
-coalesces requests to the newest useful `master`: build when the queue drains,
-or capture a snapshot after a bounded ten-minute maximum wait so a continuous
-queue cannot starve dogfood. A new commit may make another build necessary,
-but never makes integration wait for the current build. Atomic install and
-signature verification remain unchanged.
+Dogfood is requested by Electron-facing candidates but built by a detached
+installer outside the delivery lock, from an immutable integrated snapshot,
+coalesced to the newest useful `master`: build when the queue drains, or
+after a bounded ten-minute maximum wait so a continuous queue cannot starve
+dogfood. The landing returns at integration. Installation keeps its existing
+semantics — stage `/Applications/Exawatt.app` atomically without restarting
+the running app, with the in-app notice offering a restart when convenient
+(operator-confirmed 2026-08-03). A new commit may make another build
+necessary, but never makes integration wait for the current build. Signature
+verification remains unchanged.
 
 ## Queue backend — operator decision 2026-08-03
 
@@ -141,86 +158,105 @@ supersedes the same-day recommendation to trial Mergify, regardless of its
 current free tier. Pull requests are not required for machine-only delivery.
 
 The first-mile backend is machine-local because today's competing agents and
-worktrees share one Mac:
+worktrees share one Mac (operator-confirmed 2026-08-03: this Mac for now,
+remote writers eventually):
 
-- queue records, coordinator lease/heartbeat, terminal results, and append-only
-  metrics live under the repository's common Git directory, shared by every
-  worktree but never committed
+- FIFO tickets, heartbeats, terminal results, and append-only metrics live
+  under the repository's common Git directory, shared by every worktree but
+  never committed
 - every submitted candidate is pushed first to its immutable remote `agent/*`
   branch, so a local process crash cannot lose the code even though queue order
   itself is local
 - a very short queue-admission critical section allocates monotonic tickets;
   verification and integration never run while that admission lock is held
-- one detached, short-lived coordinator is elected with a recoverable lease;
-  it drains the queue and exits rather than becoming a daemon. Any waiting
-  `agent:land` process may restart it after a stale heartbeat
-- the coordinator owns an isolated reusable gate worktree. For each ticket it
-  reconstructs the candidate's submitted commits on the latest accepted
-  `master`, records conflicts as a terminal candidate failure, runs the policy
-  gate on that exact tree, and advances `master` with a normal non-force push;
-  if an external writer moves the remote during the gate, the coordinator
-  invalidates that evidence and retries the ticket on the new base rather than
-  sending the author through another rebase cycle
-- the submitting `agent:land` waits on its durable result record so it can
-  report `integrated` precisely, but it does not rebase, rerun, or hold the
-  sequencer. Multiple waiters can monitor/recover the same coordinator safely
+- there is no coordinator (amended 2026-08-03): the `agent:land` process at
+  the head of the queue integrates its own candidate, then exits. Waiting at
+  a ticket is idle — no rebasing, no reverification, no lock polling races
+- a head ticket whose owner pid is dead or whose heartbeat is stale may be
+  marked failed and skipped by any waiter; the remote's non-fast-forward
+  refusal makes a mistaken takeover a retry, never a wrong `master`. If an
+  external writer moves the remote mid-landing, the head lander retries on
+  the new base itself — the author never re-enters a rebase cycle
+- `agent:land` blocks until its ticket reaches a durable terminal result so
+  it can report `integrated` precisely; blocking is acceptable because holds
+  are seconds once dogfood leaves the lock
 - the current guarded direct fast-forward implementation remains an
   operator-only recovery mode during rollout
 
-The queue interface remains transport-neutral at its boundary so a future
-multi-machine fleet can replace local storage with a remote sequencer. That is
+The elected-coordinator sequencer from decision `0030`'s original text is the
+contingency this backend is shaped to grow into — the ticket store is exactly
+the seam it would consume. It activates only on the H11 verdict (persistent
+stale loops, red integrations, or p95 queue wait above the bound) or when
+remote writers arrive and end the local queue's authority. The queue
+interface therefore stays transport-neutral at its boundary; that is
 architectural room, not active hosted work.
 
 Keep this infrastructure small: no HTTP service, database, always-on daemon,
-queue UI, pull-request automation, or second package command. The implementation
-is a ticket store, a recoverable worker, the exact-tree policy, and tests behind
-the existing `agent:land` command.
+coordinator process, queue UI, pull-request automation, or second package
+command. The implementation is a ticket store, head-of-queue integration
+inside `agent:land`, the changed-path floor, and tests behind the existing
+command.
 
-GitHub Actions may continue using the repository's included Free-plan minutes
-for a Linux exact-candidate check: the coordinator pushes a disposable gate ref
-and waits for its status before advancing the identical SHA. Repository policy
-decides when that platform check is material; documentation-only candidates do
-not consume a full hosted matrix. H7 measures minutes and keeps platform gates
-inside the included allowance through change policy and, once proven safe,
-batching. If projected use exceeds that allowance, the gate pauses or is
-reshaped explicitly; it never buys an overage or silently drops required
-evidence. No queue milestone assumes paid Actions capacity.
+GitHub Actions stays within the repository's included Free-plan minutes as
+repaired, batched, post-integration evidence: a Linux run on the latest
+integrated `master` with obsolete in-progress runs cancelled, not a
+per-candidate serial gate. The arithmetic forbids more on this plan — 2,000
+included minutes at the observed four-to-six-minute runs is roughly thirteen
+gated candidates per day against 78 landings observed on the peak day. H7
+measures minutes; projected exhaustion pauses or reshapes the batch cadence
+explicitly, and it never buys an overage or silently drops required
+evidence. No queue milestone assumes paid Actions capacity, and merge
+authority never depends on a hosted result in this plan.
 
 ## Active milestone plan
 
-- **H7 CI truth and measurement:** classify the current CI failures, repair the
-  Linux baseline and the legacy rebase/remote-candidate retry trap, add
-  cancellation for obsolete candidate runs, and record queue wait,
-  candidate/gate duration, stale-stop count, gate failures, Actions minutes,
-  and dogfood freshness. Exit when ten consecutive current-master full gates
-  are green and the measurements are emitted from one schema.
-- **H8 Local shadow queue:** extract ticket storage, the coordinator lease, and
-  terminal result records behind internal modules used by `agent:land`;
-  exercise FIFO order, crash recovery, candidate cancellation, and an
-  operator-only bypass in temp repositories. Mirror real submissions without
-  changing their current integration path. Exit when tickets retain order, a
-  killed coordinator resumes without duplicating integration, and no orphaned
-  candidate can disappear without a terminal result.
-- **H9 Exact-candidate gate and policy:** move the verification floor into a
-  repository-owned change classifier, with a small always-on safety spine and
-  explicit conditional Electron, browser, R3F, CI, and documentation checks.
-  Callers can request extras. Exit when only a commit that passed the declared
-  policy on its current-base candidate can reach `master`, and the evidence is
-  attached to that candidate identity.
-- **H10 Authoritative local sequencer:** have the existing `agent:land`
-  entrypoint push the immutable candidate, allocate a ticket, ensure the
-  short-lived coordinator is healthy, and wait for its result. Start at gate
-  width one with batching off. Enable batching or speculative checks only after
-  measured green rate and queue latency justify them. Exit after 30
-  representative landings with zero stale-base re-verification loops, zero red
-  integrations, successful coordinator crash recovery, and lower Actions
-  minutes per integrated commit than the audit baseline.
-- **H11 Supersedent dogfood:** remove dogfood from the master-delivery lock,
-  coalesce Electron-facing requests on queue drain with a ten-minute ceiling,
-  and build from an immutable integrated SHA. Exit when a burst of at least ten
-  eligible landings advances `master` without dogfood lock contention, installs
-  the newest required snapshot, and never replaces the app with an unverified
-  or unintended build.
+Amended 2026-08-03 with decision `0030`'s contention-first amendment. The
+order is the leverage order: dogfood out of the lock is most of the win, the
+FIFO ticket makes the remainder fair, the floor makes it exact, and the
+verdict milestone decides whether the sequencer contingency is ever built.
+
+- **H7 CI truth, measurement, and the retry trap:** classify the current CI
+  failures, repair the Linux baseline, fix the legacy rebase trap
+  (`agent:land` ordinary-pushes an already-published candidate branch whose
+  history the prescribed rebase rewrote — use a lease-protected update or a
+  per-attempt ref), add cancellation for obsolete candidate runs, and record
+  queue wait (p50/p95), lock-hold duration, stale-stop count, floor failures,
+  Actions minutes, and dogfood freshness from one schema. Exit when ten
+  consecutive current-master Linux runs are green and the measurements are
+  emitted. Nothing else blocks on H7; H8 proceeds in parallel.
+- **H8 Supersedent dogfood:** remove dogfood from the delivery lock — the
+  single biggest lever, since its builds dominated the 2.2-minute median
+  hold. A detached installer coalesces Electron-facing requests to the newest
+  useful `master` on queue drain with a ten-minute ceiling, builds from an
+  immutable integrated SHA, and preserves stage-without-restart semantics and
+  the in-app restart notice. The landing returns at integration. Exit when a
+  burst of at least ten eligible landings advances `master` with lock holds
+  measured in seconds, installs the newest required snapshot within the
+  ceiling, and never replaces the app with an unverified or unintended build.
+- **H9 FIFO ticket queue:** monotonic tickets under the common Git directory;
+  the head lander integrates itself; stale-head takeover via dead pid or
+  stale heartbeat; an operator-only bypass; the shared `master` checkout
+  demoted to a best-effort post-integration sync that cannot block a landing.
+  Exit when stress trials acquire strictly in ticket order, a killed head
+  lander is taken over without duplicated integration or a lost candidate, no
+  orphaned candidate can disappear without a terminal result, and a dirty
+  shared checkout no longer stops anyone.
+- **H10 Exact-tree floor and changed-path policy:** a repository-owned
+  classifier selects the always-on cheap floor (generated route types,
+  type-check, fast tests) plus explicit conditional Electron, browser, R3F,
+  CI, and documentation checks from the changed paths; callers may add
+  evidence but cannot weaken the floor; the head lander reruns exactly the
+  floor when the base moved since candidate verification. Exit when only a
+  commit whose exact integrated tree passed the declared floor can reach
+  `master`, the evidence is attached to the candidate identity, and
+  regression tests pin the two audited composition-failure classes.
+- **H11 Measured verdict:** run 30 representative landings and compare the H7
+  schema against the audit baseline. Exit green when they show zero
+  stale-base re-verification loops, zero red integrations, p95 queue wait
+  under three minutes at comparable load, and lower Actions minutes per
+  integrated commit; otherwise exit with an explicit decision activating the
+  `0030` elected-coordinator sequencer contingency. Remote writers arriving
+  before this verdict force the contingency evaluation early.
 
 Rollback is one switch: stop admitting local tickets, drain or cancel queued
 candidates, and return `agent:land` to the guarded direct fast-forward path.
@@ -342,7 +378,7 @@ not include the affected type gate.
 
 The earlier candidate remedies—another cheap check or an advisory lock—are
 superseded by decision `0030`. The lock already exists and is non-FIFO; the
-durable fix is a repository-owned policy gate attached to the exact tree the
-sequencer will integrate. This record remains because it is the first observed
-product failure from the delivery model, not because its initial race theory
-remains active.
+durable fix is a repository-owned policy floor attached to the exact tree at
+the head of the delivery queue (decision `0030` as amended). This record
+remains because it is the first observed product failure from the delivery
+model, not because its initial race theory remains active.
