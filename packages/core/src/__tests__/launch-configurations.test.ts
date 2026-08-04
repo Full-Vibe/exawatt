@@ -158,6 +158,7 @@ describe('Launch Configuration persistence parsing and migration', () => {
         '/alpha': {
           usage: {
             forged: { launchCount: 2, lastLaunchedAt: 30 },
+            'old-id': { launchCount: 3, lastLaunchedAt: 35 },
             missing: { launchCount: 9, lastLaunchedAt: 40 },
           },
           pins: ['forged', 'missing', 'forged'],
@@ -172,7 +173,7 @@ describe('Launch Configuration persistence parsing and migration', () => {
     });
     expect(parsed.projects['/alpha']).toEqual({
       usage: {
-        [launchConfigurationId(opus)]: { launchCount: 2, lastLaunchedAt: 30 },
+        [launchConfigurationId(opus)]: { launchCount: 5, lastLaunchedAt: 35 },
       },
       pins: [launchConfigurationId(opus)],
     });

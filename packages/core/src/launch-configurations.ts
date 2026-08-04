@@ -592,7 +592,18 @@ export function parseLaunchConfigurationPool(
       for (const [rawId, rawUsage] of Object.entries(stateCandidate.usage)) {
         const id = aliases.get(rawId) ?? rawId;
         const parsedUsage = parseUsage(rawUsage);
-        if (validIds.has(id) && parsedUsage) usage[id] = parsedUsage;
+        if (validIds.has(id) && parsedUsage) {
+          const existing = usage[id];
+          usage[id] = existing
+            ? {
+                launchCount: existing.launchCount + parsedUsage.launchCount,
+                lastLaunchedAt: Math.max(
+                  existing.lastLaunchedAt,
+                  parsedUsage.lastLaunchedAt
+                ),
+              }
+            : parsedUsage;
+        }
       }
     }
     const pins: string[] = [];
