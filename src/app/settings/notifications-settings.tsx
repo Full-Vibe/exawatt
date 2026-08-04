@@ -51,18 +51,18 @@ export function GoalVisualSettings() {
 
   return (
     <SettingsGroup
-      title="Team visuals"
-      description="Visual identity for Agent goals in Team view."
+      title="Agent tile backgrounds"
+      description="Quiet, goal-based imagery behind Agent tiles."
       dataAttribute="data-goal-visual-settings"
     >
       <SettingRow
-        title="Goal backgrounds"
+        title="Show background images"
         description="Show quiet generated imagery behind Agent tiles. Turning this off hides cached visuals and stops new image requests."
       >
         <SettingSwitch
           checked={enabled}
           disabled={!ready}
-          label="Goal backgrounds"
+          label="Agent tile background images"
           onChange={next => void setEnabled(next)}
         />
       </SettingRow>

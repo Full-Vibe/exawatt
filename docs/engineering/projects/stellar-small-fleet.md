@@ -234,11 +234,18 @@ Agents advancing the same Initiative and performs no generation I/O. The
 operator chose direct live dogfood over the planned gallery review; the gallery
 comparison remains a reversible follow-up, not a second source of truth.
 
-Operator amendment, 2026-08-03: a device-local **Goal backgrounds** toggle in
-Settings → Preferences defaults on. Turning it off immediately hides cached
-imagery and prevents future generation requests; turning it back on restores a
-ready cache hit or requests the current accepted goal. The setting changes no
-goal, revision, or Project identity truth.
+Operator amendment, 2026-08-03: a device-local **Agent tile backgrounds**
+control in Settings → Preferences defaults on. Turning it off immediately
+hides cached imagery and prevents future generation requests; turning it back
+on restores a ready cache hit or requests the current accepted goal. The
+setting changes no goal, revision, or Project identity truth.
+
+Direct dogfood exposed a bearer-boundary omission the same day: the global
+proxy did not list `/api/goal-visuals` beside the other desktop bearer APIs, so
+it redirected Electron's valid POST to `/sign-in` and the preserved POST
+returned `405`. The route now bypasses cookie middleware and continues to own
+bearer validation, matching `/api/context-labels`; the proxy test names the
+endpoint so this cross-layer failure cannot silently return.
 
 ### S5 Durable Projects
 

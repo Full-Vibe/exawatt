@@ -76,6 +76,7 @@ describe('proxy offline authority', () => {
     '/architecture',
     '/api/context-labels',
     '/api/feedback',
+    '/api/goal-visuals',
     '/api/operator-stats',
     '/agentmaxxing?metric=command&window=week',
     '/operator/jakesc',

@@ -9,12 +9,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 // round-trip whose result is discarded.
 const PUBLIC_PREFIXES = [
   '/api/dev-identity',
-  // Electron authenticates this bounded metadata endpoint with a bearer
-  // token. The route validates it directly; cookie middleware would reject
-  // the desktop request before that validation can happen.
+  // Electron authenticates these bounded endpoints with a bearer token. Each
+  // route validates it directly; cookie middleware would reject the desktop
+  // request before that validation can happen.
   '/api/conversations',
   '/api/context-labels',
   '/api/feedback',
+  '/api/goal-visuals',
   // Bearer-authenticated aggregate sync. The route owns auth and its strict
   // payload boundary; public leaderboard reads use Supabase's allowlisted RPCs.
   '/api/operator-stats',
