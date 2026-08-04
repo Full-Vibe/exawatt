@@ -64,12 +64,17 @@ describe('SessionHistoryStore', () => {
     const blocked = new Promise<void>(resolve => {
       release = resolve;
     });
+    let markRenameStarted!: () => void;
+    const renameStarted = new Promise<void>(resolve => {
+      markRenameStarted = resolve;
+    });
     let first = true;
     const rename = vi
       .spyOn(fs.promises, 'rename')
       .mockImplementation(async (...args) => {
         if (first) {
           first = false;
+          markRenameStarted();
           await blocked;
         }
         return originalRename(...args);
@@ -77,7 +82,7 @@ describe('SessionHistoryStore', () => {
     try {
       value.queue('tab-one', { text: 'old', cursor: 3, updatedAt: 1 });
       const older = value.flush();
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await renameStarted;
       value.queue('tab-one', { text: 'new', cursor: 3, updatedAt: 2 });
       const newer = value.flush();
       release();
@@ -95,16 +100,21 @@ describe('SessionHistoryStore', () => {
     const blocked = new Promise<void>(resolve => {
       release = resolve;
     });
+    let markRenameStarted!: () => void;
+    const renameStarted = new Promise<void>(resolve => {
+      markRenameStarted = resolve;
+    });
     const rename = vi
       .spyOn(fs.promises, 'rename')
       .mockImplementationOnce(async (...args) => {
+        markRenameStarted();
         await blocked;
         return originalRename(...args);
       });
     try {
       value.queue('tab-one', { text: 'output', cursor: 6, updatedAt: 1 });
       const flushing = value.flush();
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await renameStarted;
       const deleting = value.delete('tab-one');
       release();
       await Promise.all([flushing, deleting]);

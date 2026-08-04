@@ -295,6 +295,20 @@ tests remain the recovery floor during the rollout.
 
 ## Findings log
 
+- 2026-08-03, the H7 flake sweep removed wall-clock guesses from the affected
+  filesystem and process-lifecycle unit tests. Session-history overlap tests
+  now wait for the mocked atomic rename to begin before racing a newer write or
+  deletion, and the process-group test waits for `ps` to report the detached
+  group leader before exercising shutdown. Renderer consumer tests also hold
+  unrelated goal-visual hydration pending and mock the separately-tested Agent
+  Sources surface; the Settings harness flushes its own asynchronous system
+  shortcut read inside React `act`. This removes late state updates and makes
+  each assertion wait on the event it actually needs. A 280-second host pause
+  during the broader sweep reproduced the 2026-07-27 contention signature, so
+  no global or per-test timeout was raised; the suspect header test passed in
+  isolation. H7 remains open for its ten-current-master-Linux-run and delivery
+  metrics exit criteria.
+
 - 2026-08-03, Playwright 1.61's managed macOS browser revisions were all
   ad-hoc signed: the outer Chrome for Testing app and its network-facing helper
   had no Team Identifier, their designated requirements were CDHash-only, and

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { execFileSync, spawn } from 'child_process';
 import { parseProcessTable } from './process-groups';
 
@@ -21,7 +21,17 @@ it('escalates and removes a process group with descendants', async () => {
   });
   if (!child.pid) throw new Error('No child pid');
   try {
-    await new Promise(resolve => setTimeout(resolve, 75));
+    await vi.waitFor(
+      () => {
+        const table = parseProcessTable(
+          execFileSync('/bin/ps', ['-axo', 'pid=,pgid='], {
+            encoding: 'utf8',
+          })
+        );
+        expect(table).toContainEqual({ pid: child.pid, pgid: child.pid });
+      },
+      { timeout: 3_000, interval: 10 }
+    );
     const { stopProcessGroups } = await import('./process-groups');
     await stopProcessGroups(
       [child.pid],

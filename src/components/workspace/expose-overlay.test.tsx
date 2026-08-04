@@ -12,6 +12,17 @@ import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-vis
 import { ExposeOverlay } from './expose-overlay';
 import type { Project } from './use-workspace-state';
 
+vi.mock('@/lib/goal-visuals/preference-source', () => ({
+  createGoalVisualPreferenceSource: () => ({
+    kind: 'web' as const,
+    // This suite owns the overlay contract, not preference hydration. Keep
+    // that unrelated async update pending so it cannot escape the render act.
+    load: () => new Promise<boolean>(() => undefined),
+    save: async (enabled: boolean) => enabled,
+    subscribe: () => () => undefined,
+  }),
+}));
+
 function render(ui: ReactElement) {
   return testingRender(ui, {
     // the overlay reads the goal-visual preference, mounted app-wide in

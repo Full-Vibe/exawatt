@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -11,14 +12,27 @@ import { defaultShortcuts, shortcutRegistry } from '@/lib/shortcuts';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { SettingsClient } from './settings-client';
 
+vi.mock('@/lib/goal-visuals/preference-source', () => ({
+  createGoalVisualPreferenceSource: () => ({
+    kind: 'web' as const,
+    // Shortcut policy does not own preference hydration. Keep that unrelated
+    // async update pending so it cannot escape the render act.
+    load: () => new Promise<boolean>(() => undefined),
+    save: async (enabled: boolean) => enabled,
+    subscribe: () => () => undefined,
+  }),
+}));
+
 // Notifications settings read the goal-visual preference, mounted app-wide
 // in layout.tsx — the test harness mirrors that mounting context.
-function renderSettings() {
-  return render(
+async function renderSettings() {
+  const view = render(
     <GoalVisualPreferenceProvider>
       <SettingsClient />
     </GoalVisualPreferenceProvider>
   );
+  await act(async () => undefined);
+  return view;
 }
 
 const { updateKeyboardShortcuts } = vi.hoisted(() => ({
@@ -33,6 +47,10 @@ vi.mock('@/app/actions/preferences', () => ({
 
 vi.mock('./appearance-settings', () => ({
   AppearanceSettings: () => <div data-appearance-settings />,
+}));
+
+vi.mock('./agent-sources-settings', () => ({
+  AgentSourcesSettings: () => <div data-agent-sources-settings />,
 }));
 
 function editShortcut(label: string): HTMLElement {
@@ -71,7 +89,7 @@ describe('shortcut settings policy', () => {
   });
 
   it('rejects a bare universal binding and accepts a Command binding', async () => {
-    renderSettings();
+    await renderSettings();
     const capture = editShortcut('Agent');
 
     fireEvent.keyDown(capture, { key: 'm', code: 'KeyM' });
@@ -118,7 +136,7 @@ describe('shortcut settings policy', () => {
         shortcuts: { systemHotkeys: vi.fn(async () => ({})) },
       },
     });
-    renderSettings();
+    await renderSettings();
     await waitFor(() =>
       expect(
         window.electron!.shortcuts!.systemHotkeys as ReturnType<typeof vi.fn>
@@ -155,7 +173,7 @@ describe('shortcut settings policy', () => {
         },
       },
     });
-    renderSettings();
+    await renderSettings();
     await waitFor(() =>
       expect(
         window.electron!.shortcuts!.systemHotkeys as ReturnType<typeof vi.fn>
@@ -179,10 +197,10 @@ describe('shortcut settings policy', () => {
     });
   });
 
-  it('warns without blocking when system prefs cannot be read (web fallback)', () => {
+  it('warns without blocking when system prefs cannot be read (web fallback)', async () => {
     // No Electron bridge: Apple defaults are only a likelihood, so ⇧⌘4
     // shows the unverified warning but stays saveable.
-    renderSettings();
+    await renderSettings();
     const capture = editShortcut('Agent');
     fireEvent.keyDown(capture, {
       key: '$',
@@ -194,8 +212,8 @@ describe('shortcut settings policy', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
   });
 
-  it('rejects a physical Project ordinal even when Option changes its character', () => {
-    renderSettings();
+  it('rejects a physical Project ordinal even when Option changes its character', async () => {
+    await renderSettings();
     const capture = editShortcut('Agent');
 
     fireEvent.keyDown(capture, {
