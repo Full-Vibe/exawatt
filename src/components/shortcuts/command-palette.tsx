@@ -1040,6 +1040,44 @@ export function CommandPalette({
     workspaceAvailability,
   ]);
 
+  // cmdk ranks items within a group, but React owns the authored order of
+  // sibling groups. Put an exact Navigation destination first declaratively;
+  // partial queries retain the Sessions-first switching grammar below.
+  const navigationQuery = search
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/^go(?:\s+to)?\s+/, '');
+  const navigationFirst =
+    navigationQuery.length > 0 &&
+    navigationItems.some(
+      item => item.label.toLocaleLowerCase() === `go to ${navigationQuery}`
+    );
+  const navigationGroup = (
+    <CommandGroup heading="Navigation">
+      {navigationItems.map(item => (
+        <CommandItem
+          key={item.id}
+          value={item.value}
+          keywords={item.keywords}
+          onSelect={() => {
+            recordPaletteUse(item.id);
+            item.onSelect();
+          }}
+        >
+          <item.icon className="mr-2 h-4 w-4" />
+          <span>{item.label}</span>
+          {item.shortcut ? (
+            <CommandShortcut>
+              {formatShortcutKeys(item.shortcut)}
+            </CommandShortcut>
+          ) : item.note ? (
+            <CommandShortcut>{item.note}</CommandShortcut>
+          ) : null}
+        </CommandItem>
+      ))}
+    </CommandGroup>
+  );
+
   return (
     <CommandDialog
       open={open}
@@ -1121,6 +1159,13 @@ export function CommandPalette({
                     </CommandItem>
                   ))}
                 </CommandGroup>
+                <CommandSeparator />
+              </>
+            )}
+
+            {navigationFirst && (
+              <>
+                {navigationGroup}
                 <CommandSeparator />
               </>
             )}
@@ -1552,31 +1597,12 @@ export function CommandPalette({
               </>
             )}
 
-            <CommandGroup heading="Navigation">
-              {navigationItems.map(item => (
-                <CommandItem
-                  key={item.id}
-                  value={item.value}
-                  keywords={item.keywords}
-                  onSelect={() => {
-                    recordPaletteUse(item.id);
-                    item.onSelect();
-                  }}
-                >
-                  <item.icon className="mr-2 h-4 w-4" />
-                  <span>{item.label}</span>
-                  {item.shortcut ? (
-                    <CommandShortcut>
-                      {formatShortcutKeys(item.shortcut)}
-                    </CommandShortcut>
-                  ) : item.note ? (
-                    <CommandShortcut>{item.note}</CommandShortcut>
-                  ) : null}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-
-            <CommandSeparator />
+            {!navigationFirst && (
+              <>
+                {navigationGroup}
+                <CommandSeparator />
+              </>
+            )}
 
             <CommandGroup heading="Actions">
               {actionItems.map(item => (
