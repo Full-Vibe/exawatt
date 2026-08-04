@@ -190,8 +190,10 @@ without making it a second product boundary.
 - **Model choice at scale.** With hundreds of reachable models, the flat
   `Select` that serves six Claude rows stops working. The picker becomes
   searchable and grouped by provider, with the operator's own recent and pinned
-  models first; this is the model axis of the Launch Configuration editor
-  (decision `0028`), not a separate surface.
+  models first; this is the model choice inside the Launch Configuration
+  ribbon's quiet Customize disclosure (decision `0028`), not a separate
+  surface. This scalable picker lands before the ribbon reaches the production
+  composer or as D46's first implementation slice.
 - **Local inference gets a distinct readout, not a distinct path.** A provider
   whose endpoint is on this machine is marked as such — nothing leaves the
   machine, no billed dollars, and ENG-008's watts rung is the honest unit rather
@@ -211,7 +213,9 @@ without making it a second product boundary.
   than a PTY, and what that would mean for a product whose current terminal
   regime is deliberately a real terminal. Not a near-term question; recorded so
   it is not rediscovered.
-- How a Launch Configuration that names an unavailable provider degrades. The
-  ENG-028 rule — Types declare what they require, sources declare what they can
-  do — is the frame; an under-capable launch must show what is missing rather
-  than silently substituting.
+- Resolved by D46's operator-confirmed lightweight-launcher contract: a Launch
+  Configuration whose provider, source, model, or requirement becomes
+  unavailable stays discoverable and selectable for inspection, names the
+  missing fact, and disables launch. It never disappears or silently
+  substitutes another value. The ENG-028 rule — Types declare what they
+  require, sources declare what they can do — remains the capability frame.

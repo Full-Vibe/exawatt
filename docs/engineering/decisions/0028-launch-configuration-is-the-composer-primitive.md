@@ -3,6 +3,11 @@
 Date: 2026-08-03
 Status: accepted
 
+Amended: 2026-08-03 after the operator's lightweight-launcher review. The
+configuration ribbon remains the primitive, but the always-visible editor,
+unsaved-configuration lifecycle, edit-driven frecency, `⌘S` naming chord, and
+"naming creates a Type" boundary are superseded below.
+
 ## Context
 
 The Agent composer today asks the operator to assemble a launch out of five
@@ -35,55 +40,87 @@ The composer's primary control is a **frecency-ordered ribbon of Launch
 Configurations**. A Launch Configuration is one selectable thing that carries a
 whole launch, and it replaces the row of independent selectors.
 
-- **Identity is harness + model + effort + Type.** Permissions and the
-  worktree/branch decision stay per-launch modifiers outside the configuration,
-  so the ribbon does not multiply into `Kimi`, `Kimi + worktree`, and
-  `Kimi + YOLO` as three chips of the same thing.
+- **Identity is configured Agent Source + source-native model + exact effort or
+  variant + optional Type.** The configured source identity matters because
+  two instances of one harness may have different endpoints, accounts,
+  catalogs, and readiness. Harness remains derived launch and presentation
+  data. Permissions, worktree/branch, and roadmap association stay per-launch
+  modifiers outside the configuration, so the ribbon does not multiply into
+  `Kimi`, `Kimi + worktree`, and `Kimi + YOLO` as three things. Editing those
+  modifiers never forks a configuration.
 - **A chip is labelled model-first with the harness as its glyph and brand
   colour** — `◈ Opus 5 · High`, `◇ Kimi K3`, `▣ Shell`. The model is the axis
-  that actually varies between configurations; the harness is usually implied by
-  it and is carried by the glyph without spending a word. A *named*
-  configuration displays its name instead (`⚡ Reviewer`), with its axes visible
-  on selection.
-- **Shell is a peer chip, not an icon.** A blank terminal is a Launch
-  Configuration whose harness is `shell`; it appears in the same ribbon, reached
-  by the same arrows, started by the same Enter. `⌘⌥T` remains the direct
-  one-stroke gesture.
-- **Arrows move across chips; Tab dives into the selected chip's axes.** Each
-  axis (harness, model, effort, Type, permissions, worktree) is a tab stop.
-  Changing any axis **forks an unsaved configuration** which immediately enters
-  frecency. There is therefore no separate "create a configuration" flow: you
-  reach a new configuration by editing an existing one, and naming it is
-  optional and later.
+  that usually varies; the harness is carried compactly by the glyph while the
+  accessible name states the complete identity. A named configuration displays
+  its friendly preset name instead (`⚡ Reviewer`). Harness brand colour stays an
+  identity accent, not a status or action fill.
+- **Shell is a peer launch choice, not an Agent configuration disguised as
+  one.** The domain is a discriminated Agent-or-Shell union. Shell has no model,
+  effort, Type, or Agent permission axes, but it appears in the same ribbon and
+  remains reachable through the direct `⌘⌥T` gesture. Task text is never sent to
+  Shell.
+- **The page stays a launcher, not an Agent builder.** Its normal launch-control
+  area is the task field, one compact ribbon, and Start. There is no
+  always-visible axis editor, configuration Draft badge, or preset-management
+  panel. The existing Project-scoped recent-conversation browser remains
+  secondary content with its plain-arrow and Enter semantics unchanged. `⌘T`
+  focuses the task so typing and Enter remain the zero-setup path. While the
+  task owns focus, `⌥↑/↓` cycles whole configurations instead of cycling only
+  the source; visible help teaches that fast path. The standard accessible path
+  is one radio-like ribbon tab stop with Left/Right selection. A compact
+  Customize action exposes source, model, effort, future Type, and initial Name;
+  each Agent configuration chip/All row owns Pin/Unpin, Rename, and Delete in
+  its secondary menu. Shell owns Pin/Unpin only and cannot be renamed or
+  deleted.
+- **There is no Launch Configuration draft lifecycle.** Identity edits may ride
+  the existing composer draft tab's exact launch snapshot, including across a
+  restart, but that snapshot is not a reusable configuration and never enters
+  the pool or rank by itself. Closing the draft without a successful launch or
+  explicit naming leaves no reusable configuration behind. A successful launch
+  structurally deduplicates or adds the configuration; naming explicitly saves
+  the current combination as a reusable preset through one short secondary
+  action.
 - **Frecency is per-Project over one shared pool.** A configuration exists once
-  in the app; each Project ranks the pool by the operator's own use *there*.
-  This extends the existing per-Project memory of source and permission mode
-  rather than inventing a second memory.
-- **A named configuration is the on-ramp to an Agent Type.** Naming is the
-  moment a launch stops being a set of settings and starts being a worker; when
-  ENG-028 T2 ships the Type format, a named configuration is what gains
-  identity, instructions, and required tools. The Type axis renders as an
-  ENG-026 `announced` affordance until then — one honest empty slot inside the
-  editor, not a sixth dropdown in the row.
+  in the app; each Project ranks the pool by successful launches *there*.
+  Selection, navigation, editing, naming, failed launch, and abandoned work do
+  not increase frecency. Project-local pins sit above learned results, and the
+  order freezes while the operator interacts so a focused target never moves.
+  Reranking applies on the next composer entry. This extends the existing
+  per-Project memory of source and permission mode without conflating policy
+  with configuration identity. The singleton Shell launch target participates
+  in the same Project ordering and may be pinned; a successful Shell launch is
+  its only usage signal. This does not make Shell an Agent configuration.
+- **Naming creates a friendly preset, not an Agent Type.** A future Type may be
+  selected as one identity axis, but naming alone makes no claim about identity,
+  instructions, tools, or portability. The Type entry remains an ENG-026
+  `announced` affordance until the Type mechanism ships. There is no global
+  `⌘S` naming command in this slice.
+- **The ribbon is a bounded working set with a visible complete route.** It is
+  one non-wrapping row whose visible count follows measured chip widths rather
+  than a fixed number. A visible **All configurations…** disclosure reaches the
+  complete catalog; `⌘K` mirrors the same catalog and is never its only home.
 
 ## Consequences
 
 - ENG-016 D35's visible model/effort selector row is **superseded as a
-  presentation**. Its substance is preserved and strengthened: every axis stays
-  visible, every default keeps its named provenance, and nothing about the
-  launch becomes implicit. Recorded in the roadmap's Amendment chain.
+  presentation**. Its substance is preserved and strengthened: every identity
+  choice remains inspectable through quiet Customize, every default keeps its
+  named provenance, and nothing about the launch becomes implicit. Recorded in
+  the roadmap's Amendment chain.
 - ENG-028 T1's composer entry point moves from a standalone `/agent-types` icon
-  into the Type axis of the configuration editor, which is a contextually
+  into the announced Type entry inside Customize, which is a contextually
   correct anchor rather than an adjacent one.
-- The "continue this work on another configuration" gesture (ENG-037's cheap
-  half) has an obvious home and an obvious vocabulary the instant configurations
-  exist: it is a relaunch onto a different chip with a handoff prompt, using
-  machinery `freshConversationPrompt` already provides. ENG-037's true
-  freeze-and-reinflate remains unshaped.
+- The cheap cross-source continuation gesture is **Clone to…**. It creates a new
+  Agent Session on a chosen available Agent configuration using a bounded
+  handoff prompt, leaves the original Session intact, and never passes a
+  provider resume identity. Its explanatory copy may say "continue with" or
+  "starts a new Agent with a handoff"; it does not imply live migration. Shell
+  is not a clone target. The true freeze-and-reinflate problem remains
+  separately unshaped.
 - Anything the ribbon can do must also be reachable from `⌘K` (the palette is a
   complete backstop), and the ribbon is the visible first-class home (the
   palette is never the IA).
-- Risk accepted: two representations of one state — chip and axis strip — can
-  disagree if they are not derived from a single selector. The implementation
-  keeps one source of truth for the active configuration and renders both from
-  it; a divergence here is a defect, not a tuning question.
+- Risk accepted: ribbon, secondary editor, palette, native commands, and Clone
+  can disagree if they do not derive from one selector and one launch command.
+  The implementation keeps one source of truth for the selected configuration;
+  divergence is a defect, not a tuning question.
