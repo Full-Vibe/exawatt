@@ -21,7 +21,7 @@ describe('Agent tile visual language bench', () => {
     vi.unstubAllGlobals();
   });
 
-  it('holds full-card geometry constant across three visual languages', async () => {
+  it('holds full-card geometry constant across seven visual languages', async () => {
     render(
       <TooltipProvider>
         <GoalVisualBenchPage />
@@ -31,16 +31,26 @@ describe('Agent tile visual language bench', () => {
     expect(
       screen.getByRole('heading', { name: 'Agent tile visual languages' })
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { name: 'Material macro' })
-    ).toBeVisible();
-    expect(
-      screen.getByRole('heading', { name: 'Aerial structure' })
-    ).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Graphic form' })).toBeVisible();
     expect(
+      screen.getByRole('heading', { name: 'Graphic metaphor' })
+    ).toBeVisible();
+    expect(
+      screen.getByRole('heading', { name: 'Symbolic still life' })
+    ).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Noun place' })).toBeVisible();
+    expect(
+      screen.getByRole('heading', { name: 'Emblematic artifact' })
+    ).toBeVisible();
+    expect(
+      screen.getByRole('heading', { name: 'Editorial collage' })
+    ).toBeVisible();
+    expect(
+      screen.getByRole('heading', { name: 'Diagrammatic landscape' })
+    ).toBeVisible();
+    expect(
       document.querySelectorAll('[data-goal-visual-language]')
-    ).toHaveLength(9);
+    ).toHaveLength(21);
     expect(
       screen.getAllByText(
         'Reduce context switching across active agent work'
@@ -51,7 +61,7 @@ describe('Agent tile visual language bench', () => {
     ).toBeVisible();
   });
 
-  it('loads nine fixed studies through the authenticated hosted boundary', async () => {
+  it('loads 21 fixed studies through the authenticated hosted boundary', async () => {
     getSession.mockResolvedValue({
       data: { session: { access_token: 'bench-token' } },
     });
@@ -74,8 +84,8 @@ describe('Agent tile visual language bench', () => {
       </TooltipProvider>
     );
 
-    expect(await screen.findByText(/9 studies ready/)).toBeVisible();
-    expect(fetchMock).toHaveBeenCalledTimes(9);
+    expect(await screen.findByText(/21 studies ready/)).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledTimes(21);
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/goal-visuals',
       expect.objectContaining({
@@ -85,7 +95,7 @@ describe('Agent tile visual language bench', () => {
         }),
       })
     );
-    expect(container.querySelectorAll('img')).toHaveLength(9);
+    expect(container.querySelectorAll('img')).toHaveLength(21);
   });
 
   it('keeps deterministic fallbacks mounted until every returned study is decoded', async () => {
@@ -122,7 +132,7 @@ describe('Agent tile visual language bench', () => {
       </TooltipProvider>
     );
 
-    await waitFor(() => expect(decodes).toHaveLength(9));
+    await waitFor(() => expect(decodes).toHaveLength(21));
     expect(screen.getByText(/Loading studies/)).toBeVisible();
     expect(container.querySelectorAll('img')).toHaveLength(0);
 
@@ -131,8 +141,8 @@ describe('Agent tile visual language bench', () => {
       await Promise.resolve();
     });
 
-    expect(await screen.findByText(/9 studies ready/)).toBeVisible();
-    expect(container.querySelectorAll('img')).toHaveLength(9);
+    expect(await screen.findByText(/21 studies ready/)).toBeVisible();
+    expect(container.querySelectorAll('img')).toHaveLength(21);
   });
 
   it('keeps successful studies when one request is unavailable', async () => {
@@ -147,7 +157,7 @@ describe('Agent tile visual language bench', () => {
         if (request === 1) throw new Error('network unavailable');
         return new Response(
           JSON.stringify({
-            identityKey: String(request).repeat(64),
+            identityKey: request.toString(16).padStart(64, '0'),
             dataUrl: 'data:image/jpeg;base64,/9j/2Q==',
           }),
           { status: 200, headers: { 'content-type': 'application/json' } }
@@ -161,7 +171,7 @@ describe('Agent tile visual language bench', () => {
       </TooltipProvider>
     );
 
-    expect(await screen.findByText(/8 studies ready/)).toBeVisible();
-    expect(container.querySelectorAll('img')).toHaveLength(8);
+    expect(await screen.findByText(/20 studies ready/)).toBeVisible();
+    expect(container.querySelectorAll('img')).toHaveLength(20);
   });
 });

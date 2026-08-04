@@ -5,20 +5,25 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { ExposeOverlay } from './expose-overlay';
 import type { Project } from './use-workspace-state';
 
+const { loadGoalVisualPreference, saveGoalVisualPreference } = vi.hoisted(
+  () => ({
+    loadGoalVisualPreference: vi.fn<() => Promise<boolean>>(),
+    saveGoalVisualPreference: vi.fn<(enabled: boolean) => Promise<boolean>>(),
+  })
+);
+
 vi.mock('@/lib/goal-visuals/preference-source', () => ({
   createGoalVisualPreferenceSource: () => ({
     kind: 'web' as const,
-    // This suite owns the overlay contract, not preference hydration. Keep
-    // that unrelated async update pending so it cannot escape the render act.
-    load: () => new Promise<boolean>(() => undefined),
-    save: async (enabled: boolean) => enabled,
+    load: loadGoalVisualPreference,
+    save: saveGoalVisualPreference,
     subscribe: () => () => undefined,
   }),
 }));
@@ -92,6 +97,40 @@ const projects: Project[] = [
 ];
 
 describe('Sessions overview', () => {
+  beforeEach(() => {
+    loadGoalVisualPreference.mockReset();
+    loadGoalVisualPreference.mockImplementation(
+      () => new Promise<boolean>(() => undefined)
+    );
+    saveGoalVisualPreference.mockReset();
+    saveGoalVisualPreference.mockImplementation(async enabled => enabled);
+  });
+
+  it('keeps the global background preference in the Team chrome', async () => {
+    loadGoalVisualPreference.mockResolvedValue(true);
+    render(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        activeTabId="tab-a"
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    const toggle = screen.getByRole('switch', {
+      name: 'Agent tile backgrounds',
+    });
+    await waitFor(() => expect(toggle).toBeEnabled());
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(toggle).toHaveAttribute('aria-checked', 'false')
+    );
+    expect(saveGoalVisualPreference).toHaveBeenCalledWith(false);
+  });
+
   it('projects a goal visual by durable Session identity without changing the tile contract', () => {
     const image = 'data:image/webp;base64,UklGRg==';
     render(

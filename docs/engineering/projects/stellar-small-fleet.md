@@ -284,6 +284,18 @@ to the provider. This is a language study only: the live Team prompt remains
 unchanged until the operator picks a family. Once that family ships, retire the
 study rather than keeping a duplicate of production.
 
+The operator chose Graphic Form as the leading direction on 2026-08-04 and
+requested a wider metaphor pass before production wiring. The bench now keeps
+Graphic Form as its anchor, retires Material Macro and Aerial Structure from
+the visible comparison, and adds Graphic Metaphor, Symbolic Still Life, Noun
+Place, Emblematic Artifact, Editorial Collage, and Diagrammatic Landscape.
+Every family renders against the same three goals and full-card geometry; the
+18 new fixed recipes remain server-owned and never forward goal or Project text
+to FAL. The existing app-global **Agent tile backgrounds** preference is also
+projected into Team's top chrome as **Backgrounds**, while Settings remains the
+durable explanatory home. Both controls write the same preference, so turning
+it off still suppresses cached rendering and future Electron generation.
+
 ### S5 Durable Projects
 
 Status: landed 2026-07-10 — scoped same day (operator); all phases complete.

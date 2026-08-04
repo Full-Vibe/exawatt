@@ -173,7 +173,11 @@ export function ExposeOverlay({
   onAttachRoadmapSession?: (tabId: string, itemId: string) => boolean;
   onClose: () => void;
 }) {
-  const { enabled: goalVisualsEnabled } = useGoalVisualPreference();
+  const {
+    enabled: goalVisualsEnabled,
+    ready: goalVisualsReady,
+    setEnabled: setGoalVisualsEnabled,
+  } = useGoalVisualPreference();
 
   // stable order = model order (spatial memory: tiles never reshuffle)
   const tiles = useMemo<Tile[]>(
@@ -630,6 +634,42 @@ export function ExposeOverlay({
               Team
             </h2>
             <span>arrows or J/K move · enter opens · esc returns</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={goalVisualsEnabled}
+              aria-label="Agent tile backgrounds"
+              data-team-goal-visual-toggle
+              disabled={!goalVisualsReady}
+              onClick={() => void setGoalVisualsEnabled(!goalVisualsEnabled)}
+              onKeyDown={event => {
+                // Enter/Space belong to this switch, not the roving Team grid.
+                // Escape still bubbles to the altitude-level return handler.
+                if (event.key !== 'Escape') event.stopPropagation();
+              }}
+              className="ml-auto inline-flex h-7 shrink-0 items-center gap-2 rounded px-2 font-mono text-chrome-label outline-none transition-colors duration-200 hover:bg-hud-stroke-faint focus-visible:ring-1 focus-visible:ring-hud-cyan disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+              style={{ color: HUD.textDim }}
+            >
+              <span>Backgrounds</span>
+              <span
+                aria-hidden="true"
+                className="relative h-4 w-7 rounded-full border transition-colors duration-200 motion-reduce:transition-none"
+                style={{
+                  borderColor: goalVisualsEnabled ? HUD.cyan : HUD.stroke,
+                  background: goalVisualsEnabled
+                    ? withThemeAlpha(HUD.cyan, 0.32)
+                    : HUD.bg.panelFill,
+                }}
+              >
+                <span
+                  className="absolute left-0 top-0.5 h-2.5 w-2.5 rounded-full transition-transform duration-200 motion-reduce:transition-none"
+                  style={{
+                    background: goalVisualsEnabled ? HUD.cyan : HUD.textDim,
+                    transform: `translateX(${goalVisualsEnabled ? 14 : 2}px)`,
+                  }}
+                />
+              </span>
+            </button>
             {/* Coordination preview's contextual anchor (ENG-026 N4): the
                 Team altitude is where "how do these Agents hand off?" is
                 asked, so the entry point lives here — real navigation with
@@ -637,7 +677,7 @@ export function ExposeOverlay({
             <Link
               href="/coordination"
               data-coordination-anchor
-              className="ml-auto inline-flex items-baseline gap-1.5 font-mono text-chrome-label outline-none transition-colors hover:text-hud-text focus-visible:text-hud-text"
+              className="inline-flex items-baseline gap-1.5 font-mono text-chrome-label outline-none transition-colors hover:text-hud-text focus-visible:text-hud-text"
               style={{ color: HUD.textDim }}
             >
               Coordination

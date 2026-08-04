@@ -37,19 +37,39 @@ const GOALS = [
 
 const LANGUAGES = [
   {
-    id: 'material',
-    label: 'Material macro',
-    note: 'resin · paper · metal',
-  },
-  {
-    id: 'aerial',
-    label: 'Aerial structure',
-    note: 'salt · river · clay',
-  },
-  {
     id: 'graphic',
     label: 'Graphic form',
     note: 'screenprint · cut paper · ink',
+  },
+  {
+    id: 'metaphor',
+    label: 'Graphic metaphor',
+    note: 'handoff · alignment · accumulation',
+  },
+  {
+    id: 'still-life',
+    label: 'Symbolic still life',
+    note: 'cord · key · reservoir',
+  },
+  {
+    id: 'noun-place',
+    label: 'Noun place',
+    note: 'crossing · switchyard · spillway',
+  },
+  {
+    id: 'artifact',
+    label: 'Emblematic artifact',
+    note: 'relay · alignment key · vessel',
+  },
+  {
+    id: 'collage',
+    label: 'Editorial collage',
+    note: 'photograph · paper · ink',
+  },
+  {
+    id: 'diagram-landscape',
+    label: 'Diagrammatic landscape',
+    note: 'merge · threshold · basin',
   },
 ] as const;
 
@@ -232,7 +252,7 @@ export function GoalVisualLanguageStudy() {
       <div className={styles.summary}>
         <h2 className="text-lg font-semibold">Full-card comparison</h2>
         <p className="text-chrome-meta text-muted-foreground">
-          Three visual languages · three goal identities · {statusCopy}
+          Seven visual languages · three goal identities · {statusCopy}
         </p>
       </div>
 
