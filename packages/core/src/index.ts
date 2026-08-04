@@ -59,3 +59,4 @@ export * from './consumption/index';
 export * from './operator-stats/index';
 export * from './demo/index';
 export * from './launch-configurations';
+export * from './launch-recommendation';

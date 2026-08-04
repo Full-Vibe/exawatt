@@ -77,6 +77,20 @@
   --color-hud-idle: var(--exa-hud-idle, #6a7585);
   --color-hud-text: var(--exa-hud-text, #dcebff);
   --color-hud-text-dim: var(--exa-hud-text-dim, #8aa0be);
+  /* Stroke/fill/surface roles were reachable only through inline style before
+     ENG-016 D49, so `border-hud-stroke-soft` and `hover:bg-hud-fill` were
+     silently no-op classes wherever they were already written. */
+  --color-hud-stroke: var(--exa-hud-stroke, rgba(80, 230, 255, 0.55));
+  --color-hud-stroke-soft: var(--exa-hud-stroke-soft, rgba(80, 230, 255, 0.22));
+  --color-hud-stroke-faint: var(--exa-hud-stroke-faint, rgba(80, 230, 255, 0.14));
+  --color-hud-divider: var(--exa-hud-divider, rgba(80, 230, 255, 0.1));
+  --color-hud-fill: var(--exa-hud-fill, rgba(20, 120, 160, 0.08));
+  --color-hud-fill-hi: var(--exa-hud-fill-hi, rgba(20, 160, 200, 0.14));
+  --color-hud-surface-input: var(--exa-hud-surface-input, rgba(8, 13, 22, 0.78));
+  --color-hud-surface-input-soft: var(
+    --exa-hud-surface-input-soft,
+    rgba(8, 13, 22, 0.6)
+  );
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
