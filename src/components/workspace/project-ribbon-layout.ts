@@ -182,11 +182,20 @@ export function layoutRibbonRow(
     openProject: RibbonProjectInput | null,
     openWidth: number
   ) => {
+    // `slice(-0)` is `slice(0)` — the WHOLE array. Folding "none" therefore
+    // used to measure a row with EVERY quiet Project folded, while the
+    // placement below correctly read 0 as none. The probe and the row it was
+    // predicting were inverted, so the search stopped the moment the
+    // all-folded row fit and the ribbon then drew the un-folded one: widening
+    // 1180px → 1200px unfolded five Projects at once, snapped tabs from 206px
+    // back to the floor, and started the row scrolling (measured 2026-08-04).
+    const candidates = projects.filter(
+      project => project !== openProject && project.tabs.length > 0
+    );
     const foldTargets = new Set(
-      projects
-        .filter(project => project !== openProject && project.tabs.length > 0)
-        .slice(-Math.max(0, foldCount))
-        .map(project => project.dir)
+      (foldCount > 0 ? candidates.slice(-foldCount) : []).map(
+        project => project.dir
+      )
     );
     return projects.reduce(
       (total, project, index) =>
@@ -205,9 +214,7 @@ export function layoutRibbonRow(
       0
     );
   };
-  const foldable = projects.filter(
-    project => project.tabs.length > 0
-  ).length;
+  const foldable = projects.filter(project => project.tabs.length > 0).length;
   // Fold until the WORST-CASE row fits with tabs at their entitled width.
   // Raising `comfortTabWidth` above the floor buys title length by folding
   // quiet Projects sooner; leaving it at the floor folds only to avoid

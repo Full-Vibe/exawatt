@@ -230,32 +230,69 @@ describe('the comfort dial (D45 tuning)', () => {
     project('/c', 2, activeIdx === 2),
   ];
 
-  it('at the floor, shrinks tabs and scrolls rather than folding', () => {
-    const layout = layoutRibbonRow(shape(0), 900, {
+  // 1100px is chosen so the dial has somewhere to act: the row fits unfolded
+  // with tabs shrunk toward the floor, but not with tabs at a raised comfort.
+  // At a width where even floor-width tabs overflow, folding is not a
+  // preference — the ladder is shrink, then fold, then scroll — so the dial
+  // has nothing to say and both settings fold.
+  const DIAL_WIDTH = 1100;
+  const atComfort = (comfortTabWidth: number) =>
+    layoutRibbonRow(shape(0), DIAL_WIDTH, {
       ...DEFAULT_RIBBON_POLICY,
       minTabWidth: 100,
-      comfortTabWidth: 100,
+      comfortTabWidth,
     });
+
+  it('at the floor, shrinks tabs rather than folding anyone', () => {
+    const layout = atComfort(100);
     expect([...layout.presentation.values()]).not.toContain('folded');
+    expect(layout.scrollable).toBe(false);
     expect(layout.targets.get('tab:/a-0')?.width).toBeLessThan(200);
   });
 
   it('raised, folds quiet Projects so the tabs keep their title', () => {
-    const layout = layoutRibbonRow(shape(0), 900, {
-      ...DEFAULT_RIBBON_POLICY,
-      minTabWidth: 100,
-      comfortTabWidth: 200,
-    });
+    const layout = atComfort(200);
     expect([...layout.presentation.values()]).toContain('folded');
     // the Project you are in never folds, and its tabs got the room back
     expect(layout.presentation.get('/a')).toBe('open');
     expect(layout.targets.get('tab:/a-0')?.width).toBeGreaterThan(
-      layoutRibbonRow(shape(0), 900, {
+      atComfort(100).targets.get('tab:/a-0')!.width
+    );
+  });
+
+  it('folds before it scrolls, whatever the dial says', () => {
+    // Regression: the fold probe used `slice(-foldCount)`, and `slice(-0)` is
+    // `slice(0)` — the WHOLE array. Folding "none" therefore measured a row
+    // with every quiet Project folded while the placement drew none, so the
+    // search stopped as soon as the all-folded row fit and the ribbon then
+    // painted the un-folded one. Widening 1180px → 1200px unfolded five
+    // Projects at once and started the row scrolling.
+    for (const comfort of [100, 200]) {
+      const tight = layoutRibbonRow(shape(0), 700, {
         ...DEFAULT_RIBBON_POLICY,
         minTabWidth: 100,
-        comfortTabWidth: 100,
-      }).targets.get('tab:/a-0')!.width
-    );
+        comfortTabWidth: comfort,
+      });
+      expect([...tight.presentation.values()]).toContain('folded');
+    }
+  });
+
+  it('never gives narrower tabs to a wider ribbon', () => {
+    let previous = 0;
+    for (let available = 700; available <= 1600; available += 20) {
+      const layout = layoutRibbonRow(shape(0), available);
+      const tab = layout.targets.get('tab:/a-0')?.width ?? 0;
+      // A fold released as the row grows costs a little of the tab budget
+      // back, but growing the ribbon must never collapse tabs to the floor
+      // AND start it scrolling, which is what the inverted probe did.
+      expect(tab >= previous - DEFAULT_RIBBON_POLICY.minTabWidth / 4).toBe(
+        true
+      );
+      expect(layout.scrollable && tab > DEFAULT_RIBBON_POLICY.minTabWidth).toBe(
+        false
+      );
+      previous = tab;
+    }
   });
 
   it('stays selection-invariant at every setting of the dial', () => {
