@@ -136,7 +136,7 @@ describe('parseRoadmap', () => {
       doc.diagnostics.filter(diagnostic => diagnostic.level === 'warn')
     ).toEqual([]);
     expect(doc.unparsedLineCount).toBe(0);
-    expect(doc.items.filter(item => item.status === 'backlog')).toHaveLength(3);
+    expect(doc.items.filter(item => item.status === 'backlog')).toHaveLength(10);
   });
 
   it('parses a declared-conformant roadmap fully', () => {
