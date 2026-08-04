@@ -39,6 +39,36 @@ const DEFAULT_OS_SIGNALS: AppearanceOsSignals = {
   reducedTransparency: false,
 };
 
+/**
+ * Appearance changes arriving from another renderer, tab, or OS callback are
+ * external snapshots rather than user input in this React tree. Give a burst
+ * one short settlement window and publish only its last complete snapshot.
+ * Local previews and commits remain immediate.
+ */
+export const EXTERNAL_APPEARANCE_SETTLE_MS = 250;
+
+function samePreferences(
+  left: AppearancePreferencesV1,
+  right: AppearancePreferencesV1
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function sameOsSignals(
+  left: AppearanceOsSignals,
+  right: AppearanceOsSignals
+): boolean {
+  return (
+    left.dark === right.dark &&
+    left.highContrast === right.highContrast &&
+    left.forcedColors === right.forcedColors &&
+    left.invertedColors === right.invertedColors &&
+    left.reducedTransparency === right.reducedTransparency &&
+    left.systemAccent === right.systemAccent &&
+    left.safeTheme === right.safeTheme
+  );
+}
+
 interface AppearanceContextValue {
   preferences: AppearancePreferencesV1;
   resolved: ResolvedAppearance;
@@ -114,26 +144,52 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    const accept = (next: AppearancePreferencesV1) => {
+    let settlementTimer: ReturnType<typeof setTimeout> | undefined;
+    let pending: AppearancePreferencesV1 | undefined;
+    const accept = (
+      next: AppearancePreferencesV1,
+      mirrorForFirstPaint = false
+    ) => {
       if (!active) return;
-      setPreferences(next);
-      // Safe mode is a non-destructive launch override. Never rewrite either
-      // persistence layer merely because recovery Classic is being rendered.
-      if (!bootstrap?.safeTheme) writeAppearanceMirror(next);
+      setPreferences(current =>
+        samePreferences(current, next) ? current : next
+      );
+      // Electron's authoritative load and final settled settings snapshot seed
+      // this renderer's next first paint without writing back to Electron.
+      // Web subscription values were already persisted by their writer.
+      if (mirrorForFirstPaint && !bootstrap?.safeTheme) {
+        writeAppearanceMirror(next);
+      }
       setReady(true);
     };
-    void source.load().then(accept, () => {
-      if (active) setReady(true);
-    });
-    const unsubscribe = source.subscribe(accept);
+    const settle = (next: AppearancePreferencesV1) => {
+      pending = next;
+      if (settlementTimer) clearTimeout(settlementTimer);
+      settlementTimer = setTimeout(() => {
+        settlementTimer = undefined;
+        const latest = pending;
+        pending = undefined;
+        if (latest) accept(latest, source.kind === 'electron');
+      }, EXTERNAL_APPEARANCE_SETTLE_MS);
+    };
+    void source.load().then(
+      next => accept(next, true),
+      () => {
+        if (active) setReady(true);
+      }
+    );
+    const unsubscribe = source.subscribe(settle);
     return () => {
       active = false;
+      if (settlementTimer) clearTimeout(settlementTimer);
       unsubscribe();
     };
   }, [bootstrap?.safeTheme, source]);
 
   useEffect(() => {
     let active = true;
+    let settlementTimer: ReturnType<typeof setTimeout> | undefined;
+    let pendingNative: NativeAppearanceSnapshot | undefined;
     const applyNative = (native?: NativeAppearanceSnapshot) => {
       if (!active) return;
       // Electron owns color-scheme state. A native event can advance it; a
@@ -141,16 +197,29 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
       const browser = webSignals(
         source.kind === 'electron' ? false : undefined
       );
-      setOs(current => ({
-        ...browser,
-        dark:
-          native?.dark ??
-          (source.kind === 'electron' ? current.dark : browser.dark),
-        highContrast: native?.highContrast ?? browser.highContrast,
-        invertedColors: native?.invertedColors ?? browser.invertedColors,
-        systemAccent: native?.systemAccent ?? undefined,
-        safeTheme: native?.safeTheme ?? bootstrap?.safeTheme ?? false,
-      }));
+      setOs(current => {
+        const next: AppearanceOsSignals = {
+          ...browser,
+          dark:
+            native?.dark ??
+            (source.kind === 'electron' ? current.dark : browser.dark),
+          highContrast: native?.highContrast ?? browser.highContrast,
+          invertedColors: native?.invertedColors ?? browser.invertedColors,
+          systemAccent: native?.systemAccent ?? undefined,
+          safeTheme: native?.safeTheme ?? bootstrap?.safeTheme ?? false,
+        };
+        return sameOsSignals(current, next) ? current : next;
+      });
+    };
+    const settleNative = (native?: NativeAppearanceSnapshot) => {
+      pendingNative = native;
+      if (settlementTimer) clearTimeout(settlementTimer);
+      settlementTimer = setTimeout(() => {
+        settlementTimer = undefined;
+        const latest = pendingNative;
+        pendingNative = undefined;
+        applyNative(latest);
+      }, EXTERNAL_APPEARANCE_SETTLE_MS);
     };
     const queries = [
       ...(source.kind === 'web' ? ['(prefers-color-scheme: dark)'] : []),
@@ -161,16 +230,17 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     ]
       .map(query => window.matchMedia?.(query))
       .filter(Boolean) as MediaQueryList[];
-    const onMediaChange = () => applyNative();
+    const onMediaChange = () => settleNative();
     for (const query of queries)
       query.addEventListener?.('change', onMediaChange);
     const appearance = window.electron?.app?.appearance;
     if (appearance) void appearance().then(applyNative, () => applyNative());
     else applyNative();
     const unsubscribeNative =
-      window.electron?.app?.onAppearanceChanged?.(applyNative);
+      window.electron?.app?.onAppearanceChanged?.(settleNative);
     return () => {
       active = false;
+      if (settlementTimer) clearTimeout(settlementTimer);
       for (const query of queries)
         query.removeEventListener?.('change', onMediaChange);
       unsubscribeNative?.();

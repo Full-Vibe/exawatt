@@ -181,3 +181,21 @@ interface-scale overlay. App surfaces still consume those preferences globally.
 This is not a ban on theme typography—it prevents a surface explicitly outside
 the app appearance canvas from taking layout inputs from that canvas. Incident
 `0004` records the metric reproduction and adversarial theme/scale gate.
+
+## Amendment — external appearance streams settle before resolution
+
+ENG-032 T5.4 closes the app-surface failure left explicitly open by T5.3.
+Local theme preview, commit, and cancel remain immediate user intent. Validated
+preference and OS/native snapshots originating in another renderer or tab are
+transport events, not individually authoritative presentation commands. The
+provider coalesces such a burst for 250 ms and publishes only the final distinct
+snapshot. Web storage subscribers do not rewrite their already-persisted input;
+Electron updates the renderer's first-paint mirror from the final settled
+settings snapshot without writing back to the settings source.
+
+This settlement boundary sits before `resolveAppearance`; the pure resolver and
+all DOM, xterm, R3F, and native adapters continue to consume one immutable
+snapshot without transport knowledge. A two-context signed-browser gate drives
+60 valid Air/Classic/Night and 90–120% writes and permits only an initial and
+final root state. Incident `0005` records the production reproduction and
+five-whys.

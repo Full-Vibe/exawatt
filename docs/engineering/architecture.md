@@ -47,7 +47,7 @@ server to close (with bounded force-stop escalation) before declaring cleanup
 complete. This is a presentation boundary, not a second application or
 alternate data source.
 
-ENG-032's appearance boundary is **implemented** (decision `0026`). T0–T5.3
+ENG-032's appearance boundary is **implemented** (decision `0026`). T0–T5.4
 provide strict versioned Classic/Air/Night definitions, a deterministic
 validator/generator, one pure resolver, device-local Electron/web preference
 adapters, production Settings, account-menu, and command-palette selection, first-paint/native
@@ -83,6 +83,14 @@ contract keeps action, status, Project identity, Agent Source identity,
 Consumption, and readiness channels distinct and accepts no executable
 CSS/JavaScript or remote assets.
 Demo and Live data remain irrelevant to appearance selection.
+Local preview and commit intent publish immediately. Validated preference or
+OS/native events arriving from another tab or renderer settle for 250 ms and
+publish only their final distinct snapshot. Web storage subscribers do not
+rewrite their already-persisted input; Electron mirrors the final settled
+settings result for the next first paint without writing back to its settings
+source. This consistency boundary sits before the pure resolver, so a
+concurrent transport cannot drive DOM, xterm, R3F, or native projection through
+intermediate appearances. Incident `0005` records the two-context reproduction.
 Client-navigation continuity is part of that projection boundary, not a second
 theme owner. Fixed-dark public exhibition surfaces own a complete presentation
 boundary: route-stable opaque chrome, a same-ground pending frame, one fixed

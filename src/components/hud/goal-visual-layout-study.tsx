@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { SessionOverviewCardContent } from '@/components/workspace/session-overview-card';
+import { PROJECT_PALETTE } from '@/components/workspace/project-colors';
 import {
   goalVisualFallbackBackground,
   goalVisualHash,
@@ -18,19 +19,19 @@ const GOALS = [
     id: 'continuity',
     shortLabel: 'Continuity',
     label: 'Reduce context switching across active agent work',
-    color: '#66A3FF',
+    color: PROJECT_PALETTE[6],
   },
   {
     id: 'launch',
     shortLabel: 'Launch configuration',
     label: 'Prepare the Exawatt agent launch configuration',
-    color: '#FF3B8B',
+    color: PROJECT_PALETTE[1],
   },
   {
     id: 'consumption',
     shortLabel: 'Consumption',
     label: 'Unify consumption visibility across AI platforms',
-    color: '#79F2A6',
+    color: PROJECT_PALETTE[3],
   },
 ] as const;
 
@@ -79,6 +80,20 @@ function isLoadedStudy(value: unknown): value is LoadedStudy {
   );
 }
 
+async function decodeStudy(study: LoadedStudy): Promise<LoadedStudy | null> {
+  if (typeof Image === 'undefined') return study;
+  const image = new Image();
+  image.decoding = 'async';
+  image.src = study.dataUrl;
+  if (typeof image.decode !== 'function') return study;
+  try {
+    await image.decode();
+    return study;
+  } catch {
+    return null;
+  }
+}
+
 function FullCardStudyTile({
   study,
   loaded,
@@ -115,6 +130,7 @@ function FullCardStudyTile({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             alt=""
+            decoding="async"
             draggable={false}
             className={styles.sceneImage}
             src={loaded.dataUrl}
@@ -161,21 +177,28 @@ export function GoalVisualLanguageStudy() {
         }
         const entries = await Promise.all(
           STUDIES.map(async study => {
-            const response = await fetch('/api/goal-visuals', {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${session.access_token}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                schemaVersion: 1,
-                projectKey: study.projectKey,
-                label: study.goal.label,
-              }),
-            });
-            if (!response.ok) return [study.id, null] as const;
-            const value: unknown = await response.json();
-            return [study.id, isLoadedStudy(value) ? value : null] as const;
+            try {
+              const response = await fetch('/api/goal-visuals', {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${session.access_token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  schemaVersion: 1,
+                  projectKey: study.projectKey,
+                  label: study.goal.label,
+                }),
+              });
+              if (!response.ok) return [study.id, null] as const;
+              const value: unknown = await response.json();
+              return [
+                study.id,
+                isLoadedStudy(value) ? await decodeStudy(value) : null,
+              ] as const;
+            } catch {
+              return [study.id, null] as const;
+            }
           })
         );
         if (cancelled) return;

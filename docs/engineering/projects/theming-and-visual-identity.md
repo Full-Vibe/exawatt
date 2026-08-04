@@ -6,7 +6,7 @@ discovery, and (once approved) the executable milestone detail.
 
 ## Current phase
 
-**Production closure — T0 through T5.3 assembled and verified.** The versioned
+**Production closure — T0 through T5.4 assembled and verified.** The versioned
 contract, device-local resolver/runtime, strict Electron settings and
 first-paint bootstrap now expose Classic, Air, and Night through production
 Appearance settings, the account-avatar menu, and the **Change theme…** command.
@@ -889,3 +889,15 @@ no packet privately extends the contract to solve a local color.
   gone. `eval:typography-stability` holds one computed/raster state and then
   adversarially cycles every production family/scale input. Incident `0004`
   records the five-whys and falsified provider/font/viewport hypotheses.
+- 2026-08-04, T5.4 external-snapshot incident closure: a two-context signed-
+  browser production control made the previously conditional app-surface
+  failure deterministic. Sixty valid cross-tab Air/Classic/Night and 90–120%
+  writes produced 61 root states, 62 computed page states, and 60 layout
+  shifts. The provider now settles external preference and OS/native streams
+  for 250 ms and publishes only the final distinct snapshot. Web subscribers do
+  not rewrite their input; Electron mirrors only the final settled settings
+  result for first paint. Local preview and commit remain immediate.
+  `eval:goal-visuals-stability` repeats that storm and also gates
+  idle metrics/rasters, decoded scene arrival, Air readable-role contrast, and
+  320px overflow/touch targets. Incident `0005` records the five-whys and
+  controls.

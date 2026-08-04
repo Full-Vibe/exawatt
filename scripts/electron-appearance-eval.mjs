@@ -195,7 +195,11 @@ async function inspectRenderer(app, page, label, expected) {
   ]);
 
   const dark = theme.appearance === 'dark';
-  assert(renderer.themeId === expected.themeId, `${label} theme mismatch`, renderer);
+  assert(
+    renderer.themeId === expected.themeId,
+    `${label} theme mismatch`,
+    renderer
+  );
   assert(
     renderer.appearance === theme.appearance,
     `${label} appearance mismatch`,
@@ -232,7 +236,11 @@ async function inspectRenderer(app, page, label, expected) {
     `${label} BrowserWindow bootstrap background mismatch`,
     native
   );
-  assert(native.dark === dark, `${label} main native appearance mismatch`, native);
+  assert(
+    native.dark === dark,
+    `${label} main native appearance mismatch`,
+    native
+  );
   assert(
     renderer.native?.dark === dark,
     `${label} preload native appearance mismatch`,
@@ -278,7 +286,10 @@ async function inspectRenderer(app, page, label, expected) {
 
   if (expected.settingsAppearance === null) {
     assert(
-      !Object.prototype.hasOwnProperty.call(renderer.settings ?? {}, 'appearance'),
+      !Object.prototype.hasOwnProperty.call(
+        renderer.settings ?? {},
+        'appearance'
+      ),
       `${label} turned a missing preference into durable settings`,
       renderer.settings
     );
@@ -309,7 +320,15 @@ async function inspectRenderer(app, page, label, expected) {
 }
 
 async function launch(
-  { label, userData, osAppearance, startupThemeId, startupSource, mockAuto, args },
+  {
+    label,
+    userData,
+    osAppearance,
+    startupThemeId,
+    startupSource,
+    mockAuto,
+    args,
+  },
   body
 ) {
   return withElectronApp(
@@ -355,10 +374,29 @@ async function launch(
 
       if (mockAuto) await setMockSystemAppearance(app, osAppearance);
       // withElectronApp resolves after the initial window has begun loading,
-      // so addInitScript cannot observe that document retroactively. Reload
-      // once through the same top-level preload/navigation boundary and trace
-      // the authoritative bootstrap before its body exists.
+      // so addInitScript cannot observe that document retroactively. Let that
+      // navigation reach its own DOM boundary before replacing it; otherwise
+      // a fast firstWindow event can make reload race loadURL and abort before
+      // a second request is issued. Reload once through the same top-level
+      // preload/navigation boundary and trace the authoritative bootstrap
+      // before its body exists.
+      await page.waitForURL(`${BASE}/workspace`, {
+        waitUntil: 'domcontentloaded',
+      });
+      const preferencesLoaded = page.waitForResponse(response => {
+        const request = response.request();
+        return (
+          request.method() === 'POST' &&
+          new URL(response.url()).pathname === '/workspace'
+        );
+      });
       await page.reload({ waitUntil: 'domcontentloaded' });
+      // The Workspace mounts server-backed preference providers after DOM
+      // readiness. Observe its preference action response before a short
+      // appearance scenario closes its window, or teardown can manufacture an
+      // unrelated `Failed to fetch` console error after every appearance
+      // assertion passed.
+      await preferencesLoaded;
       const result = await body(app, page, startup);
       assert(
         rendererErrors.length === 0,
@@ -667,7 +705,10 @@ try {
     async (_app, page) => {
       await page.locator('[data-command-altitude]').waitFor();
       await page.evaluate(preferences => {
-        localStorage.setItem('exawatt.appearance.v1', JSON.stringify(preferences));
+        localStorage.setItem(
+          'exawatt.appearance.v1',
+          JSON.stringify(preferences)
+        );
       }, manualPreferences('exawatt-classic-dark'));
     }
   );

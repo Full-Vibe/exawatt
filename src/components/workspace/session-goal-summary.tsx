@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { WORKSPACE_HUD as HUD } from './workspace-theme';
 
 /**
  * The durable Session context cue shared by Terminal chrome and comparison
@@ -7,12 +8,10 @@ import { cn } from '@/lib/utils';
  */
 export function SessionGoalSummary({
   summary,
-  color,
   size = 'chrome',
   className,
 }: {
   summary: string;
-  color: string;
   size?: 'chrome' | 'comparison';
   className?: string;
 }) {
@@ -25,7 +24,7 @@ export function SessionGoalSummary({
         size === 'comparison' ? 'text-base leading-6' : 'text-chrome-label',
         className
       )}
-      style={{ color: `${color}${size === 'comparison' ? 'E6' : 'B0'}` }}
+      style={{ color: HUD.text }}
     >
       {summary}
     </span>

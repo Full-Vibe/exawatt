@@ -285,7 +285,32 @@ text node. Content, header/footer, and pending UI opt into the shared semantic
 boundary. `eval:typography-stability` must hold identical computed metrics while
 Air/Classic/Night and 90/100/120% app-root inputs are deliberately perturbed.
 
+### Appearance snapshot consistency
+
+An application surface consumes one resolved appearance snapshot at a time.
+Local preview/commit/cancel intent is immediate. Preference or OS/native events
+originating outside the current React tree are transport streams: coalesce them
+for 250 ms, publish only the final validated snapshot, and retain object
+identity when its semantic value did not change. A web storage subscriber does
+not rewrite its input; Electron may mirror the final settled settings snapshot
+for the next first paint without writing back to the settings source.
+
+Theme-aware surfaces should not pin local typography or paint to hide source
+churn. The Goal Visuals workbench remains theme-aware because it reviews the
+real Team tile; `eval:goal-visuals-stability` proves that 60 cross-tab
+Air/Classic/Night and 90–120% writes produce only an initial and final root
+snapshot, never an intermediate layout storm.
+
 ### Amendment log
+
+- 2026-08-04 — ENG-032 T5.4 cross-context appearance incident closure:
+  external web/Electron preference and OS/native streams now settle for 250 ms
+  and publish only their final distinct snapshot; local theme intent remains
+  immediate; web subscription events do not rewrite their input, while
+  Electron mirrors only the final settled settings snapshot for first paint.
+  The Goal Visuals workbench adds decode-before-commit, paint containment, Air
+  readable-role compliance, and narrow-viewport gates. Incident `0005` carries
+  the two-context reproduction and five-whys.
 
 - 2026-08-03 — ENG-032 T5.3 public typography incident closure: completed the
   fixed public-exhibition boundary after production metric evidence showed

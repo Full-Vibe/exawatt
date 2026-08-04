@@ -1,10 +1,7 @@
 'use client';
 
 import { Shapes, Target } from 'lucide-react';
-import {
-  WORKSPACE_HUD as HUD,
-  withThemeAlpha,
-} from './workspace-theme';
+import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import {
   FLUX_CSS as FLUX,
   exact,
@@ -185,7 +182,6 @@ export function SessionOverviewCardContent({
           {titleIsContext ? (
             <SessionGoalSummary
               summary={title}
-              color={color}
               size="comparison"
               className="max-w-full"
             />
@@ -201,7 +197,6 @@ export function SessionOverviewCardContent({
           {context && (
             <SessionGoalSummary
               summary={context}
-              color={color}
               className={`mt-0.5 max-w-full text-sm leading-5${
                 // The context cue also yields its second line while the rail
                 // is up — identity stays present, the team gets the room.

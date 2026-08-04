@@ -237,6 +237,14 @@ Agents advancing the same Initiative and performs no generation I/O. The
 operator chose direct live dogfood over the planned gallery review; the gallery
 comparison remains a reversible follow-up, not a second source of truth.
 
+Follow-up, 2026-08-04: incident `0005` separated a provider-wide appearance
+storm from the Goal Visuals asset path. The comparison bench now decodes all
+nine valid studies before one React commit replaces deterministic fallbacks,
+contains each tile's paint, keeps Project identity out of readable goal copy in
+Air, and adapts below the reviewed 272px desktop geometry without horizontal
+overflow. `eval:goal-visuals-stability` owns the idle, cross-tab storm,
+contrast, decorative-image, and 320px gates; the study remains review-only.
+
 Operator amendment, 2026-08-03: a device-local **Agent tile backgrounds**
 control in Settings → Preferences defaults on. Turning it off immediately
 hides cached imagery and prevents future generation requests; turning it back

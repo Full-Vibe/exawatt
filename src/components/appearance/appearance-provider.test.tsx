@@ -7,16 +7,19 @@ import {
   selectManualTheme,
 } from '@/lib/appearance';
 import { APPEARANCE_MIRROR_STORAGE_KEY } from '@/lib/appearance/preference-source';
-import { AppearanceProvider, useAppearance } from './appearance-provider';
+import {
+  AppearanceProvider,
+  EXTERNAL_APPEARANCE_SETTLE_MS,
+  useAppearance,
+} from './appearance-provider';
 
 const { appliedThemes } = vi.hoisted(() => ({
   appliedThemes: vi.fn(),
 }));
 
 vi.mock('@/lib/appearance/dom-adapter', async importOriginal => {
-  const actual = await importOriginal<
-    typeof import('@/lib/appearance/dom-adapter')
-  >();
+  const actual =
+    await importOriginal<typeof import('@/lib/appearance/dom-adapter')>();
   return {
     ...actual,
     applyResolvedAppearance: (
@@ -45,6 +48,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   delete window.electron;
   window.localStorage.clear();
   document.documentElement.removeAttribute('style');
@@ -83,6 +87,11 @@ describe('AppearanceProvider', () => {
     expect(document.documentElement.dataset.exaTheme).toBe(
       'exawatt-classic-dark'
     );
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(APPEARANCE_MIRROR_STORAGE_KEY) ?? 'null'
+      )
+    ).toEqual(classic);
 
     act(() => view.result.current.previewTheme('exawatt-classic-dark'));
     expect(setAppearance).not.toHaveBeenCalled();
@@ -176,5 +185,61 @@ describe('AppearanceProvider', () => {
     expect(window.matchMedia).not.toHaveBeenCalledWith(
       '(prefers-color-scheme: dark)'
     );
+  });
+
+  it('publishes only the final snapshot from a burst of external renderer settings', async () => {
+    let onSettingsChanged:
+      | ((settings: { appearance: typeof classic }) => void)
+      | undefined;
+    const air = selectManualTheme(classic, 'exawatt-air-light');
+    const night = selectManualTheme(classic, 'exawatt-night-dark');
+    window.electron = {
+      isElectron: true,
+      platform: 'darwin',
+      settings: {
+        get: vi.fn().mockResolvedValue({ appearance: classic }),
+        setAppearance: vi.fn(),
+        onChanged: vi.fn(handler => {
+          onSettingsChanged = handler;
+          return vi.fn();
+        }),
+      },
+      app: {
+        bootstrapAppearance: {
+          preferences: classic,
+          dark: true,
+          safeTheme: false,
+        },
+        appearance: vi.fn(() => new Promise(() => undefined)),
+        onAppearanceChanged: vi.fn(() => vi.fn()),
+      },
+    } as unknown as NonNullable<Window['electron']>;
+
+    const view = renderHook(() => useAppearance(), { wrapper });
+    await waitFor(() => expect(view.result.current.ready).toBe(true));
+    expect(onSettingsChanged).toBeTypeOf('function');
+    appliedThemes.mockClear();
+    vi.useFakeTimers();
+
+    act(() => {
+      onSettingsChanged?.({ appearance: air });
+      onSettingsChanged?.({ appearance: classic });
+      onSettingsChanged?.({ appearance: night });
+    });
+    expect(view.result.current.resolved.themeId).toBe('exawatt-classic-dark');
+    expect(appliedThemes).not.toHaveBeenCalled();
+
+    act(() => vi.advanceTimersByTime(EXTERNAL_APPEARANCE_SETTLE_MS - 1));
+    expect(view.result.current.resolved.themeId).toBe('exawatt-classic-dark');
+
+    act(() => vi.advanceTimersByTime(1));
+    expect(view.result.current.resolved.themeId).toBe('exawatt-night-dark');
+    expect(appliedThemes).toHaveBeenCalledTimes(1);
+    expect(appliedThemes).toHaveBeenLastCalledWith('exawatt-night-dark');
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(APPEARANCE_MIRROR_STORAGE_KEY) ?? 'null'
+      )
+    ).toEqual(night);
   });
 });
