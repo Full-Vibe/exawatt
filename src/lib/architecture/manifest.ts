@@ -634,7 +634,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Registry + Adapters',
           summary:
-            'One generated declaration contract plus Electron-main runtime observations power Settings and the Agent composer. Claude Code, Codex, and OpenCode are launch-capable local adapters; OpenCode uses a guarded unique launch agent for exact model, variant, and policy without replacing user config. Observed, declared, and simulated evidence stay distinct, and Electron revalidates every Agent launch without exposing provider credentials.',
+            'One generated declaration contract plus Electron-main runtime observations power Settings and the Agent composer. Claude Code, Codex, and OpenCode are launch-capable local adapters; subscription-backed and API-backed entitlement remain source-owned modes rather than Exawatt billing. Observed, declared, and simulated evidence stay distinct, and Electron revalidates every Agent launch without exposing provider credentials.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,
@@ -658,7 +658,7 @@ export const architectureManifest = {
           id: 'decision-context-layer',
           label: 'Decision / Context Layer',
           summary:
-            'Scoped decisions, approvals, context, policy hierarchy, evidence, assurance, and consumption controls.',
+            'Scoped decisions, approvals, context, policy hierarchy, evidence, assurance, and explainable Session-continuity projections.',
           layer: 'coordination',
           status: 'designed',
           x: 342,
@@ -896,7 +896,10 @@ export const architectureManifest = {
     'Goal visuals are quiet projections of accepted Session context: semantic pivots own revision cadence, server-only generation owns provider credentials, and Demo/Live share deterministic fallback behavior.',
     'Product feedback is explicit authenticated evidence with row ownership and private attachments; inference evidence is not persisted as feedback automatically.',
     'Public operator statistics are an opt-in aggregate projection over local Session and Consumption facts: preview stays local, uploads are allowlisted, and disabling public visibility leaves local history untouched.',
+    'Session-continuity diagnostics are local, explainable projections over evidence; hosted systems may aggregate them but never replace their semantics with an opaque health score.',
     'Agent sources are replaceable harnesses behind explicit adapters.',
+    'Coding is the first dogfood workload, not the Agent boundary; compatible non-coding sources use the same command and evidence contracts.',
+    'Source entitlement and Consumption are separate: a compatible subscription-backed harness does not require Exawatt API billing, and unreported plan headroom stays unknown.',
     'A new Agent launch shows and pins the source-resolved model/effort pair; per-Agent overrides do not rewrite harness configuration, and dominant environment constraints stay explicit.',
     'Recent conversation discovery is Project-scoped, local-first, and source-neutral; exact identity reconciles Exawatt Session history with harness history before optional hosted title augmentation.',
     'Launch permission policy is source-agnostic and provider-enforced today; adapters translate visible personal Project defaults without silent escalation.',

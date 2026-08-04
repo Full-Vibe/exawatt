@@ -142,6 +142,15 @@ budgets, approvals, and consumption records.
 
 This layer also owns UI-facing view models and command contracts that are shared by multiple UI regimes. These presentation models must be source-agnostic, deterministic, pure TypeScript, and testable without React, DOM, Electron, or Three.js.
 
+Session-continuity diagnostics are a local, explainable projection owned here,
+not an opaque source status and not a hosted-control-plane invention. The
+projection may combine source-observed Events, Consumption, intervention
+patterns, compaction boundaries, declared plan/progress state, and
+completion/review Artifacts. Every signal retains its basis and freshness; a
+small repeatable harness-aware probe may add evidence about one capability but
+can never certify the quality of all work. A hosted control plane may aggregate
+the same projection across a Workspace without changing its semantics.
+
 Session context inference follows one source-agnostic evidence contract. The
 desktop supplies bounded, redacted operator instructions through trusted IPC;
 an authenticated hosted endpoint applies quota and server-held model
@@ -324,7 +333,13 @@ reconciliation loop that also wakes when the app regains focus. The loop ends
 only when the source is launchable or its retry budget is exhausted; provider
 tokens do not cross into the renderer or Exawatt storage. Missing local CLIs
 offer a fixed, adapter-declared installation guide rather than a nonfunctional
-connection action. Remote Gateway and future
+connection action. Subscription-backed harness entitlement and
+metered API authentication are distinct source-owned modes; Exawatt does not
+require the latter when the former makes the harness launchable. Consumption
+observation remains a separate evidence channel and must not be used to infer
+the source's billing mode or unreported plan headroom.
+
+Remote Gateway and future
 custom-source credentials may be held as narrowly scoped OS-keychain connection
 material behind Electron main. That is an explicit seam, not ENG-009's general
 Secrets/Credentials broker.

@@ -28,6 +28,12 @@ Settings checks again while the flow completes; a missing CLI links to its
 installation guide. Registry failures remain visibly stale or unavailable and
 cannot enable Agent launch.
 
+Exawatt uses the local harness account you already signed in with. When Claude
+Code or Codex is entitled through a compatible subscription plan, you do not
+need to switch to API billing or add a separate provider token to Exawatt;
+normal provider plan limits still apply. Exawatt never turns an observed token
+count into a claim about billing or remaining plan capacity.
+
 The ribbon keeps Project structure compact. The selected Project expands to
 show its Initiative-shaped Agent tabs; inactive Projects stay collapsed unless
 you use the small diamond or **Keep expanded** menu action. That preference

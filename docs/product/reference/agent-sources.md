@@ -46,6 +46,14 @@ source credentials may be stored as narrowly scoped connection material in the
 operating system keychain. This is distinct from ENG-009's future general
 Secrets/Credentials broker for Agent tool use.
 
+That source-owned path includes eligible subscription-backed accounts. A user
+who signs Claude Code or Codex in through a compatible paid plan can launch the
+same local harness from Exawatt without adding a provider API key or buying a
+separate Exawatt token balance. The provider's plan limits still govern the
+harness. Authentication/entitlement and Consumption telemetry stay separate:
+Exawatt must not infer a billing mode from observed tokens or claim plan
+headroom that the source does not report.
+
 Global source facts and Project-effective launch configuration appear at their
 proper scopes. The registry can show the account identity and default; the
 Agent composer shows the model and effort that the current Project will
@@ -112,6 +120,11 @@ choices persist together.
 Near-term Claude Code and Codex Sessions are PTY-backed. That transport is an
 implementation detail, not a requirement for future sources. Shells remain
 secondary Project tools.
+
+Coding is likewise the current dogfood workload, not a source-category
+boundary. Research, marketing, operations, and other non-coding Agents should
+enter through the same launch and observation contracts whenever their source
+exposes compatible commands and evidence.
 
 Source recommendations are personal and reversible. Exawatt may remember the
 last source used per Project and fall back to personal recency, but must not
