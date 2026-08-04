@@ -65,6 +65,13 @@ problem rather than isolated unlucky landings:
   so an agent's wait time does not preserve its place
 - 143 Codex compactions appeared in the sample; repeated verification and
   wait/rebase cycles are consuming both machine time and agent context
+- the local-queue decision amendment reproduced the retry trap live: its first
+  landing waited about ninety seconds, stopped because `master` moved, rebased,
+  reran all 46 delivery tests, then failed because `agent:land` uses an ordinary
+  push for the already-published agent branch whose history the prescribed
+  rebase rewrote. The legacy recovery path needs a lease-protected candidate
+  update or unique attempt ref; the queue path avoids the trap by never
+  rewriting a submitted candidate
 
 The GitHub side is amplifying the local loop. The latest 100 CI runs inspected
 were all post-push runs rather than pull-request gates. Of the 98 completed
@@ -126,56 +133,88 @@ queue cannot starve dogfood. A new commit may make another build necessary,
 but never makes integration wait for the current build. Atomic install and
 signature verification remain unchanged.
 
-## Queue backend decision boundary
+## Queue backend — operator decision 2026-08-03
 
-The sequencing contract is intentionally backend-neutral so the first mile
-does not hard-code today's hosting plan:
+Build the lightweight coordination layer in the repository. The operator does
+not want a paid GitHub plan or a hosted merge-queue dependency; this explicitly
+supersedes the same-day recommendation to trial Mergify, regardless of its
+current free tier. Pull requests are not required for machine-only delivery.
 
-- GitHub's native merge queue is not available to this private organization
-  repository on GitHub Free; private organization repositories require
-  Enterprise Cloud. Buying Enterprise solely for this queue is not justified.
-- GitHub Team adds enforceable private-repo branch protection and 3,000 Actions
-  minutes, but does not unlock the native private-repo merge queue.
-- Mergify currently includes merge queues, batching, parallel checks, and
-  two-step CI for private teams with up to five active contributors at no
-  charge. It is the first hosted proof candidate, subject to an explicit app
-  installation/security review and a reversible trial.
-- A repository-local FIFO coordinator remains the fallback and the initial
-  contract test double. It avoids a vendor but is only authoritative while all
-  writers share this machine, and it would make Exawatt maintain queue recovery,
-  status publication, and fairness machinery already available elsewhere.
+The first-mile backend is machine-local because today's competing agents and
+worktrees share one Mac:
 
-The recommended proof is therefore PR-backed Mergify with queue width one,
-while preserving the backend seam and the operator-only direct-push recovery
-path. Do not install the GitHub App or change merge authority until H7 makes CI
-green and the operator approves the requested repository permissions.
+- queue records, coordinator lease/heartbeat, terminal results, and append-only
+  metrics live under the repository's common Git directory, shared by every
+  worktree but never committed
+- every submitted candidate is pushed first to its immutable remote `agent/*`
+  branch, so a local process crash cannot lose the code even though queue order
+  itself is local
+- a very short queue-admission critical section allocates monotonic tickets;
+  verification and integration never run while that admission lock is held
+- one detached, short-lived coordinator is elected with a recoverable lease;
+  it drains the queue and exits rather than becoming a daemon. Any waiting
+  `agent:land` process may restart it after a stale heartbeat
+- the coordinator owns an isolated reusable gate worktree. For each ticket it
+  reconstructs the candidate's submitted commits on the latest accepted
+  `master`, records conflicts as a terminal candidate failure, runs the policy
+  gate on that exact tree, and advances `master` with a normal non-force push;
+  if an external writer moves the remote during the gate, the coordinator
+  invalidates that evidence and retries the ticket on the new base rather than
+  sending the author through another rebase cycle
+- the submitting `agent:land` waits on its durable result record so it can
+  report `integrated` precisely, but it does not rebase, rerun, or hold the
+  sequencer. Multiple waiters can monitor/recover the same coordinator safely
+- the current guarded direct fast-forward implementation remains an
+  operator-only recovery mode during rollout
+
+The queue interface remains transport-neutral at its boundary so a future
+multi-machine fleet can replace local storage with a remote sequencer. That is
+architectural room, not active hosted work.
+
+Keep this infrastructure small: no HTTP service, database, always-on daemon,
+queue UI, pull-request automation, or second package command. The implementation
+is a ticket store, a recoverable worker, the exact-tree policy, and tests behind
+the existing `agent:land` command.
+
+GitHub Actions may continue using the repository's included Free-plan minutes
+for a Linux exact-candidate check: the coordinator pushes a disposable gate ref
+and waits for its status before advancing the identical SHA. Repository policy
+decides when that platform check is material; documentation-only candidates do
+not consume a full hosted matrix. H7 measures minutes and keeps platform gates
+inside the included allowance through change policy and, once proven safe,
+batching. If projected use exceeds that allowance, the gate pauses or is
+reshaped explicitly; it never buys an overage or silently drops required
+evidence. No queue milestone assumes paid Actions capacity.
 
 ## Active milestone plan
 
 - **H7 CI truth and measurement:** classify the current CI failures, repair the
-  Linux baseline, add cancellation for obsolete candidate runs, and record
-  queue wait, candidate/gate duration, stale-stop count, gate failures, Actions
-  minutes, and dogfood freshness. Exit when ten consecutive current-master
-  full gates are green and the measurements are emitted from one schema.
-- **H8 Shadow queue:** extract queue and fairness behavior behind an internal
-  module used by `agent:land`; exercise FIFO order, crash recovery, candidate
-  cancellation, and an operator-only bypass in temp repositories. Mirror real
-  submissions without changing their current integration path, and validate
-  the hosted configuration with its simulator before granting merge authority.
-  Exit when submissions retain order without keeping the submitting process
-  alive and a killed coordinator resumes without duplicating integration.
+  Linux baseline and the legacy rebase/remote-candidate retry trap, add
+  cancellation for obsolete candidate runs, and record queue wait,
+  candidate/gate duration, stale-stop count, gate failures, Actions minutes,
+  and dogfood freshness. Exit when ten consecutive current-master full gates
+  are green and the measurements are emitted from one schema.
+- **H8 Local shadow queue:** extract ticket storage, the coordinator lease, and
+  terminal result records behind internal modules used by `agent:land`;
+  exercise FIFO order, crash recovery, candidate cancellation, and an
+  operator-only bypass in temp repositories. Mirror real submissions without
+  changing their current integration path. Exit when tickets retain order, a
+  killed coordinator resumes without duplicating integration, and no orphaned
+  candidate can disappear without a terminal result.
 - **H9 Exact-candidate gate and policy:** move the verification floor into a
   repository-owned change classifier, with a small always-on safety spine and
   explicit conditional Electron, browser, R3F, CI, and documentation checks.
   Callers can request extras. Exit when only a commit that passed the declared
   policy on its current-base candidate can reach `master`, and the evidence is
   attached to that candidate identity.
-- **H10 PR-backed sequencer trial:** have the existing `agent:land` entrypoint
-  create/update the candidate envelope and enqueue it; start at queue width one
-  with batching off. Enable batching or speculative checks only after measured
-  green rate and queue latency justify them. Exit after 30 representative
-  landings with zero stale-base re-verification loops, zero red integrations,
-  and lower Actions minutes per integrated commit than the audit baseline.
+- **H10 Authoritative local sequencer:** have the existing `agent:land`
+  entrypoint push the immutable candidate, allocate a ticket, ensure the
+  short-lived coordinator is healthy, and wait for its result. Start at gate
+  width one with batching off. Enable batching or speculative checks only after
+  measured green rate and queue latency justify them. Exit after 30
+  representative landings with zero stale-base re-verification loops, zero red
+  integrations, successful coordinator crash recovery, and lower Actions
+  minutes per integrated commit than the audit baseline.
 - **H11 Supersedent dogfood:** remove dogfood from the master-delivery lock,
   coalesce Electron-facing requests on queue drain with a ten-minute ceiling,
   and build from an immutable integrated SHA. Exit when a burst of at least ten
@@ -183,9 +222,10 @@ green and the operator approves the requested repository permissions.
   the newest required snapshot, and never replaces the app with an unverified
   or unintended build.
 
-Rollback is one switch: pause hosted enqueue, drain or cancel queued
+Rollback is one switch: stop admitting local tickets, drain or cancel queued
 candidates, and return `agent:land` to the guarded direct fast-forward path.
-The existing delivery tests remain the recovery floor throughout the trial.
+Remote candidate branches remain recoverable throughout. The existing delivery
+tests remain the recovery floor during the rollout.
 
 ## Findings log
 

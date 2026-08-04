@@ -1,7 +1,7 @@
 # 0030 Sequence agent delivery and decouple dogfood
 
 Date: 2026-08-03
-Status: accepted architectural direction; hosted queue authority requires an operator-approved trial
+Status: accepted; local queue backend selected by operator 2026-08-03
 
 ## Context
 
@@ -46,15 +46,28 @@ checks but may not choose a weaker set. Verification evidence is attached to a
 candidate identity and exact tree, rather than reported as an unstructured list
 of scripts an agent happened to run.
 
-Keep the queue transport replaceable. The first hosted proof candidate is
-Mergify because its current free tier includes the full merge queue for private
-teams of up to five active contributors, whereas GitHub's native private-org
-queue requires Enterprise Cloud. Mergify is not granted merge authority by
-this decision: H7 must first restore a green CI baseline, then H8 runs it in
-simulation while the internal shadow queue mirrors real submissions, and the
-operator approves the GitHub App permissions before H10 begins. A
-repository-local FIFO backend is the contract test double and fallback, not
-the preferred permanent coordinator.
+Keep the queue transport replaceable, but build the first authoritative backend
+locally. On 2026-08-03 the operator rejected buying queue infrastructure and
+chose a lightweight owned coordinator over the same-day Mergify recommendation:
+*"No I don't want to buy anything, we can build the lightweight infra we
+need."* This rejects the hosted dependency as well as a paid GitHub upgrade;
+Mergify's free tier does not change the selected direction.
+
+The local backend stores monotonic tickets, a recoverable coordinator lease,
+terminal results, and metrics under the common Git directory. It pushes the
+immutable remote candidate branch before admission, reconstructs each ticket
+on the latest accepted base in an isolated gate worktree, and advances `master`
+only after the exact-tree policy passes. The elected coordinator is short-lived
+and exits after queue drain; it is not a daemon. Waiting `agent:land` processes
+may recover a stale coordinator and read the same durable result safely.
+
+GitHub Actions remains an optional platform gate using only included Free-plan
+minutes: for material candidates, the coordinator may push a disposable gate
+ref and require a green Linux result for that identical SHA. The queue must
+remain correct without paid minutes, and documentation-only changes do not run
+the full hosted matrix. H7 owns usage measurement; projected exhaustion pauses
+or explicitly reshapes the platform gate rather than purchasing an overage or
+silently weakening required evidence.
 
 Retain an explicit operator-only guarded direct fast-forward path for incidents
 and rollback. It is a recovery mechanism, not a second normal delivery path.
@@ -63,14 +76,16 @@ and rollback. It is a recovery mechanism, not a second normal delivery path.
 
 - Agents stop spending context on repeated wait/rebase/full-verify loops; a
   failed candidate reports once and the next queue entry proceeds.
-- Pull requests may become normal machine-generated delivery envelopes even
-  without human review. This is intentional traceability, not a return to a
-  human approval bottleneck.
+- Pull requests are unnecessary for machine-only delivery. Immutable remote
+  candidate branches plus local ticket/result records provide the traceability
+  this first mile needs without adding a second operator inbox.
 - GitHub Free cannot enforce branch protection for this private repository, so
-  the trial initially relies on the repository contract to prevent ordinary
-  direct pushes. GitHub Team is the smallest later upgrade that adds
-  enforceable private-repo protection, but it still does not provide GitHub's
-  native private-org merge queue.
+  the repository contract prevents ordinary direct pushes and the remote's
+  normal non-fast-forward refusal is the final race guard. This is an accepted
+  machine-local limitation, not a reason to purchase Team.
+- A local queue is authoritative only while all writers share the common Git
+  directory. Remote/multi-machine writers require a future backend, but the
+  candidate/gate/post contracts do not change.
 - CI must be repaired and split into candidate/gate responsibilities before
   queue authority moves. A red post-merge suite is evidence, not a gate.
 - Existing immutable build snapshots, atomic app replacement, stable signing,
@@ -92,10 +107,14 @@ and rollback. It is a recovery mechanism, not a second normal delivery path.
   disproportionate on the current private-org Free plan because it requires
   Enterprise Cloud.
 - **GitHub Team plus branch protection.** Useful enforcement, not a sequencer;
-  keep as a later hardening choice if the PR-backed trial proves valuable.
-- **Permanent repository-local coordinator.** Viable while every writer shares
-  one Mac, but makes Exawatt own recovery, status, and fairness infrastructure
-  and does not extend naturally to remote agents.
+  rejected by the operator for this problem because the queue must not require
+  a purchase.
+- **Mergify.** Its free tier made it a plausible first recommendation, but the
+  operator selected owned lightweight infrastructure and no hosted queue
+  dependency. Rejected for the active plan.
+- **Permanent always-on local daemon.** Rejected: an elected worker can recover,
+  drain, and exit, avoiding another background service while all current
+  writers already share one machine.
 - **Dogfood every integrated commit.** Rejected: installation is a latest-state
   artifact, and rebuilding intermediate master states adds latency without
   improving integration safety.
