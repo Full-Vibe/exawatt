@@ -208,7 +208,10 @@ const DEFAULTS = {
   maxFleetPiecesPerZone: 64,
   maxProjectPieces: 120,
   fleetAgentLabelLimit: 8,
-  projectAgentLabelLimit: 32,
+  // A few persistent goal labels establish identity; every remaining Agent
+  // reveals the same goal/activity copy on hover, focus, or selection. Higher
+  // budgets turn a compact Project into an unreadable stack of DOM cards.
+  projectAgentLabelLimit: 4,
 } as const;
 
 const STATUS_ORDER: AgentStatus[] = [
@@ -372,7 +375,10 @@ function projectZoneRect(
 }
 
 /** Circular footprint for aggregate density at focused Project altitude. */
-function densityZoneRect(agentCount: number): SpatialBoardRect {
+function densityZoneRect(
+  slotIndex: number,
+  agentCount: number
+): SpatialBoardRect {
   const contentRadius = Math.sqrt(
     (Math.min(agentCount, 4_000) * SPATIAL_DENSITY_ZONE_PITCH ** 2 * 1.25) /
       Math.PI
@@ -381,7 +387,12 @@ function densityZoneRect(agentCount: number): SpatialBoardRect {
     BOARD.fleetMinRadius,
     contentRadius + BOARD.zoneLabelClearance + BOARD.zonePadding
   );
-  return circleRect(radius, radius, radius);
+  const fleetRect = fleetZoneRect(slotIndex, agentCount);
+  return circleRect(
+    fleetRect.x + fleetRect.width / 2,
+    fleetRect.y + fleetRect.height / 2,
+    radius
+  );
 }
 
 function axialSlotOffset(
@@ -791,7 +802,7 @@ export function selectSpatialBoardLayout(
     const rect = !detailed
       ? fleetZoneRect(slotIndex, group.agentIds.length)
       : group.agentIds.length > maxProjectPiecesBudget
-        ? densityZoneRect(group.agentIds.length)
+        ? densityZoneRect(slotIndex, group.agentIds.length)
         : projectZoneRect(slotIndex, group.agentIds.length);
     return projectZone(
       group,

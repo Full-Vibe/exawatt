@@ -15,12 +15,12 @@ almost no information — identity, goal, and activity all live in scattered
 edge chrome the operator reports never using.
 
 Asked what the board should feel like, the operator named the comp directly:
-*"I'm envisioning Starcraft manipulating units on the map… Maybe the scroll
+_"I'm envisioning Starcraft manipulating units on the map… Maybe the scroll
 wheel, trackpad, pans around and then click and drag draws selection boxes,
-just like Command and Conquer Unit Control would."* And on rendering: *"the
+just like Command and Conquer Unit Control would."_ And on rendering: _"the
 noun primitives just look super low quality and basic. Just boxes with
 background colors — we chose R3F/WebGL for a reason, and that was to push the
-UI more."*
+UI more."_
 
 ## Decision
 
@@ -50,7 +50,7 @@ coherently rather than piecemeal:
 
 - Decision `0007` holds in full: no free orbit, no immersive-world motifs,
   deterministic top-down/fixed-angle projections, layout stays in
-  `@exawatt/ui-model`. An RTS *control grammar* on a tactical board is the
+  `@exawatt/ui-model`. An RTS _control grammar_ on a tactical board is the
   opposite of the rejected free-camera world — the comp is StarCraft's
   command clarity, not its terrain fantasy.
 - Decision `0023`'s transition model (entry pose, directional fallback cut)
@@ -70,3 +70,26 @@ coherently rather than piecemeal:
   band selections are ephemeral).
 - The board owes the operator a visible selection rectangle, drawn in-world
   (WebGL), with the same damped feel as the rest of the camera model.
+
+## 2026-08-04 input and camera amendment
+
+Dogfood extends the decision without changing its RTS control model:
+
+- Pointer grammar is device-specific. Mouse/pen primary drag band-selects;
+  middle drag, WASD, and wheel/trackpad pan. Direct touch uses one-finger pan,
+  two-finger pinch zoom, and tap-to-select by default; an explicit **Select
+  units** mode arms touch band selection. This preserves direct manipulation
+  without making ordinary touch scrolling accidentally select a fleet.
+- Camera follow is a soft edge-buffer, not a center lock. Selection pans only
+  far enough to keep the Agent inside the viewport's safe interior. Manual pan
+  or zoom suspends follow; a visible reticle resumes it. Arrow selection never
+  inherits or initiates a zoom.
+- Altitude is resolution inside one board, not navigation to another map.
+  Transitions keep the current screen composition, apply one bounded semantic
+  zoom, retain neighboring Projects, and never perform a second Agent refit.
+  The minimap stays at Fleet resolution and projects the actual camera
+  footprint over that fixed world.
+
+These rules are implemented as pure camera/input policy plus a damped R3F
+adapter so future tuning can change constants and tested policy independently
+of the board's scene graph.

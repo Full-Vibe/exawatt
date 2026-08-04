@@ -6,6 +6,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type CSSProperties,
   type ReactNode,
 } from 'react';
@@ -24,8 +25,8 @@ import { useAgentFieldGlide } from '@/components/hud/webgl/use-agent-field-glide
 import {
   OperationsBoardCanvas,
   type OperationsBoardHandle,
-  type OperationsBoardViewport,
 } from './operations-board-canvas';
+import type { OperationsBoardViewport } from './operations-board-camera';
 import { RECENTER_SPATIAL_EVENT } from '@/components/nav/command-altitude-events';
 import { altitudeHandoffActive } from '@/components/nav/altitude-handoff';
 import { parseStoredViewport } from '../spatial-navigation-state';
@@ -41,6 +42,24 @@ import {
   spatialThemeFromResolvedAppearance,
   type SpatialThemeSnapshot,
 } from '../spatial-theme';
+
+function useCoarsePointer(): boolean {
+  const [coarse, setCoarse] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(pointer: coarse)').matches
+  );
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const query = window.matchMedia('(pointer: coarse)');
+    const update = () => setCoarse(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  return coarse;
+}
 
 function spatialMaterialFrame(theme: SpatialThemeSnapshot): CSSProperties {
   return {
@@ -371,6 +390,13 @@ export function OperationsBoardSurface({
     [resolved]
   );
   const controller = useRef<OperationsBoardHandle | null>(null);
+  const coarsePointer = useCoarsePointer();
+  const [followSelection, setFollowSelection] = useState(true);
+  const [touchSelectionMode, setTouchSelectionMode] = useState(false);
+  const suspendSelectionFollow = useCallback(
+    () => setFollowSelection(false),
+    []
+  );
   const viewportRect = useRef<SVGRectElement | null>(null);
   const bandOverlay = useRef<HTMLDivElement | null>(null);
   const pendingViewport = useRef<OperationsBoardViewport | null>(null);
@@ -379,6 +405,16 @@ export function OperationsBoardSurface({
   const visibleZones = useMemo(
     () => layout.zones.filter(zone => zone.visible),
     [layout.zones]
+  );
+  const accessibleAgents = useMemo(
+    () =>
+      layout.pieces
+        .filter(
+          piece =>
+            piece.visible && piece.kind === 'agent' && Boolean(piece.agentId)
+        )
+        .map(piece => ({ id: piece.agentId!, label: piece.label })),
+    [layout.pieces]
   );
   const attentionIds = useMemo(
     () =>
@@ -473,15 +509,6 @@ export function OperationsBoardSurface({
   );
 
   useEffect(() => {
-    const rect = viewportRect.current;
-    if (!rect) return;
-    rect.setAttribute('x', String(layout.cameraBounds.x));
-    rect.setAttribute('y', String(layout.cameraBounds.y));
-    rect.setAttribute('width', String(layout.cameraBounds.width));
-    rect.setAttribute('height', String(layout.cameraBounds.height));
-  }, [layout.cameraBounds]);
-
-  useEffect(() => {
     if (sessionTransitionAgentId) {
       controller.current?.enterSession(sessionTransitionAgentId);
     }
@@ -562,8 +589,8 @@ export function OperationsBoardSurface({
           direction
         );
         if (agentId) {
-          onMoveAgentSelection?.(agentId);
           controller.current?.focusAgent(agentId);
+          onMoveAgentSelection?.(agentId);
         }
         event.preventDefault();
       }
@@ -610,6 +637,42 @@ export function OperationsBoardSurface({
         color: theme.label,
       }}
     >
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {layout.selectedAgentId
+          ? `Selected Agent: ${
+              layout.pieces.find(
+                piece => piece.agentId === layout.selectedAgentId
+              )?.label ?? layout.selectedAgentId
+            }`
+          : 'No Agent selected'}
+      </span>
+      {accessibleAgents.length > 0 && (
+        <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 motion-reduce:transition-none">
+          <select
+            data-board-agent-navigator
+            aria-label="Select Agent on board"
+            value={layout.selectedAgentId ?? ''}
+            onChange={event => {
+              const agentId = event.currentTarget.value;
+              if (!agentId) return;
+              controller.current?.focusAgent(agentId);
+              if (onMoveAgentSelection) onMoveAgentSelection(agentId);
+              else onSelectAgent(agentId);
+            }}
+            className="exa-material-chrome min-h-11 max-w-72 border px-3 font-mono text-chrome-meta outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            style={spatialMaterialFrame(theme)}
+          >
+            <option value="" disabled>
+              Select Agent…
+            </option>
+            {accessibleAgents.map(agent => (
+              <option key={agent.id} value={agent.id}>
+                {agent.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <div className="absolute inset-0">
         <BoardErrorBoundary theme={theme}>
           <OperationsBoardCanvas
@@ -626,6 +689,9 @@ export function OperationsBoardSurface({
             onToggleZoneSelect={onToggleZoneSelect}
             onBandSelect={onBandSelect}
             bandOverlayRef={bandOverlay}
+            followSelection={followSelection}
+            touchSelectionMode={touchSelectionMode}
+            onManualCameraInput={suspendSelectionFollow}
             preserveDrawingBuffer={preserveDrawingBuffer}
             theme={theme}
           />
@@ -703,10 +769,14 @@ export function OperationsBoardSurface({
           {layout.altitude === 'fleet' && (
             <KeyHint keyName="1–9" label="Project" theme={theme} />
           )}
-          <KeyHint keyName="←↑↓→" label="Agents" theme={theme} />
-          <KeyHint keyName="drag WASD" label="pan" theme={theme} />
+          <KeyHint keyName="←↑↓→" label="select" theme={theme} />
+          <KeyHint
+            keyName={coarsePointer ? 'drag' : 'wheel WASD middle-drag'}
+            label="pan"
+            theme={theme}
+          />
           <KeyHint keyName="pinch + −" label="zoom" theme={theme} />
-          {onBandSelect && (
+          {onBandSelect && !coarsePointer && (
             <KeyHint keyName="drag" label="select" theme={theme} />
           )}
           <KeyHint keyName="V" label="view" theme={theme} />
@@ -721,6 +791,26 @@ export function OperationsBoardSurface({
         </div>
 
         <div className="absolute bottom-3 right-3 z-10 flex flex-row items-end gap-1.5 sm:flex-col">
+          {coarsePointer && onBandSelect && (
+            <button
+              type="button"
+              data-board-touch-select
+              aria-pressed={touchSelectionMode}
+              onClick={() => setTouchSelectionMode(value => !value)}
+              className="exa-material-chrome min-h-11 border px-3 font-mono text-chrome-micro font-semibold outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring"
+              style={
+                touchSelectionMode
+                  ? {
+                      ...spatialMaterialFrame(theme),
+                      background: theme.selection,
+                      color: theme.material.chrome.fallback,
+                    }
+                  : spatialMaterialFrame(theme)
+              }
+            >
+              Select units
+            </button>
+          )}
           <div
             className="exa-material-chrome flex border p-1"
             aria-label="Board projection"
@@ -775,6 +865,34 @@ export function OperationsBoardSurface({
               style={{ borderColor: theme.unitMuted, color: theme.selection }}
             >
               Center
+            </button>
+            <button
+              type="button"
+              aria-label={
+                followSelection ? 'Pause Agent follow' : 'Follow selected Agent'
+              }
+              aria-pressed={followSelection}
+              disabled={!layout.selectedAgentId}
+              onClick={() => {
+                if (followSelection) {
+                  setFollowSelection(false);
+                  return;
+                }
+                setFollowSelection(true);
+                if (layout.selectedAgentId) {
+                  controller.current?.focusAgent(layout.selectedAgentId, true);
+                }
+              }}
+              className="grid h-11 w-11 place-items-center border-r font-mono text-sm outline-none hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-35"
+              style={{
+                borderColor: theme.unitMuted,
+                color: followSelection ? theme.selection : theme.labelMuted,
+              }}
+              title={
+                followSelection ? 'Following selection' : 'Follow selection'
+              }
+            >
+              ◎
             </button>
             <button
               type="button"

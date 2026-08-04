@@ -39,12 +39,9 @@ await page.waitForFunction(() => {
 await page.waitForTimeout(1600);
 
 const viewportOf = () => {
-  const raw = window.sessionStorage.getItem(
-    Object.keys(window.sessionStorage).find(k =>
-      k.startsWith('exawatt:spatial-viewport')
-    ) ?? ''
-  );
-  return raw ? JSON.parse(raw) : null;
+  return window.__EVAL_BOARD_VIEWPORT__
+    ? { ...window.__EVAL_BOARD_VIEWPORT__ }
+    : null;
 };
 
 const before = await page.evaluate(viewportOf);
@@ -77,10 +74,18 @@ check(
 
 // pinch-zoom (ctrl+wheel) zooms in at cursor
 await page.mouse.move(800, 500);
-await page.mouse.wheel(0, -300).catch(() => {});
-await page.keyboard.down('Control');
-await page.mouse.wheel(0, -240);
-await page.keyboard.up('Control');
+await page.locator('canvas').evaluate(canvas => {
+  canvas.dispatchEvent(
+    new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 800,
+      clientY: 500,
+      ctrlKey: true,
+      deltaY: -240,
+    })
+  );
+});
 await page.waitForTimeout(700);
 const afterZoom = await page.evaluate(viewportOf);
 check(
@@ -113,6 +118,184 @@ await page.screenshot({ path: join(OUT, 'after-drill.png') });
 check('no page errors in nav probe', errors.length === 0);
 if (errors.length) console.log(errors.slice(0, 5));
 await page.close();
+
+// --- Touch context: direct pan/pinch plus explicit band-select mode ---
+const touchPage = await browser.newPage({
+  viewport: { width: 390, height: 844 },
+  isMobile: true,
+  hasTouch: true,
+});
+const touchErrors = [];
+touchPage.on('pageerror', e => touchErrors.push(String(e.message || e)));
+await touchPage.goto(`${BASE}/fleet/spatial`, { waitUntil: 'load' });
+await touchPage.waitForFunction(() => {
+  const canvas = document.querySelector('canvas');
+  return canvas && canvas.width > 0 && window.__EVAL_BOARD_VIEWPORT__;
+});
+await touchPage.waitForTimeout(1200);
+const touchCanvas = await touchPage.locator('canvas').boundingBox();
+const readClearTouchPoints = () =>
+  touchPage.evaluate(() => {
+    const canvas = document.querySelector('canvas');
+    const rect = canvas.getBoundingClientRect();
+    const points = [];
+    for (let y = rect.top + 18; y < rect.bottom - 18; y += 24) {
+      for (let x = rect.left + 18; x < rect.right - 18; x += 24) {
+        if (document.elementFromPoint(x, y) === canvas) points.push({ x, y });
+      }
+    }
+    return points;
+  });
+const clearTouchPoints = await readClearTouchPoints();
+if (clearTouchPoints.length < 2) {
+  throw new Error('Touch fixture has no clear board background gesture area');
+}
+const cdp = await touchPage.context().newCDPSession(touchPage);
+const touchDrag = async (from, to) => {
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [{ ...from, id: 1 }],
+  });
+  for (let step = 1; step <= 8; step += 1) {
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [
+        {
+          x: from.x + ((to.x - from.x) * step) / 8,
+          y: from.y + ((to.y - from.y) * step) / 8,
+          id: 1,
+        },
+      ],
+    });
+  }
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchEnd',
+    touchPoints: [],
+  });
+};
+const touchViewport = () =>
+  touchPage.evaluate(() => ({ ...window.__EVAL_BOARD_VIEWPORT__ }));
+const touchBefore = await touchViewport();
+await touchDrag(clearTouchPoints[Math.floor(clearTouchPoints.length / 2)], {
+  x: clearTouchPoints[Math.floor(clearTouchPoints.length / 2)].x + 90,
+  y: clearTouchPoints[Math.floor(clearTouchPoints.length / 2)].y,
+});
+await touchPage.waitForTimeout(700);
+const touchAfterPan = await touchViewport();
+check(
+  'one-finger touch drag pans',
+  Math.abs(touchAfterPan.centerX - touchBefore.centerX) > 0.5
+);
+
+const touchSelect = touchPage.locator('[data-board-touch-select]');
+await touchSelect.waitFor({ state: 'visible' });
+await touchSelect.click();
+check(
+  'touch selection mode is explicit',
+  (await touchSelect.getAttribute('aria-pressed')) === 'true'
+);
+const beforeTouchBand = await touchViewport();
+const selectionTouchPoints = await readClearTouchPoints();
+await touchDrag(selectionTouchPoints[0], {
+  x: touchCanvas.x + touchCanvas.width - 8,
+  y: touchCanvas.y + touchCanvas.height - 8,
+});
+await touchPage.waitForTimeout(700);
+const afterTouchBand = await touchViewport();
+const touchBandCount = Number(
+  await touchPage
+    .locator('[data-spatial-board]')
+    .getAttribute('data-board-multi-count')
+);
+check(
+  'touch selection mode keeps camera fixed',
+  Math.abs(afterTouchBand.centerX - beforeTouchBand.centerX) < 0.2 &&
+    Math.abs(afterTouchBand.centerY - beforeTouchBand.centerY) < 0.2
+);
+check('touch selection mode band-selects Agents', touchBandCount > 0);
+
+const pinchBefore = await touchViewport();
+const pinchTouchPoints = await readClearTouchPoints();
+let pinchPair = null;
+for (const first of pinchTouchPoints) {
+  for (const second of pinchTouchPoints) {
+    const distance = Math.hypot(second.x - first.x, second.y - first.y);
+    if (distance >= 48 && distance <= 96) {
+      pinchPair = [first, second];
+      break;
+    }
+  }
+  if (pinchPair) break;
+}
+if (!pinchPair) throw new Error('Touch fixture has no clear pinch start pair');
+const pinchCenter = {
+  x: (pinchPair[0].x + pinchPair[1].x) / 2,
+  y: (pinchPair[0].y + pinchPair[1].y) / 2,
+};
+const pinchDx = pinchPair[1].x - pinchPair[0].x;
+const pinchDy = pinchPair[1].y - pinchPair[0].y;
+await cdp.send('Input.dispatchTouchEvent', {
+  type: 'touchStart',
+  touchPoints: [
+    { ...pinchPair[0], id: 1 },
+    { ...pinchPair[1], id: 2 },
+  ],
+});
+for (let step = 1; step <= 8; step += 1) {
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchMove',
+    touchPoints: [
+      {
+        x: pinchCenter.x - pinchDx * (0.5 + step / 16),
+        y: pinchCenter.y - pinchDy * (0.5 + step / 16),
+        id: 1,
+      },
+      {
+        x: pinchCenter.x + pinchDx * (0.5 + step / 16),
+        y: pinchCenter.y + pinchDy * (0.5 + step / 16),
+        id: 2,
+      },
+    ],
+  });
+}
+await cdp.send('Input.dispatchTouchEvent', {
+  type: 'touchEnd',
+  touchPoints: [],
+});
+await touchPage.waitForTimeout(700);
+const pinchAfter = await touchViewport();
+check(
+  'two-finger touch pinch zooms',
+  pinchAfter.width < pinchBefore.width * 0.8
+);
+
+// Direct touch selection remains available after camera gestures. Use a
+// center whose topmost hit target is the Agent control so the probe tests the
+// same 44px tap boundary as an operator, not a forced DOM click.
+await touchSelect.click();
+await touchPage.keyboard.press('Digit1');
+await touchPage.waitForURL(/altitude=project/, { timeout: 10_000 });
+await touchPage.waitForTimeout(900);
+const tappableAgentId = await touchPage.evaluate(() => {
+  for (const element of document.querySelectorAll('[data-board-agent]')) {
+    const rect = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      rect.left + rect.width / 2,
+      rect.top + rect.height / 2
+    );
+    if (hit === element || element.contains(hit)) {
+      return element.getAttribute('data-board-agent');
+    }
+  }
+  return null;
+});
+if (!tappableAgentId) throw new Error('No Agent exposes a direct touch target');
+await touchPage.locator(`[data-board-agent="${tappableAgentId}"]`).tap();
+await touchPage.waitForURL(/altitude=agent/, { timeout: 10_000 });
+check('direct touch tap opens an Agent', true);
+check('no page errors in touch probe', touchErrors.length === 0);
+if (touchErrors.length) console.log(touchErrors.slice(0, 5));
+await touchPage.close();
 
 // --- Reduced-motion context ---
 const rmPage = await browser.newPage({

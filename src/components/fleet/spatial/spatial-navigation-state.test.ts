@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   parseStoredViewport,
   readSpatialFilters,
+  spatialFilterSignals,
   spatialViewportStorageKey,
+  toggleSpatialFilterSignal,
   writeSpatialFilters,
 } from './spatial-navigation-state';
 
@@ -34,6 +36,22 @@ describe('spatial navigation state', () => {
       query: '',
       statuses: [],
     });
+  });
+
+  it('maps the five visible signals to all six source statuses', () => {
+    expect(spatialFilterSignals(['working', 'reviewing', 'error'])).toEqual([
+      'active',
+      'fault',
+    ]);
+    expect(toggleSpatialFilterSignal([], 'active')).toEqual([
+      'working',
+      'reviewing',
+    ]);
+    expect(
+      toggleSpatialFilterSignal(['working', 'reviewing', 'complete'], 'active')
+    ).toEqual(['complete']);
+    expect(toggleSpatialFilterSignal([], 'result')).toEqual(['complete']);
+    expect(toggleSpatialFilterSignal([], 'fault')).toEqual(['error']);
   });
 
   it('keys camera memory by semantic board address', () => {

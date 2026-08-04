@@ -16,6 +16,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from 'react';
 import * as THREE from 'three';
 import type {
@@ -35,6 +36,7 @@ import {
 import {
   computePopulationDotField,
   POPULATION_STATUS_ORDER,
+  type PopulationDotField,
 } from './population-dots';
 import {
   ALTITUDE_HANDOFF_CROSSFADE_MS,
@@ -55,6 +57,23 @@ import {
   spatialStatusColor,
   type SpatialThemeSnapshot,
 } from '../spatial-theme';
+import {
+  applyBoardCameraTarget,
+  boardRectCenter as rectCenter,
+  boardViewportFromCamera,
+  clientPointToBoard,
+  createBoardProjectionScratch,
+  effectiveBoardCameraZoom,
+  fitBoardZoom,
+  fittedBoardCameraTarget,
+  semanticBoardCameraTarget,
+  softFollowBoardPoint,
+  type BoardCameraTarget,
+  type OperationsBoardViewport,
+} from './operations-board-camera';
+import { boardPointerAction, pinchZoomTarget } from './operations-board-input';
+
+export type { OperationsBoardViewport } from './operations-board-camera';
 
 const OperationsBoardEffects = lazy(() => import('./operations-board-effects'));
 
@@ -122,35 +141,18 @@ export interface OperationsBoardHandle {
   recenter(): void;
   restoreViewport(viewport: OperationsBoardViewport): void;
   focusProject(projectId: string): void;
-  focusAgent(agentId: string): void;
+  focusAgent(agentId: string, force?: boolean): void;
   enterSession(agentId: string): void;
   zoom(steps: number): void;
   pan(dx: number, dy: number): void;
   nudge(dx: number, dy: number, dollySteps: number, orbitRadians: number): void;
 }
 
-interface CameraTarget {
-  x: number;
-  y: number;
-  zoom: number;
-  tilt: number;
-}
-
-export interface OperationsBoardViewport {
-  centerX: number;
-  centerY: number;
-  width: number;
-  height: number;
-}
-
-function rectCenter(rect: SpatialBoardRect): { x: number; y: number } {
-  return { x: rect.x + rect.width / 2, y: -(rect.y + rect.height / 2) };
-}
-
 /** Camera speeds (damp lambda): FLIGHT for semantic moves (altitude change,
  *  drill, recenter — slower, reads as travel), NUDGE for direct manipulation
  *  (keys/wheel/drag — tight, immediate acknowledgment). */
 const FLIGHT_LAMBDA = 5.5;
+const FOLLOW_LAMBDA = 7.5;
 const NUDGE_LAMBDA = 13;
 
 function BoardCameraRig({
@@ -163,6 +165,9 @@ function BoardCameraRig({
   onBandSelect,
   bandOverlayRef,
   suppressMissRef,
+  followSelection,
+  touchSelectionMode,
+  onManualCameraInput,
 }: {
   layout: SpatialBoardLayout;
   projection: SpatialBoardProjection;
@@ -176,6 +181,11 @@ function BoardCameraRig({
   bandOverlayRef?: { current: HTMLDivElement | null };
   /** Set on band end so the trailing click never reads as background. */
   suppressMissRef?: { current: number };
+  /** Soft-follow is suspended by manual camera input until explicitly resumed. */
+  followSelection: boolean;
+  /** Direct touch pans by default; this explicit mode makes it band-select. */
+  touchSelectionMode: boolean;
+  onManualCameraInput?: () => void;
 }) {
   const { size, invalidate, gl } = useThree();
   const get = useThree(state => state.get);
@@ -186,14 +196,16 @@ function BoardCameraRig({
   const cameraBoundsY = layout.cameraBounds.y;
   const cameraBoundsWidth = layout.cameraBounds.width;
   const cameraBoundsHeight = layout.cameraBounds.height;
+  const semanticAddress = `${layout.altitude}:${layout.focusedProjectId ?? '~'}`;
+  const previousSemanticAddress = useRef(semanticAddress);
   const initialTilt = projection === 'fixed-angle' ? 1 : 0;
-  const target = useRef<CameraTarget>({
+  const target = useRef<BoardCameraTarget>({
     x: 0,
     y: 0,
     zoom: 1,
     tilt: initialTilt,
   });
-  const current = useRef<CameraTarget>({
+  const current = useRef<BoardCameraTarget>({
     x: 0,
     y: 0,
     zoom: 1,
@@ -208,37 +220,35 @@ function BoardCameraRig({
    *  already taken the camera somewhere else (input always wins). */
   const entryHold = useRef<{
     fitRect: SpatialBoardRect;
-    pose: CameraTarget;
+    pose: BoardCameraTarget;
   } | null>(null);
   const holdTimer = useRef<number | null>(null);
   const poseFrame = useRef<number | null>(null);
 
-  const notifyViewport = useCallback(
-    (value: CameraTarget) => {
-      onViewportChange?.({
-        centerX: value.x,
-        centerY: -value.y,
-        width: size.width / Math.max(value.zoom, 0.001),
-        height: size.height / Math.max(value.zoom, 0.001),
-      });
-    },
-    [onViewportChange, size.height, size.width]
-  );
+  const projectionScratch = useMemo(() => createBoardProjectionScratch(), []);
+
+  const notifyViewport = useCallback(() => {
+    const ortho = cameraRef.current;
+    if (!ortho) return;
+    ortho.updateMatrixWorld(true);
+    const viewport = boardViewportFromCamera(ortho, projectionScratch);
+    if (!viewport) return;
+    if (process.env.NODE_ENV !== 'production') {
+      (
+        window as typeof window & {
+          __EVAL_BOARD_VIEWPORT__?: OperationsBoardViewport;
+        }
+      ).__EVAL_BOARD_VIEWPORT__ = viewport;
+    }
+    onViewportChange?.(viewport);
+  }, [onViewportChange, projectionScratch]);
 
   const applyCamera = useCallback(
-    (value: CameraTarget) => {
+    (value: BoardCameraTarget) => {
       const ortho =
         cameraRef.current ?? (get().camera as THREE.OrthographicCamera);
       cameraRef.current = ortho;
-      ortho.position.set(
-        value.x + value.tilt * 18,
-        value.y - value.tilt * 22,
-        100 - value.tilt * 24
-      );
-      ortho.up.set(0, 1, 0);
-      ortho.lookAt(value.x, value.y, 0);
-      ortho.zoom = value.zoom * (1 - value.tilt * 0.08);
-      ortho.updateProjectionMatrix();
+      applyBoardCameraTarget(ortho, value);
       onZoomChange?.(value.zoom);
     },
     [get, onZoomChange]
@@ -250,26 +260,24 @@ function BoardCameraRig({
     current.current.zoom = target.current.zoom;
     current.current.tilt = target.current.tilt;
     applyCamera(current.current);
-    notifyViewport(current.current);
+    notifyViewport();
   }, [applyCamera, notifyViewport]);
 
   const announceTargetViewport = useCallback(() => {
-    notifyViewport(target.current);
+    notifyViewport();
   }, [notifyViewport]);
 
   const targetForRect = useCallback(
     (rect: SpatialBoardRect) => {
-      const paddedWidth = Math.max(18, rect.width + 8);
-      const paddedHeight = Math.max(14, rect.height + 8);
-      const zoom = Math.max(
-        0.35,
-        Math.min(size.width / paddedWidth, size.height / paddedHeight)
+      const next = fittedBoardCameraTarget(
+        rect,
+        { width: size.width, height: size.height },
+        target.current.tilt
       );
-      const center = rectCenter(rect);
-      fitZoom.current = zoom;
-      target.current.x = center.x;
-      target.current.y = center.y;
-      target.current.zoom = zoom;
+      fitZoom.current = next.zoom;
+      target.current.x = next.x;
+      target.current.y = next.y;
+      target.current.zoom = next.zoom;
       lambda.current = FLIGHT_LAMBDA;
       announceTargetViewport();
     },
@@ -340,11 +348,11 @@ function BoardCameraRig({
       fallback();
       return false;
     }
-    const pose: CameraTarget = { ...solution.pose, tilt: 0 };
+    const pose: BoardCameraTarget = { ...solution.pose, tilt: 0 };
     target.current = { ...pose };
     current.current = { ...pose };
     applyCamera(current.current);
-    notifyViewport(current.current);
+    notifyViewport();
     entryHold.current = { fitRect: activeLayout.cameraBounds, pose };
     // Announce the pose only after the first PAINTED frame at it (double
     // rAF): the card ghosts then hold still over the renderer swap and the
@@ -399,16 +407,20 @@ function BoardCameraRig({
       width: cameraBoundsWidth,
       height: cameraBoundsHeight,
     };
+    fitZoom.current = fitBoardZoom(cameraBounds, {
+      width: size.width,
+      height: size.height,
+    });
     if (entryHold.current) {
       // A layout tick during the entry hold must not move the camera; the
       // pull-back targets the freshest fit when the hold releases.
       entryHold.current.fitRect = cameraBounds;
+      previousSemanticAddress.current = semanticAddress;
       return;
     }
-    targetForRectRef.current(cameraBounds);
-    if (!initialized.current || reduced) {
-      const entered =
-        !initialized.current && !reduced && tryEnterFromHandoffRef.current();
+    if (!initialized.current) {
+      targetForRectRef.current(cameraBounds);
+      const entered = !reduced && tryEnterFromHandoffRef.current();
       initialized.current = true;
       if (!entered) {
         snapToTargetRef.current();
@@ -419,19 +431,32 @@ function BoardCameraRig({
           applyCamera(current.current);
         }
       }
+      previousSemanticAddress.current = semanticAddress;
+      invalidate();
+      return;
     }
-    invalidate();
+    if (previousSemanticAddress.current !== semanticAddress) {
+      const next = semanticBoardCameraTarget(target.current, cameraBounds, {
+        width: size.width,
+        height: size.height,
+      });
+      target.current.x = next.x;
+      target.current.y = next.y;
+      target.current.zoom = next.zoom;
+      lambda.current = FLIGHT_LAMBDA;
+      if (reduced) snapToTargetRef.current();
+      invalidate();
+    }
+    previousSemanticAddress.current = semanticAddress;
   }, [
     applyCamera,
     invalidate,
-    layout.altitude,
     cameraBoundsHeight,
     cameraBoundsWidth,
     cameraBoundsX,
     cameraBoundsY,
-    layout.focusedProjectId,
-    layout.selectedAgentId,
     reduced,
+    semanticAddress,
     size.height,
     size.width,
   ]);
@@ -444,9 +469,9 @@ function BoardCameraRig({
     invalidate();
   }, [announceTargetViewport, invalidate, projection, reduced, snapToTarget]);
 
-  // RTS pointer navigation (V3.3): primary drag band-selects; middle drag,
-  // WASD, and trackpad scroll pan; pinch (ctrl/meta + wheel) zooms anchored
-  // at the cursor. All camera inputs move the same damped target.
+  // Pointer-specific RTS grammar: mouse/pen primary drag band-selects; touch
+  // directly pans unless the explicit touch-select mode is armed. Middle drag,
+  // WASD, and trackpad scroll pan; pinch/ctrl-wheel zoom at the cursor.
   useEffect(() => {
     const element = gl.domElement;
     const clampZoom = (zoom: number) =>
@@ -457,7 +482,12 @@ function BoardCameraRig({
       );
     const worldAt = (clientX: number, clientY: number) => {
       const rect = element.getBoundingClientRect();
-      const zoom = Math.max(current.current.zoom, 0.001);
+      const ortho = cameraRef.current;
+      const projected = ortho
+        ? clientPointToBoard(ortho, rect, clientX, clientY, projectionScratch)
+        : null;
+      if (projected) return projected;
+      const zoom = Math.max(effectiveBoardCameraZoom(current.current), 0.001);
       return {
         x: current.current.x + (clientX - rect.left - rect.width / 2) / zoom,
         y: current.current.y + (rect.height / 2 - (clientY - rect.top)) / zoom,
@@ -466,12 +496,19 @@ function BoardCameraRig({
     let dragging = false;
     let lastX = 0;
     let lastY = 0;
+    const touches = new Map<number, { x: number; y: number }>();
+    let pinching = false;
+    let pinchDistance = 1;
+    let pinchZoom = 1;
+    let pinchAnchor = { x: 0, y: 0 };
     // Primary drag draws a selection band (V3.3). The
     // overlay div is DOM (pixel-crisp, outside the canvas); its transform is
     // written directly per move — never through React state (guide rule 14).
     let banding = false;
     let bandStartX = 0;
     let bandStartY = 0;
+    let bandLastX = 0;
+    let bandLastY = 0;
     const positionBandOverlay = (clientX: number, clientY: number) => {
       const overlay = bandOverlayRef?.current;
       if (!overlay) return;
@@ -488,12 +525,45 @@ function BoardCameraRig({
       const overlay = bandOverlayRef?.current;
       if (overlay) overlay.style.display = 'none';
     };
+    const beginPinch = () => {
+      const points = [...touches.values()];
+      if (points.length < 2) return;
+      const first = points[0]!;
+      const second = points[1]!;
+      pinching = true;
+      dragging = false;
+      banding = false;
+      hideBandOverlay();
+      pinchDistance = Math.max(
+        1,
+        Math.hypot(second.x - first.x, second.y - first.y)
+      );
+      pinchZoom = target.current.zoom;
+      pinchAnchor = worldAt((first.x + second.x) / 2, (first.y + second.y) / 2);
+      onManualCameraInput?.();
+    };
     const onPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0 && event.button !== 1) return;
-      if (event.button === 0 && onBandSelect) {
+      const action = boardPointerAction({
+        pointerType: event.pointerType,
+        button: event.button,
+        touchSelectionMode,
+        canBandSelect: Boolean(onBandSelect),
+      });
+      if (action === 'ignore') return;
+      if (event.pointerType === 'touch') {
+        touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        element.setPointerCapture(event.pointerId);
+        if (touches.size === 2) {
+          beginPinch();
+          return;
+        }
+      }
+      if (action === 'band') {
         banding = true;
         bandStartX = event.clientX;
         bandStartY = event.clientY;
+        bandLastX = event.clientX;
+        bandLastY = event.clientY;
         element.setPointerCapture(event.pointerId);
         return;
       }
@@ -503,36 +573,78 @@ function BoardCameraRig({
       element.setPointerCapture(event.pointerId);
     };
     const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerType === 'touch' && touches.has(event.pointerId)) {
+        touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (touches.size >= 2) {
+          const points = [...touches.values()];
+          const first = points[0]!;
+          const second = points[1]!;
+          const distance = Math.max(
+            1,
+            Math.hypot(second.x - first.x, second.y - first.y)
+          );
+          const nextZoom = clampZoom(
+            pinchZoomTarget(pinchZoom, pinchDistance, distance)
+          );
+          const ratio = target.current.zoom / nextZoom;
+          target.current.x =
+            pinchAnchor.x - (pinchAnchor.x - target.current.x) * ratio;
+          target.current.y =
+            pinchAnchor.y - (pinchAnchor.y - target.current.y) * ratio;
+          target.current.zoom = nextZoom;
+          lambda.current = NUDGE_LAMBDA;
+          if (reduced) snapToTarget();
+          invalidate();
+          return;
+        }
+      }
       if (banding) {
+        bandLastX = event.clientX;
+        bandLastY = event.clientY;
         positionBandOverlay(event.clientX, event.clientY);
         return;
       }
       if (!dragging) return;
-      const zoom = Math.max(current.current.zoom, 0.001);
+      const zoom = Math.max(effectiveBoardCameraZoom(current.current), 0.001);
       target.current.x -= (event.clientX - lastX) / zoom;
       target.current.y += (event.clientY - lastY) / zoom;
       lastX = event.clientX;
       lastY = event.clientY;
       lambda.current = NUDGE_LAMBDA;
       element.style.cursor = 'grabbing';
+      onManualCameraInput?.();
       announceTargetViewport();
       if (reduced) snapToTarget();
       invalidate();
     };
     const endDrag = (event: PointerEvent) => {
+      if (event.pointerType === 'touch') {
+        touches.delete(event.pointerId);
+        if (pinching) {
+          pinching = touches.size >= 2;
+          dragging = false;
+          banding = false;
+          hideBandOverlay();
+          if (element.hasPointerCapture(event.pointerId)) {
+            element.releasePointerCapture(event.pointerId);
+          }
+          return;
+        }
+      }
       if (banding) {
         banding = false;
         hideBandOverlay();
         if (element.hasPointerCapture(event.pointerId)) {
           element.releasePointerCapture(event.pointerId);
         }
+        const endX = event.pointerType === 'touch' ? bandLastX : event.clientX;
+        const endY = event.pointerType === 'touch' ? bandLastY : event.clientY;
         const moved =
-          Math.abs(event.clientX - bandStartX) >= 4 ||
-          Math.abs(event.clientY - bandStartY) >= 4;
+          Math.abs(endX - bandStartX) >= 4 || Math.abs(endY - bandStartY) >= 4;
         // A still click falls through to the piece/zone handlers.
         if (!moved || !onBandSelect) return;
         const from = worldAt(bandStartX, bandStartY);
-        const to = worldAt(event.clientX, event.clientY);
+        const to = worldAt(endX, endY);
         // World y is up; layout rects are y-down.
         onBandSelect({
           x: Math.min(from.x, to.x),
@@ -567,6 +679,7 @@ function BoardCameraRig({
         target.current.y -= event.deltaY / zoom;
       }
       lambda.current = NUDGE_LAMBDA;
+      onManualCameraInput?.();
       announceTargetViewport();
       if (reduced) snapToTarget();
       invalidate();
@@ -589,9 +702,12 @@ function BoardCameraRig({
     gl,
     invalidate,
     onBandSelect,
+    onManualCameraInput,
+    projectionScratch,
     reduced,
     snapToTarget,
     suppressMissRef,
+    touchSelectionMode,
   ]);
 
   useEffect(() => {
@@ -601,8 +717,9 @@ function BoardCameraRig({
       if (reduced) snapToTarget();
       invalidate();
     };
-    const cameraChanged = () => {
+    const cameraChanged = (manual = true) => {
       lambda.current = NUDGE_LAMBDA;
+      if (manual) onManualCameraInput?.();
       announceTargetViewport();
       if (reduced) snapToTarget();
       invalidate();
@@ -618,31 +735,62 @@ function BoardCameraRig({
           0.001,
           Math.min(size.width / viewport.width, size.height / viewport.height)
         );
-        cameraChanged();
+        cameraChanged(false);
       },
       focusProject(projectId) {
         const zone = layout.zones.find(entry => entry.id === projectId);
-        if (zone) focusRect(zone.rect);
+        if (!zone) return;
+        const next = semanticBoardCameraTarget(target.current, zone.rect, {
+          width: size.width,
+          height: size.height,
+        });
+        target.current.x = next.x;
+        target.current.y = next.y;
+        target.current.zoom = next.zoom;
+        lambda.current = FLIGHT_LAMBDA;
+        if (reduced) snapToTarget();
+        invalidate();
       },
-      focusAgent(agentId) {
+      focusAgent(agentId, force = false) {
         const piece = layout.pieces.find(entry => entry.agentId === agentId);
         if (!piece) return;
-        focusRect({
-          x: piece.x - 6,
-          y: piece.y - 6,
-          width: 12,
-          height: 12,
-        });
+        // Direct selection owns the camera from this instant. If an altitude
+        // flight was still finishing, keep the zoom currently on screen so an
+        // Arrow press can never inherit a delayed dolly or appear to refit.
+        target.current.zoom = current.current.zoom;
+        if (!followSelection && !force) {
+          lambda.current = FOLLOW_LAMBDA;
+          if (reduced) snapToTarget();
+          invalidate();
+          return;
+        }
+        const next = softFollowBoardPoint(
+          target.current,
+          { x: piece.x, y: -piece.y },
+          { width: size.width, height: size.height }
+        );
+        target.current.x = next.x;
+        target.current.y = next.y;
+        lambda.current = FOLLOW_LAMBDA;
+        if (reduced) snapToTarget();
+        invalidate();
       },
       enterSession(agentId) {
         const piece = layout.pieces.find(entry => entry.agentId === agentId);
         if (!piece) return;
-        focusRect({
-          x: piece.x - 2.5,
-          y: piece.y - 2.5,
-          width: 5,
-          height: 5,
-        });
+        // The altitude effect owns the one bounded semantic zoom. Session
+        // entry only composes its Agent inside the safe zone; a second tight
+        // refit would make Agent altitude feel like a disconnected map.
+        const next = softFollowBoardPoint(
+          target.current,
+          { x: piece.x, y: -piece.y },
+          { width: size.width, height: size.height }
+        );
+        target.current.x = next.x;
+        target.current.y = next.y;
+        lambda.current = FLIGHT_LAMBDA;
+        if (reduced) snapToTarget();
+        invalidate();
       },
       zoom(steps) {
         const min = fitZoom.current * 0.55;
@@ -686,6 +834,8 @@ function BoardCameraRig({
     layout.cameraBounds,
     layout.pieces,
     layout.zones,
+    followSelection,
+    onManualCameraInput,
     reduced,
     size.height,
     size.width,
@@ -733,7 +883,7 @@ function BoardCameraRig({
     current.current.zoom = moving ? nextZoom : target.current.zoom;
     current.current.tilt = moving ? nextTilt : target.current.tilt;
     applyCamera(current.current);
-    notifyViewport(current.current);
+    notifyViewport();
     if (moving) state.invalidate();
   });
 
@@ -1014,6 +1164,68 @@ function ProjectHealthRail({
   );
 }
 
+function DampedHtmlAnchor({
+  position,
+  reduced,
+  center = false,
+  children,
+}: {
+  position: [number, number, number];
+  reduced: boolean;
+  center?: boolean;
+  children: ReactNode;
+}) {
+  const group = useRef<THREE.Group>(null);
+  const initial = useRef(position);
+  const target = useRef(position);
+  target.current = position;
+  const invalidate = useThree(state => state.invalidate);
+  useLayoutEffect(() => {
+    if (!reduced || !group.current) return;
+    group.current.position.set(...position);
+    invalidate();
+  }, [invalidate, position, reduced]);
+  useFrame((state, delta) => {
+    const node = group.current;
+    if (!node || reduced) return;
+    const nextX = THREE.MathUtils.damp(
+      node.position.x,
+      target.current[0],
+      7.5,
+      delta
+    );
+    const nextY = THREE.MathUtils.damp(
+      node.position.y,
+      target.current[1],
+      7.5,
+      delta
+    );
+    const nextZ = THREE.MathUtils.damp(
+      node.position.z,
+      target.current[2],
+      7.5,
+      delta
+    );
+    const moving =
+      Math.abs(nextX - target.current[0]) > 0.001 ||
+      Math.abs(nextY - target.current[1]) > 0.001 ||
+      Math.abs(nextZ - target.current[2]) > 0.001;
+    node.position.set(
+      moving ? nextX : target.current[0],
+      moving ? nextY : target.current[1],
+      moving ? nextZ : target.current[2]
+    );
+    if (moving) state.invalidate();
+  });
+  return (
+    <group ref={group} position={initial.current}>
+      <Html center={center} style={{ pointerEvents: 'auto' }}>
+        {children}
+      </Html>
+    </group>
+  );
+}
+
 /** Zone-label budget (V3.1): full cards only when the zone's projected size
  *  can afford them; below that a one-line chip keeps identity, count, and the
  *  drill affordance while the population field stays visible. */
@@ -1029,7 +1241,9 @@ function burnShareCopy(share: number): string {
 function ProjectControls({
   zones,
   altitude,
+  focusedProjectId,
   labelTier,
+  reduced,
   lens,
   onDrillProject,
   onToggleZoneSelect,
@@ -1037,7 +1251,9 @@ function ProjectControls({
 }: {
   zones: SpatialBoardProjectZone[];
   altitude: SpatialBoardLayout['altitude'];
+  focusedProjectId: string | null;
   labelTier: ZoneLabelTier;
+  reduced: boolean;
   lens: SpatialBoardLens;
   onDrillProject: (projectId: string) => void;
   onToggleZoneSelect?: (zoneId: string) => void;
@@ -1057,7 +1273,10 @@ function ProjectControls({
       0.8,
     ];
     const accent = spatialProjectIdentityColor(theme, zone.id);
-    if (labelTier === 'compact' && altitude === 'fleet') {
+    const compact =
+      labelTier === 'compact' ||
+      (altitude !== 'fleet' && zone.id !== focusedProjectId);
+    if (compact) {
       const compactContent = (
         <span className="flex items-baseline gap-2">
           <span
@@ -1094,15 +1313,12 @@ function ProjectControls({
         </span>
       );
       return (
-        <Html
-          key={zone.id}
-          position={position}
-          style={{ pointerEvents: 'auto' }}
-        >
+        <DampedHtmlAnchor key={zone.id} position={position} reduced={reduced}>
           {!zone.isAggregate ? (
             <button
               type="button"
               data-board-zone={zone.id}
+              aria-current={zone.selected ? 'true' : undefined}
               aria-label={`Open Project ${zone.label}`}
               onClick={activateZone}
               style={{
@@ -1126,7 +1342,7 @@ function ProjectControls({
               {compactContent}
             </div>
           )}
-        </Html>
+        </DampedHtmlAnchor>
       );
     }
     const content = (
@@ -1179,11 +1395,12 @@ function ProjectControls({
       </>
     );
     return (
-      <Html key={zone.id} position={position} style={{ pointerEvents: 'auto' }}>
+      <DampedHtmlAnchor key={zone.id} position={position} reduced={reduced}>
         {!zone.isAggregate ? (
           <button
             type="button"
             data-board-zone={zone.id}
+            aria-current={zone.selected ? 'true' : undefined}
             aria-label={`Open Project ${zone.label}`}
             onClick={activateZone}
             style={{
@@ -1207,7 +1424,7 @@ function ProjectControls({
             {content}
           </div>
         )}
-      </Html>
+      </DampedHtmlAnchor>
     );
   });
 }
@@ -2062,12 +2279,14 @@ function PopulationStatusMarks({
 function PopulationDotLayer({
   zones,
   pieces,
+  altitude,
   reduced,
   lens,
   theme,
 }: {
   zones: SpatialBoardProjectZone[];
   pieces: SpatialBoardPiece[];
+  altitude: SpatialBoardLayout['altitude'];
   reduced: boolean;
   lens: SpatialBoardLens;
   theme: SpatialThemeSnapshot;
@@ -2087,6 +2306,14 @@ function PopulationDotLayer({
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const materialRef = useRef<THREE.MeshBasicMaterial>(null);
   const entrance = useRef(reduced ? 1 : 0);
+  const previousField = useRef<PopulationDotField | null>(null);
+  const previousAltitude = useRef(altitude);
+  const morph = useRef<{
+    progress: number;
+    fromX: Float32Array;
+    fromY: Float32Array;
+    fromSize: Float32Array;
+  } | null>(null);
   const scratch = useMemo(() => new THREE.Object3D(), []);
   /** Palette conversion happens once per resolved snapshot, never per unit or
    * frame. Theme changes update the existing mesh's instance colors in place. */
@@ -2114,10 +2341,60 @@ function PopulationDotLayer({
   useLayoutEffect(() => {
     const mesh = meshRef.current;
     if (!mesh) return;
+    const prior = previousField.current;
+    const transitioning =
+      !reduced && prior !== null && previousAltitude.current !== altitude;
+    if (transitioning) {
+      const priorIndex = new Map<string, number>();
+      for (let index = 0; index < prior.count; index++) {
+        priorIndex.set(
+          `${prior.zoneIds[prior.zone[index]!]}:${prior.status[index]}:${prior.ordinal[index]}`,
+          index
+        );
+      }
+      const centers = new Map(
+        zones.map(zone => [
+          zone.id,
+          {
+            x: zone.rect.x + zone.radius,
+            y: zone.rect.y + zone.radius,
+          },
+        ])
+      );
+      const fromX = new Float32Array(field.count);
+      const fromY = new Float32Array(field.count);
+      const fromSize = new Float32Array(field.count);
+      for (let index = 0; index < field.count; index++) {
+        const zoneId = field.zoneIds[field.zone[index]!]!;
+        const match = priorIndex.get(
+          `${zoneId}:${field.status[index]}:${field.ordinal[index]}`
+        );
+        const center = centers.get(zoneId);
+        fromX[index] =
+          match === undefined
+            ? (center?.x ?? field.x[index]!)
+            : prior.x[match]!;
+        fromY[index] =
+          match === undefined
+            ? (center?.y ?? field.y[index]!)
+            : prior.y[match]!;
+        fromSize[index] =
+          match === undefined ? field.size[index]! * 0.4 : prior.size[match]!;
+      }
+      morph.current = { progress: 0, fromX, fromY, fromSize };
+    } else {
+      morph.current = null;
+    }
     mesh.count = field.count;
     for (let index = 0; index < field.count; index++) {
-      scratch.position.set(field.x[index]!, -field.y[index]!, 0.7);
-      scratch.scale.setScalar(field.size[index]!);
+      scratch.position.set(
+        morph.current?.fromX[index] ?? field.x[index]!,
+        -(morph.current?.fromY[index] ?? field.y[index]!),
+        0.7
+      );
+      scratch.scale.setScalar(
+        morph.current?.fromSize[index] ?? field.size[index]!
+      );
       scratch.updateMatrix();
       mesh.setMatrixAt(index, scratch.matrix);
       // Parallel palettes, one mesh (ENG-008): the burn lens swaps the color
@@ -2138,22 +2415,73 @@ function PopulationDotLayer({
     }
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    previousField.current = field;
+    previousAltitude.current = altitude;
     invalidate();
-  }, [burnColors, burnUnknown, field, invalidate, lens, scratch, unitColor]);
+  }, [
+    altitude,
+    burnColors,
+    burnUnknown,
+    field,
+    invalidate,
+    lens,
+    reduced,
+    scratch,
+    unitColor,
+    zones,
+  ]);
 
   useFrame((state, delta) => {
     const material = materialRef.current;
     if (!material) return;
-    if (entrance.current >= 1) {
-      material.opacity = 0.92;
-      return;
+    let animating = false;
+    const activeMorph = morph.current;
+    const mesh = meshRef.current;
+    if (activeMorph && mesh) {
+      activeMorph.progress = Math.min(
+        1,
+        activeMorph.progress + Math.min(delta, 0.05) * 3.8
+      );
+      const eased = 1 - Math.pow(1 - activeMorph.progress, 3);
+      for (let index = 0; index < field.count; index++) {
+        scratch.position.set(
+          THREE.MathUtils.lerp(
+            activeMorph.fromX[index]!,
+            field.x[index]!,
+            eased
+          ),
+          -THREE.MathUtils.lerp(
+            activeMorph.fromY[index]!,
+            field.y[index]!,
+            eased
+          ),
+          0.7
+        );
+        scratch.scale.setScalar(
+          THREE.MathUtils.lerp(
+            activeMorph.fromSize[index]!,
+            field.size[index]!,
+            eased
+          )
+        );
+        scratch.updateMatrix();
+        mesh.setMatrixAt(index, scratch.matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      animating = activeMorph.progress < 1;
+      if (!animating) morph.current = null;
     }
-    entrance.current = Math.min(
-      1,
-      entrance.current + Math.min(delta, 0.05) * 3.5
-    );
-    material.opacity = 0.92 * entrance.current;
-    state.invalidate();
+    if (entrance.current < 1) {
+      entrance.current = Math.min(
+        1,
+        entrance.current + Math.min(delta, 0.05) * 3.5
+      );
+      material.opacity = 0.92 * entrance.current;
+      animating = true;
+    } else {
+      material.opacity = 0.92;
+    }
+    if (animating) state.invalidate();
   });
 
   if (field.count === 0) return null;
@@ -2349,6 +2677,8 @@ function AgentControls({
   focusedProjectId,
   onSelectAgent,
   onToggleAgentSelect,
+  multiSelection,
+  reduced,
   theme,
 }: {
   pieces: SpatialBoardPiece[];
@@ -2356,6 +2686,8 @@ function AgentControls({
   focusedProjectId: string | null;
   onSelectAgent: (agentId: string) => void;
   onToggleAgentSelect?: (agentId: string) => void;
+  multiSelection?: ReadonlySet<string>;
+  reduced: boolean;
   theme: SpatialThemeSnapshot;
 }) {
   if (altitude === 'fleet') return null;
@@ -2387,11 +2719,11 @@ function AgentControls({
           ].join(', ')
         : '';
       return (
-        <Html
+        <DampedHtmlAnchor
           key={`control:${piece.id}`}
           position={[piece.x, -piece.y, 1.2]}
+          reduced={reduced}
           center
-          style={{ pointerEvents: 'auto' }}
         >
           <button
             type="button"
@@ -2399,6 +2731,12 @@ function AgentControls({
             data-board-session-state={piece.sessionState}
             data-board-status-light={lightState}
             data-board-delegation={delegated ? delegated.count : undefined}
+            aria-current={piece.selected ? 'true' : undefined}
+            aria-pressed={
+              onToggleAgentSelect
+                ? (multiSelection?.has(piece.agentId!) ?? false)
+                : undefined
+            }
             aria-label={`${piece.label}${piece.activity ? `, ${piece.activity}` : ''}, ${STATUS_LIGHT_META[lightState].label}${piece.sessionState === 'stopped' ? ', stopped session' : ''}${delegationCopy ? `, ${delegationCopy}` : ''}`}
             onClick={event => {
               // Shift-activate (pointer or keyboard) toggles the Agent in
@@ -2437,7 +2775,7 @@ function AgentControls({
               )}
             </span>
           </button>
-        </Html>
+        </DampedHtmlAnchor>
       );
     });
 }
@@ -2464,6 +2802,9 @@ export function OperationsBoardCanvas({
   onToggleZoneSelect,
   onBandSelect,
   bandOverlayRef,
+  followSelection = true,
+  touchSelectionMode = false,
+  onManualCameraInput,
   preserveDrawingBuffer = false,
   theme,
 }: {
@@ -2482,6 +2823,9 @@ export function OperationsBoardCanvas({
   onToggleZoneSelect?: (zoneId: string) => void;
   onBandSelect?: (band: SpatialBoardRect) => void;
   bandOverlayRef?: { current: HTMLDivElement | null };
+  followSelection?: boolean;
+  touchSelectionMode?: boolean;
+  onManualCameraInput?: () => void;
   preserveDrawingBuffer?: boolean;
   theme: SpatialThemeSnapshot;
 }) {
@@ -2559,6 +2903,7 @@ export function OperationsBoardCanvas({
       dpr={lowPower ? [1, 1.25] : [1, 2]}
       camera={{ position: [0, 0, 100], zoom: 1, near: 0.1, far: 200 }}
       gl={{ antialias: true, preserveDrawingBuffer }}
+      style={{ touchAction: 'none' }}
       onPointerMissed={event => {
         // The click that trails a band drag is not a background click.
         if (performance.now() - suppressMissRef.current < 250) return;
@@ -2598,6 +2943,9 @@ export function OperationsBoardCanvas({
         onBandSelect={onBandSelect}
         bandOverlayRef={bandOverlayRef}
         suppressMissRef={suppressMissRef}
+        followSelection={followSelection}
+        touchSelectionMode={touchSelectionMode}
+        onManualCameraInput={onManualCameraInput}
       />
       <BoardGrid bounds={layout.bounds} theme={theme} />
       <ZoneLayer
@@ -2622,6 +2970,7 @@ export function OperationsBoardCanvas({
       <PopulationDotLayer
         zones={layout.zones}
         pieces={layout.pieces}
+        altitude={layout.altitude}
         reduced={reduced}
         lens={lens}
         theme={theme}
@@ -2636,7 +2985,9 @@ export function OperationsBoardCanvas({
       <ProjectControls
         zones={visibleZones}
         altitude={layout.altitude}
+        focusedProjectId={layout.focusedProjectId}
         labelTier={labelTier}
+        reduced={reduced}
         lens={lens}
         onDrillProject={onDrillProject}
         onToggleZoneSelect={onToggleZoneSelect}
@@ -2648,6 +2999,8 @@ export function OperationsBoardCanvas({
         focusedProjectId={layout.focusedProjectId}
         onSelectAgent={onSelectAgent}
         onToggleAgentSelect={onToggleAgentSelect}
+        multiSelection={multiSelection}
+        reduced={reduced}
         theme={theme}
       />
       {!lowPower && effectsReady && theme.bloom.enabled && (

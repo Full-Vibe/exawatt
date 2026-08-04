@@ -1782,6 +1782,71 @@ This lands F1 and F2 plus F3's primary pointer-grammar flip. F3's explicit
 clamp-feedback polish and the remainder of S4's selection-panel consolidation
 stay open; this correction does not claim those slices complete.
 
+### V3.3 camera, input, and learnability hardening (2026-08-04)
+
+Operator dogfood of the integrated F7/S3 board found that the composition was
+right but its camera still violated the one-world promise: selection inherited
+unfinished zooms, projection compensation popped on the last frame, Project
+and Agent descent could refit as if entering a new map, manual pan was pulled
+back toward focus, and the minimap described a nominal top-down rectangle
+rather than the board-plane footprint actually visible in fixed angle.
+
+The camera is now an explicit, modular policy. Pure functions in
+`operations-board-camera.ts` own fit, bounded semantic zoom, edge-buffer
+follow, projection-continuous zoom compensation, screen-to-board projection,
+and the actual board-plane viewport; the R3F rig is only the damped executor.
+Altitude changes preserve the current composition, zoom by a bounded amount,
+and pan only enough to keep the subject inside an 18–20% safe buffer. Arrow
+selection keeps the current zoom and gently follows only when **Follow Agent**
+is armed. Any manual pan or zoom suspends follow; the reticle resumes it and
+returns the selected Agent to the buffer without dead-centering. Agent descent
+uses the same one semantic zoom and never performs a second tight refit.
+Top-down/fixed-angle compensation now interpolates continuously through tilt
+instead of holding an 8% scale offset until the final frame.
+
+The single world is also now literal at the model boundary. Density-expanded
+Projects retain their Fleet-lattice center instead of reappearing at the
+origin, every altitude continues to render neighboring circular Projects, and
+the minimap always renders fixed Fleet footprints plus the ray/plane-projected
+live viewport. Non-focused Project controls compact at lower altitudes so
+neighbor context stays legible. Population dots and their DOM identity siblings
+morph from the prior stable address while the approved radial/floral arrival
+stagger remains entry-only. Compact viewports receive a larger, still-bounded
+semantic zoom so 44px direct-touch Agent targets separate.
+
+The input extension to decision `0024` is pointer-specific: mouse/pen primary
+drag band-selects, middle drag/WASD/scroll pans, and arrows select; direct touch
+uses one-finger pan and two-finger pinch by default, with an explicit **Select
+units** mode for band selection and tap for a single Agent. Every rendered
+individual Agent also has a focusable DOM path at Fleet altitude, selected
+state is exposed through `aria-current`/`aria-pressed`, and selection changes
+are announced. This holds the design-system D30 redundant-channel and D40
+five-signal contracts without putting WebGL under the accessibility tree.
+
+Chrome now has one fleet-wide status source: the five left-hand D40 counts are
+multi-select filter pills, remain global totals, and expose the filtered
+`N shown` separately. The duplicate upper-right status filters remain retired;
+the in-board scope readout appears only for a real multi-selection; Burn remains
+absent from the primary surface. Status-pill requests compose synchronously so
+rapid multi-selection cannot lose the first filter while the URL router catches
+up.
+
+Regression ownership is proportional to the expected iteration rate. Camera
+and pointer policy have dedicated pure tests; board layout pins stable density
+addresses; the route eval covers projection-continuous zoom, arrow safe-zone
+follow, manual-follow suspension/resume, persistent neighboring Projects,
+fixed-angle minimap projection, and multi-select status pills; the pointer eval
+covers mouse band selection, secondary pan, cursor zoom, direct-touch pan,
+explicit touch band selection, pinch, tap-to-Agent, and reduced-motion parking.
+The 1k/10k scale matrix remains green at six draw calls for aggregate tiers.
+Landing evidence: lint and type-check pass; the production Next build passes;
+the full bounded suite passes 1,602 tests (one opt-in live-provider test
+skipped); `eval:r3f` scores 100/100 with zero warnings; desktop, mobile,
+reduced-motion, low-power, entry-pose, and fallback scenarios all pass in
+`eval:spatial`; the pointer/touch probe and every real/synthetic scale tier
+pass. Browser screenshots were inspected at Fleet and focused Project altitude
+after the automated gates.
+
 ### V2.1 Scale & Truth
 
 Status: planned; gated by V2.0

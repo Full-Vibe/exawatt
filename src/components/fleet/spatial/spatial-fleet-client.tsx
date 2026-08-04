@@ -41,8 +41,9 @@ import { useCommandNavigation } from '@/components/nav/command-navigation-provid
 import { formatShortcutKeys, formatShortcutKeysAria } from '@/lib/shortcuts';
 import {
   readSpatialFilters,
-  SPATIAL_FILTERABLE_STATUSES,
+  spatialFilterSignals,
   spatialViewportStorageKey,
+  toggleSpatialFilterSignal,
   writeSpatialFilters,
 } from './spatial-navigation-state';
 import {
@@ -116,6 +117,13 @@ export function SpatialFleetClient() {
     () => readSpatialFilters(searchParams),
     [searchParams]
   );
+  // Router replacement is asynchronous; keep the latest requested filters
+  // synchronously so two quick pill presses compose instead of the second
+  // press reading a stale URL snapshot and replacing the first.
+  const requestedFiltersRef = useRef({ query, statuses: statusFilter });
+  useEffect(() => {
+    requestedFiltersRef.current = { query, statuses: statusFilter };
+  }, [query, statusFilter]);
   const [sessionHandoffAgentId, setSessionHandoffAgentId] = useState<
     string | null
   >(null);
@@ -123,6 +131,10 @@ export function SpatialFleetClient() {
     null
   );
   const filtered = query.trim() !== '' || statusFilter.length > 0;
+  const selectedStatusSignals = useMemo(
+    () => spatialFilterSignals(statusFilter),
+    [statusFilter]
+  );
   const filteredState = useMemo(
     () => filterFleetState(fleetState, { query, statuses: statusFilter }),
     [fleetState, query, statusFilter]
@@ -289,6 +301,7 @@ export function SpatialFleetClient() {
 
   const updateFilters = useCallback(
     (next: { query: string; statuses: typeof statusFilter }) => {
+      requestedFiltersRef.current = next;
       const params = writeSpatialFilters(
         new URLSearchParams(searchParams.toString()),
         next
@@ -301,13 +314,15 @@ export function SpatialFleetClient() {
     [router, searchParams]
   );
 
-  const toggleStatus = (status: (typeof statusFilter)[number]) =>
+  const toggleStatusSignal = (
+    signal: (typeof selectedStatusSignals)[number]
+  ) => {
+    const current = requestedFiltersRef.current;
     updateFilters({
-      query,
-      statuses: statusFilter.includes(status)
-        ? statusFilter.filter(item => item !== status)
-        : [...statusFilter, status],
+      query: current.query,
+      statuses: toggleSpatialFilterSignal(current.statuses, signal),
     });
+  };
 
   const viewportStorageKey = spatialViewportStorageKey({
     altitude: scene.altitude,
@@ -637,8 +652,14 @@ export function SpatialFleetClient() {
         )}
 
         <div className="hidden h-5 w-px bg-border lg:block" />
-        <div className="hidden lg:block">
-          <FleetMetricsBar embedded />
+        <div className="order-last w-full overflow-x-auto lg:order-none lg:w-auto">
+          <FleetMetricsBar
+            embedded
+            selectedStates={selectedStatusSignals}
+            onToggleState={
+              scene.altitude === 'agent' ? undefined : toggleStatusSignal
+            }
+          />
         </div>
 
         {scene.altitude !== 'agent' && (
@@ -664,22 +685,14 @@ export function SpatialFleetClient() {
                 className="w-24 rounded-sm bg-transparent text-chrome-meta text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:w-40"
               />
             </div>
-            <div className="flex flex-wrap items-center gap-1">
-              {SPATIAL_FILTERABLE_STATUSES.map(status => (
-                <button
-                  key={status}
-                  onClick={() => toggleStatus(status)}
-                  aria-pressed={statusFilter.includes(status)}
-                  className={`rounded px-1.5 py-1 text-chrome-micro capitalize transition ${
-                    statusFilter.includes(status)
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {status}
-                </button>
-              ))}
-            </div>
+            {filtered && (
+              <span
+                className="font-mono text-chrome-micro tabular-nums text-muted-foreground"
+                aria-live="polite"
+              >
+                {Object.keys(filteredState.agents).length} shown
+              </span>
+            )}
             {filtered && (
               <button
                 onClick={() => {

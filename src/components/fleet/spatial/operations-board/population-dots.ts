@@ -80,6 +80,10 @@ export interface PopulationDotField {
    *  (ENG-008); -1 when the zone's usage is unreported (neutral unknown,
    *  never a zero on the ramp). */
   burn: Float32Array;
+  /** Stable zone table plus per-dot zone/status ordinals for transition carry. */
+  zoneIds: string[];
+  zone: Uint16Array;
+  ordinal: Uint32Array;
   /** Total population represented across all zones. */
   population: number;
   /** True when any zone had to downsample below its real population. */
@@ -222,8 +226,12 @@ export function computePopulationDotField(
   const size = new Float32Array(emitted);
   const status = new Uint8Array(emitted);
   const burn = new Float32Array(emitted);
+  const zoneIds = emitPlans.map(plan => plan.zone.id);
+  const zone = new Uint16Array(emitted);
+  const ordinal = new Uint32Array(emitted);
   let cursor = 0;
-  for (const plan of emitPlans) {
+  for (let zoneIndex = 0; zoneIndex < emitPlans.length; zoneIndex++) {
+    const plan = emitPlans[zoneIndex]!;
     let slot = 0;
     for (let band = 0; band < plan.bands.length; band++) {
       const share = plan.shares[band]!;
@@ -233,11 +241,25 @@ export function computePopulationDotField(
         size[cursor] = plan.pitch * DOT_FILL;
         status[cursor] = plan.bands[band]!.status;
         burn[cursor] = plan.bands[band]!.burn;
+        zone[cursor] = zoneIndex;
+        ordinal[cursor] = index;
         cursor += 1;
         slot += 1;
       }
     }
   }
 
-  return { count: emitted, x, y, size, status, burn, population, truncated };
+  return {
+    count: emitted,
+    x,
+    y,
+    size,
+    status,
+    burn,
+    zoneIds,
+    zone,
+    ordinal,
+    population,
+    truncated,
+  };
 }

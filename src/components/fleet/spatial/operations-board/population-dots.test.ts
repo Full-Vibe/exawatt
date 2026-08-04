@@ -258,6 +258,9 @@ describe('computePopulationDotField', () => {
       ...Array(6).fill(working),
     ]);
     expect(zoneB).toEqual([...Array(3).fill(error), ...Array(5).fill(idle)]);
+    expect(field.zoneIds).toEqual(['project:a', 'project:b']);
+    expect(Array.from(field.zone).filter(index => index === 0)).toHaveLength(8);
+    expect(Array.from(field.zone).filter(index => index === 1)).toHaveLength(8);
   });
 
   it('keeps the shared density-zone sizing pitch selectable', () => {

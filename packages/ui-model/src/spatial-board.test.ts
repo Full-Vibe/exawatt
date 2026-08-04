@@ -7,6 +7,7 @@ import {
   selectSpatialScopeActivity,
   spatialBoardPieceForAgent,
   spatialBoardZoneForAgent,
+  type SpatialBoardRect,
 } from './spatial-board';
 
 const metrics: FleetMetrics = {
@@ -381,6 +382,32 @@ describe('selectSpatialBoardLayout', () => {
     expect(smallLayout.pieces.every(piece => piece.kind === 'agent')).toBe(
       true
     );
+  });
+
+  it('keeps an aggregated focused Project at its Fleet address', () => {
+    const state = fleet([
+      agent('a', 'Alpha'),
+      ...Array.from({ length: 121 }, (_, index) => agent(`b${index}`, 'Beta')),
+    ]);
+    const overview = selectSpatialBoardLayout(state);
+    const focused = selectSpatialBoardLayout(state, {
+      altitude: 'project',
+      focusedProjectId: 'project:Beta',
+      previousLayout: overview,
+    });
+    const overviewBeta = overview.zones.find(
+      zone => zone.id === 'project:Beta'
+    )!;
+    const focusedBeta = focused.zones.find(zone => zone.id === 'project:Beta')!;
+    const center = (rect: SpatialBoardRect) => ({
+      x: rect.x + rect.width / 2,
+      y: rect.y + rect.height / 2,
+    });
+
+    expect(center(focusedBeta.rect)).toEqual(center(overviewBeta.rect));
+    expect(focusedBeta.slotIndex).toBe(overviewBeta.slotIndex);
+    expect(focusedBeta.rect).not.toEqual(focusedBeta.minimapRect);
+    expect(focused.cameraBounds).toEqual(focusedBeta.rect);
   });
 
   it('budgets labels while keeping the selected Agent label visible', () => {

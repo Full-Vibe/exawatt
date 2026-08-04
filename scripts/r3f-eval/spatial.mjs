@@ -144,6 +144,10 @@ async function openProject(page) {
     'button[data-board-agent][data-board-status-light]'
   );
   await units.first().waitFor({ state: 'visible' });
+  await page.waitForTimeout(900);
+  const zoomBeforeSelection = await page.evaluate(
+    () => window.__EVAL_CAM__.zoom
+  );
   await page.keyboard.press('ArrowRight');
   await page.waitForFunction(() =>
     new URL(location.href).searchParams.has('agent')
@@ -152,7 +156,37 @@ async function openProject(page) {
     new URL(page.url()).searchParams.get('altitude') === 'project',
     'Arrow selection changed semantic altitude instead of selecting an Agent'
   );
-  return { projectCount, units };
+  await page.waitForTimeout(900);
+  const zoomAfterSelection = await page.evaluate(
+    () => window.__EVAL_CAM__.zoom
+  );
+  check(
+    Math.abs(zoomAfterSelection - zoomBeforeSelection) <
+      Math.max(0.05, zoomBeforeSelection * 0.02),
+    `Arrow selection changed camera zoom instead of gently following the Agent (${zoomBeforeSelection} → ${zoomAfterSelection})`
+  );
+  const selected = page.locator(
+    'button[data-board-agent][aria-current="true"]'
+  );
+  await selected.waitFor({ state: 'visible' });
+  const selectedRect = await selected.boundingBox();
+  const canvasRect = await page.locator('canvas').boundingBox();
+  check(
+    selectedRect && canvasRect,
+    'Selected Agent has no visible DOM equivalent'
+  );
+  const selectedCenter = {
+    x: selectedRect.x + selectedRect.width / 2,
+    y: selectedRect.y + selectedRect.height / 2,
+  };
+  check(
+    selectedCenter.x >= canvasRect.x + canvasRect.width * 0.12 &&
+      selectedCenter.x <= canvasRect.x + canvasRect.width * 0.88 &&
+      selectedCenter.y >= canvasRect.y + canvasRect.height * 0.12 &&
+      selectedCenter.y <= canvasRect.y + canvasRect.height * 0.88,
+    'Arrow selection left the selected Agent outside the camera safe zone'
+  );
+  return { projectCount, units, zoomBeforeSelection, zoomAfterSelection };
 }
 
 async function checkPersistentProjectWorld(page, projectCount) {
@@ -169,29 +203,100 @@ async function checkPersistentProjectWorld(page, projectCount) {
     'Project focus removed neighboring Projects from the minimap'
   );
   const viewport = minimap.locator('svg rect').last();
-  const readViewport = async () => ({
-    x: Number(await viewport.getAttribute('x')),
-    y: Number(await viewport.getAttribute('y')),
-  });
+  const readViewport = async () => {
+    const x = Number(await viewport.getAttribute('x'));
+    const y = Number(await viewport.getAttribute('y'));
+    const width = Number(await viewport.getAttribute('width'));
+    const height = Number(await viewport.getAttribute('height'));
+    return {
+      x,
+      y,
+      width,
+      height,
+      centerX: x + width / 2,
+      centerY: y + height / 2,
+    };
+  };
   const before = await readViewport();
   await page.locator('canvas').hover({ position: { x: 50, y: 50 } });
   await page.mouse.wheel(260, 0);
   await page.waitForTimeout(700);
   const panned = await readViewport();
   check(
-    Math.abs(panned.x - before.x) > 0.5,
+    Math.abs(panned.centerX - before.centerX) > 0.5,
     'Project focus swallowed a horizontal pan'
   );
+  const resumeFollow = page.getByRole('button', {
+    name: 'Follow selected Agent',
+  });
+  await resumeFollow.waitFor({ state: 'visible' });
+  check(
+    (await resumeFollow.getAttribute('aria-pressed')) === 'false',
+    'Manual pan did not suspend Agent follow'
+  );
+  await resumeFollow.click();
+  const pauseFollow = page.getByRole('button', {
+    name: 'Pause Agent follow',
+  });
+  await pauseFollow.waitFor({ state: 'visible' });
+  check(
+    (await pauseFollow.getAttribute('aria-pressed')) === 'true',
+    'Agent follow reticle did not resume soft follow'
+  );
+  await page.waitForTimeout(700);
+  const followed = await readViewport();
   await page.getByRole('button', { name: 'Angle' }).click();
   await page.getByRole('button', { name: 'Top' }).click();
   await page.waitForTimeout(700);
   const afterRerender = await readViewport();
   check(
-    Math.abs(afterRerender.x - panned.x) < 0.5 &&
-      Math.abs(afterRerender.y - panned.y) < 0.5,
+    Math.abs(afterRerender.centerX - followed.centerX) < 0.5 &&
+      Math.abs(afterRerender.centerY - followed.centerY) < 0.5,
     'A board rerender snapped the camera back to the focused Project'
   );
-  return { before, panned, afterRerender };
+  return { before, panned, followed, afterRerender };
+}
+
+async function checkCanonicalStatusFilters(page) {
+  const working = page.getByRole('button', {
+    name: /^Working: .*Filter by this status\.$/,
+  });
+  const result = page.getByRole('button', {
+    name: /^Result ready: .*Filter by this status\.$/,
+  });
+  await working.waitFor({ state: 'visible' });
+  const totalsBefore = await page
+    .locator('[aria-label="Fleet Agent statuses"]')
+    .innerText();
+  await working.click();
+  await result.click();
+  await page.waitForFunction(() => {
+    const statuses = new URL(location.href).searchParams.get('status') ?? '';
+    return (
+      statuses.includes('working') &&
+      statuses.includes('reviewing') &&
+      statuses.includes('complete')
+    );
+  });
+  check(
+    (await working.getAttribute('aria-pressed')) === 'true' &&
+      (await result.getAttribute('aria-pressed')) === 'true',
+    'Canonical Fleet status pills did not preserve multi-selection'
+  );
+  check(
+    await page.getByText(/\d+ shown/).isVisible(),
+    'Filtered result count is not visible'
+  );
+  check(
+    (await page.locator('[aria-label="Fleet Agent statuses"]').innerText()) ===
+      totalsBefore,
+    'Fleet-wide status totals changed with the active filter'
+  );
+  await page.getByTitle('Clear search and filters').click();
+  await page.waitForFunction(
+    () => !new URL(location.href).searchParams.has('status')
+  );
+  return { totalsBefore };
 }
 
 /**
@@ -206,6 +311,19 @@ async function checkVoltaicFleet(page) {
   await projects.first().waitFor({ state: 'visible', timeout: 10_000 });
   const projectCount = await projects.count();
   check(projectCount > 0, 'Voltaic fleet rendered no Projects');
+  const agentNavigator = page.getByLabel('Select Agent on board');
+  check(
+    (await agentNavigator.locator('option').count()) > 1,
+    'Fleet Agents have no keyboard-accessible DOM selection path'
+  );
+  await agentNavigator.focus();
+  check(
+    await agentNavigator.evaluate(
+      element => element === document.activeElement
+    ),
+    'Fleet Agent navigator cannot receive keyboard focus'
+  );
+  await page.evaluate(() => document.activeElement?.blur());
   const motion = await measureGlide(page);
   await page.keyboard.press('Digit0');
   await page.waitForTimeout(1_000);
@@ -252,6 +370,40 @@ async function checkBoardTools(page) {
     0
   );
   check(quaternionDelta > 0.05, 'Fixed-angle camera pose did not change');
+  // Read both projections in one page task. The camera is still damped; four
+  // separate attribute awaits can span frames and compare different poses.
+  const { projectedViewport, minimapViewport } = await page.evaluate(() => {
+    const map = document.querySelector(
+      'button[aria-label="Recenter board from minimap"]'
+    );
+    const rects = map?.querySelectorAll('svg rect');
+    const rect = rects?.[rects.length - 1];
+    return {
+      projectedViewport: window.__EVAL_BOARD_VIEWPORT__
+        ? { ...window.__EVAL_BOARD_VIEWPORT__ }
+        : null,
+      minimapViewport: {
+        x: Number(rect?.getAttribute('x')),
+        y: Number(rect?.getAttribute('y')),
+        width: Number(rect?.getAttribute('width')),
+        height: Number(rect?.getAttribute('height')),
+      },
+    };
+  });
+  check(projectedViewport, 'Fixed-angle board-plane viewport was not exposed');
+  check(
+    Math.abs(
+      minimapViewport.x -
+        (projectedViewport.centerX - projectedViewport.width / 2)
+    ) < 0.05 &&
+      Math.abs(
+        minimapViewport.y -
+          (projectedViewport.centerY - projectedViewport.height / 2)
+      ) < 0.05 &&
+      Math.abs(minimapViewport.width - projectedViewport.width) < 0.05 &&
+      Math.abs(minimapViewport.height - projectedViewport.height) < 0.05,
+    'Minimap viewport does not match the fixed-angle board-plane footprint'
+  );
   check(
     new URL(page.url()).searchParams.get('projection') === 'fixed-angle',
     'Projection preference was not reflected in the URL'
@@ -318,7 +470,8 @@ async function checkAgentProjectionPersistence(page) {
 async function openAgent(page, units) {
   const unitCount = await units.count();
   check(unitCount > 0, 'Project regime has no accessible Agent units');
-  await units.first().click();
+  await units.first().focus();
+  await page.keyboard.press('Enter');
   await page.waitForURL(/altitude=agent/, { timeout: 10_000 });
   await page.getByText('Selected Agent', { exact: true }).waitFor();
   return unitCount;
@@ -403,6 +556,9 @@ async function runScenario(browser, scenario) {
       result.motion = voltaic.motion;
     }
     if (scenario.tools) result.boardTools = await checkBoardTools(page);
+    if (scenario.tools) {
+      result.statusFilters = await checkCanonicalStatusFilters(page);
+    }
 
     const { projectCount, units } = await openProject(page);
     result.projectCount = projectCount;
@@ -499,6 +655,16 @@ async function runHandoffScenario(browser, scenario) {
         value: 4,
       });
     });
+  } else if (scenario.highPower) {
+    // The pose and missed-budget fixtures exercise branches that require the
+    // motion gate to be open. Pin this browser capability so a shared QA host
+    // reporting four cores cannot silently turn them into low-power cases.
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'hardwareConcurrency', {
+        configurable: true,
+        value: 8,
+      });
+    });
   }
   const errors = [];
   page.on('pageerror', error => errors.push(String(error.message || error)));
@@ -522,11 +688,24 @@ async function runHandoffScenario(browser, scenario) {
     await page.click('[data-enter-fleet]');
 
     if (scenario.expect === 'pose') {
-      await page.waitForFunction(
-        () => window.__EVAL_HANDOFF__?.poseAt != null,
-        null,
-        { timeout: 10_000 }
-      );
+      try {
+        await page.waitForFunction(
+          () => window.__EVAL_HANDOFF__?.poseAt != null,
+          null,
+          { timeout: 10_000 }
+        );
+      } catch {
+        const state = await page.evaluate(() => ({
+          handoff: window.__EVAL_HANDOFF__,
+          phase: document
+            .querySelector('[data-handoff-fixture-phase]')
+            ?.getAttribute('data-handoff-fixture-phase'),
+          board: Boolean(document.querySelector('[data-spatial-board]')),
+        }));
+        throw new Error(
+          `Handoff entry pose timed out: ${JSON.stringify(state)}`
+        );
+      }
       // Ghost layer present, never intercepting input.
       const ghosts = await page.evaluate(() => {
         const layer = document.querySelector('[data-altitude-handoff]');
@@ -594,18 +773,29 @@ async function runHandoffScenario(browser, scenario) {
       };
     } else {
       // Fallback matrix: the cut must fire and the board must still arrive.
-      await page.waitForFunction(
-        expectAttempted =>
-          window.__EVAL_HANDOFF__ &&
-          (expectAttempted
-            ? window.__EVAL_HANDOFF__.outcome !== null
-            : window.__EVAL_HANDOFF__.attempted === false &&
-              document
-                .querySelector('[data-handoff-fixture-phase]')
-                ?.getAttribute('data-handoff-fixture-phase') === 'board'),
-        scenario.expectAttempted ?? false,
-        { timeout: 10_000 }
-      );
+      try {
+        await page.waitForFunction(
+          expectAttempted =>
+            window.__EVAL_HANDOFF__ &&
+            (expectAttempted
+              ? window.__EVAL_HANDOFF__.outcome !== null
+              : window.__EVAL_HANDOFF__.attempted === false &&
+                document
+                  .querySelector('[data-handoff-fixture-phase]')
+                  ?.getAttribute('data-handoff-fixture-phase') === 'board'),
+          scenario.expectAttempted ?? false,
+          { timeout: 10_000 }
+        );
+      } catch {
+        const state = await page.evaluate(() => ({
+          handoff: window.__EVAL_HANDOFF__,
+          phase: document
+            .querySelector('[data-handoff-fixture-phase]')
+            ?.getAttribute('data-handoff-fixture-phase'),
+          board: Boolean(document.querySelector('[data-spatial-board]')),
+        }));
+        throw new Error(`Handoff fallback timed out: ${JSON.stringify(state)}`);
+      }
       const state = await page.evaluate(() => window.__EVAL_HANDOFF__);
       if (scenario.expectAttempted) {
         check(
@@ -652,13 +842,14 @@ async function runHandoffScenario(browser, scenario) {
 }
 
 const handoffScenarios = [
-  { name: 'handoff-pose', expect: 'pose' },
+  { name: 'handoff-pose', expect: 'pose', highPower: true },
   { name: 'handoff-reduced-motion', reduced: true },
   { name: 'handoff-low-power', lowPower: true },
   {
     name: 'handoff-missed-budget',
     query: '?claimDelay=1600',
     expectAttempted: true,
+    highPower: true,
   },
 ];
 
