@@ -17,6 +17,7 @@ import { createClient } from '@/lib/supabase/client';
 import type { RecentConversation } from '@/types/electron';
 import { AGENT_SOURCE_META } from './agent-sources';
 import { HarnessGlyph } from './harness-icons';
+import { SourceIdentityMark } from './source-identity-mark';
 
 const FILTER_THRESHOLD = 8;
 
@@ -375,16 +376,16 @@ export const RecentConversations = forwardRef<
                     ? 'Reopen'
                     : 'Resume'}
                 </span>
-                <span
-                  className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-sm border"
-                  style={{ color: meta.color, borderColor: `${meta.color}44` }}
+                <SourceIdentityMark
+                  className="mt-0.5 h-7 w-7"
+                  color={meta.color}
                 >
                   {opening === exactKey ? (
                     <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
                   ) : (
                     <HarnessGlyph harness={conversation.harness} size={14} />
                   )}
-                </span>
+                </SourceIdentityMark>
                 <span className="min-w-0 flex-1">
                   <span className="flex min-w-0 items-center gap-2 @max-[430px]:flex-col @max-[430px]:items-start @max-[430px]:gap-0">
                     <span
@@ -403,7 +404,7 @@ export const RecentConversations = forwardRef<
                     )}
                     <span
                       className="ml-auto shrink-0 font-mono text-chrome-micro @max-[430px]:ml-0"
-                      style={{ color: meta.color }}
+                      style={{ color: HUD.textDim }}
                     >
                       {reopensExawatt ? 'Exawatt · ' : ''}
                       {meta.label} · {relativeTime(conversation.updatedAt)}

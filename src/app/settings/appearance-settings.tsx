@@ -155,9 +155,7 @@ export function AppearanceSettings() {
   }, [commitPreferences]);
 
   const commit = useCallback(
-    (
-      update: (current: AppearancePreferencesV1) => AppearancePreferencesV1
-    ) => {
+    (update: (current: AppearancePreferencesV1) => AppearancePreferencesV1) => {
       if (!ready) return;
       const next = update(preferencesRef.current);
       preferencesRef.current = next;
@@ -192,7 +190,7 @@ export function AppearanceSettings() {
   return (
     <SettingsGroup
       title="Appearance"
-      description="Choose the app theme and readability settings for this device."
+      description="Choose the app theme and interface typography for this device."
       dataAttribute="data-appearance-settings"
     >
       <SettingRow
@@ -373,40 +371,6 @@ export function AppearanceSettings() {
             ))}
           </SelectContent>
         </Select>
-      </SettingRow>
-
-      <SettingRow
-        title="Enhanced contrast"
-        description="Strengthen text and boundaries beyond the system setting."
-      >
-        <SettingSwitch
-          checked={preferences.contrast === 'enhanced'}
-          disabled={disabled}
-          label="Enhanced contrast"
-          onChange={enhanced =>
-            commit(current => ({
-              ...current,
-              contrast: enhanced ? 'enhanced' : 'system',
-            }))
-          }
-        />
-      </SettingRow>
-
-      <SettingRow
-        title="Reduce transparency"
-        description="Use opaque surfaces instead of layered material effects."
-      >
-        <SettingSwitch
-          checked={preferences.transparency === 'reduced'}
-          disabled={disabled}
-          label="Reduce transparency"
-          onChange={reduced =>
-            commit(current => ({
-              ...current,
-              transparency: reduced ? 'reduced' : 'system',
-            }))
-          }
-        />
       </SettingRow>
 
       {error && (

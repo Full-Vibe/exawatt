@@ -47,9 +47,8 @@ contract and a pure `resolveAppearance` function as the one merge point.
   web uses a local adapter with the same schema until sync is deliberately
   designed.
 - A preset supplies the default accent, typography profile, and material recipe.
-  Global system-accent, interface font/scale, enhanced-contrast, and
-  reduced-transparency overlays survive theme changes and outrank the preset.
-  OS accessibility requests outrank both.
+  Global system-accent and interface font/scale overlays survive theme changes
+  and outrank the preset. OS accessibility requests outrank both.
 - Terminal color follows the preset; terminal typography remains independently
   configured. A theme never owns motion, layout, density, geometry, camera,
   interaction, state derivation, or product vocabulary.
@@ -86,7 +85,7 @@ and ENG-036's type scale/channel separation remain authoritative.
 - The Classic preset creates a parity oracle and rollback path, allowing the
   hardcoded system to migrate slice by slice without exposing half-themed UI.
 - Native backdrop material is optional output. Every material role has a solid
-  fallback, so platform limitations and reduced-transparency settings do not
+  fallback, so platform limitations and OS reduced-transparency requests do not
   create a separate theme or block first release.
 - Cross-device sync is intentionally absent. Adding it later must preserve local
   offline operation and resolve conflicts explicitly rather than silently
@@ -133,9 +132,25 @@ keyboard-complete **Change theme…** preview/apply/cancel command are two faces
 over the same app-global, device-local authority.
 
 Theme-provided action, typography, and material defaults remain beneath the
-system-accent, interface font/scale, enhanced-contrast, reduced-transparency,
-and OS accessibility overlays. Corrupt preferences fall back to Classic, and
+system-accent, interface font/scale, and OS accessibility overlays. Corrupt
+preferences fall back to Classic, and
 `--safe-theme` selects Classic for one launch without rewriting a valid stored
 choice. The temporary gallery theme study and evaluator retired once production
 surfaces became the review target. The final clean-master dogfood installation
 is delivery closeout and is not claimed by this decision amendment.
+
+## Amendment — retire manual accessibility overrides and harden first paint
+
+The first production rollout exposed two fragile user preferences and one
+startup race. Enhanced contrast and Reduce transparency are no longer manual
+saved controls. Existing V1 records remain parseable but normalize both fields
+to `system`, while OS contrast, forced-colors, inversion, and reduced-
+transparency requests still feed the resolver automatically. This is a scope
+reduction, not removal of platform accessibility behavior.
+
+The inline bootstrap remains the sole first-paint authority until React adopts
+the same saved preference and OS snapshot; the hydrated provider may not write
+its deterministic server default over that frame. The document root paints the
+resolved ground, and the public marketing home pins one system font rather than
+following app typography. Theme selection remains app-global and is available
+from Settings, **Change theme…**, and the avatar dropdown.

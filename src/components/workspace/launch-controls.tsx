@@ -11,10 +11,7 @@ import {
   SquareTerminal,
   TriangleAlert,
 } from 'lucide-react';
-import {
-  WORKSPACE_HUD as HUD,
-  withThemeAlpha,
-} from './workspace-theme';
+import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -54,6 +51,7 @@ import {
   type AgentSourceId,
 } from './agent-sources';
 import { HarnessGlyph } from './harness-icons';
+import { SourceIdentityMark } from './source-identity-mark';
 import type { LaunchOptions, WorkspaceDraftPatch } from './use-workspace-state';
 import type {
   AgentModelCatalog,
@@ -921,14 +919,16 @@ export function AgentComposer({
               }
               className="h-9 w-[136px] shrink-0 rounded border px-2 font-mono text-xs shadow-none transition-[border-color,filter] duration-150 hover:brightness-110 focus:ring-hud-cyan data-[state=open]:brightness-110 motion-reduce:transition-none"
               style={{
-                color: sourceMeta.color,
+                color: HUD.text,
                 borderColor: HUD.strokeSoft,
                 background: HUD.bg.deep,
               }}
             >
               {preferencesReady ? (
                 <span className="flex min-w-0 items-center gap-2">
-                  <HarnessGlyph harness={effectiveSource} size={13} />
+                  <SourceIdentityMark color={sourceMeta.color}>
+                    <HarnessGlyph harness={effectiveSource} size={12} />
+                  </SourceIdentityMark>
                   {/* The trigger owns its one brand glyph. An empty SelectValue
                   projects the selected item's decorated children here, which
                   would duplicate the option glyph (D27 correction). */}
@@ -953,11 +953,10 @@ export function AgentComposer({
                   >
                     {/* Options own their menu presentation independently of the
                   trigger: glyph + brand color, with no selection flash. */}
-                    <span
-                      className="flex items-center gap-2"
-                      style={{ color: sourceOption.color }}
-                    >
-                      <HarnessGlyph harness={id} size={12} />
+                    <span className="flex items-center gap-2">
+                      <SourceIdentityMark color={sourceOption.color}>
+                        <HarnessGlyph harness={id} size={11} />
+                      </SourceIdentityMark>
                       <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
                         <span>{sourceOption.label}</span>
                         {!sourceOption.launchable && (

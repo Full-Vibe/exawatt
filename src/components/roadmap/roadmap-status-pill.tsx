@@ -24,6 +24,17 @@ export const ROADMAP_STATUS_COLOR: Record<RoadmapDisplayStatus, string> = {
   parked: HUD.idle,
 };
 
+// The accent still carries state in the border/fill. At micro-text size the
+// label uses only HUD roles that are explicitly contrast-gated as readable.
+export const ROADMAP_STATUS_TEXT_COLOR: Record<RoadmapDisplayStatus, string> = {
+  active: HUD.text,
+  next: HUD.textDim,
+  later: HUD.textDim,
+  backlog: HUD.textDim,
+  shipped: HUD.green,
+  parked: HUD.textDim,
+};
+
 const STATUS_WORD: Record<RoadmapDisplayStatus, string> = {
   active: 'Active',
   next: 'Next',
@@ -38,14 +49,14 @@ export function RoadmapStatusPill({
 }: {
   status: RoadmapDisplayStatus;
 }) {
-  const color = ROADMAP_STATUS_COLOR[status];
+  const accent = ROADMAP_STATUS_COLOR[status];
   return (
     <span
       className="inline-flex shrink-0 items-center rounded-sm border px-1.5 py-px font-ui text-chrome-micro font-medium leading-4"
       style={{
-        color,
-        borderColor: withAlpha(color, 0.4),
-        background: withAlpha(color, 0.08),
+        color: ROADMAP_STATUS_TEXT_COLOR[status],
+        borderColor: withAlpha(accent, 0.4),
+        background: withAlpha(accent, 0.08),
       }}
     >
       {STATUS_WORD[status]}

@@ -10,7 +10,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -27,6 +32,7 @@ import {
   Trophy,
   Settings,
   MessageSquareWarning,
+  Palette,
   type LucideIcon,
 } from 'lucide-react';
 import { signOut } from '@/app/actions/projects';
@@ -41,6 +47,12 @@ import { ComingSoonMarker } from '@/components/readiness';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import type { TenantWorkspaceKind } from '@/lib/tenancy/workspace-scope';
 import { useCommandNavigation } from './command-navigation-provider';
+import { useAppearance } from '@/components/appearance/appearance-provider';
+import { THEME_REGISTRY } from '@/generated/theme-registry';
+import {
+  selectAutoThemes,
+  selectManualTheme,
+} from '@/lib/appearance/selection';
 
 const WORKSPACE_KIND_ICONS: Record<TenantWorkspaceKind, LucideIcon> = {
   personal: Laptop,
@@ -52,6 +64,87 @@ const WORKSPACE_KIND_ICONS: Record<TenantWorkspaceKind, LucideIcon> = {
 // carry the same label and icon as every other consumer (decision 0023)
 const AGENT_SURFACE = APP_SURFACES.find(surface => surface.id === 'terminal')!;
 const AgentSurfaceIcon = ALTITUDE_ICONS.terminal;
+
+const ACCOUNT_THEME_IDS = [
+  'exawatt-classic-dark',
+  'exawatt-air-light',
+  'exawatt-night-dark',
+] as const;
+
+export function AccountThemeMenu() {
+  const { preferences, ready, commitPreferences } = useAppearance();
+  const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const value =
+    preferences.selection.mode === 'auto'
+      ? 'auto'
+      : preferences.selection.themeId;
+  const currentThemeId = ACCOUNT_THEME_IDS.find(themeId => themeId === value);
+  const valueLabel =
+    value === 'auto'
+      ? 'Auto'
+      : currentThemeId
+        ? THEME_REGISTRY[currentThemeId].label
+        : 'Theme';
+
+  const selectTheme = async (next: string) => {
+    if (!ready || saving || next === value) return;
+    setSaving(true);
+    setSaveFailed(false);
+    try {
+      await commitPreferences(
+        next === 'auto'
+          ? selectAutoThemes(preferences)
+          : selectManualTheme(preferences, next)
+      );
+    } catch {
+      setSaveFailed(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger
+        data-account-theme-menu
+        disabled={!ready || saving}
+      >
+        <Palette aria-hidden className="mr-2 h-4 w-4" />
+        <span>Theme</span>
+        <span
+          className={
+            saveFailed
+              ? 'ml-auto text-chrome-meta text-destructive'
+              : 'ml-auto text-chrome-meta text-muted-foreground'
+          }
+        >
+          {saveFailed ? 'Try again' : valueLabel}
+        </span>
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="w-44">
+        <DropdownMenuRadioGroup
+          value={value}
+          onValueChange={next => void selectTheme(next)}
+        >
+          <DropdownMenuRadioItem value="auto" disabled={!ready || saving}>
+            Auto
+          </DropdownMenuRadioItem>
+          <DropdownMenuSeparator />
+          {ACCOUNT_THEME_IDS.map(themeId => (
+            <DropdownMenuRadioItem
+              key={themeId}
+              value={themeId}
+              disabled={!ready || saving}
+            >
+              {THEME_REGISTRY[themeId].label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  );
+}
 
 function WorkspaceIdentityChip({
   workspace,
@@ -362,6 +455,7 @@ export function SiteHeaderNav({
                   <DropdownMenuSeparator />
                 </>
               )}
+              <AccountThemeMenu />
               <DropdownMenuItem asChild>
                 <Link href="/settings">
                   <Settings className="mr-2 h-4 w-4" />

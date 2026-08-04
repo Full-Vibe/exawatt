@@ -3,7 +3,7 @@ import { THEME_REGISTRY } from '@/generated/theme-registry';
 import { contrastRatio } from '@/lib/appearance/color';
 import { resolveAppearance } from '@/lib/appearance/resolve-appearance';
 import type {
-  AppearancePreferencesV1,
+  AppearanceOsSignals,
   BuiltInThemeId,
 } from '@/lib/appearance/types';
 import {
@@ -19,9 +19,7 @@ import {
 
 function resolved(
   themeId: BuiltInThemeId,
-  overlays: Partial<
-    Pick<AppearancePreferencesV1, 'contrast' | 'transparency'>
-  > = {}
+  osOverrides: Partial<AppearanceOsSignals> = {}
 ) {
   const theme = THEME_REGISTRY[themeId]!;
   return resolveAppearance(
@@ -32,8 +30,8 @@ function resolved(
       accentSource: 'theme',
       interfaceFont: 'theme',
       interfaceScale: 100,
-      contrast: overlays.contrast ?? 'system',
-      transparency: overlays.transparency ?? 'system',
+      contrast: 'system',
+      transparency: 'system',
     },
     {
       dark: theme.appearance === 'dark',
@@ -41,6 +39,7 @@ function resolved(
       forcedColors: false,
       invertedColors: false,
       reducedTransparency: false,
+      ...osOverrides,
     }
   );
 }
@@ -158,8 +157,8 @@ describe('spatial theme adapter', () => {
     );
     const overlaid = spatialThemeFromResolvedAppearance(
       resolved('exawatt-night-dark', {
-        contrast: 'enhanced',
-        transparency: 'reduced',
+        highContrast: true,
+        reducedTransparency: true,
       })
     );
 

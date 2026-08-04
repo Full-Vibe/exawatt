@@ -6,17 +6,20 @@ discovery, and (once approved) the executable milestone detail.
 
 ## Current phase
 
-**Production closure — T0 through T5 assembled and verified.** The versioned
+**Production closure — T0 through T5.1 assembled and verified.** The versioned
 contract, device-local resolver/runtime, strict Electron settings and
 first-paint bootstrap now expose Classic, Air, and Night through production
-Appearance settings and the **Change theme…** command. Fresh state follows the
-OS with the Auto Air/Night pair; Manual pins a preset while retaining that pair.
+Appearance settings, the account-avatar menu, and the **Change theme…** command.
+Fresh state follows the OS with the Auto Air/Night pair; Manual pins a preset
+while retaining that pair.
 Root app chrome, Settings, shared overlays, feedback, readiness,
 Workspace/Roadmap/status paint, live plus retained xterm terminals,
 Usage/Consumption, and the Fleet Operations Board consume the same generated
 snapshot. Theme changes update existing terminal and Fleet instances without
 remount, replay, resize, camera/filter/selection reset, or data loss. The
 temporary theme workbench has retired; shipped surfaces are the review target.
+Post-rollout contrast hardening confines Agent Source colors to backed identity
+marks and gates every HUD role sanctioned as readable micro-copy.
 
 The originating operator signal is broader than dark-versus-light: the current
 fonts and colors feel “ultra-geeky” and insufficiently readable; users should be
@@ -65,18 +68,18 @@ counts.
 
 ### Existing appearance layers
 
-| Layer | Current authority | Theme pressure |
-| --- | --- | --- |
-| Semantic app chrome | shadcn variables in `globals.css`, mapped through Tailwind `@theme` | already runtime-variable-shaped, but forced dark |
-| HUD operations UI | `globals.css` plus mirrored `HUD` TypeScript object | DOM and WebGL need one resolved runtime value set |
-| Settings shell | scoped `--settings-*` variables | hardcoded dark private palette |
-| Consumption | `FLUX` TypeScript constants | semantics must remain disjoint from status |
-| Status lights | D40 protocol metadata and DOM/R3F renderers | state vocabulary and distinguishability are invariant |
-| Project identity | generated Project palette | identity remains separate from action and status |
-| Terminal | xterm `ITheme`-shaped constant | needs a theme adapter and live update path |
-| Fleet board | local Three.js/DOM color and material constants | needs theme-aware materials plus visual/performance validation |
-| Native/boot chrome | Electron window background, launch document, system accent | must match before renderer hydration and follow accessibility settings |
-| Typography | statically loaded app faces plus terminal settings | ownership relative to color themes is unresolved |
+| Layer               | Current authority                                                   | Theme pressure                                                         |
+| ------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Semantic app chrome | shadcn variables in `globals.css`, mapped through Tailwind `@theme` | already runtime-variable-shaped, but forced dark                       |
+| HUD operations UI   | `globals.css` plus mirrored `HUD` TypeScript object                 | DOM and WebGL need one resolved runtime value set                      |
+| Settings shell      | scoped `--settings-*` variables                                     | hardcoded dark private palette                                         |
+| Consumption         | `FLUX` TypeScript constants                                         | semantics must remain disjoint from status                             |
+| Status lights       | D40 protocol metadata and DOM/R3F renderers                         | state vocabulary and distinguishability are invariant                  |
+| Project identity    | generated Project palette                                           | identity remains separate from action and status                       |
+| Terminal            | xterm `ITheme`-shaped constant                                      | needs a theme adapter and live update path                             |
+| Fleet board         | local Three.js/DOM color and material constants                     | needs theme-aware materials plus visual/performance validation         |
+| Native/boot chrome  | Electron window background, launch document, system accent          | must match before renderer hydration and follow accessibility settings |
+| Typography          | statically loaded app faces plus terminal settings                  | ownership relative to color themes is unresolved                       |
 
 ## Primary-source research
 
@@ -266,9 +269,10 @@ Sources: [Zed appearance](https://zed.dev/docs/appearance),
   operator wants it; runtime contrast correction protects the selected preset.
   Project color remains identity-only.
 - **Material and accessibility:** the preset owns its suggested material recipe.
-  Global **Reduce transparency** and **Enhanced contrast** overrides sit above
-  it and automatically activate when the OS requests the same accommodations.
-  The overrides may simplify paint but never change layout or semantic state.
+  OS contrast, forced-color, inversion, and reduced-transparency requests sit
+  above it and may simplify paint but never change layout or semantic state.
+  Manual Enhanced contrast and Reduce transparency controls were retired after
+  the first rollout; their serialized V1 fields normalize to `system`.
 - **First-mile persistence:** appearance is device-local and offline-first. The
   Electron settings file is authoritative on desktop; the hosted interface uses
   a local browser source with the same schema until account sync is deliberately
@@ -293,11 +297,11 @@ motion, or changing the meaning of any product state.
 The first release contains three built-in roles with stable implementation IDs
 and gallery-reviewed display names:
 
-| Stable ID | Role | Initial typography posture |
-| --- | --- | --- |
-| `exawatt-classic-dark` | compatibility rendering of the current dark product | Exo 2 shell/body default + Geist UI/display + Geist Mono data |
-| `exawatt-air-light` | new light, airy, selectively translucent direction | system shell/UI + Geist display + Geist Mono data |
-| `exawatt-night-dark` | calmer dark sibling to Air, not a neon reskin of Classic | Geist shell/UI/display + Geist Mono data |
+| Stable ID              | Role                                                     | Initial typography posture                                    |
+| ---------------------- | -------------------------------------------------------- | ------------------------------------------------------------- |
+| `exawatt-classic-dark` | compatibility rendering of the current dark product      | Exo 2 shell/body default + Geist UI/display + Geist Mono data |
+| `exawatt-air-light`    | new light, airy, selectively translucent direction       | system shell/UI + Geist display + Geist Mono data             |
+| `exawatt-night-dark`   | calmer dark sibling to Air, not a neon reskin of Classic | Geist shell/UI/display + Geist Mono data                      |
 
 The IDs are persistence/API state and must not be renamed casually. Display
 names and these first-party profile mappings were accepted at T2; operators
@@ -311,9 +315,10 @@ may still override the interface family globally without changing a preset.
   previews without writing; Enter commits; Escape and outside-dismiss restore
   the last committed appearance. Preview reaches DOM, xterm, and R3F through
   the same resolver as committed state.
-- **Use system accent**, **Enhanced contrast**, and **Reduce transparency** are
-  global overlays. OS high-contrast, forced-colors, inverted-colors, and
-  reduced-transparency signals always outrank an app preference.
+- The avatar dropdown exposes Auto, Classic, Air, and Night as a compact direct
+  selection face over the same preference.
+- **Use system accent** is a global overlay. OS high-contrast, forced-colors,
+  inverted-colors, and reduced-transparency signals apply automatically.
 - **Interface font** offers Theme default, System, and bundled Geist in the
   first release. **Interface text size** is a bounded 90/100/110/120 percent
   preference applied to named type rungs rather than the root font size, so it
@@ -360,15 +365,15 @@ The preference source is replaceable below the provider:
 settings parser rejects unknown IDs and out-of-range values without erasing
 unrelated settings.
 
-| Field | V1 values and default |
-| --- | --- |
-| `schemaVersion` | `1` |
-| `selection` | `{ mode: "manual", themeId }` or `{ mode: "auto", lightThemeId, darkThemeId }`; fallback Auto = Air/Night after T5 |
-| `accentSource` | `theme` (default) or `system` |
-| `interfaceFont` | `theme` (default), `system`, or `geist` |
-| `interfaceScale` | `90`, `100` (default), `110`, or `120` |
-| `contrast` | `system` (default) or `enhanced`; OS request is an unconditional OR |
-| `transparency` | `system` (default) or `reduced`; OS request is an unconditional OR |
+| Field            | V1 values and default                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `schemaVersion`  | `1`                                                                                                                |
+| `selection`      | `{ mode: "manual", themeId }` or `{ mode: "auto", lightThemeId, darkThemeId }`; fallback Auto = Air/Night after T5 |
+| `accentSource`   | `theme` (default) or `system`                                                                                      |
+| `interfaceFont`  | `theme` (default), `system`, or `geist`                                                                            |
+| `interfaceScale` | `90`, `100` (default), `110`, or `120`                                                                             |
+| `contrast`       | serialized V1 compatibility field; always normalized to `system`; OS contrast/forced-color/inversion is automatic  |
+| `transparency`   | serialized V1 compatibility field; always normalized to `system`; OS reduced-transparency is automatic             |
 
 Preview state is deliberately absent from persistence. A genuinely absent
 preference adopts the accepted default pair after T5. Unknown schema versions,
@@ -384,19 +389,19 @@ or arbitrary property name. This is the trust boundary a future marketplace can
 publish into; marketplace discovery, installation, signing, moderation, and
 payment remain out of scope.
 
-| Group | Owns | Must not own |
-| --- | --- | --- |
-| Metadata | schema version, stable ID, label, author, light/dark class, gallery/production availability | executable hooks or remote resources |
-| Foundation | canvas, surfaces, overlays, inputs, text hierarchy, borders, selection, focus, action roles | Project identity or state semantics |
-| HUD | operations surfaces, strokes, readouts, HUD text roles | a second action/status vocabulary |
-| Status | paint for Off, Active, Result, Needs You, Fault | priority, icons, labels, motion, or D40 derivation |
-| Consumption | calm/mid/warm/hot/unknown visualization ramp | status, action, readiness, or Project identity |
-| Readiness | neutral announced/coming-soon paint | status/fault meaning or alternative copy |
-| Terminal | background, foreground, cursor, selection, ANSI 16 | terminal font metrics |
-| Spatial | canvas/grid/zone/material/emissive paint and bounded bloom profile | camera, interaction, geometry, timing, or unit state |
-| Typography | one validated first-party profile ID | free-form font URLs or a private type scale |
-| Material | semantic solid/translucent recipes with opaque fallbacks | layout, motion, or a requirement for native backdrop support |
-| Bootstrap | first-frame background, foreground, signal, and `color-scheme` subset | a divergent launch-screen identity |
+| Group       | Owns                                                                                        | Must not own                                                 |
+| ----------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Metadata    | schema version, stable ID, label, author, light/dark class, gallery/production availability | executable hooks or remote resources                         |
+| Foundation  | canvas, surfaces, overlays, inputs, text hierarchy, borders, selection, focus, action roles | Project identity or state semantics                          |
+| HUD         | operations surfaces, strokes, readouts, HUD text roles                                      | a second action/status vocabulary                            |
+| Status      | paint for Off, Active, Result, Needs You, Fault                                             | priority, icons, labels, motion, or D40 derivation           |
+| Consumption | calm/mid/warm/hot/unknown visualization ramp                                                | status, action, readiness, or Project identity               |
+| Readiness   | neutral announced/coming-soon paint                                                         | status/fault meaning or alternative copy                     |
+| Terminal    | background, foreground, cursor, selection, ANSI 16                                          | terminal font metrics                                        |
+| Spatial     | canvas/grid/zone/material/emissive paint and bounded bloom profile                          | camera, interaction, geometry, timing, or unit state         |
+| Typography  | one validated first-party profile ID                                                        | free-form font URLs or a private type scale                  |
+| Material    | semantic solid/translucent recipes with opaque fallbacks                                    | layout, motion, or a requirement for native backdrop support |
+| Bootstrap   | first-frame background, foreground, signal, and `color-scheme` subset                       | a divergent launch-screen identity                           |
 
 The canonical authored values live in `themes/v1/*.json`. A generator validates
 them and emits artifacts; generated files are never hand-edited:
@@ -617,6 +622,9 @@ windows.
 
 ### T5 — Selection UI, accessibility matrix, and rollout — assembled and verified
 
+T5.1 supersedes T5's brief manual Enhanced contrast and Reduce transparency
+exposure: those saved controls are retired while the OS-driven matrix remains.
+
 Depends on T1–T4. Scope:
 
 - Add the production Appearance settings and **Change theme…** command/picker;
@@ -667,32 +675,32 @@ can proceed in sibling worktrees because their source ownership is disjoint.
 Each packet lands Classic parity plus its tests before the next packet rebases;
 no packet privately extends the contract to solve a local color.
 
-| Packet | Exclusive implementation ownership | Shared interfaces it may consume, not mutate |
-| --- | --- | --- |
-| Contract owner | `themes/v1`, generator, validators, resolver, preference types | design-system channel rules |
-| T3A | root/app chrome/Settings/command/dialog/readiness files | generated variables + provider |
-| T3B | workspace/roadmap/xterm DOM files | resolved DOM/xterm adapters |
-| T3C | Consumption and scoped visualization files | channel mapping contract |
-| T4 | Fleet Operations Board R3F + Electron boot/native adapter | resolved spatial/bootstrap snapshots |
-| Gate owner | evaluators, screenshot matrix, direct-color allowlist | all public adapters |
+| Packet         | Exclusive implementation ownership                             | Shared interfaces it may consume, not mutate |
+| -------------- | -------------------------------------------------------------- | -------------------------------------------- |
+| Contract owner | `themes/v1`, generator, validators, resolver, preference types | design-system channel rules                  |
+| T3A            | root/app chrome/Settings/command/dialog/readiness files        | generated variables + provider               |
+| T3B            | workspace/roadmap/xterm DOM files                              | resolved DOM/xterm adapters                  |
+| T3C            | Consumption and scoped visualization files                     | channel mapping contract                     |
+| T4             | Fleet Operations Board R3F + Electron boot/native adapter      | resolved spatial/bootstrap snapshots         |
+| Gate owner     | evaluators, screenshot matrix, direct-color allowlist          | all public adapters                          |
 
 ## Verification matrix
 
-| Risk | Required evidence |
-| --- | --- |
-| Schema or future marketplace payload escapes visual scope | hostile/unknown-field fixtures; JSON-only validator; no URL/CSS/code acceptance |
-| Corrupt or stale device preference bricks startup | parser/property tests, Classic fallback, `--safe-theme`, unrelated-setting preservation |
-| First-paint flash or native/renderer disagreement | launch → hydration screenshots under light/dark Auto and Manual; `color-scheme` assertion |
-| Theme change disrupts active work | PTY ID/output/rows/cols unchanged; no spawn/stop/resize IPC; camera/filter/selection unchanged |
-| Cross-surface drift | one fixture rendered through DOM, xterm, and R3F adapters; generated-token completeness test |
-| Status/action/identity collision | channel distinctness checks plus D40 shape/icon/text tests in every preset |
-| Light-theme unreadability | automated contrast pairs and visual matrix across Agent, Team, Fleet, Settings, Consumption, overlays |
-| Transparency hides content | opaque fallback snapshots; OS/app reduced-transparency and inactive-window checks |
-| System accent breaks a preset | runtime luminance correction fixtures across dark/light/extreme accents |
-| Typography becomes layout theming | scale extremes at minimum viewport; ribbon height and critical-action visibility assertions |
-| R3F regression | version-pinned API review, `eval:r3f`, screenshot, draw-call/frame/invalidation/bloom gates |
-| Demo/Live divergence | same resolved theme ID/tokens across tenancy switch; no source payload field for appearance |
-| Packaging/offline regression | production build, Electron compile, packaged smoke, offline evaluator, clean-master dogfood install |
+| Risk                                                      | Required evidence                                                                                     |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Schema or future marketplace payload escapes visual scope | hostile/unknown-field fixtures; JSON-only validator; no URL/CSS/code acceptance                       |
+| Corrupt or stale device preference bricks startup         | parser/property tests, Classic fallback, `--safe-theme`, unrelated-setting preservation               |
+| First-paint flash or native/renderer disagreement         | launch → hydration screenshots under light/dark Auto and Manual; `color-scheme` assertion             |
+| Theme change disrupts active work                         | PTY ID/output/rows/cols unchanged; no spawn/stop/resize IPC; camera/filter/selection unchanged        |
+| Cross-surface drift                                       | one fixture rendered through DOM, xterm, and R3F adapters; generated-token completeness test          |
+| Status/action/identity collision                          | channel distinctness checks plus D40 shape/icon/text tests in every preset                            |
+| Light-theme unreadability                                 | automated contrast pairs and visual matrix across Agent, Team, Fleet, Settings, Consumption, overlays |
+| Transparency hides content                                | opaque fallback snapshots; OS reduced-transparency and inactive-window checks                         |
+| System accent breaks a preset                             | runtime luminance correction fixtures across dark/light/extreme accents                               |
+| Typography becomes layout theming                         | scale extremes at minimum viewport; ribbon height and critical-action visibility assertions           |
+| R3F regression                                            | version-pinned API review, `eval:r3f`, screenshot, draw-call/frame/invalidation/bloom gates           |
+| Demo/Live divergence                                      | same resolved theme ID/tokens across tenancy switch; no source payload field for appearance           |
+| Packaging/offline regression                              | production build, Electron compile, packaged smoke, offline evaluator, clean-master dogfood install   |
 
 ## Rollout and rollback
 
@@ -849,3 +857,12 @@ no packet privately extends the contract to solve a local color.
   Auto round-trip, corrupt recovery, and one-launch safe-theme recovery. The
   final clean-master dogfood installation is delivery closeout and is not
   claimed by this milestone record.
+- 2026-08-03, post-rollout hardening: reproduced the hosted startup instability
+  as competing first-frame ownership and made the inline bootstrap authoritative
+  until React adopts the same snapshot; pinned public-home typography and root
+  ground paint; retired the manual Enhanced contrast and Reduce transparency
+  controls while preserving automatic OS accessibility; added the avatar theme
+  submenu; and fixed the Air Agent Source contrast class by separating stable
+  brand marks from semantic readable text. Legacy V1 flags normalize to
+  `system`, so hidden preferences cannot strand an operator in an unselectable
+  state.

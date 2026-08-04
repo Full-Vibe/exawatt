@@ -34,6 +34,7 @@ import {
   OpenCodeIcon,
   OpenClawIcon,
 } from '@/components/workspace/harness-icons';
+import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
 import {
   fallbackAgentSourceRegistry,
   loadAgentSourceRegistry,
@@ -322,12 +323,12 @@ function RegistryRail({
                   : 'transparent',
               }}
             >
-              <span
-                className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-[var(--settings-line)] bg-[var(--settings-shell)]"
-                style={{ color: source.color }}
+              <SourceIdentityMark
+                className="size-9 rounded-lg"
+                color={source.color}
               >
                 <SourceMark id={source.adapterId} />
-              </span>
+              </SourceIdentityMark>
               <span className="min-w-0 flex-1">
                 <span
                   className="block truncate font-ui text-sm font-medium"
@@ -407,12 +408,12 @@ function SourceDetail({
     <article className="min-w-0 px-5 py-5 sm:px-7 sm:py-7 xl:px-9">
       <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-center gap-4">
-          <span
-            className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-[var(--settings-line-strong)] bg-[var(--settings-raised)]"
-            style={{ color: source.color }}
+          <SourceIdentityMark
+            className="size-11 rounded-lg"
+            color={source.color}
           >
             <SourceMark id={source.adapterId} size={22} />
-          </span>
+          </SourceIdentityMark>
           <div className="min-w-0">
             <p className="truncate font-ui text-chrome-title text-[var(--settings-dim)]">
               {source.connectionName}

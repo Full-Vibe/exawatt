@@ -47,10 +47,10 @@ server to close (with bounded force-stop escalation) before declaring cleanup
 complete. This is a presentation boundary, not a second application or
 alternate data source.
 
-ENG-032's appearance boundary is **implemented** (decision `0026`). T0–T5
+ENG-032's appearance boundary is **implemented** (decision `0026`). T0–T5.1
 provide strict versioned Classic/Air/Night definitions, a deterministic
 validator/generator, one pure resolver, device-local Electron/web preference
-adapters, production Settings and command-palette selection, first-paint/native
+adapters, production Settings, account-menu, and command-palette selection, first-paint/native
 bootstrap, and complete DOM, xterm, R3F, and Electron projections. Generated
 foundation, action, HUD, readiness, typography, material, status, and terminal
 roles project through app chrome, Settings, feedback, shared overlays,
@@ -68,16 +68,20 @@ BrowserWindow, the CSP launch document, native theme source, and the hydrated
 root consume one generated/validated state path. Fresh missing state follows
 the OS with Auto Air/Night; Manual pins Classic, Air, or Night while remembering
 the Auto pair. Invalid state and the one-launch `--safe-theme` path recover
-through Classic without mutating valid stored preferences. Settings and
-**Change theme…** are two faces over that one device-local preference, and no
+through Classic without mutating valid stored preferences. Settings, the avatar
+menu, and **Change theme…** are three faces over that one device-local preference, and no
 renderer merges theme state independently. The temporary theme workbench
 retired after production rollout. The bounded Electron native-material spike
 closed renderer-only:
 an opaque operational renderer hid macOS vibrancy completely, and Exawatt will
 not trade startup continuity and cross-platform fallback for a
 transparent-window workaround.
-The contract keeps action, status, Project identity, Consumption, and readiness
-channels distinct and accepts no executable CSS/JavaScript or remote assets.
+Manual Enhanced contrast and Reduce transparency overrides are retired; legacy
+V1 values normalize to OS-managed behavior while contrast, forced-color,
+inversion, and reduced-transparency signals still apply automatically. The
+contract keeps action, status, Project identity, Agent Source identity,
+Consumption, and readiness channels distinct and accepts no executable
+CSS/JavaScript or remote assets.
 Demo and Live data remain irrelevant to appearance selection.
 
 The Electron shell presents Agent → Team → Fleet (decision `0023`) as one

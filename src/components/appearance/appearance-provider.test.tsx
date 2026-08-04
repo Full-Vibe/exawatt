@@ -9,9 +9,30 @@ import {
 import { APPEARANCE_MIRROR_STORAGE_KEY } from '@/lib/appearance/preference-source';
 import { AppearanceProvider, useAppearance } from './appearance-provider';
 
+const { appliedThemes } = vi.hoisted(() => ({
+  appliedThemes: vi.fn(),
+}));
+
+vi.mock('@/lib/appearance/dom-adapter', async importOriginal => {
+  const actual = await importOriginal<
+    typeof import('@/lib/appearance/dom-adapter')
+  >();
+  return {
+    ...actual,
+    applyResolvedAppearance: (
+      root: HTMLElement,
+      resolved: Parameters<typeof actual.applyResolvedAppearance>[1]
+    ) => {
+      appliedThemes(resolved.themeId);
+      return actual.applyResolvedAppearance(root, resolved);
+    },
+  };
+});
+
 const classic = structuredClone(CLASSIC_RECOVERY_APPEARANCE_PREFERENCES);
 
 beforeEach(() => {
+  appliedThemes.mockClear();
   window.localStorage.clear();
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
@@ -148,8 +169,10 @@ describe('AppearanceProvider', () => {
     const view = renderHook(() => useAppearance(), { wrapper });
 
     expect(view.result.current.resolved.themeId).toBe('exawatt-night-dark');
+    expect(appliedThemes).not.toHaveBeenCalledWith('exawatt-air-light');
     await waitFor(() => expect(view.result.current.ready).toBe(true));
     expect(view.result.current.resolved.themeId).toBe('exawatt-night-dark');
+    expect(appliedThemes).not.toHaveBeenCalledWith('exawatt-air-light');
     expect(window.matchMedia).not.toHaveBeenCalledWith(
       '(prefers-color-scheme: dark)'
     );

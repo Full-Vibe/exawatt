@@ -4,6 +4,14 @@ export default function Home() {
   return (
     <>
       <style>{`
+        #site-header,
+        #site-footer,
+        [data-home-hero] {
+          --exa-interface-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
         #site-header {
           background: rgba(255, 255, 255, 0.05) !important;
           border-color: rgba(255, 255, 255, 0.1) !important;

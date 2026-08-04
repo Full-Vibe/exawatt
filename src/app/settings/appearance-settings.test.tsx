@@ -8,7 +8,10 @@ import {
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppearancePreferencesV1 } from '@/lib/appearance/types';
-import { selectAutoThemes, selectManualTheme } from '@/lib/appearance/selection';
+import {
+  selectAutoThemes,
+  selectManualTheme,
+} from '@/lib/appearance/selection';
 import { AppearanceSettings } from './appearance-settings';
 
 const { commitPreferences, appearance } = vi.hoisted(() => {
@@ -123,6 +126,17 @@ describe('AppearanceSettings', () => {
       interfaceScale: 100,
       interfaceFont: 'theme',
     });
+  });
+
+  it('does not expose the retired manual accessibility overrides', () => {
+    render(<AppearanceSettings />);
+
+    expect(
+      screen.queryByRole('switch', { name: 'Enhanced contrast' })
+    ).toBeNull();
+    expect(
+      screen.queryByRole('switch', { name: 'Reduce transparency' })
+    ).toBeNull();
   });
 
   it('coalesces rapid changes behind the active save without losing fields', async () => {

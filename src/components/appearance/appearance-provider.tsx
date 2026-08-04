@@ -90,6 +90,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   );
   const [os, setOs] = useState<AppearanceOsSignals>(DEFAULT_OS_SIGNALS);
   const [previewThemeId, setPreviewThemeId] = useState<string>();
+  const [bootstrapAdopted, setBootstrapAdopted] = useState(false);
   const [ready, setReady] = useState(false);
 
   // Keep the server and the first hydration render deterministic. The inline
@@ -108,6 +109,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
       dark: bootstrap?.dark ?? browser.dark,
       safeTheme: bootstrap?.safeTheme ?? false,
     });
+    setBootstrapAdopted(true);
   }, [bootstrap]);
 
   useEffect(() => {
@@ -187,8 +189,12 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   );
 
   useLayoutEffect(() => {
+    // The inline bootstrap already owns the first paint. Do not let React's
+    // deterministic light/server default overwrite that authoritative DOM
+    // snapshot while the saved preference and OS signals are being adopted.
+    if (!bootstrapAdopted) return;
     applyResolvedAppearance(document.documentElement, resolved);
-  }, [resolved]);
+  }, [bootstrapAdopted, resolved]);
 
   const previewTheme = useCallback((themeId?: string) => {
     setPreviewThemeId(

@@ -512,42 +512,18 @@ async function assertAppearanceControlsAndLayout() {
   });
   await assertRootAppearance(THEMES[0], { font: 'geist' });
 
-  const contrastSwitch = appearance.getByRole('switch', {
-    name: 'Enhanced contrast',
-  });
-  await contrastSwitch.click();
-  await waitForCommittedState({
-    themeId: THEMES[0].id,
-    interfaceFont: 'geist',
-    contrast: 'enhanced',
-  });
-  await assertRootAppearance(THEMES[0], {
-    font: 'geist',
-    contrast: 'enhanced',
-  });
-  await contrastSwitch.click();
-
-  const transparencySwitch = appearance.getByRole('switch', {
-    name: 'Reduce transparency',
-  });
-  await transparencySwitch.click();
-  await waitForCommittedState({
-    themeId: THEMES[0].id,
-    interfaceFont: 'geist',
-    contrast: 'system',
-    transparency: 'reduced',
-  });
-  await assertRootAppearance(THEMES[0], {
-    font: 'geist',
-    transparency: 'reduced',
-    reducedMaterial: true,
-  });
-  await transparencySwitch.click();
-  await waitForCommittedState({
-    themeId: THEMES[0].id,
-    interfaceFont: 'geist',
-    transparency: 'system',
-  });
+  assert.equal(
+    await appearance.getByRole('switch', { name: 'Enhanced contrast' }).count(),
+    0,
+    'Appearance must not expose the retired Enhanced contrast override'
+  );
+  assert.equal(
+    await appearance
+      .getByRole('switch', { name: 'Reduce transparency' })
+      .count(),
+    0,
+    'Appearance must not expose the retired Reduce transparency override'
+  );
 
   for (const viewport of [560, 900, 1400]) {
     await page.setViewportSize({ width: viewport, height: 900 });

@@ -91,6 +91,21 @@ describe('ThemeDefinitionV1', () => {
     }
   });
 
+  it('keeps sanctioned HUD micro-copy roles readable on panels', () => {
+    for (const theme of THEME_DEFINITIONS) {
+      for (const color of [
+        theme.hud.text,
+        theme.hud.textDim,
+        theme.hud.green,
+        theme.hud.red,
+      ]) {
+        expect(contrastRatio(color, theme.hud.panel)).toBeGreaterThanOrEqual(
+          4.5
+        );
+      }
+    }
+  });
+
   it('rejects unsafe values and unknown theme properties with a role path', () => {
     const unsafe = structuredClone(
       THEME_REGISTRY[CLASSIC_THEME_ID]
@@ -296,12 +311,12 @@ describe('AppearancePreferencesV1 and resolver', () => {
     ).toBe('exawatt-air-light');
   });
 
-  it('resolves preview and accessibility overlays without mutating preferences', () => {
+  it('resolves preview and OS accessibility overlays without mutating preferences', () => {
     const preferences = structuredClone(DEFAULT_APPEARANCE_PREFERENCES);
     const resolved = resolveAppearance(
       THEME_REGISTRY,
       { ...preferences, transparency: 'reduced' },
-      { ...LIGHT_OS, highContrast: true },
+      { ...LIGHT_OS, highContrast: true, reducedTransparency: true },
       { themeId: 'exawatt-air-light' }
     );
 
@@ -317,6 +332,21 @@ describe('AppearancePreferencesV1 and resolver', () => {
       blur: 0,
     });
     expect(preferences).toEqual(DEFAULT_APPEARANCE_PREFERENCES);
+  });
+
+  it('accepts retired V1 accessibility fields but normalizes them to system', () => {
+    const parsed = AppearancePreferencesSchema.parse({
+      ...DEFAULT_APPEARANCE_PREFERENCES,
+      contrast: 'enhanced',
+      transparency: 'reduced',
+    });
+    expect(parsed).toMatchObject({
+      contrast: 'system',
+      transparency: 'system',
+    });
+    const resolved = resolveAppearance(THEME_REGISTRY, parsed, LIGHT_OS);
+    expect(resolved.enhancedContrast).toBe(false);
+    expect(resolved.reducedTransparency).toBe(false);
   });
 
   it('contrast-corrects an unreadable system accent', () => {

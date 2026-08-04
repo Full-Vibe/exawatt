@@ -80,6 +80,7 @@ import {
   type AppSurface,
 } from '@/components/nav/surfaces';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
+import { SourceIdentityMark } from '@/components/workspace/source-identity-mark';
 import {
   AttentionMarker,
   SESSION_GLYPH_LABEL,
@@ -941,12 +942,12 @@ export function CommandPalette({
                       {row.icon ? (
                         <row.icon className="mr-2 h-4 w-4" />
                       ) : row.harness ? (
-                        <span
-                          className="mr-2 shrink-0"
-                          style={{ color: HARNESS_META[row.harness].color }}
+                        <SourceIdentityMark
+                          className="mr-2"
+                          color={HARNESS_META[row.harness].color}
                         >
                           <HarnessGlyph harness={row.harness} size={13} />
-                        </span>
+                        </SourceIdentityMark>
                       ) : row.color ? (
                         <span
                           className="mr-2 inline-block h-3.5 w-[3px] shrink-0 rounded-full"
@@ -1039,12 +1040,12 @@ export function CommandPalette({
                           }}
                         />
                         {s.harness !== 'shell' && (
-                          <span
-                            className="mr-1.5 shrink-0"
-                            style={{ color: s.color }}
+                          <SourceIdentityMark
+                            className="mr-1.5"
+                            color={HARNESS_META[s.harness].color}
                           >
                             <HarnessGlyph harness={s.harness} size={12} />
-                          </span>
+                          </SourceIdentityMark>
                         )}
                         <span className="min-w-0 flex-1 truncate">
                           {s.title}
@@ -1092,12 +1093,12 @@ export function CommandPalette({
                         openAgentComposer(source);
                       }}
                     >
-                      <span
-                        className="mr-2 shrink-0"
-                        style={{ color: AGENT_SOURCE_META[source].color }}
+                      <SourceIdentityMark
+                        className="mr-2"
+                        color={AGENT_SOURCE_META[source].color}
                       >
                         <HarnessGlyph harness={source} size={13} />
-                      </span>
+                      </SourceIdentityMark>
                       <span>
                         Start Agent with {AGENT_SOURCE_META[source].label}
                       </span>

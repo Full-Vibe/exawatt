@@ -102,6 +102,19 @@ describe('appearance preferences (ENG-032 T1)', () => {
     ).toEqual({ terminal: { fontSize: 15 }, appearance: normalizedClassic });
   });
 
+  it('migrates retired manual accessibility overrides back to system', () => {
+    expect(
+      parseAppearancePreferences({
+        ...classic,
+        contrast: 'enhanced',
+        transparency: 'reduced',
+      })
+    ).toMatchObject({
+      contrast: 'system',
+      transparency: 'system',
+    });
+  });
+
   it('rejects corrupt, unknown, and wrongly paired appearance data only', () => {
     expect(
       parseSettings({

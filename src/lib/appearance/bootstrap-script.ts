@@ -70,8 +70,8 @@ export const APPEARANCE_BOOTSTRAP_SCRIPT = `(() => {
   const root = document.documentElement;
   root.dataset.exaTheme = themes[id] ? id : 'exawatt-classic-dark';
   root.dataset.exaAppearance = theme.appearance;
-  root.dataset.exaContrast = preferences.contrast === 'enhanced' || matches('(prefers-contrast: more)') || matches('(forced-colors: active)') || matches('(inverted-colors: inverted)') ? 'enhanced' : 'standard';
-  root.dataset.exaTransparency = preferences.transparency === 'reduced' || matches('(prefers-reduced-transparency: reduce)') ? 'reduced' : 'standard';
+  root.dataset.exaContrast = matches('(prefers-contrast: more)') || matches('(forced-colors: active)') || matches('(inverted-colors: inverted)') ? 'enhanced' : 'standard';
+  root.dataset.exaTransparency = matches('(prefers-reduced-transparency: reduce)') ? 'reduced' : 'standard';
   root.dataset.exaFont = preferences.interfaceFont;
   root.dataset.exaTypography = theme.typography;
   root.style.setProperty('--exa-interface-scale', String(preferences.interfaceScale / 100));

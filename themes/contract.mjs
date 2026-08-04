@@ -154,7 +154,10 @@ const materialRecipe = z.strictObject({
 export const ThemeDefinitionSchema = z
   .strictObject({
     schemaVersion: z.literal(THEME_SCHEMA_VERSION),
-    id: z.string().regex(/^exawatt-[a-z0-9-]+$/).max(64),
+    id: z
+      .string()
+      .regex(/^exawatt-[a-z0-9-]+$/)
+      .max(64),
     label: safeLabel,
     author: z.literal('Exawatt'),
     appearance: z.enum(['light', 'dark']),
@@ -249,8 +252,12 @@ export const AppearancePreferencesSchema = z
         : undefined;
     return {
       ...preferences,
-      autoPair:
-        preferences.autoPair ??
+      // V1 shipped these two manual overrides briefly. Keep accepting their
+      // serialized shape so old settings recover in place, but retire the
+      // controls and normalize both fields back to OS-managed behavior.
+      contrast: 'system',
+      transparency: 'system',
+      autoPair: preferences.autoPair ??
         selectedAutoPair ?? {
           lightThemeId: 'exawatt-air-light',
           darkThemeId: 'exawatt-night-dark',
@@ -268,9 +275,7 @@ export function parseAppearancePreferences(value) {
 
 function channelLuminance(channel) {
   const value = channel / 255;
-  return value <= 0.04045
-    ? value / 12.92
-    : ((value + 0.055) / 1.055) ** 2.4;
+  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
 }
 
 function luminance(value) {
@@ -293,23 +298,48 @@ export function contrastRatio(foreground, background) {
 
 export function validateThemeContrast(theme) {
   const checks = [
-    ['foundation.canvas/text', theme.foundation.text, theme.foundation.canvas, 4.5],
+    [
+      'foundation.canvas/text',
+      theme.foundation.text,
+      theme.foundation.canvas,
+      4.5,
+    ],
     [
       'foundation.canvas/textMuted',
       theme.foundation.textMuted,
       theme.foundation.canvas,
       4.5,
     ],
-    ['foundation.surface/text', theme.foundation.text, theme.foundation.surface, 4.5],
+    [
+      'foundation.surface/text',
+      theme.foundation.text,
+      theme.foundation.surface,
+      4.5,
+    ],
     [
       'foundation.surface/textMuted',
       theme.foundation.textMuted,
       theme.foundation.surface,
       4.5,
     ],
-    ['foundation.overlay/text', theme.foundation.text, theme.foundation.overlay, 4.5],
-    ['foundation.input/text', theme.foundation.text, theme.foundation.input, 4.5],
-    ['foundation.action/actionText', theme.foundation.actionText, theme.foundation.action, 4.5],
+    [
+      'foundation.overlay/text',
+      theme.foundation.text,
+      theme.foundation.overlay,
+      4.5,
+    ],
+    [
+      'foundation.input/text',
+      theme.foundation.text,
+      theme.foundation.input,
+      4.5,
+    ],
+    [
+      'foundation.action/actionText',
+      theme.foundation.actionText,
+      theme.foundation.action,
+      4.5,
+    ],
     [
       'foundation.destructive/destructiveText',
       theme.foundation.destructiveText,
@@ -318,6 +348,9 @@ export function validateThemeContrast(theme) {
     ],
     ['hud.void/text', theme.hud.text, theme.hud.void, 4.5],
     ['hud.panel/text', theme.hud.text, theme.hud.panel, 4.5],
+    ['hud.panel/textDim', theme.hud.textDim, theme.hud.panel, 4.5],
+    ['hud.panel/greenText', theme.hud.green, theme.hud.panel, 4.5],
+    ['hud.panel/redText', theme.hud.red, theme.hud.panel, 4.5],
     ['spatial.canvas/label', theme.spatial.label, theme.spatial.canvas, 4.5],
     [
       'spatial.canvas/labelMuted',
@@ -331,15 +364,30 @@ export function validateThemeContrast(theme) {
       theme.spatial.canvas,
       3,
     ],
-    ['foundation.canvas/focus', theme.foundation.focus, theme.foundation.canvas, 3],
+    [
+      'foundation.canvas/focus',
+      theme.foundation.focus,
+      theme.foundation.canvas,
+      3,
+    ],
     ...Object.entries(theme.status).map(([state, color]) => [
       `status.${state}/foundation.surface`,
       color,
       theme.foundation.surface,
       3,
     ]),
-    ['terminal.background/foreground', theme.terminal.foreground, theme.terminal.background, 4.5],
-    ['bootstrap.background/foreground', theme.bootstrap.foreground, theme.bootstrap.background, 4.5],
+    [
+      'terminal.background/foreground',
+      theme.terminal.foreground,
+      theme.terminal.background,
+      4.5,
+    ],
+    [
+      'bootstrap.background/foreground',
+      theme.bootstrap.foreground,
+      theme.bootstrap.background,
+      4.5,
+    ],
     // Air and Night keep the stricter T2 acceptance gates after T5 promotion.
     ...(theme.id !== 'exawatt-classic-dark'
       ? [
@@ -389,7 +437,9 @@ export function validateThemeChannels(theme) {
     for (const [role, color] of entries) {
       const earlier = seen.get(color);
       if (earlier) {
-        errors.push(`${group}.${role} duplicates ${group}.${earlier} (${color})`);
+        errors.push(
+          `${group}.${role} duplicates ${group}.${earlier} (${color})`
+        );
       } else {
         seen.set(color, role);
       }

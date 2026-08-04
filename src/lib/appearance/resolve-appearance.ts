@@ -92,12 +92,8 @@ function withRuntimeOverlays(
   os: AppearanceOsSignals
 ): ThemeDefinitionV1 {
   const enhancedContrast =
-    preferences.contrast === 'enhanced' ||
-    os.highContrast ||
-    os.forcedColors ||
-    os.invertedColors;
-  const reducedTransparency =
-    preferences.transparency === 'reduced' || os.reducedTransparency;
+    os.highContrast || os.forcedColors || os.invertedColors;
+  const reducedTransparency = os.reducedTransparency;
 
   const action =
     preferences.accentSource === 'system' && os.systemAccent
@@ -164,13 +160,8 @@ export function resolveAppearance(
     theme,
     interfaceFont: preferences.interfaceFont,
     interfaceScale: preferences.interfaceScale,
-    enhancedContrast:
-      preferences.contrast === 'enhanced' ||
-      os.highContrast ||
-      os.forcedColors ||
-      os.invertedColors,
-    reducedTransparency:
-      preferences.transparency === 'reduced' || os.reducedTransparency,
+    enhancedContrast: os.highContrast || os.forcedColors || os.invertedColors,
+    reducedTransparency: os.reducedTransparency,
     preview: selected.preview,
   });
 }

@@ -109,6 +109,11 @@ export const PRODUCTION_LITERAL_EXCEPTIONS = {
     max: 10,
     reason: 'persisted Project identity palette',
   },
+  'src/components/workspace/source-identity-mark.tsx': {
+    max: 2,
+    reason:
+      'fixed accessible backing plate for stable third-party Agent Source brand colors',
+  },
   'src/lib/appearance/color.ts': {
     max: 2,
     reason: 'mathematical black/white contrast-correction endpoints',

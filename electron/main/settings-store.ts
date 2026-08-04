@@ -271,8 +271,11 @@ export function parseAppearancePreferences(
     accentSource,
     interfaceFont,
     interfaceScale,
-    contrast,
-    transparency,
+    // The manual accessibility toggles were retired after the first rollout.
+    // Accept their V1 values for backward compatibility, then persist only
+    // OS-managed behavior so an operator cannot remain stuck on a hidden flag.
+    contrast: 'system',
+    transparency: 'system',
   };
 }
 

@@ -2315,7 +2315,10 @@ function AgentControls({
               }}
             >
               <span className="block truncate">{piece.label}</span>
-              <span className="mt-0.5 block truncate text-[8px] font-normal text-[oklch(0.63_0.015_210)] sm:text-[9px]">
+              <span
+                className="mt-0.5 block truncate text-chrome-nano font-normal"
+                style={{ color: theme.labelMuted }}
+              >
                 {piece.activity ?? 'No recent activity reported'}
               </span>
               {delegationCopy && (

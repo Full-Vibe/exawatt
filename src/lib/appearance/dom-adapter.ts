@@ -1,7 +1,16 @@
-import type { ResolvedAppearance } from './types';
+import { THEME_REGISTRY } from '@/generated/theme-registry';
+import type { ResolvedAppearance, ThemeRegistry } from './types';
 
-const set = (root: HTMLElement, name: string, value: string | number) =>
-  root.style.setProperty(name, String(value));
+const set = (root: HTMLElement, name: string, value: string | number) => {
+  const next = String(value);
+  if (root.style.getPropertyValue(name) !== next) {
+    root.style.setProperty(name, next);
+  }
+};
+
+const setData = (root: HTMLElement, name: string, value: string) => {
+  if (root.dataset[name] !== value) root.dataset[name] = value;
+};
 
 /**
  * Runtime-only values layered over the generated preset block. Keeping this
@@ -36,21 +45,38 @@ export function applyResolvedAppearance(
   root: HTMLElement,
   resolved: ResolvedAppearance
 ): void {
-  root.dataset.exaTheme = resolved.themeId;
-  root.dataset.exaAppearance = resolved.appearance;
-  root.dataset.exaContrast = resolved.enhancedContrast
-    ? 'enhanced'
-    : 'standard';
-  root.dataset.exaTransparency = resolved.reducedTransparency
-    ? 'reduced'
-    : 'standard';
-  root.dataset.exaFont = resolved.interfaceFont;
-  root.dataset.exaTypography = resolved.theme.typography.profile;
+  setData(root, 'exaTheme', resolved.themeId);
+  setData(root, 'exaAppearance', resolved.appearance);
+  setData(
+    root,
+    'exaContrast',
+    resolved.enhancedContrast ? 'enhanced' : 'standard'
+  );
+  setData(
+    root,
+    'exaTransparency',
+    resolved.reducedTransparency ? 'reduced' : 'standard'
+  );
+  setData(root, 'exaFont', resolved.interfaceFont);
+  setData(root, 'exaTypography', resolved.theme.typography.profile);
   root.classList.toggle('dark', resolved.appearance === 'dark');
   root.classList.toggle('light', resolved.appearance === 'light');
-  for (const [name, value] of Object.entries(
-    resolvedAppearanceCssVariables(resolved)
-  )) {
+  const variables = resolvedAppearanceCssVariables(resolved);
+  const authoredTheme = (THEME_REGISTRY as ThemeRegistry)[resolved.themeId];
+  const authoredVariables = authoredTheme
+    ? resolvedAppearanceCssVariables({
+        ...resolved,
+        theme: authoredTheme,
+      })
+    : undefined;
+  for (const [name, value] of Object.entries(variables)) {
+    if (
+      name !== '--exa-interface-scale' &&
+      authoredVariables?.[name] === value
+    ) {
+      if (root.style.getPropertyValue(name)) root.style.removeProperty(name);
+      continue;
+    }
     set(root, name, value);
   }
 }
