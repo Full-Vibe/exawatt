@@ -104,8 +104,11 @@ queue or a repository-owned verification policy.
 Decision `0030` adopts a three-stage delivery model. Its same-day amendment
 reordered the mechanism after checking the design against the audit's own
 arithmetic: the dominant measured cost is contention (113 stale-base and
-dirty-checkout stops) rather than composition (two failures, both catchable
-by cheap always-on checks on the rebased tree), and a width-one sequencer
+dirty-checkout stops) rather than composition (three failures — corrected
+2026-08-03 from an initial count of two: the historical `rawTokens`
+type-check break, the `ExposeOverlay` provider miss, and the roadmap parser
+own-corpus expectation — all catchable by cheap always-on checks on the
+rebased tree, one by type-check and two by fast vitest), and a width-one sequencer
 running full matrices would put MORE work on the critical path than today's
 parallel verification outside the lock — 78 landings on the peak day at even
 five serial gate minutes is 6.5 hours of queue. The elected-coordinator
@@ -126,12 +129,18 @@ holds the delivery lock for seconds: fetch, ancestor check, non-fast-forward
 push. Only if `origin/master` moved since the candidate's verification does
 it rerun the cheap exact-tree floor (generated route types, type-check, fast
 tests chosen by changed-path policy) on the rebased tree — the scope that
-would have caught both audited composition failures. A failing floor is a
-terminal candidate result with actionable evidence; the next ticket proceeds,
-and no other author rebases or repeats a matrix because of it. The shared
-`master` checkout is off this path entirely: it receives a best-effort
-non-blocking sync after integration and can no longer stop a landing by
-being dirty.
+would have caught all three audited composition failures. The mechanism is
+explicit: the rebase happens in the author's own bootstrapped worktree, the
+only checkout guaranteed clean and dependency-complete; every push of the
+candidate is a new lease-protected immutable attempt ref, so published
+history is never rewritten and the integrated SHA always equals the
+ticket's current pushed attempt. There is no separate gate checkout — a
+fresh detached worktree would need its own dependency bootstrap and would
+not be lightweight. A failing floor is a terminal candidate result with
+actionable evidence; the next ticket proceeds, and no other author rebases
+or repeats a matrix because of it. The shared `master` checkout is off this
+path entirely: it receives a best-effort non-blocking sync after
+integration and can no longer stop a landing by being dirty.
 
 `agent:land` blocks until its ticket reaches a terminal result so it reports
 `integrated` precisely. Blocking is cheap because waiting is idle — no
@@ -172,11 +181,20 @@ remote writers eventually):
 - there is no coordinator (amended 2026-08-03): the `agent:land` process at
   the head of the queue integrates its own candidate, then exits. Waiting at
   a ticket is idle — no rebasing, no reverification, no lock polling races
-- a head ticket whose owner pid is dead or whose heartbeat is stale may be
-  marked failed and skipped by any waiter; the remote's non-fast-forward
-  refusal makes a mistaken takeover a retry, never a wrong `master`. If an
-  external writer moves the remote mid-landing, the head lander retries on
-  the new base itself — the author never re-enters a rebase cycle
+- ticket state transitions are compare-and-swap with ownership epochs, so
+  every ticket reaches exactly one terminal result and a superseded owner's
+  late write cannot contradict it
+- a head ticket may be taken over by a waiter only when its owner pid is
+  dead. A live pid with a stale heartbeat is surfaced to the operator, never
+  auto-taken: the 2026-07-27 load-average-425 incident proves this machine
+  stalls healthy processes for minutes, and a heartbeat-only trigger would
+  create duplicate ownership under exactly the load that needs the queue
+  most. The remote's non-fast-forward refusal makes a mistaken takeover a
+  retry, never a wrong `master`, and after any ambiguous push the lander
+  reconciles by checking whether its attempt is reachable from
+  `origin/master` before recording a terminal result. If an external writer
+  moves the remote mid-landing, the head lander retries on the new base
+  itself — the author never re-enters a rebase cycle
 - `agent:land` blocks until its ticket reaches a durable terminal result so
   it can report `integrated` precisely; blocking is acceptable because holds
   are seconds once dogfood leaves the lock
@@ -233,30 +251,42 @@ verdict milestone decides whether the sequencer contingency is ever built.
   burst of at least ten eligible landings advances `master` with lock holds
   measured in seconds, installs the newest required snapshot within the
   ceiling, and never replaces the app with an unverified or unintended build.
-- **H9 FIFO ticket queue:** monotonic tickets under the common Git directory;
-  the head lander integrates itself; stale-head takeover via dead pid or
-  stale heartbeat; an operator-only bypass; the shared `master` checkout
-  demoted to a best-effort post-integration sync that cannot block a landing.
-  Exit when stress trials acquire strictly in ticket order, a killed head
-  lander is taken over without duplicated integration or a lost candidate, no
-  orphaned candidate can disappear without a terminal result, and a dirty
-  shared checkout no longer stops anyone.
+- **H9 FIFO ticket queue:** monotonic tickets under the common Git
+  directory; the head lander integrates itself; compare-and-swap ticket
+  transitions with ownership epochs; takeover only on a dead owner pid
+  (live-pid stale heartbeats surface to the operator, never auto-take); an
+  operator-only bypass; the shared `master` checkout demoted to a
+  best-effort post-integration sync that cannot block a landing. Requires
+  H7's attempt-ref fix, and authority is never floorless: until H10 lands,
+  a base-moved head landing reruns a hardcoded static floor (generated
+  route types, type-check, fast delivery tests) on the rebased tree. Exit
+  when stress trials acquire strictly in ticket order, a killed head lander
+  is taken over without duplicated integration or a lost candidate, a
+  surviving-but-stalled head lander is NOT taken over, no orphaned
+  candidate can disappear without a terminal result, and a dirty shared
+  checkout no longer stops anyone.
 - **H10 Exact-tree floor and changed-path policy:** a repository-owned
   classifier selects the always-on cheap floor (generated route types,
   type-check, fast tests) plus explicit conditional Electron, browser, R3F,
   CI, and documentation checks from the changed paths; callers may add
   evidence but cannot weaken the floor; the head lander reruns exactly the
-  floor when the base moved since candidate verification. Exit when only a
-  commit whose exact integrated tree passed the declared floor can reach
-  `master`, the evidence is attached to the candidate identity, and
-  regression tests pin the two audited composition-failure classes.
+  floor when the base moved since candidate verification, replacing H9's
+  hardcoded static floor. Exit when only a commit whose exact integrated
+  tree passed the declared floor can reach `master`, the evidence is
+  attached to the candidate identity, and regression tests pin all three
+  audited composition-failure classes.
 - **H11 Measured verdict:** run 30 representative landings and compare the H7
-  schema against the audit baseline. Exit green when they show zero
-  stale-base re-verification loops, zero red integrations, p95 queue wait
-  under three minutes at comparable load, and lower Actions minutes per
-  integrated commit; otherwise exit with an explicit decision activating the
-  `0030` elected-coordinator sequencer contingency. Remote writers arriving
-  before this verdict force the contingency evaluation early.
+  schema against the audit baseline. "No red integrations" is defined
+  observably — batched, cancellable CI cannot see every intermediate commit,
+  so the criteria are zero exact-floor escapes (no landing's floor run fails
+  against already-integrated `master`) and every completed queue-drain Linux
+  batch green. Exit green when the 30 landings show zero stale-base
+  re-verification loops, zero floor escapes, all-green drain batches, p95
+  queue wait under three minutes at comparable load, and lower Actions
+  minutes per integrated commit; otherwise exit with an explicit decision
+  activating the `0030` elected-coordinator sequencer contingency. Remote
+  writers arriving before this verdict force the contingency evaluation
+  early.
 
 Rollback is one switch: stop admitting local tickets, drain or cancel queued
 candidates, and return `agent:land` to the guarded direct fast-forward path.

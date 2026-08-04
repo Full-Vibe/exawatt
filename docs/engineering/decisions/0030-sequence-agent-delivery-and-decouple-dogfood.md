@@ -34,10 +34,12 @@ Adopt three independently recoverable delivery stages behind the existing
    an immutable `agent/*` candidate, and submits it. Submission records queue
    position and may use a pull request as its durable status envelope; the
    submitting process does not own integration.
-2. **Gate:** one fair FIFO sequencer constructs the candidate on the latest
-   accepted base and runs repository-owned policy on that exact tree. Only the
-   sequencer mutates `master`. Begin with one candidate in flight and no
-   batching; increase speculative width only after sustained green evidence.
+2. **Gate:** integration is FIFO and exact where it matters (amended
+   2026-08-03). Tickets are served strictly in order; the `agent:land`
+   process at the head of the queue integrates its own candidate on the
+   latest accepted base, rerunning the repository floor on the exact tree
+   only when the base moved since candidate verification. Only the head of
+   the queue mutates `master`, and it holds the delivery lock for seconds.
 3. **Post:** dogfood consumes integrated commits outside the delivery lock.
    Electron-facing requests coalesce to the newest useful snapshot when the
    queue drains, with a ten-minute maximum wait so a continuous queue cannot
@@ -55,21 +57,48 @@ chose a lightweight owned coordinator over the same-day Mergify recommendation:
 need."* This rejects the hosted dependency as well as a paid GitHub upgrade;
 Mergify's free tier does not change the selected direction.
 
-The local backend stores monotonic tickets, a recoverable coordinator lease,
-terminal results, and metrics under the common Git directory. It pushes the
-immutable remote candidate branch before admission, reconstructs each ticket
-on the latest accepted base in an isolated gate worktree, and advances `master`
-only after the exact-tree policy passes. The elected coordinator is short-lived
-and exits after queue drain; it is not a daemon. Waiting `agent:land` processes
-may recover a stale coordinator and read the same durable result safely.
+The local backend (amended 2026-08-03) stores monotonic FIFO tickets,
+ownership epochs, terminal results, and metrics under the common Git
+directory, with compare-and-swap state transitions so every ticket reaches
+exactly one terminal result. There is no coordinator: the head lander
+integrates in its own bootstrapped worktree. When the base moved, it rebases
+there, pushes a new lease-protected immutable attempt ref for its ticket,
+runs the floor on that exact tree, and advances `master` with a non-force
+push; the integrated SHA must equal the ticket's current pushed attempt.
+Takeover of a head ticket requires a dead owner pid — a live pid with a
+stale heartbeat is surfaced to the operator, never auto-taken, because this
+machine has stalled healthy processes for minutes under load (load average
+425, 2026-07-27). After any ambiguous push, the lander reconciles by
+fetching and checking whether its attempt is reachable from `origin/master`
+before recording a terminal result.
 
-GitHub Actions remains an optional platform gate using only included Free-plan
-minutes: for material candidates, the coordinator may push a disposable gate
-ref and require a green Linux result for that identical SHA. The queue must
-remain correct without paid minutes, and documentation-only changes do not run
-the full hosted matrix. H7 owns usage measurement; projected exhaustion pauses
-or explicitly reshapes the platform gate rather than purchasing an overage or
-silently weakening required evidence.
+GitHub Actions is repaired, batched, post-integration evidence using only
+included Free-plan minutes: a Linux run on the latest integrated `master`
+with obsolete in-progress runs cancelled, never a per-candidate serial gate
+and never a holder of merge authority in this plan. The queue must remain
+correct without paid minutes. H7 owns usage measurement; projected
+exhaustion pauses or explicitly reshapes the batch cadence rather than
+purchasing an overage or silently weakening required evidence.
+
+### Superseded first-mile backend — 2026-08-03, retained as contingency
+
+The originally selected backend below is superseded by the same-day
+amendment and is NOT the build target. It is retained because it is the
+shape the ticket store grows into if the amendment's activation triggers
+fire (see the Amendment section).
+
+> The local backend stores monotonic tickets, a recoverable coordinator
+> lease, terminal results, and metrics under the common Git directory. It
+> pushes the immutable remote candidate branch before admission,
+> reconstructs each ticket on the latest accepted base in an isolated gate
+> worktree, and advances `master` only after the exact-tree policy passes.
+> The elected coordinator is short-lived and exits after queue drain; it is
+> not a daemon. Waiting `agent:land` processes may recover a stale
+> coordinator and read the same durable result safely. Begin with one
+> candidate in flight and no batching; increase speculative width only
+> after sustained green evidence. For material candidates, the coordinator
+> may push a disposable gate ref and require a green hosted Linux result
+> for that identical SHA.
 
 Retain an explicit operator-only guarded direct fast-forward path for incidents
 and rollback. It is a recovery mechanism, not a second normal delivery path.
@@ -88,8 +117,10 @@ and rollback. It is a recovery mechanism, not a second normal delivery path.
 - A local queue is authoritative only while all writers share the common Git
   directory. Remote/multi-machine writers require a future backend, but the
   candidate/gate/post contracts do not change.
-- CI must be repaired and split into candidate/gate responsibilities before
-  queue authority moves. A red post-merge suite is evidence, not a gate.
+- CI must be repaired to be usable evidence, but merge authority never
+  depends on a hosted result in this plan. A red post-merge suite is
+  evidence, not a gate, and a batched signal cannot pretend to cover every
+  intermediate commit.
 - Existing immutable build snapshots, atomic app replacement, stable signing,
   and stale-base refusal remain. The queue changes orchestration, not artifact
   integrity.
@@ -132,11 +163,13 @@ purchased or hosted dependency.
 Two observations drove the amendment:
 
 - The dominant measured cost is contention, not composition. Stale-base and
-  dirty-checkout stops occurred 113 times in the sample against two observed
-  composition failures — and both composition failures (the `rawTokens`
-  type-check break and the roadmap parser own-corpus expectation) were
-  catchable by cheap always-on checks run on the rebased tree, not only by an
-  Electron or hosted Linux matrix.
+  dirty-checkout stops occurred 113 times in the sample against three
+  observed composition failures (corrected 2026-08-03 from an initial count
+  of two): the historical `rawTokens` type-check break, the `ExposeOverlay`
+  goal-visual provider miss, and the roadmap parser own-corpus expectation.
+  All three were catchable by cheap always-on checks run on the rebased
+  tree — one by type-check, two by fast vitest — not only by an Electron or
+  hosted Linux matrix.
 - A width-one sequencer running the full policy matrix serializes more work
   through the critical path than the current design, where expensive
   verification runs in parallel outside the lock. At the audit's peak of 78
@@ -153,15 +186,23 @@ The amended first mile therefore:
    rare
 2. replaces the elected short-lived coordinator with a FIFO ticket queue
    under the common Git directory in which the lander at the head of the
-   queue integrates its own candidate; a stale head ticket (dead pid or stale
-   heartbeat) may be taken over by any waiter, and the remote's
-   non-fast-forward refusal remains the guard that makes a botched takeover a
-   retry, never a wrong `master`
+   queue integrates its own candidate. Ticket state transitions are
+   compare-and-swap with ownership epochs; a head ticket may be taken over
+   by a waiter only when its owner pid is dead — a live pid with a stale
+   heartbeat is surfaced, never auto-taken, on the load-average-425 evidence
+   that this machine stalls healthy processes. The remote's non-fast-forward
+   refusal remains the guard that makes a botched takeover a retry, never a
+   wrong `master`, and an ambiguous push is reconciled against
+   `origin/master` reachability before a terminal result is recorded
 3. keeps exact-tree evidence but scopes it to the cheap repository floor,
    rerun at the head of the queue only when the base moved since the
    candidate's verification (generated route types, type-check, fast tests
    selected by changed-path policy); the author's expensive matrix is never
-   rerun there
+   rerun there. The rebase happens in the author's own bootstrapped worktree
+   — the only checkout guaranteed clean and dependency-complete — and every
+   push of the candidate is a new lease-protected immutable attempt ref, so
+   published history is never rewritten and the integrated SHA always
+   equals the ticket's current pushed attempt
 4. takes the shared `master` checkout off the landing path entirely — it
    receives a best-effort non-blocking sync after integration — eliminating
    the audit's 23 dirty-checkout stops
