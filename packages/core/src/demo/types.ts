@@ -178,6 +178,16 @@ export interface DemoFleetAgent {
    * authored transcript must match its operator lines after the first. */
   interventions: number;
   usage: DemoUsageSpec;
+  /**
+   * Peak context footprint this Session reached, in tokens of its model's
+   * context window (ENG-008 per-run context pressure). Codex rollouts carry
+   * this truth (`model_context_window` + cumulative token counts); Claude
+   * Code records none, so claude-code fixtures leave it absent — unreported,
+   * never zero.
+   */
+  contextPeakTokens?: number;
+  /** Context compactions observed during the run. Absent = not recorded. */
+  compactions?: number;
   delegated: DemoDelegatedRun[];
   blocker?: DemoBlocker;
   /** Present only when status is `error`: what actually failed. */

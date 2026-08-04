@@ -1,9 +1,8 @@
 'use client';
 
 /**
- * Band: the session grid ("what is each session costing?").
- *
- * Every operator session is a row — inline burn sparkline, raw and
+ * The drill-down floor, part 2 — the session grid ("what did each run
+ * cost?"). Every operator session is a row — inline burn sparkline, raw and
  * normalized figures, impact bar, intervention count. Rows are doors into
  * the same drill panel the attribution bars open. Provider sessions outside
  * the fleet record render with measured figures and honestly absent
@@ -13,14 +12,13 @@
 import {
   CONSUMPTION_CHROME as CHROME,
   FLUX_CSS as FLUX,
-  consumptionAlpha as withAlpha,
   duration,
   tokens,
 } from '@/components/consumption/flux';
 import { Sparkline } from '@/components/consumption/atoms';
 import { STATUS_LIGHT_META } from '@/components/status-light/protocol';
 import type { GridRow } from './derive';
-import { Card, MicroLabel } from './chrome';
+import { Body, Caption, Card, Data, MicroLabel } from './chrome';
 
 const ROW_CAP = 14;
 
@@ -65,16 +63,10 @@ export function SessionsGrid({
         <MicroLabel>Session</MicroLabel>
         <MicroLabel>Src / model</MicroLabel>
         <MicroLabel>Burn</MicroLabel>
-        <span className="text-right">
-          <MicroLabel>Raw</MicroLabel>
-        </span>
-        <span className="text-right">
-          <MicroLabel>Norm</MicroLabel>
-        </span>
+        <MicroLabel className="text-right">Raw</MicroLabel>
+        <MicroLabel className="text-right">Norm</MicroLabel>
         <MicroLabel>Impact</MicroLabel>
-        <span className="text-right">
-          <MicroLabel>Int</MicroLabel>
-        </span>
+        <MicroLabel className="text-right">Int</MicroLabel>
       </div>
       {visible.map(r => (
         <SessionRow
@@ -91,25 +83,27 @@ export function SessionsGrid({
           type="button"
           onClick={onToggleExpanded}
           aria-expanded={expanded}
-          className="w-full border-t px-3 py-1.5 text-left font-mono text-chrome-meta outline-none transition-colors hover:bg-[var(--exa-hud-fill)] focus-visible:ring-1 focus-visible:ring-[var(--exa-foundation-focus)]"
-          style={{ borderColor: CHROME.border, color: CHROME.textDim }}
+          className="w-full border-t px-3 py-1.5 text-left outline-none transition-colors hover:bg-[var(--exa-hud-fill)] focus-visible:ring-1 focus-visible:ring-[var(--exa-foundation-focus)]"
+          style={{ borderColor: CHROME.border }}
         >
-          {expanded
-            ? 'Show fewer'
-            : `Show all ${rows.length} sessions · ${hidden.length} more · ${tokens(
-                hidden.reduce((n, r) => n + r.weighted, 0)
-              )} nt`}
+          <Data>
+            {expanded
+              ? 'Show fewer'
+              : `Show all ${rows.length} sessions · ${hidden.length} more · ${tokens(
+                  hidden.reduce((n, r) => n + r.weighted, 0)
+                )} nt`}
+          </Data>
         </button>
       )}
       <div
-        className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t px-3 py-1.5 font-mono text-chrome-micro"
-        style={{ borderColor: CHROME.border, color: CHROME.textDim }}
+        className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t px-3 py-1.5"
+        style={{ borderColor: CHROME.border }}
       >
-        <span>norm = normalized tokens, stated ratio basis</span>
-        <span>impact = normalized burn relative to the largest session</span>
-        <span>int = operator messages after launch</span>
+        <Caption>norm = normalized tokens, stated ratio basis</Caption>
+        <Caption>impact = normalized burn relative to the largest session</Caption>
+        <Caption>int = operator messages after launch</Caption>
         {codexBlind && (
-          <span style={{ color: FLUX.unknown }}>
+          <span className="text-chrome-meta" style={{ color: FLUX.unknown }}>
             Codex per-agent delegation: not recorded
           </span>
         )}
@@ -140,11 +134,10 @@ function SessionRow({
       className={`grid ${COLS} w-full items-center gap-3 border-b px-3 py-1 text-left outline-none transition-colors last:border-b-0 hover:bg-[var(--exa-hud-fill)] focus-visible:ring-1 focus-visible:ring-[var(--exa-foundation-focus)]`}
       style={{
         borderColor: CHROME.border,
-        background: selected
-          ? withAlpha(FLUX.mid, 0.1)
-          : r.live
-            ? withAlpha(LIVE, 0.05)
-            : undefined,
+        background: selected ? 'var(--exa-hud-fill)' : undefined,
+        boxShadow: selected
+          ? `inset 0 0 0 1px ${CHROME.borderStrong}`
+          : undefined,
       }}
     >
       <span className="flex min-w-0 items-baseline gap-1.5">
@@ -155,57 +148,46 @@ function SessionRow({
             style={{ background: r.identityColor }}
           />
         )}
-        <span
-          className="truncate text-chrome-label"
-          style={{ color: r.identified ? CHROME.text : FLUX.unknown }}
-          title={r.identified ? undefined : 'outside the fleet record — measured from local logs, no session identity'}
+        <Body
+          className="truncate"
+          color={r.identified ? CHROME.text : FLUX.unknown}
         >
-          {r.title}
-        </span>
-        {r.live ? (
-          <span className="shrink-0 font-mono text-chrome-micro" style={{ color: LIVE }}>
-            live
-          </span>
-        ) : (
           <span
-            className="shrink-0 font-mono text-chrome-micro tabular-nums"
-            style={{ color: CHROME.textDim }}
+            title={
+              r.identified
+                ? undefined
+                : 'outside the fleet record — measured from local logs, no session identity'
+            }
           >
-            -{duration(nowMs - r.lastAtMs)}
+            {r.title}
           </span>
+        </Body>
+        {r.live ? (
+          <Data className="shrink-0" color={LIVE}>
+            live
+          </Data>
+        ) : (
+          <Data className="shrink-0">-{duration(nowMs - r.lastAtMs)}</Data>
         )}
         {r.agents !== null && r.agents > 0 && (
-          <span
-            className="shrink-0 font-mono text-chrome-micro tabular-nums"
-            style={{ color: FLUX.mid }}
-            title={`${r.agents} delegated agents booked to this session`}
-          >
-            +{r.agents}
-          </span>
+          <Data className="shrink-0">
+            <span title={`${r.agents} delegated agents booked to this session`}>
+              +{r.agents}
+            </span>
+          </Data>
         )}
       </span>
-      <span
-        className="truncate font-mono text-chrome-micro"
-        style={{ color: CHROME.textDim }}
-      >
+      <Data className="truncate">
         {r.source === 'codex' ? 'codex' : 'claude'}
         {r.model ? ` · ${r.model.replace(/^claude-|^gpt-/, '')}` : ''}
-      </span>
+      </Data>
       {/* the sparkline is burn, so it stays in the FLUX channel regardless
           of liveness */}
       <Sparkline values={r.spark} width={84} height={14} color={FLUX.mid} />
-      <span
-        className="text-right font-mono text-chrome-meta tabular-nums"
-        style={{ color: CHROME.textDim }}
-      >
-        {tokens(r.raw)}
-      </span>
-      <span
-        className="text-right font-mono text-chrome-meta tabular-nums"
-        style={{ color: CHROME.text }}
-      >
+      <Data className="text-right">{tokens(r.raw)}</Data>
+      <Data bright className="text-right">
         {tokens(r.weighted)}
-      </span>
+      </Data>
       <span
         aria-hidden
         className="inline-block h-[7px] w-full rounded-[1px]"
@@ -220,20 +202,11 @@ function SessionRow({
         />
       </span>
       {r.interventions === null ? (
-        <span
-          className="text-right font-mono text-chrome-meta"
-          style={{ color: FLUX.unknown }}
-          title="no session record for this id"
-        >
-          —
-        </span>
+        <Data className="text-right" color={FLUX.unknown}>
+          <span title="no session record for this id">—</span>
+        </Data>
       ) : (
-        <span
-          className="text-right font-mono text-chrome-meta tabular-nums"
-          style={{ color: r.interventions >= 4 ? FLUX.warm : CHROME.textDim }}
-        >
-          {r.interventions}
-        </span>
+        <Data className="text-right">{r.interventions}</Data>
       )}
     </button>
   );

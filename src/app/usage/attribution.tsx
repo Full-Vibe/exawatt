@@ -1,13 +1,14 @@
 'use client';
 
 /**
- * Band: attribution ("where is it going?").
+ * The drill-down floor, part 1 — attribution ("where is it going?").
  *
  * One pivot — Project / Session / Model / Source / Roadmap item — over the
  * same rollups, normalized by default with a raw-units mode. Every bar is a
  * door: selecting it opens the sessions behind it in the shared drill panel.
+ * Controls are neutral chrome; only the bars carry consumption color.
  */
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import {
   CONSUMPTION_CHROME as CHROME,
   FLUX_CSS as FLUX,
@@ -21,11 +22,23 @@ import { NORMALIZED_BASIS_SENTENCE } from '@/components/consumption/units';
 import { UnitStack, UnitLegend } from '@/components/consumption/atoms';
 import { rawTotal } from '@/components/consumption/model';
 import { PIVOT_LABEL, type PivotKey, type PivotRow } from './derive';
-import { Card, MicroLabel } from './chrome';
+import { Band, Body, Data } from './chrome';
 
 const PIVOTS: PivotKey[] = ['project', 'session', 'model', 'source', 'roadmap'];
 
 export type UnitMode = 'normalized' | 'raw';
+
+/** One neutral chip recipe for every control on the floor. */
+function chipStyle(active: boolean): CSSProperties {
+  return {
+    borderColor: active ? CHROME.borderStrong : CHROME.border,
+    color: active ? CHROME.text : CHROME.textDim,
+    background: active ? 'var(--exa-hud-fill)' : 'transparent',
+  };
+}
+
+const CHIP =
+  'rounded border px-2 py-0.5 text-sm outline-none transition-colors hover:bg-[var(--exa-hud-fill)] focus-visible:ring-1 focus-visible:ring-[var(--exa-foundation-focus)]';
 
 export function Attribution({
   rows,
@@ -59,30 +72,10 @@ export function Attribution({
       : (ordered[0]?.weighted ?? 1);
   const overflow = ordered.slice(9);
   return (
-    <Card label="Attribution" className="flex min-w-0 flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <MicroLabel>Group by</MicroLabel>
-          {PIVOTS.map(k => (
-            <button
-              key={k}
-              type="button"
-              aria-pressed={k === pivot}
-              onClick={() => onPivot(k)}
-              className="rounded border px-2 py-0.5 text-chrome-label outline-none transition-colors hover:bg-[var(--exa-hud-fill)] focus-visible:ring-1 focus-visible:ring-[var(--exa-foundation-focus)]"
-              style={{
-                borderColor:
-                  k === pivot ? withAlpha(FLUX.mid, 0.7) : CHROME.border,
-                color: k === pivot ? CHROME.text : CHROME.textDim,
-                background:
-                  k === pivot ? withAlpha(FLUX.mid, 0.12) : 'transparent',
-              }}
-            >
-              {PIVOT_LABEL[k]}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-1.5">
+    <Band
+      label="Attribution"
+      aside={
+        <span className="flex items-center gap-1.5">
           {(['normalized', 'raw'] as const).map(m => (
             <button
               key={m}
@@ -90,17 +83,28 @@ export function Attribution({
               aria-pressed={m === mode}
               onClick={() => onMode(m)}
               title={m === 'normalized' ? NORMALIZED_BASIS_SENTENCE : undefined}
-              className="rounded border px-2 py-0.5 font-mono text-chrome-micro outline-none transition-colors hover:bg-[var(--exa-hud-fill)] focus-visible:ring-1 focus-visible:ring-[var(--exa-foundation-focus)]"
-              style={{
-                borderColor:
-                  m === mode ? withAlpha(FLUX.mid, 0.7) : CHROME.border,
-                color: m === mode ? CHROME.text : CHROME.textDim,
-              }}
+              className={CHIP}
+              style={chipStyle(m === mode)}
             >
               {m === 'raw' ? 'raw tokens' : 'normalized'}
             </button>
           ))}
-        </div>
+        </span>
+      }
+    >
+      <div className="flex flex-wrap items-center gap-1.5">
+        {PIVOTS.map(k => (
+          <button
+            key={k}
+            type="button"
+            aria-pressed={k === pivot}
+            onClick={() => onPivot(k)}
+            className={CHIP}
+            style={chipStyle(k === pivot)}
+          >
+            {PIVOT_LABEL[k]}
+          </button>
+        ))}
       </div>
 
       <div className="flex min-w-0 flex-col gap-1">
@@ -115,14 +119,13 @@ export function Attribution({
           />
         ))}
         {overflow.length > 0 && (
-          <p
-            className="px-1 pt-1 font-mono text-chrome-meta"
-            style={{ color: CHROME.textDim }}
-          >
-            {overflow.length} more ·{' '}
-            {mode === 'raw'
-              ? `${tokens(overflow.reduce((n, r) => n + rawTotal(r.usage), 0))} raw`
-              : `${tokens(overflow.reduce((n, r) => n + r.weighted, 0))} nt`}
+          <p className="px-1 pt-1">
+            <Data>
+              {overflow.length} more ·{' '}
+              {mode === 'raw'
+                ? `${tokens(overflow.reduce((n, r) => n + rawTotal(r.usage), 0))} raw`
+                : `${tokens(overflow.reduce((n, r) => n + r.weighted, 0))} nt`}
+            </Data>
           </p>
         )}
         {mode === 'raw' && (
@@ -131,7 +134,7 @@ export function Attribution({
           </div>
         )}
       </div>
-    </Card>
+    </Band>
   );
 }
 
@@ -158,7 +161,8 @@ function PivotBarRow({
       aria-pressed={selected}
       className="grid grid-cols-[minmax(120px,200px)_1fr_76px] items-center gap-3 rounded px-1.5 py-1 text-left outline-none transition-colors hover:bg-[var(--exa-hud-fill)] focus-visible:ring-1 focus-visible:ring-[var(--exa-foundation-focus)]"
       style={{
-        background: selected ? withAlpha(FLUX.mid, 0.1) : undefined,
+        background: selected ? 'var(--exa-hud-fill)' : undefined,
+        boxShadow: selected ? `inset 0 0 0 1px ${CHROME.borderStrong}` : undefined,
       }}
     >
       <span className="flex min-w-0 items-center gap-2">
@@ -169,12 +173,12 @@ function PivotBarRow({
             style={{ background: row.identity }}
           />
         )}
-        <span
-          className="truncate text-chrome-label"
-          style={{ color: row.unknown ? FLUX.unknown : CHROME.text }}
+        <Body
+          className="truncate"
+          color={row.unknown ? FLUX.unknown : CHROME.text}
         >
           {row.label}
-        </span>
+        </Body>
       </span>
       <span className="min-w-0">
         {mode === 'raw' ? (
@@ -204,13 +208,10 @@ function PivotBarRow({
           </span>
         )}
       </span>
-      <span
-        className="text-right font-mono text-chrome-meta tabular-nums"
-        style={{ color: CHROME.textDim }}
-      >
+      <Data className="text-right">
         {tokens(value)}
         {mode === 'raw' ? '' : ' nt'}
-      </span>
+      </Data>
     </button>
   );
 }

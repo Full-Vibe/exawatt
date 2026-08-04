@@ -106,6 +106,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     lastActivityAtMs: m(41),
     turns: 11,
     interventions: 1,
+    contextPeakTokens: 178_000,
     usage: {
       input: 128_000,
       cacheRead: 6_400_000,
@@ -142,6 +143,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     lastActivityAtMs: h(3),
     turns: 8,
     interventions: 0,
+    contextPeakTokens: 96_000,
     usage: {
       input: 74_000,
       cacheRead: 3_400_000,
@@ -212,6 +214,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     lastActivityAtMs: m(6),
     turns: 10,
     interventions: 1,
+    contextPeakTokens: 118_000,
     usage: {
       input: 92_000,
       cacheRead: 4_300_000,
@@ -409,6 +412,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     lastActivityAtMs: h(19),
     turns: 4,
     interventions: 0,
+    contextPeakTokens: 34_000,
     usage: {
       input: 21_000,
       cacheRead: 940_000,
@@ -442,6 +446,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     lastActivityAtMs: h(26),
     turns: 9,
     interventions: 1,
+    contextPeakTokens: 88_000,
     usage: {
       input: 68_000,
       cacheRead: 3_100_000,
@@ -478,6 +483,8 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     lastActivityAtMs: m(9),
     turns: 14,
     interventions: 5,
+    contextPeakTokens: 254_000,
+    compactions: 1,
     usage: {
       input: 156_000,
       cacheRead: 7_600_000,
@@ -512,6 +519,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     lastActivityAtMs: h(1),
     turns: 7,
     interventions: 1,
+    contextPeakTokens: 72_000,
     usage: {
       input: 54_000,
       cacheRead: 2_400_000,
@@ -630,6 +638,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     lastActivityAtMs: h(1.5),
     turns: 10,
     interventions: 3,
+    contextPeakTokens: 112_000,
     usage: {
       input: 86_000,
       cacheRead: 3_900_000,
@@ -668,6 +677,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     lastActivityAtMs: m(12),
     turns: 8,
     interventions: 1,
+    contextPeakTokens: 81_000,
     usage: {
       input: 64_000,
       cacheRead: 2_900_000,
@@ -796,6 +806,8 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     lastActivityAtMs: h(20),
     turns: 13,
     interventions: 4,
+    contextPeakTokens: 236_000,
+    compactions: 1,
     usage: {
       input: 142_000,
       cacheRead: 6_800_000,
@@ -830,6 +842,7 @@ export const DEMO_BASE_AGENTS: readonly DemoFleetAgent[] = deepFreezeFixture([
     lastActivityAtMs: d(2.2),
     turns: 3,
     interventions: 0,
+    contextPeakTokens: 26_000,
     usage: {
       input: 16_000,
       cacheRead: 720_000,

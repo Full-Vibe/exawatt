@@ -209,6 +209,15 @@ export interface DemoSessionSpec {
    */
   interventions: number;
   usage: DemoUsage;
+  /**
+   * Peak context footprint the run reached, in tokens (ENG-008 per-run
+   * context pressure). Codex rollouts carry this truth alongside
+   * `model_context_window`; Claude Code records none, so claude-code specs
+   * leave it absent — unreported, never zero.
+   */
+  contextPeakTokens?: number;
+  /** Context compactions observed during the run. Absent = not recorded. */
+  compactions?: number;
   delegated: DemoDelegatedRun[];
   roadmapItemId: string | null;
   link: LinkMethod | null;
@@ -491,6 +500,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     lastAtMs: DEMO_NOW_MS - 5 * DAY,
     turns: 12,
     interventions: 2,
+    contextPeakTokens: 212_000,
     usage: {
       input: 184_000,
       cacheRead: 8_910_000,
@@ -517,6 +527,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     turns: 9,
     // launched with one instruction, landed without a touch
     interventions: 0,
+    contextPeakTokens: 121_000,
     usage: {
       input: 96_400,
       cacheRead: 4_260_000,
@@ -542,6 +553,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     lastAtMs: DEMO_NOW_MS - 26 * HOUR,
     turns: 8,
     interventions: 2,
+    contextPeakTokens: 98_000,
     usage: {
       input: 74_800,
       cacheRead: 3_120_000,
@@ -567,6 +579,8 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     lastAtMs: DEMO_NOW_MS - 6 * DAY + 4 * HOUR,
     turns: 16,
     interventions: 3,
+    contextPeakTokens: 248_000,
+    compactions: 1,
     usage: {
       input: 214_000,
       cacheRead: 11_480_000,
@@ -592,6 +606,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     lastAtMs: DEMO_NOW_MS - 3 * DAY,
     turns: 13,
     interventions: 2,
+    contextPeakTokens: 187_000,
     usage: {
       input: 132_000,
       cacheRead: 6_940_000,
@@ -617,6 +632,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     lastAtMs: DEMO_NOW_MS - 42 * HOUR,
     turns: 7,
     interventions: 0,
+    contextPeakTokens: 58_000,
     usage: {
       input: 41_200,
       cacheRead: 1_840_000,
@@ -642,6 +658,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     lastAtMs: DEMO_NOW_MS - 17 * HOUR,
     turns: 10,
     interventions: 2,
+    contextPeakTokens: 104_000,
     usage: {
       input: 88_600,
       cacheRead: 4_020_000,
@@ -667,6 +684,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     lastAtMs: DEMO_NOW_MS - 2 * HOUR,
     turns: 15,
     interventions: 4,
+    contextPeakTokens: 226_000,
     usage: {
       input: 168_000,
       cacheRead: 8_120_000,
@@ -692,6 +710,7 @@ export const DEMO_SESSIONS: DemoSessionSpec[] = [
     lastAtMs: DEMO_NOW_MS - 40 * MIN,
     turns: 8,
     interventions: 0,
+    contextPeakTokens: 84_000,
     usage: {
       input: 61_200,
       cacheRead: 2_940_000,

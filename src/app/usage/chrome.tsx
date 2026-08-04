@@ -2,11 +2,25 @@
 
 /**
  * Page chrome for `/usage` — labels, values, and states only
- * (design-system.md, Voice). Every rung cited from the kernel: chrome type
- * roles, FLUX consumption channel, unknown-grey for absence, 4px spacing
- * grid. Descended from the ENG-008 design-options workbench chrome
- * (`src/app/hud-gallery/consumption-redesign/shared.tsx`), which stays as
- * the design record.
+ * (design-system.md, Voice).
+ *
+ * THE TREATMENT BUDGET (ENG-008 hierarchy pass, 2026-08-03). The whole page
+ * renders text through exactly these roles — the operator-review complaint
+ * ("all the different text treatments") was the count itself, so the count
+ * is now a contract:
+ *
+ *   1. page title    — `text-surface-title font-semibold` (once, usage-client)
+ *   2. Num           — mono display numeral; the hero % and the drill total
+ *   3. MicroLabel    — mono uppercase tracked micro; section + column labels
+ *   4. Body          — `text-sm` sans; names, verdict words, row labels
+ *   5. Data          — mono chrome-meta tabular; every figure in a row
+ *   6. Caption       — sans chrome-meta dim; legends, banners, footnotes
+ *
+ * Color is data-state only: the FLUX ramp on consumption numerals and fills,
+ * `FLUX.hot` on a genuinely overheating window, `FLUX.unknown` on absence,
+ * status Active blue on live markers, Project identity on ticks. All other
+ * text is neutral bright/dim. New text on this page picks one of the six
+ * roles or amends this header.
  */
 import type { ReactNode } from 'react';
 import {
@@ -25,6 +39,150 @@ import { DEMO_ORGANIZATION } from '@exawatt/core';
 import { DEMO_WORKSPACE } from '@/lib/tenancy/workspace-scope';
 
 /* ------------------------------------------------------------------ */
+/* the six text roles                                                  */
+/* ------------------------------------------------------------------ */
+
+/** Role 2 — the display numeral (hero % and the drill total). */
+export function Num({
+  children,
+  color = CHROME.text,
+}: {
+  children: ReactNode;
+  color?: string;
+}) {
+  return (
+    <span
+      className="font-mono text-display font-semibold tabular-nums"
+      style={{ color }}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** Role 3 — mono uppercase tracked micro-label (sections, columns). */
+export function MicroLabel({
+  children,
+  className = '',
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`font-mono text-chrome-micro uppercase tracking-[0.14em] ${className}`}
+      style={{ color: CHROME.textDim }}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** Role 4 — body value: names, verdict words, row labels. */
+export function Body({
+  children,
+  color = CHROME.text,
+  className = '',
+}: {
+  children: ReactNode;
+  color?: string;
+  className?: string;
+}) {
+  return (
+    <span className={`text-sm ${className}`} style={{ color }}>
+      {children}
+    </span>
+  );
+}
+
+/** Role 5 — mono data figure. Dim by default; bright for a row's key figure. */
+export function Data({
+  children,
+  bright = false,
+  color,
+  className = '',
+}: {
+  children: ReactNode;
+  bright?: boolean;
+  color?: string;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`font-mono text-chrome-meta tabular-nums ${className}`}
+      style={{ color: color ?? (bright ? CHROME.text : CHROME.textDim) }}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** Role 6 — muted caption: legends, banners, footnotes. */
+export function Caption({
+  children,
+  className = '',
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span className={`text-chrome-meta ${className}`} style={{ color: CHROME.textDim }}>
+      {children}
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* cards and bands                                                     */
+/* ------------------------------------------------------------------ */
+
+export function Card({
+  children,
+  className = '',
+  label,
+}: {
+  children: ReactNode;
+  className?: string;
+  label?: string;
+}) {
+  return (
+    <section
+      aria-label={label}
+      className={`rounded-lg border p-4 ${className}`}
+      style={{
+        borderColor: CHROME.border,
+        background: CHROME.surface,
+      }}
+    >
+      {children}
+    </section>
+  );
+}
+
+/** A question band: one micro-label heading, optional right-side aside. */
+export function Band({
+  label,
+  aside,
+  children,
+  className = '',
+}: {
+  label: string;
+  aside?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <Card label={label} className={`flex min-w-0 flex-col gap-3 ${className}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <MicroLabel>{label}</MicroLabel>
+        {aside}
+      </div>
+      {children}
+    </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* demo banner — honest assurance labeling, one line                   */
 /* ------------------------------------------------------------------ */
 
@@ -41,26 +199,20 @@ export function DemoBanner({
   return (
     <div
       className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border px-3 py-1.5"
-      style={{
-        borderColor: withAlpha(FLUX.mid, 0.28),
-        background: withAlpha(FLUX.mid, 0.05),
-      }}
+      style={{ borderColor: CHROME.border }}
     >
       <span
-        className="rounded px-1.5 py-0.5 font-mono text-chrome-micro"
-        style={{
-          border: `1px solid ${withAlpha(FLUX.mid, 0.5)}`,
-          color: FLUX.mid,
-        }}
+        className="rounded border px-1.5 py-0.5 font-mono text-chrome-micro"
+        style={{ borderColor: CHROME.borderStrong, color: CHROME.text }}
       >
         {voltaic ? DEMO_WORKSPACE.name : 'Demo data'}
       </span>
-      <span className="text-chrome-meta" style={{ color: CHROME.textDim }}>
+      <Caption>
         {voltaic ? `${DEMO_ORGANIZATION.name} · ` : ''}
         {demo.windowLabel} · {demo.workspace.sessionCount} sessions ·{' '}
         {tokens(raw)} raw tokens · same rollup path as a live local read · not
         reconciled against provider billing
-      </span>
+      </Caption>
     </div>
   );
 }
@@ -82,7 +234,7 @@ export function PaceBar({
   height?: number;
 }) {
   const w = pace.window;
-  const color = pressureColor(w.usedPercent);
+  const color = paceFill(pace);
   const usedW = Math.min(100, w.usedPercent);
   const projW = Math.max(
     0,
@@ -147,6 +299,22 @@ export function PaceBar({
 /** Pace words come from the one shared derivation — never re-phrased here. */
 export { paceLabel } from '@/components/consumption/meter/meter-model';
 
+/** Consumption fill for a window — always the FLUX ramp (data, not chrome). */
+export function paceFill(pace: WindowPace): string {
+  return pressureColor(pace.window.usedPercent);
+}
+
+/**
+ * Text color for a pace verdict under the page's color diet: neutral until
+ * the window genuinely overheats, then the consumption channel's hot — the
+ * meter's monochrome-until-it-matters idiom applied to words.
+ */
+export function verdictColor(pace: WindowPace): string {
+  return pace.exhaustsBeforeReset || pace.state === 'exhausted'
+    ? FLUX.hot
+    : CHROME.text;
+}
+
 /** The absent channel for a source that reports no plan data. */
 export function UnreportedChannel({
   observed,
@@ -169,61 +337,8 @@ export function UnreportedChannel({
           boxShadow: `inset 0 0 0 1px ${FLUX.unknownLine}`,
         }}
       />
-      <span
-        className="font-mono text-chrome-meta tabular-nums"
-        style={{ color: CHROME.textDim }}
-      >
-        {tokens(observed)} raw observed · 5h
-      </span>
-      {reason && (
-        <span className="text-chrome-meta" style={{ color: FLUX.unknown }}>
-          {reason}
-        </span>
-      )}
+      <Data>{tokens(observed)} raw observed · 5h</Data>
+      {reason && <Caption>{reason}</Caption>}
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* micro-chrome                                                        */
-/* ------------------------------------------------------------------ */
-
-export function MicroLabel({
-  children,
-  color = CHROME.textDim,
-}: {
-  children: ReactNode;
-  color?: string;
-}) {
-  return (
-    <span
-      className="font-mono text-chrome-micro uppercase tracking-[0.14em]"
-      style={{ color }}
-    >
-      {children}
-    </span>
-  );
-}
-
-export function Card({
-  children,
-  className = '',
-  label,
-}: {
-  children: ReactNode;
-  className?: string;
-  label?: string;
-}) {
-  return (
-    <section
-      aria-label={label}
-      className={`rounded-lg border p-4 ${className}`}
-      style={{
-        borderColor: CHROME.border,
-        background: CHROME.surface,
-      }}
-    >
-      {children}
-    </section>
   );
 }

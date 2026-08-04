@@ -1,29 +1,25 @@
 'use client';
 
 /**
- * The Usage surface (ENG-008) — the production composite. Route `/usage`
- * (renamed from Consumption 2026-08-03; the old route is gone, no redirect).
+ * The Usage surface (ENG-008) — the production composite. Route `/usage`.
  * The canonical concept behind it is still Consumption (`concepts.md`); the
  * wattage brand lives inside the page — FLUX channel, headroom — never in
  * the nav label.
  *
- * One page, top to bottom answering: am I OK? → where is it going? → what
- * should I change?
+ * One page structured as the operator's five questions, in order
+ * (2026-08-03 show-and-tell review; transcript in
+ * `docs/research/partner-conversations/`):
  *
- *   1. demo-data assurance banner
- *   2. plan-window cards — headroom, reset, pace vs even pace, projection;
- *      a source with no plan record rendered absent, never 0%
- *   3. headroom-over-time for the tightest window
- *   4. attribution pivot — bars are doors into the drill panel (the page's
- *      only dollars, labelled modelled)
- *   5. the session grid — every operator session a row, rows are doors too
- *   6. ratio diagnostics as one quiet row, with the ENG-014 allocation
- *      affordance at chip scale
+ *   1. Headroom — how much is left? (the glance zone: one display numeral,
+ *      the reset, the pace verdict as words; every other window subordinate)
+ *   2. Burn  — how fast am I going?
+ *   3. Pace  — am I on pace?
+ *   4. Heat  — am I overheating?
+ *   5. Spend — how much am I spending? (modelled, labelled modelled)
  *
- * Composite of the two operator-picked ENG-008 directions (Console top,
- * Ops-board floor); the explored directions stay frozen in
- * `/hud-gallery/consumption-redesign` as the design record. Supersedes the
- * E4 four-act narrative.
+ * Below the answers sits the drill-down floor — attribution pivot, session
+ * grid, drill panel ("where is it going?") — and one quiet diagnostics row.
+ * Text renders through the six-role treatment budget in `chrome.tsx`.
  *
  * Per-tenant source (ENG-027 W2): the Demo tenant reads the Voltaic corpus;
  * Personal keeps the demo week until the E5 live local parse. Both corpora
@@ -34,10 +30,7 @@ import { useMemo, useState } from 'react';
 import { displayUsage, rawTotal } from '@/components/consumption/model';
 import { useTenantConsumption } from '@/components/consumption/use-tenant-consumption';
 import { CONSUMPTION_SURFACE_NAME } from '@/components/consumption/surface-name';
-import {
-  CONSUMPTION_CHROME as CHROME,
-  exact,
-} from '@/components/consumption/flux';
+import { CONSUMPTION_CHROME as CHROME } from '@/components/consumption/flux';
 import { SurfaceReadinessMarker } from '@/components/readiness';
 import {
   allPaces,
@@ -45,15 +38,18 @@ import {
   gridRows,
   pivotRows,
   silentSources,
+  spendView,
   type PivotKey,
   type PivotRow,
 } from './derive';
-import { DemoBanner } from './chrome';
-import { PlanWindows } from './windows';
+import { Caption, DemoBanner } from './chrome';
+import { Verdict } from './verdict';
+import { Burn, Heat, Pace, Spend } from './answers';
 import { Attribution, type UnitMode } from './attribution';
 import { SessionsGrid } from './sessions-grid';
 import { DrillPanel } from './drill-panel';
 import { Diagnostics } from './diagnostics';
+import { exact } from '@/components/consumption/flux';
 
 type DrillSelection =
   | { kind: 'pivot'; id: string }
@@ -72,6 +68,7 @@ export function UsageClient() {
   const silent = useMemo(() => silentSources(demo), [demo]);
   const rows = useMemo(() => gridRows(demo), [demo]);
   const diags = useMemo(() => diagnostics(demo), [demo]);
+  const spend = useMemo(() => spendView(demo, rows), [demo, rows]);
 
   const [pivot, setPivot] = useState<PivotKey>('project');
   const [mode, setMode] = useState<UnitMode>('normalized');
@@ -118,19 +115,24 @@ export function UsageClient() {
               E5's flip to `live` removes it with no change here. No owner
               tag: roadmap IDs are provenance and live in docs, not chrome. */}
           <SurfaceReadinessMarker surfaceId="consumption" />
-          <span
-            className="ml-auto text-chrome-meta"
-            style={{ color: CHROME.textDim }}
-          >
+          <Caption className="ml-auto">
             read locally from Claude Code and Codex logs · no provider API ·
             nothing leaves this machine
-          </span>
+          </Caption>
         </header>
 
         <DemoBanner demo={demo} raw={raw} voltaic={inDemoTenant} />
 
-        <PlanWindows demo={demo} paces={paces} silent={silent} />
+        {/* the five answers, in the order the questions are asked */}
+        <Verdict paces={paces} silent={silent} />
+        <Burn demo={demo} paces={paces} />
+        <div className="grid items-start gap-4 lg:grid-cols-3">
+          <Pace paces={paces} />
+          <Heat paces={paces} />
+          <Spend spend={spend} windowLabel={demo.windowLabel} />
+        </div>
 
+        {/* the drill-down floor — where is it going? */}
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="flex min-w-0 flex-col gap-4">
             <Attribution
@@ -180,13 +182,15 @@ export function UsageClient() {
         <Diagnostics diags={diags} />
 
         <footer
-          className="border-t pt-3 text-chrome-meta"
-          style={{ borderColor: CHROME.border, color: CHROME.textDim }}
+          className="border-t pt-3"
+          style={{ borderColor: CHROME.border }}
         >
-          {exact(demo.samples.length)} usage records ·{' '}
-          {demo.workspace.sessionCount + demo.overhead.sessionCount} provider
-          sessions · rolled up with{' '}
-          <span className="font-mono">@exawatt/core</span>
+          <Caption>
+            {exact(demo.samples.length)} usage records ·{' '}
+            {demo.workspace.sessionCount + demo.overhead.sessionCount} provider
+            sessions · rolled up with{' '}
+            <span className="font-mono">@exawatt/core</span>
+          </Caption>
         </footer>
       </div>
     </main>

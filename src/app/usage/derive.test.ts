@@ -3,8 +3,11 @@ import type {
   CapacityWindowView,
   ConsumptionSourceView,
 } from '@/components/consumption/model';
-import type { DemoConsumption } from '@/components/consumption/demo-source';
-import { allPaces } from './derive';
+import {
+  demoConsumption,
+  type DemoConsumption,
+} from '@/components/consumption/demo-source';
+import { allPaces, gridRows } from './derive';
 
 const NOW = Date.parse('2026-08-02T15:20:00.000Z');
 const MIN = 60_000;
@@ -67,5 +70,30 @@ describe('allPaces — the page applies the meter’s freshness discipline', () 
     // field exists because the page renders the meter's reading, not its own
     expect(paces[0].pace).toBe('ahead');
     expect(paces[1].pace).toBe('behind');
+  });
+});
+
+describe('per-run context pressure — absent is never zero', () => {
+  it('carries codex context truth and leaves claude-code unreported', () => {
+    const rows = gridRows(demoConsumption());
+    const codex = rows.filter(r => r.source === 'codex' && r.identified);
+    expect(codex.length).toBeGreaterThan(0);
+    for (const r of codex) {
+      expect(r.contextWindow).toBe(272_000);
+      expect(r.contextPeakTokens).toBeGreaterThan(0);
+      expect(r.contextPeakTokens!).toBeLessThanOrEqual(r.contextWindow!);
+    }
+    // at least one authored compaction survives to the drill
+    expect(codex.some(r => (r.compactions ?? 0) > 0)).toBe(true);
+    // Claude Code records neither window nor peak: null, never 0
+    const claude = rows.filter(
+      r => r.source === 'claude-code' && r.identified
+    );
+    expect(claude.length).toBeGreaterThan(0);
+    for (const r of claude) {
+      expect(r.contextWindow).toBeNull();
+      expect(r.contextPeakTokens).toBeNull();
+      expect(r.compactions).toBeNull();
+    }
   });
 });

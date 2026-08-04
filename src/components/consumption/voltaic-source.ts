@@ -91,6 +91,14 @@ function voltaicSessionSpecs(agents: DemoFleetAgent[]): DemoSessionSpec[] {
       // the surface's authored-fixture banner.
       interventions: agent.interventions,
       usage: agent.usage,
+      // Context-window truth rides only where the fixture authored it
+      // (Codex rollouts); absent stays absent — unreported, never zero.
+      ...(agent.contextPeakTokens !== undefined
+        ? { contextPeakTokens: agent.contextPeakTokens }
+        : {}),
+      ...(agent.compactions !== undefined
+        ? { compactions: agent.compactions }
+        : {}),
       delegated: agent.delegated.map(run => ({
         agentId: run.agentId,
         agentType: run.agentType,

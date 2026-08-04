@@ -69,6 +69,50 @@ export function silentSources(demo: DemoConsumption): ConsumptionSourceView[] {
   return demo.sources.filter(s => s.windows.length === 0);
 }
 
+/**
+ * Windows that are genuinely overheating: spent, projected to exhaust before
+ * their reset, or running hot. The Heat band renders exactly this list — the
+ * page's only alarm state, in the consumption channel's hot color.
+ */
+export function heatWindows(paces: WindowPace[]): WindowPace[] {
+  return paces.filter(
+    p => p.exhaustsBeforeReset || p.state === 'hot' || p.state === 'exhausted'
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* spend — modelled dollars, stated basis                              */
+/* ------------------------------------------------------------------ */
+
+export interface SpendView {
+  /** Operator-session weighted tokens over the corpus window. */
+  operatorWeighted: number;
+  /** Per-source split of `operatorWeighted`, largest first. */
+  bySource: Array<{ key: Harness; label: string; weighted: number }>;
+  /** Machine-invoked overhead (entrypoint-separated), weighted. */
+  overheadWeighted: number;
+}
+
+export function spendView(demo: DemoConsumption, rows: GridRow[]): SpendView {
+  const bySource = new Map<Harness, number>();
+  let operatorWeighted = 0;
+  for (const r of rows) {
+    operatorWeighted += r.weighted;
+    bySource.set(r.source, (bySource.get(r.source) ?? 0) + r.weighted);
+  }
+  return {
+    operatorWeighted,
+    bySource: [...bySource.entries()]
+      .map(([key, weighted]) => ({
+        key,
+        label: SOURCE_LABEL[key] ?? key,
+        weighted,
+      }))
+      .sort((a, b) => b.weighted - a.weighted),
+    overheadWeighted: demo.overhead.rollup?.weightedTokens ?? 0,
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* samples                                                             */
 /* ------------------------------------------------------------------ */
@@ -182,6 +226,12 @@ export interface GridRow {
   agents: number | null;
   /** Operator messages after launch; null = no session record for this id. */
   interventions: number | null;
+  /** Model context window in tokens; null where the source reports none. */
+  contextWindow: number | null;
+  /** Peak context footprint in tokens; null = not recorded (never zero). */
+  contextPeakTokens: number | null;
+  /** Context compactions during the run; null = not recorded. */
+  compactions: number | null;
   live: boolean;
   spark: number[];
 }
@@ -202,6 +252,7 @@ export function gridRows(demo: DemoConsumption): GridRow[] {
     const usage = displayUsage(s.rollup.totals, s.rollup.sources);
     const project = s.spec.projectKey ? byKey.get(s.spec.projectKey) : undefined;
     const capable = SOURCE_CAPABILITIES[s.spec.source].delegation;
+    const samples = index.get(s.spec.id) ?? [];
     rows.push({
       id: s.spec.id,
       title: s.spec.title,
@@ -219,12 +270,12 @@ export function gridRows(demo: DemoConsumption): GridRow[] {
       weighted: s.rollup.weightedTokens,
       agents: capable ? s.rollup.delegated.agents : null,
       interventions: s.spec.interventions,
+      contextWindow:
+        samples.find(x => x.contextWindow !== null)?.contextWindow ?? null,
+      contextPeakTokens: s.spec.contextPeakTokens ?? null,
+      compactions: s.spec.compactions ?? null,
       live: demo.nowMs - s.spec.lastAtMs < LIVE_WITHIN_MS,
-      spark: sessionSpark(
-        index.get(s.spec.id) ?? [],
-        s.spec.startedAtMs,
-        s.spec.lastAtMs
-      ),
+      spark: sessionSpark(samples, s.spec.startedAtMs, s.spec.lastAtMs),
     });
   }
 
@@ -271,6 +322,10 @@ export function gridRows(demo: DemoConsumption): GridRow[] {
         ),
       agents: null,
       interventions: null,
+      contextWindow:
+        samples.find(x => x.contextWindow !== null)?.contextWindow ?? null,
+      contextPeakTokens: null,
+      compactions: null,
       live: demo.nowMs - lastAtMs < LIVE_WITHIN_MS,
       spark: sessionSpark(samples, startedAtMs, lastAtMs),
     });
@@ -303,6 +358,11 @@ export interface DrillSession {
   raw: number;
   agents: number | null;
   interventions: number | null;
+  /** Context-window pressure: window size, peak footprint, compactions.
+   *  null = not recorded by the source — rendered absent, never zero. */
+  contextWindow: number | null;
+  contextPeakTokens: number | null;
+  compactions: number | null;
   liveNow: boolean;
 }
 
@@ -330,6 +390,9 @@ export function drillOf(rows: GridRow[]): DrillSession[] {
     raw: r.raw,
     agents: r.agents,
     interventions: r.interventions,
+    contextWindow: r.contextWindow,
+    contextPeakTokens: r.contextPeakTokens,
+    compactions: r.compactions,
     liveNow: r.live,
   }));
 }
