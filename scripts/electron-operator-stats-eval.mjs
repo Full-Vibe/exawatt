@@ -15,7 +15,7 @@ const app = await electron.launch({
     NODE_ENV: 'development',
     EXAWATT_TEST: '1',
     EXAWATT_USER_DATA: userData,
-    EXAWATT_DEV_URL: `${base}/agentmaxxing`,
+    EXAWATT_DEV_URL: `${base}/leaderboard`,
   },
 });
 

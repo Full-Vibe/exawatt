@@ -78,7 +78,9 @@ describe('proxy offline authority', () => {
     '/api/feedback',
     '/api/goal-visuals',
     '/api/operator-stats',
-    '/agentmaxxing?metric=command&window=week',
+    '/leaderboard?metric=command&window=week',
+    // Hard-cut route: middleware must let Next serve its 404, not auth-redirect.
+    '/agentmaxxing',
     '/operator/jakesc',
     '/run/run_0ba96afb076e97c3f76b5384',
     '/',

@@ -29,7 +29,7 @@ describe('isAppRoute', () => {
     '/terms',
     '/sign-in',
     '/sign-up',
-    '/agentmaxxing',
+    '/leaderboard',
     '/operator/jake',
     '/run/abc123def456',
     '/deck',

@@ -24,6 +24,9 @@ const PUBLIC_PREFIXES = [
   '/sign-up',
   '/auth',
   '/architecture',
+  '/leaderboard',
+  // Retired route: keep it outside the auth gate so Next returns the intended
+  // 404 instead of redirecting signed-out visitors to /sign-in.
   '/agentmaxxing',
   '/operator',
   '/run',

@@ -203,7 +203,7 @@ Claude / Codex / future source adapters
        └─ public allowlisted reads
                  │
                  ▼
-  /agentmaxxing · /operator/[handle] · /run/[id]
+  /leaderboard · /operator/[handle] · /run/[id]
 ```
 
 Rules:
@@ -372,7 +372,7 @@ Acceptance:
 
 ### A4 — public arena, profile, and Run receipt
 
-Build `/agentmaxxing`, `/operator/[handle]`, and `/run/[id]`; add the production
+Build `/leaderboard`, `/operator/[handle]`, and `/run/[id]`; add the production
 navigation entry and metadata/OpenGraph URLs. Prototype the materially new
 profile/receipt visual state in `/hud-gallery` first, then percolate accepted
 components to public surfaces and retire the study in the same milestone.

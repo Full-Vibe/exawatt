@@ -135,7 +135,7 @@ export default async function OperatorPage({ params }: OperatorPageProps) {
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>Recent runs</h2>
-            <Link href="/agentmaxxing" className={styles.control}>
+            <Link href="/leaderboard" className={styles.control}>
               Global leaderboard
             </Link>
           </div>

@@ -257,7 +257,7 @@ const MARKETING_ROUTES = [
   '/sign-in',
   '/sign-up',
   '/architecture',
-  '/agentmaxxing',
+  '/leaderboard',
   '/operator',
   '/run',
 ];

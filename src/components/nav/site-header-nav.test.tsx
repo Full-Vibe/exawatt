@@ -53,7 +53,7 @@ describe('SiteHeaderNav leaderboard link', () => {
     expect(screen.getByRole('link', { name: /architecture/i })).toBeVisible();
     expect(screen.getByRole('link', { name: /leaderboard/i })).toHaveAttribute(
       'href',
-      '/agentmaxxing'
+      '/leaderboard'
     );
     expect(screen.queryByRole('link', { name: /components/i })).toBeNull();
   });
@@ -63,7 +63,7 @@ describe('SiteHeaderNav leaderboard link', () => {
 
     expect(screen.getByRole('link', { name: /leaderboard/i })).toHaveAttribute(
       'href',
-      '/agentmaxxing'
+      '/leaderboard'
     );
     expect(screen.getByRole('link', { name: /sign in/i })).toHaveAttribute(
       'href',

@@ -89,7 +89,7 @@ export function PublishPanel() {
         const { error: linkError } = await supabase.auth.linkIdentity({
           provider: 'github',
           options: {
-            redirectTo: `${window.location.origin}/auth/callback?next=/agentmaxxing`,
+            redirectTo: `${window.location.origin}/auth/callback?next=/leaderboard`,
           },
         });
         if (linkError) throw linkError;

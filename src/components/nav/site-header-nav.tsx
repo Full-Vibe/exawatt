@@ -220,8 +220,8 @@ export function SiteHeaderNav({
   const pathname = usePathname();
   const isHome = pathname === '/';
   const isArchitecture = pathname?.startsWith('/architecture');
-  const isAgentmaxxing =
-    pathname?.startsWith('/agentmaxxing') ||
+  const isLeaderboard =
+    pathname?.startsWith('/leaderboard') ||
     pathname?.startsWith('/operator/') ||
     pathname?.startsWith('/run/');
   const isWorkspace = pathname?.startsWith('/workspace');
@@ -331,10 +331,10 @@ export function SiteHeaderNav({
             </Link>
           </Button>
         )}
-        {!isAgentmaxxing && (
+        {!isLeaderboard && (
           <Button variant="ghost" size="sm" asChild>
             <Link
-              href="/agentmaxxing"
+              href="/leaderboard"
               aria-label="Leaderboard"
               title="Leaderboard"
               className="text-chrome-title!"
