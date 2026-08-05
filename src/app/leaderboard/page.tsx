@@ -30,36 +30,38 @@ export const metadata: Metadata = {
   },
 };
 
-// Axis ids are public URL contract (`/leaderboard?metric=…`) and stay stable;
-// only the visible labels change. Labels are written for a first-time visitor
-// who has never seen Exawatt — the previous set ("Command: 51 h") read as
-// nonsense to the operator and to a cold reviewer (FIX-003, ENG-035).
+// Ids are the `?metric=` value and the RPC argument, so they say what the
+// column says. Labels are written for a first-time visitor who has never seen
+// Exawatt — the previous set ("Command: 51 h") read as nonsense to the
+// operator and to a cold reviewer (FIX-003, ENG-035).
 const AXES: ReadonlyArray<{
   id: LeaderboardAxis;
   label: string;
   description: string;
 }> = [
   {
-    id: 'command',
+    id: 'agent-hours',
     label: 'Agent hours',
     description: 'Hours of agent work run under your command.',
   },
   {
-    id: 'endurance',
+    id: 'hands-off',
     label: 'Longest hands-off',
     description: 'Longest stretch your agents ran without needing you.',
   },
   {
-    id: 'fleet',
+    id: 'peak-fleet',
     label: 'Peak fleet size',
     description: 'Most agents running at the same time.',
   },
   {
-    id: 'energy',
+    id: 'tokens',
     label: 'Tokens used',
     description: 'Tokens your agents used, normalized across models.',
   },
 ];
+
+const DEFAULT_AXIS: LeaderboardAxis = 'agent-hours';
 
 const WINDOWS: ReadonlyArray<{ id: LeaderboardWindow; label: string }> = [
   { id: 'week', label: 'This week' },
@@ -70,7 +72,7 @@ function axisFrom(value: string | string[] | undefined): LeaderboardAxis {
   const candidate = Array.isArray(value) ? value[0] : value;
   return AXES.some(axis => axis.id === candidate)
     ? (candidate as LeaderboardAxis)
-    : 'command';
+    : DEFAULT_AXIS;
 }
 
 function windowFrom(value: string | string[] | undefined): LeaderboardWindow {
@@ -85,13 +87,13 @@ function metricHref(metric: LeaderboardAxis, window: LeaderboardWindow) {
 
 function formatMetric(metric: LeaderboardAxis, value: number) {
   switch (metric) {
-    case 'command':
+    case 'agent-hours':
       return formatAgentHours(value);
-    case 'endurance':
+    case 'hands-off':
       return formatDuration(value);
-    case 'fleet':
+    case 'peak-fleet':
       return String(value);
-    case 'energy':
+    case 'tokens':
       return formatTokens(value);
   }
 }
@@ -212,11 +214,11 @@ export default async function LeaderboardPage({
                   </td>
                   {AXES.map(axis => {
                     const value =
-                      axis.id === 'command'
+                      axis.id === 'agent-hours'
                         ? row.agent_ms
-                        : axis.id === 'endurance'
+                        : axis.id === 'hands-off'
                           ? row.longest_hands_off_ms
-                          : axis.id === 'fleet'
+                          : axis.id === 'peak-fleet'
                             ? row.peak_fleet
                             : row.normalized_tokens;
                     return (

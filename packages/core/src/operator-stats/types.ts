@@ -111,7 +111,17 @@ export interface OperatorStatsPublishPayload {
   runs: PublicRunUpload[];
 }
 
-export type LeaderboardAxis = 'command' | 'endurance' | 'fleet' | 'energy';
+/**
+ * Public ranking axes. The id IS the `/leaderboard?metric=` value and the
+ * `get_operator_leaderboard` argument, so it stays readable and matches the
+ * visible label. Renamed 2026-08-04 (FIX-003) from `command`/`endurance`/
+ * `fleet`/`energy`; the old vocabulary is gone, not aliased.
+ */
+export type LeaderboardAxis =
+  | 'agent-hours'
+  | 'hands-off'
+  | 'peak-fleet'
+  | 'tokens';
 export type LeaderboardWindow = 'week' | 'all';
 
 export interface RankableOperator {

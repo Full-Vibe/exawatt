@@ -188,7 +188,7 @@ describe('leaderboard ordering', () => {
           normalizedTokens: 1,
         },
       ],
-      'command'
+      'agent-hours'
     );
     expect(ranked.map(row => row.handle)).toEqual(['a', 'b', 'z']);
   });

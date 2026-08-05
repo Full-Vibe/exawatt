@@ -9,13 +9,13 @@ export function leaderboardValue(
   axis: LeaderboardAxis
 ): number {
   switch (axis) {
-    case 'command':
+    case 'agent-hours':
       return operator.agentMs;
-    case 'endurance':
+    case 'hands-off':
       return operator.longestHandsOffMs;
-    case 'fleet':
+    case 'peak-fleet':
       return operator.peakFleet;
-    case 'energy':
+    case 'tokens':
       return operator.normalizedTokens;
   }
 }

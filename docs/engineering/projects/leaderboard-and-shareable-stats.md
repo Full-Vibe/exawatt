@@ -461,10 +461,19 @@ Exit criteria:
   unverified-value failure decision `0029` forbids.
 
 - 2026-08-04 — **FIX-003 copy half FIXED.** Every public axis label is now
-  written for a first-time visitor, and the axis ids (`metric=command` and
-  friends) are untouched so existing shared links keep working:
+  written for a first-time visitor:
   Command → **Agent hours**, Endurance → **Longest hands-off**, Fleet → **Peak
-  fleet size**, Tokens → **Tokens used**. Descriptions were rewritten to plain
+  fleet size**, Tokens → **Tokens used**. The ids were renamed to match in a
+  follow-up the same day (operator: "we don't have any links and I don't want
+  to have legacy debt"): `command`/`endurance`/`fleet`/`energy` →
+  `agent-hours`/`hands-off`/`peak-fleet`/`tokens` across the `LeaderboardAxis`
+  union, the ranking kernel, the `?metric=` URL contract, and the
+  `get_operator_leaderboard` RPC (migration `20260805002000`). The old
+  vocabulary is REMOVED, not aliased — the RPC guard now raises on `command`,
+  which was verified against production before the app shipped. `energy` for
+  "tokens" was the clearest instance of the debt: an id that never matched its
+  own label. An unknown `?metric=` still falls back to the default axis rather
+  than erroring, so a stale link degrades instead of breaking. Descriptions were rewritten to plain
   statements ("Longest stretch your agents ran without needing you"), and the
   same labels percolated to the operator profile record rail, the activity
   graph heading ("Agent hours by day"), the run receipt rail, the publish
