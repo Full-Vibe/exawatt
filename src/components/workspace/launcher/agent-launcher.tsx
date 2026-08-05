@@ -24,8 +24,8 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { SetupRow } from './setup-row';
 import {
-  SetupDetailHandle,
   SetupDetailPanel,
+  SetupDrawerHandle,
   type DetailAxis,
 } from './setup-detail';
 import {
@@ -145,8 +145,11 @@ export function AgentLauncher({
         className="max-h-40 min-h-11 w-full resize-none rounded-md border border-hud-stroke-soft bg-hud-surface-input px-3 py-2 font-mono text-xs leading-5 text-hud-text outline-none transition-colors [field-sizing:content] placeholder:text-hud-text-dim/80 hover:border-hud-cyan/40 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
       />
 
-      <div className="flex min-w-0 items-stretch gap-2">
-        <div ref={rowRef} className="flex min-w-0 flex-1 items-stretch">
+      {/* Row, handle and panel are ONE block with no gaps between them: the
+          handle used to sit in its own `gap-2` child and read as a detached
+          arrow floating under the cards (operator, round 3). */}
+      <div ref={rowRef} className="flex min-w-0 flex-col">
+        <div className="flex min-w-0 items-stretch gap-2">
           <SetupRow
             setups={setups}
             selectedId={selectedId}
@@ -158,41 +161,39 @@ export function AgentLauncher({
             onOpenCatalog={onOpenCatalog}
             className="flex-1"
           />
+          <Button
+            type="submit"
+            data-launcher-start
+            aria-busy={launching}
+            disabled={startBlocked}
+            title={blockedReason ?? undefined}
+            className="min-w-24 shrink-0 self-stretch motion-reduce:transition-none"
+          >
+            {launching ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className="animate-spin motion-reduce:animate-none"
+              />
+            ) : null}
+            {launching ? 'Starting…' : 'Start'}
+          </Button>
         </div>
-        <Button
-          type="submit"
-          data-launcher-start
-          aria-busy={launching}
-          disabled={startBlocked}
-          title={blockedReason ?? undefined}
-          className="min-w-24 shrink-0 self-stretch motion-reduce:transition-none"
-        >
-          {launching ? (
-            <LoaderCircle
-              aria-hidden="true"
-              className="animate-spin motion-reduce:animate-none"
-            />
-          ) : null}
-          {launching ? 'Starting…' : 'Start'}
-        </Button>
+
+        <SetupDrawerHandle
+          open={open}
+          axes={axes}
+          tickPosition={notchPosition}
+          onToggle={toggleDetail}
+          disabled={!ready}
+        />
+
+        <SetupDetailPanel
+          open={open && ready}
+          axes={axes}
+          footnote={detailFootnote}
+          onDone={toggleDetail}
+        />
       </div>
-
-      <SetupDetailHandle
-        open={open}
-        notchPosition={notchPosition}
-        onToggle={toggleDetail}
-        disabled={!ready}
-      />
-
-      <SetupDetailPanel
-        open={open && ready}
-        notchPosition={notchPosition}
-        // The handle already points at the selected chip; a notch under it
-        // would be a second pointer at the same thing.
-        showNotch={false}
-        axes={axes}
-        footnote={detailFootnote}
-      />
 
       {blockedReason ? (
         <p

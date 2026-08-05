@@ -5,7 +5,8 @@
  *
  * Two parts, deliberately separate:
  *
- *   `SetupDetailHandle` — the closed face. A grip under the selected chip.
+ *   `SetupDrawerHandle` — the closed face, attached to the row's bottom
+ *     edge, naming the axes it holds.
  *   `SetupDetailPanel`  — the open face. The editable axes, and NOTHING that
  *     restates them; the axes' own values are the only place those values
  *     appear inside the drawer.
@@ -15,7 +16,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { OptionMenu, type OptionMenuOption } from '@/components/ui/option-menu';
 import { cn } from '@/lib/utils';
 
@@ -49,9 +50,15 @@ function axisMark(axis: DetailAxis): React.ReactNode {
 export interface SetupDetailFieldsProps {
   axes: readonly DetailAxis[];
   footnote?: string;
+  /** Rendered opposite the footnote, where there was already empty space. */
+  onDone?: () => void;
 }
 
-export function SetupDetailFields({ axes, footnote }: SetupDetailFieldsProps) {
+export function SetupDetailFields({
+  axes,
+  footnote,
+  onDone,
+}: SetupDetailFieldsProps) {
   return (
     <div data-setup-detail-fields className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 items-end gap-2">
@@ -81,90 +88,122 @@ export function SetupDetailFields({ axes, footnote }: SetupDetailFieldsProps) {
           </label>
         ))}
       </div>
-      {footnote ? (
-        <p className="font-mono text-chrome-micro leading-4 text-hud-text-dim">
-          {footnote}
-        </p>
+      {footnote || onDone ? (
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <p className="min-w-0 font-mono text-chrome-micro leading-4 text-hud-text-dim">
+            {footnote}
+          </p>
+          {onDone ? (
+            <button
+              type="button"
+              data-setup-drawer-done
+              onClick={onDone}
+              className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 font-mono text-chrome-micro text-hud-text-dim outline-none transition-colors hover:bg-hud-fill hover:text-hud-text focus-visible:ring-2 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+            >
+              Done
+              <ChevronUp aria-hidden="true" className="size-3.5" />
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
 }
 
 /**
- * The drawer's closed face: a grip that slides to the selected chip.
+ * The drawer, closed and open, as ONE attached element.
  *
- * An earlier cut put a read-only summary line here instead — engine, model,
- * thinking, permission as text. It restated the chip above it AND the fields
- * below it, so the same four values appeared three times (operator,
- * 2026-08-04). A drawer pull says "there is more here" without saying anything
- * the surface already says.
+ * Two corrections from the operator's round-3 review (2026-08-04):
+ *
+ *   "the arrow handle is disconnected from the card, gap looks bad" — the
+ *   handle sat in its own flex child under a `gap-2` row, so it floated. It
+ *   is now flush: the row's bottom border and the drawer's top border are the
+ *   same line, and a tick on that line sits under the selected chip.
+ *
+ *   "it doesn't communicate what's in it" — a bare chevron says a thing
+ *   exists, not what it is. Closed, the drawer names the axes it holds.
+ *   Naming the AXES is not the read-only summary that was deleted before
+ *   that one restated the chip's VALUES; this restates nothing, and it
+ *   disappears when the drawer opens and the real labels take over.
  */
-export function SetupDetailHandle({
+export function SetupDrawerHandle({
   open,
-  notchPosition,
+  axes,
+  tickPosition,
   onToggle,
   disabled,
 }: {
   open: boolean;
-  notchPosition: number | null;
+  axes: readonly DetailAxis[];
+  /** 0..1 across the launcher: where the selected chip is. */
+  tickPosition: number | null;
   onToggle: () => void;
   disabled?: boolean;
 }) {
   return (
-    <div className="relative h-4">
-      <button
-        type="button"
-        data-setup-detail-handle
-        aria-expanded={open}
-        aria-label={open ? 'Hide setup options' : 'Adjust this setup'}
-        title={open ? 'Hide setup options' : 'Adjust this setup'}
-        disabled={disabled}
-        onClick={onToggle}
-        style={{ left: `${(notchPosition ?? 0.5) * 100}%` }}
-        className={cn(
-          'absolute top-0 flex h-4 w-14 -translate-x-1/2 items-center justify-center rounded-b-lg border border-t-0 border-hud-stroke-faint bg-hud-surface-input outline-none',
-          'transition-[left,border-color,background-color] duration-[220ms] ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none',
-          'hover:border-hud-cyan/45 hover:bg-hud-fill',
-          'focus-visible:ring-2 focus-visible:ring-hud-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-hud-void',
-          'disabled:cursor-not-allowed disabled:opacity-40',
-          open && 'border-hud-cyan/50 bg-hud-fill-hi'
-        )}
-      >
-        {/* A grip, not an icon: three rules read as "pull me" at 4px tall. */}
+    <button
+      type="button"
+      data-setup-drawer-handle
+      data-open={open || undefined}
+      aria-expanded={open}
+      aria-label={
+        open
+          ? 'Hide setup options'
+          : `Adjust ${axes.map(axis => axis.label.toLowerCase()).join(', ')}`
+      }
+      disabled={disabled}
+      onClick={onToggle}
+      // Open, this collapses to nothing rather than staying as a full-width
+      // band holding one right-aligned word. The Done control moves into the
+      // panel's footnote line, which was already half empty.
+      className={cn(
+        'relative flex w-full items-center justify-between gap-2 overflow-hidden border-hud-stroke-faint bg-hud-surface-input px-3 text-left outline-none',
+        // The row above owns this border. Overlapping by exactly 1px makes the
+        // chips' bottom edge and the drawer's top edge one line, not two.
+        '-mt-px rounded-b-lg',
+        'transition-[height,opacity,border-color,background-color] duration-200 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none',
+        'focus-visible:ring-2 focus-visible:ring-hud-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-hud-void',
+        'disabled:cursor-not-allowed disabled:opacity-40',
+        open
+          ? 'pointer-events-none h-0 border-0 opacity-0'
+          : 'h-8 border hover:border-hud-cyan/45 hover:bg-hud-fill'
+      )}
+    >
+      {/* The tick is the connection to ONE chip: a segment of the shared
+          border, lit, that slides with the selection. */}
+      {tickPosition === null ? null : (
         <span
           aria-hidden="true"
+          data-setup-drawer-tick
+          style={{ left: `${tickPosition * 100}%` }}
           className={cn(
-            'flex items-center gap-0.5 transition-transform duration-200 motion-reduce:transition-none',
-            open && 'rotate-180'
+            'absolute -top-px h-px w-10 -translate-x-1/2 bg-hud-cyan/70',
+            'transition-[left,opacity] duration-[220ms] ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none',
+            open && 'opacity-0'
           )}
-        >
-          <ChevronDown className="size-3 text-hud-text-dim" />
-        </span>
-      </button>
-    </div>
+        />
+      )}
+
+      <span className="min-w-0 truncate font-mono text-chrome-micro text-hud-text-dim">
+        {axes.map(axis => axis.label).join('  ·  ')}
+      </span>
+      <span className="flex shrink-0 items-center gap-1.5 font-mono text-chrome-micro text-hud-text-dim">
+        Adjust
+        <ChevronDown aria-hidden="true" className="size-3.5" />
+      </span>
+    </button>
   );
 }
 
 export interface SetupDetailPanelProps extends SetupDetailFieldsProps {
   open: boolean;
-  /** 0..1 across the row: where the notch points. Null hides the notch. */
-  notchPosition: number | null;
-  /** The peek mechanic already has a visible closed face, so it needs no notch. */
-  showNotch?: boolean;
 }
 
 /**
- * Height animates through a `grid-template-rows` 0fr→1fr transition so the
- * panel opens against its real content height without a measured pixel value,
- * and the notch tweens along the row rather than jumping — which is what makes
- * the panel read as belonging to one chip.
+ * Height animates through a `grid-template-rows` 0fr→1fr transition, so the
+ * panel opens against its real content height without a measured pixel value.
  */
-export function SetupDetailPanel({
-  open,
-  notchPosition,
-  showNotch = true,
-  ...fields
-}: SetupDetailPanelProps) {
+export function SetupDetailPanel({ open, ...fields }: SetupDetailPanelProps) {
   const [mounted, setMounted] = useState(open);
 
   useEffect(() => {
@@ -185,18 +224,10 @@ export function SetupDetailPanel({
       }}
     >
       <div className="min-h-0 overflow-hidden">
-        <div className="relative pt-2">
-          {showNotch && notchPosition !== null ? (
-            <span
-              aria-hidden="true"
-              data-setup-detail-notch
-              className="absolute top-[3px] size-2.5 -translate-x-1/2 rotate-45 border-l border-t border-hud-cyan/50 bg-hud-panel transition-[left] duration-[220ms] ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none"
-              style={{ left: `${notchPosition * 100}%` }}
-            />
-          ) : null}
-          <div className="rounded-lg border border-hud-cyan/30 bg-hud-panel p-3">
-            {mounted ? <SetupDetailFields {...fields} /> : null}
-          </div>
+        {/* Shares the handle's bottom border, so handle and panel read as one
+            drawer rather than two stacked boxes. */}
+        <div className="-mt-px rounded-b-lg border border-hud-cyan/30 bg-hud-panel p-3">
+          {mounted ? <SetupDetailFields {...fields} /> : null}
         </div>
       </div>
     </div>
