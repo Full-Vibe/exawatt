@@ -16,6 +16,21 @@ export function formatAgentHours(ms: number): string {
   return `${hours.toFixed(1)} h`;
 }
 
+/**
+ * Agent hours carrying their own unit, for places with no column header or
+ * label to supply it — share text, page descriptions, compact run rows.
+ */
+export function formatAgentHoursLong(ms: number): string {
+  const hours = ms / 3_600_000;
+  const value =
+    hours >= 1000
+      ? `${(hours / 1000).toFixed(1)}k`
+      : hours >= 10
+        ? String(Math.round(hours))
+        : hours.toFixed(1);
+  return `${value} agent hours`;
+}
+
 export function formatTokens(tokens: number): string {
   return new Intl.NumberFormat('en', {
     notation: tokens >= 10_000 ? 'compact' : 'standard',

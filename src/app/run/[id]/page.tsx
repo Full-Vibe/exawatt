@@ -5,6 +5,7 @@ import { cache } from 'react';
 import { OperatorAvatar } from '@/components/operator-stats/avatar';
 import {
   formatAgentHours,
+  formatAgentHoursLong,
   formatDuration,
   formatTokens,
 } from '@/components/operator-stats/format';
@@ -35,7 +36,7 @@ export async function generateMetadata({
   const run = await getRun(id);
   if (!run) return { title: 'Run not found' };
   const duration = formatDuration(run.longestHandsOffMs);
-  const description = `${duration} without needing @${run.handle}. Fleet ${run.peakActiveMembers} · ${formatAgentHours(run.agentMs)} under command.`;
+  const description = `${duration} without needing @${run.handle}. Peak fleet ${run.peakActiveMembers} · ${formatAgentHoursLong(run.agentMs)} under command.`;
   return {
     title: `${duration} hands-off · @${run.handle}`,
     description,
@@ -86,13 +87,13 @@ export default async function RunPage({ params }: RunPageProps) {
 
         <div className={styles.recordRail} aria-label="Run proof">
           <div className={styles.record}>
-            <span className={styles.proofLabel}>Fleet</span>
+            <span className={styles.proofLabel}>Peak fleet size</span>
             <strong className={styles.recordValue}>
               {run.peakActiveMembers}
             </strong>
           </div>
           <div className={styles.record}>
-            <span className={styles.proofLabel}>Command</span>
+            <span className={styles.proofLabel}>Agent hours</span>
             <strong className={styles.recordValue}>
               {formatAgentHours(run.agentMs)}
             </strong>
@@ -104,7 +105,7 @@ export default async function RunPage({ params }: RunPageProps) {
             </strong>
           </div>
           <div className={styles.record}>
-            <span className={styles.proofLabel}>Tokens</span>
+            <span className={styles.proofLabel}>Tokens used</span>
             <strong className={styles.recordValue}>
               {formatTokens(run.normalizedTokens)}
             </strong>

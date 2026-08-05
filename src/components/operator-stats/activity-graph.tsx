@@ -1,6 +1,6 @@
 import { activityGraphLevel } from '@exawatt/core';
 import type { PublicOperatorDay } from '@/lib/operator-stats/public';
-import { formatAgentHours } from './format';
+import { formatAgentHours, formatAgentHoursLong } from './format';
 import styles from './operator-stats.module.css';
 
 const DAYS = 371;
@@ -31,7 +31,7 @@ export function ActivityGraph({ days }: { days: PublicOperatorDay[] }) {
       <div
         className={styles.graph}
         role="grid"
-        aria-label="Autonomous agent-hours by day"
+        aria-label="Agent hours by day"
       >
         {cells.map(cell => (
           <button
@@ -39,7 +39,7 @@ export function ActivityGraph({ days }: { days: PublicOperatorDay[] }) {
             type="button"
             role="gridcell"
             className={`${styles.graphCell} ${styles[`level${cell.level}`] ?? ''}`}
-            aria-label={`${cell.key}: ${formatAgentHours(cell.agentMs)}`}
+            aria-label={`${cell.key}: ${formatAgentHoursLong(cell.agentMs)}`}
             title={`${cell.key} · ${formatAgentHours(cell.agentMs)}`}
           />
         ))}

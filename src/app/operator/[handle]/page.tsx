@@ -6,6 +6,7 @@ import { ActivityGraph } from '@/components/operator-stats/activity-graph';
 import { OperatorAvatar } from '@/components/operator-stats/avatar';
 import {
   formatAgentHours,
+  formatAgentHoursLong,
   formatDuration,
   formatTokens,
 } from '@/components/operator-stats/format';
@@ -34,7 +35,7 @@ export async function generateMetadata({
   if (!handle) return { title: 'Operator not found' };
   const profile = await getProfile(handle);
   if (!profile) return { title: `@${handle}` };
-  const description = `${formatAgentHours(
+  const description = `${formatAgentHoursLong(
     profile.days.reduce((total, day) => total + day.agentMs, 0)
   )} under command. See @${profile.handle}'s public AI agent operator record.`;
   return {
@@ -101,23 +102,23 @@ export default async function OperatorPage({ params }: OperatorPageProps) {
 
         <div className={styles.recordRail} aria-label="All-time records">
           <div className={styles.record}>
-            <span className={styles.proofLabel}>Command</span>
+            <span className={styles.proofLabel}>Agent hours</span>
             <strong className={styles.recordValue}>
               {formatAgentHours(records.agentMs)}
             </strong>
           </div>
           <div className={styles.record}>
-            <span className={styles.proofLabel}>Endurance</span>
+            <span className={styles.proofLabel}>Longest hands-off</span>
             <strong className={styles.recordValue}>
               {formatDuration(records.enduranceMs)}
             </strong>
           </div>
           <div className={styles.record}>
-            <span className={styles.proofLabel}>Peak fleet</span>
+            <span className={styles.proofLabel}>Peak fleet size</span>
             <strong className={styles.recordValue}>{records.peakFleet}</strong>
           </div>
           <div className={styles.record}>
-            <span className={styles.proofLabel}>Tokens</span>
+            <span className={styles.proofLabel}>Tokens used</span>
             <strong className={styles.recordValue}>
               {formatTokens(records.tokens)}
             </strong>
@@ -126,8 +127,8 @@ export default async function OperatorPage({ params }: OperatorPageProps) {
 
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
-            <h2 className={styles.sectionTitle}>Command activity</h2>
-            <span className={styles.meta}>24 agent-hours saturates a day</span>
+            <h2 className={styles.sectionTitle}>Agent hours by day</h2>
+            <span className={styles.meta}>24 agent hours saturates a day</span>
           </div>
           <ActivityGraph days={profile.days} />
         </section>
@@ -161,10 +162,10 @@ export default async function OperatorPage({ params }: OperatorPageProps) {
                       {formatDuration(run.longestHandsOffMs)} hands-off
                     </span>
                     <span className={styles.metric}>
-                      Fleet {run.peakActiveMembers}
+                      peak fleet {run.peakActiveMembers}
                     </span>
                     <span className={styles.metric}>
-                      {formatAgentHours(run.agentMs)}
+                      {formatAgentHoursLong(run.agentMs)}
                     </span>
                     <span className={styles.metric}>
                       {formatTokens(run.normalizedTokens)} tokens

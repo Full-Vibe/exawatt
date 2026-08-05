@@ -460,7 +460,27 @@ Exit criteria:
   self-reported "projects launched" counter would be the exact
   unverified-value failure decision `0029` forbids.
 
-- 2026-08-04 (operator quick capture `26d8caed`, FIX-003, queued): the
+- 2026-08-04 — **FIX-003 copy half FIXED.** Every public axis label is now
+  written for a first-time visitor, and the axis ids (`metric=command` and
+  friends) are untouched so existing shared links keep working:
+  Command → **Agent hours**, Endurance → **Longest hands-off**, Fleet → **Peak
+  fleet size**, Tokens → **Tokens used**. Descriptions were rewritten to plain
+  statements ("Longest stretch your agents ran without needing you"), and the
+  same labels percolated to the operator profile record rail, the activity
+  graph heading ("Agent hours by day"), the run receipt rail, the publish
+  panel preview line, and the `⌘K` surface summary. `formatAgentHoursLong`
+  ("51 agent hours") now carries the unit wherever no column header or label
+  supplies it — page/OG descriptions, compact run rows, and graph-cell
+  `aria-label`s — because "51 h" standing alone was the original defect in
+  miniature. Verified with headless shots of `/leaderboard`,
+  `/operator/jakesc`, and a real run receipt against the worktree dev server.
+  **Two asks from the capture deliberately did NOT ship here:** peak fleet
+  counting subagents (a public-number change owed to the A1 measurement
+  contract) and the retro on how this copy passed the A4 gallery study — both
+  ride the output-pivot pass above.
+
+- 2026-08-04 (operator quick capture `26d8caed`, FIX-003, superseded by the
+  fix above; kept for the original diagnosis): the
   `/leaderboard` axis copy is unintelligible to a visitor — and to the
   operator. "Command: 51h" reads as nonsense (Command as a duration label),
   "Endurance" and "Fleet" are unexplained jargon. Direction from the capture:

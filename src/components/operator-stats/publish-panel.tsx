@@ -5,7 +5,7 @@ import type { Session } from '@supabase/supabase-js';
 import type { OperatorStatsPublishPayload } from '@exawatt/core';
 import { createClient } from '@/lib/supabase/client';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
-import { formatAgentHours, formatTokens } from './format';
+import { formatAgentHoursLong, formatTokens } from './format';
 import styles from './operator-stats.module.css';
 
 const START_KEY = 'exawatt.operator-stats.started-at.v1';
@@ -282,8 +282,8 @@ export function PublishPanel() {
         ) : (
           <>
             <p>
-              {preview.runs.length} Runs · {formatAgentHours(totalAgentMs)}{' '}
-              command · {formatTokens(totalTokens)} normalized tokens
+              {preview.runs.length} Runs · {formatAgentHoursLong(totalAgentMs)}{' '}
+              · {formatTokens(totalTokens)} tokens used
             </p>
             <p className={styles.disclosure}>
               Uploads only your GitHub-seeded profile, timezone, daily totals,

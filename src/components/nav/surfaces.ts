@@ -265,7 +265,7 @@ export const NAVIGATION_SURFACES: NavigationSurface[] = [
     routeClass: 'marketing',
     name: 'Leaderboard',
     summary:
-      'Global operator rankings across Command, Endurance, Fleet, and Tokens',
+      'Global operator rankings across agent hours, longest hands-off run, peak fleet size, and tokens used',
     href: '/leaderboard',
     readiness: 'live',
     commandPalette: true,

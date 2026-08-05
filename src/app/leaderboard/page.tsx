@@ -30,6 +30,10 @@ export const metadata: Metadata = {
   },
 };
 
+// Axis ids are public URL contract (`/leaderboard?metric=…`) and stay stable;
+// only the visible labels change. Labels are written for a first-time visitor
+// who has never seen Exawatt — the previous set ("Command: 51 h") read as
+// nonsense to the operator and to a cold reviewer (FIX-003, ENG-035).
 const AXES: ReadonlyArray<{
   id: LeaderboardAxis;
   label: string;
@@ -37,23 +41,23 @@ const AXES: ReadonlyArray<{
 }> = [
   {
     id: 'command',
-    label: 'Command',
-    description: 'Autonomous agent-hours under command.',
+    label: 'Agent hours',
+    description: 'Hours of agent work run under your command.',
   },
   {
     id: 'endurance',
-    label: 'Endurance',
-    description: 'Longest useful span without needing you.',
+    label: 'Longest hands-off',
+    description: 'Longest stretch your agents ran without needing you.',
   },
   {
     id: 'fleet',
-    label: 'Fleet',
-    description: 'Most Agents working at once.',
+    label: 'Peak fleet size',
+    description: 'Most agents running at the same time.',
   },
   {
     id: 'energy',
-    label: 'Tokens',
-    description: 'Normalized tokens consumed.',
+    label: 'Tokens used',
+    description: 'Tokens your agents used, normalized across models.',
   },
 ];
 
