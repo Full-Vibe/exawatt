@@ -19,8 +19,13 @@ import type { PtySessionManager } from './session-manager';
  * tab case this system exists for). Attention clears when the operator
  * looks (focus) or answers (input while looking). Once a turn crosses a
  * finished boundary, passive provider output cannot silently reopen it; a
- * guaranteed-human engagement begins the next turn. A spawn grace period
- * keeps auto-revived tabs from all lighting up at app start.
+ * guaranteed-human engagement begins the next turn. That guarantee holds
+ * unconditionally only for a source with its own reported-turn channel
+ * (today: Claude) — for a source with none (Codex, OpenCode), byte
+ * quiescence is the only evidence that exists, so real subsequent output can
+ * still reopen a settle it produced (2026-08-04, decision `0018` amendment).
+ * A spawn grace period keeps auto-revived tabs from all lighting up at app
+ * start.
  *
  * Pure Node (no Electron imports) so it unit-tests directly. Env knobs:
  *   EXAWATT_ATTENTION=0               disable entirely
@@ -117,7 +122,20 @@ export class AttentionMonitor extends EventEmitter {
   /** Agent turns that have crossed a visible quiet/BEL boundary. This latch
    *  prevents an idle TUI repaint from reopening a finished turn; only the
    *  guaranteed-human engagement channel can begin the next one. Shells do
-   *  not have turns and therefore never enter this set. */
+   *  not have turns and therefore never enter this set.
+   *
+   *  That guarantee holds only for a source with a reported-turn channel
+   *  (today: Claude). There, `settled` is close to a formality — the real
+   *  truth is hook-driven and bypasses `onData` entirely via
+   *  `noteHarnessTurnStart`/`noteHarnessTurnEnd`, so blocking stray bytes
+   *  costs nothing and stops repaint noise from lying. For a source with NO
+   *  reported channel (Codex, OpenCode today), inference is the only signal
+   *  that exists, and `onData` does not honor this latch: a settle it
+   *  produced cannot be trusted more than the byte quiescence used to reach
+   *  it, and freezing "done" against all future evidence turns one wrong
+   *  inference into a stuck one for the rest of the turn — worse than the
+   *  occasional noise flicker this latch exists to prevent (2026-08-04,
+   *  BUG-001 / decision `0018` amendment). */
   private settled = new Set<string>();
   /** sessions ever given work (D22: composer task, exact resume, or a human
    *  keystroke via pty:engage) or that ever raised attention (a turn-end
@@ -434,8 +452,12 @@ export class AttentionMonitor extends EventEmitter {
     // Once the UI has truthfully shown "turn finished," provider-owned idle
     // redraws, title updates, and terminal protocol chatter cannot turn it
     // back into "working." They are observable bytes, not a new operator
-    // command. A real next turn arrives through noteEngaged().
-    if (!bell && this.settled.has(id)) return;
+    // command. A real next turn arrives through noteEngaged() — UNLESS
+    // inference is this session's only signal (see `settled`'s doc comment),
+    // in which case a settle it produced is not more durable than the
+    // evidence used to reach it, and a fresh burst can still reopen it.
+    const hasReportedSource = this.reportedTurn(id) !== null;
+    if (!bell && this.settled.has(id) && hasReportedSource) return;
     this.lastDataAt.set(id, this.now());
     const sinceResize = this.now() - (this.lastResizeAt.get(id) ?? -Infinity);
     if (bell) {

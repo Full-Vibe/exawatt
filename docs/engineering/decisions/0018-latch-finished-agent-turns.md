@@ -48,3 +48,34 @@ that a finished Agent turn restarted.
   false-positive working signals from indistinguishable PTY noise.
 - The latch is runtime state. Relaunch still reconstructs live working truth
   from Electron main and durable Session startedness as before.
+
+## Amendment (2026-08-04, BUG-001)
+
+Scoped exception for a source with NO reported-turn channel at all (today:
+Codex, OpenCode — `harness-registry.ts` wires no `eventChannel` for either).
+For those sources, inference is the *only* signal that exists: there is no
+hook-reported `ownTurn` to corroborate a settle, and no hook event to manage
+the latch independently of the PTY stream the way Claude's
+`noteHarnessTurnStart`/`noteHarnessTurnEnd` do. A settle produced by
+byte-quiescence alone is a guess, not a fact, and this decision's original
+"conservative false-negative is preferred" reasoning assumed the alternative
+was permanent flicker — not a permanent, unrecoverable wrong answer for the
+rest of a turn that is demonstrably still running (the literal BUG-001
+symptom: a Codex tab showed the finished glyph while the agent kept working).
+
+For a session with no reported-turn source, `onData` no longer honors the
+`settled` latch against non-BEL bytes: real subsequent output reopens
+`working` the same way it would before the session ever settled. The latch
+still fully applies — unchanged — for any session with a reported-turn
+source, which is Claude today and is a durable claim: `reportedTurn(id)`
+becomes non-null on that session's first hook event and stays non-null for
+the Session's life, so this exception structurally cannot reach a Claude
+Session once hooks are live. The tradeoff is bounded and self-correcting: the
+worst case is an occasional flicker back to `working` from repaint noise on a
+truly-finished Codex tab, which goes quiet again within the same quiescence
+window — strictly better than the stuck-wrong failure this amendment fixes.
+
+The durable fix remains real Codex reported-turn integration (Codex's own
+`notify` hook mechanism is real and already used elsewhere on this machine;
+wiring it into Exawatt is new scope, not covered by this amendment) — this
+amendment only changes what happens while that source has no signal at all.

@@ -225,7 +225,15 @@ describe('AttentionMonitor', () => {
     expect(monitor.get('a')).toBeNull(); // focusing cleared it
   });
 
-  it('keeps a finished turn stable until explicit operator engagement', () => {
+  it('keeps a finished turn stable until explicit operator engagement, for a reported source', () => {
+    // Mirrors production Claude: a live report record exists (even a stale
+    // one), so the settle this session reaches is corroborated, not a lone
+    // guess, and repaint noise must not be able to undo it.
+    monitor.setReportedTurnSource(() => ({
+      ownTurn: 'available',
+      blockedOn: null,
+      children: [],
+    }));
     add('a', 'claude', clock - 60_000);
     data('a', 'x'.repeat(500));
     clock += 5000;
@@ -245,6 +253,34 @@ describe('AttentionMonitor', () => {
     data('a', 'real next-turn output');
     expect(monitor.get('a')).toBeNull();
     expect(monitor.isWorking('a')).toBe(true);
+  });
+
+  it('reopens a settled turn on real subsequent output, for a source with no report at all (BUG-001)', () => {
+    // Codex/OpenCode today: `reportedTurn` stays null for the session's whole
+    // life, so quiescence is not corroborated by anything — a settle it
+    // produces is a guess, not a fact, and cannot outrank real output that
+    // arrives after it. The alternative (today's default fixture, above)
+    // would leave a session that is genuinely still working stuck showing
+    // "done" for the rest of the turn, which is strictly worse than an
+    // occasional flicker back to working from noise that then goes quiet
+    // again on its own.
+    add('a', 'claude', clock - 60_000); // harness name is incidental — what
+    // matters is no setReportedTurnSource() call, i.e. reportedTurn(id) is
+    // always null, exactly the Codex/OpenCode shape today.
+    data('a', 'x'.repeat(500));
+    clock += 5000;
+    monitor.sweepNow();
+    expect(monitor.get('a')?.kind).toBe('turn-end');
+    expect(monitor.isWorking('a')).toBe(false);
+
+    // Real subsequent output — no BEL, no engagement — reopens working.
+    data('a', 'more real output the agent is still producing'.repeat(20));
+    expect(monitor.isWorking('a')).toBe(true);
+
+    // And it can settle again cleanly once it actually goes quiet.
+    clock += 5000;
+    monitor.sweepNow();
+    expect(monitor.isWorking('a')).toBe(false);
   });
 
   it('keeps the ORIGINAL since when signals repeat (stable queue order)', () => {
@@ -560,19 +596,51 @@ describe('AttentionMonitor activity truth (D18)', () => {
     ]);
     expect(monitor.isWorking('a')).toBe(false);
 
-    // A late idle repaint is not a new turn and cannot replace the check
-    // with the working pie.
+    // This session has no reported-turn source (the Codex/OpenCode shape):
+    // inference is the only signal, so real subsequent output reopens it
+    // rather than freezing a guess against all future evidence (BUG-001,
+    // decision `0018` amendment). The stable-against-repaint-noise case for
+    // a REPORTED source is covered separately, below.
     manager.emit('data', 'a', 'passive TUI repaint'.repeat(100));
-    expect(monitor.isWorking('a')).toBe(false);
-    expect(transitions).toHaveLength(2);
+    expect(monitor.isWorking('a')).toBe(true);
+    expect(transitions).toHaveLength(3);
 
-    // Explicit human engagement opens the next turn immediately; it does not
-    // depend on prompt echo, which can be absent or resize-guarded.
+    // Explicit human engagement still opens the next turn immediately; it
+    // does not depend on prompt echo, which can be absent or resize-guarded.
+    clock += 3500;
+    monitor.sweepNow();
     monitor.noteEngaged('a');
     expect(monitor.isWorking('a')).toBe(true);
     manager.emit('data', 'a', 'next turn output');
     expect(monitor.isWorking('a')).toBe(true);
     expect(transitions.at(-1)).toEqual({ id: 'a', working: true });
+  });
+
+  it('keeps a repaint from reopening working when a reported source exists', () => {
+    // Mirrors production Claude: `reportedTurn` returns a live (even if
+    // stale) record, so the settle is corroborated and repaint noise must
+    // not undo it — the exact case D38 was written to fix.
+    monitor.setReportedTurnSource(() => ({
+      ownTurn: 'available',
+      blockedOn: null,
+      children: [],
+    }));
+    manager.sessions.push({
+      id: 'a',
+      harness: 'claude',
+      startedAt: 0,
+      exited: false,
+    });
+    manager.emit('data', 'a', 'streaming output');
+    clock += 3500;
+    monitor.sweepNow();
+    expect(monitor.isWorking('a')).toBe(false);
+
+    manager.emit('data', 'a', 'passive TUI repaint'.repeat(100));
+    expect(monitor.isWorking('a')).toBe(false);
+
+    monitor.noteEngaged('a');
+    expect(monitor.isWorking('a')).toBe(true);
   });
 
   it('keeps shell activity output-driven because shells have no turns', () => {
@@ -632,8 +700,13 @@ describe('AttentionMonitor activity truth (D18)', () => {
 
     monitor.setWindowFocused(true);
     monitor.setFocus('a');
+    // No reported-turn source is wired (the Codex/OpenCode shape): a BEL
+    // settle from pure inference is still just a guess, so real subsequent
+    // output reopens it (BUG-001, decision `0018` amendment). The
+    // stable-against-repaint case for a REPORTED source is covered by
+    // 'keeps a repaint from reopening working when a reported source exists'.
     manager.emit('data', 'a', 'late prompt repaint'.repeat(100));
-    expect(monitor.isWorking('a')).toBe(false);
+    expect(monitor.isWorking('a')).toBe(true);
     clock += 5000;
     monitor.sweepNow();
     expect(monitor.get('a')).toBeNull();
