@@ -256,7 +256,7 @@ export const BENCH_SCENARIOS: BenchScenario[] = [
   {
     id: 'detail',
     title: 'Detail open',
-    note: 'One chip ribbons out. Four axes, one flat tab order, Enter starts. The notch points at the chip it belongs to.',
+    note: 'The drawer holds the editable axes and nothing else — no read-only restatement of the chip above it. One flat tab order, Enter starts.',
     state: 'ready',
     setups: buildSetups(TRAINED_HISTORY),
     selectedIndex: 1,
@@ -310,18 +310,6 @@ export const BENCH_SCENARIOS: BenchScenario[] = [
     width: 768,
   },
   {
-    id: 'launching',
-    title: 'Launching',
-    note: 'Start is in flight. The row keeps its shape; only the button changes.',
-    state: 'ready',
-    setups: buildSetups(TRAINED_HISTORY),
-    selectedIndex: 0,
-    detailOpen: false,
-    task: 'Fix the launcher spinner and add a regression test',
-    launching: true,
-    width: 768,
-  },
-  {
     id: 'narrow',
     title: 'Narrow (520px)',
     note: 'At composer minimum the row keeps whole chips rather than truncating: fewer setups, each still readable.',
@@ -331,17 +319,6 @@ export const BENCH_SCENARIOS: BenchScenario[] = [
     detailOpen: false,
     task: '',
     width: 520,
-  },
-  {
-    id: 'wide',
-    title: 'Wide (1100px)',
-    note: 'Extra width buys a fourth setup rather than four chips that each have to truncate.',
-    state: 'ready',
-    setups: buildSetups(TRAINED_HISTORY, () => ({ available: true }), 1100),
-    selectedIndex: 0,
-    detailOpen: false,
-    task: '',
-    width: 1100,
   },
 ];
 

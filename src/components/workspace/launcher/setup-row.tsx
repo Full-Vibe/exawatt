@@ -14,7 +14,7 @@
 import { useRef } from 'react';
 import { Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { SetupChip, type SetupChipVariant } from './setup-chip';
+import { SetupChip } from './setup-chip';
 import type { LauncherRowState, LauncherSetup } from './launcher-model';
 
 /** How many setups the row shows before the rest live behind ＋. */
@@ -50,7 +50,6 @@ export interface SetupRowProps {
   selectedId: string | null;
   expandedId: string | null;
   state: LauncherRowState;
-  variant?: SetupChipVariant;
   /** Slots to render while settling; matches the row the operator will get. */
   placeholderCount?: number;
   onSelect: (id: string) => void;
@@ -64,7 +63,6 @@ export function SetupRow({
   selectedId,
   expandedId,
   state,
-  variant,
   placeholderCount = 3,
   onSelect,
   onToggleDetail,
@@ -105,7 +103,6 @@ export function SetupRow({
               selected={false}
               expanded={false}
               pending
-              variant={variant}
             />
           ))
         : setups.map(setup => (
@@ -118,7 +115,6 @@ export function SetupRow({
               setup={setup}
               selected={setup.id === selectedId}
               expanded={setup.id === expandedId}
-              variant={variant}
               tabIndex={
                 setup.id === (selectedId ?? setups[0]?.id) ? 0 : -1
               }

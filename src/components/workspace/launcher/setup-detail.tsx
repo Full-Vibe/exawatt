@@ -3,15 +3,12 @@
 /**
  * The detail view that ribbons out of a selected setup (ENG-016 D49).
  *
- * Three seams so the mechanic can change without a rewrite:
+ * Two parts, deliberately separate:
  *
- *   `SetupDetailFields` — WHAT is editable. One flat tab-through line of axes
- *     driven by plain data, every one an `OptionMenu`, so the bench and the
- *     composer feed it the same way and neither owns a bespoke layout.
- *   `SetupDetailSummary` — the CLOSED presentation, for the peek mechanic.
- *     Renders the same axes as one readable line.
- *   `SetupDetailPanel` — WHERE it appears, and how it is announced. The panel
- *     grows under the row with a notch that slides to the selected chip.
+ *   `SetupDetailHandle` — the closed face. A grip under the selected chip.
+ *   `SetupDetailPanel`  — the open face. The editable axes, and NOTHING that
+ *     restates them; the axes' own values are the only place those values
+ *     appear inside the drawer.
  *
  * Every axis is one Tab stop, so the operator can land in the panel, change
  * one thing, and Tab straight to Start.
@@ -93,59 +90,15 @@ export function SetupDetailFields({ axes, footnote }: SetupDetailFieldsProps) {
   );
 }
 
-/** The closed face of the peek drawer: the same axes, read as one line. */
-export function SetupDetailSummary({
-  axes,
-  open,
-  onToggle,
-  disabled,
-}: {
-  axes: readonly DetailAxis[];
-  open: boolean;
-  onToggle: () => void;
-  disabled?: boolean;
-}) {
-  const parts = axes
-    .map(axis => {
-      const option = axis.options.find(entry => entry.id === axis.value);
-      return option?.label ?? axis.placeholder ?? null;
-    })
-    .filter(Boolean);
-
-  return (
-    <button
-      type="button"
-      data-setup-detail-summary
-      aria-expanded={open}
-      disabled={disabled}
-      onClick={onToggle}
-      className={cn(
-        'flex h-9 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-hud-stroke-faint bg-hud-surface-input px-3 text-left outline-none',
-        'transition-[border-color,background-color] duration-200 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none',
-        'hover:border-hud-cyan/45 hover:bg-hud-fill',
-        'focus-visible:ring-2 focus-visible:ring-hud-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-hud-void',
-        'disabled:cursor-not-allowed disabled:opacity-40',
-        open && 'border-hud-cyan/50'
-      )}
-    >
-      <span className="min-w-0 truncate font-mono text-chrome-meta text-hud-text-dim">
-        {parts.join('  ·  ')}
-      </span>
-      <span className="flex shrink-0 items-center gap-1.5 font-mono text-chrome-micro text-hud-text-dim">
-        {open ? 'Done' : 'Adjust'}
-        <ChevronDown
-          aria-hidden="true"
-          className={cn(
-            'size-3.5 transition-transform duration-200 motion-reduce:transition-none',
-            open && 'rotate-180'
-          )}
-        />
-      </span>
-    </button>
-  );
-}
-
-/** The closed face of the handle drawer: a grip that slides to the selection. */
+/**
+ * The drawer's closed face: a grip that slides to the selected chip.
+ *
+ * An earlier cut put a read-only summary line here instead — engine, model,
+ * thinking, permission as text. It restated the chip above it AND the fields
+ * below it, so the same four values appeared three times (operator,
+ * 2026-08-04). A drawer pull says "there is more here" without saying anything
+ * the surface already says.
+ */
 export function SetupDetailHandle({
   open,
   notchPosition,

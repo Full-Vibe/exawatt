@@ -17,7 +17,11 @@
  *
  * `pending` renders the SAME structure with shimmer blocks instead of text.
  * The skeleton IS this component, so it cannot drift from what it stands in
- * for — the previous round hand-drew it and the row still jumped on settle.
+ * for — an earlier round hand-drew it and the row still jumped on settle.
+ *
+ * There is deliberately no variant prop. Carrying three layouts side by side
+ * was useful for one review and then became permutations to wade through
+ * (operator, 2026-08-04); this is the layout.
  */
 
 import { forwardRef } from 'react';
@@ -31,13 +35,6 @@ import {
   type LauncherSetup,
   type LauncherVendor,
 } from './launcher-model';
-
-export type SetupChipVariant = 'role-lede' | 'quiet';
-
-export const SETUP_CHIP_VARIANTS: readonly SetupChipVariant[] = [
-  'role-lede',
-  'quiet',
-];
 
 export function EngineGlyph({
   engine,
@@ -97,7 +94,6 @@ export interface SetupChipProps {
   expanded: boolean;
   /** Renders the same structure as shimmer blocks. Inert: no click, no focus. */
   pending?: boolean;
-  variant?: SetupChipVariant;
   tabIndex?: number;
   onSelect?: (id: string) => void;
   onToggleDetail?: (id: string) => void;
@@ -111,7 +107,6 @@ export const SetupChip = forwardRef<HTMLButtonElement, SetupChipProps>(
       selected,
       expanded,
       pending = false,
-      variant = 'role-lede',
       tabIndex,
       onSelect,
       onToggleDetail,
@@ -142,7 +137,6 @@ export const SetupChip = forwardRef<HTMLButtonElement, SetupChipProps>(
         data-selected={(!pending && selected) || undefined}
         data-expanded={(!pending && expanded) || undefined}
         data-unavailable={(!pending && !setup.available) || undefined}
-        data-variant={variant}
         onClick={
           pending
             ? undefined
@@ -160,11 +154,9 @@ export const SetupChip = forwardRef<HTMLButtonElement, SetupChipProps>(
           pending && 'cursor-default'
         )}
       >
-        {variant === 'role-lede' ? (
-          <span className="flex h-3.5 w-full items-center font-mono text-chrome-micro leading-[0.875rem] text-hud-text-dim/70">
-            {pending ? <Shimmer className="h-2 w-10" /> : role}
-          </span>
-        ) : null}
+        <span className="flex h-3.5 w-full items-center font-mono text-chrome-micro leading-[0.875rem] text-hud-text-dim/70">
+          {pending ? <Shimmer className="h-2 w-10" /> : role}
+        </span>
 
         <span className="flex h-4 w-full min-w-0 items-center gap-1.5">
           {pending ? (

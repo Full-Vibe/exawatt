@@ -15,7 +15,6 @@ import { resolveQaBrowserLaunchOptions } from './lib/qa-browser.mjs';
 
 const BASE = process.env.EXA_BASE || 'http://localhost:7050';
 const OUT = process.env.EXA_LAUNCHER_SHOTS || '/tmp/exawatt-launcher-bench';
-const VARIANTS = (process.env.EXA_LAUNCHER_VARIANTS || 'role-tag').split(',');
 const APPEARANCE_KEY = 'exawatt.appearance.v1';
 
 const appearancePreference = themeId => ({
@@ -58,40 +57,25 @@ await page.goto(`${BASE}/hud-gallery/agent-launcher`, {
 });
 await page.waitForSelector('[data-launcher-bench]');
 
-const DRAWERS = (process.env.EXA_LAUNCHER_DRAWERS || 'peek').split(',');
+const cases = await page.$$eval('[data-bench-case]', nodes =>
+  nodes.map(node => node.getAttribute('data-bench-case'))
+);
 
-for (const drawer of DRAWERS) {
-  await page.click(`[data-bench-drawer="${drawer}"]`);
-  await page.waitForTimeout(250);
-for (const variant of VARIANTS) {
-  await page.click(`[data-bench-variant="${variant}"]`);
-  await page.waitForTimeout(450);
-
-  const cases = await page.$$eval('[data-bench-case]', nodes =>
-    nodes.map(node => node.getAttribute('data-bench-case'))
-  );
-
-  for (const id of cases) {
-    const element = await page.$(`[data-bench-case="${id}"]`);
-    if (!element) continue;
-    await element.screenshot({
-      path: join(OUT, `${drawer}--${variant}--${id}.png`),
-    });
-  }
-
-  await page.screenshot({
-    path: join(OUT, `${drawer}--${variant}--contact-sheet.png`),
-    fullPage: true,
-  });
-  console.log(`[launcher-bench] ${drawer}/${variant}: ${cases.length} cases`);
+for (const id of cases) {
+  const element = await page.$(`[data-bench-case="${id}"]`);
+  if (!element) continue;
+  await element.screenshot({ path: join(OUT, `${id}.png`) });
 }
-}
+
+await page.screenshot({
+  path: join(OUT, 'contact-sheet.png'),
+  fullPage: true,
+});
+console.log(`[launcher-bench] ${cases.length} cases`);
 
 // Gate: the skeleton must be the real chip, not a lookalike. The operator
 // asked for this explicitly — a placeholder that is one pixel shorter still
 // makes the row jump on settle, which is the finding the state exists to fix.
-await page.click('[data-bench-drawer="peek"]');
-await page.waitForTimeout(250);
 const geometry = await page.evaluate(() => {
   const box = selector => {
     const node = document.querySelector(selector);

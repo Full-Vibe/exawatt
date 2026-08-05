@@ -26,25 +26,13 @@ import { SetupRow } from './setup-row';
 import {
   SetupDetailHandle,
   SetupDetailPanel,
-  SetupDetailSummary,
   type DetailAxis,
 } from './setup-detail';
-import type { SetupChipVariant } from './setup-chip';
 import {
   setupAccessibleLabel,
   type LauncherRowState,
   type LauncherSetup,
 } from './launcher-model';
-
-/**
- * `peek`   — a collapsed summary of the current setup is always visible; it IS
- *            the drawer, closed. Nothing is hidden, so nothing has to be found.
- * `handle` — a grip tab hangs under the selected chip and slides with the
- *            selection. Lighter at rest, one more thing to notice.
- */
-export type LauncherDrawer = 'peek' | 'handle';
-
-export const LAUNCHER_DRAWERS: readonly LauncherDrawer[] = ['peek', 'handle'];
 
 export interface AgentLauncherProps {
   setups: readonly LauncherSetup[];
@@ -58,11 +46,9 @@ export interface AgentLauncherProps {
   onSelect: (id: string) => void;
   onOpenCatalog: () => void;
   onStart: () => void;
-  drawer?: LauncherDrawer;
   launching?: boolean;
   /** Blocks Start with a stated reason; never silently disabled. */
   blockedReason?: string | null;
-  variant?: SetupChipVariant;
   placeholderCount?: number;
   /** Bench escape hatch: open the detail panel for a screenshot. */
   defaultDetailOpen?: boolean;
@@ -80,10 +66,8 @@ export function AgentLauncher({
   onSelect,
   onOpenCatalog,
   onStart,
-  drawer = 'peek',
   launching = false,
   blockedReason,
-  variant,
   placeholderCount,
   defaultDetailOpen = false,
   className,
@@ -130,7 +114,6 @@ export function AgentLauncher({
   return (
     <form
       data-agent-launcher
-      data-drawer={drawer}
       className={cn('flex w-full min-w-0 flex-col gap-2', className)}
       onSubmit={event => {
         event.preventDefault();
@@ -169,7 +152,6 @@ export function AgentLauncher({
             selectedId={selectedId}
             expandedId={open ? selectedId : null}
             state={state}
-            variant={variant}
             placeholderCount={placeholderCount}
             onSelect={onSelect}
             onToggleDetail={toggleDetail}
@@ -195,28 +177,18 @@ export function AgentLauncher({
         </Button>
       </div>
 
-      {drawer === 'handle' ? (
-        <SetupDetailHandle
-          open={open}
-          notchPosition={notchPosition}
-          onToggle={toggleDetail}
-          disabled={!ready}
-        />
-      ) : (
-        <SetupDetailSummary
-          axes={axes}
-          open={open}
-          onToggle={toggleDetail}
-          disabled={!ready}
-        />
-      )}
+      <SetupDetailHandle
+        open={open}
+        notchPosition={notchPosition}
+        onToggle={toggleDetail}
+        disabled={!ready}
+      />
 
       <SetupDetailPanel
         open={open && ready}
         notchPosition={notchPosition}
-        // Both mechanics already anchor themselves — the handle slides to the
-        // selected chip, the summary is a full-width face. A notch on top of
-        // either is a second pointer at the same thing.
+        // The handle already points at the selected chip; a notch under it
+        // would be a second pointer at the same thing.
         showNotch={false}
         axes={axes}
         footnote={detailFootnote}
