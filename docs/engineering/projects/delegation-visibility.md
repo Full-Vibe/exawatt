@@ -634,6 +634,143 @@ and `pty:delegation` refreshes coalesce through one 150ms trailing timer.
   deliberate density trade inside a fixed three-row budget; the full text is
   in the row tooltip.
 
+## D3c design brief — 2026-08-06: child units and lifecycle motion
+
+**Subagents become visible units, not punctuation.** Operator dogfood compared
+the Fleet board with its originating Claude Session: four distinct
+`general-purpose` workers in the harness collapsed to four tiny dots above one
+large parent tile. D3b is truthful, but its hierarchy is too recessive to convey
+fan-out, leverage, or the fact that the work is being done by several Agents.
+This brief supersedes D3b's tiny-satellite treatment at individual board
+resolution; D3b's event truth, caps, accessible census, and one-draw-call
+instancing remain the substrate.
+
+### 1. Feature summary
+
+At individual Fleet-board resolution, every live delegated child becomes a
+recognizable unit from the same beveled hex family as its parent, targeted at
+`0.78×` the parent's diameter rather than a dot. A thin Project-identity tether
+and deterministic radial placement make parentage legible without reorganizing
+the board into a delegation tree. This is an ENG-023 visualization milestone
+that integrates through ENG-004's one persistent WebGL world.
+
+### 2. Primary operator understanding
+
+One glance should answer: **this Agent has fanned out into these workers, and
+they are still working.** The operator should not need a tooltip or the
+originating terminal to distinguish one parent with four children from one
+ordinary Agent.
+
+### 3. Design direction
+
+The treatment is a living command board, not an orbit diagram and not an org
+chart. It expresses Exawatt's commanding, lucid, kinetic design context through
+restrained physical motion: solid related units, a quiet lineage connection,
+and lifecycle transitions that explain spawn and exit. Project identity owns
+the tether/rim; the existing D40 protocol owns status; no new color or light is
+invented. The board remains WebGL/Three.js and decision `0007` restraint still
+governs material and motion.
+
+### 4. Layout strategy
+
+- The parent keeps its stable board address and slightly stronger rim/scale.
+  Children occupy pure, deterministic rosette slots around its upper and side
+  perimeter; the lower label lane stays clear. The radial/floral composition
+  echoes the already accepted board-arrival language without replaying that
+  global entrance.
+- One through five children render as individual child hexes. Above five, four
+  individual units plus one same-family overflow lobe carry `+N`; the exact
+  census and kinds remain in the DOM control/accessibility copy. The gallery
+  study must compare a second ring against the overflow lobe before fixing the
+  high-fan-out treatment, but it may not fall back to punctuation-sized dots.
+- A hairline Project-accent tether runs parent edge → child edge at individual
+  resolution. It fades before very-far aggregation so a large fleet never
+  becomes a hairball. Tethers communicate lineage only; they do not imply
+  message flow, status, or command authority.
+- Children contribute to visible population mass. At the very-far boundary
+  they agglomerate under the same F7 policy as top-level Agents rather than
+  disappearing from the fleet census.
+
+### 5. Key states
+
+- **No observable delegation:** render nothing; absent capability stays absent.
+- **First spawn:** one child emerges from the parent's edge into its stable
+  slot; the tether establishes in the same transition.
+- **Several live children:** each unit remains individually legible through the
+  normal board resolution and carries only truth the source reports.
+- **Overflow:** the high-fan-out treatment preserves exact count, mass, and
+  accessible kinds without unbounded labels or draw calls.
+- **Child stop/termination:** the departing child retracts along its tether and
+  fades; unsupported success/failure semantics are never invented.
+- **Altitude/camera change:** the constellation remains in the same world and
+  morphs continuously with its parent. It never remounts from the origin.
+- **Reduced motion / low power / hidden tab:** identical topology and census,
+  with a short crossfade or immediate stable placement instead of spatial
+  travel. No information disappears.
+- **Redelivery, reordering, missing correlation:** retain D3b's fail-to-absent
+  rule and stable child identity. An event anomaly may omit a unit; it may
+  never attach the wrong label or animate the wrong child.
+
+### 6. Interaction and motion model
+
+- **Spawn:** begin at the parent's edge at reduced scale/opacity, then move to
+  the deterministic slot with a critically damped spring (target settle
+  `450–650ms`, no bounce/elastic overshoot). Cohort spawns stagger `40–70ms`
+  with total stagger capped. Only transform, opacity, and the R3F tether
+  endpoint animate; input remains live throughout.
+- **Stop:** finish faster than entrance (`240–320ms`): status light extinguishes,
+  tether retracts, and the unit folds toward the parent while fading. No
+  particles, explosion, or decorative death effect.
+- Existing siblings keep stable slots when another child starts or stops; the
+  lifecycle event moves the affected unit, not the whole family. Camera follow
+  continues to follow the selected parent/child under ENG-004's safe-zone
+  policy and never dead-centers the constellation.
+- A visible child is focusable by pointer, arrow navigation, and the Fleet DOM
+  accessibility path. Focus reveals type, description, elapsed, and parent.
+  Activate opens the parent Session until D2 provides the child-detail
+  destination; D3c does not pretend the child is independently commandable and
+  does not add it to **Direct N Agents**.
+
+### 7. Content requirements
+
+Board copy is limited to the child's source-reported type, short description,
+elapsed time, and parent identity in hover/focus detail. Results, prompts, tool
+calls, token tickers, and second-granularity timers remain out of Fleet. No
+capability renders no affordance or zero-state copy.
+
+### 8. Implementation and review sequence
+
+1. Prototype the parent + `0/1/4/5/17` child states and spawn/stop timelines in
+   `/hud-gallery` as an R3F study for operator review before production wiring.
+   Include reduced-motion and low-power siblings.
+2. Extend the pure board model with deterministic child slots, lineage edges,
+   overflow policy, and stable identity. The R3F layer remains a damped
+   executor; no lifecycle/layout policy lives inside `<Canvas>`.
+3. Replace D3b's dot-only production treatment at individual resolution,
+   preserve Demo/Live source parity, then retire the accepted gallery study.
+4. Extend `eval:electron:delegation`, `eval:spatial`, pointer/keyboard probes,
+   and scale fixtures before landing.
+
+### 9. Acceptance and open review calls
+
+- The four-child operator fixture visibly shows four child hex units and their
+  parentage without hover; no dot-only substitute passes.
+- Parent and child remain the same noun family, with child diameter no smaller
+  than `0.70×` the parent in the accepted gallery treatment.
+- Spawn and stop produce continuous frame sequences with no teleport, remount,
+  input lock, or frame gap above the board's existing transition budget.
+- A settled constellation adds no lifecycle frames; only genuine Active-state
+  motion survives, and reduced-motion/low-power retain identical information.
+- The Voltaic, 1k, and 10k scale matrix stays within the existing draw-call,
+  label, memory, and p95 frame budgets; high fan-out cannot exhaust the
+  instance buffer.
+- Keyboard and screen-reader paths expose child identity, parent, count, and
+  state without placing the WebGL canvas in the accessibility tree.
+- Gallery review decides the exact child ratio within `0.72–0.82×`, whether the
+  tether persists on parent/child focus only or throughout individual
+  resolution, and overflow-lobe versus second-ring treatment. Those are visual
+  tuning calls, not permission to return to tiny satellites.
+
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 
 On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —

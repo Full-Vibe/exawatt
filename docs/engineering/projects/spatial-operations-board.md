@@ -1847,6 +1847,30 @@ reduced-motion, low-power, entry-pose, and fallback scenarios all pass in
 pass. Browser screenshots were inspected at Fleet and focused Project altitude
 after the automated gates.
 
+### V3.4 planning input — delegated children as board units (operator, 2026-08-06)
+
+**Delegated workers must read as workers.** Operator dogfood compared a parent
+Agent on the board with its originating Session and found four real subagents
+collapsed into four tiny dots. ENG-023 D3c owns the successor design brief and
+lifecycle truth; ENG-004 owns its composition inside the persistent board.
+
+This amends only the delegation treatment, not the board's purpose or hierarchy:
+Project boundaries stay circular, parent/top-level Agents stay hex units at
+stable addresses, and delegation remains a detail at individual resolution
+rather than the board's organizing structure. Child Agents join the same tile
+family at a slightly smaller scale, connect to the parent with restrained
+Project-identity tethers, contribute to population mass, and agglomerate only
+under F7's very-far policy. A spawn emerges outward from the parent into a
+deterministic rosette slot; a stop retracts along the same lineage. Both are
+finite, damped state transitions with reduced-motion/low-power parity, never
+ambient spectacle or a second camera system.
+
+Production work is gallery-first and remains planning-only until review. It
+must preserve the modular camera boundary, pure/tested layout policy, one-world
+minimap, arrow/DOM navigation, settled demand-render parking, and the current
+Voltaic/1k/10k scale budgets. Full slice/acceptance detail lives in
+`projects/delegation-visibility.md` §“D3c design brief”.
+
 ### V2.1 Scale & Truth
 
 Status: planned; gated by V2.0
