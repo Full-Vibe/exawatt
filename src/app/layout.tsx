@@ -7,6 +7,7 @@ import { SiteHeader } from '@/components/nav/site-header';
 import { SiteFooter } from '@/components/nav/site-footer';
 import { FleetProvider } from '@/lib/fleet/fleet-provider';
 import { UpdateReadyNotice } from '@/components/nav/update-ready-notice';
+import { AccountFirstRunCard } from '@/components/auth/account-first-run-card';
 import { CommandNavigationProvider } from '@/components/nav/command-navigation-provider';
 import { ProductFeedbackProvider } from '@/components/feedback/product-feedback-provider';
 import { WorkspaceTenancyProvider } from '@/lib/tenancy/tenancy-provider';
@@ -80,6 +81,9 @@ export default function RootLayout({
                       <FleetProvider>
                         <SiteHeader />
                         <UpdateReadyNotice />
+                        {/* one-time, dismissible, never a gate (ENG-030
+                          OS0.1); it gates itself on signed-out app surfaces */}
+                        <AccountFirstRunCard />
                         {children}
                       </FleetProvider>
                     </ShortcutProvider>

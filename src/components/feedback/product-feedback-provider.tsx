@@ -48,6 +48,11 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { QuickCaptureBar } from './quick-capture-bar';
 import {
+  analyticsSurface,
+  captureAnalyticsEvent,
+  hostedFailureForStatus,
+} from '@/lib/analytics';
+import {
   FEEDBACK_SUBMITTED_EVENT,
   OPEN_QUICK_FEEDBACK_EVENT,
   sampleQuickFeedbackAttribution,
@@ -201,9 +206,27 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
         });
         if (response.ok) {
           window.dispatchEvent(new CustomEvent(FEEDBACK_SUBMITTED_EVENT));
+        } else {
+          // ENG-030 OS1.2. Feedback is the channel the external-user audit
+          // found dead; a silent failure here is the one failure that also
+          // destroys the report of itself.
+          captureAnalyticsEvent({
+            name: 'hosted_call_failed',
+            surface: analyticsSurface(),
+            service: 'product_feedback',
+            failure: hostedFailureForStatus(response.status),
+            statusCode: response.status,
+          });
         }
         return response.ok;
       } catch {
+        captureAnalyticsEvent({
+          name: 'hosted_call_failed',
+          surface: analyticsSurface(),
+          service: 'product_feedback',
+          failure: 'network',
+          statusCode: null,
+        });
         return false;
       }
     },
@@ -235,28 +258,31 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
     restoreFocusRef.current = null;
   }, []);
 
-  const openQuickCapture = useCallback((kind: QuickFeedbackKind = 'general') => {
-    if (!tokenRef.current) return;
-    void (async () => {
-      setQuickError(null);
-      setQuickKind(kind);
-      let shot: string | null = null;
-      try {
-        shot =
-          (await window.electron?.feedback?.captureScreenshot?.()) ?? null;
-      } catch {
-        shot = null;
-      }
-      setQuickShot(shot);
-      // A bug report usually wants the evidence; other kinds opt in.
-      setQuickAttach(kind === 'bug' && !!shot);
-      restoreFocusRef.current =
-        document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : null;
-      setQuickOpen(true);
-    })();
-  }, []);
+  const openQuickCapture = useCallback(
+    (kind: QuickFeedbackKind = 'general') => {
+      if (!tokenRef.current) return;
+      void (async () => {
+        setQuickError(null);
+        setQuickKind(kind);
+        let shot: string | null = null;
+        try {
+          shot =
+            (await window.electron?.feedback?.captureScreenshot?.()) ?? null;
+        } catch {
+          shot = null;
+        }
+        setQuickShot(shot);
+        // A bug report usually wants the evidence; other kinds opt in.
+        setQuickAttach(kind === 'bug' && !!shot);
+        restoreFocusRef.current =
+          document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+        setQuickOpen(true);
+      })();
+    },
+    []
+  );
 
   useEffect(() => {
     const onOpen = (event: Event) => {

@@ -3,7 +3,7 @@
  *
  * The convention is published in `docs/product/reference/roadmap-convention.md`
  * (decision 0011): a repo-canonical markdown roadmap that Exawatt parses;
- * decision 0029 permits declared-only sequence/state edits. The parser is
+ * decision 0035 permits declared-only sequence/state edits. The parser is
  * tolerant within the published grammar and
  * diagnostic-honest outside it — unrecognized structure becomes diagnostics,
  * never guessed items.

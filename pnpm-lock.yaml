@@ -118,6 +118,9 @@ importers:
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
+      posthog-js:
+        specifier: ^1.413.2
+        version: 1.413.2
       react:
         specifier: 19.2.0
         version: 19.2.0
@@ -981,6 +984,15 @@ packages:
   '@peculiar/webcrypto@1.7.1':
     resolution: {integrity: sha512-ODOov0sGMJMf3jPonOkgGqPknTsu+DdQ7kD++gz8aI+aFMOMHFbWAA2taqXXVTdP+OTOQR/znGvSpmkeI0WTYQ==}
     engines: {node: '>=14.18.0'}
+
+  '@posthog/browser-common@0.4.0':
+    resolution: {integrity: sha512-W9DCGVks15docUMPvJ2nd8NS16Gn74bsGWuaeg31beEKFSjdW8wvnQ1ETY6WSql5pYxZb3GdJmEUZVVstKSrBQ==}
+
+  '@posthog/core@1.46.8':
+    resolution: {integrity: sha512-WQTSwlFhsWk09xngTimHiTyhFU8QZHFZEGSm+6brY3acwYdvTLcTxpIhgl/qOCgn/XoqlCFTZqU1ldWLxNntfA==}
+
+  '@posthog/types@1.402.1':
+    resolution: {integrity: sha512-4PZ9wMYI8m8AqJuZ9YR1IAHGVtSnYbBVBgTevrKpzZbcSe/OUwhEV2Ks//rJh/L8eMTU8R5DrD4D/hlrOwaAiQ==}
 
   '@radix-ui/number@1.1.1':
     resolution: {integrity: sha512-MkKCwxlXTgz6CFoJx3pCwn07GKp36+aZyu/u2Ln2VrA5DcdyCZkASEDBTd8x5whTQQL5CiYf4prXKLcgQdv29g==}
@@ -1849,6 +1861,9 @@ packages:
   '@types/three@0.184.1':
     resolution: {integrity: sha512-6q4VdiqVsrTRqmk62/BnlcAvIrnDM0zf2ZDVKI5kZiniWrSaOHaQzmbp+BNzoggc/8tgW412pL//wZIxu2PPTA==}
 
+  '@types/trusted-types@2.0.7':
+    resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
+
   '@types/webxr@0.5.24':
     resolution: {integrity: sha512-h8fgEd/DpoS9CBrjEQXR+dIDraopAEfu4wYVNY2tEPwk60stPWhvZMf4Foo5FakuQ7HFZoa8WceaWFervK2Ovg==}
 
@@ -2395,6 +2410,9 @@ packages:
     resolution: {integrity: sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ==}
     engines: {node: '>=18'}
 
+  core-js@3.50.0:
+    resolution: {integrity: sha512-BRWgOLKkFeCgRudR6zrs8p9XJZcE14grzKMMssoYrk6krtuEZ7MTKPIY5RzOnqsEKIR9kst7wNzphttraT+Yqw==}
+
   core-util-is@1.0.2:
     resolution: {integrity: sha512-3lqz5YjWTYnW6dlDa5TLaTCcShfar1e40rmcJVwCBJC6mWlFuj0eCHIElmG1g5kyuJ/GD+8Wn4FFCcz4gJPfaQ==}
 
@@ -2521,6 +2539,9 @@ packages:
 
   dom-accessibility-api@0.6.3:
     resolution: {integrity: sha512-7ZgogeTnjuHbo+ct10G9Ffp0mif17idi0IyWNVA/wcwcm7NPOD/WEHVP3n7n3MhXqxoIYm8d6MuZohYWIZ4T3w==}
+
+  dompurify@3.4.13:
+    resolution: {integrity: sha512-2vmYIoqjze2d+kakP8S/nS5shfsl587kzwEjcGlTdiksUVgFHnFCsLYDVj/JNqJVOQZGSYBTmuycv0PodwmnMQ==}
 
   dotenv-expand@11.0.7:
     resolution: {integrity: sha512-zIHwmZPRshsCdpMDyVsqGmgyP0yT8GAgXUnkdAoJisxvf33k7yO6OuoKmcTGuXPWSsm8Oh88nZicRLA9Y0rUeA==}
@@ -2809,6 +2830,9 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
+
+  fflate@0.4.9:
+    resolution: {integrity: sha512-zdxgIEddhfsyCaWpJ2SdXEP8ZMrKJ6+5jl4OupODcywU0IhRk6gdXuVGcPICyfx2H97hVK7xmJtRLPjkxAX8Vw==}
 
   fflate@0.6.10:
     resolution: {integrity: sha512-IQrh3lEPM93wVCEczc9SaAOvkmcoQn/G8Bo1e8ZPlY3X3bnAxWaBdvTdvM1hP62iZp0BXWDy4vTAy4fF0+Dlpg==}
@@ -3731,6 +3755,9 @@ packages:
     resolution: {integrity: sha512-3Ybi1tAuwAP9s0r1UQ2J4n5Y0G05bJkpUIO0/bI9MhwmD70S5aTWbXGBwxHrelT+XM1k6dM0pk+SwNkpTRN7Pg==}
     engines: {node: ^10 || ^12 || >=14}
 
+  posthog-js@1.413.2:
+    resolution: {integrity: sha512-LddTVMdYFd0jB+p5h3ZHcho9mWNjgKn9QySCQt74iISKrmC3b7KzW2Q7W7aOF6m/NwK7NubIHqLujCER64gSRw==}
+
   postject@1.0.0-alpha.6:
     resolution: {integrity: sha512-b9Eb8h2eVqNE8edvKdwqkrY6O7kAwmI8kcnBv1NScolYJbo59XUF0noFq+lxbC1yN20bmC0WBEbDC5H/7ASb0A==}
     engines: {node: '>=14.0.0'}
@@ -3743,6 +3770,14 @@ packages:
 
   potpack@1.0.2:
     resolution: {integrity: sha512-choctRBIV9EMT9WGAZHn3V7t0Z2pMQyl0EZE6pFc/6ml3ssw7Dlf/oAOvFwjm1HVsqfQN8GfeFyJ+d8tRzqueQ==}
+
+  preact@10.29.8:
+    resolution: {integrity: sha512-ej2aVZ+vZ8WO7tvlQWRM9N63A0KzF9q4mWJfDUHgYaIofWY9hu74QdnQrjoPMmZi2/nZ5gN0bJCQF49xQqx09Q==}
+    peerDependencies:
+      preact-render-to-string: '>=5'
+    peerDependenciesMeta:
+      preact-render-to-string:
+        optional: true
 
   prelude-ls@1.2.1:
     resolution: {integrity: sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==}
@@ -3797,6 +3832,9 @@ packages:
   pvutils@1.1.5:
     resolution: {integrity: sha512-KTqnxsgGiQ6ZAzZCVlJH5eOjSnvlyEgx1m8bkRJfOhmGRqfo5KLvmAlACQkrjEtOQ4B7wF9TdSLIs9O90MX9xA==}
     engines: {node: '>=16.0.0'}
+
+  query-selector-shadow-dom@1.0.1:
+    resolution: {integrity: sha512-lT5yCqEBgfoMYpf3F2xQRK7zEr1rhIIZuceDK6+xRkJQ4NMbHTwXqk4NkwDwQMNqXgG9r9fyHnzwNVs6zV5KRw==}
 
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
@@ -4485,6 +4523,12 @@ packages:
     resolution: {integrity: sha512-J3WlS0txVHkhLRb2FsmRg3dkMTCV1+M6Xra3Ho7HzZDHpE7DCOnoSoCJsZotrmW3uRMhvIJGSKUKrh/MeF4iag==}
     engines: {node: '>=12.0.0'}
     hasBin: true
+
+  web-vitals@5.3.0:
+    resolution: {integrity: sha512-q6LWsLatGYZp5VGBIOvbTj6JBV2nOmC8KvWztXBmwJcfFAzhwKwbOxhUH306XY3CcaZDUlSmSuNPBsCn0bFu+g==}
+
+  web-vitals@6.0.0:
+    resolution: {integrity: sha512-Guaibvy/+uNtL6Bsu4jmMJGzuSl91oeRH5iO9pPRbYftnFUr3yqT1TUNX/OE4o9HexuEMU3Kb/Wg7iKhlffZUA==}
 
   webcrypto-core@1.9.2:
     resolution: {integrity: sha512-gsXecm82UQNlTBURJGuqOWy1Ww08S3kZUcr3aOJS02Pk0xLtkfeUAVC0u0xhgdonFme80edSJUIJyuvL/7250Q==}
@@ -5320,6 +5364,17 @@ snapshots:
       '@peculiar/utils': 2.0.3
       tslib: 2.8.1
       webcrypto-core: 1.9.2
+
+  '@posthog/browser-common@0.4.0':
+    dependencies:
+      '@posthog/core': 1.46.8
+      '@posthog/types': 1.402.1
+
+  '@posthog/core@1.46.8':
+    dependencies:
+      '@posthog/types': 1.402.1
+
+  '@posthog/types@1.402.1': {}
 
   '@radix-ui/number@1.1.1': {}
 
@@ -6171,6 +6226,9 @@ snapshots:
       fflate: 0.8.3
       meshoptimizer: 1.1.1
 
+  '@types/trusted-types@2.0.7':
+    optional: true
+
   '@types/webxr@0.5.24': {}
 
   '@types/ws@8.18.1':
@@ -6786,6 +6844,8 @@ snapshots:
 
   cookie@1.1.1: {}
 
+  core-js@3.50.0: {}
+
   core-util-is@1.0.2: {}
 
   cross-dirname@0.1.0:
@@ -6910,6 +6970,10 @@ snapshots:
   dom-accessibility-api@0.5.16: {}
 
   dom-accessibility-api@0.6.3: {}
+
+  dompurify@3.4.13:
+    optionalDependencies:
+      '@types/trusted-types': 2.0.7
 
   dotenv-expand@11.0.7:
     dependencies:
@@ -7405,6 +7469,8 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.3):
     optionalDependencies:
       picomatch: 4.0.3
+
+  fflate@0.4.9: {}
 
   fflate@0.6.10: {}
 
@@ -8317,6 +8383,21 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
+  posthog-js@1.413.2:
+    dependencies:
+      '@posthog/browser-common': 0.4.0
+      '@posthog/core': 1.46.8
+      '@posthog/types': 1.402.1
+      core-js: 3.50.0
+      dompurify: 3.4.13
+      fflate: 0.4.9
+      preact: 10.29.8
+      query-selector-shadow-dom: 1.0.1
+      web-vitals: 5.3.0
+      web-vitals-soft-navs: web-vitals@6.0.0
+    transitivePeerDependencies:
+      - preact-render-to-string
+
   postject@1.0.0-alpha.6:
     dependencies:
       commander: 9.5.0
@@ -8327,6 +8408,8 @@ snapshots:
       three: 0.184.0
 
   potpack@1.0.2: {}
+
+  preact@10.29.8: {}
 
   prelude-ls@1.2.1: {}
 
@@ -8380,6 +8463,8 @@ snapshots:
       tslib: 2.8.1
 
   pvutils@1.1.5: {}
+
+  query-selector-shadow-dom@1.0.1: {}
 
   queue-microtask@1.2.3: {}
 
@@ -9166,6 +9251,10 @@ snapshots:
       rxjs: 7.8.2
     transitivePeerDependencies:
       - debug
+
+  web-vitals@5.3.0: {}
+
+  web-vitals@6.0.0: {}
 
   webcrypto-core@1.9.2:
     dependencies:

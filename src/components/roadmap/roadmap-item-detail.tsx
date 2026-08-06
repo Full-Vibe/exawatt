@@ -3,7 +3,7 @@
 /**
  * S13 detail: live state first, contract prose one disclosure deeper.
  * Queue manipulation stays structural and delegates every write to the
- * compare-before-write Electron boundary from decision 0029.
+ * compare-before-write Electron boundary from decision 0035.
  */
 import { useEffect, useState } from 'react';
 import {

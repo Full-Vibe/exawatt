@@ -608,7 +608,7 @@ Built:
   activity IPC plus declared-only sequence/state transactions: parser-validated
   targets, real-path containment, per-file serialization, compare/refuse,
   atomic replacement, a named policy seam, guarded undo, and no git operation
-  (decision `0029`)
+  (decision `0035`)
 - ENG-021 E1 Session-context inference: operator-submission-triggered evidence,
   authenticated server-owned structured labeling, durable last-good failure
   behavior, immediate correction, a repository gold corpus, and a reusable

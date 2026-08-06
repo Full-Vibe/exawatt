@@ -468,18 +468,26 @@ export function SiteHeaderNav({
                 <MessageSquareWarning className="mr-2 h-4 w-4" />
                 Submit feedback
               </DropdownMenuItem>
-              {isAuthenticated && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      await signOut();
-                    }}
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Sign out
-                  </DropdownMenuItem>
-                </>
+              <DropdownMenuSeparator />
+              {isAuthenticated ? (
+                <DropdownMenuItem
+                  onClick={async () => {
+                    await signOut();
+                  }}
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              ) : (
+                /* the account menu renders signed out in the desktop app, and
+                   used to offer no way in at all — the one place an operator
+                   looks for an account had nothing in it (ENG-030 OS0.1) */
+                <DropdownMenuItem asChild data-account-sign-in>
+                  <Link href="/sign-in">
+                    <LogIn className="mr-2 h-4 w-4" />
+                    Sign in
+                  </Link>
+                </DropdownMenuItem>
               )}
             </DropdownMenuContent>
           </DropdownMenu>

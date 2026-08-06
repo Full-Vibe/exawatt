@@ -253,7 +253,7 @@ export function resolveRoadmapWritePermission(projectDir: string): {
   return {
     permission: ROADMAP_STATE_WRITE_PERMISSION,
     // This resolver is intentionally its own seam even though its default
-    // reads the Project's launch policy today (decision 0029).
+    // reads the Project's launch policy today (decision 0035).
     mode: mode ?? 'unrestricted',
   };
 }

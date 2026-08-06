@@ -7,7 +7,7 @@ import { unwatchRoadmap, watchRoadmap } from './roadmap-watcher';
 
 /**
  * Roadmap lens IPC (ENG-017). Reads remain parser-owned in the renderer.
- * Decision 0029 adds one narrow main-process write boundary for declared
+ * Decision 0035 adds one narrow main-process write boundary for declared
  * roadmaps: sequence and state only, compare-before-write, never git.
  */
 export function registerRoadmapIPC(): void {

@@ -46,7 +46,7 @@ Source: operator dogfood interview 2026-07-10 and operator design interview
   title (low).
 - **Conformance is the manipulation gate.** Detected/tolerated roadmaps are
   view-only. Declared v1/v2 roadmaps may reorder, transition status, and tick
-  milestones under decision `0029`; no prose or item creation, no git, and no
+  milestones under decision `0035`; no prose or item creation, no git, and no
   merge on concurrent movement. Launch and attach remain local annotations.
 - **Declared links are view annotations.** Declare-at-launch ids persist on
   the tab in machine-local `workspace.json` (decision `0010` identity/layout
@@ -489,10 +489,10 @@ Three consequences that must land together, because doing any one alone leaves t
 
 ### Boundary: what writes, and what does not
 
-RESOLVED 2026-08-03 by decision `0029` — the operator lifted the read-only gate: _"Yes indeed, manipulate roadmap state in the repo. Maybe pop a permission dialog with always allow / don't ask me again."_
+RESOLVED 2026-08-03 by decision `0035` — the operator lifted the read-only gate: _"Yes indeed, manipulate roadmap state in the repo. Maybe pop a permission dialog with always allow / don't ask me again."_
 
 - **launch-from-item and attach are LOCAL annotations**, exactly like S4's declare-at-launch (`workspace.json`). No repo file is touched.
-- **reordering, status changes, and milestone ticks now write the repo file**, under decision `0029`'s six constraints: sequence and state only (never prose, never item creation); declared conformance required; Exawatt writes the file and never runs git; permission rides the Project's launch policy behind its own seam; concurrent modification is refused rather than merged; and the operator sees the edit animate in place with an inline pending/applied/failed state and a short undo window.
+- **reordering, status changes, and milestone ticks now write the repo file**, under decision `0035`'s six constraints: sequence and state only (never prose, never item creation); declared conformance required; Exawatt writes the file and never runs git; permission rides the Project's launch policy behind its own seam; concurrent modification is refused rather than merged; and the operator sees the edit animate in place with an inline pending/applied/failed state and a short undo window.
 - **Read the decision before implementing.** Two things there are easy to get wrong: "commit" in the operator's phrasing means the write being applied, NOT authorization for Exawatt to run `git commit` (that would reverse ENG-019 and needs its own decision); and permission is _modeled_ separately even though it _resolves_ through the launch policy today, so the two can be split later without a refactor.
 
 ### Repo readiness (S13.6) — mostly already built

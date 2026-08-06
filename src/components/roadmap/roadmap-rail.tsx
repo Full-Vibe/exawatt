@@ -11,7 +11,7 @@
  * Esc/← back out, `o` opens the file, `g` jumps to the now station).
  * Manipulation appears only for explicitly conformant roadmap files. Every
  * operation is shown inline and still delegates the actual compare/write to
- * the main-process boundary from decision 0029.
+ * the main-process boundary from decision 0035.
  */
 import {
   useCallback,
@@ -381,7 +381,8 @@ export function RoadmapRail({
   permanent?: boolean;
   onExitFocus?: () => void;
   /** ENG-025 F2.1: operator inbox pressure. Omit to sample live Supabase
-   *  state; the lab passes a fixture value. null hides the line. */
+   *  state, which returns a count for operator accounts only (F3.1); the lab
+   *  passes a fixture value. null hides the line. */
   untriagedFeedback?: number | null;
   onStartAgent?: (item: RoadmapItemView) => Promise<boolean>;
   onStartRemediation?: () => Promise<boolean>;

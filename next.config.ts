@@ -5,6 +5,29 @@ const nextConfig: NextConfig = {
   // privileged desktop renderer is one versioned local artifact. The hosted
   // deployment may use the same build output through its own delivery path.
   output: 'standalone',
+  // ENG-030 OS1.1 / decision `0034`: analytics reach PostHog only through this
+  // Exawatt-owned rewrite, so the desktop app's sole analytics destination is
+  // exawatt.ai and no third-party hostname appears in its outbound connections
+  // (ENG-016 D17, incident `0002` — firewall identity must stay stable).
+  //
+  // The packaged renderer is served by a package-local standalone server on
+  // 127.0.0.1, so it must NOT use a relative ingest path: `config.ts` resolves
+  // the desktop api_host to the absolute hosted origin, which lands here.
+  async rewrites() {
+    return [
+      {
+        source: '/ingest/static/:path*',
+        destination: 'https://us-assets.i.posthog.com/static/:path*',
+      },
+      {
+        source: '/ingest/:path*',
+        destination: 'https://us.i.posthog.com/:path*',
+      },
+    ];
+  },
+  // PostHog's ingest paths are trailing-slash sensitive; Next's redirect would
+  // turn a capture into a 308 the SDK does not follow.
+  skipTrailingSlashRedirect: true,
   async headers() {
     return [
       {

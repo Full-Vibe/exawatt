@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { analyticsSurface, captureAnalyticsEvent } from '@/lib/analytics';
 
 export function useElectronAuth(
   supabase: SupabaseClient,
@@ -23,11 +24,30 @@ export function useElectronAuth(
     if (!auth) return;
 
     const cleanupComplete = auth.onComplete(() => {
+      // The only point where the desktop system-browser flow is observably
+      // finished — the page that started it cannot await it (ENG-030 OS1.2).
+      captureAnalyticsEvent({
+        name: 'sign_in_attempted',
+        surface: analyticsSurface(),
+        method: 'google',
+        outcome: 'succeeded',
+        failure: null,
+      });
       router.push('/workspace');
       router.refresh();
     });
     const cleanupError = auth.onError(error => {
       console.error('[auth] Electron OAuth failed', error);
+      captureAnalyticsEvent({
+        name: 'sign_in_attempted',
+        surface: analyticsSurface(),
+        method: 'google',
+        outcome: 'failed',
+        failure:
+          error.name === 'AuthRetryableFetchError'
+            ? 'network'
+            : 'provider_error',
+      });
       callbacksRef.current.onError(authErrorMessage(error));
       callbacksRef.current.onLoadingChange(false);
     });
