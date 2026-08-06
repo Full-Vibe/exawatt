@@ -38,7 +38,7 @@ interface EngineModel {
   sourceId: string;
   modelId: string;
   modelLabel: string;
-  /** A capability of the model itself, shown beside its name. */
+  /** A capability of the model itself, shown below its name. */
   modelVariant?: string;
   /** Who serves it. Omitted when the engine implies it. */
   vendor?: LauncherVendor;
@@ -169,7 +169,9 @@ export interface BenchScenario {
 
 function buildSetups(
   events: readonly LaunchHistoryEvent[],
-  availability: (target: LaunchTarget) => LaunchRecommendationAvailability = () => ({
+  availability: (
+    target: LaunchTarget
+  ) => LaunchRecommendationAvailability = () => ({
     available: true,
   }),
   width = 768
@@ -234,7 +236,7 @@ export const BENCH_SCENARIOS: BenchScenario[] = [
   {
     id: 'cold',
     title: 'Cold start',
-    note: 'No launches here yet: one smart default per launchable engine, in engine order. Every chip is marked Suggested.',
+    note: 'No launches here yet: one smart default per launchable engine, in engine order.',
     state: 'ready',
     setups: buildSetups([]),
     selectedIndex: 0,
@@ -271,7 +273,11 @@ export const BENCH_SCENARIOS: BenchScenario[] = [
     state: 'ready',
     setups: buildSetups([
       ...TRAINED_HISTORY,
-      { kind: 'pin', project: BENCH_PROJECT, configurationId: seedTarget('kimi').id },
+      {
+        kind: 'pin',
+        project: BENCH_PROJECT,
+        configurationId: seedTarget('kimi').id,
+      },
     ]),
     selectedIndex: 0,
     detailOpen: false,
@@ -300,7 +306,10 @@ export const BENCH_SCENARIOS: BenchScenario[] = [
     state: 'ready',
     setups: buildSetups(TRAINED_HISTORY, target =>
       target.kind === 'agent' && target.modelId === 'sonnet-4-6'
-        ? { available: false, reason: 'Sonnet 4.6 is not available from Claude Code right now.' }
+        ? {
+            available: false,
+            reason: 'Sonnet 4.6 is not available from Claude Code right now.',
+          }
         : { available: true }
     ),
     selectedIndex: 0,
@@ -321,7 +330,6 @@ export const BENCH_SCENARIOS: BenchScenario[] = [
     width: 520,
   },
 ];
-
 
 /** The engine axis carries the same brand glyphs the chips do (finding 7). */
 const ENGINE_OPTIONS: DetailAxisOption[] = (
@@ -348,31 +356,118 @@ const ENGINE_OPTIONS: DetailAxisOption[] = (
 }));
 
 const MODEL_OPTIONS: DetailAxisOption[] = [
-  { id: 'Opus 5', label: 'Opus 5', description: '1M context · best for complex work', group: 'Claude Code', keywords: 'opus[1m] anthropic' },
-  { id: 'Sonnet 5', label: 'Sonnet 5', description: 'Efficient for routine tasks', group: 'Claude Code', keywords: 'sonnet anthropic' },
-  { id: 'Sonnet 4.6', label: 'Sonnet 4.6', description: 'Balanced', group: 'Claude Code', keywords: 'sonnet-4-6 anthropic' },
-  { id: 'Fable 5', label: 'Fable 5', description: 'Longest-running tasks', group: 'Claude Code', keywords: 'claude-fable-5' },
-  { id: 'Haiku 4.5', label: 'Haiku 4.5', description: 'Fastest for quick answers', group: 'Claude Code', keywords: 'haiku' },
-  { id: 'GPT-5.3 Codex', label: 'GPT-5.3 Codex', group: 'Codex', keywords: 'gpt-5.3-codex openai' },
-  { id: 'Kimi K3', label: 'Kimi K3', description: 'Served by OpenRouter', group: 'OpenCode', keywords: 'moonshotai/kimi-k3 openrouter' },
-  { id: 'Qwen3 Coder', label: 'Qwen3 Coder', description: 'Runs locally through Ollama', group: 'OpenCode', keywords: 'ollama/qwen3-coder local' },
-  { id: 'DeepSeek V4', label: 'DeepSeek V4', description: 'Served by OpenRouter', group: 'OpenCode', keywords: 'deepseek openrouter' },
-  { id: 'GLM 5', label: 'GLM 5', description: 'Served by OpenRouter', group: 'OpenCode', keywords: 'glm zhipu openrouter' },
-  { id: 'Llama 4 405B', label: 'Llama 4 405B', description: 'Served by OpenRouter', group: 'OpenCode', keywords: 'meta llama openrouter' },
-  { id: 'Mistral Large 3', label: 'Mistral Large 3', description: 'Served by OpenRouter', group: 'OpenCode', keywords: 'mistral openrouter' },
+  {
+    id: 'Opus 5',
+    label: 'Opus 5',
+    description: '1M context · best for complex work',
+    group: 'Claude Code',
+    keywords: 'opus[1m] anthropic',
+  },
+  {
+    id: 'Sonnet 5',
+    label: 'Sonnet 5',
+    description: 'Efficient for routine tasks',
+    group: 'Claude Code',
+    keywords: 'sonnet anthropic',
+  },
+  {
+    id: 'Sonnet 4.6',
+    label: 'Sonnet 4.6',
+    description: 'Balanced',
+    group: 'Claude Code',
+    keywords: 'sonnet-4-6 anthropic',
+  },
+  {
+    id: 'Fable 5',
+    label: 'Fable 5',
+    description: 'Longest-running tasks',
+    group: 'Claude Code',
+    keywords: 'claude-fable-5',
+  },
+  {
+    id: 'Haiku 4.5',
+    label: 'Haiku 4.5',
+    description: 'Fastest for quick answers',
+    group: 'Claude Code',
+    keywords: 'haiku',
+  },
+  {
+    id: 'GPT-5.3 Codex',
+    label: 'GPT-5.3 Codex',
+    group: 'Codex',
+    keywords: 'gpt-5.3-codex openai',
+  },
+  {
+    id: 'Kimi K3',
+    label: 'Kimi K3',
+    description: 'Served by OpenRouter',
+    group: 'OpenCode',
+    keywords: 'moonshotai/kimi-k3 openrouter',
+  },
+  {
+    id: 'Qwen3 Coder',
+    label: 'Qwen3 Coder',
+    description: 'Runs locally through Ollama',
+    group: 'OpenCode',
+    keywords: 'ollama/qwen3-coder local',
+  },
+  {
+    id: 'DeepSeek V4',
+    label: 'DeepSeek V4',
+    description: 'Served by OpenRouter',
+    group: 'OpenCode',
+    keywords: 'deepseek openrouter',
+  },
+  {
+    id: 'GLM 5',
+    label: 'GLM 5',
+    description: 'Served by OpenRouter',
+    group: 'OpenCode',
+    keywords: 'glm zhipu openrouter',
+  },
+  {
+    id: 'Llama 4 405B',
+    label: 'Llama 4 405B',
+    description: 'Served by OpenRouter',
+    group: 'OpenCode',
+    keywords: 'meta llama openrouter',
+  },
+  {
+    id: 'Mistral Large 3',
+    label: 'Mistral Large 3',
+    description: 'Served by OpenRouter',
+    group: 'OpenCode',
+    keywords: 'mistral openrouter',
+  },
 ];
 
 const THINKING_OPTIONS: DetailAxisOption[] = [
   { id: 'Low', label: 'Low', description: 'Fastest, least deliberation' },
   { id: 'Medium', label: 'Medium', description: 'Everyday work' },
   { id: 'High', label: 'High', description: 'Harder problems, slower' },
-  { id: 'Extra high', label: 'Extra high', description: 'Maximum deliberation' },
+  {
+    id: 'Extra high',
+    label: 'Extra high',
+    description: 'Maximum deliberation',
+  },
 ];
 
 const PERMISSION_OPTIONS: DetailAxisOption[] = [
-  { id: 'Ask first', label: 'Ask first', description: 'Confirm before each risky action' },
-  { id: 'Auto-review', label: 'Auto-review', description: 'Act, then show what happened' },
-  { id: 'No prompts', label: 'No prompts', description: 'Never ask. Use in a worktree.' },
+  {
+    id: 'Ask first',
+    label: 'Ask first',
+    description: 'Confirm before each risky action',
+  },
+  {
+    id: 'Auto-review',
+    label: 'Auto-review',
+    description: 'Act, then show what happened',
+  },
+  {
+    id: 'No prompts',
+    label: 'No prompts',
+    description: 'Never ask. Use in a worktree.',
+  },
 ];
 
 /** One editable axis set, driven by real option shapes and live state. */

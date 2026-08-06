@@ -242,6 +242,7 @@ The gallery has been the de facto design system. With this document as the writt
 | `/hud-gallery/consumption-lab` | **Retired 2026-08-03** (pulled forward from the planned E5 fold-in) | its subject shipped as `/usage` (E8); a study of a shipped surface only drifts. `/hud-gallery/consumption-redesign` and the `#ambient-consumption-meter` four-form study retired in the same pass once the operator picks (composite page, bar meter form) were live |
 | `/hud-gallery/roadmap-lab`                                                                                                                             | **Keep**                                                                           | deterministic review rig driving the shipped strip/rail through the real parser against canned states — exactly the workbench role                                                                                                                                                   |
 | `/hud-gallery/project-ribbon` + `/project-ribbon/bench`                                                                                                | **Keep**                                                                           | active dogfood bench (ENG-016 D42, 2026-08-02 round)                                                                                                                                                                                                                                 |
+| `/hud-gallery/agent-launcher`                                                                                                                          | **Keep**                                                                           | deterministic D49 state/interaction rig rendering the production `AgentLauncher`; browser gates cover stable skeleton geometry, card overflow, drawer attachment, and keyboard focus handoff                                                                                         |
 | `/hud-gallery/goal-visuals`                                                                                                                            | **Keep (active review candidate)**                                                 | full-card-only matrix holding three goal identities constant across Graphic Form plus six metaphor-led languages; retire after one visual language ships                                                                                                                             |
 
 G1 also amends `AGENTS.md`'s "canonical component workbench" rule: the workbench prototypes and renders; **this document is the source of design truth.** G1 executed this list on 2026-08-02 (see the amendment log); the table above stands as the record of what was decided and why.
@@ -304,6 +305,13 @@ Air/Classic/Night and 90–120% writes produce only an initial and final root
 snapshot, never an intermediate layout storm.
 
 ### Amendment log
+
+- 2026-08-06 — ENG-016 D49 production adoption: the New Agent launcher bench
+  now renders the same `AgentLauncher` mounted by the Cmd+T composer and remains
+  as its deterministic state/interaction rig. Card cleanup adhered to existing
+  HUD operational spacing, named chrome type, muted roles, and Voice; no new
+  rung or channel was introduced. Browser gates now cover card overflow,
+  complete model text, quiet recommendation marks, and ArrowDown's focus handoff.
 
 - 2026-08-04 — Voice extended to machine-authored operator text (partner
   conversation `2026-08-04-dan-rosenberg`, operator-accepted): generated prose

@@ -18,7 +18,13 @@
  * keeping WHAT and WHERE apart in `setup-detail.tsx`.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { LoaderCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -73,6 +79,7 @@ export function AgentLauncher({
   className,
 }: AgentLauncherProps) {
   const [open, setOpen] = useState(defaultDetailOpen);
+  const [detailFocusRequest, setDetailFocusRequest] = useState(0);
   const [notchPosition, setNotchPosition] = useState<number | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const taskRef = useRef<HTMLTextAreaElement>(null);
@@ -109,6 +116,14 @@ export function AgentLauncher({
   }, [state]);
 
   const toggleDetail = useCallback(() => setOpen(current => !current), []);
+  const enterDetail = useCallback(
+    (id: string) => {
+      if (id !== selectedId) onSelect(id);
+      setOpen(true);
+      setDetailFocusRequest(current => current + 1);
+    },
+    [onSelect, selectedId]
+  );
   const startBlocked = Boolean(blockedReason) || launching || selected === null;
 
   return (
@@ -158,6 +173,7 @@ export function AgentLauncher({
             placeholderCount={placeholderCount}
             onSelect={onSelect}
             onToggleDetail={toggleDetail}
+            onEnterDetail={enterDetail}
             onOpenCatalog={onOpenCatalog}
             className="flex-1"
           />
@@ -189,6 +205,7 @@ export function AgentLauncher({
 
         <SetupDetailPanel
           open={open && ready}
+          focusRequest={detailFocusRequest}
           axes={axes}
           footnote={detailFootnote}
           onDone={toggleDetail}

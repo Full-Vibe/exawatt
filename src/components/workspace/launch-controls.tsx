@@ -77,8 +77,10 @@ import {
 } from './recent-conversations';
 import {
   createAgentLaunchConfiguration,
+  emptyLaunchConfigurationPool,
   launchConfigurationId,
   rankLaunchTargets,
+  recommendLaunchSetups,
   SHELL_LAUNCH_TARGET,
   type AgentLaunchConfiguration,
   type AgentLaunchConfigurationInput,
@@ -93,10 +95,7 @@ import {
   saveNamedLaunchConfiguration,
   setLaunchConfigurationPinned,
 } from '@/lib/launch-configurations';
-import {
-  LaunchConfigurationRibbon,
-  type LaunchConfigurationRibbonItem,
-} from './launch-configuration-ribbon';
+import type { LaunchConfigurationRibbonItem } from './launch-configuration-ribbon';
 import { ModelPicker } from './model-picker';
 import type { CommandPaletteLaunchConfiguration } from '@/components/shortcuts/command-palette-launch-configurations';
 import {
@@ -105,6 +104,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { AgentLauncher } from './launcher/agent-launcher';
+import { EngineGlyph } from './launcher/setup-chip';
+import {
+  rowCapacityForWidth,
+  type LauncherSetup,
+  type LauncherVendor,
+} from './launcher/launcher-model';
+import type { DetailAxis, DetailAxisOption } from './launcher/setup-detail';
 
 const UNRESOLVED_MODEL_VALUE = '__exawatt-unresolved-model__';
 
@@ -115,6 +122,58 @@ function effortChoiceKey(source: AgentSourceId, model: string): string {
 function displayEffortLabel(value: string): string {
   if (value === 'xhigh') return 'Extra high';
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function launcherModelPresentation(
+  label: string,
+  modelId: string
+): { model: string; variant: string | null } {
+  const hasLongContext =
+    modelId.toLowerCase().endsWith('[1m]') ||
+    /(?:\s*[·(]\s*)1m(?:\s+context)?\)?\s*$/i.test(label);
+  if (!hasLongContext) return { model: label, variant: null };
+  return {
+    model: label
+      .replace(/\s*·\s*1m(?:\s+context)?\s*$/i, '')
+      .replace(/\s*\(1m(?:\s+context)?\)\s*$/i, '')
+      .trim(),
+    variant: '1M context',
+  };
+}
+
+function launcherVendor(
+  source: AgentSourceId,
+  modelId: string
+): LauncherVendor | null {
+  if (source !== 'opencode') return null;
+  const provider = modelId.slice(0, modelId.indexOf('/')).toLowerCase();
+  if (!provider) return null;
+  if (provider === 'ollama') return { label: 'Ollama', kind: 'local' };
+  const labels: Record<string, string> = {
+    openrouter: 'OpenRouter',
+    anthropic: 'Anthropic',
+    google: 'Google',
+    openai: 'OpenAI',
+  };
+  return {
+    label:
+      labels[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1),
+    kind: 'hosted',
+  };
+}
+
+function providerGroup(modelId: string): string | undefined {
+  const provider = modelId.slice(0, modelId.indexOf('/')).toLowerCase();
+  if (!provider) return undefined;
+  return (
+    {
+      openrouter: 'OpenRouter',
+      anthropic: 'Anthropic',
+      google: 'Google',
+      openai: 'OpenAI',
+      ollama: 'Local',
+    }[provider] ?? provider
+  );
 }
 
 function defaultBranch(): string {
@@ -295,6 +354,8 @@ export function AgentComposer({
   const [frozenTargets, setFrozenTargets] = useState<LaunchTarget[]>([
     SHELL_LAUNCH_TARGET,
   ]);
+  const launcherOrderFrozenRef = useRef(false);
+  const [launcherWidth, setLauncherWidth] = useState(768);
   const [catalogsBySource, setCatalogsBySource] = useState<
     Partial<Record<AgentSourceId, AgentModelCatalog>>
   >({});
@@ -326,7 +387,16 @@ export function AgentComposer({
   );
   const modelChoicesRef = useRef<Partial<Record<AgentSourceId, string>>>({});
   const effortChoicesRef = useRef<Record<string, string>>({});
-  const taskRef = useRef<HTMLTextAreaElement>(null);
+  const composerRootRef = useRef<HTMLDivElement>(null);
+  const launcherMeasureRef = useRef<HTMLDivElement>(null);
+  const openShellRef = useRef<() => void>(() => {});
+  const taskElement = useCallback(
+    () =>
+      composerRootRef.current?.querySelector<HTMLTextAreaElement>(
+        '[aria-label="Initial task for the new Agent"]'
+      ) ?? null,
+    []
+  );
   const recentRef = useRef<RecentConversationsHandle>(null);
   const permissionDescriptionId = useId();
   const branchErrorId = useId();
@@ -490,7 +560,9 @@ export function AgentComposer({
     target: AgentLaunchConfiguration
   ): { available: boolean; reason?: string } => {
     const snapshot = sourceSnapshots.find(
-      candidate => candidate.id === target.sourceId
+      candidate =>
+        candidate.id === target.sourceId ||
+        candidate.harness === target.sourceId
     );
     if (!snapshot) {
       return {
@@ -667,6 +739,7 @@ export function AgentComposer({
     setCatalogsBySource({});
     setConfigurationPool(null);
     setFrozenTargets([SHELL_LAUNCH_TARGET]);
+    launcherOrderFrozenRef.current = false;
     void loadLaunchConfigurationPool()
       .then(pool => {
         if (cancelled) return;
@@ -677,6 +750,7 @@ export function AgentComposer({
       })
       .catch(() => {
         if (cancelled) return;
+        setConfigurationPool(emptyLaunchConfigurationPool());
         setConfigurationMessage(
           'Saved launch configurations are unavailable for this visit.'
         );
@@ -919,6 +993,86 @@ export function AgentComposer({
     sourceRegistryReady,
   ]);
 
+  // D49: hold inert cards until every launchable engine has either reported a
+  // catalog or honestly degraded. Rank once at that boundary; subsequent
+  // launches update persistence for the next composer without moving the row
+  // under the current pointer or keyboard focus.
+  useEffect(() => {
+    if (
+      launcherOrderFrozenRef.current ||
+      !configurationPool ||
+      !preferencesReady ||
+      !sourceRegistryReady
+    ) {
+      return;
+    }
+    const launchable = launchSourceSnapshots(sourceRegistry).filter(
+      snapshot => snapshot.launchable
+    );
+    if (launchable.some(snapshot => !catalogsBySource[snapshot.harness])) {
+      return;
+    }
+    const seeds: AgentLaunchConfiguration[] = [];
+    for (const snapshot of launchable) {
+      const catalog = catalogsBySource[snapshot.harness];
+      if (!catalog?.effectiveModel) continue;
+      const option = catalog.models.find(
+        candidate => candidate.id === catalog.effectiveModel
+      );
+      seeds.push(
+        createAgentLaunchConfiguration(
+          {
+            sourceId: snapshot.id,
+            modelId: catalog.effectiveModel,
+            effort: catalog.effectiveEffort,
+            labels: {
+              source: snapshot.label,
+              model: option?.label ?? catalog.effectiveModelLabel,
+              effort: catalog.effectiveEffortLabel,
+            },
+          },
+          0
+        )
+      );
+    }
+    const ranked = recommendLaunchSetups({
+      pool: configurationPool,
+      project: projectDir,
+      seeds,
+      availability: target =>
+        target.kind === 'shell'
+          ? { available: true }
+          : targetAvailability(target),
+      rankedAt: Date.now(),
+    });
+    launcherOrderFrozenRef.current = true;
+    setFrozenTargets([
+      ...ranked.ordered.map(row => row.target),
+      SHELL_LAUNCH_TARGET,
+    ]);
+  }, [
+    catalogsBySource,
+    configurationPool,
+    preferencesReady,
+    projectDir,
+    sourceRegistry,
+    sourceRegistryReady,
+  ]);
+
+  useEffect(() => {
+    const element = launcherMeasureRef.current;
+    if (!element) return;
+    const measure = () => {
+      const width = element.getBoundingClientRect().width;
+      if (width > 0) setLauncherWidth(width);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   const recheckSources = useCallback(async () => {
     setSourceRegistryStatus('loading');
     setSourceActionMessage(null);
@@ -939,16 +1093,17 @@ export function AgentComposer({
   // ⌘T must land in the goal field every time (D21): focus after mount —
   // the draft pane mounts fresh on every summon
   useEffect(() => {
-    const frame = requestAnimationFrame(() => taskRef.current?.focus());
+    const frame = requestAnimationFrame(() => taskElement()?.focus());
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [taskElement]);
 
   useEffect(() => {
     const focus = (request?: AgentComposerRequest) => {
       if (typeof request === 'string') {
         applyAgentSelection(request, null, null);
       } else if (request?.configuration?.kind === 'shell') {
-        setSelectedTargetKind('shell');
+        openShellRef.current();
+        return;
       } else if (request?.configuration?.kind === 'agent') {
         applyAgentSelection(
           request.configuration.source,
@@ -960,10 +1115,13 @@ export function AgentComposer({
           candidate => candidate.id === request.configurationId
         );
         if (target?.kind === 'shell') {
-          setSelectedTargetKind('shell');
+          openShellRef.current();
+          return;
         } else if (target?.kind === 'agent') {
           const snapshot = sourceSnapshots.find(
-            candidate => candidate.id === target.sourceId
+            candidate =>
+              candidate.id === target.sourceId ||
+              candidate.harness === target.sourceId
           );
           if (snapshot) {
             applyAgentSelection(
@@ -974,7 +1132,7 @@ export function AgentComposer({
           }
         }
       }
-      requestAnimationFrame(() => taskRef.current?.focus());
+      requestAnimationFrame(() => taskElement()?.focus());
     };
     const onFocus = (event: Event) => {
       consumePendingAgentComposerRequest();
@@ -985,7 +1143,7 @@ export function AgentComposer({
     if (pending !== undefined) focus(pending);
     return () =>
       window.removeEventListener(FOCUS_AGENT_COMPOSER_EVENT, onFocus);
-  }, [applyAgentSelection, frozenTargets, sourceSnapshots]);
+  }, [applyAgentSelection, frozenTargets, sourceSnapshots, taskElement]);
 
   useEffect(() => {
     if (
@@ -999,21 +1157,21 @@ export function AgentComposer({
   /** insert pasted content at the caret, keeping focus and selection */
   const insertAtCursor = useCallback(
     (value: string) => {
-      const el = taskRef.current;
+      const el = taskElement();
       const start = el?.selectionStart ?? task.length;
       const end = el?.selectionEnd ?? task.length;
       const nextTask = task.slice(0, start) + value + task.slice(end);
       setTask(nextTask);
       reportDraftIntent({ draftTask: nextTask });
       requestAnimationFrame(() => {
-        const node = taskRef.current;
+        const node = taskElement();
         if (!node) return;
         node.focus();
         const caret = start + value.length;
         node.setSelectionRange(caret, caret);
       });
     },
-    [reportDraftIntent, task, setTask]
+    [reportDraftIntent, task, setTask, taskElement]
   );
 
   /** ⌘V/⌃V (D24): an image saves to a temp file and its path joins the
@@ -1052,6 +1210,8 @@ export function AgentComposer({
       controlsDisabled ||
       !sourcePreferences ||
       !launchReady ||
+      (model === null &&
+        modelCatalog?.effectiveModelSource === 'unavailable') ||
       (model !== null && selectedRibbonTarget?.available !== true)
     ) {
       return;
@@ -1119,9 +1279,7 @@ export function AgentComposer({
         );
     }
   };
-
-  const launchSelected = () =>
-    selectedTargetKind === 'shell' ? openShell() : launchAgent();
+  openShellRef.current = () => void openShell();
 
   const openRecentConversation = async (
     conversation: RecentConversation,
@@ -1207,199 +1365,444 @@ export function AgentComposer({
     return ok;
   };
 
+  const launchableSnapshots = sourceSnapshots.filter(
+    snapshot => snapshot.launchable
+  );
+  const launcherSettled =
+    launcherOrderFrozenRef.current &&
+    configurationPool !== null &&
+    preferencesReady &&
+    sourceRegistryReady &&
+    launchableSnapshots.every(snapshot =>
+      Boolean(catalogsBySource[snapshot.harness])
+    );
+  const projectUsage = configurationPool?.projects[projectDir]?.usage ?? {};
+
+  const targetToLauncherSetup = (
+    target: AgentLaunchConfiguration
+  ): LauncherSetup | null => {
+    const snapshot = sourceSnapshots.find(
+      candidate =>
+        candidate.id === target.sourceId ||
+        candidate.harness === target.sourceId
+    );
+    if (!snapshot) return null;
+    const catalog = catalogsBySource[snapshot.harness];
+    const option = catalog?.models.find(
+      candidate => candidate.id === target.modelId
+    );
+    const label = target.labels.model ?? option?.label ?? target.modelId;
+    const presented = launcherModelPresentation(label, target.modelId);
+    const availability = targetAvailability(target);
+    const pinned = projectPins.has(target.id);
+    return {
+      id: target.id,
+      role: 'coding',
+      name: target.name,
+      engine: {
+        harness: snapshot.harness,
+        label: snapshot.label,
+        color: snapshot.color,
+      },
+      model: presented.model,
+      modelVariant: presented.variant,
+      vendor: launcherVendor(snapshot.harness, target.modelId),
+      thinking: target.effort
+        ? (target.labels.effort ?? displayEffortLabel(target.effort))
+        : null,
+      reason: pinned
+        ? 'pinned'
+        : projectUsage[target.id]
+          ? 'frecent'
+          : 'default',
+      launchCount: projectUsage[target.id]?.launchCount ?? 0,
+      pinned,
+      available: availability.available,
+      unavailableReason: availability.reason,
+    };
+  };
+
+  const launcherTargets = frozenTargets.filter(
+    (target): target is AgentLaunchConfiguration => target.kind === 'agent'
+  );
+  const launcherSetups = launcherTargets
+    .map(targetToLauncherSetup)
+    .filter((setup): setup is LauncherSetup => setup !== null);
+
+  // A launchable engine without a source-owned default is not absent. It is a
+  // real selectable state that opens Model and blocks Start until the operator
+  // supplies the missing fact (D49 finding 13; decision 0027).
+  for (const snapshot of launchableSnapshots) {
+    const catalog = catalogsBySource[snapshot.harness];
+    if (catalog?.effectiveModel) continue;
+    launcherSetups.push({
+      id: `draft:${snapshot.harness}`,
+      role: 'coding',
+      name: null,
+      engine: {
+        harness: snapshot.harness,
+        label: snapshot.label,
+        color: snapshot.color,
+      },
+      model:
+        catalog?.effectiveModelSource === 'account-default'
+          ? catalog.effectiveModelLabel
+          : null,
+      modelVariant: null,
+      vendor: null,
+      thinking: null,
+      reason: 'default',
+      launchCount: 0,
+      pinned: false,
+      available: true,
+    });
+  }
+
+  // A palette request or restored draft may name a valid exact configuration
+  // outside the frozen recommendation row. Keep that operator-authored choice
+  // visible without re-sorting the rest of the row.
+  if (
+    currentConfigurationInput &&
+    !launcherSetups.some(setup => setup.id === currentConfigurationId)
+  ) {
+    const currentTarget = createAgentLaunchConfiguration(
+      currentConfigurationInput,
+      0
+    );
+    const setup = targetToLauncherSetup(currentTarget);
+    if (setup) launcherSetups.unshift(setup);
+  }
+
+  const selectedLauncherId =
+    selectedTargetKind === 'agent' ? currentConfigurationId : null;
+  const capacity = rowCapacityForWidth(launcherWidth);
+  let visibleLauncherSetups = launcherSetups.slice(0, capacity);
+  const selectedOutsideRow = launcherSetups.find(
+    setup => setup.id === selectedLauncherId
+  );
+  if (
+    selectedOutsideRow &&
+    !visibleLauncherSetups.some(setup => setup.id === selectedOutsideRow.id)
+  ) {
+    visibleLauncherSetups = [
+      ...visibleLauncherSetups.slice(0, Math.max(0, capacity - 1)),
+      selectedOutsideRow,
+    ];
+  }
+
+  const chooseLauncherSetup = (id: string) => {
+    if (id.startsWith('draft:')) {
+      const nextSource = id.slice('draft:'.length);
+      if (isAgentSourceId(nextSource)) {
+        reportDraftIntent({
+          draftSource: nextSource,
+          draftModel: null,
+          draftEffort: null,
+        });
+        applyAgentSelection(nextSource, null, null);
+      }
+      return;
+    }
+    const target = launcherTargets.find(candidate => candidate.id === id);
+    if (!target) return;
+    const snapshot = sourceSnapshots.find(
+      candidate =>
+        candidate.id === target.sourceId ||
+        candidate.harness === target.sourceId
+    );
+    if (!snapshot) return;
+    reportDraftIntent({
+      draftSource: snapshot.harness,
+      draftModel: target.modelId,
+      draftEffort: target.effort,
+    });
+    applyAgentSelection(snapshot.harness, target.modelId, target.effort);
+  };
+
+  const selectedCatalog = catalogsBySource[effectiveSource] ?? modelCatalog;
+  const selectedModelOption = selectedCatalog?.models.find(
+    option => option.id === model
+  );
+  const engineAxisOptions: DetailAxisOption[] = sourceSnapshots.map(
+    snapshot => ({
+      id: snapshot.harness,
+      label: snapshot.label,
+      description: snapshot.launchable ? snapshot.stateLabel : snapshot.summary,
+      disabled: !snapshot.launchable,
+      disabledReason: !snapshot.launchable ? snapshot.stateLabel : undefined,
+      mark: (
+        <EngineGlyph
+          engine={{
+            harness: snapshot.harness,
+            label: snapshot.label,
+            color: snapshot.color,
+          }}
+          size={12}
+        />
+      ),
+    })
+  );
+  const modelAxisOptions: DetailAxisOption[] = (
+    selectedCatalog?.models ?? []
+  ).map(option => ({
+    id: option.id,
+    label: option.label,
+    description: option.description,
+    group:
+      effectiveSource === 'opencode'
+        ? providerGroup(option.id)
+        : sourceMeta.label,
+    keywords: option.id,
+  }));
+  const thinkingAxisOptions: DetailAxisOption[] = (
+    selectedModelOption?.efforts ?? []
+  ).map(option => ({
+    id: option.id,
+    label: option.label,
+    description: option.description,
+  }));
+  const permissionAxisOptions: DetailAxisOption[] =
+    AGENT_PERMISSION_MODE_ORDER.filter(mode =>
+      sourceMeta.capabilities.permissionModes.includes(mode)
+    ).map(mode => ({
+      id: mode,
+      label: AGENT_PERMISSION_MODE_META[mode].label,
+      description: AGENT_PERMISSION_MODE_META[mode].description,
+    }));
+
+  const launcherAxes: DetailAxis[] = [
+    {
+      id: 'engine',
+      label: 'Engine',
+      value: effectiveSource,
+      options: engineAxisOptions,
+      onChange: optionId => {
+        if (!isAgentSourceId(optionId)) return;
+        const catalog = catalogsBySource[optionId];
+        reportDraftIntent({
+          draftSource: optionId,
+          draftModel: catalog?.effectiveModel ?? null,
+          draftEffort: catalog?.effectiveEffort ?? null,
+        });
+        applyAgentSelection(
+          optionId,
+          catalog?.effectiveModel ?? null,
+          catalog?.effectiveEffort ?? null
+        );
+      },
+      provenance: 'Engines available on this machine.',
+      footer: (
+        <Link
+          href="/settings"
+          className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 font-mono text-chrome-meta text-hud-text-dim outline-none transition-colors hover:bg-hud-fill hover:text-hud-text focus-visible:ring-2 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+        >
+          Add or remove engines
+          <ExternalLink aria-hidden="true" className="size-3.5" />
+        </Link>
+      ),
+    },
+    {
+      id: 'model',
+      label: 'Model',
+      weight: 2,
+      value: model,
+      placeholder:
+        selectedCatalog?.effectiveModelSource === 'account-default'
+          ? selectedCatalog.effectiveModelLabel
+          : 'Choose a model',
+      options: modelAxisOptions,
+      onChange: optionId => {
+        const nextModel = selectedCatalog?.models.find(
+          option => option.id === optionId
+        );
+        if (!nextModel) return;
+        const key = effortChoiceKey(effectiveSource, optionId);
+        const nextEffort =
+          effortChoicesRef.current[key] ??
+          nextModel.defaultEffort ??
+          (optionId === selectedCatalog?.effectiveModel
+            ? selectedCatalog.effectiveEffort
+            : null) ??
+          null;
+        modelChoicesRef.current[effectiveSource] = optionId;
+        if (nextEffort) effortChoicesRef.current[key] = nextEffort;
+        setSelectedTargetKind('agent');
+        setModel(optionId);
+        setEffort(nextEffort);
+        onDraftChangeRef.current?.({
+          draftModel: optionId,
+          draftEffort: nextEffort,
+        });
+        reportDraftIntent({
+          draftModel: optionId,
+          draftEffort: nextEffort,
+        });
+      },
+      provenance: selectedCatalog?.catalogProvenance,
+      searchable: modelAxisOptions.length > 10,
+      footer:
+        selectedCatalog?.selectionAction === 'choose-in-source' ? (
+          <button
+            type="button"
+            onClick={() => {
+              void runAgentSourceAction(effectiveSource, 'choose-model').then(
+                result =>
+                  setSourceActionMessage({
+                    ok: result.ok,
+                    text: result.message,
+                  })
+              );
+            }}
+            className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 font-mono text-chrome-meta text-hud-text-dim outline-none transition-colors hover:bg-hud-fill hover:text-hud-text focus-visible:ring-2 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+          >
+            Choose in {sourceMeta.label}
+            <ExternalLink aria-hidden="true" className="size-3.5" />
+          </button>
+        ) : undefined,
+    },
+    {
+      id: 'thinking',
+      label: 'Thinking',
+      weight: 1.2,
+      value: effort,
+      placeholder: 'Engine default',
+      options: thinkingAxisOptions,
+      disabled:
+        selectedCatalog?.effortLocked || thinkingAxisOptions.length === 0,
+      onChange: optionId => {
+        if (!model) return;
+        effortChoicesRef.current[effortChoiceKey(effectiveSource, model)] =
+          optionId;
+        setEffort(optionId);
+        onDraftChangeRef.current?.({ draftEffort: optionId });
+        reportDraftIntent({ draftEffort: optionId });
+      },
+      provenance: 'Applies to this Agent only.',
+    },
+    {
+      id: 'permission',
+      label: 'Permission',
+      weight: 1.2,
+      value: permissionMode,
+      options: permissionAxisOptions,
+      tone: 'caution',
+      onChange: optionId => {
+        if (!isAgentPermissionMode(optionId)) return;
+        setPermissionMode(optionId);
+        setSourcePreferences(current =>
+          current
+            ? recordAgentPermissionMode(
+                current,
+                projectDir,
+                effectiveSource,
+                optionId
+              )
+            : current
+        );
+        void persistPermissionMode(effectiveSource, optionId);
+      },
+      provenance: 'Remembered for this Project and engine.',
+    },
+  ];
+
+  const selectedSetup = visibleLauncherSetups.find(
+    setup => setup.id === selectedLauncherId
+  );
+  const modelRequired =
+    selectedCatalog?.effectiveModelSource === 'unavailable' && model === null;
+  const launcherBlockedReason = !launcherSettled
+    ? null
+    : !sourceMeta.launchable
+      ? `${sourceMeta.label}: ${sourceMeta.stateLabel}`
+      : !branchReady
+        ? 'Enter a branch name before starting.'
+        : modelRequired
+          ? `Choose a model for ${sourceMeta.label} before starting.`
+          : selectedSetup && !selectedSetup.available
+            ? (selectedSetup.unavailableReason ?? 'This setup is unavailable.')
+            : null;
+
   const controls = (
-    <form
+    <div
+      ref={composerRootRef}
       data-agent-composer
       data-preferences-ready={preferencesReady}
       aria-busy={launching !== null}
       onPointerDownCapture={() => onUserInteractionRef.current?.()}
-      onKeyDownCapture={() => onUserInteractionRef.current?.()}
-      onSubmit={event => {
+      onPasteCapture={event => {
+        const hasImage = Array.from(event.clipboardData?.items ?? []).some(
+          item => item.kind === 'file' && item.type.startsWith('image/')
+        );
+        if (!hasImage) return;
         event.preventDefault();
-        void launchSelected();
+        void pasteFromClipboard();
+      }}
+      onKeyDownCapture={event => {
+        onUserInteractionRef.current?.();
+        if (event.nativeEvent.isComposing) return;
+        if (
+          event.key === 'v' &&
+          event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          void pasteFromClipboard();
+          return;
+        }
+        const taskNode = taskElement();
+        if (event.target !== taskNode || task !== '') return;
+        if (
+          event.altKey &&
+          (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+        ) {
+          const available = visibleLauncherSetups.filter(
+            setup => setup.available
+          );
+          if (available.length < 2) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const index = available.findIndex(
+            setup => setup.id === selectedLauncherId
+          );
+          const step = event.key === 'ArrowDown' ? 1 : available.length - 1;
+          chooseLauncherSetup(
+            available[((index < 0 ? 0 : index) + step) % available.length].id
+          );
+          return;
+        }
+        if (event.key === 'ArrowDown' && !event.altKey) {
+          if (recentRef.current?.focusFirst()) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }
       }}
       className="flex w-full min-w-0 flex-col gap-1.5"
     >
-      <textarea
-        ref={taskRef}
-        rows={1}
-        value={task}
-        maxLength={8_000}
-        disabled={controlsDisabled}
-        onChange={event => {
-          const nextTask = event.target.value;
-          setTask(nextTask);
-          reportDraftIntent({ draftTask: nextTask });
-        }}
-        // image paste (D24): ⌘V catches images via the paste event; ⌃V is
-        // the coding-harness muscle memory and works the same way
-        onPaste={event => {
-          const hasImage = Array.from(event.clipboardData?.items ?? []).some(
-            item => item.kind === 'file' && item.type.startsWith('image/')
-          );
-          if (hasImage) {
-            event.preventDefault();
-            void pasteFromClipboard();
-          }
-        }}
-        onKeyDown={event => {
-          if (event.nativeEvent.isComposing) return;
-          if (
-            event.key === 'v' &&
-            event.ctrlKey &&
-            !event.metaKey &&
-            !event.altKey
-          ) {
-            event.preventDefault();
-            void pasteFromClipboard();
-            return;
-          }
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
-            void launchSelected();
-            return;
-          }
-          // The empty composer opens into local history with ↓. Source
-          // cycling keeps a distinct Option+arrow chord so both paths stay
-          // fully keyboard reachable and unambiguous.
-          if (
-            (event.key === 'ArrowUp' || event.key === 'ArrowDown') &&
-            task === '' &&
-            event.altKey
-          ) {
-            event.preventDefault();
-            const order = ribbonTargets.filter(
-              entry => entry.target.kind === 'agent' && entry.available
-            );
-            if (order.length < 2) {
-              if (launchableSourceOrder.length < 2) return;
-              const sourceIndex =
-                launchableSourceOrder.indexOf(effectiveSource);
-              const sourceStep =
-                event.key === 'ArrowDown'
-                  ? 1
-                  : launchableSourceOrder.length - 1;
-              const nextSource =
-                launchableSourceOrder[
-                  ((sourceIndex < 0 ? 0 : sourceIndex) + sourceStep) %
-                    launchableSourceOrder.length
-                ];
-              reportDraftIntent({
-                draftSource: nextSource,
-                draftModel: null,
-                draftEffort: null,
-              });
-              applyAgentSelection(nextSource, null, null);
-              return;
-            }
-            const index = order.findIndex(
-              entry => entry.item.id === selectedTargetId
-            );
-            const step = event.key === 'ArrowDown' ? 1 : order.length - 1;
-            const next = order[((index < 0 ? 0 : index) + step) % order.length];
-            if (next.target.kind !== 'agent') return;
-            const nextTarget = next.target;
-            const snapshot = sourceSnapshots.find(
-              candidate => candidate.id === nextTarget.sourceId
-            );
-            if (!snapshot) return;
-            reportDraftIntent({
-              draftSource: snapshot.harness,
-              draftModel: nextTarget.modelId,
-              draftEffort: nextTarget.effort,
-            });
-            applyAgentSelection(
-              snapshot.harness,
-              nextTarget.modelId,
-              nextTarget.effort
-            );
-            return;
-          }
-          if (event.key === 'ArrowDown' && task === '') {
-            if (recentRef.current?.focusFirst()) event.preventDefault();
-          }
-        }}
-        placeholder="What should this Agent do?"
-        aria-label="Initial task for the new Agent"
-        className="max-h-40 min-h-11 w-full resize-none rounded border bg-transparent px-3 py-2 font-mono text-xs leading-5 outline-none transition-colors [field-sizing:content] placeholder:text-hud-text-dim/80 hover:border-hud-cyan/40 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
-        style={{
-          color: HUD.text,
-          borderColor: HUD.strokeSoft,
-          background: HUD.surfaceInput,
-        }}
-      />
-
-      <div className="flex min-w-0 items-center gap-2">
-        <LaunchConfigurationRibbon
-          className="min-w-0 flex-1"
-          items={ribbonTargets.map(entry => entry.item)}
-          selectedId={selectedTargetId}
-          onSelect={id => {
-            const entry = ribbonTargets.find(
-              candidate => candidate.item.id === id
-            );
-            if (!entry) return;
-            if (entry.target.kind === 'shell') {
-              setSelectedTargetKind('shell');
-              return;
-            }
-            const agentTarget = entry.target;
-            const snapshot = sourceSnapshots.find(
-              candidate => candidate.id === agentTarget.sourceId
-            );
-            if (!snapshot) return;
-            applyAgentSelection(
-              snapshot.harness,
-              agentTarget.modelId,
-              agentTarget.effort
-            );
+      <div ref={launcherMeasureRef}>
+        <AgentLauncher
+          setups={visibleLauncherSetups}
+          selectedId={selectedLauncherId}
+          state={launcherSettled ? 'ready' : 'settling'}
+          axes={selectedLauncherId ? launcherAxes : []}
+          detailFootnote="Changes apply to this Agent until you start it."
+          task={task}
+          onTaskChange={nextTask => {
+            setTask(nextTask);
+            reportDraftIntent({ draftTask: nextTask });
           }}
-          onCustomize={() => {
-            setCustomizeOpen(open => !open);
-            setAllConfigurationsOpen(false);
-          }}
-          onShowAll={() => {
+          onSelect={chooseLauncherSetup}
+          onOpenCatalog={() => {
             setAllConfigurationsOpen(open => !open);
             setCustomizeOpen(false);
           }}
-          alwaysShowAll={ribbonTargets.length > 1}
-          allLabel="All configurations…"
+          onStart={() => void launchAgent()}
+          launching={launching === 'agent'}
+          blockedReason={launcherBlockedReason}
+          placeholderCount={Math.max(2, capacity)}
         />
-        <Button
-          type="submit"
-          aria-busy={launching !== null}
-          aria-label={
-            launching === 'shell'
-              ? 'Opening shell…'
-              : launching === 'agent'
-                ? 'Starting…'
-                : selectedTargetKind === 'shell'
-                  ? 'Open shell'
-                  : 'Start'
-          }
-          data-agent-start-button
-          disabled={
-            controlsDisabled ||
-            (selectedTargetKind === 'agent' &&
-              (!launchReady ||
-                (model !== null && selectedRibbonTarget?.available !== true)))
-          }
-          className="min-w-20 shrink-0 motion-reduce:transition-none"
-        >
-          {launching !== null && (
-            <LoaderCircle
-              aria-hidden="true"
-              className="animate-spin motion-reduce:animate-none"
-            />
-          )}
-          {launching === 'shell'
-            ? 'Opening…'
-            : launching === 'agent'
-              ? 'Starting…'
-              : selectedTargetKind === 'shell'
-                ? 'Open shell'
-                : 'Start'}
-        </Button>
       </div>
 
       {allConfigurationsOpen && (
@@ -1430,11 +1833,13 @@ export function AgentComposer({
                     aria-label={entry.item.accessibleLabel}
                     onClick={() => {
                       if (entry.target.kind === 'shell') {
-                        setSelectedTargetKind('shell');
+                        void openShell();
                       } else {
                         const agentTarget = entry.target;
                         const snapshot = sourceSnapshots.find(
-                          source => source.id === agentTarget.sourceId
+                          source =>
+                            source.id === agentTarget.sourceId ||
+                            source.harness === agentTarget.sourceId
                         );
                         if (snapshot) {
                           applyAgentSelection(
@@ -1569,6 +1974,128 @@ export function AgentComposer({
                 </div>
               );
             })}
+          </div>
+          <div className="mt-1 grid gap-2 border-t border-hud-divider px-2 py-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <label className="flex cursor-pointer items-center gap-2 font-mono text-chrome-label text-hud-text">
+                <input
+                  type="checkbox"
+                  checked={worktree}
+                  onChange={event => {
+                    const nextWorktree = event.target.checked;
+                    setWorktree(nextWorktree);
+                    onDraftChangeRef.current?.({
+                      draftWorktree: nextWorktree,
+                      draftBranch: branch,
+                    });
+                    reportDraftIntent({
+                      draftWorktree: nextWorktree,
+                      draftBranch: branch,
+                    });
+                  }}
+                  className="accent-cyan-400"
+                />
+                <GitBranch aria-hidden="true" className="size-3.5" />
+                New git worktree
+              </label>
+              {roadmapItems.length > 0 ? (
+                <select
+                  aria-label="Roadmap item this session will work on"
+                  value={roadmapItemId}
+                  onChange={event => {
+                    const nextRoadmapItemId = event.target.value;
+                    setRoadmapItemId(nextRoadmapItemId);
+                    onDraftChangeRef.current?.({
+                      draftRoadmapItemId: nextRoadmapItemId,
+                    });
+                    reportDraftIntent({
+                      draftRoadmapItemId: nextRoadmapItemId,
+                    });
+                  }}
+                  className="h-8 min-w-40 flex-1 rounded-md border border-hud-stroke-faint bg-hud-deep px-2 font-mono text-chrome-label text-hud-text outline-none focus-visible:ring-2 focus-visible:ring-hud-cyan"
+                >
+                  <option value="">No roadmap link</option>
+                  {roadmapItems.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={!currentConfigurationInput}
+                className="ml-auto shrink-0 font-mono text-chrome-label"
+                onClick={() => {
+                  if (!currentConfigurationInput) return;
+                  const nextName = window.prompt('Configuration name', '');
+                  if (!nextName?.trim()) return;
+                  void saveNamedLaunchConfiguration(
+                    currentConfigurationInput,
+                    nextName
+                  )
+                    .then(pool => {
+                      setConfigurationPool(pool);
+                      const saved = pool.configurations.find(
+                        target => target.id === currentConfigurationId
+                      );
+                      if (saved) {
+                        setFrozenTargets(current => {
+                          const exists = current.some(
+                            target => target.id === saved.id
+                          );
+                          return exists
+                            ? current.map(target =>
+                                target.id === saved.id ? saved : target
+                              )
+                            : [
+                                ...current.filter(
+                                  target => target.kind === 'agent'
+                                ),
+                                saved,
+                                SHELL_LAUNCH_TARGET,
+                              ];
+                        });
+                      }
+                      setConfigurationMessage('Named configuration saved.');
+                    })
+                    .catch(() =>
+                      setConfigurationMessage(
+                        'That configuration name could not be saved.'
+                      )
+                    );
+                }}
+              >
+                <Save aria-hidden="true" className="size-3.5" />
+                Name setup…
+              </Button>
+            </div>
+            {worktree ? (
+              <input
+                value={branch}
+                onChange={event => {
+                  branchEditSeq.current += 1;
+                  const nextBranch = event.target.value;
+                  setBranch(nextBranch);
+                  onDraftChangeRef.current?.({ draftBranch: nextBranch });
+                  reportDraftIntent({ draftBranch: nextBranch });
+                }}
+                aria-label="Branch name for the new worktree"
+                aria-invalid={!branchReady}
+                aria-describedby={branchReady ? undefined : branchErrorId}
+                className="h-8 w-full rounded-md border border-hud-stroke-faint bg-hud-deep px-2 font-mono text-chrome-label text-hud-text outline-none focus-visible:ring-2 focus-visible:ring-hud-cyan"
+              />
+            ) : null}
+            {worktree && !branchReady ? (
+              <p
+                id={branchErrorId}
+                className="font-mono text-chrome-micro text-hud-red"
+              >
+                Enter a branch name before starting.
+              </p>
+            ) : null}
           </div>
         </div>
       )}
@@ -2236,23 +2763,12 @@ export function AgentComposer({
               ? 'This permission choice applies now but could not be saved.'
               : (sourceActionMessage?.text ?? '')}
       </span>
-    </form>
+    </div>
   );
 
   return (
     <div className="flex w-full flex-col items-center px-5 sm:px-7">
-      <div className="w-full max-w-3xl text-left">
-        <p
-          className="font-display text-lg font-semibold tracking-tight"
-          style={{ color: HUD.text }}
-        >
-          {projectName}
-        </p>
-        <p className="mt-1 font-mono text-xs" style={{ color: HUD.textDim }}>
-          New Agent
-        </p>
-      </div>
-      <div className="@container mt-3 w-full max-w-3xl">
+      <div className="@container w-full max-w-3xl">
         {controls}
         <RecentConversations
           ref={recentRef}
@@ -2260,7 +2776,7 @@ export function AgentComposer({
           hidden={task.trim().length > 0}
           disabled={controlsDisabled || !preferencesReady}
           onOpen={openRecentConversation}
-          onReturnToComposer={() => taskRef.current?.focus()}
+          onReturnToComposer={() => taskElement()?.focus()}
         />
       </div>
     </div>

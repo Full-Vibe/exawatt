@@ -15,7 +15,7 @@
  * one thing, and Tab straight to Start.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { OptionMenu, type OptionMenuOption } from '@/components/ui/option-menu';
 import { cn } from '@/lib/utils';
@@ -197,21 +197,46 @@ export function SetupDrawerHandle({
 
 export interface SetupDetailPanelProps extends SetupDetailFieldsProps {
   open: boolean;
+  /** Incremented when keyboard navigation should enter the first detail axis. */
+  focusRequest?: number;
 }
 
 /**
  * Height animates through a `grid-template-rows` 0fr→1fr transition, so the
  * panel opens against its real content height without a measured pixel value.
  */
-export function SetupDetailPanel({ open, ...fields }: SetupDetailPanelProps) {
+export function SetupDetailPanel({
+  open,
+  focusRequest = 0,
+  ...fields
+}: SetupDetailPanelProps) {
   const [mounted, setMounted] = useState(open);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const handledFocusRequest = useRef(0);
 
   useEffect(() => {
     if (open) setMounted(true);
   }, [open]);
 
+  useEffect(() => {
+    if (
+      !open ||
+      !mounted ||
+      focusRequest === 0 ||
+      focusRequest === handledFocusRequest.current
+    )
+      return;
+    const firstAxis = panelRef.current?.querySelector<HTMLButtonElement>(
+      '[data-option-menu-trigger]:not(:disabled)'
+    );
+    if (!firstAxis) return;
+    firstAxis.focus();
+    handledFocusRequest.current = focusRequest;
+  }, [focusRequest, mounted, open]);
+
   return (
     <div
+      ref={panelRef}
       data-setup-detail
       data-open={open || undefined}
       aria-hidden={!open}

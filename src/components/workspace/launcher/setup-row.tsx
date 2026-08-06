@@ -54,6 +54,8 @@ export interface SetupRowProps {
   placeholderCount?: number;
   onSelect: (id: string) => void;
   onToggleDetail: (id: string) => void;
+  /** Opens this setup's detail drawer and moves focus into its first axis. */
+  onEnterDetail: (id: string) => void;
   onOpenCatalog: () => void;
   className?: string;
 }
@@ -66,6 +68,7 @@ export function SetupRow({
   placeholderCount = 3,
   onSelect,
   onToggleDetail,
+  onEnterDetail,
   onOpenCatalog,
   className,
 }: SetupRowProps) {
@@ -115,12 +118,15 @@ export function SetupRow({
               setup={setup}
               selected={setup.id === selectedId}
               expanded={setup.id === expandedId}
-              tabIndex={
-                setup.id === (selectedId ?? setups[0]?.id) ? 0 : -1
-              }
+              tabIndex={setup.id === (selectedId ?? setups[0]?.id) ? 0 : -1}
               onSelect={onSelect}
               onToggleDetail={onToggleDetail}
               onKeyDown={event => {
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault();
+                  onEnterDetail(setup.id);
+                  return;
+                }
                 const direction =
                   event.key === 'ArrowRight'
                     ? 1

@@ -21,7 +21,7 @@ export const LAUNCHER_ROLE_LABEL: Record<LauncherRole, string> = {
   coding: 'Coding',
 };
 
-/** Why this setup is in the row. Rendered as provenance, never invented. */
+/** Why this setup is in the row. Ranking state, not visible card copy. */
 export type LauncherReason = 'pinned' | 'frecent' | 'default';
 
 export interface LauncherEngine {
@@ -51,9 +51,9 @@ export interface LauncherSetup {
   /** Null while the engine has not reported a model yet. */
   model: string | null;
   /**
-   * A capability of the model itself, e.g. "1M context". Sits beside the model
-   * name because it qualifies it. Deliberately NOT the same channel as the
-   * vendor, which is identity and carries its own mark.
+   * A capability of the model itself, e.g. "1M context". Sits on the quiet
+   * secondary line so the model name owns the full anchor width. Deliberately
+   * NOT the same channel as the vendor, which is identity and carries a mark.
    */
   modelVariant: string | null;
   vendor: LauncherVendor | null;
@@ -88,15 +88,6 @@ export function rowCapacityForWidth(width: number): number {
   return 4;
 }
 
-/** One line of provenance under the chip's identity. */
-export function reasonLabel(setup: LauncherSetup): string {
-  if (setup.pinned) return 'Pinned';
-  if (setup.reason === 'frecent') {
-    return setup.launchCount === 1 ? 'Used once' : `Used ${setup.launchCount}×`;
-  }
-  return 'Suggested';
-}
-
 /** Full spoken identity. Never derived from truncated visible copy. */
 export function setupAccessibleLabel(setup: LauncherSetup): string {
   const identity = [
@@ -111,7 +102,11 @@ export function setupAccessibleLabel(setup: LauncherSetup): string {
     .filter(Boolean)
     .join(', ');
   const state = [
-    setup.pinned ? 'pinned' : null,
+    setup.pinned
+      ? 'pinned'
+      : setup.reason === 'frecent'
+        ? 'recently used'
+        : 'suggested',
     setup.available
       ? null
       : `unavailable${setup.unavailableReason ? `: ${setup.unavailableReason}` : ''}`,

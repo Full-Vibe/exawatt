@@ -35,7 +35,7 @@ import {
   type LaunchTarget,
 } from './launch-configurations';
 
-/** Why a setup earned its place. Rendered as provenance, never invented. */
+/** Why a setup earned its place. Ranking state, not visible card copy. */
 export type LaunchRecommendationReason = 'pinned' | 'frecent' | 'default';
 
 export interface LaunchRecommendationAvailability {
@@ -150,14 +150,16 @@ export function recommendLaunchSetups(
 
     if (left.reason === 'pinned') {
       return (
-        (pinIndex.get(left.target.id) ?? 0) - (pinIndex.get(right.target.id) ?? 0)
+        (pinIndex.get(left.target.id) ?? 0) -
+        (pinIndex.get(right.target.id) ?? 0)
       );
     }
 
     // An unavailable setup is demoted inside its band, never dropped: the
     // operator must still see the setup they rely on, with the exact reason.
     const availabilityOrder =
-      Number(right.availability.available) - Number(left.availability.available);
+      Number(right.availability.available) -
+      Number(left.availability.available);
     if (availabilityOrder !== 0) return availabilityOrder;
 
     if (left.reason === 'frecent') {
@@ -176,7 +178,8 @@ export function recommendLaunchSetups(
       }
     }
 
-    const leftCreated = left.target.kind === 'agent' ? left.target.createdAt : 0;
+    const leftCreated =
+      left.target.kind === 'agent' ? left.target.createdAt : 0;
     const rightCreated =
       right.target.kind === 'agent' ? right.target.createdAt : 0;
     if (leftCreated !== rightCreated) return leftCreated - rightCreated;

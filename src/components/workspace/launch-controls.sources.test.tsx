@@ -8,6 +8,7 @@ import {
   CODEX_MODEL_CATALOG,
   FOCUS_AGENT_COMPOSER_EVENT,
   installComposerTestHarness,
+  OPENCODE_MODEL_CATALOG,
   readyAgentSourceRegistry,
   renderComposer,
 } from './launch-controls.test-support';
@@ -76,14 +77,20 @@ describe('Agent composer · sources and policy', () => {
       />
     );
 
-    const modelTrigger = screen.getByLabelText('Agent model');
-    const effortTrigger = screen.getByLabelText('Agent effort');
-    await waitFor(() => expect(modelTrigger).toHaveTextContent('GPT-5.6-Sol'));
-    await waitFor(() => expect(effortTrigger).toHaveTextContent('Extra high'));
-    expect(modelTrigger).toHaveAttribute(
-      'title',
-      expect.stringContaining('Default from Codex config')
-    );
+    const drawer = screen.getByRole('button', {
+      name: 'Adjust engine, model, thinking, permission',
+    });
+    await waitFor(() => expect(drawer).not.toBeDisabled());
+    fireEvent.click(drawer);
+    const modelTrigger = await screen.findByRole('button', {
+      name: 'Model: GPT-5.6-Sol',
+    });
+    const effortTrigger = screen.getByRole('button', {
+      name: 'Thinking: Extra high',
+    });
+    expect(
+      screen.getByText('Changes apply to this Agent until you start it.')
+    ).toBeInTheDocument();
 
     fireEvent.click(modelTrigger);
     fireEvent.click(
@@ -91,13 +98,13 @@ describe('Agent composer · sources and policy', () => {
         name: /GPT-5\.6-Terra.*Balanced coding model/i,
       })
     );
+    await waitFor(() =>
+      expect(modelTrigger).toHaveAccessibleName('Model: GPT-5.6-Terra')
+    );
     expect(modelTrigger).toHaveTextContent('GPT-5.6-Terra');
-    expect(effortTrigger).toHaveTextContent('Medium');
-    fireEvent.click(modelTrigger);
-    expect(
-      screen.getByText('This override applies only to this Agent.')
-    ).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() =>
+      expect(effortTrigger).toHaveAccessibleName('Thinking: Medium')
+    );
 
     fireEvent.click(effortTrigger);
     fireEvent.click(
@@ -105,12 +112,9 @@ describe('Agent composer · sources and policy', () => {
         name: /Max.*Maximum reasoning/i,
       })
     );
-    expect(effortTrigger).toHaveTextContent('Max');
-    fireEvent.click(effortTrigger);
-    expect(
-      screen.getByText('This override applies only to this Agent.')
-    ).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() =>
+      expect(effortTrigger).toHaveAccessibleName('Thinking: Max')
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
     await waitFor(() =>
@@ -145,8 +149,12 @@ describe('Agent composer · sources and policy', () => {
       catalogMode: 'source-owned',
       selectionAction: 'choose-in-source',
     };
-    window.electron!.pty!.listAgentModels = vi.fn(
-      async () => sourceOwnedClaude
+    window.electron!.pty!.listAgentModels = vi.fn(async harness =>
+      harness === 'claude'
+        ? sourceOwnedClaude
+        : harness === 'codex'
+          ? CODEX_MODEL_CATALOG
+          : OPENCODE_MODEL_CATALOG
     );
     const onLaunch = vi.fn(async () => true);
     renderComposer(
@@ -157,9 +165,16 @@ describe('Agent composer · sources and policy', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Customize' }));
+    const drawer = screen.getByRole('button', {
+      name: 'Adjust engine, model, thinking, permission',
+    });
+    await waitFor(() => expect(drawer).not.toBeDisabled());
+    fireEvent.click(drawer);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Model: Account default' })
+    );
     const modelAction = await screen.findByRole('button', {
-      name: 'Agent model: Account default. Choose in Claude Code',
+      name: 'Choose in Claude Code',
     });
     fireEvent.click(modelAction);
     await waitFor(() =>
@@ -170,6 +185,70 @@ describe('Agent composer · sources and policy', () => {
     await waitFor(() =>
       expect(onLaunch).toHaveBeenCalledWith(
         expect.objectContaining({ model: undefined, effort: undefined })
+      )
+    );
+  });
+
+  it('shows OpenCode without a default and blocks launch until a model is chosen', async () => {
+    const openCodeWithoutDefault: AgentModelCatalog = {
+      ...OPENCODE_MODEL_CATALOG,
+      effectiveModel: null,
+      effectiveModelLabel: 'Source default',
+      effectiveModelSource: 'unavailable',
+      effectiveEffort: null,
+      effectiveEffortLabel: 'Model default',
+      effectiveEffortSource: 'unavailable',
+    };
+    window.electron!.pty!.listAgentModels = vi.fn(async harness =>
+      harness === 'claude'
+        ? CLAUDE_MODEL_CATALOG
+        : harness === 'codex'
+          ? CODEX_MODEL_CATALOG
+          : openCodeWithoutDefault
+    );
+    const onLaunch = vi.fn(async () => true);
+    renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        initialSource="opencode"
+        onLaunch={onLaunch}
+      />
+    );
+
+    const openCode = await screen.findByRole('radio', {
+      name: /OpenCode/i,
+    });
+    await waitFor(() =>
+      expect(openCode).toHaveAttribute('aria-checked', 'true')
+    );
+    expect(openCode).toHaveTextContent('Choose a model');
+    expect(screen.getByRole('button', { name: 'Start' })).toBeDisabled();
+    expect(
+      screen.getByText('Choose a model for OpenCode before starting.')
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Adjust engine, model, thinking, permission',
+      })
+    );
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Model: Choose a model' })
+    );
+    fireEvent.click(
+      await screen.findByRole('option', { name: /Kimi K3.*OpenRouter/i })
+    );
+    const start = screen.getByRole('button', { name: 'Start' });
+    await waitFor(() => expect(start).not.toBeDisabled());
+    fireEvent.click(start);
+
+    await waitFor(() =>
+      expect(onLaunch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          harness: 'opencode',
+          model: 'openrouter/moonshotai/kimi-k3',
+        })
       )
     );
   });

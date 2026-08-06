@@ -144,11 +144,10 @@ pin its preferred Agent configurations or Shell. Exawatt must not silently
 hard-code one provider for every user or Project.
 
 Model and reasoning-effort choice are visible, exact, and source-owned. The
-selected ribbon item shows the effective pair; **Customize** exposes configured
-source, searchable model, effort, launch modifiers, and optional friendly name,
-while **All configurations…** exposes the complete reusable catalog and its
-Project pin/manage actions. Agent Types remain a coming-soon axis; naming a
-configuration does not create a Type. Before a new local Agent starts, the
+selected setup card shows the effective pair; ArrowDown enters its attached
+Engine/Model/Thinking/Permission drawer, while **More** exposes the complete
+reusable catalog, Shell, Project pin/manage actions, launch modifiers, and quick
+naming. Naming a configuration does not create an Agent Type. Before a new local Agent starts, the
 composer resolves the selected harness's effective model/effort pair. Codex
 supplies its installed model catalog, each model's supported efforts and
 default, and the configured pair. Claude Code answers the same question over
@@ -168,8 +167,8 @@ hard-coded provider catalogs are fixtures only and never product truth.
 The common keyboard contract is likewise whole-configuration based: `⌘T`, type,
 Enter starts the selected Agent; `⌘T`, `⌥↑/↓`, type, Enter cycles to another
 Agent configuration without moving task focus; and `⌘⌥T` opens Shell directly.
-The ribbon remains reachable through standard Left/Right and Home/End controls,
-and `⌘K` exposes the same catalog. An unavailable configuration remains visible
+The card row uses Left/Right and Home/End, while ArrowDown enters the selected
+card's first drawer axis; `⌘K` exposes the same catalog. An unavailable configuration remains visible
 and inspectable with its missing fact but blocks Start. Selection is never
 silently translated to a different source, model, or effort.
 

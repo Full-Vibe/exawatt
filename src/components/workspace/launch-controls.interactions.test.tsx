@@ -265,7 +265,8 @@ describe('Agent composer · interactions and drafts', () => {
     });
   });
 
-  it('restores and reports the complete draft launch configuration', async () => {
+  it('restores the complete draft launch configuration', async () => {
+    const onLaunch = vi.fn(async () => true);
     const onDraftIntent = vi.fn();
     renderComposer(
       <AgentComposer
@@ -275,7 +276,7 @@ describe('Agent composer · interactions and drafts', () => {
         initialBranch="agent/preserved-branch"
         initialRoadmapItemId="ENG-017"
         roadmapItems={[{ id: 'ENG-017', label: 'ENG-017 · UX hardening' }]}
-        onLaunch={vi.fn(async () => true)}
+        onLaunch={onLaunch}
         onDraftIntent={onDraftIntent}
       />
     );
@@ -284,9 +285,8 @@ describe('Agent composer · interactions and drafts', () => {
       expect(screen.getByLabelText('Agent permissions')).not.toBeDisabled()
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Customize' }));
     fireEvent.click(
-      screen.getByRole('button', { name: 'Agent launch options' })
+      screen.getByRole('button', { name: 'All engines and models' })
     );
     expect(
       screen.getByRole('checkbox', { name: 'New git worktree' })
@@ -297,16 +297,26 @@ describe('Agent composer · interactions and drafts', () => {
     expect(
       screen.getByLabelText('Roadmap item this session will work on')
     ).toHaveValue('ENG-017');
-
     fireEvent.change(
       screen.getByLabelText('Branch name for the new worktree'),
-      {
-        target: { value: 'agent/revised-branch' },
-      }
+      { target: { value: 'agent/revised-branch' } }
     );
     expect(onDraftIntent).toHaveBeenCalledWith({
       draftBranch: 'agent/revised-branch',
       draftTouched: true,
     });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'All engines and models' })
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await waitFor(() =>
+      expect(onLaunch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          worktreeBranch: 'agent/revised-branch',
+          roadmapItemId: 'ENG-017',
+        })
+      )
+    );
   });
 });

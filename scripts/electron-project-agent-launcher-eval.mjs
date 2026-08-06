@@ -220,12 +220,20 @@ async function waitForBuffer(page, sessionId, fragment) {
   );
 }
 
-async function showLaunchCustomization(page) {
-  const customization = page.locator('[data-launch-customize]');
-  if (await customization.isVisible().catch(() => false)) return customization;
-  await page.getByRole('button', { name: 'Customize' }).click();
-  await customization.waitFor({ state: 'visible' });
-  return customization;
+function launcherAxis(page, id) {
+  return page.locator(`[data-detail-axis="${id}"] [data-option-menu-trigger]`);
+}
+
+async function showLauncherDrawer(page) {
+  const openDrawer = page.locator('[data-setup-detail][data-open="true"]');
+  if (await openDrawer.isVisible().catch(() => false)) return openDrawer;
+  const handle = page.locator('[data-setup-drawer-handle]');
+  await handle.waitFor({ state: 'visible' });
+  if ((await handle.getAttribute('aria-expanded')) !== 'true') {
+    await handle.click();
+  }
+  await openDrawer.waitFor({ state: 'visible' });
+  return openDrawer;
 }
 
 let completed = false;
@@ -468,25 +476,32 @@ try {
       await page.waitForURL('**/workspace**');
       await page.locator('[data-agent-composer]').waitFor();
 
-      const launchRibbon = page.locator('[data-launch-configuration-ribbon]');
-      const selectedConfiguration = launchRibbon.locator(
+      const launcher = page.locator('[data-agent-launcher]');
+      const setupRow = launcher.locator('[data-setup-row]');
+      await setupRow.waitFor();
+      const selectedConfiguration = setupRow.locator(
         '[role="radio"][aria-checked="true"]'
       );
+      const cardText = await setupRow.innerText();
       check(
         'the composer keeps the primary launch path lightweight',
         (await page.getByLabel('Initial task for the new Agent').isVisible()) &&
-          (await launchRibbon.isVisible()) &&
+          (await launcher.isVisible()) &&
+          (await setupRow.isVisible()) &&
           (await selectedConfiguration.count()) === 1 &&
           (await selectedConfiguration.isVisible()) &&
           (await page.getByRole('button', { name: 'Start' }).isVisible()) &&
-          (await page.getByRole('button', { name: 'Customize' }).isVisible()) &&
           (await page
-            .getByRole('button', { name: 'All launch configurations' })
+            .getByRole('button', { name: 'All engines and models' })
             .isVisible()) &&
-          (await page.getByLabel('Agent Source').isHidden())
+          (await page.locator('[data-setup-drawer-handle]').isVisible()) &&
+          !/(Suggested|Pinned|Used\s)/.test(cardText)
       );
+      await page.screenshot({
+        path: join(output, '04-production-launcher-cards.png'),
+      });
       await page
-        .getByRole('button', { name: 'All launch configurations' })
+        .getByRole('button', { name: 'All engines and models' })
         .click();
       const allConfigurations = page.locator(
         '[data-all-launch-configurations]'
@@ -498,20 +513,41 @@ try {
           (await allConfigurations.getByRole('button').count()) > 1
       );
       await page
-        .getByRole('button', { name: 'All launch configurations' })
+        .getByRole('button', { name: 'All engines and models' })
         .click();
       await allConfigurations.waitFor({ state: 'detached' });
-      await showLaunchCustomization(page);
+
+      await selectedConfiguration.focus();
+      await page.keyboard.press('ArrowDown');
+      const engineTrigger = launcherAxis(page, 'engine');
+      const openDrawer = page.locator('[data-setup-detail][data-open="true"]');
+      await openDrawer.waitFor({ state: 'visible' });
+      await page.waitForFunction(() =>
+        document.activeElement?.matches(
+          '[data-detail-axis="engine"] [data-option-menu-trigger]'
+        )
+      );
+      check(
+        'ArrowDown from a setup opens the drawer and focuses Engine',
+        (await openDrawer.isVisible()) &&
+          (await engineTrigger.evaluate(
+            element => document.activeElement === element
+          ))
+      );
+      await page.waitForTimeout(250);
+      await page.screenshot({
+        path: join(output, '04-production-launcher-arrow-down.png'),
+      });
 
       const firstTask = "Review the user's auth flow";
       await page.waitForFunction(() =>
         document
-          .querySelector('[role="combobox"][aria-label^="Agent model:"]')
+          .querySelector(
+            '[data-detail-axis="model"] [data-option-menu-trigger]'
+          )
           ?.textContent?.includes('Account default')
       );
-      const claudeModelTrigger = page.getByRole('combobox', {
-        name: /^Agent model:/,
-      });
+      const claudeModelTrigger = launcherAxis(page, 'model');
       check(
         'the composer shows the effective Claude model before launch',
         (await claudeModelTrigger.innerText()).includes('Account default')
@@ -528,32 +564,54 @@ try {
       await page.screenshot({
         path: join(output, '04-claude-model-options.png'),
       });
-      await page.keyboard.press('Escape');
-      await claudeModelMenu.waitFor({ state: 'hidden' });
-      const claudeEffortTrigger = page.getByLabel('Agent effort');
-      await page.waitForFunction(() =>
-        document
-          .querySelector('[aria-label="Agent effort"]')
-          ?.textContent?.includes('Auto')
-      );
+      await page
+        .getByRole('option', {
+          name: /Eval Claude Fable.*Frontier evaluator/i,
+        })
+        .click();
+      await page
+        .getByRole('radio', { name: /Claude Code.*Eval Claude Fable/i })
+        .waitFor();
+      await showLauncherDrawer(page);
       check(
-        'the composer shows Claude effort beside its model',
-        (await claudeEffortTrigger.innerText()).includes('Auto')
+        'the operator can choose an explicit Claude model',
+        (await launcherAxis(page, 'model').innerText()).includes(
+          'Eval Claude Fable'
+        )
+      );
+      const claudeEffortTrigger = launcherAxis(page, 'thinking');
+      console.log(
+        `[project-launcher] Claude thinking before selection: aria-label=${JSON.stringify(
+          await claudeEffortTrigger.getAttribute('aria-label')
+        )} text=${JSON.stringify(await claudeEffortTrigger.innerText())}`
       );
       await claudeEffortTrigger.click();
       const claudeEffortMenu = page.getByRole('listbox');
       await claudeEffortMenu.waitFor();
       check(
-        'Claude effort choices explain the speed-depth tradeoff',
-        (await claudeEffortMenu.innerText()).includes('Fastest for short') &&
-          (await claudeEffortMenu.innerText()).includes('Extra high') &&
-          (await claudeEffortMenu.innerText()).includes('DEFAULT')
+        'Claude effort choices come from the selected model catalog',
+        (await claudeEffortMenu.innerText()).includes('Strong balance') &&
+          (await claudeEffortMenu.innerText()).includes('Maximum')
       );
-      await page.getByRole('option', { name: /High.*Strong balance/i }).click();
-      await page.waitForFunction(() =>
-        document
-          .querySelector('[aria-label="Agent effort"]')
-          ?.textContent?.includes('High')
+      await page
+        .getByRole('option', { name: /^High\b.*Strong balance/i })
+        .click();
+      await page.getByRole('radio', { name: /Claude Code.*High/i }).waitFor();
+      await showLauncherDrawer(page);
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector(
+              '[data-detail-axis="thinking"] [data-option-menu-trigger]'
+            )
+            ?.getAttribute('aria-label') === 'Thinking: High'
+      );
+      console.log(
+        `[project-launcher] Claude thinking after selection: aria-label=${JSON.stringify(
+          await launcherAxis(page, 'thinking').getAttribute('aria-label')
+        )} text=${JSON.stringify(
+          await launcherAxis(page, 'thinking').innerText()
+        )}`
       );
       check(
         'the operator can override Claude effort for one new Agent',
@@ -561,11 +619,9 @@ try {
       );
       check(
         'new Project and source pair visibly defaults to YOLO',
-        (await page.getByLabel('Agent permissions').innerText()).includes(
-          'YOLO'
-        )
+        (await launcherAxis(page, 'permission').innerText()).includes('YOLO')
       );
-      const permissionTrigger = page.getByLabel('Agent permissions');
+      const permissionTrigger = launcherAxis(page, 'permission');
       await permissionTrigger.click();
       const permissionMenu = page.getByRole('listbox');
       await permissionMenu.waitFor();
@@ -582,10 +638,10 @@ try {
       );
       await page.keyboard.press('Home');
       await page.keyboard.press('Escape');
-      await page.waitForFunction(
-        () =>
-          document.activeElement?.getAttribute('aria-label') ===
-          'Agent permissions'
+      await page.waitForFunction(() =>
+        document.activeElement?.matches(
+          '[data-detail-axis="permission"] [data-option-menu-trigger]'
+        )
       );
       check(
         'Escape preserves YOLO and returns focus to the permission trigger',
@@ -618,7 +674,7 @@ try {
         '<--dangerously-skip-permissions>'
       );
       check('Claude Code receives the visible YOLO policy', true);
-      await waitForBuffer(page, current[0].id, '<--model><default>');
+      await waitForBuffer(page, current[0].id, '<--model><eval-claude-fable>');
       check('Claude Code receives the visible model choice', true);
       await waitForBuffer(page, current[0].id, '<--effort><high>');
       check('Claude Code receives the visible effort override', true);
@@ -765,10 +821,10 @@ try {
       // while the composer was always-open.)
       await page.locator('[data-composer-toggle]').click();
       await page.locator('[data-agent-composer]').waitFor();
-      await showLaunchCustomization(page);
-      const sourceTrigger = page.getByLabel('Agent Source');
+      await showLauncherDrawer(page);
+      const sourceTrigger = launcherAxis(page, 'engine');
       check(
-        'Agent Source trigger owns exactly one harness glyph',
+        'Engine trigger owns exactly one harness glyph',
         (await sourceTrigger.locator('[data-slot="harness-glyph"]').count()) ===
           1
       );
@@ -776,7 +832,7 @@ try {
       const claudeOption = page.getByRole('option', { name: 'Claude Code' });
       const codexOption = page.getByRole('option', { name: 'Codex' });
       check(
-        'Agent Source options each retain one harness glyph',
+        'Engine options each retain one harness glyph',
         (await claudeOption.locator('[data-slot="harness-glyph"]').count()) ===
           1 &&
           (await codexOption.locator('[data-slot="harness-glyph"]').count()) ===
@@ -788,25 +844,23 @@ try {
       await codexOption.click();
       await page.waitForFunction(() =>
         document
-          .querySelector('[role="combobox"][aria-label^="Agent model:"]')
+          .querySelector(
+            '[data-detail-axis="model"] [data-option-menu-trigger]'
+          )
           ?.textContent?.includes('Eval Codex Sol')
       );
       check(
-        'changing Agent Source keeps one trigger glyph',
+        'changing Engine keeps one trigger glyph',
         (await sourceTrigger.locator('[data-slot="harness-glyph"]').count()) ===
           1
       );
       check(
         'a new Codex pair has its own YOLO default',
-        (await page.getByLabel('Agent permissions').innerText()).includes(
-          'YOLO'
-        )
+        (await launcherAxis(page, 'permission').innerText()).includes('YOLO')
       );
-      const modelTrigger = page.getByRole('combobox', {
-        name: /^Agent model:/,
-      });
+      const modelTrigger = launcherAxis(page, 'model');
       check(
-        'Codex exposes the installed catalog default beside Agent Source',
+        'Codex exposes the installed catalog default beside Engine',
         (await modelTrigger.innerText()).includes('Eval Codex Sol')
       );
       await modelTrigger.click();
@@ -815,8 +869,7 @@ try {
       check(
         'model choices explain their role and mark the current default',
         (await modelMenu.innerText()).includes('Frontier evaluator model') &&
-          (await modelMenu.innerText()).includes('Balanced evaluator model') &&
-          (await modelMenu.innerText()).includes('DEFAULT')
+          (await modelMenu.innerText()).includes('Balanced evaluator model')
       );
       await page.screenshot({
         path: join(output, '04-model-options.png'),
@@ -824,11 +877,17 @@ try {
       await page
         .getByRole('option', { name: /Eval Codex Terra.*Balanced evaluator/i })
         .click();
+      await page
+        .getByRole('radio', { name: /Codex.*Eval Codex Terra/i })
+        .waitFor();
+      await showLauncherDrawer(page);
       check(
         'the operator can override the model for one new Agent',
-        (await modelTrigger.innerText()).includes('Eval Codex Terra')
+        (await launcherAxis(page, 'model').innerText()).includes(
+          'Eval Codex Terra'
+        )
       );
-      const effortTrigger = page.getByLabel('Agent effort');
+      const effortTrigger = launcherAxis(page, 'thinking');
       check(
         'changing models reveals that model’s default effort',
         (await effortTrigger.innerText()).includes('Medium')
@@ -841,10 +900,7 @@ try {
         (await effortMenu.innerText()).includes(
           'Balanced evaluator reasoning'
         ) &&
-          (await effortMenu.innerText()).includes(
-            'Maximum evaluator reasoning'
-          ) &&
-          (await effortMenu.innerText()).includes('DEFAULT')
+          (await effortMenu.innerText()).includes('Maximum evaluator reasoning')
       );
       await page.screenshot({
         path: join(output, '04-effort-options.png'),
@@ -852,11 +908,13 @@ try {
       await page
         .getByRole('option', { name: /Max.*Maximum evaluator reasoning/i })
         .click();
+      await page.getByRole('radio', { name: /Codex.*Max/i }).waitFor();
+      await showLauncherDrawer(page);
       check(
         'the operator can override Codex effort for one new Agent',
-        (await effortTrigger.innerText()).includes('Max')
+        (await launcherAxis(page, 'thinking').innerText()).includes('Max')
       );
-      await page.getByLabel('Agent permissions').focus();
+      await launcherAxis(page, 'permission').focus();
       await page.keyboard.press('Space');
       await page.locator('[role="listbox"]').waitFor();
       // keyboard doctrine (D24): from the YOLO default (last option),
@@ -865,13 +923,13 @@ try {
       await page.keyboard.press('ArrowUp');
       await page.waitForFunction(() =>
         document
-          .querySelector('[role="option"][data-highlighted]')
+          .querySelector('[role="option"][data-active]')
           ?.textContent?.includes('Auto-review')
       );
       await page.keyboard.press('Enter');
       await page.waitForFunction(() => {
         const trigger = document.querySelector(
-          '[aria-label="Agent permissions"]'
+          '[data-detail-axis="permission"] [data-option-menu-trigger]'
         );
         return (
           trigger?.textContent?.includes('Auto') &&
@@ -880,21 +938,23 @@ try {
       });
       check(
         'KEYBOARD selection commits Auto-review and restores trigger focus',
-        (await page.getByLabel('Agent permissions').innerText()).includes(
-          'Auto'
-        ) &&
+        (await launcherAxis(page, 'permission').innerText()).includes('Auto') &&
           (await page
-            .getByLabel('Agent permissions')
+            .locator(
+              '[data-detail-axis="permission"] [data-option-menu-trigger]'
+            )
             .evaluate(element => document.activeElement === element))
       );
-      await page.getByLabel('Agent Source').click();
+      await launcherAxis(page, 'engine').click();
       await page.getByRole('option', { name: 'Claude Code' }).click();
       await page.waitForFunction(() =>
         document
-          .querySelector('[aria-label="Agent Source"]')
+          .querySelector(
+            '[data-detail-axis="engine"] [data-option-menu-trigger]'
+          )
           ?.textContent?.includes('Claude Code')
       );
-      await page.getByLabel('Agent Source').click();
+      await launcherAxis(page, 'engine').click();
       await page.getByRole('option', { name: 'Codex' }).click();
       // Keep the draft: it is the composer under test, and the launch below
       // consumes it into the second Agent. Discarding it here would select
@@ -904,14 +964,14 @@ try {
       // palette-opened draft is the one that needs an explicit discard.
       await page.waitForFunction(() =>
         document
-          .querySelector('[aria-label="Agent Source"]')
+          .querySelector(
+            '[data-detail-axis="engine"] [data-option-menu-trigger]'
+          )
           ?.textContent?.includes('Codex')
       );
       check(
         'an unlaunched policy choice survives a harness round trip',
-        (await page.getByLabel('Agent permissions').innerText()).includes(
-          'Auto'
-        )
+        (await launcherAxis(page, 'permission').innerText()).includes('Auto')
       );
       await page
         .getByLabel('Initial task for the new Agent')
@@ -949,30 +1009,34 @@ try {
       );
       await page.getByText('Claude Code', { exact: true }).click();
       await page.getByLabel('Initial task for the new Agent').waitFor();
-      await showLaunchCustomization(page);
+      await showLauncherDrawer(page);
       await page.waitForFunction(
         () =>
           document
-            .querySelector('[aria-label="Agent Source"]')
+            .querySelector(
+              '[data-detail-axis="engine"] [data-option-menu-trigger]'
+            )
             ?.textContent?.includes('Claude Code') &&
           document
-            .querySelector('[aria-label="Agent permissions"]')
+            .querySelector(
+              '[data-detail-axis="permission"] [data-option-menu-trigger]'
+            )
             ?.textContent?.includes('YOLO')
       );
       check(
         'palette routes into the visible composer with that harness policy',
-        (await page.getByLabel('Agent Source').innerText()).includes(
+        (await launcherAxis(page, 'engine').innerText()).includes(
           'Claude Code'
         ) &&
-          (await page.getByLabel('Agent permissions').innerText()).includes(
-            'YOLO'
-          )
+          (await launcherAxis(page, 'permission').innerText()).includes('YOLO')
       );
-      await page.getByLabel('Agent Source').click();
+      await launcherAxis(page, 'engine').click();
       await page.getByRole('option', { name: 'Codex' }).click();
       await page.waitForFunction(() =>
         document
-          .querySelector('[aria-label="Agent Source"]')
+          .querySelector(
+            '[data-detail-axis="engine"] [data-option-menu-trigger]'
+          )
           ?.textContent?.includes('Codex')
       );
 
@@ -995,20 +1059,18 @@ try {
         ledger.length === 2
       );
       await page.locator('[data-agent-composer]').waitFor();
-      await showLaunchCustomization(page);
+      await showLauncherDrawer(page);
       check(
         'closing the last Agent leaves the empty Project selected',
         await page.locator('[data-project="alpha"]').isVisible()
       );
       check(
         'last source recommendation survives in the empty Project',
-        (await page.getByLabel('Agent Source').innerText()).includes('Codex')
+        (await launcherAxis(page, 'engine').innerText()).includes('Codex')
       );
       check(
         'Project and harness permission survive in the empty Project',
-        (await page.getByLabel('Agent permissions').innerText()).includes(
-          'Auto'
-        )
+        (await launcherAxis(page, 'permission').innerText()).includes('Auto')
       );
       const guardedTask = 'Keep this launch intent in the open Project';
       await page.getByLabel('Initial task for the new Agent').fill(guardedTask);
@@ -1103,27 +1165,25 @@ try {
       await closeTab(page, 'Codex');
       await waitForClosedSessionCount(page, 2);
       await page.locator('[data-agent-composer]').waitFor();
-      await showLaunchCustomization(page);
+      await showLauncherDrawer(page);
       check(
         'source recommendation survives the close and restore cycle',
-        (await page.getByLabel('Agent Source').innerText()).includes('Codex')
+        (await launcherAxis(page, 'engine').innerText()).includes('Codex')
       );
       check(
         'permission recommendation survives the close and restore cycle',
-        (await page.getByLabel('Agent permissions').innerText()).includes(
-          'Auto'
-        )
+        (await launcherAxis(page, 'permission').innerText()).includes('Auto')
       );
-      await page.getByLabel('Agent Source').click();
+      await launcherAxis(page, 'engine').click();
       await page.getByRole('option', { name: 'Claude Code' }).click();
+      await showLauncherDrawer(page);
       check(
         'Claude and Codex retain independent permission choices',
-        (await page.getByLabel('Agent permissions').innerText()).includes(
-          'YOLO'
-        )
+        (await launcherAxis(page, 'permission').innerText()).includes('YOLO')
       );
-      await page.getByLabel('Agent Source').click();
+      await launcherAxis(page, 'engine').click();
       await page.getByRole('option', { name: 'Codex' }).click();
+      await showLauncherDrawer(page);
 
       await app.evaluate(({ BrowserWindow }) =>
         BrowserWindow.getAllWindows()[0].setSize(800, 600)
@@ -1264,16 +1324,14 @@ try {
       );
       await alphaTile.click();
       await page.locator('[data-agent-composer]').waitFor();
-      await showLaunchCustomization(page);
+      await showLauncherDrawer(page);
       check(
         'source recommendation survives a full app restart',
-        (await page.getByLabel('Agent Source').innerText()).includes('Codex')
+        (await launcherAxis(page, 'engine').innerText()).includes('Codex')
       );
       check(
         'permission recommendation survives a full app restart',
-        (await page.getByLabel('Agent permissions').innerText()).includes(
-          'Auto'
-        )
+        (await launcherAxis(page, 'permission').innerText()).includes('Auto')
       );
       await page.keyboard.press('Meta+KeyN');
       await page.locator('[data-project-opener]').waitFor();
@@ -1289,8 +1347,17 @@ try {
         'importing Projects starts no process',
         (await sessions(page)).length === 0
       );
-      await page.locator('[data-project="bravo"]').waitFor();
-      await page.getByRole('button', { name: 'Open shell in bravo' }).click();
+      const bravoProject = page.locator('[data-project="bravo"]');
+      await bravoProject.waitFor();
+      await bravoProject.locator('[data-project-chrome]').click();
+      await page.locator('[data-agent-composer]').waitFor();
+      await page
+        .getByRole('button', { name: 'All engines and models' })
+        .click();
+      await page
+        .locator('[data-all-launch-configurations]')
+        .waitFor({ state: 'visible' });
+      await page.getByRole('button', { name: 'Shell in bravo' }).click();
       const shell = await waitForSessionCount(page, 1);
       check(
         'shell remains an explicit Project tool',

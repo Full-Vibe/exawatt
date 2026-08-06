@@ -1,9 +1,10 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ExawattSettings } from '@/types/electron';
 import {
   AgentComposer,
+  FOCUS_AGENT_COMPOSER_EVENT,
   installComposerTestHarness,
   renderComposer,
 } from './launch-controls.test-support';
@@ -34,7 +35,7 @@ describe('Agent composer · launching', () => {
       target: { value: 'Review the auth flow' },
     });
     const startButton = screen.getByRole('button', { name: 'Start' });
-    expect(startButton).toHaveAttribute('data-agent-start-button');
+    expect(startButton).toHaveAttribute('data-launcher-start');
     expect(startButton).toHaveAttribute('type', 'submit');
     expect(startButton).not.toHaveAttribute('data-r3f-keyswitch-control');
     expect(startButton).not.toHaveAttribute('tabindex', '-1');
@@ -85,8 +86,38 @@ describe('Agent composer · launching', () => {
     fireEvent.change(screen.getByLabelText('Initial task for the new Agent'), {
       target: { value: 'Do not send this to a shell' },
     });
-    fireEvent.click(screen.getByRole('radio', { name: 'Shell in Project' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open shell' }));
+    const catalog = screen.getByRole('button', {
+      name: 'All engines and models',
+    });
+    await waitFor(() => expect(catalog).not.toBeDisabled());
+    fireEvent.click(catalog);
+    fireEvent.click(screen.getByRole('button', { name: 'Shell in Project' }));
+    await waitFor(() =>
+      expect(onLaunch).toHaveBeenCalledWith({
+        harness: 'shell',
+        dir: '/project',
+      })
+    );
+  });
+
+  it('opens Shell immediately when the command palette requests it', async () => {
+    const onLaunch = vi.fn(async () => true);
+    renderComposer(
+      <AgentComposer
+        projectDir="/project"
+        projectName="Project"
+        onLaunch={onLaunch}
+      />
+    );
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(FOCUS_AGENT_COMPOSER_EVENT, {
+          detail: { configuration: { kind: 'shell' } },
+        })
+      );
+    });
+
     await waitFor(() =>
       expect(onLaunch).toHaveBeenCalledWith({
         harness: 'shell',

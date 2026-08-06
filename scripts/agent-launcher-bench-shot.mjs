@@ -167,8 +167,12 @@ const geometry = await page.evaluate(() => {
   const lineCount = selector =>
     document.querySelector(selector)?.children.length ?? -1;
   return {
-    pending: box('[data-bench-case="settling"] [data-setup-chip][data-pending]'),
-    real: box('[data-bench-case="trained"] [data-setup-chip]:not([data-pending])'),
+    pending: box(
+      '[data-bench-case="settling"] [data-setup-chip][data-pending]'
+    ),
+    real: box(
+      '[data-bench-case="trained"] [data-setup-chip]:not([data-pending])'
+    ),
     pendingLines: lineCount(
       '[data-bench-case="settling"] [data-setup-chip][data-pending]'
     ),
@@ -196,6 +200,152 @@ if (!geometry.pending || !geometry.real) {
       `[launcher-bench] gate ok: skeleton and real chip both ${geometry.real.height}px, ${geometry.realLines} lines`
     );
   }
+}
+
+// Gate: fixed-height card rows may not wrap into each other, and ranking
+// provenance is not card content. The operator caught both failures in the
+// rendered bench: "Extra high thinking" painted over "Suggested" while Opus
+// surrendered its name to the context label beside it.
+const cardAudit = await page.evaluate(() => {
+  const cards = Array.from(
+    document.querySelectorAll(
+      '[data-setup-chip]:not([data-pending]):not([data-unavailable])'
+    )
+  );
+  const overflow = [];
+  const overlap = [];
+  const provenance = [];
+  let opus = null;
+
+  for (const card of cards) {
+    const id = card.getAttribute('data-setup-id') ?? 'unknown';
+    const text = card.textContent ?? '';
+    if (/\b(?:Suggested|Pinned|Used once|Used \d+[×x])\b/.test(text)) {
+      provenance.push({ id, text: text.trim() });
+    }
+
+    const secondary = card.querySelector('[data-setup-secondary]');
+    const thinking = card.querySelector('[data-setup-thinking]');
+    for (const [name, node] of [
+      ['secondary', secondary],
+      ['thinking', thinking],
+    ]) {
+      if (node && node.scrollHeight > node.clientHeight + 1) {
+        overflow.push({
+          id,
+          line: name,
+          scroll: node.scrollHeight,
+          client: node.clientHeight,
+        });
+      }
+    }
+    if (secondary && thinking) {
+      const upper = secondary.getBoundingClientRect();
+      const lower = thinking.getBoundingClientRect();
+      if (upper.bottom > lower.top + 1) {
+        overlap.push({
+          id,
+          amount: Math.round((upper.bottom - lower.top) * 100) / 100,
+        });
+      }
+    }
+
+    const model = card.querySelector('[data-setup-model]');
+    if (model?.textContent?.trim().startsWith('Opus')) {
+      opus = {
+        text: model.textContent.trim(),
+        scroll: model.scrollWidth,
+        client: model.clientWidth,
+      };
+    }
+  }
+
+  return { overflow, overlap, provenance, opus };
+});
+
+if (cardAudit.provenance.length > 0) {
+  errors.push(
+    `[gate] launcher cards still show ranking provenance: ${JSON.stringify(cardAudit.provenance)}`
+  );
+}
+if (cardAudit.overflow.length > 0) {
+  errors.push(
+    `[gate] fixed-height launcher card rows wrap: ${JSON.stringify(cardAudit.overflow)}`
+  );
+}
+if (cardAudit.overlap.length > 0) {
+  errors.push(
+    `[gate] launcher card rows overlap: ${JSON.stringify(cardAudit.overlap)}`
+  );
+}
+if (!cardAudit.opus) {
+  errors.push('[gate] could not find an Opus card model label');
+} else if (
+  cardAudit.opus.text !== 'Opus 5' ||
+  cardAudit.opus.scroll > cardAudit.opus.client + 1
+) {
+  errors.push(
+    `[gate] Opus model label is clipped: ${JSON.stringify(cardAudit.opus)}`
+  );
+}
+if (
+  cardAudit.provenance.length === 0 &&
+  cardAudit.overflow.length === 0 &&
+  cardAudit.overlap.length === 0 &&
+  cardAudit.opus &&
+  cardAudit.opus.scroll <= cardAudit.opus.client + 1
+) {
+  console.log(
+    '[launcher-bench] gate ok: cards are concise and text rows do not collide'
+  );
+}
+
+// Gate: Down is the spatial handoff from the selected tile into the drawer.
+// Exercise it in a real browser because delayed drawer mounting and focus are
+// exactly the kind of interaction a DOM-only unit test can accidentally mask.
+const trained = page.locator('[data-bench-case="trained"]');
+const selectedTile = trained
+  .locator('[data-setup-chip][data-selected]')
+  .first();
+await selectedTile.focus();
+const scrollBeforeDown = await page.evaluate(() => window.scrollY);
+await selectedTile.press('ArrowDown');
+const firstAxis = trained
+  .locator('[data-setup-detail] [data-option-menu-trigger]:not(:disabled)')
+  .first();
+try {
+  await firstAxis.waitFor({ state: 'visible', timeout: 2_000 });
+  const keyboardState = await page.evaluate(() => {
+    const scope = document.querySelector('[data-bench-case="trained"]');
+    const panel = scope?.querySelector('[data-setup-detail]');
+    const active = document.activeElement;
+    return {
+      drawerOpen: panel?.getAttribute('aria-hidden') === 'false',
+      focusedAxis: Boolean(active?.matches('[data-option-menu-trigger]')),
+      scrollY: window.scrollY,
+    };
+  });
+  if (!keyboardState.drawerOpen || !keyboardState.focusedAxis) {
+    errors.push(
+      `[gate] ArrowDown did not enter the drawer: ${JSON.stringify(keyboardState)}`
+    );
+  }
+  if (Math.abs(keyboardState.scrollY - scrollBeforeDown) > 1) {
+    errors.push(
+      `[gate] ArrowDown scrolled the page by ${keyboardState.scrollY - scrollBeforeDown}px`
+    );
+  }
+  if (
+    keyboardState.drawerOpen &&
+    keyboardState.focusedAxis &&
+    Math.abs(keyboardState.scrollY - scrollBeforeDown) <= 1
+  ) {
+    console.log(
+      '[launcher-bench] gate ok: ArrowDown enters the drawer without scrolling'
+    );
+  }
+} catch {
+  errors.push('[gate] ArrowDown never revealed a focusable drawer axis');
 }
 
 await browser.close();

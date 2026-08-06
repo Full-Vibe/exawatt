@@ -11,9 +11,9 @@ folders from an optional parent-directory import. Opening a Project only changes
 the working context; it does not start a shell or Agent.
 
 Inside a Project, the new-Agent page stays deliberately small: an optional first
-task, one **Launch Configuration** ribbon, and **Start**. Each Agent choice is an
-exact configured source, source-native model, and effort or variant. A blank task
-starts an interactive Agent Session. The fast paths are:
+task, two-to-four whole Agent setup cards, **More**, and **Start**. Each card is
+an exact configured source, source-native model, and effort or variant. A blank
+task starts an interactive Agent Session. The fast paths are:
 
 - **⌘T**, type, **Enter** to start the selected Agent.
 - **⌘T**, use **⌥↑/↓** before typing to cycle the whole Agent choice, then type
@@ -21,13 +21,12 @@ starts an interactive Agent Session. The fast paths are:
 - **⌘⌥T** to open Shell directly, then type the shell command and press
   **Enter** in the terminal.
 
-The ribbon also supports Left/Right and Home/End. **Customize** exposes the
-configured source, searchable model, effort, launch policy, worktree/branch,
-roadmap association, and an optional friendly name without turning the page
-into an Agent builder. **All configurations…** opens the complete catalog and
-its Pin, Rename, and Delete actions; the same Agent and Shell choices are
-searchable from **⌘K**. Agent Types remain a clearly marked coming-soon concept,
-and naming a configuration does not create one.
+The card row supports Left/Right and Home/End. ArrowDown opens the selected
+card's attached drawer and focuses its first control. The drawer exposes Engine,
+searchable Model, Thinking, and Permission as one-parameter edits. **More**
+opens the complete Agent and Shell catalog with Pin, Rename, Delete, worktree,
+roadmap, and quick naming controls; the same choices are searchable from **⌘K**.
+Naming a setup creates a friendly preset, not a new Agent Type.
 
 Exawatt learns the order separately in each Project. Only a successful Agent or
 Shell launch changes that Project's frecency; selecting, editing, naming,
@@ -36,9 +35,9 @@ above the learned order. Unavailable configurations stay visible with the exact
 missing fact and cannot Start; Exawatt never substitutes another model or
 source silently.
 
-Shell is a peer choice in the ribbon but remains a distinct Project tool. It
-has no Agent Source, model, effort, Agent Type, or Agent permission, receives no
-task text, and cannot be a Clone target.
+Shell remains a distinct Project tool available through **More**, **⌘K**, and
+**⌘⌥T**. It has no Agent Source, model, effort, Agent Type, or Agent permission,
+receives no task text, and cannot be a Clone target.
 
 Open **Settings → Agent Sources** to inspect the source registry. Local Claude
 Code, Codex, and OpenCode show installation, sign-in, minimum account identity,
@@ -80,8 +79,8 @@ shell process; press it repeatedly to restore older closed Sessions. The same
 entries remain individually selectable from **⌘K**. Empty drafts and Agents
 that never received work are discarded instead of entering recovery history.
 
-The selected Launch Configuration shows the exact capability pair that will be
-requested for the new Agent. Exawatt resolves Codex's live catalog,
+The selected setup card shows the exact capability pair that will be requested
+for the new Agent. Exawatt resolves Codex's live catalog,
 model-specific effort levels, and configured defaults. For Claude Code it asks
 the installed CLI for the same rows its native `/model` menu renders — the
 account-aware catalog, each row's `--model` value, and the effort levels that
@@ -90,14 +89,13 @@ that can go stale or rewrite either harness's configuration. Changing a value ov
 only this new Agent; both
 choices stay with the existing composer draft while you move between tabs.
 Successfully launching or explicitly naming the choice adds its structurally
-deduplicated identity to the reusable pool; merely editing the draft does not.
+deduplicated identity to the reusable pool; merely editing the composer does not.
 Effort trades
 speed and spend for reasoning depth, and changing models updates its valid
 choices and default. Worktree/branch and roadmap-link choices are part of the
 same saved draft rather than transient popover state.
 
-The permission choice under **Customize** controls how much autonomy the new
-Agent receives:
+The drawer's Permission choice controls how much autonomy the new Agent receives:
 
 - **Ask first:** keep operator approval in the loop.
 - **Auto-review:** let the harness's safety reviewer handle routine actions and

@@ -8,12 +8,9 @@
  *
  *   role      quiet     what kind of worker (ENG-028's axis, Coding for now)
  *   engine    quiet     which harness runs it
- *   MODEL     ANCHOR    the thing actually chosen between, plus its variant
- *   vendor    quiet     who serves the model — only when the engine does not
- *                       imply it, and marked so it can never be mistaken for
- *                       the capability tag beside the model name
- *   thinking  quiet     reasoning effort
- *   why       quietest  provenance for the row's ordering
+ *   MODEL     ANCHOR    the thing actually chosen between; full row width
+ *   context   quiet     model capability + non-implied vendor identity
+ *   thinking  quiet     reasoning effort, or exact unavailable reason
  *
  * `pending` renders the SAME structure with shimmer blocks instead of text.
  * The skeleton IS this component, so it cannot drift from what it stands in
@@ -25,12 +22,18 @@
  */
 
 import { forwardRef } from 'react';
-import { Cloud, HardDrive, Pin, TerminalSquare } from 'lucide-react';
+import {
+  Cloud,
+  HardDrive,
+  History,
+  Pin,
+  Sparkles,
+  TerminalSquare,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { HarnessGlyph } from '../harness-icons';
 import {
   LAUNCHER_ROLE_LABEL,
-  reasonLabel,
   setupAccessibleLabel,
   type LauncherSetup,
   type LauncherVendor,
@@ -88,6 +91,37 @@ function Shimmer({ className }: { className?: string }) {
   );
 }
 
+function RecommendationMark({
+  setup,
+  pending,
+}: {
+  setup: LauncherSetup;
+  pending: boolean;
+}) {
+  const reason = setup.pinned
+    ? { label: 'Pinned in this Project', Icon: Pin }
+    : setup.reason === 'frecent'
+      ? { label: 'Recently used', Icon: History }
+      : { label: 'Suggested', Icon: Sparkles };
+  return (
+    <span
+      aria-hidden="true"
+      data-recommendation-reason={pending ? undefined : setup.reason}
+      title={pending ? undefined : reason.label}
+      className={cn(
+        'absolute right-2.5 top-2.5 grid size-3.5 place-items-center text-hud-text-dim/50',
+        pending && 'opacity-0'
+      )}
+    >
+      <reason.Icon
+        className="size-3"
+        fill={setup.pinned ? 'currentColor' : 'none'}
+        strokeWidth={1.7}
+      />
+    </span>
+  );
+}
+
 export interface SetupChipProps {
   setup: LauncherSetup;
   selected: boolean;
@@ -115,10 +149,6 @@ export const SetupChip = forwardRef<HTMLButtonElement, SetupChipProps>(
     ref
   ) {
     const role = LAUNCHER_ROLE_LABEL[setup.role];
-    const provenance = setup.available
-      ? reasonLabel(setup)
-      : (setup.unavailableReason ?? 'Unavailable');
-
     return (
       <button
         ref={ref}
@@ -140,7 +170,8 @@ export const SetupChip = forwardRef<HTMLButtonElement, SetupChipProps>(
         onClick={
           pending
             ? undefined
-            : () => (selected ? onToggleDetail?.(setup.id) : onSelect?.(setup.id))
+            : () =>
+                selected ? onToggleDetail?.(setup.id) : onSelect?.(setup.id)
         }
         onKeyDown={pending ? undefined : onKeyDown}
         className={cn(
@@ -154,6 +185,7 @@ export const SetupChip = forwardRef<HTMLButtonElement, SetupChipProps>(
           pending && 'cursor-default'
         )}
       >
+        <RecommendationMark setup={setup} pending={pending} />
         <span className="flex h-3.5 w-full items-center font-mono text-chrome-micro leading-[0.875rem] text-hud-text-dim/70">
           {pending ? <Shimmer className="h-2 w-10" /> : role}
         </span>
@@ -167,64 +199,64 @@ export const SetupChip = forwardRef<HTMLButtonElement, SetupChipProps>(
               <span className="min-w-0 flex-1 truncate font-mono text-chrome-meta text-hud-text-dim">
                 {setup.engine.label}
               </span>
-              {setup.pinned ? (
-                <Pin
-                  aria-hidden="true"
-                  fill="currentColor"
-                  className="size-3 shrink-0 text-hud-text-dim"
-                />
-              ) : null}
             </>
           )}
         </span>
 
         {/* The anchor. The model is what the operator chooses between, so it is
             the only line carrying weight. */}
-        <span className="mt-1 flex h-5 w-full min-w-0 items-baseline gap-1.5">
+        <span className="mt-1 flex h-5 w-full min-w-0 items-baseline">
           {pending ? (
             <Shimmer className="h-3.5 w-4/5" />
           ) : (
-            <>
-              <span className="min-w-0 truncate font-ui text-chrome-label font-semibold text-hud-text">
-                {setup.model ?? 'Choose a model'}
-              </span>
-              {setup.modelVariant ? (
-                <span className="shrink-0 font-mono text-chrome-micro text-hud-text-dim">
-                  {setup.modelVariant}
-                </span>
-              ) : null}
-            </>
+            <span
+              data-setup-model
+              className="min-w-0 flex-1 truncate whitespace-nowrap font-ui text-chrome-label font-semibold text-hud-text"
+            >
+              {setup.model ?? 'Choose a model'}
+            </span>
           )}
         </span>
 
-        {/* Vendor: identity, marked, structurally distinct from the capability
-            tag beside the model name above. */}
-        <span className="flex h-3.5 w-full min-w-0 items-center gap-1 font-mono text-chrome-micro leading-[0.875rem] text-hud-text-dim">
+        {/* Capability and vendor share the quiet secondary line so the model
+            name owns the full anchor width. Vendor remains marked identity;
+            capability remains plain metadata. */}
+        <span
+          data-setup-secondary
+          className="flex h-3.5 w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap font-mono text-chrome-micro leading-[0.875rem] text-hud-text-dim"
+        >
+          {!pending && setup.modelVariant ? (
+            <span className="shrink-0">{setup.modelVariant}</span>
+          ) : null}
+          {!pending && setup.modelVariant && setup.vendor ? (
+            <span aria-hidden="true" className="shrink-0 text-hud-text-dim/60">
+              ·
+            </span>
+          ) : null}
           {!pending && setup.vendor ? (
-            <>
+            <span className="flex min-w-0 items-center gap-1">
               <VendorGlyph vendor={setup.vendor} />
               <span className="min-w-0 truncate">{setup.vendor.label}</span>
-            </>
+            </span>
           ) : null}
         </span>
 
-        <span className="mt-1 flex h-3.5 w-full items-center font-mono text-chrome-micro leading-[0.875rem] text-hud-text-dim">
+        <span
+          data-setup-thinking
+          className={cn(
+            'mt-1 flex h-3.5 w-full min-w-0 items-center truncate whitespace-nowrap font-mono text-chrome-micro leading-[0.875rem]',
+            setup.available ? 'text-hud-text-dim' : 'text-hud-amber/80'
+          )}
+        >
           {pending ? (
             <Shimmer className="h-2 w-1/2" />
+          ) : !setup.available ? (
+            (setup.unavailableReason ?? 'Unavailable')
           ) : setup.thinking ? (
-            `${setup.thinking} thinking`
+            setup.thinking
           ) : (
             'Engine default'
           )}
-        </span>
-
-        <span
-          className={cn(
-            'flex h-3.5 w-full items-center truncate font-mono text-chrome-micro leading-[0.875rem]',
-            setup.available ? 'text-hud-text-dim/65' : 'text-hud-amber/80'
-          )}
-        >
-          {pending ? null : provenance}
         </span>
       </button>
     );
