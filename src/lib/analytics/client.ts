@@ -134,6 +134,25 @@ export function initAnalytics(): Promise<AnalyticsDecision> {
 
   emitting = true;
   started = (async () => {
+    // ─────────────────────────────────────────────────────────────────────
+    // READ THIS BEFORE DEBUGGING "analytics are not arriving" (2026-08-06).
+    //
+    // PostHog drops every capture from a browser it considers a bot, and a
+    // HEADLESS BROWSER IS A BOT. `capture()` returns `undefined` before
+    // `before_send` ever runs, with no log, no network request, and no error
+    // — `__loaded` is true and the instance looks perfectly healthy.
+    //
+    // This repo's standing rule is that evals run headless, so the default
+    // way to check this feature will always show zero events. That is the
+    // harness, not the product. Confirmed by setting
+    // `opt_out_useragent_filter: true`, after which the identical build
+    // emitted `app_launched` to `/ingest/e/` normally.
+    //
+    // Do NOT ship `opt_out_useragent_filter: true` to silence it: filtering
+    // bots is correct, and the alternative is paying to store crawler noise.
+    // Verify from a real browser, or flip the flag in a scratch build only.
+    // ─────────────────────────────────────────────────────────────────────
+    //
     // `.full.no-external` bundles every extension instead of fetching one at
     // runtime. The desktop renderer's CSP is `script-src 'self'` against a
     // loopback origin, so a remotely loaded extension could never execute
