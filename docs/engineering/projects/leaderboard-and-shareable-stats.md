@@ -423,6 +423,32 @@ Exit criteria:
 
 ## Findings log
 
+- 2026-08-06 (external-user audit, `projects/external-user-readiness.md`):
+  **the GitHub identity backing the public profile no longer exists, and A2's
+  acceptance was too weak to catch it.** `operator_profiles` holds a genuine
+  GitHub subject (`275063`, provider handle `JakeSc`) written by a real
+  `sync_operator_stats` call on 2026-08-04 — so the link unquestionably worked
+  once. `auth.identities` now holds four rows, all `google`, and no `github`
+  row at all. The `auth` audit log retains nothing from that window, so what
+  removed it cannot be recovered.
+
+  Consequences, both read from the code rather than reproduced (reproducing
+  would rewrite the operator's published aggregates): `githubIdentity()` in
+  `/api/operator-stats` returns null and answers **409 "Link GitHub before
+  publishing your operator profile"** before the RPC is reached, and
+  `sync_operator_stats` would independently raise `linked GitHub identity
+  required`. Meanwhile `get_operator_leaderboard` still serves the profile
+  anonymously — rank 1, 184,072,156 agent-ms, avatar from GitHub 275063 — so
+  the public face is live but frozen at its 2026-08-04 sync with nothing
+  anywhere saying so.
+
+  Two corrections follow. **Acceptance:** A2/A5 tracked this as one-time
+  provider configuration, which "publish once" satisfies; it must become
+  identity persistence plus a **later** successful resync. **Product:** a
+  missing link must surface — a publicly visible profile that silently cannot
+  refresh is exactly the unverified-value failure decision `0029` forbids,
+  arriving through staleness rather than through a wrong number.
+
 - 2026-08-04 (partner conversation `2026-08-04-dan-rosenberg`, operator-accepted
   the same day — roadmap amendment recorded): **the public arena must lead with
   output, not input.** Dan Rosenberg is a creative director and positioned the
