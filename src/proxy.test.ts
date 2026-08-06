@@ -96,6 +96,25 @@ describe('proxy offline authority', () => {
     expect(response.status).toBe(200);
   });
 
+  it('lets the analytics ingest proxy through while signed out', async () => {
+    // Regression: `/ingest` is a `next.config.ts` rewrite, not a route, so it
+    // was not on the public list and the gate answered every analytics
+    // request with a 307 to /sign-in. Emission is fire-and-forget, so nothing
+    // surfaced the failure — production collected zero events silently
+    // (2026-08-06). Decision `0034` requires this path to work signed out.
+    const fetchSpy = vi.fn(() => {
+      throw new Error('network call while serving the ingest proxy');
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    for (const path of ['/ingest/i/v0/e/', '/ingest/static/array.js']) {
+      const response = await proxy(request(path));
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(response.status).toBe(200);
+      expect(response.headers.get('location')).toBeNull();
+    }
+  });
+
   it('redirects signed-out users away from protected paths without network', async () => {
     const fetchSpy = vi.fn(() => {
       throw new Error('network call while deciding a cookie-less redirect');

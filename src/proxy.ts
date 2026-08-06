@@ -8,6 +8,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 // public paths skip auth entirely instead of blocking on a Supabase
 // round-trip whose result is discarded.
 const PUBLIC_PREFIXES = [
+  // ENG-030 OS1.1 / decision `0034`: the analytics reverse proxy. It is a
+  // rewrite in `next.config.ts`, not a route, so without this entry the auth
+  // gate answers every ingest request with a 307 to /sign-in and analytics
+  // collect exactly nothing — silently, because emission is fire-and-forget
+  // by design. Caught in production verification 2026-08-06; the whole point
+  // of the proxy is that the desktop client can reach it while signed out.
+  '/ingest',
   '/api/dev-identity',
   // Electron authenticates these bounded endpoints with a bearer token. Each
   // route validates it directly; cookie middleware would reject the desktop
