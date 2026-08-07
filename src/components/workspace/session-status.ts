@@ -64,6 +64,62 @@ export function mergeSessionAttentionMaps(
   return merged;
 }
 
+/**
+ * The MARKER is the contract (ENG-016 D51, BUG-009).
+ *
+ * A Session is a ⌘J target exactly when a surface paints it amber. That
+ * sounds tautological and was not: the strip painted from `tabIsLive(tab)`
+ * while the jump queue filtered on `tab.exitCode === null`, two different
+ * predicates over two different fields. One reconciliation branch sets both
+ * `resumeState: 'live'` and a non-null `exitCode` for a session that exited
+ * while adopted, so that tab showed an amber marker the jump could never
+ * reach — the operator's report: "I see an orange needs-attention tab but
+ * cmd+j doesn't jump to it, it does nothing."
+ *
+ * Both directions were wrong. The mirror case — `exitCode === null` on a
+ * restored-but-not-live tab — would have let ⌘J navigate to a Session with
+ * no visible marker, which is the surprise-navigation the queue's own
+ * comment forbids.
+ *
+ * So eligibility lives here, next to the predicate it depends on, and every
+ * surface that paints or navigates attention calls it rather than restating
+ * it. `live` is the caller's `tabIsLive(tab)`; keeping it a plain boolean is
+ * what lets this module stay render-free and free of workspace types.
+ */
+export interface AttentionCandidate {
+  sessionId: string | null;
+  live: boolean;
+}
+
+export function paintsAttention(
+  candidate: AttentionCandidate,
+  attention: Readonly<Record<string, SessionAttentionSignal>>
+): boolean {
+  if (!candidate.sessionId || !candidate.live) return false;
+  return attentionNeedsOperator(attention[candidate.sessionId]);
+}
+
+/**
+ * The ⌘J queue: every painted target, oldest signal first, minus the one you
+ * are already standing on. Derived from `paintsAttention` so the queue and
+ * the markers cannot disagree.
+ */
+export function attentionJumpQueue(
+  candidates: readonly AttentionCandidate[],
+  attention: Readonly<Record<string, SessionAttentionSignal>>,
+  activeSessionId: string | null
+): string[] {
+  const painted = new Set<string>();
+  for (const candidate of candidates) {
+    if (paintsAttention(candidate, attention)) {
+      painted.add(candidate.sessionId as string);
+    }
+  }
+  return orderedAttentionTargets(attention, activeSessionId).filter(sessionId =>
+    painted.has(sessionId)
+  );
+}
+
 /** One ordering function feeds both command availability and navigation. */
 export function orderedAttentionTargets(
   attention: Record<string, SessionAttentionSignal>,

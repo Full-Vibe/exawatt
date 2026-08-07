@@ -373,20 +373,24 @@ export function stickyProjectForScroll(
 ): RibbonStickyProject | null {
   if (scrollLeft <= 0) return null;
 
-  for (let index = projects.length - 1; index >= 0; index -= 1) {
-    const project = projects[index];
+  // Only Projects the LAYOUT placed. A Project mid-close is still in the
+  // caller's list for its retraction, but D37 removed it from the laid-out
+  // row — reading neighbours from the caller's list made the pin hold past
+  // its own block for the whole three-second exit (D50 review).
+  const placed = projects.flatMap(project => {
     const header = layout.targets.get(headerKey(project.dir));
-    if (!header) continue;
+    return header ? [{ dir: project.dir, header }] : [];
+  });
+
+  for (let index = placed.length - 1; index >= 0; index -= 1) {
+    const { dir, header } = placed[index];
     // The block the left edge is standing in.
     if (header.x > scrollLeft) continue;
 
     // A folded Project is only its container chip: nothing scrolls under it.
-    if (layout.presentation.get(project.dir) === 'folded') return null;
+    if (layout.presentation.get(dir) === 'folded') return null;
 
-    const next = projects[index + 1];
-    const nextHeader = next
-      ? layout.targets.get(headerKey(next.dir))
-      : undefined;
+    const nextHeader = placed[index + 1]?.header;
     const blockEnd = nextHeader
       ? nextHeader.x - policy.groupGap
       : layout.contentWidth;
@@ -397,11 +401,11 @@ export function stickyProjectForScroll(
     // Parked at 0 until the incoming header reaches us, then pushed out by
     // exactly as much as it has arrived.
     const room = blockEnd - scrollLeft - header.width;
-    if (room >= 0) return { dir: project.dir, offsetX: 0, pushProgress: 0 };
+    if (room >= 0) return { dir, offsetX: 0, pushProgress: 0 };
     const offsetX = Math.max(-header.width, room);
     const pushProgress =
       header.width > 0 ? Math.min(1, -offsetX / header.width) : 0;
-    return { dir: project.dir, offsetX, pushProgress };
+    return { dir, offsetX, pushProgress };
   }
   return null;
 }

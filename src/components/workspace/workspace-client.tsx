@@ -110,9 +110,9 @@ import {
 } from './session-clone';
 import { loadLaunchConfigurationPool } from '@/lib/launch-configurations';
 import {
+  attentionJumpQueue,
   attentionNeedsOperator,
   mergeSessionAttentionMaps,
-  orderedAttentionTargets,
 } from './session-status';
 import {
   deriveWorkspaceCommandAvailability,
@@ -228,12 +228,15 @@ export function WorkspaceClient() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [resumeNoticeDismissed, setResumeNoticeDismissed] = useState(false);
   const [projectOpenerOpen, setProjectOpenerOpen] = useState(false);
-  const [reorderStatus, setReorderStatus] = useState({
+  // One spoken channel for the workspace. It began as reorder-only; ⌘J's
+  // no-op is the second caller, and D44's contract is that a command never
+  // just silently does nothing.
+  const [workspaceStatus, setWorkspaceStatus] = useState({
     sequence: 0,
     message: '',
   });
-  const announceReorder = useCallback((message: string) => {
-    setReorderStatus(current => ({
+  const announceWorkspace = useCallback((message: string) => {
+    setWorkspaceStatus(current => ({
       sequence: current.sequence + 1,
       message,
     }));
@@ -407,17 +410,17 @@ export function WorkspaceClient() {
         activeProject?.tabs.findIndex(tab => tab.id === activeTab?.id) ?? -1;
       const moved = moveActiveTab(delta);
       if (moved && activeProject && activeTab) {
-        announceReorder(
+        announceWorkspace(
           `Moved Session ${activeTab.title} to position ${from + delta + 1} of ${activeProject.tabs.length}.`
         );
       } else {
-        announceReorder(
+        announceWorkspace(
           `Session cannot move ${delta < 0 ? 'left' : 'right'} from its current position.`
         );
       }
       return moved;
     },
-    [activeProject, activeTab, announceReorder, moveActiveTab]
+    [activeProject, activeTab, announceWorkspace, moveActiveTab]
   );
 
   const moveProjectWithFeedback = useCallback(
@@ -427,17 +430,17 @@ export function WorkspaceClient() {
       );
       const moved = moveActiveProject(delta);
       if (moved && activeProject) {
-        announceReorder(
+        announceWorkspace(
           `Moved Project ${activeProject.name} to position ${from + delta + 1} of ${projects.length}.`
         );
       } else {
-        announceReorder(
+        announceWorkspace(
           `Project cannot move ${delta < 0 ? 'left' : 'right'} from its current position.`
         );
       }
       return moved;
     },
-    [activeProject, announceReorder, moveActiveProject, projects]
+    [activeProject, announceWorkspace, moveActiveProject, projects]
   );
 
   const {
@@ -663,19 +666,23 @@ export function WorkspaceClient() {
     () => mergeSessionAttentionMaps(attention, roadmapAttention),
     [attention, roadmapAttention]
   );
-  const attentionJumpTargets = useMemo(() => {
-    const liveSessionIds = new Set(
-      projects.flatMap(project =>
-        project.tabs.flatMap(tab =>
-          tab.sessionId && tab.exitCode === null ? [tab.sessionId] : []
-        )
-      )
-    );
-    return orderedAttentionTargets(
-      mergedAttention,
-      activeTab?.sessionId ?? null
-    ).filter(sessionId => liveSessionIds.has(sessionId));
-  }, [activeTab?.sessionId, mergedAttention, projects]);
+  // Eligibility is the SAME rule the surfaces paint with (D51). It used to be
+  // `exitCode === null` here and `tabIsLive(tab)` everywhere else, which is
+  // how a tab could wear an amber marker ⌘J refused to visit (BUG-009).
+  const attentionJumpTargets = useMemo(
+    () =>
+      attentionJumpQueue(
+        projects.flatMap(project =>
+          project.tabs.map(tab => ({
+            sessionId: tab.sessionId,
+            live: tabIsLive(tab),
+          }))
+        ),
+        mergedAttention,
+        activeTab?.sessionId ?? null
+      ),
+    [activeTab?.sessionId, mergedAttention, projects]
+  );
   const hasAttentionTarget = attentionJumpTargets.length > 0;
 
   // ⌘J is a strict attention queue: every target has a visible needs-you
@@ -793,16 +800,22 @@ export function WorkspaceClient() {
     [router]
   );
   useEffect(() => setOverviewOpen(requestedOverview), [requestedOverview]);
+  // Read through a ref so the resolver is registered ONCE. Re-registering a
+  // fresh closure on every tab-activity tick republished capability state for
+  // no change (D50 review); the truth it reads is the same either way.
+  const projectsRef = useRef(projects);
+  projectsRef.current = projects;
+
   // Which recorded locations still exist (D50). A ⌘W-destroyed tab must
   // stop being a Back stop; the history owns what to do about that, the
   // workspace owns the truth of which tabs are open (BUG-006).
   useEffect(() => {
     navHistory.setLocationResolver(location => {
       if (!location.tab) return true;
-      const project = projects.find(p => p.dir === location.tab!.dir);
-      return !!project?.tabs.some(t => t.id === location.tab!.tabId);
+      const open = projectsRef.current.find(p => p.dir === location.tab!.dir);
+      return !!open?.tabs.some(t => t.id === location.tab!.tabId);
     });
-  }, [projects]);
+  }, []);
 
   // back stack recorder (D27): every location the operator lands on in the
   // workspace — surface (Terminal vs Sessions) + the active tab — becomes a
@@ -1141,9 +1154,17 @@ export function WorkspaceClient() {
       },
       jumpAttention: () => {
         // The chord belongs to the workspace even when the strict visible
-        // queue is empty. Consume it as a deliberate no-op so Chromium or a
-        // parent navigation layer cannot reinterpret ⌘J.
-        jumpAttentionQueue();
+        // queue is empty. Consume it so Chromium or a parent navigation
+        // layer cannot reinterpret ⌘J — but SAY so, because a key that
+        // silently does nothing is indistinguishable from a broken one
+        // (D44; the operator hit exactly this against a visible marker).
+        if (!jumpAttentionQueue()) {
+          announceWorkspace(
+            attentionJumpTargets.length === 0
+              ? 'No Agents need you'
+              : 'Already on the Agent that needs you'
+          );
+        }
         return true;
       },
       activateCommandAltitude: target => {
@@ -1191,6 +1212,8 @@ export function WorkspaceClient() {
     };
   }, [
     activeTab,
+    announceWorkspace,
+    attentionJumpTargets.length,
     commandAvailability,
     summonRoadmap,
     launchHere,
@@ -1269,13 +1292,13 @@ export function WorkspaceClient() {
       style={{ background: HUD.bg.void }}
     >
       <p
-        key={reorderStatus.sequence}
+        key={workspaceStatus.sequence}
         role="status"
         aria-live="polite"
         aria-atomic="true"
         className="sr-only"
       >
-        {reorderStatus.message}
+        {workspaceStatus.message}
       </p>
       <div
         data-workspace-underlay

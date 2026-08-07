@@ -509,6 +509,122 @@ try {
   });
   await lightPage.close();
 
+  // ── D50 gate: the pinned Project header. The strip's whole answer to
+  // "where am I" once the row scrolls, and until now it was verified by
+  // screenshot only.
+  // Its own page: the gates above close tabs, and a pin needs a full row to
+  // overflow. Narrow enough that the active Project's own tabs scroll — the
+  // shape the operator was in when he reported losing the Project name.
+  const pinPage = await browser.newPage({
+    viewport: { width: 1600, height: 1000 },
+  });
+  await pinPage.goto(`${BASE}/hud-gallery/project-ribbon/bench`, {
+    waitUntil: 'networkidle',
+  });
+  await pinPage.locator('[data-workspace-tab-strip]').waitFor();
+  await pinPage.evaluate(() => {
+    const slider = document.querySelector('input[type=range]');
+    const set = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value'
+    ).set;
+    set.call(slider, 880);
+    slider.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await pinPage.waitForTimeout(500);
+  const pin = await pinPage.evaluate(async () => {
+    const strip = document.querySelector('[data-workspace-tab-strip]');
+    const scroller = strip?.querySelector('[data-ribbon-scroller]');
+    if (!scroller) return { reason: 'no scroller' };
+    const view = () => scroller.getBoundingClientRect();
+    const settle = () =>
+      new Promise(resolve => requestAnimationFrame(() => resolve()));
+    const scrollTo = async left => {
+      scroller.scrollLeft = left;
+      scroller.dispatchEvent(new Event('scroll'));
+      await settle();
+    };
+    const pinnedNow = () => {
+      const pinned = strip.querySelector('[data-ribbon-pinned]');
+      if (!pinned) return null;
+      const style = getComputedStyle(pinned);
+      return {
+        dir: pinned.getAttribute('data-ribbon-project-header'),
+        offset: Math.round(
+          pinned.getBoundingClientRect().left - view().left
+        ),
+        opaque:
+          style.backgroundImage !== 'none' ||
+          style.backgroundColor !== 'rgba(0, 0, 0, 0)',
+      };
+    };
+
+    await scrollTo(0);
+    const max = scroller.scrollWidth - scroller.clientWidth;
+    if (max <= 0) return { reason: 'row does not scroll' };
+    const rest = pinnedNow();
+
+    // The Project whose OWN tabs overflow is the one that pins; find it by
+    // its laid-out block rather than by name, so the gate survives fixture
+    // edits. Its header is the last one that still leaves room to its right.
+    const headers = [
+      ...strip.querySelectorAll('[data-ribbon-project-header]'),
+    ].map(node => ({
+      dir: node.getAttribute('data-ribbon-project-header'),
+      x: Math.round(node.getBoundingClientRect().left - view().left),
+    }));
+    const widest = headers.reduce((best, header, index) => {
+      const next = headers[index + 1];
+      const span = (next ? next.x : scroller.scrollWidth) - header.x;
+      return !best || span > best.span ? { ...header, span } : best;
+    }, null);
+    if (!widest) return { reason: 'no project headers' };
+
+    await scrollTo(Math.min(widest.x + 80, max));
+    const parked = pinnedNow();
+    // Deeper into the same run: a pinned header must HOLD the edge, not
+    // drift with the content. (The hand-off push itself is unit-tested in
+    // project-ribbon-layout.test.ts — this fixture's row never scrolls far
+    // enough to reach the next Project's header.)
+    await scrollTo(Math.min(widest.x + 260, max));
+    const deeper = pinnedNow();
+
+    await scrollTo(0);
+    return { rest, parked, deeper, widest };
+  });
+  if (pin.reason) {
+    throw new Error(`pin gate: ${pin.reason}`);
+  }
+  if (pin.rest !== null) {
+    throw new Error('pin gate: a header was pinned at rest');
+  }
+  if (!pin.parked || pin.parked.dir !== pin.widest.dir) {
+    throw new Error(
+      `pin gate: expected ${pin.widest.dir} parked at the left edge, got ${JSON.stringify(pin.parked)}`
+    );
+  }
+  if (Math.abs(pin.parked.offset) > 1) {
+    throw new Error(
+      `pin gate: pinned header sits ${pin.parked.offset}px from the edge, expected 0`
+    );
+  }
+  if (!pin.parked.opaque) {
+    throw new Error(
+      'pin gate: the pinned header is translucent; tabs show through'
+    );
+  }
+  if (!pin.deeper || pin.deeper.dir !== pin.widest.dir) {
+    throw new Error(
+      `pin gate: the pin was dropped deeper into the same Project: ${JSON.stringify(pin.deeper)}`
+    );
+  }
+  if (Math.abs(pin.deeper.offset) > 1) {
+    throw new Error(
+      `pin gate: the pinned header drifted to ${pin.deeper.offset}px instead of holding the edge`
+    );
+  }
+  await pinPage.close();
+
   if (errors.length > 0) {
     throw new Error(`Renderer errors:\n${errors.join('\n')}`);
   }
@@ -524,6 +640,7 @@ try {
           ringStops,
           reorder: { before, swapped },
           heightHeldAcrossDrain: closeDelta === 0,
+          pinnedProjectHeader: pin,
         },
         screenshots: SCREENSHOT_DIR,
       },

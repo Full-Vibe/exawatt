@@ -86,8 +86,8 @@ import {
   RENAME_ACTIVE_EVENT,
 } from './session-jump';
 import { tabIsPinnable } from './split-layout';
+import { paintsAttention } from './session-status';
 import {
-  attentionNeedsOperator,
   DelegationDots,
   SESSION_GLYPH_COPY,
   SESSION_GLYPH_LABEL,
@@ -1425,7 +1425,12 @@ export function TabStrip({
             const summary = summaries[tab.durableSessionId];
             const attentionSignal =
               !dead && tab.sessionId ? attention[tab.sessionId] : undefined;
-            const needsYou = attentionNeedsOperator(attentionSignal);
+            // Same call the ⌘J queue makes, so the marker and the jump
+            // cannot drift apart again (D51/BUG-009).
+            const needsYou = paintsAttention(
+              { sessionId: tab.sessionId, live: !dead },
+              attention
+            );
             const working =
               !dead && !!(tab.sessionId && activity[tab.sessionId]);
             const isAgent = tab.harness !== 'shell';

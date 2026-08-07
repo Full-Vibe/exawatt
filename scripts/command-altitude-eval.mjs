@@ -3,7 +3,10 @@
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { resolveQaBrowserLaunchOptions } from './lib/qa-browser.mjs';
+import {
+  primeEvalBrowserPage,
+  resolveQaBrowserLaunchOptions,
+} from './lib/qa-browser.mjs';
 
 const BASE = process.env.EXA_BASE || 'http://localhost:7000';
 const SCREENSHOT_DIR =
@@ -18,6 +21,11 @@ const browser = await chromium.launch({
   ...(await resolveQaBrowserLaunchOptions(chromium)),
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+// Returning-operator state. Without this the account first-run invitation
+// floats over the chrome and silently intercepts whatever it covers — a
+// suppressed bug in the eval, not a product signal. The helper existed and
+// nothing called it (D51).
+await primeEvalBrowserPage(page);
 const errors = [];
 page.on('pageerror', error => errors.push(String(error.message || error)));
 page.on('console', message => {

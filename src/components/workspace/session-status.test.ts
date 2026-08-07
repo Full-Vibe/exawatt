@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  attentionJumpQueue,
   attentionNeedsOperator,
+  paintsAttention,
   delegationCopy,
   delegationElapsedLabel,
   delegationRailRows,
@@ -329,5 +331,72 @@ describe('delegation elapsed labels', () => {
 
   it('never goes negative on clock skew', () => {
     expect(delegationElapsedLabel(0, 5_000)).toBe('<1m');
+  });
+});
+
+// ── BUG-009 (operator, 2026-08-07): "I see an orange needs-attention tab but
+// cmd+j doesn't jump to it, it does nothing." The strip painted from
+// `tabIsLive(tab)`; the jump queue filtered on `tab.exitCode === null`. One
+// reconciliation branch sets resumeState 'live' AND a non-null exitCode for a
+// session that exited while adopted, so that tab wore a marker ⌘J refused.
+describe('attention eligibility is one rule (BUG-009)', () => {
+  const bell = { kind: 'bell' as const, since: 10 };
+  const older = { kind: 'bell' as const, since: 1 };
+
+  it('paints exactly what the queue will visit', () => {
+    const attention = { 's1': bell };
+    const live = { sessionId: 's1', live: true };
+    const dead = { sessionId: 's1', live: false };
+    expect(paintsAttention(live, attention)).toBe(true);
+    expect(paintsAttention(dead, attention)).toBe(false);
+    expect(attentionJumpQueue([live], attention, null)).toEqual(['s1']);
+    expect(attentionJumpQueue([dead], attention, null)).toEqual([]);
+  });
+
+  it('reaches a marked Session whose process already exited', () => {
+    // the exact shape of the regression: adopted, still `live`, exit code set
+    const attention = { 's1': bell };
+    expect(
+      attentionJumpQueue([{ sessionId: 's1', live: true }], attention, null)
+    ).toEqual(['s1']);
+  });
+
+  it('never navigates to a Session carrying no visible marker', () => {
+    const attention = { 's1': bell };
+    // s2 has no signal at all; s3 is not live
+    const queue = attentionJumpQueue(
+      [
+        { sessionId: 's1', live: true },
+        { sessionId: 's2', live: true },
+        { sessionId: 's3', live: false },
+      ],
+      attention,
+      null
+    );
+    expect(queue).toEqual(['s1']);
+  });
+
+  it('keeps the oldest-first order and skips where you already are', () => {
+    const attention = { 's1': bell, 's2': older };
+    const candidates = [
+      { sessionId: 's1', live: true },
+      { sessionId: 's2', live: true },
+    ];
+    expect(attentionJumpQueue(candidates, attention, null)).toEqual([
+      's2',
+      's1',
+    ]);
+    expect(attentionJumpQueue(candidates, attention, 's2')).toEqual(['s1']);
+  });
+
+  it('a finished turn is a result to read, not an operator gate', () => {
+    const attention = { 's1': { kind: 'turn-end' as const, since: 1 } };
+    expect(
+      attentionJumpQueue([{ sessionId: 's1', live: true }], attention, null)
+    ).toEqual([]);
+  });
+
+  it('ignores a candidate with no session id', () => {
+    expect(paintsAttention({ sessionId: null, live: true }, {})).toBe(false);
   });
 });

@@ -69,8 +69,22 @@ test('parses repeated verification and delivery options', () => {
       help: false,
       keepBranch: false,
       verify: ['type-check', 'test:run'],
+      waiveGate: [],
     }
   );
+});
+
+test('parses deliberate surface-gate waivers', () => {
+  const options = parseArgs([
+    '--',
+    '--waive-gate',
+    'eval:workspace:ribbon:bench',
+    '--verify',
+    'test:run',
+  ]);
+  assert.deepEqual(options.waiveGate, ['eval:workspace:ribbon:bench']);
+  assert.deepEqual(options.verify, ['test:run']);
+  assert.throws(() => parseArgs(['--waive-gate']), /requires a gate id/);
 });
 
 test('parses the master checkout from worktree porcelain output', () => {

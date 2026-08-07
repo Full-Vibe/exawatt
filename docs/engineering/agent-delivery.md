@@ -31,6 +31,38 @@ floor. The repository always owns that floor. `--keep-branch` retains immutable
 attempt refs for diagnosis. `--direct` is an operator-only incident path, not a
 second normal workflow.
 
+## Surface gates
+
+The repository owns 31 eval gates and the changed-path floor routes to one.
+That is structural, not neglect: every browser and Electron eval needs a dev
+server the floor does not own (`EXA_BASE`), so it cannot run them unattended.
+The consequence was that the most motion-sensitive surfaces in the app could
+change and land with no gate run at all, as long as the author forgot — and
+forgetting was silent.
+
+So the floor does not run these; it requires them to be **declared**.
+`missingSurfaceGates` in `scripts/lib/delivery-policy.mjs` maps changed paths
+to the gates they owe. `agent:land` refuses before any expensive work, naming
+the gate, the files that triggered it, and the exact commands:
+
+```text
+pnpm dev -p <free-port>
+EXA_BASE=http://localhost:<port> pnpm eval:workspace:ribbon:bench
+pnpm agent:land -- --verify eval:workspace:ribbon:bench
+```
+
+A gate whose own script is red is `quarantined` in the map with the backlog
+id that will repair it: announced on every landing that touches its surface,
+never enforced. Deleting the entry instead would throw away the fact that the
+surface owes evidence at all. The first routing pass quarantined two
+(BUG-010, BUG-011) — both had been broken since D49 without anyone knowing,
+which is the same disease one layer down.
+
+A gate that genuinely does not apply is waived on purpose with
+`--waive-gate <id>`; both the refusal and the waiver append a metric
+(`surface_gate_refused`, `surface_gate_waived`), so skipped evidence stays
+visible instead of vanishing. Adding a gate is a data edit to `SURFACE_GATES`.
+
 ## Three-stage flow
 
 | Stage     | Parallel or serialized               | Durable identity                                                        | Completion boundary                                                                             |

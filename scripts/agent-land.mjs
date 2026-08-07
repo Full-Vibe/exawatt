@@ -20,6 +20,9 @@ import {
 } from './lib/delivery-queue.mjs';
 import {
   classifyDeliveryPolicy,
+  missingSurfaceGates,
+  quarantinedSurfaceGates,
+  surfaceGateMessage,
   runDeliveryChecks,
 } from './lib/delivery-policy.mjs';
 import {
@@ -39,6 +42,7 @@ export function parseArgs(argv) {
     help: false,
     keepBranch: false,
     verify: [],
+    waiveGate: [],
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -54,6 +58,13 @@ export function parseArgs(argv) {
         throw new Error('--verify requires a package.json script name.');
       }
       options.verify.push(script);
+      index += 1;
+    } else if (argument === '--waive-gate') {
+      const gate = argv[index + 1];
+      if (!gate || gate.startsWith('--')) {
+        throw new Error('--waive-gate requires a gate id.');
+      }
+      options.waiveGate.push(gate);
       index += 1;
     } else {
       throw new Error(`Unknown argument: ${argument}`);
@@ -86,6 +97,7 @@ Runs the repository-owned verification floor, admits the committed agent branch
 to the local FIFO queue, and lands it without a pull request.
 
   --verify <script>  Add a package.json check to the repository-owned floor.
+  --waive-gate <id>  Declare on purpose that a surface gate does not apply.
   --dogfood          Queue a coalescing Electron dogfood install after integration.
   --keep-branch      Keep the immutable remote attempt ref after integration.
   --direct           Operator-only guarded recovery path (requires explicit env opt-in).
@@ -297,6 +309,37 @@ async function main() {
   const candidateBase = await git(root, 'merge-base', 'origin/master', 'HEAD');
   const candidateSha = await git(root, 'rev-parse', 'HEAD');
   const files = await changedPaths(root, candidateBase);
+  // Surface gates are declared, not run here: they need a dev server the
+  // floor does not own. Refuse before any expensive work so the omission is
+  // loud and early rather than invisible (D51).
+  const missingGates = missingSurfaceGates(files, [
+    ...options.verify,
+    ...options.waiveGate,
+  ]);
+  if (missingGates.length > 0) {
+    await appendDeliveryMetric(root, 'surface_gate_refused', {
+      candidateSha,
+      gates: missingGates.map(entry => entry.gate),
+    });
+    throw new Error(surfaceGateMessage(missingGates));
+  }
+  for (const entry of quarantinedSurfaceGates(files)) {
+    console.warn(
+      `[agent-land] ${entry.gate} is quarantined (${entry.backlogId}) — this change would otherwise owe it: ${entry.why}`
+    );
+    await appendDeliveryMetric(root, 'surface_gate_quarantined', {
+      candidateSha,
+      gate: entry.gate,
+      backlogId: entry.backlogId,
+    });
+  }
+  if (options.waiveGate.length > 0) {
+    await appendDeliveryMetric(root, 'surface_gate_waived', {
+      candidateSha,
+      gates: options.waiveGate,
+    });
+  }
+
   const checks = classifyDeliveryPolicy(files, options.verify);
   const evidence = await runDeliveryChecks(root, checks, {
     phase: 'candidate',

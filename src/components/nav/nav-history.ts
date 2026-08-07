@@ -48,6 +48,18 @@ export function sameLocation(a: NavLocation, b: NavLocation): boolean {
   );
 }
 
+/** True when `observed` is a partially-applied stage of `target` rather than
+ *  an independent navigation: it agrees on the surface or on the tab. */
+function partOfApply(target: NavLocation, observed: NavLocation): boolean {
+  if (target.surface === observed.surface) return true;
+  const targetTab = target.tab;
+  const observedTab = observed.tab;
+  if (!targetTab || !observedTab) return false;
+  return (
+    targetTab.dir === observedTab.dir && targetTab.tabId === observedTab.tabId
+  );
+}
+
 /** Answers whether a recorded location can still be navigated to. */
 export type LocationResolver = (location: NavLocation) => boolean;
 
@@ -90,7 +102,11 @@ export class NavHistory {
    * re-registers with fresh truth.
    */
   setLocationResolver(resolve: LocationResolver): void {
+    if (this.resolve === resolve) return;
     this.resolve = resolve;
+    // Capability can change with it (a closed tab may have been the only
+    // stop behind us), so publish — but only when the resolver actually
+    // changed. The workspace re-registers on every tab-activity tick.
     this.notify();
   }
 
@@ -150,8 +166,15 @@ export class NavHistory {
    */
   visit(location: NavLocation): void {
     if (this.applying && !this.applyExpired()) {
-      if (sameLocation(this.applying.location, location)) this.applying = null;
-      return;
+      if (sameLocation(this.applying.location, location)) {
+        this.applying = null;
+        return;
+      }
+      // A STAGE of the apply shares something with its target — the tab has
+      // landed but the router has not, or the reverse. A location sharing
+      // neither is the operator having moved on mid-apply, and swallowing
+      // that would drop a real stop from the chain (D50 review).
+      if (partOfApply(this.applying.location, location)) return;
     }
     this.applying = null;
     const current = this.current();

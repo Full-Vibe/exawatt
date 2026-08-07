@@ -186,19 +186,33 @@ describe('NavHistory (D27 app-location back stack)', () => {
       expect(h.snapshot().entries).toEqual([terminal, settings]);
     });
 
-    it('an apply that never lands cannot silence recording forever', () => {
+    // Only STAGES of the apply are swallowed. A location sharing neither the
+    // surface nor the tab is the operator navigating somewhere else mid-apply,
+    // and dropping that would break the chain the fix exists to keep whole.
+    it('records an unrelated navigation made mid-apply', () => {
+      const h = new NavHistory();
+      h.visit(terminal);
+      h.beginApply(sessions);
+      h.visit(settings);
+      expect(h.snapshot().entries).toEqual([terminal, settings]);
+      expect(h.isApplying()).toBe(false);
+    });
+
+    it('an apply whose stages never finish cannot silence recording forever', () => {
       const h = new NavHistory();
       let clock = 0;
       h.setClock(() => clock);
       h.visit(terminal);
       h.beginApply(sessions);
-      h.visit(settings); // swallowed: still applying
+      // shares the tab, so it reads as a stage and is swallowed
+      const stage = { surface: '/workspace', tab: sessions.tab };
+      h.visit(stage);
       expect(h.snapshot().entries).toEqual([terminal]);
 
       clock += 10_000;
       expect(h.isApplying()).toBe(false);
-      h.visit(settings);
-      expect(h.snapshot().entries).toEqual([terminal, settings]);
+      h.visit(stage);
+      expect(h.snapshot().entries).toEqual([terminal, stage]);
     });
   });
 
