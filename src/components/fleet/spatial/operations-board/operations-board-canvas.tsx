@@ -80,6 +80,17 @@ import {
   type OperationsBoardViewport,
 } from './operations-board-camera';
 import { boardPointerAction, pinchZoomTarget } from './operations-board-input';
+import { delegationElapsedLabel } from '../spatial-agent-copy';
+import { useMinuteClock } from '../use-minute-clock';
+import {
+  DELEGATION_EXIT_SWEEP_MS,
+  DELEGATION_MOTION,
+  delegationBodyScale,
+  delegationRoster,
+  delegationSpawnDelaySeconds,
+  easeOutCubic,
+  nextDelegationExits,
+} from './delegation-roster';
 
 export type { OperationsBoardViewport } from './operations-board-camera';
 
@@ -1479,6 +1490,22 @@ function ProjectControls({
   });
 }
 
+/**
+ * The one Agent-unit noun. Parents and delegated children are the same family
+ * by construction — they share this geometry rather than each constructing an
+ * identical hex prism, so the family cannot drift and the GPU holds one buffer.
+ *
+ * Module scope, created once and never disposed: it is a six-sided prism of a
+ * few hundred bytes, two layers mount and unmount it independently, and it
+ * lives exactly as long as the lazily-imported board chunk that owns it.
+ * Ref-counting it would mean mutating module state during render.
+ */
+const AGENT_HEX_GEOMETRY = (() => {
+  const geometry = new THREE.CylinderGeometry(0.5, 0.56, 0.34, 6);
+  geometry.rotateX(Math.PI / 2);
+  return geometry;
+})();
+
 function checkGeometry(): THREE.ShapeGeometry {
   const shape = new THREE.Shape();
   shape.moveTo(-0.15, 0.01);
@@ -1520,47 +1547,37 @@ function crossGeometry(): THREE.ShapeGeometry {
  * subagents then read as four specks above one large parent, conveying neither
  * fan-out nor that several Agents are doing the work.
  *
- * Children are now the same beveled hex noun as their parent at the pure
- * model's ratio, connected by a hairline Project-identity tether. All slot
- * geometry, the overflow boundary, and the lineage endpoints come from
- * `selectSpatialDelegationUnits`; this layer is a damped executor that owns
- * only material and the finite spawn/stop transitions.
+ * Children are the same beveled hex noun as their parent, one size down. All
+ * slot geometry, the overflow boundary, and lineage endpoints come from
+ * `selectSpatialDelegationUnits`; the roster diff and motion curve come from
+ * `delegation-roster.ts`. This component owns only material and transforms.
  *
- * Two instanced draws for the whole board (bodies, tethers). Tethers are
- * transform-driven quads rather than lines so their endpoints can animate
- * every frame without rebuilding geometry.
+ * **Why the orbit is what it is.** A child must be legible as a unit without
+ * out-shouting the parent that owns it. The orbit puts each child just clear
+ * of the parent body, so the two read as separate solids with no outline,
+ * halo, or extra colour channel — an earlier pass added a contrasting collar
+ * to survive the overlap, and moving the slot out by a few percent removed the
+ * need for it entirely. Project identity stays on the tether, where the D3c
+ * brief puts lineage; the body stays the shared Agent noun.
+ *
+ * Two instanced draws for the whole board (tethers, bodies).
+ * Tethers are transform-driven quads rather than lines so their endpoints can
+ * animate every frame without rebuilding geometry.
  */
-const DELEGATION_MOTION = {
-  /** Critically damped settle, no bounce (D3c brief: 450–650ms). */
-  spawnSeconds: 0.55,
-  /** The exit finishes faster than the entrance (240–320ms). */
-  stopSeconds: 0.28,
-  staggerSeconds: 0.055,
-  maxStaggerSeconds: 0.33,
-  /** Per-piece mark cap × the project-altitude piece budget, with headroom:
-   *  drei silently no-ops writes past `limit`, so a full fan-out team must
-   *  never be able to reach it. */
-  instanceLimit: 640,
-} as const;
-
-/** Identity rim scale relative to the child body — a hairline halo, not a ring. */
-const DELEGATION_RIM_SCALE = 1.08;
 
 interface DelegationMotionRecord {
   progress: number;
   delay: number;
-  parentX: number;
-  parentY: number;
-}
-
-function easeOutCubic(value: number): number {
-  return 1 - Math.pow(1 - value, 3);
+  /** Where the unit emerges from and retracts to: its parent's edge. */
+  originX: number;
+  originY: number;
 }
 
 /**
  * Units whose parent stopped reporting them, retained just long enough to
- * retract along their tether. Kept in React state (never set from `useFrame`);
- * the frame loop only mutates transforms.
+ * retract. State is set from effects only — never from `useFrame`, which
+ * mutates transforms and nothing else. One timer per departing cohort, tracked
+ * so it is cleared on completion instead of accumulating for the session.
  */
 function useDelegationExits(
   units: SpatialBoardDelegationUnit[],
@@ -1568,41 +1585,33 @@ function useDelegationExits(
 ): SpatialBoardDelegationUnit[] {
   const [exits, setExits] = useState<SpatialBoardDelegationUnit[]>([]);
   const previous = useRef<SpatialBoardDelegationUnit[]>([]);
-  const timers = useRef<number[]>([]);
+  const exitsRef = useRef<SpatialBoardDelegationUnit[]>([]);
+  exitsRef.current = exits;
+  const timers = useRef(new Set<number>());
   useLayoutEffect(() => {
-    const liveIds = new Set(units.map(unit => unit.id));
-    const departed = previous.current.filter(unit => !liveIds.has(unit.id));
-    previous.current = units;
-    // Reduced motion keeps identical topology and census with no travel, so a
-    // departure is simply gone on the next frame.
-    if (reduced) {
-      setExits(current => (current.length === 0 ? current : []));
-      return;
-    }
-    setExits(current => {
-      const kept = current.filter(unit => !liveIds.has(unit.id));
-      const known = new Set(kept.map(unit => unit.id));
-      const added = departed.filter(unit => !known.has(unit.id));
-      if (added.length === 0 && kept.length === current.length) return current;
-      return [...kept, ...added];
-    });
-    if (departed.length === 0) return;
-    const timer = window.setTimeout(
-      () => {
-        const goneIds = new Set(departed.map(unit => unit.id));
-        setExits(current => current.filter(unit => !goneIds.has(unit.id)));
-      },
-      DELEGATION_MOTION.stopSeconds * 1000 + 60
+    const { exits: next, departed, changed } = nextDelegationExits(
+      exitsRef.current,
+      previous.current,
+      units,
+      reduced
     );
-    timers.current.push(timer);
+    previous.current = units;
+    if (changed) setExits(next);
+    if (departed.length === 0) return;
+    const goneIds = new Set(departed.map(unit => unit.id));
+    const timer = window.setTimeout(() => {
+      timers.current.delete(timer);
+      setExits(current => current.filter(unit => !goneIds.has(unit.id)));
+    }, DELEGATION_EXIT_SWEEP_MS);
+    timers.current.add(timer);
   }, [reduced, units]);
-  useEffect(
-    () => () => {
-      for (const timer of timers.current) window.clearTimeout(timer);
-      timers.current = [];
-    },
-    []
-  );
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      for (const timer of pending) window.clearTimeout(timer);
+      pending.clear();
+    };
+  }, []);
   return exits;
 }
 
@@ -1618,30 +1627,14 @@ function DelegationUnitLayer({
   const invalidate = useThree(state => state.invalidate);
   const exits = useDelegationExits(units, reduced);
   const bodyRefs = useRef(new Map<string, THREE.Object3D>());
-  const rimRefs = useRef(new Map<string, THREE.Object3D>());
   const tetherRefs = useRef(new Map<string, THREE.Object3D>());
   const motion = useRef(new Map<string, DelegationMotionRecord>());
-  const pieceGeometry = useMemo(() => {
-    // The same noun as an Agent unit, one size down — the family match is the
-    // whole point of the milestone, so the geometry is deliberately identical.
-    const geometry = new THREE.CylinderGeometry(0.5, 0.56, 0.34, 6);
-    geometry.rotateX(Math.PI / 2);
-    return geometry;
-  }, []);
+  const pieceGeometry = AGENT_HEX_GEOMETRY;
   const tetherGeometry = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
-  useEffect(
-    () => () => {
-      pieceGeometry.dispose();
-      tetherGeometry.dispose();
-    },
-    [pieceGeometry, tetherGeometry]
-  );
+  useEffect(() => () => tetherGeometry.dispose(), [tetherGeometry]);
 
   const rendered = useMemo(
-    () => [
-      ...units.map(unit => ({ unit, exiting: false })),
-      ...exits.map(unit => ({ unit, exiting: true })),
-    ],
+    () => delegationRoster(units, exits),
     [exits, units]
   );
 
@@ -1655,20 +1648,12 @@ function DelegationUnitLayer({
       if (motion.current.has(unit.id)) continue;
       const index = perParent.get(unit.parentPieceId) ?? 0;
       perParent.set(unit.parentPieceId, index + 1);
-      const record: DelegationMotionRecord = {
+      motion.current.set(unit.id, {
         progress: reduced || exiting ? 1 : 0,
-        delay: reduced
-          ? 0
-          : Math.min(
-              index * DELEGATION_MOTION.staggerSeconds,
-              DELEGATION_MOTION.maxStaggerSeconds
-            ),
-        // The child emerges from, and retracts to, its parent's centre; the
-        // tether endpoints in the model give it its resting geometry.
-        parentX: unit.tether.x1,
-        parentY: unit.tether.y1,
-      };
-      motion.current.set(unit.id, record);
+        delay: reduced ? 0 : delegationSpawnDelaySeconds(index),
+        originX: unit.tether.x1,
+        originY: unit.tether.y1,
+      });
     }
     for (const id of [...motion.current.keys()]) {
       if (!seen.has(id)) motion.current.delete(id);
@@ -1683,8 +1668,6 @@ function DelegationUnitLayer({
     for (const { unit, exiting } of rendered) {
       const record = motion.current.get(unit.id);
       const body = bodyRefs.current.get(unit.id);
-      const rim = rimRefs.current.get(unit.id);
-      const tether = tetherRefs.current.get(unit.id);
       if (!record || !body) continue;
       if (reduced) record.progress = exiting ? 0 : 1;
       else if (exiting) {
@@ -1704,33 +1687,40 @@ function DelegationUnitLayer({
         animating = true;
       }
       const eased = easeOutCubic(record.progress);
-      const x = THREE.MathUtils.lerp(record.parentX, unit.x, eased);
-      const layoutY = THREE.MathUtils.lerp(record.parentY, unit.y, eased);
-      const scale = unit.size * (0.18 + 0.82 * eased);
-      body.position.set(x, -layoutY, 0.72);
+      const x = THREE.MathUtils.lerp(record.originX, unit.x, eased);
+      const layoutY = THREE.MathUtils.lerp(record.originY, unit.y, eased);
+      const worldY = -layoutY;
+      const scale = delegationBodyScale(unit.size, eased);
+      body.position.set(x, worldY, 0.72);
       body.scale.set(scale, scale, 1);
-      if (rim) {
-        rim.position.set(x, -layoutY, 0.7);
-        rim.scale.set(scale * DELEGATION_RIM_SCALE, scale * DELEGATION_RIM_SCALE, 1);
-      }
+      const tether = tetherRefs.current.get(unit.id);
       if (tether) {
         // The tether establishes and retracts with the unit it explains.
+        const originWorldY = -unit.tether.y1;
         const dx = x - unit.tether.x1;
-        const dy = -layoutY - -unit.tether.y1;
-        const length = Math.hypot(dx, dy);
+        const dy = worldY - originWorldY;
         tether.position.set(
           (unit.tether.x1 + x) / 2,
-          (-unit.tether.y1 + -layoutY) / 2,
+          (originWorldY + worldY) / 2,
           0.55
         );
         tether.rotation.set(0, 0, Math.atan2(dy, dx));
-        tether.scale.set(length, Math.max(unit.size * 0.045, 0.012), 1);
+        tether.scale.set(
+          Math.hypot(dx, dy),
+          Math.max(unit.size * 0.05, 0.012),
+          1
+        );
       }
     }
     if (animating) state.invalidate();
   });
 
   if (rendered.length === 0) return null;
+  // Instance transforms are written imperatively from the frame loop, so the
+  // InstancedMesh bounding sphere — computed once from the initial zero-scale
+  // instances at the origin, and never recomputed when instance matrices
+  // change — would frustum-cull these layers as soon as the camera leaves the
+  // origin. Culling a single instanced draw saves nothing here anyway.
   return (
     <group>
       <Instances
@@ -1743,7 +1733,7 @@ function DelegationUnitLayer({
         <meshBasicMaterial
           toneMapped={false}
           transparent
-          opacity={0.5}
+          opacity={0.55}
           depthWrite={false}
         />
         {rendered.map(({ unit }) => (
@@ -1752,31 +1742,6 @@ function DelegationUnitLayer({
             ref={(instance: THREE.Object3D | null) => {
               if (instance) tetherRefs.current.set(unit.id, instance);
               else tetherRefs.current.delete(unit.id);
-            }}
-            scale={[0, 0, 1]}
-            color={spatialProjectIdentityColor(theme, unit.projectId)}
-            raycast={noopRaycast}
-          />
-        ))}
-      </Instances>
-      {/* Identity rim: the unit body stays the shared dark `theme.unit` noun,
-          so without this a child hex is a near-black shape on a dark zone. The
-          rim is the Project-identity channel the D3c brief assigns to lineage —
-          it makes the worker legible without inventing a status color. */}
-      <Instances
-        geometry={pieceGeometry}
-        limit={DELEGATION_MOTION.instanceLimit}
-        range={rendered.length}
-        renderOrder={1}
-        frustumCulled={false}
-      >
-        <meshBasicMaterial toneMapped={false} transparent opacity={0.34} />
-        {rendered.map(({ unit }) => (
-          <Instance
-            key={`rim:${unit.id}`}
-            ref={(instance: THREE.Object3D | null) => {
-              if (instance) rimRefs.current.set(unit.id, instance);
-              else rimRefs.current.delete(unit.id);
             }}
             scale={[0, 0, 1]}
             color={spatialProjectIdentityColor(theme, unit.projectId)}
@@ -1993,7 +1958,7 @@ function StatusMarkLayer({
           geometry={geometries.check}
           limit={256}
           range={result.length}
-          renderOrder={3}
+          renderOrder={2}
         >
           <meshBasicMaterial
             color={theme.canvas}
@@ -2018,7 +1983,7 @@ function StatusMarkLayer({
           geometry={geometries.dot}
           limit={256}
           range={needsYou.length}
-          renderOrder={3}
+          renderOrder={2}
         >
           <meshBasicMaterial
             color={theme.canvas}
@@ -2043,7 +2008,7 @@ function StatusMarkLayer({
           geometry={geometries.cross}
           limit={256}
           range={fault.length}
-          renderOrder={3}
+          renderOrder={2}
         >
           <meshBasicMaterial
             color={theme.canvas}
@@ -2165,17 +2130,7 @@ function AgentPieceLayer({
   );
   const entranceClock = useRef<number | null>(reduced ? null : 0);
   const invalidate = useThree(state => state.invalidate);
-  const pieceGeometry = useMemo(() => {
-    const geometry = new THREE.CylinderGeometry(0.5, 0.56, 0.34, 6);
-    geometry.rotateX(Math.PI / 2);
-    return geometry;
-  }, []);
-  useEffect(
-    () => () => {
-      pieceGeometry.dispose();
-    },
-    [pieceGeometry]
-  );
+  const pieceGeometry = AGENT_HEX_GEOMETRY;
   useCursor(hoveredId != null);
 
   // Carry the unit field through semantic altitude changes. The new layout is
@@ -3035,14 +2990,7 @@ function AgentControls({
     });
 }
 
-function delegationElapsedCopy(startedAt: number | null): string | null {
-  if (startedAt === null || !Number.isFinite(startedAt)) return null;
-  const minutes = Math.floor((Date.now() - startedAt) / 60_000);
-  if (minutes < 0) return null;
-  if (minutes < 1) return 'under a minute';
-  if (minutes < 60) return `${minutes}m`;
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-}
+
 
 /**
  * DOM equivalents for delegated child units (D3c). WebGL stays out of the
@@ -3058,6 +3006,7 @@ function DelegationControls({
   focusedProjectId,
   onSelectAgent,
   reduced,
+  now,
   theme,
 }: {
   units: SpatialBoardDelegationUnit[];
@@ -3066,6 +3015,8 @@ function DelegationControls({
   focusedProjectId: string | null;
   onSelectAgent: (agentId: string) => void;
   reduced: boolean;
+  /** Injected clock so elapsed copy is deterministic and stable per paint. */
+  now: number;
   theme: SpatialThemeSnapshot;
 }) {
   if (altitude === 'fleet') return null;
@@ -3076,7 +3027,7 @@ function DelegationControls({
     .filter(unit => unit.projectId === focusedProjectId)
     .map(unit => {
       const parentLabel = parentLabels.get(unit.parentPieceId) ?? 'its parent';
-      const elapsed = delegationElapsedCopy(unit.startedAt);
+      const elapsed = delegationElapsedLabel(unit.startedAt, now);
       const label =
         unit.kind === 'overflow'
           ? `${unit.overflowCount} more delegated Agents under ${parentLabel}`
@@ -3103,7 +3054,7 @@ function DelegationControls({
             aria-label={label}
             title={label}
             onClick={() => onSelectAgent(unit.parentAgentId)}
-            className="board-control-enter group relative grid h-8 w-8 place-items-center border border-transparent bg-transparent outline-none transition-[border-color] duration-150 focus-visible:ring-2 focus-visible:ring-ring"
+            className="board-control-enter group relative grid h-11 w-11 place-items-center border border-transparent bg-transparent outline-none transition-[border-color] duration-150 focus-visible:ring-2 focus-visible:ring-ring"
           >
             {unit.kind === 'overflow' && (
               <span
@@ -3174,6 +3125,7 @@ export function OperationsBoardCanvas({
   const reduced = useReducedMotion();
   const lowPower = useLowPowerMode();
   const pageVisible = usePageVisible();
+  const now = useMinuteClock();
   const ambient = !reduced && !lowPower && pageVisible;
   // During a Team→Fleet handoff the lazy postprocessing chunk's shader
   // compile is the single biggest main-thread stall — landing it mid
@@ -3360,6 +3312,7 @@ export function OperationsBoardCanvas({
         focusedProjectId={layout.focusedProjectId}
         onSelectAgent={onSelectAgent}
         reduced={reduced}
+        now={now}
         theme={theme}
       />
       {!lowPower && effectsReady && theme.bloom.enabled && (

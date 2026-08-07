@@ -1125,7 +1125,7 @@ export const SPATIAL_DELEGATION_UNIT = {
   /** Above it, this many individuals plus one same-family overflow lobe. */
   individualsWhenOverflowing: 4,
   /** Center-to-center distance as a fraction of the parent's diameter. */
-  orbitRadius: 0.8,
+  orbitRadius: 0.9,
   /** Rosette center, degrees CCW from +x with +y UP (layout space is y-down,
    *  so this is converted on use). 90° is directly above the parent. */
   arcCenterDeg: 90,
@@ -1136,6 +1136,24 @@ export const SPATIAL_DELEGATION_UNIT = {
    *  the parent belongs to the DOM label, so slots stop at the horizontal. */
   maxHalfSpanDeg: 90,
 } as const;
+
+/**
+ * Marks a single parent can contribute: every child individually, or the
+ * individuals plus one overflow lobe. Both branches top out at
+ * `individualLimit`, which is what a renderer must budget per piece.
+ */
+export const SPATIAL_DELEGATION_MARKS_PER_PIECE =
+  SPATIAL_DELEGATION_UNIT.individualLimit;
+
+/**
+ * Upper bound on delegation units the board can emit at once, so a renderer
+ * can size a fixed instance buffer that CANNOT silently truncate. Fleet
+ * altitude carries the larger piece budget, so it — not the focused-Project
+ * budget — sets the ceiling.
+ */
+export const SPATIAL_DELEGATION_UNIT_CEILING =
+  Math.max(DEFAULTS.maxFleetPieces, DEFAULTS.maxProjectPieces) *
+  SPATIAL_DELEGATION_MARKS_PER_PIECE;
 
 export interface SpatialBoardDelegationUnit {
   /** Stable across frames: lifecycle motion keys off this, so a redelivered or

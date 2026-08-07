@@ -8,7 +8,10 @@ import { chromium } from 'playwright-core';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveQaBrowserLaunchOptions } from '../lib/qa-browser.mjs';
+import {
+  primeEvalBrowserPage,
+  resolveQaBrowserLaunchOptions,
+} from '../lib/qa-browser.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPORT_DIR = join(__dirname, 'spatial-report');
@@ -497,6 +500,7 @@ async function runScenario(browser, scenario) {
     reducedMotion: scenario.reduced ? 'reduce' : 'no-preference',
     deviceScaleFactor: scenario.lowPower ? 2 : 1,
   });
+  await primeEvalBrowserPage(page);
   if (scenario.lowPower) {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'hardwareConcurrency', {
@@ -652,6 +656,7 @@ async function runHandoffScenario(browser, scenario) {
     viewport: { width: 1440, height: 1000 },
     reducedMotion: scenario.reduced ? 'reduce' : 'no-preference',
   });
+  await primeEvalBrowserPage(page);
   if (scenario.lowPower) {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'hardwareConcurrency', {

@@ -278,3 +278,33 @@ export async function resolveQaBrowser(
 export async function resolveQaBrowserLaunchOptions(chromium, options) {
   return (await resolveQaBrowser(chromium, options)).launchOptions;
 }
+
+/**
+ * Keys a first-run browser surface reads before deciding to invite the
+ * operator. Electron evals are already exempt through the dev-evaluator
+ * preload marker (`window.electron.feedback.testMode`); a browser eval has no
+ * such marker, so it declares the same thing through storage.
+ */
+const EVAL_FIRST_RUN_KEYS = ['exawatt:account-first-run'];
+
+/**
+ * Put a Playwright page into the state a returning operator is in, before the
+ * app boots. Without this a first-run invitation floats over the app chrome
+ * and silently intercepts clicks on whatever it happens to cover — which is a
+ * suppressed UI bug in the eval, not a product signal.
+ *
+ * Call on every page that drives an APP route. Surfaces whose first-run
+ * behaviour is itself under test must skip it and assert deliberately.
+ */
+export async function primeEvalBrowserPage(page, keys = EVAL_FIRST_RUN_KEYS) {
+  await page.addInitScript(storageKeys => {
+    try {
+      for (const key of storageKeys) {
+        window.localStorage.setItem(key, 'dismissed');
+      }
+    } catch {
+      // A storage-denied context still runs the eval; the invitation may then
+      // appear, and the failure it causes is a real one worth seeing.
+    }
+  }, keys);
+}

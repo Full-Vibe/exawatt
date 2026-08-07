@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { AlertTriangle } from 'lucide-react';
 import type {
@@ -16,7 +17,7 @@ import {
   statusLightStateForAgentStatus,
 } from '@/components/status-light';
 import type { SpatialCalloutTheme } from './spatial-theme';
-import { agentGoalDisplay } from './spatial-agent-copy';
+import { agentGoalDisplay, delegationElapsedLabel } from './spatial-agent-copy';
 
 /**
  * One selection command panel (ENG-004 V3.3 S4/F6, decision `0024`).
@@ -43,15 +44,6 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-function elapsedSince(startedAt: number | null, now: number): string | null {
-  if (startedAt === null || !Number.isFinite(startedAt)) return null;
-  const minutes = Math.floor((now - startedAt) / 60_000);
-  if (minutes < 0) return null;
-  if (minutes < 1) return 'under 1m';
-  if (minutes < 60) return `${minutes}m`;
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-}
-
 function PanelSection({
   title,
   count,
@@ -59,7 +51,7 @@ function PanelSection({
 }: {
   title: string;
   count?: number;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <section className="border-t border-border pt-3">
@@ -337,7 +329,7 @@ export function SpatialSelectionPanel({
             <PanelSection title="Delegated" count={delegation.count}>
               <ul className="space-y-1.5">
                 {shownChildren.map(child => {
-                  const elapsed = elapsedSince(child.startedAt, now);
+                  const elapsed = delegationElapsedLabel(child.startedAt, now);
                   return (
                     <li
                       key={child.id}

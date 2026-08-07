@@ -1934,8 +1934,11 @@ logic lives inside `<Canvas>`.
 - One to five children render individually. Above five it is four individuals
   plus one same-family overflow lobe carrying the exact remaining count, so the
   census is never lost to a label budget.
-- A Project-identity rim and a hairline tether carry lineage. Both are identity,
-  never status: D40 keeps sole ownership of state, and no new light is invented.
+- A hairline Project-identity tether carries lineage. It is identity, never
+  status: D40 keeps sole ownership of state, and no new light is invented.
+  The child body stays the shared Agent noun, and the orbit places it just
+  clear of the parent so the two read as separate solids with no outline,
+  halo, or extra colour channel.
 - Spawn emerges from the parent edge into the slot with a damped settle and a
   capped cohort stagger; stop retracts faster along the same lineage. Departing
   units are held in React state and animated out — never `setState` in
@@ -1947,14 +1950,17 @@ logic lives inside `<Canvas>`.
   a child is independently commandable and never adds it to `Direct N Agents`.
 
 **A rendering trap worth recording.** The child layers were invisible for
-several diagnostic rounds while the scene graph showed them present, visible,
-and correctly transformed. The cause was `InstancedMesh` frustum culling: the
-bounding sphere is computed once, from the initial zero-scale instances at the
-origin, and is not recomputed when instance matrices change — so a layer whose
-transforms are written imperatively from the frame loop is culled the moment the
-camera leaves the origin. The fix is `frustumCulled={false}` on those layers. A
-red-material probe initially seemed to disprove occlusion but was itself masked,
-because per-instance `color` MULTIPLIES the material colour.
+several diagnostic rounds while the scene graph reported them present, visible,
+and correctly transformed. `InstancedMesh` computes its bounding sphere once,
+from whatever the instances happen to be at the time, and never recomputes it
+when instance matrices change. These layers start every instance at zero scale
+at the origin and then position them from the frame loop, so the cached sphere
+stayed a speck at the world origin and the renderer frustum-culled the whole
+layer the moment the camera looked anywhere else. `frustumCulled={false}` is
+the fix for any instanced layer driven imperatively; culling one instanced draw
+saves nothing regardless. A red-material probe appeared to rule out occlusion
+and did not, because per-instance `color` MULTIPLIES the material colour — the
+probe was masked by the near-black instance colour it was meant to override.
 
 Two calls the D3c brief reserved for gallery review were made and are flagged
 rather than settled: the tether tucks short (children sit close to the parent,
@@ -1983,6 +1989,68 @@ all four handoff scenarios. Its `desktop` scenario fails, and fails identically
 on unmodified `origin/master`: ENG-030's first-run account popover intercepts the
 header click the scenario needs. That is a pre-existing regression in the eval's
 environment, not this change, and it is not fixed here.
+
+### V3.3/V3.4 review pass (2026-08-07)
+
+A review of the landed arc found five real defects and one composition failure.
+All are fixed; the entries above describe the corrected state.
+
+- **The child units were invisible in the light theme.** The first landing was
+  graded only against the dark eval fixture, where a dark child hex on a dark
+  zone was just legible. In Air the same treatment fused into the parent, so a
+  four-child parent read as one lumpy blob — the exact failure D3c exists to
+  prevent. The first attempt at a fix added a contrasting collar behind each
+  child; it worked but shouted, and children out-competed the parents that own
+  them. The real problem was geometric: the orbit put children slightly INSIDE
+  the parent body. Moving the slot out by a few percent so a child sits just
+  clear of its parent made both themes read with no collar, no outline, and one
+  fewer instanced draw. **Grade a composition in every theme it ships in, not
+  the one the fixture defaults to.**
+- **The instance buffer could silently truncate.** `instanceLimit` was a
+  hardcoded 640 justified by the focused-Project piece budget (120 × 5), but
+  Fleet altitude carries 240 pieces — a worst case of 1,200 units. drei no-ops
+  writes past `limit` with no warning, so a large delegating fleet would have
+  quietly lost children. The ceiling is now derived in the model
+  (`SPATIAL_DELEGATION_UNIT_CEILING`) and a test drives a 400-Agent fleet at
+  both altitudes to keep the two in agreement.
+- **The exit timers accumulated.** Each departing cohort pushed a `setTimeout`
+  id into an array cleared only on unmount, so a long session of spawns and
+  stops grew it without bound. Timers are now tracked in a set and removed as
+  they fire.
+- **The roster diff and motion curve were untestable.** Both lived inside the
+  R3F component. They now live in `delegation-roster.ts` as pure functions with
+  their own tests, leaving the component a transform executor.
+- **Two accessibility gaps.** Child DOM controls were 32px where every other
+  board control is 44px, and at Fleet altitude — where children render but have
+  no in-world controls — the delegated population was invisible to assistive
+  tech. The navigator now names each parent's delegated count and the board
+  carries a census line.
+- **Elapsed copy read `Date.now()` during render**, which is neither
+  deterministic under test nor self-updating. Both the board and the panel now
+  share one `delegationElapsedLabel` helper over an injected `useMinuteClock`,
+  so every elapsed label on screen advances together.
+
+Two shared-code cleanups rode along: parents and children now share one
+`AGENT_HEX_GEOMETRY` module constant rather than each constructing an identical
+hex prism, and the duplicated elapsed formatter in the selection panel was
+folded into the shared helper.
+
+**`eval:spatial`'s desktop scenario, previously failing on `master`, is fixed.**
+ENG-030's first-run account invitation is a fixed overlay on app routes; Electron
+evals are exempt through the dev-evaluator preload marker, but browser evals had
+no equivalent, so the card covered the Fleet header and intercepted the click the
+scenario needs. `primeEvalBrowserPage` in the shared QA-browser helper now puts
+an eval page into the state a returning operator is in, before the app boots.
+It is exported for every browser eval, not patched into this one — a surface
+whose first-run behaviour is itself under test opts out and asserts deliberately.
+
+Evidence: type-check and lint clean; 1,853 tests pass (1 skipped); `eval:r3f`
+100/100 with zero warnings, `t5-operations-board` at 15 draw calls (one lower
+than the first landing, from deleting the collar); `eval:spatial` 8/8 including
+desktop; all 15 `eval:spatial:pointer` scenarios; every `eval:spatial:scale`
+tier with Voltaic at 13 draw calls and the 1k/10k aggregates at 6. Composition
+graded from screenshots of the real Voltaic demo board and the fanout fixture in
+both the Air and Classic themes.
 
 ### V2.1 Scale & Truth
 

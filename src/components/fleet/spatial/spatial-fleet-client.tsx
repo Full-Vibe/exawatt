@@ -27,6 +27,7 @@ import {
   type SpatialBoardRect,
 } from '@exawatt/ui-model';
 import { SpatialSelectionPanel } from './spatial-selection-panel';
+import { useMinuteClock } from './use-minute-clock';
 import { requestSessionJump } from '@/components/workspace/session-jump';
 import { rememberSpatialReturn } from '@/components/nav/spatial-return';
 import { useEffectiveShortcut, useShortcuts } from '@/components/shortcuts';
@@ -65,6 +66,7 @@ const OperationsBoardSurface = dynamic(
 
 export function SpatialFleetClient() {
   const { resolved: resolvedAppearance } = useAppearance();
+  const now = useMinuteClock();
   const spatialTheme = useMemo(
     () => spatialThemeFromResolvedAppearance(resolvedAppearance),
     [resolvedAppearance]
@@ -741,7 +743,7 @@ export function SpatialFleetClient() {
             isDemo={isDemo}
             opening={Boolean(sessionHandoffAgentId)}
             handoffError={sessionHandoffError}
-            now={Date.now()}
+            now={now}
             onOpenSession={() => void openInspectedSession()}
             onClearSelection={clearMultiSelect}
             onInspectAgent={handleSelectAgent}

@@ -381,6 +381,11 @@ export function OperationsBoardSurface({
     () => layout.zones.filter(zone => zone.visible),
     [layout.zones]
   );
+  // The Agent navigator is the DOM equivalent of the WebGL field at EVERY
+  // altitude (the in-world controls only exist below Fleet). Delegation is
+  // rendered as units at Fleet altitude too, so its census has to ride here —
+  // otherwise a whole population is visible to sighted operators and absent
+  // for assistive tech.
   const accessibleAgents = useMemo(
     () =>
       layout.pieces
@@ -388,7 +393,23 @@ export function OperationsBoardSurface({
           piece =>
             piece.visible && piece.kind === 'agent' && Boolean(piece.agentId)
         )
-        .map(piece => ({ id: piece.agentId!, label: piece.label })),
+        .map(piece => ({
+          id: piece.agentId!,
+          label: piece.delegation
+            ? `${piece.label} — ${piece.delegation.count} delegated`
+            : piece.label,
+        })),
+    [layout.pieces]
+  );
+  const delegatedCount = useMemo(
+    () =>
+      layout.pieces.reduce(
+        (total, piece) =>
+          piece.visible && piece.delegation
+            ? total + piece.delegation.count
+            : total,
+        0
+      ),
     [layout.pieces]
   );
   const attentionIds = useMemo(
@@ -621,6 +642,19 @@ export function OperationsBoardSurface({
             }`
           : 'No Agent selected'}
       </span>
+      {/* Board census. Delegated children render as units at every individual
+          resolution but only have their own DOM controls below Fleet, so the
+          population they add is stated here rather than being sight-only. */}
+      <p className="sr-only">
+        {`${accessibleAgents.length} ${
+          accessibleAgents.length === 1 ? 'Agent' : 'Agents'
+        } on the board`}
+        {delegatedCount > 0
+          ? `, plus ${delegatedCount} delegated ${
+              delegatedCount === 1 ? 'Agent' : 'Agents'
+            }`
+          : ''}
+      </p>
       {accessibleAgents.length > 0 && (
         <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 motion-reduce:transition-none">
           <select

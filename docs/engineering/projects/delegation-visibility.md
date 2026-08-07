@@ -791,8 +791,9 @@ What shipped against §9's acceptance list:
 - **Deterministic rosette slots** across the upper and side perimeter, stopping
   at the horizontal so the parent's label lane stays clear. A test pins that
   invariant and caught a real defect during implementation.
-- **Lineage without authority**: a Project-identity rim and hairline tether.
-  D40 keeps sole ownership of status; no new light or colour is invented.
+- **Lineage without authority**: a hairline Project-identity tether. D40 keeps
+  sole ownership of status; no new light or colour is invented, and the child
+  body is the same Agent noun as its parent.
 - **Finite lifecycle motion**: spawn emerges from the parent edge into its slot
   with a damped settle and capped cohort stagger; stop retracts faster along the
   same lineage. Existing siblings keep their slots. A settled constellation adds
@@ -812,9 +813,10 @@ What shipped against §9's acceptance list:
   description renders as such and never as a fabricated one.
 
 **Open, not settled.** §9 reserved three calls for gallery review. The ratio is
-fixed at `0.72x`; the tether tucks short rather than persisting long, because
-the existing Project-altitude hex pitch makes a wider constellation collide with
-neighbouring parents; and the overflow lobe was chosen over a second ring. The
+fixed at `0.72x`; the orbit places each child just clear of the parent body,
+close enough that a dense Project altitude stays legible and far enough that no
+outline is needed to separate them; and the overflow lobe was chosen over a
+second ring. The
 operator's visual review of all three is still owed.
 
 **Process deviation.** §8 step 1 asks for a `/hud-gallery` study before
