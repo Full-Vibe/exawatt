@@ -1,4 +1,11 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from '@testing-library/react';
+import { OUTBOUND_CONTROLS } from '@/lib/hosted-features/contract';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AccountFirstRunCard,
@@ -52,10 +59,13 @@ describe('AccountFirstRunCard', () => {
 
     const invitation = card();
     expect(invitation).not.toBeNull();
+    // Hosted-feature names come from the contract that also names them on
+    // Settings → Privacy — asserting the contract value rather than a literal
+    // is what stops the invitation and the switch drifting apart again.
     for (const feature of [
-      'Session context labels',
-      'Conversation summaries',
-      'Goal visuals',
+      OUTBOUND_CONTROLS.contextLabels.label,
+      OUTBOUND_CONTROLS.conversationSummaries.label,
+      OUTBOUND_CONTROLS.goalVisuals.label,
       'Project sync across machines',
       'Sending feedback',
     ]) {

@@ -10,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultShortcuts, shortcutRegistry } from '@/lib/shortcuts';
 import { GoalVisualPreferenceProvider } from '@/components/goal-visuals/goal-visual-preference-provider';
+import { OUTBOUND_CONTROLS } from '@/lib/hosted-features/contract';
 import { SettingsClient } from './settings-client';
 
 vi.mock('@/lib/goal-visuals/preference-source', () => ({
@@ -23,8 +24,8 @@ vi.mock('@/lib/goal-visuals/preference-source', () => ({
   }),
 }));
 
-// Notifications settings read the goal-visual preference, mounted app-wide
-// in layout.tsx — the test harness mirrors that mounting context.
+// The Privacy section reads the goal-visual preference, mounted app-wide in
+// layout.tsx — the test harness mirrors that mounting context.
 async function renderSettings() {
   const view = render(
     <GoalVisualPreferenceProvider>
@@ -210,6 +211,38 @@ describe('shortcut settings policy', () => {
     });
     expect(screen.getByText(/usually reserved by macOS/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+  });
+
+  it('gives data sharing its own section instead of a Preferences corner', async () => {
+    Object.defineProperty(window, 'electron', {
+      configurable: true,
+      value: {
+        isElectron: true,
+        platform: 'darwin',
+        settings: {
+          get: vi.fn(async () => ({})),
+          onChanged: vi.fn(() => () => undefined),
+          setHostedConversationSummaries: vi.fn(async () => ({})),
+          setHostedContextLabels: vi.fn(async () => ({})),
+        },
+      },
+    });
+    await renderSettings();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preferences' }));
+    expect(
+      screen.getByRole('switch', { name: 'Native macOS notifications' })
+    ).toBeVisible();
+    for (const control of Object.values(OUTBOUND_CONTROLS)) {
+      expect(screen.queryByRole('switch', { name: control.label })).toBeNull();
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'Privacy' }));
+    await act(async () => undefined);
+    expect(screen.getByRole('heading', { name: 'Privacy' })).toBeVisible();
+    for (const control of Object.values(OUTBOUND_CONTROLS)) {
+      expect(screen.getByRole('switch', { name: control.label })).toBeVisible();
+    }
   });
 
   it('rejects a physical Project ordinal even when Option changes its character', async () => {

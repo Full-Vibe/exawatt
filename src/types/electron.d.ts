@@ -550,6 +550,13 @@ export interface ExawattSettings {
     /** macOS dock badge count + bounce (D18) — default off */
     dockBadge?: boolean;
   };
+  /** Decision `0031` hosted-feature switches (ENG-030 OS1.5). Structurally
+   *  identical to `HostedFeaturePreferences` in
+   *  `src/lib/hosted-features/contract.ts`; absent means the disclosed
+   *  default-on, never off. */
+  contextLabels?: {
+    hosted: boolean;
+  };
   conversationSummaries?: {
     hosted: boolean;
   };
@@ -572,6 +579,7 @@ export interface ElectronSettingsApi {
   ) => Promise<ExawattSettings>;
   setAttentionNotifications: (enabled: boolean) => Promise<ExawattSettings>;
   setDockBadge: (enabled: boolean) => Promise<ExawattSettings>;
+  setHostedContextLabels: (enabled: boolean) => Promise<ExawattSettings>;
   setHostedConversationSummaries: (
     enabled: boolean
   ) => Promise<ExawattSettings>;

@@ -28,20 +28,31 @@ import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
 import { isAppRoute } from '@/components/nav/surfaces';
+import { OUTBOUND_CONTROLS } from '@/lib/hosted-features/contract';
 
 export const ACCOUNT_FIRST_RUN_STORAGE_KEY = 'exawatt:account-first-run';
 
 /** What an account turns on, in the order the product surfaces them. */
 const ACCOUNT_FEATURES = [
-  'Session context labels',
-  'Conversation summaries',
-  'Goal visuals',
+  // The first three are the hosted features; take their names from the one
+  // contract that also names them on Settings → Privacy, so the invitation and
+  // the switch cannot call the same thing different things.
+  OUTBOUND_CONTROLS.contextLabels.label,
+  OUTBOUND_CONTROLS.conversationSummaries.label,
+  OUTBOUND_CONTROLS.goalVisuals.label,
   'Project sync across machines',
   'Sending feedback',
 ];
 
-/** Auth surfaces already are the invitation; never stack the card on them. */
-const SUPPRESSED_PREFIXES = ['/sign-in', '/sign-up', '/auth'];
+/**
+ * Auth surfaces already are the invitation; never stack the card on them.
+ *
+ * `/settings` is here for a different reason, found in a visual pass: the card
+ * is positioned top-right and floated over the Privacy section's switch
+ * column, hiding the very controls it was describing. A surface that lets the
+ * operator manage these features must not be covered by an ad for them.
+ */
+const SUPPRESSED_PREFIXES = ['/sign-in', '/sign-up', '/auth', '/settings'];
 
 type AuthState = 'unknown' | 'signed-out' | 'signed-in' | 'unavailable';
 

@@ -13,6 +13,7 @@ import {
   CLASSIC_RECOVERY_ELECTRON_APPEARANCE_PREFERENCES,
   loadSettings,
   setAppearancePreferences,
+  setHostedContextLabels,
 } from './settings-store';
 
 const classic = {
@@ -71,6 +72,30 @@ describe('appearance settings persistence', () => {
       })
     ).toThrow('Invalid or unavailable');
     expect(fs.readFileSync(file, 'utf8')).toBe(before);
+  });
+
+  it('records a hosted-feature choice without ever writing a default', () => {
+    const file = path.join(electronState.userData, 'settings.json');
+    fs.writeFileSync(file, JSON.stringify({ terminal: { fontSize: 15 } }));
+    const before = fs.readFileSync(file, 'utf8');
+
+    // Reading resolves the default in memory; the file keeps its silence, so
+    // an operator who never chose is never recorded as having chosen.
+    expect(loadSettings().contextLabels?.hosted !== false).toBe(true);
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+
+    expect(setHostedContextLabels(false)).toEqual({
+      terminal: { fontSize: 15 },
+      contextLabels: { hosted: false },
+    });
+    expect(loadSettings().contextLabels).toEqual({ hosted: false });
+    expect(setHostedContextLabels(true).contextLabels).toEqual({
+      hosted: true,
+    });
+    expect(loadSettings()).toEqual({
+      terminal: { fontSize: 15 },
+      contextLabels: { hosted: true },
+    });
   });
 
   it('distinguishes a missing preference from corrupt settings', () => {

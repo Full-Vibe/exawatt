@@ -57,6 +57,18 @@ export interface ExawattSettings {
      *  default off — ambient OS-level signals are opt-in. */
     dockBadge?: boolean;
   };
+  /**
+   * ENG-030 OS1.5. The three hosted-feature switches below are decision
+   * `0031`'s "independent user control that prevents hosted feature calls".
+   * All default ON with disclosure; `undefined` means default, never off, and
+   * nothing writes a default back into the file. `src/lib/hosted-features/
+   * contract.ts` carries the same shape for the Settings surface.
+   */
+  contextLabels?: {
+    /** Hosted Session context labels. Off assembles no operator evidence and
+     * sends nothing; accepted and restored labels survive. */
+    hosted: boolean;
+  };
   conversationSummaries?: {
     /** Hosted Haiku labels for local conversation excerpts. Defaults on;
      * excerpts are secret-redacted before they leave the device. */
@@ -372,6 +384,14 @@ export function parseSettings(raw: unknown): ExawattSettings {
     )
       settings.notifications = parsed;
   }
+  // Only an explicit boolean is a choice. A missing or malformed hosted-feature
+  // key stays absent so `?.hosted !== false` resolves it to the disclosed
+  // default instead of silently opting the operator out.
+  const contextLabels = (raw as { contextLabels?: unknown }).contextLabels;
+  if (contextLabels && typeof contextLabels === 'object') {
+    const hosted = (contextLabels as { hosted?: unknown }).hosted;
+    if (typeof hosted === 'boolean') settings.contextLabels = { hosted };
+  }
   const conversationSummaries = (raw as { conversationSummaries?: unknown })
     .conversationSummaries;
   if (conversationSummaries && typeof conversationSummaries === 'object') {
@@ -641,6 +661,13 @@ export function setDockBadge(enabled: boolean): ExawattSettings {
     attention: settings.notifications?.attention ?? false,
     dockBadge: enabled,
   };
+  writeSettings(settings);
+  return settings;
+}
+
+export function setHostedContextLabels(enabled: boolean): ExawattSettings {
+  const settings = loadSettings();
+  settings.contextLabels = { hosted: enabled };
   writeSettings(settings);
   return settings;
 }

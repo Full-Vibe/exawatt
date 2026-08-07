@@ -29,6 +29,25 @@ describe('parseSettings', () => {
     });
   });
 
+  // ENG-030 OS1.5: for every hosted feature, absent must resolve to the
+  // disclosed default, and only an explicit `false` may switch one off.
+  it('treats a missing or malformed hosted-feature key as the default, not off', () => {
+    for (const settings of [
+      parseSettings({}),
+      parseSettings({ contextLabels: { hosted: 'no' } }),
+      parseSettings({ contextLabels: 'off' }),
+    ]) {
+      expect(settings.contextLabels).toBeUndefined();
+      expect(settings.contextLabels?.hosted !== false).toBe(true);
+    }
+    expect(parseSettings({ contextLabels: { hosted: false } })).toEqual({
+      contextLabels: { hosted: false },
+    });
+    expect(
+      parseSettings({ contextLabels: { hosted: true } }).contextLabels
+    ).toEqual({ hosted: true });
+  });
+
   it('parses only an explicit hosted-summary privacy choice', () => {
     expect(
       parseSettings({ conversationSummaries: { hosted: false } })

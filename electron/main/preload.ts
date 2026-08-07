@@ -181,6 +181,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('settings:set-attention-notifications', enabled),
     setDockBadge: (enabled: boolean) =>
       ipcRenderer.invoke('settings:set-dock-badge', enabled),
+    setHostedContextLabels: (enabled: boolean) =>
+      ipcRenderer.invoke('settings:set-hosted-context-labels', enabled),
     setHostedConversationSummaries: (enabled: boolean) =>
       ipcRenderer.invoke('settings:set-hosted-conversation-summaries', enabled),
     setGoalVisualsEnabled: (enabled: boolean) =>
@@ -243,6 +245,7 @@ contextBridge.exposeInMainWorld('electron', {
         fontStrokeWidth?: number;
       };
       notifications?: { attention: boolean; dockBadge?: boolean };
+      contextLabels?: { hosted: boolean };
       conversationSummaries?: { hosted: boolean };
       goalVisuals?: { enabled: boolean };
       agentSources?: {

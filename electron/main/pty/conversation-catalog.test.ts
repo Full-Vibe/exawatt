@@ -232,6 +232,70 @@ describe('RecentConversationCatalog', () => {
     ]);
   });
 
+  // ENG-030 OS1.5 / decision `0031`: the Settings switch must PREVENT the
+  // hosted call, and must do so on the next call, not the next launch.
+  it('never reaches the summary endpoint once the operator switches summaries off', async () => {
+    const cacheRoot = await temporaryRoot('exawatt-conversation-off-');
+    const draft: ConversationDraft = {
+      id: 'provider-id',
+      harness: 'codex',
+      cwd: '/project',
+      startedAt: 1,
+      updatedAt: 2,
+      title: 'Long raw operator prompt',
+      description: 'Long raw operator prompt',
+      titleSource: 'fallback',
+      needsSummary: true,
+      providerSessionId: 'provider-id',
+      continuation: { kind: 'provider' },
+      fingerprint: '2:100',
+      summaryInput: ['Long raw operator prompt'],
+      providerIdentity: 'provider-id',
+      correlationKey: 'codex:long raw operator prompt',
+    };
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            conversations: [
+              {
+                key: 'codex:provider-id',
+                title: 'Cortex Intake Refactor',
+                summary:
+                  'Refactor the patient intake flow and verify consent boundaries.',
+              },
+            ],
+          })
+        )
+    );
+    let hosted = true;
+    const catalog = new RecentConversationCatalog({
+      adapters: [{ harnesses: ['codex'], list: vi.fn(async () => [draft]) }],
+      cacheFile: path.join(cacheRoot, 'summaries.json'),
+      fetch: fetchMock as typeof fetch,
+      summaryEndpoint: 'https://example.test/summarize',
+      hostedSummariesEnabled: () => hosted,
+    });
+
+    await expect(
+      catalog.enrich('/project', 'signed-in-token')
+    ).resolves.toMatchObject([{ title: 'Cortex Intake Refactor' }]);
+    expect(fetchMock).toHaveBeenCalledOnce();
+
+    hosted = false;
+    catalog.invalidate();
+    await expect(
+      catalog.enrich('/project', 'signed-in-token')
+    ).rejects.toThrow(/disabled in Settings/);
+    expect(fetchMock).toHaveBeenCalledOnce();
+
+    // The private cache written while it was on survives, and the local list
+    // stays useful with the feature off.
+    await expect(catalog.list('/project')).resolves.toMatchObject([
+      { title: 'Cortex Intake Refactor', needsSummary: false },
+    ]);
+  });
+
   it('refuses generated narration and overlong cached labels at the desktop boundary', async () => {
     const cacheRoot = await temporaryRoot('exawatt-conversation-cache-');
     const cacheFile = path.join(cacheRoot, 'summaries.json');

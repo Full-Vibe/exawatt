@@ -36,6 +36,7 @@ import {
   setAttentionNotifications,
   setDockBadge,
   setGoalVisualsEnabled,
+  setHostedContextLabels,
   setHostedConversationSummaries,
   setLaunchConfigurationPinned,
   setAppearancePreferences,
@@ -125,6 +126,11 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   // micro-context subtitles (W0.4): summaries stream as they refresh, and
   // ride along on pty:list so late attaches/pollers see the latest
   contextSummarizer.attach(ptySessions);
+  // Hosted-feature switches are read once at boot and again on every change;
+  // absent means the disclosed default (ENG-030 OS1.5, decision `0031`).
+  contextSummarizer.setContextLabelsEnabled(
+    loadSettings().contextLabels?.hosted !== false
+  );
   contextSummarizer.setGoalVisualsEnabled(
     loadSettings().goalVisuals?.enabled !== false
   );
@@ -744,6 +750,19 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     broadcast('settings:changed', settings);
     return settings;
   });
+  handleTrusted(
+    'settings:set-hosted-context-labels',
+    (_event, enabled: boolean) => {
+      if (typeof enabled !== 'boolean')
+        throw new Error('Invalid context label setting');
+      const settings = setHostedContextLabels(enabled);
+      // Applied before the write is announced: no request may be constructed
+      // after the operator has switched the feature off.
+      contextSummarizer.setContextLabelsEnabled(enabled);
+      broadcast('settings:changed', settings);
+      return settings;
+    }
+  );
   handleTrusted(
     'settings:set-hosted-conversation-summaries',
     (_event, enabled: boolean) => {

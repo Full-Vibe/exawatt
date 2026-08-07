@@ -27,9 +27,9 @@ directly — the exact outbound identity decision `0034` exists to prevent.
 | Destination | Category | Default | Off switch |
 | --- | --- | --- | --- |
 | `www.exawatt.ai/ingest` → PostHog (`us.i.posthog.com`, `us-assets.i.posthog.com`) | Product analytics | On in production builds | Runtime opt-out; `NEXT_PUBLIC_ANALYTICS_DISABLED`; omit `NEXT_PUBLIC_POSTHOG_KEY`; redirect via `NEXT_PUBLIC_POSTHOG_HOST` |
-| `www.exawatt.ai/api/context-labels` → `api.anthropic.com` | Hosted feature | On when signed in | `EXAWATT_CONTEXT_LABELS=0` / `EXAWATT_SUMMARIES=0` (no UI toggle — known gap) |
-| `www.exawatt.ai/api/conversations/summarize` → `api.anthropic.com` | Hosted feature | On when signed in | Settings → Preferences → automatic hosted summaries |
-| `www.exawatt.ai/api/goal-visuals` → `fal.run`, `*.fal.media` | Hosted feature | On when signed in | Settings → Preferences → Agent tile background images |
+| `www.exawatt.ai/api/context-labels` → `api.anthropic.com` | Hosted feature | On when signed in | Settings → Privacy → Session context labels; `EXAWATT_CONTEXT_LABELS=0` |
+| `www.exawatt.ai/api/conversations/summarize` → `api.anthropic.com` | Hosted feature | On when signed in | Settings → Privacy → Conversation summaries |
+| `www.exawatt.ai/api/goal-visuals` → `fal.run`, `*.fal.media` | Hosted feature | On when signed in | Settings → Privacy → Agent tile backgrounds |
 | `<project>.supabase.co` | Account, sync, feedback, stats | On when signed in | Sign out; individual features listed below |
 | `<project>.supabase.co/storage/.../desktop-updates` | App updates | Always on in signed builds | No user switch (known gap) |
 | Locally spawned agent harnesses | User's own tools | On user action | Do not launch an Agent |
@@ -199,8 +199,8 @@ is dashboard state and is not verifiable from this repository.
 - **Onward**: the generated image is fetched from an allowlisted `*.fal.media`
   URL and cached in Supabase Storage under `<userId>/<identityKey>.jpg`.
 - **Default**: on when signed in.
-- **Off**: Settings → Preferences → Agent tile background images;
-  `EXAWATT_GOAL_VISUAL_ENDPOINT` redirects it.
+- **Off**: Settings → Privacy → Agent tile backgrounds (also "Backgrounds" in
+  Team's chrome — same preference); `EXAWATT_GOAL_VISUAL_ENDPOINT` redirects it.
 
 ## 5. Supabase — account, sync, feedback, stats
 
@@ -275,8 +275,18 @@ development.
 
 ## Known gaps
 
-- Context labels have no user-facing toggle, only environment variables, while
-  the two other hosted features do. ENG-030 OS1 owns closing that asymmetry.
+- ~~Context labels have no user-facing toggle.~~ **Closed 2026-08-07 (ENG-030
+  OS1.5):** `contextLabels.hosted` is a real preference, enforced at the
+  boundary in `context-summarizer.ts` — when it is off no evidence is
+  assembled and no request is constructed, and an in-flight answer is
+  discarded rather than applied. All three hosted features are now surfaced
+  together on the Settings → Privacy surface.
+- **The re-entry recap is still untoggleable.** It is a separate feature from
+  context labels: it spawns `claude -p --model haiku` and pipes up to 6000
+  characters of unredacted terminal scrollback, under the **user's own** Claude
+  Code credentials rather than Exawatt's. `EXAWATT_SUMMARIES=0` is its only
+  control. It sends more, less redacted, than anything else in this manifest,
+  and it is the strongest remaining candidate for the next control.
 - The update check cannot be disabled from the UI.
 - The Privacy page must be reconciled with this manifest in the same release
   that ships analytics (ENG-030 OS1.4, decision `0034`). Until then, treat this

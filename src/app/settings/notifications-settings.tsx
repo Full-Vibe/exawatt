@@ -3,72 +3,12 @@
 import { useEffect, useState } from 'react';
 import type { ExawattSettings } from '@/types/electron';
 import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
-import { useGoalVisualPreference } from '@/components/goal-visuals/goal-visual-preference-provider';
 
-/** Hosted labeling is automatic by default, but never invisible: Settings
- * names the processor, the bounded/redacted payload, and the local-only
- * fallback. Turning it off is enforced again in Electron main. */
-export function ConversationPrivacySettings() {
-  const [settings, setSettings] = useState<ExawattSettings | null>(null);
-  const [available, setAvailable] = useState(false);
-
-  useEffect(() => {
-    const api = window.electron?.settings;
-    if (!api) return;
-    setAvailable(true);
-    void api.get().then(setSettings);
-    const off = api.onChanged?.(next => setSettings(next));
-    return () => off?.();
-  }, []);
-
-  if (!available) return null;
-  const hosted = settings?.conversationSummaries?.hosted !== false;
-
-  return (
-    <SettingsGroup
-      title="Conversation labels"
-      description="Control optional hosted labels in the Project conversation browser."
-      dataAttribute="data-conversation-privacy-settings"
-    >
-      <SettingRow
-        title="Automatic hosted summaries"
-        description="Send up to eight bounded excerpts to Exawatt’s hosted Anthropic model for short titles. Common credential patterns are redacted first, and full transcripts stay local. Turn this off to stop future hosted requests; provider titles, local prompt text, and already-cached labels still work."
-      >
-        <SettingSwitch
-          checked={hosted}
-          label="Automatic hosted conversation summaries"
-          onChange={next =>
-            void window.electron?.settings?.setHostedConversationSummaries(next)
-          }
-        />
-      </SettingRow>
-    </SettingsGroup>
-  );
-}
-
-export function GoalVisualSettings() {
-  const { enabled, ready, setEnabled } = useGoalVisualPreference();
-
-  return (
-    <SettingsGroup
-      title="Agent tile backgrounds"
-      description="Quiet, goal-based imagery behind Agent tiles."
-      dataAttribute="data-goal-visual-settings"
-    >
-      <SettingRow
-        title="Show background images"
-        description="Show quiet generated imagery behind Agent tiles. Turning this off hides cached visuals and stops new image requests."
-      >
-        <SettingSwitch
-          checked={enabled}
-          disabled={!ready}
-          label="Agent tile background images"
-          onChange={next => void setEnabled(next)}
-        />
-      </SettingRow>
-    </SettingsGroup>
-  );
-}
+/*
+ * Data sharing is not a notification setting (ENG-030 OS1.5). Conversation
+ * summaries and goal visuals left this file for Settings → Privacy, where they
+ * sit beside the other two outbound behaviors and carry their disclosures.
+ */
 
 /**
  * Notification preferences (ENG-016 D6 + D18). Everything here defaults OFF:

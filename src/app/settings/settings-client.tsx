@@ -31,8 +31,6 @@ import {
   resetKeyboardShortcuts,
 } from '@/app/actions/preferences';
 import {
-  ConversationPrivacySettings,
-  GoalVisualSettings,
   NotificationsSettings,
   PermissionsExplainer,
 } from './notifications-settings';
@@ -51,6 +49,7 @@ import type {
 import {
   AlertCircle,
   Blocks,
+  Lock,
   RotateCcw,
   Settings2,
   SlidersHorizontal,
@@ -58,8 +57,9 @@ import {
 } from 'lucide-react';
 import { AgentSourcesSettings } from './agent-sources-settings';
 import { AppearanceSettings } from './appearance-settings';
+import { PrivacySettings } from './privacy-settings';
 
-type SettingsSection = 'agent-sources' | 'preferences';
+type SettingsSection = 'agent-sources' | 'preferences' | 'privacy';
 
 function SettingsNavigation({
   active,
@@ -78,6 +78,11 @@ function SettingsNavigation({
       id: 'preferences' as const,
       label: 'Preferences',
       icon: SlidersHorizontal,
+    },
+    {
+      id: 'privacy' as const,
+      label: 'Privacy',
+      icon: Lock,
     },
   ];
   return (
@@ -394,9 +399,9 @@ export function SettingsClient() {
           active={activeSection}
           onChange={setActiveSection}
         />
-        {activeSection === 'agent-sources' ? (
-          <AgentSourcesSettings />
-        ) : (
+        {activeSection === 'agent-sources' && <AgentSourcesSettings />}
+        {activeSection === 'privacy' && <PrivacySettings />}
+        {activeSection === 'preferences' && (
           <section
             aria-labelledby="preferences-heading"
             className="min-w-0 bg-[var(--settings-page)] px-4 py-6 sm:px-7 lg:px-9"
@@ -410,15 +415,13 @@ export function SettingsClient() {
                   Preferences
                 </h2>
                 <p className="mt-1 font-ui text-chrome-title text-[var(--settings-dim)]">
-                  Personal controls for appearance, notifications, privacy, and
-                  keyboard behavior.
+                  Personal controls for appearance, notifications, and keyboard
+                  behavior.
                 </p>
               </div>
 
               <AppearanceSettings />
-              <GoalVisualSettings />
               <NotificationsSettings />
-              <ConversationPrivacySettings />
               <PermissionsExplainer />
 
               <Card className="border-[var(--settings-line)] bg-[var(--settings-panel)] shadow-none">

@@ -322,6 +322,7 @@ export class ContextSummarizer extends EventEmitter {
   private labelFailures = new Map<string, number>();
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private accessToken: string | null = null;
+  private contextLabelsEnabled = true;
   private goalVisuals = new Map<string, GoalVisual>();
   private goalVisualsEnabled = true;
   private goalVisualPending = new Map<string, PendingGoalVisual>();
@@ -406,6 +407,36 @@ export class ContextSummarizer extends EventEmitter {
     }
   }
 
+  /**
+   * Decision `0031`'s independent user control for `/api/context-labels`
+   * (ENG-030 OS1.5) — the widest-sending hosted path in the product, which
+   * until now was environment-gated only.
+   *
+   * Off is enforced at the boundary rather than the call site: no operator
+   * evidence is assembled, so there is nothing to send and nothing retained.
+   * Turning it off is immediate and non-blocking — a request already in flight
+   * may finish, but its result is discarded and no new one starts. What
+   * survives is exactly what `setGoalVisualsEnabled` preserves for images:
+   * accepted labels, restored last-good state, and operator corrections.
+   */
+  setContextLabelsEnabled(enabled: boolean): void {
+    if (enabled === this.contextLabelsEnabled) return;
+    this.contextLabelsEnabled = enabled;
+    if (enabled) return;
+    this.labelPending.clear();
+    this.labelFailures.clear();
+    for (const timer of this.retryTimers.values()) clearTimeout(timer);
+    this.retryTimers.clear();
+    this.instructions.clear();
+    this.initialInstructions.clear();
+    this.inputBuffers.clear();
+  }
+
+  /** The one gate every context-label evidence and request path consults. */
+  private hostedLabelsAllowed(): boolean {
+    return !this.contextDisabled && this.contextLabelsEnabled;
+  }
+
   setGoalVisualsEnabled(enabled: boolean): void {
     if (enabled === this.goalVisualsEnabled) return;
     this.goalVisualsEnabled = enabled;
@@ -460,6 +491,10 @@ export class ContextSummarizer extends EventEmitter {
       this.summarySources.set(durableSessionId, 'provisional');
       this.emit('context', durableSessionId, seed);
     }
+    // The provisional label above is derived locally from the launch task and
+    // never leaves the device, so it remains the deterministic fallback that
+    // decision `0031` requires. Only the hosted evidence stops here.
+    if (!this.hostedLabelsAllowed()) return;
     const evidence = redactContextEvidence(task) || '[Attachment]';
     this.initialInstructions.set(durableSessionId, evidence);
     this.addInstruction(durableSessionId, evidence);
@@ -527,7 +562,7 @@ export class ContextSummarizer extends EventEmitter {
       this.recapGeneration += 1;
     }
     if (this.pendingRecap?.id === id) this.pendingRecap = null;
-    if (!data || this.contextDisabled || !this.manager) return;
+    if (!data || !this.hostedLabelsAllowed() || !this.manager) return;
     const session = this.manager.list().find(item => item.id === id);
     if (!session || session.harness === 'shell') return;
     const consumed = consumeOperatorInput(
@@ -542,6 +577,7 @@ export class ContextSummarizer extends EventEmitter {
   }
 
   private addInstruction(durableId: string, text: string): void {
+    if (!this.hostedLabelsAllowed()) return;
     const recent = this.instructions.get(durableId) ?? [];
     recent.push({ text, submittedAt: this.now() });
     this.instructions.set(durableId, recent.slice(-MAX_RECENT_INSTRUCTIONS));
@@ -575,7 +611,7 @@ export class ContextSummarizer extends EventEmitter {
 
   private async drainLabel(durableId: string): Promise<void> {
     if (
-      this.contextDisabled ||
+      !this.hostedLabelsAllowed() ||
       !this.accessToken ||
       this.labelInFlight.has(durableId) ||
       !this.labelPending.has(durableId)
@@ -590,6 +626,9 @@ export class ContextSummarizer extends EventEmitter {
     this.labelInFlight.add(durableId);
     try {
       const result = await this.generateLabel(evidence, token);
+      // Switched off while this call was in flight: let it finish, keep its
+      // answer off the screen, and leave the last good label standing.
+      if (!this.contextLabelsEnabled) return;
       const rejection = subtitleRejectionReason(result.label);
       if (rejection) throw new Error(`invalid-label:${rejection}`);
       if (
@@ -632,6 +671,7 @@ export class ContextSummarizer extends EventEmitter {
         confidence: result.confidence,
       });
     } catch (error) {
+      if (!this.contextLabelsEnabled) return;
       this.labelPending.add(durableId);
       const failures = (this.labelFailures.get(durableId) ?? 0) + 1;
       this.labelFailures.set(durableId, failures);

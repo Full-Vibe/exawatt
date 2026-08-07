@@ -434,6 +434,228 @@ describe('hosted Session context ownership', () => {
   });
 });
 
+/**
+ * ENG-030 OS1.5. Decision `0031` requires an independent user control that
+ * *prevents hosted feature calls* — not one that merely stores a boolean. Each
+ * test below fails if enforcement moves back to the call site, and the cache /
+ * last-good assertions pin the "deterministic local fallback" half of the same
+ * decision.
+ */
+describe('hosted context labels are independently controllable', () => {
+  let manager: FakeManager;
+  let generateLabel: ReturnType<typeof vi.fn>;
+  let generateGoalVisual: ReturnType<typeof vi.fn>;
+  let service: ContextSummarizer;
+
+  beforeEach(() => {
+    manager = new FakeManager();
+    generateLabel = vi.fn(async () => ({
+      label: 'Improve agent context summaries',
+      relationship: 'new_context' as const,
+      confidence: 0.95,
+    }));
+    generateGoalVisual = vi.fn(async () => ({
+      identityKey: 'goal-identity',
+      dataUrl: 'data:image/jpeg;base64,YWJj',
+    }));
+    service = new ContextSummarizer({
+      generateLabel,
+      generateGoalVisual,
+      retryBaseMs: 1,
+    });
+    service.attach(manager as unknown as PtySessionManager);
+  });
+
+  it('calls the endpoint by default, because the preference is absent', async () => {
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'Improve the stale tab summary\r');
+    await flush();
+    expect(generateLabel).toHaveBeenCalledOnce();
+  });
+
+  it('assembles no operator evidence and sends nothing while switched off', async () => {
+    service.setContextLabelsEnabled(false);
+    service.setAccessToken('jwt');
+    service.seedFromTask('session-1', 'Implement cmd+shift+t to reopen tabs');
+    service.noteInput('live-1', 'A prompt that must never leave the device\r');
+    await flush();
+    expect(generateLabel).not.toHaveBeenCalled();
+    // The launch label is derived locally and stays: turning a hosted feature
+    // off must not take the deterministic fallback with it.
+    expect(service.getSummary('session-1')).toBe(
+      'Implement cmd+shift+t to reopen tabs'
+    );
+  });
+
+  it('restores a persisted label while switched off', () => {
+    service.setContextLabelsEnabled(false);
+    service.setAccessToken('jwt');
+    expect(service.restore('session-1', 'MVP of Widget Checkout')).toBe(
+      'MVP of Widget Checkout'
+    );
+    expect(generateLabel).not.toHaveBeenCalled();
+  });
+
+  it('keeps the accepted label and generated visual when switched off mid-session', async () => {
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'First work\r');
+    await vi.waitFor(() => expect(generateGoalVisual).toHaveBeenCalledOnce());
+    expect(service.getSummary('session-1')).toBe(
+      'Improve agent context summaries'
+    );
+
+    service.setContextLabelsEnabled(false);
+    service.noteInput('live-1', 'More work after the switch\r');
+    await flush();
+
+    expect(generateLabel).toHaveBeenCalledOnce();
+    expect(service.getSummary('session-1')).toBe(
+      'Improve agent context summaries'
+    );
+    expect(service.getGoalVisual('session-1')).toMatchObject({
+      revision: 1,
+      state: 'ready',
+    });
+  });
+
+  it('discards a response that lands after the switch went off', async () => {
+    let resolveFirst!: (value: {
+      label: string;
+      relationship: 'new_context';
+      confidence: number;
+    }) => void;
+    generateLabel.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveFirst = resolve;
+        })
+    );
+    service.restore('session-1', 'Implement cmd+shift+t to reopen tabs');
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'Topic\r');
+    await Promise.resolve();
+    expect(generateLabel).toHaveBeenCalledOnce();
+
+    service.setContextLabelsEnabled(false);
+    resolveFirst({
+      label: 'Label the operator opted out of',
+      relationship: 'new_context',
+      confidence: 1,
+    });
+    await flush();
+
+    expect(service.getSummary('session-1')).toBe(
+      'Implement cmd+shift+t to reopen tabs'
+    );
+  });
+
+  it('cancels a queued failure retry instead of calling again', async () => {
+    vi.useFakeTimers();
+    generateLabel.mockRejectedValue(new Error('offline'));
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'Old evidence\r');
+    await flush();
+    expect(generateLabel).toHaveBeenCalledOnce();
+
+    service.setContextLabelsEnabled(false);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+    expect(generateLabel).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
+
+  it('resumes on the next instruction after being switched back on', async () => {
+    service.setAccessToken('jwt');
+    service.setContextLabelsEnabled(false);
+    service.noteInput('live-1', 'Hidden while the control was off\r');
+    await flush();
+    expect(generateLabel).not.toHaveBeenCalled();
+
+    service.setContextLabelsEnabled(true);
+    service.noteInput('live-1', 'Improve the stale tab summary\r');
+    await flush();
+
+    expect(generateLabel).toHaveBeenCalledOnce();
+    const [evidence] = generateLabel.mock.calls[0];
+    expect(evidence.recentInstructions).toEqual([
+      expect.objectContaining({ text: 'Improve the stale tab summary' }),
+    ]);
+    expect(JSON.stringify(evidence)).not.toContain('Hidden while the control');
+  });
+});
+
+describe('goal visuals are independently controllable', () => {
+  let manager: FakeManager;
+  let generateLabel: ReturnType<typeof vi.fn>;
+  let generateGoalVisual: ReturnType<typeof vi.fn>;
+  let service: ContextSummarizer;
+
+  beforeEach(() => {
+    manager = new FakeManager();
+    generateLabel = vi.fn(async () => ({
+      label: 'Improve agent context summaries',
+      relationship: 'new_context' as const,
+      confidence: 0.95,
+    }));
+    generateGoalVisual = vi.fn(async () => ({
+      identityKey: 'goal-identity',
+      dataUrl: 'data:image/jpeg;base64,YWJj',
+    }));
+    service = new ContextSummarizer({
+      generateLabel,
+      generateGoalVisual,
+      retryBaseMs: 1,
+    });
+    service.attach(manager as unknown as PtySessionManager);
+  });
+
+  it('labels Sessions without ever calling the image provider when off', async () => {
+    service.setGoalVisualsEnabled(false);
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'First work\r');
+    await vi.waitFor(() => expect(generateLabel).toHaveBeenCalledOnce());
+    await flush();
+    expect(generateGoalVisual).not.toHaveBeenCalled();
+    expect(service.getSummary('session-1')).toBe(
+      'Improve agent context summaries'
+    );
+  });
+
+  it('preserves an already generated image and stops requesting new ones', async () => {
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'First work\r');
+    await vi.waitFor(() => expect(generateGoalVisual).toHaveBeenCalledOnce());
+
+    service.setGoalVisualsEnabled(false);
+    service.correct('session-1', 'A different human goal');
+    await flush();
+
+    expect(generateGoalVisual).toHaveBeenCalledOnce();
+    expect(service.getGoalVisual('session-1')).toMatchObject({
+      identityKey: 'goal-identity',
+      revision: 1,
+      state: 'ready',
+    });
+  });
+
+  it('resumes generation for labelled Sessions when switched back on', async () => {
+    service.setGoalVisualsEnabled(false);
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'First work\r');
+    await vi.waitFor(() => expect(generateLabel).toHaveBeenCalledOnce());
+    expect(generateGoalVisual).not.toHaveBeenCalled();
+
+    service.setGoalVisualsEnabled(true);
+
+    await vi.waitFor(() => expect(generateGoalVisual).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(service.getGoalVisual('session-1')).toMatchObject({
+        state: 'ready',
+      })
+    );
+  });
+});
+
 describe('re-entry recap remains a separate delta feature', () => {
   it('summarizes only output produced while away', async () => {
     let now = 100_000;
