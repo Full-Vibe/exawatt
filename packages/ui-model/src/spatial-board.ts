@@ -75,11 +75,13 @@ export interface SpatialBoardZoneBurn {
   intensity: number;
 }
 
-/** One delegated child projected for the board (ENG-023 D3b): labels only. */
+/** One delegated child projected for the board (ENG-023 D3b/D3c): labels and
+ *  the source's own start time, which the focus detail turns into elapsed. */
 export interface SpatialBoardDelegatedChild {
   id: string;
   agentType: string | null;
   description: string | null;
+  startedAt: number | null;
 }
 
 /** Satellites drawn per delegating piece before the count aggregates into
@@ -635,6 +637,8 @@ function individualPieces(
                   id: child.id,
                   agentType: child.agentType,
                   description: child.description ?? null,
+                  startedAt:
+                    typeof child.startedAt === 'number' ? child.startedAt : null,
                 })),
             },
           }
@@ -1100,6 +1104,137 @@ export function spatialBoardZoneForAgent(
   agentId: string
 ): SpatialBoardProjectZone | null {
   return layout.zones.find(zone => zone.agentIds.includes(agentId)) ?? null;
+}
+
+/**
+ * Delegated children as board units (ENG-004 V3.4 / ENG-023 D3c). D3b drew one
+ * punctuation-sized dot per child; operator dogfood found four real subagents
+ * reading as four specks above one large parent, which conveys neither fan-out
+ * nor that several Agents are doing the work.
+ *
+ * The policy here is pure so the R3F layer stays a damped executor: it decides
+ * slot geometry, the overflow boundary, and lineage endpoints; the renderer
+ * decides only material and motion.
+ */
+export const SPATIAL_DELEGATION_UNIT = {
+  /** Child diameter as a fraction of the parent's. The D3c brief fixes the
+   *  accepted band at 0.72–0.82; below it children read as punctuation again. */
+  childScale: 0.72,
+  /** At or below this, every child is an individual unit. */
+  individualLimit: SPATIAL_DELEGATION_SATELLITE_CAP,
+  /** Above it, this many individuals plus one same-family overflow lobe. */
+  individualsWhenOverflowing: 4,
+  /** Center-to-center distance as a fraction of the parent's diameter. */
+  orbitRadius: 0.8,
+  /** Rosette center, degrees CCW from +x with +y UP (layout space is y-down,
+   *  so this is converted on use). 90° is directly above the parent. */
+  arcCenterDeg: 90,
+  /** Widest angular step between neighbours, so two children never straddle
+   *  the parent and the constellation stays a rosette rather than a ring. */
+  maxStepDeg: 46,
+  /** The rosette may reach the sides but never dip below them: the lane under
+   *  the parent belongs to the DOM label, so slots stop at the horizontal. */
+  maxHalfSpanDeg: 90,
+} as const;
+
+export interface SpatialBoardDelegationUnit {
+  /** Stable across frames: lifecycle motion keys off this, so a redelivered or
+   *  reordered event can never animate the wrong child. */
+  id: string;
+  parentPieceId: string;
+  parentAgentId: string;
+  projectId: string;
+  kind: 'child' | 'overflow';
+  agentType: string | null;
+  description: string | null;
+  startedAt: number | null;
+  /** Exact Agents the lobe stands for; 0 on an individual child. */
+  overflowCount: number;
+  x: number;
+  y: number;
+  size: number;
+  /** Parent edge → child edge in layout space. Lineage only: the tether does
+   *  not imply message flow, status, or command authority. */
+  tether: { x1: number; y1: number; x2: number; y2: number };
+}
+
+function delegationSlotAngles(count: number): number[] {
+  if (count <= 0) return [];
+  if (count === 1) return [SPATIAL_DELEGATION_UNIT.arcCenterDeg];
+  const step = Math.min(
+    SPATIAL_DELEGATION_UNIT.maxStepDeg,
+    (SPATIAL_DELEGATION_UNIT.maxHalfSpanDeg * 2) / (count - 1)
+  );
+  return Array.from(
+    { length: count },
+    (_, index) =>
+      SPATIAL_DELEGATION_UNIT.arcCenterDeg + (index - (count - 1) / 2) * step
+  );
+}
+
+/**
+ * Every live delegated child that should render as a unit, in deterministic
+ * slots around its parent. Returns nothing for aggregated tiers by
+ * construction: aggregate pieces carry no delegation, so a very-far fleet
+ * never becomes a hairball of tethers.
+ */
+export function selectSpatialDelegationUnits(
+  layout: SpatialBoardLayout
+): SpatialBoardDelegationUnit[] {
+  const units: SpatialBoardDelegationUnit[] = [];
+  for (const piece of layout.pieces) {
+    if (piece.kind !== 'agent' || !piece.visible || !piece.agentId) continue;
+    const delegation = piece.delegation;
+    if (!delegation || delegation.count <= 0) continue;
+    const overflowing = delegation.count > SPATIAL_DELEGATION_UNIT.individualLimit;
+    const individuals = overflowing
+      ? delegation.children.slice(
+          0,
+          SPATIAL_DELEGATION_UNIT.individualsWhenOverflowing
+        )
+      : delegation.children;
+    const remainder = overflowing ? delegation.count - individuals.length : 0;
+    const marks = individuals.length + (remainder > 0 ? 1 : 0);
+    const angles = delegationSlotAngles(marks);
+    const size = piece.size * SPATIAL_DELEGATION_UNIT.childScale;
+    const orbit = piece.size * SPATIAL_DELEGATION_UNIT.orbitRadius;
+    for (let index = 0; index < marks; index += 1) {
+      const radians = (angles[index]! * Math.PI) / 180;
+      // Layout space is y-down, so a positive (upward) angle subtracts y.
+      const x = piece.x + Math.cos(radians) * orbit;
+      const y = piece.y - Math.sin(radians) * orbit;
+      const dx = x - piece.x;
+      const dy = y - piece.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const ux = dx / length;
+      const uy = dy / length;
+      const child = individuals[index];
+      const lobe = !child;
+      units.push({
+        id: lobe
+          ? `delegation:${piece.id}:overflow`
+          : `delegation:${piece.id}:${child!.id}`,
+        parentPieceId: piece.id,
+        parentAgentId: piece.agentId,
+        projectId: piece.projectId,
+        kind: lobe ? 'overflow' : 'child',
+        agentType: lobe ? null : child!.agentType,
+        description: lobe ? null : child!.description,
+        startedAt: lobe ? null : child!.startedAt,
+        overflowCount: lobe ? remainder : 0,
+        x: round4(x),
+        y: round4(y),
+        size: round4(size),
+        tether: {
+          x1: round4(piece.x + ux * piece.size * 0.5),
+          y1: round4(piece.y + uy * piece.size * 0.5),
+          x2: round4(x - ux * size * 0.5),
+          y2: round4(y - uy * size * 0.5),
+        },
+      });
+    }
+  }
+  return units;
 }
 
 export function compareSpatialBoardAttention(

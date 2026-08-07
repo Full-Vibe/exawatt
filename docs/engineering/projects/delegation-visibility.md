@@ -771,6 +771,58 @@ capability renders no affordance or zero-state copy.
   resolution, and overflow-lobe versus second-ring treatment. Those are visual
   tuning calls, not permission to return to tiny satellites.
 
+## D3c landing — 2026-08-07: children are units
+
+Landed with ENG-004 V3.4 in the one persistent WebGL board. D3b's event truth,
+caps, accessible census, and instancing remain the substrate; only the
+individual-resolution board treatment changed. D1's compact DOM dots are
+untouched, as the brief required.
+
+What shipped against §9's acceptance list:
+
+- **Four children read as four workers.** The deterministic
+  `/eval/t5-operations-board?fixture=fanout` rig renders the `0/1/4/5/17` states
+  on one board; the four-child parent shows four hex units and their parentage
+  without hover. No dot-only substitute survives at individual resolution.
+- **Same noun family, `0.72x` the parent** — inside the accepted band and above
+  the `0.70x` floor, pinned by a test.
+- **Overflow preserves the census**: above five children, four individuals plus
+  one same-family lobe carrying the exact remainder (`+13` for seventeen).
+- **Deterministic rosette slots** across the upper and side perimeter, stopping
+  at the horizontal so the parent's label lane stays clear. A test pins that
+  invariant and caught a real defect during implementation.
+- **Lineage without authority**: a Project-identity rim and hairline tether.
+  D40 keeps sole ownership of status; no new light or colour is invented.
+- **Finite lifecycle motion**: spawn emerges from the parent edge into its slot
+  with a damped settle and capped cohort stagger; stop retracts faster along the
+  same lineage. Existing siblings keep their slots. A settled constellation adds
+  no frames, and reduced motion keeps identical topology and census with no
+  travel.
+- **Aggregation**: aggregate pieces carry no delegation, so the very-far tier
+  emits no units by construction and a large fleet never becomes a hairball.
+  The 1k/10k tiers stay at six draw calls.
+- **Accessibility**: every visible child is a focusable DOM control whose name
+  carries type, description, elapsed, and parent. Activating opens the PARENT
+  Session — D3c does not pretend a child is independently commandable, and
+  children never join `Direct N Agents`. The board projection now carries the
+  child's `startedAt` so elapsed is real rather than invented.
+- **Panel parity**: the ENG-004 S4 selection panel lists the inspected Agent's
+  delegated children with type, description, and elapsed, folding an over-cap
+  list into an exact remaining count. Absent stays absent — an unreported
+  description renders as such and never as a fabricated one.
+
+**Open, not settled.** §9 reserved three calls for gallery review. The ratio is
+fixed at `0.72x`; the tether tucks short rather than persisting long, because
+the existing Project-altitude hex pitch makes a wider constellation collide with
+neighbouring parents; and the overflow lobe was chosen over a second ring. The
+operator's visual review of all three is still owed.
+
+**Process deviation.** §8 step 1 asks for a `/hud-gallery` study before
+production wiring. The states live in the deterministic eval rig instead, since
+ENG-036's workbench rule would require retiring a study in the same change while
+the eval fixture is permanent regression coverage. Recorded here so the
+substitution is reviewable rather than silent.
+
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 
 On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —

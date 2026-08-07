@@ -1,17 +1,9 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AlertTriangle,
-  Activity,
-  Crosshair,
-  Keyboard,
-  RadioTower,
-  Search,
-} from 'lucide-react';
+import { Crosshair, Keyboard, RadioTower, Search } from 'lucide-react';
 import {
   useConnectToOC,
   useCron,
@@ -28,12 +20,13 @@ import {
   selectSpatialBoardLayout,
   selectSpatialProjectZones,
   selectSpatialScopeActivity,
+  spatialBoardPieceForAgent,
   type Altitude,
   type SpatialBoardLayout,
   type SpatialBoardProjection,
   type SpatialBoardRect,
 } from '@exawatt/ui-model';
-import { agentGoalDisplay } from './spatial-agent-copy';
+import { SpatialSelectionPanel } from './spatial-selection-panel';
 import { requestSessionJump } from '@/components/workspace/session-jump';
 import { rememberSpatialReturn } from '@/components/nav/spatial-return';
 import { useEffectiveShortcut, useShortcuts } from '@/components/shortcuts';
@@ -46,11 +39,6 @@ import {
   toggleSpatialFilterSignal,
   writeSpatialFilters,
 } from './spatial-navigation-state';
-import {
-  STATUS_LIGHT_META,
-  StatusLight,
-  statusLightStateForAgentStatus,
-} from '@/components/status-light';
 import { useAppearance } from '@/components/appearance/appearance-provider';
 import {
   spatialFaultCallout,
@@ -460,35 +448,28 @@ export function SpatialFleetClient() {
     scene.altitude === 'agent'
       ? (commandView.agents.find(agent => agent.id === selectedAgentId) ?? null)
       : null;
-  const visibleActivity = useMemo(() => {
-    if (scene.altitude === 'agent' && selectedAgentId) {
-      return commandView.activityFeed.filter(
-        item => item.agentId === selectedAgentId
-      );
-    }
-    if (scene.altitude === 'project' && scene.focusedProjectId) {
-      const memberIds = new Set(
-        fieldZones.find(zone => zone.clusterId === scene.focusedProjectId)
-          ?.agentIds ?? []
-      );
-      return commandView.activityFeed.filter(item =>
-        memberIds.has(item.agentId)
-      );
-    }
-    return commandView.activityFeed;
-  }, [
-    commandView.activityFeed,
-    fieldZones,
-    scene.altitude,
-    scene.focusedProjectId,
-    selectedAgentId,
-  ]);
-  const inspectedGoal = inspectedAgent
-    ? agentGoalDisplay(inspectedAgent.goal)
-    : null;
-  const inspectedLightState = inspectedAgent
-    ? statusLightStateForAgentStatus(inspectedAgent.status)
-    : null;
+  // "What has this unit been doing" (UX pass, 2026-08-02): the panel carries
+  // the inspected Agent's own Events. The fleet-wide feed is retired — its
+  // state-transition exhaust was chrome nobody read.
+  const inspectedActivity = useMemo(() => {
+    if (!selectedAgentId) return [];
+    return commandView.activityFeed.filter(
+      item => item.agentId === selectedAgentId
+    );
+  }, [commandView.activityFeed, selectedAgentId]);
+  // The selection panel is the ONE command surface (S4/F6): the always-present
+  // inspector rail and the fleet-wide activity feed are retired, so board
+  // chrome is the header strip, the tool cluster, and this panel on selection.
+  const selectedAgents = useMemo(() => {
+    if (multiSelection.size === 0) return [];
+    return commandView.agents.filter(agent => multiSelection.has(agent.id));
+  }, [commandView.agents, multiSelection]);
+  const inspectedDelegation = useMemo(() => {
+    if (!inspectedAgent) return null;
+    const piece = spatialBoardPieceForAgent(boardLayout, inspectedAgent.id);
+    return piece?.delegation ?? null;
+  }, [boardLayout, inspectedAgent]);
+  const showSelectionPanel = Boolean(inspectedAgent) || selectedAgents.length > 0;
 
   const openInspectedSession = useCallback(async () => {
     if (!inspectedAgent || sessionHandoffAgentId) return;
@@ -558,23 +539,6 @@ export function SpatialFleetClient() {
     router,
     sessionHandoffAgentId,
   ]);
-  const showSideRail = Boolean(inspectedAgent || visibleActivity.length > 0);
-
-  const formatTokens = (n: number) =>
-    n >= 1_000_000
-      ? `${(n / 1_000_000).toFixed(1)}M`
-      : n >= 1_000
-        ? `${Math.round(n / 1_000)}k`
-        : `${n}`;
-
-  const formatCurrency = (value: number) =>
-    new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(value);
-
   return (
     <div
       // The inline appearance bootstrap may intentionally change the root
@@ -734,7 +698,7 @@ export function SpatialFleetClient() {
 
       <main
         className={`relative grid flex-none xl:flex-1 xl:overflow-hidden ${
-          showSideRail
+          showSelectionPanel
             ? 'min-h-[calc(100svh+6rem)] xl:min-h-0 xl:grid-cols-[minmax(0,1fr)_340px]'
             : 'min-h-0'
         }`}
@@ -755,189 +719,33 @@ export function SpatialFleetClient() {
             onToggleAgentSelect={toggleAgentSelect}
             onToggleZoneSelect={toggleZoneSelect}
             onBandSelect={bandSelect}
-            onClearMultiSelect={clearMultiSelect}
-            scopeActivity={scopeActivity}
             sessionTransitionAgentId={sessionHandoffAgentId}
             viewportStorageKey={viewportStorageKey}
           />
         </section>
 
-        {showSideRail && (
-          <aside className="exa-material-overlay relative z-10 flex flex-col gap-3 border-t border-border p-4 pb-24 xl:min-h-0 xl:border-l xl:border-t-0 xl:pb-4">
-            {inspectedAgent ? (
-              <section className="exa-material-raised rounded-lg border border-border p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      Selected Agent
-                    </p>
-                    <h2 className="mt-1 break-words text-xl font-semibold leading-tight text-foreground">
-                      {inspectedAgent.name}
-                    </h2>
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 rounded border border-border bg-background px-2 py-1 font-mono text-xs text-foreground">
-                    {inspectedLightState && (
-                      <StatusLight
-                        decorative
-                        size="compact"
-                        state={inspectedLightState}
-                      />
-                    )}
-                    {inspectedAgent.sessionState === 'stopped'
-                      ? 'stopped'
-                      : inspectedLightState
-                        ? STATUS_LIGHT_META[inspectedLightState].label
-                        : inspectedAgent.status}
-                  </span>
-                </div>
-
-                <div className="mt-4 space-y-1.5">
-                  <p className="text-sm leading-6 text-foreground">
-                    {inspectedGoal?.summary}
-                  </p>
-                  {inspectedGoal?.context && (
-                    <p
-                      className="break-words font-mono text-xs leading-5 text-muted-foreground"
-                      title={inspectedGoal.contextTitle ?? undefined}
-                    >
-                      {inspectedGoal.context}
-                    </p>
-                  )}
-                </div>
-
-                <dl className="mt-4 grid grid-cols-2 divide-x divide-border border-y border-border py-3 text-sm">
-                  {/* Spend renders only when the source reports it; a source
-                      with usage but no dollars shows tokens instead (absent,
-                      never zero — the local and demo transports report no
-                      cost by design). */}
-                  {inspectedAgent.cost > 0 ? (
-                    <div className="px-3 first:pl-0">
-                      <p className="text-xs text-muted-foreground">Cost</p>
-                      <p className="mt-1 font-mono text-foreground">
-                        {formatCurrency(inspectedAgent.cost)}
-                      </p>
-                    </div>
-                  ) : inspectedAgent.rawTokens !== undefined ? (
-                    <div className="px-3 first:pl-0">
-                      <p className="text-xs text-muted-foreground">Tokens</p>
-                      <p className="mt-1 font-mono text-foreground">
-                        {formatTokens(inspectedAgent.rawTokens)}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="px-3 first:pl-0" />
-                  )}
-                  <div className="px-3">
-                    <p className="text-xs text-muted-foreground">Turns</p>
-                    <p className="mt-1 font-mono text-foreground">
-                      {inspectedAgent.turnCount}
-                    </p>
-                  </div>
-                </dl>
-
-                {inspectedAgent.needsOperator && (
-                  <div
-                    className="mt-4 rounded-md border p-3 text-sm"
-                    style={{
-                      borderColor: needsOperatorCallout.border,
-                      background: needsOperatorCallout.background,
-                      color: needsOperatorCallout.text,
-                    }}
-                  >
-                    <div className="flex items-center gap-2 font-semibold">
-                      <AlertTriangle
-                        className="h-4 w-4"
-                        style={{ color: needsOperatorCallout.signal }}
-                      />
-                      {inspectedAgent.blockerTitle ?? 'Needs operator'}
-                    </div>
-                    {inspectedAgent.blockerDescription && (
-                      <p
-                        className="mt-2 line-clamp-3"
-                        style={{ color: needsOperatorCallout.detail }}
-                      >
-                        {inspectedAgent.blockerDescription}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {sessionHandoffError && (
-                  <p
-                    role="alert"
-                    className="mt-4 border p-3 text-sm leading-5"
-                    style={{
-                      borderColor: faultCallout.border,
-                      background: faultCallout.background,
-                      color: faultCallout.text,
-                    }}
-                  >
-                    {sessionHandoffError}
-                  </p>
-                )}
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    data-open-agent-session={inspectedAgent.id}
-                    disabled={Boolean(sessionHandoffAgentId)}
-                    onClick={() => void openInspectedSession()}
-                  >
-                    {sessionHandoffAgentId
-                      ? 'Opening…'
-                      : inspectedAgent.sessionState === 'stopped'
-                        ? 'Open stopped session'
-                        : 'Open session'}
-                  </Button>
-                  {inspectedAgent.needsOperator && !isDemo && (
-                    <Button asChild variant="destructive">
-                      <Link
-                        href={`/fleet/${encodeURIComponent(inspectedAgent.id)}`}
-                      >
-                        Clear
-                      </Link>
-                    </Button>
-                  )}
-                </div>
-              </section>
-            ) : null}
-
-            {/* Activity feed — a live event stream, distinct from the hero/blocker
-              attention shown on the surface itself (no duplicate blocker list). */}
-            <section
-              className={`exa-material-raised overflow-hidden rounded-lg border border-border p-4 ${
-                visibleActivity.length > 0 ? 'min-h-0 flex-1' : ''
-              }`}
-            >
-              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-                <Activity className="h-4 w-4 text-primary" />
-                Activity
-              </div>
-              <div className="space-y-2 overflow-y-auto pr-1">
-                {visibleActivity.length === 0 ? (
-                  <p className="text-sm leading-5 text-muted-foreground">
-                    {scene.altitude === 'fleet'
-                      ? 'Waiting for events.'
-                      : `No recent activity for this ${scene.altitude === 'agent' ? 'Agent' : 'Project'}.`}
-                  </p>
-                ) : (
-                  visibleActivity.map(item => (
-                    <div
-                      key={item.id}
-                      className="rounded-md border border-border bg-background/50 p-2.5"
-                    >
-                      <p className="truncate text-chrome-meta font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                        {item.agentName}
-                      </p>
-                      <p className="mt-0.5 line-clamp-2 text-sm text-foreground">
-                        {item.content}
-                      </p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
-          </aside>
+        {showSelectionPanel && (
+          <SpatialSelectionPanel
+            agent={inspectedAgent}
+            selectedAgents={selectedAgents}
+            scopeActivity={scopeActivity}
+            activity={inspectedActivity}
+            delegation={inspectedDelegation}
+            statusColors={{
+              active: spatialTheme.status.active,
+              blocked: spatialTheme.status['needs-you'],
+              idle: spatialTheme.status.off,
+            }}
+            needsOperatorCallout={needsOperatorCallout}
+            faultCallout={faultCallout}
+            isDemo={isDemo}
+            opening={Boolean(sessionHandoffAgentId)}
+            handoffError={sessionHandoffError}
+            now={Date.now()}
+            onOpenSession={() => void openInspectedSession()}
+            onClearSelection={clearMultiSelect}
+            onInspectAgent={handleSelectAgent}
+          />
         )}
       </main>
     </div>

@@ -455,8 +455,10 @@ async function checkAgentProjectionPersistence(page) {
     'Projection lost Agent altitude'
   );
   check(
-    await page.getByText('Selected Agent', { exact: true }).isVisible(),
-    'Projection hid the selected Agent inspector'
+    await page
+      .locator('[data-spatial-selection-panel="agent"]')
+      .isVisible(),
+    'Projection hid the Agent selection panel'
   );
   await page.getByRole('button', { name: 'Top' }).click();
   await page.waitForFunction(
@@ -473,7 +475,7 @@ async function openAgent(page, units) {
   await units.first().focus();
   await page.keyboard.press('Enter');
   await page.waitForURL(/altitude=agent/, { timeout: 10_000 });
-  await page.getByText('Selected Agent', { exact: true }).waitFor();
+  await page.locator('[data-spatial-selection-panel="agent"]').waitFor();
   return unitCount;
 }
 
@@ -587,10 +589,12 @@ async function runScenario(browser, scenario) {
         'Mobile inspector is not reachable by scrolling'
       );
       await page
-        .getByText('Selected Agent', { exact: true })
+        .locator('[data-spatial-selection-panel="agent"]')
         .scrollIntoViewIfNeeded();
       check(
-        await page.getByText('Selected Agent', { exact: true }).isVisible(),
+        await page
+          .locator('[data-spatial-selection-panel="agent"]')
+          .isVisible(),
         'Mobile Agent inspector is not visible'
       );
     } else if (scenario.reduced || scenario.lowPower) {
@@ -612,7 +616,7 @@ async function runScenario(browser, scenario) {
     await page.keyboard.press('Escape');
     await page.waitForURL(/altitude=project/, { timeout: 10_000 });
     await page
-      .getByText('Selected Agent', { exact: true })
+      .locator('[data-spatial-selection-panel="agent"]')
       .waitFor({ state: 'hidden', timeout: 10_000 });
     await page.keyboard.press('Escape');
     await page.waitForURL(

@@ -18,15 +18,16 @@ import {
   type SpatialBoardLens,
   type SpatialBoardProjection,
   type SpatialBoardRect,
-  type SpatialScopeActivity,
 } from '@exawatt/ui-model';
-import { AnnouncedChip } from '@/components/readiness';
 import { useAgentFieldGlide } from '@/components/hud/webgl/use-agent-field-glide';
 import {
   OperationsBoardCanvas,
   type OperationsBoardHandle,
 } from './operations-board-canvas';
-import type { OperationsBoardViewport } from './operations-board-camera';
+import type {
+  BoardClampEdges,
+  OperationsBoardViewport,
+} from './operations-board-camera';
 import { RECENTER_SPATIAL_EVENT } from '@/components/nav/command-altitude-events';
 import { altitudeHandoffActive } from '@/components/nav/altitude-handoff';
 import { parseStoredViewport } from '../spatial-navigation-state';
@@ -37,7 +38,6 @@ import { resolvedAppearanceCssVariables } from '@/lib/appearance/dom-adapter';
 import type { ResolvedAppearance } from '@/lib/appearance/types';
 import {
   spatialColorWithAlpha,
-  spatialPressureColor,
   spatialProjectIdentityColor,
   spatialThemeFromResolvedAppearance,
   type SpatialThemeSnapshot,
@@ -148,112 +148,74 @@ function KeyHint({
   );
 }
 
-/** One count in the scope readout: protocol-colored dot + mono figure. The
- *  dot echoes the D40 light the bucket folds into (D30 redundant channels:
- *  the word carries the meaning; the hue only echoes it). */
-function ScopeCount({
-  color,
-  count,
-  label,
-  theme,
-}: {
-  color: string;
-  count: number;
-  label: string;
-  theme: SpatialThemeSnapshot;
-}) {
-  return (
-    <span className="flex items-center gap-1 whitespace-nowrap">
-      <span
-        aria-hidden="true"
-        className="h-1.5 w-1.5 rounded-full"
-        style={{ background: color, opacity: count > 0 ? 1 : 0.35 }}
-      />
-      <span className="font-mono tabular-nums" style={{ color: theme.label }}>
-        {count}
-      </span>
-      <span style={{ color: theme.labelMuted }}>{label}</span>
-    </span>
-  );
-}
+/** How long a clamp indication stays up after the bound stops being pushed.
+ *  Long enough to read a single flick, short enough never to look like state. */
+const CLAMP_INDICATION_MS = 520;
 
 /**
- * Fleet-scope activity readout (V3.2): fleet totals by default, the
- * selection's totals while a multi-selection exists. Working/blocked/idle
- * ride the D40 buckets; token burn is the scope's reported total — absent
- * (not zero) when nothing in scope reports. On a selection the panel also
- * carries the announced "Direct N Agents" verb — dashed, inert, honest.
+ * Clamp feedback (V3.3 F3, decision `0024`). The camera's elastic overshoot is
+ * the primary answer to a bounded gesture; this is its redundant, motion-free
+ * channel, so reduced motion and low power still see that the board answered
+ * rather than dropped the input. Purely decorative — the board's semantics do
+ * not change at a bound.
  */
-function ScopeReadout({
-  activity,
-  selectionCount,
-  onClearSelection,
+function BoardClampIndicator({
+  edges,
   theme,
 }: {
-  activity: SpatialScopeActivity;
-  selectionCount: number;
-  onClearSelection?: () => void;
+  edges: BoardClampEdges;
   theme: SpatialThemeSnapshot;
 }) {
-  const selection = selectionCount > 0;
+  const edge = theme.selection;
+  const bar = (position: string, size: string, gradient: string) => (
+    <span
+      className={`absolute ${position} ${size}`}
+      style={{ background: gradient }}
+    />
+  );
+  const wash = spatialColorWithAlpha(edge, 0.42);
+  const fade = spatialColorWithAlpha(edge, 0);
   return (
     <div
-      data-board-scope={selection ? 'selection' : 'fleet'}
-      data-board-scope-agents={activity.agentCount}
-      className="exa-material-chrome absolute left-3 top-3 z-10 flex flex-col gap-1.5 border px-2.5 py-2"
-      style={spatialMaterialFrame(theme)}
+      aria-hidden="true"
+      data-board-clamp={boardClampIndicatorState(edges)}
+      className="pointer-events-none absolute inset-0 z-10"
     >
-      <div className="flex items-center justify-between gap-3">
-        <span
-          className="font-mono text-chrome-micro uppercase tracking-[0.12em]"
-          style={{ color: theme.selection }}
-        >
-          {selection
-            ? `${selectionCount} selected`
-            : `${activity.agentCount} agents`}
-        </span>
-        {selection && onClearSelection && (
-          <button
-            type="button"
-            aria-label="Clear selection"
-            onClick={onClearSelection}
-            className="grid h-5 w-5 place-items-center font-mono text-xs leading-none outline-none transition-opacity hover:opacity-70 focus-visible:ring-2 focus-visible:ring-ring"
-            style={{ color: theme.labelMuted }}
-          >
-            ×
-          </button>
+      {edges.left &&
+        bar('left-0 top-0 h-full', 'w-6', `linear-gradient(90deg, ${wash}, ${fade})`)}
+      {edges.right &&
+        bar(
+          'right-0 top-0 h-full',
+          'w-6',
+          `linear-gradient(270deg, ${wash}, ${fade})`
         )}
-      </div>
-      <div className="flex items-center gap-2.5 text-chrome-micro">
-        <ScopeCount
-          color={theme.status.active}
-          count={activity.working}
-          label="working"
-          theme={theme}
+      {edges.top &&
+        bar('left-0 top-0 w-full', 'h-6', `linear-gradient(180deg, ${wash}, ${fade})`)}
+      {edges.bottom &&
+        bar(
+          'bottom-0 left-0 w-full',
+          'h-6',
+          `linear-gradient(0deg, ${wash}, ${fade})`
+        )}
+      {(edges.zoomIn || edges.zoomOut) && (
+        <span
+          className="absolute inset-0 border"
+          style={{ borderColor: spatialColorWithAlpha(edge, 0.32) }}
         />
-        <ScopeCount
-          color={theme.status['needs-you']}
-          count={activity.blocked}
-          label="blocked"
-          theme={theme}
-        />
-        <ScopeCount
-          color={theme.status.off}
-          count={activity.idle}
-          label="idle"
-          theme={theme}
-        />
-      </div>
-      {selection && (
-        <AnnouncedChip
-          coming={`direct all ${selectionCount} selected Agents at once`}
-          className="mt-0.5 self-start"
-        >
-          Direct {selectionCount} {selectionCount === 1 ? 'Agent' : 'Agents'}
-        </AnnouncedChip>
       )}
     </div>
   );
+}
+
+function boardClampIndicatorState(edges: BoardClampEdges): string {
+  const parts: string[] = [];
+  if (edges.left) parts.push('left');
+  if (edges.right) parts.push('right');
+  if (edges.top) parts.push('top');
+  if (edges.bottom) parts.push('bottom');
+  if (edges.zoomIn) parts.push('zoom-in');
+  if (edges.zoomOut) parts.push('zoom-out');
+  return parts.join(' ');
 }
 
 function BoardMiniMap({
@@ -345,8 +307,6 @@ export function OperationsBoardSurface({
   onToggleAgentSelect,
   onToggleZoneSelect,
   onBandSelect,
-  onClearMultiSelect,
-  scopeActivity = null,
   sessionTransitionAgentId = null,
   viewportStorageKey = 'exawatt:spatial-viewport:v2:fleet:~:~:top-down',
   preserveDrawingBuffer = false,
@@ -369,9 +329,6 @@ export function OperationsBoardSurface({
   onToggleAgentSelect?: (agentId: string) => void;
   onToggleZoneSelect?: (zoneId: string) => void;
   onBandSelect?: (band: SpatialBoardRect) => void;
-  onClearMultiSelect?: () => void;
-  /** Scope-aware activity readout (fleet totals, or the selection's). */
-  scopeActivity?: SpatialScopeActivity | null;
   sessionTransitionAgentId?: string | null;
   viewportStorageKey?: string;
   preserveDrawingBuffer?: boolean;
@@ -399,6 +356,24 @@ export function OperationsBoardSurface({
   );
   const viewportRect = useRef<SVGRectElement | null>(null);
   const bandOverlay = useRef<HTMLDivElement | null>(null);
+  // Clamp feedback state is semantic (which bound is engaged), not positional,
+  // so it renders through React; the rig only reports edge-set CHANGES.
+  const [clampEdges, setClampEdges] = useState<BoardClampEdges | null>(null);
+  const clampTimer = useRef<number | null>(null);
+  const handleClampEdges = useCallback((edges: BoardClampEdges | null) => {
+    if (clampTimer.current !== null) window.clearTimeout(clampTimer.current);
+    if (edges) setClampEdges(edges);
+    clampTimer.current = window.setTimeout(() => {
+      clampTimer.current = null;
+      setClampEdges(null);
+    }, CLAMP_INDICATION_MS);
+  }, []);
+  useEffect(
+    () => () => {
+      if (clampTimer.current !== null) window.clearTimeout(clampTimer.current);
+    },
+    []
+  );
   const pendingViewport = useRef<OperationsBoardViewport | null>(null);
   const didRestoreViewport = useRef(false);
   const viewportSaveTimer = useRef<number | null>(null);
@@ -692,11 +667,14 @@ export function OperationsBoardSurface({
             followSelection={followSelection}
             touchSelectionMode={touchSelectionMode}
             onManualCameraInput={suspendSelectionFollow}
+            onClampEdges={handleClampEdges}
             preserveDrawingBuffer={preserveDrawingBuffer}
             theme={theme}
           />
         </BoardErrorBoundary>
       </div>
+
+      {clampEdges && <BoardClampIndicator edges={clampEdges} theme={theme} />}
 
       {/* Shift-drag selection band (V3.2): positioned imperatively by the
           camera rig at pointer frequency; dashed per the board's selection
@@ -739,14 +717,6 @@ export function OperationsBoardSurface({
           sessionTransitionAgentId ? 'pointer-events-none opacity-0' : ''
         }`}
       >
-        {scopeActivity && multiSelection && multiSelection.size > 0 && (
-          <ScopeReadout
-            activity={scopeActivity}
-            selectionCount={multiSelection?.size ?? 0}
-            onClearSelection={onClearMultiSelect}
-            theme={theme}
-          />
-        )}
         {attentionIds.length > 0 && (
           <button
             type="button"
@@ -762,35 +732,40 @@ export function OperationsBoardSurface({
           </button>
         )}
 
+        {/* One tool cluster (S4/F6): hints, touch mode, projection, minimap,
+            and zoom share a single stable region so the board carries at most
+            this and the needs-you queue besides the selection panel. */}
         <div
-          className="exa-material-chrome pointer-events-none absolute bottom-3 left-1/2 z-10 hidden -translate-x-1/2 flex-wrap items-center justify-center gap-x-3 gap-y-1.5 border px-2.5 py-2 xl:flex"
-          style={spatialMaterialFrame(theme)}
+          data-board-tool-cluster
+          className="absolute bottom-3 right-3 z-10 flex flex-row items-end gap-1.5 sm:flex-col"
         >
-          {layout.altitude === 'fleet' && (
-            <KeyHint keyName="1–9" label="Project" theme={theme} />
-          )}
-          <KeyHint keyName="←↑↓→" label="select" theme={theme} />
-          <KeyHint
-            keyName={coarsePointer ? 'drag' : 'wheel WASD middle-drag'}
-            label="pan"
-            theme={theme}
-          />
-          <KeyHint keyName="pinch + −" label="zoom" theme={theme} />
-          {onBandSelect && !coarsePointer && (
-            <KeyHint keyName="drag" label="select" theme={theme} />
-          )}
-          <KeyHint keyName="V" label="view" theme={theme} />
-          {attentionIds.length > 0 && (
-            <KeyHint keyName="N" label="attention" theme={theme} />
-          )}
-          <KeyHint
-            keyName={layout.altitude === 'fleet' ? '0' : 'Esc'}
-            label={layout.altitude === 'fleet' ? 'recenter' : 'zoom out'}
-            theme={theme}
-          />
-        </div>
-
-        <div className="absolute bottom-3 right-3 z-10 flex flex-row items-end gap-1.5 sm:flex-col">
+          <div
+            className="exa-material-chrome pointer-events-none hidden flex-wrap items-center justify-end gap-x-3 gap-y-1.5 border px-2.5 py-2 xl:flex"
+            style={spatialMaterialFrame(theme)}
+          >
+            {layout.altitude === 'fleet' && (
+              <KeyHint keyName="1–9" label="Project" theme={theme} />
+            )}
+            <KeyHint keyName="←↑↓→" label="select" theme={theme} />
+            <KeyHint
+              keyName={coarsePointer ? 'drag' : 'wheel WASD middle-drag'}
+              label="pan"
+              theme={theme}
+            />
+            <KeyHint keyName="pinch + −" label="zoom" theme={theme} />
+            {onBandSelect && !coarsePointer && (
+              <KeyHint keyName="drag" label="select" theme={theme} />
+            )}
+            <KeyHint keyName="V" label="view" theme={theme} />
+            {attentionIds.length > 0 && (
+              <KeyHint keyName="N" label="attention" theme={theme} />
+            )}
+            <KeyHint
+              keyName={layout.altitude === 'fleet' ? '0' : 'Esc'}
+              label={layout.altitude === 'fleet' ? 'recenter' : 'zoom out'}
+              theme={theme}
+            />
+          </div>
           {coarsePointer && onBandSelect && (
             <button
               type="button"

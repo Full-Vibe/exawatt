@@ -19,13 +19,15 @@ import {
   type ReactNode,
 } from 'react';
 import * as THREE from 'three';
-import type {
-  SpatialBoardLayout,
-  SpatialBoardLens,
-  SpatialBoardPiece,
-  SpatialBoardProjection,
-  SpatialBoardProjectZone,
-  SpatialBoardRect,
+import {
+  selectSpatialDelegationUnits,
+  type SpatialBoardDelegationUnit,
+  type SpatialBoardLayout,
+  type SpatialBoardLens,
+  type SpatialBoardPiece,
+  type SpatialBoardProjection,
+  type SpatialBoardProjectZone,
+  type SpatialBoardRect,
 } from '@exawatt/ui-model';
 import {
   STATUS_LIGHT_ACTIVE_ROTATION_SECONDS,
@@ -59,16 +61,22 @@ import {
 } from '../spatial-theme';
 import {
   applyBoardCameraTarget,
+  boardCameraLimits,
+  boardClampEdgesKey,
   boardRectCenter as rectCenter,
   boardViewportFromCamera,
+  clampBoardCameraTargetInPlace,
   clientPointToBoard,
+  createBoardClampEdges,
   createBoardProjectionScratch,
   effectiveBoardCameraZoom,
   fitBoardZoom,
   fittedBoardCameraTarget,
+  relaxBoardCameraTargetInPlace,
   semanticBoardCameraTarget,
   softFollowBoardPoint,
   type BoardCameraTarget,
+  type BoardClampEdges,
   type OperationsBoardViewport,
 } from './operations-board-camera';
 import { boardPointerAction, pinchZoomTarget } from './operations-board-input';
@@ -168,6 +176,7 @@ function BoardCameraRig({
   followSelection,
   touchSelectionMode,
   onManualCameraInput,
+  onClampEdges,
 }: {
   layout: SpatialBoardLayout;
   projection: SpatialBoardProjection;
@@ -186,6 +195,9 @@ function BoardCameraRig({
   /** Direct touch pans by default; this explicit mode makes it band-select. */
   touchSelectionMode: boolean;
   onManualCameraInput?: () => void;
+  /** F3 clamp feedback: fires only when the ENGAGED edge set changes, so the
+   *  DOM indicator is semantic state and never a pointer-frequency render. */
+  onClampEdges?: (edges: BoardClampEdges | null) => void;
 }) {
   const { size, invalidate, gl } = useThree();
   const get = useThree(state => state.get);
@@ -214,6 +226,10 @@ function BoardCameraRig({
   const fitZoom = useRef(1);
   const lambda = useRef(FLIGHT_LAMBDA);
   const initialized = useRef(false);
+  const clampEdges = useRef(createBoardClampEdges());
+  const clampLimits = useRef<ReturnType<typeof boardCameraLimits> | null>(null);
+  const clampEngaged = useRef(false);
+  const clampKey = useRef('');
   /** Entry-pose hold (V3.0): while set, the camera stays on the handoff
    *  pose so the card→zone crossfade happens over a still frame; the
    *  pull-back to `fitRect` fires on release, unless the operator has
@@ -266,6 +282,35 @@ function BoardCameraRig({
   const announceTargetViewport = useCallback(() => {
     notifyViewport();
   }, [notifyViewport]);
+
+  /**
+   * Hold a manually requested camera target inside the board's limits, letting
+   * it travel a bounded distance past an engaged bound (F3). Applied to
+   * operator input only — solved poses (entry, focus, recenter) already frame
+   * real geometry, and clamping them would fight the transition owner.
+   */
+  const constrainTarget = useCallback(() => {
+    const bounds = layoutRef.current.bounds;
+    if (size.width <= 0 || size.height <= 0) return;
+    const limits = boardCameraLimits(
+      bounds,
+      { width: size.width, height: size.height },
+      fitZoom.current,
+      target.current
+    );
+    clampLimits.current = limits;
+    const engaged = clampBoardCameraTargetInPlace(
+      target.current,
+      limits,
+      !reduced,
+      clampEdges.current
+    );
+    clampEngaged.current = engaged;
+    const key = engaged ? boardClampEdgesKey(clampEdges.current) : '';
+    if (key === clampKey.current) return;
+    clampKey.current = key;
+    onClampEdges?.(engaged ? { ...clampEdges.current } : null);
+  }, [onClampEdges, reduced, size.height, size.width]);
 
   const targetForRect = useCallback(
     (rect: SpatialBoardRect) => {
@@ -474,12 +519,6 @@ function BoardCameraRig({
   // WASD, and trackpad scroll pan; pinch/ctrl-wheel zoom at the cursor.
   useEffect(() => {
     const element = gl.domElement;
-    const clampZoom = (zoom: number) =>
-      THREE.MathUtils.clamp(
-        zoom,
-        fitZoom.current * 0.55,
-        fitZoom.current * 4.5
-      );
     const worldAt = (clientX: number, clientY: number) => {
       const rect = element.getBoundingClientRect();
       const ortho = cameraRef.current;
@@ -583,15 +622,14 @@ function BoardCameraRig({
             1,
             Math.hypot(second.x - first.x, second.y - first.y)
           );
-          const nextZoom = clampZoom(
-            pinchZoomTarget(pinchZoom, pinchDistance, distance)
-          );
-          const ratio = target.current.zoom / nextZoom;
+          const nextZoom = pinchZoomTarget(pinchZoom, pinchDistance, distance);
+          const ratio = target.current.zoom / Math.max(nextZoom, 0.001);
           target.current.x =
             pinchAnchor.x - (pinchAnchor.x - target.current.x) * ratio;
           target.current.y =
             pinchAnchor.y - (pinchAnchor.y - target.current.y) * ratio;
           target.current.zoom = nextZoom;
+          constrainTarget();
           lambda.current = NUDGE_LAMBDA;
           if (reduced) snapToTarget();
           invalidate();
@@ -608,6 +646,7 @@ function BoardCameraRig({
       const zoom = Math.max(effectiveBoardCameraZoom(current.current), 0.001);
       target.current.x -= (event.clientX - lastX) / zoom;
       target.current.y += (event.clientY - lastY) / zoom;
+      constrainTarget();
       lastX = event.clientX;
       lastY = event.clientY;
       lambda.current = NUDGE_LAMBDA;
@@ -667,10 +706,8 @@ function BoardCameraRig({
       const zoom = Math.max(current.current.zoom, 0.001);
       if (event.ctrlKey || event.metaKey) {
         const anchor = worldAt(event.clientX, event.clientY);
-        const nextZoom = clampZoom(
-          target.current.zoom * Math.exp(-event.deltaY * 0.012)
-        );
-        const ratio = target.current.zoom / nextZoom;
+        const nextZoom = target.current.zoom * Math.exp(-event.deltaY * 0.012);
+        const ratio = target.current.zoom / Math.max(nextZoom, 0.001);
         target.current.x = anchor.x - (anchor.x - target.current.x) * ratio;
         target.current.y = anchor.y - (anchor.y - target.current.y) * ratio;
         target.current.zoom = nextZoom;
@@ -678,6 +715,7 @@ function BoardCameraRig({
         target.current.x += event.deltaX / zoom;
         target.current.y -= event.deltaY / zoom;
       }
+      constrainTarget();
       lambda.current = NUDGE_LAMBDA;
       onManualCameraInput?.();
       announceTargetViewport();
@@ -699,6 +737,7 @@ function BoardCameraRig({
   }, [
     announceTargetViewport,
     bandOverlayRef,
+    constrainTarget,
     gl,
     invalidate,
     onBandSelect,
@@ -735,6 +774,10 @@ function BoardCameraRig({
           0.001,
           Math.min(size.width / viewport.width, size.height / viewport.height)
         );
+        // A viewport remembered against a different fleet shape can sit far
+        // outside today's board; restoring it must land inside the limits
+        // rather than resuming the session lost in empty space.
+        constrainTarget();
         cameraChanged(false);
       },
       focusProject(projectId) {
@@ -793,32 +836,21 @@ function BoardCameraRig({
         invalidate();
       },
       zoom(steps) {
-        const min = fitZoom.current * 0.55;
-        const max = fitZoom.current * 4.5;
-        target.current.zoom = THREE.MathUtils.clamp(
-          target.current.zoom * Math.exp(steps * 0.18),
-          min,
-          max
-        );
+        target.current.zoom *= Math.exp(steps * 0.18);
+        constrainTarget();
         cameraChanged();
       },
       pan(dx, dy) {
         target.current.x += dx * span();
         target.current.y -= dy * span();
+        constrainTarget();
         cameraChanged();
       },
       nudge(dx, dy, dollySteps) {
         target.current.x += dx * span();
         target.current.y -= dy * span();
-        if (dollySteps) {
-          const min = fitZoom.current * 0.55;
-          const max = fitZoom.current * 4.5;
-          target.current.zoom = THREE.MathUtils.clamp(
-            target.current.zoom * Math.exp(dollySteps * 1.7),
-            min,
-            max
-          );
-        }
+        if (dollySteps) target.current.zoom *= Math.exp(dollySteps * 1.7);
+        constrainTarget();
         cameraChanged();
       },
     };
@@ -827,6 +859,7 @@ function BoardCameraRig({
     };
   }, [
     announceTargetViewport,
+    constrainTarget,
     controllerRef,
     invalidate,
     layout.bounds.height,
@@ -848,6 +881,23 @@ function BoardCameraRig({
     const ortho =
       cameraRef.current ?? (state.camera as THREE.OrthographicCamera);
     cameraRef.current = ortho;
+    // Rubber band (F3): a target pushed past a bound returns to it. Gated on
+    // an actually engaged clamp so a solved focus/entry pose is never dragged.
+    let relaxing = false;
+    if (clampEngaged.current && clampLimits.current) {
+      relaxing = relaxBoardCameraTargetInPlace(
+        target.current,
+        clampLimits.current,
+        Math.min(delta, 0.05)
+      );
+      if (!relaxing) {
+        clampEngaged.current = false;
+        if (clampKey.current !== '') {
+          clampKey.current = '';
+          onClampEdges?.(null);
+        }
+      }
+    }
     const speed = lambda.current;
     const nextX = THREE.MathUtils.damp(
       current.current.x,
@@ -884,7 +934,7 @@ function BoardCameraRig({
     current.current.tilt = moving ? nextTilt : target.current.tilt;
     applyCamera(current.current);
     notifyViewport();
-    if (moving) state.invalidate();
+    if (moving || relaxing) state.invalidate();
   });
 
   return null;
@@ -1465,98 +1515,297 @@ function crossGeometry(): THREE.ShapeGeometry {
  * Only Active rotors invalidate the demand loop, at the shared DOM cadence.
  */
 /**
- * Delegation satellites (ENG-023 D3b): one small dot per live delegated
- * child, in a row above the parent piece (the space below belongs to the DOM
- * control label) — the same dots-not-counts grammar the DOM surfaces use, in
- * the project's accent so they read as the parent's team rather than as more
- * status. One instanced draw for the whole board; capped per piece upstream
- * (`SPATIAL_DELEGATION_SATELLITE_CAP`), the exact census stays in the DOM
- * control copy. Breathes on the shared V2.4 ambient gate and parks still at
- * base opacity otherwise.
+ * Delegated children as board units (ENG-004 V3.4 / ENG-023 D3c). D3b drew one
+ * punctuation-sized dot per child; operator dogfood found that four real
+ * subagents then read as four specks above one large parent, conveying neither
+ * fan-out nor that several Agents are doing the work.
+ *
+ * Children are now the same beveled hex noun as their parent at the pure
+ * model's ratio, connected by a hairline Project-identity tether. All slot
+ * geometry, the overflow boundary, and the lineage endpoints come from
+ * `selectSpatialDelegationUnits`; this layer is a damped executor that owns
+ * only material and the finite spawn/stop transitions.
+ *
+ * Two instanced draws for the whole board (bodies, tethers). Tethers are
+ * transform-driven quads rather than lines so their endpoints can animate
+ * every frame without rebuilding geometry.
  */
-/** Breath = 0.725 + 0.175·sin(phase); the park value sits ON that curve so
- *  pausing and resuming the ambient gate is continuous, not a pop. */
-const SATELLITE_PARK_OPACITY = 0.85;
-const SATELLITE_PARK_PHASE = Math.asin(
-  (SATELLITE_PARK_OPACITY - 0.725) / 0.175
-);
+const DELEGATION_MOTION = {
+  /** Critically damped settle, no bounce (D3c brief: 450–650ms). */
+  spawnSeconds: 0.55,
+  /** The exit finishes faster than the entrance (240–320ms). */
+  stopSeconds: 0.28,
+  staggerSeconds: 0.055,
+  maxStaggerSeconds: 0.33,
+  /** Per-piece mark cap × the project-altitude piece budget, with headroom:
+   *  drei silently no-ops writes past `limit`, so a full fan-out team must
+   *  never be able to reach it. */
+  instanceLimit: 640,
+} as const;
 
-function DelegationSatelliteLayer({
-  pieces,
-  active,
-  theme,
-}: {
-  pieces: SpatialBoardPiece[];
-  active: boolean;
-  theme: SpatialThemeSnapshot;
-}) {
-  const material = useRef<THREE.MeshBasicMaterial>(null);
-  const phase = useRef(SATELLITE_PARK_PHASE);
-  const geometry = useMemo(() => new THREE.CircleGeometry(0.5, 16), []);
-  useEffect(() => () => geometry.dispose(), [geometry]);
+/** Identity rim scale relative to the child body — a hairline halo, not a ring. */
+const DELEGATION_RIM_SCALE = 1.08;
 
-  const satellites = pieces.flatMap(piece => {
-    if (piece.kind !== 'agent' || !piece.delegation) return [];
-    const shown = piece.delegation.children.length;
-    const dot = piece.size * 0.13;
-    const gap = piece.size * 0.18;
-    // Above the piece: the space below belongs to the DOM control label at
-    // Team/Agent altitude, and the row must never hide behind it.
-    return piece.delegation.children.map((child, index) => ({
-      key: `satellite:${piece.id}:${child.id}`,
-      x: piece.x + (index - (shown - 1) / 2) * gap,
-      y: piece.y - piece.size * 0.72,
-      scale: dot,
-      color: spatialProjectIdentityColor(theme, piece.projectId),
-    }));
-  });
+interface DelegationMotionRecord {
+  progress: number;
+  delay: number;
+  parentX: number;
+  parentY: number;
+}
 
-  // One slow breath for the whole constellation — 2.6s, matching the DOM
-  // dots. The off-branch settles opacity to the park value AND re-seeds the
-  // phase to the point on the sine that MAPS to it, so the gate flipping
-  // false can never freeze the dots mid-sine (the console3d Panel bug) and
-  // flipping back on resumes from the parked brightness instead of popping
-  // to an arbitrary point in the cycle.
-  useFrame((state, delta) => {
-    if (!material.current) return;
-    if (!active || satellites.length === 0) {
-      material.current.opacity = SATELLITE_PARK_OPACITY;
-      phase.current = SATELLITE_PARK_PHASE;
+function easeOutCubic(value: number): number {
+  return 1 - Math.pow(1 - value, 3);
+}
+
+/**
+ * Units whose parent stopped reporting them, retained just long enough to
+ * retract along their tether. Kept in React state (never set from `useFrame`);
+ * the frame loop only mutates transforms.
+ */
+function useDelegationExits(
+  units: SpatialBoardDelegationUnit[],
+  reduced: boolean
+): SpatialBoardDelegationUnit[] {
+  const [exits, setExits] = useState<SpatialBoardDelegationUnit[]>([]);
+  const previous = useRef<SpatialBoardDelegationUnit[]>([]);
+  const timers = useRef<number[]>([]);
+  useLayoutEffect(() => {
+    const liveIds = new Set(units.map(unit => unit.id));
+    const departed = previous.current.filter(unit => !liveIds.has(unit.id));
+    previous.current = units;
+    // Reduced motion keeps identical topology and census with no travel, so a
+    // departure is simply gone on the next frame.
+    if (reduced) {
+      setExits(current => (current.length === 0 ? current : []));
       return;
     }
-    phase.current += (Math.min(delta, 0.05) * Math.PI * 2) / 2.6;
-    material.current.opacity = 0.725 + 0.175 * Math.sin(phase.current);
-    state.invalidate();
+    setExits(current => {
+      const kept = current.filter(unit => !liveIds.has(unit.id));
+      const known = new Set(kept.map(unit => unit.id));
+      const added = departed.filter(unit => !known.has(unit.id));
+      if (added.length === 0 && kept.length === current.length) return current;
+      return [...kept, ...added];
+    });
+    if (departed.length === 0) return;
+    const timer = window.setTimeout(
+      () => {
+        const goneIds = new Set(departed.map(unit => unit.id));
+        setExits(current => current.filter(unit => !goneIds.has(unit.id)));
+      },
+      DELEGATION_MOTION.stopSeconds * 1000 + 60
+    );
+    timers.current.push(timer);
+  }, [reduced, units]);
+  useEffect(
+    () => () => {
+      for (const timer of timers.current) window.clearTimeout(timer);
+      timers.current = [];
+    },
+    []
+  );
+  return exits;
+}
+
+function DelegationUnitLayer({
+  units,
+  reduced,
+  theme,
+}: {
+  units: SpatialBoardDelegationUnit[];
+  reduced: boolean;
+  theme: SpatialThemeSnapshot;
+}) {
+  const invalidate = useThree(state => state.invalidate);
+  const exits = useDelegationExits(units, reduced);
+  const bodyRefs = useRef(new Map<string, THREE.Object3D>());
+  const rimRefs = useRef(new Map<string, THREE.Object3D>());
+  const tetherRefs = useRef(new Map<string, THREE.Object3D>());
+  const motion = useRef(new Map<string, DelegationMotionRecord>());
+  const pieceGeometry = useMemo(() => {
+    // The same noun as an Agent unit, one size down — the family match is the
+    // whole point of the milestone, so the geometry is deliberately identical.
+    const geometry = new THREE.CylinderGeometry(0.5, 0.56, 0.34, 6);
+    geometry.rotateX(Math.PI / 2);
+    return geometry;
+  }, []);
+  const tetherGeometry = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
+  useEffect(
+    () => () => {
+      pieceGeometry.dispose();
+      tetherGeometry.dispose();
+    },
+    [pieceGeometry, tetherGeometry]
+  );
+
+  const rendered = useMemo(
+    () => [
+      ...units.map(unit => ({ unit, exiting: false })),
+      ...exits.map(unit => ({ unit, exiting: true })),
+    ],
+    [exits, units]
+  );
+
+  // Seed lifecycle records for arrivals. A sibling that was already live keeps
+  // its slot and its progress: a spawn moves the new unit, never the family.
+  useLayoutEffect(() => {
+    const seen = new Set<string>();
+    const perParent = new Map<string, number>();
+    for (const { unit, exiting } of rendered) {
+      seen.add(unit.id);
+      if (motion.current.has(unit.id)) continue;
+      const index = perParent.get(unit.parentPieceId) ?? 0;
+      perParent.set(unit.parentPieceId, index + 1);
+      const record: DelegationMotionRecord = {
+        progress: reduced || exiting ? 1 : 0,
+        delay: reduced
+          ? 0
+          : Math.min(
+              index * DELEGATION_MOTION.staggerSeconds,
+              DELEGATION_MOTION.maxStaggerSeconds
+            ),
+        // The child emerges from, and retracts to, its parent's centre; the
+        // tether endpoints in the model give it its resting geometry.
+        parentX: unit.tether.x1,
+        parentY: unit.tether.y1,
+      };
+      motion.current.set(unit.id, record);
+    }
+    for (const id of [...motion.current.keys()]) {
+      if (!seen.has(id)) motion.current.delete(id);
+    }
+    invalidate();
+  }, [invalidate, reduced, rendered]);
+
+  useFrame((state, delta) => {
+    if (rendered.length === 0) return;
+    const dt = Math.min(delta, 0.05);
+    let animating = false;
+    for (const { unit, exiting } of rendered) {
+      const record = motion.current.get(unit.id);
+      const body = bodyRefs.current.get(unit.id);
+      const rim = rimRefs.current.get(unit.id);
+      const tether = tetherRefs.current.get(unit.id);
+      if (!record || !body) continue;
+      if (reduced) record.progress = exiting ? 0 : 1;
+      else if (exiting) {
+        record.progress = Math.max(
+          0,
+          record.progress - dt / DELEGATION_MOTION.stopSeconds
+        );
+        if (record.progress > 0) animating = true;
+      } else if (record.delay > 0) {
+        record.delay = Math.max(0, record.delay - dt);
+        animating = true;
+      } else if (record.progress < 1) {
+        record.progress = Math.min(
+          1,
+          record.progress + dt / DELEGATION_MOTION.spawnSeconds
+        );
+        animating = true;
+      }
+      const eased = easeOutCubic(record.progress);
+      const x = THREE.MathUtils.lerp(record.parentX, unit.x, eased);
+      const layoutY = THREE.MathUtils.lerp(record.parentY, unit.y, eased);
+      const scale = unit.size * (0.18 + 0.82 * eased);
+      body.position.set(x, -layoutY, 0.72);
+      body.scale.set(scale, scale, 1);
+      if (rim) {
+        rim.position.set(x, -layoutY, 0.7);
+        rim.scale.set(scale * DELEGATION_RIM_SCALE, scale * DELEGATION_RIM_SCALE, 1);
+      }
+      if (tether) {
+        // The tether establishes and retracts with the unit it explains.
+        const dx = x - unit.tether.x1;
+        const dy = -layoutY - -unit.tether.y1;
+        const length = Math.hypot(dx, dy);
+        tether.position.set(
+          (unit.tether.x1 + x) / 2,
+          (-unit.tether.y1 + -layoutY) / 2,
+          0.55
+        );
+        tether.rotation.set(0, 0, Math.atan2(dy, dx));
+        tether.scale.set(length, Math.max(unit.size * 0.045, 0.012), 1);
+      }
+    }
+    if (animating) state.invalidate();
   });
 
-  if (satellites.length === 0) return null;
+  if (rendered.length === 0) return null;
   return (
-    <Instances
-      geometry={geometry}
-      // The per-piece cap times the board's project-altitude piece budget
-      // (120): a full team zone must never silently truncate — drei no-ops
-      // writes past `limit` with no warning.
-      limit={600}
-      range={satellites.length}
-      renderOrder={2}
-    >
-      <meshBasicMaterial
-        ref={material}
-        toneMapped={false}
-        transparent
-        opacity={SATELLITE_PARK_OPACITY}
-        depthWrite={false}
-      />
-      {satellites.map(satellite => (
-        <Instance
-          key={satellite.key}
-          position={[satellite.x, -satellite.y, 0.8]}
-          scale={[satellite.scale, satellite.scale, 1]}
-          color={satellite.color}
-          raycast={() => null}
+    <group>
+      <Instances
+        geometry={tetherGeometry}
+        limit={DELEGATION_MOTION.instanceLimit}
+        range={rendered.length}
+        renderOrder={1}
+        frustumCulled={false}
+      >
+        <meshBasicMaterial
+          toneMapped={false}
+          transparent
+          opacity={0.5}
+          depthWrite={false}
         />
-      ))}
-    </Instances>
+        {rendered.map(({ unit }) => (
+          <Instance
+            key={`tether:${unit.id}`}
+            ref={(instance: THREE.Object3D | null) => {
+              if (instance) tetherRefs.current.set(unit.id, instance);
+              else tetherRefs.current.delete(unit.id);
+            }}
+            scale={[0, 0, 1]}
+            color={spatialProjectIdentityColor(theme, unit.projectId)}
+            raycast={noopRaycast}
+          />
+        ))}
+      </Instances>
+      {/* Identity rim: the unit body stays the shared dark `theme.unit` noun,
+          so without this a child hex is a near-black shape on a dark zone. The
+          rim is the Project-identity channel the D3c brief assigns to lineage —
+          it makes the worker legible without inventing a status color. */}
+      <Instances
+        geometry={pieceGeometry}
+        limit={DELEGATION_MOTION.instanceLimit}
+        range={rendered.length}
+        renderOrder={1}
+        frustumCulled={false}
+      >
+        <meshBasicMaterial toneMapped={false} transparent opacity={0.34} />
+        {rendered.map(({ unit }) => (
+          <Instance
+            key={`rim:${unit.id}`}
+            ref={(instance: THREE.Object3D | null) => {
+              if (instance) rimRefs.current.set(unit.id, instance);
+              else rimRefs.current.delete(unit.id);
+            }}
+            scale={[0, 0, 1]}
+            color={spatialProjectIdentityColor(theme, unit.projectId)}
+            raycast={noopRaycast}
+          />
+        ))}
+      </Instances>
+      <Instances
+        geometry={pieceGeometry}
+        limit={DELEGATION_MOTION.instanceLimit}
+        range={rendered.length}
+        renderOrder={2}
+        frustumCulled={false}
+      >
+        <meshLambertMaterial />
+        {rendered.map(({ unit }) => (
+          <Instance
+            key={`unit:${unit.id}`}
+            ref={(instance: THREE.Object3D | null) => {
+              if (instance) bodyRefs.current.set(unit.id, instance);
+              else bodyRefs.current.delete(unit.id);
+            }}
+            scale={[0, 0, 1]}
+            color={theme.unit}
+            raycast={noopRaycast}
+          />
+        ))}
+      </Instances>
+    </group>
   );
 }
 
@@ -1881,6 +2130,7 @@ function SelectionRing({
 
 function AgentPieceLayer({
   pieces,
+  delegationUnits,
   altitude,
   reduced,
   ambient,
@@ -1890,6 +2140,7 @@ function AgentPieceLayer({
   theme,
 }: {
   pieces: SpatialBoardPiece[];
+  delegationUnits: SpatialBoardDelegationUnit[];
   altitude: SpatialBoardLayout['altitude'];
   reduced: boolean;
   ambient: boolean;
@@ -2079,7 +2330,11 @@ function AgentPieceLayer({
         lens={lens}
         theme={theme}
       />
-      <DelegationSatelliteLayer pieces={solid} active={ambient} theme={theme} />
+      <DelegationUnitLayer
+        units={delegationUnits}
+        reduced={reduced}
+        theme={theme}
+      />
       <StoppedAgentOutlines pieces={visible} lens={lens} theme={theme} />
       {selected && (
         <SelectionRing
@@ -2780,6 +3035,91 @@ function AgentControls({
     });
 }
 
+function delegationElapsedCopy(startedAt: number | null): string | null {
+  if (startedAt === null || !Number.isFinite(startedAt)) return null;
+  const minutes = Math.floor((Date.now() - startedAt) / 60_000);
+  if (minutes < 0) return null;
+  if (minutes < 1) return 'under a minute';
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+/**
+ * DOM equivalents for delegated child units (D3c). WebGL stays out of the
+ * accessibility tree, so every visible child is reachable by pointer, focus,
+ * and screen reader here. Focus reveals type, description, elapsed, and parent.
+ * Activating opens the PARENT Session: D3c does not pretend a child is
+ * independently commandable, and never joins "Direct N Agents".
+ */
+function DelegationControls({
+  units,
+  pieces,
+  altitude,
+  focusedProjectId,
+  onSelectAgent,
+  reduced,
+  theme,
+}: {
+  units: SpatialBoardDelegationUnit[];
+  pieces: SpatialBoardPiece[];
+  altitude: SpatialBoardLayout['altitude'];
+  focusedProjectId: string | null;
+  onSelectAgent: (agentId: string) => void;
+  reduced: boolean;
+  theme: SpatialThemeSnapshot;
+}) {
+  if (altitude === 'fleet') return null;
+  const parentLabels = new Map(
+    pieces.map(piece => [piece.id, piece.label] as const)
+  );
+  return units
+    .filter(unit => unit.projectId === focusedProjectId)
+    .map(unit => {
+      const parentLabel = parentLabels.get(unit.parentPieceId) ?? 'its parent';
+      const elapsed = delegationElapsedCopy(unit.startedAt);
+      const label =
+        unit.kind === 'overflow'
+          ? `${unit.overflowCount} more delegated Agents under ${parentLabel}`
+          : [
+              unit.agentType ?? 'Delegated Agent',
+              unit.description,
+              elapsed ? `running ${elapsed}` : null,
+              `delegated by ${parentLabel}`,
+            ]
+              .filter(Boolean)
+              .join(', ');
+      return (
+        <DampedHtmlAnchor
+          key={`delegation-control:${unit.id}`}
+          position={[unit.x, -unit.y, 1.1]}
+          reduced={reduced}
+          center
+        >
+          <button
+            type="button"
+            data-board-delegation-unit={unit.id}
+            data-board-delegation-kind={unit.kind}
+            data-board-delegation-parent={unit.parentAgentId}
+            aria-label={label}
+            title={label}
+            onClick={() => onSelectAgent(unit.parentAgentId)}
+            className="board-control-enter group relative grid h-8 w-8 place-items-center border border-transparent bg-transparent outline-none transition-[border-color] duration-150 focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {unit.kind === 'overflow' && (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none font-mono text-chrome-nano font-semibold"
+                style={{ color: theme.label }}
+              >
+                +{unit.overflowCount}
+              </span>
+            )}
+          </button>
+        </DampedHtmlAnchor>
+      );
+    });
+}
+
 /** Demand-loop bridge: material/DOM props update in place, then the existing
  * scene gets exactly one requested paint for the new resolved snapshot. */
 function InvalidateOnSpatialTheme({ theme }: { theme: SpatialThemeSnapshot }) {
@@ -2805,6 +3145,7 @@ export function OperationsBoardCanvas({
   followSelection = true,
   touchSelectionMode = false,
   onManualCameraInput,
+  onClampEdges,
   preserveDrawingBuffer = false,
   theme,
 }: {
@@ -2826,6 +3167,7 @@ export function OperationsBoardCanvas({
   followSelection?: boolean;
   touchSelectionMode?: boolean;
   onManualCameraInput?: () => void;
+  onClampEdges?: (edges: BoardClampEdges | null) => void;
   preserveDrawingBuffer?: boolean;
   theme: SpatialThemeSnapshot;
 }) {
@@ -2853,6 +3195,12 @@ export function OperationsBoardCanvas({
   /** Band-drag end timestamp — the trailing click must not clear/ascend. */
   const suppressMissRef = useRef(0);
   const visibleZones = layout.zones.filter(zone => zone.visible);
+  // Delegation composition (V3.4): pure slot/overflow/lineage policy, resolved
+  // once per layout. Aggregated tiers emit none by construction.
+  const delegationUnits = useMemo(
+    () => selectSpatialDelegationUnits(layout),
+    [layout]
+  );
   // Zone-label budget: full cards only when every zone's projected width can
   // afford them, so the bound is the NARROWEST visible zone (one overflowing
   // card is the failure the tier exists to prevent). Hysteresis keeps the
@@ -2946,6 +3294,7 @@ export function OperationsBoardCanvas({
         followSelection={followSelection}
         touchSelectionMode={touchSelectionMode}
         onManualCameraInput={onManualCameraInput}
+        onClampEdges={onClampEdges}
       />
       <BoardGrid bounds={layout.bounds} theme={theme} />
       <ZoneLayer
@@ -2959,6 +3308,7 @@ export function OperationsBoardCanvas({
       />
       <AgentPieceLayer
         pieces={layout.pieces}
+        delegationUnits={delegationUnits}
         altitude={layout.altitude}
         reduced={reduced}
         ambient={ambient}
@@ -3000,6 +3350,15 @@ export function OperationsBoardCanvas({
         onSelectAgent={onSelectAgent}
         onToggleAgentSelect={onToggleAgentSelect}
         multiSelection={multiSelection}
+        reduced={reduced}
+        theme={theme}
+      />
+      <DelegationControls
+        units={delegationUnits}
+        pieces={layout.pieces}
+        altitude={layout.altitude}
+        focusedProjectId={layout.focusedProjectId}
+        onSelectAgent={onSelectAgent}
         reduced={reduced}
         theme={theme}
       />

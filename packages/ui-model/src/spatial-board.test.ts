@@ -3,6 +3,7 @@ import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
 import {
   selectSpatialBandAgentIds,
   selectSpatialBoardLayout,
+  selectSpatialDelegationUnits,
   selectSpatialDirectionalAgentId,
   selectSpatialScopeActivity,
   spatialBoardPieceForAgent,
@@ -544,6 +545,7 @@ describe('piece delegation', () => {
       id: 'c1',
       agentType: 'Explore',
       description: 'Map the release gates',
+      startedAt: 1,
     });
   });
 
@@ -552,6 +554,146 @@ describe('piece delegation', () => {
     const piece = layout.pieces.find(item => item.agentId === 'a');
     expect(piece).toBeDefined();
     expect(piece).not.toHaveProperty('delegation');
+  });
+});
+
+/**
+ * Delegated children as board units (V3.4 / D3c). The acceptance the operator
+ * named: four real subagents must read as four workers, never as punctuation.
+ */
+describe('delegation units', () => {
+  const child = (id: string) => ({
+    id,
+    agentType: 'Explore',
+    description: `Work for ${id}`,
+    startedAt: 1,
+  });
+
+  const delegatingLayout = (count: number) =>
+    selectSpatialBoardLayout(
+      fleet([
+        {
+          ...agent('a', 'Alpha', 'working'),
+          delegation: {
+            children: Array.from({ length: count }, (_, index) =>
+              child(`c${index + 1}`)
+            ),
+          },
+        },
+      ])
+    );
+
+  it('renders nothing when no delegation is observed', () => {
+    const layout = selectSpatialBoardLayout(fleet([agent('a', 'Alpha')]));
+    expect(selectSpatialDelegationUnits(layout)).toEqual([]);
+  });
+
+  it('gives four children four individual units, not dots', () => {
+    const units = selectSpatialDelegationUnits(delegatingLayout(4));
+    expect(units).toHaveLength(4);
+    expect(units.every(unit => unit.kind === 'child')).toBe(true);
+    expect(new Set(units.map(unit => unit.id)).size).toBe(4);
+  });
+
+  it('keeps children in the same noun family at the accepted ratio', () => {
+    const layout = delegatingLayout(4);
+    const parent = layout.pieces.find(piece => piece.agentId === 'a')!;
+    for (const unit of selectSpatialDelegationUnits(layout)) {
+      const ratio = unit.size / parent.size;
+      expect(ratio).toBeGreaterThanOrEqual(0.7);
+      expect(ratio).toBeLessThanOrEqual(0.82);
+    }
+  });
+
+  it('keeps the lower label lane clear', () => {
+    const layout = delegatingLayout(5);
+    const parent = layout.pieces.find(piece => piece.agentId === 'a')!;
+    // Layout space is y-down: every child sits at or above the parent centre.
+    for (const unit of selectSpatialDelegationUnits(layout)) {
+      expect(unit.y).toBeLessThanOrEqual(parent.y + 0.001);
+    }
+  });
+
+  it('places one child directly above its parent', () => {
+    const layout = delegatingLayout(1);
+    const parent = layout.pieces.find(piece => piece.agentId === 'a')!;
+    const [unit] = selectSpatialDelegationUnits(layout);
+    expect(unit!.x).toBeCloseTo(parent.x, 3);
+    expect(unit!.y).toBeLessThan(parent.y);
+  });
+
+  it('carries the exact census through an overflow lobe above the individual limit', () => {
+    const units = selectSpatialDelegationUnits(delegatingLayout(17));
+    expect(units).toHaveLength(5);
+    const lobes = units.filter(unit => unit.kind === 'overflow');
+    expect(lobes).toHaveLength(1);
+    // 4 individuals shown + 13 folded = the 17 the source reported.
+    expect(lobes[0]!.overflowCount).toBe(13);
+    expect(units.filter(unit => unit.kind === 'child')).toHaveLength(4);
+  });
+
+  it('renders five children individually and only overflows above that', () => {
+    expect(selectSpatialDelegationUnits(delegatingLayout(5))).toHaveLength(5);
+    expect(
+      selectSpatialDelegationUnits(delegatingLayout(5)).every(
+        unit => unit.kind === 'child'
+      )
+    ).toBe(true);
+    const six = selectSpatialDelegationUnits(delegatingLayout(6));
+    expect(six.filter(unit => unit.kind === 'overflow')).toHaveLength(1);
+    expect(six.find(unit => unit.kind === 'overflow')!.overflowCount).toBe(2);
+  });
+
+  it('anchors each tether between the parent edge and the child edge', () => {
+    const layout = delegatingLayout(3);
+    const parent = layout.pieces.find(piece => piece.agentId === 'a')!;
+    for (const unit of selectSpatialDelegationUnits(layout)) {
+      const fromParent = Math.hypot(
+        unit.tether.x1 - parent.x,
+        unit.tether.y1 - parent.y
+      );
+      const toChild = Math.hypot(
+        unit.tether.x2 - unit.x,
+        unit.tether.y2 - unit.y
+      );
+      expect(fromParent).toBeCloseTo(parent.size * 0.5, 3);
+      expect(toChild).toBeCloseTo(unit.size * 0.5, 3);
+    }
+  });
+
+  it('is deterministic and stable for the same reported children', () => {
+    const first = selectSpatialDelegationUnits(delegatingLayout(4));
+    const second = selectSpatialDelegationUnits(delegatingLayout(4));
+    expect(second).toEqual(first);
+  });
+
+  it('emits nothing for an aggregated fleet, so very far never becomes a hairball', () => {
+    const agents = Array.from({ length: 400 }, (_, index) => ({
+      ...agent(`a${index}`, `Project ${index % 8}`, 'working'),
+      delegation: { children: [child(`c${index}`)] },
+    }));
+    const layout = selectSpatialBoardLayout(fleet(agents));
+    expect(layout.pieces.some(piece => piece.kind === 'aggregate')).toBe(true);
+    expect(
+      selectSpatialDelegationUnits(layout).every(unit =>
+        layout.pieces.some(
+          piece => piece.id === unit.parentPieceId && piece.kind === 'agent'
+        )
+      )
+    ).toBe(true);
+  });
+
+  it('drops units for a filtered-out parent', () => {
+    const layout = selectSpatialBoardLayout(
+      fleet([
+        {
+          ...agent('a', 'Alpha', 'working'),
+          delegation: { children: [child('c1'), child('c2')] },
+        },
+      ]),
+      { visibleAgentIds: new Set<string>() }
+    );
+    expect(selectSpatialDelegationUnits(layout)).toEqual([]);
   });
 });
 

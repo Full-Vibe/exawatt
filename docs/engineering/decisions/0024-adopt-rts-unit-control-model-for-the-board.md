@@ -93,3 +93,21 @@ Dogfood extends the decision without changing its RTS control model:
 These rules are implemented as pure camera/input policy plus a damped R3F
 adapter so future tuning can change constants and tested policy independently
 of the board's scene graph.
+
+## 2026-08-07 clamp-feedback completion
+
+The decision's "pan clamping must never eat input silently" clause is now
+implemented, and the audit that implemented it found the board had drifted the
+other way: pan carried no bound at all, so the world could be pushed entirely
+off screen, while zoom clamped without any response.
+
+- The camera's bounds derive from the WHOLE board, never the focused subject, so
+  the one-world promise holds at the limit as well as in the middle.
+- A gesture that reaches a bound travels a bounded elastic excursion past it and
+  damps back. The excursion is the feedback.
+- Reduced motion and low power clamp hard and answer through a redundant,
+  motion-free edge indicator, because "no visible answer" is the failure this
+  clause exists to prevent, in every context.
+
+As with the 2026-08-04 amendment, this is pure tested policy plus a damped R3F
+adapter; constants can be retuned without touching the scene graph.

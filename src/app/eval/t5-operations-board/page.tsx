@@ -89,6 +89,46 @@ const state: FleetState = {
   lastUpdated: 1,
 };
 
+/**
+ * Fan-out fixture (ENG-004 V3.4 / ENG-023 D3c): the child-count states the
+ * design brief calls out — 0, 1, 4, 5, and 17 — on one board so a single
+ * screenshot grades the whole policy, including the overflow lobe boundary.
+ */
+function fanoutChildren(count: number, parentId: string) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `${parentId}-child-${index + 1}`,
+    agentType: index % 2 === 0 ? 'Explore' : 'general-purpose',
+    description: `Assignment ${index + 1}`,
+    startedAt: 1,
+  }));
+}
+
+const fanoutAgents = [
+  agent('fanout-none', 'No Delegation', 'Fanout', 'working'),
+  {
+    ...agent('fanout-one', 'One Child', 'Fanout', 'working'),
+    delegation: { children: fanoutChildren(1, 'fanout-one') },
+  },
+  {
+    ...agent('fanout-four', 'Four Children', 'Fanout', 'working'),
+    delegation: { children: fanoutChildren(4, 'fanout-four') },
+  },
+  {
+    ...agent('fanout-five', 'Five Children', 'Fanout', 'working'),
+    delegation: { children: fanoutChildren(5, 'fanout-five') },
+  },
+  {
+    ...agent('fanout-many', 'Seventeen Children', 'Fanout', 'working'),
+    delegation: { children: fanoutChildren(17, 'fanout-many') },
+  },
+];
+
+const fanoutState: FleetState = {
+  agents: Object.fromEntries(fanoutAgents.map(item => [item.id, item])),
+  metrics,
+  lastUpdated: 1,
+};
+
 const EVAL_THEME_IDS = {
   air: 'exawatt-air-light',
   classic: 'exawatt-classic-dark',
@@ -106,13 +146,19 @@ export default function OperationsBoardEvalPage() {
   // regime (satellites + control copy) against the same fixture fleet. Read
   // after mount so the server and first client render agree.
   const [focusedProject, setFocusedProject] = useState<string | null>(null);
+  const [fanout, setFanout] = useState(false);
   const [themeId, setThemeId] = useState<BuiltInThemeId>(
     'exawatt-classic-dark'
   );
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const fanoutRequested = params.get('fixture') === 'fanout';
+    setFanout(fanoutRequested);
     if (params.get('altitude') === 'project') {
-      setFocusedProject(params.get('project') ?? 'project:Atlas');
+      setFocusedProject(
+        params.get('project') ??
+          (fanoutRequested ? 'project:Fanout' : 'project:Atlas')
+      );
     }
     const requested = params.get('theme');
     if (requested && requested in EVAL_THEME_IDS) {
@@ -130,12 +176,12 @@ export default function OperationsBoardEvalPage() {
   const layout = useMemo(
     () =>
       selectSpatialBoardLayout(
-        state,
+        fanout ? fanoutState : state,
         focusedProject
           ? { altitude: 'project', focusedProjectId: focusedProject }
           : {}
       ),
-    [focusedProject]
+    [fanout, focusedProject]
   );
   const resolvedAppearance = useMemo(() => {
     const theme = THEME_REGISTRY[themeId];

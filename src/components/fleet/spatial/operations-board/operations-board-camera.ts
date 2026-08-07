@@ -191,6 +191,197 @@ export function semanticBoardCameraTarget(
   return softFollowBoardRect({ ...current, zoom }, focusRect, size);
 }
 
+/**
+ * Camera limits and the elastic response at them (V3.3 F3, decision `0024`:
+ * "pan clamping must never eat input silently"). Two rules produce it:
+ *
+ * - the camera center stays within the board expanded by `panSlack` of the
+ *   visible half-extent, so the world can never be pushed entirely off screen;
+ * - an input may push `overshoot` past a bound, then a damped relax returns it.
+ *   The excursion is what the hand feels; without it a clamped gesture is
+ *   indistinguishable from a dropped one.
+ */
+export const BOARD_CAMERA_LIMIT_POLICY = {
+  zoomOutRatio: 0.55,
+  zoomInRatio: 4.5,
+  panSlack: 0.62,
+  panOvershoot: 0.085,
+  zoomOvershoot: 0.06,
+  relaxLambda: 8.5,
+  restEpsilon: 1e-4,
+} as const;
+
+export interface BoardCameraLimits {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  minZoom: number;
+  maxZoom: number;
+  overshootX: number;
+  overshootY: number;
+}
+
+/** Which bound the operator is currently pushing against. Mutable and caller
+ *  owned so the per-frame relax never allocates (guide rule 3). */
+export interface BoardClampEdges {
+  left: boolean;
+  right: boolean;
+  top: boolean;
+  bottom: boolean;
+  zoomIn: boolean;
+  zoomOut: boolean;
+}
+
+export function createBoardClampEdges(): BoardClampEdges {
+  return {
+    left: false,
+    right: false,
+    top: false,
+    bottom: false,
+    zoomIn: false,
+    zoomOut: false,
+  };
+}
+
+export function boardClampEdgesKey(edges: BoardClampEdges): string {
+  return `${edges.left ? 'l' : ''}${edges.right ? 'r' : ''}${
+    edges.top ? 't' : ''
+  }${edges.bottom ? 'b' : ''}${edges.zoomIn ? 'i' : ''}${
+    edges.zoomOut ? 'o' : ''
+  }`;
+}
+
+function finiteOr(value: number, fallback: number): number {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+/**
+ * Pan bounds follow the WHOLE board, not the focused subject: altitude is
+ * resolution inside one world, so descending into a Project must not fence the
+ * camera out of its neighbors.
+ */
+export function boardCameraLimits(
+  bounds: SpatialBoardRect,
+  size: BoardViewportSize,
+  fitZoom: number,
+  target: BoardCameraTarget
+): BoardCameraLimits {
+  const zoom = Math.max(effectiveBoardCameraZoom(target), 0.001);
+  const halfWidth = finiteOr(size.width / (2 * zoom), 0);
+  const halfHeight = finiteOr(size.height / (2 * zoom), 0);
+  const slackX = halfWidth * BOARD_CAMERA_LIMIT_POLICY.panSlack;
+  const slackY = halfHeight * BOARD_CAMERA_LIMIT_POLICY.panSlack;
+  const safeFit = fitZoom > 0 && Number.isFinite(fitZoom) ? fitZoom : 0;
+  return {
+    minX: bounds.x - slackX,
+    maxX: bounds.x + bounds.width + slackX,
+    // Layout rects are y-down; the camera lives in y-up world space.
+    minY: -(bounds.y + bounds.height) - slackY,
+    maxY: -bounds.y + slackY,
+    minZoom: safeFit > 0 ? safeFit * BOARD_CAMERA_LIMIT_POLICY.zoomOutRatio : 0,
+    maxZoom: safeFit > 0
+      ? safeFit * BOARD_CAMERA_LIMIT_POLICY.zoomInRatio
+      : Number.POSITIVE_INFINITY,
+    overshootX: halfWidth * BOARD_CAMERA_LIMIT_POLICY.panOvershoot,
+    overshootY: halfHeight * BOARD_CAMERA_LIMIT_POLICY.panOvershoot,
+  };
+}
+
+/**
+ * Clamp a requested camera target to its limits, allowing a bounded elastic
+ * excursion past each engaged bound. Mutates `target` and `edges` in place and
+ * returns whether any bound is engaged. `elastic: false` (reduced motion, low
+ * power) clamps hard — the edge report is then the only feedback channel.
+ */
+export function clampBoardCameraTargetInPlace(
+  target: BoardCameraTarget,
+  limits: BoardCameraLimits,
+  elastic: boolean,
+  edges: BoardClampEdges
+): boolean {
+  const overshootX = elastic ? limits.overshootX : 0;
+  const overshootY = elastic ? limits.overshootY : 0;
+  const zoomOvershoot = elastic ? BOARD_CAMERA_LIMIT_POLICY.zoomOvershoot : 0;
+  edges.left = target.x < limits.minX;
+  edges.right = target.x > limits.maxX;
+  edges.bottom = target.y < limits.minY;
+  edges.top = target.y > limits.maxY;
+  edges.zoomOut = target.zoom < limits.minZoom;
+  edges.zoomIn = target.zoom > limits.maxZoom;
+  // A board narrower than its slack can invert the range; the midpoint is the
+  // only honest answer and keeps the world centered instead of NaN.
+  if (limits.minX > limits.maxX) target.x = (limits.minX + limits.maxX) / 2;
+  else {
+    target.x = THREE.MathUtils.clamp(
+      target.x,
+      limits.minX - overshootX,
+      limits.maxX + overshootX
+    );
+  }
+  if (limits.minY > limits.maxY) target.y = (limits.minY + limits.maxY) / 2;
+  else {
+    target.y = THREE.MathUtils.clamp(
+      target.y,
+      limits.minY - overshootY,
+      limits.maxY + overshootY
+    );
+  }
+  target.zoom = THREE.MathUtils.clamp(
+    target.zoom,
+    limits.minZoom * (1 - zoomOvershoot),
+    limits.maxZoom * (1 + zoomOvershoot)
+  );
+  return (
+    edges.left ||
+    edges.right ||
+    edges.top ||
+    edges.bottom ||
+    edges.zoomIn ||
+    edges.zoomOut
+  );
+}
+
+function relaxAxis(
+  value: number,
+  min: number,
+  max: number,
+  delta: number
+): number {
+  const bound = value < min ? min : value > max ? max : null;
+  if (bound === null) return value;
+  const next = THREE.MathUtils.damp(
+    value,
+    bound,
+    BOARD_CAMERA_LIMIT_POLICY.relaxLambda,
+    delta
+  );
+  return Math.abs(next - bound) <= BOARD_CAMERA_LIMIT_POLICY.restEpsilon
+    ? bound
+    : next;
+}
+
+/**
+ * Return an over-pushed camera target to its bounds. Mutates in place and
+ * reports whether it is still travelling, so the demand loop keeps painting
+ * exactly as long as the rubber band is visibly moving.
+ */
+export function relaxBoardCameraTargetInPlace(
+  target: BoardCameraTarget,
+  limits: BoardCameraLimits,
+  delta: number
+): boolean {
+  const x = relaxAxis(target.x, limits.minX, limits.maxX, delta);
+  const y = relaxAxis(target.y, limits.minY, limits.maxY, delta);
+  const zoom = relaxAxis(target.zoom, limits.minZoom, limits.maxZoom, delta);
+  const moved =
+    x !== target.x || y !== target.y || zoom !== target.zoom;
+  target.x = x;
+  target.y = y;
+  target.zoom = zoom;
+  return moved;
+}
+
 export interface BoardProjectionScratch {
   raycaster: THREE.Raycaster;
   plane: THREE.Plane;

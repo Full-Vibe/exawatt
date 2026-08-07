@@ -1847,6 +1847,53 @@ reduced-motion, low-power, entry-pose, and fallback scenarios all pass in
 pass. Browser screenshots were inspected at Fleet and focused Project altitude
 after the automated gates.
 
+### V3.3 F3 clamp feedback and S4 selection panel landed (2026-08-07)
+
+The two slices V3.3 left open are closed.
+
+**F3 — the camera answers at its bounds.** Decision `0024` required that "pan
+clamping must never eat input silently", but the shipped board had the opposite
+defect: pan was completely unbounded (the world could be pushed off screen and
+lost) while zoom clamped in silence. Both halves are fixed by one pure policy in
+`operations-board-camera.ts`:
+
+- `boardCameraLimits` derives bounds from the WHOLE board, not the focused
+  subject, so descending into a Project never fences the camera out of its
+  neighbours — the one-world promise holds at the limit too. The camera centre
+  may leave the board by `panSlack` of the visible half-extent, so a fraction of
+  the world always stays on screen.
+- `clampBoardCameraTargetInPlace` lets a requested target travel a bounded
+  elastic excursion past an engaged bound and reports WHICH bound is engaged;
+  `relaxBoardCameraTargetInPlace` damps it home. The excursion is what the hand
+  feels. Both mutate in place, so the per-frame relax allocates nothing.
+- The relax is gated on an actually engaged clamp, so a solved entry/focus pose
+  is never dragged by it.
+- Reduced motion and low power clamp hard (no excursion) and answer through a
+  redundant, motion-free edge indicator in the DOM overlay — the board must
+  never look like it dropped the gesture. The rig reports only edge-set CHANGES,
+  so this is semantic React state, never a pointer-frequency render.
+
+The three duplicated zoom-clamp expressions in the canvas collapse into the one
+tested policy.
+
+**S4/F6 — one selection panel.** The always-present 340px inspector rail and the
+fleet-wide activity feed are retired. `SpatialSelectionPanel` is docked (it never
+covers in-world content) and exists only while something is selected:
+
+- single Agent — identity, D40 status, goal + context, cost or tokens (absent,
+  never zero) and turns, the blocker callout, delegated children, that Agent's
+  own recent Events, and Open session;
+- multi-selection — the working set, its D40 bucket counts, the announced
+  `Direct N Agents` verb, and a list that inspects a member.
+
+The feed became "what has this unit been doing", per the 2026-08-02 UX pass; the
+global stream and its `Waiting for events.` empty state are gone. The floating
+in-board scope readout folded into the panel, and the keyboard hint bar folded
+into the bottom-right tool cluster, so the board now carries exactly two chrome
+regions besides the header — the tool cluster and the needs-you queue — plus the
+panel on selection. `eval:spatial` now asserts the panel by its stable
+`data-spatial-selection-panel` contract instead of the retired rail's copy.
+
 ### V3.4 planning input — delegated children as board units (operator, 2026-08-06)
 
 **Delegated workers must read as workers.** Operator dogfood compared a parent
@@ -1870,6 +1917,72 @@ must preserve the modular camera boundary, pure/tested layout policy, one-world
 minimap, arrow/DOM navigation, settled demand-render parking, and the current
 Voltaic/1k/10k scale budgets. Full slice/acceptance detail lives in
 `projects/delegation-visibility.md` §“D3c design brief”.
+
+### V3.4 delegation composition landed (2026-08-07)
+
+Delegated children are units, not punctuation. Slot geometry, the overflow
+boundary, and lineage endpoints are pure `ui-model` policy
+(`selectSpatialDelegationUnits`, `SPATIAL_DELEGATION_UNIT`); the R3F layer owns
+only material and the finite spawn/stop transitions, so no lifecycle or layout
+logic lives inside `<Canvas>`.
+
+- Children are the same beveled hex noun at `0.72x` the parent, on deterministic
+  rosette slots spread across the upper and side perimeter. The arc stops at the
+  horizontal so the lane under the parent — which belongs to the DOM label —
+  stays clear; a test pins that invariant, and it caught a real defect (at five
+  children the first arc dipped below the parent).
+- One to five children render individually. Above five it is four individuals
+  plus one same-family overflow lobe carrying the exact remaining count, so the
+  census is never lost to a label budget.
+- A Project-identity rim and a hairline tether carry lineage. Both are identity,
+  never status: D40 keeps sole ownership of state, and no new light is invented.
+- Spawn emerges from the parent edge into the slot with a damped settle and a
+  capped cohort stagger; stop retracts faster along the same lineage. Departing
+  units are held in React state and animated out — never `setState` in
+  `useFrame`, which only mutates transforms.
+- Aggregated tiers emit no units by construction (aggregate pieces carry no
+  delegation), so a very-far fleet cannot become a hairball of tethers.
+- Every visible child has a focusable DOM control exposing type, description,
+  elapsed, and parent. Activating opens the PARENT Session; D3c does not pretend
+  a child is independently commandable and never adds it to `Direct N Agents`.
+
+**A rendering trap worth recording.** The child layers were invisible for
+several diagnostic rounds while the scene graph showed them present, visible,
+and correctly transformed. The cause was `InstancedMesh` frustum culling: the
+bounding sphere is computed once, from the initial zero-scale instances at the
+origin, and is not recomputed when instance matrices change — so a layer whose
+transforms are written imperatively from the frame loop is culled the moment the
+camera leaves the origin. The fix is `frustumCulled={false}` on those layers. A
+red-material probe initially seemed to disprove occlusion but was itself masked,
+because per-instance `color` MULTIPLIES the material colour.
+
+Two calls the D3c brief reserved for gallery review were made and are flagged
+rather than settled: the tether tucks short (children sit close to the parent,
+because the existing Project-altitude hex pitch makes a wider constellation
+collide with neighbouring parents), and the overflow lobe was chosen over a
+second ring. The `0.70x` floor, the same-noun family, the cleared label lane, and
+the exact census are unchanged.
+
+**Deviation from the brief's step 1, stated plainly.** The brief asks for a
+`/hud-gallery` R3F study of the `0/1/4/5/17` states before production wiring.
+Those states now live in the deterministic `/eval/t5-operations-board?fixture=fanout`
+rig instead, and the composition was graded from its screenshots. The reason is
+that ENG-036's workbench rule requires retiring a study once its subject ships,
+so a study built here would be deleted in the same change while the eval fixture
+is permanent regression coverage. The operator's visual review is still owed and
+is the reason the tuning calls above are recorded as open.
+
+**Landing evidence.** `pnpm type-check` and `pnpm lint` clean; the full bounded
+suite passes 1,843 tests (1 skipped); 42 pure spatial-board tests including 11
+new delegation-unit tests, 19 camera tests including 8 new clamp tests, and 6 new
+selection-panel tests; `pnpm eval:r3f` 100/100 with zero warnings; all 15
+`eval:spatial:pointer` scenarios pass including reduced-motion parking; every
+`eval:spatial:scale` tier passes with Voltaic at 13 draw calls and the 1k/10k
+aggregate tiers at 6; `eval:spatial` passes mobile, reduced-motion, low-power and
+all four handoff scenarios. Its `desktop` scenario fails, and fails identically
+on unmodified `origin/master`: ENG-030's first-run account popover intercepts the
+header click the scenario needs. That is a pre-existing regression in the eval's
+environment, not this change, and it is not fixed here.
 
 ### V2.1 Scale & Truth
 
