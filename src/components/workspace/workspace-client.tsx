@@ -65,7 +65,6 @@ import {
   consumePendingProjectPicker,
   FOCUS_AGENT_COMPOSER_EVENT,
   hasPendingAgentComposer,
-  hasPendingTabSelect,
   REOPEN_CLOSED_EVENT,
   REOPEN_LAST_CLOSED_EVENT,
   consumePendingReopenLastClosed,
@@ -794,15 +793,23 @@ export function WorkspaceClient() {
     [router]
   );
   useEffect(() => setOverviewOpen(requestedOverview), [requestedOverview]);
+  // Which recorded locations still exist (D50). A ⌘W-destroyed tab must
+  // stop being a Back stop; the history owns what to do about that, the
+  // workspace owns the truth of which tabs are open (BUG-006).
+  useEffect(() => {
+    navHistory.setLocationResolver(location => {
+      if (!location.tab) return true;
+      const project = projects.find(p => p.dir === location.tab!.dir);
+      return !!project?.tabs.some(t => t.id === location.tab!.tabId);
+    });
+  }, [projects]);
+
   // back stack recorder (D27): every location the operator lands on in the
   // workspace — surface (Terminal vs Sessions) + the active tab — becomes a
-  // ⌘[/⌘] stop. Applying back dedupes in navHistory, never re-records.
+  // ⌘[/⌘] stop. Mid-apply states are suspended inside navHistory, which is
+  // the only place that knows which location is being applied (D50).
   useEffect(() => {
     if (!ready) return;
-    // a ⌘[ application is mid-flight: the restored-layout active tab is a
-    // transient state, not a location — recording it would truncate the
-    // forward stack before the target tab applies (D27 review)
-    if (hasPendingTabSelect()) return;
     navHistory.visit({
       surface: overviewOpen ? '/workspace?view=sessions' : '/workspace',
       tab:

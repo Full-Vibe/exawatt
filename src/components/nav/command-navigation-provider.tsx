@@ -220,6 +220,11 @@ export function CommandNavigationProvider({
 
   const applyLocation = useCallback(
     (location: NavLocation) => {
+      // Applying lands in stages: the tab select is synchronous, the surface
+      // change is a router round trip. Recorders observe the hybrid in
+      // between; the history suspends recording until the real location
+      // arrives so that hybrid cannot become an entry (BUG-006).
+      navHistory.beginApply(location);
       const current = `${window.location.pathname}${window.location.search}`;
       if (location.surface !== current) {
         // replace: applying history must not manufacture browser history

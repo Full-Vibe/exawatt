@@ -143,10 +143,6 @@ export function consumePendingTabSelect(): {
   pendingTabSelect = null;
   return value;
 }
-export function hasPendingTabSelect(): boolean {
-  return take(pendingTabSelect) !== null;
-}
-
 export function requestSessionJump(sessionId: string): void {
   pendingSession = { value: sessionId, at: Date.now() };
   window.dispatchEvent(

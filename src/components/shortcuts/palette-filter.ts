@@ -23,6 +23,14 @@
  * "go to X" / "go X" phrasings are re-scored with the verb stripped, a hair
  * below what the bare query would earn, so "go to usage" finds Usage without
  * ever outranking a literal match of the raw query.
+ *
+ * These bands only decide ranking WITHIN a group. cmdk orders the groups
+ * themselves by each group's best item score, and that ordering is only as
+ * good as its bookkeeping: it used to go arbitrary the moment any row
+ * unmounted (FIX-007). Fixed in `patches/cmdk.patch`, pinned by
+ * `src/components/ui/command-group-order.test.tsx`. There is deliberately no
+ * second, React-side group sort here — one owner, or the two fight over the
+ * same DOM nodes.
  */
 import { defaultFilter } from 'cmdk';
 

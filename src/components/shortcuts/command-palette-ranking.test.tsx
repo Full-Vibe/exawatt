@@ -25,6 +25,7 @@ import type { SessionRow } from '@/components/workspace/switcher-rows';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
 import { CommandPalette } from './command-palette';
+import type { CommandPaletteLaunchConfiguration } from './command-palette-launch-configurations';
 
 const navigateCommandSurface = vi.fn();
 const activateCommandAltitude = vi.fn();
@@ -54,8 +55,15 @@ vi.mock('@/components/feedback/product-feedback-provider', () => ({
   useOptionalProductFeedback: () => null,
 }));
 
+let projectFixtures: Array<{
+  id: string;
+  name: string;
+  root_path: string;
+  color: string | null;
+}> = [];
+
 vi.mock('@/lib/projects/registry', () => ({
-  listProjects: vi.fn(async () => []),
+  listProjects: vi.fn(async () => projectFixtures),
   rebindProjectPath: vi.fn(async () => undefined),
 }));
 
@@ -101,10 +109,12 @@ vi.mock('@/lib/demo-workspace/model', () => ({
   demoSessionRows: () => SESSION_FIXTURES,
 }));
 
+let activeWorkspaceId: string = DEMO_WORKSPACE_ID;
+
 vi.mock('@/lib/tenancy/tenancy-provider', () => ({
   useOptionalWorkspaceTenancy: () => ({
     hydrated: true,
-    activeWorkspace: { id: DEMO_WORKSPACE_ID },
+    activeWorkspace: { id: activeWorkspaceId },
     workspaces: [],
     switchWorkspace: vi.fn(),
   }),
@@ -143,6 +153,8 @@ beforeEach(() => {
   window.localStorage.clear();
   navigateCommandSurface.mockClear();
   activateCommandAltitude.mockClear();
+  activeWorkspaceId = DEMO_WORKSPACE_ID;
+  projectFixtures = [];
 });
 
 afterEach(cleanup);
@@ -289,5 +301,119 @@ describe('⌘K ranking (ENG-016)', () => {
     await typeQuery('usage');
     expect(headings()).not.toContain('Recent');
     expect(visibleRows()[0].textContent).toContain('Go to Usage');
+  });
+});
+
+// ── FIX-007 (2026-08-06 operator quick capture, two rows, one defect).
+// cmdk ranks items INSIDE a group; sibling group order was whatever the JSX
+// authored. Projects sat seventh, so an exact-substring Project name lost to
+// a fuzzy `Start Codex` in the fifth group and to an unrelated Session in the
+// fourth. Group order is now derived from what the rows actually score.
+describe('⌘K cross-group ranking (FIX-007)', () => {
+  const PROJECTS = [
+    {
+      id: 'p-cortex',
+      name: 'cortex-ehr',
+      root_path: '/Users/jake/Code/cortex-ehr',
+      color: '#50E6FF',
+    },
+    {
+      id: 'p-gpagent',
+      name: 'gpagent',
+      root_path: '/Users/jake/Code/gpagent',
+      color: '#FFB86B',
+    },
+  ];
+
+  // A Session whose title merely CONTAINS the query, in the group authored
+  // above Projects — the `gpagent` report's collision.
+  const PTY_SESSIONS = [
+    {
+      id: 'pty-1',
+      durableSessionId: 'dur-1',
+      harness: 'claude' as const,
+      title: 'Wire gpagent telemetry export',
+      cwd: '/Users/jake/Code/other',
+      projectDir: '/Users/jake/Code/other',
+      projectName: 'other',
+      cols: 80,
+      rows: 24,
+      startedAt: 1,
+      exited: false,
+      exitCode: null,
+      lastDataAt: 1,
+      harnessSessionId: null,
+    },
+  ];
+
+  const LAUNCH_CONFIGURATIONS: CommandPaletteLaunchConfiguration[] = [
+    {
+      configurationId: 'launch-codex',
+      label: 'Start Codex',
+      searchValue: 'Start Codex',
+      configuration: {
+        kind: 'agent' as const,
+        source: 'codex' as const,
+        model: 'gpt-5',
+        effort: null,
+      },
+    },
+  ];
+
+  beforeEach(() => {
+    activeWorkspaceId = 'personal';
+    projectFixtures = PROJECTS;
+    Object.defineProperty(window, 'electron', {
+      configurable: true,
+      value: {
+        pty: {
+          list: vi.fn(async () => PTY_SESSIONS),
+          closedSessions: vi.fn(async () => []),
+        },
+        workspace: { load: vi.fn(async () => null) },
+      },
+    });
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(window as unknown as Record<string, unknown>, 'electron');
+  });
+
+  function renderPersonalPalette() {
+    return render(
+      <TooltipProvider>
+        <CommandPalette
+          open
+          onOpenChange={() => undefined}
+          onOpenHelpModal={() => undefined}
+          launchConfigurations={LAUNCH_CONFIGURATIONS}
+        />
+      </TooltipProvider>
+    );
+  }
+
+  it('ranks the Project above a fuzzy Start row for "cortex"', async () => {
+    renderPersonalPalette();
+    await waitFor(() => expect(visibleRows().length).toBeGreaterThan(0));
+    await typeQuery('cortex');
+
+    const rows = visibleRows();
+    expect(rows[0].textContent).toContain('cortex-ehr');
+    const codex = rows.findIndex(r => r.textContent?.includes('Start Codex'));
+    if (codex !== -1) expect(codex).toBeGreaterThan(0);
+  });
+
+  it('ranks the exactly-named Project above a Session that contains it', async () => {
+    renderPersonalPalette();
+    await waitFor(() => expect(visibleRows().length).toBeGreaterThan(0));
+    await typeQuery('gpagent');
+
+    const rows = visibleRows();
+    expect(rows[0].textContent).toContain('gpagent');
+    // the Session is still findable, just no longer ahead of an exact match
+    const session = rows.findIndex(r =>
+      r.textContent?.includes('Wire gpagent telemetry export')
+    );
+    if (session !== -1) expect(session).toBeGreaterThan(0);
   });
 });

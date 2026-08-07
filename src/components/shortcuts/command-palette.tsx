@@ -1040,18 +1040,6 @@ export function CommandPalette({
     workspaceAvailability,
   ]);
 
-  // cmdk ranks items within a group, but React owns the authored order of
-  // sibling groups. Put an exact Navigation destination first declaratively;
-  // partial queries retain the Sessions-first switching grammar below.
-  const navigationQuery = search
-    .trim()
-    .toLocaleLowerCase()
-    .replace(/^go(?:\s+to)?\s+/, '');
-  const navigationFirst =
-    navigationQuery.length > 0 &&
-    navigationItems.some(
-      item => item.label.toLocaleLowerCase() === `go to ${navigationQuery}`
-    );
   const navigationGroup = (
     <CommandGroup heading="Navigation">
       {navigationItems.map(item => (
@@ -1159,13 +1147,6 @@ export function CommandPalette({
                     </CommandItem>
                   ))}
                 </CommandGroup>
-                <CommandSeparator />
-              </>
-            )}
-
-            {navigationFirst && (
-              <>
-                {navigationGroup}
                 <CommandSeparator />
               </>
             )}
@@ -1366,7 +1347,17 @@ export function CommandPalette({
                   {cloneTargets.map(target => (
                     <CommandItem
                       key={`clone-${target.id}`}
-                      value={`clone active agent new session handoff ${target.label} ${target.source} ${target.modelId} ${target.effort ?? ''}`}
+                      value={paletteValue(target.label, `clone-${target.id}`)}
+                      keywords={[
+                        'clone',
+                        'active',
+                        'agent',
+                        'new session',
+                        'handoff',
+                        target.source,
+                        target.modelId,
+                        ...(target.effort ? [target.effort] : []),
+                      ]}
                       onSelect={() => cloneActiveAgent(target)}
                     >
                       <CopyPlus className="mr-2 h-3.5 w-3.5 shrink-0" />
@@ -1597,12 +1588,8 @@ export function CommandPalette({
               </>
             )}
 
-            {!navigationFirst && (
-              <>
-                {navigationGroup}
-                <CommandSeparator />
-              </>
-            )}
+            {navigationGroup}
+            <CommandSeparator />
 
             <CommandGroup heading="Actions">
               {actionItems.map(item => (

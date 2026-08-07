@@ -78,6 +78,130 @@ describe('NavHistory (D27 app-location back stack)', () => {
     ).toBe(true);
   });
 
+  // ── BUG-006: closing a tab used to leave a dead stop in the stack.
+  // `selectExistingTab` silently no-ops for a tab that no longer exists, so
+  // Back moved the index and changed nothing on screen: "Back reaches
+  // nothing". Reopening is ⌘⇧T's job (D39) — Back's job is to keep an
+  // unbroken chain to whatever is still there.
+  describe('dead stops (BUG-006)', () => {
+    const live = new Set(['t1', 't2', 't3']);
+    const resolver = (l: { tab?: { tabId: string } | null }) =>
+      !l.tab || live.has(l.tab.tabId);
+    const tab = (id: string) => ({
+      surface: '/workspace',
+      tab: { dir: '/a', tabId: id },
+    });
+
+    it('backs THROUGH a destroyed tab to the last live location', () => {
+      const h = new NavHistory();
+      h.setLocationResolver(resolver);
+      h.visit(tab('t1'));
+      h.visit(tab('t2'));
+      h.visit(tab('t3'));
+
+      live.delete('t2');
+      expect(h.back()).toEqual(tab('t1'));
+      // the dead entry is gone, not merely skipped
+      expect(h.snapshot().entries).toEqual([tab('t1'), tab('t3')]);
+      expect(h.forward()).toEqual(tab('t3'));
+
+      live.add('t2');
+    });
+
+    it('reports canBack false when every entry behind us is destroyed', () => {
+      const h = new NavHistory();
+      h.setLocationResolver(resolver);
+      h.visit(tab('t1'));
+      h.visit(tab('t2'));
+
+      live.delete('t1');
+      expect(h.canBack()).toBe(false);
+      expect(h.back()).toBeNull();
+
+      live.add('t1');
+    });
+
+    it('closing the ACTIVE tab still leaves an unbroken chain', () => {
+      const h = new NavHistory();
+      h.setLocationResolver(resolver);
+      h.visit(tab('t1'));
+      h.visit(tab('t2'));
+      h.visit(tab('t3'));
+
+      // ⌘W on t3; the workspace selects a neighbour, which records normally
+      live.delete('t3');
+      h.visit(tab('t2'));
+      expect(h.back()).toEqual(tab('t1'));
+
+      live.add('t3');
+    });
+
+    it('surface-only entries survive any tab churn', () => {
+      const h = new NavHistory();
+      h.setLocationResolver(resolver);
+      h.visit(settings);
+      h.visit(tab('t2'));
+
+      live.delete('t2');
+      h.visit(tab('t1'));
+      expect(h.back()).toEqual(settings);
+
+      live.add('t2');
+    });
+  });
+
+  // ── BUG-006 second defect: Back "cycled between the same two entries".
+  // Applying a location lands in stages — the tab select is synchronous, the
+  // surface change is a router round trip — so the workspace recorder
+  // observes a hybrid (old surface, new tab) that matches no entry, pushes
+  // it, and truncates the forward stack. The stack becomes an oscillator.
+  describe('apply epoch (BUG-006 oscillation)', () => {
+    it('ignores hybrid states observed while a location is applying', () => {
+      const h = new NavHistory();
+      h.visit(terminal);
+      h.visit(sessions);
+
+      const target = h.back();
+      expect(target).toEqual(terminal);
+      h.beginApply(target!);
+      // stage 1: the tab applied, the router has not landed yet
+      h.visit({ surface: sessions.surface, tab: terminal.tab });
+      // stage 2: the router lands and the real location is observed
+      h.visit(terminal);
+
+      expect(h.snapshot().entries).toEqual([terminal, sessions]);
+      expect(h.canForward()).toBe(true);
+      expect(h.forward()).toEqual(sessions);
+    });
+
+    it('records normally again once the applied location arrives', () => {
+      const h = new NavHistory();
+      h.visit(terminal);
+      h.visit(sessions);
+      h.beginApply(h.back()!);
+      h.visit(terminal);
+      expect(h.isApplying()).toBe(false);
+
+      h.visit(settings);
+      expect(h.snapshot().entries).toEqual([terminal, settings]);
+    });
+
+    it('an apply that never lands cannot silence recording forever', () => {
+      const h = new NavHistory();
+      let clock = 0;
+      h.setClock(() => clock);
+      h.visit(terminal);
+      h.beginApply(sessions);
+      h.visit(settings); // swallowed: still applying
+      expect(h.snapshot().entries).toEqual([terminal]);
+
+      clock += 10_000;
+      expect(h.isApplying()).toBe(false);
+      h.visit(settings);
+      expect(h.snapshot().entries).toEqual([terminal, settings]);
+    });
+  });
+
   it('publishes capability changes for chrome controls', () => {
     const h = new NavHistory();
     const revisions: number[] = [];
