@@ -183,6 +183,10 @@ export function AgentLauncher({
             aria-busy={launching}
             disabled={startBlocked}
             title={blockedReason ?? undefined}
+            // Stable hook for the chrome-layout gate, which checks that Start
+            // survives a narrowing window. D46 had one; D49's redraw dropped
+            // it and the gate rotted silently (BUG-010).
+            data-agent-start-button
             className="min-w-24 shrink-0 self-stretch motion-reduce:transition-none"
           >
             {launching ? (

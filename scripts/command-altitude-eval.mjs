@@ -343,10 +343,18 @@ try {
   const spatialSearch = page.getByLabel('Search agents');
   await spatialSearch.fill('navigation');
   await page.waitForURL(url => url.searchParams.get('q') === 'navigation');
-  // exact: the Team altitude button's accessible name ("...the Agents working
-  // them") substring-matches 'working' under Playwright's default matching.
-  await page.getByRole('button', { name: 'working', exact: true }).click();
-  await page.waitForURL(url => url.searchParams.get('status') === 'working');
+  // The status chips carry a full accessible sentence ("Working: 3 of 9
+  // Agents. Filter by this status."), and the D30/D33/D40 protocol renamed
+  // the state itself — this used to wait for a bare 'working' button and
+  // hung forever once neither existed (BUG-011). Anchor on the label the
+  // protocol actually ships, and on the status the chip selects rather than
+  // on the whole parameter: the `active` signal selects working AND
+  // reviewing, so an equality check would encode a narrower contract than
+  // the product has.
+  await page.getByRole('button', { name: /^Working:/ }).click();
+  await page.waitForURL(url =>
+    (url.searchParams.get('status') ?? '').split(',').includes('working')
+  );
   const filteredAddress =
     new URL(page.url()).pathname + new URL(page.url()).search;
   await page.locator('[data-command-altitude-level="terminal"]').click();

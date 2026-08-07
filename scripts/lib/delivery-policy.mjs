@@ -37,7 +37,6 @@ export const SURFACE_GATES = [
   {
     gate: 'eval:workspace:chrome',
     why: 'workspace chrome layout is height-sensitive; a shift resizes every terminal',
-    quarantined: 'BUG-010',
     match: file =>
       /^src\/components\/workspace\/(?:workspace-client|split-layout|terminal-pane)\.tsx?$/.test(
         file
@@ -46,7 +45,6 @@ export const SURFACE_GATES = [
   {
     gate: 'eval:navigation',
     why: 'the command-altitude continuum owns cross-surface navigation',
-    quarantined: 'BUG-011',
     match: file =>
       /^src\/components\/nav\/(?:command-navigation-provider|command-altitude[^/]*|nav-history|surfaces)\.tsx?$/.test(
         file
@@ -55,7 +53,14 @@ export const SURFACE_GATES = [
   {
     gate: 'eval:workspace:launcher',
     why: 'the New Agent launcher has a deterministic state/interaction rig',
-    match: file => file.startsWith('src/components/workspace/launcher/'),
+    // option-menu is the launcher's list renderer (decision `0033`, one menu
+    // primitive) and is only ever seen through it. BUG-003 changed it and
+    // ran no gate, which is how a menu that opened above the top of the
+    // window shipped.
+    match: file =>
+      file.startsWith('src/components/workspace/launcher/') ||
+      file === 'src/components/ui/option-menu.tsx' ||
+      file === 'src/components/ui/option-menu-keyboard.ts',
   },
 ];
 

@@ -11,7 +11,10 @@
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { resolveQaBrowserLaunchOptions } from './lib/qa-browser.mjs';
+import {
+  primeEvalBrowserPage,
+  resolveQaBrowserLaunchOptions,
+} from './lib/qa-browser.mjs';
 
 const BASE = process.env.EXA_BASE || 'http://localhost:7050';
 const OUT = process.env.EXA_LAUNCHER_SHOTS || '/tmp/exawatt-launcher-bench';
@@ -346,6 +349,69 @@ try {
   }
 } catch {
   errors.push('[gate] ArrowDown never revealed a focusable drawer axis');
+}
+
+// ── BUG-003 gate: every option menu must fit the window it opens in.
+// A SHORT window is the reproduction — the trigger sits low, so a constant
+// max-height cannot fit below it and Radix flips the menu upward until its
+// first options sit ABOVE the top edge, where nothing can scroll them back.
+// Measured at listTop -16px before the fix.
+try {
+  const shortPage = await browser.newPage({
+    viewport: { width: 1280, height: 560 },
+  });
+  await primeEvalBrowserPage(shortPage);
+  await shortPage.goto(`${BASE}/hud-gallery/agent-launcher`, {
+    waitUntil: 'networkidle',
+  });
+  await shortPage.waitForTimeout(700);
+  const triggers = await shortPage.$$('button[aria-expanded]');
+  const menus = [];
+  for (const trigger of triggers) {
+    try {
+      await trigger.scrollIntoViewIfNeeded();
+      await trigger.click({ timeout: 2000 });
+      await shortPage.waitForTimeout(300);
+      const measured = await shortPage.evaluate(() => {
+        const list = document.querySelector('[role="listbox"]');
+        if (!list) return null;
+        const box = list.getBoundingClientRect();
+        return {
+          top: Math.round(box.top),
+          bottom: Math.round(box.bottom),
+          viewport: window.innerHeight,
+          options: list.querySelectorAll('[role="option"]').length,
+          scrollable: list.scrollHeight > list.clientHeight + 1,
+        };
+      });
+      if (measured) menus.push(measured);
+      await shortPage.keyboard.press('Escape');
+      await shortPage.waitForTimeout(120);
+    } catch {
+      // a trigger that does not open a listbox is not this gate's business
+    }
+  }
+  if (menus.length === 0) {
+    errors.push('[gate] no option menu opened, so the fit gate proved nothing');
+  }
+  for (const menu of menus) {
+    if (menu.top < 0 || menu.bottom > menu.viewport) {
+      errors.push(
+        `[gate] an option menu (${menu.options} options) rendered outside the window: ${JSON.stringify(menu)}`
+      );
+    }
+  }
+  const outside = menus.filter(
+    menu => menu.top < 0 || menu.bottom > menu.viewport
+  ).length;
+  if (menus.length > 0 && outside === 0) {
+    console.log(
+      `[launcher-bench] gate ok: ${menus.length} option menus fit a 560px-tall window`
+    );
+  }
+  await shortPage.close();
+} catch (error) {
+  errors.push(`[gate] option-menu fit check failed: ${String(error)}`);
 }
 
 await browser.close();

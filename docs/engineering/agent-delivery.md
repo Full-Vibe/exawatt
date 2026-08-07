@@ -56,7 +56,9 @@ id that will repair it: announced on every landing that touches its surface,
 never enforced. Deleting the entry instead would throw away the fact that the
 surface owes evidence at all. The first routing pass quarantined two
 (BUG-010, BUG-011) — both had been broken since D49 without anyone knowing,
-which is the same disease one layer down.
+which is the same disease one layer down. Both were repaired the same week
+and are enforced again; nothing is quarantined today, and the mechanism
+stays for the next red gate.
 
 A gate that genuinely does not apply is waived on purpose with
 `--waive-gate <id>`; both the refusal and the waiver append a metric

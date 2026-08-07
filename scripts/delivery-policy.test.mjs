@@ -132,6 +132,15 @@ test('a deliberate waiver satisfies it too, and is the caller saying so', () => 
   );
 });
 
+test('the shared menu primitive owes the launcher gate', () => {
+  assert.deepEqual(
+    missingSurfaceGates(['src/components/ui/option-menu.tsx']).map(
+      entry => entry.gate
+    ),
+    ['eval:workspace:launcher']
+  );
+});
+
 test('ungated paths owe nothing', () => {
   assert.deepEqual(missingSurfaceGates(['docs/engineering/roadmap.md']), []);
   assert.deepEqual(missingSurfaceGates(['src/lib/shortcuts/format.ts']), []);
@@ -149,15 +158,17 @@ test('several gated surfaces in one change owe each gate once', () => {
   ]);
 });
 
-// A gate whose own script is red must not be enforced — and must not quietly
-// become "this surface owes no evidence" either.
-test('a quarantined gate is announced, not enforced', () => {
+// Quarantine is the mechanism for a gate whose own script is red. Both of the
+// first two were repaired the same week they were found, so nothing is
+// quarantined today — the rule stays tested so the next red gate is announced
+// rather than deleted.
+test('a repaired gate is enforced again, not quarantined', () => {
   const files = ['src/components/nav/nav-history.ts'];
-  assert.deepEqual(missingSurfaceGates(files), []);
   assert.deepEqual(
-    quarantinedSurfaceGates(files).map(entry => [entry.gate, entry.backlogId]),
-    [['eval:navigation', 'BUG-011']]
+    missingSurfaceGates(files).map(entry => entry.gate),
+    ['eval:navigation']
   );
+  assert.deepEqual(quarantinedSurfaceGates(files), []);
 });
 
 test('quarantine says nothing about an untouched surface', () => {

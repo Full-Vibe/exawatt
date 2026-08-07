@@ -251,6 +251,14 @@ export function OptionMenu({
 
       <PopoverContent
         align="start"
+        // Keep the whole menu inside the window (BUG-003). The list used to
+        // cap at a CONSTANT 18rem, which is not a height the window has
+        // promised: opened from a trigger low in a short window, the tail of
+        // a long catalog rendered past the viewport with nothing to scroll,
+        // and opencode ships the largest catalog of any source. Radix
+        // already measures the room it has; the cap is now that measurement,
+        // and the list flexes inside it.
+        collisionPadding={12}
         onKeyDown={onKeyDown}
         // Focus stays on one element so arrows and type-ahead have a single
         // owner: the search field when present, otherwise the list itself.
@@ -264,7 +272,8 @@ export function OptionMenu({
           });
         }}
         className={cn(
-          'w-[min(26rem,calc(100vw-2rem))] border-hud-stroke-soft bg-hud-deep p-0',
+          'flex w-[min(26rem,calc(100vw-2rem))] flex-col border-hud-stroke-soft bg-hud-deep p-0',
+          'max-h-[min(21rem,var(--radix-popover-content-available-height,21rem))]',
           contentClassName
         )}
       >
@@ -289,7 +298,7 @@ export function OptionMenu({
           aria-label={label}
           aria-activedescendant={active ? `${listId}-${active.id}` : undefined}
           tabIndex={showSearch ? -1 : 0}
-          className="max-h-72 overflow-y-auto py-1 outline-none"
+          className="min-h-0 flex-1 overflow-y-auto py-1 outline-none"
         >
           {flat.length === 0 ? (
             <p className="px-3 py-4 font-mono text-chrome-meta text-hud-text-dim">

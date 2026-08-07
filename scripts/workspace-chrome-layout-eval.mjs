@@ -440,21 +440,26 @@ try {
       const taskElement = document.querySelector(
         '[aria-label="Initial task for the new Agent"]'
       );
-      const configurationRibbon = document.querySelector(
-        '[data-launch-configuration-ribbon]'
-      );
-      const configurationViewport = document.querySelector(
-        '[data-launch-configuration-viewport]'
-      );
+      // D49 replaced D46's configuration ribbon with setup cards, its
+      // Customize button with an attached drawer handle, and "All launch
+      // configurations" with "All engines and models". This block still
+      // named the D46 surface and had therefore been failing since D49
+      // landed, unnoticed because nothing ran this gate (BUG-010). The
+      // CONTRACT is unchanged — the composer must render a chooser, a way
+      // into the detail, a way to everything, and Start — so it is restated
+      // against what ships.
+      const configurationRibbon = document.querySelector('[data-setup-row]');
+      const configurationViewport =
+        document.querySelector('[data-setup-chip]');
       const selectedConfiguration = document.querySelector(
-        '[data-launch-configuration-ribbon] [role="radio"][aria-checked="true"]'
+        '[data-setup-chip][data-selected="true"]'
       );
       const startElement = document.querySelector('[data-agent-start-button]');
       const customizeElement = document.querySelector(
-        '[data-agent-composer] button[aria-label="Customize"]'
+        '[data-agent-composer] [data-setup-drawer-handle]'
       );
       const allElement = document.querySelector(
-        '[data-agent-composer] button[aria-label="All launch configurations"]'
+        '[data-agent-composer] button[aria-label="All engines and models"]'
       );
       if (
         !(chromeElement instanceof HTMLElement) ||
@@ -471,27 +476,21 @@ try {
           ['chrome', chromeElement instanceof HTMLElement],
           ['composer', panelElement instanceof HTMLElement],
           ['task', taskElement instanceof HTMLTextAreaElement],
-          ['configuration ribbon', configurationRibbon instanceof HTMLElement],
-          [
-            'configuration viewport',
-            configurationViewport instanceof HTMLElement,
-          ],
-          [
-            'selected configuration',
-            selectedConfiguration instanceof HTMLElement,
-          ],
+          ['setup row', configurationRibbon instanceof HTMLElement],
+          ['setup card', configurationViewport instanceof HTMLElement],
+          ['selected setup', selectedConfiguration instanceof HTMLElement],
           ['Start', startElement instanceof HTMLButtonElement],
-          ['Customize', customizeElement instanceof HTMLButtonElement],
-          ['All configurations', allElement instanceof HTMLButtonElement],
+          ['drawer handle', customizeElement instanceof HTMLButtonElement],
+          ['All engines and models', allElement instanceof HTMLButtonElement],
         ]
           .filter(([, present]) => !present)
           .map(([name]) => name);
         throw new Error(
           `Workspace chrome fixture did not render: ${missing.join(', ')}; launcher=${JSON.stringify(
             {
-              ribbonText: configurationRibbon?.textContent,
-              radios:
-                configurationRibbon?.querySelectorAll('[role="radio"]').length,
+              rowText: configurationRibbon?.textContent,
+              cards:
+                document.querySelectorAll('[data-setup-chip]').length,
               controls: Array.from(
                 panelElement?.querySelectorAll('button') ?? []
               ).map(button => button.getAttribute('aria-label')),
@@ -1281,12 +1280,20 @@ try {
     await page.locator('[data-composer-toggle]').click();
     await page.locator('[data-agent-composer]').waitFor();
   }
-  const launchCustomization = page.locator('[data-launch-customize]');
-  if (!(await launchCustomization.isVisible())) {
-    await page.getByRole('button', { name: 'Customize' }).click();
-    await launchCustomization.waitFor({ state: 'visible' });
+  // D49: the detail is an attached drawer entered from the selected setup
+  // card with ArrowDown — the launcher's own keyboard contract — not a
+  // "Customize" button revealing a panel (BUG-010).
+  // The D49 drawer's control is an OptionMenu whose accessible name carries
+  // its current value ("Permission: Ask first"); the bare "Agent
+  // permissions" label belongs to the legacy hidden Select, which is why a
+  // label lookup resolved to something invisible (BUG-010).
+  const permissionTrigger = page.getByRole('button', {
+    name: /^Permission:/,
+  });
+  if (!(await permissionTrigger.isVisible())) {
+    await page.locator('[data-setup-drawer-handle]').first().click();
+    await permissionTrigger.waitFor({ state: 'visible' });
   }
-  const permissionTrigger = page.getByLabel('Agent permissions');
   await permissionTrigger.focus();
   await page.keyboard.press('Space');
   const permissionMenu = page.getByRole('listbox');
@@ -1330,11 +1337,18 @@ try {
     path: join(SCREENSHOT_DIR, 'workspace-800x700-permissions.png'),
   });
   await page.keyboard.press('Escape');
-  if (
-    !(await permissionTrigger.evaluate(
+  // Radix returns focus on its own schedule, so this must WAIT for the
+  // contract rather than sample it one tick after the key. Asserting
+  // synchronously made the gate fail intermittently, which is its own kind
+  // of rot: an agent who cannot trust a gate stops running it.
+  let focusRestored = false;
+  for (let attempt = 0; attempt < 20 && !focusRestored; attempt += 1) {
+    focusRestored = await permissionTrigger.evaluate(
       element => document.activeElement === element
-    ))
-  ) {
+    );
+    if (!focusRestored) await page.waitForTimeout(100);
+  }
+  if (!focusRestored) {
     throw new Error('Permission menu did not restore keyboard focus');
   }
 
