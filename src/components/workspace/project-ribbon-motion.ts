@@ -151,6 +151,13 @@ export function estimateRibbonTokenWidth(
   return Math.min(400, Math.max(92, title.length * 7.2 + 74));
 }
 
+/**
+ * `--exa-ribbon-pin` is the sticky Project header's extra offset (D50). It
+ * is 0 for everything else and is written imperatively by the strip's scroll
+ * handler, so the pin lands on the scroll frame instead of a React render
+ * behind it. Keeping it INSIDE the one transform means there is still
+ * exactly one owner of an item's position.
+ */
 export function ribbonTargetTransform(target: RibbonTarget, scale = 1): string {
-  return `translate3d(${target.x}px, ${target.y}px, 0) scaleX(${scale})`;
+  return `translate3d(calc(${target.x}px + var(--exa-ribbon-pin, 0px)), ${target.y}px, 0) scaleX(${scale})`;
 }

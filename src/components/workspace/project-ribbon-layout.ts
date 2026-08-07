@@ -337,6 +337,75 @@ export function layoutRibbonRow(
   };
 }
 
+/**
+ * Which Project header should be PINNED at the left edge, and where (D50).
+ *
+ * Once the row scrolls, the Project you are inside scrolls away with it and
+ * the strip stops answering "where am I" — the operator's report:
+ * "as I horizontally scroll … I find myself forgetting what project I'm in."
+ * The fix is the UIScrollView section-header grammar, laid on its side: the
+ * current Project's header parks at the left edge, its own tabs slide
+ * underneath it, and the NEXT Project's header pushes it out of the way
+ * rather than crossfading over it.
+ *
+ * Pure so the motion can be reasoned about and tested without a viewport:
+ * given the laid-out row and a scroll offset, there is exactly one right
+ * answer. `offsetX` is 0 while parked and goes NEGATIVE during the push, so
+ * the caller only ever writes one transform.
+ *
+ * Returns null when nothing should be pinned — at rest, or when the left
+ * edge sits in a folded Project (a folded block is nothing but its own
+ * header, so there is nothing for it to hold above).
+ */
+export interface RibbonStickyProject {
+  dir: string;
+  /** translateX for the pinned header: 0 parked, negative while pushed out */
+  offsetX: number;
+  /** how far the push has run, 0→1; the incoming header owns the rest */
+  pushProgress: number;
+}
+
+export function stickyProjectForScroll(
+  projects: readonly { dir: string }[],
+  layout: RibbonRowLayout,
+  scrollLeft: number,
+  policy: RibbonLayoutPolicy = DEFAULT_RIBBON_POLICY
+): RibbonStickyProject | null {
+  if (scrollLeft <= 0) return null;
+
+  for (let index = projects.length - 1; index >= 0; index -= 1) {
+    const project = projects[index];
+    const header = layout.targets.get(headerKey(project.dir));
+    if (!header) continue;
+    // The block the left edge is standing in.
+    if (header.x > scrollLeft) continue;
+
+    // A folded Project is only its container chip: nothing scrolls under it.
+    if (layout.presentation.get(project.dir) === 'folded') return null;
+
+    const next = projects[index + 1];
+    const nextHeader = next
+      ? layout.targets.get(headerKey(next.dir))
+      : undefined;
+    const blockEnd = nextHeader
+      ? nextHeader.x - policy.groupGap
+      : layout.contentWidth;
+    // Already scrolled clean past this Project's tabs — the next header is
+    // in place on its own and needs no help.
+    if (blockEnd <= scrollLeft) return null;
+
+    // Parked at 0 until the incoming header reaches us, then pushed out by
+    // exactly as much as it has arrived.
+    const room = blockEnd - scrollLeft - header.width;
+    if (room >= 0) return { dir: project.dir, offsetX: 0, pushProgress: 0 };
+    const offsetX = Math.max(-header.width, room);
+    const pushProgress =
+      header.width > 0 ? Math.min(1, -offsetX / header.width) : 0;
+    return { dir: project.dir, offsetX, pushProgress };
+  }
+  return null;
+}
+
 export function ribbonHeightForRows(rows: number): number {
   return rows <= 0 ? 0 : RIBBON_ROW_HEIGHT;
 }

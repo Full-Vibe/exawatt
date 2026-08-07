@@ -6,6 +6,7 @@ import {
   RIBBON_COLUMN_GAP,
   RIBBON_GROUP_GAP,
   RIBBON_ROW_HEIGHT,
+  stickyProjectForScroll,
   ribbonHeightForRows,
   type RibbonProjectInput,
 } from './project-ribbon-layout';
@@ -311,5 +312,95 @@ describe('the comfort dial (D45 tuning)', () => {
         modes[1].presentation.get('/c')
       );
     }
+  });
+});
+
+// ── D50: the pinned Project header. Operator, 2026-08-06: "as I horizontally
+// scroll … I find myself forgetting what project I'm in. I want the project
+// tab to stop at the left scroll position and the tabs to scroll under it.
+// Then when scrolling through the next projects' agent tabs, that project tab
+// kicks out the prior one."
+describe('stickyProjectForScroll (D50)', () => {
+  const project = (dir: string, tabs: number, active = false) => ({
+    dir,
+    headerWidth: 100,
+    tabs: Array.from({ length: tabs }, (_, i) => ({
+      id: `${dir}-${i}`,
+      openWidth: 240,
+      miniWidth: 60,
+    })),
+    active,
+  });
+
+  // The row only scrolls after the fold ladder runs out, so the realistic
+  // scrolling shape is ONE open Project whose own tabs overflow. Zero-tab
+  // neighbours cannot fold, which is how a second header stays in the row.
+  const projects = [project('/a', 5, true), project('/b', 0), project('/c', 0)];
+  const layout = layoutRibbonRow(projects, 700);
+  const headerX = (dir: string) => layout.targets.get(`project:${dir}`)!.x;
+  const blockEndOfA = headerX('/b') - RIBBON_GROUP_GAP;
+
+  it('pins nothing at rest', () => {
+    expect(layout.scrollable).toBe(true);
+    expect(stickyProjectForScroll(projects, layout, 0)).toBeNull();
+  });
+
+  it('parks the Project you are inside at the left edge', () => {
+    const sticky = stickyProjectForScroll(projects, layout, 300);
+    expect(sticky?.dir).toBe('/a');
+    expect(sticky?.offsetX).toBe(0);
+    expect(sticky?.pushProgress).toBe(0);
+  });
+
+  it('holds the park for the whole run of its own tabs', () => {
+    const sticky = stickyProjectForScroll(
+      projects,
+      layout,
+      blockEndOfA - 100 - 1
+    );
+    expect(sticky?.dir).toBe('/a');
+    expect(sticky?.offsetX).toBe(0);
+  });
+
+  it('lets the next Project push it out rather than fade over it', () => {
+    const nudged = stickyProjectForScroll(projects, layout, blockEndOfA - 90);
+    expect(nudged?.dir).toBe('/a');
+    expect(nudged?.offsetX).toBe(-10);
+
+    // fully pushed at the last pixel it owns; one more and the next block
+    // owns the edge outright
+    const shoved = stickyProjectForScroll(projects, layout, blockEndOfA - 1);
+    expect(shoved?.dir).toBe('/a');
+    expect(shoved?.offsetX).toBe(-99);
+    expect(stickyProjectForScroll(projects, layout, blockEndOfA)?.dir).not.toBe(
+      '/a'
+    );
+  });
+
+  it('hands the pin over once the next block owns the edge', () => {
+    const sticky = stickyProjectForScroll(projects, layout, headerX('/b') + 4);
+    expect(sticky?.dir).toBe('/b');
+    // zero-tab neighbours sit shoulder to shoulder, so /b is immediately
+    // under pressure from /c rather than parked — still continuous
+    expect(sticky?.offsetX).toBeLessThanOrEqual(0);
+  });
+
+  it('never pins a folded Project — its block is only its own chip', () => {
+    const foldable = [
+      project('/a', 4, true),
+      project('/b', 3),
+      project('/c', 3),
+    ];
+    const folded = layoutRibbonRow(foldable, 900);
+    const foldedDir = [...folded.presentation.entries()].find(
+      ([, mode]) => mode === 'folded'
+    )?.[0];
+    expect(foldedDir).toBeTruthy();
+    const at = folded.targets.get(`project:${foldedDir}`)!.x;
+    expect(stickyProjectForScroll(foldable, folded, at + 1)).toBeNull();
+    // and the open Project ahead of it still gets pushed out by its arrival
+    const pushed = stickyProjectForScroll(foldable, folded, at - 40);
+    expect(pushed?.dir).toBe('/a');
+    expect(pushed?.offsetX).toBeLessThan(0);
   });
 });

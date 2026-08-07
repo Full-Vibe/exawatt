@@ -36,6 +36,7 @@ import {
   type ProjectPresentation,
   RIBBON_ROW_HEIGHT,
   ribbonHeightForRows,
+  stickyProjectForScroll,
   type RibbonLayoutPolicy,
   type RibbonProjectInput,
   type RibbonTarget,
@@ -459,6 +460,61 @@ export function TabStrip({
     []
   );
 
+  // ── The pinned Project header (D50). Operator, 2026-08-06: scrolling the
+  // row takes the Project name with it, so the strip stops answering "where
+  // am I". The Project you are inside parks at the left edge, its own tabs
+  // slide underneath, and the next Project's header pushes it out — the
+  // UIScrollView section-header grammar, on its side.
+  //
+  // The REAL header does this; there is no pinned copy. Its transform already
+  // places it, so pinning is one extra term, written as a CSS variable the
+  // scroll handler owns and React never touches. That keeps the pin exactly
+  // on the scroll frame instead of a re-render behind it.
+  const pinnedNodeRef = useRef<HTMLElement | null>(null);
+  const [pinnedDir, setPinnedDir] = useState<string | null>(null);
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+  const orderedRef = useRef(orderedProjects);
+  orderedRef.current = orderedProjects;
+
+  const syncPinnedProject = useCallback(() => {
+    const node = scrollerRef.current;
+    if (!node) return;
+    // Never pin under a drag: the layout recomputes on every pointer move.
+    const sticky = pointerDragRef.current?.engaged
+      ? null
+      : stickyProjectForScroll(
+          orderedRef.current,
+          layoutRef.current,
+          node.scrollLeft
+        );
+    const previous = pinnedNodeRef.current;
+    if (previous && (!sticky || previous.dataset.ribbonProjectHeader !== sticky.dir)) {
+      previous.style.removeProperty('--exa-ribbon-pin');
+      pinnedNodeRef.current = null;
+    }
+    if (!sticky) {
+      setPinnedDir(current => (current === null ? current : null));
+      return;
+    }
+    const cached = pinnedNodeRef.current;
+    const header =
+      cached && cached.isConnected ? cached : (
+        node.querySelector<HTMLElement>(
+          `[data-ribbon-project-header="${CSS.escape(sticky.dir)}"]`
+        )
+      );
+    if (header) {
+      const target = layoutRef.current.targets.get(`project:${sticky.dir}`);
+      const pin = target
+        ? node.scrollLeft - target.x + sticky.offsetX
+        : sticky.offsetX;
+      header.style.setProperty('--exa-ribbon-pin', `${pin}px`);
+      pinnedNodeRef.current = header;
+    }
+    setPinnedDir(current => (current === sticky.dir ? current : sticky.dir));
+  }, []);
+
   const syncScrollEdges = useCallback(() => {
     const node = scrollerRef.current;
     if (!node) return;
@@ -469,7 +525,8 @@ export function TabStrip({
         ? current
         : { left, right }
     );
-  }, []);
+    syncPinnedProject();
+  }, [syncPinnedProject]);
 
   // Keep the selection reachable without hunting: when the row scrolls, bring
   // the selected tab into view. Instant under Reduced Motion.
@@ -980,6 +1037,31 @@ export function TabStrip({
     };
   };
 
+  /** A pinned header tracks the scroll frame exactly, so it cannot carry the
+   *  position tween the rest of the row uses, and it must paint above the
+   *  tabs passing beneath it. */
+  const pinnedStyle = (
+    base: React.CSSProperties,
+    pinned: boolean
+  ): React.CSSProperties =>
+    pinned
+      ? {
+          ...base,
+          transitionProperty: 'opacity',
+          zIndex: 2,
+          willChange: 'transform',
+          // The one cue that it is holding station ABOVE the row rather than
+          // sitting in it: a hairline of depth on the edge the tabs pass.
+          boxShadow: `3px 0 8px -2px ${withThemeAlpha(HUD.bg.void, 0.55)}`,
+        }
+      : base;
+
+  /** Composite a translucent tint onto the strip's own ground. Off the pin
+   *  the tint stays translucent exactly as before; on the pin it becomes
+   *  opaque WITHOUT changing what it looks like. */
+  const layerOnGround = (tint: string, pinned: boolean): string =>
+    pinned ? `linear-gradient(${tint}, ${tint}), ${HUD.bg.deep}` : tint;
+
   // Mask color is alpha-only compositing syntax, not presentation paint.
   const fadeMask = layout.scrollable
     ? `linear-gradient(to right, transparent 0, #000 ${
@@ -1044,6 +1126,7 @@ export function TabStrip({
 
             if (token.kind === 'project') {
               const dormantProject = dormant.has(project.dir);
+              const pinned = pinnedDir === project.dir;
               const signal = projectSignals.get(project.dir) ?? 'quiet';
               const projectMenuItems: StripMenuItem[] = [
                 ...(onNewAgent
@@ -1159,21 +1242,32 @@ export function TabStrip({
                       });
                     }
                   }}
+                  data-ribbon-project-header={project.dir}
+                  data-ribbon-pinned={pinned || undefined}
                   className="group/project flex h-7 origin-left items-center overflow-hidden rounded-md border"
                   style={{
-                    ...itemStyle(entry, projectExiting),
+                    ...pinnedStyle(itemStyle(entry, projectExiting), pinned),
                     borderColor: groupActive
                       ? withThemeAlpha(color, 0.46)
                       : dormantProject
                         ? withThemeAlpha(HUD.textDim, 0.09)
                         : withThemeAlpha(HUD.textDim, 0.15),
+                    // While pinned the header holds station over its own
+                    // scrolling tabs, so its tint has to sit on the strip's
+                    // ground instead of on whatever is passing underneath.
                     background: draggingSelf
                       ? HUD.bg.panelFill
                       : groupActive
-                        ? withThemeAlpha(color, 0.07)
+                        ? layerOnGround(withThemeAlpha(color, 0.07), pinned)
                         : dormantProject
-                          ? withThemeAlpha(HUD.textDim, 0.018)
-                          : withThemeAlpha(HUD.textDim, 0.035),
+                          ? layerOnGround(
+                              withThemeAlpha(HUD.textDim, 0.018),
+                              pinned
+                            )
+                          : layerOnGround(
+                              withThemeAlpha(HUD.textDim, 0.035),
+                              pinned
+                            ),
                     filter: dormantProject ? 'opacity(.62)' : undefined,
                   }}
                 >

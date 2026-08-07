@@ -306,6 +306,19 @@ snapshot, never an intermediate layout storm.
 
 ### Amendment log
 
+- 2026-08-07 — ENG-016 D50 pinned Project header: a scrolled ribbon now holds
+  the current Project's header at the left edge while its tabs pass beneath
+  it. This introduces one behaviour the system did not have — an element that
+  holds station ABOVE the row it belongs to — so it gets exactly one new cue
+  and no new rungs: a hairline right-edge depth (`3px 0 8px -2px` at 55% void)
+  on the edge the tabs pass, and the chip's existing tint composited onto the
+  strip's own ground so it reads identically while being opaque. No new type,
+  color, or spacing rung; the chip treatment, Project identity color, and
+  signal mark are unchanged. A pinned element drops its position tween on
+  purpose: sticky must track the scroll frame, and a tween on a scroll-driven
+  offset reads as lag, not as motion. Reviewed on
+  `/hud-gallery/project-ribbon/bench`.
+
 - 2026-08-06 — ENG-016 D49 production adoption: the New Agent launcher bench
   now renders the same `AgentLauncher` mounted by the Cmd+T composer and remains
   as its deterministic state/interaction rig. Card cleanup adhered to existing

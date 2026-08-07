@@ -23,7 +23,8 @@ import {
   AttentionMarker,
   SessionStatusGlyph,
 } from '@/components/workspace/status-glyphs';
-import type { ShortcutCategory } from '@/types/shortcuts';
+import type { ShortcutCategory, ShortcutKeys } from '@/types/shortcuts';
+import { matchesChordQuery, parseChordQuery } from '@/lib/shortcuts/chord-query';
 import { ALL_FIXED_FAMILIES } from '@/lib/shortcuts/fixed-families';
 
 /** the D30 status icon vocabulary, taught where operators already look */
@@ -106,12 +107,21 @@ export function ShortcutHelpModal({
     if (!open) setQuery('');
   }, [open]);
   const q = query.trim().toLowerCase();
+  // FIX-001: this sheet exists to answer "what is ⌘⇧T bound to?", so a query
+  // that looks like a chord is matched against the BINDING, not against the
+  // rendered string — "cmd shift t" and "⌘⇧T" are the same question, and
+  // neither is a substring of the other. Anything that isn't a chord stays a
+  // plain label search.
+  const chord = useMemo(() => parseChordQuery(query), [query]);
   const matches = useCallback(
-    (label: string, keysText: string) =>
-      !q ||
-      label.toLowerCase().includes(q) ||
-      keysText.toLowerCase().includes(q),
-    [q]
+    (label: string, keysText: string, keys?: ShortcutKeys) => {
+      if (!q) return true;
+      if (chord) return keys ? matchesChordQuery(keys, chord) : false;
+      return (
+        label.toLowerCase().includes(q) || keysText.toLowerCase().includes(q)
+      );
+    },
+    [chord, q]
   );
 
   const sections = useMemo(() => {
@@ -119,7 +129,13 @@ export function ShortcutHelpModal({
       const rows = (shortcuts[category] ?? []).flatMap(shortcut => {
         const effectiveKeys = shortcutRegistry.getEffectiveKeys(shortcut.id);
         if (!effectiveKeys) return [];
-        if (!matches(shortcut.label, formatShortcutKeys(effectiveKeys))) {
+        if (
+          !matches(
+            shortcut.label,
+            formatShortcutKeys(effectiveKeys),
+            effectiveKeys
+          )
+        ) {
           return [];
         }
         return [
@@ -128,15 +144,19 @@ export function ShortcutHelpModal({
       });
       const fixed = ALL_FIXED_FAMILIES.filter(family => {
         const keysText = formatShortcutKeys(family.keys);
-        return family.category === category && matches(family.label, keysText);
+        return (
+          family.category === category &&
+          matches(family.label, keysText, family.keys)
+        );
       });
       return { category, rows, fixed };
     }).filter(s => s.rows.length > 0 || s.fixed.length > 0);
   }, [shortcuts, matches]);
   const statusLegendMatches =
     !q ||
-    'agent status'.includes(q) ||
-    STATUS_LEGEND.some(entry => matches(entry.label, entry.meaning));
+    (!chord &&
+      ('agent status'.includes(q) ||
+        STATUS_LEGEND.some(entry => matches(entry.label, entry.meaning))));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
