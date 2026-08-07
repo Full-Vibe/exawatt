@@ -642,6 +642,50 @@ Implementation record (landed 2026-07-10):
 
 ## Findings log
 
+- 2026-08-07 (S6 pairing, operator): "we should pair all the Team-view UI
+  work / bugs / enhancements together. I'm thinking of the up/down arrows
+  suggestion." Four open rows are Team surface — FIX-002 (arrows), FIX-006
+  (title input), FIX-008 (float active Agents forward), FIX-005 plus S4.1's
+  unshipped goal-visual language — and they now travel as one pass rather
+  than four small-fixes landing separately into the same component.
+
+  **FIX-002 and FIX-006 are one defect, confirmed by reading before the pass
+  starts.** Both live in `expose-overlay.tsx`'s `onKeyDown`:
+
+  - Movement is `±1` over a flat `items` array, so Up/Down and Left/Right all
+    step through one list. The tile layout is a 2-D grid and promises rows and
+    columns; the keyboard delivers a sequence. That is FIX-002 exactly, and
+    the operator's framing — "matching what the 2-D tile layout visually
+    promises" — is a request for the keyboard to agree with the geometry.
+  - The handler yields to `[data-roadmap-rail]` and to nothing else. There is
+    no text-entry guard, so inside a tile's agent-title field plain `j`/`k`
+    are `preventDefault`ed into tile movement (they are the D9 list-navigation
+    mirror of down/up), `Enter` runs `onPick` and navigates away instead of
+    committing the rename, and `Escape` closes the whole overlay instead of
+    cancelling the edit. That is FIX-006's "takes focus but no characters",
+    and the 2026-08-04 triage note guessed the mechanism correctly — "check
+    whether a parent key handler … is swallowing keystrokes before the input
+    sees them."
+
+  So the subject of the pass is not four fixes; it is that the Team grid has
+  no keyboard owner. It needs one that knows its own geometry and yields to
+  text entry — the same shape as ENG-016 D51's attention rule, where the
+  defect was two consumers restating a contract nobody had written down.
+
+  FIX-008 lands on the same grid from the other side: it asks the grid to
+  REORDER. That raises the question the design pass must answer with the
+  operator rather than assume — whether Team ordering is a view mode, a
+  transient filter, or a sort; what "active" means (working now, recently
+  mine, or needs-you); and whether Team may reorder Agents at all without
+  contradicting the durable manual arrangement ENG-016 D20/D45 made
+  load-bearing one altitude down. A sort that silently fights the ribbon's
+  order would trade one orientation problem for a worse one.
+
+  Method for the pass, per the operator's standing preference: iterate on the
+  bench with screenshots and clarifying questions on taste before wiring
+  anything into the production surface, and keep the DOM specimen honest —
+  Team tiles are DOM, so no R3F sibling is owed.
+
 - 2026-08-04 (operator quick capture, triaged from `product_feedback`):
   - **Team arrow keys should move spatially (`d74f5009`, FIX-002, queued).** In
     the Team altitude (`/workspace?view=sessions`), Up/Down currently step
