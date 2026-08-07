@@ -59,3 +59,6 @@ release/
 
 # eval output (screenshots, packaged-run artifacts) — never tracked
 .artifacts/
+
+# Local tool state (omo)
+.omo/
