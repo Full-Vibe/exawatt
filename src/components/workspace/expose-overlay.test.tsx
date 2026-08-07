@@ -335,6 +335,93 @@ describe('Sessions overview', () => {
     expect(alpha).toHaveAttribute('data-selected', 'true');
   });
 
+  // ── FIX-002: the keyboard must agree with the geometry. jsdom reports no
+  // layout, so the rects are supplied the way the browser would.
+  it('moves Down to the row below rather than the next tile', async () => {
+    const layout = new Map<string, DOMRect>();
+    const place = (name: RegExp, left: number, top: number) => {
+      const node = screen.getByRole('button', { name });
+      layout.set(node.getAttribute('aria-label') ?? '', {
+        left,
+        top,
+        width: 200,
+        height: 140,
+        right: left + 200,
+        bottom: top + 140,
+        x: left,
+        y: top,
+        toJSON: () => ({}),
+      } as DOMRect);
+      return node;
+    };
+
+    render(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        activeTabId="tab-a"
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    const alpha = place(/^Alpha, One/, 0, 0);
+    const beta = place(/^Beta, One/, 220, 0);
+    const gamma = place(/^Gamma, One/, 0, 160);
+
+    const original = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () {
+      const rect = layout.get(this.getAttribute('aria-label') ?? '');
+      return rect ?? (original.call(this) as DOMRect);
+    };
+    try {
+      await waitFor(() => expect(alpha).toHaveFocus());
+      // Down from the first tile of row one lands in row two, NOT on Beta.
+      fireEvent.keyDown(alpha, { key: 'ArrowDown' });
+      await waitFor(() => expect(gamma).toHaveFocus());
+      // and Right stays inside the row it is in
+      fireEvent.keyDown(gamma, { key: 'ArrowUp' });
+      await waitFor(() => expect(alpha).toHaveFocus());
+      fireEvent.keyDown(alpha, { key: 'ArrowRight' });
+      await waitFor(() => expect(beta).toHaveFocus());
+    } finally {
+      Element.prototype.getBoundingClientRect = original;
+    }
+  });
+
+  // ── FIX-006: the grid claimed every key that was not an arrow, so a
+  // focused field never saw j/k and Enter picked a tile instead of
+  // committing. The field that showed this was later deleted; the rule is
+  // what must not regress.
+  it('yields every key to a focused text field inside the overlay', async () => {
+    const onPick = vi.fn();
+    render(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        activeTabId="tab-a"
+        onPick={onPick}
+        onClose={vi.fn()}
+      />
+    );
+
+    const alpha = screen.getByRole('button', { name: /^Alpha, One/ });
+    await waitFor(() => expect(alpha).toHaveFocus());
+
+    const field = document.createElement('input');
+    alpha.append(field);
+    field.focus();
+
+    for (const key of ['j', 'k', 'ArrowDown', 'Enter']) {
+      const event = fireEvent.keyDown(field, { key, bubbles: true });
+      expect(event).toBe(true); // nothing called preventDefault
+    }
+    expect(onPick).not.toHaveBeenCalled();
+    expect(alpha).toHaveAttribute('data-selected', 'true');
+  });
+
   it('follows active-tab changes from the global command-shift bracket ring', async () => {
     const view = render(
       <ExposeOverlay

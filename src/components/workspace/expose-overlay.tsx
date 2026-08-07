@@ -36,6 +36,11 @@ import {
   GoalVisualBackdrop,
   type GoalVisualReadout,
 } from './goal-visual-backdrop';
+import {
+  teamGridNeighbor,
+  teamGridYieldsTo,
+  type TeamGridDirection,
+} from './team-grid-nav';
 import { useGoalVisualPreference } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { tokens as formatTokens } from '@/components/consumption/flux';
 import { tabIsLive } from './use-workspace-state';
@@ -269,6 +274,40 @@ export function ExposeOverlay({
     [items]
   );
 
+  /**
+   * Measure the tiles and ask the pure model where a direction key lands
+   * (FIX-002). Geometry is read at keypress rather than tracked, because the
+   * only thing that can be wrong is a stale rect: the rail docks and
+   * undocks, tiles wrap on resize, and Projects come and go. A tile with no
+   * node yet (mounting, or scrolled out of the ref map) contributes an empty
+   * rect, which the model treats as its own row and therefore skips.
+   */
+  const nextSelection = useCallback(
+    (from: number, direction: TeamGridDirection): number => {
+      const rects = items.map(item => {
+        const node = tileRefs.current.get(selectionKey(item));
+        if (!node) return { left: 0, top: 0, width: 0, height: 0 };
+        const box = node.getBoundingClientRect();
+        return {
+          left: box.left,
+          top: box.top,
+          width: box.width,
+          height: box.height,
+        };
+      });
+      // jsdom and any host without layout report every rect as zero; fall
+      // back to reading order there so behaviour stays defined.
+      const measured = rects.some(rect => rect.width > 0 || rect.height > 0);
+      if (!measured) {
+        const step = direction === 'down' || direction === 'right' ? 1 : -1;
+        return Math.min(items.length - 1, Math.max(0, from + step));
+      }
+      const next = teamGridNeighbor(rects, from, direction);
+      return next ?? from;
+    },
+    [items]
+  );
+
   // ── Roadmap home (ENG-017 S12) ───────────────────────────────────────
   // Sessions is the zoomed-out altitude, so the Project roadmap lives HERE:
   // a permanent rail scoped to the SELECTED Project — roving across tiles
@@ -432,6 +471,12 @@ export function ExposeOverlay({
     ) {
       return;
     }
+    // …and so do keys born inside anything that owns text or its own
+    // activation. Without this the grid claims every key that is not an
+    // arrow, so a focused field never sees `j`/`k`, Enter picks a tile
+    // instead of committing, and Escape closes the altitude instead of
+    // cancelling the edit (FIX-006).
+    if (teamGridYieldsTo(e.target)) return;
     if (e.key === 'Escape' || (e.metaKey && e.key.toLowerCase() === 'o')) {
       e.preventDefault();
       onClose();
@@ -446,24 +491,27 @@ export function ExposeOverlay({
       }
       return;
     }
-    // arrows move the grid selection; plain j/k mirror down/up (D9 — the
-    // app's list-navigation vocabulary works here too). Modifier combos are
-    // NOT movement: ⌘K must stay the palette, ⌘J the attention jump.
+    // Arrows move the grid SPATIALLY (FIX-002): Up/Down between rows,
+    // Left/Right within one, measured from the tiles themselves rather than
+    // from an assumed column count. Plain j/k stay the D9 list-navigation
+    // mirror of down/up. Modifier combos are NOT movement: ⌘K must stay the
+    // palette, ⌘J the attention jump.
     const plainKey = !e.metaKey && !e.ctrlKey && !e.altKey;
-    const delta =
-      e.key === 'ArrowRight' ||
-      e.key === 'ArrowDown' ||
-      (plainKey && e.key === 'j')
-        ? 1
-        : e.key === 'ArrowLeft' ||
-            e.key === 'ArrowUp' ||
-            (plainKey && e.key === 'k')
-          ? -1
-          : 0;
-    if (delta !== 0 && items.length > 0) {
+    const direction: TeamGridDirection | null =
+      e.key === 'ArrowRight'
+        ? 'right'
+        : e.key === 'ArrowLeft'
+          ? 'left'
+          : e.key === 'ArrowDown' || (plainKey && e.key === 'j')
+            ? 'down'
+            : e.key === 'ArrowUp' || (plainKey && e.key === 'k')
+              ? 'up'
+              : null;
+    if (direction && items.length > 0) {
       e.preventDefault();
       setSel(s => {
-        const next = Math.min(items.length - 1, Math.max(0, s + delta));
+        const next = nextSelection(s, direction);
+        if (next === s) return s;
         requestAnimationFrame(() => focusSelection(next));
         return next;
       });

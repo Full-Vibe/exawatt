@@ -681,6 +681,33 @@ Implementation record (landed 2026-07-10):
   load-bearing one altitude down. A sort that silently fights the ribbon's
   order would trade one orientation problem for a worse one.
 
+  **S6.1 landed 2026-08-07 — the half that needed no design pass.** Arrows
+  now move by measured tile geometry (`team-grid-nav.ts`, pure and unit
+  tested): Up/Down take the nearest row and then the nearest column inside
+  it, Left/Right stay in the row, and a row edge falls through to reading
+  order so no tile becomes a dead end the operator has to escape with a
+  different key. Rows are discovered by VERTICAL OVERLAP rather than a column
+  count, which is what makes the awkward cases free — a ragged last row, the
+  full-width row an empty Project contributes, a card taller than its
+  neighbours, and the boundary between two Projects are all just "the nearest
+  row". A column count would have been a second, weaker model of a layout CSS
+  has already solved, and it would have had to be re-derived every time the
+  rail docks or the window resizes. The bridge measures at keypress rather
+  than tracking rects, because the only thing that can be wrong is a stale
+  one; where there is no layout to measure (jsdom, any non-visual host) it
+  falls back to reading order so the behaviour stays defined.
+
+  The yield rule shipped with it: the grid now hands every key to a focused
+  control that owns text or its own activation. FIX-006's specific field
+  turned out not to exist — D49 deleted the "Optional name" input it was
+  almost certainly seen on — so that row is recorded as PREVENTED rather than
+  fixed. The honest version of this is worth keeping: the reported symptom
+  was never reproduced on a current build, but the cause the triage note
+  guessed was real and is now closed as a class.
+
+  Both halves are pinned by tests that fail without them (verified by
+  sabotage), which matters here because neither is visible in a screenshot.
+
   Method for the pass, per the operator's standing preference: iterate on the
   bench with screenshots and clarifying questions on taste before wiring
   anything into the production surface, and keep the DOM specimen honest —
