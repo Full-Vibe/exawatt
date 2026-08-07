@@ -229,6 +229,36 @@ describe('turn truth: what the operator sees', () => {
     }
   });
 
+  it('never reclaims a turn that is still streaming (BUG-008)', () => {
+    // Measured on a real long Session, 2026-08-07: the tab showed a green
+    // result for minutes while the Agent was visibly working, then corrected
+    // itself to the working spinner only when a delegated child spawned.
+    //
+    // The pause is what did it. A slow first token is longer than the 3s
+    // working window, so the sweep latched the Session `settled`; the latch
+    // then dropped every subsequent byte in `onData` — including the
+    // quiescence clock — so no amount of streaming could look like speech,
+    // and at 12s the stale-report reclaim ended a turn the harness had never
+    // stopped reporting as open.
+    const h = harness();
+    h.hook(submit);
+    h.advance(5000); // thinking longer than the working window before output
+    expect(h.light()).toBe('active');
+
+    for (let elapsed = 0; elapsed < 60_000; elapsed += 1000) {
+      h.stream(2000);
+      h.advance(1000);
+      expect(h.light()).toBe('active');
+    }
+    // and the Agent's own output is what says so, not just the report
+    expect(h.attention.isWorking(SESSION)).toBe(true);
+    expect(h.delegation.get(SESSION)?.ownTurn).toBe('generating');
+
+    // the reported boundary still settles it the instant it arrives
+    h.hook(stop);
+    expect(h.light()).toBe('result');
+  });
+
   it('still infers a turn boundary for a source that reports nothing', () => {
     const h = harness();
     h.stream(2000);

@@ -79,3 +79,41 @@ The durable fix remains real Codex reported-turn integration (Codex's own
 `notify` hook mechanism is real and already used elsewhere on this machine;
 wiring it into Exawatt is new scope, not covered by this amendment) — this
 amendment only changes what happens while that source has no signal at all.
+
+## Amendment (2026-08-07, BUG-008)
+
+The latch produced the mirror image of the failure it was written to prevent:
+a Claude tab showed the green finished check for minutes while the Agent was
+visibly streaming, correcting itself to the working spinner only when a
+delegated child happened to spawn. Two corrections, both about the latch's
+REACH rather than its purpose.
+
+**A pause inside a reported-open turn is not a turn boundary.** The sweep's
+working→quiet transition latched `settled` on any three-second gap in output,
+including gaps the harness had already explained — a slow first token on a
+large context, a long silent tool call. Latching there is what made the rest
+of the damage possible: the latch's whole justification is that a FINISHED
+turn must stay finished, and the harness was still reporting this one open.
+The sweep now latches only when nothing reports the turn open
+(`reportedTurnOpen`), which is the same condition every other inference guard
+in the monitor already defers to.
+
+**The quiescence clock is not part of the latch.** `onData` returned before
+recording `lastDataAt`, so a latched Session's "time since it last spoke"
+froze at the moment it latched, no matter how much output followed. That fed
+`reclaimStaleReportedTurn` (2026-08-04, ENG-023 D4) a Session that looked
+silent for the whole turn: twelve seconds after the pause, the reclaim
+declared the reported-open turn stale, applied a `turn-end`, and the light
+went green mid-stream. Recording when a Session last emitted bytes is
+bookkeeping about the stream, not a claim about what the bytes mean, so it now
+happens for every chunk; the latch still suppresses exactly what it always
+suppressed — `working` and the burst that raises an inferred turn-end.
+
+Nothing about the original decision's tradeoff changes: passive redraws after
+a genuinely finished turn still cannot reopen `working`, and guaranteed-human
+engagement (or a reported turn start) is still what opens the next turn. What
+changes is that the latch can no longer close over a turn that is running, and
+inference can no longer mistake a muted Session for a silent one. The
+stale-report reclaim keeps working as designed, because it now measures real
+byte silence: an aborted turn — still the case it exists for — goes quiet for
+real and is reclaimed on schedule.

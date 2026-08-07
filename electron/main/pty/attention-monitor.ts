@@ -456,9 +456,17 @@ export class AttentionMonitor extends EventEmitter {
     // inference is this session's only signal (see `settled`'s doc comment),
     // in which case a settle it produced is not more durable than the
     // evidence used to reach it, and a fresh burst can still reopen it.
+    //
+    // The quiescence CLOCK is exempt, and must be: it is bookkeeping about
+    // when this Session last spoke, not a claim about what the bytes mean.
+    // Freezing it here is how a streaming Agent came to look silent — the
+    // latch dropped every byte before this line, `lastDataAt` stopped at the
+    // pause that latched it, and twelve seconds later
+    // `reclaimStaleReportedTurn` declared a visibly-working turn stale and
+    // put a green result on the tab (BUG-008).
+    this.lastDataAt.set(id, this.now());
     const hasReportedSource = this.reportedTurn(id) !== null;
     if (!bell && this.settled.has(id) && hasReportedSource) return;
-    this.lastDataAt.set(id, this.now());
     const sinceResize = this.now() - (this.lastResizeAt.get(id) ?? -Infinity);
     if (bell) {
       // BEL is an explicit turn boundary: the agent is now waiting, not
@@ -485,7 +493,18 @@ export class AttentionMonitor extends EventEmitter {
       if (this.working.has(s.id)) {
         const last = this.lastDataAt.get(s.id);
         if (s.exited || last === undefined || now - last >= WORKING_WINDOW_MS) {
-          if (!s.exited && s.harness !== 'shell') this.settled.add(s.id);
+          // Going visually quiet is not the same fact as finishing. The latch
+          // exists to keep a FINISHED turn finished against idle repaints, so
+          // it may only close over a turn nothing says is still open: a slow
+          // first token or a long tool call is an ordinary pause inside a
+          // reported-open turn, and latching there muted the Agent's own
+          // output for the rest of the turn (BUG-008).
+          if (
+            !s.exited &&
+            s.harness !== 'shell' &&
+            !this.reportedTurnOpen(s.id)
+          )
+            this.settled.add(s.id);
           this.setWorking(s.id, false);
         }
       }

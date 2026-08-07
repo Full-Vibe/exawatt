@@ -255,6 +255,34 @@ describe('AttentionMonitor', () => {
     expect(monitor.isWorking('a')).toBe(true);
   });
 
+  it('keeps the quiescence clock running while the latch holds (BUG-008)', () => {
+    // A BEL mid-turn latches the Session, and the latch rightly stops those
+    // bytes from reading as WORK. It must not stop them counting as SPEECH:
+    // the stale-report reclaim asks whether this Session has been silent long
+    // enough that its reported-open turn cannot still be real, and a Session
+    // that is streaming has not been silent at all.
+    const stale: string[] = [];
+    monitor.on('reported-turn-stale', (id: string) => stale.push(id));
+    monitor.setReportedTurnSource(() => ({
+      ownTurn: 'generating',
+      blockedOn: null,
+      children: [],
+    }));
+    add('a', 'claude', clock - 60_000);
+    data('a', `waiting${BELL}`);
+    expect(monitor.isWorking('a')).toBe(false);
+
+    for (let i = 0; i < 20; i += 1) {
+      data('a', 'x'.repeat(500));
+      clock += 1000;
+      monitor.sweepNow();
+    }
+    // the latch still holds — these bytes never became "working"
+    expect(monitor.isWorking('a')).toBe(false);
+    // but nothing declared a talking Session's open turn stale
+    expect(stale).toEqual([]);
+  });
+
   it('reopens a settled turn on real subsequent output, for a source with no report at all (BUG-001)', () => {
     // Codex/OpenCode today: `reportedTurn` stays null for the session's whole
     // life, so quiescence is not corroborated by anything — a settle it
