@@ -734,6 +734,12 @@ declare global {
           supabaseUrl: string;
           supabaseAnonKey: string;
           redirectTo: string;
+          /**
+           * `linkIdentity` asks who you are before it builds an authorize URL.
+           * Main creates its own Supabase client per flow and has no session
+           * of its own, so the renderer hands over the live one.
+           */
+          session?: { accessToken: string; refreshToken: string };
         }) => Promise<void>;
         onComplete: (handler: () => void) => () => void;
         onError: (
@@ -744,6 +750,12 @@ declare global {
             code?: string;
           }) => void
         ) => () => void;
+        /**
+         * Verdict of an identity-link attempt that came back without a code.
+         * One token from `AUTH_LINK_OUTCOMES`, successes included — the panel
+         * that started the link renders its own copy for it.
+         */
+        onLinkOutcome?: (handler: (outcome: string) => void) => () => void;
         installTestSession?: (
           config: { supabaseUrl: string; supabaseAnonKey: string },
           tokens: { accessToken: string; refreshToken: string }

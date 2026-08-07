@@ -1,21 +1,83 @@
 import { NextResponse } from 'next/server';
+import {
+  AUTH_INTENT_PARAM,
+  AUTH_LINK_PARAM,
+  authCallbackIntent,
+  classifyLinkOutcome,
+  isAuthLinkSuccess,
+  type AuthLinkOutcome,
+} from '@/components/auth/callback-failures';
 
-export async function GET(request: Request) {
+/**
+ * Desktop landing route: the system browser ends here, and the desktop app
+ * gets the result over the `exawatt://` deep link.
+ *
+ * A GitHub link attempt that Supabase refuses comes back with NO CODE — only
+ * `?error=…&error_description=…`. The first version answered that with a 400
+ * page in a browser tab the operator had already stopped looking at, and told
+ * the app nothing at all, so the publish panel sat there as if nothing had
+ * happened. A link callback now relays a closed OUTCOME instead, successes
+ * included: `already linked` is the state the operator wanted, and the panel
+ * is the surface that says so.
+ *
+ * The provider's own words never ride the deep link — any local process can
+ * see it — only one token from the closed set.
+ */
+
+export function handleElectronCallback(
+  request: Request,
+  logFailure: (outcome: AuthLinkOutcome, detail: string) => void = (
+    outcome,
+    detail
+  ) => {
+    console.error(
+      detail
+        ? `[auth/electron-callback] ${outcome}: ${detail}`
+        : `[auth/electron-callback] ${outcome}`
+    );
+  }
+): Response {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
 
-  if (!code) {
+  if (code) {
+    // Don't exchange the code here — the PKCE code verifier lives in the
+    // Electron main process.  Relay the code back via deep link so the app
+    // can exchange it itself.
+    return relay(`exawatt://auth/callback?code=${encodeURIComponent(code)}`);
+  }
+
+  const linking =
+    authCallbackIntent(requestUrl.searchParams.get(AUTH_INTENT_PARAM)) ===
+    'link';
+  if (!linking) {
     return new NextResponse(errorHTML('Missing authorization code.'), {
       status: 400,
       headers: { 'Content-Type': 'text/html' },
     });
   }
 
-  // Don't exchange the code here — the PKCE code verifier lives in the
-  // Electron renderer's storage.  Relay the code back via deep link so
-  // the renderer can exchange it itself.
-  const deepLinkUrl = `exawatt://auth/callback?code=${encodeURIComponent(code)}`;
+  const providerError =
+    requestUrl.searchParams.get('error_description') ||
+    requestUrl.searchParams.get('error');
+  const outcome: AuthLinkOutcome = providerError
+    ? classifyLinkOutcome({
+        message: providerError,
+        code: requestUrl.searchParams.get('error_code'),
+      })
+    : 'link_incomplete';
+  if (!isAuthLinkSuccess(outcome)) {
+    logFailure(outcome, providerError ?? 'callback carried no result');
+  }
 
+  return relay(`exawatt://auth/callback?${AUTH_LINK_PARAM}=${outcome}`);
+}
+
+export async function GET(request: Request): Promise<Response> {
+  return handleElectronCallback(request);
+}
+
+function relay(deepLinkUrl: string): NextResponse {
   return new NextResponse(redirectHTML(deepLinkUrl), {
     status: 200,
     headers: { 'Content-Type': 'text/html' },

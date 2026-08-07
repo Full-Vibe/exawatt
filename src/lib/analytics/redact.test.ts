@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CaptureResult } from 'posthog-js';
+import { ANALYTICS_EXCEPTION_PROPERTIES } from './events';
 import {
   ANALYTICS_PROPERTY_DENYLIST,
   redactFrameLocation,
@@ -132,6 +133,107 @@ describe('capture scrubbing', () => {
     });
   });
 
+  it('keeps the declared crash payload properties', () => {
+    const result = scrubAnalyticsCapture(
+      capture('$exception', {
+        $exception_list: [{ type: 'RangeError', value: 'oops' }],
+        $exception_level: 'fatal',
+        // Ordinary SDK metadata rides along on a crash like any other event.
+        $lib: 'web',
+        $os: 'Mac OS X',
+        distinct_id: 'installation-uuid',
+        token: 'phc_test',
+      })
+    );
+    expect(Object.keys(result!.properties).sort()).toEqual([
+      '$exception_level',
+      '$exception_list',
+      '$lib',
+      '$os',
+      'distinct_id',
+      'token',
+    ]);
+    expect(result?.properties.$exception_level).toBe('fatal');
+  });
+
+  it('drops a crash payload property nobody declared', () => {
+    // Defence in depth: no installed posthog-js version emits these on this
+    // path, but a future one adding a content-bearing `$exception_*` property
+    // must not ship by default.
+    const result = scrubAnalyticsCapture(
+      capture('$exception', {
+        $exception_list: [],
+        // Free-text breadcrumbs, gated behind a config this client never sets.
+        $exception_steps: [
+          { message: 'ran claude -p on /Users/jake/Code/exawatt' },
+        ],
+        // Invented by a hypothetical future SDK release.
+        $exception_source_context: 'const prompt = "refactor the coordinator"',
+        // The Sentry integration's raw, unredacted exception object.
+        $sentry_exception_message: 'summarize failed for /Users/jake',
+        // A caller's own extra property.
+        project_name: 'exawatt',
+      })
+    );
+
+    expect(Object.keys(result!.properties)).toEqual(['$exception_list']);
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain('/Users/jake');
+    expect(serialized).not.toContain('refactor the coordinator');
+    expect(serialized).not.toContain('exawatt');
+  });
+
+  it('coerces an exception level that is not a severity', () => {
+    const level = (value: unknown) =>
+      scrubAnalyticsCapture(capture('$exception', { $exception_level: value }))
+        ?.properties.$exception_level;
+
+    expect(level('warning')).toBe('warning');
+    expect(level('/Users/jake/Code/exawatt')).toBe('error');
+    expect(level(undefined)).toBe('error');
+  });
+
+  it('rebuilds the mechanism instead of forwarding it', () => {
+    const result = scrubAnalyticsCapture(
+      capture('$exception', {
+        $exception_list: [
+          {
+            type: 'TypeError',
+            value: 'nope',
+            mechanism: {
+              type: 'onunhandledrejection',
+              handled: false,
+              synthetic: true,
+              // `Mechanism.source` is a free-form string in the SDK's types.
+              source: '/Users/jake/Code/exawatt/session.ts',
+            },
+          },
+        ],
+      })
+    );
+
+    const exception = (result?.properties.$exception_list as unknown[])[0];
+    expect(exception).toMatchObject({
+      mechanism: {
+        type: 'onunhandledrejection',
+        handled: false,
+        synthetic: true,
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('/Users/jake');
+  });
+
+  it('never lets a crash payload ride an ordinary event', () => {
+    const result = scrubAnalyticsCapture(
+      capture('app_crashed', {
+        scope: 'renderer',
+        $exception_list: [{ type: 'Error', value: 'the prompt text' }],
+        $exception_steps: ['a breadcrumb'],
+      })
+    );
+    expect(result?.properties).toEqual({ scope: 'renderer' });
+  });
+
   it('reduces frame locations to a path that identifies no machine', () => {
     expect(
       redactFrameLocation('https://www.exawatt.ai/_next/static/chunks/main.js')
@@ -149,5 +251,18 @@ describe('capture scrubbing', () => {
     expect(ANALYTICS_PROPERTY_DENYLIST).toContain('$current_url');
     expect(ANALYTICS_PROPERTY_DENYLIST).toContain('$title');
     expect(ANALYTICS_PROPERTY_DENYLIST).toContain('$exception_message');
+    expect(ANALYTICS_PROPERTY_DENYLIST).toContain('$exception_steps');
+  });
+
+  it('enforces exactly the crash payload allowlist it publishes', () => {
+    // Every declared property offered at once, so the assertion fails if the
+    // allowlist grows without `redact.ts` learning how to redact the addition.
+    const offered = Object.fromEntries(
+      ANALYTICS_EXCEPTION_PROPERTIES.map((key) => [key, []])
+    );
+    const result = scrubAnalyticsCapture(capture('$exception', offered));
+    expect(Object.keys(result!.properties).sort()).toEqual(
+      [...ANALYTICS_EXCEPTION_PROPERTIES].sort()
+    );
   });
 });

@@ -41,6 +41,7 @@ import type {
 import type { RunStateStore } from './run-state';
 import type {
   ElectronAuthCoordinator,
+  ElectronAuthLinkConfig,
   ElectronAuthStartConfig,
 } from './auth-coordinator';
 import { createElectronAuthCookies } from './auth-cookies';
@@ -124,6 +125,12 @@ let safeElectronAuthError: (error: unknown) => {
   name: 'Error',
   message: error instanceof Error ? error.message : 'Authentication failed.',
 });
+/**
+ * Any local process can invoke `exawatt://`, so a link outcome is forwarded to
+ * the renderer only after it is recognized. Null until the auth runtime loads,
+ * which makes an early deep link queue rather than arrive unvetted.
+ */
+let isElectronAuthLinkOutcome: ((value: unknown) => boolean) | null = null;
 let startupComplete = false;
 let inactiveLaunchPromoted = false;
 let startupStage: StartupStage = {
@@ -357,9 +364,10 @@ function handleDeepLink(url: string): void {
     return;
   }
 
-  // exawatt://auth/callback?code=...
+  // exawatt://auth/callback?code=...  or  ?link=<outcome>
   if (parsed.hostname === 'auth' && parsed.pathname === '/callback') {
     const code = parsed.searchParams.get('code');
+    const linkOutcome = parsed.searchParams.get('link');
     recordAuthDiagnostic('auth.callback.received', {
       host: parsed.hostname,
       path: parsed.pathname,
@@ -382,6 +390,30 @@ function handleDeepLink(url: string): void {
         void completeElectronAuth(code);
       } else {
         // Window not ready — queue for delivery after load
+        pendingDeepLinkUrl = url;
+        recordAuthDiagnostic('auth.callback.queued');
+      }
+    } else if (linkOutcome) {
+      // An identity link that Supabase answered without a code — including
+      // "already linked", which is the state the operator wanted. The surface
+      // that started it owns the verdict, so main only relays the token.
+      if (
+        mainWindow &&
+        !mainWindow.isDestroyed() &&
+        isElectronAuthLinkOutcome &&
+        isWorkspaceTarget(mainWindow.webContents.getURL())
+      ) {
+        if (!isElectronAuthLinkOutcome(linkOutcome)) {
+          recordAuthDiagnostic('auth.callback.link_outcome_rejected');
+          return;
+        }
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+        mainWindow.webContents.send('auth:link-outcome', linkOutcome);
+        recordAuthDiagnostic('auth.callback.link_outcome_sent', {
+          outcome: linkOutcome,
+        });
+      } else {
         pendingDeepLinkUrl = url;
         recordAuthDiagnostic('auth.callback.queued');
       }
@@ -906,7 +938,7 @@ function registerAuthIPC(): void {
   );
   handleTrusted(
     'auth:link-github',
-    async (_event, config: ElectronAuthStartConfig) => {
+    async (_event, config: ElectronAuthLinkConfig) => {
       if (!authCoordinator) throw new Error('Authentication is not ready.');
       try {
         await authCoordinator.linkGithub(config);
@@ -1335,6 +1367,7 @@ async function bootstrapCommandSurface(): Promise<void> {
   installProductUpdate = runtime.updater.installProductUpdate;
   shutdownCopy = runtime.shutdown.shutdownCopy;
   safeElectronAuthError = runtime.auth.safeElectronAuthError;
+  isElectronAuthLinkOutcome = runtime.auth.isElectronAuthLinkOutcome;
 
   const authLogPath = path.join(app.getPath('userData'), 'logs', 'auth.jsonl');
   recordAuthDiagnostic =

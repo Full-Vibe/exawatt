@@ -36,6 +36,7 @@ export {
   ANALYTICS_ALLOWLIST_VERSION,
   ANALYTICS_EVENT_NAMES,
   ANALYTICS_EVENT_PROPERTIES,
+  ANALYTICS_EXCEPTION_PROPERTIES,
   hostedFailureForStatus,
   toAnalyticsPayload,
   type AnalyticsEvent,

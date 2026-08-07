@@ -72,10 +72,24 @@ the user's machine (ENG-016 D17, incident `0002`), not deniability.
 | `app_crashed` | `allowlist_version`, `surface`, `scope` (`renderer`\|`main`\|`gpu`\|`utility`\|`agent_harness`), `reason` (`crashed`\|`killed`\|`out_of_memory`\|`launch_failed`\|`unresponsive`\|`unknown`), `app_version` |
 
 Plus PostHog's `$exception` event, which `capture_exceptions` produces for an
-uncaught renderer error. Its message text is **removed** before send
-(`value: '<redacted>'`), and stack frame locations are reduced to a path, so
-neither an error string nor a machine path leaves. Exception type and stack
-shape remain, which is enough to group crashes.
+uncaught renderer error. It is allowlisted the same way the four events above
+are: exactly two crash payload properties may leave, and both are rebuilt
+rather than forwarded.
+
+| Property | What survives |
+| --- | --- |
+| `$exception_list` | Per exception: `type`, `value` (always `'<redacted>'`), `mechanism` (`type`, `handled`, `synthetic`), and `stacktrace.frames` reduced to `function`, `filename`, `lineno`, `colno`, `in_app`, `platform`, `lang` |
+| `$exception_level` | One of `fatal`, `error`, `warning`, `log`, `info`, `debug`; anything else becomes `error` |
+
+The message text is **removed** before send (`value: '<redacted>'`), and stack
+frame locations are reduced to a path, so neither an error string nor a machine
+path leaves. Exception type and stack shape remain, which is enough to group
+crashes. Every other property in the crash payload namespace — `$exception_*`
+or `$sentry_*`, including a property a future posthog-js release invents — is
+dropped, so the SDK cannot widen this surface without a deliberate change to
+`ANALYTICS_EXCEPTION_PROPERTIES`. `$exception_steps`, PostHog's free-text
+breadcrumbs, is additionally denylisted; the SDK only emits it when
+`error_tracking.exception_steps` is enabled, which this client never does.
 
 Every event also carries PostHog's own SDK metadata: library version, browser
 and OS class, screen size, timezone, session id, and the anonymous
@@ -91,8 +105,9 @@ This is enforced structurally, not by convention:
   shape-validated version string. There is nowhere to put free text.
 - `src/lib/analytics/redact.ts` runs as PostHog's `before_send`: a
   non-allowlisted event is dropped outright, an allowlisted event keeps only
-  its declared properties, and person properties (`$set`, `$set_once`) are
-  always discarded.
+  its declared properties, `$exception` keeps only the two crash payload
+  properties above, and person properties (`$set`, `$set_once`) are always
+  discarded.
 - URL-bearing properties (`$current_url`, `$pathname`, `$referrer`, `$title`,
   campaign parameters) are both denylisted in PostHog config and stripped in
   `before_send`. In the desktop app `$current_url` would otherwise carry
@@ -248,8 +263,9 @@ development.
 
 - Analytics allowlist and redaction: `pnpm vitest run src/lib/analytics`. The
   tests assert the event set, the exact property keys, that forged content
-  cannot reach a payload, and that exception messages and loopback URLs are
-  stripped.
+  cannot reach a payload, that exception messages and loopback URLs are
+  stripped, and that an undeclared crash payload property is dropped rather
+  than forwarded.
 - Host split: the same suite asserts the desktop `api_host` is the absolute
   hosted origin and never a loopback address.
 - End to end: run a production build with the network inspector open, or watch

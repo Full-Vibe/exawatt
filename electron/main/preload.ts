@@ -331,6 +331,8 @@ contextBridge.exposeInMainWorld('electron', {
       supabaseUrl: string;
       supabaseAnonKey: string;
       redirectTo: string;
+      // `linkIdentity` needs a live session; the renderer is where one exists.
+      session?: { accessToken: string; refreshToken: string };
     }) => ipcRenderer.invoke('auth:link-github', config),
     onComplete: subscribe<void>('auth:complete'),
     onError: subscribe<{
@@ -339,6 +341,9 @@ contextBridge.exposeInMainWorld('electron', {
       status?: number;
       code?: string;
     }>('auth:error'),
+    // An identity-link verdict, closed-vocabulary and already vetted by main.
+    // Successes ride this channel too — "already linked" is not an error.
+    onLinkOutcome: subscribe<string>('auth:link-outcome'),
     ...(process.env.EXAWATT_TEST === '1'
       ? {
           installTestSession: (

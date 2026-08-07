@@ -36,6 +36,48 @@ export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
  */
 export const POSTHOG_EXCEPTION_EVENT = '$exception';
 
+/**
+ * The crash payload properties allowed to leave, and nothing else.
+ *
+ * The four events above are allowlisted, so `$exception` should be too. It was
+ * originally filtered by denylist instead, which meant a future posthog-js
+ * release could add a content-bearing `$exception_*` property and it would ship
+ * by default — the class of content decision `0031` forbids. Nothing leaks
+ * today (`posthog-js@1.413.2` emits only these two from `ErrorProperties`, and
+ * `$exception_steps` — free-text breadcrumbs — is gated behind
+ * `error_tracking.exception_steps`, which this project never enables), so this
+ * is defence in depth, not a live incident.
+ *
+ * Each member is safe by construction:
+ *  - `$exception_list` — an array of exceptions, rebuilt field by field in
+ *    `redact.ts`: the message is replaced, frame locations lose anything
+ *    machine-identifying, and every other field is dropped.
+ *  - `$exception_level` — a closed severity enum (`EXCEPTION_LEVELS`) coerced
+ *    to a member before send, so it can never carry a string of its own.
+ *
+ * Adding a member here is the same kind of deliberate public-contract change
+ * as adding an event property, and must be reflected in
+ * `docs/engineering/outbound-data.md`.
+ */
+export const ANALYTICS_EXCEPTION_PROPERTIES = [
+  '$exception_list',
+  '$exception_level',
+] as const;
+
+export type AnalyticsExceptionProperty =
+  (typeof ANALYTICS_EXCEPTION_PROPERTIES)[number];
+
+/** `@posthog/core`'s `SeverityLevel`. `$exception_level` is one of these. */
+export const EXCEPTION_LEVELS = [
+  'fatal',
+  'error',
+  'warning',
+  'log',
+  'info',
+  'debug',
+] as const;
+export type ExceptionLevel = (typeof EXCEPTION_LEVELS)[number];
+
 /* ------------------------------------------------------------------ *
  * Closed enums. Every property a caller can set is one of these.
  * ------------------------------------------------------------------ */
@@ -117,12 +159,32 @@ export type HostedFailure = (typeof HOSTED_FAILURES)[number];
 /**
  * Map an HTTP status onto the closed failure enum. Shared so every hosted
  * caller classifies the same status the same way — otherwise the counts are
- * not comparable across services, which is the only thing they are for.
+ * not comparable across services, which is the only thing they are for. A
+ * wrong bucket is worse than a coarse one, so where this codebase's routes and
+ * the general HTTP meaning disagree, the general meaning wins: these counts
+ * cover Supabase and vendor responses too, not only `src/app/api`.
+ *
+ * Each branch, against what the routes actually return:
+ *  - `401` every route's missing/invalid bearer token; `403` is Supabase RLS.
+ *  - `429` is a throttle. Our three hosted routes send it with
+ *    `Retry-After: 3600` when `claim_*_quota` returns false, and their own copy
+ *    deliberately refuses to attribute that to the caller's quota — one boolean
+ *    covers the caller's quota, the global ceiling, and the kill switch. So it
+ *    is counted as throttling, which is also what a Supabase or vendor 429
+ *    means. `quota_exhausted` is reserved for a status that says only that.
+ *  - `402` is that status: allowance spent. No route emits it yet.
+ *  - `408`/`504` are gateway timeouts on the model-backed routes.
+ *  - `>= 500` is our `500`/`502`/`503` — the service or its upstream failed.
+ *  - Any other `4xx` is a request the service refused rather than a broken one:
+ *    `400` unparseable body, `404` missing object, `409` operator-stats
+ *    demanding a linked GitHub identity, `413` over the byte cap, `422`
+ *    fal.ai's safety rejection. This is the coarse bucket; `409` used to be
+ *    misfiled as `quota_exhausted`, which is a conflict, not a quota.
  */
 export function hostedFailureForStatus(status: number): HostedFailure {
   if (status === 401 || status === 403) return 'unauthorized';
   if (status === 429) return 'rate_limited';
-  if (status === 402 || status === 409) return 'quota_exhausted';
+  if (status === 402) return 'quota_exhausted';
   if (status === 408 || status === 504) return 'timeout';
   if (status >= 500) return 'server_error';
   if (status >= 400) return 'invalid_response';

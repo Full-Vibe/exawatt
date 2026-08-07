@@ -1,7 +1,11 @@
 import type { CookieMethodsBrowser } from '@supabase/ssr';
 import { describe, expect, it, vi } from 'vitest';
+import { AUTH_LINK_OUTCOMES as RENDERER_LINK_OUTCOMES } from '@/components/auth/callback-failures';
 import {
+  AUTH_LINK_OUTCOMES,
   ElectronAuthCoordinator,
+  isElectronAuthLinkOutcome,
+  linkRedirectTarget,
   safeElectronAuthError,
 } from './auth-coordinator';
 
@@ -9,6 +13,14 @@ const startConfig = {
   supabaseUrl: 'https://project.supabase.co',
   supabaseAnonKey: 'public-anon-key',
   redirectTo: 'http://127.0.0.1:43123/auth/electron-callback',
+};
+
+const linkConfig = {
+  ...startConfig,
+  session: {
+    accessToken: 'header.payload.signature',
+    refreshToken: 'renderer-refresh-token',
+  },
 };
 
 function memoryCookies() {
@@ -203,11 +215,84 @@ describe('ElectronAuthCoordinator', () => {
 
   it('opens a GitHub identity-link flow through the same system-browser boundary', async () => {
     const { coordinator, linkGithub, openExternal } = setup();
-    await coordinator.linkGithub(startConfig);
-    expect(linkGithub).toHaveBeenCalledWith(startConfig.redirectTo);
+    await coordinator.linkGithub(linkConfig);
+    expect(linkGithub).toHaveBeenCalledWith(
+      'http://127.0.0.1:43123/auth/electron-callback?intent=link'
+    );
     expect(openExternal).toHaveBeenCalledWith(
       'https://project.supabase.co/auth/v1/authorize?provider=github'
     );
+  });
+
+  it('installs the renderer session before asking to link', async () => {
+    const { coordinator, installSession, linkGithub } = setup();
+
+    await coordinator.linkGithub(linkConfig);
+
+    // `linkIdentity` reads the session and sends its access token as the
+    // bearer, so a fresh main-process client must be given one first.
+    expect(installSession).toHaveBeenCalledWith(linkConfig.session);
+    expect(installSession.mock.invocationCallOrder[0]).toBeLessThan(
+      linkGithub.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('refuses a link with no session instead of failing at Supabase', async () => {
+    const { coordinator, linkGithub, openExternal } = setup();
+
+    await expect(coordinator.linkGithub(startConfig)).rejects.toThrow(
+      /Auth session missing/
+    );
+    expect(linkGithub).not.toHaveBeenCalled();
+    expect(openExternal).not.toHaveBeenCalled();
+  });
+
+  it('rejects a session that is not a bounded pair of tokens', async () => {
+    const { coordinator } = setup();
+
+    for (const session of [
+      { accessToken: '', refreshToken: 'refresh-token' },
+      { accessToken: 'header.payload.signature', refreshToken: '' },
+      { accessToken: 'not-a-jwt', refreshToken: 'refresh-token' },
+      { accessToken: 'a.b.c', refreshToken: 'r'.repeat(8_193) },
+    ]) {
+      await expect(
+        coordinator.linkGithub({ ...startConfig, session })
+      ).rejects.toThrow('The authentication session was invalid.');
+    }
+  });
+
+  it('keeps the tokens out of the diagnostic log', async () => {
+    const { coordinator, recordDiagnostic } = setup();
+
+    await coordinator.linkGithub(linkConfig);
+
+    const serialized = JSON.stringify(recordDiagnostic.mock.calls);
+    expect(serialized).not.toContain(linkConfig.session.accessToken);
+    expect(serialized).not.toContain(linkConfig.session.refreshToken);
+    expect(recordDiagnostic.mock.calls.map(([event]) => event)).toContain(
+      'auth.link.session_adopted'
+    );
+  });
+
+  it('stamps the link intent without loosening the callback check', async () => {
+    const { coordinator } = setup();
+
+    expect(linkRedirectTarget('http://127.0.0.1:43123/auth/electron-callback'))
+      .toBe('http://127.0.0.1:43123/auth/electron-callback?intent=link');
+    // the caller still may not smuggle its own query across IPC
+    await expect(
+      coordinator.linkGithub({
+        ...linkConfig,
+        redirectTo: 'http://127.0.0.1:43123/auth/electron-callback?next=/evil',
+      })
+    ).rejects.toThrow('The authentication callback URL was rejected.');
+  });
+
+  it('shares one closed outcome vocabulary with the renderer', () => {
+    expect([...AUTH_LINK_OUTCOMES]).toEqual([...RENDERER_LINK_OUTCOMES]);
+    expect(isElectronAuthLinkOutcome('already_linked')).toBe(true);
+    expect(isElectronAuthLinkOutcome('javascript:alert(1)')).toBe(false);
   });
 
   it('emits correlated lifecycle diagnostics without auth code values', async () => {

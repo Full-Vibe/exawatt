@@ -3,6 +3,9 @@ import {
   ANALYTICS_ALLOWLIST_VERSION,
   ANALYTICS_EVENT_NAMES,
   ANALYTICS_EVENT_PROPERTIES,
+  ANALYTICS_EXCEPTION_PROPERTIES,
+  HOSTED_FAILURES,
+  hostedFailureForStatus,
   isAnalyticsEventName,
   toAnalyticsPayload,
   type AnalyticsEvent,
@@ -22,6 +25,13 @@ describe('analytics event allowlist', () => {
     expect(Object.keys(ANALYTICS_EVENT_PROPERTIES).sort()).toEqual(
       [...ANALYTICS_EVENT_NAMES].sort()
     );
+  });
+
+  it('declares the crash payload as an allowlist, not a denylist', () => {
+    expect([...ANALYTICS_EXCEPTION_PROPERTIES]).toEqual([
+      '$exception_list',
+      '$exception_level',
+    ]);
   });
 
   it('emits only declared properties', () => {
@@ -165,6 +175,46 @@ describe('analytics event allowlist', () => {
     expect(status(99)).toBeNull();
     expect(status(600)).toBeNull();
     expect(status('503')).toBeNull();
+  });
+
+  it('buckets every status the routes actually return', () => {
+    // Route evidence, so a future edit has to argue with the code rather than
+    // with a taste: a wrong bucket is worse than a coarse one.
+    expect(hostedFailureForStatus(401)).toBe('unauthorized');
+    expect(hostedFailureForStatus(403)).toBe('unauthorized');
+    // `claim_*_quota` refusal in the three hosted routes, sent with
+    // `Retry-After: 3600`. A throttle, and the same reading as a Supabase or
+    // vendor 429.
+    expect(hostedFailureForStatus(429)).toBe('rate_limited');
+    // Reserved for the status that says only "allowance spent".
+    expect(hostedFailureForStatus(402)).toBe('quota_exhausted');
+    expect(hostedFailureForStatus(408)).toBe('timeout');
+    expect(hostedFailureForStatus(504)).toBe('timeout');
+    expect(hostedFailureForStatus(500)).toBe('server_error');
+    expect(hostedFailureForStatus(502)).toBe('server_error');
+    expect(hostedFailureForStatus(503)).toBe('server_error');
+    expect(hostedFailureForStatus(400)).toBe('invalid_response');
+    expect(hostedFailureForStatus(404)).toBe('invalid_response');
+    expect(hostedFailureForStatus(413)).toBe('invalid_response');
+    expect(hostedFailureForStatus(422)).toBe('invalid_response');
+    expect(hostedFailureForStatus(200)).toBe('unknown');
+  });
+
+  it('does not call an operator-stats conflict a quota', () => {
+    // `src/app/api/operator-stats/route.ts` returns 409 for "Link GitHub
+    // before publishing your operator profile" — a precondition on account
+    // state. Counting it as `quota_exhausted` made a capacity dashboard lie.
+    expect(hostedFailureForStatus(409)).not.toBe('quota_exhausted');
+    expect(hostedFailureForStatus(409)).toBe('invalid_response');
+  });
+
+  it('emits every failure it maps to as a declared enum member', () => {
+    const statuses = [
+      200, 400, 401, 402, 403, 404, 408, 409, 413, 422, 429, 500, 502, 503, 504,
+    ];
+    for (const status of statuses) {
+      expect(HOSTED_FAILURES).toContain(hostedFailureForStatus(status));
+    }
   });
 
   it('refuses an event name that is not on the allowlist', () => {

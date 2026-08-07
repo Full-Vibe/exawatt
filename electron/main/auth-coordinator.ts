@@ -12,6 +12,57 @@ export interface ElectronAuthStartConfig {
   redirectTo: string;
 }
 
+/** The renderer's live session, handed across IPC. Credentials — never logged. */
+export interface ElectronAuthSessionTokens {
+  accessToken: string;
+  refreshToken: string;
+}
+
+export interface ElectronAuthLinkConfig extends ElectronAuthStartConfig {
+  session?: ElectronAuthSessionTokens;
+}
+
+/**
+ * Outcomes a GitHub link attempt may report back over the `exawatt://` deep
+ * link. Any local process can invoke that scheme, so main forwards a value to
+ * the renderer only if it appears here.
+ *
+ * This must stay identical to `AUTH_LINK_OUTCOMES` in
+ * `src/components/auth/callback-failures.ts`, which owns the copy. Electron
+ * main compiles with `rootDir: electron/` and cannot import from `src`; the
+ * parity is asserted in `auth-coordinator.test.ts` instead of being trusted.
+ */
+export const AUTH_LINK_OUTCOMES = [
+  'linked',
+  'already_linked',
+  'provider_refused',
+  'link_claimed',
+  'link_incomplete',
+  'link_signed_out',
+  'link_failed',
+] as const;
+
+export type ElectronAuthLinkOutcome = (typeof AUTH_LINK_OUTCOMES)[number];
+
+export function isElectronAuthLinkOutcome(
+  value: unknown
+): value is ElectronAuthLinkOutcome {
+  return (AUTH_LINK_OUTCOMES as readonly unknown[]).includes(value);
+}
+
+/**
+ * The desktop callback is one URL for both flows, so it has to be told which
+ * one came back: a refused GitHub link and a refused Google sign-in are the
+ * same shape on the wire. The renderer keeps passing the bare callback URL —
+ * `validateStartConfig` still rejects anything with a query — and the intent
+ * is stamped here, where the flow's identity is actually known.
+ */
+export function linkRedirectTarget(redirectTo: string): string {
+  const target = new URL(redirectTo);
+  target.searchParams.set('intent', 'link');
+  return target.toString();
+}
+
 export interface ElectronAuthError {
   name: string;
   message: string;
@@ -123,10 +174,60 @@ export class ElectronAuthCoordinator {
     );
   }
 
-  async linkGithub(config: ElectronAuthStartConfig): Promise<void> {
-    return this.startFlow(config, 'github', client =>
-      client.linkGithub(config.redirectTo)
-    );
+  /**
+   * Linking is not signing in, and the difference is load-bearing here.
+   * `signInWithOAuth` builds an authorize URL from nothing, so a brand-new
+   * client works for Google. `linkIdentity` asks *who are you* first: it reads
+   * the session out of storage and sends its access token as the bearer. This
+   * coordinator builds a FRESH client per flow, in the main process, so that
+   * lookup found nothing and supabase-js answered `AuthSessionMissingError`
+   * before a browser ever opened — which is why linking only ever worked from
+   * the web renderer, where the session is already in hand.
+   *
+   * So the session is now installed on the client before the link is asked
+   * for, from the renderer that demonstrably has one. Nothing is inferred from
+   * the ambient cookie jar: an identity link that cannot prove who it is
+   * belongs to fails loudly, not silently.
+   */
+  async linkGithub(config: ElectronAuthLinkConfig): Promise<void> {
+    return this.startFlow(config, 'github', async client => {
+      await this.adoptRendererSession(client, config.session);
+      return client.linkGithub(linkRedirectTarget(config.redirectTo));
+    });
+  }
+
+  private async adoptRendererSession(
+    client: ElectronAuthClient,
+    tokens: ElectronAuthSessionTokens | undefined
+  ): Promise<void> {
+    if (!tokens) {
+      this.recordDiagnostic('auth.link.session_absent');
+      throw new Error('Auth session missing. Sign in again to link GitHub.');
+    }
+    validateSessionTokens(tokens);
+
+    let result: ExchangeResult;
+    try {
+      result = await client.installSession(tokens);
+    } catch (error) {
+      this.recordDiagnostic('auth.link.session_install_throw', {
+        error: describeAuthError(error),
+      });
+      throw error;
+    }
+    if (result.error || !result.data.session) {
+      this.recordDiagnostic('auth.link.session_install_failure', {
+        error: result.error
+          ? describeAuthError(result.error)
+          : { message: 'The authentication service returned no session.' },
+      });
+      throw (
+        result.error ??
+        new Error('Auth session missing. Sign in again to link GitHub.')
+      );
+    }
+    // Deliberately records nothing about the tokens themselves.
+    this.recordDiagnostic('auth.link.session_adopted');
   }
 
   private async startFlow(
@@ -356,6 +457,28 @@ function validateStartConfig(
     redirectTo.hash
   ) {
     throw new Error('The authentication callback URL was rejected.');
+  }
+}
+
+/** Bounds and shape only. A token's value is never read, compared, or logged. */
+const MAX_TOKEN_CHARS = 8_192;
+
+export function validateSessionTokens(tokens: ElectronAuthSessionTokens): void {
+  const { accessToken, refreshToken } = tokens;
+  if (typeof accessToken !== 'string' || typeof refreshToken !== 'string') {
+    throw new Error('The authentication session was invalid.');
+  }
+  if (!accessToken || !refreshToken) {
+    throw new Error('The authentication session was invalid.');
+  }
+  if (
+    accessToken.length > MAX_TOKEN_CHARS ||
+    refreshToken.length > MAX_TOKEN_CHARS
+  ) {
+    throw new Error('The authentication session was invalid.');
+  }
+  if (accessToken.split('.').length !== 3) {
+    throw new Error('The authentication session was invalid.');
   }
 }
 

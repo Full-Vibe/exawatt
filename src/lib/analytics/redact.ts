@@ -11,10 +11,17 @@
  *  2. A declared event keeps only its declared properties plus SDK-internal
  *     `$` properties that are not on the denylist. There is no path for a
  *     free-form key to survive.
- *  3. `$exception` (the crash signal `capture_exceptions` produces) keeps its
- *     exception type and stack shape and loses its message text and any
- *     absolute source location — an exception message is the one place product
- *     content can leak into a crash report.
+ *  3. `$exception` (the crash signal `capture_exceptions` produces) keeps only
+ *     the crash payload properties `ANALYTICS_EXCEPTION_PROPERTIES` declares,
+ *     and each of those is rebuilt rather than forwarded: the exception message
+ *     is replaced and source locations lose anything machine-identifying. An
+ *     exception message is the one place product content can leak into a crash
+ *     report.
+ *
+ * Rule 3 used to be a denylist — everything not explicitly named survived —
+ * which made it the one asymmetric branch here, and meant a future posthog-js
+ * release adding a content-bearing `$exception_*` property would have shipped
+ * it by default. Nothing leaked at the installed version; this is hardening.
  *
  * Person properties (`$set`, `$set_once`) are always dropped: anonymous
  * installation identity stays distinct from account identity (decision `0031`),
@@ -24,8 +31,10 @@
 import type { CaptureResult } from 'posthog-js';
 import {
   ANALYTICS_EVENT_PROPERTIES,
+  EXCEPTION_LEVELS,
   isAnalyticsEventName,
   POSTHOG_EXCEPTION_EVENT,
+  type AnalyticsExceptionProperty,
 } from './events';
 
 /**
@@ -52,6 +61,11 @@ export const ANALYTICS_PROPERTY_DENYLIST: readonly string[] = [
   '$search_engine',
   '$exception_message',
   '$exception_personURL',
+  // Free-text breadcrumbs. Only emitted when `error_tracking.exception_steps`
+  // is enabled, which `client.ts` never does — named anyway so the belt is as
+  // explicit as the braces, and so PostHog's own `property_denylist` drops it
+  // before it can reach a queue.
+  '$exception_steps',
   'utm_source',
   'utm_medium',
   'utm_campaign',
@@ -71,6 +85,27 @@ const DENIED = new Set(ANALYTICS_PROPERTY_DENYLIST);
 const SDK_TRANSPORT_KEYS = new Set(['token', 'distinct_id', 'uuid', 'timestamp']);
 
 type Properties = Record<string, unknown>;
+
+/**
+ * Keys that carry crash payload data rather than machine metadata: PostHog's
+ * own `$exception_*` set, and the `$sentry_*` set its Sentry integration adds
+ * (`$sentry_exception` is a raw, unredacted exception object). This namespace
+ * is closed — a key matching it survives only by being declared in
+ * `ANALYTICS_EXCEPTION_PROPERTIES` — which is what keeps the `$`-prefix escape
+ * hatch below from becoming a hole the next SDK release can widen.
+ */
+const EXCEPTION_PAYLOAD_KEY = /^\$(?:exception|sentry)/;
+
+/**
+ * Machine metadata the library generates: `$lib`, `$os`, `$browser`,
+ * `$screen_height`, `$session_id`, and the rest. None of it is ours to declare,
+ * and none of it can carry product content — except in the crash payload
+ * namespace, which is why that is excluded here rather than trusted.
+ */
+function isSdkMetadataKey(key: string): boolean {
+  if (EXCEPTION_PAYLOAD_KEY.test(key)) return false;
+  return key.startsWith('$') || SDK_TRANSPORT_KEYS.has(key);
+}
 
 /**
  * A stack frame's location is a build artifact (`/_next/static/chunks/...`),
@@ -106,6 +141,21 @@ function redactFrame(frame: unknown): unknown {
   };
 }
 
+/**
+ * How the crash was caught. `@posthog/core` types `source` as a free-form
+ * string, so this is rebuilt from the three fields the SDK actually sets rather
+ * than forwarded — the same allowlist discipline as the frame above.
+ */
+function redactMechanism(mechanism: unknown): unknown {
+  if (!mechanism || typeof mechanism !== 'object') return undefined;
+  const source = mechanism as Properties;
+  return {
+    type: typeof source.type === 'string' ? source.type : 'generic',
+    handled: source.handled !== false,
+    synthetic: source.synthetic === true,
+  };
+}
+
 function redactException(exception: unknown): unknown {
   if (!exception || typeof exception !== 'object') return exception;
   const source = exception as Properties;
@@ -118,24 +168,50 @@ function redactException(exception: unknown): unknown {
     // The message is the only free-form field in an exception. It is dropped,
     // not truncated: a truncated prompt is still a prompt.
     value: '<redacted>',
-    mechanism: source.mechanism,
+    mechanism: redactMechanism(source.mechanism),
     ...(stacktrace
       ? { stacktrace: { type: stacktrace.type ?? 'raw', frames: frames ?? [] } }
       : {}),
   };
 }
 
+function redactExceptionLevel(value: unknown): unknown {
+  return (EXCEPTION_LEVELS as readonly unknown[]).includes(value)
+    ? value
+    : 'error';
+}
+
+/**
+ * One redactor per declared crash payload property. `satisfies` makes the two
+ * lists impossible to drift apart: declaring a property in `events.ts` without
+ * deciding here how it is redacted does not compile, and a redactor for a
+ * property nobody declared does not compile either.
+ */
+const EXCEPTION_PROPERTY_REDACTORS = {
+  $exception_list: (value: unknown) =>
+    Array.isArray(value) ? value.map(redactException) : [],
+  $exception_level: redactExceptionLevel,
+} satisfies Record<AnalyticsExceptionProperty, (value: unknown) => unknown>;
+
+/**
+ * The crash report, built by allowlist. Declared crash payload properties are
+ * rebuilt; ordinary SDK metadata rides along as it does on any other event;
+ * everything else — an undeclared `$exception_*` from a future SDK release, a
+ * `$sentry_*` payload, a caller's extra property — is dropped.
+ */
 export function redactExceptionProperties(properties: Properties): Properties {
-  const redacted: Properties = {};
+  const kept: Properties = {};
   for (const [key, value] of Object.entries(properties)) {
     if (DENIED.has(key)) continue;
-    if (key === '$exception_list') {
-      redacted[key] = Array.isArray(value) ? value.map(redactException) : [];
+    if (EXCEPTION_PAYLOAD_KEY.test(key)) {
+      const redact =
+        EXCEPTION_PROPERTY_REDACTORS[key as AnalyticsExceptionProperty];
+      if (redact) kept[key] = redact(value);
       continue;
     }
-    redacted[key] = value;
+    if (isSdkMetadataKey(key)) kept[key] = value;
   }
-  return redacted;
+  return kept;
 }
 
 /**
@@ -162,9 +238,10 @@ export function scrubAnalyticsCapture(
   const kept: Properties = {};
   for (const [key, value] of Object.entries(properties)) {
     if (DENIED.has(key)) continue;
-    // SDK-internal properties are machine metadata the library generates.
-    // Everything else must be a property this event declares.
-    if (key.startsWith('$') || SDK_TRANSPORT_KEYS.has(key) || declared.has(key)) {
+    // SDK-internal properties are machine metadata the library generates —
+    // crash payload keys excluded, because the only event those are allowed on
+    // is `$exception`, handled above. Everything else must be declared.
+    if (isSdkMetadataKey(key) || declared.has(key)) {
       kept[key] = value;
     }
   }

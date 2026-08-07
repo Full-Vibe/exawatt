@@ -1,7 +1,13 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ANALYTICS_EVENT_NAMES, ANALYTICS_EVENT_PROPERTIES } from './events';
+import {
+  ANALYTICS_EVENT_NAMES,
+  ANALYTICS_EVENT_PROPERTIES,
+  ANALYTICS_EXCEPTION_PROPERTIES,
+  HOSTED_FAILURES,
+} from './events';
+import { ANALYTICS_PROPERTY_DENYLIST } from './redact';
 
 /**
  * Decision `0031` requires the repository to carry the exact outbound-data
@@ -20,6 +26,28 @@ describe('outbound-data manifest', () => {
       for (const property of ANALYTICS_EVENT_PROPERTIES[name]) {
         expect(MANIFEST).toContain(property);
       }
+    }
+  });
+
+  it('names every crash payload property that may leave', () => {
+    for (const property of ANALYTICS_EXCEPTION_PROPERTIES) {
+      expect(MANIFEST).toContain(property);
+    }
+    // The manifest must say the crash payload is closed, not merely filtered.
+    expect(MANIFEST).toContain('$exception_steps');
+  });
+
+  it('names every failure bucket a hosted call can be counted in', () => {
+    for (const failure of HOSTED_FAILURES) {
+      expect(MANIFEST).toContain(failure);
+    }
+  });
+
+  it('names the denylisted properties it claims to strip', () => {
+    const stripped = ['$current_url', '$pathname', '$referrer', '$title'];
+    for (const property of stripped) {
+      expect(ANALYTICS_PROPERTY_DENYLIST).toContain(property);
+      expect(MANIFEST).toContain(property);
     }
   });
 

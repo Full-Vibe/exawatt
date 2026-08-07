@@ -14,6 +14,11 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import {
+  CALLBACK_FAILURE_MESSAGES,
+  GENERIC_CALLBACK_FAILURE,
+  isAuthCallbackFailure,
+} from '@/components/auth/callback-failures';
 import { createClient } from '@/lib/supabase/client';
 import { useElectronAuth } from '@/hooks/use-electron-auth';
 import { FORGOT_PASSWORD_PATH } from '@/components/auth/hosted-auth';
@@ -22,6 +27,13 @@ import {
   captureAnalyticsEvent,
   type SignInFailure,
 } from '@/lib/analytics';
+
+const CALLBACK_FAILURE_ANALYTICS: Record<string, SignInFailure> = {
+  provider_refused: 'provider_error',
+  missing_code: 'callback_exchange',
+  exchange_failed: 'callback_exchange',
+  exchange_rejected: 'callback_exchange',
+};
 
 /**
  * ENG-030 OS1.2. The audit that opened this work could not answer "did the
@@ -51,8 +63,15 @@ export default function SignInPage() {
 function SignInForm() {
   const searchParams = useSearchParams();
   // ENG-030 OS0.3: /auth/callback reports a failed exchange here instead of
-  // dropping the operator on a signed-out /workspace with no explanation.
-  const callbackError = searchParams.get('error');
+  // dropping the operator on a signed-out /workspace with no explanation. The
+  // parameter is a code, never text — whatever arrives, only copy from
+  // CALLBACK_FAILURE_MESSAGES is ever rendered.
+  const callbackErrorCode = searchParams.get('error') || null;
+  const callbackError = callbackErrorCode
+    ? isAuthCallbackFailure(callbackErrorCode)
+      ? CALLBACK_FAILURE_MESSAGES[callbackErrorCode]
+      : GENERIC_CALLBACK_FAILURE
+    : null;
   // a new attempt supersedes the previous callback's verdict
   const [callbackErrorStale, setCallbackErrorStale] = useState(false);
   const [email, setEmail] = useState('');
@@ -72,16 +91,17 @@ function SignInForm() {
   // — the reason string itself never leaves; only the closed enum does.
   const reportedCallbackFailure = useRef(false);
   useEffect(() => {
-    if (!callbackError || reportedCallbackFailure.current) return;
+    if (!callbackErrorCode || reportedCallbackFailure.current) return;
     reportedCallbackFailure.current = true;
     captureAnalyticsEvent({
       name: 'sign_in_attempted',
       surface: analyticsSurface(),
       method: 'unknown',
       outcome: 'failed',
-      failure: 'callback_exchange',
+      failure:
+        CALLBACK_FAILURE_ANALYTICS[callbackErrorCode] ?? 'callback_exchange',
     });
-  }, [callbackError]);
+  }, [callbackErrorCode]);
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
