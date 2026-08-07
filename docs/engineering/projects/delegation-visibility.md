@@ -794,6 +794,11 @@ What shipped against §9's acceptance list:
 - **Lineage without authority**: a hairline Project-identity tether. D40 keeps
   sole ownership of status; no new light or colour is invented, and the child
   body is the same Agent noun as its parent.
+- **Children carry the D40 Active mark** (2026-08-07, operator): a live child is
+  working by definition, and without a mark it read as an empty silhouette
+  rather than an Agent. Drawn by the same instanced layer as parents, so it is
+  the same light at no extra draw call. Overflow lobes stay unlit — a single
+  light cannot honestly speak for several Agents — and carry their count.
 - **Finite lifecycle motion**: spawn emerges from the parent edge into its slot
   with a damped settle and capped cohort stagger; stop retracts faster along the
   same lineage. Existing siblings keep their slots. A settled constellation adds

@@ -85,6 +85,8 @@ import { useMinuteClock } from '../use-minute-clock';
 import {
   DELEGATION_EXIT_SWEEP_MS,
   DELEGATION_MOTION,
+  DELEGATION_SETTLE_MS,
+  delegationStatusPieces,
   delegationBodyScale,
   delegationRoster,
   delegationSpawnDelaySeconds,
@@ -1500,6 +1502,23 @@ function ProjectControls({
  * lives exactly as long as the lazily-imported board chunk that owns it.
  * Ref-counting it would mean mutating module state during render.
  */
+/**
+ * The D40 status-mark primitives. Module scope for the same reasons as
+ * `AGENT_HEX_GEOMETRY`: they are small, several layers draw them, and a shared
+ * definition is what guarantees a delegated child's Active light is literally
+ * the same light as its parent's rather than a lookalike.
+ */
+const STATUS_MARK_GEOMETRY = {
+  backing: new THREE.CircleGeometry(0.34, 32),
+  ring: new THREE.RingGeometry(0.18, 0.28, 32),
+  offSegment: new THREE.RingGeometry(0.21, 0.27, 8, 1, 0, Math.PI / 4),
+  rotor: new THREE.CircleGeometry(0.2, 24, -Math.PI / 2, Math.PI),
+  signal: new THREE.CircleGeometry(0.28, 28),
+  check: checkGeometry(),
+  dot: new THREE.CircleGeometry(0.07, 16),
+  cross: crossGeometry(),
+} as const;
+
 const AGENT_HEX_GEOMETRY = (() => {
   const geometry = new THREE.CylinderGeometry(0.5, 0.56, 0.34, 6);
   geometry.rotateX(Math.PI / 2);
@@ -1613,6 +1632,57 @@ function useDelegationExits(
     };
   }, []);
   return exits;
+}
+
+/**
+ * Ids whose spawn travel has finished. Timer-driven rather than frame-driven:
+ * settling is a once-per-unit semantic event, and `useFrame` must never set
+ * state. Reduced motion has no travel, so everything is settled immediately.
+ */
+function useSettledDelegationUnits(
+  units: SpatialBoardDelegationUnit[],
+  reduced: boolean
+): SpatialBoardDelegationUnit[] {
+  const [settledIds, setSettledIds] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  const timers = useRef(new Set<number>());
+  useEffect(() => {
+    const live = new Set(units.map(unit => unit.id));
+    setSettledIds(current => {
+      const pruned = new Set([...current].filter(id => live.has(id)));
+      if (reduced) {
+        for (const id of live) pruned.add(id);
+      }
+      return pruned.size === current.size &&
+        [...pruned].every(id => current.has(id))
+        ? current
+        : pruned;
+    });
+    if (reduced) return;
+    const arriving = units.filter(unit => !settledIds.has(unit.id));
+    if (arriving.length === 0) return;
+    const ids = arriving.map(unit => unit.id);
+    const timer = window.setTimeout(() => {
+      timers.current.delete(timer);
+      setSettledIds(current => new Set([...current, ...ids]));
+    }, DELEGATION_SETTLE_MS);
+    timers.current.add(timer);
+    // `settledIds` is read to find arrivals but must not re-arm the effect;
+    // the timer that adds them would then immediately schedule another.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reduced, units]);
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      for (const timer of pending) window.clearTimeout(timer);
+      pending.clear();
+    };
+  }, []);
+  return useMemo(
+    () => units.filter(unit => settledIds.has(unit.id)),
+    [settledIds, units]
+  );
 }
 
 function DelegationUnitLayer({
@@ -1770,6 +1840,14 @@ function DelegationUnitLayer({
           />
         ))}
       </Instances>
+      {/* The D40 Active light, on the same primitives the parent uses. A child
+          the source still reports IS working — that is what "live child" means,
+          and D3b already forces `working` for them — so this states existing
+          truth through the existing protocol rather than inventing a signal.
+          Without it a child is a silhouette: the parent reads as a unit only
+          because it carries this mark. The overflow lobe is deliberately
+          excluded; its count is its content, and a light there would claim a
+          single state for several Agents. */}
     </group>
   );
 }
@@ -1797,25 +1875,7 @@ function StatusMarkLayer({
   const needsYou = byState('needs-you');
   const fault = byState('fault');
   const signalDisks = [...result, ...needsYou, ...fault];
-  const geometries = useMemo(
-    () => ({
-      backing: new THREE.CircleGeometry(0.34, 32),
-      ring: new THREE.RingGeometry(0.18, 0.28, 32),
-      offSegment: new THREE.RingGeometry(0.21, 0.27, 8, 1, 0, Math.PI / 4),
-      rotor: new THREE.CircleGeometry(0.2, 24, -Math.PI / 2, Math.PI),
-      signal: new THREE.CircleGeometry(0.28, 28),
-      check: checkGeometry(),
-      dot: new THREE.CircleGeometry(0.07, 16),
-      cross: crossGeometry(),
-    }),
-    []
-  );
-  useEffect(
-    () => () => {
-      for (const geometry of Object.values(geometries)) geometry.dispose();
-    },
-    [geometries]
-  );
+  const geometries = STATUS_MARK_GEOMETRY;
 
   useFrame((state, delta) => {
     if (rotorRefs.current.size === 0) return;
@@ -2132,6 +2192,13 @@ function AgentPieceLayer({
   const invalidate = useThree(state => state.invalidate);
   const pieceGeometry = AGENT_HEX_GEOMETRY;
   useCursor(hoveredId != null);
+  // Settled delegated children ride the parents' own D40 draws, so a child's
+  // Active light is literally the same light — and costs no extra draw call.
+  const settledDelegation = useSettledDelegationUnits(delegationUnits, reduced);
+  const statusSubjects = useMemo(
+    () => [...solid, ...delegationStatusPieces(settledDelegation)],
+    [settledDelegation, solid]
+  );
 
   // Carry the unit field through semantic altitude changes. The new layout is
   // first transformed back onto the ACTUAL previous frame, then that inverse
@@ -2280,7 +2347,7 @@ function AgentPieceLayer({
         })}
       </Instances>
       <StatusMarkLayer
-        pieces={solid}
+        pieces={statusSubjects}
         active={ambient}
         lens={lens}
         theme={theme}
@@ -3059,7 +3126,7 @@ function DelegationControls({
             {unit.kind === 'overflow' && (
               <span
                 aria-hidden="true"
-                className="pointer-events-none font-mono text-chrome-nano font-semibold"
+                className="pointer-events-none font-mono text-chrome-micro font-semibold"
                 style={{ color: theme.label }}
               >
                 +{unit.overflowCount}

@@ -2052,6 +2052,52 @@ tier with Voltaic at 13 draw calls and the 1k/10k aggregates at 6. Composition
 graded from screenshots of the real Voltaic demo board and the fanout fixture in
 both the Air and Classic themes.
 
+### V3.4 delegated children become first-class (2026-08-07, operator)
+
+Operator screenshot of a live seven-child fan-out: the children were legible as
+shapes but read as empty silhouettes — holes in the board rather than Agents.
+The diagnosis is one line. **A parent reads as a unit because it carries a D40
+status mark; the children carried nothing.** Size, tether, and slot geometry
+were never the missing ingredient.
+
+A live delegated child is working — that is what the source still reporting it
+means, and D3b already forces `working` for delegated children — so children now
+carry the D40 **Active** mark. This states existing truth through the existing
+protocol; no new light, colour, or channel is invented.
+
+The mark is drawn by the SAME instanced layer that draws parents' marks, not a
+parallel one. A first attempt gave the delegation layer its own backing/ring/
+rotor draws; it looked right and `eval:r3f` immediately caught it — t5 went to
+18 draw calls and scored 70/100. Routing settled children through
+`StatusMarkLayer` as ordinary status subjects (`delegationStatusPieces`) costs
+**zero** extra draw calls, and makes the child's light literally the same light
+rather than a lookalike that can drift.
+
+Because the shared layer draws marks at a unit's resting slot, a child only
+takes its light once its spawn travel has finished — otherwise the light would
+park at the destination while the unit was still in flight. `useSettledDelegationUnits`
+owns that gate on a timer, since settling is a once-per-unit semantic event and
+`useFrame` must never set state. Reduced motion has no travel, so everything is
+settled immediately, and the child lights obey the shared ambient gate for free:
+`eval:spatial` still reports zero idle frames under reduced motion and low power.
+
+Two supporting adjustments. Child scale moved `0.72×` → `0.74×`: once the mark
+was there, a bigger body was no longer what made a child first-class, and at
+`0.80×` parents and children read as peers, which loses the ownership the
+composition is supposed to show. The overflow lobe is deliberately excluded from
+the mark — one light cannot honestly speak for several Agents — so its count is
+its content, promoted from `chrome-nano` to `chrome-micro` semibold.
+
+The status-mark primitives are now a module-level `STATUS_MARK_GEOMETRY`
+alongside `AGENT_HEX_GEOMETRY`, so both layers share one definition instead of
+`StatusMarkLayer` allocating and disposing eight geometries per mount.
+
+Evidence: type-check and lint clean; 1,971 tests (1 skipped) including four new
+status-piece tests; `eval:r3f` 100/100 with `t5-operations-board` back at 15
+draw calls; `eval:spatial` 8/8; 15/15 pointer scenarios; every scale tier with
+Voltaic at 13 draw calls and the 1k/10k aggregates at 6 and still parking.
+Graded from screenshots at Fleet and Project altitude, in Air and Classic.
+
 ### V2.1 Scale & Truth
 
 Status: planned; gated by V2.0

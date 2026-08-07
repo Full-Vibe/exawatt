@@ -1119,7 +1119,7 @@ export function spatialBoardZoneForAgent(
 export const SPATIAL_DELEGATION_UNIT = {
   /** Child diameter as a fraction of the parent's. The D3c brief fixes the
    *  accepted band at 0.72–0.82; below it children read as punctuation again. */
-  childScale: 0.72,
+  childScale: 0.74,
   /** At or below this, every child is an individual unit. */
   individualLimit: SPATIAL_DELEGATION_SATELLITE_CAP,
   /** Above it, this many individuals plus one same-family overflow lobe. */

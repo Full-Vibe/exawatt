@@ -1,6 +1,7 @@
 import {
   SPATIAL_DELEGATION_UNIT_CEILING,
   type SpatialBoardDelegationUnit,
+  type SpatialBoardPiece,
 } from '@exawatt/ui-model';
 
 /**
@@ -33,6 +34,15 @@ export const DELEGATION_MOTION = {
 /** Grace beyond the exit duration before a departed unit is dropped. */
 export const DELEGATION_EXIT_SWEEP_MS =
   DELEGATION_MOTION.stopSeconds * 1000 + 60;
+
+/**
+ * When a spawning unit has finished travelling and may take its status light.
+ * The light is drawn by the shared D40 layer at the unit's RESTING slot, so
+ * granting it early would park a light at the destination while the unit is
+ * still in flight.
+ */
+export const DELEGATION_SETTLE_MS =
+  (DELEGATION_MOTION.spawnSeconds + DELEGATION_MOTION.maxStaggerSeconds) * 1000;
 
 export interface DelegationRosterEntry {
   unit: SpatialBoardDelegationUnit;
@@ -107,4 +117,45 @@ export function delegationRoster(
   for (const unit of units) roster.push({ unit, exiting: false });
   for (const unit of exits) roster.push({ unit, exiting: true });
   return roster;
+}
+
+/**
+ * A settled child rendered as a board piece, so the D40 status layer draws its
+ * Active light through exactly the same instanced draws as a parent's. This is
+ * what makes a delegated child read as a unit rather than a silhouette, and
+ * routing it through the existing layer — instead of a parallel one — is what
+ * keeps it the SAME light rather than a lookalike, at no extra draw call.
+ *
+ * A live child is working by definition: that is what the source reporting it
+ * means, and D3b already forces `working` for delegated children. Overflow
+ * lobes are excluded — a single light cannot honestly speak for several Agents,
+ * so the lobe carries its count instead.
+ */
+export function delegationStatusPieces(
+  units: readonly SpatialBoardDelegationUnit[]
+): SpatialBoardPiece[] {
+  const pieces: SpatialBoardPiece[] = [];
+  for (const unit of units) {
+    if (unit.kind !== 'child') continue;
+    pieces.push({
+      id: unit.id,
+      slotIndex: 0,
+      kind: 'agent',
+      projectId: unit.projectId,
+      agentId: null,
+      label: unit.description ?? unit.agentType ?? 'Delegated Agent',
+      summary: unit.agentType ?? 'Delegated Agent',
+      status: 'working',
+      count: 1,
+      x: unit.x,
+      y: unit.y,
+      size: unit.size,
+      visible: true,
+      selected: false,
+      needsAttention: false,
+      labelVisibility: 'hidden',
+      burnIntensity: null,
+    });
+  }
+  return pieces;
 }

@@ -8,6 +8,7 @@ import {
 import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
 import {
   DELEGATION_MOTION,
+  delegationStatusPieces,
   delegationBodyScale,
   delegationRoster,
   delegationSpawnDelaySeconds,
@@ -63,6 +64,38 @@ describe('delegation motion policy', () => {
     expect(DELEGATION_MOTION.instanceLimit).toBeGreaterThanOrEqual(
       SPATIAL_DELEGATION_UNIT_CEILING
     );
+  });
+});
+
+describe('delegation status pieces', () => {
+  it('renders a live child as a working unit through the shared D40 layer', () => {
+    const [piece] = delegationStatusPieces([unit('a')]);
+    expect(piece).toMatchObject({
+      id: 'a',
+      kind: 'agent',
+      status: 'working',
+      visible: true,
+      labelVisibility: 'hidden',
+    });
+    // The child is not independently selectable or commandable (D3c).
+    expect(piece!.agentId).toBeNull();
+    expect(piece!.needsAttention).toBe(false);
+  });
+
+  it('places the mark at the unit, at the unit size', () => {
+    const child = { ...unit('a'), x: 12, y: -4, size: 1.6 };
+    const [piece] = delegationStatusPieces([child]);
+    expect(piece).toMatchObject({ x: 12, y: -4, size: 1.6 });
+  });
+
+  it('never lights an overflow lobe — one light cannot speak for several Agents', () => {
+    const lobe = { ...unit('lobe'), kind: 'overflow' as const, overflowCount: 9 };
+    expect(delegationStatusPieces([lobe])).toEqual([]);
+    expect(delegationStatusPieces([unit('a'), lobe])).toHaveLength(1);
+  });
+
+  it('reports no burn, so the burn lens shows unknown rather than a fake zero', () => {
+    expect(delegationStatusPieces([unit('a')])[0]!.burnIntensity).toBeNull();
   });
 });
 
