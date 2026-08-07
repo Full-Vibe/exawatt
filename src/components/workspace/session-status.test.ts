@@ -13,7 +13,10 @@ import {
   sessionDelegationBusy,
   sessionGlyphCopy,
   sessionGlyphState,
+  sessionLensTurnState,
   sessionStatusLightState,
+  sessionTurnFacts,
+  type SessionAttentionSignal,
 } from './session-status';
 
 describe('sessionStatusLightState', () => {
@@ -149,13 +152,15 @@ describe('delegated work', () => {
   });
 
   it('explains a quiet delegating Session honestly', () => {
-    // "output streaming" is the wrong reason for a Session that is quiet
-    // precisely because it handed the work to someone else.
+    // A generic "turn in progress" is true but incurious for a Session that
+    // is quiet precisely because it handed the work to someone else.
     expect(sessionGlyphCopy('working', busyChild)).toBe(
       'working — delegated agents running'
     );
+    // And the generic one never names a mechanism the operator can see is not
+    // happening: the light is active for a silent reported-open turn too.
     expect(sessionGlyphCopy('working', null)).toBe(
-      'working — output streaming'
+      'working — turn in progress'
     );
     expect(sessionGlyphCopy('done', busyChild)).toBe(SESSION_GLYPH_COPY.done);
   });
@@ -398,5 +403,94 @@ describe('attention eligibility is one rule (BUG-009)', () => {
 
   it('ignores a candidate with no session id', () => {
     expect(paintsAttention({ sessionId: null, live: true }, {})).toBe(false);
+  });
+});
+
+/**
+ * One composition, one collapse (BUG-008's surface half).
+ *
+ * Five surfaces used to assemble a Session's turn facts by hand, and the ones
+ * that reached for the activity map alone are exactly the ones that lied.
+ * These cases pin the shared composer and the lens projection built on it.
+ */
+describe('shared turn facts', () => {
+  const tab = {
+    sessionId: 's1',
+    harness: 'claude',
+    durableSessionId: 'd1',
+  };
+  const generating = {
+    ownTurn: 'generating' as const,
+    blockedOn: null,
+    children: [],
+  };
+  const empty = {
+    activity: {},
+    engaged: {},
+    summaries: {},
+    delegation: {},
+  };
+
+  it('carries every channel, not just the bytes', () => {
+    expect(
+      sessionTurnFacts(tab, {
+        ...empty,
+        activity: { s1: true },
+        engaged: { s1: true },
+      })
+    ).toEqual({
+      working: true,
+      agent: true,
+      started: true,
+      delegatedBusy: false,
+      blocked: false,
+      ownTurn: undefined,
+    });
+
+    // A silent Agent whose harness says the turn is open is WORKING, and a
+    // goal subtitle counts as started for Sessions older than the engaged bit.
+    const midTurn = sessionTurnFacts(tab, {
+      ...empty,
+      summaries: { d1: 'Wire the intake form' },
+      delegation: { s1: generating },
+    });
+    expect(midTurn).toMatchObject({
+      working: false,
+      started: true,
+      ownTurn: 'generating',
+    });
+    expect(sessionGlyphState(midTurn)).toBe('working');
+  });
+
+  it('reports a shell as a shell and an absent process as unstarted', () => {
+    expect(
+      sessionTurnFacts({ ...tab, harness: 'shell' }, empty).agent
+    ).toBe(false);
+    expect(
+      sessionTurnFacts({ ...tab, sessionId: null }, { ...empty, activity: { s1: true } })
+    ).toMatchObject({ working: false, started: false });
+  });
+
+  it('collapses the five lights into the lens’s three by the same rules', () => {
+    const lens = (
+      sources: Parameters<typeof sessionTurnFacts>[1],
+      attention?: SessionAttentionSignal
+    ) => sessionLensTurnState({ facts: sessionTurnFacts(tab, sources), attention });
+
+    // The case the lens used to get wrong: mid-tool-call, no bytes, open turn.
+    expect(lens({ ...empty, delegation: { s1: generating } })).toBe('working');
+    // And the other one: a question the operator is looking at, so no unseen
+    // attention signal exists to fall back on.
+    expect(
+      lens({
+        ...empty,
+        delegation: {
+          s1: { ...generating, blockedOn: 'question' as const },
+        },
+      })
+    ).toBe('needs-you');
+    expect(lens({ ...empty, activity: { s1: true } })).toBe('working');
+    expect(lens({ ...empty, engaged: { s1: true } })).toBe('waiting');
+    expect(lens(empty, { kind: 'bell', since: 1 })).toBe('needs-you');
   });
 });

@@ -45,6 +45,12 @@ import {
   consumePendingLaunch,
   consumePendingOpenProject,
 } from './session-jump';
+import {
+  sessionDelegationBusy,
+  sessionGlyphState,
+  sessionReportedBlocked,
+  type SessionGlyphState,
+} from './session-status';
 import { loadTerminalFont } from './terminal-font';
 import { useClosedSessionCount } from './use-closed-session-count';
 import {
@@ -215,8 +221,10 @@ export interface ResumeBatchProgress {
 /** what a close attempt did (D27) — the UI narrates each differently */
 export type CloseOutcome =
   | { kind: 'noop' }
-  /** a started live agent needs the in-app confirm; re-call with force */
-  | { kind: 'needs-confirm'; working: boolean }
+  /** A started live agent needs the in-app confirm; re-call with force. The
+   *  turn state rides along so the dialog can name the actual consequence —
+   *  an interrupted turn and a discarded question are not the same loss. */
+  | { kind: 'needs-confirm'; turn: SessionGlyphState }
   | { kind: 'discarded' }
   | { kind: 'closed'; entry: ClosedSessionEntry };
 
@@ -691,6 +699,10 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
   const cloningRef = useRef(new Set<string>());
   const activityRef = useRef(activity);
   activityRef.current = activity;
+  /** Read by the close path, which asks about the TURN rather than about
+   *  bytes: an Agent mid-tool-call has quiet activity and an open turn. */
+  const delegationRef = useRef(delegation);
+  delegationRef.current = delegation;
   const resumeInFlightRef = useRef<Set<string>>(new Set());
   /** Close/archive work is tracked so browser-style reopen cannot race the
    * optimistic strip removal and read the ledger before the entry lands. */
@@ -1876,9 +1888,24 @@ export function useWorkspaceState(options: WorkspaceStateOptions = {}) {
             return { kind: 'discarded' };
           }
           if (!opts.force) {
+            const sessionDelegation = tab.sessionId
+              ? delegationRef.current[tab.sessionId]
+              : undefined;
             return {
               kind: 'needs-confirm',
-              working: !!(tab.sessionId && activityRef.current[tab.sessionId]),
+              // The same derivation the tab's own light uses. Asking the
+              // activity map directly called a mid-tool-call Agent idle for
+              // the three seconds it took to think (BUG-008).
+              turn: sessionGlyphState({
+                working: !!(
+                  tab.sessionId && activityRef.current[tab.sessionId]
+                ),
+                agent: tab.harness !== 'shell',
+                started,
+                delegatedBusy: sessionDelegationBusy(sessionDelegation),
+                blocked: sessionReportedBlocked(sessionDelegation),
+                ownTurn: sessionDelegation?.ownTurn,
+              }),
             };
           }
         }

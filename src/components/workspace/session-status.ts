@@ -134,6 +134,76 @@ export function orderedAttentionTargets(
     .map(([sessionId]) => sessionId);
 }
 
+/**
+ * Everything known about one Session's turn, from both channels at once:
+ * what the bytes showed and what the harness reported.
+ *
+ * Named and exported because more than one question is asked of these facts —
+ * which light to draw, and whether closing this tab would interrupt work — and
+ * every asker has to start from the same ones. A surface that reaches past
+ * this for the raw activity map is reading byte evidence where turn truth is
+ * meant, which is the shape of every status lie this area has produced.
+ */
+export interface SessionTurnFacts {
+  /** inferred from the PTY stream: bytes are arriving right now */
+  working: boolean;
+  /** false for shells — they have no turn state */
+  agent: boolean;
+  started: boolean;
+  /** harness-reported outstanding children; false when unreported (ENG-023) */
+  delegatedBusy?: boolean;
+  /** harness-reported operator gate — a question, permission, or elicitation
+   *  the Agent is waiting on (ENG-023 D4) */
+  blocked?: boolean;
+  /** the source's OWN report of its turn, when it makes one (ENG-015 S1.1).
+   *  Undefined means unreported, and the inferred byte activity stands. */
+  ownTurn?: 'generating' | 'available';
+}
+
+/**
+ * The per-Session channels a workspace surface holds, keyed as they arrive
+ * from main: `activity`/`engaged`/`delegation` by sessionId, `summaries` by
+ * durable id.
+ */
+export interface SessionTurnSources {
+  activity: Record<string, boolean>;
+  engaged: Record<string, boolean>;
+  summaries: Record<string, string>;
+  delegation: Record<string, SessionDelegation>;
+}
+
+/**
+ * Compose one tab's turn facts from every channel that has an opinion.
+ *
+ * The composition itself is the thing worth sharing. It was written out by
+ * hand at five surfaces — strip, exposé, Project dot, close paths, roadmap
+ * lens — and the ones that forgot a channel are precisely the ones that
+ * lied: a lens that read only `activity` called a mid-tool-call Agent
+ * `waiting`, and a close confirmation that read only `activity` offered no
+ * warning at all. Forgetting a channel should require deleting an argument,
+ * not merely failing to remember one.
+ */
+export function sessionTurnFacts(
+  tab: {
+    sessionId: string | null;
+    harness: string;
+    durableSessionId: string;
+  },
+  { activity, engaged, summaries, delegation }: SessionTurnSources
+): SessionTurnFacts {
+  const reported = tab.sessionId ? delegation[tab.sessionId] : undefined;
+  return {
+    working: !!(tab.sessionId && activity[tab.sessionId]),
+    agent: tab.harness !== 'shell',
+    started:
+      !!(tab.sessionId && engaged[tab.sessionId]) ||
+      !!summaries[tab.durableSessionId],
+    delegatedBusy: sessionDelegationBusy(reported),
+    blocked: sessionReportedBlocked(reported),
+    ownTurn: reported?.ownTurn,
+  };
+}
+
 /** Working wins; agents split on whether they were ever given work; shells
  * are simply quiet between output because they do not have turns.
  *
@@ -149,20 +219,7 @@ export function sessionGlyphState({
   delegatedBusy = false,
   blocked = false,
   ownTurn,
-}: {
-  working: boolean;
-  /** false for shells — they have no turn state */
-  agent: boolean;
-  started: boolean;
-  /** harness-reported outstanding children; false when unreported (ENG-023) */
-  delegatedBusy?: boolean;
-  /** harness-reported operator gate — a question, permission, or elicitation
-   *  the Agent is waiting on (ENG-023 D4) */
-  blocked?: boolean;
-  /** the source's OWN report of its turn, when it makes one (ENG-015 S1.1).
-   *  Undefined means unreported, and the inferred byte activity stands. */
-  ownTurn?: 'generating' | 'available';
-}): SessionGlyphState {
+}: SessionTurnFacts): SessionGlyphState {
   // Outranks every other fact, including a still-open turn. An Agent parked on
   // a question IS mid-turn — `Stop` has not fired — but "working" is the one
   // thing it is provably not doing, and the operator is the only one who can
@@ -183,6 +240,30 @@ export function sessionGlyphState({
   if (working) return 'working';
   if (!agent) return 'quiet';
   return started ? 'done' : 'fresh';
+}
+
+/**
+ * The roadmap lens speaks in three states where the light has five.
+ *
+ * Both surfaces that summon the lens — the workspace and exposé — used to
+ * collapse them by hand from the raw activity map, which read a mid-tool-call
+ * Agent as `waiting` and a Session parked on a question as `waiting` too.
+ * Collapsing the LIGHT instead means the lens can only ever differ from the
+ * tab strip by being coarser, never by disagreeing.
+ */
+export function sessionLensTurnState({
+  facts,
+  attention,
+}: {
+  facts: SessionTurnFacts;
+  attention?: SessionAttentionSignal | null;
+}): 'working' | 'waiting' | 'needs-you' {
+  const light = sessionStatusLightState({
+    state: sessionGlyphState(facts),
+    attention,
+  });
+  if (light === 'needs-you') return 'needs-you';
+  return light === 'active' ? 'working' : 'waiting';
 }
 
 /**
@@ -223,7 +304,11 @@ export function sessionStatusLightState({
 
 /** Tooltip copy — one voice across every Session surface. */
 export const SESSION_GLYPH_COPY: Record<SessionGlyphState, string> = {
-  working: 'working — output streaming',
+  // NOT "output streaming": the light is active for a reported-open turn with
+  // no bytes at all — a long tool call, a slow first token — and a tooltip
+  // that names a mechanism the operator can see is not happening teaches them
+  // to distrust the light (BUG-008).
+  working: 'working — turn in progress',
   blocked: 'needs you — waiting on your answer',
   done: 'result ready — turn finished',
   fresh: 'new — not given a task yet',
@@ -354,8 +439,9 @@ export function delegationElapsedLabel(now: number, startedAt: number): string {
 /**
  * Tooltip for the status light, corrected for delegation.
  *
- * "output streaming" is the wrong explanation for a Session that is quiet
- * precisely because it handed the work to someone else.
+ * A generic "turn in progress" is true but incurious for a Session that is
+ * quiet precisely because it handed the work to someone else; that one says
+ * so, because the operator's next question is who.
  */
 export function sessionGlyphCopy(
   state: SessionGlyphState,

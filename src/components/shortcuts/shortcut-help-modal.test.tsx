@@ -84,11 +84,13 @@ describe('shortcut help manifest coverage', () => {
 
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Filter shortcuts'), {
-        target: { value: 'output streaming' },
+        target: { value: 'turn in progress' },
       });
     });
     expect(screen.getByText('working')).toBeVisible();
-    expect(screen.getByText('output streaming right now')).toBeVisible();
+    expect(
+      screen.getByText('turn in progress — streaming or thinking')
+    ).toBeVisible();
     view.unmount();
   });
 });

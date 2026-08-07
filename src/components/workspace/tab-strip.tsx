@@ -92,9 +92,8 @@ import {
   SESSION_GLYPH_COPY,
   SESSION_GLYPH_LABEL,
   SessionStatusGlyph,
-  sessionDelegationBusy,
   sessionGlyphState,
-  sessionReportedBlocked,
+  sessionTurnFacts,
   type SessionAttentionSignal,
 } from './status-glyphs';
 import { useOrdinalHints } from './use-ordinal-hints';
@@ -1431,24 +1430,23 @@ export function TabStrip({
               { sessionId: tab.sessionId, live: !dead },
               attention
             );
-            const working =
-              !dead && !!(tab.sessionId && activity[tab.sessionId]);
             const isAgent = tab.harness !== 'shell';
             const isDraft = tab.lifecycle === 'draft';
             const fault = tab.lifecycle === 'failed';
-            const started =
-              !!(tab.sessionId && engaged[tab.sessionId]) || !!summary;
             const tabDelegation = tab.sessionId
               ? delegation[tab.sessionId]
               : undefined;
-            const glyphState = sessionGlyphState({
-              working,
-              agent: isAgent,
-              started,
-              delegatedBusy: sessionDelegationBusy(tabDelegation),
-              blocked: sessionReportedBlocked(tabDelegation),
-              ownTurn: tabDelegation?.ownTurn,
+            const facts = sessionTurnFacts(tab, {
+              activity,
+              engaged,
+              summaries,
+              delegation,
             });
+            const glyphState = sessionGlyphState(
+              // A stopped Session cannot be working: its process is gone, and
+              // a flag left behind belongs to a turn that no longer exists.
+              dead ? { ...facts, working: false } : facts
+            );
             const display = sessionDisplayCopy({
               harness: tab.harness,
               title: tab.title,

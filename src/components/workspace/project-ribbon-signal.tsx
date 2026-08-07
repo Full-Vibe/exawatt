@@ -5,10 +5,9 @@ import {
 import { STATUS_THEME_COLOR } from '@/components/status-light/status-light';
 import type { SessionDelegation } from '@/types/electron';
 import {
-  sessionDelegationBusy,
   sessionGlyphState,
-  sessionReportedBlocked,
   sessionStatusLightState,
+  sessionTurnFacts,
 } from './session-status';
 import { tabIsLive, type Project } from './use-workspace-state';
 import type { SessionAttentionSignal } from './status-glyphs';
@@ -91,17 +90,10 @@ function tabStatusLight({
   // A stopped Session carries no live turn state; its own row says so, and at
   // Project altitude it must not masquerade as a pending result.
   if (!tabIsLive(tab) || !tab.sessionId) return 'off';
-  const sessionDelegation = delegation[tab.sessionId];
   return sessionStatusLightState({
-    state: sessionGlyphState({
-      working: !!activity[tab.sessionId],
-      agent: tab.harness !== 'shell',
-      started:
-        !!engaged[tab.sessionId] || !!summaries[tab.durableSessionId],
-      delegatedBusy: sessionDelegationBusy(sessionDelegation),
-      blocked: sessionReportedBlocked(sessionDelegation),
-      ownTurn: sessionDelegation?.ownTurn,
-    }),
+    state: sessionGlyphState(
+      sessionTurnFacts(tab, { activity, engaged, summaries, delegation })
+    ),
     attention: attention[tab.sessionId],
   });
 }

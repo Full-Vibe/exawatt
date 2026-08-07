@@ -814,7 +814,7 @@ export function DemoWorkspaceClient() {
         <CloseConfirm
           title={closeConfirm.title}
           goal={closeConfirm.goal}
-          working
+          turn="working"
           color={closeConfirm.color}
           onClose={() => {
             const { tabId } = closeConfirm;

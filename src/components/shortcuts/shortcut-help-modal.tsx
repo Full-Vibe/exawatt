@@ -41,7 +41,7 @@ const STATUS_LEGEND: Array<{
   {
     glyph: <SessionStatusGlyph state="working" />,
     label: 'working',
-    meaning: 'output streaming right now',
+    meaning: 'turn in progress — streaming or thinking',
   },
   {
     glyph: <SessionStatusGlyph state="done" />,

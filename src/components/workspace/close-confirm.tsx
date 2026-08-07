@@ -13,6 +13,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import type { SessionGlyphState } from './session-status';
 import {
   WORKSPACE_HUD as HUD,
   withThemeAlpha,
@@ -21,7 +22,7 @@ import {
 export function CloseConfirm({
   title,
   goal,
-  working,
+  turn,
   color,
   onClose,
   onCancel,
@@ -29,8 +30,10 @@ export function CloseConfirm({
   title: string;
   /** goal subtitle when one exists — names what is being closed */
   goal: string | null;
-  /** mid-turn close interrupts work — the copy says so */
-  working: boolean;
+  /** The Session's turn, read exactly as its tab light reads it. Two of the
+   *  five states cost the operator something extra on close, and they cost
+   *  different things: an interrupted turn versus a discarded question. */
+  turn: SessionGlyphState;
   /** project color — the dialog belongs to the tab it is about */
   color: string;
   onClose: () => void;
@@ -97,8 +100,13 @@ export function CloseConfirm({
           className="font-sans text-xs leading-5"
           style={{ color: HUD.textDim }}
         >
-          {working && (
+          {turn === 'working' && (
             <>It is still working — closing interrupts the turn in flight. </>
+          )}
+          {turn === 'blocked' && (
+            <>
+              It is waiting on your answer — closing discards the question.{' '}
+            </>
           )}
           The agent stops, and the Session — conversation, goal, and scrollback
           — moves to Recently closed. Reopen it from ⌘K within 14 days.
@@ -137,13 +145,19 @@ export function CloseProjectConfirm({
   title,
   tabCount,
   workingCount,
+  waitingCount,
   color,
   onClose,
   onCancel,
 }: {
   title: string;
   tabCount: number;
+  /** Agents mid-turn — closing interrupts them. */
   workingCount: number;
+  /** Agents parked on a question — closing discards it. Counted separately
+   *  because it is a different loss, and because an operator who sees it
+   *  will often want to answer one of them first. */
+  waitingCount: number;
   color: string;
   onClose: () => void;
   onCancel: () => void;
@@ -199,12 +213,23 @@ export function CloseProjectConfirm({
           style={{ color: HUD.textDim }}
         >
           {tabCount} open {tabCount === 1 ? 'tab' : 'tabs'} will close.
+          {/* Two different losses, each in one clause. Kept inline and short:
+              this paragraph is read under a raised finger, and the rare case
+              where both apply must not turn it into a wall. */}
           {workingCount > 0 && (
             <>
               {' '}
               {workingCount === 1
-                ? 'One Agent is still working; its turn will be interrupted.'
-                : `${workingCount} Agents are still working; their turns will be interrupted.`}
+                ? 'One Agent is mid-turn; its turn will be interrupted.'
+                : `${workingCount} Agents are mid-turn; their turns will be interrupted.`}
+            </>
+          )}
+          {waitingCount > 0 && (
+            <>
+              {' '}
+              {waitingCount === 1
+                ? 'One is waiting on your answer; the question is discarded.'
+                : `${waitingCount} are waiting on your answer; their questions are discarded.`}
             </>
           )}{' '}
           Sessions move to Recently closed for 14 days. The Project stays in

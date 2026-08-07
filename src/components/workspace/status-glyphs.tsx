@@ -51,12 +51,16 @@ export {
   sessionDelegationBusy,
   sessionGlyphCopy,
   sessionGlyphState,
+  sessionLensTurnState,
   sessionReportedBlocked,
   sessionStatusLightState,
+  sessionTurnFacts,
 } from './session-status';
 export type {
   SessionAttentionSignal,
   SessionGlyphState,
+  SessionTurnFacts,
+  SessionTurnSources,
 } from './session-status';
 
 /** constant footprint so working↔rest↔attention swaps never shift the row */

@@ -113,6 +113,11 @@ import {
   attentionJumpQueue,
   attentionNeedsOperator,
   mergeSessionAttentionMaps,
+  sessionGlyphState,
+  sessionLensTurnState,
+  sessionTurnFacts,
+  type SessionGlyphState,
+  type SessionTurnFacts,
 } from './session-status';
 import {
   deriveWorkspaceCommandAvailability,
@@ -564,6 +569,24 @@ export function WorkspaceClient() {
     [activateCommandAltitude, searchParams]
   );
 
+  /**
+   * One composer of a tab's turn facts, from both channels at once.
+   *
+   * Every question this file asks about a Session's turn — what the roadmap
+   * lens labels it, what closing it would interrupt — starts here, so none of
+   * them can quietly regress to reading the activity map, which is bytes and
+   * goes quiet inside any live turn (BUG-008).
+   */
+  const turnFactsFor = useCallback(
+    (tab: {
+      sessionId: string | null;
+      harness: string;
+      durableSessionId: string;
+    }): SessionTurnFacts =>
+      sessionTurnFacts(tab, { activity, engaged, summaries, delegation }),
+    [activity, delegation, engaged, summaries]
+  );
+
   // the lens data: live sessions of the focused Project, linked to roadmap
   // items by inference (S3); the same view feeds the rail and the
   // context-bar reciprocal chip
@@ -583,13 +606,12 @@ export function WorkspaceClient() {
             attention[t.sessionId as string]
           ),
           startedAt: t.startedAt ?? null,
-          turnState: attentionNeedsOperator(attention[t.sessionId as string])
-            ? ('needs-you' as const)
-            : activity[t.sessionId as string]
-              ? ('working' as const)
-              : ('waiting' as const),
+          turnState: sessionLensTurnState({
+            facts: turnFactsFor(t),
+            attention: attention[t.sessionId as string],
+          }),
         })),
-    [activeProject, summaries, attention, activity]
+    [activeProject, attention, summaries, turnFactsFor]
   );
   // declared-at-launch links (S4): machine-local tab annotations that
   // override inference; a declared id the roadmap no longer contains falls
@@ -937,7 +959,7 @@ export function WorkspaceClient() {
     tabId: string;
     title: string;
     goal: string | null;
-    working: boolean;
+    turn: SessionGlyphState;
     color: string;
   } | null>(null);
   useEffect(
@@ -957,7 +979,7 @@ export function WorkspaceClient() {
           tabId,
           title: tab.title,
           goal: summaries[tab.durableSessionId] ?? null,
-          working: outcome.working,
+          turn: outcome.turn,
           color: project.color,
         });
         return;
@@ -977,6 +999,7 @@ export function WorkspaceClient() {
     color: string;
     tabCount: number;
     workingCount: number;
+    waitingCount: number;
   } | null>(null);
   const requestProjectClose = useCallback(
     (dir: string) => {
@@ -986,17 +1009,20 @@ export function WorkspaceClient() {
         requestProjectExit(dir);
         return;
       }
+      // Each tab's turn read the way its own light reads it, then counted by
+      // consequence: an interrupted turn and a discarded question are
+      // different losses and the dialog names them separately.
+      const turns = project.tabs.map(tab => sessionGlyphState(turnFactsFor(tab)));
       setProjectCloseConfirm({
         dir,
         name: project.name,
         color: project.color,
         tabCount: project.tabs.length,
-        workingCount: project.tabs.filter(
-          tab => !!(tab.sessionId && activity[tab.sessionId])
-        ).length,
+        workingCount: turns.filter(turn => turn === 'working').length,
+        waitingCount: turns.filter(turn => turn === 'blocked').length,
       });
     },
-    [activity, projects, requestProjectExit]
+    [projects, requestProjectExit, turnFactsFor]
   );
   /**
    * Browser-style close target: the active Agent tab wins; when the active
@@ -1764,7 +1790,7 @@ export function WorkspaceClient() {
         <CloseConfirm
           title={closeConfirm.title}
           goal={closeConfirm.goal}
-          working={closeConfirm.working}
+          turn={closeConfirm.turn}
           color={closeConfirm.color}
           onClose={() => {
             const { tabId } = closeConfirm;
@@ -1779,6 +1805,7 @@ export function WorkspaceClient() {
           title={projectCloseConfirm.name}
           tabCount={projectCloseConfirm.tabCount}
           workingCount={projectCloseConfirm.workingCount}
+          waitingCount={projectCloseConfirm.waitingCount}
           color={projectCloseConfirm.color}
           onClose={confirmProjectClose}
           onCancel={() => setProjectCloseConfirm(null)}

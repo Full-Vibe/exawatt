@@ -135,7 +135,15 @@ export class AttentionMonitor extends EventEmitter {
    *  it, and freezing "done" against all future evidence turns one wrong
    *  inference into a stuck one for the rest of the turn — worse than the
    *  occasional noise flicker this latch exists to prevent (2026-08-04,
-   *  BUG-001 / decision `0018` amendment). */
+   *  BUG-001 / decision `0018` amendment).
+   *
+   *  Two rules bound what this may close over, both learned the same way
+   *  (2026-08-07, BUG-008 / decision `0018`'s second amendment). It may only
+   *  latch a turn NOTHING reports as open — a pause is not a boundary, and
+   *  latching an ordinary mid-turn silence muted the Agent's own output for
+   *  the rest of the turn. And it suppresses meaning only, never bookkeeping:
+   *  `lastDataAt` records every chunk regardless, so `reclaimStaleReportedTurn`
+   *  keeps measuring real silence rather than time-since-latch. */
   private settled = new Set<string>();
   /** sessions ever given work (D22: composer task, exact resume, or a human
    *  keystroke via pty:engage) or that ever raised attention (a turn-end

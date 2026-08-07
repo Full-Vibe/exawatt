@@ -18,9 +18,9 @@ import {
   attentionNeedsOperator,
   delegationCopy,
   SESSION_GLYPH_LABEL,
-  sessionDelegationBusy,
   sessionGlyphState,
-  sessionReportedBlocked,
+  sessionLensTurnState,
+  sessionTurnFacts,
 } from './status-glyphs';
 import type { SessionAttentionSignal } from './status-glyphs';
 import {
@@ -311,13 +311,17 @@ export function ExposeOverlay({
             attention[t.sessionId as string]
           ),
           startedAt: t.startedAt ?? null,
-          turnState: attentionNeedsOperator(attention[t.sessionId as string])
-            ? ('needs-you' as const)
-            : activity[t.sessionId as string]
-              ? ('working' as const)
-              : ('waiting' as const),
+          turnState: sessionLensTurnState({
+            facts: sessionTurnFacts(t, {
+              activity,
+              engaged,
+              summaries,
+              delegation,
+            }),
+            attention: attention[t.sessionId as string],
+          }),
         })),
-    [selectedProject, summaries, attention, activity]
+    [selectedProject, summaries, attention, activity, delegation, engaged]
   );
   const declaredLinks = useMemo(
     () =>
@@ -473,7 +477,6 @@ export function ExposeOverlay({
       ? attention[tile.sessionId]
       : undefined;
     const needsYou = attentionNeedsOperator(attentionSignal);
-    const working = !!(tile.sessionId && activity[tile.sessionId]);
     const fault = tile.stateLabel === 'failed';
     // Durable Session context survives process replacement. The display
     // projection is total: rejected/missing labels become "New agent", never
@@ -493,14 +496,9 @@ export function ExposeOverlay({
     const tileDelegation = tile.sessionId
       ? delegation[tile.sessionId]
       : undefined;
-    const glyphState = sessionGlyphState({
-      working,
-      agent: tile.harness !== 'shell',
-      started: !!(tile.sessionId && engaged[tile.sessionId]) || !!subtitle,
-      delegatedBusy: sessionDelegationBusy(tileDelegation),
-      blocked: sessionReportedBlocked(tileDelegation),
-      ownTurn: tileDelegation?.ownTurn,
-    });
+    const glyphState = sessionGlyphState(
+      sessionTurnFacts(tile, { activity, engaged, summaries, delegation })
+    );
     const roadmap = roadmapByTab[tile.tabId];
     const consumption = consumptionByTab[tile.tabId] ?? null;
     const initiative = initiativeByTab[tile.tabId] ?? null;
