@@ -642,6 +642,38 @@ Implementation record (landed 2026-07-10):
 
 ## Findings log
 
+- 2026-08-07 (S6.2, landed): the FIX-008 design pass is staged, not decided.
+
+  - **The bench runs the real surface.** `/hud-gallery/team-order` mounts
+    `ExposeOverlay` itself over a ten-agent fixture fleet whose working /
+    needs-you / idle / stopped Agents are deliberately NOT at the front of
+    their Projects in manual order — so "I have to scroll and scan" is
+    reproduced before a chip is pressed. The strip's three candidates are
+    As arranged, Active first, and Needs you first; switching re-feeds the
+    same Projects in that mode's view order and the actual tiles move.
+    Judging a mock would have judged the mock.
+
+  - **The engine ships tested so the pick costs nothing.** `team-order.ts`
+    is pure with three load-bearing properties, each pinned: ordering is
+    within each Project only (the operator's words); it is a VIEW, never a
+    mutation — D20/D45 made manual arrangement durable, and a sort that
+    rewrote it would trade one orientation problem for a worse one; and it
+    is stable, so equal-state Agents keep their relative manual positions
+    and the order cannot shuffle on every activity ping. needs-you rides
+    D51's predicate, so a finished turn is a result, not attention.
+
+  - **What stays the operator's.** The mode vocabulary (are these the right
+    three?), view-mode vs transient filter, what "active" should mean, and
+    where the strip lives in production chrome. Only the chosen mode gets
+    production wiring; the bench chips are candidates, not shipped copy.
+
+  - **Boyscout, same subsystem.** Both altitudes fed `useProjectRoadmap`
+    the same ~25-line inline projection of a Project's live tabs, and the
+    copies had drifted syntactically (one memoized `sessionTurnFacts`, one
+    spread it inline) — the identical shape to BUG-009's two attention
+    predicates. `roadmap-lens-input.ts` is now the one owner, with
+    `paintsAttention` for the needs-you bit and its own unit tests.
+
 - 2026-08-07 (S6 pairing, operator): "we should pair all the Team-view UI
   work / bugs / enhancements together. I'm thinking of the up/down arrows
   suggestion." Four open rows are Team surface — FIX-002 (arrows), FIX-006

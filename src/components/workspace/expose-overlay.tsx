@@ -13,6 +13,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import { READINESS_NEUTRAL } from '@/components/readiness';
+import {
+  projectDeclaredLinks,
+  projectRoadmapSessions,
+} from './roadmap-lens-input';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import {
   attentionNeedsOperator,
@@ -334,50 +338,19 @@ export function ExposeOverlay({
 
   const selectedDir = items[sel]?.dir ?? activeProjectDir ?? null;
   const selectedProject = projects.find(p => p.dir === selectedDir) ?? null;
-  const roadmapSessions = useMemo<RoadmapSessionDescriptor[]>(
+  const roadmapSessions = useMemo(
     () =>
-      (selectedProject?.tabs ?? [])
-        .filter(t => t.sessionId && tabIsLive(t))
-        .map(t => ({
-          sessionId: t.sessionId as string,
-          tabId: t.id,
-          title: t.title,
-          harness: t.harness,
-          cwd: t.cwd,
-          contextSummary: summaries[t.durableSessionId] ?? null,
-          initialTask: t.initialTask,
-          needsAttention: attentionNeedsOperator(
-            attention[t.sessionId as string]
-          ),
-          startedAt: t.startedAt ?? null,
-          turnState: sessionLensTurnState({
-            facts: sessionTurnFacts(t, {
-              activity,
-              engaged,
-              summaries,
-              delegation,
-            }),
-            attention: attention[t.sessionId as string],
-          }),
-        })),
+      projectRoadmapSessions(selectedProject?.tabs, attention, {
+        activity,
+        engaged,
+        summaries,
+        delegation,
+      }),
     [selectedProject, summaries, attention, activity, delegation, engaged]
   );
   const declaredLinks = useMemo(
     () =>
-      (selectedProject?.tabs ?? [])
-        .filter(t => t.roadmapItemId && t.sessionId && tabIsLive(t))
-        .map(t => ({
-          sessionId: t.sessionId as string,
-          tabId: t.id,
-          projectDir: selectedProject?.dir ?? '',
-          itemId: t.roadmapItemId as string,
-          method: 'declared' as const,
-          confidence: 'high' as const,
-          evidence: [
-            { kind: 'declared' as const, excerpt: 'declared at launch' },
-          ],
-          evaluatedAt: 0,
-        })),
+      projectDeclaredLinks(selectedProject?.tabs, selectedProject?.dir ?? ''),
     [selectedProject]
   );
   const {

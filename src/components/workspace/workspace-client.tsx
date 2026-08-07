@@ -110,6 +110,10 @@ import {
 } from './session-clone';
 import { loadLaunchConfigurationPool } from '@/lib/launch-configurations';
 import {
+  projectDeclaredLinks,
+  projectRoadmapSessions,
+} from './roadmap-lens-input';
+import {
   attentionJumpQueue,
   attentionNeedsOperator,
   mergeSessionAttentionMaps,
@@ -589,49 +593,20 @@ export function WorkspaceClient() {
 
   // the lens data: live sessions of the focused Project, linked to roadmap
   // items by inference (S3); the same view feeds the rail and the
-  // context-bar reciprocal chip
-  const roadmapSessions = useMemo<RoadmapSessionDescriptor[]>(
+  // context-bar reciprocal chip. One projection shared with the Team
+  // altitude (roadmap-lens-input.ts) so the two cannot drift.
+  const roadmapSessions = useMemo(
     () =>
-      (activeProject?.tabs ?? [])
-        .filter(t => t.sessionId && tabIsLive(t))
-        .map(t => ({
-          sessionId: t.sessionId as string,
-          tabId: t.id,
-          title: t.title,
-          harness: t.harness,
-          cwd: t.cwd,
-          contextSummary: summaries[t.durableSessionId] ?? null,
-          initialTask: t.initialTask,
-          needsAttention: attentionNeedsOperator(
-            attention[t.sessionId as string]
-          ),
-          startedAt: t.startedAt ?? null,
-          turnState: sessionLensTurnState({
-            facts: turnFactsFor(t),
-            attention: attention[t.sessionId as string],
-          }),
-        })),
-    [activeProject, attention, summaries, turnFactsFor]
+      projectRoadmapSessions(activeProject?.tabs, attention, {
+        activity,
+        engaged,
+        summaries,
+        delegation,
+      }),
+    [activeProject, activity, attention, delegation, engaged, summaries]
   );
-  // declared-at-launch links (S4): machine-local tab annotations that
-  // override inference; a declared id the roadmap no longer contains falls
-  // to the unmapped shelf, never silently back to inference
   const declaredLinks = useMemo(
-    () =>
-      (activeProject?.tabs ?? [])
-        .filter(t => t.roadmapItemId && t.sessionId && tabIsLive(t))
-        .map(t => ({
-          sessionId: t.sessionId as string,
-          tabId: t.id,
-          projectDir: activeProject?.dir ?? '',
-          itemId: t.roadmapItemId as string,
-          method: 'declared' as const,
-          confidence: 'high' as const,
-          evidence: [
-            { kind: 'declared' as const, excerpt: 'declared at launch' },
-          ],
-          evaluatedAt: 0,
-        })),
+    () => projectDeclaredLinks(activeProject?.tabs, activeProject?.dir ?? ''),
     [activeProject]
   );
   const { view: roadmapView } = useProjectRoadmap(
