@@ -19,6 +19,14 @@
  *
  * Adding an outbound behavior means adding it HERE, which is deliberately the
  * same edit that gives it a user-visible switch and a disclosure line.
+ *
+ * 2026-08-07: a THIRD category joined hosted features and analytics — outbound
+ * behavior under the operator's OWN credentials. The re-entry recap pipes raw
+ * terminal scrollback to the operator's local `claude` CLI, which reaches
+ * Anthropic under their Claude Code sign-in and never touches Exawatt.
+ * Nothing about it is "hosted by Exawatt", so it gets its own group on the
+ * Privacy surface rather than borrowing either existing one — the same
+ * structural-separation reasoning decision `0031` applied to analytics.
  */
 
 export const HOSTED_FEATURE_IDS = [
@@ -29,9 +37,16 @@ export const HOSTED_FEATURE_IDS = [
 
 export type HostedFeatureId = (typeof HOSTED_FEATURE_IDS)[number];
 
+/** Outbound behaviors that run through the operator's own local sign-ins;
+ *  Exawatt's servers are never on the path. */
+export const OWN_ACCOUNT_FEATURE_IDS = ['reentryRecap'] as const;
+
+export type OwnAccountFeatureId = (typeof OWN_ACCOUNT_FEATURE_IDS)[number];
+
 /** Every switch on the privacy surface, including the analytics one. */
 export const OUTBOUND_CONTROL_IDS = [
   ...HOSTED_FEATURE_IDS,
+  ...OWN_ACCOUNT_FEATURE_IDS,
   'productAnalytics',
 ] as const;
 
@@ -95,6 +110,24 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     cost: 'Tiles use a plain background; images already generated stay.',
     defaultEnabled: true,
   },
+  reentryRecap: {
+    id: 'reentryRecap',
+    // "since you left" is the label the recap line itself carries in the
+    // context bar (ENG-016 D18); the control is named after what the operator
+    // has seen on screen, not after "re-entry recap", which is roadmap
+    // vocabulary and must not reach a user-facing string.
+    label: 'Since-you-left recaps',
+    purpose:
+      'Answers "what changed while you were away?" when you return to a Session.',
+    sends:
+      'Recent terminal output from the Session you return to — up to 6,000 characters, exactly as it appeared on screen, not redacted.',
+    // Unlike everything above, this never touches Exawatt: the recap runs the
+    // claude CLI already signed in on this machine, so the request is the
+    // operator's own API traffic.
+    destination: 'Anthropic, through your own Claude Code sign-in — never Exawatt',
+    cost: 'Coming back to a Session shows no "since you left" line; you catch up by reading the terminal.',
+    defaultEnabled: true,
+  },
   productAnalytics: {
     id: 'productAnalytics',
     label: 'Product analytics',
@@ -115,6 +148,7 @@ export interface HostedFeaturePreferences {
   contextLabels?: { hosted: boolean };
   conversationSummaries?: { hosted: boolean };
   goalVisuals?: { enabled: boolean };
+  reentryRecap?: { enabled: boolean };
 }
 
 export function isHostedFeatureEnabled(
@@ -130,4 +164,11 @@ export function isHostedFeatureEnabled(
     case 'goalVisuals':
       return preferences.goalVisuals?.enabled !== false;
   }
+}
+
+export function isReentryRecapEnabled(
+  preferences: HostedFeaturePreferences | null | undefined
+): boolean {
+  if (!preferences) return OUTBOUND_CONTROLS.reentryRecap.defaultEnabled;
+  return preferences.reentryRecap?.enabled !== false;
 }

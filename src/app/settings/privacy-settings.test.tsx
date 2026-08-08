@@ -51,6 +51,7 @@ type SettingsBridge = {
   onChanged: ReturnType<typeof vi.fn>;
   setHostedConversationSummaries: ReturnType<typeof vi.fn>;
   setHostedContextLabels: ReturnType<typeof vi.fn>;
+  setReentryRecap: ReturnType<typeof vi.fn>;
 };
 
 /** The desktop settings store, as this surface sees it: a local read, a live
@@ -85,6 +86,9 @@ function installSettingsBridge(
     ),
     setHostedContextLabels: vi.fn(async (enabled: boolean) =>
       write({ ...store, contextLabels: { hosted: enabled } })
+    ),
+    setReentryRecap: vi.fn(async (enabled: boolean) =>
+      write({ ...store, reentryRecap: { enabled } })
     ),
   };
 
@@ -227,15 +231,73 @@ describe('Settings → Privacy', () => {
     );
   });
 
+  // ENG-030 OS1.5: the recap is a THIRD category — outbound under the
+  // operator's own Claude Code sign-in, hosted by nobody — so it gets its own
+  // group rather than borrowing "Hosted features" or "Analytics".
+  it('gives the since-you-left recap its own switch in its own group', async () => {
+    const bridge = installSettingsBridge();
+    await renderPrivacy();
+
+    const ownAccounts = groupFor('data-own-account-settings');
+    const recap = within(ownAccounts).getByRole('switch', {
+      name: OUTBOUND_CONTROLS.reentryRecap.label,
+    });
+    expect(recap).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.click(recap);
+    await waitFor(() =>
+      expect(bridge.setReentryRecap).toHaveBeenCalledWith(false)
+    );
+    await waitFor(() => expect(recap).toHaveAttribute('aria-checked', 'false'));
+
+    fireEvent.click(recap);
+    await waitFor(() =>
+      expect(bridge.setReentryRecap).toHaveBeenCalledWith(true)
+    );
+    await waitFor(() => expect(recap).toHaveAttribute('aria-checked', 'true'));
+  });
+
+  it('reflects a recap preference persisted earlier', async () => {
+    installSettingsBridge({ reentryRecap: { enabled: false } });
+    await renderPrivacy();
+
+    expect(
+      within(groupFor('data-own-account-settings')).getByRole('switch', {
+        name: OUTBOUND_CONTROLS.reentryRecap.label,
+      })
+    ).toHaveAttribute('aria-checked', 'false');
+  });
+
   it('keeps analytics separate from the hosted features, both ways', async () => {
     installSettingsBridge();
     await renderPrivacy();
 
     const hosted = groupFor('data-hosted-feature-settings');
     const analytics = groupFor('data-analytics-settings');
+    const ownAccounts = groupFor('data-own-account-settings');
 
     expect(hosted.contains(analytics)).toBe(false);
     expect(analytics.contains(hosted)).toBe(false);
+    expect(hosted.contains(ownAccounts)).toBe(false);
+    expect(ownAccounts.contains(hosted)).toBe(false);
+    expect(analytics.contains(ownAccounts)).toBe(false);
+    expect(ownAccounts.contains(analytics)).toBe(false);
+
+    expect(
+      within(ownAccounts).getByRole('switch', {
+        name: OUTBOUND_CONTROLS.reentryRecap.label,
+      })
+    ).toBeVisible();
+    expect(
+      within(hosted).queryByRole('switch', {
+        name: OUTBOUND_CONTROLS.reentryRecap.label,
+      })
+    ).toBeNull();
+    expect(
+      within(analytics).queryByRole('switch', {
+        name: OUTBOUND_CONTROLS.reentryRecap.label,
+      })
+    ).toBeNull();
 
     expect(
       within(analytics).getByRole('switch', {
@@ -315,6 +377,12 @@ describe('Settings → Privacy', () => {
     expect(
       screen.queryByRole('switch', {
         name: OUTBOUND_CONTROLS.contextLabels.label,
+      })
+    ).toBeNull();
+    // The recap is terminal-fed and desktop-only, like context labels.
+    expect(
+      screen.queryByRole('switch', {
+        name: OUTBOUND_CONTROLS.reentryRecap.label,
       })
     ).toBeNull();
   });

@@ -7,9 +7,11 @@ import {
   HOSTED_FEATURE_IDS,
   OUTBOUND_CONTROLS,
   isHostedFeatureEnabled,
+  isReentryRecapEnabled,
   type HostedFeatureId,
   type HostedFeaturePreferences,
   type OutboundControl,
+  type OwnAccountFeatureId,
 } from '@/lib/hosted-features/contract';
 import { useGoalVisualPreference } from '@/components/goal-visuals/goal-visual-preference-provider';
 import type { ElectronSettingsApi, ExawattSettings } from '@/types/electron';
@@ -107,13 +109,18 @@ function useHostedFeatureSettings() {
     };
   }, []);
 
-  const setHosted = useCallback(
-    async (id: HostedFeatureId, enabled: boolean) => {
+  const setFeature = useCallback(
+    async (
+      id: Exclude<HostedFeatureId, 'goalVisuals'> | OwnAccountFeatureId,
+      enabled: boolean
+    ) => {
       if (!api) return;
       const save =
         id === 'contextLabels'
           ? api.setHostedContextLabels
-          : api.setHostedConversationSummaries;
+          : id === 'conversationSummaries'
+            ? api.setHostedConversationSummaries
+            : api.setReentryRecap;
       try {
         setSettings(await save(enabled));
       } catch {
@@ -123,11 +130,11 @@ function useHostedFeatureSettings() {
     [api]
   );
 
-  return { available: api !== null, settings, setHosted };
+  return { available: api !== null, settings, setFeature };
 }
 
 export function PrivacySettings() {
-  const { available, settings, setHosted } = useHostedFeatureSettings();
+  const { available, settings, setFeature } = useHostedFeatureSettings();
   const goalVisuals = useGoalVisualPreference();
   const [analyticsEnabled, setAnalyticsEnabled] = useState(
     OUTBOUND_CONTROLS.productAnalytics.defaultEnabled
@@ -179,11 +186,30 @@ export function PrivacySettings() {
                   key={id}
                   control={OUTBOUND_CONTROLS[id]}
                   checked={isHostedFeatureEnabled(preferences, id)}
-                  onChange={next => void setHosted(id, next)}
+                  onChange={next => void setFeature(id, next)}
                 />
               )
           )}
         </SettingsGroup>
+
+        {/* A third category, structurally separate on purpose: outbound under
+            the operator's OWN sign-ins. Nothing here is hosted by Exawatt, so
+            it borrows neither the hosted group nor the analytics one — the
+            same separation reasoning decision `0031` applied to analytics.
+            Desktop-only, like the other terminal-fed features. */}
+        {available ? (
+          <SettingsGroup
+            title="Your own accounts"
+            description="Features that run through tools you signed in to yourself. These requests are your own traffic and never touch Exawatt."
+            dataAttribute="data-own-account-settings"
+          >
+            <OutboundControlRow
+              control={OUTBOUND_CONTROLS.reentryRecap}
+              checked={isReentryRecapEnabled(preferences)}
+              onChange={next => void setFeature('reentryRecap', next)}
+            />
+          </SettingsGroup>
+        ) : null}
 
         <SettingsGroup
           title="Analytics"

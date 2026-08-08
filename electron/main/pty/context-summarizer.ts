@@ -3,6 +3,10 @@ import { EventEmitter } from 'events';
 import { createHash } from 'crypto';
 import { defaultShell } from './session-manager';
 import type { PtySessionManager } from './session-manager';
+import {
+  recordHostedCallHttpFailure,
+  recordHostedCallTransportFailure,
+} from '../analytics-bridge';
 
 /**
  * ENG-021 E1 context owner.
@@ -335,6 +339,7 @@ export class ContextSummarizer extends EventEmitter {
   private checkpoints = new Map<string, VisitCheckpoint>();
   private focusedId: string | null = null;
   private windowFocused = false;
+  private reentryRecapEnabled = true;
   private recapGeneration = 0;
   private pendingRecap: PendingRecap | null = null;
   private activeRecap: PendingRecap | null = null;
@@ -435,6 +440,36 @@ export class ContextSummarizer extends EventEmitter {
   /** The one gate every context-label evidence and request path consults. */
   private hostedLabelsAllowed(): boolean {
     return !this.contextDisabled && this.contextLabelsEnabled;
+  }
+
+  /**
+   * Decision `0031`'s independent user control for the re-entry recap
+   * (ENG-030 OS1.5). The recap sends more, less redacted, than anything else
+   * in the product — up to 6,000 characters of raw scrollback piped to the
+   * operator's OWN `claude -p --model haiku`, straight to Anthropic under
+   * their Claude Code sign-in, never through Exawatt — and until this switch
+   * its only control was `EXAWATT_SUMMARIES=0` (which keeps working as the
+   * environment override underneath).
+   *
+   * Off is enforced at the boundary, in the `setContextLabelsEnabled` shape:
+   * immediate, non-blocking, no scrollback is read and no process is spawned.
+   * The pending recap and away checkpoints are cleared, and a recap already
+   * in flight finishes but its output is discarded (the generation bump makes
+   * `recapIsCurrent` reject it). Re-enabling resumes on the next away/return
+   * cycle.
+   */
+  setReentryRecapEnabled(enabled: boolean): void {
+    if (enabled === this.reentryRecapEnabled) return;
+    this.reentryRecapEnabled = enabled;
+    if (enabled) return;
+    this.pendingRecap = null;
+    this.checkpoints.clear();
+    this.recapGeneration += 1;
+  }
+
+  /** The one gate every recap checkpoint, scrollback read, and spawn consults. */
+  private recapAllowed(): boolean {
+    return !this.disabled && this.reentryRecapEnabled;
   }
 
   setGoalVisualsEnabled(enabled: boolean): void {
@@ -710,17 +745,31 @@ export class ContextSummarizer extends EventEmitter {
   ): Promise<HostedContextLabel> {
     if (this.generateLabelOverride)
       return this.generateLabelOverride(evidence, token);
-    const response = await fetch(this.endpoint, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(evidence),
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!response.ok)
+    // Transport-level failures of a genuine attempt are counted (ENG-030
+    // OS1.5b). The `hostedLabelsAllowed` guards keep a feature the operator
+    // switched off from ever reaching this method — and mid-flight, from
+    // reporting — so a disabled feature never shows up as a failure.
+    let response: Response;
+    try {
+      response = await fetch(this.endpoint, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(evidence),
+        signal: AbortSignal.timeout(20_000),
+      });
+    } catch (error) {
+      if (this.hostedLabelsAllowed())
+        recordHostedCallTransportFailure('context_labels', error);
+      throw error;
+    }
+    if (!response.ok) {
+      if (this.hostedLabelsAllowed())
+        recordHostedCallHttpFailure('context_labels', response.status);
       throw new Error(`context endpoint returned ${response.status}`);
+    }
     return (await response.json()) as HostedContextLabel;
   }
 
@@ -857,16 +906,27 @@ export class ContextSummarizer extends EventEmitter {
   ): Promise<HostedGoalVisual> {
     if (this.generateGoalVisualOverride)
       return this.generateGoalVisualOverride(request, token);
-    const response = await fetch(this.goalVisualEndpoint, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(request),
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!response.ok) throw new GoalVisualEndpointError(response.status);
+    let response: Response;
+    try {
+      response = await fetch(this.goalVisualEndpoint, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (error) {
+      if (this.goalVisualsEnabled)
+        recordHostedCallTransportFailure('goal_visuals', error);
+      throw error;
+    }
+    if (!response.ok) {
+      if (this.goalVisualsEnabled)
+        recordHostedCallHttpFailure('goal_visuals', response.status);
+      throw new GoalVisualEndpointError(response.status);
+    }
     return (await response.json()) as HostedGoalVisual;
   }
 
@@ -887,7 +947,9 @@ export class ContextSummarizer extends EventEmitter {
   }
 
   private markAway(id: string): void {
-    if (!this.manager || this.checkpoints.has(id)) return;
+    // Recap off: record nothing, so nothing accrues to summarize later.
+    if (!this.recapAllowed() || !this.manager || this.checkpoints.has(id))
+      return;
     this.checkpoints.set(id, {
       cursor: this.manager.bufferCursor(id),
       leftAt: this.now(),
@@ -898,7 +960,9 @@ export class ContextSummarizer extends EventEmitter {
   private maybeQueueRecap(id: string): void {
     const checkpoint = this.checkpoints.get(id);
     this.checkpoints.delete(id);
-    if (!checkpoint || !this.manager || this.disabled) return;
+    // Gated before the buffer read below: off means no scrollback is read,
+    // not merely no request sent.
+    if (!checkpoint || !this.manager || !this.recapAllowed()) return;
     if ((this.inputVersions.get(id) ?? 0) !== checkpoint.inputVersion) return;
     const awayMs = this.now() - checkpoint.leftAt;
     if (awayMs < this.recapAwayMs) return;
@@ -926,7 +990,8 @@ export class ContextSummarizer extends EventEmitter {
   }
 
   private async drainPendingRecap(): Promise<void> {
-    if (this.disabled || this.recapInFlight || !this.pendingRecap) return;
+    if (!this.recapAllowed() || this.recapInFlight || !this.pendingRecap)
+      return;
     const request = this.pendingRecap;
     this.pendingRecap = null;
     if (!this.recapIsCurrent(request)) return;

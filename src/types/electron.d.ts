@@ -563,6 +563,11 @@ export interface ExawattSettings {
   goalVisuals?: {
     enabled: boolean;
   };
+  /** The "since you left" recap — outbound under the operator's OWN Claude
+   *  Code sign-in, never Exawatt's servers (ENG-030 OS1.5). */
+  reentryRecap?: {
+    enabled: boolean;
+  };
   agentSources?: {
     projectLastUsed: Record<string, string>;
     sourceRecency: Record<string, number>;
@@ -584,6 +589,7 @@ export interface ElectronSettingsApi {
     enabled: boolean
   ) => Promise<ExawattSettings>;
   setGoalVisualsEnabled: (enabled: boolean) => Promise<ExawattSettings>;
+  setReentryRecap: (enabled: boolean) => Promise<ExawattSettings>;
   recordAgentSourceUse: (
     projectDir: string,
     source: string,
@@ -613,6 +619,20 @@ export interface ElectronSettingsApi {
     pinned: boolean
   ) => Promise<ExawattSettings>;
   onChanged: (handler: (settings: ExawattSettings) => void) => () => void;
+}
+
+/**
+ * ENG-030 OS1.5b — the renderer end of the main→renderer analytics bridge.
+ * Main queues typed `app_crashed` / `hosted_call_failed` facts it observes
+ * (bounded, in-memory); the renderer drains them through the allowlisted
+ * `captureAnalyticsEvent` path, which no-ops when analytics are off.
+ */
+export interface ElectronAnalyticsApi {
+  /** Atomically returns and clears main's queued events. Payloads are
+   *  re-validated in the renderer before any reaches the emission path. */
+  drainMainProcessEvents: () => Promise<unknown[]>;
+  /** Payload-free nudge that main queued something; drain on receipt. */
+  onMainProcessEvents: (handler: () => void) => () => void;
 }
 
 export interface ExawattBuildInfo {
@@ -731,6 +751,7 @@ declare global {
       workspace?: ElectronWorkspaceApi;
       roadmap?: ElectronRoadmapApi;
       settings?: ElectronSettingsApi;
+      analytics?: ElectronAnalyticsApi;
       app?: ElectronAppApi;
       auth?: {
         startGoogle: (config: {

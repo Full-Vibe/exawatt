@@ -25,6 +25,13 @@ import {
 } from './ipc-security';
 import { registerSystemShortcutIPC } from './system-shortcuts';
 import { registerOperatorStatsIPC } from './operator-stats-ipc';
+import { registerAnalyticsIPC } from './analytics-ipc';
+import {
+  appCrashFromChildProcessGone,
+  appCrashFromMainException,
+  appCrashFromRenderProcessGone,
+  queueMainAnalyticsEvent,
+} from './analytics-bridge';
 import { randomUUID } from 'crypto';
 import { launchScreenUrl, type StartupStage } from './launch-screen';
 import {
@@ -1435,6 +1442,7 @@ async function bootstrapCommandSurface(): Promise<void> {
   registerMenuIPC();
   registerSystemShortcutIPC();
   registerOperatorStatsIPC();
+  registerAnalyticsIPC();
   shutdownCoordinator = new runtime.shutdown.ShutdownCoordinator({
     countLive: () => {
       const live = ptySessions.list().filter(session => !session.exited);
@@ -1514,6 +1522,35 @@ app.whenReady().then(() => {
       failed: true,
     });
   });
+});
+
+// ENG-030 OS1.5b — main-process crash coverage (`app_crashed`). Each listener
+// queues one typed event into the in-memory analytics bridge; it reaches
+// PostHog only if a renderer later drains it through the allowlisted emission
+// path (decision `0034`: main has no analytics destination of its own). A
+// crash at quit that never drains is an accepted loss — no persistence, no
+// extra work on the crash path.
+app.on('render-process-gone', (_event, _webContents, details) => {
+  const crash = appCrashFromRenderProcessGone(details.reason, app.getVersion());
+  if (crash) queueMainAnalyticsEvent(crash);
+});
+app.on('child-process-gone', (_event, details) => {
+  const crash = appCrashFromChildProcessGone(
+    details.type,
+    details.reason,
+    app.getVersion()
+  );
+  if (crash) queueMainAnalyticsEvent(crash);
+});
+// `uncaughtExceptionMonitor` observes without changing Node's default crash
+// behavior — the safe way to see main's own death. Queue-and-hope: if the
+// process dies before a drain, the event is lost, and that is fine.
+process.on('uncaughtExceptionMonitor', () => {
+  try {
+    queueMainAnalyticsEvent(appCrashFromMainException(app.getVersion()));
+  } catch {
+    // Never add a second failure to the crash path.
+  }
 });
 
 app.on('before-quit', event => {

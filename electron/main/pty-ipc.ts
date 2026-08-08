@@ -39,6 +39,7 @@ import {
   setHostedContextLabels,
   setHostedConversationSummaries,
   setLaunchConfigurationPinned,
+  setReentryRecapEnabled,
   setAppearancePreferences,
 } from './settings-store';
 import { applyNativeAppearancePreference } from './appearance';
@@ -133,6 +134,9 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
   );
   contextSummarizer.setGoalVisualsEnabled(
     loadSettings().goalVisuals?.enabled !== false
+  );
+  contextSummarizer.setReentryRecapEnabled(
+    loadSettings().reentryRecap?.enabled !== false
   );
   // packaged-app stdout goes nowhere — the summarizer's attempts, failures,
   // and backoffs persist to userData/logs so a silent-subtitle dogfood
@@ -778,6 +782,16 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       throw new Error('Invalid goal visual setting');
     const settings = setGoalVisualsEnabled(enabled);
     contextSummarizer.setGoalVisualsEnabled(enabled);
+    broadcast('settings:changed', settings);
+    return settings;
+  });
+  handleTrusted('settings:set-reentry-recap', (_event, enabled: boolean) => {
+    if (typeof enabled !== 'boolean')
+      throw new Error('Invalid recap setting');
+    const settings = setReentryRecapEnabled(enabled);
+    // Applied before the write is announced: no scrollback may be read and no
+    // recap process spawned after the operator has switched the recap off.
+    contextSummarizer.setReentryRecapEnabled(enabled);
     broadcast('settings:changed', settings);
     return settings;
   });

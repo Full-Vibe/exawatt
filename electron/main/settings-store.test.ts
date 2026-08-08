@@ -59,6 +59,25 @@ describe('parseSettings', () => {
     ).toBeUndefined();
   });
 
+  // ENG-030 OS1.5: same contract for the re-entry recap — absent resolves to
+  // the disclosed default-on, and only an explicit boolean is a choice.
+  it('treats a missing or malformed recap key as the default, not off', () => {
+    for (const settings of [
+      parseSettings({}),
+      parseSettings({ reentryRecap: { enabled: 'no' } }),
+      parseSettings({ reentryRecap: 'off' }),
+    ]) {
+      expect(settings.reentryRecap).toBeUndefined();
+      expect(settings.reentryRecap?.enabled !== false).toBe(true);
+    }
+    expect(parseSettings({ reentryRecap: { enabled: false } })).toEqual({
+      reentryRecap: { enabled: false },
+    });
+    expect(
+      parseSettings({ reentryRecap: { enabled: true } }).reentryRecap
+    ).toEqual({ enabled: true });
+  });
+
   it('sanitizes Agent Source recommendations while preserving future source ids', () => {
     expect(
       parseSettings({

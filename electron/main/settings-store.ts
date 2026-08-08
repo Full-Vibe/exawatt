@@ -58,11 +58,13 @@ export interface ExawattSettings {
     dockBadge?: boolean;
   };
   /**
-   * ENG-030 OS1.5. The three hosted-feature switches below are decision
-   * `0031`'s "independent user control that prevents hosted feature calls".
-   * All default ON with disclosure; `undefined` means default, never off, and
-   * nothing writes a default back into the file. `src/lib/hosted-features/
-   * contract.ts` carries the same shape for the Settings surface.
+   * ENG-030 OS1.5. The outbound-feature switches below are decision `0031`'s
+   * "independent user control" for each outbound behavior — three hosted
+   * features plus the re-entry recap, which goes out under the operator's own
+   * Claude Code credentials rather than Exawatt's. All default ON with
+   * disclosure; `undefined` means default, never off, and nothing writes a
+   * default back into the file. `src/lib/hosted-features/contract.ts` carries
+   * the same shape for the Settings surface.
    */
   contextLabels?: {
     /** Hosted Session context labels. Off assembles no operator evidence and
@@ -77,6 +79,12 @@ export interface ExawattSettings {
   goalVisuals?: {
     /** Generated Team-tile imagery defaults on; false suppresses rendering
      * and future generation while preserving the private cache. */
+    enabled: boolean;
+  };
+  reentryRecap?: {
+    /** The "since you left" recap: recent terminal scrollback piped,
+     * unredacted, to the operator's OWN local `claude` CLI (never Exawatt's
+     * servers). Off reads no scrollback and spawns nothing. */
     enabled: boolean;
   };
   agentSources?: {
@@ -405,6 +413,11 @@ export function parseSettings(raw: unknown): ExawattSettings {
     const enabled = (goalVisuals as { enabled?: unknown }).enabled;
     if (typeof enabled === 'boolean') settings.goalVisuals = { enabled };
   }
+  const reentryRecap = (raw as { reentryRecap?: unknown }).reentryRecap;
+  if (reentryRecap && typeof reentryRecap === 'object') {
+    const enabled = (reentryRecap as { enabled?: unknown }).enabled;
+    if (typeof enabled === 'boolean') settings.reentryRecap = { enabled };
+  }
   const agentSources = (raw as { agentSources?: unknown }).agentSources;
   if (agentSources && typeof agentSources === 'object') {
     const candidate = agentSources as {
@@ -684,6 +697,13 @@ export function setHostedConversationSummaries(
 export function setGoalVisualsEnabled(enabled: boolean): ExawattSettings {
   const settings = loadSettings();
   settings.goalVisuals = { enabled };
+  writeSettings(settings);
+  return settings;
+}
+
+export function setReentryRecapEnabled(enabled: boolean): ExawattSettings {
+  const settings = loadSettings();
+  settings.reentryRecap = { enabled };
   writeSettings(settings);
   return settings;
 }

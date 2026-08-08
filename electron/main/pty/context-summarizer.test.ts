@@ -1,13 +1,18 @@
 import { EventEmitter } from 'events';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ContextSummarizer,
   acceptableSubtitle,
   consumeOperatorInput,
   provisionalSubtitle,
   redactContextEvidence,
+  type ReentryRecap,
 } from './context-summarizer';
 import type { PtySessionManager } from './session-manager';
+import {
+  __resetMainAnalyticsForTests,
+  drainMainAnalyticsEvents,
+} from '../analytics-bridge';
 
 class FakeManager extends EventEmitter {
   private text = new Map<string, string>();
@@ -653,6 +658,253 @@ describe('goal visuals are independently controllable', () => {
         state: 'ready',
       })
     );
+  });
+});
+
+/**
+ * ENG-030 OS1.5b. Main-process hosted-call failures are counted through the
+ * analytics bridge — but only genuine attempt-and-fail. A feature the
+ * operator switched off never attempts, so it never counts.
+ */
+describe('main-process hosted-call failures are counted', () => {
+  let manager: FakeManager;
+
+  beforeEach(() => {
+    __resetMainAnalyticsForTests();
+    manager = new FakeManager();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    __resetMainAnalyticsForTests();
+  });
+
+  it('queues the HTTP status when the context-label endpoint refuses', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const service = new ContextSummarizer({ retryBaseMs: 60_000 });
+    service.attach(manager as unknown as PtySessionManager);
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'Improve the stale tab summary\r');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await flush();
+    expect(drainMainAnalyticsEvents()).toEqual([
+      {
+        name: 'hosted_call_failed',
+        service: 'context_labels',
+        failure: null,
+        statusCode: 503,
+      },
+    ]);
+    service.stop();
+  });
+
+  it('classifies a transport failure as network, with no status', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const service = new ContextSummarizer({ retryBaseMs: 60_000 });
+    service.attach(manager as unknown as PtySessionManager);
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'Improve the stale tab summary\r');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await flush();
+    expect(drainMainAnalyticsEvents()).toEqual([
+      {
+        name: 'hosted_call_failed',
+        service: 'context_labels',
+        failure: 'network',
+        statusCode: null,
+      },
+    ]);
+    service.stop();
+  });
+
+  it('never counts context labels the operator switched off', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const service = new ContextSummarizer({ retryBaseMs: 60_000 });
+    service.attach(manager as unknown as PtySessionManager);
+    service.setContextLabelsEnabled(false);
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'A prompt that must never leave the device\r');
+    await flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(drainMainAnalyticsEvents()).toEqual([]);
+    service.stop();
+  });
+
+  it('queues the HTTP status when the goal-visual endpoint fails', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 500 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const service = new ContextSummarizer({
+      generateLabel: async () => ({
+        label: 'Improve agent context summaries',
+        relationship: 'new_context' as const,
+        confidence: 0.9,
+      }),
+      retryBaseMs: 60_000,
+    });
+    service.attach(manager as unknown as PtySessionManager);
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'First work\r');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await flush();
+    expect(drainMainAnalyticsEvents()).toEqual([
+      {
+        name: 'hosted_call_failed',
+        service: 'goal_visuals',
+        failure: null,
+        statusCode: 500,
+      },
+    ]);
+    service.stop();
+  });
+
+  it('never counts goal visuals the operator switched off', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 500 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const service = new ContextSummarizer({
+      generateLabel: async () => ({
+        label: 'Improve agent context summaries',
+        relationship: 'new_context' as const,
+        confidence: 0.9,
+      }),
+      retryBaseMs: 60_000,
+    });
+    service.attach(manager as unknown as PtySessionManager);
+    service.setGoalVisualsEnabled(false);
+    service.setAccessToken('jwt');
+    service.noteInput('live-1', 'First work\r');
+    await flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(drainMainAnalyticsEvents()).toEqual([]);
+    service.stop();
+  });
+});
+
+/**
+ * ENG-030 OS1.5. The recap sends the most, least redacted, in the product —
+ * raw scrollback to the operator's own `claude` CLI — so its switch must
+ * PREVENT the work at the boundary: no scrollback read, no process spawned,
+ * in-flight output discarded, `EXAWATT_SUMMARIES=0` still an override.
+ */
+describe('the re-entry recap is independently controllable', () => {
+  function recapRig(summarize?: (prompt: string, maxChars: number) => Promise<string | null>) {
+    const state = { now: 100_000 };
+    const manager = new FakeManager();
+    const summarizeFn = vi.fn(
+      summarize ?? (async () => 'Tests passed; approval is waiting.')
+    );
+    const service = new ContextSummarizer({
+      recapAwayMs: 10_000,
+      recapMinChars: 20,
+      now: () => state.now,
+      summarize: summarizeFn,
+    });
+    service.attach(manager as unknown as PtySessionManager);
+    const recaps: ReentryRecap[] = [];
+    service.on('recap', (recap: ReentryRecap) => recaps.push(recap));
+    return { manager, service, summarize: summarizeFn, recaps, state };
+  }
+
+  it('reads no scrollback and spawns nothing while switched off', async () => {
+    const { manager, service, summarize, recaps, state } = recapRig();
+    const bufferSince = vi.spyOn(manager, 'bufferSince');
+    service.setReentryRecapEnabled(false);
+    service.setWindowFocused(true);
+    service.setFocus('live-1');
+    service.setWindowFocused(false);
+    state.now += 12_000;
+    manager.data('live-1', 'new tests passed and approval is waiting\n');
+    service.setWindowFocused(true);
+    await flush();
+    expect(bufferSince).not.toHaveBeenCalled();
+    expect(summarize).not.toHaveBeenCalled();
+    expect(recaps).toEqual([]);
+  });
+
+  it('clears an away checkpoint recorded before the switch went off', async () => {
+    const { manager, service, summarize, recaps, state } = recapRig();
+    service.setWindowFocused(true);
+    service.setFocus('live-1');
+    service.setWindowFocused(false); // checkpoint recorded while still enabled
+    state.now += 12_000;
+    manager.data('live-1', 'new tests passed and approval is waiting\n');
+    service.setReentryRecapEnabled(false); // mid-away
+    service.setWindowFocused(true);
+    await flush();
+    expect(summarize).not.toHaveBeenCalled();
+    expect(recaps).toEqual([]);
+  });
+
+  it('discards in-flight recap output when switched off mid-call', async () => {
+    let resolveRecap!: (value: string) => void;
+    const { manager, service, summarize, recaps, state } = recapRig(
+      () =>
+        new Promise<string | null>(resolve => {
+          resolveRecap = resolve;
+        })
+    );
+    service.setWindowFocused(true);
+    service.setFocus('live-1');
+    service.setWindowFocused(false);
+    state.now += 12_000;
+    manager.data('live-1', 'new tests passed and approval is waiting\n');
+    service.setWindowFocused(true);
+    await flush();
+    expect(summarize).toHaveBeenCalledOnce();
+
+    service.setReentryRecapEnabled(false);
+    resolveRecap('Late recap the operator opted out of');
+    await flush();
+    expect(recaps).toEqual([]);
+  });
+
+  it('resumes on the next away/return cycle after being switched back on', async () => {
+    const { manager, service, summarize, recaps, state } = recapRig();
+    service.setReentryRecapEnabled(false);
+    service.setWindowFocused(true);
+    service.setFocus('live-1');
+    service.setWindowFocused(false);
+    state.now += 12_000;
+    manager.data('live-1', 'output the operator opted out of hearing about\n');
+    service.setWindowFocused(true);
+    await flush();
+    expect(summarize).not.toHaveBeenCalled();
+
+    service.setReentryRecapEnabled(true);
+    service.setWindowFocused(false);
+    state.now += 12_000;
+    manager.data('live-1', 'new tests passed and approval is waiting\n');
+    service.setWindowFocused(true);
+    await flush();
+    expect(summarize).toHaveBeenCalledOnce();
+    expect(recaps).toMatchObject([{ id: 'live-1', awayMs: 12_000 }]);
+    // The switched-off period was never checkpointed, so its output is not
+    // in the prompt either.
+    const prompt = summarize.mock.calls[0][0] as string;
+    expect(prompt).not.toContain('opted out of hearing about');
+  });
+
+  it('keeps EXAWATT_SUMMARIES=0 as the environment override', async () => {
+    process.env.EXAWATT_SUMMARIES = '0';
+    try {
+      const { manager, service, summarize, recaps, state } = recapRig();
+      service.setReentryRecapEnabled(true);
+      service.setWindowFocused(true);
+      service.setFocus('live-1');
+      service.setWindowFocused(false);
+      state.now += 12_000;
+      manager.data('live-1', 'new tests passed and approval is waiting\n');
+      service.setWindowFocused(true);
+      await flush();
+      expect(summarize).not.toHaveBeenCalled();
+      expect(recaps).toEqual([]);
+    } finally {
+      delete process.env.EXAWATT_SUMMARIES;
+    }
   });
 });
 

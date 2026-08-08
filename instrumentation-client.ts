@@ -1,9 +1,12 @@
 /**
  * ENG-030 OS1 — the single client entry point for product analytics.
  *
- * Next runs this once per renderer load, before the app hydrates. It does two
- * things and nothing else: ask `initAnalytics()` whether analytics are on for
- * this build, and — if they are — emit `app_launched`.
+ * Next runs this once per renderer load, before the app hydrates. It does
+ * three things and nothing else: ask `initAnalytics()` whether analytics are
+ * on for this build, emit `app_launched` if they are, and — in the desktop
+ * renderer — start draining the events Electron main queued behind it
+ * (OS1.5b: main-process crashes and hosted-call failures, which have no other
+ * path to the allowlisted emission pipeline).
  *
  * Everything that decides behavior lives under `src/lib/analytics/`:
  *   - `config.ts`  where events go (decision `0034`: only via exawatt.ai) and
@@ -22,6 +25,7 @@ import {
   initAnalytics,
   readLaunchContext,
 } from '@/lib/analytics';
+import { startMainProcessAnalyticsBridge } from '@/lib/analytics-bridge/main-process-events';
 
 async function reportLaunch(): Promise<void> {
   const decision = await initAnalytics();
@@ -48,3 +52,4 @@ async function reportLaunch(): Promise<void> {
 }
 
 void reportLaunch();
+startMainProcessAnalyticsBridge();

@@ -7,6 +7,10 @@ import { promisify } from 'util';
 import type { PtyHarness } from './session-manager';
 import type { ClosedSessionEntry } from './closed-session-ledger';
 import { listProjectWorktrees } from './project-resolve';
+import {
+  recordHostedCallHttpFailure,
+  recordHostedCallTransportFailure,
+} from '../analytics-bridge';
 
 const execFileAsync = promisify(execFile);
 
@@ -1105,21 +1109,31 @@ export class RecentConversationCatalog {
       .slice(0, MAX_SUMMARY_CONVERSATIONS);
     if (pending.length === 0) return drafts.map(stripPrivateFields);
 
-    const response = await this.fetchFn(this.summaryEndpoint, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${accessToken}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        conversations: pending.map(candidate => ({
-          key: cacheKey(candidate),
-          turns: candidate.summaryInput.map(redactHostedSummaryText),
-        })),
-      }),
-      signal: AbortSignal.timeout(15_000),
-    });
+    // Failures below are genuine attempt-and-fail and are counted (ENG-030
+    // OS1.5b): the disabled-in-Settings and missing-token cases already threw
+    // above, before any request existed, so they can never be reported.
+    let response: Response;
+    try {
+      response = await this.fetchFn(this.summaryEndpoint, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          conversations: pending.map(candidate => ({
+            key: cacheKey(candidate),
+            turns: candidate.summaryInput.map(redactHostedSummaryText),
+          })),
+        }),
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (error) {
+      recordHostedCallTransportFailure('conversation_summary', error);
+      throw error;
+    }
     if (!response.ok) {
+      recordHostedCallHttpFailure('conversation_summary', response.status);
       throw new Error(
         `Conversation summaries unavailable (${response.status}).`
       );

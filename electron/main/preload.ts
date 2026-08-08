@@ -187,6 +187,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('settings:set-hosted-conversation-summaries', enabled),
     setGoalVisualsEnabled: (enabled: boolean) =>
       ipcRenderer.invoke('settings:set-goal-visuals', enabled),
+    setReentryRecap: (enabled: boolean) =>
+      ipcRenderer.invoke('settings:set-reentry-recap', enabled),
     recordAgentSourceUse: (
       projectDir: string,
       source: string,
@@ -248,6 +250,7 @@ contextBridge.exposeInMainWorld('electron', {
       contextLabels?: { hosted: boolean };
       conversationSummaries?: { hosted: boolean };
       goalVisuals?: { enabled: boolean };
+      reentryRecap?: { enabled: boolean };
       agentSources?: {
         projectLastUsed: Record<string, string>;
         sourceRecency: Record<string, number>;
@@ -382,5 +385,14 @@ contextBridge.exposeInMainWorld('electron', {
   },
   shortcuts: {
     systemHotkeys: () => ipcRenderer.invoke('shortcuts:system-hotkeys'),
+  },
+  // ENG-030 OS1.5b: the renderer end of the main-process analytics bridge.
+  // Drain returns main's queued typed events; the renderer feeds them through
+  // the allowlisted captureAnalyticsEvent path (which no-ops when analytics
+  // are off, so an opted-out renderer drains and drops).
+  analytics: {
+    drainMainProcessEvents: () =>
+      ipcRenderer.invoke('analytics:drain-main-events'),
+    onMainProcessEvents: subscribe<null>('analytics:main-process-events'),
   },
 });

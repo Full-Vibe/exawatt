@@ -12,6 +12,10 @@ import {
   type ConversationCatalogAdapter,
   type ConversationDraft,
 } from './conversation-catalog';
+import {
+  __resetMainAnalyticsForTests,
+  drainMainAnalyticsEvents,
+} from '../analytics-bridge';
 
 const roots: string[] = [];
 
@@ -293,6 +297,76 @@ describe('RecentConversationCatalog', () => {
     // stays useful with the feature off.
     await expect(catalog.list('/project')).resolves.toMatchObject([
       { title: 'Cortex Intake Refactor', needsSummary: false },
+    ]);
+  });
+
+  // ENG-030 OS1.5b: a genuine enrich attempt that fails is counted through
+  // the main-process analytics bridge — and a refusal caused by the
+  // operator's own switch is not a failure and never queues an event.
+  it('counts a failed summary attempt, but never a disabled feature', async () => {
+    __resetMainAnalyticsForTests();
+    const cacheRoot = await temporaryRoot('exawatt-conversation-analytics-');
+    const draft: ConversationDraft = {
+      id: 'provider-id',
+      harness: 'codex',
+      cwd: '/project',
+      startedAt: 1,
+      updatedAt: 2,
+      title: 'Long raw operator prompt',
+      description: 'Long raw operator prompt',
+      titleSource: 'fallback',
+      needsSummary: true,
+      providerSessionId: 'provider-id',
+      continuation: { kind: 'provider' },
+      fingerprint: '2:100',
+      summaryInput: ['Long raw operator prompt'],
+      providerIdentity: 'provider-id',
+      correlationKey: 'codex:long raw operator prompt',
+    };
+    const fetchMock = vi.fn(
+      async () => new Response('overloaded', { status: 503 })
+    );
+    let hosted = true;
+    const catalog = new RecentConversationCatalog({
+      adapters: [{ harnesses: ['codex'], list: vi.fn(async () => [draft]) }],
+      cacheFile: path.join(cacheRoot, 'summaries.json'),
+      fetch: fetchMock as typeof fetch,
+      summaryEndpoint: 'https://example.test/summarize',
+      hostedSummariesEnabled: () => hosted,
+    });
+
+    await expect(
+      catalog.enrich('/project', 'signed-in-token')
+    ).rejects.toThrow('503');
+    expect(drainMainAnalyticsEvents()).toEqual([
+      {
+        name: 'hosted_call_failed',
+        service: 'conversation_summary',
+        failure: null,
+        statusCode: 503,
+      },
+    ]);
+
+    hosted = false;
+    catalog.invalidate();
+    await expect(
+      catalog.enrich('/project', 'signed-in-token')
+    ).rejects.toThrow(/disabled in Settings/);
+    expect(drainMainAnalyticsEvents()).toEqual([]);
+
+    hosted = true;
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+    catalog.invalidate();
+    await expect(
+      catalog.enrich('/project', 'signed-in-token')
+    ).rejects.toThrow('fetch failed');
+    expect(drainMainAnalyticsEvents()).toEqual([
+      {
+        name: 'hosted_call_failed',
+        service: 'conversation_summary',
+        failure: 'network',
+        statusCode: null,
+      },
     ]);
   });
 

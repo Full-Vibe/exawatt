@@ -14,6 +14,7 @@ import {
   loadSettings,
   setAppearancePreferences,
   setHostedContextLabels,
+  setReentryRecapEnabled,
 } from './settings-store';
 
 const classic = {
@@ -95,6 +96,29 @@ describe('appearance settings persistence', () => {
     expect(loadSettings()).toEqual({
       terminal: { fontSize: 15 },
       contextLabels: { hosted: true },
+    });
+  });
+
+  it('records a recap choice without ever writing a default', () => {
+    const file = path.join(electronState.userData, 'settings.json');
+    fs.writeFileSync(file, JSON.stringify({ terminal: { fontSize: 15 } }));
+    const before = fs.readFileSync(file, 'utf8');
+
+    // Reading resolves the default in memory; the file keeps its silence.
+    expect(loadSettings().reentryRecap?.enabled !== false).toBe(true);
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+
+    expect(setReentryRecapEnabled(false)).toEqual({
+      terminal: { fontSize: 15 },
+      reentryRecap: { enabled: false },
+    });
+    expect(loadSettings().reentryRecap).toEqual({ enabled: false });
+    expect(setReentryRecapEnabled(true).reentryRecap).toEqual({
+      enabled: true,
+    });
+    expect(loadSettings()).toEqual({
+      terminal: { fontSize: 15 },
+      reentryRecap: { enabled: true },
     });
   });
 

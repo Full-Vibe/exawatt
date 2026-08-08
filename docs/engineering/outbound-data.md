@@ -30,6 +30,7 @@ directly — the exact outbound identity decision `0034` exists to prevent.
 | `www.exawatt.ai/api/context-labels` → `api.anthropic.com` | Hosted feature | On when signed in | Settings → Privacy → Session context labels; `EXAWATT_CONTEXT_LABELS=0` |
 | `www.exawatt.ai/api/conversations/summarize` → `api.anthropic.com` | Hosted feature | On when signed in | Settings → Privacy → Conversation summaries |
 | `www.exawatt.ai/api/goal-visuals` → `fal.run`, `*.fal.media` | Hosted feature | On when signed in | Settings → Privacy → Agent tile backgrounds |
+| `claude` CLI → `api.anthropic.com` (the **user's own** Claude Code sign-in) | Own-account feature (re-entry recap) | On | Settings → Privacy → Since-you-left recaps; `EXAWATT_SUMMARIES=0` |
 | `<project>.supabase.co` | Account, sync, feedback, stats | On when signed in | Sign out; individual features listed below |
 | `<project>.supabase.co/storage/.../desktop-updates` | App updates | Always on in signed builds | No user switch (known gap) |
 | Locally spawned agent harnesses | User's own tools | On user action | Do not launch an Agent |
@@ -140,6 +141,22 @@ All four suppress **initialization and emission**, not merely ingestion: when
 analytics are off, `posthog-js` is never imported, so there is no queue and
 nothing to flush later.
 
+**Main-process coverage (ENG-030 OS1.5b).** Electron main observes facts worth
+counting — its own hosted-call failures (sections 2–4) and process crashes —
+but has no analytics path of its own: decision `0034` gives the desktop app
+exactly one analytics destination, and it lives in the renderer. Main queues
+typed `hosted_call_failed` / `app_crashed` events in a bounded in-memory
+bridge (`electron/main/analytics-bridge.ts`, 16 events, drop-oldest, no
+persistence), and the renderer drains them through the same allowlisted
+emission path as every other event
+(`src/lib/analytics-bridge/main-process-events.ts`, started from
+`instrumentation-client.ts`). Every drained payload is re-validated against
+the allowlist before emission; when analytics are off, the renderer still
+drains and drops. Main never talks to any analytics host itself, and a
+failure caused by the operator switching a feature off is never counted —
+only genuine attempt-and-fail. Crashes at quit that no renderer drains are
+accepted losses.
+
 **Retention.** Events live in Exawatt's PostHog project under that project's
 retention settings. The proxy does not store a copy. PostHog project retention
 is dashboard state and is not verifiable from this repository.
@@ -241,8 +258,18 @@ one exception worth naming: the re-entry recap
 (`electron/main/pty/context-summarizer.ts`) spawns `claude -p --model haiku`
 and pipes it up to 6000 characters of the session's own ANSI-stripped terminal
 scrollback, unredacted. That reaches Anthropic under the **user's** Claude Code
-credentials, never Exawatt's. It is gated by `EXAWATT_SUMMARIES=0` only;
-there is no user-facing toggle.
+credentials, never Exawatt's — nothing about it is hosted by Exawatt, which is
+why the Privacy surface presents it in its own "Your own accounts" group
+rather than under hosted features.
+
+- **Purpose**: the "since you left" line in the context bar when the operator
+  returns to a Session (ENG-016 D18).
+- **Default**: on.
+- **Off**: Settings → Privacy → **Since-you-left recaps**
+  (`reentryRecap.enabled`), enforced at the boundary: off reads no scrollback,
+  records no away checkpoints, and spawns no process; a recap already in
+  flight finishes but its output is discarded. `EXAWATT_SUMMARIES=0` remains
+  the environment override; `EXAWATT_SUMMARIZER_CMD` redirects the engine.
 
 Everything else is local: `/api/oc/token` reads the OpenClaw gateway token off
 disk and returns a `127.0.0.1` address; `/api/dev-identity` exists only in
@@ -281,12 +308,14 @@ development.
   assembled and no request is constructed, and an in-flight answer is
   discarded rather than applied. All three hosted features are now surfaced
   together on the Settings → Privacy surface.
-- **The re-entry recap is still untoggleable.** It is a separate feature from
-  context labels: it spawns `claude -p --model haiku` and pipes up to 6000
-  characters of unredacted terminal scrollback, under the **user's own** Claude
-  Code credentials rather than Exawatt's. `EXAWATT_SUMMARIES=0` is its only
-  control. It sends more, less redacted, than anything else in this manifest,
-  and it is the strongest remaining candidate for the next control.
+- ~~The re-entry recap is still untoggleable.~~ **Closed 2026-08-07 (ENG-030
+  OS1.5):** `reentryRecap.enabled` is a real preference with its own row on
+  Settings → Privacy, in a **"Your own accounts"** group separate from hosted
+  features — it sends the most, least redacted, in this manifest, and it goes
+  to Anthropic under the user's own Claude Code sign-in, never through
+  Exawatt. Off is enforced at the boundary in `context-summarizer.ts`: no
+  scrollback is read and no recap process is spawned; in-flight output is
+  discarded. `EXAWATT_SUMMARIES=0` survives as the environment override.
 - The update check cannot be disabled from the UI.
 - The Privacy page must be reconciled with this manifest in the same release
   that ships analytics (ENG-030 OS1.4, decision `0034`). Until then, treat this
