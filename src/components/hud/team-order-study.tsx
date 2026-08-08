@@ -1,44 +1,40 @@
 'use client';
 
 /**
- * Team ordering study (ENG-015 S6, FIX-008) — the design pass, on the bench.
+ * Team ordering rig (ENG-015 S6.3, FIX-008 — shipped 2026-08-07).
  *
- * Operator, 2026-08-07: "Add a filter strip / ribbon in Team view … that
- * with one click (or keyboard) lets one sort the active agents to the front
- * within each project. Right now I have to scroll and scan to see what I
- * was working on."
+ * The design pass ran here and the operator picked, in his vocabulary:
+ * two named sorts. **Started** is the stored default (Chrome's model — a
+ * new Agent appends); **Activity** leads each Project with its most recent
+ * activity, fully live; needs-you-first does not exist. This page survives
+ * as the deterministic REVIEW RIG for that shipped behaviour (the
+ * ribbon-bench precedent): the real `ExposeOverlay` over a fixture fleet,
+ * driven through its own production control, with `eval:workspace:team`
+ * asserting order, glide, and persistence against it.
  *
- * This study renders the REAL Team altitude (`ExposeOverlay`) over a fixture
- * fleet, with a candidate order strip above it. Switching a chip re-feeds
- * the overlay the same Projects with their tabs in that mode's view order
- * (`orderTeamTabs` — pure, tested, stable, never written back), so the
- * operator judges the actual surface reordering, not a mock of one.
- *
- * The open questions this bench exists to answer stay open here: whether
- * ordering is a view mode or a transient filter, what "active" means, and
- * where the strip lives in production chrome. The chips are candidates, not
- * shipped vocabulary.
+ * The fixture is adversarial on purpose: creation times deliberately
+ * disagree with manual order, and the working / needs-you Agents are buried
+ * mid-Project, so both orders are observable and neither happens to equal
+ * the array as written.
  */
-import { useMemo, useState } from 'react';
 import { ExposeOverlay } from '@/components/workspace/expose-overlay';
 import type {
   Project,
   WorkspaceTab,
 } from '@/components/workspace/use-workspace-state';
-import {
-  orderTeamTabs,
-  TEAM_ORDER_MODES,
-  type TeamOrderMode,
-} from '@/components/workspace/team-order';
 import type { SessionAttentionSignal } from '@/components/workspace/session-status';
-import { WORKSPACE_HUD as HUD, withThemeAlpha } from '@/components/workspace/workspace-theme';
+import {
+  WORKSPACE_HUD as HUD,
+  withThemeAlpha,
+} from '@/components/workspace/workspace-theme';
 
-/** A believable ten-agent fleet across three Projects: working, needs-you,
- *  idle, and stopped Agents interleaved in MANUAL order, so "I have to
- *  scroll and scan" is reproduced before a chip is pressed. */
+const T0 = 1_722_000_000_000;
+const MIN = 60_000;
+
 const tab = (
   id: string,
   title: string,
+  startedAt: number,
   over: Partial<WorkspaceTab> = {}
 ): WorkspaceTab =>
   ({
@@ -54,7 +50,7 @@ const tab = (
     exitCode: null,
     harnessSessionId: null,
     initialTask: null,
-    startedAt: 1_722_000_000_000,
+    startedAt,
     roadmapItemId: null,
     ...over,
   }) as WorkspaceTab;
@@ -66,16 +62,21 @@ const FLEET: Project[] = [
     color: '#19E6FF',
     activeTabId: 'exa-1',
     tabs: [
-      tab('exa-1', 'Ship the launcher redraw'),
-      tab('exa-2', 'Fix Sessions rendering', { harness: 'codex' }),
-      tab('exa-3', 'Define the durable session', {
+      // manual order ≠ creation order: exa-1 is the NEWEST despite being first
+      tab('exa-1', 'Ship the launcher redraw', T0 + 9 * MIN),
+      tab('exa-2', 'Fix Sessions rendering', T0 + 2 * MIN, {
+        harness: 'codex',
+      }),
+      tab('exa-3', 'Define the durable session', T0 + 5 * MIN, {
         resumeState: 'ended-resumable',
         sessionId: null,
         lifecycle: 'stopped-clean',
         harnessSessionId: 'prov-exa-3',
       }),
-      tab('exa-4', 'Review keyboard navigation'),
-      tab('exa-5', 'Design clear subagent rails', { harness: 'codex' }),
+      tab('exa-4', 'Review keyboard navigation', T0 + 1 * MIN),
+      tab('exa-5', 'Design clear subagent rails', T0 + 7 * MIN, {
+        harness: 'codex',
+      }),
     ],
   },
   {
@@ -84,14 +85,14 @@ const FLEET: Project[] = [
     color: '#FFB86B',
     activeTabId: 'stock-1',
     tabs: [
-      tab('stock-1', 'Backtest the rebalance rule'),
-      tab('stock-2', 'Wire the earnings feed', {
+      tab('stock-1', 'Backtest the rebalance rule', T0 + 6 * MIN),
+      tab('stock-2', 'Wire the earnings feed', T0 + 3 * MIN, {
         resumeState: 'ended-resumable',
         sessionId: null,
         lifecycle: 'stopped-clean',
         harnessSessionId: 'prov-stock-2',
       }),
-      tab('stock-3', 'Chart drawdown bands'),
+      tab('stock-3', 'Chart drawdown bands', T0 + 4 * MIN),
     ],
   },
   {
@@ -100,22 +101,23 @@ const FLEET: Project[] = [
     color: '#B084FF',
     activeTabId: 'photo-1',
     tabs: [
-      tab('photo-1', 'Tune the upscaler pass'),
-      tab('photo-2', 'Batch the export queue', { harness: 'codex' }),
+      tab('photo-1', 'Tune the upscaler pass', T0 + 8 * MIN),
+      tab('photo-2', 'Batch the export queue', T0 + 0 * MIN, {
+        harness: 'codex',
+      }),
     ],
   },
 ];
 
-/** exa-2, stock-3, photo-1 working; exa-4, stock-1 waiting on the operator —
- *  deliberately NOT at the front of their Projects in manual order. */
+/** exa-2, stock-3, photo-1 working; exa-4, stock-1 waiting on the operator. */
 const ACTIVITY: Record<string, boolean> = {
   'session-exa-2': true,
   'session-stock-3': true,
   'session-photo-1': true,
 };
 const ATTENTION: Record<string, SessionAttentionSignal> = {
-  'session-exa-4': { kind: 'bell', since: 1_722_000_100_000 },
-  'session-stock-1': { kind: 'bell', since: 1_722_000_200_000 },
+  'session-exa-4': { kind: 'bell', since: T0 + 10 * MIN },
+  'session-stock-1': { kind: 'bell', since: T0 + 11 * MIN },
 };
 const SUMMARIES: Record<string, string> = {
   'durable-exa-2': 'Repainting the Sessions grid from live tile geometry',
@@ -126,63 +128,8 @@ const SUMMARIES: Record<string, string> = {
 };
 
 export function TeamOrderStudy() {
-  const [mode, setMode] = useState<TeamOrderMode>('active-first');
-  const signals = useMemo(
-    () => ({ activity: ACTIVITY, attention: ATTENTION }),
-    []
-  );
-  const projects = useMemo(
-    () =>
-      FLEET.map(project => ({
-        ...project,
-        tabs: orderTeamTabs(project.tabs, mode, signals),
-      })),
-    [mode, signals]
-  );
-
   return (
     <section data-team-order-study className="flex flex-col gap-4">
-      {/* the candidate strip: one click per order, keyboard-reachable */}
-      <div
-        role="radiogroup"
-        aria-label="Team order"
-        className="flex flex-wrap items-center gap-2"
-      >
-        {TEAM_ORDER_MODES.map(candidate => {
-          const selected = candidate.id === mode;
-          return (
-            <button
-              key={candidate.id}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              data-team-order-mode={candidate.id}
-              onClick={() => setMode(candidate.id)}
-              title={candidate.meaning}
-              className="inline-flex min-h-9 items-center gap-2 rounded-md border px-3 font-mono text-chrome-label outline-none transition-colors focus-visible:ring-1 focus-visible:ring-hud-cyan"
-              style={{
-                borderColor: selected
-                  ? withThemeAlpha(HUD.cyan, 0.5)
-                  : withThemeAlpha(HUD.textDim, 0.18),
-                background: selected
-                  ? withThemeAlpha(HUD.cyan, 0.08)
-                  : 'transparent',
-                color: selected ? HUD.cyan : HUD.textDim,
-              }}
-            >
-              {candidate.label}
-            </button>
-          );
-        })}
-        <p
-          className="ml-1 font-mono text-chrome-meta"
-          style={{ color: HUD.textDim }}
-        >
-          {TEAM_ORDER_MODES.find(candidate => candidate.id === mode)?.meaning}
-        </p>
-      </div>
-
-      {/* the real Team altitude over the fixture fleet */}
       <div
         className="relative overflow-hidden rounded-lg border"
         style={{
@@ -191,7 +138,7 @@ export function TeamOrderStudy() {
         }}
       >
         <ExposeOverlay
-          projects={projects}
+          projects={FLEET}
           summaries={SUMMARIES}
           attention={ATTENTION}
           activity={ACTIVITY}

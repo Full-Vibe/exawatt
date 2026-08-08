@@ -24,9 +24,10 @@ export default function TeamOrderBenchPage() {
               Team ordering
             </h1>
             <p className="mt-2 max-w-2xl text-sm" style={{ color: HUD.textDim }}>
-              The real Team altitude over a fixture fleet. Each chip re-feeds
-              the same Projects in a candidate view order — tabs move, the
-              durable manual arrangement never does.
+              The real Team altitude over a fixture fleet, driven through its
+              own Started · Activity control. Started is the stored default;
+              tiles glide live, and the durable manual arrangement is never
+              written.
             </p>
           </div>
           <Link

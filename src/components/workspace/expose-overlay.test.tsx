@@ -422,6 +422,77 @@ describe('Sessions overview', () => {
     expect(alpha).toHaveAttribute('data-selected', 'true');
   });
 
+  // ── S6.3 (FIX-008): view order. Started (oldest first) is the stored
+  // default; the Activity sort leads each Project with working Agents, live.
+  it('defaults to Started order and re-sorts live through Activity', async () => {
+    window.localStorage.removeItem('exawatt.team-order.v1');
+    const created: Project[] = [
+      {
+        dir: '/one',
+        name: 'One',
+        color: '#19E6FF',
+        activeTabId: 'n1',
+        tabs: [
+          // manual order deliberately disagrees with creation order
+          {
+            ...projects[0].tabs[0],
+            id: 'n1',
+            title: 'Newest',
+            startedAt: 900,
+            sessionId: 'session-n1',
+          },
+          {
+            ...projects[0].tabs[1],
+            id: 'n2',
+            title: 'Oldest',
+            startedAt: 100,
+            sessionId: 'session-n2',
+          },
+          {
+            ...projects[0].tabs[2],
+            id: 'n3',
+            title: 'Middle',
+            startedAt: 500,
+            sessionId: 'session-n3',
+            resumeState: 'live',
+            lifecycle: 'running',
+          },
+        ] as Project['tabs'],
+      },
+    ];
+    render(
+      <ExposeOverlay
+        projects={created}
+        summaries={{}}
+        attention={{}}
+        activity={{ 'session-n1': true }}
+        activeTabId="n1"
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    const titles = () =>
+      Array.from(document.querySelectorAll('[data-expose-tile]')).map(node =>
+        node.getAttribute('aria-label')?.split(',')[0]
+      );
+    // Chrome model: oldest first, the newest Agent appends
+    await waitFor(() =>
+      expect(titles()).toEqual(['Oldest', 'Middle', 'Newest'])
+    );
+
+    // one compact control, the operator's vocabulary: Started · Activity
+    fireEvent.click(screen.getByRole('radio', { name: 'Activity' }));
+    await waitFor(() =>
+      expect(titles()).toEqual(['Newest', 'Oldest', 'Middle'])
+    );
+    // and the choice is stored
+    expect(window.localStorage.getItem('exawatt.team-order.v1')).toBe(
+      'activity'
+    );
+    window.localStorage.removeItem('exawatt.team-order.v1');
+  });
+
   it('follows active-tab changes from the global command-shift bracket ring', async () => {
     const view = render(
       <ExposeOverlay

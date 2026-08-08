@@ -51,6 +51,14 @@ export const SURFACE_GATES = [
       ),
   },
   {
+    gate: 'eval:workspace:team',
+    why: 'the Team altitude owns live re-sorting, its glide, and the stored order',
+    match: file =>
+      /^src\/components\/workspace\/(?:expose-overlay|team-order[^/]*|team-grid-nav|use-flip-tiles)\.tsx?$/.test(
+        file
+      ),
+  },
+  {
     gate: 'eval:workspace:launcher',
     why: 'the New Agent launcher has a deterministic state/interaction rig',
     // option-menu is the launcher's list renderer (decision `0033`, one menu

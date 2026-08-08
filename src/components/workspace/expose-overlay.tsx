@@ -17,6 +17,10 @@ import {
   projectDeclaredLinks,
   projectRoadmapSessions,
 } from './roadmap-lens-input';
+import { orderTeamTabs } from './team-order';
+import { useTeamOrderPreference } from './team-order-preference';
+import { useFlipTiles } from './use-flip-tiles';
+import { usePrefersReducedMotion } from '@/lib/motion/use-prefers-reduced-motion';
 import { FOCUS_SESSIONS_EVENT } from '@/components/nav/command-altitude-events';
 import {
   attentionNeedsOperator,
@@ -112,16 +116,22 @@ const TILE_STATE_LABEL: Record<string, string> = {
 const TILE_W = 272;
 const TILE_H = 252;
 
+// Stable identities for absent optional props. An inline `= {}` default is a
+// FRESH object every render, and anything memoized on it re-derives per
+// render — which reached the follow-active-tab effect through the S6.3 view
+// order and made it yank focus back to the active tile on every re-render.
+const EMPTY_MAP = Object.freeze({}) as Record<string, never>;
+
 export function ExposeOverlay({
   projects,
   summaries,
   attention,
-  activity = {},
-  engaged = {},
-  delegation = {},
-  roadmapByTab = {},
-  agentTypeByTab = {},
-  initiativeByTab = {},
+  activity = EMPTY_MAP,
+  engaged = EMPTY_MAP,
+  delegation = EMPTY_MAP,
+  roadmapByTab = EMPTY_MAP,
+  agentTypeByTab = EMPTY_MAP,
+  initiativeByTab = EMPTY_MAP,
   consumptionByTab = {},
   goalVisuals = {},
   activeTabId,
@@ -188,10 +198,37 @@ export function ExposeOverlay({
     setEnabled: setGoalVisualsEnabled,
   } = useGoalVisualPreference();
 
-  // stable order = model order (spatial memory: tiles never reshuffle)
+  // View order (S6.3, FIX-008 — operator pick 2026-08-07). This supersedes
+  // the earlier "tiles never reshuffle" spatial-memory rule on purpose:
+  // the default is CREATION order (Chrome's model — a new Agent appends,
+  // nothing on screen changes address), and the stored Active-first toggle
+  // leads each Project with working Agents, live — a tile glides to its new
+  // slot the moment its state changes band (FLIP below). Ordering is a
+  // view; the ribbon's durable manual arrangement is never written.
+  const [orderMode, setOrderMode] = useTeamOrderPreference();
+  const orderSignals = useMemo(
+    () => ({ activity, attention }),
+    [activity, attention]
+  );
+  const reducedMotion = usePrefersReducedMotion();
+  const viewProjects = useMemo(
+    () =>
+      projects.map(project => ({
+        ...project,
+        tabs: orderTeamTabs(project.tabs, orderMode, orderSignals),
+      })),
+    [orderMode, orderSignals, projects]
+  );
+  // one key per visual order; any band move re-keys and the tiles glide
+  const registerFlipNode = useFlipTiles(
+    viewProjects
+      .map(project => project.tabs.map(tab => tab.id).join(','))
+      .join('|'),
+    reducedMotion
+  );
   const tiles = useMemo<Tile[]>(
     () =>
-      projects.flatMap(g =>
+      viewProjects.flatMap(g =>
         g.tabs.map(t => {
           const live = tabIsLive(t) && !!t.sessionId && t.exitCode === null;
           return {
@@ -213,11 +250,11 @@ export function ExposeOverlay({
           };
         })
       ),
-    [projects]
+    [viewProjects]
   );
   const items = useMemo<SelectionItem[]>(
     () =>
-      projects.flatMap<SelectionItem>(project => {
+      viewProjects.flatMap<SelectionItem>(project => {
         const projectTiles = tiles.filter(tile => tile.dir === project.dir);
         return projectTiles.length > 0
           ? projectTiles
@@ -231,7 +268,7 @@ export function ExposeOverlay({
               } satisfies EmptyProjectItem,
             ];
       }),
-    [projects, tiles]
+    [tiles, viewProjects]
   );
 
   // start where the operator was — ⌃⌘2 then Enter must be a no-op return,
@@ -532,8 +569,17 @@ export function ExposeOverlay({
       attention: attentionSignal,
     });
     return (
-      <button
+      // FLIP wrapper (S6.3): owns POSITION only. The button keeps its own
+      // entrance/selection transforms, so a glide and a hover can never
+      // fight over one `transform`, and the entrance stagger's per-index
+      // transition delay cannot postpone a re-sort glide.
+      <div
         key={tile.tabId}
+        ref={registerFlipNode(tile.tabId)}
+        data-expose-tile-slot={tile.tabId}
+        className="shrink-0"
+      >
+      <button
         ref={node => {
           if (node) tileRefs.current.set(tile.tabId, node);
           else tileRefs.current.delete(tile.tabId);
@@ -612,6 +658,7 @@ export function ExposeOverlay({
           )}
         </div>
       </button>
+      </div>
     );
   };
 
@@ -653,6 +700,51 @@ export function ExposeOverlay({
               Team
             </h2>
             <span>arrows or J/K move · enter opens · esc returns</span>
+            {/* Sort (S6.3, FIX-008): the operator's vocabulary — two named
+                sorts, Started (the stored default: Chrome's model, oldest
+                first, a new Agent appends) and Activity (most recent
+                activity leads, live). One compact control, chrome-quiet
+                until Activity is engaged. */}
+            <div
+              role="radiogroup"
+              aria-label="Sort Agents"
+              data-team-order-control
+              className="ml-auto inline-flex h-7 shrink-0 items-center gap-0.5 rounded border px-0.5 font-mono text-chrome-label"
+              style={{ borderColor: HUD.strokeFaint }}
+              onKeyDown={event => {
+                // these keys belong to the control, not the roving Team
+                // grid; Escape still bubbles to the altitude-level return
+                if (event.key !== 'Escape') event.stopPropagation();
+              }}
+            >
+              {(
+                [
+                  ['started', 'Started'],
+                  ['activity', 'Activity'],
+                ] as const
+              ).map(([value, label]) => {
+                const selected = orderMode === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    data-team-order-mode={value}
+                    onClick={() => setOrderMode(value)}
+                    className="inline-flex h-6 items-center rounded-sm px-2 outline-none transition-colors duration-200 hover:bg-hud-stroke-faint focus-visible:ring-1 focus-visible:ring-hud-cyan motion-reduce:transition-none"
+                    style={{
+                      color: selected ? HUD.cyan : HUD.textDim,
+                      background: selected
+                        ? withThemeAlpha(HUD.cyan, 0.09)
+                        : 'transparent',
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
             <button
               type="button"
               role="switch"
@@ -666,7 +758,7 @@ export function ExposeOverlay({
                 // Escape still bubbles to the altitude-level return handler.
                 if (event.key !== 'Escape') event.stopPropagation();
               }}
-              className="ml-auto inline-flex h-7 shrink-0 items-center gap-2 rounded px-2 font-mono text-chrome-label outline-none transition-colors duration-200 hover:bg-hud-stroke-faint focus-visible:ring-1 focus-visible:ring-hud-cyan disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+              className="inline-flex h-7 shrink-0 items-center gap-2 rounded px-2 font-mono text-chrome-label outline-none transition-colors duration-200 hover:bg-hud-stroke-faint focus-visible:ring-1 focus-visible:ring-hud-cyan disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
               style={{ color: HUD.textDim }}
             >
               <span>Backgrounds</span>
@@ -725,7 +817,7 @@ export function ExposeOverlay({
             </div>
           )}
           <div className="flex flex-col gap-4">
-            {projects.map(project => {
+            {viewProjects.map(project => {
               const projectTiles = tiles.filter(
                 tile => tile.dir === project.dir
               );

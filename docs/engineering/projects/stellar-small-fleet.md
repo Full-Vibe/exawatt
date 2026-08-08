@@ -642,6 +642,55 @@ Implementation record (landed 2026-07-10):
 
 ## Findings log
 
+- 2026-08-07 (S6.3, landed — FIX-008 closed): the operator reviewed the S6.2
+  bench and decided the whole shape in one message: needs-you-first "shouldn't
+  exist"; a single subtle sort control; the stored default is creation time
+  ("keep it like Google Chrome" — oldest first, a new Agent appends); fully
+  live re-sorting; production chrome; "sort animations should be smooth and
+  perfect and delightful." Mid-build he named the vocabulary too: "sort by
+  'Recently started' vs. 'Recent activity' or Started vs. Activity" — so the
+  control is a compact Started · Activity pair, and the Activity sort is
+  defined by activity RECENCY at the fidelity the surface has (working now
+  → newest attention signal → Started order), which refines cleanly if
+  per-tab activity timestamps are ever plumbed. The stored pre-rename value
+  migrates.
+
+  - **Engine.** `team-order.ts` shrank to two sorts. Start time is both the
+    default order and the tiebreak inside every Activity band, which is what
+    makes live re-sorting calm by construction: a deterministic total order
+    means a tile moves ONLY when its rank inputs change, never because a
+    sort was unstable under an activity ping.
+  - **Chrome.** One compact Started · Activity control in the Team top
+    chrome, chrome-quiet until Activity is engaged, with the same keyboard
+    containment as the Backgrounds switch so the row reads as one control
+    family.
+  - **Glide.** `use-flip-tiles.ts` is a FLIP hook that owns POSITION only,
+    on a wrapper element, so it can never fight the tile button's own
+    entrance/selection transforms and the entrance stagger's per-index
+    transition delay cannot postpone a glide. Timing cites D45's
+    position-tween vocabulary. Reduced motion snaps: a re-sort is a data
+    change, and the motion it declines is exactly this.
+  - **Storage.** Device-local web storage with a same-tab event, deliberately
+    NOT the Electron settings channel the Backgrounds toggle uses — that
+    channel earns its weight for preferences that gate rendering work
+    app-wide; this is one surface's view order. Promote it if a second
+    surface ever needs it.
+  - **The gate.** The Team surface owned no browser gate — the exact D51
+    lesson — so `eval:workspace:team` now runs the rig through the
+    PRODUCTION toggle: created default, active-first bands, a mid-flight
+    FLIP transform (sabotage-verified: disabling the hook fails the gate
+    with "the re-sort snapped"), and reload persistence. The overlay, the
+    order engine, and the FLIP hook joined `SURFACE_GATES`.
+  - **Boyscout with a lesson.** The overlay's optional props defaulted to
+    inline `{}` — a FRESH object per render — and everything memoized on
+    them re-derived every render. Harmless while nothing downstream cared;
+    the moment the view order joined the memo chain, the follow-active-tab
+    effect (keyed on `items`) re-fired per render and yanked focus back to
+    the active tile, killing arrow navigation in tests. Stable frozen
+    empties now. The failure was invisible until a consumer arrived, which
+    is the argument for stable identities as a default, not an
+    optimization.
+
 - 2026-08-07 (S6.2, landed): the FIX-008 design pass is staged, not decided.
 
   - **The bench runs the real surface.** `/hud-gallery/team-order` mounts

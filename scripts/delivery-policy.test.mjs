@@ -132,6 +132,21 @@ test('a deliberate waiver satisfies it too, and is the caller saying so', () => 
   );
 });
 
+test('the Team altitude owes its ordering gate', () => {
+  assert.deepEqual(
+    missingSurfaceGates(['src/components/workspace/expose-overlay.tsx']).map(
+      entry => entry.gate
+    ),
+    ['eval:workspace:team']
+  );
+  assert.deepEqual(
+    missingSurfaceGates(['src/components/workspace/use-flip-tiles.ts']).map(
+      entry => entry.gate
+    ),
+    ['eval:workspace:team']
+  );
+});
+
 test('the shared menu primitive owes the launcher gate', () => {
   assert.deepEqual(
     missingSurfaceGates(['src/components/ui/option-menu.tsx']).map(

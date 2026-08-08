@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { orderTeamTabs, teamOrderBand } from './team-order';
+import { orderTeamTabs, teamOrderRank } from './team-order';
 import type { WorkspaceTab } from './use-workspace-state';
 
-const tab = (id: string, over: Partial<WorkspaceTab> = {}): WorkspaceTab =>
+const tab = (
+  id: string,
+  startedAt: number | null,
+  over: Partial<WorkspaceTab> = {}
+): WorkspaceTab =>
   ({
     id,
     durableSessionId: `d-${id}`,
@@ -16,50 +20,75 @@ const tab = (id: string, over: Partial<WorkspaceTab> = {}): WorkspaceTab =>
     exitCode: null,
     harnessSessionId: null,
     initialTask: null,
-    startedAt: 1,
+    startedAt,
     roadmapItemId: null,
     ...over,
   }) as WorkspaceTab;
 
-// a: working · b: needs-you · c: idle live · d: stopped
-const TABS = [
-  tab('a'),
-  tab('b'),
-  tab('c'),
-  tab('d', { resumeState: 'ended-resumable', sessionId: null }),
-];
-const SIGNALS = {
-  activity: { 's-a': true },
-  attention: { 's-b': { kind: 'bell' as const, since: 1 } },
-};
+const NO_SIGNALS = { activity: {}, attention: {} };
 
-describe('orderTeamTabs (FIX-008 bench engine)', () => {
-  it('arranged is the identity — the durable manual order untouched', () => {
-    expect(orderTeamTabs(TABS, 'arranged', SIGNALS).map(t => t.id)).toEqual([
+describe('orderTeamTabs (FIX-008, operator picks 2026-08-07)', () => {
+  it('started = Chrome model: oldest first, a new Agent appends', () => {
+    // manual order deliberately NOT creation order
+    const tabs = [tab('b', 200), tab('a', 100), tab('new', 900), tab('c', 300)];
+    expect(orderTeamTabs(tabs, 'started', NO_SIGNALS).map(t => t.id)).toEqual([
       'a',
       'b',
       'c',
-      'd',
+      'new',
     ]);
   });
 
-  it('active-first leads with working, then needs-you, then the rest', () => {
-    const shuffled = [TABS[3], TABS[2], TABS[1], TABS[0]];
-    expect(
-      orderTeamTabs(shuffled, 'active-first', SIGNALS).map(t => t.id)
-    ).toEqual(['a', 'b', 'c', 'd']);
+  it('undated tabs sort after every dated one, keeping their manual order', () => {
+    const tabs = [tab('draft2', null), tab('a', 100), tab('draft1', null)];
+    expect(orderTeamTabs(tabs, 'started', NO_SIGNALS).map(t => t.id)).toEqual([
+      'a',
+      'draft2',
+      'draft1',
+    ]);
   });
 
-  it('needs-you-first leads with attention', () => {
-    expect(
-      orderTeamTabs(TABS, 'needs-you-first', SIGNALS).map(t => t.id)
-    ).toEqual(['b', 'a', 'c', 'd']);
+  it('activity: working leads, needs-you second, rest keep started order', () => {
+    const tabs = [
+      tab('idle-old', 100),
+      tab('needs', 200),
+      tab('working', 300),
+      tab('idle-new', 400),
+      tab('stopped', 50, {
+        resumeState: 'ended-resumable',
+        sessionId: null,
+        lifecycle: 'stopped-clean',
+      }),
+    ];
+    const signals = {
+      activity: { 's-working': true },
+      attention: { 's-needs': { kind: 'bell' as const, since: 1 } },
+    };
+    expect(orderTeamTabs(tabs, 'activity', signals).map(t => t.id)).toEqual(
+      ['working', 'needs', 'idle-old', 'idle-new', 'stopped']
+    );
   });
 
-  it('is stable: equal-band Agents keep their manual order', () => {
-    const three = [tab('x'), tab('y'), tab('z')];
-    expect(orderTeamTabs(three, 'active-first', { activity: {}, attention: {} })
-      .map(t => t.id)).toEqual(['x', 'y', 'z']);
+  it('within a band, started order is the tiebreak — never manual position', () => {
+    const tabs = [tab('late', 900), tab('early', 100)];
+    const signals = {
+      activity: { 's-late': true, 's-early': true },
+      attention: {},
+    };
+    expect(orderTeamTabs(tabs, 'activity', signals).map(t => t.id)).toEqual(
+      ['early', 'late']
+    );
+  });
+
+  it('a live re-sort moves a tile only when its band changes', () => {
+    // deterministic: same signals in, same order out — an activity ping
+    // that does not change any band cannot shuffle anything
+    const tabs = [tab('a', 100), tab('b', 200), tab('c', 300)];
+    const signals = { activity: { 's-b': true }, attention: {} };
+    const first = orderTeamTabs(tabs, 'activity', signals).map(t => t.id);
+    const second = orderTeamTabs(tabs, 'activity', signals).map(t => t.id);
+    expect(first).toEqual(['b', 'a', 'c']);
+    expect(second).toEqual(first);
   });
 
   it('a finished turn is a result, not needs-you (D51 predicate)', () => {
@@ -67,14 +96,21 @@ describe('orderTeamTabs (FIX-008 bench engine)', () => {
       activity: {},
       attention: { 's-a': { kind: 'turn-end' as const, since: 1 } },
     };
-    expect(teamOrderBand(tab('a'), 'needs-you-first', signals)).toBeGreaterThan(
-      0
-    );
+    expect(teamOrderRank(tab('a', 100), 'activity', signals).band).toBe(2);
   });
 
-  it('never reorders across Projects — callers sort one tab list at a time', () => {
-    // structural: the signature takes ONE project's tabs; this pin exists so
-    // a future flatten refactor has to consciously delete it
-    expect(orderTeamTabs([], 'active-first', SIGNALS)).toEqual([]);
+  it('among Agents needing you, the newest signal is the most recent activity', () => {
+    const tabs = [tab('older-signal', 100), tab('newer-signal', 200)];
+    const signals = {
+      activity: {},
+      attention: {
+        's-older-signal': { kind: 'bell' as const, since: 1_000 },
+        's-newer-signal': { kind: 'bell' as const, since: 9_000 },
+      },
+    };
+    expect(orderTeamTabs(tabs, 'activity', signals).map(t => t.id)).toEqual([
+      'newer-signal',
+      'older-signal',
+    ]);
   });
 });
