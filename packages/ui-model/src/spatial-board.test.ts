@@ -595,13 +595,33 @@ describe('delegation units', () => {
     expect(new Set(units.map(unit => unit.id)).size).toBe(4);
   });
 
-  it('keeps children in the same noun family at the accepted ratio', () => {
+  it('sizes children as peers of their parent, not as lesser units', () => {
     const layout = delegatingLayout(4);
     const parent = layout.pieces.find(piece => piece.agentId === 'a')!;
     for (const unit of selectSpatialDelegationUnits(layout)) {
       const ratio = unit.size / parent.size;
-      expect(ratio).toBeGreaterThanOrEqual(0.7);
-      expect(ratio).toBeLessThanOrEqual(0.82);
+      // Amended 2026-08-07 (operator): peers, not a hierarchy. Held just under
+      // parity so the hub of a constellation stays findable.
+      expect(ratio).toBeGreaterThanOrEqual(0.85);
+      expect(ratio).toBeLessThan(1);
+    }
+  });
+
+  it('opens a real gap between the two bodies so the spoke has a visible run', () => {
+    const layout = delegatingLayout(3);
+    const parent = layout.pieces.find(piece => piece.agentId === 'a')!;
+    for (const unit of selectSpatialDelegationUnits(layout)) {
+      const centres = Math.hypot(unit.x - parent.x, unit.y - parent.y);
+      expect(centres).toBeGreaterThan(parent.size / 2 + unit.size / 2);
+    }
+  });
+
+  it('carries the hub position so the spoke can start at the parent centre', () => {
+    const layout = delegatingLayout(2);
+    const parent = layout.pieces.find(piece => piece.agentId === 'a')!;
+    for (const unit of selectSpatialDelegationUnits(layout)) {
+      expect(unit.parentX).toBeCloseTo(parent.x, 4);
+      expect(unit.parentY).toBeCloseTo(parent.y, 4);
     }
   });
 

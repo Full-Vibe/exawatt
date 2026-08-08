@@ -1117,15 +1117,20 @@ export function spatialBoardZoneForAgent(
  * decides only material and motion.
  */
 export const SPATIAL_DELEGATION_UNIT = {
-  /** Child diameter as a fraction of the parent's. The D3c brief fixes the
-   *  accepted band at 0.72–0.82; below it children read as punctuation again. */
-  childScale: 0.74,
+  /** Child diameter as a fraction of the parent's. AMENDED 2026-08-07
+   *  (operator): parents and children read mainly as PEERS. D3c's original
+   *  0.72–0.82 band expressed lineage through size hierarchy; lineage now
+   *  rides the spoke instead, and a delegated worker is not a lesser Agent.
+   *  Held just under parity so the hub of a constellation is still findable. */
+  childScale: 0.92,
   /** At or below this, every child is an individual unit. */
   individualLimit: SPATIAL_DELEGATION_SATELLITE_CAP,
   /** Above it, this many individuals plus one same-family overflow lobe. */
   individualsWhenOverflowing: 4,
-  /** Center-to-center distance as a fraction of the parent's diameter. */
-  orbitRadius: 0.9,
+  /** Center-to-center distance as a fraction of the parent's diameter. Sized
+   *  so a real gap opens between the two bodies: at peer scale the spoke is
+   *  what carries parentage, and a spoke with no visible run carries nothing. */
+  orbitRadius: 1.14,
   /** Rosette center, degrees CCW from +x with +y UP (layout space is y-down,
    *  so this is converted on use). 90° is directly above the parent. */
   arcCenterDeg: 90,
@@ -1161,6 +1166,9 @@ export interface SpatialBoardDelegationUnit {
   id: string;
   parentPieceId: string;
   parentAgentId: string;
+  /** Hub the constellation belongs to, in layout space. */
+  parentX: number;
+  parentY: number;
   projectId: string;
   kind: 'child' | 'overflow';
   agentType: string | null;
@@ -1234,6 +1242,8 @@ export function selectSpatialDelegationUnits(
           : `delegation:${piece.id}:${child!.id}`,
         parentPieceId: piece.id,
         parentAgentId: piece.agentId,
+        parentX: piece.x,
+        parentY: piece.y,
         projectId: piece.projectId,
         kind: lobe ? 'overflow' : 'child',
         agentType: lobe ? null : child!.agentType,

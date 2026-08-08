@@ -794,6 +794,13 @@ What shipped against §9's acceptance list:
 - **Lineage without authority**: a hairline Project-identity tether. D40 keeps
   sole ownership of status; no new light or colour is invented, and the child
   body is the same Agent noun as its parent.
+- **Peers, not a hierarchy** (2026-08-07, operator): children render at `0.92x`
+  the parent and lineage rides a spoke from the parent centre rather than a size
+  difference. D3c's `0.72–0.82x` band and `0.70x` floor are superseded — a
+  delegated worker is not a lesser Agent. A child still is not independently
+  commandable (arrow navigation skips it, it never joins **Direct N Agents**,
+  and activating opens the parent Session); at peer scale that is a mismatch to
+  resolve when D2 gives a child a destination.
 - **Children carry the D40 Active mark** (2026-08-07, operator): a live child is
   working by definition, and without a mark it read as an empty silhouette
   rather than an Agent. Drawn by the same instanced layer as parents, so it is

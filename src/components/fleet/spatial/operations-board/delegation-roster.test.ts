@@ -21,6 +21,8 @@ function unit(id: string): SpatialBoardDelegationUnit {
     id,
     parentPieceId: 'agent:p',
     parentAgentId: 'p',
+    parentX: 0,
+    parentY: 0,
     projectId: 'project:Alpha',
     kind: 'child',
     agentType: 'Explore',

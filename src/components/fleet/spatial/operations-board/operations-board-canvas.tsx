@@ -1765,19 +1765,22 @@ function DelegationUnitLayer({
       body.scale.set(scale, scale, 1);
       const tether = tetherRefs.current.get(unit.id);
       if (tether) {
-        // The tether establishes and retracts with the unit it explains.
-        const originWorldY = -unit.tether.y1;
-        const dx = x - unit.tether.x1;
-        const dy = worldY - originWorldY;
+        // Peer-scale children carry no size hierarchy, so the spoke is the only
+        // thing that says which hub a unit belongs to. It runs from the parent
+        // CENTRE to the child centre — both bodies cover their own end, and
+        // what remains visible is the run between them.
+        const hubWorldY = -unit.parentY;
+        const dx = x - unit.parentX;
+        const dy = worldY - hubWorldY;
         tether.position.set(
-          (unit.tether.x1 + x) / 2,
-          (originWorldY + worldY) / 2,
+          (unit.parentX + x) / 2,
+          (hubWorldY + worldY) / 2,
           0.55
         );
         tether.rotation.set(0, 0, Math.atan2(dy, dx));
         tether.scale.set(
           Math.hypot(dx, dy),
-          Math.max(unit.size * 0.05, 0.012),
+          Math.max(unit.size * 0.085, 0.02),
           1
         );
       }
@@ -1803,7 +1806,7 @@ function DelegationUnitLayer({
         <meshBasicMaterial
           toneMapped={false}
           transparent
-          opacity={0.55}
+          opacity={0.85}
           depthWrite={false}
         />
         {rendered.map(({ unit }) => (

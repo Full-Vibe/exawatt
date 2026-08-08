@@ -2098,6 +2098,51 @@ draw calls; `eval:spatial` 8/8; 15/15 pointer scenarios; every scale tier with
 Voltaic at 13 draw calls and the 1k/10k aggregates at 6 and still parking.
 Graded from screenshots at Fleet and Project altitude, in Air and Classic.
 
+### V3.4 parents and children become peers (2026-08-07, operator)
+
+> "I sort of do want parents and children to read mainly as peers. Maybe with
+> some spoke line connecting them or gravitational physics keeping them close
+> together."
+
+This amends D3c's composition, not its truth. The brief expressed lineage
+through SIZE — children at `0.72–0.82×` a parent — which encodes delegated work
+as lesser work. The operator's direction moves lineage entirely onto the
+connection, so the hierarchy can go.
+
+- **Peers.** Child scale `0.74×` → `0.92×`. Held just under parity rather than
+  at it, so the hub of a constellation is still findable at a glance; the D3c
+  band is superseded and the test now pins `≥0.85` and `<1`.
+- **The spoke carries parentage.** The orbit opens to `1.14×` the parent
+  diameter so a real gap exists between the two bodies — at peer scale a spoke
+  with no visible run carries nothing. It is drawn from the parent CENTRE
+  (the hub) rather than its edge, thicker and at `0.85` opacity, so a
+  constellation reads as a hub with spokes. Both bodies cover their own end.
+- **Bound, not orbiting.** "Close together" is delivered by geometry: the
+  orbit is the tightest radius that still shows a spoke, so a constellation
+  holds as one cluster. Ambient orbital drift was considered and NOT built —
+  see the open question below.
+
+Since the children's D40 marks are drawn by the shared status layer at each
+unit's RESTING slot, any ambient positional drift would separate a child's body
+from its own light. Making drift work means either moving child marks off the
+shared layer (which costs draw calls, and `eval:r3f` already caught that once)
+or re-running the pure layout at a drift cadence (which re-renders the whole
+board a few times a second). Both are real costs for a subtle effect, so the
+decision is the operator's rather than assumed.
+
+**Open, unchanged by this pass:** a child now LOOKS like a peer but is still not
+independently commandable — arrow navigation skips it, it cannot join
+`Direct N Agents`, and activating it opens the parent Session. That was correct
+while children read as subordinate detail; at peer scale it is a mismatch worth
+resolving, and it is gated on ENG-023 D2 giving a child a destination.
+
+Evidence: type-check and lint clean; 2,041 tests (1 skipped); `eval:r3f`
+100/100 with `t5-operations-board` still at 15 draw calls; `eval:spatial` 8/8
+with zero idle frames under reduced motion and low power; 15/15 pointer
+scenarios; every scale tier with Voltaic at 13 draw calls and the 1k/10k
+aggregates at 6 and still parking. Graded at Fleet and Project altitude in Air
+and Classic.
+
 ### V2.1 Scale & Truth
 
 Status: planned; gated by V2.0
