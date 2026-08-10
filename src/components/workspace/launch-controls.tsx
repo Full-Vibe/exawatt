@@ -556,42 +556,45 @@ export function AgentComposer({
     seenTargetIds.add(currentConfigurationId);
   }
 
-  const targetAvailability = (
-    target: AgentLaunchConfiguration
-  ): { available: boolean; reason?: string } => {
-    const snapshot = sourceSnapshots.find(
-      candidate =>
-        candidate.id === target.sourceId ||
-        candidate.harness === target.sourceId
-    );
-    if (!snapshot) {
-      return {
-        available: false,
-        reason: `Agent Source ${target.labels.source ?? target.sourceId} is not installed.`,
-      };
-    }
-    if (!snapshot?.launchable) {
-      return {
-        available: false,
-        reason: snapshot
-          ? `${snapshot.label}: ${snapshot.stateLabel}`
-          : `Agent Source ${target.sourceId} is unavailable.`,
-      };
-    }
-    const catalog = catalogsBySource[snapshot.harness];
-    if (!catalog) {
-      return { available: false, reason: 'Checking model availability…' };
-    }
-    const exactModelAvailable =
-      target.modelId === catalog.effectiveModel ||
-      catalog.models.some(option => option.id === target.modelId);
-    return exactModelAvailable
-      ? { available: true }
-      : {
+  const targetAvailability = useCallback(
+    (
+      target: AgentLaunchConfiguration
+    ): { available: boolean; reason?: string } => {
+      const snapshot = launchSourceSnapshots(sourceRegistry).find(
+        candidate =>
+          candidate.id === target.sourceId ||
+          candidate.harness === target.sourceId
+      );
+      if (!snapshot) {
+        return {
           available: false,
-          reason: `${target.labels.model ?? target.modelId} is not available from ${snapshot.label}.`,
+          reason: `Agent Source ${target.labels.source ?? target.sourceId} is not installed.`,
         };
-  };
+      }
+      if (!snapshot?.launchable) {
+        return {
+          available: false,
+          reason: snapshot
+            ? `${snapshot.label}: ${snapshot.stateLabel}`
+            : `Agent Source ${target.sourceId} is unavailable.`,
+        };
+      }
+      const catalog = catalogsBySource[snapshot.harness];
+      if (!catalog) {
+        return { available: false, reason: 'Checking model availability…' };
+      }
+      const exactModelAvailable =
+        target.modelId === catalog.effectiveModel ||
+        catalog.models.some(option => option.id === target.modelId);
+      return exactModelAvailable
+        ? { available: true }
+        : {
+            available: false,
+            reason: `${target.labels.model ?? target.modelId} is not available from ${snapshot.label}.`,
+          };
+    },
+    [catalogsBySource, sourceRegistry]
+  );
 
   const ribbonTargets: Array<{
     target: LaunchTarget;
@@ -1057,6 +1060,7 @@ export function AgentComposer({
     projectDir,
     sourceRegistry,
     sourceRegistryReady,
+    targetAvailability,
   ]);
 
   useEffect(() => {
