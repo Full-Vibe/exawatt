@@ -568,6 +568,12 @@ export interface ExawattSettings {
   reentryRecap?: {
     enabled: boolean;
   };
+  /** ENG-035 automatic public-profile sync. Opposite polarity from every
+   *  switch above: absent means OFF — publishing is opt-in (decision `0029`)
+   *  and turning this on is the consent act. */
+  operatorProfile?: {
+    autoPublish: boolean;
+  };
   agentSources?: {
     projectLastUsed: Record<string, string>;
     sourceRecency: Record<string, number>;
@@ -590,6 +596,7 @@ export interface ElectronSettingsApi {
   ) => Promise<ExawattSettings>;
   setGoalVisualsEnabled: (enabled: boolean) => Promise<ExawattSettings>;
   setReentryRecap: (enabled: boolean) => Promise<ExawattSettings>;
+  setOperatorAutoPublish: (enabled: boolean) => Promise<ExawattSettings>;
   recordAgentSourceUse: (
     projectDir: string,
     source: string,

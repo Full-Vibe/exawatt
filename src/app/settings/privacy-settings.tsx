@@ -7,11 +7,13 @@ import {
   HOSTED_FEATURE_IDS,
   OUTBOUND_CONTROLS,
   isHostedFeatureEnabled,
+  isOperatorAutoPublishEnabled,
   isReentryRecapEnabled,
   type HostedFeatureId,
   type HostedFeaturePreferences,
   type OutboundControl,
   type OwnAccountFeatureId,
+  type PublicSharingFeatureId,
 } from '@/lib/hosted-features/contract';
 import { useGoalVisualPreference } from '@/components/goal-visuals/goal-visual-preference-provider';
 import type { ElectronSettingsApi, ExawattSettings } from '@/types/electron';
@@ -111,7 +113,10 @@ function useHostedFeatureSettings() {
 
   const setFeature = useCallback(
     async (
-      id: Exclude<HostedFeatureId, 'goalVisuals'> | OwnAccountFeatureId,
+      id:
+        | Exclude<HostedFeatureId, 'goalVisuals'>
+        | OwnAccountFeatureId
+        | PublicSharingFeatureId,
       enabled: boolean
     ) => {
       if (!api) return;
@@ -120,7 +125,9 @@ function useHostedFeatureSettings() {
           ? api.setHostedContextLabels
           : id === 'conversationSummaries'
             ? api.setHostedConversationSummaries
-            : api.setReentryRecap;
+            : id === 'operatorProfile'
+              ? api.setOperatorAutoPublish
+              : api.setReentryRecap;
       try {
         setSettings(await save(enabled));
       } catch {
@@ -207,6 +214,26 @@ export function PrivacySettings() {
               control={OUTBOUND_CONTROLS.reentryRecap}
               checked={isReentryRecapEnabled(preferences)}
               onChange={next => void setFeature('reentryRecap', next)}
+            />
+          </SettingsGroup>
+        ) : null}
+
+        {/* The FOURTH category (ENG-035): public sharing. The one control on
+            this surface that makes data PUBLIC, and the one that defaults
+            off — turning it on is decision `0029`'s consent act. Structurally
+            separate from hosted features (private, for you), own-account
+            traffic, and analytics. Desktop-only: the local source that feeds
+            it exists only in the app. */}
+        {available ? (
+          <SettingsGroup
+            title="Public sharing"
+            description="Data published for anyone to read. Off until you turn it on."
+            dataAttribute="data-public-sharing-settings"
+          >
+            <OutboundControlRow
+              control={OUTBOUND_CONTROLS.operatorProfile}
+              checked={isOperatorAutoPublishEnabled(preferences)}
+              onChange={next => void setFeature('operatorProfile', next)}
             />
           </SettingsGroup>
         ) : null}

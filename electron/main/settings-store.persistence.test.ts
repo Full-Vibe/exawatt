@@ -14,6 +14,7 @@ import {
   loadSettings,
   setAppearancePreferences,
   setHostedContextLabels,
+  setOperatorAutoPublish,
   setReentryRecapEnabled,
 } from './settings-store';
 
@@ -119,6 +120,30 @@ describe('appearance settings persistence', () => {
     expect(loadSettings()).toEqual({
       terminal: { fontSize: 15 },
       reentryRecap: { enabled: true },
+    });
+  });
+
+  it('records a publishing choice without ever writing a default — absent is OFF', () => {
+    const file = path.join(electronState.userData, 'settings.json');
+    fs.writeFileSync(file, JSON.stringify({ terminal: { fontSize: 15 } }));
+    const before = fs.readFileSync(file, 'utf8');
+
+    // ENG-035 / decision `0029`: absent means OFF — opt-in, the opposite
+    // default from every other switch here — and reading never writes.
+    expect(loadSettings().operatorProfile?.autoPublish === true).toBe(false);
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+
+    expect(setOperatorAutoPublish(true)).toEqual({
+      terminal: { fontSize: 15 },
+      operatorProfile: { autoPublish: true },
+    });
+    expect(loadSettings().operatorProfile).toEqual({ autoPublish: true });
+    expect(setOperatorAutoPublish(false).operatorProfile).toEqual({
+      autoPublish: false,
+    });
+    expect(loadSettings()).toEqual({
+      terminal: { fontSize: 15 },
+      operatorProfile: { autoPublish: false },
     });
   });
 

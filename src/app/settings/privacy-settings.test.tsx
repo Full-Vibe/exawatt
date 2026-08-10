@@ -52,6 +52,7 @@ type SettingsBridge = {
   setHostedConversationSummaries: ReturnType<typeof vi.fn>;
   setHostedContextLabels: ReturnType<typeof vi.fn>;
   setReentryRecap: ReturnType<typeof vi.fn>;
+  setOperatorAutoPublish: ReturnType<typeof vi.fn>;
 };
 
 /** The desktop settings store, as this surface sees it: a local read, a live
@@ -89,6 +90,9 @@ function installSettingsBridge(
     ),
     setReentryRecap: vi.fn(async (enabled: boolean) =>
       write({ ...store, reentryRecap: { enabled } })
+    ),
+    setOperatorAutoPublish: vi.fn(async (enabled: boolean) =>
+      write({ ...store, operatorProfile: { autoPublish: enabled } })
     ),
   };
 
@@ -149,14 +153,17 @@ describe('Settings → Privacy', () => {
     }
   });
 
-  it('shows every control on by default before any settings load', async () => {
+  it('shows every control at its disclosed default before any settings load', async () => {
     installSettingsBridge({}, { pendingRead: true });
     await renderPrivacy();
 
+    // Everything defaults on (decision `0031`) except public sharing, which
+    // defaults OFF (decision `0029`) — the contract states each honestly.
+    expect(OUTBOUND_CONTROLS.operatorProfile.defaultEnabled).toBe(false);
     for (const control of Object.values(OUTBOUND_CONTROLS)) {
       expect(
         within(rowFor(control.id)).getByRole('switch', { name: control.label })
-      ).toHaveAttribute('aria-checked', 'true');
+      ).toHaveAttribute('aria-checked', String(control.defaultEnabled));
     }
   });
 
@@ -255,6 +262,73 @@ describe('Settings → Privacy', () => {
       expect(bridge.setReentryRecap).toHaveBeenCalledWith(true)
     );
     await waitFor(() => expect(recap).toHaveAttribute('aria-checked', 'true'));
+  });
+
+  // ENG-035: public sharing is a FOURTH structurally separate group — the
+  // only control that makes data public, and the only one that is opt-in.
+  it('gives the operator profile an off-by-default switch in its own group', async () => {
+    const bridge = installSettingsBridge();
+    await renderPrivacy();
+
+    const publicSharing = groupFor('data-public-sharing-settings');
+    const publishing = within(publicSharing).getByRole('switch', {
+      name: OUTBOUND_CONTROLS.operatorProfile.label,
+    });
+    // Absent preference means OFF — enabling is the consent act.
+    expect(publishing).toHaveAttribute('aria-checked', 'false');
+
+    fireEvent.click(publishing);
+    await waitFor(() =>
+      expect(bridge.setOperatorAutoPublish).toHaveBeenCalledWith(true)
+    );
+    await waitFor(() =>
+      expect(publishing).toHaveAttribute('aria-checked', 'true')
+    );
+
+    fireEvent.click(publishing);
+    await waitFor(() =>
+      expect(bridge.setOperatorAutoPublish).toHaveBeenCalledWith(false)
+    );
+    await waitFor(() =>
+      expect(publishing).toHaveAttribute('aria-checked', 'false')
+    );
+  });
+
+  it('reflects a publishing preference persisted earlier', async () => {
+    installSettingsBridge({ operatorProfile: { autoPublish: true } });
+    await renderPrivacy();
+
+    expect(
+      within(groupFor('data-public-sharing-settings')).getByRole('switch', {
+        name: OUTBOUND_CONTROLS.operatorProfile.label,
+      })
+    ).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('keeps public sharing structurally separate from every other group', async () => {
+    installSettingsBridge();
+    await renderPrivacy();
+
+    const publicSharing = groupFor('data-public-sharing-settings');
+    for (const attribute of [
+      'data-hosted-feature-settings',
+      'data-own-account-settings',
+      'data-analytics-settings',
+    ]) {
+      const other = groupFor(attribute);
+      expect(publicSharing.contains(other)).toBe(false);
+      expect(other.contains(publicSharing)).toBe(false);
+      expect(
+        within(other).queryByRole('switch', {
+          name: OUTBOUND_CONTROLS.operatorProfile.label,
+        })
+      ).toBeNull();
+    }
+    expect(
+      within(publicSharing).getByRole('switch', {
+        name: OUTBOUND_CONTROLS.operatorProfile.label,
+      })
+    ).toBeVisible();
   });
 
   it('reflects a recap preference persisted earlier', async () => {
@@ -383,6 +457,12 @@ describe('Settings → Privacy', () => {
     expect(
       screen.queryByRole('switch', {
         name: OUTBOUND_CONTROLS.reentryRecap.label,
+      })
+    ).toBeNull();
+    // Publishing is fed by the local desktop source; no dead switch on web.
+    expect(
+      screen.queryByRole('switch', {
+        name: OUTBOUND_CONTROLS.operatorProfile.label,
       })
     ).toBeNull();
   });

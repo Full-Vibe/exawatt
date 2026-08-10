@@ -31,6 +31,21 @@ export function formatAgentHoursLong(ms: number): string {
   return `${value} agent hours`;
 }
 
+/**
+ * The publish panel's last-synced stamp: time of day while it is today,
+ * date + time once it is not, so "synced 2:14 PM" can never silently mean
+ * yesterday.
+ */
+export function formatSyncedAt(at: number, now: number = Date.now()): string {
+  const then = new Date(at);
+  const sameDay = new Date(now).toDateString() === then.toDateString();
+  return new Intl.DateTimeFormat('en', {
+    ...(sameDay ? {} : { month: 'short', day: 'numeric' }),
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(then);
+}
+
 export function formatTokens(tokens: number): string {
   return new Intl.NumberFormat('en', {
     notation: tokens >= 10_000 ? 'compact' : 'standard',

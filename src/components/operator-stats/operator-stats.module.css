@@ -259,9 +259,88 @@
 
 .publishActions {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
   justify-content: flex-end;
   margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+/* The publishing switch — the panel's primary control (ENG-035). Same mono
+   control voice as the buttons; the track/thumb carry state redundantly with
+   the label so hue never signals alone. */
+.publishSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.5rem;
+  padding: 0 1rem;
+  font-family: var(--font-geist-mono);
+  font-size: var(--text-chrome-label);
+  font-weight: 650;
+  color: var(--exa-hud-text, #dcebff);
+  background: transparent;
+  border: 1px solid var(--arena-line);
+  cursor: pointer;
+}
+
+.publishSwitch[data-publishing='on'] {
+  color: var(--arena-hot);
+  border-color: var(--arena-hot);
+}
+
+.switchTrack {
+  position: relative;
+  width: 1.9rem;
+  height: 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--arena-line);
+  background: transparent;
+  transition: background 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.publishSwitch[data-publishing='on'] .switchTrack {
+  border-color: var(--arena-hot);
+  background: var(--arena-hot);
+}
+
+.switchThumb {
+  position: absolute;
+  top: 50%;
+  left: 0.15rem;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  background: var(--exa-hud-text-dim, #8aa0be);
+  transform: translateY(-50%);
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.publishSwitch[data-publishing='on'] .switchThumb {
+  background: var(--exa-hud-void, #04060b);
+  transform: translate(0.85rem, -50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switchTrack,
+  .switchThumb {
+    transition: none;
+  }
+}
+
+.syncStatus {
+  margin-top: 0.35rem;
+  font-family: var(--font-geist-mono);
+  font-size: var(--text-chrome-label);
+  color: var(--exa-hud-text-dim, #8aa0be);
+}
+
+.syncStatus[data-sync-state='failed'] {
+  color: var(--exa-hud-amber, #ffb02e);
+}
+
+.syncStatus[data-sync-state='synced'] {
+  color: var(--exa-hud-green, #6fe39f);
 }
 
 .error {

@@ -27,6 +27,13 @@
  * Nothing about it is "hosted by Exawatt", so it gets its own group on the
  * Privacy surface rather than borrowing either existing one — the same
  * structural-separation reasoning decision `0031` applied to analytics.
+ *
+ * 2026-08-10: a FOURTH category — public sharing. The operator profile is the
+ * only control here that makes data PUBLIC, and the only one that defaults
+ * OFF: publishing is opt-in under decision `0029`, and turning the switch on
+ * is the consent act. It is not a hosted feature (those improve the app for
+ * you privately), not your-own-accounts traffic, and not analytics, so it
+ * borrows none of those groups.
  */
 
 export const HOSTED_FEATURE_IDS = [
@@ -43,10 +50,17 @@ export const OWN_ACCOUNT_FEATURE_IDS = ['reentryRecap'] as const;
 
 export type OwnAccountFeatureId = (typeof OWN_ACCOUNT_FEATURE_IDS)[number];
 
+/** Outbound behaviors that publish data for anyone to read. Off by default —
+ *  the opposite of everything else here (decision `0029`). */
+export const PUBLIC_SHARING_FEATURE_IDS = ['operatorProfile'] as const;
+
+export type PublicSharingFeatureId = (typeof PUBLIC_SHARING_FEATURE_IDS)[number];
+
 /** Every switch on the privacy surface, including the analytics one. */
 export const OUTBOUND_CONTROL_IDS = [
   ...HOSTED_FEATURE_IDS,
   ...OWN_ACCOUNT_FEATURE_IDS,
+  ...PUBLIC_SHARING_FEATURE_IDS,
   'productAnalytics',
 ] as const;
 
@@ -67,7 +81,8 @@ export interface OutboundControl {
   destination: string;
   /** What the operator loses by switching it off. Never "nothing". */
   cost: string;
-  /** Default-on per decision `0031`; all of these are disclosed, not hidden. */
+  /** Default-on per decision `0031` for hosted/own-account/analytics rows;
+   *  public sharing is default-OFF per decision `0029`. Disclosed either way. */
   defaultEnabled: boolean;
 }
 
@@ -128,6 +143,19 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     cost: 'Coming back to a Session shows no "since you left" line; you catch up by reading the terminal.',
     defaultEnabled: true,
   },
+  operatorProfile: {
+    id: 'operatorProfile',
+    // "Publishing" is the word the leaderboard panel's switch carries; this
+    // row names the thing being published. Decision `0029` owns the exact
+    // upload allowlist the `sends` sentence summarizes.
+    label: 'Public operator profile',
+    purpose: 'Keeps your profile on the public leaderboard up to date.',
+    sends:
+      'Aggregate daily totals and Run records — agent hours, fleet size, durations, and token counts — with your GitHub-seeded handle, name, and avatar. Never prompts, responses, code, Project names, paths, or transcripts.',
+    destination: 'Exawatt — publicly readable on the leaderboard',
+    cost: 'Your public profile stops updating; it stays visible until you remove it.',
+    defaultEnabled: false,
+  },
   productAnalytics: {
     id: 'productAnalytics',
     label: 'Product analytics',
@@ -149,6 +177,7 @@ export interface HostedFeaturePreferences {
   conversationSummaries?: { hosted: boolean };
   goalVisuals?: { enabled: boolean };
   reentryRecap?: { enabled: boolean };
+  operatorProfile?: { autoPublish: boolean };
 }
 
 export function isHostedFeatureEnabled(
@@ -171,4 +200,15 @@ export function isReentryRecapEnabled(
 ): boolean {
   if (!preferences) return OUTBOUND_CONTROLS.reentryRecap.defaultEnabled;
   return preferences.reentryRecap?.enabled !== false;
+}
+
+/**
+ * Deliberately `=== true`, never `!== false`: publishing is opt-in (decision
+ * `0029`), so absent, malformed, or missing settings all mean OFF. This is the
+ * one accessor in this module with that polarity.
+ */
+export function isOperatorAutoPublishEnabled(
+  preferences: HostedFeaturePreferences | null | undefined
+): boolean {
+  return preferences?.operatorProfile?.autoPublish === true;
 }

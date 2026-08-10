@@ -189,6 +189,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('settings:set-goal-visuals', enabled),
     setReentryRecap: (enabled: boolean) =>
       ipcRenderer.invoke('settings:set-reentry-recap', enabled),
+    setOperatorAutoPublish: (enabled: boolean) =>
+      ipcRenderer.invoke('settings:set-operator-auto-publish', enabled),
     recordAgentSourceUse: (
       projectDir: string,
       source: string,
@@ -251,6 +253,7 @@ contextBridge.exposeInMainWorld('electron', {
       conversationSummaries?: { hosted: boolean };
       goalVisuals?: { enabled: boolean };
       reentryRecap?: { enabled: boolean };
+      operatorProfile?: { autoPublish: boolean };
       agentSources?: {
         projectLastUsed: Record<string, string>;
         sourceRecency: Record<string, number>;

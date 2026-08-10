@@ -370,6 +370,29 @@ Acceptance:
 - the payload can be printed in tests and contains only allowlisted fields
 - signed-out/offline/live/demo states are distinct and honest
 
+**Amended 2026-08-10 — publishing is a durable preference, not a per-sync
+ritual** (operator, verbatim: "I don't want to preview local stats as a user.
+Just auto-publish or pause publishing, based on a preference switch"; decision
+`0029`'s dated amendment carries the consent reasoning). The mandatory
+preview→publish two-step is retired. Consent is now the off-by-default
+`operatorProfile.autoPublish` switch (Electron settings store; absent means
+off), surfaced on the publish panel and as Settings → Privacy's fourth,
+structurally separate "Public sharing" group — both wired to the same stored
+preference. While on, the renderer-owned scheduler
+(`src/lib/operator-stats/auto-sync.ts`, started from
+`instrumentation-client.ts`) syncs shortly after launch, then six-hourly, and
+immediately on flip-on, all through one coalesced executor that re-reads the
+preference at execution time — no upload can happen with the switch off or
+absent, and a gated state never emits analytics; genuine failures count as
+`hosted_call_failed` service `operator_stats`. The panel became a status
+surface: switch (Publishing on / Publishing paused), last-synced time, honest
+paused / waiting-for-GitHub / syncing / up-to-date / failed-retries states, a
+small **Sync now**, and **Remove public profile** as the distinct
+profile-takedown action (which also pauses publishing so a scheduled sync
+cannot resurrect it). The A3 acceptance list above still holds under the new
+vehicle: no read or upload happens by visiting, and the first write still
+follows explicit consent — the flip.
+
 ### A4 — public arena, profile, and Run receipt
 
 Build `/leaderboard`, `/operator/[handle]`, and `/run/[id]`; add production
@@ -422,6 +445,19 @@ Exit criteria:
 | Delivery        | `agent:land` with all relevant verifies and `--dogfood`; signed-out production URL check after deployment |
 
 ## Findings log
+
+- 2026-08-10 (operator decision, verbatim: "I don't want to preview local
+  stats as a user. Just auto-publish or pause publishing, based on a
+  preference switch."): **the preview→publish two-step gated the wrong
+  moment.** The operator — #1 on the board, `operator_profiles.enabled=true`,
+  already past first consent — wanted his frozen profile refreshed and was
+  made to re-run a disclosure ritual designed for someone who had never
+  consented. Shipped the same day: publishing became the off-by-default
+  `operatorProfile.autoPublish` preference (the A3 amendment above), with
+  automatic coalesced syncs while on and the preview demoted to optional
+  passive disclosure. This also gives the 2026-08-06 staleness finding its
+  owner-facing surface: the panel now states "waiting for GitHub link" when
+  the switch is on but the identity is gone, instead of freezing silently.
 
 - 2026-08-06 (external-user audit, `projects/external-user-readiness.md`):
   **the GitHub identity backing the public profile no longer exists, and A2's

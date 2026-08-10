@@ -78,6 +78,27 @@ describe('parseSettings', () => {
     ).toEqual({ enabled: true });
   });
 
+  // ENG-035: the publishing switch has the OPPOSITE polarity — opt-in under
+  // decision `0029`. Absent or malformed must resolve to OFF, never on, and
+  // only an explicit boolean is a choice.
+  it('treats a missing or malformed publishing key as off, never on', () => {
+    for (const settings of [
+      parseSettings({}),
+      parseSettings({ operatorProfile: { autoPublish: 'yes' } }),
+      parseSettings({ operatorProfile: 'on' }),
+      parseSettings({ operatorProfile: { autoPublish: 1 } }),
+    ]) {
+      expect(settings.operatorProfile).toBeUndefined();
+      expect(settings.operatorProfile?.autoPublish === true).toBe(false);
+    }
+    expect(parseSettings({ operatorProfile: { autoPublish: true } })).toEqual({
+      operatorProfile: { autoPublish: true },
+    });
+    expect(
+      parseSettings({ operatorProfile: { autoPublish: false } }).operatorProfile
+    ).toEqual({ autoPublish: false });
+  });
+
   it('sanitizes Agent Source recommendations while preserving future source ids', () => {
     expect(
       parseSettings({

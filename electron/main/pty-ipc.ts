@@ -39,6 +39,7 @@ import {
   setHostedContextLabels,
   setHostedConversationSummaries,
   setLaunchConfigurationPinned,
+  setOperatorAutoPublish,
   setReentryRecapEnabled,
   setAppearancePreferences,
 } from './settings-store';
@@ -795,6 +796,20 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     broadcast('settings:changed', settings);
     return settings;
   });
+  handleTrusted(
+    'settings:set-operator-auto-publish',
+    (_event, enabled: boolean) => {
+      if (typeof enabled !== 'boolean')
+        throw new Error('Invalid publishing setting');
+      // No main-side enforcement point exists on purpose: uploads only ever
+      // leave from the renderer's sync path, which re-reads this preference
+      // at execution time (ENG-035; decision `0029`). Main persists the
+      // choice and announces it.
+      const settings = setOperatorAutoPublish(enabled);
+      broadcast('settings:changed', settings);
+      return settings;
+    }
+  );
   handleTrusted(
     'settings:record-agent-source-use',
     (_event, projectDir: string, source: string, usedAt: number) => {

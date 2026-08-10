@@ -87,6 +87,13 @@ export interface ExawattSettings {
      * servers). Off reads no scrollback and spawns nothing. */
     enabled: boolean;
   };
+  operatorProfile?: {
+    /** ENG-035: automatic sync of the public operator profile. The one
+     * outbound switch that defaults OFF — publishing is opt-in under decision
+     * `0029`, and turning this on IS the consent act. Absent means off, never
+     * on; no upload of any kind may happen while it is absent or false. */
+    autoPublish: boolean;
+  };
   agentSources?: {
     projectLastUsed: Record<string, string>;
     sourceRecency: Record<string, number>;
@@ -418,6 +425,18 @@ export function parseSettings(raw: unknown): ExawattSettings {
     const enabled = (reentryRecap as { enabled?: unknown }).enabled;
     if (typeof enabled === 'boolean') settings.reentryRecap = { enabled };
   }
+  // Opposite polarity from every switch above: absent means OFF (decision
+  // `0029` — publishing is opt-in), so a malformed key falls back to not
+  // publishing rather than silently opting the operator in.
+  const operatorProfile = (raw as { operatorProfile?: unknown })
+    .operatorProfile;
+  if (operatorProfile && typeof operatorProfile === 'object') {
+    const autoPublish = (operatorProfile as { autoPublish?: unknown })
+      .autoPublish;
+    if (typeof autoPublish === 'boolean') {
+      settings.operatorProfile = { autoPublish };
+    }
+  }
   const agentSources = (raw as { agentSources?: unknown }).agentSources;
   if (agentSources && typeof agentSources === 'object') {
     const candidate = agentSources as {
@@ -704,6 +723,13 @@ export function setGoalVisualsEnabled(enabled: boolean): ExawattSettings {
 export function setReentryRecapEnabled(enabled: boolean): ExawattSettings {
   const settings = loadSettings();
   settings.reentryRecap = { enabled };
+  writeSettings(settings);
+  return settings;
+}
+
+export function setOperatorAutoPublish(enabled: boolean): ExawattSettings {
+  const settings = loadSettings();
+  settings.operatorProfile = { autoPublish: enabled };
   writeSettings(settings);
   return settings;
 }

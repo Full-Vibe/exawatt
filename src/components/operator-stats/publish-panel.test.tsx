@@ -19,6 +19,55 @@ vi.mock('@/lib/tenancy/tenancy-provider', () => ({
   useOptionalWorkspaceTenancy: () => null,
 }));
 
+/** The sync executor has its own suites (`src/lib/operator-stats`); here the
+ *  panel is a pure status surface over a drivable store. */
+interface FakeSyncState {
+  phase: 'idle' | 'syncing';
+  lastOutcome: string | null;
+  lastSyncedAt: number | null;
+  lastSnapshot: {
+    runs: number;
+    agentMs: number;
+    normalizedTokens: number;
+  } | null;
+}
+
+const { syncStore, runSync } = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  const initial = () => ({
+    phase: 'idle' as const,
+    lastOutcome: null,
+    lastSyncedAt: null,
+    lastSnapshot: null,
+  });
+  const store = {
+    state: initial() as FakeSyncState,
+    listeners,
+    set(patch: Partial<FakeSyncState>) {
+      store.state = { ...store.state, ...patch };
+      for (const listener of listeners) listener();
+    },
+    reset() {
+      store.state = initial();
+      listeners.clear();
+    },
+  };
+  return {
+    syncStore: store,
+    runSync: vi.fn(async () => ({ outcome: 'synced', snapshot: null })),
+  };
+});
+
+vi.mock('@/lib/operator-stats/auto-sync', () => ({
+  OPERATOR_STATS_ENABLED_KEY: 'exawatt.operator-stats.enabled.v1',
+  readOperatorStatsSyncState: () => syncStore.state,
+  subscribeOperatorStatsSync: (listener: () => void) => {
+    syncStore.listeners.add(listener);
+    return () => syncStore.listeners.delete(listener);
+  },
+  runOperatorStatsSync: runSync,
+}));
+
 const GITHUB_IDENTITY = {
   identity_id: 'identity-1',
   id: 'gh-1',
@@ -105,9 +154,54 @@ function at(path: string) {
   window.history.replaceState(null, '', path);
 }
 
+/** The full desktop context: Electron bridge with a settings store, a linked
+ *  GitHub identity, and a signed-in session — where the switch lives. */
+function electronPanel(
+  options: { autoPublish?: boolean; published?: boolean } = {}
+) {
+  client.current = buildClient({ identities: [GITHUB_IDENTITY] });
+  if (options.published) {
+    window.localStorage.setItem('exawatt.operator-stats.enabled.v1', 'true');
+  }
+  let settings: Record<string, unknown> =
+    options.autoPublish === undefined
+      ? {}
+      : { operatorProfile: { autoPublish: options.autoPublish } };
+  const settingsListeners = new Set<(next: unknown) => void>();
+  const bridge = {
+    get: vi.fn(async () => settings),
+    onChanged: vi.fn((handler: (next: unknown) => void) => {
+      settingsListeners.add(handler);
+      return () => settingsListeners.delete(handler);
+    }),
+    setOperatorAutoPublish: vi.fn(async (enabled: boolean) => {
+      settings = { operatorProfile: { autoPublish: enabled } };
+      for (const listener of settingsListeners) listener(settings);
+      return settings;
+    }),
+  };
+  Object.defineProperty(window, 'electron', {
+    configurable: true,
+    writable: true,
+    value: {
+      isElectron: true,
+      auth: {
+        onComplete: vi.fn(() => () => {}),
+        onError: vi.fn(() => () => {}),
+        onLinkOutcome: vi.fn(() => () => {}),
+      },
+      settings: bridge,
+    },
+  });
+  return { settingsBridge: bridge };
+}
+
 beforeEach(() => {
   client.current = buildClient();
   at('/leaderboard');
+  window.localStorage.clear();
+  syncStore.reset();
+  runSync.mockClear();
   Object.defineProperty(window, 'electron', {
     value: undefined,
     configurable: true,
@@ -121,6 +215,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('an already-linked GitHub reads as done, not failed', () => {
@@ -324,5 +419,195 @@ describe('the web flow returns to the surface that started it', () => {
     expect(redirect.pathname).toBe('/auth/callback');
     expect(redirect.searchParams.get('intent')).toBe('link');
     expect(redirect.searchParams.get('next')).toBe('/leaderboard');
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * ENG-035 — publishing as a durable preference. The panel is a status
+ * surface: one switch, honest state, no preview ritual.
+ * ------------------------------------------------------------------ */
+
+describe('the preview ritual is gone', () => {
+  it('offers no preview or one-shot publish action in any state', async () => {
+    electronPanel({ autoPublish: true, published: true });
+
+    await mount();
+
+    expect(screen.queryByText('Preview local stats')).toBeNull();
+    expect(screen.queryByText('Refresh preview')).toBeNull();
+    expect(screen.queryByText('Publish my profile')).toBeNull();
+    expect(screen.getByRole('switch')).toBeTruthy();
+  });
+});
+
+describe('publishing paused (the off state)', () => {
+  it('defaults off with the consent disclosure inline — absent means paused', async () => {
+    electronPanel(); // no preference recorded at all
+
+    await mount();
+
+    const publishing = screen.getByRole('switch', {
+      name: 'Publishing paused',
+    });
+    expect(publishing).toHaveAttribute('aria-checked', 'false');
+    // The disclosure IS the consent surface: what is shared, what never is,
+    // and that recording starts at the flip with no backfill.
+    expect(
+      screen.getByText(/aggregate daily totals and Run records/)
+    ).toBeTruthy();
+    expect(screen.getByText(/never leave this machine/)).toBeTruthy();
+    expect(
+      screen.getByText(/earlier local history is not uploaded/)
+    ).toBeTruthy();
+    // Nothing to sync and nothing to remove while off and unpublished.
+    expect(screen.queryByRole('button', { name: 'Sync now' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Remove public profile' })
+    ).toBeNull();
+    expect(runSync).not.toHaveBeenCalled();
+  });
+
+  it('tells a published owner the profile stays visible and stops updating', async () => {
+    electronPanel({ autoPublish: false, published: true });
+
+    await mount();
+
+    expect(
+      screen.getByText('Paused — your profile stays visible and stops updating.')
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Remove public profile' })
+    ).toBeTruthy();
+    // He consented already; re-enabling resumes from the original anchor, so
+    // the first-consent "recording starts now" paragraph would be false here.
+    expect(
+      screen.queryByText(/earlier local history is not uploaded/)
+    ).toBeNull();
+  });
+});
+
+describe('flipping publishing on', () => {
+  it('records the preference and starts a sync — the consent act', async () => {
+    const { settingsBridge } = electronPanel();
+
+    await mount();
+    await act(async () => {
+      screen.getByRole('switch', { name: 'Publishing paused' }).click();
+    });
+
+    expect(settingsBridge.setOperatorAutoPublish).toHaveBeenCalledWith(true);
+    expect(runSync).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole('switch', { name: 'Publishing on' })
+    ).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('button', { name: 'Sync now' })).toBeTruthy();
+  });
+
+  it('turns off without syncing — paused means paused', async () => {
+    const { settingsBridge } = electronPanel({ autoPublish: true });
+
+    await mount();
+    await act(async () => {
+      screen.getByRole('switch', { name: 'Publishing on' }).click();
+    });
+
+    expect(settingsBridge.setOperatorAutoPublish).toHaveBeenCalledWith(false);
+    expect(runSync).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('switch', { name: 'Publishing paused' })
+    ).toHaveAttribute('aria-checked', 'false');
+  });
+});
+
+describe('honest sync status while publishing is on', () => {
+  it('shows syncing and holds Sync now while a sync runs', async () => {
+    electronPanel({ autoPublish: true });
+
+    await mount();
+    act(() => syncStore.set({ phase: 'syncing' }));
+
+    expect(screen.getByText('Syncing…')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Sync now' })).toBeDisabled();
+  });
+
+  it('shows up to date with the last-synced time and the local aggregate', async () => {
+    electronPanel({ autoPublish: true, published: true });
+
+    await mount();
+    act(() =>
+      syncStore.set({
+        phase: 'idle',
+        lastOutcome: 'synced',
+        lastSyncedAt: Date.now(),
+        lastSnapshot: { runs: 12, agentMs: 10_908_000, normalizedTokens: 52_200_000 },
+      })
+    );
+
+    expect(screen.getByText(/Up to date · synced /)).toBeTruthy();
+    expect(screen.getByText(/12 Runs · 3.0 agent hours ·/)).toBeTruthy();
+  });
+
+  it('admits a failed sync and that it retries on its own', async () => {
+    electronPanel({ autoPublish: true, published: true });
+
+    await mount();
+    act(() => syncStore.set({ phase: 'idle', lastOutcome: 'failed' }));
+
+    expect(
+      screen.getByText('Sync failed — retries automatically.')
+    ).toBeTruthy();
+  });
+
+  it('lets impatience trigger the same coalesced sync', async () => {
+    electronPanel({ autoPublish: true, published: true });
+
+    await mount();
+    await act(async () => {
+      screen.getByRole('button', { name: 'Sync now' }).click();
+    });
+
+    expect(runSync).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a missing GitHub link surfaces instead of freezing silently', () => {
+  it('says publishing is waiting for GitHub when on but unlinked', async () => {
+    electronPanel({ autoPublish: true });
+    client.current = buildClient({ identities: [] });
+
+    await mount();
+
+    expect(screen.getByText('Claim your operator identity')).toBeTruthy();
+    expect(
+      screen.getByText(/Publishing is on and waiting for GitHub/)
+    ).toBeTruthy();
+  });
+});
+
+describe('removing the public profile stays a distinct act', () => {
+  it('takes the profile down AND pauses publishing so a sync cannot resurrect it', async () => {
+    const { settingsBridge } = electronPanel({
+      autoPublish: true,
+      published: true,
+    });
+    const fetchSpy = vi.fn(async () => ({ ok: true, status: 200 }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await mount();
+    await act(async () => {
+      screen.getByRole('button', { name: 'Remove public profile' }).click();
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/operator-stats',
+      expect.objectContaining({ method: 'DELETE' })
+    );
+    expect(
+      window.localStorage.getItem('exawatt.operator-stats.enabled.v1')
+    ).toBeNull();
+    expect(settingsBridge.setOperatorAutoPublish).toHaveBeenCalledWith(false);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Public profile removed. Local history was not changed.'
+    );
   });
 });

@@ -1,8 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import type { Session, UserIdentity } from '@supabase/supabase-js';
-import type { OperatorStatsPublishPayload } from '@exawatt/core';
 import { createClient } from '@/lib/supabase/client';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import {
@@ -15,16 +21,36 @@ import {
   linkOutcomeMessage,
   LINK_SUCCESS_MESSAGES,
 } from '@/components/auth/callback-failures';
-import { formatAgentHoursLong, formatTokens } from './format';
+import { isOperatorAutoPublishEnabled } from '@/lib/hosted-features/contract';
+import {
+  OPERATOR_STATS_ENABLED_KEY,
+  readOperatorStatsSyncState,
+  runOperatorStatsSync,
+  subscribeOperatorStatsSync,
+  type OperatorStatsSyncState,
+} from '@/lib/operator-stats/auto-sync';
+import { formatAgentHoursLong, formatSyncedAt, formatTokens } from './format';
 import styles from './operator-stats.module.css';
 
-const START_KEY = 'exawatt.operator-stats.started-at.v1';
-const ENABLED_KEY = 'exawatt.operator-stats.enabled.v1';
+/**
+ * ENG-035 — the publish panel as a status surface, not a ritual.
+ *
+ * Publishing is one durable preference (`operatorProfile.autoPublish`, the
+ * Electron settings store; also on Settings → Privacy — same preference, same
+ * bridge, so the two can never disagree). Turning it on is the decision `0029`
+ * consent act and carries the disclosure inline; while it is on, syncs run
+ * automatically (`src/lib/operator-stats/auto-sync.ts`). The old mandatory
+ * preview-then-publish two-step is gone per the operator's 2026-08-10
+ * direction. Pausing stops updates; **Remove public profile** takes the
+ * profile down — deliberately distinct actions.
+ */
 
-type LocalPreview = Pick<
-  OperatorStatsPublishPayload,
-  'schemaVersion' | 'consentVersion' | 'enabled' | 'timezone' | 'days' | 'runs'
->;
+const SERVER_SYNC_STATE: OperatorStatsSyncState = {
+  phase: 'idle',
+  lastOutcome: null,
+  lastSyncedAt: null,
+  lastSnapshot: null,
+};
 
 function findGithub(identities: UserIdentity[] | null | undefined) {
   return identities?.find(identity => identity.provider === 'github') ?? null;
@@ -46,14 +72,19 @@ export function PublishPanel() {
   // that already succeeded.
   const [identities, setIdentities] = useState<UserIdentity[] | null>(null);
   const [inElectron, setInElectron] = useState(false);
-  const [preview, setPreview] = useState<LocalPreview | null>(null);
+  const [autoPublish, setAutoPublish] = useState(false);
+  const [published, setPublished] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [enabled, setEnabled] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The desktop error channel is shared with sign-in. Only a link this panel
   // started is this panel's to report.
   const linkInFlight = useRef(false);
+  const sync = useSyncExternalStore(
+    subscribeOperatorStatsSync,
+    readOperatorStatsSyncState,
+    () => SERVER_SYNC_STATE
+  );
 
   const refreshIdentities = useCallback(async () => {
     if (!supabase) return null;
@@ -93,7 +124,7 @@ export function PublishPanel() {
 
   useEffect(() => {
     setInElectron(Boolean(window.electron?.isElectron));
-    setEnabled(localStorage.getItem(ENABLED_KEY) === 'true');
+    setPublished(localStorage.getItem(OPERATOR_STATS_ENABLED_KEY) === 'true');
     if (!supabase) return;
     void supabase.auth
       .getSession()
@@ -126,6 +157,32 @@ export function PublishPanel() {
     };
   }, [supabase, reportLinkOutcome]);
 
+  // The publishing preference, live. The settings store is the single source
+  // of truth; Settings → Privacy writes through the same bridge.
+  useEffect(() => {
+    const bridge = window.electron?.settings;
+    if (!bridge) return;
+    let active = true;
+    void bridge.get().then(
+      settings => {
+        if (active) setAutoPublish(isOperatorAutoPublishEnabled(settings));
+      },
+      () => undefined
+    );
+    const off = bridge.onChanged?.(settings => {
+      if (active) setAutoPublish(isOperatorAutoPublishEnabled(settings));
+    });
+    return () => {
+      active = false;
+      off?.();
+    };
+  }, []);
+
+  // A sync that succeeded (from any trigger) means the profile exists.
+  useEffect(() => {
+    if (sync.lastOutcome === 'synced') setPublished(true);
+  }, [sync.lastOutcome]);
+
   // The web flow returns here, not to /sign-in, and says what happened on the
   // way in. Consumed once: a reload should not replay a stale verdict.
   useEffect(() => {
@@ -152,10 +209,6 @@ export function PublishPanel() {
   }, [userId, refreshIdentities]);
 
   const github = findGithub(identities ?? session?.user.identities);
-  const totalAgentMs =
-    preview?.days.reduce((sum, day) => sum + day.agentMs, 0) ?? 0;
-  const totalTokens =
-    preview?.days.reduce((sum, day) => sum + day.normalizedTokens, 0) ?? 0;
 
   async function linkGithub() {
     if (!supabase) return;
@@ -215,94 +268,48 @@ export function PublishPanel() {
     setBusy(false);
   }
 
-  async function scan() {
-    const api = window.electron?.operatorStats;
-    if (!api) return;
-    setBusy(true);
+  async function setPublishing(next: boolean) {
+    const bridge = window.electron?.settings;
+    if (!bridge?.setOperatorAutoPublish) return;
     setError(null);
     setMessage(null);
     try {
-      let since = localStorage.getItem(START_KEY);
-      if (!since) {
-        since = new Date().toISOString();
-        localStorage.setItem(START_KEY, since);
-      }
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      setPreview(await api.scan(since, timezone));
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : 'Local stats could not be read.'
-      );
-    } finally {
-      setBusy(false);
+      await bridge.setOperatorAutoPublish(next);
+      setAutoPublish(next);
+      // Enabling is the moment the operator expects the profile to appear or
+      // refresh. The executor re-checks the preference and coalesces with any
+      // scheduled trigger, so this can never double-post.
+      if (next) void runOperatorStatsSync();
+    } catch {
+      // A refused write leaves the switch showing the state that is real.
     }
   }
 
-  async function publish() {
-    if (!supabase || !session || !preview || !github) return;
-    setBusy(true);
-    setError(null);
-    setMessage(null);
-    const data = github.identity_data ?? {};
-    const handle = String(data.user_name ?? data.preferred_username ?? '');
-    try {
-      const response = await fetch('/api/operator-stats', {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${session.access_token}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...preview,
-          identity: {
-            provider: 'github',
-            providerHandle: handle,
-            handle: handle.toLowerCase(),
-            displayName: String(data.full_name ?? data.name ?? handle),
-            avatarUrl:
-              typeof data.avatar_url === 'string' ? data.avatar_url : null,
-            links: [`https://github.com/${handle}`],
-          },
-        }),
-      });
-      const result = (await response.json().catch(() => ({}))) as {
-        error?: string;
-      };
-      if (!response.ok)
-        throw new Error(result.error ?? 'Profile could not be published.');
-      localStorage.setItem(ENABLED_KEY, 'true');
-      setEnabled(true);
-      setMessage('Public profile synced. You are on the board.');
-      window.setTimeout(() => window.location.reload(), 700);
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : 'Profile could not be published.'
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function disable() {
+  async function removeProfile() {
     if (!session) return;
     setBusy(true);
     setError(null);
+    setMessage(null);
     const response = await fetch('/api/operator-stats', {
       method: 'DELETE',
       headers: { authorization: `Bearer ${session.access_token}` },
     });
     if (response.ok) {
-      localStorage.removeItem(ENABLED_KEY);
-      setEnabled(false);
-      setPreview(null);
-      setMessage('Public profile disabled. Local history was not changed.');
+      localStorage.removeItem(OPERATOR_STATS_ENABLED_KEY);
+      setPublished(false);
+      // Removal pauses publishing too — a scheduled sync must never
+      // resurrect a profile the operator just took down. Re-enabling the
+      // switch is the explicit republish path.
+      try {
+        await window.electron?.settings?.setOperatorAutoPublish?.(false);
+        setAutoPublish(false);
+      } catch {
+        // The preference write failing leaves the switch honest on refresh.
+      }
+      setMessage('Public profile removed. Local history was not changed.');
       window.setTimeout(() => window.location.reload(), 700);
     } else {
-      setError('Profile could not be disabled.');
+      setError('Profile could not be removed.');
     }
     setBusy(false);
   }
@@ -314,7 +321,7 @@ export function PublishPanel() {
           <h2>Demo operator profile</h2>
           <p>
             Demo Mode exercises this public arena without scanning or publishing
-            personal harness data. Switch to the Personal Workspace to preview
+            personal harness data. Switch to the Personal Workspace to publish
             your real aggregate.
           </p>
         </div>
@@ -331,8 +338,8 @@ export function PublishPanel() {
         <div>
           <h2>Put your fleet on the board</h2>
           <p>
-            Public profiles are opt-in. Sign in, link GitHub, then choose
-            exactly when recording begins.
+            Public profiles are opt-in. Sign in, link GitHub, and turn on
+            publishing when you are ready.
           </p>
         </div>
         <a className={styles.button} href="/sign-in">
@@ -351,6 +358,12 @@ export function PublishPanel() {
             GitHub seeds your public handle and avatar. The profile model is
             provider-neutral.
           </p>
+          {autoPublish && (
+            <p className={styles.syncStatus} data-sync-state="waiting-for-link">
+              Publishing is on and waiting for GitHub. Syncing resumes once
+              your account is linked.
+            </p>
+          )}
           {message && (
             <p className={styles.success} role="status" data-panel-status="success">
               {message}
@@ -398,32 +411,60 @@ export function PublishPanel() {
     );
   }
 
+  const syncing = sync.phase === 'syncing';
+  const statusLine = !autoPublish
+    ? published
+      ? 'Paused — your profile stays visible and stops updating.'
+      : null
+    : syncing
+      ? 'Syncing…'
+      : sync.lastOutcome === 'failed'
+        ? 'Sync failed — retries automatically.'
+        : sync.lastSyncedAt
+          ? `Up to date · synced ${formatSyncedAt(sync.lastSyncedAt)}`
+          : 'Publishing on — first sync runs shortly.';
+  const syncState = !autoPublish
+    ? 'paused'
+    : syncing
+      ? 'syncing'
+      : sync.lastOutcome === 'failed'
+        ? 'failed'
+        : sync.lastSyncedAt
+          ? 'synced'
+          : 'waiting';
+
   return (
     <aside className={styles.publishPanel}>
       <div>
         <h2>
-          {enabled
+          {published
             ? 'Your public operator profile'
             : 'Publish your operator profile'}
         </h2>
-        {!preview ? (
-          <p>
-            No scan happens until you ask. Recording starts now—earlier local
-            history is not backfilled.
+        {statusLine && (
+          <p className={styles.syncStatus} data-sync-state={syncState}>
+            {statusLine}
           </p>
-        ) : (
-          <>
-            <p>
-              {preview.runs.length} Runs · {formatAgentHoursLong(totalAgentMs)}{' '}
-              · {formatTokens(totalTokens)} tokens used
-            </p>
-            <p className={styles.disclosure}>
-              Uploads only your GitHub-seeded profile, timezone, daily totals,
-              and aggregate Run records. Never prompts, responses, code,
-              repositories, Projects, branches, paths, filenames, diffs, or
-              local Session ids.
-            </p>
-          </>
+        )}
+        {autoPublish && sync.lastSnapshot && (
+          <p>
+            {sync.lastSnapshot.runs} Runs ·{' '}
+            {formatAgentHoursLong(sync.lastSnapshot.agentMs)} ·{' '}
+            {formatTokens(sync.lastSnapshot.normalizedTokens)} tokens used
+          </p>
+        )}
+        {/* The first-consent disclosure. Only before the first publish: a
+            paused owner already consented, and for him "recording starts when
+            you turn it on" would be false — resuming uploads from the
+            original consent anchor. */}
+        {!autoPublish && !published && (
+          <p className={styles.disclosure}>
+            Turning publishing on shares aggregate daily totals and Run records
+            — agent hours, fleet size, durations, and token counts — under your
+            GitHub handle, name, and avatar. Prompts, responses, code, Project
+            names, and file paths never leave this machine. Recording starts
+            when you turn it on; earlier local history is not uploaded.
+          </p>
         )}
         {message && (
           <p className={styles.success} role="status" data-panel-status="success">
@@ -437,34 +478,39 @@ export function PublishPanel() {
         )}
       </div>
       <div className={styles.publishActions}>
-        {enabled && (
+        {published && (
           <button
             type="button"
             className={styles.buttonQuiet}
             disabled={busy}
-            onClick={disable}
+            onClick={removeProfile}
           >
-            Disable
+            Remove public profile
+          </button>
+        )}
+        {autoPublish && (
+          <button
+            type="button"
+            className={styles.buttonQuiet}
+            disabled={syncing}
+            onClick={() => void runOperatorStatsSync()}
+          >
+            Sync now
           </button>
         )}
         <button
           type="button"
-          className={styles.buttonQuiet}
-          disabled={busy}
-          onClick={scan}
+          role="switch"
+          aria-checked={autoPublish}
+          className={styles.publishSwitch}
+          data-publishing={autoPublish ? 'on' : 'paused'}
+          onClick={() => void setPublishing(!autoPublish)}
         >
-          {preview ? 'Refresh preview' : 'Preview local stats'}
+          <span className={styles.switchTrack} aria-hidden="true">
+            <span className={styles.switchThumb} />
+          </span>
+          {autoPublish ? 'Publishing on' : 'Publishing paused'}
         </button>
-        {preview && (
-          <button
-            type="button"
-            className={styles.button}
-            disabled={busy}
-            onClick={publish}
-          >
-            {enabled ? 'Sync now' : 'Publish my profile'}
-          </button>
-        )}
       </div>
     </aside>
   );
