@@ -90,10 +90,24 @@ export function SettingSwitch({
             : 'var(--settings-raised)',
         }}
       >
+        {/* The thumb needs an explicit `left` anchor: an absolutely
+            positioned box with `left: auto` sits at its static position, and
+            the button's UA `text-align: center` centers that static position
+            inside the track, shifting both translate states 17px right (the
+            checked thumb landed outside the track). The thumb paints the
+            on-action ink when checked — the one color the theme contract
+            guarantees against `--settings-teal`, including under the system
+            accent overlay — and muted-text neutral against the raised track
+            when off. */}
         <span
-          className={`absolute top-[2px] h-3.5 w-3.5 rounded-full bg-[var(--settings-shell)] transition-transform ${
-            checked ? 'translate-x-[17px]' : 'translate-x-[2px]'
+          className={`absolute left-0 top-0.5 h-3.5 w-3.5 rounded-full transition ${
+            checked ? 'translate-x-4.5' : 'translate-x-0.5'
           }`}
+          style={{
+            background: checked
+              ? 'var(--settings-teal-text)'
+              : 'var(--settings-dim)',
+          }}
         />
       </span>
     </button>

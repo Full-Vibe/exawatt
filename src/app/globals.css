@@ -392,6 +392,7 @@ body {
   --settings-dim: var(--exa-foundation-text-muted);
   --settings-faint: var(--exa-foundation-text-faint);
   --settings-teal: var(--exa-foundation-action);
+  --settings-teal-text: var(--exa-foundation-action-text);
   --settings-teal-wash: color-mix(
     in srgb,
     var(--exa-foundation-action) 8%,
