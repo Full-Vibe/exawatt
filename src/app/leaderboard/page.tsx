@@ -63,9 +63,12 @@ const AXES: ReadonlyArray<{
 
 const DEFAULT_AXIS: LeaderboardAxis = 'agent-hours';
 
+// All time leads and is the default (operator, 2026-08-10): a young arena's
+// weekly window resets to an all-zero row every Monday, which reads as a dead
+// product to a first-time visitor. All-time always has something to show.
 const WINDOWS: ReadonlyArray<{ id: LeaderboardWindow; label: string }> = [
-  { id: 'week', label: 'This week' },
   { id: 'all', label: 'All time' },
+  { id: 'week', label: 'This week' },
 ];
 
 function axisFrom(value: string | string[] | undefined): LeaderboardAxis {
@@ -77,7 +80,8 @@ function axisFrom(value: string | string[] | undefined): LeaderboardAxis {
 
 function windowFrom(value: string | string[] | undefined): LeaderboardWindow {
   const candidate = Array.isArray(value) ? value[0] : value;
-  return candidate === 'all' ? 'all' : 'week';
+  // explicit ?window=week links keep working; absent or unknown means all time
+  return candidate === 'week' ? 'week' : 'all';
 }
 
 function metricHref(metric: LeaderboardAxis, window: LeaderboardWindow) {
