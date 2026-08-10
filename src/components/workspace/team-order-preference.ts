@@ -12,7 +12,7 @@
  * Team surface (workspace and demo tenant) in agreement. Promote it to the
  * settings channel only if a second surface ever needs it.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import type { TeamOrderMode } from './team-order';
 
 export const TEAM_ORDER_STORAGE_KEY = 'exawatt.team-order.v1';
@@ -31,45 +31,51 @@ export function readTeamOrderPreference(): TeamOrderMode {
   }
 }
 
+/** Same-tab listeners plus cross-window `storage`, so every mounted Team
+ *  surface agrees without a provider. */
+function subscribeTeamOrder(onChange: () => void): () => void {
+  window.addEventListener(TEAM_ORDER_EVENT, onChange);
+  window.addEventListener('storage', onChange);
+  return () => {
+    window.removeEventListener(TEAM_ORDER_EVENT, onChange);
+    window.removeEventListener('storage', onChange);
+  };
+}
+
 export function writeTeamOrderPreference(mode: TeamOrderMode): void {
   try {
     window.localStorage.setItem(TEAM_ORDER_STORAGE_KEY, mode);
   } catch {
     // storage may be unavailable; the in-memory state still applies
   }
-  window.dispatchEvent(
-    new CustomEvent<TeamOrderMode>(TEAM_ORDER_EVENT, { detail: mode })
-  );
+  window.dispatchEvent(new CustomEvent(TEAM_ORDER_EVENT));
 }
 
-export function useTeamOrderPreference(): [
-  TeamOrderMode,
-  (mode: TeamOrderMode) => void,
-] {
-  // read lazily so SSR and the first client render agree on the default
-  const [mode, setMode] = useState<TeamOrderMode>('started');
-  useEffect(() => {
-    setMode(readTeamOrderPreference());
-    const onChanged = (event: Event) =>
-      setMode((event as CustomEvent<TeamOrderMode>).detail);
-    // cross-tab: another window wrote the key
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === TEAM_ORDER_STORAGE_KEY) {
-        setMode(readTeamOrderPreference());
-      }
-    };
-    window.addEventListener(TEAM_ORDER_EVENT, onChanged);
-    window.addEventListener('storage', onStorage);
-    return () => {
-      window.removeEventListener(TEAM_ORDER_EVENT, onChanged);
-      window.removeEventListener('storage', onStorage);
-    };
-  }, []);
-
-  const set = useCallback((next: TeamOrderMode) => {
-    setMode(next);
-    writeTeamOrderPreference(next);
-  }, []);
-
-  return [mode, set];
+export function useTeamOrderPreference(): {
+  mode: TeamOrderMode;
+  /** false until the stored choice has been read — the glide waits for it */
+  ready: boolean;
+  setMode: (mode: TeamOrderMode) => void;
+} {
+  // An external store, read through React's own contract rather than an
+  // effect that assigns state after the first paint: the client's FIRST
+  // render already carries the stored sort, so Team never paints Started and
+  // then re-sorts. `getServerSnapshot` keeps SSR and hydration agreeing on
+  // the default; `ready` marks the moment the two can diverge, which is what
+  // the glide uses to treat the settle as a starting point, not a re-sort.
+  const mode = useSyncExternalStore(
+    subscribeTeamOrder,
+    readTeamOrderPreference,
+    () => 'started' as const
+  );
+  const ready = useSyncExternalStore(
+    subscribeTeamOrder,
+    () => true,
+    () => false
+  );
+  const setMode = useCallback(
+    (next: TeamOrderMode) => writeTeamOrderPreference(next),
+    []
+  );
+  return { mode, ready, setMode };
 }

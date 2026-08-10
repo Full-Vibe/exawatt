@@ -493,6 +493,51 @@ describe('Sessions overview', () => {
     window.localStorage.removeItem('exawatt.team-order.v1');
   });
 
+  // ── S6.3 review: view order made `items` sensitive to activity, and the
+  // follow-active-tab effect keys on `items`. An Agent starting or stopping
+  // work is exactly what happens while the operator scans Team, and it must
+  // not drag the keyboard back to the active tile.
+  it('keeps the operator selection when an Agent starts working', async () => {
+    const view = render(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        activity={{}}
+        activeTabId="tab-a"
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    const alpha = screen.getByRole('button', { name: /^Alpha, One/ });
+    const beta = screen.getByRole('button', { name: /^Beta, One/ });
+    await waitFor(() => expect(alpha).toHaveFocus());
+
+    // the operator arrows away to read a different Agent
+    fireEvent.keyDown(alpha, { key: 'ArrowRight' });
+    await waitFor(() => expect(beta).toHaveFocus());
+
+    // an unrelated Agent starts working: a NEW activity object arrives
+    view.rerender(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        activity={{ 'session-b': true }}
+        activeTabId="tab-a"
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    // …and the keyboard stays where the operator put it
+    await Promise.resolve();
+    expect(beta).toHaveFocus();
+    expect(beta).toHaveAttribute('data-selected', 'true');
+    view.unmount();
+  });
+
   it('follows active-tab changes from the global command-shift bracket ring', async () => {
     const view = render(
       <ExposeOverlay

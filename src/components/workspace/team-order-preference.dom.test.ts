@@ -9,24 +9,30 @@ import {
 afterEach(() => window.localStorage.removeItem(TEAM_ORDER_STORAGE_KEY));
 
 describe('useTeamOrderPreference (S6.3)', () => {
-  it('defaults to created and remembers active-first', () => {
+  it('defaults to Started and remembers Activity', () => {
     const { result } = renderHook(() => useTeamOrderPreference());
-    expect(result.current[0]).toBe('started');
+    expect(result.current.mode).toBe('started');
 
-    act(() => result.current[1]('activity'));
-    expect(result.current[0]).toBe('activity');
+    act(() => result.current.setMode('activity'));
+    expect(result.current.mode).toBe('activity');
     expect(readTeamOrderPreference()).toBe('activity');
 
-    // a fresh mount — the next session — reads the stored choice
+    // a fresh mount — the next session — carries the stored choice on its
+    // FIRST render, so Team never paints the wrong order and re-sorts
     const { result: next } = renderHook(() => useTeamOrderPreference());
-    expect(next.current[0]).toBe('activity');
+    expect(next.current.mode).toBe('activity');
   });
 
   it('keeps two mounted Team surfaces in agreement', () => {
     const a = renderHook(() => useTeamOrderPreference());
     const b = renderHook(() => useTeamOrderPreference());
-    act(() => a.result.current[1]('activity'));
-    expect(b.result.current[0]).toBe('activity');
+    act(() => a.result.current.setMode('activity'));
+    expect(b.result.current.mode).toBe('activity');
+  });
+
+  it('reports ready, which is what holds the glide until the sort is known', () => {
+    const { result } = renderHook(() => useTeamOrderPreference());
+    expect(result.current.ready).toBe(true);
   });
 
   it('reads the pre-rename spelling as the activity sort', () => {

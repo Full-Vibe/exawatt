@@ -56,6 +56,44 @@ try {
   }
   console.log('[team-order] gate ok: Started default is oldest→newest');
 
+  // Gate 1b — opening with a STORED sort settles silently. The order that
+  // arrives with the preference is a starting point, not a re-sort, and an
+  // unearned animation on every open is the thing this catches.
+  await page.evaluate(() =>
+    window.localStorage.setItem('exawatt.team-order.v1', 'activity')
+  );
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-expose-tile]');
+  const settleTransforms = await page.evaluate(
+    () =>
+      Array.from(document.querySelectorAll('[data-expose-tile-slot]')).filter(
+        node => {
+          const transform = getComputedStyle(node).transform;
+          return transform && transform !== 'none';
+        }
+      ).length
+  );
+  if (settleTransforms > 0) {
+    throw new Error(
+      `settle gate: ${settleTransforms} tiles animated while applying the stored sort on open`
+    );
+  }
+  const settled = await titles();
+  if (settled[0] !== 'Fix Sessions rendering') {
+    throw new Error(
+      `settle gate: the stored sort was not applied on the first paint, got ${JSON.stringify(settled)}`
+    );
+  }
+  console.log('[team-order] gate ok: a stored sort settles on open without animating');
+
+  // back to the default for the toggle gates
+  await page.evaluate(() =>
+    window.localStorage.removeItem('exawatt.team-order.v1')
+  );
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-expose-tile]');
+  await page.waitForTimeout(600);
+
   // Gate 2+3 — select Activity through the production control; the order
   // changes AND glides.
   await page.getByRole('radio', { name: 'Activity' }).click();

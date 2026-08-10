@@ -642,6 +642,58 @@ Implementation record (landed 2026-07-10):
 
 ## Findings log
 
+- 2026-08-07 (S6.3 review pass, landed): a thorough read of the shipped
+  ordering found three real defects, all mine, plus one piece of my own
+  defensive code that turned out to be dead.
+
+  - **The live sort stole the keyboard (regression, operator-visible).**
+    Making `items` derive from the view order made it rebuild whenever
+    `activity` or `attention` changed identity — and `setActivity` changes
+    identity exactly when an Agent starts or stops working, which is what
+    happens continuously while the operator scans Team. The
+    follow-active-tab effect keys on `items`, so every such ping dragged the
+    roving selection and the keyboard focus back to the active tile from
+    wherever he had arrowed to. The effect's trigger was already too loose
+    before S6.3; the view order simply made a latent bug reachable. It now
+    mirrors a CHANGE OF ACTIVE TAB — tracked by identity, read through a ref
+    so a late-arriving tab is still found — instead of any new array.
+    Reproduced first as a failing test: arrow away, deliver a new activity
+    map, assert focus stays.
+
+  - **A second toggle inside 320ms snapped the first glide.** Each glide
+    scheduled an unconditional cleanup that stripped `transition` when it
+    fired; a re-sort arriving mid-flight inherited the older cleanup, which
+    then cut the newer animation. Timers are now tracked per tile and
+    cancelled by the next glide, cleared on unmount, and cleared when a tile
+    unmounts mid-flight (which also drops its stale rect).
+
+  - **Every open of Team painted the wrong order first.** The stored
+    preference was read in an effect, so the first paint was always Started
+    and an Activity operator watched it re-sort — an unearned animation on
+    every open. The preference is now an external store read through
+    `useSyncExternalStore`, so the client's first render already carries the
+    stored sort, with `getServerSnapshot` keeping SSR and hydration on the
+    default. Pinned by a new eval gate: a stored sort must apply on the
+    first paint with ZERO tiles transformed.
+
+  - **And one deletion.** I had added a `settling` guard to suppress that
+    open-glide. Sabotaging it did not fail the new gate, which showed the
+    guard never fired: with the store delivering the sort on render one, and
+    with `animate` false meaning nothing is measured, a tile has no prior
+    rect to glide from anyway. The guard was removed rather than kept as
+    reassurance — an unexercised branch is a claim the tests do not support.
+
+  - **Also swept:** per-tile ref callbacks are cached instead of rebuilt
+    every render (React was detaching and re-attaching every tile ref on
+    every render), and the measurement pass is skipped entirely under
+    reduced motion rather than measuring for a glide that will not happen.
+
+  - **Open, not fixed:** the full suite failed once inside `agent:land`
+    during the S6.3 landing and once here, both times passing on the very
+    next run, and four consecutive clean runs since have not reproduced it.
+    Recorded rather than closed — an intermittent nobody can name is still
+    debt.
+
 - 2026-08-07 (S6.3, landed — FIX-008 closed): the operator reviewed the S6.2
   bench and decided the whole shape in one message: needs-you-first "shouldn't
   exist"; a single subtle sort control; the stored default is creation time

@@ -205,7 +205,11 @@ export function ExposeOverlay({
   // leads each Project with working Agents, live — a tile glides to its new
   // slot the moment its state changes band (FLIP below). Ordering is a
   // view; the ribbon's durable manual arrangement is never written.
-  const [orderMode, setOrderMode] = useTeamOrderPreference();
+  const {
+    mode: orderMode,
+    ready: orderReady,
+    setMode: setOrderMode,
+  } = useTeamOrderPreference();
   const orderSignals = useMemo(
     () => ({ activity, attention }),
     [activity, attention]
@@ -224,7 +228,9 @@ export function ExposeOverlay({
     viewProjects
       .map(project => project.tabs.map(tab => tab.id).join(','))
       .join('|'),
-    reducedMotion
+    // Not until the stored sort has been read: the order it settles into on
+    // open is a starting point, not a re-sort to animate.
+    orderReady && !reducedMotion
   );
   const tiles = useMemo<Tile[]>(
     () =>
@@ -420,16 +426,34 @@ export function ExposeOverlay({
   // The fixed tab-ring shortcuts remain live at Sessions altitude. Mirror an
   // active-tab change back into the overview's roving selection so ⌘⇧[/]
   // visibly moves here instead of only changing the inert underlay.
+  //
+  // It mirrors a CHANGE OF ACTIVE TAB, not every re-render that produced a
+  // new `items` array. Keying on the array was already loose; S6.3's view
+  // order made it harmful, because `items` now rebuilds whenever an Agent
+  // starts or stops working — precisely while the operator is scanning —
+  // and the mirror would drag the keyboard back to the active tile from
+  // wherever he had arrowed to. `items` is still read, through a ref, so a
+  // tab that arrives later is still found without the array's identity
+  // becoming a trigger.
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const mirroredRef = useRef<string | null>(null);
   useEffect(() => {
-    const next = items.findIndex(item =>
+    const target = activeTabId ?? `project:${activeProjectDir ?? ''}`;
+    if (mirroredRef.current === target) return;
+    const next = itemsRef.current.findIndex(item =>
       activeTabId
         ? item.tabId === activeTabId
         : item.tabId === null && item.dir === activeProjectDir
     );
-    if (next === -1 || next === selectedIndexRef.current) return;
+    // Not laid out yet: leave the mirror unclaimed so the next render that
+    // does contain it still moves the selection.
+    if (next === -1) return;
+    mirroredRef.current = target;
+    if (next === selectedIndexRef.current) return;
     setSel(next);
     requestAnimationFrame(() => focusSelection(next));
-  }, [activeProjectDir, activeTabId, focusSelection, items]);
+  }, [activeProjectDir, activeTabId, focusSelection, items.length]);
 
   // take the keyboard away from xterm; entrance flag flips post-mount so
   // tiles transition in (staggered). When a roadmap summon is in flight the
