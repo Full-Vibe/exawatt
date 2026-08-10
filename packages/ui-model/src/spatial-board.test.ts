@@ -616,6 +616,24 @@ describe('delegation units', () => {
     }
   });
 
+  it('carries the source child id, which is what other surfaces key on', () => {
+    const units = selectSpatialDelegationUnits(delegatingLayout(3));
+    // `id` is board-scoped so it cannot collide across parents; `childId` is
+    // the source's own, so the selection panel can match a clicked unit.
+    for (const unit of units) {
+      expect(unit.id).toContain(unit.childId!);
+      expect(unit.id).not.toBe(unit.childId);
+    }
+    expect(units.map(unit => unit.childId)).toEqual(['c1', 'c2', 'c3']);
+  });
+
+  it('leaves an overflow lobe without a source child id', () => {
+    const lobe = selectSpatialDelegationUnits(delegatingLayout(17)).find(
+      unit => unit.kind === 'overflow'
+    );
+    expect(lobe!.childId).toBeNull();
+  });
+
   it('carries the hub position so the spoke can start at the parent centre', () => {
     const layout = delegatingLayout(2);
     const parent = layout.pieces.find(piece => piece.agentId === 'a')!;

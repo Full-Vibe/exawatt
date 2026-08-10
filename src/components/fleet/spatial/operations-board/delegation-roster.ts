@@ -36,13 +36,17 @@ export const DELEGATION_EXIT_SWEEP_MS =
   DELEGATION_MOTION.stopSeconds * 1000 + 60;
 
 /**
- * When a spawning unit has finished travelling and may take its status light.
- * The light is drawn by the shared D40 layer at the unit's RESTING slot, so
- * granting it early would park a light at the destination while the unit is
- * still in flight.
+ * When the nth unit of a cohort has finished travelling and may take its status
+ * light. The light is drawn by the shared D40 layer at the unit's RESTING slot,
+ * so granting it early would park a light at the destination while the unit is
+ * still in flight. Per-unit rather than per-cohort, so lights come up as each
+ * worker lands instead of all at once after the slowest one.
  */
-export const DELEGATION_SETTLE_MS =
-  (DELEGATION_MOTION.spawnSeconds + DELEGATION_MOTION.maxStaggerSeconds) * 1000;
+export function delegationSettleMs(index: number): number {
+  return (
+    (DELEGATION_MOTION.spawnSeconds + delegationSpawnDelaySeconds(index)) * 1000
+  );
+}
 
 export interface DelegationRosterEntry {
   unit: SpatialBoardDelegationUnit;
@@ -101,8 +105,10 @@ export function nextDelegationExits(
   const known = new Set(kept.map(unit => unit.id));
   const added = departed.filter(unit => !known.has(unit.id));
   const changed = added.length > 0 || kept.length !== currentExits.length;
+  // Only the changed branch allocates: an unchanged roster hands back the same
+  // array so React state and the render memo both stay put.
   return {
-    exits: changed ? [...kept, ...added] : [...currentExits],
+    exits: changed ? [...kept, ...added] : (currentExits as SpatialBoardDelegationUnit[]),
     departed,
     changed,
   };

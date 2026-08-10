@@ -307,6 +307,7 @@ export function OperationsBoardSurface({
   onToggleAgentSelect,
   onToggleZoneSelect,
   onBandSelect,
+  onSelectDelegationChild,
   sessionTransitionAgentId = null,
   viewportStorageKey = 'exawatt:spatial-viewport:v2:fleet:~:~:top-down',
   preserveDrawingBuffer = false,
@@ -329,6 +330,8 @@ export function OperationsBoardSurface({
   onToggleAgentSelect?: (agentId: string) => void;
   onToggleZoneSelect?: (zoneId: string) => void;
   onBandSelect?: (band: SpatialBoardRect) => void;
+  /** Which delegated child an activation came through (ENG-023 D3c). */
+  onSelectDelegationChild?: (parentAgentId: string, childId: string) => void;
   sessionTransitionAgentId?: string | null;
   viewportStorageKey?: string;
   preserveDrawingBuffer?: boolean;
@@ -702,6 +705,7 @@ export function OperationsBoardSurface({
             touchSelectionMode={touchSelectionMode}
             onManualCameraInput={suspendSelectionFollow}
             onClampEdges={handleClampEdges}
+            onSelectDelegationChild={onSelectDelegationChild}
             preserveDrawingBuffer={preserveDrawingBuffer}
             theme={theme}
           />

@@ -179,6 +179,7 @@ export function SpatialSelectionPanel({
   scopeActivity,
   activity,
   delegation,
+  highlightChildId,
   statusColors,
   needsOperatorCallout,
   faultCallout,
@@ -199,6 +200,10 @@ export function SpatialSelectionPanel({
   activity: ActivityFeedItem[];
   /** Live delegated children the source reports for the inspected Agent. */
   delegation: { count: number; children: SpatialBoardDelegatedChild[] } | null;
+  /** The child whose board unit was activated to get here. The board opens the
+   *  parent because a child has no destination yet (ENG-023 D2), so the panel
+   *  names the worker the operator actually clicked. */
+  highlightChildId?: string | null;
   statusColors: { active: string; blocked: string; idle: string };
   needsOperatorCallout: SpatialCalloutTheme;
   faultCallout: SpatialCalloutTheme;
@@ -330,11 +335,20 @@ export function SpatialSelectionPanel({
               <ul className="space-y-1.5">
                 {shownChildren.map(child => {
                   const elapsed = delegationElapsedLabel(child.startedAt, now);
+                  const highlighted = child.id === highlightChildId;
                   return (
                     <li
                       key={child.id}
                       data-delegated-child={child.id}
-                      className="flex items-baseline gap-2"
+                      data-delegated-child-highlighted={
+                        highlighted ? 'true' : undefined
+                      }
+                      aria-current={highlighted ? 'true' : undefined}
+                      className={`flex items-baseline gap-2 rounded-sm ${
+                        highlighted
+                          ? '-mx-1.5 bg-secondary px-1.5 py-0.5'
+                          : ''
+                      }`}
                     >
                       <span className="shrink-0 font-mono text-chrome-micro text-muted-foreground">
                         {child.agentType ?? 'Agent'}

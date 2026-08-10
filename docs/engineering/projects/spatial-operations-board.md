@@ -2143,6 +2143,59 @@ scenarios; every scale tier with Voltaic at 13 draw calls and the 1k/10k
 aggregates at 6 and still parking. Graded at Fleet and Project altitude in Air
 and Classic.
 
+### V3.4 peer review pass (2026-08-10)
+
+Review of the peer composition. Peer scale raised the bar it had to clear: a
+unit that LOOKS like an Agent is expected to behave like one, and three of the
+gaps below were invisible while children read as subordinate detail.
+
+**UX**
+
+- **Hovering a child did nothing.** Parent pieces lift under the pointer;
+  children answered only with a native tooltip after a delay, so a peer-scale
+  unit read as scenery. Children now take the same damped hover lift, driven
+  from the DOM control that already sits over them, and it snaps under reduced
+  motion like every other damped transition on the board.
+- **Clicking a child silently selected its parent.** The board opens the parent
+  because a child still has no destination (ENG-023 D2), but nothing said so
+  and nothing indicated WHICH worker had been clicked. Two fixes: the control's
+  accessible name now ends "Selects <parent>", and the selection panel
+  highlights the child the activation came through. The board no longer answers
+  a click with an unexplained substitution.
+- The board unit id is board-scoped (`delegation:<piece>:<child>`), so matching
+  it against the panel's source-level child ids silently never fired. Units now
+  carry the source's own `childId` alongside their board id, and a test pins
+  that the two differ and that an overflow lobe has none.
+
+**Correctness**
+
+- `useSettledDelegationUnits` scheduled against a stale set read from the render
+  closure, behind a dependency suppression; its timer could also resurrect a
+  child that departed while its light was in flight, and every layout tick
+  re-scheduled timers for units already pending. It now keeps the authoritative
+  set in state with a ref mirror the effect reads, tracks pending timers per
+  id, cancels them when a unit departs, and guards the resurrection case. The
+  suppression is gone.
+- The settle delay was one cohort-wide constant, so a lone child waited out a
+  stagger it never had. `delegationSettleMs(index)` is per-unit, so lights come
+  up as each worker lands rather than all at once after the slowest.
+- `nextDelegationExits` copied its input even when nothing changed, churning
+  React state and the render memo on every layout tick. The unchanged branch
+  now returns the same array, pinned by a test.
+
+Evidence: type-check and lint clean; 2,047 tests (1 skipped) including six new
+ones across settle timing, roster identity, source child ids, and the panel
+highlight; `eval:r3f` 100/100 with `t5-operations-board` at 15 draw calls;
+`eval:spatial` 8/8 with zero idle frames under reduced motion and low power;
+15/15 pointer scenarios; every scale tier with Voltaic at 13 draw calls and the
+1k/10k aggregates at 6 and still parking. Hover, activation, and the panel
+highlight were driven in the real demo board.
+
+**Still open, unchanged:** a child cannot be band-selected, arrow navigation
+skips it, and it never joins `Direct N Agents`. That remains gated on D2 giving
+a child a destination; what this pass removed is the SILENCE around it, not the
+limitation.
+
 ### V2.1 Scale & Truth
 
 Status: planned; gated by V2.0

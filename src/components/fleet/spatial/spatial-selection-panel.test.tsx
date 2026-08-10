@@ -126,6 +126,46 @@ describe('SpatialSelectionPanel', () => {
     expect(screen.getByText('No description reported')).toBeInTheDocument();
   });
 
+  it('names the child whose board unit was activated', () => {
+    // The board opens the PARENT because a child has no destination yet, so the
+    // panel has to say which worker the operator clicked — otherwise the
+    // selection arrives with no explanation of why it is the parent.
+    renderPanel({
+      agent: agentView(),
+      highlightChildId: 'c2',
+      delegation: {
+        count: 2,
+        children: [
+          { id: 'c1', agentType: 'Explore', description: 'First', startedAt: null },
+          { id: 'c2', agentType: 'Explore', description: 'Second', startedAt: null },
+        ],
+      },
+    });
+    const highlighted = document.querySelector(
+      '[data-delegated-child-highlighted="true"]'
+    );
+    expect(highlighted).toHaveAttribute('data-delegated-child', 'c2');
+    expect(highlighted).toHaveAttribute('aria-current', 'true');
+    expect(
+      document.querySelectorAll('[data-delegated-child-highlighted]')
+    ).toHaveLength(1);
+  });
+
+  it('highlights nothing when the Agent was selected directly', () => {
+    renderPanel({
+      agent: agentView(),
+      delegation: {
+        count: 1,
+        children: [
+          { id: 'c1', agentType: 'Explore', description: null, startedAt: null },
+        ],
+      },
+    });
+    expect(
+      document.querySelector('[data-delegated-child-highlighted]')
+    ).toBeNull();
+  });
+
   it('folds an over-cap child list into an exact remaining count', () => {
     renderPanel({
       agent: agentView(),

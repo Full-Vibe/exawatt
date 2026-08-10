@@ -472,6 +472,34 @@ export function SpatialFleetClient() {
     return piece?.delegation ?? null;
   }, [boardLayout, inspectedAgent]);
   const showSelectionPanel = Boolean(inspectedAgent) || selectedAgents.length > 0;
+  // A delegated child looks like a peer but opens its parent, so the panel has
+  // to name the worker the operator actually clicked — otherwise the selection
+  // arrives with no explanation of why it is the parent.
+  //
+  // Held against the PARENT id rather than against the resolved child list: the
+  // activation navigates, so for a render or two the parent's delegation is not
+  // resolved yet, and validating against it would clear the very thing the
+  // click just set.
+  const [activatedChild, setActivatedChild] = useState<{
+    parentAgentId: string;
+    childId: string;
+  } | null>(null);
+  const selectDelegationChild = useCallback(
+    (parentAgentId: string, childId: string) =>
+      setActivatedChild({ parentAgentId, childId }),
+    []
+  );
+  const viaChildId =
+    activatedChild && activatedChild.parentAgentId === selectedAgentId
+      ? activatedChild.childId
+      : null;
+  useEffect(() => {
+    // Drop it once the operator has moved on, so it cannot reappear if they
+    // navigate back to the same parent by another route.
+    setActivatedChild(current =>
+      current && current.parentAgentId === selectedAgentId ? current : null
+    );
+  }, [selectedAgentId]);
 
   const openInspectedSession = useCallback(async () => {
     if (!inspectedAgent || sessionHandoffAgentId) return;
@@ -721,6 +749,7 @@ export function SpatialFleetClient() {
             onToggleAgentSelect={toggleAgentSelect}
             onToggleZoneSelect={toggleZoneSelect}
             onBandSelect={bandSelect}
+            onSelectDelegationChild={selectDelegationChild}
             sessionTransitionAgentId={sessionHandoffAgentId}
             viewportStorageKey={viewportStorageKey}
           />
@@ -733,6 +762,7 @@ export function SpatialFleetClient() {
             scopeActivity={scopeActivity}
             activity={inspectedActivity}
             delegation={inspectedDelegation}
+            highlightChildId={viaChildId}
             statusColors={{
               active: spatialTheme.status.active,
               blocked: spatialTheme.status['needs-you'],

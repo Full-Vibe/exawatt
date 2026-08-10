@@ -1171,6 +1171,9 @@ export interface SpatialBoardDelegationUnit {
   parentY: number;
   projectId: string;
   kind: 'child' | 'overflow';
+  /** The source's own child id, unprefixed — `id` is board-scoped, so this is
+   *  what other surfaces (the selection panel, delegation events) key on. */
+  childId: string | null;
   agentType: string | null;
   description: string | null;
   startedAt: number | null;
@@ -1246,6 +1249,7 @@ export function selectSpatialDelegationUnits(
         parentY: piece.y,
         projectId: piece.projectId,
         kind: lobe ? 'overflow' : 'child',
+        childId: lobe ? null : child!.id,
         agentType: lobe ? null : child!.agentType,
         description: lobe ? null : child!.description,
         startedAt: lobe ? null : child!.startedAt,

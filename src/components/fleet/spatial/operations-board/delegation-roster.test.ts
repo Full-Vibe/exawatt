@@ -8,6 +8,7 @@ import {
 import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
 import {
   DELEGATION_MOTION,
+  delegationSettleMs,
   delegationStatusPieces,
   delegationBodyScale,
   delegationRoster,
@@ -25,6 +26,7 @@ function unit(id: string): SpatialBoardDelegationUnit {
     parentY: 0,
     projectId: 'project:Alpha',
     kind: 'child',
+    childId: id,
     agentType: 'Explore',
     description: null,
     startedAt: null,
@@ -60,6 +62,28 @@ describe('delegation motion policy', () => {
     expect(delegationSpawnDelaySeconds(1_000)).toBe(
       DELEGATION_MOTION.maxStaggerSeconds
     );
+  });
+
+  it('lets each unit take its light when IT lands, not when the cohort does', () => {
+    // The light is drawn at a unit's resting slot, so it may only appear once
+    // that unit has finished travelling — and a lone child should not wait out
+    // a stagger it never had.
+    expect(delegationSettleMs(0)).toBeCloseTo(
+      DELEGATION_MOTION.spawnSeconds * 1000
+    );
+    expect(delegationSettleMs(1)).toBeGreaterThan(delegationSettleMs(0));
+    expect(delegationSettleMs(50)).toBeCloseTo(
+      (DELEGATION_MOTION.spawnSeconds + DELEGATION_MOTION.maxStaggerSeconds) *
+        1000
+    );
+  });
+
+  it('never grants a light before the body finishes travelling', () => {
+    for (const index of [0, 1, 4, 20]) {
+      expect(delegationSettleMs(index)).toBeGreaterThanOrEqual(
+        DELEGATION_MOTION.spawnSeconds * 1000
+      );
+    }
   });
 
   it('sizes the instance buffer above the board ceiling it must never truncate', () => {
@@ -118,9 +142,13 @@ describe('delegation roster', () => {
   });
 
   it('reports no change when nothing left, so state is not churned', () => {
-    const result = nextDelegationExits([], [unit('a')], [unit('a')], false);
+    const current: SpatialBoardDelegationUnit[] = [];
+    const result = nextDelegationExits(current, [unit('a')], [unit('a')], false);
     expect(result.changed).toBe(false);
     expect(result.departed).toEqual([]);
+    // Unchanged hands back the SAME array, so React state and the render memo
+    // both stay put instead of being churned by a fresh copy every layout.
+    expect(result.exits).toBe(current);
   });
 
   it('drops exits entirely under reduced motion — same census, no travel', () => {

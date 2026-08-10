@@ -85,7 +85,7 @@ import { useMinuteClock } from '../use-minute-clock';
 import {
   DELEGATION_EXIT_SWEEP_MS,
   DELEGATION_MOTION,
-  DELEGATION_SETTLE_MS,
+  delegationSettleMs,
   delegationStatusPieces,
   delegationBodyScale,
   delegationRoster,
@@ -1584,12 +1584,17 @@ function crossGeometry(): THREE.ShapeGeometry {
  * animate every frame without rebuilding geometry.
  */
 
+/** Hover lift for a delegated child, matching the parent pieces' hover feel. */
+const DELEGATION_HOVER_LIFT = 1.1;
+
 interface DelegationMotionRecord {
   progress: number;
   delay: number;
   /** Where the unit emerges from and retracts to: its parent's edge. */
   originX: number;
   originY: number;
+  /** Damped hover scale multiplier. */
+  lift: number;
 }
 
 /**
@@ -1646,37 +1651,54 @@ function useSettledDelegationUnits(
   const [settledIds, setSettledIds] = useState<ReadonlySet<string>>(
     () => new Set()
   );
-  const timers = useRef(new Set<number>());
+  // A mirror the scheduling effect reads, so `settledIds` never has to be one
+  // of its dependencies. Depending on it would re-arm the effect every time a
+  // unit settles; reading it from the render closure instead would schedule
+  // against a stale set whenever two layouts land inside one settle window.
+  const settledRef = useRef(settledIds);
+  settledRef.current = settledIds;
+  const pending = useRef(new Map<string, number>());
   useEffect(() => {
     const live = new Set(units.map(unit => unit.id));
-    setSettledIds(current => {
-      const pruned = new Set([...current].filter(id => live.has(id)));
-      if (reduced) {
-        for (const id of live) pruned.add(id);
+    for (const [id, timer] of [...pending.current]) {
+      if (!live.has(id)) {
+        window.clearTimeout(timer);
+        pending.current.delete(id);
       }
-      return pruned.size === current.size &&
-        [...pruned].every(id => current.has(id))
-        ? current
-        : pruned;
+    }
+    setSettledIds(current => {
+      const next = new Set([...current].filter(id => live.has(id)));
+      // Reduced motion has no travel, so nothing has to be waited out.
+      if (reduced) for (const id of live) next.add(id);
+      return next.size === current.size ? current : next;
     });
-    if (reduced) return;
-    const arriving = units.filter(unit => !settledIds.has(unit.id));
-    if (arriving.length === 0) return;
-    const ids = arriving.map(unit => unit.id);
-    const timer = window.setTimeout(() => {
-      timers.current.delete(timer);
-      setSettledIds(current => new Set([...current, ...ids]));
-    }, DELEGATION_SETTLE_MS);
-    timers.current.add(timer);
-    // `settledIds` is read to find arrivals but must not re-arm the effect;
-    // the timer that adds them would then immediately schedule another.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (reduced) {
+      for (const timer of pending.current.values()) window.clearTimeout(timer);
+      pending.current.clear();
+      return;
+    }
+    const perParent = new Map<string, number>();
+    for (const unit of units) {
+      const index = perParent.get(unit.parentPieceId) ?? 0;
+      perParent.set(unit.parentPieceId, index + 1);
+      const id = unit.id;
+      if (settledRef.current.has(id) || pending.current.has(id)) continue;
+      const timer = window.setTimeout(() => {
+        pending.current.delete(id);
+        // Guard the resurrection case: the unit may have departed while its
+        // light was still on the way.
+        setSettledIds(current =>
+          current.has(id) ? current : new Set([...current, id])
+        );
+      }, delegationSettleMs(index));
+      pending.current.set(id, timer);
+    }
   }, [reduced, units]);
   useEffect(() => {
-    const pending = timers.current;
+    const timers = pending.current;
     return () => {
-      for (const timer of pending) window.clearTimeout(timer);
-      pending.clear();
+      for (const timer of timers.values()) window.clearTimeout(timer);
+      timers.clear();
     };
   }, []);
   return useMemo(
@@ -1688,10 +1710,13 @@ function useSettledDelegationUnits(
 function DelegationUnitLayer({
   units,
   reduced,
+  hoveredId,
   theme,
 }: {
   units: SpatialBoardDelegationUnit[];
   reduced: boolean;
+  /** Pointer/keyboard focus from the DOM control that sits over this unit. */
+  hoveredId: string | null;
   theme: SpatialThemeSnapshot;
 }) {
   const invalidate = useThree(state => state.invalidate);
@@ -1723,6 +1748,7 @@ function DelegationUnitLayer({
         delay: reduced ? 0 : delegationSpawnDelaySeconds(index),
         originX: unit.tether.x1,
         originY: unit.tether.y1,
+        lift: 1,
       });
     }
     for (const id of [...motion.current.keys()]) {
@@ -1760,7 +1786,15 @@ function DelegationUnitLayer({
       const x = THREE.MathUtils.lerp(record.originX, unit.x, eased);
       const layoutY = THREE.MathUtils.lerp(record.originY, unit.y, eased);
       const worldY = -layoutY;
-      const scale = delegationBodyScale(unit.size, eased);
+      // Hover lift, damped to the same target the parent pieces use. A peer
+      // that answers nothing to the pointer reads as scenery, not a unit.
+      const wantLift = unit.id === hoveredId ? DELEGATION_HOVER_LIFT : 1;
+      if (reduced) record.lift = wantLift;
+      else {
+        record.lift = THREE.MathUtils.damp(record.lift, wantLift, 9, dt);
+        if (Math.abs(record.lift - wantLift) > 0.001) animating = true;
+      }
+      const scale = delegationBodyScale(unit.size, eased) * record.lift;
       body.position.set(x, worldY, 0.72);
       body.scale.set(scale, scale, 1);
       const tether = tetherRefs.current.get(unit.id);
@@ -2159,6 +2193,7 @@ function SelectionRing({
 function AgentPieceLayer({
   pieces,
   delegationUnits,
+  hoveredDelegationId,
   altitude,
   reduced,
   ambient,
@@ -2169,6 +2204,8 @@ function AgentPieceLayer({
 }: {
   pieces: SpatialBoardPiece[];
   delegationUnits: SpatialBoardDelegationUnit[];
+  /** Hovered delegated child, from its DOM control. */
+  hoveredDelegationId: string | null;
   altitude: SpatialBoardLayout['altitude'];
   reduced: boolean;
   ambient: boolean;
@@ -2358,6 +2395,7 @@ function AgentPieceLayer({
       <DelegationUnitLayer
         units={delegationUnits}
         reduced={reduced}
+        hoveredId={hoveredDelegationId}
         theme={theme}
       />
       <StoppedAgentOutlines pieces={visible} lens={lens} theme={theme} />
@@ -3075,6 +3113,8 @@ function DelegationControls({
   altitude,
   focusedProjectId,
   onSelectAgent,
+  onSelectDelegationChild,
+  onHoverChange,
   reduced,
   now,
   theme,
@@ -3084,6 +3124,10 @@ function DelegationControls({
   altitude: SpatialBoardLayout['altitude'];
   focusedProjectId: string | null;
   onSelectAgent: (agentId: string) => void;
+  /** Reports which child was activated, so the surface that opens the parent
+   *  can also say WHICH worker the operator meant. */
+  onSelectDelegationChild?: (parentAgentId: string, childId: string) => void;
+  onHoverChange: (unitId: string | null) => void;
   reduced: boolean;
   /** Injected clock so elapsed copy is deterministic and stable per paint. */
   now: number;
@@ -3098,9 +3142,12 @@ function DelegationControls({
     .map(unit => {
       const parentLabel = parentLabels.get(unit.parentPieceId) ?? 'its parent';
       const elapsed = delegationElapsedLabel(unit.startedAt, now);
+      // The label states what activation does. A child looks like a peer but
+      // is not independently commandable until ENG-023 D2 gives it a
+      // destination, so silently selecting the parent would be a trapdoor.
       const label =
         unit.kind === 'overflow'
-          ? `${unit.overflowCount} more delegated Agents under ${parentLabel}`
+          ? `${unit.overflowCount} more delegated Agents under ${parentLabel}. Selects ${parentLabel}.`
           : [
               unit.agentType ?? 'Delegated Agent',
               unit.description,
@@ -3108,7 +3155,7 @@ function DelegationControls({
               `delegated by ${parentLabel}`,
             ]
               .filter(Boolean)
-              .join(', ');
+              .join(', ') + `. Selects ${parentLabel}.`;
       return (
         <DampedHtmlAnchor
           key={`delegation-control:${unit.id}`}
@@ -3123,7 +3170,16 @@ function DelegationControls({
             data-board-delegation-parent={unit.parentAgentId}
             aria-label={label}
             title={label}
-            onClick={() => onSelectAgent(unit.parentAgentId)}
+            onClick={() => {
+              if (unit.kind === 'child' && unit.childId) {
+                onSelectDelegationChild?.(unit.parentAgentId, unit.childId);
+              }
+              onSelectAgent(unit.parentAgentId);
+            }}
+            onPointerEnter={() => onHoverChange(unit.id)}
+            onPointerLeave={() => onHoverChange(null)}
+            onFocus={() => onHoverChange(unit.id)}
+            onBlur={() => onHoverChange(null)}
             className="board-control-enter group relative grid h-11 w-11 place-items-center border border-transparent bg-transparent outline-none transition-[border-color] duration-150 focus-visible:ring-2 focus-visible:ring-ring"
           >
             {unit.kind === 'overflow' && (
@@ -3167,6 +3223,7 @@ export function OperationsBoardCanvas({
   touchSelectionMode = false,
   onManualCameraInput,
   onClampEdges,
+  onSelectDelegationChild,
   preserveDrawingBuffer = false,
   theme,
 }: {
@@ -3189,6 +3246,9 @@ export function OperationsBoardCanvas({
   touchSelectionMode?: boolean;
   onManualCameraInput?: () => void;
   onClampEdges?: (edges: BoardClampEdges | null) => void;
+  /** Which delegated child an activation came through, so the selection panel
+   *  can name the worker the operator actually clicked. */
+  onSelectDelegationChild?: (parentAgentId: string, childId: string) => void;
   preserveDrawingBuffer?: boolean;
   theme: SpatialThemeSnapshot;
 }) {
@@ -3214,6 +3274,9 @@ export function OperationsBoardCanvas({
     return () => window.clearTimeout(timer);
   }, []);
   const [hoveredZoneId, setHoveredZoneId] = useState<string | null>(null);
+  const [hoveredDelegationId, setHoveredDelegationId] = useState<string | null>(
+    null
+  );
   /** Band-drag end timestamp — the trailing click must not clear/ascend. */
   const suppressMissRef = useRef(0);
   const visibleZones = layout.zones.filter(zone => zone.visible);
@@ -3331,6 +3394,7 @@ export function OperationsBoardCanvas({
       <AgentPieceLayer
         pieces={layout.pieces}
         delegationUnits={delegationUnits}
+        hoveredDelegationId={hoveredDelegationId}
         altitude={layout.altitude}
         reduced={reduced}
         ambient={ambient}
@@ -3381,6 +3445,8 @@ export function OperationsBoardCanvas({
         altitude={layout.altitude}
         focusedProjectId={layout.focusedProjectId}
         onSelectAgent={onSelectAgent}
+        onSelectDelegationChild={onSelectDelegationChild}
+        onHoverChange={setHoveredDelegationId}
         reduced={reduced}
         now={now}
         theme={theme}
