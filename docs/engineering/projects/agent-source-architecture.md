@@ -204,6 +204,15 @@ without making it a second product boundary.
   catalog or effective model has a named source or an explicit unknown, and a
   supported-but-unconfigured provider is visibly different from a broken one.
 
+## Demand evidence
+
+- 2026-08-10 (triage, feedback row `b813c1b0-0673-41e1-8e13-1e3905ee736d`,
+  operator): "Support for Hermes, Kilo Code, and Gemini coding agents." Three
+  more named sources for the registry's queue. No scope shaped here; each
+  candidate goes through the same S2-style adapter evaluation (local record
+  truth, capability declaration, decision `0027` endpoint rules) when its
+  turn comes.
+
 ## Open questions carried forward
 
 - Whether a vendor-published Anthropic-compatible endpoint (Moonshot's is the

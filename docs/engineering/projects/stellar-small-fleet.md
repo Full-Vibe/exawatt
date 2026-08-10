@@ -642,6 +642,17 @@ Implementation record (landed 2026-07-10):
 
 ## Findings log
 
+- 2026-08-10 (triage, feedback row `60fa8c39-63da-432d-8c9d-14d901ac40b2`,
+  operator on dogfood 0.1.9): **the needs-you bell is silent for Claude Code
+  and Codex Sessions but sounds for OpenRouter (opencode) Sessions.** Queued
+  fix on the S1 attention system. Diagnostic starting point: the S1/S1.1
+  needs-you path differs per source — first-party harnesses ride reported
+  turn boundaries (D38 latch, ENG-023 channel) while opencode rides
+  byte-quiescence/BEL — so the audible-bell emission has likely diverged
+  between those paths (regression window unknown; opencode landed with
+  ENG-003 S2). Verify against D33's calm-attention contract (static amber,
+  bell-on-transition) before changing sounds.
+
 - 2026-08-07 (S6.3 review pass, landed): a thorough read of the shipped
   ordering found three real defects, all mine, plus one piece of my own
   defensive code that turned out to be dead.
