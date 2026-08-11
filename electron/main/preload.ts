@@ -50,6 +50,16 @@ contextBridge.exposeInMainWorld('electron', {
     scan: (since: string, timezone: string) =>
       ipcRenderer.invoke('operator-stats:scan', since, timezone),
   },
+  // ENG-008 E5: the live local-consumption seam. Contract types live in
+  // @exawatt/core `consumption/live-snapshot.ts`; updates are notification-only
+  // (revision + scan state) and the renderer pulls snapshots when it cares.
+  consumption: {
+    snapshot: (request?: { sinceMs?: number }) =>
+      ipcRenderer.invoke('consumption:snapshot', request),
+    rescan: () => ipcRenderer.invoke('consumption:rescan'),
+    cancelScan: () => ipcRenderer.invoke('consumption:cancel-scan'),
+    onUpdated: subscribe<unknown>('consumption:updated'),
+  },
   pty: {
     create: (options: unknown) => ipcRenderer.invoke('pty:create', options),
     listAgentModels: (harness: string, cwd: string, refresh?: boolean) =>

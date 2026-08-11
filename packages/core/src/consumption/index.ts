@@ -86,3 +86,18 @@ export type {
 } from './ports';
 export { scanConsumption } from './scan';
 export type { ConsumptionScan } from './scan';
+export {
+  LIVE_CONSUMPTION_SNAPSHOT_VERSION,
+  emptyLiveConsumptionSnapshot,
+  idleScanState,
+} from './live-snapshot';
+export type {
+  ConsumptionScanPhase,
+  ConsumptionScanProgress,
+  ConsumptionScanState,
+  ConsumptionUpdatedEvent,
+  LiveConsumptionSnapshot,
+  LiveConsumptionSnapshotRequest,
+  LiveSessionIdentityLink,
+  PlanWindowObservation,
+} from './live-snapshot';

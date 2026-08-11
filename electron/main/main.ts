@@ -25,6 +25,7 @@ import {
 } from './ipc-security';
 import { registerSystemShortcutIPC } from './system-shortcuts';
 import { registerOperatorStatsIPC } from './operator-stats-ipc';
+import { registerConsumptionIPC } from './consumption-ipc';
 import { registerAnalyticsIPC } from './analytics-ipc';
 import {
   appCrashFromChildProcessGone,
@@ -1442,6 +1443,7 @@ async function bootstrapCommandSurface(): Promise<void> {
   registerMenuIPC();
   registerSystemShortcutIPC();
   registerOperatorStatsIPC();
+  registerConsumptionIPC(() => BrowserWindow.getAllWindows());
   registerAnalyticsIPC();
   shutdownCoordinator = new runtime.shutdown.ShutdownCoordinator({
     countLive: () => {

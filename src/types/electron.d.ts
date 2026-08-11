@@ -16,6 +16,11 @@ import type {
   PtyHarness,
 } from '@exawatt/core';
 import type { OperatorStatsPublishPayload } from '@exawatt/core';
+import type {
+  ConsumptionUpdatedEvent,
+  LiveConsumptionSnapshot,
+  LiveConsumptionSnapshotRequest,
+} from '@exawatt/core';
 
 export type {
   AgentHarness,
@@ -34,6 +39,36 @@ export type {
   LaunchConfigurationPoolV1,
   PtyHarness,
 } from '@exawatt/core';
+
+/**
+ * ENG-008 E5 — the live local-consumption seam. The snapshot shape, honesty
+ * rules, and channel semantics are documented once, in `@exawatt/core`
+ * (`consumption/live-snapshot.ts`); this is only the renderer-side typing of
+ * the preload bridge.
+ */
+export interface ElectronConsumptionApi {
+  /**
+   * Pull the current snapshot. Never blocks on scanning: the first call this
+   * launch starts the BACKGROUND first scan and returns whatever is already
+   * known (persisted state or an empty snapshot with `firstScanComplete:
+   * false`). Pass `sinceMs` to bound the sample payload to the window the
+   * surface renders.
+   */
+  snapshot: (
+    request?: LiveConsumptionSnapshotRequest
+  ) => Promise<LiveConsumptionSnapshot>;
+  /** Request an incremental pass now. Debounced; no-op while one runs. */
+  rescan: () => Promise<void>;
+  /** Cancel the in-flight pass. Completed work is kept, never discarded. */
+  cancelScan: () => Promise<void>;
+  /**
+   * Revision bumps. Notification-only (revision + scan state, never samples);
+   * pull a fresh snapshot when the new revision matters to the surface.
+   */
+  onUpdated: (
+    handler: (event: ConsumptionUpdatedEvent) => void
+  ) => () => void;
+}
 
 export interface ElectronAgentSourcesApi {
   list: (
@@ -754,6 +789,7 @@ declare global {
           >
         >;
       };
+      consumption?: ElectronConsumptionApi;
       pty?: ElectronPtyApi;
       workspace?: ElectronWorkspaceApi;
       roadmap?: ElectronRoadmapApi;
