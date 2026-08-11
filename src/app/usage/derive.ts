@@ -631,14 +631,26 @@ export function diagnostics(demo: DemoConsumption): Diagnostic[] {
           share: delegated,
         }
   );
-  out.push({
-    key: 'interventions',
-    label: `Intervention rate · ${win}`,
-    value: `${rate1(iv.perSession)} per Session`,
-    state: 'steady',
-    hint: `${iv.interventions} operator messages after launch across ${iv.sessions} Sessions · ${rate1(iv.perActiveHour)} per active hour · ${iv.untouchedSessions} Sessions ran untouched · an upper bound: steering and a stuck agent arrive the same way`,
-    share: iv.sessions > 0 ? 1 - iv.untouchedShare : undefined,
-  });
+  out.push(
+    iv.sessions === 0
+      ? {
+          // No session in scope carries an intervention record (the live
+          // read until the snapshot carries counts): absent, never zero.
+          key: 'interventions',
+          label: `Intervention rate · ${win}`,
+          value: 'not recorded',
+          state: 'not-recorded',
+          hint: 'no session in this window carries an intervention record',
+        }
+      : {
+          key: 'interventions',
+          label: `Intervention rate · ${win}`,
+          value: `${rate1(iv.perSession)} per Session`,
+          state: 'steady',
+          hint: `${iv.interventions} operator messages after launch across ${iv.sessions} Sessions · ${rate1(iv.perActiveHour)} per active hour · ${iv.untouchedSessions} Sessions ran untouched · an upper bound: steering and a stuck agent arrive the same way`,
+          share: iv.sessions > 0 ? 1 - iv.untouchedShare : undefined,
+        }
+  );
   out.push({
     key: 'overhead',
     label: `Exawatt overhead · ${win}`,

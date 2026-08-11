@@ -15,7 +15,7 @@ import {
   type PlanWindow,
 } from '@exawatt/core';
 import { readMeter } from './meter/meter-model';
-import { allPaces, gridRows } from '@/app/usage/derive';
+import { allPaces, diagnostics, gridRows } from '@/app/usage/derive';
 import {
   CLAUDE_PLAN_NOTE,
   buildLiveConsumption,
@@ -309,6 +309,10 @@ describe('the built view — attribution, identity, honest absence', () => {
 
   it('excludes unrecorded sessions from the intervention rate', () => {
     expect(view.interventions.rows).toHaveLength(0);
+    // …and the diagnostics tile states the absence, never a 0.0 rate
+    const tile = diagnostics(view).find(d => d.key === 'interventions');
+    expect(tile?.value).toBe('not recorded');
+    expect(tile?.state).toBe('not-recorded');
     const counted = buildLiveConsumption({
       ...liveInputs,
       identities: [
