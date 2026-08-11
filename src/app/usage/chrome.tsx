@@ -36,6 +36,7 @@ import {
   unknownHatchCss as unknownHatch,
 } from '@/components/consumption/flux';
 import type { DemoConsumption } from '@/components/consumption/demo-source';
+import type { LiveScanView } from '@/components/consumption/live-source';
 import type { WindowPace } from './derive';
 import { DEMO_ORGANIZATION } from '@exawatt/core';
 import { DEMO_WORKSPACE } from '@/lib/tenancy/workspace-scope';
@@ -182,6 +183,44 @@ export function Band({
       {children}
     </Card>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* live scan captions — minimal honest state, one Caption line (E5)    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The live read's only chrome: one quiet line while the first scan runs
+ * (with its progress) or while the corpus is a partial read; nothing at all
+ * once the read is complete — the numbers then speak for themselves. The
+ * freshness fact (`read Xm ago`) lives in the page footer.
+ */
+export function LiveScanNotice({ scan }: { scan: LiveScanView | null }) {
+  if (!scan) return null;
+  if (scan.phase === 'first-scan') {
+    const p = scan.progress;
+    return (
+      <div className="px-0.5">
+        <Caption>
+          Reading local logs
+          {p && p.filesTotal > 0
+            ? ` · ${p.filesSeen.toLocaleString()} of ${p.filesTotal.toLocaleString()} files`
+            : '…'}
+        </Caption>
+      </div>
+    );
+  }
+  if (!scan.firstScanComplete) {
+    return (
+      <div className="px-0.5">
+        <Caption>
+          Partial read of local logs
+          {scan.cancelled ? ' · last scan cancelled' : ''}
+        </Caption>
+      </div>
+    );
+  }
+  return null;
 }
 
 /* ------------------------------------------------------------------ */

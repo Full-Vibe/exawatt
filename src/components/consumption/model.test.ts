@@ -219,7 +219,8 @@ describe('intervention rate (ENG-026 N2)', () => {
     // one row per authored operator Session — the 38 summarizer calls have no
     // operator to intervene and must not flatter the rate
     expect(demo.interventions.rows.length).toBe(DEMO_SESSIONS.length);
-    const total = DEMO_SESSIONS.reduce((n, s) => n + s.interventions, 0);
+    // authored specs always state a number (null is the live-identity case)
+    const total = DEMO_SESSIONS.reduce((n, s) => n + (s.interventions ?? 0), 0);
     expect(demo.interventions.total.interventions).toBe(total);
   });
 

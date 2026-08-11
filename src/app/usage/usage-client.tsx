@@ -25,10 +25,12 @@
  * retired 2026-08-03 once the composite shipped — the design record lives in
  * git history, the review screenshots, and the E8 milestone log.
  *
- * Per-tenant source (ENG-027 W2): the Demo tenant reads the Voltaic corpus;
- * Personal keeps the demo week until the E5 live local parse. Both corpora
- * flow through the same view-model and rollups; they never merge. Nothing
- * here reads a file, spawns a process, or makes a network call.
+ * Per-tenant source (ENG-027 W2, live since E5): the Demo tenant reads the
+ * Voltaic corpus; Personal reads THIS machine's live local corpus through
+ * the E5 bridge, falling back to the bannered demo week only where no
+ * bridge exists (the hosted web app). Every corpus flows through the same
+ * view-model and rollups; they never merge. Nothing in this renderer reads
+ * a file, spawns a process, or makes a network call — main owns the scan.
  */
 import { useMemo, useState } from 'react';
 import { displayUsage, rawTotal } from '@/components/consumption/model';
@@ -46,14 +48,14 @@ import {
   type PivotKey,
   type PivotRow,
 } from './derive';
-import { Caption, DemoBanner } from './chrome';
+import { Caption, DemoBanner, LiveScanNotice } from './chrome';
 import { Verdict } from './verdict';
 import { Burn, Heat, Pace, Spend } from './answers';
 import { Attribution, type UnitMode } from './attribution';
 import { SessionsGrid } from './sessions-grid';
 import { DrillPanel } from './drill-panel';
 import { Diagnostics } from './diagnostics';
-import { exact } from '@/components/consumption/flux';
+import { duration, exact } from '@/components/consumption/flux';
 
 type DrillSelection =
   | { kind: 'pivot'; id: string }
@@ -63,7 +65,7 @@ type DrillSelection =
 export function UsageClient() {
   // ONE tenant-aware seam, shared with the ambient chrome meter — the title
   // bar and this page render the same corpus at the same pinned instant.
-  const { view: demo, voltaic: inDemoTenant } = useTenantConsumption();
+  const { view: demo, voltaic: inDemoTenant, live, scan } = useTenantConsumption();
 
   const raw = rawTotal(
     displayUsage(demo.workspace.totals, demo.workspace.sources)
@@ -125,7 +127,14 @@ export function UsageClient() {
           </Caption>
         </header>
 
-        <DemoBanner demo={demo} raw={raw} voltaic={inDemoTenant} />
+        {/* THE FLIP (E5): live data drops the demo banner; the live read's
+            only chrome is the one-line scan caption while a first or
+            partial read is in flight. */}
+        {live ? (
+          <LiveScanNotice scan={scan} />
+        ) : (
+          <DemoBanner demo={demo} raw={raw} voltaic={inDemoTenant} />
+        )}
 
         {/* the five answers, in the order the questions are asked */}
         <Verdict paces={paces} silent={silent} />
@@ -194,6 +203,10 @@ export function UsageClient() {
             {demo.workspace.sessionCount + demo.overhead.sessionCount} provider
             sessions · rolled up with{' '}
             <span className="font-mono">@exawatt/core</span>
+            {/* data freshness — the live read states when it last ran */}
+            {live && scan?.lastScanAtMs != null
+              ? ` · read ${duration(Math.max(0, demo.nowMs - scan.lastScanAtMs))} ago`
+              : ''}
           </Caption>
         </footer>
       </div>

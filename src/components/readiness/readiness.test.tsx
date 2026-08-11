@@ -22,11 +22,13 @@ describe('readiness grammar (ENG-026 N0)', () => {
   });
 
   it('SurfaceReadinessMarker renders the marker for a preview surface and nothing for a live one', () => {
-    const preview = render(<SurfaceReadinessMarker surfaceId="consumption" />);
+    // organization is still a vision preview; consumption flipped live at
+    // ENG-008 E5 and must render NO marker — that disappearance IS the flip.
+    const preview = render(<SurfaceReadinessMarker surfaceId="organization" />);
     expect(preview.getByText('Coming soon')).toBeInTheDocument();
     cleanup();
 
-    const live = render(<SurfaceReadinessMarker surfaceId="settings" />);
+    const live = render(<SurfaceReadinessMarker surfaceId="consumption" />);
     expect(live.container).toBeEmptyDOMElement();
   });
 

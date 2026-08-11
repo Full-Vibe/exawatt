@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PtySessionInfo } from '@/types/electron';
 import {
+  attachLiveSessionBurn,
   extractLocalWorkspaceProjects,
   mergeLocalWorkspaceSessions,
 } from './local-workspace-sessions';
@@ -159,6 +160,69 @@ describe('mergeLocalWorkspaceSessions', () => {
       exitCode: 1,
       sessionState: 'stopped',
     });
+  });
+});
+
+describe('attachLiveSessionBurn (ENG-008 E5)', () => {
+  const layout = {
+    v: 5,
+    projects: [
+      {
+        dir: '/code/exawatt',
+        name: 'Exawatt',
+        tabs: [
+          {
+            id: 'tab-stopped',
+            durableSessionId: 'durable-2',
+            sessionId: null,
+            harness: 'codex',
+            title: 'Stopped agent',
+            cwd: '/code/exawatt',
+            harnessSessionId: 'provider-2',
+          },
+        ],
+      },
+    ],
+  };
+
+  it('attaches measured burn to live PTYs and stopped tabs by provider id', () => {
+    const merged = mergeLocalWorkspaceSessions([live()], layout);
+    const result = attachLiveSessionBurn(
+      merged,
+      [live()],
+      layout,
+      new Map([
+        ['provider-1', { rawTokens: 12_000, normalizedTokens: 8_000 }],
+        ['provider-2', { rawTokens: 3_000, normalizedTokens: 1_500 }],
+      ])
+    );
+    expect(result[0]).toMatchObject({
+      id: 'pty-1',
+      rawTokens: 12_000,
+      normalizedTokens: 8_000,
+    });
+    expect(result[1]).toMatchObject({
+      id: 'workspace:durable-2',
+      rawTokens: 3_000,
+      normalizedTokens: 1_500,
+    });
+  });
+
+  it('leaves unmeasured Sessions untouched — absent, never zero', () => {
+    const merged = mergeLocalWorkspaceSessions([live()], layout);
+    const result = attachLiveSessionBurn(merged, [live()], layout, new Map());
+    for (const snapshot of result) {
+      expect('rawTokens' in snapshot).toBe(false);
+      expect('normalizedTokens' in snapshot).toBe(false);
+    }
+    const partial = attachLiveSessionBurn(
+      merged,
+      [live()],
+      layout,
+      new Map([['provider-1', { rawTokens: 500, normalizedTokens: 400 }]])
+    );
+    expect(partial[0].rawTokens).toBe(500);
+    expect(partial[1].rawTokens).toBeUndefined();
   });
 });
 

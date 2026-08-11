@@ -67,6 +67,15 @@ export interface LocalSessionSnapshot {
   /** Whether an Agent Session has ever been given work. Shells do not have
    *  turns; undefined preserves the legacy byte-inference posture. */
   engaged?: boolean;
+  /**
+   * Measured consumption for this Session over the live corpus window
+   * (ENG-008 E5), joined by the caller from the local consumption read.
+   * Undefined = the Session reports no usage — absent, never zero, so the
+   * burn lens leaves it out of the ramp exactly like the Demo transport's
+   * unreporting Agents.
+   */
+  rawTokens?: number;
+  normalizedTokens?: number;
 }
 
 export interface LocalSessionsSource {
@@ -165,7 +174,18 @@ export function sessionToAgent(
     project: session.projectName,
     sessionKey: session.sessionKey ?? session.id,
     sessionState: session.sessionState ?? (session.exited ? 'stopped' : 'live'),
-    metrics: { ...INITIAL_AGENT_METRICS },
+    // Live measured burn (ENG-008 E5) rides the same optional AgentMetrics
+    // fields the Demo transport fills from demoAgentBurn — the burn lens and
+    // Team tiles read one seam. Absent stays absent.
+    metrics: {
+      ...INITIAL_AGENT_METRICS,
+      ...(session.rawTokens !== undefined
+        ? { rawTokens: session.rawTokens }
+        : {}),
+      ...(session.normalizedTokens !== undefined
+        ? { normalizedTokens: session.normalizedTokens }
+        : {}),
+    },
     lastActivityAt,
     blockerInfo: sessionBlocker(session),
     // Present only while children are live: presence IS the signal, so an

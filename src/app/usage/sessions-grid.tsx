@@ -78,6 +78,11 @@ export function SessionsGrid({
           onSelect={() => onSelect(r.id)}
         />
       ))}
+      {rows.length === 0 && (
+        <div className="px-3 py-3">
+          <Caption>No sessions in this window</Caption>
+        </div>
+      )}
       {hidden.length > 0 && (
         <button
           type="button"

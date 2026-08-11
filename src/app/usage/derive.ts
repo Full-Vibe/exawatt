@@ -243,7 +243,6 @@ function specRows(demo: DemoConsumption): DemoSessionRollup[] {
 export function gridRows(demo: DemoConsumption): GridRow[] {
   const index = sampleIndex(demo);
   const byKey = new Map(demo.projects.map(p => [p.project.key, p.project]));
-  const byDir = new Map(demo.projects.map(p => [p.project.dir, p.project]));
   const rows: GridRow[] = [];
   const covered = new Set<string>();
 
@@ -296,7 +295,11 @@ export function gridRows(demo: DemoConsumption): GridRow[] {
     const lastAtMs = Math.max(...times);
     const source = samples[0].source;
     const cwd = samples.find(s => s.cwd !== null)?.cwd ?? null;
-    const project = cwd ? byDir.get(cwd) : undefined;
+    // The corpus's own worktree-aware resolution — the same attribution the
+    // Project rollups used, so an outside-record row and the Project pivot
+    // can never disagree about where a launch directory belongs.
+    const resolved = cwd ? demo.resolveProject(cwd) : null;
+    const project = resolved ? byKey.get(resolved.id) : undefined;
     const models = [
       ...new Set(samples.flatMap(s => (s.model ? [s.model] : []))),
     ];

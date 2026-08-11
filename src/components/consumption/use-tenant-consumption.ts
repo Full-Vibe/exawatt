@@ -1,29 +1,49 @@
 'use client';
 
 /**
- * THE tenant-aware consumption seam (ENG-008 review fixes, 2026-08-03).
+ * THE tenant-aware consumption seam (ENG-008; live swap E5).
  *
- * Every consumption consumer — the ambient chrome meter, `/usage`, and any
- * future carrier — reads the corpus through this one hook, so the title bar
- * and the page are structurally incapable of disagreeing about which tenant's
- * numbers (and which pinned clock) are on screen. The Demo tenant reads the
- * Voltaic fortnight on the demo shell's clock; every other tenant reads the
- * Personal demo week at `DEMO_NOW_MS` until the E5 live local parse. Both
- * corpora flow through the same view-model; they never merge (ENG-027 W2).
+ * Every consumption consumer — the ambient chrome meter, `/usage`, the
+ * entity burn carriers — reads the corpus through this one hook, so the
+ * title bar and the page are structurally incapable of disagreeing about
+ * which corpus (and which clock) is on screen.
  *
- * Render "now" is always `view.nowMs` — the corpus's own pinned instant —
- * never a per-consumer clock.
+ * Per-tenant source:
+ * - the Demo tenant reads the Voltaic fortnight on the demo shell's clock —
+ *   Demo Mode is first-class forever and never merges with Personal;
+ * - the Personal tenant reads THIS machine's live local corpus through the
+ *   E5 bridge (`live-store.ts`, one IPC subscription for the whole
+ *   renderer). While the first pull is in flight the view is an honest
+ *   empty live view — absent states, never demo numbers wearing a live
+ *   face;
+ * - without the bridge (the hosted web app) Personal falls back to the
+ *   authored demo week, explicitly bannered as demo data — the only honest
+ *   option where no local filesystem exists.
+ *
+ * Render "now" is always `view.nowMs` — the corpus's own pinned instant
+ * (Demo corpora pin authored clocks; the live view re-pins on every store
+ * rebuild) — never a per-consumer clock.
  */
-import { useMemo } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
 import { demoConsumption, type DemoConsumption } from './demo-source';
+import type { LiveScanView } from './live-source';
+import {
+  getLiveConsumption,
+  getServerLiveConsumption,
+  subscribeLiveConsumption,
+} from './live-store';
 import { voltaicConsumption } from './voltaic-source';
 
 export interface TenantConsumption {
   view: DemoConsumption;
-  /** The Demo tenant's Voltaic corpus is on screen, not the Personal week. */
+  /** The Demo tenant's Voltaic corpus is on screen, not the Personal one. */
   voltaic: boolean;
+  /** The Personal tenant's live local read is on screen (E5). */
+  live: boolean;
+  /** Scan state for the live read; null on demo corpora. */
+  scan: LiveScanView | null;
 }
 
 export function useTenantConsumption(): TenantConsumption {
@@ -31,9 +51,21 @@ export function useTenantConsumption(): TenantConsumption {
   const voltaic =
     (tenancy?.hydrated ?? false) &&
     tenancy?.activeWorkspace.id === DEMO_WORKSPACE_ID;
-  const view = useMemo(
-    () => (voltaic ? voltaicConsumption() : demoConsumption()),
-    [voltaic]
+  const liveState = useSyncExternalStore(
+    subscribeLiveConsumption,
+    getLiveConsumption,
+    getServerLiveConsumption
   );
-  return { view, voltaic };
+  const live =
+    !voltaic && liveState.status !== 'unavailable' && liveState.view !== null;
+  const view = useMemo(
+    () =>
+      voltaic
+        ? voltaicConsumption()
+        : live
+          ? (liveState.view as DemoConsumption)
+          : demoConsumption(),
+    [voltaic, live, liveState.view]
+  );
+  return { view, voltaic, live, scan: live ? liveState.scan : null };
 }

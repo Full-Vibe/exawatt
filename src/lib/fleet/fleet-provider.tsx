@@ -28,9 +28,14 @@ import {
   type ProjectCatalogEntry,
 } from '@exawatt/core';
 import {
+  attachLiveSessionBurn,
   extractLocalWorkspaceProjects,
   mergeLocalWorkspaceSessions,
 } from './local-workspace-sessions';
+import {
+  getLiveConsumption,
+  subscribeLiveConsumption,
+} from '@/components/consumption/live-store';
 import { useOptionalWorkspaceTenancy } from '@/lib/tenancy/tenancy-provider';
 import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
 
@@ -134,6 +139,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     let mounted = true;
     let offWorkspaceChanged: (() => void) | undefined;
     let offDelegation: (() => void) | undefined;
+    let offLiveBurn: (() => void) | undefined;
 
     function startDemoWorkspace() {
       if (!mounted) return;
@@ -193,7 +199,16 @@ export function FleetProvider({ children }: { children: ReactNode }) {
                   sameProjectCatalog(current, next) ? current : next
                 );
               }
-              return mergeLocalWorkspaceSessions(live, layout);
+              // Live measured burn joins by each Session's captured provider
+              // identity (ENG-008 E5) — the burn lens reads the same
+              // AgentMetrics fields the Demo transport fills. Absent stays
+              // absent, exactly like an unreporting Demo Agent.
+              return attachLiveSessionBurn(
+                mergeLocalWorkspaceSessions(live, layout),
+                live,
+                layout,
+                getLiveConsumption().burnByProviderId
+              );
             },
             onData: pty.onData,
             onExit: pty.onExit,
@@ -226,6 +241,16 @@ export function FleetProvider({ children }: { children: ReactNode }) {
               sameProjectCatalog(current, next) ? current : next
             );
             void localTransport.refresh();
+          });
+          // A completed scan changes per-Session burn; re-list so the board
+          // recolors. Gated on the snapshot revision — the store also emits
+          // on 60s now-re-pins, which change no burn figure.
+          let lastBurnRevision = getLiveConsumption().revision;
+          offLiveBurn = subscribeLiveConsumption(() => {
+            const { revision } = getLiveConsumption();
+            if (revision === lastBurnRevision) return;
+            lastBurnRevision = revision;
+            if (mounted) void localTransport.refresh();
           });
           return;
         }
@@ -325,6 +350,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       cancelOcRetryRef.current = null;
       offWorkspaceChanged?.();
       offDelegation?.();
+      offLiveBurn?.();
       ocClientRef.current?.disconnect();
       for (const timer of toastTimersRef.current) clearTimeout(timer);
       toastTimersRef.current = [];

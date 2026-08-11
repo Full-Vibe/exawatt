@@ -157,9 +157,10 @@ export const NAVIGATION_SURFACES: NavigationSurface[] = [
     summary: 'What the fleet is spending, and on what',
     href: '/usage',
     tier: 'app',
-    // ENG-008 E4 shipped it demo-sourced; E5 swaps the source and this line
-    // flips to `live`. That flip is the whole deployment.
-    readiness: 'preview',
+    // ENG-008 E5 (2026-08-10): the Personal tenant reads this machine's real
+    // local corpus through the live IPC bridge — the E4 preview flipped live,
+    // exactly the one-line change E5 was designed to be.
+    readiness: 'live',
     commandPalette: true,
     shortcutId: 'go-consumption',
     keywords: [

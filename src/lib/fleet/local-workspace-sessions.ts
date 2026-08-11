@@ -1,6 +1,11 @@
 import type { LocalSessionSnapshot, ProjectCatalogEntry } from '@exawatt/core';
 import type { PtySessionInfo } from '@/types/electron';
 
+export interface LiveBurnFigures {
+  rawTokens: number;
+  normalizedTokens: number;
+}
+
 function leaf(path: string): string {
   return path.split('/').filter(Boolean).pop() ?? path;
 }
@@ -172,4 +177,71 @@ export function mergeLocalWorkspaceSessions(
   }
 
   return merged;
+}
+
+/**
+ * Attach live measured burn (ENG-008 E5) to merged fleet snapshots by each
+ * Session's captured provider identity. Live PTYs carry `harnessSessionId`
+ * directly; a stopped tab keeps its identity in the persisted layout. A
+ * Session with no identity or no measured samples is left untouched —
+ * absent, never zero — so the burn lens omits it from the ramp exactly like
+ * an unreporting Demo Agent.
+ */
+export function attachLiveSessionBurn(
+  merged: LocalSessionSnapshot[],
+  live: PtySessionInfo[],
+  layout: unknown,
+  burnByProviderId: ReadonlyMap<string, LiveBurnFigures>
+): LocalSessionSnapshot[] {
+  if (burnByProviderId.size === 0) return merged;
+
+  const byRuntimeId = new Map<string, string>();
+  for (const session of live) {
+    if (session.harnessSessionId) {
+      byRuntimeId.set(session.id, session.harnessSessionId);
+    }
+  }
+  const byDurableId = new Map<string, string>();
+  for (const candidate of workspaceGroups(layout)) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const tabs = (candidate as { tabs?: unknown }).tabs;
+    if (!Array.isArray(tabs)) continue;
+    for (const row of tabs) {
+      if (!row || typeof row !== 'object') continue;
+      const tab = row as {
+        id?: unknown;
+        durableSessionId?: unknown;
+        harnessSessionId?: unknown;
+      };
+      if (typeof tab.harnessSessionId !== 'string') continue;
+      const durableId =
+        typeof tab.durableSessionId === 'string'
+          ? tab.durableSessionId
+          : typeof tab.id === 'string'
+            ? tab.id
+            : null;
+      if (durableId) byDurableId.set(durableId, tab.harnessSessionId);
+    }
+  }
+  for (const session of live) {
+    if (session.harnessSessionId) {
+      byDurableId.set(session.durableSessionId, session.harnessSessionId);
+    }
+  }
+
+  return merged.map(snapshot => {
+    const providerId =
+      byRuntimeId.get(snapshot.id) ??
+      (snapshot.id.startsWith('workspace:')
+        ? byDurableId.get(snapshot.id.slice('workspace:'.length))
+        : undefined);
+    const burn = providerId ? burnByProviderId.get(providerId) : undefined;
+    return burn
+      ? {
+          ...snapshot,
+          rawTokens: burn.rawTokens,
+          normalizedTokens: burn.normalizedTokens,
+        }
+      : snapshot;
+  });
 }

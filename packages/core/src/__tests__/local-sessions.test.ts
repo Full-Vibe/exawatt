@@ -213,6 +213,21 @@ describe('sessionToAgent', () => {
     expect(b.goal).toContain('Interactive');
   });
 
+  it('carries live measured burn into AgentMetrics; absent stays absent (E5)', () => {
+    const measured = sessionToAgent(
+      snap({ rawTokens: 12_000, normalizedTokens: 8_000 }),
+      2_000,
+      3_000,
+      15_000
+    );
+    expect(measured.metrics.rawTokens).toBe(12_000);
+    expect(measured.metrics.normalizedTokens).toBe(8_000);
+    // an unmeasured Session reports NOTHING — the burn lens omits it
+    const unmeasured = sessionToAgent(snap(), 2_000, 3_000, 15_000);
+    expect(unmeasured.metrics.rawTokens).toBeUndefined();
+    expect(unmeasured.metrics.normalizedTokens).toBeUndefined();
+  });
+
   it('only a human gate produces blockerInfo; quiet completion is a result', () => {
     const result = sessionToAgent(
       snap({ attention: { kind: 'turn-end', since: 2_500 } }),

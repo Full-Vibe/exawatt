@@ -204,10 +204,13 @@ export interface DemoSessionSpec {
    * Operator messages AFTER launch (ENG-026 N2's intervention rate). Counted
    * live from the `UserPromptSubmit` events the ENG-023 harness channel
    * already receives (Claude Code) and the user turns Codex rollouts already
-   * record. Required, like `delegation`: a construction site must state 0
-   * rather than silently read as autonomous.
+   * record. Required, like `delegation`: a construction site must state its
+   * value rather than silently read as autonomous. `null` means the source
+   * kept no record for this Session (E5 live identities without a count) —
+   * unrecorded, never zero, and excluded from the intervention-rate
+   * denominator. Authored corpora always state a number.
    */
-  interventions: number;
+  interventions: number | null;
   usage: DemoUsage;
   /**
    * Peak context footprint the run reached, in tokens (ENG-008 per-run
@@ -970,6 +973,13 @@ export interface DemoConsumption {
   inferredWeighted: number;
   /** Exawatt's own machine-invoked harness usage. Shown, never folded in. */
   overhead: { sessionCount: number; rollup: ConsumptionRollup | null };
+  /**
+   * The corpus's own cwd → Project resolution (worktree-aware), carried on
+   * the view so downstream derivations (the outside-fleet-record grid rows)
+   * attribute a launch directory exactly the way the Project rollups did —
+   * one resolver per corpus, never a second exact-match guess.
+   */
+  resolveProject: (cwd: string) => { id: string; label: string } | null;
   sources: ConsumptionSourceView[];
   /**
    * ENG-026 N2 — the intervention record for operator Sessions. Overhead is
@@ -1107,21 +1117,23 @@ export function buildDemoConsumption(
 
   // Interventions ride the same session rollups as everything else, so the
   // token denominator includes delegated children — one human touch steers
-  // the whole tree it launched.
-  const interventionRows: InterventionRow[] = sessionRollups.map(
-    ({ spec, rollup }) => ({
+  // the whole tree it launched. Sessions whose count is unrecorded (null)
+  // stay OUT of the rate entirely: an unobserved session is not an
+  // untouched one, and folding it in would flatter the rate.
+  const interventionRows: InterventionRow[] = sessionRollups
+    .filter(({ spec }) => spec.interventions !== null)
+    .map(({ spec, rollup }) => ({
       sessionId: spec.id,
       title: spec.title,
       harness: spec.source,
-      interventions: spec.interventions,
+      interventions: spec.interventions as number,
       activeMs: Math.max(1, spec.lastAtMs - spec.startedAtMs),
       rawTokens:
         rollup.totals.inputTokens +
         rollup.totals.cacheReadTokens +
         rollup.totals.cacheWriteTokens +
         rollup.totals.outputTokens,
-    })
-  );
+    }));
 
   return {
     nowMs,
@@ -1141,6 +1153,7 @@ export function buildDemoConsumption(
       sessionCount: new Set(machine.map(s => s.providerSessionId)).size,
       rollup: overheadRollup,
     },
+    resolveProject: projectResolver,
     sources: buildSources(inputs, operator, planWindows),
     interventions: {
       rows: interventionRows,
@@ -1267,7 +1280,12 @@ function buildSources(
       key: source,
       harness: source,
       label,
-      planType: windows.length > 0 ? 'pro' : null,
+      // The plan's OWN reported type, never an assumed tier.
+      planType:
+        windows.length > 0
+          ? (planWindows.find(w => w.source === source && w.planType)
+              ?.planType ?? null)
+          : null,
       credits: null,
       windows,
       observedTokens5h,

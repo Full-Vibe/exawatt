@@ -123,8 +123,8 @@ describe('readiness (ENG-026 N0/N1)', () => {
     }
   });
 
-  it('consumption is preview until ENG-008 E5 swaps the source', () => {
-    expect(surfaceById('consumption').readiness).toBe('preview');
+  it('consumption is live — ENG-008 E5 swapped the source (2026-08-10)', () => {
+    expect(surfaceById('consumption').readiness).toBe('live');
   });
 
   it('the vision surfaces are registered as navigable previews in the app tier', () => {

@@ -40,6 +40,7 @@ import { CloseConfirm, CloseProjectConfirm } from './close-confirm';
 import { navHistory } from '@/components/nav/nav-history';
 import { ProjectOpener } from './project-opener';
 import { ExposeOverlay } from './expose-overlay';
+import { useLiveConsumptionByTab } from '@/components/consumption/use-live-consumption-by-tab';
 import { ReentryRecapLine } from './reentry-recap';
 import {
   useWorkspaceState,
@@ -739,6 +740,11 @@ export function WorkspaceClient() {
   // agent-first mirror (S9): tabId → what that agent is executing. Declared
   // ids cover every project (machine-local layout truth); the active
   // project's lens enriches with real labels, fractions, inferred links.
+  // Live per-Session burn on the exposé tiles (ENG-008 E5): each tab's
+  // captured provider identity joins the live corpus through the one shared
+  // burn derivation. Tabs whose Session reports nothing stay absent.
+  const consumptionByTab = useLiveConsumptionByTab(projects);
+
   const roadmapByTab = useMemo(() => {
     const out: Record<
       string,
@@ -1732,6 +1738,7 @@ export function WorkspaceClient() {
           roadmapByTab={roadmapByTab}
           projects={projects}
           summaries={summaries}
+          consumptionByTab={consumptionByTab}
           goalVisuals={goalVisuals}
           attention={mergedAttention}
           activity={activity}
