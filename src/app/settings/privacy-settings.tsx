@@ -6,6 +6,7 @@ import { readAnalyticsOptOut, setAnalyticsOptOut } from '@/lib/analytics';
 import {
   HOSTED_FEATURE_IDS,
   OUTBOUND_CONTROLS,
+  isClaudePlanWindowsEnabled,
   isHostedFeatureEnabled,
   isOperatorAutoPublishEnabled,
   isReentryRecapEnabled,
@@ -127,7 +128,9 @@ function useHostedFeatureSettings() {
             ? api.setHostedConversationSummaries
             : id === 'operatorProfile'
               ? api.setOperatorAutoPublish
-              : api.setReentryRecap;
+              : id === 'claudePlanWindows'
+                ? api.setClaudePlanWindows
+                : api.setReentryRecap;
       try {
         setSettings(await save(enabled));
       } catch {
@@ -214,6 +217,11 @@ export function PrivacySettings() {
               control={OUTBOUND_CONTROLS.reentryRecap}
               checked={isReentryRecapEnabled(preferences)}
               onChange={next => void setFeature('reentryRecap', next)}
+            />
+            <OutboundControlRow
+              control={OUTBOUND_CONTROLS.claudePlanWindows}
+              checked={isClaudePlanWindowsEnabled(preferences)}
+              onChange={next => void setFeature('claudePlanWindows', next)}
             />
           </SettingsGroup>
         ) : null}

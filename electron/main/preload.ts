@@ -199,6 +199,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('settings:set-goal-visuals', enabled),
     setReentryRecap: (enabled: boolean) =>
       ipcRenderer.invoke('settings:set-reentry-recap', enabled),
+    setClaudePlanWindows: (enabled: boolean) =>
+      ipcRenderer.invoke('settings:set-claude-plan-windows', enabled),
     setOperatorAutoPublish: (enabled: boolean) =>
       ipcRenderer.invoke('settings:set-operator-auto-publish', enabled),
     recordAgentSourceUse: (

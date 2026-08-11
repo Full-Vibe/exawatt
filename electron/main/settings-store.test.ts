@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isClaudePlanWindowsEnabled,
   isPersistableAppearancePreferences,
   parseAppearancePreferences,
   parseSettings,
@@ -75,6 +76,25 @@ describe('parseSettings', () => {
     });
     expect(
       parseSettings({ reentryRecap: { enabled: true } }).reentryRecap
+    ).toEqual({ enabled: true });
+  });
+
+  // ENG-038: same default-on contract for the Claude plan-window read —
+  // absent resolves to the disclosed default, only an explicit false is off.
+  it('treats a missing or malformed Claude plan-window key as the default, not off', () => {
+    for (const settings of [
+      parseSettings({}),
+      parseSettings({ claudePlanWindows: { enabled: 'no' } }),
+      parseSettings({ claudePlanWindows: 'off' }),
+    ]) {
+      expect(settings.claudePlanWindows).toBeUndefined();
+      expect(isClaudePlanWindowsEnabled(settings)).toBe(true);
+    }
+    const off = parseSettings({ claudePlanWindows: { enabled: false } });
+    expect(off).toEqual({ claudePlanWindows: { enabled: false } });
+    expect(isClaudePlanWindowsEnabled(off)).toBe(false);
+    expect(
+      parseSettings({ claudePlanWindows: { enabled: true } }).claudePlanWindows
     ).toEqual({ enabled: true });
   });
 

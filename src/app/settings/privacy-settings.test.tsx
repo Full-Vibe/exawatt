@@ -52,6 +52,7 @@ type SettingsBridge = {
   setHostedConversationSummaries: ReturnType<typeof vi.fn>;
   setHostedContextLabels: ReturnType<typeof vi.fn>;
   setReentryRecap: ReturnType<typeof vi.fn>;
+  setClaudePlanWindows: ReturnType<typeof vi.fn>;
   setOperatorAutoPublish: ReturnType<typeof vi.fn>;
 };
 
@@ -90,6 +91,9 @@ function installSettingsBridge(
     ),
     setReentryRecap: vi.fn(async (enabled: boolean) =>
       write({ ...store, reentryRecap: { enabled } })
+    ),
+    setClaudePlanWindows: vi.fn(async (enabled: boolean) =>
+      write({ ...store, claudePlanWindows: { enabled } })
     ),
     setOperatorAutoPublish: vi.fn(async (enabled: boolean) =>
       write({ ...store, operatorProfile: { autoPublish: enabled } })
@@ -262,6 +266,38 @@ describe('Settings → Privacy', () => {
       expect(bridge.setReentryRecap).toHaveBeenCalledWith(true)
     );
     await waitFor(() => expect(recap).toHaveAttribute('aria-checked', 'true'));
+  });
+
+  // ENG-038: the Claude plan-window read — same own-account group as the
+  // recap (the operator's own sign-in, never Exawatt), default on because
+  // the operator pulled the feature; off must persist through its own setter.
+  it('gives the Claude plan-window read its own default-on switch beside the recap', async () => {
+    const bridge = installSettingsBridge();
+    await renderPrivacy();
+
+    const ownAccounts = groupFor('data-own-account-settings');
+    const plan = within(ownAccounts).getByRole('switch', {
+      name: OUTBOUND_CONTROLS.claudePlanWindows.label,
+    });
+    expect(plan).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.click(plan);
+    await waitFor(() =>
+      expect(bridge.setClaudePlanWindows).toHaveBeenCalledWith(false)
+    );
+    await waitFor(() => expect(plan).toHaveAttribute('aria-checked', 'false'));
+    expect(bridge.setReentryRecap).not.toHaveBeenCalled();
+  });
+
+  it('reflects a plan-window preference persisted earlier', async () => {
+    installSettingsBridge({ claudePlanWindows: { enabled: false } });
+    await renderPrivacy();
+
+    expect(
+      within(groupFor('data-own-account-settings')).getByRole('switch', {
+        name: OUTBOUND_CONTROLS.claudePlanWindows.label,
+      })
+    ).toHaveAttribute('aria-checked', 'false');
   });
 
   // ENG-035: public sharing is a FOURTH structurally separate group — the

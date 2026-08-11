@@ -27,6 +27,8 @@ import { registerSystemShortcutIPC } from './system-shortcuts';
 import { registerOperatorStatsIPC } from './operator-stats-ipc';
 import { registerConsumptionIPC } from './consumption-ipc';
 import { ConsumptionScannerService } from './consumption/scanner-service';
+import { ClaudePlanAccountService } from './consumption/claude-plan-account';
+import { ProviderPlanCompositeSource } from './consumption/provider-plan-composite';
 import { registerAnalyticsIPC } from './analytics-ipc';
 import {
   appCrashFromChildProcessGone,
@@ -59,7 +61,7 @@ import { resolveWindowLaunchMode } from './window-launch-mode';
 import { createDirectoryPicker } from './directory-picker';
 import { stopChildProcess } from './child-process-lifecycle';
 import { FIXED_SESSION_MENU_COMMANDS } from './fixed-session-menu';
-import { loadSettings } from './settings-store';
+import { isClaudePlanWindowsEnabled, loadSettings } from './settings-store';
 import {
   applyNativeAppearancePreference,
   refreshNativeWindowBackgrounds,
@@ -116,6 +118,7 @@ let rendererWasWarmAtLaunch = false;
 let bootstrapExitInProgress = false;
 let shutdownCoordinator: ShutdownCoordinator | null = null;
 let consumptionScanner: ConsumptionScannerService | null = null;
+let claudePlanAccount: ClaudePlanAccountService | null = null;
 let runStateStore: RunStateStore | null = null;
 let authCoordinator: ElectronAuthCoordinator | null = null;
 let recordAuthDiagnostic: AuthDiagnosticRecorder = () => {};
@@ -1449,7 +1452,18 @@ async function bootstrapCommandSurface(): Promise<void> {
     stateDir: path.join(app.getPath('userData'), 'consumption-scan'),
     identities: () => ptySessions.listProviderIdentities(),
   });
-  registerConsumptionIPC(() => BrowserWindow.getAllWindows(), consumptionScanner);
+  // ENG-038: the credentialed Claude plan-account read — a SIBLING of the
+  // scanner (the local parse stays credential- and network-free), merged
+  // behind the same IPC seam by the composite.
+  claudePlanAccount = new ClaudePlanAccountService({
+    stateDir: path.join(app.getPath('userData'), 'consumption-plan'),
+    enabled: isClaudePlanWindowsEnabled(loadSettings()),
+  });
+  registerConsumptionIPC(
+    () => BrowserWindow.getAllWindows(),
+    new ProviderPlanCompositeSource(consumptionScanner, claudePlanAccount),
+    claudePlanAccount
+  );
   registerAnalyticsIPC();
   shutdownCoordinator = new runtime.shutdown.ShutdownCoordinator({
     countLive: () => {
@@ -1566,6 +1580,7 @@ app.on('before-quit', event => {
   // store is crash-safe (append-ordered, atomic meta), so this is a courtesy
   // flush, never a correctness requirement — it must not delay quit.
   void consumptionScanner?.dispose();
+  claudePlanAccount?.dispose();
   if (!shutdownCoordinator) {
     if (bootstrapExitInProgress) return;
     event.preventDefault();

@@ -141,6 +141,13 @@ export interface CapacityWindowView {
   burnPercentPerHour: number;
   /** When Exawatt last saw this window state. Omitted by hand-authored fixtures. */
   observedAtMs?: number;
+  /**
+   * True for a window reported by the vendor's own account endpoint
+   * (ENG-038): PLAN truth — it meters everything on the plan, claude.ai chat
+   * included, and is never agent-attributable. Surfaces say so once, per
+   * source, in one line.
+   */
+  planLevel?: boolean;
 }
 
 /**
@@ -219,12 +226,16 @@ export function capacityWindowFromPlan(
   if (Number.isNaN(resetsAtMs)) return null;
   return {
     limitId: planWindowKey(plan),
-    label: planWindowLabel(plan.windowMinutes),
+    // The provider's own window name wins when it carries one — it is the
+    // only thing that can tell two same-length windows apart (Claude's
+    // weekly all-models beside weekly Fable; Codex's model-scoped weeklies).
+    label: plan.limitName ?? planWindowLabel(plan.windowMinutes),
     usedPercent: plan.usedPercent,
     windowMinutes: plan.windowMinutes,
     resetsAtMs,
     burnPercentPerHour,
     observedAtMs: Date.parse(plan.observedAt),
+    ...(plan.origin === 'provider-account' ? { planLevel: true } : {}),
   };
 }
 

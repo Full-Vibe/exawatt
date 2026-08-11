@@ -14,6 +14,7 @@ import type {
 } from '@exawatt/core';
 import { emptyLiveConsumptionSnapshot } from '@exawatt/core';
 import { handleTrusted } from './ipc-security';
+import { setClaudePlanWindowsEnabled } from './settings-store';
 import { broadcastToWindows } from './window-broadcast';
 
 export interface ConsumptionScannerLike {
@@ -45,8 +46,27 @@ class StubConsumptionScanner implements ConsumptionScannerLike {
 
 export function registerConsumptionIPC(
   windows: () => readonly BrowserWindow[],
-  scanner: ConsumptionScannerLike = new StubConsumptionScanner()
+  scanner: ConsumptionScannerLike = new StubConsumptionScanner(),
+  planAccount?: { setEnabled(enabled: boolean): void }
 ): () => void {
+  if (planAccount) {
+    // ENG-038: the off switch for the credentialed Claude plan-window read.
+    // Applied to the service BEFORE the write is announced, so no request can
+    // be constructed after the operator has switched the read off; the
+    // service's own revision bump then pushes `consumption:updated`, and the
+    // next pull serves absence.
+    handleTrusted(
+      'settings:set-claude-plan-windows',
+      (_event, enabled: boolean) => {
+        if (typeof enabled !== 'boolean')
+          throw new Error('Invalid Claude plan usage setting');
+        planAccount.setEnabled(enabled);
+        const settings = setClaudePlanWindowsEnabled(enabled);
+        broadcastToWindows(windows(), 'settings:changed', settings);
+        return settings;
+      }
+    );
+  }
   handleTrusted(
     'consumption:snapshot',
     (_event, request?: LiveConsumptionSnapshotRequest) => {

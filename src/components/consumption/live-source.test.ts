@@ -357,6 +357,82 @@ describe('the built view — attribution, identity, honest absence', () => {
   });
 });
 
+describe('ENG-038 — Claude vendor-account windows through the live view', () => {
+  const vendor = (over: Partial<PlanWindow> & { limitId: string }) =>
+    planWindow({
+      source: 'claude-code',
+      planType: 'max',
+      providerSessionId: '',
+      origin: 'provider-account',
+      observedAt: iso(NOW - MIN),
+      ...over,
+    });
+  const claudeWindows = [
+    vendor({
+      limitId: 'claude-session',
+      limitName: 'Current session',
+      windowMinutes: 300,
+      usedPercent: 16,
+      resetsAt: iso(NOW + 100 * MIN),
+    }),
+    vendor({
+      limitId: 'claude-weekly-all',
+      limitName: 'Weekly — all models',
+      windowMinutes: 10_080,
+      usedPercent: 38,
+      resetsAt: iso(NOW + 5 * 24 * HOUR),
+    }),
+    vendor({
+      limitId: 'claude-weekly-fable',
+      limitName: 'Weekly — Fable',
+      windowMinutes: 10_080,
+      usedPercent: 68,
+      resetsAt: iso(NOW + 5 * 24 * HOUR),
+    }),
+  ];
+  const view = buildLiveConsumption(
+    inputs({
+      planWindows: claudeWindows,
+      windowRates: { [planWindowKey(claudeWindows[2])]: 0.41 },
+    })
+  );
+  const claude = view.sources.find(s => s.harness === 'claude-code')!;
+
+  it("renders the account's three windows under its own names and plan type", () => {
+    expect(claude.windows).toHaveLength(3);
+    expect(claude.windows.map(w => w.label).sort()).toEqual([
+      'Current session',
+      'Weekly — Fable',
+      'Weekly — all models',
+    ]);
+    expect(claude.planType).toBe('max');
+    // Plan-level, per source: these meter the whole plan (claude.ai chat
+    // included) and every row says so through the one popover caption.
+    expect(claude.windows.every(w => w.planLevel === true)).toBe(true);
+  });
+
+  it("prefers main's trend rate and falls back to the observed average", () => {
+    const fable = claude.windows.find(w => w.label === 'Weekly — Fable')!;
+    expect(fable.burnPercentPerHour).toBeCloseTo(0.41, 5);
+    const session = claude.windows.find(w => w.label === 'Current session')!;
+    expect(session.burnPercentPerHour).toBeGreaterThan(0); // average, never 0
+  });
+
+  it('the tightest Claude window headlines the meter exactly like Codex would', () => {
+    const meter = readMeter(view.sources, view.nowMs);
+    expect(meter.reading).not.toBeNull();
+    expect(meter.reading!.window.label).toBe('Weekly — Fable');
+    expect(meter.reading!.usedPercent).toBe(68);
+  });
+
+  it('degrade path: no vendor windows reads exactly like before ENG-038', () => {
+    const absent = buildLiveConsumption(inputs());
+    const silent = absent.sources.find(s => s.harness === 'claude-code')!;
+    expect(silent.windows).toHaveLength(0);
+    expect(silent.unreportedReason).toBe(CLAUDE_PLAN_NOTE);
+  });
+});
+
 describe('the empty corpus — a fresh machine, absent-never-zero', () => {
   const view = buildLiveConsumption(inputs());
 

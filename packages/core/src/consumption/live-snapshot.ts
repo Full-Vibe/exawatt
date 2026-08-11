@@ -28,9 +28,12 @@
  * Honesty rules the snapshot inherits from the spine:
  *
  * - Claude Code reports NO plan window anywhere on disk (definitive, §4).
- *   That is represented by `planWindows` simply containing no `claude-code`
- *   entry — absent, never zero — with `SOURCE_CAPABILITIES` stating the
- *   capability. Nothing in this contract fabricates a window for it.
+ *   The LOCAL parse therefore never emits a `claude-code` window, and
+ *   `SOURCE_CAPABILITIES` still states that capability truthfully. Claude
+ *   windows that DO appear here arrived through ENG-038's separate
+ *   credentialed source class (`origin: 'provider-account'`, the vendor's
+ *   own account endpoint) — never from a local file, and never fabricated.
+ *   When that read is off or failing, the entries are simply absent again.
  * - Degenerate windows (`windowMinutes <= 0`) are discarded before the
  *   snapshot, but counted in `discardedDegenerateWindows` — dropped from use,
  *   never dropped in silence.
@@ -49,6 +52,52 @@ import type {
   PlanWindow,
 } from './types';
 import { emptyDiagnostics } from './types';
+
+/**
+ * ENG-038 — one provider's plan-account read, as carried on the snapshot.
+ *
+ * This is the OTHER source class beside the local parse: a credentialed,
+ * remote, read-only fetch of the vendor's own account state (for Claude, the
+ * endpoint Claude Code's `/usage` consults). Its windows enter
+ * `LiveConsumptionSnapshot.planWindows` with `origin: 'provider-account'`
+ * and flow through the same freshness rules; this record carries the
+ * account-level facts that are not windows.
+ *
+ * Honesty rules:
+ * - `unavailable` (endpoint failed, token expired, schema drifted) presents
+ *   as ABSENCE downstream, never as an error state, and any windows still on
+ *   the snapshot keep their true (old) `observedAt` for the freshness rule
+ *   to judge.
+ * - `disabled` means the operator switched the read off: nothing is fetched
+ *   and no windows from this account ride the snapshot at all.
+ * - `spend` is the vendor's usage-credit figure (the spend-class dimension,
+ *   captured for the model; deliberately no UI in ENG-038 slice 1).
+ */
+export type ProviderPlanAccountStatus = 'ok' | 'unavailable' | 'disabled';
+
+/** Vendor-reported usage-credit spend, in minor currency units. */
+export interface ProviderPlanSpend {
+  /** e.g. 20160 with exponent 2 = $201.60. */
+  usedMinor: number;
+  /** null when the vendor reports no limit. */
+  limitMinor: number | null;
+  currency: string;
+  exponent: number;
+  /** Vendor's own 0-100 figure when reported. */
+  percent: number | null;
+  /** Whether extra usage / credits are currently enabled on the account. */
+  enabled: boolean;
+}
+
+export interface ProviderPlanAccountState {
+  source: ConsumptionSourceId;
+  status: ProviderPlanAccountStatus;
+  /** ISO 8601 instant of the last SUCCESSFUL fetch; null before one. */
+  observedAt: string | null;
+  /** The account's own plan identity, e.g. `max`. */
+  planType: string | null;
+  spend: ProviderPlanSpend | null;
+}
 
 export const LIVE_CONSUMPTION_SNAPSHOT_VERSION = 1 as const;
 
@@ -159,6 +208,14 @@ export interface LiveConsumptionSnapshot {
    * state a pace) — absent, never zero; a genuinely flat window reports `0`.
    */
   windowRates: Record<string, number>;
+  /**
+   * ENG-038 — per-provider plan-account reads (the credentialed source
+   * class). Their windows already ride `planWindows` with
+   * `origin: 'provider-account'`; this carries the account-level state.
+   * Absent on snapshots produced before the field existed and when no
+   * account source is configured — absent, never an empty claim.
+   */
+  providerPlanAccounts?: ProviderPlanAccountState[];
   /** The durable-Session identity index. See `LiveSessionIdentityLink`. */
   sessionIdentities: LiveSessionIdentityLink[];
   /** Accumulated scan diagnostics — everything unused is counted, not lost. */

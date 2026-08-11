@@ -46,7 +46,10 @@ export type HostedFeatureId = (typeof HOSTED_FEATURE_IDS)[number];
 
 /** Outbound behaviors that run through the operator's own local sign-ins;
  *  Exawatt's servers are never on the path. */
-export const OWN_ACCOUNT_FEATURE_IDS = ['reentryRecap'] as const;
+export const OWN_ACCOUNT_FEATURE_IDS = [
+  'reentryRecap',
+  'claudePlanWindows',
+] as const;
 
 export type OwnAccountFeatureId = (typeof OWN_ACCOUNT_FEATURE_IDS)[number];
 
@@ -143,6 +146,21 @@ export const OUTBOUND_CONTROLS: Record<OutboundControlId, OutboundControl> = {
     cost: 'Coming back to a Session shows no "since you left" line; you catch up by reading the terminal.',
     defaultEnabled: true,
   },
+  claudePlanWindows: {
+    id: 'claudePlanWindows',
+    // ENG-038: named after what the operator sees — the Claude rows in the
+    // Usage meter and page. "Plan windows" is claude.ai's own vocabulary
+    // (session and weekly limits).
+    label: 'Claude plan usage',
+    purpose:
+      'Shows your Claude session and weekly limits in the Usage meter and page.',
+    sends:
+      'Nothing from your machine — one read-only usage request, authorized by the sign-in Claude Code already keeps in your Keychain. The credential is read in place, never stored or copied.',
+    destination:
+      'Anthropic, through your own Claude Code sign-in — never Exawatt',
+    cost: 'Claude shows no plan windows here; local token counts stay.',
+    defaultEnabled: true,
+  },
   operatorProfile: {
     id: 'operatorProfile',
     // "Publishing" is the word the leaderboard panel's switch carries; this
@@ -177,6 +195,7 @@ export interface HostedFeaturePreferences {
   conversationSummaries?: { hosted: boolean };
   goalVisuals?: { enabled: boolean };
   reentryRecap?: { enabled: boolean };
+  claudePlanWindows?: { enabled: boolean };
   operatorProfile?: { autoPublish: boolean };
 }
 
@@ -200,6 +219,13 @@ export function isReentryRecapEnabled(
 ): boolean {
   if (!preferences) return OUTBOUND_CONTROLS.reentryRecap.defaultEnabled;
   return preferences.reentryRecap?.enabled !== false;
+}
+
+export function isClaudePlanWindowsEnabled(
+  preferences: HostedFeaturePreferences | null | undefined
+): boolean {
+  if (!preferences) return OUTBOUND_CONTROLS.claudePlanWindows.defaultEnabled;
+  return preferences.claudePlanWindows?.enabled !== false;
 }
 
 /**

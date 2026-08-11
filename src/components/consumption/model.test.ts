@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SOURCE_CAPABILITIES } from '@exawatt/core';
 import {
+  capacityWindowFromPlan,
   delegatedWeighted,
   displayUsage,
   interventionStats,
@@ -81,6 +82,40 @@ describe('windowFreshness', () => {
  * measured corpus quietly teaches a demo audience the wrong shape. These
  * assertions pin the properties `consumption-spine.md` actually measured.
  */
+describe('capacityWindowFromPlan (ENG-038 vendor windows)', () => {
+  const plan = {
+    source: 'claude-code' as const,
+    limitId: 'claude-weekly-fable',
+    limitName: 'Weekly — Fable',
+    scope: 'primary' as const,
+    usedPercent: 68,
+    windowMinutes: 10_080,
+    resetsAt: new Date(DEMO_NOW_MS + 5 * 24 * HOUR).toISOString(),
+    planType: 'max',
+    observedAt: new Date(DEMO_NOW_MS).toISOString(),
+    providerSessionId: '',
+    origin: 'provider-account' as const,
+  };
+
+  it("prefers the provider's own window name — two same-length weeklies must read apart", () => {
+    const view = capacityWindowFromPlan(plan, 0.4)!;
+    expect(view.label).toBe('Weekly — Fable');
+    // Without a provider name the length-derived label still applies.
+    expect(capacityWindowFromPlan({ ...plan, limitName: null }, 0.4)!.label).toBe(
+      'Weekly window'
+    );
+  });
+
+  it('marks a vendor-account window plan-level; a local-log window never is', () => {
+    expect(capacityWindowFromPlan(plan, 0.4)!.planLevel).toBe(true);
+    const local = capacityWindowFromPlan(
+      { ...plan, limitId: 'codex', source: 'codex', origin: undefined },
+      0.4
+    )!;
+    expect(local.planLevel).toBeUndefined();
+  });
+});
+
 describe('demo corpus stays plausible against the real corpus', () => {
   const demo = demoConsumption();
 

@@ -241,9 +241,28 @@ export function isOperatorEntrypoint(entrypoint: string | null): boolean {
 }
 
 /**
+ * Where a plan window's figure came from (ENG-038).
+ *
+ * - `local-log` — the harness wrote the window into its own local files and
+ *   Exawatt read them (the spine's read-only local parse). Absent means this:
+ *   every window before ENG-038 was a local read, and the demo corpora and the
+ *   Codex scanner never state it.
+ * - `provider-account` — the vendor's own account endpoint reported it,
+ *   credentialed and remote (ENG-038's separate source class). Such a window
+ *   is PLAN truth: it includes everything the plan meters (claude.ai chat as
+ *   well as agent burn) and is never agent- or session-attributable. On the
+ *   assurance ladder it is `reported` by the vendor with nothing locally
+ *   `observed`.
+ */
+export type PlanWindowOrigin = 'local-log' | 'provider-account';
+
+/**
  * Capacity truth as the harness observed it. This is the only honest answer to
  * "how much of my plan have I used" — it is Codex-native and has no Claude Code
  * equivalent on disk (see `docs/engineering/projects/consumption-spine.md`).
+ * ENG-038 adds the OTHER path to the same shape: a credentialed vendor-account
+ * read (`origin: 'provider-account'`), produced outside this module — nothing
+ * in the local parse gains a credential or a network call.
  */
 export interface PlanWindow {
   source: ConsumptionSourceId;
@@ -260,7 +279,11 @@ export interface PlanWindow {
   planType: string | null;
   /** ISO 8601 instant Exawatt observed this window state. */
   observedAt: string;
+  /** Session whose log carried the window; '' for a vendor-account read,
+   *  which no session produced. */
   providerSessionId: string;
+  /** Absent means `local-log`. See `PlanWindowOrigin`. */
+  origin?: PlanWindowOrigin;
 }
 
 export type ConsumptionScopeKind =

@@ -121,9 +121,14 @@ export function UsageClient() {
               E5's flip to `live` removes it with no change here. No owner
               tag: roadmap IDs are provenance and live in docs, not chrome. */}
           <SurfaceReadinessMarker surfaceId="consumption" />
+          {/* The provenance line must stay TRUE (ENG-038): with vendor plan
+              windows on screen, "no provider API" would be a lie — the Claude
+              rows came from the operator's own account read. Without them the
+              spine's original claim holds verbatim. */}
           <Caption className="ml-auto">
-            read locally from Claude Code and Codex logs · no provider API ·
-            nothing leaves this machine
+            {demo.planWindows.some(w => w.origin === 'provider-account')
+              ? 'read locally from Claude Code and Codex logs · plan windows from your Claude account'
+              : 'read locally from Claude Code and Codex logs · no provider API · nothing leaves this machine'}
           </Caption>
         </header>
 

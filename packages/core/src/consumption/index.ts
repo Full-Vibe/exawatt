@@ -112,4 +112,7 @@ export type {
   LiveConsumptionSnapshotRequest,
   LiveSessionIdentityLink,
   PlanWindowObservation,
+  ProviderPlanAccountState,
+  ProviderPlanAccountStatus,
+  ProviderPlanSpend,
 } from './live-snapshot';

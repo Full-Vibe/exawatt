@@ -120,6 +120,10 @@ function SourceRows({
   snapshot: MeterSnapshot;
 }) {
   const readings = readAllWindows(source, snapshot.nowMs);
+  // ENG-038: vendor-account windows are PLAN truth — they meter the whole
+  // plan (claude.ai chat included), not just this machine's agents. One line,
+  // once per source, never per row.
+  const planLevel = readings.some(r => r.window.planLevel);
   return (
     <div className="flex flex-col gap-2 px-3 py-2.5">
       <span
@@ -141,6 +145,15 @@ function SourceRows({
             reading={r}
           />
         ))
+      )}
+      {planLevel && (
+        <p
+          data-meter-plan-note
+          className="font-ui text-chrome-micro leading-4"
+          style={{ color: PANEL.faint }}
+        >
+          From your Claude account — plan-wide, including claude.ai.
+        </p>
       )}
     </div>
   );

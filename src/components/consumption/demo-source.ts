@@ -1316,7 +1316,10 @@ function buildSources(
       'claude-code',
       'Claude Code',
       inputs.burn['claude-code'],
-      {},
+      // ENG-038: Claude windows exist when the vendor-account read supplies
+      // them, and their rates ride the same burnRates map. The note below
+      // still renders whenever no window survives — the honest absence.
+      inputs.burnRates,
       inputs.claudePlanNote
     ),
   ];

@@ -603,6 +603,12 @@ export interface ExawattSettings {
   reentryRecap?: {
     enabled: boolean;
   };
+  /** ENG-038 Claude plan-window read — outbound to Anthropic only, under the
+   *  operator's OWN Claude Code credential; absent means the disclosed
+   *  default-on. */
+  claudePlanWindows?: {
+    enabled: boolean;
+  };
   /** ENG-035 automatic public-profile sync. Opposite polarity from every
    *  switch above: absent means OFF — publishing is opt-in (decision `0029`)
    *  and turning this on is the consent act. */
@@ -631,6 +637,7 @@ export interface ElectronSettingsApi {
   ) => Promise<ExawattSettings>;
   setGoalVisualsEnabled: (enabled: boolean) => Promise<ExawattSettings>;
   setReentryRecap: (enabled: boolean) => Promise<ExawattSettings>;
+  setClaudePlanWindows: (enabled: boolean) => Promise<ExawattSettings>;
   setOperatorAutoPublish: (enabled: boolean) => Promise<ExawattSettings>;
   recordAgentSourceUse: (
     projectDir: string,

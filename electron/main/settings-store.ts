@@ -87,6 +87,14 @@ export interface ExawattSettings {
      * servers). Off reads no scrollback and spawns nothing. */
     enabled: boolean;
   };
+  claudePlanWindows?: {
+    /** ENG-038: read-only plan-window fetch from the operator's own Claude
+     * account (the endpoint Claude Code's `/usage` consults), authorized by
+     * the Keychain credential Claude Code already holds. Defaults ON
+     * (operator-pulled, 2026-08-11). Off constructs no request and serves
+     * no Claude plan windows. */
+    enabled: boolean;
+  };
   operatorProfile?: {
     /** ENG-035: automatic sync of the public operator profile. The one
      * outbound switch that defaults OFF — publishing is opt-in under decision
@@ -425,6 +433,12 @@ export function parseSettings(raw: unknown): ExawattSettings {
     const enabled = (reentryRecap as { enabled?: unknown }).enabled;
     if (typeof enabled === 'boolean') settings.reentryRecap = { enabled };
   }
+  const claudePlanWindows = (raw as { claudePlanWindows?: unknown })
+    .claudePlanWindows;
+  if (claudePlanWindows && typeof claudePlanWindows === 'object') {
+    const enabled = (claudePlanWindows as { enabled?: unknown }).enabled;
+    if (typeof enabled === 'boolean') settings.claudePlanWindows = { enabled };
+  }
   // Opposite polarity from every switch above: absent means OFF (decision
   // `0029` — publishing is opt-in), so a malformed key falls back to not
   // publishing rather than silently opting the operator in.
@@ -725,6 +739,18 @@ export function setReentryRecapEnabled(enabled: boolean): ExawattSettings {
   settings.reentryRecap = { enabled };
   writeSettings(settings);
   return settings;
+}
+
+export function setClaudePlanWindowsEnabled(enabled: boolean): ExawattSettings {
+  const settings = loadSettings();
+  settings.claudePlanWindows = { enabled };
+  writeSettings(settings);
+  return settings;
+}
+
+/** Default ON; only an explicit false is off (the `!== false` convention). */
+export function isClaudePlanWindowsEnabled(settings: ExawattSettings): boolean {
+  return settings.claudePlanWindows?.enabled !== false;
 }
 
 export function setOperatorAutoPublish(enabled: boolean): ExawattSettings {
