@@ -22,6 +22,9 @@ export const DELEGATION_MOTION = {
   maxStaggerSeconds: 0.33,
   /** A unit begins this fraction of its final size at the parent's edge. */
   spawnScaleFloor: 0.18,
+  /** Peak of the single arrival overshoot, as a fraction of the travel. Small
+   *  enough to read as momentum rather than a bounce. */
+  arrivalOvershoot: 0.06,
   /**
    * Instance-buffer size. Derived from the model's own ceiling rather than
    * guessed: drei silently no-ops writes past `limit`, so a hardcoded number
@@ -55,6 +58,25 @@ export interface DelegationRosterEntry {
 
 export function easeOutCubic(value: number): number {
   return 1 - Math.pow(1 - value, 3);
+}
+
+/**
+ * Arrival curve for a spawning child (operator, 2026-08-10: "gravitational
+ * physics keeping them close together" — delivered at lifecycle time rather
+ * than as ambient drift).
+ *
+ * A single soft overshoot past the slot, then settle: the unit reads as pulled
+ * into orbit instead of sliding to a stop. This amends D3c's "no bounce/elastic
+ * overshoot" clause, which was written to forbid decorative springiness; the
+ * overshoot here is one small excursion, not an oscillation, and it is the
+ * physical read the operator asked for.
+ */
+export function delegationArrivalEase(value: number): number {
+  const clamped = Math.min(1, Math.max(0, value));
+  const eased = easeOutCubic(clamped);
+  // Fades in from nothing and back to nothing, so the curve still starts at 0
+  // and ends exactly at 1 — a unit never rests off its slot.
+  return eased + DELEGATION_MOTION.arrivalOvershoot * Math.sin(Math.PI * clamped);
 }
 
 /** Stagger for the nth unit arriving under one parent, capped in total. */

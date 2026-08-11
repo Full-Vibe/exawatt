@@ -912,46 +912,169 @@ export function selectSpatialBoardLayout(
   };
 }
 
+export type SpatialSelectionDirection = 'up' | 'down' | 'left' | 'right';
+
 /**
- * Band-hit selection (ENG-004 V3.2): resolve a drag rectangle in LAYOUT space
- * (y-down, the coordinate system every `SpatialBoardRect` uses) to the Agents
- * it captures. Two capture rules, both over visible entities only:
- *
- * - a visible agent piece whose CENTER falls inside the band is captured
- *   individually (the RTS unit rule);
- * - a zone whose population renders as the aggregated dot field — no
- *   per-agent pieces to hit — is captured whole when the band INTERSECTS its
- *   circular footprint (the RTS building rule; at fleet density the zone is
- *   the unit).
- *   Zones that do render agent pieces are owned by the piece rule, so a band
- *   inside a focused Project never grabs the whole Project.
- *
- * `visibleAgentIds` (the same set the layout was computed with) keeps
- * filtered-out Agents out of zone captures. Pure and order-stable: piece
- * captures in piece order, then zone captures in zone order, deduplicated.
+ * Arrow-key selection for the RTS board. Candidates live in the pressed
+ * half-plane; distance is weighted by angular deviation so a nearby diagonal
+ * Agent wins only when it is still a legible move in that direction.
  */
-export function selectSpatialBandAgentIds(
+/**
+ * What board navigation and band selection can land on (ENG-004 V3.4).
+ *
+ * Delegated children render as peers, so they are reachable — but they are not
+ * Agents: no Session, no goal, no URL address, and nothing to direct yet. The
+ * discriminated union is what keeps that distinction honest instead of
+ * smuggling a child through an `agentId`-shaped hole.
+ */
+export type SpatialBoardTarget =
+  | { kind: 'agent'; agentId: string }
+  | {
+      kind: 'child';
+      /** Board-scoped unit id; unique across parents. */
+      unitId: string;
+      parentAgentId: string;
+      /** The source's own child id. */
+      childId: string;
+    };
+
+interface DirectionalCandidate {
+  key: string;
+  x: number;
+  y: number;
+  target: SpatialBoardTarget;
+}
+
+function directionalCandidates(
   layout: SpatialBoardLayout,
+  units: readonly SpatialBoardDelegationUnit[]
+): DirectionalCandidate[] {
+  const candidates: DirectionalCandidate[] = [];
+  for (const piece of layout.pieces) {
+    if (piece.kind !== 'agent' || !piece.visible || !piece.agentId) continue;
+    candidates.push({
+      key: `agent:${piece.agentId}`,
+      x: piece.x,
+      y: piece.y,
+      target: { kind: 'agent', agentId: piece.agentId },
+    });
+  }
+  for (const unit of units) {
+    // An overflow lobe stands for several Agents; walking onto it would claim
+    // to select one of them.
+    if (unit.kind !== 'child' || !unit.childId) continue;
+    candidates.push({
+      key: `child:${unit.id}`,
+      x: unit.x,
+      y: unit.y,
+      target: {
+        kind: 'child',
+        unitId: unit.id,
+        parentAgentId: unit.parentAgentId,
+        childId: unit.childId,
+      },
+    });
+  }
+  return candidates;
+}
+
+function targetKey(target: SpatialBoardTarget | null): string | null {
+  if (!target) return null;
+  return target.kind === 'agent'
+    ? `agent:${target.agentId}`
+    : `child:${target.unitId}`;
+}
+
+/**
+ * The nearest unit in the pressed direction, over board coordinates. Agents and
+ * delegated children are one field: at peer scale, arrow navigation that skips
+ * half of what is on screen reads as broken.
+ */
+export function selectSpatialDirectionalTarget(
+  layout: SpatialBoardLayout,
+  units: readonly SpatialBoardDelegationUnit[],
+  current: SpatialBoardTarget | null,
+  direction: SpatialSelectionDirection
+): SpatialBoardTarget | null {
+  const candidates = directionalCandidates(layout, units);
+  if (candidates.length === 0) return null;
+  const currentKey = targetKey(current);
+  const from = currentKey
+    ? candidates.find(candidate => candidate.key === currentKey)
+    : undefined;
+  const origin = from ?? {
+    x: layout.cameraBounds.x + layout.cameraBounds.width / 2,
+    y: layout.cameraBounds.y + layout.cameraBounds.height / 2,
+  };
+  const axis =
+    direction === 'left'
+      ? { x: -1, y: 0 }
+      : direction === 'right'
+        ? { x: 1, y: 0 }
+        : direction === 'up'
+          ? { x: 0, y: -1 }
+          : { x: 0, y: 1 };
+  let best: DirectionalCandidate | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (const candidate of candidates) {
+    if (candidate.key === currentKey) continue;
+    const dx = candidate.x - origin.x;
+    const dy = candidate.y - origin.y;
+    const forward = dx * axis.x + dy * axis.y;
+    if (forward <= 0.001) continue;
+    const distance = Math.hypot(dx, dy);
+    const perpendicular = Math.abs(dx * axis.y - dy * axis.x);
+    const score = distance * (1 + (perpendicular / distance) * 2.25);
+    if (
+      score < bestScore - 0.0001 ||
+      (Math.abs(score - bestScore) <= 0.0001 &&
+        candidate.key.localeCompare(best?.key ?? '') < 0)
+    ) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+  return best?.target ?? from?.target ?? null;
+}
+
+/** A band drag's catch: Agents and delegated children, kept apart. */
+export interface SpatialBandSelection {
+  agentIds: string[];
+  /** Board-scoped delegation unit ids. */
+  childUnitIds: string[];
+}
+
+/**
+ * Band-hit selection over board coordinates. Piece centers act as RTS unit
+ * points; a zone rendered as population dots is captured whole on intersection,
+ * while a zone that owns individual pieces is never grabbed wholesale.
+ *
+ * Delegated children are captured as themselves, never folded into their
+ * parent — a band over a constellation caught the workers, not one Agent.
+ */
+export function selectSpatialBandSelection(
+  layout: SpatialBoardLayout,
+  units: readonly SpatialBoardDelegationUnit[],
   band: SpatialBoardRect,
   visibleAgentIds?: ReadonlySet<string>
-): string[] {
+): SpatialBandSelection {
   const left = Math.min(band.x, band.x + band.width);
   const right = Math.max(band.x, band.x + band.width);
   const top = Math.min(band.y, band.y + band.height);
   const bottom = Math.max(band.y, band.y + band.height);
+  const inside = (x: number, y: number) =>
+    x >= left && x <= right && y >= top && y <= bottom;
   const captured = new Set<string>();
+  const capturedChildren = new Set<string>();
   const pieceOwnedZones = new Set<string>();
   for (const piece of layout.pieces) {
     if (piece.kind !== 'agent' || !piece.visible || !piece.agentId) continue;
     pieceOwnedZones.add(piece.projectId);
-    if (
-      piece.x >= left &&
-      piece.x <= right &&
-      piece.y >= top &&
-      piece.y <= bottom
-    ) {
-      captured.add(piece.agentId);
-    }
+    if (inside(piece.x, piece.y)) captured.add(piece.agentId);
+  }
+  for (const unit of units) {
+    if (unit.kind !== 'child') continue;
+    if (inside(unit.x, unit.y)) capturedChildren.add(unit.id);
   }
   for (const zone of layout.zones) {
     if (!zone.visible || zone.isAggregate || zone.agentCount === 0) continue;
@@ -969,73 +1092,9 @@ export function selectSpatialBandAgentIds(
       captured.add(agentId);
     }
   }
-  return [...captured];
+  return { agentIds: [...captured], childUnitIds: [...capturedChildren] };
 }
 
-export type SpatialSelectionDirection = 'up' | 'down' | 'left' | 'right';
-
-/**
- * Arrow-key selection for the RTS board. Candidates live in the pressed
- * half-plane; distance is weighted by angular deviation so a nearby diagonal
- * Agent wins only when it is still a legible move in that direction.
- */
-export function selectSpatialDirectionalAgentId(
-  layout: SpatialBoardLayout,
-  currentAgentId: string | null,
-  direction: SpatialSelectionDirection
-): string | null {
-  const candidates = layout.pieces.filter(
-    (piece): piece is SpatialBoardPiece & { agentId: string } =>
-      piece.kind === 'agent' && piece.visible && Boolean(piece.agentId)
-  );
-  if (candidates.length === 0) return null;
-  const current = currentAgentId
-    ? candidates.find(piece => piece.agentId === currentAgentId)
-    : undefined;
-  const origin = current ?? {
-    x: layout.cameraBounds.x + layout.cameraBounds.width / 2,
-    y: layout.cameraBounds.y + layout.cameraBounds.height / 2,
-  };
-  const axis =
-    direction === 'left'
-      ? { x: -1, y: 0 }
-      : direction === 'right'
-        ? { x: 1, y: 0 }
-        : direction === 'up'
-          ? { x: 0, y: -1 }
-          : { x: 0, y: 1 };
-  let best: (typeof candidates)[number] | null = null;
-  let bestScore = Number.POSITIVE_INFINITY;
-  for (const candidate of candidates) {
-    if (candidate.agentId === currentAgentId) continue;
-    const dx = candidate.x - origin.x;
-    const dy = candidate.y - origin.y;
-    const forward = dx * axis.x + dy * axis.y;
-    if (forward <= 0.001) continue;
-    const distance = Math.hypot(dx, dy);
-    const perpendicular = Math.abs(dx * axis.y - dy * axis.x);
-    const score = distance * (1 + (perpendicular / distance) * 2.25);
-    if (
-      score < bestScore - 0.0001 ||
-      (Math.abs(score - bestScore) <= 0.0001 &&
-        candidate.agentId.localeCompare(best?.agentId ?? '') < 0)
-    ) {
-      best = candidate;
-      bestScore = score;
-    }
-  }
-  return best?.agentId ?? current?.agentId ?? null;
-}
-
-/**
- * Fleet-altitude activity summary (ENG-004 V3.2): the compact working /
- * blocked / idle readout plus the scope's token burn, over the whole fleet or
- * a selected scope. Buckets follow the D40 projection the zone health rails
- * already use: working folds in reviewing (both Active), blocked folds in
- * error (both demand the operator), idle folds in complete (both quietly
- * waiting). `burn` is null when no Agent in scope reports usage — absent,
- * never zero, per consumption canon.
- */
 export interface SpatialScopeActivity {
   agentCount: number;
   working: number;

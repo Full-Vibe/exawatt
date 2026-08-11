@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
 import {
-  selectSpatialBandAgentIds,
+  selectSpatialBandSelection,
   selectSpatialBoardLayout,
   selectSpatialDelegationUnits,
-  selectSpatialDirectionalAgentId,
+  selectSpatialDirectionalTarget,
   selectSpatialScopeActivity,
   spatialBoardPieceForAgent,
   spatialBoardZoneForAgent,
@@ -465,7 +465,7 @@ describe('selectSpatialBoardLayout', () => {
   });
 });
 
-describe('selectSpatialDirectionalAgentId', () => {
+describe('selectSpatialDirectionalTarget', () => {
   it('walks visible Agents by board direction and holds at an edge', () => {
     const layout = selectSpatialBoardLayout(
       fleet([
@@ -477,20 +477,29 @@ describe('selectSpatialDirectionalAgentId', () => {
       { altitude: 'project', focusedProjectId: 'project:Alpha' }
     );
     const center = layout.pieces.find(piece => piece.slotIndex === 0)!;
-    const right = selectSpatialDirectionalAgentId(
+    const right = selectSpatialDirectionalTarget(
       layout,
-      center.agentId,
+      [],
+      { kind: 'agent', agentId: center.agentId! },
       'right'
     );
-    expect(right).not.toBe(center.agentId);
+    expect(right?.kind).toBe('agent');
+    const rightId = right!.kind === 'agent' ? right!.agentId : null;
+    expect(rightId).not.toBe(center.agentId);
     expect(
-      layout.pieces.find(piece => piece.agentId === right)!.x
+      layout.pieces.find(piece => piece.agentId === rightId)!.x
     ).toBeGreaterThan(center.x);
 
     const rightmost = [...layout.pieces].sort((a, b) => b.x - a.x)[0]!;
+    // Nothing further right: the selection holds rather than wrapping.
     expect(
-      selectSpatialDirectionalAgentId(layout, rightmost.agentId, 'right')
-    ).toBe(rightmost.agentId);
+      selectSpatialDirectionalTarget(
+        layout,
+        [],
+        { kind: 'agent', agentId: rightmost.agentId! },
+        'right'
+      )
+    ).toEqual({ kind: 'agent', agentId: rightmost.agentId });
   });
 
   it('starts from the visible camera center and ignores filtered pieces', () => {
@@ -504,7 +513,7 @@ describe('selectSpatialDirectionalAgentId', () => {
       focusedProjectId: 'project:Alpha',
       visibleAgentIds: new Set(['a', 'b']),
     });
-    const selected = selectSpatialDirectionalAgentId(layout, null, 'down');
+    const selected = selectSpatialDirectionalTarget(layout, [], null, 'down');
     expect(selected).not.toBe('c');
   });
 });
@@ -736,7 +745,120 @@ describe('delegation units', () => {
 });
 
 /** Band-hit selection (ENG-004 V3.2): drag rect in layout space → Agents. */
-describe('selectSpatialBandAgentIds', () => {
+/**
+ * Peers are reachable (ENG-004 V3.4, operator 2026-08-10): arrows walk one
+ * field of Agents and delegated children, and a band catches both.
+ */
+describe('delegated children as selection targets', () => {
+  const child = (id: string) => ({
+    id,
+    agentType: 'Explore',
+    description: null,
+    startedAt: 1,
+  });
+
+  const fanoutLayout = (count: number) =>
+    selectSpatialBoardLayout(
+      fleet([
+        {
+          ...agent('a', 'Alpha', 'working'),
+          delegation: {
+            children: Array.from({ length: count }, (_, index) =>
+              child(`c${index + 1}`)
+            ),
+          },
+        },
+      ]),
+      { altitude: 'project', focusedProjectId: 'project:Alpha' }
+    );
+
+  it('walks from a parent onto one of its children', () => {
+    const layout = fanoutLayout(3);
+    const units = selectSpatialDelegationUnits(layout);
+    const target = selectSpatialDirectionalTarget(
+      layout,
+      units,
+      { kind: 'agent', agentId: 'a' },
+      'up'
+    );
+    expect(target?.kind).toBe('child');
+    expect(units.some(unit => unit.id === (target as { unitId: string }).unitId)).toBe(
+      true
+    );
+  });
+
+  it('walks back off a child, so a child is never a dead end', () => {
+    const layout = fanoutLayout(3);
+    const units = selectSpatialDelegationUnits(layout);
+    const up = selectSpatialDirectionalTarget(
+      layout,
+      units,
+      { kind: 'agent', agentId: 'a' },
+      'up'
+    )!;
+    const back = selectSpatialDirectionalTarget(layout, units, up, 'down');
+    expect(back).not.toBeNull();
+    expect(back).not.toEqual(up);
+  });
+
+  it('never walks onto an overflow lobe, which stands for several Agents', () => {
+    const layout = fanoutLayout(17);
+    const units = selectSpatialDelegationUnits(layout);
+    expect(units.some(unit => unit.kind === 'overflow')).toBe(true);
+    const lobeIds = new Set(
+      units.filter(unit => unit.kind === 'overflow').map(unit => unit.id)
+    );
+    for (const direction of ['up', 'down', 'left', 'right'] as const) {
+      const target = selectSpatialDirectionalTarget(
+        layout,
+        units,
+        { kind: 'agent', agentId: 'a' },
+        direction
+      );
+      if (target?.kind === 'child') expect(lobeIds.has(target.unitId)).toBe(false);
+    }
+  });
+
+  it('ignores children entirely when none are passed, preserving Agent-only walking', () => {
+    const layout = fanoutLayout(3);
+    expect(
+      selectSpatialDirectionalTarget(
+        layout,
+        [],
+        { kind: 'agent', agentId: 'a' },
+        'up'
+      )?.kind
+    ).not.toBe('child');
+  });
+
+  it('catches children in a band as themselves, never folded into the parent', () => {
+    const layout = fanoutLayout(3);
+    const units = selectSpatialDelegationUnits(layout);
+    const caught = selectSpatialBandSelection(layout, units, layout.bounds);
+    expect(caught.agentIds).toEqual(['a']);
+    expect(caught.childUnitIds).toHaveLength(3);
+    expect(new Set(caught.childUnitIds)).toEqual(
+      new Set(units.filter(unit => unit.kind === 'child').map(unit => unit.id))
+    );
+  });
+
+  it('catches a child without its parent when the band covers only the child', () => {
+    const layout = fanoutLayout(1);
+    const units = selectSpatialDelegationUnits(layout);
+    const only = units[0]!;
+    const band = {
+      x: only.x - 0.05,
+      y: only.y - 0.05,
+      width: 0.1,
+      height: 0.1,
+    };
+    const caught = selectSpatialBandSelection(layout, units, band);
+    expect(caught.childUnitIds).toEqual([only.id]);
+    expect(caught.agentIds).toEqual([]);
+  });
+});
+
+describe('selectSpatialBandSelection', () => {
   it('captures visible agent pieces whose centers fall inside the band', () => {
     const layout = selectSpatialBoardLayout(
       fleet([agent('a', 'Alpha'), agent('b', 'Alpha'), agent('c', 'Beta')])
@@ -748,7 +870,7 @@ describe('selectSpatialBandAgentIds', () => {
       width: 2,
       height: 2,
     };
-    expect(selectSpatialBandAgentIds(layout, band)).toEqual(['a']);
+    expect(selectSpatialBandSelection(layout, [], band).agentIds).toEqual(['a']);
   });
 
   it('normalizes a band dragged up-left (negative width/height)', () => {
@@ -760,7 +882,7 @@ describe('selectSpatialBandAgentIds', () => {
       width: -2,
       height: -2,
     };
-    expect(selectSpatialBandAgentIds(layout, band)).toEqual(['a']);
+    expect(selectSpatialBandSelection(layout, [], band).agentIds).toEqual(['a']);
   });
 
   it('captures a dot-rendered zone whole when the band intersects it, aggregated Agents included', () => {
@@ -779,14 +901,14 @@ describe('selectSpatialBandAgentIds', () => {
       width: 4,
       height: 4,
     };
-    expect(selectSpatialBandAgentIds(layout, edge)).toHaveLength(40);
+    expect(selectSpatialBandSelection(layout, [], edge).agentIds).toHaveLength(40);
     const emptyCorner = {
       x: zone.rect.x - 1,
       y: zone.rect.y - 1,
       width: 2,
       height: 2,
     };
-    expect(selectSpatialBandAgentIds(layout, emptyCorner)).toHaveLength(0);
+    expect(selectSpatialBandSelection(layout, [], emptyCorner).agentIds).toHaveLength(0);
     // A band that misses the zone captures nothing.
     const outside = {
       x: zone.rect.x + zone.rect.width + 5,
@@ -794,7 +916,7 @@ describe('selectSpatialBandAgentIds', () => {
       width: 4,
       height: 4,
     };
-    expect(selectSpatialBandAgentIds(layout, outside)).toHaveLength(0);
+    expect(selectSpatialBandSelection(layout, [], outside).agentIds).toHaveLength(0);
   });
 
   it('keeps filtered-out Agents out of zone captures and lets pieces own their zone', () => {
@@ -810,7 +932,7 @@ describe('selectSpatialBandAgentIds', () => {
       width: zone.rect.width + 2,
       height: zone.rect.height + 2,
     };
-    expect(selectSpatialBandAgentIds(layout, fullBand, visible)).toHaveLength(
+    expect(selectSpatialBandSelection(layout, [], fullBand, visible).agentIds).toHaveLength(
       5
     );
     // Focused Project altitude renders individual pieces, so the piece rule
@@ -826,7 +948,7 @@ describe('selectSpatialBandAgentIds', () => {
       width: 1,
       height: 1,
     };
-    const tight = selectSpatialBandAgentIds(focused, tightBand);
+    const tight = selectSpatialBandSelection(focused, [], tightBand).agentIds;
     expect(tight.length).toBeGreaterThan(0);
     expect(tight.length).toBeLessThan(40);
   });

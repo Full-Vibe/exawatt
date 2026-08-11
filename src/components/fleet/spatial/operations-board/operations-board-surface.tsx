@@ -12,7 +12,10 @@ import {
 } from 'react';
 import Link from 'next/link';
 import {
-  selectSpatialDirectionalAgentId,
+  selectSpatialDelegationUnits,
+  selectSpatialDirectionalTarget,
+  type SpatialBoardDelegationUnit,
+  type SpatialBoardTarget,
   type SpatialSelectionDirection,
   type SpatialBoardLayout,
   type SpatialBoardLens,
@@ -308,6 +311,8 @@ export function OperationsBoardSurface({
   onToggleZoneSelect,
   onBandSelect,
   onSelectDelegationChild,
+  selectedChildTarget = null,
+  delegationUnits,
   sessionTransitionAgentId = null,
   viewportStorageKey = 'exawatt:spatial-viewport:v2:fleet:~:~:top-down',
   preserveDrawingBuffer = false,
@@ -332,6 +337,11 @@ export function OperationsBoardSurface({
   onBandSelect?: (band: SpatialBoardRect) => void;
   /** Which delegated child an activation came through (ENG-023 D3c). */
   onSelectDelegationChild?: (parentAgentId: string, childId: string) => void;
+  /** The child arrow navigation currently sits on, if any. */
+  selectedChildTarget?: SpatialBoardTarget | null;
+  /** Delegated children the board is drawing, as arrow/band targets. Derived
+   *  from the layout when a caller has no reason to compute them. */
+  delegationUnits?: readonly SpatialBoardDelegationUnit[];
   sessionTransitionAgentId?: string | null;
   viewportStorageKey?: string;
   preserveDrawingBuffer?: boolean;
@@ -414,6 +424,20 @@ export function OperationsBoardSurface({
         0
       ),
     [layout.pieces]
+  );
+  const units = useMemo(
+    () => delegationUnits ?? selectSpatialDelegationUnits(layout),
+    [delegationUnits, layout]
+  );
+  // Arrow navigation walks one field of Agents and delegated children, so the
+  // keyboard reaches everything the board draws as a unit.
+  const selectedTarget: SpatialBoardTarget | null = useMemo(
+    () =>
+      selectedChildTarget ??
+      (layout.selectedAgentId
+        ? { kind: 'agent', agentId: layout.selectedAgentId }
+        : null),
+    [layout.selectedAgentId, selectedChildTarget]
   );
   const attentionIds = useMemo(
     () =>
@@ -582,14 +606,22 @@ export function OperationsBoardSurface({
         const direction = event.key
           .slice('Arrow'.length)
           .toLowerCase() as SpatialSelectionDirection;
-        const agentId = selectSpatialDirectionalAgentId(
+        const target = selectSpatialDirectionalTarget(
           layout,
-          layout.selectedAgentId,
+          units,
+          selectedTarget,
           direction
         );
-        if (agentId) {
-          controller.current?.focusAgent(agentId);
-          onMoveAgentSelection?.(agentId);
+        if (target?.kind === 'agent') {
+          controller.current?.focusAgent(target.agentId);
+          onMoveAgentSelection?.(target.agentId);
+        } else if (target?.kind === 'child') {
+          // A child has no address of its own yet (ENG-023 D2), so walking
+          // onto one selects its parent and names the worker reached — the
+          // same destination a click on it produces.
+          controller.current?.focusAgent(target.parentAgentId);
+          onSelectDelegationChild?.(target.parentAgentId, target.childId);
+          onMoveAgentSelection?.(target.parentAgentId);
         }
         event.preventDefault();
       }
@@ -601,6 +633,9 @@ export function OperationsBoardSurface({
     lens,
     onDrillProject,
     onMoveAgentSelection,
+    onSelectDelegationChild,
+    selectedTarget,
+    units,
     onOverview,
     onProjectionChange,
     onToggleZoneSelect,
@@ -706,6 +741,11 @@ export function OperationsBoardSurface({
             onManualCameraInput={suspendSelectionFollow}
             onClampEdges={handleClampEdges}
             onSelectDelegationChild={onSelectDelegationChild}
+            selectedDelegationUnitId={
+              selectedChildTarget?.kind === 'child'
+                ? selectedChildTarget.unitId
+                : null
+            }
             preserveDrawingBuffer={preserveDrawingBuffer}
             theme={theme}
           />
@@ -755,55 +795,16 @@ export function OperationsBoardSurface({
           sessionTransitionAgentId ? 'pointer-events-none opacity-0' : ''
         }`}
       >
-        {attentionIds.length > 0 && (
-          <button
-            type="button"
-            onClick={() => triage(1)}
-            className="exa-material-raised absolute bottom-16 left-3 z-10 min-h-11 border px-2.5 py-1.5 font-mono text-chrome-micro outline-none transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring sm:bottom-3"
-            style={{
-              ...spatialMaterialFrame(theme),
-              borderColor: theme.attention,
-              color: theme.attention,
-            }}
-          >
-            {attentionIds.length} need attention
-          </button>
-        )}
-
-        {/* One tool cluster (S4/F6): hints, touch mode, projection, minimap,
-            and zoom share a single stable region so the board carries at most
-            this and the needs-you queue besides the selection panel. */}
+        {/* The board's ONE chrome region besides the selection panel
+            (S4/F6, FIX-009). The header strip owns the needs-you count
+            outright — a second copy of it floated bottom-left — and the key
+            hints sit LAST in this stack so they read with the controls they
+            describe instead of stranded a cluster's height above the edge.
+            `N` still walks the queue; the hint below is its affordance. */}
         <div
           data-board-tool-cluster
           className="absolute bottom-3 right-3 z-10 flex flex-row items-end gap-1.5 sm:flex-col"
         >
-          <div
-            className="exa-material-chrome pointer-events-none hidden flex-wrap items-center justify-end gap-x-3 gap-y-1.5 border px-2.5 py-2 xl:flex"
-            style={spatialMaterialFrame(theme)}
-          >
-            {layout.altitude === 'fleet' && (
-              <KeyHint keyName="1–9" label="Project" theme={theme} />
-            )}
-            <KeyHint keyName="←↑↓→" label="select" theme={theme} />
-            <KeyHint
-              keyName={coarsePointer ? 'drag' : 'wheel WASD middle-drag'}
-              label="pan"
-              theme={theme}
-            />
-            <KeyHint keyName="pinch + −" label="zoom" theme={theme} />
-            {onBandSelect && !coarsePointer && (
-              <KeyHint keyName="drag" label="select" theme={theme} />
-            )}
-            <KeyHint keyName="V" label="view" theme={theme} />
-            {attentionIds.length > 0 && (
-              <KeyHint keyName="N" label="attention" theme={theme} />
-            )}
-            <KeyHint
-              keyName={layout.altitude === 'fleet' ? '0' : 'Esc'}
-              label={layout.altitude === 'fleet' ? 'recenter' : 'zoom out'}
-              theme={theme}
-            />
-          </div>
           {coarsePointer && onBandSelect && (
             <button
               type="button"
@@ -916,6 +917,33 @@ export function OperationsBoardSurface({
             >
               +
             </button>
+          </div>
+          <div
+            className="exa-material-chrome pointer-events-none hidden flex-wrap items-center justify-end gap-x-3 gap-y-1.5 border px-2.5 py-2 xl:flex"
+            style={spatialMaterialFrame(theme)}
+          >
+            {layout.altitude === 'fleet' && (
+              <KeyHint keyName="1–9" label="Project" theme={theme} />
+            )}
+            <KeyHint keyName="←↑↓→" label="select" theme={theme} />
+            <KeyHint
+              keyName={coarsePointer ? 'drag' : 'wheel WASD middle-drag'}
+              label="pan"
+              theme={theme}
+            />
+            <KeyHint keyName="pinch + −" label="zoom" theme={theme} />
+            {onBandSelect && !coarsePointer && (
+              <KeyHint keyName="drag" label="select" theme={theme} />
+            )}
+            <KeyHint keyName="V" label="view" theme={theme} />
+            {attentionIds.length > 0 && (
+              <KeyHint keyName="N" label="attention" theme={theme} />
+            )}
+            <KeyHint
+              keyName={layout.altitude === 'fleet' ? '0' : 'Esc'}
+              label={layout.altitude === 'fleet' ? 'recenter' : 'zoom out'}
+              theme={theme}
+            />
           </div>
         </div>
       </div>

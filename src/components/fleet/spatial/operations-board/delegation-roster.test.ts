@@ -8,6 +8,7 @@ import {
 import type { ExawattAgent, FleetMetrics, FleetState } from '@exawatt/core';
 import {
   DELEGATION_MOTION,
+  delegationArrivalEase,
   delegationSettleMs,
   delegationStatusPieces,
   delegationBodyScale,
@@ -46,12 +47,37 @@ describe('delegation motion policy', () => {
     expect(delegationBodyScale(2, easeOutCubic(1))).toBeCloseTo(2);
   });
 
-  it('eases out without overshooting, so a spawn never bounces', () => {
+  it('eases out monotonically for an exit, which should not look playful', () => {
     for (let step = 0; step <= 10; step += 1) {
       const value = easeOutCubic(step / 10);
       expect(value).toBeGreaterThanOrEqual(0);
       expect(value).toBeLessThanOrEqual(1);
     }
+  });
+
+  it('springs an arrival just past its slot and settles exactly on it', () => {
+    // Starts at the parent, rests on the slot: a unit never comes to rest off
+    // its own address.
+    expect(delegationArrivalEase(0)).toBeCloseTo(0);
+    expect(delegationArrivalEase(1)).toBeCloseTo(1);
+    // One excursion past the slot, not an oscillation.
+    const samples = Array.from({ length: 41 }, (_, i) =>
+      delegationArrivalEase(i / 40)
+    );
+    const over = samples.filter(value => value > 1);
+    expect(over.length).toBeGreaterThan(0);
+    expect(Math.max(...samples)).toBeLessThan(
+      1 + DELEGATION_MOTION.arrivalOvershoot * 1.01
+    );
+    // Contiguous: it goes past once and comes back, never past again.
+    const first = samples.findIndex(value => value > 1);
+    const last = samples.length - 1 - [...samples].reverse().findIndex(v => v > 1);
+    expect(over.length).toBe(last - first + 1);
+  });
+
+  it('clamps out-of-range progress rather than flinging a unit', () => {
+    expect(delegationArrivalEase(-5)).toBeCloseTo(0);
+    expect(delegationArrivalEase(9)).toBeCloseTo(1);
   });
 
   it('staggers a cohort but caps the total wait', () => {

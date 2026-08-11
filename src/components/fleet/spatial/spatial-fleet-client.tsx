@@ -16,14 +16,16 @@ import {
   filterFleetState,
   selectFleetCommandView,
   selectFleetSpatialScene,
-  selectSpatialBandAgentIds,
+  selectSpatialBandSelection,
   selectSpatialBoardLayout,
   selectSpatialProjectZones,
   selectSpatialScopeActivity,
+  selectSpatialDelegationUnits,
   spatialBoardPieceForAgent,
   type Altitude,
   type SpatialBoardLayout,
   type SpatialBoardProjection,
+  type SpatialBoardTarget,
   type SpatialBoardRect,
 } from '@exawatt/ui-model';
 import { SpatialSelectionPanel } from './spatial-selection-panel';
@@ -205,6 +207,11 @@ export function SpatialFleetClient() {
     previousBoardLayout.current = boardLayout;
   }, [boardLayout]);
 
+  const delegationUnits = useMemo(
+    () => selectSpatialDelegationUnits(boardLayout),
+    [boardLayout]
+  );
+
   // Multi-selection (V3.2): real, ephemeral, client-owned — the single
   // inspected Agent stays URL-addressed; a band/shift selection is a working
   // set, not an address. Pruned against the filtered fleet so filters and
@@ -252,17 +259,37 @@ export function SpatialFleetClient() {
   );
 
   // Band select replaces the working set (RTS grammar); an empty band clears.
+  // Band select replaces the working set (RTS grammar); an empty band clears.
+  // Children are captured as themselves — a band over a constellation caught
+  // the workers, not one Agent standing for all of them.
+  const [selectedChildUnitIds, setSelectedChildUnitIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set<string>());
   const bandSelect = useCallback(
     (band: SpatialBoardRect) => {
-      setMultiSelectedIds(
-        new Set(selectSpatialBandAgentIds(boardLayout, band, visibleAgentIds))
+      const caught = selectSpatialBandSelection(
+        boardLayout,
+        delegationUnits,
+        band,
+        visibleAgentIds
       );
+      setMultiSelectedIds(new Set(caught.agentIds));
+      setSelectedChildUnitIds(new Set(caught.childUnitIds));
     },
-    [boardLayout, visibleAgentIds]
+    [boardLayout, delegationUnits, visibleAgentIds]
+  );
+  // Live units only: a child whose parent stopped reporting it must not linger
+  // in the working set as a phantom member.
+  const selectedChildren = useMemo(
+    () => delegationUnits.filter(unit => selectedChildUnitIds.has(unit.id)),
+    [delegationUnits, selectedChildUnitIds]
   );
 
   const clearMultiSelect = useCallback(() => {
     setMultiSelectedIds(previous =>
+      previous.size === 0 ? previous : new Set()
+    );
+    setSelectedChildUnitIds(previous =>
       previous.size === 0 ? previous : new Set()
     );
   }, []);
@@ -471,7 +498,10 @@ export function SpatialFleetClient() {
     const piece = spatialBoardPieceForAgent(boardLayout, inspectedAgent.id);
     return piece?.delegation ?? null;
   }, [boardLayout, inspectedAgent]);
-  const showSelectionPanel = Boolean(inspectedAgent) || selectedAgents.length > 0;
+  const showSelectionPanel =
+    Boolean(inspectedAgent) ||
+    selectedAgents.length > 0 ||
+    selectedChildren.length > 0;
   // A delegated child looks like a peer but opens its parent, so the panel has
   // to name the worker the operator actually clicked — otherwise the selection
   // arrives with no explanation of why it is the parent.
@@ -489,6 +519,22 @@ export function SpatialFleetClient() {
       setActivatedChild({ parentAgentId, childId }),
     []
   );
+  const selectedChildTarget: SpatialBoardTarget | null = useMemo(() => {
+    if (!activatedChild || activatedChild.parentAgentId !== selectedAgentId) {
+      return null;
+    }
+    const unit = delegationUnits.find(
+      entry => entry.childId === activatedChild.childId
+    );
+    return unit
+      ? {
+          kind: 'child',
+          unitId: unit.id,
+          parentAgentId: unit.parentAgentId,
+          childId: activatedChild.childId,
+        }
+      : null;
+  }, [activatedChild, delegationUnits, selectedAgentId]);
   const viaChildId =
     activatedChild && activatedChild.parentAgentId === selectedAgentId
       ? activatedChild.childId
@@ -750,6 +796,8 @@ export function SpatialFleetClient() {
             onToggleZoneSelect={toggleZoneSelect}
             onBandSelect={bandSelect}
             onSelectDelegationChild={selectDelegationChild}
+            selectedChildTarget={selectedChildTarget}
+            delegationUnits={delegationUnits}
             sessionTransitionAgentId={sessionHandoffAgentId}
             viewportStorageKey={viewportStorageKey}
           />
@@ -759,6 +807,7 @@ export function SpatialFleetClient() {
           <SpatialSelectionPanel
             agent={inspectedAgent}
             selectedAgents={selectedAgents}
+            selectedChildren={selectedChildren}
             scopeActivity={scopeActivity}
             activity={inspectedActivity}
             delegation={inspectedDelegation}

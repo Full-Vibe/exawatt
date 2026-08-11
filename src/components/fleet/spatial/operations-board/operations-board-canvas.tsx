@@ -85,11 +85,12 @@ import { useMinuteClock } from '../use-minute-clock';
 import {
   DELEGATION_EXIT_SWEEP_MS,
   DELEGATION_MOTION,
-  delegationSettleMs,
-  delegationStatusPieces,
+  delegationArrivalEase,
   delegationBodyScale,
   delegationRoster,
+  delegationSettleMs,
   delegationSpawnDelaySeconds,
+  delegationStatusPieces,
   easeOutCubic,
   nextDelegationExits,
 } from './delegation-roster';
@@ -1227,6 +1228,10 @@ function ProjectHealthRail({
   );
 }
 
+/** Ceiling for in-world DOM anchors: above the board's own chrome, below the
+ *  app's fixed layers (the feedback panel is `z-50`, first-run is `z-90`). */
+const BOARD_HTML_Z_MAX = 30;
+
 function DampedHtmlAnchor({
   position,
   reduced,
@@ -1282,7 +1287,16 @@ function DampedHtmlAnchor({
   });
   return (
     <group ref={group} position={initial.current}>
-      <Html center={center} style={{ pointerEvents: 'auto' }}>
+      <Html
+        center={center}
+        // drei defaults this to 16,777,271, which is above every app-chrome
+        // layer in the product — in-world labels then paint over the quick
+        // feedback panel and anything else fixed above the board. These
+        // anchors belong just above the board's own overlay chrome (z-10/z-20)
+        // and below app chrome, so the range is stated rather than defaulted.
+        zIndexRange={[BOARD_HTML_Z_MAX, 0]}
+        style={{ pointerEvents: 'auto' }}
+      >
         {children}
       </Html>
     </group>
@@ -1782,7 +1796,11 @@ function DelegationUnitLayer({
         );
         animating = true;
       }
-      const eased = easeOutCubic(record.progress);
+      // Arrival springs slightly past the slot and settles; an exit retracts
+      // plainly, because a departure should not look playful.
+      const eased = exiting
+        ? easeOutCubic(record.progress)
+        : delegationArrivalEase(record.progress);
       const x = THREE.MathUtils.lerp(record.originX, unit.x, eased);
       const layoutY = THREE.MathUtils.lerp(record.originY, unit.y, eased);
       const worldY = -layoutY;
@@ -2194,6 +2212,7 @@ function AgentPieceLayer({
   pieces,
   delegationUnits,
   hoveredDelegationId,
+  selectedDelegationUnitId,
   altitude,
   reduced,
   ambient,
@@ -2206,6 +2225,8 @@ function AgentPieceLayer({
   delegationUnits: SpatialBoardDelegationUnit[];
   /** Hovered delegated child, from its DOM control. */
   hoveredDelegationId: string | null;
+  /** The delegated child arrow navigation currently sits on. */
+  selectedDelegationUnitId: string | null;
   altitude: SpatialBoardLayout['altitude'];
   reduced: boolean;
   ambient: boolean;
@@ -2236,8 +2257,15 @@ function AgentPieceLayer({
   // Active light is literally the same light — and costs no extra draw call.
   const settledDelegation = useSettledDelegationUnits(delegationUnits, reduced);
   const statusSubjects = useMemo(
-    () => [...solid, ...delegationStatusPieces(settledDelegation)],
-    [settledDelegation, solid]
+    () => [
+      ...solid,
+      ...delegationStatusPieces(settledDelegation).map(piece =>
+        piece.id === selectedDelegationUnitId
+          ? { ...piece, selected: true }
+          : piece
+      ),
+    ],
+    [selectedDelegationUnitId, settledDelegation, solid]
   );
 
   // Carry the unit field through semantic altitude changes. The new layout is
@@ -2341,7 +2369,10 @@ function AgentPieceLayer({
     state.invalidate();
   });
 
-  const selected = visible.find(piece => piece.selected);
+  // Selection is looked up over the same set the status marks draw, so a
+  // walked-to child wears the board's own selection ring rather than being
+  // reachable but unmarked.
+  const selected = statusSubjects.find(piece => piece.selected);
   return (
     <group ref={motionGroup}>
       <Instances geometry={pieceGeometry} limit={256} range={solid.length}>
@@ -3224,6 +3255,7 @@ export function OperationsBoardCanvas({
   onManualCameraInput,
   onClampEdges,
   onSelectDelegationChild,
+  selectedDelegationUnitId = null,
   preserveDrawingBuffer = false,
   theme,
 }: {
@@ -3249,6 +3281,8 @@ export function OperationsBoardCanvas({
   /** Which delegated child an activation came through, so the selection panel
    *  can name the worker the operator actually clicked. */
   onSelectDelegationChild?: (parentAgentId: string, childId: string) => void;
+  /** The delegated child arrow navigation sits on, so it wears the ring. */
+  selectedDelegationUnitId?: string | null;
   preserveDrawingBuffer?: boolean;
   theme: SpatialThemeSnapshot;
 }) {
@@ -3395,6 +3429,7 @@ export function OperationsBoardCanvas({
         pieces={layout.pieces}
         delegationUnits={delegationUnits}
         hoveredDelegationId={hoveredDelegationId}
+        selectedDelegationUnitId={selectedDelegationUnitId}
         altitude={layout.altitude}
         reduced={reduced}
         ambient={ambient}

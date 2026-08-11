@@ -2196,6 +2196,58 @@ skips it, and it never joins `Direct N Agents`. That remains gated on D2 giving
 a child a destination; what this pass removed is the SILENCE around it, not the
 limitation.
 
+### V3.4 peers become reachable, and FIX-009 (2026-08-10, operator)
+
+**FIX-009 — three board-chrome findings**, all from one operator screenshot.
+The bottom-left "N need attention" box duplicated the header strip's
+`Needs you N` and is deleted; `N` still walks the queue and its hint carries the
+affordance. The key hints moved to the END of the tool cluster: stacked first
+they floated a cluster's height above the bottom edge and read as stranded.
+The label layering had a mechanical cause worth recording — drei's `<Html>`
+defaults `zIndexRange` to `[16777271, 0]`, which is above every app-chrome layer
+in the product, so in-world Project labels painted over the quick-feedback
+panel. Board anchors now declare a ceiling of 30: above the board's own overlay
+chrome (z-10/z-20), below the app's fixed layers (feedback `z-50`, first-run
+`z-90`). Nothing moved position; only the order changed, as the report asked.
+
+**Peers become reachable** (operator, 2026-08-10). Peer-scale children that
+arrow navigation skipped and band selection ignored were peers in appearance
+only. Both selectors now walk one field:
+
+- `selectSpatialDirectionalTarget` replaces `selectSpatialDirectionalAgentId`
+  and returns a discriminated `SpatialBoardTarget` — `agent` or `child`. The
+  union is what keeps the distinction honest rather than smuggling a child
+  through an `agentId`-shaped hole: a child has no Session, no goal, no URL
+  address, and nothing to direct yet. Overflow lobes are never walked onto,
+  because a lobe stands for several Agents.
+- `selectSpatialBandSelection` replaces `selectSpatialBandAgentIds` and returns
+  Agents and children apart. A band over a constellation caught the workers,
+  not one Agent standing for all of them.
+- Walking onto a child selects its parent and names the worker reached — the
+  same destination a click produces — and the child wears the board's own
+  selection ring, looked up over the same set the status marks draw.
+- The selection panel counts and lists delegated workers separately from
+  Agents. The announced **Direct N Agents** verb stays Agent-only and appears
+  only when Agents are selected: directing a child has no meaning yet, and the
+  chip is a promise.
+
+**Arrival spring** (operator's "gravitational physics", delivered at lifecycle
+time rather than as ambient drift). `delegationArrivalEase` adds a single soft
+excursion past the slot before settling, so a spawning child reads as pulled
+into orbit instead of sliding to a stop. This amends D3c's "no bounce/elastic
+overshoot" clause, which was written against decorative springiness; this is one
+bounded excursion that starts at 0 and ends exactly at 1, so a unit never rests
+off its own address. Exits keep the plain ease — a departure should not look
+playful — and reduced motion has no travel at all.
+
+Evidence: type-check and lint clean; 2,099 tests (1 skipped) including eleven new
+ones across child navigation, band capture, and the arrival curve; `eval:r3f`
+100/100 with `t5-operations-board` at 15 draw calls; `eval:spatial` 8/8 with zero
+idle frames under reduced motion and low power; 15/15 pointer scenarios; every
+scale tier with Voltaic at 13 draw calls and the 1k/10k aggregates at 6 and still
+parking. Chrome, arrow-walking into a child, and the panel highlight were driven
+in the real demo board.
+
 ### V2.1 Scale & Truth
 
 Status: planned; gated by V2.0

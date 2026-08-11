@@ -7,6 +7,7 @@ import type {
   ActivityFeedItem,
   FleetAgentView,
   SpatialBoardDelegatedChild,
+  SpatialBoardDelegationUnit,
   SpatialScopeActivity,
 } from '@exawatt/ui-model';
 import { AnnouncedChip } from '@/components/readiness';
@@ -92,12 +93,16 @@ function ScopeCount({
  *  command verb. Selection is real; fan-out is not built (V3.2's boundary). */
 function MultiSelectionCommand({
   agents,
+  workers,
   activity,
   statusColors,
   onClear,
   onInspect,
 }: {
   agents: FleetAgentView[];
+  /** Delegated children caught by the same band. Named `workers` because
+   *  `children` is React's own prop and this list is not it. */
+  workers: SpatialBoardDelegationUnit[];
   activity: SpatialScopeActivity | null;
   statusColors: { active: string; blocked: string; idle: string };
   onClear: () => void;
@@ -111,6 +116,15 @@ function MultiSelectionCommand({
           <h2 className="mt-1 text-xl font-semibold leading-tight text-foreground">
             {agents.length} {agents.length === 1 ? 'Agent' : 'Agents'}
           </h2>
+          {/* Counted apart, not folded in: a delegated child is a selectable
+              unit but not an Agent, and the Direct verb below is Agent-only
+              until a child has something to direct (ENG-023 D2). */}
+          {workers.length > 0 && (
+            <p className="mt-0.5 text-chrome-meta text-muted-foreground">
+              and {workers.length} delegated{' '}
+              {workers.length === 1 ? 'worker' : 'workers'}
+            </p>
+          )}
         </div>
         <Button type="button" variant="outline" size="sm" onClick={onClear}>
           Clear
@@ -137,13 +151,37 @@ function MultiSelectionCommand({
         </div>
       )}
 
-      <AnnouncedChip
-        coming={`direct all ${agents.length} selected Agents at once`}
-        className="mt-3 self-start"
-      >
-        Direct {agents.length} {agents.length === 1 ? 'Agent' : 'Agents'}
-      </AnnouncedChip>
+      {agents.length > 0 && (
+        <AnnouncedChip
+          coming={`direct all ${agents.length} selected Agents at once`}
+          className="mt-3 self-start"
+        >
+          Direct {agents.length} {agents.length === 1 ? 'Agent' : 'Agents'}
+        </AnnouncedChip>
+      )}
 
+      {workers.length > 0 && (
+        <PanelSection title="Delegated workers" count={workers.length}>
+          <ul className="space-y-1">
+            {workers.map(unit => (
+              <li
+                key={unit.id}
+                data-selection-child={unit.id}
+                className="flex items-baseline gap-2"
+              >
+                <span className="shrink-0 font-mono text-chrome-micro text-muted-foreground">
+                  {unit.agentType ?? 'Agent'}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-chrome-meta text-foreground">
+                  {unit.description ?? 'No description reported'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </PanelSection>
+      )}
+
+      {agents.length > 0 && (
       <PanelSection title="Selected" count={agents.length}>
         <ul className="space-y-1">
           {agents.map(agent => {
@@ -169,6 +207,7 @@ function MultiSelectionCommand({
           })}
         </ul>
       </PanelSection>
+      )}
     </>
   );
 }
@@ -176,6 +215,7 @@ function MultiSelectionCommand({
 export function SpatialSelectionPanel({
   agent,
   selectedAgents,
+  selectedChildren,
   scopeActivity,
   activity,
   delegation,
@@ -195,6 +235,9 @@ export function SpatialSelectionPanel({
   agent: FleetAgentView | null;
   /** The ephemeral working set, when a band/shift selection exists. */
   selectedAgents: FleetAgentView[];
+  /** Delegated children caught by the same band. They are selectable units but
+   *  not Agents, so they are counted and listed apart rather than folded in. */
+  selectedChildren?: SpatialBoardDelegationUnit[];
   scopeActivity: SpatialScopeActivity | null;
   /** Meaningful Events for the inspected Agent — never fleet-wide exhaust. */
   activity: ActivityFeedItem[];
@@ -216,7 +259,8 @@ export function SpatialSelectionPanel({
   onClearSelection: () => void;
   onInspectAgent: (agentId: string) => void;
 }) {
-  const multi = selectedAgents.length > 0;
+  const workers = selectedChildren ?? [];
+  const multi = selectedAgents.length > 0 || workers.length > 0;
   const goal = agent ? agentGoalDisplay(agent.goal) : null;
   const light = agent ? statusLightStateForAgentStatus(agent.status) : null;
   const shownChildren = delegation?.children ?? [];
@@ -234,6 +278,7 @@ export function SpatialSelectionPanel({
       {multi ? (
         <MultiSelectionCommand
           agents={selectedAgents}
+          workers={workers}
           activity={scopeActivity}
           statusColors={statusColors}
           onClear={onClearSelection}
