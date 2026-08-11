@@ -38,9 +38,18 @@ export function Verdict({
 }) {
   const [headline, ...rest] = paces;
   if (!headline) {
+    // No live window anywhere — say so, and still show each source's absent
+    // channel (observed raw + why) rather than a bare card (E5 empty state).
     return (
       <Band label="Headroom">
         <Caption>No source reports a live plan window.</Caption>
+        {silent.length > 0 && (
+          <div className="flex min-w-0 max-w-xl flex-col gap-3">
+            {silent.map(s => (
+              <SilentRow key={s.key} source={s} />
+            ))}
+          </div>
+        )}
       </Band>
     );
   }

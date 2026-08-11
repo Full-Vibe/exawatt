@@ -222,6 +222,9 @@ function BurnChart({
 export function Pace({ paces }: { paces: WindowPace[] }) {
   return (
     <Band label="Pace">
+      {/* a fresh machine has no live window to pace — state it, never a
+          bare card (E5 empty-state honesty) */}
+      {paces.length === 0 && <Caption>No live plan window to pace.</Caption>}
       <div className="flex flex-col gap-2.5">
         {paces.map(p => {
           const label = paceLabel(p);
