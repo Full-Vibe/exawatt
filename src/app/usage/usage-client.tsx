@@ -205,7 +205,9 @@ export function UsageClient() {
             <span className="font-mono">@exawatt/core</span>
             {/* data freshness — the live read states when it last ran */}
             {live && scan?.lastScanAtMs != null
-              ? ` · read ${duration(Math.max(0, demo.nowMs - scan.lastScanAtMs))} ago`
+              ? demo.nowMs - scan.lastScanAtMs < 60_000
+                ? ' · read just now'
+                : ` · read ${duration(demo.nowMs - scan.lastScanAtMs)} ago`
               : ''}
           </Caption>
         </footer>
