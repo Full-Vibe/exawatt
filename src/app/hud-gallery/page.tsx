@@ -36,6 +36,7 @@ import {
 import { SessionStateTileStudy } from '@/components/hud/session-state-tile-study';
 import { ProjectRibbonStudy } from '@/components/hud/project-ribbon-study';
 import { ReadinessGrammarStudy } from '@/components/readiness/gallery-study';
+import { PaceOpportunityStudy } from './pace-opportunity-study';
 
 const TONES: HudTone[] = ['cyan', 'magenta', 'amber', 'red', 'green', 'idle'];
 const STATUSES: AgentStatus[] = [
@@ -59,6 +60,12 @@ interface Section {
 }
 
 const SECTIONS: Section[] = [
+  {
+    id: 'pace-opportunity',
+    title: 'Pace opportunity voice',
+    meta: 'design options · ENG-008 E9 — use-it-or-lose-it, operator pick pending',
+    showcase: <PaceOpportunityStudy />,
+  },
   {
     id: 'readiness-grammar',
     title: 'Readiness grammar',
