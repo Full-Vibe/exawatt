@@ -191,3 +191,7 @@ affordance that no longer exists in `src` (verified by grep); its repair
 stays owed to the launcher line (ENG-016), and demo-tenancy behavior was
 verified through the green unit seams (`usage-client`, `live-store`,
 tenant-consumption suites) exactly as the E5 landing did.
+REPAIRED 2026-08-11 (`1a5d449`, ENG-016): the eval now drives the D49
+catalog ("All engines and models" → "Shell in <project>") through the
+shared `openShellFromLauncher` helper and runs all 48 checks green;
+details in the ENG-016 findings log.
