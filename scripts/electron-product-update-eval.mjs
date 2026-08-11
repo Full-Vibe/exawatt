@@ -14,6 +14,7 @@ import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
+import { openShellFromLauncher } from './lib/electron-eval.mjs';
 
 const sourceApp = process.env.EXAWATT_BASE_APP_PATH
   ? resolve(process.env.EXAWATT_BASE_APP_PATH)
@@ -238,7 +239,7 @@ async function startAgent(page, source) {
 }
 
 async function openShell(page) {
-  await page.getByRole('button', { name: /Open shell in / }).click();
+  await openShellFromLauncher(page);
 }
 
 async function waitForAgentIdentities(page, count) {

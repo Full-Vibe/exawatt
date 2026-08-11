@@ -8,7 +8,10 @@
 import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { withElectronApp } from './lib/electron-eval.mjs';
+import {
+  openShellFromLauncher,
+  withElectronApp,
+} from './lib/electron-eval.mjs';
 
 const BASE = process.env.EXA_BASE || 'http://localhost:7071';
 const OUT =
@@ -185,7 +188,7 @@ await withElectronApp(
     await openProject(page, healthy);
     await page.waitForTimeout(1800);
     await summonComposer();
-    await page.getByRole('button', { name: /Open shell in / }).click();
+    await openShellFromLauncher(page);
     await page.locator('.xterm-helper-textarea').last().waitFor();
 
     // ⌘B from Terminal = Sessions with the rail focused
@@ -361,7 +364,7 @@ await withElectronApp(
     await openProject(page, empty);
     await page.waitForTimeout(1500);
     await summonComposer();
-    await page.getByRole('button', { name: /Open shell in / }).click();
+    await openShellFromLauncher(page);
     await page.waitForTimeout(1500);
     await page.keyboard.press('Meta+j');
     await page.waitForTimeout(500);
@@ -419,7 +422,7 @@ await withElectronApp(
     await openProject(page, gitFix);
     await page.waitForTimeout(2500);
     await summonComposer();
-    await page.getByRole('button', { name: /Open shell in / }).click();
+    await openShellFromLauncher(page);
     await page.locator('.xterm-helper-textarea').last().waitFor();
     await page.waitForTimeout(1500);
     const contextBar = await page.evaluate(

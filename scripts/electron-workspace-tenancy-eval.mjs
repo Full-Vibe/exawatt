@@ -30,7 +30,10 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { withElectronApp } from './lib/electron-eval.mjs';
+import {
+  openShellFromLauncher,
+  withElectronApp,
+} from './lib/electron-eval.mjs';
 
 const BASE = process.env.EXA_BASE || 'http://localhost:7000';
 const SCREENSHOT_DIR =
@@ -130,14 +133,10 @@ try {
         .locator('[data-agent-composer], [data-composer-toggle]')
         .first()
         .waitFor();
-      // the composer is summoned, not permanent — expand it if collapsed
-      if ((await page.locator('[data-agent-composer]').count()) === 0) {
-        await page
-          .locator('[data-composer-toggle][aria-expanded="false"]')
-          .click();
-        await page.locator('[data-agent-composer]').waitFor();
-      }
-      await page.getByRole('button', { name: /Open shell in / }).click();
+      // D49 launcher contract: Shell is an explicit Project tool in the
+      // "All engines and models" catalog (the pre-D49 "Open shell in"
+      // button is retired)
+      await openShellFromLauncher(page);
       // Bounded explicit poll — NOT waitForFunction with an async predicate:
       // the returned Promise object is truthy on the first tick, so that
       // form resolves before the spawn completes and the next read races.
@@ -432,14 +431,14 @@ try {
         'palette lists demo Sessions',
         (await page.locator('[cmdk-root] [data-session-id^="vg-"]').count()) > 0
       );
+      // Launch verbs are the Start group's configuration rows since D49
+      // ("Start Agent with X" / "Open shell in X" are retired labels); the
+      // personalVerbs gate must drop the whole group inside Demo.
       check(
         'palette offers no launch verbs in Demo',
         (await page
-          .locator('[cmdk-item]', { hasText: 'Start Agent with' })
-          .count()) === 0 &&
-          (await page
-            .locator('[cmdk-item]', { hasText: 'Open shell in' })
-            .count()) === 0
+          .locator('[cmdk-item][data-launch-configuration]')
+          .count()) === 0
       );
       check(
         'palette exposes source-safe Project movement in Demo',

@@ -13,6 +13,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { openShellFromLauncher } from './lib/electron-eval.mjs';
 
 const executable = resolve(
   process.env.EXAWATT_APP_PATH ??
@@ -171,7 +172,7 @@ async function startAgent(page, source) {
 
 async function openShell(page) {
   await summonComposer(page);
-  await page.getByRole('button', { name: /Open shell in / }).click();
+  await openShellFromLauncher(page);
 }
 
 async function waitForAgentIdentities(page, count) {

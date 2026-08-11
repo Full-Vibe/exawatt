@@ -4,6 +4,7 @@ import { _electron as electron } from 'playwright-core';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { openShellFromLauncher } from './lib/electron-eval.mjs';
 
 const executable = resolve(
   process.env.EXAWATT_APP_PATH ??
@@ -29,7 +30,7 @@ try {
     );
   });
   await page.locator('[data-agent-composer]').waitFor();
-  await page.getByRole('button', { name: /Open shell in / }).click();
+  await openShellFromLauncher(page);
   const textarea = page.locator('.xterm-helper-textarea');
   await textarea.waitFor();
 

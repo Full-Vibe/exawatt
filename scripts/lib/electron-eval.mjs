@@ -176,3 +176,22 @@ export async function withElectronApp(launchOpts, body, opts = {}) {
     process.off('SIGTERM', onSignal);
   }
 }
+
+/**
+ * Open a shell Session through the CURRENT launcher contract (ENG-016 D49):
+ * the composer's "All engines and models" catalog lists Shell as an explicit
+ * Project tool ("Shell in <project>"). The pre-D49 "Open shell in <project>"
+ * button this replaced no longer exists in src.
+ *
+ * Expects the Agent composer to be reachable on the page; expands it from the
+ * summon toggle when collapsed.
+ */
+export async function openShellFromLauncher(page) {
+  if ((await page.locator('[data-agent-composer]').count()) === 0) {
+    await page.locator('[data-composer-toggle][aria-expanded="false"]').click();
+    await page.locator('[data-agent-composer]').waitFor();
+  }
+  await page.getByRole('button', { name: 'All engines and models' }).click();
+  await page.locator('[data-all-launch-configurations]').waitFor();
+  await page.getByRole('button', { name: /^Shell in / }).click();
+}

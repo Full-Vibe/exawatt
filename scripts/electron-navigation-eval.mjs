@@ -4,6 +4,7 @@ import { _electron as electron } from 'playwright-core';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { openShellFromLauncher } from './lib/electron-eval.mjs';
 
 const BASE = process.env.EXA_BASE || 'http://localhost:7000';
 const SCREENSHOT_DIR =
@@ -45,7 +46,7 @@ try {
     );
   }, process.cwd());
   await page.locator('[data-agent-composer]').waitFor();
-  await page.getByRole('button', { name: /Open shell in / }).click();
+  await openShellFromLauncher(page);
   await page.waitForFunction(async () => {
     const sessions = await window.electron?.pty?.list();
     return sessions?.length === 1;

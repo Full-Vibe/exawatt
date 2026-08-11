@@ -31,6 +31,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { openShellFromLauncher } from './lib/electron-eval.mjs';
 
 const GENERATIONS = Number(process.env.EXAWATT_IDEMPOTENCY_GENERATIONS || 3);
 
@@ -246,7 +247,7 @@ try {
     'third agent'
   );
   await summonComposer(page);
-  await page.getByRole('button', { name: /Open shell in / }).click();
+  await openShellFromLauncher(page);
   await waitFor(page, async () => (await sessions(page)).length === 4, 'shell');
 
   // The Codex task was submitted through the composer/CLI argument. Identity

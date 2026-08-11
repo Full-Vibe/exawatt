@@ -3,7 +3,10 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { withElectronApp } from './lib/electron-eval.mjs';
+import {
+  openShellFromLauncher,
+  withElectronApp,
+} from './lib/electron-eval.mjs';
 
 const executable = resolve(
   process.env.EXAWATT_APP_PATH ??
@@ -73,10 +76,10 @@ try {
       }, projectDir);
       await page.locator('[data-agent-composer]').waitFor();
 
-      await page.getByRole('button', { name: /Open shell in / }).click();
+      await openShellFromLauncher(page);
       await waitForSessionCount(page, 1);
       await waitForWorkspaceTabCount(page, 1);
-      await page.getByRole('button', { name: /Open shell in / }).click();
+      await openShellFromLauncher(page);
       const [firstSession] = await waitForSessionCount(page, 2);
       await waitForWorkspaceTabCount(page, 2);
 
