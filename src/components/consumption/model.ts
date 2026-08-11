@@ -31,6 +31,7 @@
  */
 import {
   SOURCE_CAPABILITIES,
+  planWindowKey,
   type ConsumptionRollup,
   type ConsumptionSourceId,
   type PlanWindow,
@@ -125,6 +126,12 @@ export type WindowFreshness = 'live' | 'stale' | 'expired';
 
 /** One reported plan window, projected for display. */
 export interface CapacityWindowView {
+  /**
+   * UNIQUE window-bucket key (provider limitId + scope + window length via
+   * core's `planWindowKey`), not the provider's raw limitId: one real
+   * limitId carries both a primary and a secondary window, and a collapsed
+   * key is how a window disappears or two rows read as the headline.
+   */
   limitId: string;
   label: string;
   usedPercent: number;
@@ -211,7 +218,7 @@ export function capacityWindowFromPlan(
   const resetsAtMs = Date.parse(plan.resetsAt);
   if (Number.isNaN(resetsAtMs)) return null;
   return {
-    limitId: plan.limitId ?? plan.scope,
+    limitId: planWindowKey(plan),
     label: planWindowLabel(plan.windowMinutes),
     usedPercent: plan.usedPercent,
     windowMinutes: plan.windowMinutes,

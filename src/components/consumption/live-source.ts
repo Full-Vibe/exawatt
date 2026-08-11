@@ -32,6 +32,7 @@
  */
 import {
   isOperatorEntrypoint,
+  planWindowKey,
   resolveModelWeight,
   weightUsage,
   type ConsumptionSample,
@@ -193,15 +194,17 @@ export function liveProjectResolver(
  * freshness rule to judge, not ours to hide.
  */
 export function latestPlanWindows(planWindows: PlanWindow[]): PlanWindow[] {
-  const byLimit = new Map<string, PlanWindow>();
+  const byBucket = new Map<string, PlanWindow>();
   for (const w of planWindows) {
-    const key = `${w.source}:${w.limitId ?? w.scope}`;
-    const prev = byLimit.get(key);
+    // The FULL bucket key — one limitId carries both a primary and a
+    // secondary window, so limitId alone would collapse two real windows.
+    const key = planWindowKey(w);
+    const prev = byBucket.get(key);
     if (!prev || Date.parse(w.observedAt) > Date.parse(prev.observedAt)) {
-      byLimit.set(key, w);
+      byBucket.set(key, w);
     }
   }
-  return [...byLimit.values()];
+  return [...byBucket.values()];
 }
 
 /**
@@ -414,10 +417,12 @@ export function buildLiveConsumption(
   const resolve = liveProjectResolver(inputs.projects);
 
   // Main's trend-derived rate wins; the single-observation average is the
-  // honest fallback, never zero (see `LiveConsumptionInputs.windowRates`).
+  // honest fallback, never a fabricated zero — while a REPORTED 0 (a
+  // genuinely flat window) is kept. Keys are the full window bucket
+  // (`planWindowKey`), matching the contract.
   const burnRates: Record<string, number> = {};
   for (const w of planWindows) {
-    const key = w.limitId ?? w.scope;
+    const key = planWindowKey(w);
     burnRates[key] = inputs.windowRates[key] ?? observedBurnRate(w);
   }
 

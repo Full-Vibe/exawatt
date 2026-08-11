@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   localLogAssurance,
+  planWindowKey,
   type ConsumptionSample,
   type ConsumptionSourceId,
   type PlanWindow,
@@ -140,7 +141,7 @@ describe('liveProjectResolver — cwd-keyed, worktree-aware (E2)', () => {
 });
 
 describe('plan windows — latest observation, honest rates (E1/E3 seams)', () => {
-  it('keeps only the latest observation per limitId', () => {
+  it('keeps only the latest observation per window bucket', () => {
     const old = planWindow({
       limitId: 'codex-weekly',
       usedPercent: 10,
@@ -156,6 +157,28 @@ describe('plan windows — latest observation, honest rates (E1/E3 seams)', () =
     expect(survivors[0].usedPercent).toBe(84);
   });
 
+  it('never collapses two windows that share one limitId (primary + secondary)', () => {
+    const fiveHour = planWindow({
+      limitId: 'codex',
+      scope: 'primary',
+      windowMinutes: 300,
+    });
+    const weekly = planWindow({
+      limitId: 'codex',
+      scope: 'secondary',
+      windowMinutes: 10_080,
+      resetsAt: iso(NOW + 2 * 24 * HOUR),
+    });
+    expect(latestPlanWindows([fiveHour, weekly])).toHaveLength(2);
+    // …and the view keys them uniquely, so React rows and the popover's
+    // headline match can never conflate them
+    const view = buildLiveConsumption(
+      inputs({ planWindows: [fiveHour, weekly] })
+    );
+    const codex = view.sources.find(s => s.harness === 'codex')!;
+    expect(new Set(codex.windows.map(w => w.limitId)).size).toBe(2);
+  });
+
   it('derives the observed average rate from a single observation', () => {
     // 5h window observed 2.5h in (reset 2.5h away) at 50% → 20 %/h
     const w = planWindow({
@@ -169,10 +192,12 @@ describe('plan windows — latest observation, honest rates (E1/E3 seams)', () =
   });
 
   it("prefers main's trend-derived rate over the average fallback", () => {
+    const w = planWindow({ limitId: 'codex-primary' });
     const view = buildLiveConsumption(
       inputs({
-        planWindows: [planWindow({ limitId: 'codex-primary' })],
-        windowRates: { 'codex-primary': 3.7 },
+        planWindows: [w],
+        // the contract keys rates by the full window bucket, never limitId
+        windowRates: { [planWindowKey(w)]: 3.7 },
       })
     );
     const codex = view.sources.find(s => s.harness === 'codex')!;
@@ -190,6 +215,22 @@ describe('plan windows — latest observation, honest rates (E1/E3 seams)', () =
 });
 
 describe('the built view — attribution, identity, honest absence', () => {
+  const primaryWindow = planWindow({ limitId: 'codex-primary', usedPercent: 68 });
+  const weeklyWindow = planWindow({
+    limitId: 'codex-weekly',
+    usedPercent: 84,
+    scope: 'secondary',
+    windowMinutes: 10_080,
+    resetsAt: iso(NOW + 2 * 24 * HOUR),
+  });
+  // a stale survivor: observation far older than the window it describes
+  const ancientWindow = planWindow({
+    limitId: 'codex-ancient',
+    usedPercent: 97,
+    windowMinutes: 300,
+    resetsAt: iso(NOW + 4 * HOUR),
+    observedAt: iso(NOW - 60 * 24 * HOUR),
+  });
   const liveInputs = inputs({
     samples: [
       // identified codex session, run from a WORKTREE of exawatt
@@ -227,24 +268,7 @@ describe('the built view — attribution, identity, honest absence', () => {
         at: iso(NOW - 9 * 24 * HOUR),
       }),
     ],
-    planWindows: [
-      planWindow({ limitId: 'codex-primary', usedPercent: 68 }),
-      planWindow({
-        limitId: 'codex-weekly',
-        usedPercent: 84,
-        scope: 'secondary',
-        windowMinutes: 10_080,
-        resetsAt: iso(NOW + 2 * 24 * HOUR),
-      }),
-      // a stale survivor: observation far older than the window it describes
-      planWindow({
-        limitId: 'codex-ancient',
-        usedPercent: 97,
-        windowMinutes: 300,
-        resetsAt: iso(NOW + 4 * HOUR),
-        observedAt: iso(NOW - 60 * 24 * HOUR),
-      }),
-    ],
+    planWindows: [primaryWindow, weeklyWindow, ancientWindow],
     identities: [
       identity({ providerSessionId: 'codex-1', title: 'worktree bootstrap' }),
       // an index row whose session produced no samples in the window
@@ -302,12 +326,14 @@ describe('the built view — attribution, identity, honest absence', () => {
   it('applies the freshness discipline: a stale window can never headline', () => {
     const paces = allPaces(view);
     expect(paces.map(p => p.window.limitId)).toEqual([
-      'codex-weekly',
-      'codex-primary',
+      planWindowKey(weeklyWindow),
+      planWindowKey(primaryWindow),
     ]);
     // …but the stale record is not hidden from the source's window list
     const codex = view.sources.find(s => s.harness === 'codex')!;
-    expect(codex.windows.map(w => w.limitId)).toContain('codex-ancient');
+    expect(codex.windows.map(w => w.limitId)).toContain(
+      planWindowKey(ancientWindow)
+    );
   });
 
   it('meter == page: both read the same tightest live window (the invariant)', () => {

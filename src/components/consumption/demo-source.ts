@@ -30,6 +30,7 @@
 import {
   isOperatorEntrypoint,
   localLogAssurance,
+  planWindowKey,
   rollupByProject,
   rollupByRoadmapItem,
   rollupBySession,
@@ -1274,7 +1275,15 @@ function buildSources(
       );
     const windows = planWindows
       .filter(w => w.source === source)
-      .map(w => capacityWindowFromPlan(w, burnRates[w.limitId ?? ''] ?? 0))
+      // Rates key by the full window bucket (`planWindowKey`) first — one
+      // limitId can carry two windows — with the authored demo corpora's
+      // plain limitId keys as the compatible fallback.
+      .map(w =>
+        capacityWindowFromPlan(
+          w,
+          burnRates[planWindowKey(w)] ?? burnRates[w.limitId ?? ''] ?? 0
+        )
+      )
       .filter((w): w is NonNullable<typeof w> => w !== null);
     return {
       key: source,
