@@ -31,6 +31,7 @@ directly — the exact outbound identity decision `0034` exists to prevent.
 | `www.exawatt.ai/api/conversations/summarize` → `api.anthropic.com` | Hosted feature | On when signed in | Settings → Privacy → Conversation summaries |
 | `www.exawatt.ai/api/goal-visuals` → `fal.run`, `*.fal.media` | Hosted feature | On when signed in | Settings → Privacy → Agent tile backgrounds |
 | `claude` CLI → `api.anthropic.com` (the **user's own** Claude Code sign-in) | Own-account feature (re-entry recap) | On | Settings → Privacy → Since-you-left recaps; `EXAWATT_SUMMARIES=0` |
+| Electron main → `api.anthropic.com/api/oauth/usage` (the **user's own** Claude Code OAuth token, read in place from the Keychain) | Own-account feature (Claude plan usage, ENG-038) | On | Settings → Privacy → Claude plan usage |
 | `<project>.supabase.co` | Account, sync, feedback, stats | On when signed in | Sign out; individual features listed below |
 | `<project>.supabase.co/storage/.../desktop-updates` | App updates | Always on in signed builds | No user switch (known gap) |
 | Locally spawned agent harnesses | User's own tools | On user action | Do not launch an Agent |
@@ -271,6 +272,32 @@ rather than under hosted features.
   flight finishes but its output is discarded. `EXAWATT_SUMMARIES=0` remains
   the environment override; `EXAWATT_SUMMARIZER_CMD` redirects the engine.
 
+A second own-account path exists since 2026-08-11 (ENG-038): **Claude plan
+usage** (`electron/main/consumption/claude-plan-account.ts`). Electron main
+issues a read-only `GET https://api.anthropic.com/api/oauth/usage` —
+the request Claude Code's own `/usage` command makes — authorized by the
+OAuth token Claude Code already stores in the macOS Keychain
+(`Claude Code-credentials`).
+
+- **Sent**: nothing from the machine beyond the request itself. No body, no
+  content, no paths — only the bearer token, to Anthropic, over TLS with
+  redirects refused so the token cannot leave `api.anthropic.com`.
+- **Received and kept**: plan-window percentages/resets and usage-credit
+  totals, cached locally under `userData/consumption-plan/`. The token is
+  read in place at request time and is never persisted, logged, or included
+  in any state — unit tests pin this.
+- **Purpose**: the Claude session/weekly rows in the Usage meter and `/usage`
+  page — plan truth local files definitively lack.
+- **Default**: on (the operator-pulled feature; own-account default-on per
+  decision `0031`'s disclosure contract).
+- **Off**: Settings → Privacy → **Claude plan usage**
+  (`claudePlanWindows.enabled`), enforced at the boundary: off constructs no
+  request and the meter shows Claude as unmetered again. Exawatt never
+  refreshes the token; if Claude Code's token is expired, no request is made
+  at all.
+- **Cadence**: at most one request per ~5 minutes, and only while the app is
+  open with a consumption surface alive.
+
 Everything else is local: `/api/oc/token` reads the OpenClaw gateway token off
 disk and returns a `127.0.0.1` address; `/api/dev-identity` exists only in
 development.
@@ -295,10 +322,17 @@ development.
   than forwarded.
 - Host split: the same suite asserts the desktop `api_host` is the absolute
   hosted origin and never a loopback address.
+- Claude plan usage: `pnpm vitest run
+  electron/main/consumption/claude-plan-account.test.ts`. The tests pin the
+  single host, refused redirects, the never-send-expired-token rule, the
+  token's absence from persisted state and the served view, and every failure
+  mode degrading to absence.
 - End to end: run a production build with the network inspector open, or watch
   the app's outbound connections in a firewall tool. The desktop app should
-  show `exawatt.ai` and — when signed in and using hosted features — the
-  Supabase project host; no PostHog, Anthropic, or fal hostname should appear.
+  show `exawatt.ai`, — when signed in and using hosted features — the Supabase
+  project host, and `api.anthropic.com` only from the Claude plan usage read
+  (or the `claude` CLI the recap spawns); no PostHog or fal hostname should
+  appear.
 
 ## Known gaps
 

@@ -618,6 +618,13 @@ Built:
   aggregate-only payload parser, operator-triggered Electron-main scan IPC,
   authenticated idempotent sync/disable API, and RLS-backed Supabase aggregate
   schema with enabled-only anonymous leaderboard/profile/Run projections
+- ENG-038 provider plan-account read (slice 1): a credentialed, remote,
+  read-only Electron-main sibling of the local Consumption scanner that
+  fetches Claude plan windows from the vendor's own account endpoint using
+  the Keychain credential Claude Code already holds (read in place, never
+  persisted or refreshed), merges them into the live snapshot as reported
+  plan-level capacity behind the same IPC seam, degrades every failure to
+  absence, and carries a default-on own-account privacy switch
 
 Implemented:
 

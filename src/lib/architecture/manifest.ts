@@ -718,7 +718,7 @@ export const architectureManifest = {
           id: 'consumption-spine',
           label: 'Consumption Spine',
           summary:
-            'Source-agnostic usage contract, local-log adapters behind an injected filesystem port, idempotent merge, and scoped rollups with assurance and delegated split.',
+            'Source-agnostic usage contract, local-log adapters behind an injected filesystem port, idempotent merge, and scoped rollups with assurance and delegated split. A structurally separate credentialed sibling reads vendor plan-account truth (Claude plan windows) as reported, plan-level capacity.',
           layer: 'coordination',
           status: 'implemented',
           x: 645,
