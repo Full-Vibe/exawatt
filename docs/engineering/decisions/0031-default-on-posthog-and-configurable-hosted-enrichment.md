@@ -2,7 +2,15 @@
 # 0031 Default-on PostHog and configurable hosted enrichment
 
 Date: 2026-08-03
-Status: accepted — implementation is ENG-030 OS1 and has not landed
+Status: accepted — implemented by ENG-030 OS1 for official distributions;
+community-build scope amended by decision `0036`
+
+Amended 2026-08-10 by decision `0036`: the controls and disclosure contract
+below remain binding for official Exawatt distributions, but production builds
+made from the public repository no longer default to Exawatt analytics or
+Exawatt-hosted enrichment. Community builds are service-neutral and make no
+Exawatt network calls unless a distributor supplies its own compatible
+configuration. The earlier official-and-OSS default is superseded.
 
 ## Context
 
