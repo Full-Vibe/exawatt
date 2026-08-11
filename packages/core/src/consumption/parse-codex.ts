@@ -62,6 +62,7 @@ import {
   toIso,
 } from './lines';
 import { localLogAssurance, planWindowAssurance } from './assurance';
+import { planWindowKey } from './plan-window-history';
 import type {
   ConsumptionDiagnostics,
   ConsumptionSample,
@@ -338,7 +339,7 @@ export function latestPlanWindows(
 ): PlanWindow[] {
   const byBucket = new Map<string, PlanWindow>();
   for (const window of windows) {
-    const key = `${window.source}|${window.limitId ?? ''}|${window.scope}|${window.windowMinutes}`;
+    const key = planWindowKey(window);
     const existing = byBucket.get(key);
     if (!existing || window.observedAt > existing.observedAt) {
       byBucket.set(key, window);

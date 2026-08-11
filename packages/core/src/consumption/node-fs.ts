@@ -65,24 +65,40 @@ export class NodeConsumptionFileSystem implements ConsumptionFileSystem {
 
   async readFrom(
     path: string,
-    fromByte: number
+    fromByte: number,
+    maxBytes?: number
   ): Promise<ConsumptionChunk | null> {
     try {
       const stat = await fsp.stat(path);
       if (fromByte >= stat.size) {
         return { text: '', fromByte, toByte: fromByte };
       }
+      // Raw bytes, decoded once at the end: `toByte` must be EXACT so callers
+      // can do offset arithmetic, and decoding inside the stream would make a
+      // range that splits a multibyte character report the replacement
+      // character's byte length instead of the bytes actually read. The
+      // replacement character itself is harmless — it can only appear at the
+      // very end of a bounded read, after the last newline (a newline is a
+      // single byte in UTF-8), so it lands in the unparsed tail.
       const stream = createReadStream(path, {
         start: fromByte,
-        encoding: 'utf8',
+        // `end` is inclusive.
+        ...(maxBytes !== undefined && maxBytes > 0
+          ? { end: fromByte + maxBytes - 1 }
+          : {}),
       });
-      const parts: string[] = [];
+      const parts: Buffer[] = [];
       let bytes = 0;
       for await (const part of stream) {
-        parts.push(part as string);
-        bytes += Buffer.byteLength(part as string, 'utf8');
+        const buffer = part as Buffer;
+        parts.push(buffer);
+        bytes += buffer.length;
       }
-      return { text: parts.join(''), fromByte, toByte: fromByte + bytes };
+      return {
+        text: Buffer.concat(parts).toString('utf8'),
+        fromByte,
+        toByte: fromByte + bytes,
+      };
     } catch {
       return null;
     }

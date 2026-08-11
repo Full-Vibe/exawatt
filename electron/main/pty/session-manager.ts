@@ -33,7 +33,10 @@ import {
   type PtyHarness,
 } from './harness-types';
 import { harnessDescriptor } from './harness-registry';
-import { SessionIdentityStore } from './session-identity-store';
+import {
+  SessionIdentityStore,
+  type SessionIdentityRecord,
+} from './session-identity-store';
 
 const execFileAsync = promisify(execFile);
 const OPENCODE_IDENTITY_TIMEOUT_MS = 20_000;
@@ -1088,6 +1091,15 @@ export class PtySessionManager extends EventEmitter {
       }
     }
     return repaired;
+  }
+
+  /**
+   * The whole durable-Session ↔ provider-conversation index, read-only.
+   * The E5 consumption snapshot exposes it so the renderer can roll provider
+   * conversations up into Exawatt Sessions without re-deriving main's state.
+   */
+  listProviderIdentities(): SessionIdentityRecord[] {
+    return this.identities?.list() ?? [];
   }
 
   durableProviderIdentity(

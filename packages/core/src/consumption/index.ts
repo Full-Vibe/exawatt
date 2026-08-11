@@ -74,16 +74,28 @@ export {
   sessionIdFromClaudePath,
   sessionIdFromCodexPath,
 } from './adapters';
+export { DEFAULT_SCAN_CHUNK_BYTES } from './ports';
 export type {
   ConsumptionChunk,
+  ConsumptionFileProgress,
   ConsumptionFileRef,
   ConsumptionFileSystem,
+  ConsumptionScanAbort,
   ConsumptionScanOptions,
+  ConsumptionScanSink,
   ConsumptionSourceAdapter,
   ConsumptionSourceScan,
   ConsumptionWatermark,
   ConsumptionWatermarks,
 } from './ports';
+export {
+  MIN_RATE_SPAN_MS,
+  WindowObservationAccumulator,
+  derivePlanWindowRates,
+  observationKey,
+  planWindowKey,
+} from './plan-window-history';
+export type { WindowObservationOptions } from './plan-window-history';
 export { scanConsumption } from './scan';
 export type { ConsumptionScan } from './scan';
 export {

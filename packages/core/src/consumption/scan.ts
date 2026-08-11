@@ -22,11 +22,15 @@ import {
 export interface ConsumptionScan {
   samples: ConsumptionSample[];
   planWindows: PlanWindow[];
+  /** Uncollapsed plan-window observations, for pace history. */
+  windowObservations: PlanWindow[];
   diagnostics: ConsumptionDiagnostics;
   perSource: Record<string, ConsumptionDiagnostics>;
   watermarks: ConsumptionWatermarks;
   /** Sources that reported zero files. Explicit absence, not silent zero. */
   emptySources: ConsumptionSourceId[];
+  /** Any adapter's pass was aborted; results are valid but partial. */
+  aborted: boolean;
 }
 
 export async function scanConsumption(
@@ -36,10 +40,12 @@ export async function scanConsumption(
 ): Promise<ConsumptionScan> {
   const rawSamples: ConsumptionSample[] = [];
   const planWindows: PlanWindow[] = [];
+  const windowObservations: PlanWindow[] = [];
   const perSource: Record<string, ConsumptionDiagnostics> = {};
   const watermarks: ConsumptionWatermarks = {};
   const emptySources: ConsumptionSourceId[] = [];
   let diagnostics = emptyDiagnostics();
+  let aborted = false;
 
   const results = await Promise.all(
     adapters.map(async adapter => ({
@@ -51,10 +57,12 @@ export async function scanConsumption(
   for (const { adapter, result } of results) {
     rawSamples.push(...result.samples);
     planWindows.push(...result.planWindows);
+    windowObservations.push(...result.windowObservations);
     perSource[adapter.source] = result.diagnostics;
     diagnostics = addDiagnostics(diagnostics, result.diagnostics);
     Object.assign(watermarks, result.watermarks);
     if (result.diagnostics.filesSeen === 0) emptySources.push(adapter.source);
+    if (result.aborted) aborted = true;
   }
 
   // Cross-source merge. Claude `requestId`s span parent and subagent
@@ -71,9 +79,11 @@ export async function scanConsumption(
   return {
     samples: merged.samples,
     planWindows: windows,
+    windowObservations,
     diagnostics,
     perSource,
     watermarks,
     emptySources,
+    aborted,
   };
 }

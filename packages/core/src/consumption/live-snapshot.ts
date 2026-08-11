@@ -114,9 +114,12 @@ export interface LiveSessionIdentityLink {
 /**
  * One point of a plan window's observed history, downsampled and bounded by
  * main. `PlanWindow` is the latest state; this series is how pace becomes
- * observable (%/h needs two observations spaced in time).
+ * observable (%/h needs two observations spaced in time). Bucket identity is
+ * `planWindowKey()` from `./plan-window-history` — never `limitId` alone,
+ * because one limitId carries both a primary and a secondary window.
  */
 export interface PlanWindowObservation {
+  source: ConsumptionSourceId;
   limitId: string | null;
   scope: 'primary' | 'secondary';
   windowMinutes: number;
@@ -148,10 +151,12 @@ export interface LiveConsumptionSnapshot {
   /** Bounded observed history per window, ascending by `observedAtMs`. */
   windowObservations: PlanWindowObservation[];
   /**
-   * Observed consumption rate per `limitId` in percent per hour, derived by
-   * main from `windowObservations` within the current reset cycle. A limitId
-   * ABSENT from this record has no derivable rate yet (a single observation
-   * cannot state a pace) — absent, never zero.
+   * Observed consumption rate in percent per hour, derived by main from
+   * `windowObservations` within the current reset cycle. Keyed by
+   * `planWindowKey()` (`./plan-window-history`) — limitId + scope +
+   * windowMinutes, since one limitId carries two windows. A bucket ABSENT
+   * from this record has no derivable rate yet (a single observation cannot
+   * state a pace) — absent, never zero; a genuinely flat window reports `0`.
    */
   windowRates: Record<string, number>;
   /** The durable-Session identity index. See `LiveSessionIdentityLink`. */
