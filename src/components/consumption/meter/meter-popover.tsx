@@ -8,16 +8,24 @@
  * the title bar; the click-through to /usage (rung 3) owns everything
  * deeper. Deliberately smaller than `CapacityPopover`: no sparklines, no
  * assurance essay — the windows, their resets, the pace verdict, and one
- * line of coaching when (and only when) a window runs hot.
+ * line of coaching. The coach slot has a priority rule (E9): a hot or spent
+ * window's remediation always owns it; only when no alarm speaks may a
+ * closing opportunity coach one line in the quiet register.
  *
  * The popover stays in chrome neutrals like the meter itself; the FLUX ramp
- * appears per-row only where that row's window has earned it.
+ * appears per-row only where that row's window has earned it. The
+ * opportunity voice (E9, Direction C) rides the shared pace vocabulary —
+ * `paceSentence` re-frames itself — and never changes a color channel; a
+ * closing row's caption merely brightens to the panel text tone.
  */
 
 import { CONSUMPTION_CHROME as CHROME, duration, percent } from '../flux';
 import { HARNESS_LABEL, type ConsumptionSourceView } from '../model';
 import {
+  floorTitle,
   meterTone,
+  opportunityCoach,
+  opportunityOf,
   paceSentence,
   readAllWindows,
   remediationHint,
@@ -43,6 +51,7 @@ function WindowRow({
   reading: NonNullable<MeterSnapshot['reading']>;
 }) {
   const tone = meterTone(reading);
+  const opportunity = opportunityOf(reading);
   const headline =
     snapshot.reading &&
     snapshot.reading.window.limitId === reading.window.limitId &&
@@ -100,7 +109,19 @@ function WindowRow({
         />
       </svg>
       <p className="font-ui text-chrome-micro leading-4" style={{ color: PANEL.faint }}>
-        {paceSentence(reading)}
+        {opportunity ? (
+          // the E9 metric swap — same vocabulary, closing tier brightens
+          <span
+            style={{
+              color: opportunity.tier === 'closing' ? PANEL.text : PANEL.faint,
+            }}
+            title={floorTitle(opportunity)}
+          >
+            {paceSentence(reading)}
+          </span>
+        ) : (
+          paceSentence(reading)
+        )}
         {reading.exhaustsBeforeReset && reading.state !== 'exhausted' && (
           <span style={{ color: tone.colored ? tone.text : PANEL.dim }}>
             {' '}
@@ -165,6 +186,13 @@ export const METER_POPOVER_WIDTH = 296;
 export function MeterPopover({ snapshot }: { snapshot: MeterSnapshot }) {
   const r = snapshot.reading;
   const hint = r ? remediationHint(r) : null;
+  // The E9 coach shares the hint's slot; the shared arbiter guarantees a hot
+  // or spent window anywhere silences it (HOT ALWAYS OUTRANKS).
+  const coach = hint
+    ? null
+    : opportunityCoach(
+        snapshot.sources.flatMap(s => readAllWindows(s, snapshot.nowMs))
+      );
   const tone = meterTone(r);
   return (
     <div
@@ -220,6 +248,15 @@ export function MeterPopover({ snapshot }: { snapshot: MeterSnapshot }) {
           style={{ borderColor: PANEL.divider, color: tone.text }}
         >
           {hint}
+        </p>
+      )}
+      {coach && (
+        <p
+          data-meter-coach
+          className="border-t px-3 py-2 font-ui text-chrome-micro leading-4"
+          style={{ borderColor: PANEL.divider, color: PANEL.dim }}
+        >
+          {coach}
         </p>
       )}
 

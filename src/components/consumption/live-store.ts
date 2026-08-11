@@ -253,6 +253,7 @@ function buildState(
     samples: inputs.snapshot.samples,
     planWindows: inputs.snapshot.planWindows,
     windowRates: inputs.snapshot.windowRates,
+    windowObservations: inputs.snapshot.windowObservations,
     identities: inputs.identities,
     projects: inputs.projects,
   });

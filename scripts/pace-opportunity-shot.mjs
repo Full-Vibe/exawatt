@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 
 /**
- * Screenshot the pace-opportunity study (ENG-008 E9 design options).
+ * Screenshot the pace-opportunity study (ENG-008 E9; C + B shipped
+ * 2026-08-11 — the specimens now render the production predicate and
+ * vocabulary, so these shots double as review evidence for the live
+ * behavior across the five fixture states).
  *
  * Headless by default (standing rule). One full-section shot per fixture
  * state plus one crop per direction card, so every direction × state ×
- * placement is on disk for the operator pick without re-driving the app.
+ * placement is on disk without re-driving the app.
  */
 
 import { chromium } from 'playwright-core';

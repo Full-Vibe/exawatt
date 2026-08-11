@@ -49,6 +49,7 @@ import {
   type InterventionRow,
   type InterventionStats,
 } from './model';
+import type { ClosedCycle } from './meter/meter-model';
 
 export const DEMO_NOW_MS = Date.parse('2026-08-02T15:20:00.000Z');
 export const DEMO_WINDOW_DAYS = 7;
@@ -983,6 +984,13 @@ export interface DemoConsumption {
   resolveProject: (cwd: string) => { id: string; label: string } | null;
   sources: ConsumptionSourceView[];
   /**
+   * E9 — cycles that recently closed with real headroom unspent, derived
+   * from observed window history near each reset (live corpus only; the
+   * authored demo corpora carry none). Rendered as the one ledger caption
+   * in `/usage`'s Headroom band — never in the popover.
+   */
+  closedCycles: ClosedCycle[];
+  /**
    * ENG-026 N2 — the intervention record for operator Sessions. Overhead is
    * excluded by construction: a machine-invoked call has no operator to
    * intervene, and counting it would flatter the rate.
@@ -1016,6 +1024,8 @@ export interface DemoConsumptionInputs {
   /** per plan-window limitId: percent consumed per hour */
   burnRates: Record<string, number>;
   claudePlanNote: string;
+  /** E9 — recently closed cycles with unspent headroom; live source only. */
+  closedCycles?: ClosedCycle[];
 }
 
 export function buildDemoConsumption(
@@ -1156,6 +1166,7 @@ export function buildDemoConsumption(
     },
     resolveProject: projectResolver,
     sources: buildSources(inputs, operator, planWindows),
+    closedCycles: inputs.closedCycles ?? [],
     interventions: {
       rows: interventionRows,
       total: interventionStats(interventionRows),

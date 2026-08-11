@@ -20,6 +20,7 @@ import {
   CLAUDE_PLAN_NOTE,
   buildLiveConsumption,
   latestPlanWindows,
+  liveClosedCycles,
   liveProjectResolver,
   liveScanView,
   observedBurnRate,
@@ -102,6 +103,7 @@ function inputs(over: Partial<LiveConsumptionInputs> = {}): LiveConsumptionInput
     samples: [],
     planWindows: [],
     windowRates: {},
+    windowObservations: [],
     identities: [],
     projects: [
       { dir: EXA, name: 'exawatt', color: '#19E6FF' },
@@ -497,5 +499,94 @@ describe('liveScanView — the caption mapping', () => {
     });
     expect(scan.lastScanAtMs).toBe(NOW - 3 * MIN);
     expect(scan.firstScanComplete).toBe(true);
+  });
+});
+
+describe('liveClosedCycles — the E9 ledger claims only what was observed', () => {
+  const WEEK_MIN = 10_080;
+  const WEEK_MS = WEEK_MIN * MIN;
+
+  /** A weekly window whose current cycle began `agoMs` ago. */
+  function weekly(agoMs: number): PlanWindow {
+    return planWindow({
+      limitId: 'codex-weekly',
+      scope: 'secondary',
+      windowMinutes: WEEK_MIN,
+      usedPercent: 1,
+      resetsAt: iso(NOW - agoMs + WEEK_MS),
+      observedAt: iso(NOW - MIN),
+    });
+  }
+
+  function observation(observedAtMs: number, usedPercent: number) {
+    return {
+      source: 'codex' as const,
+      limitId: 'codex-weekly',
+      scope: 'secondary' as const,
+      windowMinutes: WEEK_MIN,
+      usedPercent,
+      observedAtMs,
+    };
+  }
+
+  it('a cycle observed near its close with real headroom becomes the ledger', () => {
+    const cycleStart = NOW - 25 * MIN;
+    const cycles = liveClosedCycles(
+      [weekly(25 * MIN)],
+      [
+        observation(cycleStart - 2 * 24 * HOUR, 20),
+        observation(cycleStart - 10 * MIN, 33), // the final observed state
+      ],
+      NOW
+    );
+    expect(cycles).toEqual([
+      { label: 'Weekly window', unusedPercent: 67, agoMs: 25 * MIN },
+    ]);
+  });
+
+  it('an unobserved close makes no claim, however behind the cycle was', () => {
+    const cycleStart = NOW - 25 * MIN;
+    // last seen 3 days before the reset — anything could have burned since
+    const cycles = liveClosedCycles(
+      [weekly(25 * MIN)],
+      [observation(cycleStart - 3 * 24 * HOUR, 20)],
+      NOW
+    );
+    expect(cycles).toEqual([]);
+  });
+
+  it('a cycle that closed under the opportunity floor is a footnote, not a ledger', () => {
+    const cycleStart = NOW - 25 * MIN;
+    const cycles = liveClosedCycles(
+      [weekly(25 * MIN)],
+      [observation(cycleStart - 10 * MIN, 90)], // closed with only 10% unused
+      NOW
+    );
+    expect(cycles).toEqual([]);
+  });
+
+  it('the ledger is news, never history: silent past a quarter of the new window', () => {
+    const agoMs = 2 * 24 * HOUR; // weekly quarter is 1.75d
+    const cycleStart = NOW - agoMs;
+    const cycles = liveClosedCycles(
+      [weekly(agoMs)],
+      [observation(cycleStart - 10 * MIN, 33)],
+      NOW
+    );
+    expect(cycles).toEqual([]);
+  });
+
+  it('rides the built view; absent history means an empty ledger', () => {
+    const cycleStart = NOW - 25 * MIN;
+    const view = buildLiveConsumption(
+      inputs({
+        planWindows: [weekly(25 * MIN)],
+        windowObservations: [observation(cycleStart - 10 * MIN, 33)],
+      })
+    );
+    expect(view.closedCycles).toEqual([
+      { label: 'Weekly window', unusedPercent: 67, agoMs: 25 * MIN },
+    ]);
+    expect(buildLiveConsumption(inputs()).closedCycles).toEqual([]);
   });
 });

@@ -81,8 +81,11 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     contexts: ['global'],
   },
   {
+    // The id is an address and never changes (E8); the chord follows the
+    // display name — U for Usage (operator, 2026-08-11). `g c` is burned,
+    // not aliased.
     id: 'go-consumption',
-    keys: [{ key: 'g' }, { key: 'c' }],
+    keys: [{ key: 'g' }, { key: 'u' }],
     label: `Go to ${CONSUMPTION_SURFACE_NAME}`,
     description: `Navigate to the ${CONSUMPTION_SURFACE_NAME} surface`,
     category: 'navigation',

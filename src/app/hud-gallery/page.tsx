@@ -63,7 +63,7 @@ const SECTIONS: Section[] = [
   {
     id: 'pace-opportunity',
     title: 'Pace opportunity voice',
-    meta: 'design options · ENG-008 E9 — use-it-or-lose-it, operator pick pending',
+    meta: 'ENG-008 E9 — C (metric swap + coach) + B (page-bar expiry geometry) shipped 2026-08-11; A unshipped',
     showcase: <PaceOpportunityStudy />,
   },
   {

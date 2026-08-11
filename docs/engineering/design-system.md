@@ -151,6 +151,15 @@ interpolation/formatting helpers, not universal production paint. “Unknown” 
 a neutral hatched data state—**never a fill or a zero**. Only Consumption
 surfaces use this channel.
 
+**Hatch meanings (closed set of three — do not mint a fourth):** −45° in the
+unknown grey = *unreported* (`unknownHatch`); −45° in the ramp color =
+*projection*, where the fill lands if the pace holds (`projectionHatch`);
++45° in neutral chrome ink at a sparser 7px period = *expiry*, the region of
+a pace bar that dies unused if the pace holds (`expiryHatch`, ENG-008 E9 —
+`/usage` bars only, never the popover mini bars). The three separate on
+angle, ink, and density at once, because at 6px bar heights no single cue
+survives alone.
+
 ### Project identity
 
 `PROJECT_PALETTE` (`src/components/workspace/project-colors.ts`), assigned via `pickDistinctColor`. Identity appears as thin vertical bars, zone edges, and emblems — **identity-only** (D30/D32): never a lamp, never a status, never a button color.
@@ -306,6 +315,28 @@ Air/Classic/Night and 90–120% writes produce only an initial and final root
 snapshot, never an intermediate layout storm.
 
 ### Amendment log
+
+- 2026-08-11 — ENG-008 E9 pace opportunity (operator pick: C + B). Two
+  amendments, no new type/color/spacing rungs. (1) **The shared pace
+  vocabulary re-frames itself**: when the opportunity trigger fires
+  (healthy|warm ∧ behind ∧ floor ≥ 15 pts ∧ reset ≥ 30m, in `meter-model`),
+  `paceSentence`/`paceLabel` swap the deficit reading for free-to-spend
+  ("72% free · expires in 9h" / "72% free to spend"), a closing-tier coach
+  line shares the hot remediation's slot behind one arbiter where hot always
+  outranks, and `/usage` alone may carry a one-line closed-cycle ledger
+  caption. All of it reuses the existing six `/usage` roles and the
+  popover's existing text tones; the only emphasis move is a caption
+  brightening dim → text at the closing tier. The alarm channel is
+  untouched — opportunity never colors. (2) **A third hatch meaning**,
+  recorded in the Consumption channel section above: the +45° neutral
+  expiry hatch on `/usage` pace bars. The study flagged the texture
+  collision as B's cost; resolved by separating on three simultaneous cues
+  (angle vs both −45° textures, neutral ink vs ramp/unknown, and a sparser
+  7px period vs 4.5/5px — widened from the study's 5px after page-scale
+  review). Popover mini bars never draw it (the study's finding that 4px
+  regions are unreadable stands). Evidence: `/tmp/exawatt-e9-ship-shots/`
+  Night + Air crops beside the unreported channel, and the live-data run in
+  the E9 ship milestone log.
 
 - 2026-08-07 — ENG-016 D50 pinned Project header: a scrolled ribbon now holds
   the current Project's header at the left edge while its tabs pass beneath

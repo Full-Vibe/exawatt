@@ -142,7 +142,11 @@ export function UsageClient() {
         )}
 
         {/* the five answers, in the order the questions are asked */}
-        <Verdict paces={paces} silent={silent} />
+        <Verdict
+          paces={paces}
+          silent={silent}
+          closedCycles={demo.closedCycles}
+        />
         <Burn demo={demo} paces={paces} />
         <div className="grid items-start gap-4 lg:grid-cols-3">
           <Pace paces={paces} />

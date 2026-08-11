@@ -7,6 +7,13 @@ import {
   demoConsumption,
   type DemoConsumption,
 } from '@/components/consumption/demo-source';
+import {
+  opportunityOf,
+  paceLabel,
+  paceSentence,
+  readAllWindows,
+} from '@/components/consumption/meter/meter-model';
+import { OPPORTUNITY_STATES } from '@/app/hud-gallery/pace-opportunity-model';
 import { allPaces, gridRows } from './derive';
 
 const NOW = Date.parse('2026-08-02T15:20:00.000Z');
@@ -95,5 +102,44 @@ describe('per-run context pressure — absent is never zero', () => {
       expect(r.contextPeakTokens).toBeNull();
       expect(r.compactions).toBeNull();
     }
+  });
+});
+
+describe('meter/page verdict agreement on opportunity states (E9)', () => {
+  // The chrome popover derives rows through `readAllWindows`; the page
+  // derives them through `allPaces`. Both must speak the same opportunity
+  // verdict AND the same words for every window of every review fixture —
+  // one vocabulary, one trigger, zero drift.
+  it.each(OPPORTUNITY_STATES.map(s => [s.id, s] as const))(
+    '%s: identical trigger and vocabulary in both placements',
+    (_id, state) => {
+      const page = allPaces({
+        nowMs: state.nowMs,
+        sources: state.sources,
+      } as unknown as DemoConsumption);
+      const meter = state.sources.flatMap(s =>
+        readAllWindows(s, state.nowMs)
+      );
+      expect(page.map(p => p.window.limitId).sort()).toEqual(
+        meter.map(m => m.window.limitId).sort()
+      );
+      for (const m of meter) {
+        const p = page.find(x => x.window.limitId === m.window.limitId)!;
+        expect(opportunityOf(p)).toEqual(opportunityOf(m));
+        expect(paceSentence(p)).toBe(paceSentence(m));
+        expect(paceLabel(p).text).toBe(paceLabel(m).text);
+      }
+    }
+  );
+
+  it('the operator’s verbatim shape reads free-to-spend on the page and in the popover', () => {
+    const state = OPPORTUNITY_STATES.find(s => s.id === 'strongly-behind')!;
+    const page = allPaces({
+      nowMs: state.nowMs,
+      sources: state.sources,
+    } as unknown as DemoConsumption);
+    const weekly = page.find(p => p.window.limitId === 'codex-weekly')!;
+    expect(paceLabel(weekly).text).toBe('72% free to spend');
+    expect(paceSentence(weekly)).toBe('72% free · expires in 9h');
   });
 });

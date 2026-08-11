@@ -239,7 +239,8 @@ export function capacityWindowFromPlan(
   };
 }
 
-function planWindowLabel(windowMinutes: number): string {
+/** The one display name for a plan window length — every view reads this. */
+export function planWindowLabel(windowMinutes: number): string {
   if (windowMinutes % 10_080 === 0) {
     const weeks = windowMinutes / 10_080;
     return weeks === 1 ? 'Weekly window' : `${weeks}-week window`;

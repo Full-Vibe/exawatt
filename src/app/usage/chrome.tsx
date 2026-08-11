@@ -29,12 +29,17 @@ import {
   CONSUMPTION_CHROME as CHROME,
   FLUX_CSS as FLUX,
   consumptionAlpha as withAlpha,
+  expiryHatch,
   percent,
   pressureColorCss as pressureColor,
   projectionHatch,
   tokens,
   unknownHatchCss as unknownHatch,
 } from '@/components/consumption/flux';
+import {
+  floorTitle,
+  opportunityOf,
+} from '@/components/consumption/meter/meter-model';
 import type { DemoConsumption } from '@/components/consumption/demo-source';
 import type { LiveScanView } from '@/components/consumption/live-source';
 import type { WindowPace } from './derive';
@@ -266,6 +271,13 @@ export function DemoBanner({
  * The pacing bar: fill = used, hatch = projected by reset, hollow tick =
  * where even pace would put you now. The delta between fill edge and tick
  * IS the pace read.
+ *
+ * E9 (Direction B, operator pick 2026-08-11): when the shared opportunity
+ * trigger fires, the bar additionally draws the region that dies unused if
+ * the pace holds — projected landing point to the ceiling, in the +45°
+ * neutral expiry hatch behind a hairline boundary tick. Magnitude as area,
+ * never as color; a bar inside pace draws nothing extra. `/usage` bars
+ * only — the popover mini bars proved too small for this region to read.
  */
 export function PaceBar({
   pace,
@@ -281,6 +293,8 @@ export function PaceBar({
     0,
     Math.min(100 - usedW, pace.projectedPercent - w.usedPercent)
   );
+  const o = opportunityOf(pace);
+  const expiryStart = Math.min(100, usedW + projW);
   const overshoot = pace.projectedPercent > 100;
   return (
     <span
@@ -309,6 +323,28 @@ export function PaceBar({
             background: projectionHatch(withAlpha(color, 0.85)),
           }}
         />
+      )}
+      {/* expiry region — dies unused at this pace (opportunity states only) */}
+      {o && expiryStart < 99.5 && (
+        <>
+          <span
+            className="absolute top-0 h-full"
+            style={{
+              left: `${expiryStart}%`,
+              width: `${100 - expiryStart}%`,
+              background: expiryHatch(),
+            }}
+            title={floorTitle(o)}
+          />
+          <span
+            className="absolute top-0 h-full"
+            style={{
+              left: `calc(${expiryStart}% - 1px)`,
+              width: 1,
+              background: withAlpha(CHROME.text, 0.55),
+            }}
+          />
+        </>
       )}
       {/* even-pace marker — a reference tick, not a fill */}
       <span

@@ -1,105 +1,27 @@
 /**
- * Pace opportunity — trigger predicate + review fixtures (ENG-008 E9 design
- * options). Study-local on purpose: production (`meter-model`) adopts the
- * predicate only after the operator picks a direction.
+ * Pace opportunity — review fixtures (ENG-008 E9).
  *
- * THE PROBLEM. The settled escalation idiom (monochrome-until-hot,
- * silent-below-hot) was designed against the running-out goal. Its inverse —
- * "free allocation resets soon, use it or lose it" (operator, 2026-08-03:
- * "if I have some free allocation that will reset soon, I want to see
- * that... I want to use the maximum I can under the limits") — currently
- * renders as the CALMEST state on screen. Opportunity needs a voice, and it
- * must not borrow the alarm channel or the operator learns to ignore both.
+ * SUBJECT PARTLY SHIPPED (operator pick, 2026-08-11): Direction C (metric
+ * swap + coach) landed everywhere, plus Direction B's expiry geometry on the
+ * `/usage` pace bars only — B stays off the popover, where the study proved
+ * the region too small to read. The trigger predicate, thresholds, and the
+ * whole opportunity vocabulary now live in production `meter-model`
+ * (`opportunityOf` and friends); this file keeps only the five review
+ * fixtures the study switches between, so the specimens render the REAL
+ * production predicate and can never drift from it.
  *
- * THE TWO HONEST NUMBERS. For a window behind pace:
- *
- *   floor  = evenPace% − used%   — the share that expires unused EVEN IF burn
- *            returns to even pace this instant. Pure geometry over two
- *            reported facts (used%, elapsed%); no burn-rate noise. The
- *            trigger gates on this.
- *   course = 100 − projected%    — the share that expires at the CURRENT
- *            burn. This is the number the copy shows ("N% unused at this
- *            pace"); it moves with the burn estimate, so it never gates.
- *
- * The floor has a useful built-in property: a deficit of N pts requires at
- * least N% of the window to have elapsed, so a large floor can only exist
- * late in a window — reset proximity is partially structural.
- *
- * THRESHOLDS, with rationale from the corpus shapes:
- *
- *   floor ≥ 15 pts     3× the shared even band (±5). On a 5-hour window
- *                      that is ~45 minutes of full-rate work; on a weekly,
- *                      ~one day of allocation. Below it, "behind" is a pace
- *                      verdict, not an opportunity.
- *   reset ≥ 30m away   under half an hour nothing meaningful can still be
- *                      launched against the headroom; suppress the
- *                      last-minutes flicker.
- *   never hot/spent    the alarm states own their channel outright; a window
- *                      cannot warn and beckon at once.
- *
- *   closing tier       floor ≥ 30 pts, or reset within a quarter of the
- *                      window — the countdown becomes the leading fact. The
- *                      operator's verbatim case (weekly at 28% used, resets
- *                      9h → floor 67) sits deep in this tier. The real
- *                      recovered weekly at 75% used never triggers at all.
- *
- * THE STANDING FALSE POSITIVE, named rather than hidden: deliberate idle.
- * Overnight and on weekends every live window drifts behind even pace, so
- * the trigger holds for hours at a time and no threshold can distinguish
- * "sleeping" from "leaving money on the table". That is precisely why the
- * opportunity voice must be quiet enough to be furniture when ignored —
- * and why it may never share the alarm channel.
+ * The fixture shapes still carry the design rationale: the operator's
+ * verbatim case (weekly at 28% used, resets 9h → floor 67) sits deep in the
+ * closing tier; a 12-pt deficit stays a plain pace verdict; the dual-signal
+ * state proves the alarm always outranks the opportunity voice. The named
+ * standing false positive — deliberate idle — is documented on the predicate
+ * itself in `meter-model`.
  */
 import type {
   CapacityWindowView,
   ConsumptionSourceView,
 } from '@/components/consumption/model';
-import type { MeterReading } from '@/components/consumption/meter/meter-model';
-
-/* ------------------------------------------------------------------ */
-/* trigger predicate                                                   */
-/* ------------------------------------------------------------------ */
-
-export const OPPORTUNITY_MIN_FLOOR_PTS = 15;
-export const OPPORTUNITY_MIN_RUNWAY_MS = 30 * 60_000;
-export const OPPORTUNITY_CLOSING_FLOOR_PTS = 30;
-export const OPPORTUNITY_CLOSING_RESET_FRACTION = 0.25;
-
-export interface OpportunityRead {
-  /** 100 − used%: free headroom right now. */
-  freePts: number;
-  /** evenPace% − used%: expires unused even at even pace from now. */
-  floorPts: number;
-  /** 100 − projected%: expires unused at the current burn. */
-  coursePts: number;
-  /** 'open' speaks quietly; 'closing' leads with the countdown. */
-  tier: 'open' | 'closing';
-}
-
-/**
- * The trigger. Null means the window has no opportunity voice — either it is
- * inside pace, the deficit is under the floor, the reset is too close to act
- * on, or an alarm state owns the window outright.
- */
-export function opportunityOf(r: MeterReading): OpportunityRead | null {
-  if (r.state === 'hot' || r.state === 'exhausted') return null;
-  // floor ≥ 15 implies the shared verdict already reads 'behind' (band ±5);
-  // the explicit check keeps the predicate readable as one sentence.
-  if (r.pace !== 'behind') return null;
-  const floorPts = Math.round(r.evenPacePercent - r.usedPercent);
-  if (floorPts < OPPORTUNITY_MIN_FLOOR_PTS) return null;
-  if (r.msToReset < OPPORTUNITY_MIN_RUNWAY_MS) return null;
-  const windowMs = r.window.windowMinutes * 60_000;
-  const closing =
-    floorPts >= OPPORTUNITY_CLOSING_FLOOR_PTS ||
-    r.msToReset <= windowMs * OPPORTUNITY_CLOSING_RESET_FRACTION;
-  return {
-    freePts: Math.round(100 - r.usedPercent),
-    floorPts,
-    coursePts: Math.round(Math.max(0, 100 - r.projectedPercent)),
-    tier: closing ? 'closing' : 'open',
-  };
-}
+import type { ClosedCycle } from '@/components/consumption/meter/meter-model';
 
 /* ------------------------------------------------------------------ */
 /* review fixtures                                                     */
@@ -159,13 +81,6 @@ function claudeSilent(): ConsumptionSourceView {
     unreportedReason:
       'No plan, quota, or rate-limit record exists anywhere in Claude Code’s local files.',
   };
-}
-
-/** A cycle that already closed with headroom unspent — the expired state. */
-export interface ClosedCycle {
-  label: string;
-  unusedPercent: number;
-  agoMs: number;
 }
 
 export interface OpportunityFixtureState {

@@ -183,6 +183,23 @@ export function projectionHatch(color: string): string {
   return `repeating-linear-gradient(-45deg, ${color} 0 1.5px, transparent 1.5px 4.5px)`;
 }
 
+/**
+ * Expiry hatch (ENG-008 E9, Direction B) — the region of a pace bar that
+ * dies unused if the pace holds. The THIRD hatch meaning, and deliberately
+ * separable from the other two at small bar heights by three cues at once:
+ * opposite angle (+45° vs the −45° projection/unreported textures), neutral
+ * chrome ink (never the ramp, never the unknown grey), and a sparser 7px
+ * period so it reads lighter than both even where the angle is hard to see.
+ * Ships on the `/usage` pace bars only — at popover scale the region is too
+ * small to read (the E9 study's finding), so the mini bars never draw it.
+ */
+export function expiryHatch(alpha = 0.5): string {
+  return `repeating-linear-gradient(45deg, ${consumptionAlpha(
+    CONSUMPTION_CHROME.textDim,
+    alpha
+  )} 0 1px, transparent 1px 7px)`;
+}
+
 const COMPACT = new Intl.NumberFormat('en-US', {
   notation: 'compact',
   maximumFractionDigits: 1,

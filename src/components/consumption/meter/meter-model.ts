@@ -14,6 +14,16 @@
  * FLUX channel-ownership rule holds: nothing here is ever green, amber, or
  * fault-red.
  *
+ * The OPPORTUNITY voice (ENG-008 E9, operator-picked 2026-08-11 from the
+ * `/hud-gallery#pace-opportunity` design pass): the inverse goal — "free
+ * allocation resets soon, use it or lose it" — speaks through the SAME pace
+ * vocabulary below. When `opportunityOf` fires, `paceSentence`/`paceLabel`
+ * re-frame the deficit as free-to-spend, and one coach line may appear at the
+ * closing tier through `opportunityCoach`. Channel discipline is absolute:
+ * opportunity never borrows the alarm channel (no FLUX warm/hot, no color
+ * change, no motion), and a hot or spent window ALWAYS outranks it — the
+ * operator must never learn to ignore either voice because of the other.
+ *
  * Pure presentation data and pure functions: no React or DOM state. Theme
  * values stay as unresolved CSS-variable strings until the browser paints.
  */
@@ -149,6 +159,132 @@ export function readAllWindows(
 }
 
 /* ------------------------------------------------------------------ */
+/* opportunity — use it or lose it (E9)                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The two honest numbers, for a window behind pace:
+ *
+ *   floor  = evenPace% − used% — the share that expires unused EVEN IF burn
+ *            returns to even pace this instant. Pure geometry over two
+ *            reported facts (used%, elapsed%); no burn-rate noise. The
+ *            trigger gates on this. A floor of N pts requires N% of the
+ *            window to have elapsed, so a large floor can only exist late
+ *            in a window — reset proximity is partially structural.
+ *   course = 100 − projected% — the share that expires at the CURRENT burn.
+ *            This is the number the copy shows; it moves with the burn
+ *            estimate, so it never gates.
+ *
+ * Thresholds: 15 pts is 3× the shared even band (±5) — below it, "behind"
+ * is a pace verdict, not an opportunity. Under 30 minutes of runway nothing
+ * meaningful can still be launched. Hot and spent windows never speak here:
+ * the alarm states own their channel outright.
+ *
+ * The standing false positive, named rather than hidden: deliberate idle.
+ * Overnight every live window drifts behind even pace, so the trigger holds
+ * for hours and no threshold can distinguish "sleeping" from "leaving money
+ * on the table". That is why this voice must be quiet enough to be furniture
+ * when ignored — and why it may never share the alarm channel.
+ */
+export const OPPORTUNITY_MIN_FLOOR_PTS = 15;
+export const OPPORTUNITY_MIN_RUNWAY_MS = 30 * 60_000;
+export const OPPORTUNITY_CLOSING_FLOOR_PTS = 30;
+export const OPPORTUNITY_CLOSING_RESET_FRACTION = 0.25;
+
+export interface OpportunityRead {
+  /** 100 − used%: free headroom right now. */
+  freePts: number;
+  /** evenPace% − used%: expires unused even at even pace from now. */
+  floorPts: number;
+  /** 100 − projected%: expires unused at the current burn. */
+  coursePts: number;
+  /** 'open' speaks quietly; 'closing' leads with the countdown. */
+  tier: 'open' | 'closing';
+}
+
+/**
+ * The trigger. Null means the window has no opportunity voice — either it is
+ * inside pace, the deficit is under the floor, the reset is too close to act
+ * on, or an alarm state owns the window outright.
+ */
+export function opportunityOf(r: MeterReading): OpportunityRead | null {
+  if (r.state === 'hot' || r.state === 'exhausted') return null;
+  // floor ≥ 15 implies the shared verdict already reads 'behind' (band ±5);
+  // the explicit check keeps the predicate readable as one sentence.
+  if (r.pace !== 'behind') return null;
+  const floorPts = Math.round(r.evenPacePercent - r.usedPercent);
+  if (floorPts < OPPORTUNITY_MIN_FLOOR_PTS) return null;
+  if (r.msToReset < OPPORTUNITY_MIN_RUNWAY_MS) return null;
+  const windowMs = r.window.windowMinutes * 60_000;
+  const closing =
+    floorPts >= OPPORTUNITY_CLOSING_FLOOR_PTS ||
+    r.msToReset <= windowMs * OPPORTUNITY_CLOSING_RESET_FRACTION;
+  return {
+    freePts: Math.round(100 - r.usedPercent),
+    floorPts,
+    coursePts: Math.round(Math.max(0, 100 - r.projectedPercent)),
+    tier: closing ? 'closing' : 'open',
+  };
+}
+
+/** The floor claim, stated once as a tooltip so copy stays short. */
+export function floorTitle(o: OpportunityRead): string {
+  return `Even at even pace from now, at least ${o.floorPts}% of this window expires unused.`;
+}
+
+/** The coach line. Spoken only at the closing tier, and only when no alarm
+ *  outranks it — `opportunityCoach` below is the one arbiter. */
+export function coachLine(r: MeterReading, o: OpportunityRead): string {
+  return `${r.window.label} resets in ${duration(r.msToReset)} with ${o.freePts}% free — front-load the heavy runs.`;
+}
+
+/** Best closing opportunity across a set of readings (most free wins). */
+export function closingOpportunity(
+  readings: readonly MeterReading[]
+): { reading: MeterReading; o: OpportunityRead } | null {
+  let best: { reading: MeterReading; o: OpportunityRead } | null = null;
+  for (const reading of readings) {
+    const o = opportunityOf(reading);
+    if (!o || o.tier !== 'closing') continue;
+    if (!best || o.freePts > best.o.freePts) best = { reading, o };
+  }
+  return best;
+}
+
+/**
+ * The coach-slot arbiter, shared by the meter popover and `/usage` so the
+ * two placements can never disagree about who owns the slot: any hot or
+ * spent window silences the coach outright (HOT ALWAYS OUTRANKS — a window
+ * cannot warn and beckon at once), otherwise the best closing opportunity
+ * speaks one line in the quiet register.
+ */
+export function opportunityCoach(
+  readings: readonly MeterReading[]
+): string | null {
+  if (readings.some(r => r.state === 'hot' || r.state === 'exhausted')) {
+    return null;
+  }
+  const best = closingOpportunity(readings);
+  return best ? coachLine(best.reading, best.o) : null;
+}
+
+/** A cycle that already closed with headroom unspent — the expired state.
+ *  Rendered as one ledger caption on `/usage` only; the popover and the
+ *  geometry stay silent (the chip family has no memory, the bar is fresh). */
+export interface ClosedCycle {
+  label: string;
+  /** Share of the closed window that was still free at its last observation
+   *  near the reset — observed, never extrapolated. */
+  unusedPercent: number;
+  /** How long ago the cycle closed. */
+  agoMs: number;
+}
+
+export function ledgerLine(c: ClosedCycle): string {
+  return `${c.label} reset ${duration(c.agoMs)} ago · closed with ${c.unusedPercent}% unused`;
+}
+
+/* ------------------------------------------------------------------ */
 /* tone — monochrome until it matters                                  */
 /* ------------------------------------------------------------------ */
 
@@ -217,7 +353,19 @@ export function meterTone(reading: MeterReading | null): MeterTone {
 /* words                                                               */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The pace caption. AMENDED by E9 (the metric swap, Direction C): when the
+ * opportunity trigger fires, the deficit sentence becomes the free-to-spend
+ * framing — the line the operator already reads changes what it says, in
+ * both placements at once, because this is the one place it is written.
+ */
 export function paceSentence(r: MeterReading): string {
+  const o = opportunityOf(r);
+  if (o) {
+    return o.tier === 'closing'
+      ? `${o.freePts}% free · expires in ${duration(r.msToReset)}`
+      : `${o.coursePts}% will expire unused at this pace`;
+  }
   const pts = Math.abs(Math.round(r.paceDeltaPoints));
   if (r.pace === 'even') return 'on even pace for this window';
   return r.pace === 'ahead'
@@ -229,7 +377,8 @@ export function paceSentence(r: MeterReading): string {
  * The pace verdict as a short card label, with its display color. Same
  * vocabulary as `paceSentence` — "even pace", pts, and the one exhaustion
  * verb "spent" — so the title bar and the page can never phrase the same
- * window differently.
+ * window differently. AMENDED by E9 with the same metric swap: a firing
+ * opportunity reads free-to-spend, in the calm color (never the alarm's).
  */
 export function paceLabel(r: MeterReading): { text: string; color: string } {
   if (r.exhaustsBeforeReset && r.state !== 'exhausted') {
@@ -241,6 +390,8 @@ export function paceLabel(r: MeterReading): { text: string; color: string } {
   if (r.state === 'exhausted') {
     return { text: 'spent — holds until reset', color: FLUX.hot };
   }
+  const o = opportunityOf(r);
+  if (o) return { text: `${o.freePts}% free to spend`, color: FLUX.calm };
   const pts = Math.abs(Math.round(r.paceDeltaPoints));
   if (r.pace === 'even') return { text: 'on even pace', color: FLUX.calm };
   if (r.pace === 'ahead') {
