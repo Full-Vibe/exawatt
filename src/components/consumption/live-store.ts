@@ -265,27 +265,58 @@ function buildState(
   };
 }
 
+let pulling = false;
+let pullAgain = false;
+
+/**
+ * Single-flight, monotonic pulls. Two guards close a real race observed on
+ * the first scan: the boot pull can resolve AFTER an updated-triggered pull
+ * (the scanner streams progressive revisions), and applying it late would
+ * overwrite real samples with the earlier, emptier snapshot.
+ * - only one pull runs at a time; a request during flight queues one rerun;
+ * - a resolved snapshot older than the applied one is dropped, never applied.
+ */
 async function refetch(): Promise<void> {
   const api = bridge();
   if (!api) return;
+  if (pulling) {
+    pullAgain = true;
+    return;
+  }
+  pulling = true;
   try {
-    const pty = window.electron?.pty;
-    const workspace = window.electron?.workspace;
-    const [snapshot, ptys, closed, layout] = await Promise.all([
-      api.snapshot({ sinceMs: Date.now() - LIVE_WINDOW_DAYS * DAY_MS }),
-      pty?.list().catch(() => []) ?? Promise.resolve([]),
-      pty?.closedSessions().catch(() => []) ?? Promise.resolve([]),
-      workspace?.load().catch(() => null) ?? Promise.resolve(null),
-    ]);
-    lastRevision = Math.max(lastRevision, snapshot.scanState.revision);
-    const identities = assembleIdentities(snapshot, ptys, closed, layout);
-    const projects: LiveProjectRecord[] = extractLocalWorkspaceProjects(
-      layout
-    ).map(p => ({ dir: p.id, name: p.label, ...(p.color ? { color: p.color } : {}) }));
-    cached = { snapshot, identities, projects };
-    setState(buildState(cached, 'ready'));
+    do {
+      pullAgain = false;
+      const pty = window.electron?.pty;
+      const workspace = window.electron?.workspace;
+      const [snapshot, ptys, closed, layout] = await Promise.all([
+        api.snapshot({ sinceMs: Date.now() - LIVE_WINDOW_DAYS * DAY_MS }),
+        pty?.list().catch(() => []) ?? Promise.resolve([]),
+        pty?.closedSessions().catch(() => []) ?? Promise.resolve([]),
+        workspace?.load().catch(() => null) ?? Promise.resolve(null),
+      ]);
+      lastRevision = Math.max(lastRevision, snapshot.scanState.revision);
+      if (
+        cached &&
+        snapshot.scanState.revision < cached.snapshot.scanState.revision
+      ) {
+        continue; // stale pull — keep the newer applied state
+      }
+      const identities = assembleIdentities(snapshot, ptys, closed, layout);
+      const projects: LiveProjectRecord[] = extractLocalWorkspaceProjects(
+        layout
+      ).map(p => ({
+        dir: p.id,
+        name: p.label,
+        ...(p.color ? { color: p.color } : {}),
+      }));
+      cached = { snapshot, identities, projects };
+      setState(buildState(cached, 'ready'));
+    } while (pullAgain);
   } catch {
     // A failed pull keeps the last honest state; the next revision retries.
+  } finally {
+    pulling = false;
   }
 }
 
@@ -345,6 +376,8 @@ export function resetLiveConsumptionForTests(): void {
   started = false;
   lastRevision = -1;
   pendingState = null;
+  pulling = false;
+  pullAgain = false;
 }
 
 let pendingState: LiveConsumptionState | null = null;

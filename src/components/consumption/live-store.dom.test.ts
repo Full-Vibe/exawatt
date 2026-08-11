@@ -179,6 +179,34 @@ describe('live store', () => {
     off();
   });
 
+  it('never applies a snapshot older than the one on screen', async () => {
+    const newer = readySnapshot();
+    newer.scanState = { ...newer.scanState, revision: 5 };
+    const fake = installFakeBridge(newer);
+    const off = subscribeLiveConsumption(() => {});
+    await vi.waitFor(() => expect(getLiveConsumption().status).toBe('ready'));
+    expect(getLiveConsumption().revision).toBe(5);
+    const applied = getLiveConsumption();
+
+    // a regressed server response (older revision) must be dropped
+    const older = emptyLiveConsumptionSnapshot(NOW);
+    older.scanState = { ...older.scanState, revision: 3 };
+    (
+      window as unknown as {
+        electron: { consumption: { snapshot: () => Promise<unknown> } };
+      }
+    ).electron.consumption.snapshot = async () => {
+      fake.snapshotCalls += 1;
+      return older;
+    };
+    fake.pushUpdate({ revision: 6, scanState: older.scanState });
+    await vi.waitFor(() => expect(fake.snapshotCalls).toBe(2));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(getLiveConsumption()).toBe(applied);
+    expect(getLiveConsumption().revision).toBe(5);
+    off();
+  });
+
   it('refetches only when the revision advances', async () => {
     const fake = installFakeBridge(readySnapshot());
     const off = subscribeLiveConsumption(() => {});
