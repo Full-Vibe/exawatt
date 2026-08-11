@@ -2,8 +2,8 @@
 # 0036 Open client, permissive compatibility spec, private cloud
 
 Date: 2026-08-10
-Status: accepted — implementation is ENG-030 OS2–OS6; license publication is
-subject to a pre-publication legal review
+Status: accepted — implementation is ENG-030 OS2–OS6; amended 2026-08-11:
+counsel review is trigger-deferred, not a publication gate (see Amendment)
 
 ## Context
 
@@ -104,12 +104,22 @@ including covered modifications operated for users over a network. A modified
 distribution may not present itself as official Exawatt, use Exawatt's signing
 identity or update channel, or consume Exawatt-hosted services by default.
 
-Before publication, qualified counsel must review the license selection,
-trademark policy, dependency compatibility, asset provenance, and the precise
-boundary between covered public implementation and an independent private
-service. That review may correct legal mechanics without reopening the product
-goal: open distribution and contribution, mandatory sharing of implementation
-forks, permissive adoption of the compatibility contract, private cloud value.
+Counsel review of the license selection, trademark policy, and CLA is
+**trigger-deferred, not a publication gate** (amended by the operator,
+2026-08-11 — "too early"). Publication proceeds on standard instruments:
+unmodified OSI license texts, an off-the-shelf license-grant CLA with the
+perpetual-OSI commitment, template-derived trademark policy, and mechanical
+dependency-license and asset-provenance scans. Qualified counsel is engaged
+when a trigger fires: the first commercial license or paid tier, an
+enterprise customer requiring legal assurance, a live dispute, or fundraise
+diligence. A future review may correct legal mechanics without reopening the
+product goal: open distribution and contribution, mandatory sharing of
+implementation forks, permissive adoption of the compatibility contract,
+private cloud value. The AGPL-reach question is contained by ownership: the
+operator holds copyright in the original work and the CLA grants cover
+contributions, so license obligations bind licensees, never Exawatt's own
+private use. A low-cost USPTO trademark filing for the Exawatt mark is worth
+doing before broad visibility; it is an option, not a gate.
 
 ### 4. Contribution rights
 
