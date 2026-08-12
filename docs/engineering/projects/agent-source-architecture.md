@@ -204,6 +204,110 @@ without making it a second product boundary.
   catalog or effective model has a named source or an explicit unknown, and a
   supported-but-unconfigured provider is visibly different from a broken one.
 
+## S4 — the Grok Build adapter
+
+Status: shaped 2026-08-12, execution-ready. Operator-pulled during the Grok
+Bot category wave (2026-08-11) and sequenced for immediate execution so
+source-plurality has a fourth, timely proof at the ENG-030 launch moment.
+Integration facts below were verified against the harness's own repository
+docs on 2026-08-12; full recon with sources in
+`docs/research/market/2026-08-12-agent-fleet-market-and-grok-wave.md` §5.
+
+**What it is, and what it is not.** Grok Build is xAI's open-source
+(Apache-2.0, `github.com/xai-org/grok-build`) terminal coding agent — a
+Rust/Ratatui interactive TUI, launchable per directory, v1.0.0 on 2026-08-07,
+accessible on SuperGrok $30/mo, X Premium+ $40/mo, or `XAI_API_KEY`
+pay-as-you-go. It is NOT Grok Bot (the $300/mo cloud "AI teammates" product),
+which has no public API/CLI/SDK and is not a candidate Agent Source. Its
+integration surfaces deliberately clone Claude Code's, which is why the recon
+verdict is easy-to-medium — the cheapest adapter this item has evaluated.
+
+**Why now, beyond the wave.** Grok-the-model is already launchable through S2
+`opencode` (official xAI `/connect` OAuth since May 2026, plus OpenRouter), so
+S4 adds the native harness — its TUI, subagents (documented ceiling: 8
+concurrent, depth 1), plan mode, and on-disk record — not model access. That
+also means the composer's Grok story is honest in two tiers: available today
+via opencode, native harness when S4 lands.
+
+Verified integration facts:
+
+- **Launch**: binary `grok`; `grok --cwd <dir> -m <model> "<initial prompt>"`;
+  `--resume <id>` / `-c` for continuation. Interactive TUI over PTY exactly
+  like the existing three sources; hosting model unchanged.
+- **Auth is source-owned**: browser OAuth into `~/.grok/auth.json` (0600,
+  auto-refresh, hot-reloaded) or `grok login --device-auth`; `XAI_API_KEY`
+  fallback. Exawatt never reads, stores, or refreshes the token — the
+  "no local provider token is stored by Exawatt" criterion holds unchanged,
+  and decision `0027` is untouched because this is a native harness, not
+  provider-credential injection.
+- **State home**: `~/.grok/`, overridable per-launch with `GROK_HOME` —
+  per-Session isolation of injected configuration is trivial and preferred,
+  mirroring how ENG-023 keeps injected Claude settings in Exawatt's own state
+  directory.
+- **Status truth**: hooks are deliberately Claude Code-compatible —
+  `Notification` with `permission_prompt` / `idle_prompt` / `task_complete`
+  matchers, blocking `Stop`/`SubagentStop` with Claude-style decision JSON,
+  `PreToolUse`, and `type: "http"` hooks. The ENG-023 harness event channel's
+  vocabulary maps nearly one-to-one; payloads are camelCase (Claude's are
+  snake_case) and tool names differ (`run_terminal_command` vs `Bash`), so
+  the adapter owns a small translation table, not a new mechanism. Delegation
+  is observable (`SubagentStop`), so the capability contract declares push.
+- **Consumption**: sessions persist at
+  `~/.grok/sessions/<url-encoded-cwd>/<uuidv7>/` with `signals.json` (token
+  usage, tool/turn counters), `summary.json` (model, timestamps, counts), and
+  `updates.jsonl` (typed ACP event stream). ENG-008's scanner gains a source
+  whose token totals need no transcript parsing. Path derivation must
+  reproduce the harness's URL-encoding of the cwd exactly (255-byte
+  slug+hash fallback case exists).
+- **Headless/eval**: `grok -p --output-format streaming-messages-json` is
+  byte-compatible with Claude Code's stream-json, and `grok agent` exposes a
+  standard ACP JSON-RPC server — recorded as a future integration seam under
+  the same open question S2 carries for `opencode serve`, not S4 scope.
+
+Risks and unknowns to verify on a real install, before the adapter is called
+done:
+
+- model-catalog enumeration is undocumented — probe `grok inspect` JSON and
+  the ACP `initialize` response; fall back to observed configuration under
+  the same provenance rules as Claude's offline fallback
+- Grok Build has its own worktree/fork machinery (`~/.grok/worktrees`,
+  `--worktree`, `/fork`) that could fight Exawatt-managed worktrees — launch
+  must not trigger it implicitly, and the eval asserts the Session works in
+  the Exawatt-provided directory
+- it auto-loads `~/.claude/settings.json` hooks for compatibility — verify
+  whether a user's own Claude hooks cross-fire inside Exawatt-launched Grok
+  sessions and, if so, disable via `[compat]` in the injected `GROK_HOME`
+  config with the same inspectable-disclosure rule ENG-023 applies to
+  injected Claude settings
+- per-tier rate limits are undocumented; Consumption must not infer plan
+  headroom (existing rule, restated because this vendor publishes none)
+- trust history is part of the source's truthful description: the July 2026
+  repo-exfiltration incident (fixed, then open-sourced as damage control) is
+  why the adapter surfaces the harness's own privacy switches in the
+  capability description rather than hiding them
+- xAI's written ToS position on third-party orchestrator use of subscription
+  OAuth is unpublished (behaviorally tolerated via official opencode
+  integration and Superconductor); the April-2026 Anthropic precedent says
+  treat subscription-backed access as revocable — the registry's degraded
+  states must already tell that story honestly
+
+Acceptance (S2's bar, restated for this source):
+
+- Grok Build appears in Settings and the ⌘T catalog through the same
+  generated declaration and registry contract; installed/not-installed/
+  sign-in-required/incompatible states derive from normalized facts
+- launch composes `GROK_HOME`-isolated configuration, the chosen model, and
+  the Exawatt worktree; the Session reaches first prompt with TUI fidelity
+- status lights ride hook events, not TUI scraping, wherever a hook exists;
+  a needs-you gate (permission prompt) reads identically before and after
+  tab focus, per the D4 rule
+- `signals.json`-derived Consumption rows land under the source with
+  provenance, absent-never-zero
+- dedicated Electron eval in the S2 pattern covers launch, status truth, and
+  the injected-configuration disclosure
+- operator credential prerequisite recorded: a SuperGrok plan or API key on
+  the dogfood machine is needed before the eval can run live
+
 ## Demand evidence
 
 - 2026-08-10 (triage, feedback row `b813c1b0-0673-41e1-8e13-1e3905ee736d`,
