@@ -576,6 +576,93 @@ describe('AttentionMonitor', () => {
       goQuietAfterWork('a');
       expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
     });
+
+    /**
+     * The idle nudge of a delegating parent (operator report, 2026-08-13).
+     *
+     * Measured against Claude Code 2.1.231 launched exactly as Exawatt
+     * launches it: `UserPromptSubmit` +1.2s, `SubagentStart` +3.5s, `Stop`
+     * +4.5s, a BARE BEL at +64.5s — 60.0s after the parent's own turn ended —
+     * and `SubagentStop` for that same child only at +135.8s. Every other
+     * raise path already deferred to the reported record; this one did not, so
+     * Sessions with demonstrably busy teams went amber.
+     */
+    describe('the idle bell of a delegating parent', () => {
+      const report = (state: {
+        children: number;
+        blockedOn?: string | null;
+      }) => ({
+        ownTurn: 'available' as const,
+        blockedOn: state.blockedOn ?? null,
+        children: Array.from({ length: state.children }, () => ({})),
+      });
+
+      it('does not raise needs-you while delegated children are running', () => {
+        monitor.setReportedTurnSource(() => report({ children: 1 }));
+        add('a');
+        data('a', 'x'.repeat(500));
+        monitor.noteHarnessTurnEnd('a'); // the parent's own `Stop`
+        clock += 60_000; // the harness nudges its idle prompt
+        data('a', BELL);
+        expect(monitor.get('a')).toBeNull();
+      });
+
+      it('still raises needs-you when nothing was delegated', () => {
+        monitor.setReportedTurnSource(() => report({ children: 0 }));
+        add('a');
+        data('a', 'x'.repeat(500));
+        monitor.noteHarnessTurnEnd('a');
+        clock += 60_000;
+        data('a', BELL);
+        expect(monitor.get('a')).toEqual({ kind: 'bell', since: clock });
+      });
+
+      it('still raises needs-you for a gate held while children run', () => {
+        // The case the suppression must not cost: a parent parked on a
+        // permission decision it cannot answer itself, with its team still
+        // working. The reported gate is the guaranteed-human channel.
+        monitor.setReportedTurnSource(() =>
+          report({ children: 1, blockedOn: 'permission' })
+        );
+        add('a');
+        data('a', 'x'.repeat(500));
+        clock += 60_000;
+        data('a', BELL);
+        expect(monitor.get('a')).toEqual({ kind: 'bell', since: clock });
+      });
+
+      it('raises the reported gate itself while children run', () => {
+        // Belt and braces on the same seam from the other direction: the D4
+        // gate path never consulted delegation and must not start.
+        const gate = { children: 1, blockedOn: null as string | null };
+        monitor.setReportedTurnSource(() => report(gate));
+        add('a');
+        gate.blockedOn = 'question';
+        monitor.noteHarnessBlocked('a');
+        expect(monitor.get('a')).toEqual({ kind: 'blocked', since: clock });
+      });
+
+      it('returns to ordinary bell behavior once the team finishes', () => {
+        const team = { children: 1 };
+        monitor.setReportedTurnSource(() => report(team));
+        add('a');
+        data('a', 'x'.repeat(500));
+        monitor.noteHarnessTurnEnd('a');
+        clock += 60_000;
+        data('a', BELL);
+        expect(monitor.get('a')).toBeNull();
+
+        // the last child ends: the withheld result raises as it always did …
+        team.children = 0;
+        monitor.noteHarnessTurnEnd('a');
+        expect(monitor.get('a')).toEqual({ kind: 'turn-end', since: clock });
+
+        // … and the next bell upgrades that result to a human gate again
+        clock += 60_000;
+        data('a', BELL);
+        expect(monitor.get('a')).toEqual({ kind: 'bell', since: clock });
+      });
+    });
   });
 });
 

@@ -8,7 +8,11 @@ import type { PtySessionManager } from './session-manager';
  * Two signal classes:
  *   bell      — explicit: a REAL BEL (0x07) or a terminal notification
  *               sequence (OSC 9, OSC 777). BELs that merely terminate OSC
- *               sequences (window-title updates end in BEL) do NOT count.
+ *               sequences (window-title updates end in BEL) do NOT count, and
+ *               neither does a bell from a Session whose harness reports live
+ *               delegated children and no gate — that one is the harness
+ *               nudging its own idle prompt while the team works
+ *               (`teamWorkingWithoutGate`).
  *   turn-end  — inferred, harness sessions only: a work burst (≥ minBurst
  *               raw bytes) followed by output quiescence (≥ quietMs) is a
  *               turn boundary — the agent stopped and is likely waiting.
@@ -325,6 +329,36 @@ export class AttentionMonitor extends EventEmitter {
   }
 
   /**
+   * The team is still working and the harness reports no gate of its own, so
+   * an ambient bell from this Session is not a human gate (ENG-015 S1).
+   *
+   * The BEL path was the last raise path that never consulted the reported
+   * record — `noteHarnessTurnEnd` defers to `delegatedBusy`, the quiescence
+   * sweep and the stale-report reclaim both defer to `reportedTurnOpen`, and
+   * this one asked nothing. That gap is the whole operator-visible defect:
+   * measured against Claude Code 2.1.231 in an Exawatt PTY, a parent that
+   * delegates emits `Stop` at +4.5s with its child still live, and rings a
+   * BARE BEL exactly 60s later while the child runs on to +135.8s. That bell
+   * is the harness nudging its own idle prompt; the `idle_prompt` Notification
+   * is deliberately unsubscribed (it would light the whole fleet), so the BEL
+   * is the only channel the nudge has, and it lit "needs you" on Sessions whose
+   * team was demonstrably busy. A parent whose children are still working has
+   * produced nothing for the operator to answer: the honest light is `active`
+   * (ENG-023, D40), and the delegation dots already distinguish it from a plain
+   * working Agent.
+   *
+   * `blockedOn` is the seam, and the reason this is a suppression rather than a
+   * blanket mute. A reported gate is the guaranteed-human channel (decision
+   * `0018`), so a parent genuinely waiting on a person WHILE its children run
+   * still rings through — that case is the one this must not cost.
+   */
+  private teamWorkingWithoutGate(id: string): boolean {
+    const report = this.reportedTurn(id);
+    if (!report) return false;
+    return !report.blockedOn && report.children.length > 0;
+  }
+
+  /**
    * Hand a reported-open turn back to inference once it has gone silent with
    * nothing to explain it (ENG-023 D4).
    *
@@ -487,7 +521,14 @@ export class AttentionMonitor extends EventEmitter {
       if (sinceResize >= RESIZE_GRACE_MS) this.setWorking(id, true);
       this.burstBytes.set(id, (this.burstBytes.get(id) ?? 0) + data.length);
     }
-    if (bell && !this.isWatched(id)) this.raise(id, 'bell');
+    // A bell from a Session whose team is still working is ambient, not a
+    // gate. Suppressed at the RAISE, not at any surface: main decides which
+    // signal survives and the renderer decides which one is navigable, and the
+    // one time this liveness rule was written on both sides of the IPC it
+    // drifted within a milestone (S1.1's post-landing review).
+    if (bell && !this.isWatched(id) && !this.teamWorkingWithoutGate(id)) {
+      this.raise(id, 'bell');
+    }
   }
 
   /** turn-boundary detection; public so tests can drive time explicitly */

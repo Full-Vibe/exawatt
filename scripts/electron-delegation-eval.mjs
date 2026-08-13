@@ -104,6 +104,36 @@ try {
         (await dots.count()) === 1 && (await statusOf()) === 'working'
       );
 
+      // --- the idle nudge of a delegating parent (ENG-015 S1) -----------
+      // Claude Code rings a BARE BEL 60s after its own Stop, and its
+      // `idle_prompt` Notification is deliberately unsubscribed, so that bell
+      // is the only channel the nudge has. Measured on 2.1.231 launched
+      // exactly as Exawatt launches it: Stop +4.5s, BEL +64.5s, and the child
+      // still running until +135.8s. The bell was the one raise path that
+      // never consulted the reported record, so the operator saw amber
+      // "needs you" on Sessions whose team was demonstrably busy.
+      await send('bell');
+      await page.waitForTimeout(1_500);
+      const afterBell = await page.evaluate(async () =>
+        ((await window.electron?.pty?.list()) ?? []).map(s => s.attention)
+      );
+      check(
+        'an idle bell while a child runs raises no needs-you',
+        afterBell.every(entry => entry?.kind !== 'bell')
+      );
+      check(
+        'the delegating Session still reads as working after the bell',
+        (await statusOf()) === 'working'
+      );
+      check(
+        'no Session paints the needs-you marker while its team works',
+        (await page.locator('[data-attention]').count()) === 0
+      );
+      await page.screenshot({
+        path: join(root, 'delegation-idle-bell.png'),
+        fullPage: false,
+      });
+
       // --- the Sessions tile details the team as a labeled rail (D3a) ---
       await page.keyboard.press('Control+Meta+2');
       await page.locator('[data-expose-tile]').first().waitFor();

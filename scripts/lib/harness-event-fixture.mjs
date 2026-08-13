@@ -21,6 +21,7 @@ import { join } from 'node:path';
  *   idle                 Notification[idle_prompt] — deliberately NOT a gate
  *   batch                PostToolBatch — the granted-permission release
  *   say <text>           plain stdout, no hook — pure terminal bytes
+ *   bell                 a BARE BEL, no hook — Claude Code's idle-prompt nudge
  */
 export function createHarnessFixture(prefix) {
   const root = mkdtempSync(join(tmpdir(), `${prefix}-`));
@@ -130,6 +131,10 @@ process.stdin.on('data', async chunk => {
       await post({ hook_event_name: 'PostToolBatch', tool_calls: [] });
     else if (command === 'child-stop')
       await post({ hook_event_name: 'Stop', agent_id: rest });
+    // The idle nudge, byte for byte. Claude Code 2.1.231's \`idle_prompt\`
+    // Notification is deliberately unsubscribed, so 60s after its own Stop it
+    // reaches Exawatt as nothing but this: one bare BEL, no hook at all.
+    else if (command === 'bell') process.stdout.write('\\x07');
     else if (command === 'say') process.stdout.write(rest + '\\n');
   }
 });

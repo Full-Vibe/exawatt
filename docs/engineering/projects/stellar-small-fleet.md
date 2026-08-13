@@ -35,7 +35,13 @@ Scope:
 
 - main-process attention monitor over the PTY stream, two signal classes:
   - explicit: BEL (`\x07`) and terminal notify sequences (OSC 9, OSC 777)
-    from any session — these are what harnesses and TUIs already emit
+    from any session — these are what harnesses and TUIs already emit.
+    AMENDED 2026-08-13: a bell from a Session whose harness reports live
+    delegated children and no gate of its own does NOT raise. That bell is
+    the harness nudging its own idle prompt while the team works; the honest
+    light is `active` (ENG-023, D40). A reported operator gate is the seam —
+    a parent genuinely waiting on a person while its children run still rings
+    (decision `0018`'s guaranteed-human channel)
   - inferred (harness sessions only, not shells): a work burst followed by
     output quiescence = turn boundary → "may need you". Thresholds
     env-tunable; expect dogfood tuning. Shells stay bell-only (quiet is
@@ -641,6 +647,78 @@ Implementation record (landed 2026-07-10):
   full Spatial desktop/mobile/reduced-motion/low-power battery remains green.
 
 ## Findings log
+
+- 2026-08-13 (S1, landed — feedback row `7d814294` closed): **the amber was
+  Claude Code's 60-second idle bell, and the BEL was the one raise path that
+  never consulted the reported record.**
+
+  - **What actually raised it.** Not inference. Every inferred path already
+    defers to ENG-023's delegation truth — `noteHarnessTurnEnd` returns on
+    `delegatedBusy`, and both the quiescence sweep and D4's stale-report
+    reclaim return on `reportedTurnOpen`, which counts live children as an
+    explanation for silence. `onData`'s BEL branch asked nothing at all and
+    raised `kind: 'bell'`, which `attentionNeedsOperator` classes as a human
+    gate. The Session's glyph stayed `working` (delegation outranks), so the
+    tab painted delegation dots and an amber light at once — exactly the
+    operator's screenshot, where `Evaluate Exawatt …` and `Position Exawatt …`
+    each carry three child dots beside the amber marker.
+
+  - **The evidence, from the real harness.** A probe ran Claude Code 2.1.231
+    in a pty with Exawatt's own injected hook settings pointed at a logging
+    receiver, in Exawatt's own PTY environment (`TERM_PROGRAM=Exawatt`), and
+    recorded both channels. One delegating turn:
+
+    ```
+    +1.2s   UserPromptSubmit                     turn-start
+    +3.5s   PreToolUse[Agent] · SubagentStart    child ad9b288a… starts
+    +4.5s   Stop                                 the PARENT's turn ends
+    +64.5s  \x07                                 a BARE BEL, 60.0s after Stop
+    +135.8s SubagentStop  ad9b288a…              the child finally ends
+    ```
+
+    The Agent tool returns before its child does, so `Stop` lands with the
+    team still working — and the bell rings squarely inside the child's life.
+    No `Notification` arrives with it: `idle_prompt` is deliberately
+    unsubscribed (it would light the whole fleet), so the BEL is the ONLY
+    channel that nudge has, and it was being read as a human gate.
+
+  - **The rule.** `teamWorkingWithoutGate` — the harness reports children and
+    no `blockedOn`. Suppressed at the RAISE, in main, not at any surface: main
+    decides which signal survives and the renderer decides which one is
+    navigable, and the one time this liveness rule was written on both sides
+    of the IPC it drifted within a milestone (S1.1's post-landing review). No
+    sixth signal: the honest state is D40 `active`, and D3a's delegation dots
+    already tell a delegating parent apart from a plain working Agent.
+
+  - **What the rule deliberately does not cost.** `blockedOn` is the seam.
+    A parent parked on a permission decision or a question WHILE its children
+    run still raises, because a reported gate is decision `0018`'s
+    guaranteed-human channel; so does a bell from a Session with no reported
+    delegation channel at all (Codex, OpenCode), where inference is the only
+    evidence that exists. Both are pinned.
+
+  - **Pinned by.** Five unit cases in `attention-monitor.test.ts` (quiet
+    parent with live children → no raise; no children → raises as before; a
+    gate held while children run → raises; the D4 gate path itself → raises;
+    the team finishing → ordinary bell behavior returns), and three new checks
+    in `eval:electron:delegation` driving a bare BEL through the fixture
+    harness after a `Stop` with a live child. Sabotage-verified in both
+    layers: reverting the guard fails two unit cases and the two eval checks
+    that read the light.
+
+  - **Left open, deliberately.** (1) The same capture shows `PostToolBatch`
+    firing INSIDE a child (`agent_id` set) and normalizing to
+    `unblocked: permission` for the parent — a child's resolved tool batch can
+    release a gate that belongs to the parent. Gating it on `insideChild` is
+    not a safe one-liner, because a child's own permission gate is reported to
+    the parent by design (`claude-hooks.ts`) and would then never be released.
+    Unmeasured under YOLO permissions; recorded, not fixed. (2) Both
+    `eval:electron:delegation` and `eval:electron:turn-truth` still fail at
+    their FINAL step, the Codex "reports nothing" control, on
+    `getByLabel('Agent Source')` — the pre-D49 Select that now lives in a
+    `hidden` Customize container no code ever opens. That is BUG-014(2)
+    verbatim, reproduced identically on a clean `origin/master` tree before
+    this change; every delegation and turn assertion before it is green.
 
 - 2026-08-13 (triage, feedback row `7d814294-fe23-4c28-b586-12f634d7aad6`,
   operator on dogfood 0.1.9 `0cb5eba`, screenshot attached): **Claude Code
