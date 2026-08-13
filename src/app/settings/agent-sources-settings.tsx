@@ -401,9 +401,11 @@ function SourceDetail({
       ? 'Project-scoped per-model catalog'
       : source.capabilities.effortSelection === 'configured-value'
         ? 'Observed configured value'
-        : source.capabilities.effortSelection === 'gateway'
-          ? 'Gateway-advertised'
-          : 'Scenario-defined';
+        : source.capabilities.effortSelection === 'source-owned'
+          ? `Choose in ${source.label}`
+          : source.capabilities.effortSelection === 'gateway'
+            ? 'Gateway-advertised'
+            : 'Scenario-defined';
   return (
     <article className="min-w-0 px-5 py-5 sm:px-7 sm:py-7 xl:px-9">
       <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">

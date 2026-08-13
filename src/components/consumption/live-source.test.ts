@@ -444,10 +444,11 @@ describe('the empty corpus — a fresh machine, absent-never-zero', () => {
     expect(gridRows(view)).toHaveLength(0);
     expect(allPaces(view)).toHaveLength(0);
     expect(readMeter(view.sources, view.nowMs).reading).toBeNull();
-    // both sources exist as absent channels, never 0% windows
+    // every declared source exists as an absent channel, never a 0% window
     expect(view.sources.map(s => s.harness).sort()).toEqual([
       'claude-code',
       'codex',
+      'grok',
     ]);
     for (const s of view.sources) expect(s.windows).toHaveLength(0);
   });

@@ -160,6 +160,8 @@ export function voltaicConsumption(): DemoConsumption {
       'claude-code': [
         0.52, 0.66, 0.74, 0.6, 0.86, 0.71, 0.47, 0.79, 0.9, 0.67, 0.58, 0.63,
       ],
+      // No Grok Build fixture corpus: absent, not a fabricated series.
+      grok: [],
     },
     burnRates: { 'codex-primary': 8.1, 'codex-weekly': 0.78 },
     claudePlanNote:

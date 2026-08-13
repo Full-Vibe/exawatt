@@ -5,5 +5,6 @@ export {
   expandHome,
   defaultClaudeConsumptionRoot,
   defaultCodexConsumptionRoot,
+  defaultGrokConsumptionRoot,
 } from './consumption/node-fs';
 export type { NodeConsumptionFsOptions } from './consumption/node-fs';

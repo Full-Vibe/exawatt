@@ -98,6 +98,7 @@ export function demoInitiativeFor(agent: DemoFleetAgent): DemoInitiative {
 const HARNESS_BY_SOURCE: Record<DemoFleetAgent['source'], PtyHarness> = {
   'claude-code': 'claude',
   codex: 'codex',
+  grok: 'grok',
 };
 
 export function demoHarness(agent: DemoFleetAgent): PtyHarness {

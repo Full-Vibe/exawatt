@@ -69,8 +69,26 @@ export {
 } from './rollup';
 export type { ProjectResolver, RollupOptions, RollupResult } from './rollup';
 export {
+  parseGrokUpdates,
+  emptyGrokContext,
+  grokUsage,
+} from './parse-grok';
+export type {
+  GrokParseContext,
+  GrokParseResult,
+  GrokSessionContext,
+} from './parse-grok';
+export {
+  GROK_MAX_DIRNAME_BYTES,
+  GROK_SESSION_FILES,
+  decodeGrokCwdDirname,
+  encodeGrokCwdDirname,
+  grokUrlEncode,
+} from './grok-paths';
+export {
   ClaudeConsumptionAdapter,
   CodexConsumptionAdapter,
+  GrokConsumptionAdapter,
   sessionIdFromClaudePath,
   sessionIdFromCodexPath,
 } from './adapters';

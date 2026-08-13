@@ -45,6 +45,7 @@ export type Harness = ConsumptionSourceId;
 export const HARNESS_LABEL: Record<Harness, string> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
+  grok: 'Grok Build',
 };
 
 /**

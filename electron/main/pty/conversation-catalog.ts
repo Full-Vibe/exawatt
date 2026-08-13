@@ -11,6 +11,11 @@ import {
   recordHostedCallHttpFailure,
   recordHostedCallTransportFailure,
 } from '../analytics-bridge';
+import {
+  GROK_SESSION_FILES,
+  decodeGrokCwdDirname,
+  encodeGrokCwdDirname,
+} from '@exawatt/core';
 
 const execFileAsync = promisify(execFile);
 
@@ -828,7 +833,7 @@ export class ClaudeConversationAdapter implements ConversationCatalogAdapter {
  * when known so the catalog can reconcile both records without duplication.
  */
 export class ProjectSessionConversationAdapter implements ConversationCatalogAdapter {
-  readonly harnesses = ['claude', 'codex', 'opencode'] as const;
+  readonly harnesses = ['claude', 'codex', 'opencode', 'grok'] as const;
 
   constructor(private readonly listSessions: () => ClosedSessionEntry[]) {}
 
@@ -839,7 +844,8 @@ export class ProjectSessionConversationAdapter implements ConversationCatalogAda
       if (
         entry.harness !== 'claude' &&
         entry.harness !== 'codex' &&
-        entry.harness !== 'opencode'
+        entry.harness !== 'opencode' &&
+        entry.harness !== 'grok'
       ) {
         continue;
       }
@@ -994,6 +1000,210 @@ export class OpenCodeConversationAdapter implements ConversationCatalogAdapter {
   }
 }
 
+/** Session rows read from Grok Build's own `summary.json` files. */
+export interface GrokSessionSummary {
+  id: string;
+  cwd: string;
+  title: string | null;
+  createdAt: number;
+  updatedAt: number;
+  hidden: boolean;
+  /** `fork`, `subagent`, `worktree`, … — absent for an operator's own session. */
+  sessionKind: string | null;
+}
+
+export function parseGrokSessionSummary(
+  raw: string,
+  fallbackId: string,
+  fallbackCwd: string | null
+): GrokSessionSummary | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const record = parsed as {
+    info?: { id?: unknown; cwd?: unknown };
+    session_summary?: unknown;
+    generated_title?: unknown;
+    created_at?: unknown;
+    updated_at?: unknown;
+    last_active_at?: unknown;
+    hidden?: unknown;
+    session_kind?: unknown;
+  };
+  const id =
+    typeof record.info?.id === 'string' && record.info.id
+      ? record.info.id
+      : fallbackId;
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(id)) return null;
+  const cwd =
+    typeof record.info?.cwd === 'string' && record.info.cwd
+      ? record.info.cwd
+      : fallbackCwd;
+  if (!cwd) return null;
+  const createdAt = Date.parse(String(record.created_at ?? ''));
+  const activeAt = Date.parse(String(record.last_active_at ?? ''));
+  const updatedAt = Date.parse(String(record.updated_at ?? ''));
+  const title =
+    usableNativeTitle(record.generated_title) ??
+    usableNativeTitle(record.session_summary);
+  return {
+    id,
+    cwd,
+    title,
+    createdAt: Number.isFinite(createdAt) ? createdAt : 0,
+    updatedAt: Number.isFinite(activeAt)
+      ? activeAt
+      : Number.isFinite(updatedAt)
+        ? updatedAt
+        : 0,
+    // `hidden` is the source's own visibility override; its own pickers honor
+    // it, so Exawatt does too rather than surfacing rows Grok Build hides.
+    hidden: record.hidden === true,
+    sessionKind:
+      typeof record.session_kind === 'string' && record.session_kind
+        ? record.session_kind
+        : null,
+  };
+}
+
+/**
+ * Grok Build conversations, read straight from its own session directories.
+ *
+ * No subprocess: the harness writes `summary.json` per session under
+ * `<grok home>/sessions/<encoded cwd>/<uuid>/`, so the catalog is a directory
+ * read rather than a CLI round trip. The cwd component is derived with the
+ * harness's own encoding, and the slug+hash form (a cwd whose encoded name
+ * would exceed 255 bytes) is resolved through the `.cwd` file the harness
+ * writes for exactly that purpose — the encoded name is never recomputed
+ * from a hash Exawatt owns.
+ *
+ * Subagent and fork sessions are excluded: they are the source's internal
+ * children, not conversations the operator started, and offering them as
+ * resume targets would put another Agent's transcript in a tab.
+ */
+export class GrokConversationAdapter implements ConversationCatalogAdapter {
+  readonly harnesses = ['grok'] as const;
+
+  constructor(
+    private readonly sessionsRoot = grokSessionsRoot(),
+    private readonly maxSessions = 200
+  ) {}
+
+  async list(projectDir: string): Promise<ConversationDraft[]> {
+    const scope = await ProjectDirectoryScope.create(projectDir);
+    const directories = new Set<string>();
+    for (const root of [projectDir, ...scope.roots]) {
+      const encoded = encodeGrokCwdDirname(root);
+      if (encoded) directories.add(path.join(this.sessionsRoot, encoded));
+    }
+    // Long-cwd (slug+hash) directories cannot be derived, only recognized, so
+    // the corpus is enumerated once and matched through each directory's own
+    // `.cwd` record. Bounded by the same list the derived path uses.
+    for (const entry of await this.longFormDirectories()) {
+      if (await scope.launchDirectory(entry.cwd)) directories.add(entry.path);
+    }
+    const rows: ConversationDraft[] = [];
+    for (const directory of directories) {
+      for (const summary of await this.readSummaries(directory)) {
+        if (summary.hidden || summary.sessionKind) continue;
+        const launchDirectory = await scope.launchDirectory(summary.cwd);
+        if (!launchDirectory) continue;
+        rows.push({
+          id: summary.id,
+          harness: 'grok',
+          cwd: launchDirectory,
+          startedAt: summary.createdAt,
+          updatedAt: summary.updatedAt,
+          title: summary.title ?? 'Grok Build session',
+          description: null,
+          titleSource: summary.title ? 'native' : 'fallback',
+          needsSummary: false,
+          providerSessionId: summary.id,
+          continuation: { kind: 'provider' },
+          fingerprint: `grok:${summary.updatedAt}`,
+          summaryInput: [],
+          providerIdentity: summary.id,
+          correlationKey: null,
+        });
+        if (rows.length >= this.maxSessions) return rows;
+      }
+    }
+    return rows;
+  }
+
+  private async longFormDirectories(): Promise<
+    Array<{ path: string; cwd: string }>
+  > {
+    let entries: string[];
+    try {
+      entries = await fs.promises.readdir(this.sessionsRoot);
+    } catch {
+      return [];
+    }
+    const out: Array<{ path: string; cwd: string }> = [];
+    for (const entry of entries.slice(0, 5_000)) {
+      if (decodeGrokCwdDirname(entry)) continue;
+      const directory = path.join(this.sessionsRoot, entry);
+      let contents: string;
+      try {
+        contents = await fs.promises.readFile(
+          path.join(directory, GROK_SESSION_FILES.cwd),
+          'utf8'
+        );
+      } catch {
+        continue;
+      }
+      const cwd = decodeGrokCwdDirname(entry, contents);
+      if (cwd) out.push({ path: directory, cwd });
+    }
+    return out;
+  }
+
+  private async readSummaries(directory: string): Promise<GrokSessionSummary[]> {
+    let entries: string[];
+    try {
+      entries = await fs.promises.readdir(directory);
+    } catch {
+      return [];
+    }
+    const fallbackCwd = decodeGrokCwdDirname(
+      path.basename(directory),
+      await fs.promises
+        .readFile(path.join(directory, GROK_SESSION_FILES.cwd), 'utf8')
+        .catch(() => null)
+    );
+    const rows = await Promise.all(
+      entries.slice(0, this.maxSessions).map(async entry => {
+        const file = path.join(directory, entry, GROK_SESSION_FILES.summary);
+        let raw: string;
+        try {
+          raw = await fs.promises.readFile(file, 'utf8');
+        } catch {
+          return null;
+        }
+        if (raw.length > MAX_METADATA_BYTES * 4) return null;
+        return parseGrokSessionSummary(raw, entry, fallbackCwd);
+      })
+    );
+    return rows
+      .filter((row): row is GrokSessionSummary => row !== null)
+      .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+  }
+}
+
+/** `GROK_HOME` is the harness's own override; Exawatt reads it, never sets it. */
+export function grokSessionsRoot(
+  env: NodeJS.ProcessEnv = process.env
+): string {
+  if (env.EXAWATT_GROK_SESSIONS_ROOT) return env.EXAWATT_GROK_SESSIONS_ROOT;
+  if (env.GROK_HOME) return path.join(env.GROK_HOME, 'sessions');
+  return path.join(os.homedir(), '.grok', 'sessions');
+}
+
 export interface ConversationCatalogOptions {
   adapters?: ConversationCatalogAdapter[];
   projectSessions?: () => ClosedSessionEntry[];
@@ -1028,6 +1238,7 @@ export class RecentConversationCatalog {
       new ClaudeConversationAdapter(),
       new CodexConversationAdapter(),
       new OpenCodeConversationAdapter(options.openCodeShell),
+      new GrokConversationAdapter(),
       ...(options.projectSessions
         ? [new ProjectSessionConversationAdapter(options.projectSessions)]
         : []),

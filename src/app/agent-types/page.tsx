@@ -3,6 +3,8 @@ import { Shapes } from 'lucide-react';
 import { PreviewSurfaceShell } from '@/components/readiness';
 import { HarnessGlyph } from '@/components/workspace/harness-icons';
 import { demoAgentTypeRoster, type AgentTypeProfile } from './model';
+import type { ConsumptionSourceId } from '@exawatt/core';
+import type { PtyHarness } from '@/types/electron';
 
 // Preview surface (ENG-026 N5 / ENG-028 T1). noindex for the same stealth
 // reason as /usage: reachable by URL for demos, not discoverable.
@@ -11,10 +13,18 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-const SOURCE_LABEL = { 'claude-code': 'Claude Code', codex: 'Codex' } as const;
-const SOURCE_GLYPH = { 'claude-code': 'claude', codex: 'codex' } as const;
+const SOURCE_LABEL = {
+  'claude-code': 'Claude Code',
+  codex: 'Codex',
+  grok: 'Grok Build',
+} as const satisfies Record<ConsumptionSourceId, string>;
+const SOURCE_GLYPH = {
+  'claude-code': 'claude',
+  codex: 'codex',
+  grok: 'grok',
+} as const satisfies Record<ConsumptionSourceId, PtyHarness>;
 
-function EngineChip({ source }: { source: 'claude-code' | 'codex' }) {
+function EngineChip({ source }: { source: ConsumptionSourceId }) {
   return (
     <span className="inline-flex items-center gap-1.5 rounded border border-border px-1.5 py-0.5 font-mono text-chrome-micro text-muted-foreground">
       <HarnessGlyph harness={SOURCE_GLYPH[source]} size={10} />

@@ -530,6 +530,142 @@ export function parseOpencodeModelCatalog(
   };
 }
 
+/**
+ * Grok Build's authentication banner — the first line of `grok models`.
+ *
+ * Verified against grok 1.0.3: the command prints exactly one of these five
+ * lines, then a blank line, then `Default model: <id>`, a blank line, and
+ * `Available models:` followed by one `  * <id> (default)` / `  - <id>` row
+ * per model. There is no `--json`, no per-model description, and no effort
+ * enumeration on this surface (efforts exist only over the ACP
+ * `x.ai/models/list` response, which a PTY launch never opens), so the
+ * catalog is model IDs and a default — nothing is invented to fill the gap.
+ */
+export function parseGrokAuthBanner(raw: string): {
+  authenticated: boolean;
+  identity: string;
+  detail: string;
+} | null {
+  const line = raw
+    .split(/\r?\n/)
+    .map(value => value.trim())
+    .find(Boolean);
+  if (!line) return null;
+  if (/^You are not authenticated\./i.test(line)) {
+    return {
+      authenticated: false,
+      identity: 'Not signed in',
+      detail: 'Grok Build reports no active credential.',
+    };
+  }
+  if (/^You are using XAI_API_KEY\./i.test(line)) {
+    return {
+      authenticated: true,
+      identity: 'XAI_API_KEY',
+      detail:
+        'Grok Build reads the key from this shell. Exawatt never receives or stores it.',
+    };
+  }
+  const loggedIn = line.match(/^You are logged in with (.+?)\.$/i);
+  if (loggedIn) {
+    return {
+      authenticated: true,
+      identity: loggedIn[1].trim() || 'Grok account',
+      detail:
+        'Signed in through Grok Build. The browser OAuth token stays in its own state directory.',
+    };
+  }
+  const byok = line.match(/^Model '(.+?)' is using its own API key\.$/i);
+  if (byok) {
+    return {
+      authenticated: true,
+      identity: `${byok[1]} · own API key`,
+      detail:
+        'A custom model in the Grok Build configuration carries its own credential.',
+    };
+  }
+  if (/^You are authenticated via deployment key\./i.test(line)) {
+    return {
+      authenticated: true,
+      identity: 'Deployment key',
+      detail: 'Grok Build is authenticated by an enterprise deployment key.',
+    };
+  }
+  return null;
+}
+
+/** Parse the exact `grok models` listing. Rows outside the
+ *  `Available models:` block are ignored so the auth banner and any future
+ *  preamble can never become a model row. */
+export function parseGrokModelCatalog(raw: string): AgentModelCatalog {
+  const lines = raw.split(/\r?\n/);
+  const defaultLine = lines.find(line => /^Default model:\s*\S/.test(line));
+  const reportedDefault = defaultLine
+    ? defaultLine.replace(/^Default model:\s*/, '').trim()
+    : '';
+  const listIndex = lines.findIndex(line =>
+    /^Available models:\s*$/.test(line.trim())
+  );
+  const models: AgentModelOption[] = [];
+  let defaultModel: string | null = isValidAgentModel(reportedDefault)
+    ? reportedDefault
+    : null;
+  if (listIndex !== -1) {
+    for (
+      let index = listIndex + 1;
+      index < lines.length && models.length < 500;
+      index += 1
+    ) {
+      const row = lines[index].trim();
+      if (!row) continue;
+      const match = row.match(/^[*-]\s+(\S+)(\s+\(default\))?$/);
+      if (!match) break;
+      const id = match[1];
+      if (!isValidAgentModel(id)) continue;
+      if (models.some(model => model.id === id)) continue;
+      if (match[2]) defaultModel = id;
+      models.push({
+        id,
+        label: formatAgentModelLabel(id),
+        description: 'Reported by the installed Grok Build CLI.',
+        // Grok accepts `--reasoning-effort`, but the per-model option set is
+        // not published to any interface a PTY launch can read. An empty
+        // list renders as absent; a guessed list would be a launch policy.
+        defaultEffort: null,
+        efforts: [],
+      });
+    }
+  }
+  if (defaultModel && !models.some(model => model.id === defaultModel)) {
+    models.unshift({
+      id: defaultModel,
+      label: formatAgentModelLabel(defaultModel),
+      description: 'Reported as the default by the installed Grok Build CLI.',
+      defaultEffort: null,
+      efforts: [],
+    });
+  }
+  const effective = models.find(model => model.id === defaultModel);
+  return {
+    harness: 'grok',
+    effectiveModel: defaultModel,
+    effectiveModelLabel: effective?.label ?? 'Source default',
+    effectiveModelSource: defaultModel ? 'account-default' : 'unavailable',
+    effectiveEffort: null,
+    effectiveEffortLabel: 'Source default',
+    effectiveEffortSource: 'unavailable',
+    effortLocked: false,
+    models,
+    catalogMode: models.length > 0 ? 'live-catalog' : 'unavailable',
+    catalogProvenance:
+      models.length > 0
+        ? 'Installed Grok Build CLI · grok models'
+        : 'Grok Build model discovery unavailable',
+    observedAt: Date.now(),
+    selectionAction: null,
+  };
+}
+
 interface ClaudeSettings {
   model?: unknown;
   effortLevel?: unknown;
@@ -1082,6 +1218,34 @@ async function listOpencodeModels(
     : readOpencodeModelCatalog(cwd, shell);
 }
 
+/**
+ * `grok models` starts the agent backend to answer, so it is slower than a
+ * flag parse and gets the same generous deadline OpenCode's catalog does.
+ * Measured at ~2 s unauthenticated on grok 1.0.3.
+ */
+export async function readGrokModelCatalog(
+  cwd: string,
+  shell: string
+): Promise<AgentModelCatalog> {
+  let stdout = '';
+  try {
+    const executable = testHarnessExecutable('grok');
+    const catalogCommand = executable
+      ? `${shellQuote(executable)} models`
+      : 'grok models';
+    const result = await execWithDeadline(shell, catalogCommand, {
+      cwd,
+      timeout: 20_000,
+      maxBuffer: 2 * 1024 * 1024,
+    });
+    stdout = result.stdout;
+  } catch {
+    // A failed probe leaves the catalog explicitly unavailable. No row is
+    // invented, and no credential is read to compensate.
+  }
+  return parseGrokModelCatalog(stdout);
+}
+
 async function probeAgentModels(
   harness: Exclude<PtyHarness, 'shell'>,
   cwd: string,
@@ -1093,6 +1257,9 @@ async function probeAgentModels(
   }
   if (harness === 'opencode') {
     return listOpencodeModels(cwd, shell, environment);
+  }
+  if (harness === 'grok') {
+    return readGrokModelCatalog(cwd, shell);
   }
   return listClaudeModels(cwd, shell, environment);
 }

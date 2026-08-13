@@ -135,6 +135,39 @@ export const OPENCODE_MODEL_CATALOG: AgentModelCatalog = {
   catalogProvenance: 'Installed OpenCode CLI',
 };
 
+/** Grok Build reports model IDs and a default, and enumerates NO effort
+ *  options on any surface a PTY launch can read (ENG-003 S4). */
+export const GROK_MODEL_CATALOG: AgentModelCatalog = {
+  harness: 'grok',
+  effectiveModel: 'grok-4.5',
+  effectiveModelLabel: 'Grok 4.5',
+  effectiveModelSource: 'account-default',
+  effectiveEffort: null,
+  effectiveEffortLabel: 'Source default',
+  effectiveEffortSource: 'unavailable',
+  effortLocked: false,
+  models: [
+    {
+      id: 'grok-4.5',
+      label: 'Grok 4.5',
+      description: 'Reported by the installed Grok Build CLI.',
+      defaultEffort: null,
+      efforts: [],
+    },
+    {
+      id: 'grok-4.5-fast',
+      label: 'Grok 4.5 Fast',
+      description: 'Reported by the installed Grok Build CLI.',
+      defaultEffort: null,
+      efforts: [],
+    },
+  ],
+  catalogMode: 'live-catalog',
+  catalogProvenance: 'Installed Grok Build CLI · grok models',
+  observedAt: 1,
+  selectionAction: null,
+};
+
 export function installComposerTestHarness() {
   const recordAgentSourceUse = vi.fn();
   const setAgentPermissionMode = vi.fn();
@@ -164,7 +197,9 @@ export function installComposerTestHarness() {
             ? CODEX_MODEL_CATALOG
             : harness === 'opencode'
               ? OPENCODE_MODEL_CATALOG
-              : CLAUDE_MODEL_CATALOG
+              : harness === 'grok'
+                ? GROK_MODEL_CATALOG
+                : CLAUDE_MODEL_CATALOG
         ),
         listRecentConversations: vi.fn().mockResolvedValue([]),
       },

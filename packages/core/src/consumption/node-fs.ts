@@ -126,3 +126,19 @@ export function defaultCodexConsumptionRoot(
 ): string {
   return env.EXAWATT_CODEX_SESSIONS_ROOT ?? join(homedir(), '.codex', 'sessions');
 }
+
+/**
+ * Grok Build's corpus root.
+ *
+ * `GROK_HOME` is the harness's OWN override and is honored here, so an
+ * operator who relocated their Grok state still sees their consumption.
+ * Exawatt never SETS it: relocating the home moves auth, config, folder
+ * trust, and the whole session corpus with it (ENG-003 S4).
+ */
+export function defaultGrokConsumptionRoot(
+  env: Record<string, string | undefined> = process.env
+): string {
+  if (env.EXAWATT_GROK_SESSIONS_ROOT) return env.EXAWATT_GROK_SESSIONS_ROOT;
+  if (env.GROK_HOME) return join(env.GROK_HOME, 'sessions');
+  return join(homedir(), '.grok', 'sessions');
+}

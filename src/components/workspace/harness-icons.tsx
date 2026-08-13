@@ -84,6 +84,30 @@ export function OpenCodeIcon({ size = 12 }: { size?: number }) {
   );
 }
 
+/** xAI's slashed-square mark, reduced to the same 24×24 grid the other
+ *  source glyphs use. https://x.ai */
+export function GrokIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg
+      data-slot="harness-glyph"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      aria-hidden="true"
+    >
+      <path
+        fill="currentColor"
+        d="M3.4 20.6 14.9 9.1l2.6 2.6L6 23.2H3.4v-2.6Z"
+        opacity="0.38"
+      />
+      <path
+        fill="currentColor"
+        d="M4.6 14.2 16.4.8h3.9L6.9 18.1l-2.3-3.9ZM15.4 20.9V14l4.6-4.6v11.5h-4.6Z"
+      />
+    </svg>
+  );
+}
+
 /** Official OpenClaw pixel lobster, reduced from the source's 16×16 grid.
  *  https://github.com/openclaw/openclaw/blob/main/docs/assets/pixel-lobster.svg */
 export function OpenClawIcon({ size = 16 }: { size?: number }) {
@@ -127,5 +151,6 @@ export function HarnessGlyph({
   if (harness === 'claude') return <ClaudeIcon size={size} />;
   if (harness === 'codex') return <OpenAIIcon size={size} />;
   if (harness === 'opencode') return <OpenCodeIcon size={size} />;
+  if (harness === 'grok') return <GrokIcon size={size} />;
   return null;
 }

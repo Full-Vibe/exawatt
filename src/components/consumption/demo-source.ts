@@ -1177,6 +1177,9 @@ export function buildDemoConsumption(
         codex: interventionStats(
           interventionRows.filter(r => r.harness === 'codex')
         ),
+        grok: interventionStats(
+          interventionRows.filter(r => r.harness === 'grok')
+        ),
       },
     },
   };
@@ -1199,6 +1202,9 @@ export function demoConsumption(): DemoConsumption {
     burn: {
       codex: [0.31, 0.44, 0.38, 0.52, 0.61, 0.55, 0.72, 0.66, 0.58, 0.74, 0.81, 0.69],
       'claude-code': [0.48, 0.62, 0.71, 0.58, 0.83, 0.69, 0.44, 0.76, 0.88, 0.64, 0.55, 0.61],
+      // No Grok Build fixture corpus: an empty series keeps the source ABSENT
+      // from the demo readout rather than inventing a shape for it.
+      grok: [],
     },
     burnRates: { 'codex-primary': 9.4, 'codex-weekly': 0.92 },
     claudePlanNote:
@@ -1246,6 +1252,14 @@ function emptyWorkspace(nowMs: number): ConsumptionRollup {
     delegationBlindSources: [],
   };
 }
+
+/**
+ * Grok Build's absence of local plan data, verified against grok 1.0.3: it
+ * writes no rate-limit or quota record, and xAI publishes no per-tier limits.
+ * Absent, never zero.
+ */
+export const GROK_PLAN_NOTE =
+  'Grok Build keeps no plan, quota, or rate-limit record in its local files, and xAI publishes no per-tier limits.';
 
 /** Per-source capacity view, assembled from the same samples and plan windows. */
 function buildSources(
@@ -1311,8 +1325,11 @@ function buildSources(
       observedTokens5h,
       observedSessions: new Set(mine.map(s => s.providerSessionId)).size,
       observedDelegatedShare:
-        source === 'codex'
-          ? null // Codex writes no delegation record: unavailable, not zero
+        source === 'codex' || source === 'grok'
+          ? // Neither writes a delegation record a usage sample can carry:
+            // unavailable, not zero. Grok's subagents live in their own
+            // session directories, outside the ledger's parent/child shape.
+            null
           : observedTokens5h > 0
             ? delegatedTokens / observedTokens5h
             : 0,
@@ -1333,5 +1350,10 @@ function buildSources(
       inputs.burnRates,
       inputs.claudePlanNote
     ),
+    // Every declared source is a channel, present even when it has nothing
+    // to say — the same rule Claude Code's window-less row already follows.
+    // A missing row would read as "Exawatt does not know about Grok Build";
+    // an empty one reads as "Grok Build reported nothing", which is the fact.
+    build('grok', 'Grok Build', inputs.burn.grok, inputs.burnRates, GROK_PLAN_NOTE),
   ];
 }

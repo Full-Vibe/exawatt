@@ -116,6 +116,7 @@ export const LIVE_WORKSPACE_MENU_COMMANDS: ReadonlySet<string> = new Set([
   'launch-claude',
   'launch-codex',
   'launch-opencode',
+  'launch-grok',
   'open-project',
   'launch-shell',
   'reopen-closed-tab',
@@ -340,6 +341,12 @@ export function ShortcutProvider({ children }: ShortcutProviderProps) {
           break;
         case 'launch-opencode':
           requestAgentComposer('opencode');
+          if (!window.location.pathname.startsWith('/workspace')) {
+            navigateCommandSurface('/workspace');
+          }
+          break;
+        case 'launch-grok':
+          requestAgentComposer('grok');
           if (!window.location.pathname.startsWith('/workspace')) {
             navigateCommandSurface('/workspace');
           }

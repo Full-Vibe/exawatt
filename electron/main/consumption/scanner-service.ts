@@ -33,6 +33,7 @@ import * as fsNode from 'fs';
 import {
   ClaudeConsumptionAdapter,
   CodexConsumptionAdapter,
+  GrokConsumptionAdapter,
   LIVE_CONSUMPTION_SNAPSHOT_VERSION,
   WindowObservationAccumulator,
   addDiagnostics,
@@ -62,6 +63,7 @@ import {
   NodeConsumptionFileSystem,
   defaultClaudeConsumptionRoot,
   defaultCodexConsumptionRoot,
+  defaultGrokConsumptionRoot,
 } from '@exawatt/core/server';
 import type { ConsumptionScannerLike } from '../consumption-ipc';
 import {
@@ -83,6 +85,7 @@ export interface ConsumptionScannerServiceOptions {
   stateDir: string;
   claudeRoot?: string;
   codexRoot?: string;
+  grokRoot?: string;
   fileSystem?: ConsumptionFileSystem;
   /** Live read of the durable-Session ↔ provider-conversation index. */
   identities?: () => ProviderIdentityRecord[];
@@ -110,6 +113,7 @@ export interface ConsumptionScannerServiceOptions {
 const HARNESS_TO_SOURCE: Record<string, ConsumptionSourceId> = {
   claude: 'claude-code',
   codex: 'codex',
+  grok: 'grok',
 };
 
 interface AppendBuffer {
@@ -130,6 +134,7 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
   private readonly fileSystem: ConsumptionFileSystem;
   private readonly claudeRoot: string;
   private readonly codexRoot: string;
+  private readonly grokRoot: string;
   private readonly now: () => number;
   private readonly watchEnabled: boolean;
   private readonly debounceMs: number;
@@ -176,6 +181,7 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
       options.fileSystem ?? new NodeConsumptionFileSystem({ maxFiles: 50_000 });
     this.claudeRoot = options.claudeRoot ?? defaultClaudeConsumptionRoot();
     this.codexRoot = options.codexRoot ?? defaultCodexConsumptionRoot();
+    this.grokRoot = options.grokRoot ?? defaultGrokConsumptionRoot();
     this.now = options.now ?? Date.now;
     this.watchEnabled = options.watch ?? true;
     this.debounceMs = options.debounceMs ?? 10_000;
@@ -305,7 +311,7 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
 
   private startWatching(): void {
     if (!this.watchEnabled || this.disposed) return;
-    for (const root of [this.claudeRoot, this.codexRoot]) {
+    for (const root of [this.claudeRoot, this.codexRoot, this.grokRoot]) {
       try {
         const watcher = fsNode.watch(root, { recursive: true }, () => {
           this.onCorpusChanged();
@@ -467,6 +473,7 @@ export class ConsumptionScannerService implements ConsumptionScannerLike {
     const adapters: ConsumptionSourceAdapter[] = [
       new ClaudeConsumptionAdapter(this.claudeRoot),
       new CodexConsumptionAdapter(this.codexRoot),
+      new GrokConsumptionAdapter(this.grokRoot),
     ];
 
     let aborted = false;

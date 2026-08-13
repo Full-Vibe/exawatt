@@ -20,6 +20,12 @@ import {
   type CodexSessionContext,
 } from './parse-codex';
 import {
+  emptyGrokContext,
+  parseGrokUpdates,
+  type GrokSessionContext,
+} from './parse-grok';
+import { GROK_SESSION_FILES, decodeGrokCwdDirname } from './grok-paths';
+import {
   DEFAULT_SCAN_CHUNK_BYTES,
   type ConsumptionFileRef,
   type ConsumptionFileSystem,
@@ -40,11 +46,13 @@ import {
 
 function selectFiles(
   files: ConsumptionFileRef[],
-  options: ConsumptionScanOptions
+  options: ConsumptionScanOptions,
+  accept: (path: string) => boolean = path => path.endsWith('.jsonl')
 ): ConsumptionFileRef[] {
-  // Both harnesses write sidecar files (`sessions-index.json`,
-  // `agent-*.meta.json`) into the same trees. Only transcripts are parsed here.
-  let selected = files.filter(file => file.path.endsWith('.jsonl'));
+  // Every harness writes sidecar files (`sessions-index.json`,
+  // `agent-*.meta.json`, `chat_history.jsonl`) into the same trees. Only the
+  // stream that carries usage is parsed here.
+  let selected = files.filter(file => accept(file.path));
   if (options.sinceMs) {
     selected = selected.filter(file => file.mtimeMs >= options.sinceMs!);
   }
@@ -492,6 +500,155 @@ export class CodexConsumptionAdapter implements ConsumptionSourceAdapter {
     }
 
     return finishPass(pass, true, options.sink !== undefined);
+  }
+}
+
+const DEFAULT_GROK_ROOT = '~/.grok/sessions';
+
+/** `<root>/<encoded cwd>/<session uuid>/updates.jsonl` — the only file in a
+ *  Grok session directory that carries billed usage. */
+function isGrokUpdatesFile(path: string): boolean {
+  return path.endsWith(`${GROK_SESSION_FILES.updates}`)
+    ? (path.split(/[/\\]/).pop() ?? '') === GROK_SESSION_FILES.updates
+    : false;
+}
+
+function grokPathParts(
+  path: string
+): { sessionId: string; cwdDirname: string; directory: string } | null {
+  const segments = path.split(/[/\\]/);
+  if (segments.length < 4) return null;
+  const sessionId = segments[segments.length - 2];
+  const cwdDirname = segments[segments.length - 3];
+  if (!sessionId || !cwdDirname) return null;
+  return {
+    sessionId,
+    cwdDirname,
+    directory: segments.slice(0, segments.length - 2).join('/'),
+  };
+}
+
+/**
+ * Grok Build.
+ *
+ * Reads `<grok home>/sessions/<encoded cwd>/<uuid>/updates.jsonl`. The launch
+ * directory is recovered from the directory NAME, and for the harness's
+ * slug+hash form (encoded cwd over 255 bytes) from the `.cwd` metadata file
+ * the harness writes beside the sessions for exactly this purpose — never
+ * from a hash Exawatt recomputes, which could silently disagree with the one
+ * the source used. A directory whose cwd cannot be recovered still yields
+ * samples; they simply carry `cwd: null` and are counted in
+ * `recordsWithoutCwd` rather than being attributed to a guessed Project.
+ */
+export class GrokConsumptionAdapter implements ConsumptionSourceAdapter {
+  readonly source = 'grok' as const;
+
+  constructor(readonly root: string = DEFAULT_GROK_ROOT) {}
+
+  private cwdCache = new Map<string, string | null>();
+
+  private async launchDirectory(
+    fs: ConsumptionFileSystem,
+    parts: { cwdDirname: string; directory: string }
+  ): Promise<string | null> {
+    const cached = this.cwdCache.get(parts.directory);
+    if (cached !== undefined) return cached;
+    let resolved = decodeGrokCwdDirname(parts.cwdDirname);
+    if (!resolved) {
+      const chunk = await fs.readFrom(
+        `${parts.directory}/${GROK_SESSION_FILES.cwd}`,
+        0,
+        4096
+      );
+      resolved = decodeGrokCwdDirname(parts.cwdDirname, chunk?.text ?? null);
+    }
+    this.cwdCache.set(parts.directory, resolved);
+    return resolved;
+  }
+
+  async scan(
+    fs: ConsumptionFileSystem,
+    options: ConsumptionScanOptions = {}
+  ): Promise<ConsumptionSourceScan> {
+    const pass = emptyPass();
+    const files = selectFiles(
+      await fs.listFiles(this.root),
+      options,
+      isGrokUpdatesFile
+    );
+    let bytesReadTotal = 0;
+
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+      if (options.signal?.aborted) {
+        pass.aborted = true;
+        carryUnreached(pass, files, index, options);
+        break;
+      }
+      pass.diagnostics.filesSeen += 1;
+      const previous = options.watermarks?.[file.path];
+      const { fromByte, skip, carry } = resumePoint(file, previous);
+      if (skip) {
+        pass.watermarks[file.path] = previous!;
+        continue;
+      }
+      const parts = grokPathParts(file.path);
+      const fallbackCwd = parts ? await this.launchDirectory(fs, parts) : null;
+      let context =
+        (carry as GrokSessionContext | undefined) ?? emptyGrokContext();
+
+      const read = await readCompleteLines(
+        fs,
+        file,
+        fromByte,
+        options,
+        lines => {
+          const parsed = parseGrokUpdates(lines, {
+            sourceFile: file.path,
+            fallbackSessionId: parts?.sessionId,
+            fallbackCwd,
+            session: context,
+          });
+          context = parsed.session;
+          emitSamples(pass, options, file, parsed.samples);
+          mergeInto(pass.diagnostics, parsed.diagnostics);
+        }
+      );
+      if (read.unreadable) {
+        pass.diagnostics.filesUnreadable += 1;
+        if (previous) pass.watermarks[file.path] = previous;
+        continue;
+      }
+      pass.diagnostics.bytesRead += read.bytesRead;
+      bytesReadTotal += read.bytesRead;
+      if (read.truncatedFinal) pass.diagnostics.truncatedFinalLines += 1;
+      const mark = watermarkFor(
+        file,
+        read.consumedBytes,
+        read.aborted,
+        context
+      );
+      pass.watermarks[file.path] = mark;
+      options.sink?.fileScanned?.(file, mark);
+      if (read.aborted) {
+        pass.aborted = true;
+        carryUnreached(pass, files, index + 1, options);
+        break;
+      }
+      await notifyFile(
+        this.source,
+        options,
+        file,
+        index + 1,
+        files.length,
+        bytesReadTotal
+      );
+    }
+
+    // `collapseWindows: false` — Grok Build reports no plan window at all, and
+    // collapsing an empty list would publish a `planWindowsEmitted: 0` that
+    // reads as "none observed" rather than "this source cannot say".
+    return finishPass(pass, false, options.sink !== undefined);
   }
 }
 

@@ -71,6 +71,11 @@ export interface HarnessLaunchDescriptor {
   eventChannel?: HarnessEventChannelBinding;
   launchAgent?: HarnessLaunchAgentBinding;
   permissionFlags: (mode: AgentPermissionMode) => string;
+  /** Pin the launch directory on the argv when the source accepts one. The PTY
+   *  is already spawned there; a source that also takes the directory as an
+   *  argument gets it, so a login shell that `cd`s in an rc file cannot move
+   *  the Session (and the source's own cwd-keyed record) somewhere else. */
+  cwdInvocation?: (invocation: string, cwd: string) => string;
   modelInvocation: (invocation: string, quotedModel: string) => string;
   effortInvocation: (invocation: string, effort: string) => string;
   initialTaskInvocation: (invocation: string, quotedTask: string) => string;
@@ -239,6 +244,56 @@ const descriptors = {
     resumeInvocation: (invocation, sessionId) =>
       `${invocation} -s ${sessionId}`,
     freshInvocation: invocation => invocation,
+  },
+  grok: {
+    id: 'grok',
+    source: {
+      ...agentSourceDeclaration('grok'),
+      executable: 'grok',
+      versionArgs: ['--version'],
+      // `grok models` is the only non-interactive command that reports auth
+      // state; it prints a banner line naming the credential source before
+      // the catalog. `grok login` with no subcommand starts the browser flow.
+      authStatusArgs: ['models'],
+      authLoginArgs: ['login'],
+      authOwner: 'Grok Build',
+    },
+    // Verified on grok 1.0.3: `-s/--session-id <UUID>` names a NEW conversation
+    // ("must be a valid UUID and must not already exist under the target
+    // session directory"), so Exawatt allocates identity before launch exactly
+    // as it does for Claude Code — no post-hoc catalog binding is needed.
+    allocatesFreshSessionId: true,
+    // Grok Build's hooks are deliberately Claude Code-compatible, but the
+    // interactive TUI accepts no per-launch hook seam: hooks are discovered
+    // only from the state home (`$GROK_HOME/hooks/*.json`, `~/.claude`, the
+    // project tree) or `config.toml`, and `--plugin-dir` — the vendor's own
+    // per-connection injection point — exists on `grok agent`, not on the
+    // root TUI. Moving `GROK_HOME` would take the operator's auth, config,
+    // folder trust, and whole session corpus with it (verified against
+    // `xai_grok_config::paths`), so Exawatt does not move it and this source
+    // launches unsubscribed. Inference owns its status, like Codex's.
+    delegation: {
+      observable: false,
+      reason:
+        'Grok Build reports delegated work only to hooks Exawatt cannot inject per launch',
+    },
+    permissionFlags: mode =>
+      mode === 'prompt'
+        ? '--permission-mode default'
+        : mode === 'auto'
+          ? '--permission-mode auto'
+          : '--permission-mode bypassPermissions',
+    cwdInvocation: (invocation, cwd) => `${invocation} --cwd ${shellQuote(cwd)}`,
+    modelInvocation: (invocation, quotedModel) =>
+      `${invocation} -m ${quotedModel}`,
+    effortInvocation: (invocation, effort) =>
+      `${invocation} --reasoning-effort ${shellQuote(effort)}`,
+    initialTaskInvocation: (invocation, quotedTask) =>
+      `${invocation} ${quotedTask}`,
+    resumeInvocation: (invocation, sessionId) =>
+      `${invocation} --resume ${sessionId}`,
+    freshInvocation: (invocation, sessionId) =>
+      sessionId ? `${invocation} --session-id ${sessionId}` : invocation,
   },
 } satisfies Record<AgentHarness, HarnessLaunchDescriptor>;
 

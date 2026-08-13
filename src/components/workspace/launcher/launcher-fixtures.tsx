@@ -333,7 +333,7 @@ export const BENCH_SCENARIOS: BenchScenario[] = [
 
 /** The engine axis carries the same brand glyphs the chips do (finding 7). */
 const ENGINE_OPTIONS: DetailAxisOption[] = (
-  ['claude', 'codex', 'opencode'] as PtyHarness[]
+  ['claude', 'codex', 'opencode', 'grok'] as PtyHarness[]
 ).map(harness => ({
   id: harness,
   label: HARNESS_META[harness].label,
@@ -342,7 +342,9 @@ const ENGINE_OPTIONS: DetailAxisOption[] = (
       ? 'Multi-provider and local models'
       : harness === 'codex'
         ? 'OpenAI models'
-        : 'Anthropic models',
+        : harness === 'grok'
+          ? 'xAI models'
+          : 'Anthropic models',
   mark: (
     <EngineGlyph
       engine={{

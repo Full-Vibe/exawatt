@@ -14,17 +14,19 @@ describe('command palette launch configurations', () => {
       'agent',
       'agent',
       'agent',
+      'agent',
       'shell',
     ]);
     expect(
       rows.flatMap(row =>
         row.configuration.kind === 'agent' ? [row.configuration.source] : []
       )
-    ).toEqual(['claude', 'codex', 'opencode']);
+    ).toEqual(['claude', 'codex', 'opencode', 'grok']);
     expect(rows.map(commandPaletteConfigurationKey)).toEqual([
       'claude',
       'codex',
       'opencode',
+      'grok',
       'shell',
     ]);
   });

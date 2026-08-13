@@ -520,6 +520,7 @@ export function buildLiveConsumption(
     burn: {
       codex: sourceBurnSpark(samples, 'codex', nowMs),
       'claude-code': sourceBurnSpark(samples, 'claude-code', nowMs),
+      grok: sourceBurnSpark(samples, 'grok', nowMs),
     },
     burnRates,
     claudePlanNote: CLAUDE_PLAN_NOTE,

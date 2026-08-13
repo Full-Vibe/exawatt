@@ -7,7 +7,7 @@
  * successful probe.
  */
 
-export type AgentHarness = 'claude' | 'codex' | 'opencode';
+export type AgentHarness = 'claude' | 'codex' | 'opencode' | 'grok';
 export type PtyHarness = 'shell' | AgentHarness;
 export type AgentPermissionMode = 'prompt' | 'auto' | 'unrestricted';
 
@@ -63,7 +63,18 @@ export interface AgentSourceCapabilities {
   initialTask: boolean;
   exactResume: boolean;
   modelSelection: 'live-catalog' | 'source-owned' | 'gateway' | 'scenario';
-  effortSelection: 'live-catalog' | 'configured-value' | 'gateway' | 'scenario';
+  /**
+   * `source-owned` means the source accepts an effort but publishes no
+   * enumerable per-model option set to any interface Exawatt can read. The
+   * registry fails closed: Exawatt offers no effort control rather than
+   * inventing one, and the source's own selector stays the place to change it.
+   */
+  effortSelection:
+    | 'live-catalog'
+    | 'configured-value'
+    | 'source-owned'
+    | 'gateway'
+    | 'scenario';
   permissionModes: readonly AgentPermissionMode[];
   delegationObservation: string;
   enforcementOwner: string;

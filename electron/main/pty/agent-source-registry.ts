@@ -15,7 +15,11 @@ import type {
   AgentSourceState,
 } from '@exawatt/core';
 import { harnessDescriptor } from './harness-registry';
-import { parseOpencodeModelCatalog } from './agent-models';
+import {
+  parseGrokAuthBanner,
+  parseGrokModelCatalog,
+  parseOpencodeModelCatalog,
+} from './agent-models';
 import {
   agentSourceDeclaration,
   FUTURE_AGENT_SOURCE_CATALOG,
@@ -261,6 +265,7 @@ async function inspectLocalHarness(
   shell: string
 ): Promise<AgentSourceSnapshot> {
   if (harness === 'opencode') return inspectOpencode(shell);
+  if (harness === 'grok') return inspectGrok(shell);
   const observedAt = Date.now();
   const descriptor = harnessDescriptor(harness);
   const source = descriptor.source;
@@ -686,6 +691,217 @@ async function inspectOpencode(shell: string): Promise<AgentSourceSnapshot> {
   };
 }
 
+/**
+ * Grok Build ships `grok X.Y.Z (<build>)`. The adapter contract was verified
+ * against 1.0.3; anything older predates the launch/session surface Exawatt
+ * composes, so it is reported incompatible rather than launched hopefully.
+ */
+export function parseGrokVersion(raw: string): {
+  version: string;
+  compatible: boolean;
+} | null {
+  const match = raw.match(/\b(\d+)\.(\d+)\.(\d+)\b/);
+  if (!match) return null;
+  const tuple = match.slice(1).map(Number);
+  const minimum = [1, 0, 0];
+  const compatible = tuple.some(
+    (value, index) =>
+      value > minimum[index] &&
+      tuple.slice(0, index).every((part, i) => part === minimum[i])
+  )
+    ? true
+    : tuple.every((value, index) => value === minimum[index]);
+  return { version: match[0], compatible };
+}
+
+/**
+ * Grok Build's readiness, from the two commands it answers without a TUI.
+ *
+ * `grok models` is deliberately the auth probe AND the catalog probe: it is
+ * the only non-interactive command that names the credential source, and it
+ * emits the catalog in the same breath, so one subprocess establishes both
+ * facts instead of two racing ones. Exawatt never opens `~/.grok/auth.json`.
+ */
+async function inspectGrok(shell: string): Promise<AgentSourceSnapshot> {
+  const observedAt = Date.now();
+  const descriptor = harnessDescriptor('grok');
+  const source = descriptor.source;
+  const declaration = agentSourceDeclaration('grok');
+  const commandEvidence = provenance(
+    'source-command',
+    'Grok Build CLI',
+    observedAt
+  );
+  const declarationEvidence = provenance(
+    'adapter-declaration',
+    'Built-in adapter declaration',
+    0
+  );
+  const executablePath = await resolveExecutable(shell, source.executable);
+  if (!executablePath) {
+    return {
+      ...declaration,
+      id: 'grok-local',
+      configured: true,
+      launchable: false,
+      state: 'not-installed',
+      stateLabel: 'Not installed',
+      summary: 'Grok Build is supported here, but its CLI is not installed.',
+      observedAt,
+      facts: {
+        installation: fact(
+          'not-installed',
+          'Not installed',
+          'grok was not found in the login-shell PATH.',
+          commandEvidence
+        ),
+        reachability: fact(
+          'unavailable',
+          'Unavailable',
+          'Local reachability requires the installed CLI.',
+          commandEvidence
+        ),
+        authentication: fact(
+          'unknown',
+          'Unknown',
+          'Sign-in remains owned by Grok Build.',
+          commandEvidence
+        ),
+        identity: fact(
+          'unknown',
+          'Unknown',
+          'No source identity was queried.',
+          commandEvidence
+        ),
+        compatibility: fact(
+          'unknown',
+          'Unknown',
+          'Grok Build 1.0.0 or newer is required.',
+          declarationEvidence
+        ),
+        modelDiscovery: fact(
+          'unavailable',
+          'Unavailable',
+          'Model discovery requires the installed source.',
+          commandEvidence
+        ),
+      },
+      actions: {
+        recheck: true,
+        authenticate: false,
+        chooseModel: false,
+        installGuide: true,
+      },
+    };
+  }
+
+  const versionResult = await loginShellCommand(
+    shell,
+    sourceCommand(executablePath, source.versionArgs),
+    8_000
+  );
+  const modelsResult = await loginShellCommand(
+    shell,
+    sourceCommand(executablePath, source.authStatusArgs),
+    20_000
+  );
+  const modelsOutput = `${modelsResult.stdout}\n${modelsResult.stderr}`.trim();
+  const version = parseGrokVersion(
+    `${versionResult.stdout}\n${versionResult.stderr}`
+  );
+  const auth = parseGrokAuthBanner(modelsOutput);
+  const modelCount = parseGrokModelCatalog(modelsResult.stdout).models.length;
+  const state: AgentSourceState =
+    !versionResult.ok || !version
+      ? 'degraded'
+      : !version.compatible
+        ? 'incompatible'
+        : !auth
+          ? 'unknown'
+          : auth.authenticated
+            ? 'ready'
+            : 'action-required';
+  return {
+    ...declaration,
+    id: 'grok-local',
+    configured: true,
+    launchable: state === 'ready',
+    state,
+    stateLabel: stateLabel(state),
+    summary:
+      state === 'ready'
+        ? 'Exawatt can start and resume local Grok Build Agents. Sign-in and execution remain with Grok Build.'
+        : state === 'incompatible'
+          ? 'This Grok Build version predates the adapter contract verified by Exawatt.'
+          : state === 'action-required'
+            ? 'Grok Build is installed, but its source-owned sign-in needs attention.'
+            : 'Grok Build is installed, but Exawatt could not verify every launch prerequisite.',
+    observedAt,
+    facts: {
+      installation: fact(
+        'ready',
+        version?.version || versionResult.stdout || 'Installed',
+        `Detected at ${executablePath}.`,
+        commandEvidence
+      ),
+      reachability: fact(
+        versionResult.ok ? 'ready' : 'degraded',
+        versionResult.ok ? 'Local CLI responds' : 'Version check failed',
+        versionResult.ok
+          ? 'Observed through grok --version.'
+          : 'The executable exists, but its version command did not complete.',
+        commandEvidence
+      ),
+      authentication: fact(
+        auth ? (auth.authenticated ? 'ready' : 'action-required') : 'unknown',
+        auth
+          ? auth.authenticated
+            ? `Managed by ${source.authOwner}`
+            : 'Sign-in required'
+          : 'Unknown',
+        auth
+          ? auth.detail
+          : `Exawatt does not receive or store the ${source.authOwner} credential.`,
+        commandEvidence
+      ),
+      identity: fact(
+        auth ? (auth.authenticated ? 'ready' : 'action-required') : 'unknown',
+        auth?.identity ?? 'Unknown',
+        auth?.authenticated
+          ? 'Minimum identity exposed by Grok Build.'
+          : 'No authenticated source identity is available.',
+        commandEvidence
+      ),
+      compatibility: fact(
+        version ? (version.compatible ? 'ready' : 'incompatible') : 'unknown',
+        version
+          ? version.compatible
+            ? 'Compatible'
+            : 'Upgrade required'
+          : 'Unknown',
+        'The adapter contract was verified against Grok Build 1.0.3.',
+        version ? commandEvidence : declarationEvidence
+      ),
+      modelDiscovery: fact(
+        modelCount > 0 ? 'ready' : 'degraded',
+        modelCount > 0
+          ? `${modelCount} models reported`
+          : 'Catalog unavailable',
+        modelCount > 0
+          ? 'Observed from grok models. Reasoning effort is not enumerated on this surface and stays with the source.'
+          : 'Grok Build returned no parseable model rows.',
+        commandEvidence
+      ),
+    },
+    actions: {
+      recheck: true,
+      authenticate: !auth?.authenticated,
+      chooseModel: false,
+      installGuide: true,
+    },
+  };
+}
+
 interface OpenClawObservation {
   lastTouchedVersion: string | null;
   host: string;
@@ -1042,6 +1258,7 @@ async function discoverAgentSources(
     inspectLocalHarness('claude', shell),
     inspectLocalHarness('codex', shell),
     inspectLocalHarness('opencode', shell),
+    inspectLocalHarness('grok', shell),
   ]);
   const sources =
     scope === 'launch'

@@ -67,6 +67,26 @@ export const AGENT_SOURCE_DECLARATIONS = [
     },
   },
   {
+    adapterId: 'grok',
+    harness: 'grok',
+    label: 'Grok Build',
+    connectionName: 'Local CLI',
+    color: '#B79CE8',
+    installationGuideUrl: 'https://docs.x.ai/build/overview',
+    description: 'Use the locally installed xAI Grok Build CLI.',
+    capabilities: {
+      interactiveLaunch: true,
+      initialTask: true,
+      exactResume: true,
+      modelSelection: 'live-catalog',
+      effortSelection: 'source-owned',
+      permissionModes: ['prompt', 'auto', 'unrestricted'],
+      delegationObservation:
+        'Grok Build reports delegated work only to hooks Exawatt cannot inject per launch',
+      enforcementOwner: 'Grok Build',
+    },
+  },
+  {
     adapterId: 'openclaw',
     harness: null,
     label: 'OpenClaw',

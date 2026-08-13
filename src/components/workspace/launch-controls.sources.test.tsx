@@ -7,6 +7,7 @@ import {
   CLAUDE_MODEL_CATALOG,
   CODEX_MODEL_CATALOG,
   FOCUS_AGENT_COMPOSER_EVENT,
+  GROK_MODEL_CATALOG,
   installComposerTestHarness,
   OPENCODE_MODEL_CATALOG,
   readyAgentSourceRegistry,
@@ -154,7 +155,9 @@ describe('Agent composer · sources and policy', () => {
         ? sourceOwnedClaude
         : harness === 'codex'
           ? CODEX_MODEL_CATALOG
-          : OPENCODE_MODEL_CATALOG
+          : harness === 'grok'
+            ? GROK_MODEL_CATALOG
+            : OPENCODE_MODEL_CATALOG
     );
     const onLaunch = vi.fn(async () => true);
     renderComposer(
@@ -204,7 +207,9 @@ describe('Agent composer · sources and policy', () => {
         ? CLAUDE_MODEL_CATALOG
         : harness === 'codex'
           ? CODEX_MODEL_CATALOG
-          : openCodeWithoutDefault
+          : harness === 'grok'
+            ? GROK_MODEL_CATALOG
+            : openCodeWithoutDefault
     );
     const onLaunch = vi.fn(async () => true);
     renderComposer(

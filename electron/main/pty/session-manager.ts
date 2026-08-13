@@ -377,6 +377,10 @@ export class PtySessionManager extends EventEmitter {
       ...(opencodeLaunchAgentName
         ? { launchAgentName: opencodeLaunchAgentName }
         : {}),
+      // Resolved, not realpath'd: the operator-entered path is what the
+      // Session displays and what a source keys its own record on, but a
+      // relative entry must never reach an argv.
+      cwd: path.resolve(cwd),
     };
     let proc: pty.IPty;
     try {

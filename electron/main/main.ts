@@ -886,6 +886,7 @@ function createMenu(): void {
         menuCommand('Start Agent with Claude Code…', 'launch-claude'),
         menuCommand('Start Agent with Codex…', 'launch-codex'),
         menuCommand('Start Agent with OpenCode…', 'launch-opencode'),
+        menuCommand('Start Agent with Grok Build…', 'launch-grok'),
         { type: 'separator' },
         menuCommand('New Agent', 'new-agent'),
         menuCommand('Open Shell', 'launch-shell'),

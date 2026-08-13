@@ -114,6 +114,24 @@ export const AGENT_SOURCE_META: Record<AgentSourceId, AgentSourceMeta> = {
       },
     };
   })(),
+  grok: (() => {
+    const declaration = agentSourceDeclaration('grok');
+    return {
+      label: declaration.label,
+      color: declaration.color,
+      capabilities: {
+        interactive: declaration.capabilities.interactiveLaunch,
+        initialTask: declaration.capabilities.initialTask,
+        exactResume: declaration.capabilities.exactResume,
+        modelSelection: declaration.capabilities.modelSelection !== 'source-owned',
+        // Grok Build accepts `--reasoning-effort` but publishes no per-model
+        // option set to any interface a PTY launch can read, so Exawatt shows
+        // no effort control rather than inventing one.
+        effortSelection: declaration.capabilities.effortSelection !== 'source-owned',
+        permissionModes: declaration.capabilities.permissionModes,
+      },
+    };
+  })(),
 };
 
 export const AGENT_SOURCE_ORDER = Object.keys(

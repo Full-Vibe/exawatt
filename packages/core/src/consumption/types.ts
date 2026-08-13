@@ -12,7 +12,7 @@
  */
 
 /** A harness whose local records Exawatt can parse. */
-export type ConsumptionSourceId = 'claude-code' | 'codex';
+export type ConsumptionSourceId = 'claude-code' | 'codex' | 'grok';
 
 /**
  * Raw, provider-normalized token counts for one unit of work.
@@ -129,6 +129,20 @@ export const SOURCE_CAPABILITIES: Readonly<
     gitBranch: false,
     webToolUse: false,
     effort: true,
+  },
+  // Grok Build writes no local rate-limit record and xAI publishes no per-tier
+  // limits, so plan headroom is ABSENT for this source, never zero. Its
+  // subagents run as their own session directories rather than as nested
+  // transcripts, so a usage record cannot say it came from delegated work; the
+  // relationship lives in `summary.json`, outside the ledger. `effort` is
+  // accepted at launch but never written back into a usage record.
+  grok: {
+    planWindows: false,
+    delegation: false,
+    reasoningTokens: true,
+    gitBranch: false,
+    webToolUse: false,
+    effort: false,
   },
 });
 

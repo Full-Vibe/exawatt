@@ -41,6 +41,7 @@ export function registerAgentSourcesIPC(): void {
         adapterId !== 'claude' &&
         adapterId !== 'codex' &&
         adapterId !== 'opencode' &&
+        adapterId !== 'grok' &&
         adapterId !== 'openclaw' &&
         adapterId !== 'demo'
       ) {
@@ -67,7 +68,8 @@ export function registerAgentSourcesIPC(): void {
       if (
         adapterId !== 'claude' &&
         adapterId !== 'codex' &&
-        adapterId !== 'opencode'
+        adapterId !== 'opencode' &&
+        adapterId !== 'grok'
       ) {
         throw new Error('This Agent Source does not expose that action');
       }

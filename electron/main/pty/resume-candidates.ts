@@ -6,6 +6,7 @@ import { promisify } from 'util';
 import type { PtyHarness } from './session-manager';
 import {
   CodexConversationAdapter,
+  GrokConversationAdapter,
   RecentConversationCatalog,
   parseOpencodeSessionList,
 } from './conversation-catalog';
@@ -179,7 +180,13 @@ function catalogFor(
         ? new RecentConversationCatalog({
             adapters: [new CodexConversationAdapter(sessionsRoot)],
           })
-        : new RecentConversationCatalog();
+        : harness === 'grok'
+          ? // Grok Build reads its own session directories; no other adapter
+            // needs to run to answer a Grok resume question.
+            new RecentConversationCatalog({
+              adapters: [new GrokConversationAdapter()],
+            })
+          : new RecentConversationCatalog();
     catalogs.set(key, catalog);
   }
   return catalog;
@@ -207,6 +214,7 @@ export async function listResumeCandidates(
   // reinterpret a custom Codex root as a Claude projects root.
   if (
     harness !== 'codex' &&
+    harness !== 'grok' &&
     sessionsRoot !== path.join(os.homedir(), '.codex', 'sessions')
   ) {
     return [];

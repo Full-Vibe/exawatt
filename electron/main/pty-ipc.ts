@@ -373,7 +373,8 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
       if (
         harness !== 'claude' &&
         harness !== 'codex' &&
-        harness !== 'opencode'
+        harness !== 'opencode' &&
+        harness !== 'grok'
       ) {
         throw new Error('Unsupported Agent Source');
       }
@@ -675,7 +676,8 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
           !/^[A-Za-z0-9._-]{1,200}$/.test(hint.durableSessionId) ||
           (hint.harness !== 'claude' &&
             hint.harness !== 'codex' &&
-            hint.harness !== 'opencode') ||
+            hint.harness !== 'opencode' &&
+            hint.harness !== 'grok') ||
           typeof hint.cwd !== 'string' ||
           !hint.cwd ||
           hint.cwd.includes('\0') ||

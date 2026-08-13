@@ -25,6 +25,7 @@ export const HARNESS_META: Record<PtyHarness, HarnessMeta> = {
   claude: { ...AGENT_SOURCE_META.claude, launch: '+ Claude Code' },
   codex: { ...AGENT_SOURCE_META.codex, launch: '+ Codex' },
   opencode: { ...AGENT_SOURCE_META.opencode, launch: '+ OpenCode' },
+  grok: { ...AGENT_SOURCE_META.grok, launch: '+ Grok Build' },
   // Source identity is a brand/data channel and stays stable across themes.
   shell: { label: 'Shell', color: '#6A7585', launch: '+ Shell' },
 };

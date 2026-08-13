@@ -23,6 +23,9 @@ export interface HarnessLaunchWiring {
   eventChannelSettingsPath?: string;
   /** Collision-resistant source-agent identity for per-launch config. */
   launchAgentName?: string;
+  /** The directory the PTY is spawned in, passed on to sources that accept it
+   *  as an argument so a login-shell `cd` cannot relocate the Session. */
+  cwd?: string;
 }
 
 export function buildHarnessCommand(
@@ -106,10 +109,18 @@ export function buildHarnessCommand(
     .join(' ');
   // Subscribe BEFORE the Agent-shaped flags so the launch reads as
   // "this harness, wired to Exawatt, then asked to do X".
-  const baseInvocation =
+  const subscribedInvocation =
     settingsPath && descriptor.eventChannel
       ? descriptor.eventChannel.invocation(permissionInvocation, settingsPath)
       : permissionInvocation;
+  const launchCwd = wiring.cwd?.trim() ?? '';
+  if (launchCwd && !path.isAbsolute(launchCwd)) {
+    throw new Error('Launch directory must be absolute');
+  }
+  const baseInvocation =
+    launchCwd && descriptor.cwdInvocation
+      ? descriptor.cwdInvocation(subscribedInvocation, launchCwd)
+      : subscribedInvocation;
   const modelInvocation =
     selectedModel && !descriptor.launchAgent
       ? descriptor.modelInvocation(baseInvocation, shellQuote(selectedModel))
