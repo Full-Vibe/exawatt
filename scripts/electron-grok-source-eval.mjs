@@ -219,26 +219,32 @@ async function chooseFromLauncher(page, pattern) {
   }
 }
 
-async function sessionOfHarness(page, harness, excludeId = '') {
+/**
+ * Wait for a Session whose harness has actually SPOKEN.
+ *
+ * Grok Build's identity is allocated by Exawatt before the spawn, so
+ * `harnessSessionId` is set the instant the record exists — earlier than any
+ * output. Polling on identity alone therefore reads an empty scrollback and
+ * every argv assertion becomes a race. `marker` is the source's first byte.
+ */
+async function sessionOfHarness(page, harness, excludeId = '', marker = '') {
   return page.evaluate(
-    async ({ harness: wanted, excludeId: skip }) => {
-      const deadline = Date.now() + 20_000;
+    async ({ harness: wanted, excludeId: skip, marker: needle }) => {
+      const deadline = Date.now() + 25_000;
       while (Date.now() < deadline) {
         const sessions = await window.electron?.pty?.list();
         const session = sessions?.find(
           item => item.harness === wanted && item.id !== skip
         );
         if (session?.harnessSessionId) {
-          return {
-            session,
-            buffer: await window.electron?.pty?.buffer(session.id),
-          };
+          const buffer = (await window.electron?.pty?.buffer(session.id)) ?? '';
+          if (!needle || buffer.includes(needle)) return { session, buffer };
         }
         await new Promise(wait => setTimeout(wait, 100));
       }
       return null;
     },
-    { harness, excludeId }
+    { harness, excludeId, marker }
   );
 }
 
@@ -301,7 +307,12 @@ try {
         exact: true,
       });
       await startButton.click();
-      const launched = await sessionOfHarness(page, 'grok');
+      const launched = await sessionOfHarness(
+        page,
+        'grok',
+        '',
+        'FAKE_GROK_ARGS:'
+      );
       const buffer = launched?.buffer ?? '';
       const identity = launched?.session.harnessSessionId ?? '';
       check(
@@ -364,7 +375,8 @@ try {
       const resumed = await sessionOfHarness(
         page,
         'grok',
-        launched?.session.id ?? ''
+        launched?.session.id ?? '',
+        'FAKE_GROK_ARGS:'
       );
       check(
         'the recent row resumes only its exact identity, never --continue',
