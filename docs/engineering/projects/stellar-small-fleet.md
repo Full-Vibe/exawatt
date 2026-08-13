@@ -1026,6 +1026,28 @@ Implementation record (landed 2026-07-10):
     private goal-to-scene derivation boundary (FAL never sees goal text)
     survives the provider swap.
 
+- 2026-08-13 (partner conversation `2026-08-13-eve-chen-design-scoping`):
+  - **Multi-harness context loss, reported unprompted (evidence for S4).** A
+    designer running Claude Code, Codex, and Cursor side by side described the
+    exact failure S4 exists for, without being asked and without seeing the
+    feature: "there's a lot going on just within Cloud, and then across Codex
+    or Cursor, and I forget about what I was working on easily." Two things
+    this adds to the operator's own evidence: the pain is not
+    operator-specific, and it spans SOURCES and even sibling products from one
+    vendor, not just tabs within one harness — the re-entry problem is
+    fleet-wide by nature, which is the same source-agnostic boundary the
+    product already claims.
+  - **The shipped ambient recap is "okay", and the gap is named.** Demoing the
+    "Since you left…" line live, the operator graded it himself: "So it's okay,
+    but I'm trying to build a little bit more, like, kind of, hey, remember what
+    we were working on, and here's how you can jump back in." Read with his
+    framing of the job — "think about it like a hurdle… lower the barrier to
+    entry to, like, switch context." The falsifiable reading: a recap that only
+    REPORTS what changed leaves the operator to reconstruct the way back in
+    themselves, so re-entry may owe a resumable next move, not just a status
+    sentence. Not shaped; it sharpens the existing ~2-second "where was I here?"
+    exit criterion and is a candidate input to the S4 design pass.
+
 ## Progress log
 
 S5 Durable Projects (P1–P5 landed 2026-07-10):
