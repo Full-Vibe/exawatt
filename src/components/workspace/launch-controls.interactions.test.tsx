@@ -288,8 +288,11 @@ describe('Agent composer · interactions and drafts', () => {
     fireEvent.click(
       screen.getByRole('button', { name: 'All engines and models' })
     );
+    // The catalog mounts on its own schedule; sampling one tick after the
+    // click made this assertion fail roughly one run in three under load
+    // (D52: a check that is flaky is a check that stops being trusted).
     expect(
-      screen.getByRole('checkbox', { name: 'New git worktree' })
+      await screen.findByRole('checkbox', { name: 'New git worktree' })
     ).toBeChecked();
     expect(
       screen.getByLabelText('Branch name for the new worktree')
