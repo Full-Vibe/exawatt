@@ -716,9 +716,17 @@ Implementation record (landed 2026-07-10):
     `eval:electron:delegation` and `eval:electron:turn-truth` still fail at
     their FINAL step, the Codex "reports nothing" control, on
     `getByLabel('Agent Source')` — the pre-D49 Select that now lives in a
-    `hidden` Customize container no code ever opens. That is BUG-014(2)
-    verbatim, reproduced identically on a clean `origin/master` tree before
-    this change; every delegation and turn assertion before it is green.
+    `hidden` Customize container no code ever opens (`customizeOpen` is
+    initialized false and only ever set false again, so the Select is `hidden`
+    AND `disabled`). That is BUG-014(2) verbatim, reproduced identically on a
+    clean `origin/master` tree before this change; every delegation and turn
+    assertion before it is green. Attempted here and REVERTED: swapping it for
+    D49's "All engines and models" catalog — the shape that repaired the shell
+    openers — does not work, because a source only appears in that catalog
+    when it publishes a live model catalog (`if (!catalog?.effectiveModel)
+    continue`), and the fixture Codex answers only `--version` and `login`.
+    The repair needs the setup-card contract or a fixture that answers the
+    model probe, which is exactly the warning BUG-014 already carries.
 
 - 2026-08-13 (triage, feedback row `7d814294-fe23-4c28-b586-12f634d7aad6`,
   operator on dogfood 0.1.9 `0cb5eba`, screenshot attached): **Claude Code
