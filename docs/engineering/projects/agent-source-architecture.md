@@ -206,11 +206,12 @@ without making it a second product boundary.
 
 ## S4 — the Grok Build adapter
 
-Status: shaped 2026-08-12, execution-ready. Operator-pulled during the Grok
-Bot category wave (2026-08-11) and sequenced for immediate execution so
-source-plurality has a fourth, timely proof at the ENG-030 launch moment.
-Integration facts below were verified against the harness's own repository
-docs on 2026-08-12; full recon with sources in
+Status: landed 2026-08-13. Shaped 2026-08-12 and operator-pulled during the
+Grok Bot category wave (2026-08-11) so source-plurality has a fourth, timely
+proof at the ENG-030 launch moment. The shaped facts below were taken from the
+harness's own repository docs; the landing log at the end of this section
+records what a real install confirmed, what it CORRECTED, and what remains
+unverified for want of a credential. Full recon with sources in
 `docs/research/market/2026-08-12-agent-fleet-market-and-grok-wave.md` §5.
 
 **What it is, and what it is not.** Grok Build is xAI's open-source
@@ -307,6 +308,160 @@ Acceptance (S2's bar, restated for this source):
   the injected-configuration disclosure
 - operator credential prerequisite recorded: a SuperGrok plan or API key on
   the dogfood machine is needed before the eval can run live
+
+### Roadmap milestone log
+
+#### 2026-08-13 — S4 landed, with two shaped assumptions corrected
+
+**Grok Build launches, resumes, and reports consumption; it does not report
+delegation.** Verified against a real install — `grok 1.0.3`, installed
+non-interactively from npm `@xai-official/grok`, plus its open-source tree
+(`github.com/xai-org/grok-build`, Apache-2.0, 25k stars) — rather than from
+docs alone. What the install confirmed, what it corrected, and what could not
+be exercised are kept separate below, because the difference is the whole
+value of the exercise.
+
+**Verified live on the installed binary**
+
+- The launch surface: `--cwd`, `-m`, a positional initial prompt,
+  `--permission-mode {default,acceptEdits,auto,dontAsk,bypassPermissions,plan}`,
+  `--resume [id]`, `-c/--continue`, `--reasoning-effort`, and — beyond the
+  shaped contract — `-s/--session-id <UUID>`, which names a NEW conversation.
+  That last one upgrades identity: Exawatt allocates the session id before the
+  first turn exactly as it does for Claude Code, so no post-hoc catalog
+  binding (OpenCode's S2 problem) is needed at all.
+- `grok models` is the only non-interactive command that reports auth state,
+  and it prints the catalog in the same breath: one banner line naming the
+  credential source, then `Default model:`, then the listing. It answers
+  UNAUTHENTICATED with the built-in catalog, so the source is legible before
+  sign-in. There is no `--json`, no per-model description, and no effort
+  enumeration on this surface.
+- `grok inspect --json` reports the resolved configuration, including a
+  `configSources.layers` list and an `externalCompat.cells` matrix — the
+  inspectable disclosure surface for everything below.
+- **The Claude cross-fire risk is real.** On this machine a fresh Grok home
+  still loaded `~/.claude/settings.local.json` permissions (12 rules),
+  `~/.claude/hooks/guard-claude-dir.sh` as a `pre_tool_use` hook, and
+  `~/.claude/Claude.md` as project instructions — each tagged
+  `vendor: "claude", compatibilityStatus: "enabled"`. Setting
+  `GROK_CLAUDE_HOOKS_ENABLED=0` flips them to `disabled` with `source: "env"`,
+  verified through `grok inspect --json`. Exawatt deliberately does NOT set
+  it: this is Grok Build's own documented, default-on compatibility feature,
+  not an Exawatt-caused defect, and silently disabling a harness feature is
+  the kind of surprise the injected-configuration rule exists to prevent. The
+  switch is named in the capability reference so an operator who wants it off
+  knows where it lives.
+- `$GROK_HOME/hooks/*.json` discovery works: a document written there is
+  listed by `grok inspect --json` with its event, matcher, and source.
+
+**Verified from the harness's own source (authoritative — it is the
+serializer), not from prose**
+
+- The hook envelope is camelCase (`hookEventName`, `sessionId`, `cwd`,
+  `workspaceRoot`, `permissionMode`) with event-specific fields flattened in:
+  `toolName`/`toolUseId`/`toolInput`, `notificationType`, and — better than
+  Claude's — `subagentId`/`subagentType`/`description` DIRECTLY on
+  `SubagentStart`, so a spawn label needs no correlation staging at all.
+- The tool alias table is exact: `Bash`→`run_terminal_command`,
+  `Task`/`Agent`→`spawn_subagent`, `AskUserQuestion`→`ask_user_question`,
+  `Read`→`read_file`, `Edit`/`Write`→`search_replace`. Matchers are exact-set
+  for simple `A|B` patterns (with alias expansion) and unanchored regex
+  otherwise, so Claude's anchoring workaround is unnecessary here.
+- Notification types emitted: `permission_prompt`, `idle_prompt`,
+  `task_complete`, `agent_error`.
+- `type: "http"` hooks are **HTTPS-only** (`validate_hook_url` rejects any
+  other scheme before the loopback IP allowance is even consulted) and carry
+  no custom headers. The ENG-023 channel's plain-HTTP loopback listener is
+  therefore unreachable from a Grok HTTP hook; a `command` hook would be the
+  only shape, and it receives the envelope on stdin.
+
+**Correction 1 — `signals.json` is not the ledger.**
+
+The shaped scope named `signals.json` as the token record needing "no
+transcript parsing". Its actual fields are `turnCount`, `toolCallCount`,
+`contextTokensUsed`, `contextWindowTokens`, `totalTokensBeforeCompaction`,
+`toolsUsed`, `primaryModelId` — live occupancy and counters, with no
+cumulative input/output/cache totals anywhere. Reading context occupancy as
+consumption would report a number that FALLS after a compaction. The billed
+record is `updates.jsonl`'s `turn_completed` update, whose `usage` is a
+per-prompt `PromptUsage` keyed by the harness's own `prompt_id` — a genuine
+idempotency key, and a JSONL stream that fits ENG-008's existing chunked,
+watermarked adapter unchanged. One normalization is load-bearing: on the ACP
+wire `inputTokens` is the FULL prompt sum including both cache buckets, so
+the parser subtracts them exactly as the Codex parser does.
+
+**Correction 2 — there is no per-launch hook seam on the interactive TUI, so
+delegation is declared unobservable.**
+
+The shaped scope expected `GROK_HOME` per-Session isolation to make hook
+injection "trivial". On a real install it is not, and the reason matters:
+`grok_home()` is a single `OnceLock` resolving `$GROK_HOME` or `~/.grok` for
+EVERYTHING — `auth.json`, `config.toml`, `sessions/`, `trusted_folders.toml`,
+`hooks/`, `worktrees/`, `mcp_credentials.json`. Relocating it per Session
+would sign the operator out, discard their model/MCP/tool configuration, reset
+folder trust (silently disabling their project hooks and MCP servers), and
+detach their session corpus from the one `grok sessions` reads. Three
+alternatives were evaluated and rejected on the evidence:
+
+1. **Write into `~/.grok/hooks/`.** Additive and visible in Grok's own Hooks
+   tab, but it mutates the user's harness configuration (the rule that keeps
+   Exawatt out of `~/.claude` and `~/.codex`) and would fire a loopback POST
+   inside every Grok session on the machine, including ones Exawatt never
+   started.
+2. **`--plugin-dir <DIR>`** — the vendor's OWN per-connection injection point,
+   documented as "used by the Agent SDKs", always trusted, hooks and MCP
+   activate without a prompt. It exists on `grok agent` (the ACP server), not
+   on the root TUI: `grok --plugin-dir …` errors with `unexpected argument`.
+3. **`--agent <path>`** — a per-launch agent definition file whose frontmatter
+   may carry `hooks:`, merged into the live registry at the PRIMARY session
+   (not only subagents), and unconditionally allowed because a file outside
+   `~/.grok/agents/` resolves to `AgentScope::BuiltIn`. Mechanically this
+   works. It was rejected because supplying a definition REPLACES the
+   operator's default Grok agent — its system prompt, toolset, and plan mode —
+   to attach a status listener, which trades the harness's actual behavior for
+   a light. No inherit-and-extend form is documented, and guessing one against
+   an install that cannot be exercised end to end is exactly the move the
+   fail-closed rule forbids.
+
+So Exawatt injects nothing, and the capability declares
+`observable: false` with the reason on the record. The eval asserts the
+absence positively: `GROK_HOME` and `GROK_AUTH_PATH` are both `unset` inside
+the launched child, and the argv carries no `--settings` and no `--agent`.
+Status rides the same inference Codex and OpenCode use. ENG-015's
+`teamWorkingWithoutGate` rule is untouched and now has a case pinning that a
+source with no reported record keeps ordinary bell behavior.
+
+**Also verified: the cwd encoding, including its fallback.**
+
+`encode_cwd_dirname` URL-encodes the cwd with Rust's `urlencoding` (unreserved
+bytes verbatim, UPPERCASE hex — `encodeURIComponent` is NOT equivalent, it
+leaves `!'()*` alone) when the result is <= 255 bytes, and otherwise uses
+`{slug}-{blake3_hex16}`. Exawatt reproduces the first branch exactly and
+resolves the second through the `.cwd` metadata file the harness writes for
+that purpose, rather than reimplementing BLAKE3 — the harness's own
+`decode_cwd_from_dirname` reads the same file, and a hash Exawatt recomputed
+could silently disagree after any upstream change. Tests use the harness's own
+`LONG_CWDS` regression fixtures.
+
+**Unverified, and why**
+
+Live hook FIRING was never exercised: `grok` validates authentication before a
+session starts, so a fabricated `XAI_API_KEY` cannot reach `SessionStart`. The
+hook payload contract above therefore comes from the harness's serializer
+rather than from captured traffic. This does not affect what shipped — nothing
+subscribes — but it is the gate on the follow-up below. The operator
+credential prerequisite the shaped scope recorded still stands.
+
+**Follow-up, recorded not built**
+
+`grok agent` (ACP JSON-RPC over stdio/WebSocket, with `--plugin-dir` for
+per-connection hooks and `--client-identifier`) is the seam that would give
+Grok Build full ENG-023 status truth without touching the operator's state
+home. It is the same open question S2 carries for `opencode serve` — whether a
+protocol transport belongs in a product whose current terminal regime is
+deliberately a real terminal — and it now has a concrete second data point.
+Headless `-p --output-format streaming-messages-json` (byte-compatible with
+Claude Code's stream-json) remains out of scope.
 
 ## Demand evidence
 

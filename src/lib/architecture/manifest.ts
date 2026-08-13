@@ -144,7 +144,7 @@ export const architectureManifest = {
           id: 'third-party-sources',
           label: 'Third-party harnesses',
           summary:
-            'Codex, Claude Code, OpenCode, custom harnesses, and partner agent sources.',
+            'Codex, Claude Code, OpenCode, Grok Build, custom harnesses, and partner agent sources.',
           layer: 'infrastructure',
           x: 830,
           y: 380,
@@ -198,7 +198,7 @@ export const architectureManifest = {
           id: 'agent-infrastructure-layer',
           label: 'Agent Infrastructure Layer',
           summary:
-            'Local OpenClaw, hosted OpenClaw, Codex, Claude Code, OpenCode, custom harnesses, gateways, and credentials.',
+            'Local OpenClaw, hosted OpenClaw, Codex, Claude Code, OpenCode, Grok Build, custom harnesses, gateways, and credentials.',
           layer: 'infrastructure',
           x: 115,
           y: 555,
@@ -441,7 +441,7 @@ export const architectureManifest = {
         },
         {
           id: 'harness-fleet',
-          label: 'OpenClaw / Codex / Claude Code / OpenCode / Custom',
+          label: 'OpenClaw / Codex / Claude Code / OpenCode / Grok Build / Custom',
           summary:
             'The set of local, hosted, third-party, and custom execution backends.',
           layer: 'infrastructure',
@@ -634,7 +634,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Registry + Adapters',
           summary:
-            'One generated declaration contract plus Electron-main runtime observations power Settings and the Agent composer. Claude Code, Codex, and OpenCode are launch-capable local adapters; subscription-backed and API-backed entitlement remain source-owned modes rather than Exawatt billing. Observed, declared, and simulated evidence stay distinct, and Electron revalidates every Agent launch without exposing provider credentials.',
+            'One generated declaration contract plus Electron-main runtime observations power Settings and the Agent composer. Claude Code, Codex, OpenCode, and Grok Build are launch-capable local adapters; subscription-backed and API-backed entitlement remain source-owned modes rather than Exawatt billing. Observed, declared, and simulated evidence stay distinct, and Electron revalidates every Agent launch without exposing provider credentials.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,

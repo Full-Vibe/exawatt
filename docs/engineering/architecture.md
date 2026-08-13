@@ -308,7 +308,7 @@ renderer. Runtime observations remain main-process evidence. This prevents UI
 defaults, source probes, and launch code from becoming competing registries.
 Source-specific CLI/config/protocol inspection stays behind a renderer-safe IPC
 surface; Settings and the Agent composer consume the same normalized
-snapshots. Claude Code, Codex, and OpenCode are launch-capable local records. Local
+snapshots. Claude Code, Codex, OpenCode, and Grok Build are launch-capable local records. Local
 OpenClaw reachability is established only by a successful gateway protocol
 status command, not by config presence or an open TCP port. Demo Mode is a
 built-in record whose facts use simulated provenance. The renderer receives
@@ -326,7 +326,11 @@ Demo Mode enters below this boundary and emits the same contract with simulated
 provenance.
 
 Discovery is evidence-bearing. Each catalog or capability snapshot names the
-source mechanism and observation time. Codex's supported machine-readable
+source mechanism and observation time. A capability is declared only where a
+mechanism was verified on a real install; Grok Build's delegation reporting is
+declared UNOBSERVABLE because its interactive TUI accepts no per-launch hook
+seam and relocating its state home would move the operator's sign-in,
+configuration, folder trust, and session corpus with it. Codex's supported machine-readable
 model command populates its live catalog. OpenCode's bounded verbose catalog
 provides source-reported `provider/model` identity and records exact per-model
 variant keys. Its 1.3.4 root TUI has no `--variant` flag, so Electron creates a
@@ -427,7 +431,7 @@ Provider/runtime boundaries:
 - Agent Source / Harness adapters
 - local OpenClaw gateway
 - remote OpenClaw gateway
-- Codex / Claude Code / OpenCode adapters
+- Codex / Claude Code / OpenCode / Grok Build adapters
 - Demo Harness / Demo Scenario Source
 - custom harnesses
 - local machine
@@ -473,7 +477,7 @@ Built:
 - `/fleet/spatial` Fleet Operations Board (V2.0 active replacement of the
   superseded immersive 3D composition)
 - Electron agent terminal workspace with real `node-pty` sessions rendered by
-  xterm.js for Claude Code, Codex, OpenCode, and shells, behind a session-manager boundary
+  xterm.js for Claude Code, Codex, OpenCode, Grok Build, and shells, behind a session-manager boundary
 - Electron-main turn-state ownership that distinguishes Agent work from PTY
   transport noise: output may establish working before a turn settles, while a
   quiet/BEL boundary latches finished until guaranteed operator engagement.
@@ -496,7 +500,13 @@ Built:
   default when live discovery is unavailable, and never invents provider aliases.
   OpenCode applies exact reported variants through that launch agent even
   though the root TUI has no `--variant` flag; an unavailable catalog remains
-  explicitly source-default/unknown.
+  explicitly source-default/unknown. Grok Build reports model IDs and a
+  default through `grok models` and enumerates no per-model effort to any
+  interface a PTY launch can read, so Exawatt declares its effort selection
+  `source-owned` and shows no effort control rather than inventing one; its
+  permission modes map one-to-one onto the source's own
+  `default`/`auto`/`bypassPermissions`, and the launch pins the Exawatt
+  directory with `--cwd` so a login-shell `cd` cannot relocate the Session.
   Environment-owned effort constraints remain visible and non-editable because
   they outrank session flags. Successful launches alone train a Project-ranked
   app-wide Launch Configuration pool; Project pins, All/Customize, exact

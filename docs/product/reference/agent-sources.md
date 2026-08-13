@@ -11,6 +11,7 @@ Examples:
 - Codex
 - Claude Code
 - OpenCode
+- Grok Build
 - custom harnesses
 - Demo Scenario Source
 
@@ -21,7 +22,8 @@ OpenClaw is the first implementation target, not the product boundary.
 Settings owns an Agent Source registry: a compact list of configured source
 instances and a selected-source detail view. A user may eventually connect
 multiple instances of one source type, so the row identifies both the adapter
-(`Claude Code`, `Codex`, `OpenClaw`, or `Demo Mode`) and the configured source
+(`Claude Code`, `Codex`, `OpenCode`, `Grok Build`, `OpenClaw`, or `Demo Mode`)
+and the configured source
 (`Personal`, `Work gateway`, or another user-chosen name).
 
 A configured source is how Exawatt reaches the runtime that creates and resumes
@@ -40,7 +42,8 @@ required`, `degraded`, `unavailable`, `not installed`, `incompatible`, and
 that, for example, installed-but-signed-out never collapses into a vague
 offline state.
 
-For local Claude Code and Codex sources, authentication remains source-owned.
+For every local CLI source — Claude Code, Codex, OpenCode, Grok Build —
+authentication remains source-owned.
 Exawatt may launch the harness's supported sign-in command and recheck status,
 but does not collect or store the provider token. Gateway and future custom
 source credentials may be stored as narrowly scoped connection material in the
@@ -71,11 +74,11 @@ connection that looks broken.
 
 ### Current desktop implementation
 
-Settings now auto-discovers five built-in records through one Electron-main
-registry boundary: local Claude Code, local Codex, the local OpenClaw gateway,
-local OpenCode, and Demo Mode. Claude Code, Codex, and OpenCode can launch from
-the Agent composer when their installation and source-owned authentication are
-ready. OpenClaw's local
+Settings now auto-discovers six built-in records through one Electron-main
+registry boundary: local Claude Code, local Codex, local OpenCode, local Grok
+Build, the local OpenClaw gateway, and Demo Mode. Claude Code, Codex, OpenCode,
+and Grok Build can launch from the Agent composer when their installation and
+source-owned authentication are ready. OpenClaw's local
 installation and gateway configuration are reported independently, but
 reachability and authentication become ready only after its protocol-level
 gateway status command succeeds. Config presence and a listening port are not
@@ -126,7 +129,7 @@ active Project's frecency. Selection, editing, naming, failed starts, and
 abandoned work do not train rank. Pins are Project-local and remain above the
 learned order.
 
-Near-term Claude Code, Codex, and OpenCode Sessions are PTY-backed. That
+Near-term Claude Code, Codex, OpenCode, and Grok Build Sessions are PTY-backed. That
 transport is an implementation detail, not a requirement for future sources.
 Shells remain
 secondary Project tools even though Shell appears as a peer ribbon and `⌘K`
@@ -206,6 +209,41 @@ Model/effort discovery, create, attach, resume, branch, background, and
 delegation are source capabilities. The UI should expose only capabilities an
 adapter actually supports; a unified attach/resume design remains a hypothesis
 for later iteration.
+
+### What each launchable source actually supports
+
+The registry fails closed: a capability is declared only where Exawatt verified
+a mechanism on a real install, and an unverified one is reported absent rather
+than optimistically enabled.
+
+| Source | Model catalog | Reasoning effort | Delegation reported | Plan window |
+| --- | --- | --- | --- | --- |
+| Claude Code | live, per Project | live, per model | yes, through lifecycle hooks | no local record |
+| Codex | live, per Project | live, per model | no | yes, source-reported |
+| OpenCode | live, per Project | live, exact per-model variants | not through its PTY | no local record |
+| Grok Build | live (`grok models`) | source-owned — see below | not through its PTY | no local record |
+
+Two Grok Build facts are worth stating plainly because both are absences with
+reasons, not gaps waiting to be filled:
+
+- **Reasoning effort stays in Grok Build.** It accepts an effort at launch, but
+  publishes no per-model option set to any interface a PTY launch can read, so
+  Exawatt shows no effort control rather than inventing one.
+- **Delegated work is not reported to Exawatt.** Grok Build's hooks are
+  deliberately Claude Code-compatible and it does record subagents, but its
+  interactive TUI accepts no per-launch hook seam: hooks load only from the
+  state home, the `~/.claude` compatibility path, the project tree, or
+  `config.toml`, and the vendor's own per-connection injection point
+  (`--plugin-dir`) lives on its headless `grok agent` server. Relocating the
+  state home would move the operator's sign-in, configuration, folder trust,
+  and entire session history with it, so Exawatt injects nothing and the
+  Session's status rides the same inference Codex and OpenCode use. Its
+  delegation dots are therefore absent, not empty.
+
+Grok-the-model has been launchable through OpenCode since that source landed;
+Grok Build is the native harness — its own TUI, plan mode, subagents, and
+on-disk session record. Choosing between them is a choice of harness, not of
+model access.
 
 ## Activity and assurance contract
 
