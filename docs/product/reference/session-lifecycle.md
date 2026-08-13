@@ -39,6 +39,11 @@ selected Agent or broaden it to all Projects. Every scope starts eligible agent
 Sessions sequentially and never starts shells. A stopped shell offers **Start
 New Shell** instead. An individual stopped Agent offers **Resume This Agent**.
 
+Recovery is reachable without the pointer. **⌘⌥R** resumes the selected Agent
+and **⌘⌥⇧R** resumes the bar's own default scope; both are rebindable, both
+appear in **⌘K** only while something is paused, and neither changes what
+recovery does — they are a keyboard surface over the scopes above.
+
 Claude Code and Codex resume only by the exact provider conversation identity
 saved for that Session. Exawatt does not guess from the latest conversation or
 working directory. Electron main writes that identity to its own atomic local

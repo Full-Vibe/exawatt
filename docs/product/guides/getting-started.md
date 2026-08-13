@@ -143,6 +143,12 @@ all Projects. A stopped pane also offers **Resume This Agent**; a stopped shell
 offers **Start New Shell**. If an older Session is missing its exact provider
 identity, Exawatt labels it **Reconnect needed** instead of guessing.
 
+Both recovery scopes are keyboard verbs too. **⌘⌥R** resumes the selected
+Agent; **⌘⌥⇧R** resumes the same scope the bar's one-click control would —
+the selected Project, or every Project when this one has nothing paused. Both
+appear in **⌘K** while something is paused, and both are rebindable in
+Settings, so the chord the bar shows is always the chord you have.
+
 See the [Session lifecycle reference](../reference/session-lifecycle.md) for the
 state and persistence contract.
 
