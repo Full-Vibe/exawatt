@@ -63,6 +63,12 @@ export const FOCUS_ACTIVE_TERMINAL_EVENT = 'exawatt:focus-active-terminal';
  *  they are plain live events — no pending slots needed */
 export const TOGGLE_SPLIT_EVENT = 'exawatt:toggle-split';
 export const JUMP_ATTENTION_EVENT = 'exawatt:jump-attention';
+/** palette → workspace: relaunch recovery (D36/D47). Two scopes only —
+ *  the selected Agent, and the recovery bar's own default scope. Semantics
+ *  stay entirely in the workspace: these events carry no identity, so a row
+ *  can never ask for a resume the bar would not perform. */
+export const RESUME_ACTIVE_AGENT_EVENT = 'exawatt:resume-active-agent';
+export const RESUME_PARKED_SCOPE_EVENT = 'exawatt:resume-parked-scope';
 export const CLOSE_ACTIVE_EVENT = 'exawatt:close-active-tab';
 /** palette/menu → workspace: nudge the active tab within its Project
  *  (the ⌘⌥[/⌘⌥] fixed family, D20); detail = { delta: 1 | -1 } */

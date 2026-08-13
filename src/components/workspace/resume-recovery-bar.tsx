@@ -11,11 +11,36 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { formatShortcutKeys } from '@/lib/shortcuts/format';
+import { useEffectiveShortcut } from '@/components/shortcuts/use-effective-shortcut';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 
 interface ResumeBatchProgress {
   completed: number;
   total: number;
+}
+
+/**
+ * The bar's own chord hints (2026-08-13, operator: "there's no cmd+k or
+ * discoverable keyboard shortcut for resume this agent"). Rendered ALWAYS,
+ * never on a hover or modifier reveal: the bar appears for a few seconds
+ * after a relaunch, so a hint that has to be discovered to be discovered is
+ * no hint at all — and reserving the space by construction is how a hint
+ * satisfies "never shifts layout". The combo comes from the registry, so a
+ * rebind in Settings changes what the bar advertises.
+ */
+function ChordHint({ shortcutId }: { shortcutId: string }) {
+  const keys = useEffectiveShortcut(shortcutId);
+  if (!keys) return null;
+  return (
+    <kbd
+      aria-hidden
+      data-resume-chord-hint={shortcutId}
+      className="pointer-events-none ml-1 shrink-0 font-mono text-chrome-micro opacity-70"
+    >
+      {formatShortcutKeys(keys)}
+    </kbd>
+  );
 }
 
 export interface ResumeRecoveryBarProps {
@@ -103,9 +128,12 @@ export function ResumeRecoveryBar({
               <PlayIcon className="h-3.5 w-3.5" />
               {progress ? 'Resuming…' : 'Resume project'}
               {!progress && (
-                <span className="text-chrome-micro opacity-60">
-                  {activeProjectReadyCount}
-                </span>
+                <>
+                  <span className="text-chrome-micro opacity-60">
+                    {activeProjectReadyCount}
+                  </span>
+                  <ChordHint shortcutId="workspace-resume-scope" />
+                </>
               )}
             </Button>
 
@@ -127,13 +155,22 @@ export function ResumeRecoveryBar({
                   <DropdownMenuLabel className="text-chrome-meta font-medium text-muted-foreground">
                     Resume
                   </DropdownMenuLabel>
+                  {/* Counts move inline and the trailing slot becomes the
+                      chord column, the way every other menu in the app
+                      reads. Only the scopes that HAVE a chord show one —
+                      All projects is reachable by chord only when it is the
+                      bar's own default scope, and a hint that lies is worse
+                      than none. */}
                   {agentIsDistinctScope && (
                     <DropdownMenuItem
                       aria-label="Resume this agent"
                       onSelect={onResumeActiveTab}
                     >
                       This agent
-                      <DropdownMenuShortcut>1</DropdownMenuShortcut>
+                      <span className="ml-1 opacity-60">1</span>
+                      <DropdownMenuShortcut>
+                        <ChordHint shortcutId="workspace-resume-agent" />
+                      </DropdownMenuShortcut>
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem
@@ -141,8 +178,11 @@ export function ResumeRecoveryBar({
                     onSelect={onResumeActiveProject}
                   >
                     This project
-                    <DropdownMenuShortcut>
+                    <span className="ml-1 opacity-60">
                       {activeProjectReadyCount}
+                    </span>
+                    <DropdownMenuShortcut>
+                      <ChordHint shortcutId="workspace-resume-scope" />
                     </DropdownMenuShortcut>
                   </DropdownMenuItem>
                   {allIsDistinctScope && (
@@ -176,9 +216,12 @@ export function ResumeRecoveryBar({
             <PlayIcon className="h-3.5 w-3.5" />
             {progress ? 'Resuming…' : 'Resume all'}
             {!progress && (
-              <span className="text-chrome-micro opacity-60">
-                {readyAgentCount}
-              </span>
+              <>
+                <span className="text-chrome-micro opacity-60">
+                  {readyAgentCount}
+                </span>
+                <ChordHint shortcutId="workspace-resume-scope" />
+              </>
             )}
           </Button>
         ))}

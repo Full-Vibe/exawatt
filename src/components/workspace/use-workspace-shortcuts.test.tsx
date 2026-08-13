@@ -21,6 +21,8 @@ function actions(): WorkspaceShortcutActions {
     moveTab: yes(),
     moveProject: yes(),
     jumpAttention: yes(),
+    resumeActiveAgent: yes(),
+    resumeParkedScope: yes(),
     activateCommandAltitude: yes(),
     openPalette: yes(),
     togglePin: yes(),
@@ -287,6 +289,79 @@ describe('keyboard doctrine + arrangement (D20)', () => {
     expect(handlers.launchShell).toHaveBeenCalledOnce();
     expect(handlers.reopenClosed).toHaveBeenCalledOnce();
     expect(handlers.newAgent).toHaveBeenCalledOnce();
+  });
+
+  // ENG-016 D36/D47 keyboard surface (operator, 2026-08-13). Resume is the
+  // verb that brings a parked fleet back after a relaunch and it was the one
+  // verb that needed the mouse. ⇧ escalates Agent → the bar's own scope, the
+  // way ⌘⌥[ (tab) escalates to ⌘⌥⇧[ (Project).
+  it('separates the two recovery scopes on the resume family', () => {
+    const handlers = actions();
+    renderHook(() => useWorkspaceShortcuts(handlers));
+
+    fireEvent.keyDown(window, {
+      key: 'r',
+      code: 'KeyR',
+      metaKey: true,
+      altKey: true,
+    });
+    expect(handlers.resumeActiveAgent).toHaveBeenCalledOnce();
+    expect(handlers.resumeParkedScope).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, {
+      key: 'R',
+      code: 'KeyR',
+      metaKey: true,
+      altKey: true,
+      shiftKey: true,
+    });
+    expect(handlers.resumeParkedScope).toHaveBeenCalledOnce();
+    expect(handlers.resumeActiveAgent).toHaveBeenCalledOnce();
+  });
+
+  it('reaches resume from inside a focused terminal', () => {
+    const handlers = actions();
+    renderHook(() => useWorkspaceShortcuts(handlers));
+    const terminal = document.createElement('textarea');
+    terminal.className = 'xterm-helper-textarea';
+    document.body.append(terminal);
+    terminal.focus();
+
+    fireEvent.keyDown(terminal, {
+      key: 'r',
+      code: 'KeyR',
+      metaKey: true,
+      altKey: true,
+    });
+
+    expect(handlers.resumeActiveAgent).toHaveBeenCalledOnce();
+    terminal.remove();
+  });
+
+  it('follows a rebind of the resume chord (D9)', () => {
+    const handlers = actions();
+    renderHook(() => useWorkspaceShortcuts(handlers));
+    shortcutRegistry.setOverride('workspace-resume-agent', {
+      key: 'y',
+      modifiers: ['meta', 'alt'],
+    });
+
+    fireEvent.keyDown(window, {
+      key: 'r',
+      code: 'KeyR',
+      metaKey: true,
+      altKey: true,
+    });
+    expect(handlers.resumeActiveAgent).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, {
+      key: 'y',
+      code: 'KeyY',
+      metaKey: true,
+      altKey: true,
+    });
+    expect(handlers.resumeActiveAgent).toHaveBeenCalledOnce();
+    shortcutRegistry.removeOverride('workspace-resume-agent');
   });
 
   it('does not consume reopen when the action is unavailable', () => {

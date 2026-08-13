@@ -12,6 +12,8 @@
  *   ⌘⌥[ / ⌘⌥]    move the active tab within its Project (D20)
  *   ⌘⌥⇧[ / ⌘⌥⇧]  move the active Project in the strip (D20)
  *   ⌘J           jump to the oldest visibly needs-you Session; no-op if none
+ *   ⌘⌥R          resume the selected parked Agent (D36 scope: this Agent)
+ *   ⌘⌥⇧R         resume the recovery bar's scope (this Project, else all)
  *   ⌃⌘1 / ⌃⌘2 / ⌃⌘3  Terminal / Sessions / Spatial (D19 — off ⌘⇧3,
  *                     which macOS swallows for screenshots)
  *   ⌘K           session switcher / command palette (S2)
@@ -102,6 +104,10 @@ export interface WorkspaceShortcutActions extends FixedWorkspaceShortcutActions 
   reopenClosed: () => boolean;
   /** jump to the oldest visible needs-attention Session */
   jumpAttention: () => boolean;
+  /** ⌘⌥R — resume the selected parked Agent on its exact provider identity */
+  resumeActiveAgent: () => boolean;
+  /** ⌘⌥⇧R — resume the recovery bar's default scope (Project, else all) */
+  resumeParkedScope: () => boolean;
   /** open or refocus one absolute command altitude */
   activateCommandAltitude: (target: CommandAltitude) => boolean;
   /** open the ⌘K palette (session switcher) */
@@ -264,6 +270,8 @@ function useWorkspaceShortcutLayer(
         ['workspace-close-tab', registryActions.closeActive, true],
         ['workspace-reopen-closed-tab', registryActions.reopenClosed],
         ['workspace-jump-attention', registryActions.jumpAttention],
+        ['workspace-resume-agent', registryActions.resumeActiveAgent],
+        ['workspace-resume-scope', registryActions.resumeParkedScope],
         ['workspace-split', registryActions.togglePin],
         ['workspace-roadmap', registryActions.toggleRoadmap],
         ['workspace-rename', registryActions.renameActive],

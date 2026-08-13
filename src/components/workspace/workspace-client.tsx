@@ -56,6 +56,8 @@ import {
 } from './use-workspace-shortcuts';
 import {
   JUMP_ATTENTION_EVENT,
+  RESUME_ACTIVE_AGENT_EVENT,
+  RESUME_PARKED_SCOPE_EVENT,
   MOVE_ACTIVE_PROJECT_EVENT,
   MOVE_ACTIVE_TAB_EVENT,
   OPEN_ROADMAP_EVENT,
@@ -529,6 +531,45 @@ export function WorkspaceClient() {
     [projects]
   );
   const stoppedAgentCount = readyAgentCount + reconnectableAgents.length;
+
+  // Relaunch recovery, once (ENG-016 D36, presented by D47). The chord, the
+  // ⌘K row, and the recovery bar's controls all call these — a keyboard
+  // surface over the existing contract, so exact-identity eligibility
+  // (`tabCanResumeAsAgent`) and the bar's own default scope stay the only
+  // truth. Nothing here guesses an identity or resumes without being asked.
+  const resumeActiveAgentNow = useCallback((): boolean => {
+    if (!activeTab || !tabCanResumeAsAgent(activeTab)) return false;
+    void resumeTab(activeTab.id);
+    return true;
+  }, [activeTab, resumeTab]);
+  const resumeParkedScopeNow = useCallback((): boolean => {
+    if (readyAgentCount === 0) return false;
+    if (activeProject && activeProjectReadyCount > 0) {
+      resumeProject(activeProject.dir);
+    } else {
+      resumeAll();
+    }
+    return true;
+  }, [
+    activeProject,
+    activeProjectReadyCount,
+    readyAgentCount,
+    resumeAll,
+    resumeProject,
+  ]);
+
+  // The ⌘K rows dispatch these; run the same ladder so a row can never do
+  // less than the chord it advertises (the JUMP_ATTENTION_EVENT pattern).
+  useEffect(() => {
+    const onResumeAgent = () => resumeActiveAgentNow();
+    const onResumeScope = () => resumeParkedScopeNow();
+    window.addEventListener(RESUME_ACTIVE_AGENT_EVENT, onResumeAgent);
+    window.addEventListener(RESUME_PARKED_SCOPE_EVENT, onResumeScope);
+    return () => {
+      window.removeEventListener(RESUME_ACTIVE_AGENT_EVENT, onResumeAgent);
+      window.removeEventListener(RESUME_PARKED_SCOPE_EVENT, onResumeScope);
+    };
+  }, [resumeActiveAgentNow, resumeParkedScopeNow]);
 
   useEffect(() => {
     const off = window.electron?.pty?.onNotificationClick(({ id }) => {
@@ -1047,14 +1088,23 @@ export function WorkspaceClient() {
         activeProjectIndex >= 0 && activeProjectIndex < projects.length - 1,
       hasAttentionTarget,
       closedSessionCount,
+      // Recovery truth, shared by the bar, the chords, and the ⌘K rows
+      // (D36/D47) — one derivation, so no surface can offer a scope the
+      // others do not have.
+      resumableAgentCount: readyAgentCount,
+      activeProjectResumableCount: activeProjectReadyCount,
+      activeTabCanResume,
     });
   }, [
     activeProject,
+    activeProjectReadyCount,
     activeTab,
+    activeTabCanResume,
     closedSessionCount,
     hasAttentionTarget,
     pinnedTabId,
     projects,
+    readyAgentCount,
   ]);
   useEffect(() => {
     if (ready) publishWorkspaceCommandAvailability(commandAvailability);
@@ -1174,6 +1224,26 @@ export function WorkspaceClient() {
         }
         return true;
       },
+      // Recovery chords consume their keystroke either way and SAY why when
+      // there is nothing to resume (D44/D51): a chord that silently does
+      // nothing is indistinguishable from one that is broken — and after a
+      // relaunch "did my agents come back?" is exactly the open question.
+      resumeActiveAgent: () => {
+        if (!resumeActiveAgentNow()) {
+          announceWorkspace(
+            activeTab
+              ? 'This Agent is not parked'
+              : 'Select a parked Agent to resume'
+          );
+        }
+        return true;
+      },
+      resumeParkedScope: () => {
+        if (!resumeParkedScopeNow()) {
+          announceWorkspace('No parked Agents to resume');
+        }
+        return true;
+      },
       activateCommandAltitude: target => {
         activateCommandAltitude(target);
         return true;
@@ -1232,6 +1302,8 @@ export function WorkspaceClient() {
     moveTabWithFeedback,
     moveProjectWithFeedback,
     jumpAttentionQueue,
+    resumeActiveAgentNow,
+    resumeParkedScopeNow,
     togglePin,
     activateCommandAltitude,
     openCommandPalette,

@@ -23,6 +23,17 @@ import {
 } from 'vitest';
 import type { SessionRow } from '@/components/workspace/switcher-rows';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { defaultShortcuts, shortcutRegistry } from '@/lib/shortcuts';
+import {
+  deriveWorkspaceCommandAvailability,
+  publishWorkspaceCommandAvailability,
+  resetWorkspaceCommandAvailability,
+  type WorkspaceCommandAvailabilityInput,
+} from '@/components/workspace/workspace-command-availability';
+import {
+  RESUME_ACTIVE_AGENT_EVENT,
+  RESUME_PARKED_SCOPE_EVENT,
+} from '@/components/workspace/session-jump';
 import { DEMO_WORKSPACE_ID } from '@/lib/tenancy/workspace-scope';
 import { CommandPalette } from './command-palette';
 import type { CommandPaletteLaunchConfiguration } from './command-palette-launch-configurations';
@@ -415,5 +426,194 @@ describe('⌘K cross-group ranking (FIX-007)', () => {
       r.textContent?.includes('Wire gpagent telemetry export')
     );
     if (session !== -1) expect(session).toBeGreaterThan(0);
+  });
+});
+
+// ── ENG-016 D36/D47 keyboard surface (feedback row f05da191, operator on
+// dogfood 0.1.9): "There's no cmd+k or discoverable keyboard shortcut for
+// resume this agent." Resume is CONTEXTUAL — absent with nothing parked —
+// and both rows lead with the word so the D48 name-prefix band ranks the
+// verb over a Session that merely fuzzy-matches it.
+describe('⌘K relaunch recovery rows (ENG-016 D36/D47)', () => {
+  // Fuzzy-matches "resume" (r·e·s·u·m·e in order) without prefixing it, and
+  // renders in the Sessions group ABOVE Workspace — the collision the bands
+  // exist to settle.
+  const PTY_SESSIONS = [
+    {
+      id: 'pty-parked',
+      durableSessionId: 'dur-parked',
+      harness: 'claude' as const,
+      title: 'Rebuild the consumer metrics',
+      cwd: '/Users/jake/Code/exawatt',
+      projectDir: '/Users/jake/Code/exawatt',
+      projectName: 'exawatt',
+      cols: 80,
+      rows: 24,
+      startedAt: 1,
+      exited: false,
+      exitCode: null,
+      lastDataAt: 1,
+      harnessSessionId: null,
+    },
+  ];
+
+  const parked = (
+    overrides: Partial<WorkspaceCommandAvailabilityInput> = {}
+  ) =>
+    deriveWorkspaceCommandAvailability({
+      activeProjectName: 'exawatt',
+      hasActiveTab: true,
+      canToggleSplit: false,
+      canClose: true,
+      canMoveTabLeft: false,
+      canMoveTabRight: false,
+      canMoveProjectLeft: false,
+      canMoveProjectRight: false,
+      hasAttentionTarget: false,
+      closedSessionCount: 0,
+      resumableAgentCount: 0,
+      activeProjectResumableCount: 0,
+      activeTabCanResume: false,
+      ...overrides,
+    });
+
+  beforeEach(() => {
+    activeWorkspaceId = 'personal';
+    window.history.replaceState({}, '', '/workspace');
+    for (const definition of defaultShortcuts) {
+      shortcutRegistry.register({ ...definition, action: vi.fn() });
+    }
+    Object.defineProperty(window, 'electron', {
+      configurable: true,
+      value: {
+        pty: {
+          list: vi.fn(async () => PTY_SESSIONS),
+          closedSessions: vi.fn(async () => []),
+        },
+        workspace: { load: vi.fn(async () => null) },
+      },
+    });
+  });
+
+  afterEach(() => {
+    resetWorkspaceCommandAvailability();
+    for (const definition of defaultShortcuts) {
+      shortcutRegistry.unregister(definition.id);
+    }
+    window.history.replaceState({}, '', '/');
+    Reflect.deleteProperty(
+      window as unknown as Record<string, unknown>,
+      'electron'
+    );
+  });
+
+  function renderWorkspacePalette() {
+    return render(
+      <TooltipProvider>
+        <CommandPalette
+          open
+          onOpenChange={() => undefined}
+          onOpenHelpModal={() => undefined}
+        />
+      </TooltipProvider>
+    );
+  }
+
+  it('offers no resume verb while nothing is parked', async () => {
+    publishWorkspaceCommandAvailability(parked());
+    renderWorkspacePalette();
+    await waitFor(() => expect(visibleRows().length).toBeGreaterThan(0));
+    await typeQuery('resume');
+
+    const rows = visibleRows();
+    expect(rows.some(r => r.textContent?.includes('Resume'))).toBe(false);
+    // and the verbs are ABSENT, not greyed: no disabled row either
+    const disabled = Array.from(
+      document.querySelectorAll('[cmdk-item][aria-disabled="true"]')
+    ).map(el => el.textContent ?? '');
+    expect(disabled.some(text => text.includes('Resume'))).toBe(false);
+  });
+
+  it('ranks both recovery verbs above a fuzzy Session for "resume"', async () => {
+    publishWorkspaceCommandAvailability(
+      parked({
+        resumableAgentCount: 4,
+        activeProjectResumableCount: 2,
+        activeTabCanResume: true,
+      })
+    );
+    renderWorkspacePalette();
+    await waitFor(() => expect(visibleRows().length).toBeGreaterThan(0));
+    await typeQuery('resume');
+
+    const rows = visibleRows();
+    expect(rows[0].textContent).toContain('Resume this Agent');
+    expect(rows[1].textContent).toContain('Resume 2 parked Agents in exawatt');
+    const session = rows.findIndex(r =>
+      r.textContent?.includes('Rebuild the consumer metrics')
+    );
+    if (session !== -1) expect(session).toBeGreaterThan(1);
+  });
+
+  it('shows the rebindable chord beside each row', async () => {
+    publishWorkspaceCommandAvailability(
+      parked({
+        resumableAgentCount: 4,
+        activeProjectResumableCount: 2,
+        activeTabCanResume: true,
+      })
+    );
+    renderWorkspacePalette();
+    await waitFor(() => expect(visibleRows().length).toBeGreaterThan(0));
+    await typeQuery('resume');
+
+    const rows = visibleRows();
+    expect(rows[0].textContent).toContain('⌘⌥R');
+    expect(rows[1].textContent).toContain('⌘⌥⇧R');
+  });
+
+  it('names the recovery bar’s own scope when this Project has nothing parked', async () => {
+    publishWorkspaceCommandAvailability(
+      parked({ resumableAgentCount: 3, activeProjectResumableCount: 0 })
+    );
+    renderWorkspacePalette();
+    await waitFor(() => expect(visibleRows().length).toBeGreaterThan(0));
+    await typeQuery('resume');
+
+    const rows = visibleRows();
+    expect(rows[0].textContent).toContain('Resume all 3 parked Agents');
+    // the selected Agent is live — its verb is not offered
+    expect(rows.some(r => r.textContent?.includes('Resume this Agent'))).toBe(
+      false
+    );
+  });
+
+  it('asks the workspace to resume, carrying no identity of its own', async () => {
+    publishWorkspaceCommandAvailability(
+      parked({
+        resumableAgentCount: 4,
+        activeProjectResumableCount: 2,
+        activeTabCanResume: true,
+      })
+    );
+    const requests: string[] = [];
+    const onAgent = () => requests.push(RESUME_ACTIVE_AGENT_EVENT);
+    const onScope = () => requests.push(RESUME_PARKED_SCOPE_EVENT);
+    window.addEventListener(RESUME_ACTIVE_AGENT_EVENT, onAgent);
+    window.addEventListener(RESUME_PARKED_SCOPE_EVENT, onScope);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderWorkspacePalette();
+      await waitFor(() => expect(visibleRows().length).toBeGreaterThan(0));
+      await typeQuery('resume this agent');
+
+      fireEvent.keyDown(paletteInput(), { key: 'Enter' });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(requests).toEqual([RESUME_ACTIVE_AGENT_EVENT]);
+    } finally {
+      vi.useRealTimers();
+      window.removeEventListener(RESUME_ACTIVE_AGENT_EVENT, onAgent);
+      window.removeEventListener(RESUME_PARKED_SCOPE_EVENT, onScope);
+    }
   });
 });

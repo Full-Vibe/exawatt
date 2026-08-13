@@ -172,6 +172,42 @@ export const defaultShortcuts: ShortcutDefinition[] = [
     category: 'workspace',
     contexts: ['workspace'],
   },
+  // Relaunch recovery (ENG-016 D36, presented by D47). The two recovery
+  // scopes — this Agent, and the recovery bar's default Project/all scope —
+  // were pointer-only until 2026-08-13; resume was the one daily verb that
+  // required the mouse.
+  //
+  // Why R on ⌥ rather than the obvious ⌘R/⌘⇧R: both belong to this app's own
+  // View menu (Electron's `reload` / `forceReload` roles register those
+  // accelerators natively, so the renderer never sees the keydown). ⌥ is the
+  // established alternate-modifier home for a verb sharing a mnemonic with a
+  // taken chord (⌘T new Agent → ⌘⌥T new shell), and ⇧ is the established
+  // scope escalation inside an ⌥ family (⌘⌥[ moves the tab → ⌘⌥⇧[ moves the
+  // Project). Both survive the D19 effective-hotkey check: no Apple default
+  // and no user-enabled symbolic hotkey binds the R key.
+  //
+  // Deliberately NOT an extension of ⌘⇧T (D39's browser-style Session
+  // recovery). ⌘⇧T restores a CLOSED Session as a stopped tab and spawns
+  // nothing; resume starts a process against an exact provider identity on a
+  // tab already on screen. One chord for both would make the consequence —
+  // including whether a provider starts billing — depend on invisible state.
+  {
+    id: 'workspace-resume-agent',
+    keys: { key: 'r', modifiers: ['meta', 'alt'] },
+    label: 'Resume this Agent',
+    description: 'Restart the selected parked Agent on its exact Session',
+    category: 'workspace',
+    contexts: ['workspace'],
+  },
+  {
+    id: 'workspace-resume-scope',
+    keys: { key: 'r', modifiers: ['meta', 'alt', 'shift'] },
+    label: 'Resume the parked Agents',
+    description:
+      "Restart the recovery bar's scope — this Project, or every Project",
+    category: 'workspace',
+    contexts: ['workspace'],
+  },
   {
     id: 'workspace-split',
     keys: { key: 'd', modifiers: ['meta'] },

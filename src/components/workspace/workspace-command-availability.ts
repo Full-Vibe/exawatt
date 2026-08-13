@@ -20,15 +20,32 @@ export type WorkspaceContextCommand =
   | 'move-project-left'
   | 'move-project-right'
   | 'jump-attention'
-  | 'open-roadmap';
+  | 'open-roadmap'
+  | 'resume-agent'
+  | 'resume-scope';
 
 export interface CommandAvailability {
   available: boolean;
   reason: string | null;
 }
 
+/**
+ * What the recovery bar's one-click control would do right now (D47): the
+ * selected Project when it holds parked Agents, otherwise every Project. The
+ * ⌘K row and the chord read this so all three entry points name the same
+ * scope and the same count instead of each deriving its own.
+ */
+export interface ResumeScope {
+  kind: 'project' | 'all';
+  count: number;
+  /** Present only for `kind: 'project'`. */
+  projectName: string | null;
+}
+
 export interface WorkspaceCommandAvailability {
   activeProjectName: string | null;
+  /** null when nothing is parked — the verbs are absent, not disabled. */
+  resumeScope: ResumeScope | null;
   commands: Record<WorkspaceContextCommand, CommandAvailability>;
 }
 
@@ -43,6 +60,12 @@ export interface WorkspaceCommandAvailabilityInput {
   canMoveProjectRight: boolean;
   hasAttentionTarget: boolean;
   closedSessionCount: number;
+  /** Parked Agents with an exact provider identity, across every Project. */
+  resumableAgentCount: number;
+  /** …of those, the ones in the selected Project. */
+  activeProjectResumableCount: number;
+  /** the selected tab is itself a parked Agent with an exact identity */
+  activeTabCanResume: boolean;
 }
 
 const available = (): CommandAvailability => ({
@@ -66,10 +89,24 @@ export function deriveWorkspaceCommandAvailability({
   canMoveProjectRight,
   hasAttentionTarget,
   closedSessionCount,
+  resumableAgentCount,
+  activeProjectResumableCount,
+  activeTabCanResume,
 }: WorkspaceCommandAvailabilityInput): WorkspaceCommandAvailability {
   const hasProject = activeProjectName !== null;
+  const resumeScope: ResumeScope | null =
+    resumableAgentCount === 0
+      ? null
+      : hasProject && activeProjectResumableCount > 0
+        ? {
+            kind: 'project',
+            count: activeProjectResumableCount,
+            projectName: activeProjectName,
+          }
+        : { kind: 'all', count: resumableAgentCount, projectName: null };
   return {
     activeProjectName,
+    resumeScope,
     commands: {
       'launch-shell': hasProject
         ? available()
@@ -124,6 +161,16 @@ export function deriveWorkspaceCommandAvailability({
       'open-roadmap': hasProject
         ? available()
         : unavailable('Open a Project first'),
+      // Recovery keeps D36's exact-identity contract: a tab without a
+      // captured provider ID is never counted, so neither verb can offer to
+      // guess one (ENG-018).
+      'resume-agent': activeTabCanResume
+        ? available()
+        : unavailable('This Agent is not parked'),
+      'resume-scope':
+        resumeScope !== null
+          ? available()
+          : unavailable('No parked Agents to resume'),
     },
   };
 }
@@ -140,6 +187,9 @@ export const EMPTY_WORKSPACE_COMMAND_AVAILABILITY =
     canMoveProjectRight: false,
     hasAttentionTarget: false,
     closedSessionCount: 0,
+    resumableAgentCount: 0,
+    activeProjectResumableCount: 0,
+    activeTabCanResume: false,
   });
 
 let snapshot = EMPTY_WORKSPACE_COMMAND_AVAILABILITY;

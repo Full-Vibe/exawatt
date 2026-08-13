@@ -45,6 +45,8 @@ import {
   Shapes,
   Trophy,
   CopyPlus,
+  Play,
+  ListRestart,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -56,6 +58,8 @@ import {
   EDIT_ACTIVE_PROJECT_EVENT,
   TOGGLE_SPLIT_EVENT,
   JUMP_ATTENTION_EVENT,
+  RESUME_ACTIVE_AGENT_EVENT,
+  RESUME_PARKED_SCOPE_EVENT,
   CLOSE_ACTIVE_EVENT,
   MOVE_ACTIVE_PROJECT_EVENT,
   MOVE_ACTIVE_TAB_EVENT,
@@ -201,6 +205,8 @@ const WORKSPACE_PALETTE_ROW_ID = {
   color: 'ws-color',
   split: 'ws-split',
   jump: 'ws-jump',
+  resumeAgent: 'ws-resume-agent',
+  resumeScope: 'ws-resume-scope',
   roadmap: 'ws-roadmap',
   moveTabLeft: 'ws-move-left',
   moveTabRight: 'ws-move-right',
@@ -558,7 +564,76 @@ export function CommandPalette({
     Array<CommandItem & { demoAvailable?: boolean }>
   >(() => {
     void shortcutVersion;
+    // Relaunch recovery is CONTEXTUAL (ENG-016 D36/D47): with nothing parked
+    // these rows are absent, not greyed. A disabled "Resume" would appear on
+    // every ⌘K in a healthy fleet and teach the operator to ignore the one
+    // row that matters for the ten seconds after a relaunch. Both names lead
+    // with "Resume" so the D48 name-prefix band ranks the verb over a fuzzy
+    // Session hit, and the scope row names the exact scope the recovery
+    // bar's one-click control would use — never a second recovery model.
+    const resumeScope = workspaceAvailability.resumeScope;
+    const parkedAgents = (count: number) =>
+      `${count} parked ${count === 1 ? 'Agent' : 'Agents'}`;
+    const resumeScopeLabel =
+      resumeScope === null
+        ? null
+        : resumeScope.kind === 'project'
+          ? `Resume ${parkedAgents(resumeScope.count)} in ${resumeScope.projectName}`
+          : `Resume all ${parkedAgents(resumeScope.count)}`;
+    const resumeKeywords = [
+      'resume',
+      'restart',
+      'relaunch',
+      'recover',
+      'parked',
+      'paused',
+      'stopped',
+      'wake',
+      'agent',
+    ];
     return [
+      ...(workspaceAvailability.commands['resume-agent'].available
+        ? [
+            {
+              id: WORKSPACE_PALETTE_ROW_ID.resumeAgent,
+              label: 'Resume this Agent',
+              value: paletteValue(
+                'Resume this Agent',
+                WORKSPACE_PALETTE_ROW_ID.resumeAgent
+              ),
+              keywords: [...resumeKeywords, 'this', 'selected'],
+              shortcut: shortcutRegistry.getEffectiveKeys(
+                'workspace-resume-agent'
+              ),
+              icon: Play,
+              onSelect: () => dispatch(RESUME_ACTIVE_AGENT_EVENT),
+            },
+          ]
+        : []),
+      ...(resumeScopeLabel !== null
+        ? [
+            {
+              id: WORKSPACE_PALETTE_ROW_ID.resumeScope,
+              label: resumeScopeLabel,
+              value: paletteValue(
+                resumeScopeLabel,
+                WORKSPACE_PALETTE_ROW_ID.resumeScope
+              ),
+              keywords: [
+                ...resumeKeywords,
+                'all',
+                'project',
+                'fleet',
+                'everything',
+              ],
+              shortcut: shortcutRegistry.getEffectiveKeys(
+                'workspace-resume-scope'
+              ),
+              icon: ListRestart,
+              onSelect: () => dispatch(RESUME_PARKED_SCOPE_EVENT),
+            },
+          ]
+        : []),
       {
         id: WORKSPACE_PALETTE_ROW_ID.rename,
         label: 'Rename the active tab',

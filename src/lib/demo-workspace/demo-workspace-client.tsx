@@ -534,6 +534,11 @@ export function DemoWorkspaceClient() {
         attentionNeedsOperator(signal)
       ),
       closedSessionCount: closedTabs.length,
+      // Demo tabs never own a provider identity and cannot spawn a process,
+      // so relaunch recovery has nothing to offer here (ENG-027).
+      resumableAgentCount: 0,
+      activeProjectResumableCount: 0,
+      activeTabCanResume: false,
     });
   }, [activeId, activeProject, activeTab, attention, closedTabs, projects]);
 

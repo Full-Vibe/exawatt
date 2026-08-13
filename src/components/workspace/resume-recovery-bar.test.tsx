@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { defaultShortcuts, shortcutRegistry } from '@/lib/shortcuts';
 import {
   ResumeRecoveryBar,
   type ResumeRecoveryBarProps,
@@ -24,6 +25,18 @@ function props(
 }
 
 describe('ResumeRecoveryBar', () => {
+  beforeEach(() => {
+    for (const definition of defaultShortcuts) {
+      shortcutRegistry.register({ ...definition, action: vi.fn() });
+    }
+  });
+
+  afterEach(() => {
+    for (const definition of defaultShortcuts) {
+      shortcutRegistry.unregister(definition.id);
+    }
+  });
+
   it('makes the selected Project the one-click relaunch scope', () => {
     const value = props();
     render(<ResumeRecoveryBar {...value} />);
@@ -88,6 +101,44 @@ describe('ResumeRecoveryBar', () => {
       screen.getByRole('button', { name: 'Resume all 3 agents' })
     );
     expect(value.onResumeAll).toHaveBeenCalledOnce();
+  });
+
+  // ENG-016 D36/D47 keyboard surface (operator, 2026-08-13). The bar is the
+  // visible affordance; it must also TEACH the chord, or the chord is only
+  // discoverable by reading the cheat sheet you did not know to open.
+  it('teaches each scope its chord from the registry', async () => {
+    const value = props();
+    render(<ResumeRecoveryBar {...value} />);
+
+    expect(
+      screen.getByRole('button', { name: 'Resume 2 agents in Exawatt' })
+    ).toHaveTextContent('⌘⌥⇧R');
+
+    fireEvent.pointerDown(
+      screen.getByRole('button', { name: 'Choose resume scope' }),
+      { button: 0, ctrlKey: false }
+    );
+    expect(
+      await screen.findByRole('menuitem', { name: 'Resume this agent' })
+    ).toHaveTextContent('⌘⌥R');
+    expect(
+      screen.getByRole('menuitem', {
+        name: 'Resume 2 agents in this project',
+      })
+    ).toHaveTextContent('⌘⌥⇧R');
+  });
+
+  it('follows a rebind instead of advertising a stale chord (D9)', () => {
+    shortcutRegistry.setOverride('workspace-resume-scope', {
+      key: 'y',
+      modifiers: ['meta', 'alt', 'shift'],
+    });
+    render(<ResumeRecoveryBar {...props()} />);
+
+    expect(
+      screen.getByRole('button', { name: 'Resume 2 agents in Exawatt' })
+    ).toHaveTextContent('⌘⌥⇧Y');
+    shortcutRegistry.removeOverride('workspace-resume-scope');
   });
 
   it('reports reconnection separately and disables recovery during a batch', () => {
