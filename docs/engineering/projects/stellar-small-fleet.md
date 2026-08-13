@@ -642,6 +642,26 @@ Implementation record (landed 2026-07-10):
 
 ## Findings log
 
+- 2026-08-13 (triage, feedback row `7d814294-fe23-4c28-b586-12f634d7aad6`,
+  operator on dogfood 0.1.9 `0cb5eba`, screenshot attached): **Claude Code
+  Agents whose DELEGATED subagents are still running show the amber
+  needs-you signal.** "I see a few agents indicating orange 'attention
+  needed' but they have subagents running." Queued fix on the S1 attention
+  system; the attached ribbon shows two such chips (`Evaluate Exawatt …`,
+  `Position Exawatt …`) amber while delegated work continues.
+
+  Diagnostic starting point, not a diagnosis: the parent Session's own
+  output goes quiet while its subagents work, and both attention paths can
+  read that quiet as a finished turn — S1.1's reported-boundary path (does
+  the harness report a parent `Stop` while children run?) and the
+  byte-quiescence backstop (a parent emitting nothing for the quiet window
+  looks idle). D38's latch then holds the state. ENG-023 already reads the
+  on-disk subagent records that would prove children are live, so the fix is
+  likely a suppression rule — a Session with running delegated children is
+  not needs-you — rather than new detection. Verify against D33's calm
+  attention contract and D40's five-signal protocol before changing the
+  light: `active` with delegation is the honest state.
+
 - 2026-08-10 (triage, feedback row `60fa8c39-63da-432d-8c9d-14d901ac40b2`,
   operator on dogfood 0.1.9): **the needs-you bell is silent for Claude Code
   and Codex Sessions but sounds for OpenRouter (opencode) Sessions.** Queued
