@@ -557,8 +557,22 @@ export function registerPtyIPC(previousRunInterrupted = false): void {
     ...ptySessions.bufferSince(id, cursor),
     cursor: ptySessions.bufferCursor(id),
   }));
-  handleTrusted('pty:retained-history', (_event, durableSessionId: string) =>
-    ptySessions.retainedHistory(durableSessionId)
+  // The paused-Agent record's read: O(1), no transcript (incident 0008).
+  handleTrusted(
+    'pty:retained-history-meta',
+    (_event, durableSessionId: string) =>
+      ptySessions.retainedHistoryMeta(durableSessionId)
+  );
+  // Explicitly requested, rendered in main, bounded before it crosses IPC.
+  handleTrusted(
+    'pty:retained-transcript',
+    (_event, durableSessionId: string, maxLines?: number) =>
+      ptySessions.retainedTranscript(
+        durableSessionId,
+        typeof maxLines === 'number' && maxLines > 0
+          ? Math.min(maxLines, 20_000)
+          : 2_000
+      )
   );
   // read-only clipboard for the composer (D24 image paste): an image
   // saves to a temp file (same lifecycle as terminal pastes), text

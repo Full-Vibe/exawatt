@@ -51,6 +51,15 @@ export const SURFACE_GATES = [
       ),
   },
   {
+    gate: 'eval:workspace:paused',
+    why: 'a paused Agent must state how it ended and must not read its transcript to render',
+    match: file =>
+      /^src\/components\/workspace\/paused-agent-record\.tsx?$/.test(file) ||
+      /^electron\/main\/pty\/(?:transcript-lines|session-history-store)\.ts$/.test(
+        file
+      ),
+  },
+  {
     gate: 'eval:workspace:team',
     why: 'the Team altitude owns live re-sorting, its glide, and the stored order',
     match: file =>

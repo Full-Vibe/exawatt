@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { Play } from 'lucide-react';
 import { WORKSPACE_HUD as HUD, withThemeAlpha } from './workspace-theme';
 import { READINESS_NEUTRAL } from '@/components/readiness';
 import {
@@ -51,7 +52,7 @@ import {
 } from './team-grid-nav';
 import { useGoalVisualPreference } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { tokens as formatTokens } from '@/components/consumption/flux';
-import { tabIsLive } from './use-workspace-state';
+import { tabCanResumeAsAgent, tabIsLive } from './use-workspace-state';
 import type { Project } from './use-workspace-state';
 import type { PtyHarness, SessionDelegation } from '@/types/electron';
 import type { RoadmapItemView } from '@exawatt/ui-model';
@@ -83,6 +84,8 @@ interface Tile {
   live: boolean;
   /** short state word for non-live tabs ("stopped", "interrupted", …) */
   stateLabel: string | null;
+  /** stopped AND carrying the identity to resume exactly (FIX-010) */
+  canResume: boolean;
 }
 
 interface EmptyProjectItem {
@@ -139,6 +142,7 @@ export function ExposeOverlay({
   roadmapRead,
   onPick,
   onPickProject = () => {},
+  onResumeTab,
   onStartRoadmapAgent = async () => false,
   onStartRoadmapRemediation = async () => false,
   onAttachRoadmapSession = () => false,
@@ -184,6 +188,10 @@ export function ExposeOverlay({
   roadmapRead?: RoadmapReadSource;
   onPick: (dir: string, tabId: string) => void;
   onPickProject?: (dir: string) => void;
+  /** Resume a paused Agent from here (FIX-010). Team paints stopped Agents,
+   *  so withholding the verb made the altitude state a fact it could not act
+   *  on; the operator had to descend to the Agent altitude to get back. */
+  onResumeTab?: (dir: string, tabId: string) => void;
   onStartRoadmapAgent?: (
     dir: string,
     item: RoadmapItemView
@@ -253,6 +261,7 @@ export function ExposeOverlay({
               ? null
               : (TILE_STATE_LABEL[t.lifecycle] ??
                 (t.exitCode !== null ? 'exited' : 'stopped')),
+            canResume: tabCanResumeAsAgent(t),
           };
         })
       ),
@@ -601,8 +610,32 @@ export function ExposeOverlay({
         key={tile.tabId}
         ref={registerFlipNode(tile.tabId)}
         data-expose-tile-slot={tile.tabId}
-        className="shrink-0"
+        className="group/tile relative shrink-0"
       >
+        {/* FIX-010: Team paints stopped Agents, so it owes the verb too.
+            A sibling of the tile button, never nested inside it. */}
+        {tile.canResume && onResumeTab && (
+          <button
+            type="button"
+            data-expose-resume={tile.tabId}
+            tabIndex={-1}
+            title={`Resume ${display.primary}`}
+            aria-label={`Resume ${display.primary}, ${tile.projectName}`}
+            onClick={event => {
+              event.stopPropagation();
+              onResumeTab(tile.dir, tile.tabId);
+            }}
+            className="absolute right-2 top-2 z-20 inline-flex min-h-7 items-center gap-1 rounded border px-2 font-mono text-chrome-micro opacity-0 outline-none transition-opacity duration-150 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-hud-cyan group-hover/tile:opacity-100 motion-reduce:transition-none"
+            style={{
+              color: HUD.cyan,
+              borderColor: withThemeAlpha(HUD.cyan, 0.4),
+              background: HUD.bg.panelFill,
+            }}
+          >
+            <Play className="h-3 w-3" />
+            Resume
+          </button>
+        )}
       <button
         ref={node => {
           if (node) tileRefs.current.set(tile.tabId, node);

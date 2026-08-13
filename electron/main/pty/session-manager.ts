@@ -33,6 +33,7 @@ import {
   type PtyHarness,
 } from './harness-types';
 import { harnessDescriptor } from './harness-registry';
+import { transcriptLines } from './transcript-lines';
 import {
   SessionIdentityStore,
   type SessionIdentityRecord,
@@ -1035,6 +1036,48 @@ export class PtySessionManager extends EventEmitter {
   /** layout persistence source (W0.2): everything EXCEPT the live process */
   serialize(): PtySessionInfo[] {
     return this.list();
+  }
+
+  /**
+   * What a paused Agent needs to describe itself. Deliberately does NOT read
+   * the transcript (ENG-016 BUG-012, incident 0008): opening a paused Agent
+   * used to JSON-parse megabytes on this process, which is a frozen app, and
+   * a record only needs its size and when it stopped.
+   */
+  async retainedHistoryMeta(
+    durableSessionId: string
+  ): Promise<{ bytes: number; updatedAt: number; exists: boolean }> {
+    const runtime = Array.from(this.sessions.values()).find(
+      session => session.info.durableSessionId === durableSessionId
+    );
+    if (runtime) {
+      const text = this.scrollback.text(durableSessionId);
+      return {
+        bytes: text.length,
+        updatedAt: runtime.info.lastDataAt,
+        exists: text.length > 0,
+      };
+    }
+    return (
+      this.history?.meta(durableSessionId) ?? {
+        bytes: 0,
+        updatedAt: 0,
+        exists: false,
+      }
+    );
+  }
+
+  /**
+   * The transcript as readable lines, bounded, and only when the operator
+   * asks for it. Rendering happens HERE so megabytes never cross IPC.
+   */
+  async retainedTranscript(
+    durableSessionId: string,
+    maxLines = 2_000
+  ): Promise<{ lines: string[]; truncated: number; corrupt: boolean }> {
+    const history = await this.retainedHistory(durableSessionId);
+    const rendered = transcriptLines(history.text, { maxLines });
+    return { ...rendered, corrupt: history.corrupt };
   }
 
   async retainedHistory(

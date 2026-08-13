@@ -49,7 +49,7 @@ import {
 } from './use-workspace-state';
 import { SessionRestorePanel } from './session-restore-panel';
 import { ResumeRecoveryBar } from './resume-recovery-bar';
-import { RetainedTerminalPane } from './retained-terminal-pane';
+import { PausedAgentRecord } from './paused-agent-record';
 import {
   useWorkspaceShortcuts,
   type WorkspaceShortcutActions,
@@ -1739,10 +1739,9 @@ export function WorkspaceClient() {
                                 tab={tab}
                                 onResumeTab={resumeTab}
                               />
-                              <RetainedTerminalPane
-                                durableSessionId={tab.durableSessionId}
-                                title={tab.title}
-                                font={font}
+                              <PausedAgentRecord
+                                tab={tab}
+                                summary={summaries[tab.durableSessionId]}
                               />
                             </div>
                           )}
@@ -1824,6 +1823,12 @@ export function WorkspaceClient() {
           onPick={(dir, tabId) => {
             selectTab(dir, tabId);
             closeOverview();
+          }}
+          onResumeTab={(dir, tabId) => {
+            // Resume in place and STAY at Team: the operator asked to reach
+            // the verb from here, not to be thrown down an altitude for it.
+            selectTab(dir, tabId);
+            void resumeTab(tabId);
           }}
           onPickProject={dir => {
             const index = projects.findIndex(project => project.dir === dir);

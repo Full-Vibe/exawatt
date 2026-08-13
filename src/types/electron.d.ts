@@ -347,12 +347,17 @@ export interface ElectronPtyApi {
     id: string,
     cursor: number
   ) => Promise<{ text: string; cursor: number; truncated: boolean }>;
-  retainedHistory: (durableSessionId: string) => Promise<{
-    text: string;
-    cursor: number;
+  /** O(1) description of a paused Session — never reads the transcript. */
+  retainedHistoryMeta: (durableSessionId: string) => Promise<{
+    bytes: number;
     updatedAt: number;
-    corrupt: boolean;
+    exists: boolean;
   }>;
+  /** The transcript as readable lines, rendered in main and bounded. */
+  retainedTranscript: (
+    durableSessionId: string,
+    maxLines?: number
+  ) => Promise<{ lines: string[]; truncated: number; corrupt: boolean }>;
   pasteClipboard: (
     id: string
   ) => Promise<{ kind: 'image' | 'text' | 'empty'; path?: string }>;

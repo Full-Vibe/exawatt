@@ -1444,7 +1444,13 @@ try {
   await stoppedPane
     .getByRole('button', { name: 'Resume This Agent' })
     .waitFor();
-  await page.getByText('Saved terminal history · read-only').waitFor();
+  // A stopped Agent shows a RECORD, not a replayed terminal (BUG-013): it
+  // states how the Session ended and offers the transcript rather than
+  // pouring it onto the pane. The old assertion here waited for the retained
+  // terminal's read-only badge, which is the surface that was removed.
+  await page.locator('[data-paused-agent-record]').waitFor();
+  await page.getByText(/Stopped cleanly|Exited with code|Interrupted/).waitFor();
+  await page.locator('[data-show-transcript]').waitFor();
   await page.screenshot({
     path: join(SCREENSHOT_DIR, 'stopped-pane-read-only.png'),
   });

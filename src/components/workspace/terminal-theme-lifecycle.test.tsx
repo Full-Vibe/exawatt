@@ -6,7 +6,6 @@ import {
   resolveAppearance,
 } from '@/lib/appearance/resolve-appearance';
 import type { ResolvedAppearance } from '@/lib/appearance/types';
-import { RetainedTerminalPane } from './retained-terminal-pane';
 import { TerminalPane } from './terminal-pane';
 import { resolveTerminalFont } from './terminal-font';
 
@@ -145,7 +144,6 @@ beforeEach(() => {
     onData: vi.fn(() => vi.fn()),
     bufferSnapshot: vi.fn(async () => ({ text: 'live history', cursor: 1 })),
     bufferSince: vi.fn(async () => ({ text: '', cursor: 1 })),
-    retainedHistory: vi.fn(async () => ({ text: 'saved history', corrupt: false })),
     resize: vi.fn(async () => undefined),
     write: vi.fn(async () => undefined),
     openExternal: vi.fn(async () => undefined),
@@ -192,41 +190,6 @@ describe('xterm theme lifecycle', () => {
     expect(terminal.writes).toEqual(['live history']);
     expect(xterm.state.fitCalls).toBe(fitCalls);
     expect(vi.mocked(pty.resize)).toHaveBeenCalledTimes(resizeCalls);
-    expect(terminal.options.minimumContrastRatio).toBe(4.5);
-  });
-
-  it('updates retained history without remount, replay, or fit', async () => {
-    const view = render(
-      <RetainedTerminalPane
-        durableSessionId="retained-1"
-        font={font}
-        title="Research"
-      />
-    );
-
-    await waitFor(() => expect(xterm.state.terminals).toHaveLength(1));
-    const terminal = xterm.state.terminals[0];
-    await waitFor(() => expect(terminal.writes).toEqual(['saved history']));
-    const fitCalls = xterm.state.fitCalls;
-
-    xterm.state.appearance = resolved('exawatt-night-dark');
-    view.rerender(
-      <RetainedTerminalPane
-        durableSessionId="retained-1"
-        font={font}
-        title="Research"
-      />
-    );
-
-    await waitFor(() =>
-      expect(
-        (terminal.options.theme as { background: string }).background
-      ).toBe('#080E0C')
-    );
-    expect(xterm.state.terminals).toHaveLength(1);
-    expect(xterm.state.disposeCalls).toBe(0);
-    expect(terminal.writes).toEqual(['saved history']);
-    expect(xterm.state.fitCalls).toBe(fitCalls);
     expect(terminal.options.minimumContrastRatio).toBe(4.5);
   });
 });

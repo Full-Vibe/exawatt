@@ -172,3 +172,48 @@ describe('SessionHistoryStore', () => {
     );
   });
 });
+
+// ── ENG-016 BUG-012 / incident 0008: the interaction path must not read the
+// transcript, and one Session's transcript must not stall another's.
+describe('history metadata and per-Session serialization', () => {
+  it('describes a paused Session without parsing its transcript', async () => {
+    const { value } = await store();
+    await value.initialize();
+    value.queue('sess-a', {
+      text: 'x'.repeat(200_000),
+      cursor: 200_000,
+      updatedAt: 1_000,
+    });
+    await value.flush();
+
+    const meta = await value.meta('sess-a');
+    expect(meta.exists).toBe(true);
+    expect(meta.bytes).toBeGreaterThan(100_000);
+    expect(meta.updatedAt).toBeGreaterThan(0);
+
+    expect(await value.meta('sess-never')).toEqual({
+      bytes: 0,
+      updatedAt: 0,
+      exists: false,
+    });
+  });
+
+  it('serializes per Session, so one transcript cannot block another', async () => {
+    const { value } = await store();
+    await value.initialize();
+    value.queue('slow', {
+      text: 'y'.repeat(400_000),
+      cursor: 400_000,
+      updatedAt: 1,
+    });
+    value.queue('quick', { text: 'ok', cursor: 2, updatedAt: 1 });
+    await value.flush();
+
+    const [slow, quick] = await Promise.all([
+      value.load('slow'),
+      value.load('quick'),
+    ]);
+    expect(slow.text).toHaveLength(400_000);
+    expect(quick.text).toBe('ok');
+  });
+});

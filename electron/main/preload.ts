@@ -95,8 +95,10 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('pty:buffer-snapshot', id),
     bufferSince: (id: string, cursor: number) =>
       ipcRenderer.invoke('pty:buffer-since', id, cursor),
-    retainedHistory: (durableSessionId: string) =>
-      ipcRenderer.invoke('pty:retained-history', durableSessionId),
+    retainedHistoryMeta: (durableSessionId: string) =>
+      ipcRenderer.invoke('pty:retained-history-meta', durableSessionId),
+    retainedTranscript: (durableSessionId: string, maxLines?: number) =>
+      ipcRenderer.invoke('pty:retained-transcript', durableSessionId, maxLines),
     pasteClipboard: (id: string) =>
       ipcRenderer.invoke('pty:paste-clipboard', id),
     clipboardRead: () => ipcRenderer.invoke('pty:clipboard-read'),
