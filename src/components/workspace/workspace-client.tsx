@@ -537,11 +537,32 @@ export function WorkspaceClient() {
   // surface over the existing contract, so exact-identity eligibility
   // (`tabCanResumeAsAgent`) and the bar's own default scope stay the only
   // truth. Nothing here guesses an identity or resumes without being asked.
+  // While Team is open the roving selection IS the subject — Enter opens it,
+  // so the resume verb must act on it too. Targeting `activeTab` from Team
+  // resumed a different Agent than the one on screen.
+  const [teamSelection, setTeamSelection] = useState<{
+    dir: string;
+    tabId: string;
+  } | null>(null);
+  // A non-null selection MEANS Team is open: the overlay publishes null when
+  // it unmounts, so this needs no second source of truth for the altitude.
+  const resumeTargetTab = useMemo(() => {
+    if (!teamSelection) return activeTab;
+    return (
+      projects
+        .find(project => project.dir === teamSelection.dir)
+        ?.tabs.find(tab => tab.id === teamSelection.tabId) ?? null
+    );
+  }, [activeTab, projects, teamSelection]);
+
+  const resumeTargetCanResume =
+    !!resumeTargetTab && tabCanResumeAsAgent(resumeTargetTab);
+
   const resumeActiveAgentNow = useCallback((): boolean => {
-    if (!activeTab || !tabCanResumeAsAgent(activeTab)) return false;
-    void resumeTab(activeTab.id);
+    if (!resumeTargetTab || !tabCanResumeAsAgent(resumeTargetTab)) return false;
+    void resumeTab(resumeTargetTab.id);
     return true;
-  }, [activeTab, resumeTab]);
+  }, [resumeTargetTab, resumeTab]);
   const resumeParkedScopeNow = useCallback((): boolean => {
     if (readyAgentCount === 0) return false;
     if (activeProject && activeProjectReadyCount > 0) {
@@ -1093,14 +1114,14 @@ export function WorkspaceClient() {
       // others do not have.
       resumableAgentCount: readyAgentCount,
       activeProjectResumableCount: activeProjectReadyCount,
-      activeTabCanResume,
+      activeTabCanResume: resumeTargetCanResume,
     });
   }, [
     activeProject,
     activeProjectReadyCount,
     activeTab,
-    activeTabCanResume,
     closedSessionCount,
+    resumeTargetCanResume,
     hasAttentionTarget,
     pinnedTabId,
     projects,
@@ -1824,6 +1845,7 @@ export function WorkspaceClient() {
             selectTab(dir, tabId);
             closeOverview();
           }}
+          onSelectionChange={setTeamSelection}
           onResumeTab={(dir, tabId) => {
             // Resume in place and STAY at Team: the operator asked to reach
             // the verb from here, not to be thrown down an altitude for it.

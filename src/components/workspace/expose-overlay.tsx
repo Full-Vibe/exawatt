@@ -143,6 +143,7 @@ export function ExposeOverlay({
   onPick,
   onPickProject = () => {},
   onResumeTab,
+  onSelectionChange,
   onStartRoadmapAgent = async () => false,
   onStartRoadmapRemediation = async () => false,
   onAttachRoadmapSession = () => false,
@@ -192,6 +193,10 @@ export function ExposeOverlay({
    *  so withholding the verb made the altitude state a fact it could not act
    *  on; the operator had to descend to the Agent altitude to get back. */
   onResumeTab?: (dir: string, tabId: string) => void;
+  /** The roving selection, published so workspace-level verbs act on what is
+   *  selected HERE. Without it the resume chord targeted the active tab
+   *  while the operator was looking at a different tile. */
+  onSelectionChange?: (selection: { dir: string; tabId: string } | null) => void;
   onStartRoadmapAgent?: (
     dir: string,
     item: RoadmapItemView
@@ -540,6 +545,22 @@ export function ExposeOverlay({
     // mirror of down/up. Modifier combos are NOT movement: ⌘K must stay the
     // palette, ⌘J the attention jump.
     const plainKey = !e.metaKey && !e.ctrlKey && !e.altKey;
+    // FIX-010 keyboard half: the Resume control was reachable by mouse only,
+    // and its focus-visible styling could never fire because the button is
+    // deliberately out of the tab order (the grid is one roving stop). `r`
+    // acts on the SELECTED tile, which is the thing the operator is looking
+    // at — the same rule Enter follows.
+    if (plainKey && e.key === 'r' && onResumeTab) {
+      const item = items[sel];
+      const tile = item?.tabId
+        ? tiles.find(candidate => candidate.tabId === item.tabId)
+        : undefined;
+      if (tile?.canResume) {
+        e.preventDefault();
+        onResumeTab(tile.dir, tile.tabId);
+        return;
+      }
+    }
     const direction: TeamGridDirection | null =
       e.key === 'ArrowRight'
         ? 'right'
@@ -560,6 +581,19 @@ export function ExposeOverlay({
       });
     }
   };
+
+  const selectedItem = items[sel];
+  const selectedTabId = selectedItem?.tabId ?? null;
+  const selectedDirForVerbs = selectedItem?.dir ?? null;
+  useEffect(() => {
+    onSelectionChange?.(
+      selectedTabId && selectedDirForVerbs
+        ? { dir: selectedDirForVerbs, tabId: selectedTabId }
+        : null
+    );
+  }, [onSelectionChange, selectedDirForVerbs, selectedTabId]);
+  // Leaving Team hands the verbs back to the Agent altitude's active tab.
+  useEffect(() => () => onSelectionChange?.(null), [onSelectionChange]);
 
   const sessionTile = (tile: Tile) => {
     const index = items.findIndex(item => item.tabId === tile.tabId);
@@ -625,7 +659,9 @@ export function ExposeOverlay({
               event.stopPropagation();
               onResumeTab(tile.dir, tile.tabId);
             }}
-            className="absolute right-2 top-2 z-20 inline-flex min-h-7 items-center gap-1 rounded border px-2 font-mono text-chrome-micro opacity-0 outline-none transition-opacity duration-150 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-hud-cyan group-hover/tile:opacity-100 motion-reduce:transition-none"
+            className={`absolute right-2 top-2 z-20 inline-flex min-h-7 items-center gap-1 rounded border px-2 font-mono text-chrome-micro outline-none transition-opacity duration-150 group-hover/tile:opacity-100 motion-reduce:transition-none ${
+              selected ? 'opacity-100' : 'opacity-0'
+            }`}
             style={{
               color: HUD.cyan,
               borderColor: withThemeAlpha(HUD.cyan, 0.4),

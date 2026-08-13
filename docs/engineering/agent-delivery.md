@@ -31,6 +31,20 @@ floor. The repository always owns that floor. `--keep-branch` retains immutable
 attempt refs for diagnosis. `--direct` is an operator-only incident path, not a
 second normal workflow.
 
+## A known intermittent
+
+`pnpm test:run` has exited non-zero three times across 2026-08-07..13 with
+**no failing test named** — the summary line reported every test passing and
+the process still failed — and passed on the very next run each time, plus
+five consecutive clean runs when chased deliberately. Every occurrence was on
+a machine also running a dev server and browser evals, which is exactly the
+contention the 25% worker cap exists to bound, so the leading theory is a
+worker timeout or teardown error rather than a flaky assertion.
+
+Recorded rather than closed. If it recurs, capture the FULL output (not the
+tail): a run that fails with no `×` line is an unhandled error or a dead
+worker, and that distinction is the whole diagnosis.
+
 ## Surface gates
 
 The repository owns 31 eval gates and the changed-path floor routes to one.

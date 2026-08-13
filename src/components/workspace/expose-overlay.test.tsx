@@ -538,6 +538,96 @@ describe('Sessions overview', () => {
     view.unmount();
   });
 
+  // ── FIX-010 review: the Resume control shipped mouse-only. It sits outside
+  // the tab order on purpose (the grid is one roving stop), so without a key
+  // it was unreachable, and its focus-visible styling could never fire.
+  it('resumes the selected stopped Agent from the keyboard', async () => {
+    const onResumeTab = vi.fn();
+    render(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        activeTabId="tab-a"
+        onPick={vi.fn()}
+        onResumeTab={onResumeTab}
+        onClose={vi.fn()}
+      />
+    );
+
+    const alpha = screen.getByRole('button', { name: /^Alpha, One/ });
+    const gamma = screen.getByRole('button', { name: /^Gamma, One/ });
+    await waitFor(() => expect(alpha).toHaveFocus());
+
+    // `r` acts on the SELECTION, so arrow to the stopped Agent first — the
+    // same contract Enter follows.
+    fireEvent.keyDown(alpha, { key: 'ArrowRight' });
+    fireEvent.keyDown(alpha, { key: 'ArrowRight' });
+    await waitFor(() => expect(gamma).toHaveFocus());
+
+    fireEvent.keyDown(gamma, { key: 'r' });
+    expect(onResumeTab).toHaveBeenCalledWith('/one', 'tab-c');
+  });
+
+  it('does not offer resume for a running Agent', async () => {
+    const onResumeTab = vi.fn();
+    render(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        activeTabId="tab-a"
+        onPick={vi.fn()}
+        onResumeTab={onResumeTab}
+        onClose={vi.fn()}
+      />
+    );
+
+    const alpha = screen.getByRole('button', { name: /^Alpha, One/ });
+    await waitFor(() => expect(alpha).toHaveFocus());
+    fireEvent.keyDown(alpha, { key: 'r' });
+    expect(onResumeTab).not.toHaveBeenCalled();
+    expect(
+      document.querySelector('[data-expose-resume="tab-a"]')
+    ).toBeNull();
+  });
+
+  // The chord targeted the ACTIVE tab while the operator was looking at a
+  // different tile, so Team published its selection for workspace verbs.
+  it('publishes the roving selection, and clears it on the way out', async () => {
+    const onSelectionChange = vi.fn();
+    const view = render(
+      <ExposeOverlay
+        projects={projects}
+        summaries={{}}
+        attention={{}}
+        activeTabId="tab-a"
+        onPick={vi.fn()}
+        onSelectionChange={onSelectionChange}
+        onClose={vi.fn()}
+      />
+    );
+
+    await waitFor(() =>
+      expect(onSelectionChange).toHaveBeenCalledWith({
+        dir: '/one',
+        tabId: 'tab-a',
+      })
+    );
+
+    const beta = screen.getByRole('button', { name: /^Beta, One/ });
+    fireEvent.keyDown(beta, { key: 'ArrowRight' });
+    await waitFor(() =>
+      expect(onSelectionChange).toHaveBeenCalledWith({
+        dir: '/one',
+        tabId: 'tab-b',
+      })
+    );
+
+    view.unmount();
+    expect(onSelectionChange).toHaveBeenLastCalledWith(null);
+  });
+
   it('follows active-tab changes from the global command-shift bracket ring', async () => {
     const view = render(
       <ExposeOverlay
