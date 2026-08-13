@@ -12,11 +12,35 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { withElectronApp } from './lib/electron-eval.mjs';
 
+/**
+ * Grok Build's `sessions/<dir>` component, reproduced here rather than
+ * imported: this script runs as plain ESM outside the TypeScript build, and
+ * the eval must exercise the SAME encoding contract the adapter claims (Rust
+ * `urlencoding::encode` — unreserved bytes verbatim, uppercase hex).
+ * `packages/core/src/consumption/grok-paths.ts` is the shipped implementation
+ * and `consumption-grok.test.ts` pins them to the same fixtures.
+ */
+const encodeGrokCwdDirname = value =>
+  [...Buffer.from(value, 'utf8')]
+    .map(byte =>
+      /[A-Za-z0-9\-._~]/.test(String.fromCharCode(byte)) && byte < 0x80
+        ? String.fromCharCode(byte)
+        : `%${byte.toString(16).toUpperCase().padStart(2, '0')}`
+    )
+    .join('');
+
 const root = mkdtempSync(join(tmpdir(), 'exawatt-agent-sources-'));
 const userData = join(root, 'userData');
 const fakeHome = join(root, 'home');
 const fakeBin = join(root, 'bin');
 const projectDir = join(root, 'project');
+/** Grok Build's own corpus root, reproduced with its cwd encoding. */
+const grokSessionsDir = join(
+  fakeHome,
+  '.grok',
+  'sessions',
+  encodeGrokCwdDirname(projectDir)
+);
 const output = resolve('.artifacts', 'agent-sources');
 const previewThemes = [
   'exawatt-air-light',
@@ -32,6 +56,7 @@ for (const directory of [
   projectDir,
   output,
   join(fakeHome, '.openclaw'),
+  grokSessionsDir,
 ]) {
   mkdirSync(directory, { recursive: true });
 }
@@ -107,6 +132,20 @@ while IFS= read -r input; do printf 'FAKE_OPENCODE_INPUT:%s\n' "$input"; done
   openclaw: `#!/bin/sh
 if [ "$1" = "--version" ]; then printf 'OpenClaw 2026.8.0-eval\\n'; exit 0; fi
 exit 1
+`,
+  // Mirrors the real `grok 1.0.3` surfaces Exawatt reads: the version string,
+  // the `grok models` banner + listing, and an interactive launch that echoes
+  // its argv so the eval can assert the exact composed command.
+  grok: `#!/bin/sh
+if [ "$1" = "--version" ]; then printf 'grok 1.0.3 (evalbuild)\n'; exit 0; fi
+if [ "$1" = "models" ]; then
+  printf '%s\n' 'You are logged in with grok.com.' '' 'Default model: eval-grok-4.5' '' 'Available models:' '  * eval-grok-4.5 (default)' '  - eval-grok-code'
+  exit 0
+fi
+printf 'FAKE_GROK_ARGS:'
+printf ' <%s>' "$@"
+printf '\nFAKE_GROK_HOME:%s\n' "\${GROK_HOME-unset}"
+while IFS= read -r input; do printf 'FAKE_GROK_INPUT:%s\n' "$input"; done
 `,
 };
 for (const [name, fixture] of Object.entries(fixtures)) {
@@ -216,8 +255,9 @@ try {
         window.electron?.agentSources?.list('all')
       );
       check(
-        'registry returns five normalized source records',
-        registry?.sources.length === 5
+        'registry returns six normalized source records',
+        registry?.sources.length === 6,
+        JSON.stringify(registry?.sources.map(source => source.adapterId))
       );
       const claude = registry?.sources.find(
         source => source.adapterId === 'claude'
@@ -259,6 +299,24 @@ try {
         'OpenCode is ready with source-reported catalog and unclaimed credential validity',
         opencodeReady,
         opencodeReady ? '' : JSON.stringify(opencode)
+      );
+      const grok = registry?.sources.find(source => source.adapterId === 'grok');
+      const grokReady =
+        grok?.state === 'ready' &&
+        grok?.facts.identity.value === 'grok.com' &&
+        grok?.facts.modelDiscovery.value === '2 models reported' &&
+        grok?.facts.authentication.state === 'ready';
+      check(
+        'Grok Build is ready with a source-reported catalog and its own identity',
+        grokReady,
+        grokReady ? '' : JSON.stringify(grok)
+      );
+      check(
+        'Grok Build declares no delegation channel it cannot deliver',
+        grok?.capabilities.delegationObservation.includes('cannot inject') ===
+          true &&
+          grok?.capabilities.effortSelection === 'source-owned',
+        JSON.stringify(grok?.capabilities)
       );
       check(
         'configured unreachable OpenClaw is degraded, not disconnected/absent',
@@ -417,8 +475,9 @@ try {
       );
       check(
         'composer scope contains only interactive local sources',
-        launchRegistry?.sources.length === 3 &&
-          launchRegistry.sources.every(source => source.harness !== null)
+        launchRegistry?.sources.length === 4 &&
+          launchRegistry.sources.every(source => source.harness !== null),
+        JSON.stringify(launchRegistry?.sources.map(source => source.adapterId))
       );
       await app.evaluate(({ BrowserWindow }) => {
         BrowserWindow.getAllWindows()[0]?.webContents.send(
@@ -568,6 +627,140 @@ try {
         archived?.harnessSessionId === 'ses_eval_opencode_1234',
         JSON.stringify(archived)
       );
+
+      // ---- Grok Build (ENG-003 S4) -----------------------------------------
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.webContents.send(
+          'menu:command',
+          'launch-grok'
+        );
+      });
+      await page.waitForFunction(() =>
+        document
+          .querySelector('[aria-label="Agent Source"]')
+          ?.textContent?.includes('Grok Build')
+      );
+      await page.getByLabel('Agent model').waitFor();
+      check(
+        'native Grok Build launch command opens the composer with Grok preselected',
+        (await page.getByLabel('Agent Source').innerText()).includes(
+          'Grok Build'
+        ) && (await page.locator('[data-agent-composer]').count()) === 1
+      );
+      check(
+        'the source default model is pinned and no effort control is offered',
+        (await page.getByLabel('Agent model').innerText()).includes(
+          'Eval Grok 4.5'
+        ) && (await page.getByLabel('Agent effort').isDisabled()),
+        await page.getByLabel('Agent model').innerText()
+      );
+      await page
+        .getByLabel('Initial task for the new Agent')
+        .fill('Verify the Grok Build launch adapter');
+      await page.getByRole('button', { name: 'Start', exact: true }).click();
+      const grokLaunched = await page.evaluate(async () => {
+        const deadline = Date.now() + 20_000;
+        while (Date.now() < deadline) {
+          const sessions = await window.electron?.pty?.list();
+          const session = sessions?.find(item => item.harness === 'grok');
+          if (session?.harnessSessionId) {
+            return {
+              session,
+              buffer: await window.electron?.pty?.buffer(session.id),
+            };
+          }
+          await new Promise(resolveWait => setTimeout(resolveWait, 100));
+        }
+        return null;
+      });
+      const grokBuffer = grokLaunched?.buffer ?? '';
+      const grokIdentity = grokLaunched?.session.harnessSessionId ?? '';
+      check(
+        'Exawatt allocates the Grok session identity before the first turn',
+        /^[0-9a-f-]{36}$/.test(grokIdentity) &&
+          grokBuffer.includes(`<--session-id> <${grokIdentity}>`),
+        grokBuffer
+      );
+      check(
+        'the launch pins the Exawatt directory, model, and permission policy',
+        grokBuffer.includes(`<--cwd> <${projectDir}>`) &&
+          grokBuffer.includes('<--permission-mode> <bypassPermissions>') &&
+          grokBuffer.includes('<-m> <eval-grok-4.5>') &&
+          grokBuffer.includes('<Verify the Grok Build launch adapter>'),
+        grokBuffer
+      );
+      check(
+        'the launch never asks Grok Build for its own worktree',
+        !grokBuffer.includes('<--worktree>') && !grokBuffer.includes('<-w>'),
+        grokBuffer
+      );
+      check(
+        'Exawatt injects no configuration into the Grok state home',
+        grokBuffer.includes('FAKE_GROK_HOME:unset') &&
+          !grokBuffer.includes('<--settings>') &&
+          !grokBuffer.includes('<--agent>'),
+        grokBuffer
+      );
+
+      // The source writes its own session record; the recent-conversation row
+      // must come from that file and resume only its exact identity.
+      mkdirSync(join(grokSessionsDir, grokIdentity), { recursive: true });
+      writeFileSync(
+        join(grokSessionsDir, grokIdentity, 'summary.json'),
+        JSON.stringify({
+          info: { id: grokIdentity, cwd: projectDir },
+          session_summary: 'Grok Build launch eval',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          last_active_at: new Date().toISOString(),
+          num_messages: 2,
+          current_model_id: 'eval-grok-4.5',
+        })
+      );
+      await page.waitForTimeout(10_500);
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.webContents.send(
+          'menu:command',
+          'launch-grok'
+        );
+      });
+      const recentGrok = page.locator(
+        `[data-conversation-id="${grokIdentity}"]`
+      );
+      await recentGrok.waitFor();
+      check(
+        'the Grok session record appears as a native provider conversation',
+        (await recentGrok.getAttribute('data-continuation')) === 'provider' &&
+          (await recentGrok.getAttribute('data-title-source')) === 'native' &&
+          (await recentGrok.innerText()).includes('Grok Build launch eval')
+      );
+      await recentGrok.locator('button').first().click();
+      const grokResumed = await page.evaluate(async originalSessionId => {
+        const deadline = Date.now() + 20_000;
+        while (Date.now() < deadline) {
+          const sessions = await window.electron?.pty?.list();
+          const session = sessions?.find(
+            item => item.harness === 'grok' && item.id !== originalSessionId
+          );
+          if (session?.harnessSessionId) {
+            return {
+              session,
+              buffer: await window.electron?.pty?.buffer(session.id),
+            };
+          }
+          await new Promise(resolveWait => setTimeout(resolveWait, 100));
+        }
+        return null;
+      }, grokLaunched?.session.id ?? '');
+      check(
+        'the Grok recent row resumes only its exact identity, never --continue',
+        grokResumed?.session.harnessSessionId === grokIdentity &&
+          grokResumed.buffer.includes(`<--resume> <${grokIdentity}>`) &&
+          !grokResumed.buffer.includes('<--continue>') &&
+          !grokResumed.buffer.includes('<-c>'),
+        grokResumed?.buffer ?? 'No resumed Grok session'
+      );
+
       check(
         'renderer emitted no uncaught page errors',
         pageErrors.length === 0,

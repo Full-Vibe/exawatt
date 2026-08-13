@@ -5,7 +5,9 @@ import path from 'path';
 import {
   ClaudeConversationAdapter,
   CodexConversationAdapter,
+  GrokConversationAdapter,
   OpenCodeConversationAdapter,
+  parseGrokSessionSummary,
   ProjectSessionConversationAdapter,
   RecentConversationCatalog,
   redactHostedSummaryText,
@@ -16,6 +18,7 @@ import {
   __resetMainAnalyticsForTests,
   drainMainAnalyticsEvents,
 } from '../analytics-bridge';
+import { encodeGrokCwdDirname } from '@exawatt/core';
 
 const roots: string[] = [];
 
@@ -853,5 +856,129 @@ describe('RecentConversationCatalog', () => {
         titleSource: 'fallback',
       }),
     ]);
+  });
+});
+
+describe('GrokConversationAdapter (ENG-003 S4)', () => {
+  async function seedSession(
+    sessionsRoot: string,
+    cwd: string,
+    id: string,
+    summary: Record<string, unknown>,
+    dirname = encodeGrokCwdDirname(cwd)
+  ) {
+    const directory = path.join(sessionsRoot, dirname!, id);
+    await fs.promises.mkdir(directory, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(directory, 'summary.json'),
+      JSON.stringify({
+        info: { id, cwd },
+        created_at: '2026-08-13T10:00:00Z',
+        updated_at: '2026-08-13T10:05:00Z',
+        num_messages: 4,
+        current_model_id: 'grok-4.5',
+        ...summary,
+      })
+    );
+    return directory;
+  }
+
+  it('reads the source summary without spawning the CLI', async () => {
+    const sessionsRoot = await temporaryRoot('exawatt-grok-sessions-');
+    const cwd = await temporaryRoot('exawatt-grok-project-');
+    await seedSession(sessionsRoot, cwd, '018f1111-2222-4333-8444-555566667777', {
+      generated_title: 'Wire the launcher ribbon',
+      last_active_at: '2026-08-13T10:30:00Z',
+    });
+    const rows = await new GrokConversationAdapter(sessionsRoot).list(cwd);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      harness: 'grok',
+      id: '018f1111-2222-4333-8444-555566667777',
+      providerSessionId: '018f1111-2222-4333-8444-555566667777',
+      title: 'Wire the launcher ribbon',
+      titleSource: 'native',
+      continuation: { kind: 'provider' },
+    });
+    expect(rows[0].updatedAt).toBe(Date.parse('2026-08-13T10:30:00Z'));
+  });
+
+  it('hides the source own children and its hidden rows', async () => {
+    const sessionsRoot = await temporaryRoot('exawatt-grok-sessions-');
+    const cwd = await temporaryRoot('exawatt-grok-project-');
+    await seedSession(sessionsRoot, cwd, '018f0000-0000-4000-8000-000000000001', {
+      generated_title: 'Operator session',
+    });
+    // A subagent is the source's own child, not a conversation the operator
+    // started; offering it as a resume target would put another Agent's
+    // transcript in a tab.
+    await seedSession(sessionsRoot, cwd, '018f0000-0000-4000-8000-000000000002', {
+      generated_title: 'Subagent run',
+      session_kind: 'subagent',
+    });
+    await seedSession(sessionsRoot, cwd, '018f0000-0000-4000-8000-000000000003', {
+      generated_title: 'Hidden by the source',
+      hidden: true,
+    });
+    const rows = await new GrokConversationAdapter(sessionsRoot).list(cwd);
+    expect(rows.map(row => row.title)).toEqual(['Operator session']);
+  });
+
+  it('finds a long-cwd directory through the harness .cwd metadata', async () => {
+    const sessionsRoot = await temporaryRoot('exawatt-grok-sessions-');
+    const cwd = await temporaryRoot('exawatt-grok-project-');
+    const directory = path.join(sessionsRoot, 'project-1a2b3c4d5e6f7a8b');
+    await fs.promises.mkdir(directory, { recursive: true });
+    await fs.promises.writeFile(path.join(directory, '.cwd'), cwd);
+    await seedSession(
+      sessionsRoot,
+      cwd,
+      '018f9999-9999-4999-8999-999999999999',
+      { generated_title: 'Deeply nested worktree' },
+      'project-1a2b3c4d5e6f7a8b'
+    );
+    const rows = await new GrokConversationAdapter(sessionsRoot).list(cwd);
+    expect(rows.map(row => row.title)).toEqual(['Deeply nested worktree']);
+  });
+
+  it('is empty, not broken, when Grok Build has never run here', async () => {
+    const sessionsRoot = await temporaryRoot('exawatt-grok-sessions-');
+    const cwd = await temporaryRoot('exawatt-grok-project-');
+    await expect(
+      new GrokConversationAdapter(sessionsRoot).list(cwd)
+    ).resolves.toEqual([]);
+  });
+});
+
+describe('parseGrokSessionSummary', () => {
+  it('prefers the generated title and falls back to the rolling summary', () => {
+    const base = {
+      info: { id: '018f1111-2222-4333-8444-555566667777', cwd: '/work' },
+      created_at: '2026-08-13T10:00:00Z',
+      updated_at: '2026-08-13T10:05:00Z',
+      session_summary: 'Rolling summary text',
+    };
+    expect(
+      parseGrokSessionSummary(JSON.stringify(base), 'fallback', null)?.title
+    ).toBe('Rolling summary text');
+    expect(
+      parseGrokSessionSummary(
+        JSON.stringify({ ...base, generated_title: 'Named by the model' }),
+        'fallback',
+        null
+      )?.title
+    ).toBe('Named by the model');
+  });
+
+  it('refuses a row it cannot place, rather than guessing a directory', () => {
+    expect(parseGrokSessionSummary('{ not json', 'id', '/work')).toBeNull();
+    expect(
+      parseGrokSessionSummary(
+        JSON.stringify({ info: { id: '018f1111-2222-4333-8444-555566667777' } }),
+        '018f1111-2222-4333-8444-555566667777',
+        null
+      )
+    ).toBeNull();
+    expect(parseGrokSessionSummary(JSON.stringify({}), 'short', '/work')).toBeNull();
   });
 });

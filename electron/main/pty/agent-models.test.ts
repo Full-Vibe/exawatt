@@ -11,6 +11,8 @@ import {
   parseCodexConfiguredEffort,
   parseCodexConfiguredModel,
   parseCodexModelCatalog,
+  parseGrokAuthBanner,
+  parseGrokModelCatalog,
   parseOpencodeModelCatalog,
 } from './agent-models';
 
@@ -424,5 +426,134 @@ openai/gpt-5.3-codex
         OPENCODE_CONFIG_CONTENT: '{"provider":{"private":{}}}',
       })
     ).toBeNull();
+  });
+});
+
+/** Verbatim `grok models` output, captured from grok 1.0.3 on 2026-08-13. */
+const GROK_MODELS_UNAUTHENTICATED = [
+  'You are not authenticated.',
+  '',
+  'Default model: grok-4.5',
+  '',
+  'Available models:',
+  '  * grok-4.5 (default)',
+  '',
+].join('\n');
+
+const GROK_MODELS_SIGNED_IN = [
+  'You are logged in with grok.com.',
+  '',
+  'Default model: grok-4.5',
+  '',
+  'Available models:',
+  '  * grok-4.5 (default)',
+  '  - grok-4.5-fast',
+  '  - grok-code-fast-2',
+  '',
+].join('\n');
+
+describe('parseGrokModelCatalog', () => {
+  it('reads the source catalog and its own default', () => {
+    const catalog = parseGrokModelCatalog(GROK_MODELS_SIGNED_IN);
+    expect(catalog.harness).toBe('grok');
+    expect(catalog.models.map(model => model.id)).toEqual([
+      'grok-4.5',
+      'grok-4.5-fast',
+      'grok-code-fast-2',
+    ]);
+    expect(catalog.effectiveModel).toBe('grok-4.5');
+    expect(catalog.effectiveModelSource).toBe('account-default');
+    expect(catalog.catalogMode).toBe('live-catalog');
+    expect(catalog.catalogProvenance).toBe(
+      'Installed Grok Build CLI · grok models'
+    );
+  });
+
+  it('offers no effort options, because the source enumerates none', () => {
+    const catalog = parseGrokModelCatalog(GROK_MODELS_SIGNED_IN);
+    for (const model of catalog.models) {
+      expect(model.efforts).toEqual([]);
+      expect(model.defaultEffort).toBeNull();
+    }
+    expect(catalog.effectiveEffort).toBeNull();
+    expect(catalog.effectiveEffortSource).toBe('unavailable');
+    expect(catalog.effortLocked).toBe(false);
+  });
+
+  it('still reports the built-in catalog before sign-in', () => {
+    const catalog = parseGrokModelCatalog(GROK_MODELS_UNAUTHENTICATED);
+    expect(catalog.models.map(model => model.id)).toEqual(['grok-4.5']);
+    expect(catalog.effectiveModel).toBe('grok-4.5');
+  });
+
+  it('never promotes the banner or a stray line into a model row', () => {
+    const catalog = parseGrokModelCatalog(
+      [
+        'You are not authenticated.',
+        '',
+        'Default model: grok-4.5',
+        '',
+        'Available models:',
+        '  * grok-4.5 (default)',
+        '',
+        'Some later advisory line.',
+        '  - not-a-model-row',
+      ].join('\n')
+    );
+    expect(catalog.models.map(model => model.id)).toEqual(['grok-4.5']);
+  });
+
+  it('reports an unavailable catalog rather than inventing one', () => {
+    const catalog = parseGrokModelCatalog('');
+    expect(catalog.models).toEqual([]);
+    expect(catalog.effectiveModel).toBeNull();
+    expect(catalog.catalogMode).toBe('unavailable');
+    expect(catalog.selectionAction).toBeNull();
+  });
+
+  it('keeps a reported default that never appears in the listing', () => {
+    const catalog = parseGrokModelCatalog(
+      ['Default model: grok-5', '', 'Available models:', '  - grok-4.5'].join(
+        '\n'
+      )
+    );
+    expect(catalog.models.map(model => model.id)).toEqual([
+      'grok-5',
+      'grok-4.5',
+    ]);
+    expect(catalog.effectiveModel).toBe('grok-5');
+  });
+});
+
+describe('parseGrokAuthBanner', () => {
+  it('reads every credential source Grok Build names', () => {
+    expect(parseGrokAuthBanner('You are not authenticated.')).toMatchObject({
+      authenticated: false,
+      identity: 'Not signed in',
+    });
+    expect(parseGrokAuthBanner('You are using XAI_API_KEY.')).toMatchObject({
+      authenticated: true,
+      identity: 'XAI_API_KEY',
+    });
+    expect(parseGrokAuthBanner('You are logged in with grok.com.')).toMatchObject(
+      { authenticated: true, identity: 'grok.com' }
+    );
+    expect(
+      parseGrokAuthBanner("Model 'local-llama' is using its own API key.")
+    ).toMatchObject({ authenticated: true });
+    expect(
+      parseGrokAuthBanner('You are authenticated via deployment key.')
+    ).toMatchObject({ authenticated: true, identity: 'Deployment key' });
+  });
+
+  it('reports credential presence without ever naming the value', () => {
+    const banner = parseGrokAuthBanner('You are using XAI_API_KEY.')!;
+    expect(banner.detail).toContain('never receives or stores');
+    expect(banner.detail).not.toMatch(/xai-[A-Za-z0-9]/);
+  });
+
+  it('is unknown, not signed-out, for an unrecognized banner', () => {
+    expect(parseGrokAuthBanner('')).toBeNull();
+    expect(parseGrokAuthBanner('Checking for updates…')).toBeNull();
   });
 });

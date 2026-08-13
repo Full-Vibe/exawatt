@@ -11,6 +11,7 @@ import {
   parseOpenClawGatewayStatus,
   parseOpencodeAuthStatus,
   parseOpencodeVersion,
+  parseGrokVersion,
   inspectOpencodeLaunchEnvironment,
   sourceOwnedActionCommand,
 } from './agent-source-registry';
@@ -276,5 +277,46 @@ describe('Agent Source registry truth', () => {
         'claude'
       )
     ).toBeNull();
+  });
+});
+
+describe('Grok Build source truth (ENG-003 S4)', () => {
+  it('reads the installed version and pins the verified contract floor', () => {
+    // Real output from the installed binary on 2026-08-13.
+    expect(parseGrokVersion('grok 1.0.3 (1a29d5bc12d4)')).toEqual({
+      version: '1.0.3',
+      compatible: true,
+    });
+    expect(parseGrokVersion('grok 2.0.0')).toMatchObject({ compatible: true });
+    expect(parseGrokVersion('grok 0.9.14')).toMatchObject({
+      compatible: false,
+    });
+    // No version is UNKNOWN, never "compatible by default".
+    expect(parseGrokVersion('grok')).toBeNull();
+  });
+
+  it('opens the source-owned sign-in rather than handling a credential', () => {
+    expect(sourceOwnedActionCommand('grok', 'authenticate')).toBe(
+      "'grok' 'login'"
+    );
+  });
+
+  it('names the source when a launch is refused', () => {
+    const snapshot = {
+      sources: [
+        {
+          adapterId: 'grok',
+          harness: 'grok',
+          label: 'Grok Build',
+          state: 'action-required',
+          stateLabel: 'Action required',
+          launchable: false,
+        },
+      ],
+    } as unknown as AgentSourceRegistrySnapshot;
+    expect(agentSourceLaunchError(snapshot, 'grok')).toContain('Grok Build');
+    expect(agentSourceLaunchError(snapshot, 'grok')).toContain(
+      'requires sign-in'
+    );
   });
 });

@@ -662,6 +662,24 @@ describe('AttentionMonitor', () => {
         data('a', BELL);
         expect(monitor.get('a')).toEqual({ kind: 'bell', since: clock });
       });
+
+      /**
+       * Grok Build (ENG-003 S4) has Claude Code-compatible hooks but no
+       * per-launch seam Exawatt can inject into, so it launches unsubscribed
+       * and reports nothing. The suppression must therefore not fire for it:
+       * `teamWorkingWithoutGate` reads the REPORTED record, and a source that
+       * writes none has no children to defer to. A source with no reported
+       * channel keeps ordinary inference — the same posture Codex and
+       * OpenCode already have.
+       */
+      it('leaves an unsubscribed source on ordinary inference', () => {
+        monitor.setReportedTurnSource(() => null);
+        add('a', 'grok');
+        data('a', 'x'.repeat(500));
+        clock += 60_000;
+        data('a', BELL);
+        expect(monitor.get('a')).toEqual({ kind: 'bell', since: clock });
+      });
     });
   });
 });

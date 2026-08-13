@@ -502,4 +502,127 @@ describe('buildHarnessCommand', () => {
       ).toThrow('must be absolute');
     });
   });
+
+  describe('Grok Build (ENG-003 S4)', () => {
+    const IDENTITY = '44444444-4444-4444-8444-444444444444';
+
+    it('pre-allocates identity for a fresh launch and resumes exactly', () => {
+      expect(buildHarnessCommand('grok', IDENTITY, false)).toBe(
+        `grok --permission-mode bypassPermissions --session-id ${IDENTITY}`
+      );
+      const resumed = buildHarnessCommand('grok', IDENTITY, true);
+      expect(resumed).toBe(
+        `grok --permission-mode bypassPermissions --resume ${IDENTITY}`
+      );
+      // `-c`/`--continue` resumes "the most recent session for this cwd".
+      // Recency is never identity (ENG-003).
+      expect(resumed).not.toContain('--continue');
+      expect(resumed).not.toContain(' -c');
+    });
+
+    it('maps every permission mode onto a real Grok mode', () => {
+      const descriptor = harnessDescriptor('grok');
+      expect(descriptor.permissionFlags('prompt')).toBe(
+        '--permission-mode default'
+      );
+      expect(descriptor.permissionFlags('auto')).toBe('--permission-mode auto');
+      expect(descriptor.permissionFlags('unrestricted')).toBe(
+        '--permission-mode bypassPermissions'
+      );
+    });
+
+    it('pins the launch directory and never triggers the source worktree', () => {
+      const command = buildHarnessCommand(
+        'grok',
+        IDENTITY,
+        false,
+        undefined,
+        'ship it',
+        'prompt',
+        'grok-4.5',
+        undefined,
+        { cwd: '/work/exawatt' }
+      );
+      expect(command).toBe(
+        `grok --permission-mode default --cwd '/work/exawatt' -m 'grok-4.5' ` +
+          `--session-id ${IDENTITY} 'ship it'`
+      );
+      // Grok Build owns its own worktree machinery (`--worktree`, `/fork`,
+      // `~/.grok/worktrees`). Exawatt supplies the directory and must never
+      // implicitly ask the source to make another one.
+      expect(command).not.toContain('--worktree');
+      expect(command).not.toContain(' -w ');
+    });
+
+    it('rejects a relative launch directory', () => {
+      expect(() =>
+        buildHarnessCommand(
+          'grok',
+          IDENTITY,
+          false,
+          undefined,
+          undefined,
+          'unrestricted',
+          undefined,
+          undefined,
+          { cwd: 'work/exawatt' }
+        )
+      ).toThrow('Launch directory must be absolute');
+    });
+
+    it('launches unsubscribed: no hook seam exists on the interactive TUI', () => {
+      const descriptor = harnessDescriptor('grok');
+      // Verified against grok 1.0.3: hooks load from the state home, the
+      // `~/.claude` compat path, the project tree, or `config.toml`.
+      // `--plugin-dir` (the vendor's per-connection seam) is on `grok agent`,
+      // not the root TUI, and relocating `GROK_HOME` would move auth, config,
+      // folder trust, and the whole session corpus with it. Declaring push
+      // here would be a capability Exawatt cannot deliver.
+      expect(descriptor.eventChannel).toBeUndefined();
+      expect(descriptor.delegation.observable).toBe(false);
+      // A settings path offered to a source with no channel is ignored, not
+      // silently appended to the argv.
+      expect(
+        buildHarnessCommand(
+          'grok',
+          IDENTITY,
+          false,
+          undefined,
+          undefined,
+          'unrestricted',
+          undefined,
+          undefined,
+          { eventChannelSettingsPath: '/tmp/exawatt/pty-1.json' }
+        )
+      ).toBe(`grok --permission-mode bypassPermissions --session-id ${IDENTITY}`);
+    });
+
+    it('never receives or names a provider credential', () => {
+      const { source } = harnessDescriptor('grok');
+      const command = buildHarnessCommand(
+        'grok',
+        IDENTITY,
+        false,
+        undefined,
+        undefined,
+        'unrestricted',
+        undefined,
+        undefined,
+        { cwd: '/work/exawatt' }
+      );
+      for (const secret of [
+        'XAI_API_KEY',
+        'auth.json',
+        'GROK_AUTH_PROVIDER_COMMAND',
+        'GROK_HOME',
+      ]) {
+        expect(command).not.toContain(secret);
+      }
+      // Sign-in is the source's own flow, and the readiness probe reads a
+      // banner, never a token file.
+      expect(source.authLoginArgs).toEqual(['login']);
+      expect(source.authStatusArgs).toEqual(['models']);
+      expect(source.authOwner).toBe('Grok Build');
+    });
+  });
 });

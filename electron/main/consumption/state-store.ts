@@ -104,6 +104,7 @@ const REHYDRATED_ASSURANCE: Record<
 > = {
   'claude-code': localLogAssurance('claude-code'),
   codex: localLogAssurance('codex'),
+  grok: localLogAssurance('grok'),
 };
 
 function stripAssurance(
