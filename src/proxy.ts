@@ -58,10 +58,10 @@ const PUBLIC_PREFIXES = [
   '/eval',
   '/privacy',
   '/terms',
-  // Unlisted invite-gated download (decision 0021). It carries its own gate
-  // and must stay reachable signed out — invitees do not have accounts yet,
-  // and bouncing them to /sign-in would both break the flow and contradict
-  // the marketing canon that public surfaces never promote sign-in.
+  // Public desktop download (decision 0021, 2026-08-14 amendment). Reachable
+  // signed out by design: someone taking the app has no account yet, and
+  // bouncing them to /sign-in would both break the flow and contradict the
+  // marketing canon that public surfaces never promote sign-in.
   '/download',
 ];
 
