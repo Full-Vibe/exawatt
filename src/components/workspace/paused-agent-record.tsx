@@ -50,7 +50,7 @@ export function formatWhen(at: number, now = Date.now()): string {
  */
 export function endedCopy(tab: WorkspaceTab): string {
   if (tab.lifecycle === 'interrupted') {
-    return 'Interrupted — the previous run did not shut down cleanly.';
+    return 'Interrupted. The previous run did not shut down cleanly.';
   }
   if (tab.lifecycle === 'failed') return 'The last resume attempt failed.';
   if (tab.exitCode !== null && tab.exitCode !== 0) {

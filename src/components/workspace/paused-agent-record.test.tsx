@@ -65,7 +65,9 @@ describe('paused-Agent record copy', () => {
 
   it('says how it ended, never just that it stopped', () => {
     expect(endedCopy(tab())).toMatch(/Stopped cleanly/);
-    expect(endedCopy(tab({ lifecycle: 'interrupted' }))).toMatch(/Interrupted/);
+    expect(endedCopy(tab({ lifecycle: 'interrupted' }))).toMatch(
+      /^Interrupted\. /
+    );
     expect(endedCopy(tab({ lifecycle: 'failed' }))).toMatch(/resume attempt/);
     expect(endedCopy(tab({ exitCode: 137 }))).toMatch(/code 137/);
     expect(endedCopy(tab({ harness: 'shell' }))).toMatch(/Shell closed/);

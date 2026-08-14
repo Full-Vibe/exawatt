@@ -82,7 +82,7 @@ const CASES: Array<{ id: string; caption: string; tab: WorkspaceTab; summary?: s
     },
     {
       id: 'exited-nonzero',
-      caption: 'Exited with a code — the ending is stated, not implied',
+      caption: 'Exited with a code. The ending is stated, not implied',
       tab: tab({ lifecycle: 'exited', exitCode: 137 }),
     },
     {
@@ -92,7 +92,7 @@ const CASES: Array<{ id: string; caption: string; tab: WorkspaceTab; summary?: s
     },
     {
       id: 'no-task',
-      caption: 'No task recorded — says so rather than showing an empty pane',
+      caption: 'No task recorded. Says so rather than showing an empty pane',
       tab: tab({ initialTask: null }),
     },
     {
