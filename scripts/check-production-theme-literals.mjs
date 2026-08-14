@@ -38,23 +38,11 @@ export const PRODUCTION_LITERAL_EXCEPTIONS = {
     max: 6,
     reason: 'self-contained OAuth completion HTML before app hydration',
   },
-  // Public marketing and the scientific demo own art-directed/data palettes,
-  // not app-chrome state. Keep their existing paint bounded independently.
+  // Public marketing owns an art-directed palette, not app-chrome state.
+  // Keep its existing paint bounded independently.
   'src/app/page.tsx': {
     max: 7,
     reason: 'public home art direction outside the command-app theme surface',
-  },
-  'src/app/thrml/GraphCanvas.tsx': {
-    max: 2,
-    reason: 'scientific graph-grid visualization data paint',
-  },
-  'src/app/thrml/MaxCutDemo.tsx': {
-    max: 4,
-    reason: 'scientific partition/algorithm identity palette',
-  },
-  'src/app/thrml/ScoreChart.tsx': {
-    max: 3,
-    reason: 'scientific chart-grid visualization data paint',
   },
 
   // /architecture uses persistent layer/status identity as data. Its canvas

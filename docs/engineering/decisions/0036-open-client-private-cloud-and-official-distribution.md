@@ -112,7 +112,16 @@ perpetual-OSI commitment, template-derived trademark policy, and mechanical
 dependency-license and asset-provenance scans. Qualified counsel is engaged
 when a trigger fires: the first commercial license or paid tier, an
 enterprise customer requiring legal assurance, a live dispute, or fundraise
-diligence. A future review may correct legal mechanics without reopening the
+diligence. Refined 2026-08-14 after external review: "off-the-shelf" means
+**verbatim adoption of a proven instrument** — Element's published CLA
+already carries the perpetual-OSI commitment and is the default choice. If
+the CLA text ends up requiring any custom drafting, that adds one earlier
+trigger: a short specialist review of the CLA and the private-overlay
+boundary before the first external contribution is merged. Repository
+publication itself is never gated on counsel; the CLA is the one instrument
+whose defects are permanent once contributions are accepted under it, and
+the overlay question only becomes live at the same moment external code
+does. A future review may correct legal mechanics without reopening the
 product goal: open distribution and contribution, mandatory sharing of
 implementation forks, permissive adoption of the compatibility contract,
 private cloud value. The AGPL-reach question is contained by ownership: the
