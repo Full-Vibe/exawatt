@@ -26,8 +26,14 @@
  */
 import type {
   ClosedSessionEntry,
+  PtyHarness,
   PtySessionInfo,
 } from '@/types/electron';
+import {
+  HARNESS_ORDER,
+  isDefaultHarnessTitle,
+} from '@/components/workspace/harnesses';
+import { sessionDisplayCopy } from '@/components/workspace/session-display-copy';
 import {
   emptyLiveConsumptionSnapshot,
   type ConsumptionSourceId,
@@ -100,9 +106,36 @@ function bridge() {
 /* identity assembly — fleet records over main's identity index        */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Everything `sessionDisplayCopy` needs, carried from whichever fleet record
+ * knows this Session. The raw `title` is NOT display copy: for an unrenamed
+ * Session it is the harness's own default ("Claude Code"), which is why the
+ * grid rendered fourteen identically-named rows while the Team altitude —
+ * the one surface that called the resolver — showed real names.
+ */
 interface DurableMeta {
   title: string;
+  titleKind: 'default' | 'operator';
+  harness: PtyHarness;
+  lifecycle: string;
+  summary: string | null;
   projectDir: string | null;
+}
+
+const HARNESSES: readonly string[] = HARNESS_ORDER;
+const asHarness = (value: unknown): PtyHarness =>
+  typeof value === 'string' && HARNESSES.includes(value)
+    ? (value as PtyHarness)
+    : 'claude';
+
+/** A record that predates explicit title ownership states it by shape. */
+function titleKindOf(
+  declared: unknown,
+  harness: PtyHarness,
+  title: string
+): 'default' | 'operator' {
+  if (declared === 'default' || declared === 'operator') return declared;
+  return isDefaultHarnessTitle(harness, title) ? 'default' : 'operator';
 }
 
 function layoutMeta(layout: unknown): Map<string, DurableMeta> {
@@ -122,6 +155,10 @@ function layoutMeta(layout: unknown): Map<string, DurableMeta> {
         durableSessionId?: unknown;
         id?: unknown;
         title?: unknown;
+        titleKind?: unknown;
+        harness?: unknown;
+        lifecycle?: unknown;
+        contextSummary?: unknown;
       };
       const durableId =
         typeof tab.durableSessionId === 'string'
@@ -130,9 +167,18 @@ function layoutMeta(layout: unknown): Map<string, DurableMeta> {
             ? tab.id
             : null;
       if (!durableId) continue;
+      const harness = asHarness(tab.harness);
+      const title =
+        typeof tab.title === 'string' && tab.title.trim() ? tab.title : 'Session';
       out.set(durableId, {
-        title:
-          typeof tab.title === 'string' && tab.title.trim() ? tab.title : 'Session',
+        title,
+        titleKind: titleKindOf(tab.titleKind, harness, title),
+        harness,
+        lifecycle: typeof tab.lifecycle === 'string' ? tab.lifecycle : 'stopped',
+        summary:
+          typeof tab.contextSummary === 'string' && tab.contextSummary.trim()
+            ? tab.contextSummary
+            : null,
         projectDir: dir,
       });
     }
@@ -151,6 +197,12 @@ function assembleIdentities(
   for (const entry of closed) {
     meta.set(entry.durableSessionId, {
       title: entry.title,
+      titleKind: titleKindOf(entry.titleKind, entry.harness, entry.title),
+      harness: entry.harness,
+      lifecycle: 'stopped-clean',
+      // The ledger's `goal` IS the durable context label the workspace
+      // restores as this Session's summary.
+      summary: entry.goal,
       projectDir: entry.projectDir || null,
     });
   }
@@ -158,6 +210,11 @@ function assembleIdentities(
   for (const p of ptys) {
     meta.set(p.durableSessionId, {
       title: p.title,
+      // A live PTY carries no title ownership on the wire; its shape states it.
+      titleKind: titleKindOf(undefined, p.harness, p.title),
+      harness: p.harness,
+      lifecycle: p.exited ? 'stopped' : 'running',
+      summary: p.contextSummary ?? null,
       projectDir: p.projectDir || null,
     });
   }
@@ -172,7 +229,9 @@ function assembleIdentities(
     identities.set(`${link.source}:${link.providerSessionId}`, {
       providerSessionId: link.providerSessionId,
       source: link.source,
-      title: m.title,
+      // THE one display-identity projection, shared with the tab strip and
+      // the Team tiles — a Session is named identically on every surface.
+      title: displayTitle(m),
       projectDir: m.projectDir ?? (link.cwd || null),
       // Owed to the contract (recorded in the project doc): live
       // intervention counts — UserPromptSubmit via the ENG-023 channel for
@@ -192,12 +251,30 @@ function assembleIdentities(
     identities.set(key, {
       providerSessionId: p.harnessSessionId,
       source,
-      title: p.title,
+      title: displayTitle({
+        title: p.title,
+        titleKind: titleKindOf(undefined, p.harness, p.title),
+        harness: p.harness,
+        lifecycle: p.exited ? 'stopped' : 'running',
+        summary: p.contextSummary ?? null,
+        projectDir: p.projectDir || null,
+      }),
       projectDir: p.projectDir || null,
       interventions: null,
     });
   }
   return [...identities.values()];
+}
+
+/** The visible identity every Session surface must render (ENG-016 D18). */
+function displayTitle(m: DurableMeta): string {
+  return sessionDisplayCopy({
+    harness: m.harness,
+    title: m.title,
+    titleKind: m.titleKind,
+    lifecycle: m.lifecycle,
+    summary: m.summary,
+  }).primary;
 }
 
 function sessionBurn(view: DemoConsumption): Map<string, LiveSessionBurn> {

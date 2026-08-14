@@ -42,6 +42,7 @@ import {
   allPaces,
   diagnostics,
   gridRows,
+  pivotAbsenceNote,
   pivotRows,
   planCreditRows,
   silentSources,
@@ -171,6 +172,7 @@ export function UsageClient() {
           <div className="flex min-w-0 flex-col gap-4">
             <Attribution
               rows={pivots}
+              note={pivotAbsenceNote(pivot, pivots)}
               pivot={pivot}
               onPivot={k => {
                 setPivot(k);

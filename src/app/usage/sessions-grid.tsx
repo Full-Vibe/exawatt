@@ -51,6 +51,11 @@ export function SessionsGrid({
   const hidden = rows.slice(ROW_CAP);
   const maxWeighted = rows[0]?.weighted ?? 1;
   const codexBlind = rows.some(r => r.source === 'codex');
+  // A column of em-dashes is a blank, not a fact. When NO row in scope
+  // carries a count, the legend says why instead of leaving the reader to
+  // infer that every session ran untouched.
+  const noInterventions =
+    rows.length > 0 && rows.every(r => r.interventions === null);
 
   return (
     <Card label="Sessions" className="flex min-w-0 flex-col p-0">
@@ -107,6 +112,11 @@ export function SessionsGrid({
         <Caption>norm = normalized tokens, stated ratio basis</Caption>
         <Caption>impact = normalized burn relative to the largest session</Caption>
         <Caption>int = operator messages after launch</Caption>
+        {noInterventions && (
+          <span className="text-chrome-meta" style={{ color: FLUX.unknown }}>
+            Interventions: not recorded
+          </span>
+        )}
         {codexBlind && (
           <span className="text-chrome-meta" style={{ color: FLUX.unknown }}>
             Codex per-agent delegation: not recorded
@@ -208,7 +218,18 @@ function SessionRow({
       </span>
       {r.interventions === null ? (
         <Data className="text-right" color={FLUX.unknown}>
-          <span title="no session record for this id">—</span>
+          {/* two different absences, and they used to share one sentence:
+              an identified Session HAS a record, its interventions are just
+              not on the snapshot yet */}
+          <span
+            title={
+              r.identified
+                ? 'not recorded — the live read carries no intervention counts yet'
+                : 'no session record for this id'
+            }
+          >
+            —
+          </span>
         </Data>
       ) : (
         <Data className="text-right">{r.interventions}</Data>

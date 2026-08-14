@@ -598,6 +598,31 @@ export function pivotRows(
   return out.sort((a, b) => b.weighted - a.weighted);
 }
 
+/**
+ * Why a pivot has nothing to show, stated instead of rendered as an empty
+ * band or a single grey bar.
+ *
+ * The Roadmap pivot is the case that motivated it: on live data it collapses
+ * to one `Not attributed` row, because a live Session carries no roadmap
+ * link until ENG-017's declaration path exists (`live-source.ts`). One grey
+ * bar reads as a measurement; this says it is a missing input.
+ */
+export function pivotAbsenceNote(
+  key: PivotKey,
+  rows: PivotRow[]
+): string | null {
+  if (rows.length === 0) return 'Nothing to attribute in this window.';
+  const onlyUnknown = rows.every(r => r.unknown);
+  if (!onlyUnknown) return null;
+  if (key === 'roadmap') {
+    return 'No session in this window carries a roadmap link.';
+  }
+  if (key === 'project') {
+    return 'No session in this window resolves to a known Project.';
+  }
+  return null;
+}
+
 /* ------------------------------------------------------------------ */
 /* diagnostics — one quiet row                                         */
 /* ------------------------------------------------------------------ */

@@ -22,7 +22,7 @@ import { NORMALIZED_BASIS_SENTENCE } from '@/components/consumption/units';
 import { UnitStack, UnitLegend } from '@/components/consumption/atoms';
 import { rawTotal } from '@/components/consumption/model';
 import { PIVOT_LABEL, type PivotKey, type PivotRow } from './derive';
-import { Band, Body, Data } from './chrome';
+import { Band, Body, Caption, Data } from './chrome';
 
 const PIVOTS: PivotKey[] = ['project', 'session', 'model', 'source', 'roadmap'];
 
@@ -48,6 +48,7 @@ export function Attribution({
   onMode,
   selectedId,
   onSelect,
+  note = null,
 }: {
   rows: PivotRow[];
   pivot: PivotKey;
@@ -56,6 +57,8 @@ export function Attribution({
   onMode: (m: UnitMode) => void;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** Why this pivot has nothing to attribute; null when it does. */
+  note?: string | null;
 }) {
   // Raw mode is a real reordering, not a re-skin: rows sort by raw total and
   // bars scale to the raw max, so what reads biggest IS biggest in raw units.
@@ -106,6 +109,10 @@ export function Attribution({
           </button>
         ))}
       </div>
+
+      {/* a missing input is stated, never rendered as an empty band or a
+          lone grey bar that reads like a measurement */}
+      {note && <Caption>{note}</Caption>}
 
       <div className="flex min-w-0 flex-col gap-1">
         {ordered.slice(0, 9).map(r => (
