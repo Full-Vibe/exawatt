@@ -64,7 +64,9 @@ export function UpdateReadyNotice() {
             ? `Downloading Exawatt ${status.availableVersion} · ${Math.round(status.percent ?? 0)}%`
             : status?.phase === 'downloaded'
               ? `Exawatt ${status.availableVersion} is ready to install.`
-              : `Update failed. Exawatt ${status?.currentVersion} remains installed.`;
+              : // the reason is the whole value of this line: without it a
+                // stuck user can only report "it failed" (ENG-030 OS1.6)
+                `Update failed, so Exawatt ${status?.currentVersion} stays installed. ${status?.error ?? 'No reason was reported.'}`;
 
   return (
     <div className="exa-material-overlay fixed bottom-8 left-1/2 z-[100] flex w-[min(42rem,calc(100%-2rem))] -translate-x-1/2 flex-wrap items-center gap-3 border border-[var(--exa-foundation-border-strong)] px-3 py-2 text-xs text-[var(--exa-foundation-text)] shadow-lg">

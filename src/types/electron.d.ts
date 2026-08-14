@@ -65,9 +65,7 @@ export interface ElectronConsumptionApi {
    * Revision bumps. Notification-only (revision + scan state, never samples);
    * pull a fresh snapshot when the new revision matters to the surface.
    */
-  onUpdated: (
-    handler: (event: ConsumptionUpdatedEvent) => void
-  ) => () => void;
+  onUpdated: (handler: (event: ConsumptionUpdatedEvent) => void) => () => void;
 }
 
 export interface ElectronAgentSourcesApi {
@@ -712,6 +710,11 @@ export interface ProductUpdateStatus {
   percent: number | null;
   liveSessions: number;
   error: string | null;
+  /** false when this build has no update channel at all (unsigned local
+   *  delivery, or a dev/test run) */
+  enabled: boolean;
+  /** absolute path to the updater JSONL a user can send back after a failure */
+  logPath: string | null;
 }
 
 export interface ElectronAppApi {

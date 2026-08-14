@@ -128,6 +128,7 @@ let disposeRoadmapWatchers: () => void = () => {};
 let installProductUpdate: () => void = () => {
   throw new Error('Product updates are not ready.');
 };
+let checkForUpdatesFromMenu: () => Promise<void> = async () => {};
 let shutdownCopy: typeof import('./shutdown-coordinator').shutdownCopy;
 let safeElectronAuthError: (error: unknown) => {
   name: string;
@@ -806,6 +807,10 @@ function createMenu(): void {
       submenu: [
         { role: 'about' },
         { label: `Build ${buildInfo.sha.slice(0, 12)}`, enabled: false },
+        {
+          label: 'Check for Updates…',
+          click: () => void checkForUpdatesFromMenu(),
+        },
         { type: 'separator' },
         menuCommand('Settings…', 'open-settings', true),
         { type: 'separator' },
@@ -1379,6 +1384,7 @@ async function bootstrapCommandSurface(): Promise<void> {
   disposePty = runtime.ptyIpc.disposePty;
   disposeRoadmapWatchers = runtime.roadmapWatcher.disposeRoadmapWatchers;
   installProductUpdate = runtime.updater.installProductUpdate;
+  checkForUpdatesFromMenu = runtime.updater.checkForUpdatesFromMenu;
   shutdownCopy = runtime.shutdown.shutdownCopy;
   safeElectronAuthError = runtime.auth.safeElectronAuthError;
   isElectronAuthLinkOutcome = runtime.auth.isElectronAuthLinkOutcome;

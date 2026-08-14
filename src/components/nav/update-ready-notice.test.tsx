@@ -30,6 +30,8 @@ function installApi() {
         percent: null,
         liveSessions: 0,
         error: null,
+        enabled: true,
+        logPath: null,
       }),
       checkForUpdates: async () => {
         throw new Error('unused');
@@ -62,6 +64,8 @@ describe('UpdateReadyNotice', () => {
         percent: 100,
         liveSessions: 4,
         error: null,
+        enabled: true,
+        logPath: null,
       })
     );
     expect(screen.getByText(/ready to install/)).toBeInTheDocument();
@@ -81,10 +85,37 @@ describe('UpdateReadyNotice', () => {
         percent: null,
         liveSessions: 0,
         error: 'network unavailable',
+        enabled: true,
+        logPath: '/tmp/updater.jsonl',
       })
     );
     expect(
-      screen.getByText('Update failed. Exawatt 1.0.0 remains installed.')
+      screen.getByText(
+        'Update failed, so Exawatt 1.0.0 stays installed. network unavailable'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('says so when a failure arrived without a reason', async () => {
+    installApi();
+    render(<UpdateReadyNotice />);
+    await act(async () => undefined);
+    act(() =>
+      emitStatus?.({
+        phase: 'error',
+        currentVersion: '1.0.0',
+        availableVersion: null,
+        percent: null,
+        liveSessions: 0,
+        error: null,
+        enabled: true,
+        logPath: null,
+      })
+    );
+    expect(
+      screen.getByText(
+        'Update failed, so Exawatt 1.0.0 stays installed. No reason was reported.'
+      )
     ).toBeInTheDocument();
   });
 });
