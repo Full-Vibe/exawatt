@@ -45,6 +45,7 @@ next-env.d.ts
 
 .claude/*
 !.claude/commands/
+!.claude/skills/
 
 # Electron
 dist-electron/
