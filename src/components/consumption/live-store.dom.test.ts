@@ -232,3 +232,185 @@ describe('live store', () => {
     off();
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* D3 — a Session is named identically on every surface                */
+/* ------------------------------------------------------------------ */
+
+interface NamingFleet {
+  ptys?: unknown[];
+  closed?: unknown[];
+  layout?: unknown;
+}
+
+/** The same bridge, with the fleet records the naming path actually reads. */
+function installNamingBridge(fleet: NamingFleet): void {
+  const snapshot = readySnapshot();
+  (window as unknown as { electron: unknown }).electron = {
+    isElectron: true,
+    consumption: {
+      snapshot: async () => snapshot,
+      rescan: async () => {},
+      cancelScan: async () => {},
+      onUpdated: () => () => {},
+    },
+    pty: {
+      list: async () => fleet.ptys ?? [],
+      closedSessions: async () => fleet.closed ?? [],
+    },
+    workspace: {
+      load: async () => fleet.layout ?? { projects: [] },
+      onChanged: () => () => {},
+    },
+  };
+}
+
+async function readyTitle(): Promise<string> {
+  const off = subscribeLiveConsumption(() => {});
+  await vi.waitFor(() => expect(getLiveConsumption().status).toBe('ready'));
+  const rows = gridRows(getLiveConsumption().view!);
+  off();
+  expect(rows).toHaveLength(1);
+  return rows[0].title;
+}
+
+const livePty = (over: Record<string, unknown> = {}) => ({
+  id: 'pty-1',
+  durableSessionId: 'durable-1',
+  harness: 'codex',
+  title: 'Codex',
+  cwd: '/Users/op/Code/exawatt',
+  projectDir: '/Users/op/Code/exawatt',
+  projectName: 'exawatt',
+  cols: 80,
+  rows: 24,
+  startedAt: NOW - 3 * HOUR,
+  exited: false,
+  exitCode: null,
+  lastDataAt: NOW,
+  harnessSessionId: 'prov-1',
+  ...over,
+});
+
+describe('session naming', () => {
+  it('prefers the context summary over an unrenamed harness title', async () => {
+    // The defect verbatim: 14 of 14 rows read "Claude Code" because the
+    // store took `title` raw. The Team altitude, calling the resolver on
+    // the same Session, showed its real work.
+    installNamingBridge({
+      ptys: [
+        livePty({
+          contextSummary: 'Unified consumption dashboard across AI platforms',
+        }),
+      ],
+    });
+    expect(await readyTitle()).toBe(
+      'Unified consumption dashboard across AI platforms'
+    );
+  });
+
+  it('keeps an operator rename primary over the context summary', async () => {
+    installNamingBridge({
+      ptys: [
+        livePty({
+          title: 'gateway reconnect backoff',
+          contextSummary: 'Unified consumption dashboard',
+        }),
+      ],
+    });
+    expect(await readyTitle()).toBe('gateway reconnect backoff');
+  });
+
+  it('falls back to New agent rather than printing the harness name', async () => {
+    installNamingBridge({ ptys: [livePty()] });
+    expect(await readyTitle()).toBe('New agent');
+  });
+
+  it("reads a closed Session's goal from the ledger", async () => {
+    installNamingBridge({
+      ptys: [],
+      closed: [
+        {
+          durableSessionId: 'durable-1',
+          title: 'Codex',
+          titleKind: 'default',
+          goal: 'ENG-004 V3.3 F7 fleet board composition',
+          harness: 'codex',
+          cwd: '/Users/op/Code/exawatt',
+          projectDir: '/Users/op/Code/exawatt',
+          projectName: 'exawatt',
+          harnessSessionId: 'prov-1',
+          initialTask: null,
+          closedAt: NOW - HOUR,
+        },
+      ],
+    });
+    expect(await readyTitle()).toBe('ENG-004 V3.3 F7 fleet board composition');
+  });
+
+  it('reads a persisted workspace tab the same way the tab strip does', async () => {
+    installNamingBridge({
+      ptys: [],
+      layout: {
+        projects: [
+          {
+            dir: '/Users/op/Code/exawatt',
+            name: 'exawatt',
+            tabs: [
+              {
+                id: 'tab-1',
+                durableSessionId: 'durable-1',
+                harness: 'codex',
+                title: 'Codex',
+                titleKind: 'default',
+                lifecycle: 'stopped-clean',
+                contextSummary: 'Plan remote agent harness for Hetzner VPS',
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(await readyTitle()).toBe('Plan remote agent harness for Hetzner VPS');
+  });
+});
+
+describe('provider plan accounts cross the bridge (D1/D2)', () => {
+  it('carries account state onto the built view instead of dropping it', async () => {
+    const snapshot = readySnapshot();
+    snapshot.providerPlanAccounts = [
+      {
+        source: 'claude-code',
+        status: 'unavailable',
+        observedAt: iso(NOW - 3 * HOUR),
+        planType: 'max',
+        spend: {
+          usedMinor: 20_160,
+          limitMinor: 20_000,
+          currency: 'USD',
+          exponent: 2,
+          percent: 100.8,
+          enabled: true,
+        },
+      },
+    ];
+    (window as unknown as { electron: unknown }).electron = {
+      isElectron: true,
+      consumption: {
+        snapshot: async () => snapshot,
+        rescan: async () => {},
+        cancelScan: async () => {},
+        onUpdated: () => () => {},
+      },
+      pty: { list: async () => [], closedSessions: async () => [] },
+      workspace: { load: async () => ({ projects: [] }), onChanged: () => () => {} },
+    };
+    const off = subscribeLiveConsumption(() => {});
+    await vi.waitFor(() => expect(getLiveConsumption().status).toBe('ready'));
+    const view = getLiveConsumption().view!;
+    const claude = view.sources.find(s => s.harness === 'claude-code')!;
+    expect(claude.accountRead?.status).toBe('unavailable');
+    expect(claude.accountRead?.spend?.usedMinor).toBe(20_160);
+    off();
+  });
+});

@@ -5,9 +5,14 @@ import {
   delegatedWeighted,
   displayUsage,
   interventionStats,
+  planReadState,
   rawTotal,
+  unknownPlanSources,
   windowFreshness,
+  windowOwnerLabel,
+  type AccountReadView,
   type CapacityWindowView,
+  type ConsumptionSourceView,
   type InterventionRow,
 } from './model';
 import { demoConsumption, DEMO_NOW_MS, DEMO_SESSIONS } from './demo-source';
@@ -287,5 +292,188 @@ describe('intervention rate (ENG-026 N2)', () => {
       delegating.usage.cacheWrite +
       delegating.usage.output;
     expect(row.rawTokens).toBeGreaterThan(own);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* plan-read state — the D1 honesty inversion                          */
+/* ------------------------------------------------------------------ */
+
+describe('planReadState', () => {
+  const NOW = Date.parse('2026-08-13T18:00:00.000Z');
+  const MIN = 60_000;
+
+  const liveWindow = (): CapacityWindowView => ({
+    limitId: 'claude-weekly',
+    label: 'Weekly — Fable',
+    usedPercent: 97,
+    windowMinutes: 10_080,
+    resetsAtMs: NOW + 2 * 24 * HOUR,
+    burnPercentPerHour: 0.4,
+    observedAtMs: NOW - 5 * MIN,
+    planLevel: true,
+  });
+
+  /** The persisted last-known window a failed read leaves behind: its TRUE
+   *  observedAt is old, so the freshness rule already drops it from paces. */
+  const staleWindow = (): CapacityWindowView => ({
+    ...liveWindow(),
+    observedAtMs: NOW - 20 * 24 * HOUR,
+  });
+
+  const claude = (
+    windows: CapacityWindowView[],
+    accountRead?: AccountReadView
+  ): ConsumptionSourceView => ({
+    key: 'claude-code',
+    harness: 'claude-code',
+    label: 'Claude Code',
+    planType: null,
+    credits: null,
+    windows,
+    observedTokens5h: 208_100_000,
+    observedSessions: 12,
+    observedDelegatedShare: 0.31,
+    burn: [0.8, 0.9],
+    unreportedReason:
+      'Claude Code keeps no plan, quota, or rate-limit record in its local files.',
+    ...(accountRead ? { accountRead } : {}),
+  });
+
+  it('reads a live window as reported', () => {
+    const source = claude([liveWindow()], {
+      status: 'ok',
+      observedAtMs: NOW - 5 * MIN,
+      planType: 'max',
+      spend: null,
+    });
+    expect(planReadState(source, NOW)).toBe('reported');
+    expect(unknownPlanSources([source], NOW)).toHaveLength(0);
+  });
+
+  it('keeps "no plan record" a CAPABILITY fact when no account read exists', () => {
+    // The pre-ENG-038 truth, and the only case that may wear the harness's
+    // own sentence: nothing is configured to read, so nothing is unknown.
+    const source = claude([]);
+    expect(planReadState(source, NOW)).toBe('none');
+    expect(unknownPlanSources([source], NOW)).toHaveLength(0);
+  });
+
+  it('separates a disabled read from an absent capability', () => {
+    const source = claude([], {
+      status: 'disabled',
+      observedAtMs: null,
+      planType: null,
+      spend: null,
+    });
+    expect(planReadState(source, NOW)).toBe('off');
+    expect(unknownPlanSources([source], NOW)).toHaveLength(1);
+  });
+
+  it('marks a NEVER-CONFIGURED account unreadable, not absent', () => {
+    // No Keychain credential has ever produced a successful read.
+    const source = claude([], {
+      status: 'unavailable',
+      observedAtMs: null,
+      planType: null,
+      spend: null,
+    });
+    expect(planReadState(source, NOW)).toBe('unreadable');
+  });
+
+  it('marks a NETWORK FAILURE unreadable', () => {
+    const source = claude([], {
+      status: 'unavailable',
+      observedAtMs: NOW - 40 * MIN,
+      planType: 'max',
+      spend: null,
+    });
+    expect(planReadState(source, NOW)).toBe('unreadable');
+  });
+
+  it('marks an EXPIRED TOKEN unreadable even with last-known windows on hand', () => {
+    // The adapter degrades to its persisted windows at their true age;
+    // freshness drops them from the paces, and this is what stops that
+    // drop from reading as "this vendor has no such record".
+    const source = claude([staleWindow()], {
+      status: 'unavailable',
+      observedAtMs: NOW - 20 * 24 * HOUR,
+      planType: 'max',
+      spend: null,
+    });
+    expect(windowFreshness(staleWindow(), NOW)).not.toBe('live');
+    expect(planReadState(source, NOW)).toBe('unreadable');
+  });
+
+  it('treats an ok read whose observation went stale as unknown, never as fine', () => {
+    const source = claude([staleWindow()], {
+      status: 'ok',
+      observedAtMs: NOW - 20 * 24 * HOUR,
+      planType: 'max',
+      spend: null,
+    });
+    expect(planReadState(source, NOW)).toBe('unreadable');
+  });
+});
+
+describe('windowOwnerLabel', () => {
+  const NOW = Date.parse('2026-08-13T18:00:00.000Z');
+  const source: ConsumptionSourceView = {
+    key: 'claude-code',
+    harness: 'claude-code',
+    label: 'Claude Code',
+    planType: null,
+    credits: null,
+    windows: [],
+    observedTokens5h: 0,
+    observedSessions: 0,
+    observedDelegatedShare: null,
+    burn: [],
+  };
+
+  it('names an account-scoped window for the ACCOUNT, not the harness', () => {
+    // The figure meters the whole Anthropic plan, claude.ai chat included,
+    // so "Claude Code" would state tool truth for an account number.
+    const view = capacityWindowFromPlan(
+      {
+        source: 'claude-code',
+        limitId: 'claude-weekly',
+        limitName: 'Weekly — Fable',
+        scope: 'primary',
+        usedPercent: 97,
+        windowMinutes: 10_080,
+        resetsAt: new Date(NOW + HOUR).toISOString(),
+        observedAt: new Date(NOW).toISOString(),
+        planType: 'max',
+        origin: 'provider-account',
+        providerSessionId: '',
+      },
+      0.4
+    )!;
+    expect(view.planLevel).toBe(true);
+    expect(windowOwnerLabel(source, view)).toBe('Claude account');
+  });
+
+  it('leaves a locally-parsed window under its harness', () => {
+    const view = capacityWindowFromPlan(
+      {
+        source: 'codex',
+        limitId: 'codex-primary',
+        limitName: null,
+        scope: 'primary',
+        usedPercent: 5,
+        windowMinutes: 10_080,
+        resetsAt: new Date(NOW + HOUR).toISOString(),
+        observedAt: new Date(NOW).toISOString(),
+        planType: 'pro',
+        origin: 'local-log',
+        providerSessionId: '',
+      },
+      0.1
+    )!;
+    expect(view.planLevel).toBeUndefined();
+    expect(
+      windowOwnerLabel({ ...source, harness: 'codex', label: 'Codex' }, view)
+    ).toBe('Codex');
   });
 });

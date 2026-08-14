@@ -14,7 +14,13 @@ import {
   readAllWindows,
 } from '@/components/consumption/meter/meter-model';
 import { OPPORTUNITY_STATES } from '@/app/hud-gallery/pace-opportunity-model';
-import { allPaces, gridRows } from './derive';
+import {
+  allPaces,
+  gridRows,
+  pivotAbsenceNote,
+  unknownVerdictNote,
+  type PivotRow,
+} from './derive';
 
 const NOW = Date.parse('2026-08-02T15:20:00.000Z');
 const MIN = 60_000;
@@ -141,5 +147,112 @@ describe('meter/page verdict agreement on opportunity states (E9)', () => {
     const weekly = page.find(p => p.window.limitId === 'codex-weekly')!;
     expect(paceLabel(weekly).text).toBe('72% free to spend');
     expect(paceSentence(weekly)).toBe('72% free · expires in 9h');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* a missing input is stated, never drawn as a measurement (D3)        */
+/* ------------------------------------------------------------------ */
+
+describe('pivotAbsenceNote', () => {
+  const row = (over: Partial<PivotRow> & { id: string }): PivotRow => ({
+    label: over.id,
+    usage: { input: 0, cacheWrite: 0, cacheRead: 0, output: 0, reasoning: null },
+    weighted: 1,
+    sessions: 1,
+    drill: [],
+    ...over,
+  });
+
+  it('says a roadmap pivot has no links rather than drawing one grey bar', () => {
+    // Live data collapses to exactly this: a single `Not attributed` row,
+    // because a live Session carries no roadmap link until ENG-017's
+    // declaration path exists. One bar reads as a measured result.
+    const rows = [row({ id: 'unattributed', label: 'Not attributed', unknown: true })];
+    expect(pivotAbsenceNote('roadmap', rows)).toBe(
+      'No session in this window carries a roadmap link.'
+    );
+  });
+
+  it('stays silent as soon as one real row exists', () => {
+    const rows = [
+      row({ id: 'ENG-008', label: 'ENG-008 · Consumption' }),
+      row({ id: 'unattributed', label: 'Not attributed', unknown: true }),
+    ];
+    expect(pivotAbsenceNote('roadmap', rows)).toBeNull();
+  });
+
+  it('gives the empty corpus the empty state the band lacked', () => {
+    expect(pivotAbsenceNote('project', [])).toBe(
+      'Nothing to attribute in this window.'
+    );
+    expect(pivotAbsenceNote('session', [])).toBe(
+      'Nothing to attribute in this window.'
+    );
+  });
+
+  it('has nothing to add for pivots whose absence is already legible', () => {
+    const rows = [row({ id: 'x', unknown: true })];
+    expect(pivotAbsenceNote('model', rows)).toBeNull();
+    expect(pivotAbsenceNote('source', rows)).toBeNull();
+  });
+});
+
+describe('unknownVerdictNote — naming what the verdict misses', () => {
+  const claude = (
+    accountRead: ConsumptionSourceView['accountRead']
+  ): ConsumptionSourceView => ({
+    ...source([]),
+    key: 'claude-code',
+    harness: 'claude-code',
+    label: 'Claude Code',
+    ...(accountRead ? { accountRead } : {}),
+  });
+  const grok = (
+    accountRead: ConsumptionSourceView['accountRead']
+  ): ConsumptionSourceView => ({
+    ...source([]),
+    key: 'grok',
+    harness: 'grok',
+    label: 'Grok Build',
+    ...(accountRead ? { accountRead } : {}),
+  });
+  const off = {
+    status: 'disabled' as const,
+    observedAtMs: null,
+    planType: null,
+    spend: null,
+  };
+  const failing = {
+    status: 'unavailable' as const,
+    observedAtMs: NOW - 60 * MIN,
+    planType: 'max',
+    spend: null,
+  };
+
+  it('is null when every source is readable', () => {
+    expect(unknownVerdictNote(demoWith([claude(undefined)]))).toBeNull();
+  });
+
+  it('names one unreadable account', () => {
+    expect(unknownVerdictNote(demoWith([claude(failing)]))).toBe(
+      'Claude account is not readable — this verdict covers the sources that reported.'
+    );
+  });
+
+  it('says "turned off" only when every unknown source is switched off', () => {
+    expect(unknownVerdictNote(demoWith([claude(off)]))).toContain(
+      'is turned off'
+    );
+    // a mix must not soften a real failure into a preference
+    expect(
+      unknownVerdictNote(demoWith([claude(off), grok(failing)]))
+    ).toContain('are not readable');
+  });
+
+  it('lists several accounts in one line', () => {
+    const note = unknownVerdictNote(demoWith([claude(failing), grok(failing)]))!;
+    expect(note).toContain('Claude account and xAI account');
+    expect(note).toContain('are not readable');
   });
 });

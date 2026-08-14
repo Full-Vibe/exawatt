@@ -13,9 +13,19 @@ import {
   type ConsumptionSample,
   type ConsumptionSourceId,
   type PlanWindow,
+  type ProviderPlanAccountState,
 } from '@exawatt/core';
-import { readMeter } from './meter/meter-model';
-import { allPaces, diagnostics, gridRows } from '@/app/usage/derive';
+import { opportunityOf, paceLabel, readMeter } from './meter/meter-model';
+import { planReadState } from './model';
+import { planCredits } from './units';
+import {
+  allPaces,
+  diagnostics,
+  gridRows,
+  planCreditRows,
+  unknownSources,
+  unknownVerdictNote,
+} from '@/app/usage/derive';
 import {
   CLAUDE_PLAN_NOTE,
   buildLiveConsumption,
@@ -589,5 +599,150 @@ describe('liveClosedCycles — the E9 ledger claims only what was observed', () 
       { label: 'Weekly window', unusedPercent: 67, agoMs: 25 * MIN },
     ]);
     expect(buildLiveConsumption(inputs()).closedCycles).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* ENG-038 account STATE — the field the renderer used to drop          */
+/* ------------------------------------------------------------------ */
+
+describe('providerPlanAccounts reaches the view (D1/D2)', () => {
+  const account = (
+    over: Partial<ProviderPlanAccountState> = {}
+  ): ProviderPlanAccountState => ({
+    source: 'claude-code',
+    status: 'ok',
+    observedAt: iso(NOW - 4 * MIN),
+    planType: 'max',
+    spend: null,
+    ...over,
+  });
+
+  const claudeOf = (over: Partial<LiveConsumptionInputs> = {}) =>
+    buildLiveConsumption(inputs(over)).sources.find(
+      s => s.harness === 'claude-code'
+    )!;
+
+  it('leaves the account read ABSENT when the snapshot carries none', () => {
+    // A main process without the ENG-038 service, or no account configured:
+    // the local capability fact stands alone, exactly as before.
+    const claude = claudeOf();
+    expect(claude.accountRead).toBeUndefined();
+    expect(planReadState(claude, NOW)).toBe('none');
+  });
+
+  it('carries a disabled read through as an UNKNOWN position', () => {
+    const claude = claudeOf({
+      providerPlanAccounts: [
+        account({ status: 'disabled', observedAt: null, planType: null }),
+      ],
+    });
+    expect(claude.accountRead?.status).toBe('disabled');
+    expect(planReadState(claude, NOW)).toBe('off');
+  });
+
+  it('carries a failed read through as an UNKNOWN position', () => {
+    const claude = claudeOf({
+      providerPlanAccounts: [account({ status: 'unavailable' })],
+    });
+    expect(planReadState(claude, NOW)).toBe('unreadable');
+    expect(claude.accountRead?.observedAtMs).toBe(NOW - 4 * MIN);
+  });
+
+  it('carries the vendor plan-credit spend the renderer never read (D2)', () => {
+    // The operator's real machine: $201.60 spent of $200 monthly credits.
+    const claude = claudeOf({
+      providerPlanAccounts: [
+        account({
+          spend: {
+            usedMinor: 20_160,
+            limitMinor: 20_000,
+            currency: 'USD',
+            exponent: 2,
+            percent: 100.8,
+            enabled: true,
+          },
+        }),
+      ],
+    });
+    expect(claude.accountRead?.spend).toMatchObject({
+      usedMinor: 20_160,
+      limitMinor: 20_000,
+      currency: 'USD',
+      exponent: 2,
+    });
+    const rows = planCreditRows(buildLiveConsumption(
+      inputs({
+        providerPlanAccounts: [
+          account({
+            spend: {
+              usedMinor: 20_160,
+              limitMinor: 20_000,
+              currency: 'USD',
+              exponent: 2,
+              percent: 100.8,
+              enabled: true,
+            },
+          }),
+        ],
+      })
+    ));
+    expect(rows).toHaveLength(1);
+    // account truth wears the ACCOUNT's name, never the harness's
+    expect(rows[0].label).toBe('Claude account');
+    expect(planCredits(rows[0].spend.usedMinor, rows[0].spend)).toBe('$201.60');
+    expect(planCredits(rows[0].spend.limitMinor!, rows[0].spend)).toBe('$200.00');
+  });
+
+  it('renders a non-USD account in its own currency', () => {
+    const claude = claudeOf({
+      providerPlanAccounts: [
+        account({
+          spend: {
+            usedMinor: 4_250,
+            limitMinor: null,
+            currency: 'EUR',
+            exponent: 2,
+            percent: null,
+            enabled: true,
+          },
+        }),
+      ],
+    });
+    expect(planCredits(claude.accountRead!.spend!.usedMinor, claude.accountRead!.spend!)).toBe(
+      '€42.50'
+    );
+  });
+
+  it('an unreadable account turns the page verdict partial and quiet (D1)', () => {
+    // The audit's capture `08`, end to end through the live builder: Codex
+    // sits at 5% and far behind pace, so before the guard this read
+    // "95% free to spend" while Claude burned unmetered.
+    const codexWeekly = planWindow({
+      source: 'codex',
+      limitId: 'codex-weekly',
+      limitName: 'Weekly window',
+      windowMinutes: 10_080,
+      usedPercent: 5,
+      resetsAt: iso(NOW + 5 * 24 * HOUR),
+      observedAt: iso(NOW - MIN),
+    });
+    const view = buildLiveConsumption(
+      inputs({
+        planWindows: [codexWeekly],
+        providerPlanAccounts: [
+          account({ status: 'disabled', observedAt: null, planType: null }),
+        ],
+      })
+    );
+    const paces = allPaces(view);
+    expect(paces).toHaveLength(1);
+    expect(paces[0].fleetUnknown).toBe(true);
+    expect(opportunityOf(paces[0])).toBeNull();
+    expect(paceLabel(paces[0]).text).not.toContain('free to spend');
+    const note = unknownVerdictNote(view)!;
+    expect(note).toContain('Claude account');
+    expect(note).toContain('turned off');
+    expect(unknownSources(view).map(s => s.harness)).toEqual(['claude-code']);
   });
 });

@@ -416,3 +416,147 @@ describe('opportunity coach — hot always outranks', () => {
     expect(opportunityCoach([spent, behind])).toBeNull();
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* D1 — an unreadable source must never improve the verdict            */
+/* ------------------------------------------------------------------ */
+
+describe('unknown sources silence the opportunity voice', () => {
+  /**
+   * The audit's exact reproduction (capture `08`): with the operator's
+   * Claude plan windows switched off, `/usage` headlined
+   * `Codex · Weekly window 5% used · 95% free to spend` while Claude Code
+   * had burned 208.1M raw tokens in the trailing five hours. The page was
+   * at its most reassuring at the moment it knew least.
+   */
+  const codexWeekly = () =>
+    win({
+      limitId: 'codex-weekly',
+      label: 'Weekly window',
+      usedPercent: 5,
+      windowMinutes: 10_080,
+      resetsAtMs: NOW + 5 * 24 * HOUR,
+      burnPercentPerHour: 0.05,
+    });
+
+  /** Behind pace by far more than the 15-point opportunity floor. */
+  const codex = () => source([codexWeekly()]);
+
+  const claudeAccount = (
+    accountRead: ConsumptionSourceView['accountRead']
+  ): ConsumptionSourceView => ({
+    key: 'claude-code',
+    harness: 'claude-code',
+    label: 'Claude Code',
+    planType: null,
+    credits: null,
+    windows: [],
+    observedTokens5h: 208_100_000,
+    observedSessions: 12,
+    observedDelegatedShare: 0.31,
+    burn: [0.9, 1],
+    unreportedReason:
+      'Claude Code keeps no plan, quota, or rate-limit record in its local files.',
+    ...(accountRead ? { accountRead } : {}),
+  });
+
+  it('still fires when the only window-less source genuinely has no plan record', () => {
+    // Baseline: the pre-ENG-038 fleet. Nothing is unknown, so the voice is
+    // free to speak — this is the behaviour the guard must NOT break.
+    const snap = readMeter([codex(), claudeAccount(undefined)], NOW);
+    expect(snap.unknownSources).toBe(false);
+    expect(opportunityOf(snap.reading!)).not.toBeNull();
+    expect(paceLabel(snap.reading!).text).toContain('free to spend');
+  });
+
+  const unknownCases: Array<[string, ConsumptionSourceView['accountRead']]> = [
+    [
+      'the operator turned the read off',
+      { status: 'disabled', observedAtMs: null, planType: null, spend: null },
+    ],
+    [
+      'the token expired',
+      {
+        status: 'unavailable',
+        observedAtMs: NOW - 3 * HOUR,
+        planType: 'max',
+        spend: null,
+      },
+    ],
+    [
+      'the network failed',
+      {
+        status: 'unavailable',
+        observedAtMs: NOW - 20 * MIN,
+        planType: 'max',
+        spend: null,
+      },
+    ],
+    [
+      'the account was never configured',
+      {
+        status: 'unavailable',
+        observedAtMs: null,
+        planType: null,
+        spend: null,
+      },
+    ],
+  ];
+
+  it.each(unknownCases)('goes quiet when %s', (_case, accountRead) => {
+    const snap = readMeter([codex(), claudeAccount(accountRead)], NOW);
+    expect(snap.unknownSources).toBe(true);
+    const reading = snap.reading!;
+    expect(reading.fleetUnknown).toBe(true);
+    // the whole E9 voice speaks through this one gate
+    expect(opportunityOf(reading)).toBeNull();
+    expect(paceLabel(reading).text).not.toContain('free to spend');
+    expect(paceSentence(reading)).not.toContain('free');
+    expect(paceSentence(reading)).not.toContain('expire');
+    // the honest pace verdict survives — the window IS behind pace
+    expect(reading.pace).toBe('behind');
+    expect(paceLabel(reading).text).toContain('behind even pace');
+  });
+
+  it('silences the coach line across the whole fleet', () => {
+    const off: ConsumptionSourceView['accountRead'] = {
+      status: 'disabled',
+      observedAtMs: null,
+      planType: null,
+      spend: null,
+    };
+    const closing = win({
+      limitId: 'codex-primary',
+      usedPercent: 2,
+      windowMinutes: 300,
+      resetsAtMs: NOW + 60 * MIN,
+      burnPercentPerHour: 0.2,
+    });
+    const readable = readAllWindows(source([closing]), NOW, false);
+    expect(opportunityCoach(readable)).not.toBeNull();
+    const withUnknown = readMeter(
+      [source([closing]), claudeAccount(off)],
+      NOW
+    );
+    const all = withUnknown.sources.flatMap(s =>
+      readAllWindows(s, NOW, withUnknown.unknownSources)
+    );
+    expect(opportunityCoach(all)).toBeNull();
+  });
+
+  it('leaves the ALARM voice untouched — unknown never mutes a hot window', () => {
+    const off: ConsumptionSourceView['accountRead'] = {
+      status: 'disabled',
+      observedAtMs: null,
+      planType: null,
+      spend: null,
+    };
+    const snap = readMeter(
+      [source([win({ usedPercent: 96 })]), claudeAccount(off)],
+      NOW
+    );
+    expect(snap.unknownSources).toBe(true);
+    expect(snap.reading!.state).toBe('hot');
+    expect(remediationHint(snap.reading!)).not.toBeNull();
+  });
+});
