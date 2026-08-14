@@ -255,6 +255,7 @@ The gallery has been the de facto design system. With this document as the writt
 | `/hud-gallery/paused-agent`                                                                                                                            | **Keep**                                                                           | ENG-016 BUG-012/013: the state matrix for the paused-Agent record, driven by an injected bridge so it needs no Electron; `eval:workspace:paused` runs here                                                                                                                                        |
 | `/hud-gallery/team-order`                                                                                                                              | **Keep (active review candidate)**                                                 | ENG-015 S6.3: the deterministic rig for shipped Team ordering — the real overlay driven through its production Active-first switch; `eval:workspace:team` runs here (ribbon-bench precedent)                                                                                                                                       |
 | `/hud-gallery/goal-visuals`                                                                                                                            | **Keep (active review candidate)**                                                 | full-card-only matrix holding three goal identities constant across Graphic Form plus six metaphor-led languages; retire after one visual language ships                                                                                                                             |
+| `/hud-gallery/usage-directions` | **Keep (active review candidate)** | ENG-008 E12: three vendor-multiplexer directions over ONE frozen real capture of this machine, six states each, deep-linked `?d=&s=`; the honesty machinery (monotonicity over the headline, the broken/settled split, drawn residuals, glance-is-a-projection) is unit-pinned in `model.test.ts`. Retire once a direction ships to `/usage` |
 
 G1 also amends `AGENTS.md`'s "canonical component workbench" rule: the workbench prototypes and renders; **this document is the source of design truth.** G1 executed this list on 2026-08-02 (see the amendment log); the table above stands as the record of what was decided and why.
 
@@ -316,6 +317,30 @@ Air/Classic/Night and 90–120% writes produce only an initial and final root
 snapshot, never an intermediate layout storm.
 
 ### Amendment log
+
+- 2026-08-14 — ENG-008 E12 usage-multiplexer design options
+  (`/hud-gallery/usage-directions`, gallery-only, awaiting the operator's
+  pick). One amendment, no new type, colour, or spacing rungs. **The `/usage`
+  six-role treatment budget gains a seventh role: the VERDICT.** The budget
+  was written when the page's glance zone was a number (`Num`, mono display
+  numeral); a multiplexer's two-second answer is a verdict in WORDS —
+  "Runs out before reset", "Tight", "Clear" — which no existing role fits:
+  `Num` is mono and numeric, `Body` is 14px and disappears beside a display
+  numeral. The verdict is `text-display font-semibold` in the interface face,
+  an existing named rung, coloured only by data state (neutral, or the
+  Consumption channel's hot when a window genuinely overheats). It is
+  singular by construction — one per surface, first in reading order — so it
+  cannot proliferate the way the pre-hierarchy-pass treatments did.
+  Everything else in the study renders through the existing six roles.
+  Channel discipline is unchanged and was the constraint that shaped the row
+  states: the CHROME ATTENTION role (amber) marks exactly one row state, the
+  one with a repair verb; a source that is legitimately unavailable for this
+  account uses the Consumption unknown grey and product language, because a
+  red dot that is always on trains the operator to ignore red dots. Absence
+  draws the existing −45° unreported hatch at the same height as a tape, so
+  row geometry is fixed through success and failure. Evidence:
+  `/tmp/exawatt-e12-shots/` and `/tmp/exawatt-e12-shots-night/` (3 directions
+  × 6 states, both grounds) and the E12 entry in the ENG-008 project doc.
 
 - 2026-08-11 — ENG-008 E9 pace opportunity (operator pick: C + B). Two
   amendments, no new type/color/spacing rungs. (1) **The shared pace

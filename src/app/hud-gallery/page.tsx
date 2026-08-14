@@ -495,6 +495,13 @@ export default function HudGallery() {
                 style={{ color: HUD.cyan }}
               >
                 Open the Agent tile image bench →
+              </a>{' '}
+              <a
+                href="/hud-gallery/usage-directions"
+                className="underline underline-offset-2"
+                style={{ color: HUD.cyan }}
+              >
+                Open the Usage multiplexer directions →
               </a>
             </p>
           </header>
