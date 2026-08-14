@@ -100,7 +100,12 @@ function withRuntimeOverlays(
       ? correctAccentContrast(
           os.systemAccent,
           theme.foundation.actionText,
-          theme.foundation.action
+          theme.foundation.action,
+          undefined,
+          // The filled default button sits on raised surfaces and inside
+          // dialogs, so it is corrected against the lighter of the two — the
+          // one it is likeliest to disappear into (FIX-011).
+          theme.foundation.surfaceRaised ?? theme.foundation.surface
         )
       : theme.foundation.action;
 

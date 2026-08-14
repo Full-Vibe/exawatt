@@ -51,6 +51,13 @@ export const SURFACE_GATES = [
       ),
   },
   {
+    gate: 'eval:theme-system',
+    why: 'appearance resolution decides every surface colour, including whether a default action still reads as one',
+    match: file =>
+      /^src\/lib\/appearance\/(?:color|resolve-appearance)\.ts$/.test(file) ||
+      /^themes\/v1\/.+\.json$/.test(file),
+  },
+  {
     gate: 'eval:workspace:paused',
     why: 'a paused Agent must state how it ended and must not read its transcript to render',
     match: file =>
