@@ -31,6 +31,7 @@ function installApi() {
         liveSessions: 0,
         error: null,
         enabled: true,
+        disabledReason: null,
         logPath: null,
       }),
       checkForUpdates: async () => {
@@ -65,6 +66,7 @@ describe('UpdateReadyNotice', () => {
         liveSessions: 4,
         error: null,
         enabled: true,
+        disabledReason: null,
         logPath: null,
       })
     );
@@ -86,6 +88,7 @@ describe('UpdateReadyNotice', () => {
         liveSessions: 0,
         error: 'network unavailable',
         enabled: true,
+        disabledReason: null,
         logPath: '/tmp/updater.jsonl',
       })
     );
@@ -109,6 +112,7 @@ describe('UpdateReadyNotice', () => {
         liveSessions: 0,
         error: null,
         enabled: true,
+        disabledReason: null,
         logPath: null,
       })
     );

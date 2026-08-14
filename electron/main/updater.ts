@@ -1,3 +1,4 @@
+import { existsSync } from 'fs';
 import path from 'path';
 import { app, BrowserWindow, dialog } from 'electron';
 import { autoUpdater, type UpdateInfo } from 'electron-updater';
@@ -6,6 +7,12 @@ import {
   createDiagnosticsLog,
   type DiagnosticRecorder,
 } from './diagnostics-log';
+
+export type UpdaterDisabledReason =
+  | 'unsigned-delivery'
+  | 'not-packaged'
+  | 'test-run'
+  | 'no-feed-config';
 
 export type ProductUpdatePhase =
   | 'idle'
@@ -26,6 +33,8 @@ export interface ProductUpdateStatus {
    *  delivery, or a dev/test run). A user on such a build never sees an
    *  update and never sees a failure; only this field says so. */
   enabled: boolean;
+  /** why the channel is off, when it is. `null` while updates are live. */
+  disabledReason: UpdaterDisabledReason | null;
   /** Absolute path to the JSONL a user can send back after a failed update. */
   logPath: string | null;
 }
@@ -38,6 +47,7 @@ let status: ProductUpdateStatus = {
   liveSessions: 0,
   error: null,
   enabled: false,
+  disabledReason: null,
   logPath: null,
 };
 let registered = false;
@@ -219,10 +229,17 @@ export async function checkForUpdatesFromMenu(): Promise<void> {
     : '';
 
   if (!status.enabled) {
+    // 'no-feed-config' is the only one of these a released build can hit, and
+    // the user cannot fix it from inside the app: the build itself is missing
+    // its update channel, so the way forward is a fresh download.
+    const detail =
+      status.disabledReason === 'no-feed-config'
+        ? `Exawatt ${status.currentVersion} was packaged without an update channel, so it cannot check for new versions. Download the current release from exawatt.ai/download and replace this copy.${detailSuffix}`
+        : `This copy of Exawatt ${status.currentVersion} was installed directly rather than from a signed release, so it has no update channel. Install the latest release to turn automatic updates on.`;
     await dialog.showMessageBox({
-      type: 'info',
+      type: status.disabledReason === 'no-feed-config' ? 'warning' : 'info',
       message: 'Automatic updates are off for this build.',
-      detail: `This copy of Exawatt ${status.currentVersion} was installed directly rather than from a signed release, so it has no update channel. Install the latest release to turn automatic updates on.`,
+      detail,
       buttons: ['OK'],
     });
     return;
@@ -262,15 +279,40 @@ export async function checkForUpdatesFromMenu(): Promise<void> {
   });
 }
 
+/**
+ * A build with no `app-update.yml` is not a build with a broken network: it
+ * has no feed at all, and electron-updater's `loadUpdateConfig` reads that
+ * file with a bare `readFile`, so the first check rejects with ENOENT and
+ * every launch after it repeats. Six signed releases shipped that way
+ * (BUG-015, incident `0009`). The packaging guard makes it unshippable; this
+ * makes it legible if it ever ships again, because "no update channel" is a
+ * true sentence a user can act on and a recurring "Update failed" is not.
+ */
+export function updaterDisabledReason(input: {
+  signedDelivery: boolean;
+  packaged: boolean;
+  testRun: boolean;
+  hasFeedConfig: boolean;
+}): UpdaterDisabledReason | null {
+  if (!input.signedDelivery) return 'unsigned-delivery';
+  if (!input.packaged) return 'not-packaged';
+  if (input.testRun) return 'test-run';
+  if (!input.hasFeedConfig) return 'no-feed-config';
+  return null;
+}
+
 export function startProductUpdater(enabled: boolean): void {
-  const reason = !enabled
-    ? 'unsigned-delivery'
-    : !app.isPackaged
-      ? 'not-packaged'
-      : process.env.EXAWATT_TEST === '1'
-        ? 'test-run'
-        : null;
-  setStatus({ enabled: reason === null });
+  const packaged = app.isPackaged;
+  const reason = updaterDisabledReason({
+    signedDelivery: enabled,
+    packaged,
+    testRun: process.env.EXAWATT_TEST === '1',
+    // only meaningful once packaged; an unpacked run has already bailed out
+    hasFeedConfig:
+      !packaged ||
+      existsSync(path.join(process.resourcesPath, 'app-update.yml')),
+  });
+  setStatus({ enabled: reason === null, disabledReason: reason });
   record('updater.startup', {
     currentVersion: status.currentVersion,
     enabled: status.enabled,

@@ -713,6 +713,13 @@ export interface ProductUpdateStatus {
   /** false when this build has no update channel at all (unsigned local
    *  delivery, or a dev/test run) */
   enabled: boolean;
+  /** why the channel is off, when it is. `null` while updates are live. */
+  disabledReason:
+    | 'unsigned-delivery'
+    | 'not-packaged'
+    | 'test-run'
+    | 'no-feed-config'
+    | null;
   /** absolute path to the updater JSONL a user can send back after a failure */
   logPath: string | null;
 }
