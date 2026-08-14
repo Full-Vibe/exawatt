@@ -31,14 +31,21 @@ import type {
   DemoSessionRollup,
 } from '@/components/consumption/demo-source';
 import {
+  ACCOUNT_LABEL,
   displayUsage,
+  planReadState,
   rawTotal,
+  sourceOwnerLabel,
   sumUsage,
+  unknownPlanSources,
+  windowFreshness,
+  type AccountSpendView,
   type ConsumptionSourceView,
   type DisplayUsage,
   type Harness,
 } from '@/components/consumption/model';
 import {
+  fleetHasUnknownSource,
   readAllWindows,
   type MeterReading,
 } from '@/components/consumption/meter/meter-model';
@@ -57,16 +64,76 @@ const LIVE_WITHIN_MS = 45 * 60_000;
  */
 export type WindowPace = MeterReading;
 
-/** Every LIVE reported window across every source, tightest first. */
+/**
+ * Every LIVE reported window across every source, tightest first.
+ *
+ * Each reading carries whether the FLEET holds an unknown source, so the
+ * opportunity voice is silenced on a partial picture — the page and the
+ * chrome meter gate on the identical fact (`fleetHasUnknownSource`).
+ */
 export function allPaces(demo: DemoConsumption): WindowPace[] {
+  const unknown = fleetHasUnknownSource(demo.sources, demo.nowMs);
   return demo.sources
-    .flatMap(s => readAllWindows(s, demo.nowMs))
+    .flatMap(s => readAllWindows(s, demo.nowMs, unknown))
     .sort((a, b) => b.usedPercent - a.usedPercent);
 }
 
-/** Sources that report no plan data at all — rendered absent, never 0%. */
+/**
+ * Sources with no live window — rendered absent, never 0%. Three different
+ * causes live here and the Headroom band tells them apart through
+ * `planReadState`: a capability fact, an off switch, or a failed read.
+ */
 export function silentSources(demo: DemoConsumption): ConsumptionSourceView[] {
-  return demo.sources.filter(s => s.windows.length === 0);
+  return demo.sources.filter(
+    s => !s.windows.some(w => windowFreshness(w, demo.nowMs) === 'live')
+  );
+}
+
+/** Sources whose true plan position nobody can currently see. */
+export function unknownSources(demo: DemoConsumption): ConsumptionSourceView[] {
+  return unknownPlanSources(demo.sources, demo.nowMs);
+}
+
+/**
+ * The Headroom band's partial-verdict line: names the sources the verdict on
+ * screen does NOT cover. Null when it covers everything.
+ */
+export function unknownVerdictNote(
+  demo: DemoConsumption
+): string | null {
+  const unknown = unknownSources(demo);
+  if (unknown.length === 0) return null;
+  const names = unknown.map(sourceOwnerLabel);
+  const list =
+    names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  const allOff = unknown.every(s => planReadState(s, demo.nowMs) === 'off');
+  return allOff
+    ? `${list} ${names.length === 1 ? 'is' : 'are'} turned off — this verdict covers the sources that reported.`
+    : `${list} ${names.length === 1 ? 'is' : 'are'} not readable — this verdict covers the sources that reported.`;
+}
+
+/** Vendor-account plan-credit spend, per source that reports it (ENG-038). */
+export interface PlanCreditRow {
+  key: Harness;
+  /** The ACCOUNT's name, never the harness's — this is account truth. */
+  label: string;
+  spend: AccountSpendView;
+}
+
+export function planCreditRows(demo: DemoConsumption): PlanCreditRow[] {
+  const out: PlanCreditRow[] = [];
+  for (const source of demo.sources) {
+    const spend = source.accountRead?.spend;
+    if (!spend) continue;
+    out.push({
+      key: source.harness,
+      label: ACCOUNT_LABEL[source.harness],
+      spend,
+    });
+  }
+  return out;
 }
 
 /**

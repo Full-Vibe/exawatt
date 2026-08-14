@@ -36,6 +36,7 @@ import {
 } from '../flux';
 import {
   projectWindow,
+  unknownPlanSources,
   windowFreshness,
   type CapacityWindowView,
   type ConsumptionSourceView,
@@ -74,6 +75,17 @@ export interface MeterReading {
   exhaustsBeforeReset: boolean;
   msToExhaust: number;
   state: MeterState;
+  /**
+   * True when some OTHER source in the same fleet has an unknown plan
+   * position — an account read that is off, failing, or stale.
+   *
+   * It rides the reading because the opportunity voice must be silenced by
+   * it, and the voice speaks through five call sites that only ever hold one
+   * reading. A window cannot honestly say "95% free to spend" while a
+   * sibling ledger cannot be read at all: the operator would hear a verdict
+   * over the whole fleet from a page that measured part of it.
+   */
+  fleetUnknown: boolean;
 }
 
 export interface MeterSnapshot {
@@ -82,6 +94,9 @@ export interface MeterSnapshot {
   reading: MeterReading | null;
   sources: ConsumptionSourceView[];
   nowMs: number;
+  /** Some source's plan position is unknown, so `reading` is a partial
+   *  verdict. Never let a surface present it as the whole one. */
+  unknownSources: boolean;
 }
 
 function elapsedPercent(w: CapacityWindowView, nowMs: number): number {
@@ -108,7 +123,8 @@ function stateFor(
 export function readWindowPace(
   source: ConsumptionSourceView,
   window: CapacityWindowView,
-  nowMs: number
+  nowMs: number,
+  fleetUnknown = false
 ): MeterReading {
   const p = projectWindow(window, nowMs);
   const evenPace = elapsedPercent(window, nowMs);
@@ -125,37 +141,57 @@ export function readWindowPace(
     exhaustsBeforeReset: p.exhaustsBeforeReset,
     msToExhaust: p.msToExhaust,
     state: stateFor(window.usedPercent, p.exhaustsBeforeReset),
+    fleetUnknown,
   };
+}
+
+/**
+ * Does any source in this fleet have an unknown plan position? Derived once
+ * here so the chrome meter and `/usage` gate the opportunity voice on the
+ * same fact.
+ */
+export function fleetHasUnknownSource(
+  sources: readonly ConsumptionSourceView[],
+  nowMs: number
+): boolean {
+  return unknownPlanSources(sources, nowMs).length > 0;
 }
 
 /**
  * The headline: the tightest LIVE window across every reporting source.
  * Stale and expired windows are excluded the same way the capacity surfaces
  * exclude them — a meter projecting from a dead reading is quietly lying.
+ *
+ * Only readable windows can be ranked, so an unreadable source cannot enter
+ * the ranking — but it MUST enter the verdict, or losing a source improves
+ * the reading. `fleetUnknown` carries that fact onto every reading the
+ * snapshot produces.
  */
 export function readMeter(
   sources: ConsumptionSourceView[],
   nowMs: number
 ): MeterSnapshot {
+  const unknown = fleetHasUnknownSource(sources, nowMs);
   let best: MeterReading | null = null;
   for (const source of sources) {
     for (const window of source.windows) {
       if (windowFreshness(window, nowMs) !== 'live') continue;
-      const reading = readWindowPace(source, window, nowMs);
+      const reading = readWindowPace(source, window, nowMs, unknown);
       if (!best || reading.usedPercent > best.usedPercent) best = reading;
     }
   }
-  return { reading: best, sources, nowMs };
+  return { reading: best, sources, nowMs, unknownSources: unknown };
 }
 
 /** Every live window, one reading each — the popover's windows list. */
 export function readAllWindows(
   source: ConsumptionSourceView,
-  nowMs: number
+  nowMs: number,
+  fleetUnknown = false
 ): MeterReading[] {
   return source.windows
     .filter(w => windowFreshness(w, nowMs) === 'live')
-    .map(w => readWindowPace(source, w, nowMs));
+    .map(w => readWindowPace(source, w, nowMs, fleetUnknown));
 }
 
 /* ------------------------------------------------------------------ */
@@ -208,6 +244,13 @@ export interface OpportunityRead {
  * on, or an alarm state owns the window outright.
  */
 export function opportunityOf(r: MeterReading): OpportunityRead | null {
+  // UNKNOWN OUTRANKS OPPORTUNITY. "Free to spend" is a claim about the whole
+  // fleet's headroom; with a sibling source unreadable, the claim cannot be
+  // made from what is on screen. Losing a vendor read must never make the
+  // page more reassuring — the failure that motivates this guard is a page
+  // that read `95% free to spend` while an unreadable Claude account had
+  // burned 208M raw tokens in five hours.
+  if (r.fleetUnknown) return null;
   if (r.state === 'hot' || r.state === 'exhausted') return null;
   // floor ≥ 15 implies the shared verdict already reads 'behind' (band ±5);
   // the explicit check keeps the predicate readable as one sentence.

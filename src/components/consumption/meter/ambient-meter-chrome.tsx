@@ -18,6 +18,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { duration, percent } from '../flux';
+import { windowOwnerLabel } from '../model';
 import { useTenantConsumption } from '../use-tenant-consumption';
 import {
   paceSentence,
@@ -35,14 +36,20 @@ export const CHROME_METER_FORM: MeterFormId = 'bar';
 
 export function meterAriaLabel(snapshot: MeterSnapshot): string {
   const r = snapshot.reading;
+  // A 71px glyph cannot show the fleet's unknowns, but its label can — and
+  // must, or the one number it shows reads as the whole picture (ENG-038).
+  const partial = snapshot.unknownSources
+    ? ' Some sources cannot be read, so this is a partial reading.'
+    : '';
   if (!r) {
-    return 'Usage: no source reports plan limits. Opens the usage surface.';
+    return `Usage: no source reports plan limits.${partial} Opens the usage surface.`;
   }
+  const owner = windowOwnerLabel(r.source, r.window);
   const head =
     r.state === 'exhausted'
-      ? `${r.source.label} ${r.window.label.toLowerCase()} spent, resets in ${duration(r.msToReset)}`
-      : `${r.source.label} ${r.window.label.toLowerCase()} at ${percent(r.usedPercent)}, ${paceSentence(r)}, resets in ${duration(r.msToReset)}`;
-  return `Usage: ${head}. Opens the usage surface.`;
+      ? `${owner} ${r.window.label.toLowerCase()} spent, resets in ${duration(r.msToReset)}`
+      : `${owner} ${r.window.label.toLowerCase()} at ${percent(r.usedPercent)}, ${paceSentence(r)}, resets in ${duration(r.msToReset)}`;
+  return `Usage: ${head}.${partial} Opens the usage surface.`;
 }
 
 const HOVER_OPEN_MS = 120;

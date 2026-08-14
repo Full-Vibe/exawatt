@@ -49,6 +49,25 @@ export const HARNESS_LABEL: Record<Harness, string> = {
 };
 
 /**
+ * The VENDOR ACCOUNT behind a harness (ENG-038).
+ *
+ * A plan window read from the vendor's own account endpoint meters the whole
+ * account — claude.ai chat included — so labelling it with the harness name
+ * ("Claude Code · Weekly — Fable") states tool truth for an account figure.
+ * Every surface that renders an account-scoped window names it from here
+ * instead; `windowOwnerLabel` below is the one derivation.
+ */
+export const ACCOUNT_LABEL: Record<Harness, string> = {
+  'claude-code': 'Claude account',
+  codex: 'OpenAI account',
+  grok: 'xAI account',
+};
+
+/** ENG-038 disclosure, stated once wherever an account window is rendered. */
+export const PLAN_LEVEL_NOTE =
+  'Account windows are plan-wide — usage outside Exawatt is included.';
+
+/**
  * Disjoint raw-unit segments for one scope. `null` on any unit means the
  * harness does not report that unit at all. Never coerce it to 0.
  */
@@ -185,6 +204,43 @@ export function projectWindow(w: CapacityWindowView, nowMs: number) {
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* vendor account reads (ENG-038) — the credentialed source class       */
+/* ------------------------------------------------------------------ */
+
+/** Vendor-reported plan-credit spend. Its OWN ledger — never summed with
+ *  modelled dollars, because plan / overage / metered API are disjoint. */
+export interface AccountSpendView {
+  /** Minor currency units, e.g. 20160 with exponent 2 = $201.60. */
+  usedMinor: number;
+  /** null when the vendor reports no limit. */
+  limitMinor: number | null;
+  currency: string;
+  exponent: number;
+  /** The vendor's own 0-100 figure, when it reports one. */
+  percent: number | null;
+  /** Whether extra usage / credits are currently enabled on the account. */
+  enabled: boolean;
+}
+
+/**
+ * One vendor account read, as the capacity surfaces see it.
+ *
+ * Its presence is the fact that MAKES an absent window ambiguous: a source
+ * with no account read and no windows keeps no plan record (a capability
+ * fact); a source WITH an account read and no live window has a position
+ * nobody can currently see. `planReadState` below is where that distinction
+ * is made, once, for every surface.
+ */
+export interface AccountReadView {
+  status: 'ok' | 'unavailable' | 'disabled';
+  /** Last SUCCESSFUL read; null when none has ever succeeded. */
+  observedAtMs: number | null;
+  /** The account's own plan identity, e.g. `max`. */
+  planType: string | null;
+  spend: AccountSpendView | null;
+}
+
 /**
  * A harness as the capacity surfaces see it. `windows: []` means the harness
  * reports no plan data anywhere on disk — rendered as an empty hatched channel,
@@ -210,6 +266,12 @@ export interface ConsumptionSourceView {
   burn: number[];
   /** Why this source has no windows, in the harness's own terms. */
   unreportedReason?: string;
+  /**
+   * ENG-038 — this source's vendor account read, when one is configured at
+   * all. Absent means no credentialed read exists for the source, so
+   * `unreportedReason` (the local capability fact) is the whole truth.
+   */
+  accountRead?: AccountReadView;
 }
 
 /**
@@ -252,6 +314,77 @@ export function planWindowLabel(windowMinutes: number): string {
   }
   const hours = Math.round(windowMinutes / 60);
   return hours >= 1 ? `${hours}-hour window` : `${windowMinutes}-minute window`;
+}
+
+/* ------------------------------------------------------------------ */
+/* plan-read state — why a source has no live window                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The four honest answers to "what is this source's plan position?".
+ *
+ *   reported   — a live window exists; read it.
+ *   none       — the source keeps no plan record and no account read is
+ *                configured. A capability fact: there is nothing to see.
+ *   off        — an account read exists and the operator turned it off.
+ *   unreadable — an account read exists and currently cannot be read
+ *                (token expired, network down, schema drift, never
+ *                configured, or its last observation went stale).
+ *
+ * `off` and `unreadable` are the UNKNOWN states, and they are the reason this
+ * function exists: before it, all three of `none`/`off`/`unreadable` rendered
+ * the same "keeps no plan record" sentence, so a credential failure read as a
+ * capability fact and a fleet that could see LESS looked healthier. Absent is
+ * never zero, and unknown is never absent.
+ */
+export type PlanReadState = 'reported' | 'none' | 'off' | 'unreadable';
+
+export function planReadState(
+  source: ConsumptionSourceView,
+  nowMs: number
+): PlanReadState {
+  if (source.windows.some(w => windowFreshness(w, nowMs) === 'live')) {
+    return 'reported';
+  }
+  const account = source.accountRead;
+  if (!account) return 'none';
+  if (account.status === 'disabled') return 'off';
+  // `ok` with nothing live means the read succeeded but its observation has
+  // gone stale — still unknown, never a reassuring absence.
+  return 'unreadable';
+}
+
+/** True for the states where the source's true position is UNKNOWN. */
+export function planReadIsUnknown(state: PlanReadState): boolean {
+  return state === 'off' || state === 'unreadable';
+}
+
+/** Sources whose plan position is unknown right now. */
+export function unknownPlanSources(
+  sources: readonly ConsumptionSourceView[],
+  nowMs: number
+): ConsumptionSourceView[] {
+  return sources.filter(s => planReadIsUnknown(planReadState(s, nowMs)));
+}
+
+/**
+ * Who OWNS a window's figure — the account when the vendor's own endpoint
+ * reported it, the harness when the local logs did. One derivation, so the
+ * page, the chart asides, and the popover cannot label the same window
+ * three ways (ENG-038).
+ */
+export function windowOwnerLabel(
+  source: ConsumptionSourceView,
+  window: CapacityWindowView
+): string {
+  return window.planLevel ? ACCOUNT_LABEL[source.harness] : source.label;
+}
+
+/** The name to call a source whose plan position is unknown. */
+export function sourceOwnerLabel(source: ConsumptionSourceView): string {
+  return source.accountRead
+    ? ACCOUNT_LABEL[source.harness]
+    : source.label;
 }
 
 /* ------------------------------------------------------------------ */

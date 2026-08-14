@@ -44,6 +44,7 @@ import {
 import {
   capacityWindowFromPlan,
   interventionStats,
+  type AccountReadView,
   type ConsumptionSourceView,
   type Harness,
   type InterventionRow,
@@ -1026,6 +1027,13 @@ export interface DemoConsumptionInputs {
   claudePlanNote: string;
   /** E9 — recently closed cycles with unspent headroom; live source only. */
   closedCycles?: ClosedCycle[];
+  /**
+   * ENG-038 — per-source vendor account read state, for the sources that have
+   * one. Absent entries mean no credentialed read is configured for that
+   * source; a present entry is what lets `/usage` tell a failed read apart
+   * from a source that simply keeps no plan record.
+   */
+  accountReads?: Partial<Record<ConsumptionSourceId, AccountReadView>>;
 }
 
 export function buildDemoConsumption(
@@ -1335,6 +1343,12 @@ function buildSources(
             : 0,
       burn,
       unreportedReason,
+      // ENG-038: present only where a vendor account read is configured.
+      // Its presence is what separates "keeps no plan record" from "its
+      // position is currently unknown" (`planReadState`).
+      ...(inputs.accountReads?.[source]
+        ? { accountRead: inputs.accountReads[source] }
+        : {}),
     };
   };
 

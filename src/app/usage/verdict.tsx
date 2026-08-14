@@ -21,7 +21,14 @@ import {
   duration,
   percent,
 } from '@/components/consumption/flux';
-import type { ConsumptionSourceView } from '@/components/consumption/model';
+import {
+  PLAN_LEVEL_NOTE,
+  planReadState,
+  sourceOwnerLabel,
+  windowOwnerLabel,
+  type ConsumptionSourceView,
+  type PlanReadState,
+} from '@/components/consumption/model';
 import {
   ledgerLine,
   opportunityCoach,
@@ -45,23 +52,32 @@ import {
 export function Verdict({
   paces,
   silent,
+  nowMs,
+  unknownNote = null,
   closedCycles = [],
 }: {
   paces: WindowPace[];
   silent: ConsumptionSourceView[];
+  nowMs: number;
+  /** Names the sources this verdict does NOT cover; null when it covers all. */
+  unknownNote?: string | null;
   closedCycles?: ClosedCycle[];
 }) {
   const [headline, ...rest] = paces;
+  // ENG-038: an account window meters the whole plan, so the page states that
+  // once — the disclosure used to exist only in the meter popover.
+  const planLevel = paces.some(p => p.window.planLevel);
   if (!headline) {
     // No live window anywhere — say so, and still show each source's absent
     // channel (observed raw + why) rather than a bare card (E5 empty state).
     return (
       <Band label="Headroom">
         <Caption>No source reports a live plan window.</Caption>
+        {unknownNote && <Caption>{unknownNote}</Caption>}
         {silent.length > 0 && (
           <div className="flex min-w-0 max-w-xl flex-col gap-3">
             {silent.map(s => (
-              <SilentRow key={s.key} source={s} />
+              <SilentRow key={s.key} source={s} nowMs={nowMs} />
             ))}
           </div>
         )}
@@ -75,7 +91,8 @@ export function Verdict({
       label="Headroom"
       aside={
         <Caption>
-          {headline.source.label} · {headline.window.label}
+          {windowOwnerLabel(headline.source, headline.window)} ·{' '}
+          {headline.window.label}
         </Caption>
       }
     >
@@ -96,10 +113,14 @@ export function Verdict({
             <WindowRow key={p.window.limitId} pace={p} />
           ))}
           {silent.map(s => (
-            <SilentRow key={s.key} source={s} />
+            <SilentRow key={s.key} source={s} nowMs={nowMs} />
           ))}
         </div>
       </div>
+      {/* the partial-verdict fact leads the captions: a reader who stops at
+          the glance zone must not leave thinking the page saw everything */}
+      {unknownNote && <Caption>{unknownNote}</Caption>}
+      {planLevel && <Caption>{PLAN_LEVEL_NOTE}</Caption>}
       {coach && <Caption>{coach}</Caption>}
       {closedCycles.map(c => (
         <Caption key={`${c.label}-${c.agoMs}`}>{ledgerLine(c)}</Caption>
@@ -115,7 +136,7 @@ function WindowRow({ pace }: { pace: WindowPace }) {
     <div className="flex min-w-0 flex-col gap-1">
       <div className="flex items-baseline justify-between gap-3">
         <Body className="truncate" color={CHROME.textDim}>
-          {pace.source.label} · {pace.window.label}
+          {windowOwnerLabel(pace.source, pace.window)} · {pace.window.label}
         </Body>
         {o ? (
           // the E9 metric swap — the figure the row leads with becomes free
@@ -133,21 +154,57 @@ function WindowRow({ pace }: { pace: WindowPace }) {
   );
 }
 
-/** A source with no plan record — an absent channel, never 0%. */
-function SilentRow({ source }: { source: ConsumptionSourceView }) {
+/**
+ * A source with no live window — an absent channel, never 0%.
+ *
+ * Three causes wear three different states (`planReadState`). Before this
+ * split every one of them printed the harness's static capability sentence,
+ * so an expired token read as "this vendor keeps no such record" and a fleet
+ * that could see less looked healthier.
+ */
+function SilentRow({
+  source,
+  nowMs,
+}: {
+  source: ConsumptionSourceView;
+  nowMs: number;
+}) {
+  const state = planReadState(source, nowMs);
+  const unknown = state === 'off' || state === 'unreadable';
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <div className="flex items-baseline justify-between gap-3">
         <Body className="truncate" color={CHROME.textDim}>
-          {source.label} · plan
+          {sourceOwnerLabel(source)} · plan
         </Body>
-        <Data color={FLUX.unknown}>no plan record</Data>
+        <Data color={FLUX.unknown}>{stateFigure(state)}</Data>
       </div>
       <UnreportedChannel
         observed={source.observedTokens5h}
-        reason={source.unreportedReason}
+        reason={unknown ? readReason(source, state, nowMs) : source.unreportedReason}
         height={6}
       />
     </div>
   );
+}
+
+/** The right-hand state word. Unknown never borrows absence's phrasing. */
+function stateFigure(state: PlanReadState): string {
+  if (state === 'off') return 'read turned off';
+  if (state === 'unreadable') return 'position unknown';
+  return 'no plan record';
+}
+
+/** One short fact about the read itself — never a remedy, never a stack. */
+function readReason(
+  source: ConsumptionSourceView,
+  state: PlanReadState,
+  nowMs: number
+): string {
+  const name = sourceOwnerLabel(source);
+  if (state === 'off') return `${name} reads are turned off in Settings.`;
+  const observedAtMs = source.accountRead?.observedAtMs ?? null;
+  return observedAtMs === null
+    ? `${name} has never been read successfully.`
+    : `${name} last read ${duration(Math.max(0, nowMs - observedAtMs))} ago.`;
 }

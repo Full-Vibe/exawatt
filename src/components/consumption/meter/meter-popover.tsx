@@ -20,7 +20,12 @@
  */
 
 import { CONSUMPTION_CHROME as CHROME, duration, percent } from '../flux';
-import { HARNESS_LABEL, type ConsumptionSourceView } from '../model';
+import {
+  ACCOUNT_LABEL,
+  HARNESS_LABEL,
+  planReadState,
+  type ConsumptionSourceView,
+} from '../model';
 import {
   floorTitle,
   meterTone,
@@ -140,22 +145,41 @@ function SourceRows({
   source: ConsumptionSourceView;
   snapshot: MeterSnapshot;
 }) {
-  const readings = readAllWindows(source, snapshot.nowMs);
+  const readings = readAllWindows(
+    source,
+    snapshot.nowMs,
+    snapshot.unknownSources
+  );
   // ENG-038: vendor-account windows are PLAN truth — they meter the whole
   // plan (claude.ai chat included), not just this machine's agents. One line,
   // once per source, never per row.
   const planLevel = readings.some(r => r.window.planLevel);
+  const state = planReadState(source, snapshot.nowMs);
   return (
     <div className="flex flex-col gap-2 px-3 py-2.5">
       <span
         className="font-ui text-chrome-label font-medium"
         style={{ color: PANEL.text }}
       >
-        {HARNESS_LABEL[source.harness]}
+        {/* an account-scoped window is named for the ACCOUNT, not the tool
+            that happens to share its credential */}
+        {planLevel || state === 'off' || state === 'unreadable'
+          ? ACCOUNT_LABEL[source.harness]
+          : HARNESS_LABEL[source.harness]}
       </span>
       {readings.length === 0 ? (
-        <p className="font-ui text-chrome-micro leading-4" style={{ color: PANEL.faint }}>
-          No plan record on disk — this source is unmetered here, not at zero.
+        <p
+          data-meter-absent={state}
+          className="font-ui text-chrome-micro leading-4"
+          style={{ color: PANEL.faint }}
+        >
+          {/* three causes, three sentences: a failed read must never wear
+              the capability sentence (the D1 honesty inversion) */}
+          {state === 'off'
+            ? 'Reads are turned off in Settings — position unknown, not zero.'
+            : state === 'unreadable'
+              ? 'This account cannot be read right now — position unknown, not zero.'
+              : 'No plan record on disk — this source is unmetered here, not at zero.'}
         </p>
       ) : (
         readings.map(r => (
@@ -191,7 +215,9 @@ export function MeterPopover({ snapshot }: { snapshot: MeterSnapshot }) {
   const coach = hint
     ? null
     : opportunityCoach(
-        snapshot.sources.flatMap(s => readAllWindows(s, snapshot.nowMs))
+        snapshot.sources.flatMap(s =>
+          readAllWindows(s, snapshot.nowMs, snapshot.unknownSources)
+        )
       );
   const tone = meterTone(r);
   return (

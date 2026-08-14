@@ -21,13 +21,18 @@ import {
   percent,
   tokens,
 } from '@/components/consumption/flux';
-import { modelledDollars } from '@/components/consumption/units';
+import {
+  modelledDollars,
+  planCredits as planCreditAmount,
+} from '@/components/consumption/units';
+import { windowOwnerLabel } from '@/components/consumption/model';
 import { remediationHint } from '@/components/consumption/meter/meter-model';
 import type { DemoConsumption } from '@/components/consumption/demo-source';
 import {
   heatWindows,
   operatorSamples,
   windowTimeline,
+  type PlanCreditRow,
   type SpendView,
   type WindowPace,
 } from './derive';
@@ -62,7 +67,7 @@ export function Burn({
           {paces.map(p => (
             <span key={p.window.limitId} className="flex items-baseline gap-1.5">
               <Caption>
-                {p.source.label} · {p.window.label}
+                {windowOwnerLabel(p.source, p.window)} · {p.window.label}
               </Caption>
               <Data bright>{p.window.burnPercentPerHour.toFixed(1)}%/h</Data>
             </span>
@@ -238,7 +243,7 @@ export function Pace({ paces }: { paces: WindowPace[] }) {
                   {label.text}
                 </Body>
                 <Caption>
-                  {p.source.label} · {p.window.label}
+                  {windowOwnerLabel(p.source, p.window)} · {p.window.label}
                 </Caption>
               </span>
               <Data bright>
@@ -270,7 +275,7 @@ export function Heat({ paces }: { paces: WindowPace[] }) {
             return (
               <div key={p.window.limitId} className="flex min-w-0 flex-col">
                 <Body color={FLUX.hot}>
-                  {p.source.label} · {p.window.label} ·{' '}
+                  {windowOwnerLabel(p.source, p.window)} · {p.window.label} ·{' '}
                   {p.exhaustsBeforeReset && p.state !== 'exhausted'
                     ? `spent in ${duration(p.msToExhaust)}`
                     : paceLabel(p).text}
@@ -291,9 +296,12 @@ export function Heat({ paces }: { paces: WindowPace[] }) {
 
 export function Spend({
   spend,
+  planCredits: credits = [],
   windowLabel,
 }: {
   spend: SpendView;
+  /** ENG-038 vendor-reported plan credits. Its own lane, never a sum. */
+  planCredits?: PlanCreditRow[];
   windowLabel: string;
 }) {
   return (
@@ -322,6 +330,31 @@ export function Spend({
         </div>
         <Caption>list-price model · not billing truth</Caption>
       </div>
+      {/* Plan credits are a DIFFERENT ledger, so they get their own lane and
+          their own basis label. Plan, overage, and metered API never sum:
+          a single total across them is a figure nobody is charged. */}
+      {credits.length > 0 && (
+        <div
+          className="flex flex-col gap-2.5 border-t pt-2.5"
+          style={{ borderColor: CHROME.border }}
+        >
+          {credits.map(row => (
+            <div
+              key={row.key}
+              className="flex items-baseline justify-between gap-3"
+            >
+              <Body>{row.label}</Body>
+              <Data bright>
+                {planCreditAmount(row.spend.usedMinor, row.spend)}
+                {row.spend.limitMinor !== null
+                  ? ` of ${planCreditAmount(row.spend.limitMinor, row.spend)}`
+                  : ''}
+              </Data>
+            </div>
+          ))}
+          <Caption>plan credits · vendor-reported</Caption>
+        </div>
+      )}
     </Band>
   );
 }

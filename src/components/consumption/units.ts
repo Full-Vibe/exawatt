@@ -135,6 +135,33 @@ export function modelledDollars(weightedTokens: number): number {
   return (weightedTokens / 1_000_000) * LIST_PRICE_PER_MTOK.workhorse.input;
 }
 
+/**
+ * A vendor's own plan-credit figure, in its own currency (ENG-038).
+ *
+ * MEASURED, not modelled — the vendor reported it — which is exactly why it
+ * may never be added to `modelledDollars`: plan credits, overage, and metered
+ * API keys are disjoint ledgers, and one total across them would be a number
+ * the operator is not charged. Formatting stays exact to the minor unit
+ * because this figure IS money, unlike the rounded modelled estimate.
+ */
+export function planCredits(amountMinor: number, spend: {
+  currency: string;
+  exponent: number;
+}): string {
+  const value = amountMinor / 10 ** spend.exponent;
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: spend.currency,
+      minimumFractionDigits: spend.exponent,
+      maximumFractionDigits: spend.exponent,
+    }).format(value);
+  } catch {
+    // An unrecognized currency code must still render its number honestly.
+    return `${value.toFixed(spend.exponent)} ${spend.currency}`;
+  }
+}
+
 /** Modelled watt-hours for a weighted-token figure, at the stated basis. */
 export function modelledWattHours(weightedTokens: number): number {
   return (weightedTokens / 1000) * WATT_HOURS_PER_NORMALIZED_KTOK;

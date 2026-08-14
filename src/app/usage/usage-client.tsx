@@ -43,8 +43,10 @@ import {
   diagnostics,
   gridRows,
   pivotRows,
+  planCreditRows,
   silentSources,
   spendView,
+  unknownVerdictNote,
   type PivotKey,
   type PivotRow,
 } from './derive';
@@ -75,6 +77,10 @@ export function UsageClient() {
   const rows = useMemo(() => gridRows(demo), [demo]);
   const diags = useMemo(() => diagnostics(demo), [demo]);
   const spend = useMemo(() => spendView(demo, rows), [demo, rows]);
+  // ENG-038 honesty: which sources this page cannot see, and the vendor's own
+  // plan-credit ledger. Both arrive on the snapshot; both used to be dropped.
+  const unknownNote = useMemo(() => unknownVerdictNote(demo), [demo]);
+  const planCredits = useMemo(() => planCreditRows(demo), [demo]);
 
   const [pivot, setPivot] = useState<PivotKey>('project');
   const [mode, setMode] = useState<UnitMode>('normalized');
@@ -145,13 +151,19 @@ export function UsageClient() {
         <Verdict
           paces={paces}
           silent={silent}
+          nowMs={demo.nowMs}
+          unknownNote={unknownNote}
           closedCycles={demo.closedCycles}
         />
         <Burn demo={demo} paces={paces} />
         <div className="grid items-start gap-4 lg:grid-cols-3">
           <Pace paces={paces} />
           <Heat paces={paces} />
-          <Spend spend={spend} windowLabel={demo.windowLabel} />
+          <Spend
+            spend={spend}
+            planCredits={planCredits}
+            windowLabel={demo.windowLabel}
+          />
         </div>
 
         {/* the drill-down floor — where is it going? */}

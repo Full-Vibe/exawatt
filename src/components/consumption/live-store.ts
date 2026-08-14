@@ -256,6 +256,12 @@ function buildState(
     windowObservations: inputs.snapshot.windowObservations,
     identities: inputs.identities,
     projects: inputs.projects,
+    // ENG-038 account state — the plan-credit spend and, load-bearing, the
+    // read's own health. Dropping it here is what made a failed vendor read
+    // present as "this source keeps no plan record".
+    ...(inputs.snapshot.providerPlanAccounts
+      ? { providerPlanAccounts: inputs.snapshot.providerPlanAccounts }
+      : {}),
   });
   return {
     status,

@@ -40,9 +40,10 @@ import {
   type ConsumptionSourceId,
   type PlanWindow,
   type PlanWindowObservation,
+  type ProviderPlanAccountState,
 } from '@exawatt/core';
 import { projectColor } from '@/components/workspace/project-colors';
-import { planWindowLabel } from './model';
+import { planWindowLabel, type AccountReadView } from './model';
 import {
   OPPORTUNITY_CLOSING_RESET_FRACTION,
   OPPORTUNITY_MIN_FLOOR_PTS,
@@ -153,6 +154,45 @@ export interface LiveConsumptionInputs {
   windowObservations: PlanWindowObservation[];
   identities: LiveSessionIdentity[];
   projects: LiveProjectRecord[];
+  /**
+   * ENG-038 — per-provider account read state from the snapshot. Absent (or
+   * an empty array) means no credentialed read is configured, and each
+   * source's local capability fact stands alone. A PRESENT entry is what
+   * lets the page say "unknown" instead of "keeps no plan record" when the
+   * read is off or failing, and is where the plan-credit spend arrives.
+   */
+  providerPlanAccounts?: ProviderPlanAccountState[];
+}
+
+/** Snapshot account state → the view-model's account read, one per source. */
+export function accountReads(
+  accounts: readonly ProviderPlanAccountState[] | undefined
+): Partial<Record<ConsumptionSourceId, AccountReadView>> {
+  const out: Partial<Record<ConsumptionSourceId, AccountReadView>> = {};
+  for (const account of accounts ?? []) {
+    const observedAtMs = account.observedAt
+      ? Date.parse(account.observedAt)
+      : null;
+    out[account.source] = {
+      status: account.status,
+      observedAtMs:
+        observedAtMs === null || Number.isNaN(observedAtMs)
+          ? null
+          : observedAtMs,
+      planType: account.planType,
+      spend: account.spend
+        ? {
+            usedMinor: account.spend.usedMinor,
+            limitMinor: account.spend.limitMinor,
+            currency: account.spend.currency,
+            exponent: account.spend.exponent,
+            percent: account.spend.percent,
+            enabled: account.spend.enabled,
+          }
+        : null,
+    };
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------ */
@@ -524,6 +564,7 @@ export function buildLiveConsumption(
     },
     burnRates,
     claudePlanNote: CLAUDE_PLAN_NOTE,
+    accountReads: accountReads(inputs.providerPlanAccounts),
     closedCycles: liveClosedCycles(
       planWindows,
       inputs.windowObservations,
