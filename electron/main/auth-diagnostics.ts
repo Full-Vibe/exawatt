@@ -1,5 +1,9 @@
 import fs from 'fs';
 import path from 'path';
+import {
+  redactDiagnosticFields,
+  redactDiagnosticText,
+} from './diagnostics-redaction';
 
 export type AuthDiagnosticFields = Record<string, unknown>;
 export type AuthDiagnosticRecorder = (
@@ -225,59 +229,20 @@ function bodyByteLength(body: unknown): number | undefined {
   return undefined;
 }
 
+/**
+ * Auth's sanitizers are now thin names over the shared redaction pass
+ * (ENG-025 F5.1). They stay exported/used under these names because the auth
+ * call sites and their tests describe auth intent; the behavior is the one
+ * every diagnostics writer gets.
+ */
 function sanitizeAuthDiagnosticFields(
   fields: AuthDiagnosticFields
 ): AuthDiagnosticFields {
-  return Object.fromEntries(
-    Object.entries(fields).map(([key, value]) => [
-      key,
-      sanitizeAuthDiagnosticValue(value, 0),
-    ])
-  );
-}
-
-function sanitizeAuthDiagnosticValue(value: unknown, depth: number): unknown {
-  if (value === null || value === undefined) return value;
-  if (typeof value === 'string') return sanitizeAuthDiagnosticText(value);
-  if (typeof value === 'number' || typeof value === 'boolean') return value;
-  if (depth >= 5) return '[MAX_DEPTH]';
-  if (Array.isArray(value)) {
-    return value
-      .slice(0, 16)
-      .map(item => sanitizeAuthDiagnosticValue(item, depth + 1));
-  }
-  if (typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, nested]) => [
-        key,
-        sanitizeAuthDiagnosticValue(nested, depth + 1),
-      ])
-    );
-  }
-  return sanitizeAuthDiagnosticText(String(value));
+  return redactDiagnosticFields(fields, MAX_TEXT_LENGTH);
 }
 
 function sanitizeAuthDiagnosticText(value: string): string {
-  return value
-    .slice(0, MAX_TEXT_LENGTH)
-    .replace(/(authorization\s*[:=]\s*bearer\s+)[^\s,}]+/gi, '$1[REDACTED]')
-    .replace(
-      /([?&](?:access_token|refresh_token|token|code|code_verifier)=)[^&\s]+/gi,
-      '$1[REDACTED]'
-    )
-    .replace(
-      /(["']?(?:access_token|refresh_token|token|code|code_verifier)["']?\s*[:=]\s*["'])[^"']+/gi,
-      '$1[REDACTED]'
-    )
-    .replace(
-      /\b(access_token|refresh_token|token|code|code_verifier)\s*[:=]\s*["']?(?!\[REDACTED\])[^\s,"';}\]]+/gi,
-      '$1=[REDACTED]'
-    )
-    .replace(
-      /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
-      '[REDACTED_JWT]'
-    )
-    .replace(/\b[A-Za-z0-9_-]{96,}\b/g, '[REDACTED_LONG_VALUE]');
+  return redactDiagnosticText(value, MAX_TEXT_LENGTH);
 }
 
 function rotateIfNeeded(

@@ -297,6 +297,10 @@ contextBridge.exposeInMainWorld('electron', {
   app: {
     bootstrapAppearance,
     getBuildInfo: () => ipcRenderer.invoke('app:get-build-info'),
+    getDiagnosticsReport: (signedIn: boolean) =>
+      ipcRenderer.invoke('app:get-diagnostics-report', signedIn),
+    saveDiagnosticsReport: (signedIn: boolean) =>
+      ipcRenderer.invoke('app:save-diagnostics-report', signedIn),
     accentColor: () => ipcRenderer.invoke('app:accent-color'),
     appearance: () => ipcRenderer.invoke('app:appearance'),
     onAppearanceChanged: subscribe<{

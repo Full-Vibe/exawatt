@@ -35,6 +35,7 @@ directly — the exact outbound identity decision `0034` exists to prevent.
 | `<project>.supabase.co` | Account, sync, feedback, stats | On when signed in | Sign out; individual features listed below |
 | `<project>.supabase.co/storage/.../desktop-updates` | App updates | Always on in signed builds | No user switch (known gap) |
 | Locally spawned agent harnesses | User's own tools | On user action | Do not launch an Agent |
+| `<project>.supabase.co` (`product_feedback.context.diagnostics`) | Anonymized diagnostics attached to a bug report | Never automatic; per-report opt-in on ⌘⇧F → Bug → ⌘D | Leave the toggle off, or use Settings → Privacy → Diagnostics to save the same report to a file instead |
 
 Signed out, the desktop app is nearly silent: context labels, goal visuals,
 conversation summaries, Project sync, feedback, and stats all short-circuit on
@@ -249,6 +250,43 @@ work and Demo Mode without an account.
 - Runs five seconds after launch in packaged **signed** builds, regardless of
   sign-in state. Dogfood builds never check.
 - **No user setting disables it** — a known gap.
+
+## 6b. Anonymized diagnostics on a bug report
+
+**Destination.** Nowhere new. The bundle rides inside the existing feedback
+intake as `product_feedback.context.diagnostics`
+(`src/app/api/feedback/route.ts`), so it reaches the same Supabase row a ⌘⇧F
+bug report already creates. Nothing is sent unless the operator attaches it.
+
+**Trigger.** ⌘⇧F → Bug → ⌘D, defaulted on for the Bug kind and visible as an
+`Anonymized diagnostics` chip. `Review` prints the exact JSON that will be
+sent before it is sent. Any other feedback kind never offers it.
+
+**Built by** `electron/main/diagnostics-report.ts`. Contents:
+
+- build and system facts: app version, sha, branch, delivery channel, whether
+  the app is packaged, install path, platform, arch, macOS version, Electron
+  and Node versions, locale
+- the current `ProductUpdateStatus`
+- `signedIn` (a renderer self-report) and a count of live Sessions
+- the last 40 lines each of `updater.jsonl`, `auth.jsonl`, and
+  `summarizer.jsonl` from `userData/logs`
+
+**Not in it, by construction:** agent transcripts, prompts, Session output,
+Project names, paths inside a Project, file contents, environment variables,
+and screenshots. Home directories are rewritten to `~`. The three logs are
+redacted at write time by `electron/main/diagnostics-redaction.ts` (bearer
+tokens, JWTs, `access_token`/`refresh_token`/`code` forms, and long opaque
+values), which is the same pass `auth.jsonl` has always used.
+
+**Bounded.** 28 KB serialized; oldest log lines are dropped first and the
+report says in `notes` that it was shortened.
+
+**Off switch.** It is per-report opt-in rather than a persistent setting: no
+diagnostics leave unless the operator toggles the chip on that report. To
+avoid the network entirely, Settings → Privacy → Diagnostics writes the same
+report to `~/Downloads` and reveals it in Finder, which needs no account and
+no connection.
 
 ## 7. Locally spawned agent harnesses
 

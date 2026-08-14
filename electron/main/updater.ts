@@ -211,6 +211,11 @@ async function runCheck(
   }
 }
 
+/** Read-only snapshot for callers outside the IPC handler (ENG-025 F5). */
+export function currentUpdateStatus(): ProductUpdateStatus {
+  return { ...status, liveSessions: liveSessionCount() };
+}
+
 export function installProductUpdate(): void {
   if (!downloaded) throw new Error('No downloaded update is ready');
   record('updater.installing', { availableVersion: status.availableVersion });

@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import type { DiagnosticsReport } from '@/types/electron';
 import type {
   FeedbackKind,
   ProductFeedbackRequest,
@@ -248,6 +249,12 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
   const [quickMessage, setQuickMessage] = useState('');
   const [quickShot, setQuickShot] = useState<string | null>(null);
   const [quickAttach, setQuickAttach] = useState(false);
+  // ENG-025 F5. Collected alongside the screenshot, before the bar renders,
+  // so the toggle is instant and the bundle describes the moment the operator
+  // hit ⌘⇧F rather than the moment they decided to attach it.
+  const [quickDiagnostics, setQuickDiagnostics] =
+    useState<DiagnosticsReport | null>(null);
+  const [quickAttachDiagnostics, setQuickAttachDiagnostics] = useState(false);
   const [quickError, setQuickError] = useState<string | null>(null);
   const [sentPulse, setSentPulse] = useState(false);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
@@ -272,8 +279,19 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
           shot = null;
         }
         setQuickShot(shot);
+        let report: DiagnosticsReport | null = null;
+        try {
+          report =
+            (await window.electron?.app?.getDiagnosticsReport?.(
+              !!tokenRef.current
+            )) ?? null;
+        } catch {
+          report = null;
+        }
+        setQuickDiagnostics(report);
         // A bug report usually wants the evidence; other kinds opt in.
         setQuickAttach(kind === 'bug' && !!shot);
+        setQuickAttachDiagnostics(kind === 'bug' && !!report);
         restoreFocusRef.current =
           document.activeElement instanceof HTMLElement
             ? document.activeElement
@@ -307,6 +325,8 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
       quickAttach && quickShot
         ? { dataUrl: quickShot, name: 'screenshot' }
         : null;
+    const diagnostics =
+      quickAttachDiagnostics && quickDiagnostics ? quickDiagnostics : null;
     const attribution = sampleQuickFeedbackAttribution();
     // Optimistic: the bar closes on Enter; a failed send reopens it with the
     // draft intact.
@@ -321,6 +341,7 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
         viewport: { width: window.innerWidth, height: window.innerHeight },
         projectName: attribution?.projectName ?? null,
         durableSessionId: attribution?.durableSessionId ?? null,
+        ...(diagnostics ? { diagnostics } : {}),
       },
       attachment,
     });
@@ -328,12 +349,23 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
       setQuickMessage('');
       setQuickShot(null);
       setQuickAttach(false);
+      setQuickDiagnostics(null);
+      setQuickAttachDiagnostics(false);
       setSentPulse(true);
       return;
     }
-    setQuickError('Send failed — draft kept');
+    setQuickError('Send failed, draft kept');
     setQuickOpen(true);
-  }, [closeQuick, quickAttach, quickKind, quickMessage, quickShot, submit]);
+  }, [
+    closeQuick,
+    quickAttach,
+    quickAttachDiagnostics,
+    quickDiagnostics,
+    quickKind,
+    quickMessage,
+    quickShot,
+    submit,
+  ]);
 
   const submitContextRating = useCallback(
     async (rating: ContextRating) => {
@@ -611,6 +643,9 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
                 onMessageChange={setQuickMessage}
                 screenshot={quickShot}
                 attachScreenshot={quickAttach}
+                diagnostics={quickDiagnostics}
+                attachDiagnostics={quickAttachDiagnostics}
+                onAttachDiagnosticsChange={setQuickAttachDiagnostics}
                 onAttachScreenshotChange={setQuickAttach}
                 error={quickError}
                 onSubmit={() => void submitQuick()}

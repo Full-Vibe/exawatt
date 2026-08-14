@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
-import { Check } from 'lucide-react';
+import { useCallback, useRef, useState } from 'react';
+import { Check, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { DiagnosticsReport } from '@/types/electron';
 import type { QuickFeedbackKind } from './quick-feedback-events';
 
 const KINDS: Array<{ kind: QuickFeedbackKind; label: string; hint: string }> = [
@@ -26,9 +27,27 @@ export interface QuickCaptureBarProps {
   screenshot: string | null;
   attachScreenshot: boolean;
   onAttachScreenshotChange: (attach: boolean) => void;
+  /** ENG-025 F5: the pre-collected diagnostics bundle; null outside the
+   *  desktop app or when collection failed. Only offered on Bug, because it
+   *  answers "what was the machine doing", which is a bug question. */
+  diagnostics: DiagnosticsReport | null;
+  attachDiagnostics: boolean;
+  onAttachDiagnosticsChange: (attach: boolean) => void;
   error: string | null;
   onSubmit: () => void;
   onDismiss: () => void;
+}
+
+/** One line naming what the bundle actually found, so the toggle is a
+ *  decision rather than a leap of faith. */
+function diagnosticsSummary(report: DiagnosticsReport): string {
+  const phase =
+    typeof report.update?.phase === 'string' ? report.update.phase : null;
+  const parts = [`Exawatt ${report.app.version}`];
+  if (phase === 'error') parts.push('update failed');
+  else if (phase && phase !== 'idle') parts.push(`update ${phase}`);
+  parts.push(report.session.signedIn ? 'signed in' : 'signed out');
+  return parts.join(' · ');
 }
 
 /** The ENG-025 quick-capture card: one field, kind chips, a pre-captured
@@ -44,11 +63,16 @@ export function QuickCaptureBar({
   screenshot,
   attachScreenshot,
   onAttachScreenshotChange,
+  diagnostics,
+  attachDiagnostics,
+  onAttachDiagnosticsChange,
   error,
   onSubmit,
   onDismiss,
 }: QuickCaptureBarProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const diagnosticsOffered = kind === 'bug' && diagnostics !== null;
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
@@ -73,11 +97,19 @@ export function QuickCaptureBar({
       if (event.key.toLowerCase() === 's' && screenshot) {
         event.preventDefault();
         onAttachScreenshotChange(!attachScreenshot);
+        return;
+      }
+      if (event.key.toLowerCase() === 'd' && diagnosticsOffered) {
+        event.preventDefault();
+        onAttachDiagnosticsChange(!attachDiagnostics);
       }
     },
     [
+      attachDiagnostics,
       attachScreenshot,
+      diagnosticsOffered,
       message,
+      onAttachDiagnosticsChange,
       onAttachScreenshotChange,
       onDismiss,
       onKindChange,
@@ -161,6 +193,39 @@ export function QuickCaptureBar({
             </span>
           </button>
         )}
+        {diagnosticsOffered && (
+          <button
+            type="button"
+            aria-pressed={attachDiagnostics}
+            aria-label={
+              attachDiagnostics
+                ? 'Remove anonymized diagnostics'
+                : 'Attach anonymized diagnostics'
+            }
+            onClick={() => {
+              onAttachDiagnosticsChange(!attachDiagnostics);
+              textareaRef.current?.focus();
+            }}
+            className={cn(
+              'ml-1 flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs transition-colors',
+              attachDiagnostics
+                ? 'border-hud-cyan bg-[var(--exa-hud-fill-hi)] text-foreground'
+                : 'border-hud-cyan/20 text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <ShieldCheck
+              className={cn(
+                'size-3 transition-opacity',
+                !attachDiagnostics && 'opacity-40'
+              )}
+            />
+            <span>Anonymized diagnostics</span>
+            {attachDiagnostics && <Check className="size-3" />}
+            <span className="font-mono text-chrome-micro text-muted-foreground">
+              ⌘D
+            </span>
+          </button>
+        )}
         <div
           aria-live="polite"
           className="ml-auto pr-1 font-mono text-chrome-micro whitespace-nowrap text-muted-foreground"
@@ -172,6 +237,31 @@ export function QuickCaptureBar({
           )}
         </div>
       </div>
+      {/* Subtle until it matters: the summary is one dim line, and the exact
+          JSON is one click away. Sending machine state is a trust moment, so
+          "review" shows the payload itself rather than a description of it. */}
+      {diagnosticsOffered && attachDiagnostics && diagnostics && (
+        <div className="border-t border-hud-cyan/15 px-4 py-2">
+          <div className="flex items-center gap-2 font-mono text-chrome-micro text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate">
+              {diagnosticsSummary(diagnostics)}
+            </span>
+            <button
+              type="button"
+              onClick={() => setReviewing(current => !current)}
+              aria-expanded={reviewing}
+              className="shrink-0 underline underline-offset-2 hover:text-foreground"
+            >
+              {reviewing ? 'Hide' : 'Review'}
+            </button>
+          </div>
+          {reviewing && (
+            <pre className="mt-2 max-h-56 overflow-auto rounded-sm bg-hud-fill p-2 font-mono text-chrome-micro leading-4 whitespace-pre-wrap text-muted-foreground">
+              {JSON.stringify(diagnostics, null, 2)}
+            </pre>
+          )}
+        </div>
+      )}
     </div>
   );
 }

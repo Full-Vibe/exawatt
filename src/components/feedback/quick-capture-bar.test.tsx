@@ -1,8 +1,36 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { QuickCaptureBar, type QuickCaptureBarProps } from './quick-capture-bar';
+import {
+  QuickCaptureBar,
+  type QuickCaptureBarProps,
+} from './quick-capture-bar';
+import type { DiagnosticsReport } from '@/types/electron';
 
 const SHOT = 'data:image/png;base64,iVBORw0KGgo=';
+
+export const REPORT: DiagnosticsReport = {
+  reportVersion: 1,
+  generatedAt: '2026-08-14T12:00:00.000Z',
+  app: {
+    version: '0.1.9',
+    sha: 'abc123',
+    branch: 'master',
+    delivery: 'signed',
+    packaged: true,
+    installPath: '/Applications/Exawatt.app',
+  },
+  system: {
+    platform: 'darwin',
+    arch: 'arm64',
+    osRelease: '15.0',
+    electron: '43.1.0',
+    node: '24.18.0',
+    locale: 'en-US',
+  },
+  update: { phase: 'error', error: 'ENOSPC' },
+  session: { signedIn: true, liveSessions: 2 },
+  logs: [{ name: 'updater.jsonl', present: true, lines: [{ event: 'x' }] }],
+};
 
 function renderBar(overrides: Partial<QuickCaptureBarProps> = {}) {
   const props: QuickCaptureBarProps = {
@@ -13,6 +41,9 @@ function renderBar(overrides: Partial<QuickCaptureBarProps> = {}) {
     screenshot: SHOT,
     attachScreenshot: false,
     onAttachScreenshotChange: vi.fn(),
+    diagnostics: null,
+    attachDiagnostics: false,
+    onAttachDiagnosticsChange: vi.fn(),
     error: null,
     onSubmit: vi.fn(),
     onDismiss: vi.fn(),
@@ -79,12 +110,62 @@ describe('QuickCaptureBar', () => {
 
   it('shields workspace verbs behind a dialog role and keeps the error in the hint slot', () => {
     renderBar({ error: 'Send failed — draft kept' });
-    expect(
-      screen.getByRole('dialog', { name: 'Quick feedback' })
-    ).toBeTruthy();
-    expect(
-      screen.getByText('Send failed — draft kept')
-    ).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Quick feedback' })).toBeTruthy();
+    expect(screen.getByText('Send failed — draft kept')).toBeTruthy();
     expect(screen.queryByText('↩ send')).toBeNull();
+  });
+
+  it('names the toggle anonymized on a Bug', () => {
+    renderBar({ kind: 'bug', diagnostics: REPORT });
+    expect(
+      screen.getByLabelText('Attach anonymized diagnostics')
+    ).toBeInTheDocument();
+    expect(screen.getByText('Anonymized diagnostics')).toBeInTheDocument();
+  });
+
+  it('does not offer diagnostics on a non-Bug kind', () => {
+    renderBar({ kind: 'general', diagnostics: REPORT });
+    expect(
+      screen.queryByLabelText('Attach anonymized diagnostics')
+    ).not.toBeInTheDocument();
+  });
+
+  it('toggles diagnostics with Cmd+D only when they are offered', () => {
+    const withReport = renderBar({ kind: 'bug', diagnostics: REPORT });
+    fireEvent.keyDown(screen.getByLabelText('Feedback'), {
+      key: 'd',
+      metaKey: true,
+    });
+    expect(withReport.onAttachDiagnosticsChange).toHaveBeenCalledWith(true);
+  });
+
+  it('ignores Cmd+D when no report was collected', () => {
+    const without = renderBar({ kind: 'bug', diagnostics: null });
+    fireEvent.keyDown(screen.getByLabelText('Feedback'), {
+      key: 'd',
+      metaKey: true,
+    });
+    expect(without.onAttachDiagnosticsChange).not.toHaveBeenCalled();
+  });
+
+  it('summarizes a failed update and reveals the exact payload on review', () => {
+    renderBar({ kind: 'bug', diagnostics: REPORT, attachDiagnostics: true });
+    expect(
+      screen.getByText('Exawatt 0.1.9 · update failed · signed in')
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+    // the review shows the payload itself, not a description of it
+    expect(screen.getByText(/"reportVersion": 1/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/"installPath": "\/Applications/)
+    ).toBeInTheDocument();
+  });
+
+  it('hides the summary until diagnostics are actually attached', () => {
+    renderBar({ kind: 'bug', diagnostics: REPORT, attachDiagnostics: false });
+    expect(
+      screen.queryByRole('button', { name: 'Review' })
+    ).not.toBeInTheDocument();
   });
 });

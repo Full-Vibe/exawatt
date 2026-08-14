@@ -34,6 +34,10 @@ function installApi() {
         disabledReason: null,
         logPath: null,
       }),
+      getDiagnosticsReport: async () => {
+        throw new Error('unused');
+      },
+      saveDiagnosticsReport: async () => ({ ok: false, filePath: null }),
       checkForUpdates: async () => {
         throw new Error('unused');
       },

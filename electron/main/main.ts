@@ -24,6 +24,10 @@ import {
   setTrustedRendererOrigin,
 } from './ipc-security';
 import { registerSystemShortcutIPC } from './system-shortcuts';
+import {
+  buildDiagnosticsReport,
+  type DiagnosticsReport,
+} from './diagnostics-report';
 import { registerOperatorStatsIPC } from './operator-stats-ipc';
 import { registerConsumptionIPC } from './consumption-ipc';
 import { ConsumptionScannerService } from './consumption/scanner-service';
@@ -129,6 +133,59 @@ let installProductUpdate: () => void = () => {
   throw new Error('Product updates are not ready.');
 };
 let checkForUpdatesFromMenu: () => Promise<void> = async () => {};
+/** Null until the updater runtime loads; the report says so rather than
+ *  inventing an idle status (ENG-025 F5). */
+let currentUpdateStatus: () => Record<string, unknown> | null = () => null;
+
+/**
+ * ENG-025 F5 — assemble the anonymized diagnostics bundle from whatever main
+ * currently knows. Deliberately tolerant: a report from a half-started or
+ * broken app is exactly the report worth having, so every source degrades to
+ * a null or a zero rather than throwing.
+ */
+function collectDiagnosticsReport(signedIn: boolean): DiagnosticsReport {
+  return buildDiagnosticsReport({
+    build: buildInfo,
+    appVersion: app.getVersion(),
+    packaged: app.isPackaged,
+    installPath: app.getAppPath(),
+    logDirectory: path.join(app.getPath('userData'), 'logs'),
+    updateStatus: currentUpdateStatus(),
+    signedIn,
+    liveSessions: ptySessions
+      ? ptySessions.list().filter(session => !session.exited).length
+      : 0,
+    locale: app.getLocale(),
+  });
+}
+
+/**
+ * The signed-out path. ⌘⇧F is a no-op without an account and a broken install
+ * is disproportionately signed out, so the report has to be obtainable with
+ * no network and no session: write it next to the user's other downloads and
+ * put a Finder window in front of them.
+ */
+async function saveDiagnosticsReport(
+  signedIn: boolean
+): Promise<{ ok: boolean; filePath: string | null }> {
+  try {
+    const report = collectDiagnosticsReport(signedIn);
+    const stamp = report.generatedAt.replace(/[:.]/g, '-');
+    const filePath = path.join(
+      app.getPath('downloads'),
+      `exawatt-diagnostics-${stamp}.json`
+    );
+    await fs.promises.writeFile(
+      filePath,
+      `${JSON.stringify(report, null, 2)}\n`,
+      { encoding: 'utf8', mode: 0o600 }
+    );
+    shell.showItemInFolder(filePath);
+    return { ok: true, filePath };
+  } catch {
+    return { ok: false, filePath: null };
+  }
+}
 let shutdownCopy: typeof import('./shutdown-coordinator').shutdownCopy;
 let safeElectronAuthError: (error: unknown) => {
   name: string;
@@ -1046,6 +1103,17 @@ function registerAppIPC(): void {
     // marketed version alongside the exact sha (ENG-025 feedback stamping)
     version: app.getVersion(),
   }));
+  // ENG-025 F5. `signedIn` is renderer-supplied because the Supabase session
+  // lives there; it is a self-report in a self-reported bundle, not a claim
+  // main can make on its own.
+  handleTrusted('app:get-diagnostics-report', (_event, signedIn?: boolean) =>
+    collectDiagnosticsReport(Boolean(signedIn))
+  );
+  handleTrusted(
+    'app:save-diagnostics-report',
+    async (_event, signedIn?: boolean) =>
+      saveDiagnosticsReport(Boolean(signedIn))
+  );
   // Optional ENG-032 action overlay input: '#RRGGBB' or null off-macOS.
   // The selected theme remains the default and Project identity stays separate.
   const systemAccentColor = () => {
@@ -1385,6 +1453,7 @@ async function bootstrapCommandSurface(): Promise<void> {
   disposeRoadmapWatchers = runtime.roadmapWatcher.disposeRoadmapWatchers;
   installProductUpdate = runtime.updater.installProductUpdate;
   checkForUpdatesFromMenu = runtime.updater.checkForUpdatesFromMenu;
+  currentUpdateStatus = () => ({ ...runtime.updater.currentUpdateStatus() });
   shutdownCopy = runtime.shutdown.shutdownCopy;
   safeElectronAuthError = runtime.auth.safeElectronAuthError;
   isElectronAuthLinkOutcome = runtime.auth.isElectronAuthLinkOutcome;

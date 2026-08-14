@@ -19,6 +19,7 @@ import {
 import { useGoalVisualPreference } from '@/components/goal-visuals/goal-visual-preference-provider';
 import type { ElectronSettingsApi, ExawattSettings } from '@/types/electron';
 import { SettingsGroup, SettingRow, SettingSwitch } from './settings-controls';
+import { DiagnosticsSettings } from './diagnostics-settings';
 
 /**
  * ENG-030 OS1.5 — the one place that says what Exawatt sends.
@@ -260,6 +261,8 @@ export function PrivacySettings() {
             }}
           />
         </SettingsGroup>
+
+        <DiagnosticsSettings />
 
         <p className="font-ui text-chrome-label text-[var(--settings-dim)]">
           <Link

@@ -697,6 +697,40 @@ export interface ExawattBuildInfo {
   version: string;
 }
 
+/** ENG-025 F5. Mirrors `electron/main/diagnostics-report.ts`; the renderer
+ *  renders this object verbatim for review before anything is sent. */
+export interface DiagnosticsLogTail {
+  name: string;
+  present: boolean;
+  lines: unknown[];
+  truncated?: boolean;
+}
+
+export interface DiagnosticsReport {
+  reportVersion: number;
+  generatedAt: string;
+  app: {
+    version: string;
+    sha: string;
+    branch: string;
+    delivery: string;
+    packaged: boolean;
+    installPath: string;
+  };
+  system: {
+    platform: string;
+    arch: string;
+    osRelease: string;
+    electron: string;
+    node: string;
+    locale: string;
+  };
+  update: Record<string, unknown> | null;
+  session: { signedIn: boolean; liveSessions: number };
+  logs: DiagnosticsLogTail[];
+  notes?: string[];
+}
+
 export interface ProductUpdateStatus {
   phase:
     | 'idle'
@@ -752,6 +786,14 @@ export interface ElectronAppApi {
       safeTheme: boolean;
     }) => void
   ) => () => void;
+  /** ENG-025 F5 — the anonymized diagnostics bundle a bug report can carry.
+   *  `signedIn` is renderer-supplied because the Supabase session lives here. */
+  getDiagnosticsReport: (signedIn: boolean) => Promise<DiagnosticsReport>;
+  /** Write the same report to Downloads and reveal it in Finder. The path
+   *  that works with no account and no network. */
+  saveDiagnosticsReport: (
+    signedIn: boolean
+  ) => Promise<{ ok: boolean; filePath: string | null }>;
   getUpdateStatus: () => Promise<ProductUpdateStatus>;
   checkForUpdates: () => Promise<ProductUpdateStatus>;
   restartUpdate: () => Promise<void>;
