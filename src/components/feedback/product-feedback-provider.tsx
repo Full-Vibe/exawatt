@@ -49,6 +49,10 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { QuickCaptureBar } from './quick-capture-bar';
 import {
+  resolveQuickDiagnostics,
+  withDiagnostics,
+} from './quick-capture-payload';
+import {
   analyticsSurface,
   captureAnalyticsEvent,
   hostedFailureForStatus,
@@ -325,8 +329,11 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
       quickAttach && quickShot
         ? { dataUrl: quickShot, name: 'screenshot' }
         : null;
-    const diagnostics =
-      quickAttachDiagnostics && quickDiagnostics ? quickDiagnostics : null;
+    const diagnostics = resolveQuickDiagnostics(
+      kind,
+      quickAttachDiagnostics,
+      quickDiagnostics
+    );
     const attribution = sampleQuickFeedbackAttribution();
     // Optimistic: the bar closes on Enter; a failed send reopens it with the
     // draft intact.
@@ -335,14 +342,16 @@ export function ProductFeedbackProvider({ children }: { children: ReactNode }) {
       kind,
       message: clean,
       surface: 'quick-capture',
-      context: {
-        schemaVersion: 1,
-        url: window.location.href,
-        viewport: { width: window.innerWidth, height: window.innerHeight },
-        projectName: attribution?.projectName ?? null,
-        durableSessionId: attribution?.durableSessionId ?? null,
-        ...(diagnostics ? { diagnostics } : {}),
-      },
+      context: withDiagnostics(
+        {
+          schemaVersion: 1,
+          url: window.location.href,
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          projectName: attribution?.projectName ?? null,
+          durableSessionId: attribution?.durableSessionId ?? null,
+        },
+        diagnostics
+      ),
       attachment,
     });
     if (sent) {

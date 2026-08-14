@@ -274,7 +274,19 @@ sent before it is sent. Any other feedback kind never offers it.
 
 **Not in it, by construction:** agent transcripts, prompts, Session output,
 Project names, paths inside a Project, file contents, environment variables,
-and screenshots. Home directories are rewritten to `~`. The three logs are
+and screenshots.
+
+**What the log tails can contain, stated precisely.** The report adds no
+identifiers of its own, but `summarizer.jsonl` lines carry a durable Session
+**id** (an opaque uuid, under the key `session`) alongside outcome metadata
+(`relationship`, `confidence`, `reason`, `revision`, `retryMs`, `error`), and
+`auth.jsonl` lines carry request metadata (host, path, query and header
+*names*). Those are identifiers and shapes, never the labelled text, the
+prompt, or the Project the Session belongs to. Reviewers checking this claim
+should read values, not key names: an earlier version of the exclusion test
+asserted on key names the logs do not use and could never have failed.
+
+Home directories are rewritten to `~`. The three logs are
 redacted at write time by `electron/main/diagnostics-redaction.ts` (bearer
 tokens, JWTs, `access_token`/`refresh_token`/`code` forms, and long opaque
 values), which is the same pass `auth.jsonl` has always used.

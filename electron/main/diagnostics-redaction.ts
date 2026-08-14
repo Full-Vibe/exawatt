@@ -36,16 +36,31 @@ export function anonymizeHomePath(value: string): string {
   return HOME_PATTERN ? value.replace(HOME_PATTERN, '~') : value;
 }
 
+/** Guard against running the sweep over a pathologically large value. Well
+ *  above any real log field, and far above every caller's `maxLength`. */
+const MAX_SCAN_LENGTH = 64_000;
+
 /**
- * Redact credential-shaped substrings and shorten the result. Ordering
- * matters: the specific `key=value` forms run before the generic long-token
- * sweep so a matched secret is labeled rather than swallowed as an opaque run.
+ * Redact credential-shaped substrings and shorten the result.
+ *
+ * **Redaction happens before truncation, and the order is load-bearing.** The
+ * original auth-only implementation sliced first, which let a secret survive
+ * by straddling the cut: the surviving fragment was too short to match the
+ * 96-character opaque-run sweep, and a truncated JWT no longer matched the
+ * three-segment pattern at all. Slicing first leaked 66 characters of a
+ * 150-character token in a direct probe. Everything now goes through a
+ * diagnostics bundle that leaves the machine, so the fragment case is not
+ * theoretical.
+ *
+ * Within the sweep, the specific `key=value` forms run before the generic
+ * long-token sweep so a matched secret is labeled rather than swallowed as an
+ * opaque run.
  */
 export function redactDiagnosticText(
   value: string,
   maxLength = MAX_TEXT_LENGTH
 ): string {
-  return anonymizeHomePath(value.slice(0, maxLength))
+  return anonymizeHomePath(value.slice(0, MAX_SCAN_LENGTH))
     .replace(/(authorization\s*[:=]\s*bearer\s+)[^\s,}]+/gi, '$1[REDACTED]')
     .replace(
       /([?&](?:access_token|refresh_token|token|code|code_verifier)=)[^&\s]+/gi,
@@ -63,7 +78,8 @@ export function redactDiagnosticText(
       /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
       '[REDACTED_JWT]'
     )
-    .replace(/\b[A-Za-z0-9_-]{96,}\b/g, '[REDACTED_LONG_VALUE]');
+    .replace(/\b[A-Za-z0-9_-]{96,}\b/g, '[REDACTED_LONG_VALUE]')
+    .slice(0, maxLength);
 }
 
 export function redactDiagnosticValue(

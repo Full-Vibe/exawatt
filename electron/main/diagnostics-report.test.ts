@@ -111,18 +111,42 @@ describe('buildDiagnosticsReport', () => {
     expect(report.notes?.[0]).toMatch(/Dropped \d+ older log line/);
   });
 
-  it('carries no key that could hold Session or Project content', () => {
+  it('adds no Session or Project content of its own', () => {
+    // Asserting on key names alone was false comfort: the summarizer writes
+    // `session`, not `durableSessionId`, so the original list could never
+    // have caught anything. Assert on the assembled shape instead.
     const report = buildDiagnosticsReport(input());
-    const serialized = JSON.stringify(report);
-    for (const forbidden of [
-      'projectName',
-      'durableSessionId',
-      'transcript',
-      'prompt',
-      'cwd',
-    ]) {
-      expect(serialized).not.toContain(forbidden);
-    }
+    expect(Object.keys(report).sort()).toEqual([
+      'app',
+      'generatedAt',
+      'logs',
+      'reportVersion',
+      'session',
+      'system',
+      'update',
+    ]);
+    expect(Object.keys(report.session).sort()).toEqual([
+      'liveSessions',
+      'signedIn',
+    ]);
+  });
+
+  it('does not let a secret in a log line reach the bundle', () => {
+    // The realistic worry is not a key name, it is a credential that a
+    // subsystem logged into a value.
+    const line = JSON.stringify({
+      event: 'auth.transport.failure',
+      error: 'Authorization: Bearer sk-live-must-not-ship',
+      jwt: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.c2lnbmF0dXJl',
+    });
+    const serialized = JSON.stringify(
+      buildDiagnosticsReport(
+        input({ readLog: logReader({ 'auth.jsonl': line }) })
+      )
+    );
+    expect(serialized).not.toContain('sk-live-must-not-ship');
+    expect(serialized).not.toContain('eyJhbGciOiJIUzI1NiJ9');
+    expect(serialized).toContain('[REDACTED');
   });
 
   it('anonymizes the home directory inside the update status', () => {

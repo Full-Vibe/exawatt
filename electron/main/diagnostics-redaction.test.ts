@@ -43,6 +43,28 @@ describe('redactDiagnosticText', () => {
   it('truncates to the caller-supplied maximum', () => {
     expect(redactDiagnosticText('x'.repeat(50), 10)).toHaveLength(10);
   });
+
+  it('redacts before truncating, so a secret cannot survive the cut', () => {
+    // Slicing first left the tail of this token too short to match the
+    // 96-character opaque-run sweep, leaking 66 characters verbatim.
+    const secret = 'S3CR3T'.repeat(25);
+    const out = redactDiagnosticText(`${'x'.repeat(330)} ${secret}`, 400);
+    expect(out).not.toContain('S3CR3TS3CR3T');
+    expect(out).toContain('[REDACTED_LONG_VALUE]');
+  });
+
+  it('redacts a JWT that would have straddled the truncation point', () => {
+    // Truncated, this stopped matching the three-segment pattern entirely.
+    const jwt = `eyJhbGciOiJIUzI1NiJ9.${'a'.repeat(60)}.${'b'.repeat(40)}`;
+    const out = redactDiagnosticText(`${'y'.repeat(360)} ${jwt}`, 400);
+    expect(out).toContain('[REDACTED_JWT]');
+    expect(out).not.toMatch(/eyJ[A-Za-z0-9_-]{4,}/);
+  });
+
+  it('still honours the maximum after redaction shortens the string', () => {
+    const out = redactDiagnosticText('z'.repeat(2000), 64);
+    expect(out.length).toBeLessThanOrEqual(64);
+  });
 });
 
 describe('anonymizeHomePath', () => {
