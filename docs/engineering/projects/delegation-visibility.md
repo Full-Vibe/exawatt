@@ -63,17 +63,19 @@ Two consequences:
 Three mechanisms exist across the harnesses Exawatt targets. The contract
 describes which one a source supports; the UI never assumes.
 
-| Source               | Delegation today                                                                        | Observation mechanism                                                                                                                                                                                                                              |
-| -------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code          | yes                                                                                     | **push** — injected `--settings` hooks (verified)                                                                                                                                                                                                  |
-| Codex                | **none** — no Agent/Task tool; ENG-008 E0 measured 0 delegated records across 356 files | hooks exist and use the same JSON shape, but are **trust-gated**: Codex persists a `trusted_hash` per hook file in `config.toml` and needs `--dangerously-bypass-hook-trust` to skip. Exawatt must not silently inject. Future: `codex app-server` |
-| OpenClaw             | unknown                                                                                 | **protocol** — gateway events (`packages/core/src/oc`), a third mechanism under the same contract                                                                                                                                                  |
-| Demo Scenario Source | simulated                                                                               | same view model, clearly simulated provenance                                                                                                                                                                                                      |
+| Source               | Delegation today                                               | Observation mechanism                                                                                                                                                                                                                                                                                 |
+| -------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code          | yes                                                            | **push** — injected `--settings` hooks (verified)                                                                                                                                                                                                                                                     |
+| Codex                | yes — current operator Sessions launch real parallel subagents | **protocol** — Codex 0.147.0 app-server exposes parent/child thread identity, descendant listing, collaboration tool-call state, and subagent activity items. The PTY/log adapter still declares this absent until D5 consumes that owned protocol; Exawatt must not infer it from local side effects |
+| OpenClaw             | unknown                                                        | **protocol** — gateway events (`packages/core/src/oc`), a third mechanism under the same contract                                                                                                                                                                                                     |
+| Demo Scenario Source | simulated                                                      | same view model, clearly simulated provenance                                                                                                                                                                                                                                                         |
 
-A source therefore declares delegation as `observable: false` (Codex today),
-not as zero children. Absent capability reads as absent — confirmed by the
-operator — and never as an empty state, a zero count, or a broken surface in a
-parallel first-class regime.
+A source therefore declares delegation from the adapter it is actually using,
+not from a product-wide assumption. The current Codex PTY/log adapter remains
+`observable: false`; the D5 app-server adapter will declare protocol
+observation. Absent capability reads as absent — confirmed by the operator —
+and never as an empty state, a zero count, or a broken surface in a parallel
+first-class regime.
 
 ### D-B State model: two independent facts, no new light
 
@@ -371,10 +373,10 @@ globally wrong. So the mechanism was driven against the real binary:
   property, not a hope.
 - **The matched path fires.** Re-aiming the same matcher at `Bash` produced
   `UserPromptSubmit -> PreToolUse[Bash] -> PostToolUse[Bash] -> PostToolBatch
-  -> Stop`, confirming payload fields (`tool_name`, `tool_use_id`) and ordering.
+-> Stop`, confirming payload fields (`tool_name`, `tool_use_id`) and ordering.
 - **The reported bug, observed.** A real interactive session asked a real
   question and reported `UserPromptSubmit -> PreToolUse[AskUserQuestion] ->
-  Notification[permission_prompt]`, with **no `Stop`** — the root cause, live.
+Notification[permission_prompt]`, with **no `Stop`** — the root cause, live.
 
 That last measurement corrected the design mid-flight. One question is
 announced TWICE, six seconds apart, under two different names. The first draft
@@ -836,6 +838,35 @@ production wiring. The states live in the deterministic eval rig instead, since
 ENG-036's workbench rule would require retiring a study in the same change while
 the eval fixture is permanent regression coverage. Recorded here so the
 substitution is reviewable rather than silent.
+
+## D5 evidence and execution contract — 2026-08-16
+
+Operator dogfood corrected the old product-level conclusion: current Codex
+Sessions do launch parallel subagents, but Exawatt's PTY/log adapter renders
+none. The old measurement remains valid for that adapter and corpus; it cannot
+be generalized to current Codex capability.
+
+This is not a speculative scraping seam. `codex-cli 0.147.0` generates an
+experimental app-server JSON Schema that exposes all of the stable nouns D5
+needs:
+
+- a `Thread` has `parentThreadId`, `agentNickname`, and `agentRole`;
+- a subagent thread's source carries `parent_thread_id`, depth, nickname, role,
+  and path;
+- `thread/list` accepts `ancestorThreadId` and returns descendants at any depth;
+- collaboration tool-call items carry sender and receiver thread IDs, requested
+  model and reasoning effort, status, and last-known child states;
+- subagent activity items carry child thread ID and `started`, `interacted`, or
+  `interrupted` lifecycle kind.
+
+D5 therefore adds a Codex app-server adapter under the existing source-declared
+`protocol` mechanism; it does not add another event channel or another child
+view model. The adapter must version-probe the protocol, correlate children by
+thread IDs, resnapshot descendants after reconnect, and translate only
+protocol-reported lifecycle into the D1/D3 surfaces. A controlled parent with at
+least two live children is the runtime acceptance fixture. If the protocol is
+unavailable or incompatible, the adapter declares delegation absent. Worktrees,
+files, process trees, and terminal text remain forbidden evidence.
 
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 
