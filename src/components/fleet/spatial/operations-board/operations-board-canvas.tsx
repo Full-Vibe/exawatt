@@ -80,6 +80,7 @@ import {
   type OperationsBoardViewport,
 } from './operations-board-camera';
 import { boardPointerAction, pinchZoomTarget } from './operations-board-input';
+import { mixHexColors } from '@/lib/appearance/color';
 import { delegationElapsedLabel } from '../spatial-agent-copy';
 import { useMinuteClock } from '../use-minute-clock';
 import {
@@ -1869,7 +1870,19 @@ function DelegationUnitLayer({
               else tetherRefs.current.delete(unit.id);
             }}
             scale={[0, 0, 1]}
-            color={spatialProjectIdentityColor(theme, unit.projectId)}
+            // A settled parent's spoke recedes toward the ground it sits on.
+            // Lineage is still readable, but only work in flight draws the eye
+            // — the instanced material is shared, so this is the per-instance
+            // channel that can carry it.
+            color={
+              unit.parentActive
+                ? spatialProjectIdentityColor(theme, unit.projectId)
+                : mixHexColors(
+                    spatialProjectIdentityColor(theme, unit.projectId),
+                    theme.zone,
+                    0.62
+                  )
+            }
             raycast={noopRaycast}
           />
         ))}
@@ -2445,6 +2458,19 @@ function AgentPieceLayer({
 
 const noopRaycast = () => null;
 
+/**
+ * Quad size for a population status mark, as a multiple of the unit it marks.
+ *
+ * A glyph has to sit inside the HEXAGON, and a hexagon's flat edges are only
+ * `0.866` of its circumradius from the centre — so the usable half-extent is
+ * about `0.43 x size`, not `0.5`. The previous `1.42` was set against the
+ * circle marks, which are inscribed and looked right; the check and cross
+ * reach into the quad's corners and visibly overhung their hexes at every
+ * aggregate tier. The glyph coordinates below share one reach so this single
+ * number governs all of them.
+ */
+const POPULATION_MARK_SCALE = 1.2;
+
 function PopulationStatusMarks({
   field,
   lens,
@@ -2530,18 +2556,18 @@ function PopulationStatusMarks({
             ink = d < 0.31 && rotated.x > -0.02 ? 1.0 : 0.0;
           } else if (vMarkState < 2.5) {
             float check = min(
-              segment(p, vec2(-0.27, 0.01), vec2(-0.07, -0.20)),
-              segment(p, vec2(-0.07, -0.20), vec2(0.31, 0.23))
+              segment(p, vec2(-0.23, 0.01), vec2(-0.06, -0.17)),
+              segment(p, vec2(-0.06, -0.17), vec2(0.25, 0.19))
             );
-            ink = check < 0.055 ? 1.0 : 0.0;
+            ink = check < 0.05 ? 1.0 : 0.0;
           } else if (vMarkState < 3.5) {
             ink = abs(d - 0.27) < 0.055 || d < 0.065 ? 1.0 : 0.0;
           } else {
             float cross = min(
-              segment(p, vec2(-0.24, -0.24), vec2(0.24, 0.24)),
-              segment(p, vec2(-0.24, 0.24), vec2(0.24, -0.24))
+              segment(p, vec2(-0.19, -0.19), vec2(0.19, 0.19)),
+              segment(p, vec2(-0.19, 0.19), vec2(0.19, -0.19))
             );
-            ink = cross < 0.055 ? 1.0 : 0.0;
+            ink = cross < 0.05 ? 1.0 : 0.0;
           }
           if (ink < 0.5) discard;
           gl_FragColor = vec4(vMarkColor, alpha);
@@ -2564,7 +2590,7 @@ function PopulationStatusMarks({
     mesh.current.count = field.count;
     for (let index = 0; index < field.count; index += 1) {
       scratch.position.set(field.x[index]!, -field.y[index]!, 0.92);
-      scratch.scale.setScalar(field.size[index]! * 1.42);
+      scratch.scale.setScalar(field.size[index]! * POPULATION_MARK_SCALE);
       scratch.updateMatrix();
       mesh.current.setMatrixAt(index, scratch.matrix);
       states.setX(index, stateByStatus[field.status[index]!]!);
@@ -3049,7 +3075,6 @@ function AgentControls({
         piece.projectId === focusedProjectId
     )
     .map(piece => {
-      const always = piece.labelVisibility === 'always';
       const lightState = statusLightStateForAgentStatus(piece.status);
       // Delegation joins the control copy as labels (ENG-023 D3b): the count
       // and the team's kinds. Full child descriptions stay at the Sessions
@@ -3098,8 +3123,14 @@ function AgentControls({
             }}
             className="board-control-enter group relative grid h-11 w-11 place-items-center border border-transparent bg-transparent outline-none transition-[border-color,transform] duration-150 active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring"
           >
+            {/* Reveal-only (operator, 2026-08-11): a persistent card per Agent
+                put three lines of prose on a board whose job is a glance, and
+                the prose was the least of what it said. Status, activity and
+                lineage are carried by the mark, its motion, and the spoke; the
+                words are here for the one unit you point at, and for the
+                accessible name that never depended on them being visible. */}
             <span
-              className={`exa-material-overlay pointer-events-none absolute left-1/2 top-[calc(100%+3px)] w-16 -translate-x-1/2 border px-1 py-1 text-center text-chrome-nano font-medium transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 sm:w-28 sm:px-1.5 sm:text-chrome-micro ${always ? 'opacity-100' : 'opacity-0'}`}
+              className="exa-material-overlay pointer-events-none absolute left-1/2 top-[calc(100%+3px)] w-16 -translate-x-1/2 border px-1 py-1 text-center text-chrome-nano font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none sm:w-28 sm:px-1.5 sm:text-chrome-micro"
               style={{
                 borderColor: theme.unitMuted,
                 color: theme.label,

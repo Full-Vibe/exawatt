@@ -2307,6 +2307,56 @@ at the zoomed-out altitude, and it is one constant away from being reverted:
 stop shrinking, and sub-agents stop fitting. The operator has this trade in
 front of him.
 
+### V3.6 A standing board study, and what it caught (2026-08-11)
+
+> "Generally in the future I feel like we can iterate faster and better if we
+> just use a board study on the web and then you can take screenshots and
+> iterate more quickly than booting up a whole Electron server and stuff."
+
+**`/hud-gallery/board-study`.** The real board surface over deterministic
+fixtures, with every knob in the URL — fixture, altitude, theme, projection —
+so any state is a link and a screenshot. Five named shapes: mixed fleet,
+fan-out (`0 · 1 · 4 · 5 · 17` children), crowded (every Agent delegating),
+sparse, and stopped/settled.
+
+**This amends ENG-036's workbench rule for this one surface.** That rule says
+retire a study once its subject ships, because a study of a shipped surface
+only drifts. It is right about studies that PROPOSE a design. This is not one:
+it renders the shipped board itself, and what it provides is the iteration
+loop. It cannot drift from its subject because it has no separate subject.
+Standing bench, not a study — and the reason it earns that is measured below.
+
+**What it caught in its first minute.** The operator reported "the check marks
+on the hexes are bigger than the hexes in one of the zoom views." Loading the
+mixed fixture at Project altitude reproduced it instantly, and a crop named the
+cause: population status glyphs are drawn in a quad scaled `1.42 x` the unit,
+but a glyph has to fit a HEXAGON, whose flat edges sit at only `0.866` of the
+circumradius — a usable half-extent of about `0.43 x size`. The circle marks
+are inscribed and looked right, which is what the `1.42` had been tuned
+against; the check and cross reach into the quad's CORNERS and overhung their
+hexes at every aggregate tier. Fixed by bringing those two glyphs to the same
+reach as the rings and setting one scale constant that governs all of them.
+Diagnosis to verified fix was one screenshot loop.
+
+**Two more operator notes, same pass.**
+
+- *Settled parents' spokes recede.* A delegated constellation under a parent
+  that is not working no longer draws the eye like one in flight: the spoke
+  mixes toward the ground it sits on. Lineage stays readable; only live work
+  is loud.
+- *The label cards became reveal-only.* Three lines of prose per Agent, always
+  on, on a board whose job is a glance — "it's trying too hard and it's just
+  generally useless" (operator). Status, activity, and lineage are already
+  carried by the mark, its motion, and the spoke. The card now appears for the
+  one unit under the pointer or keyboard focus, and the accessible name never
+  depended on it being visible.
+
+**Still open from the same review:** transitions between altitudes are jerky,
+and the unit field appears to move at a different rate than the Project circles
+around it. That is a motion-ownership problem — the camera, the zone layer, and
+the piece field each damp on their own schedule — and it is the next thing to
+take, now that there is a bench to judge it in.
+
 ### V2.1 Scale & Truth
 
 Status: planned; gated by V2.0

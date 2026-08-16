@@ -504,6 +504,13 @@ export default function HudGallery() {
                 Open the Agent tile image bench →
               </a>{' '}
               <a
+                href="/hud-gallery/board-study"
+                className="underline underline-offset-2"
+                style={{ color: HUD.cyan }}
+              >
+                Open the Fleet board study →
+              </a>{' '}
+              <a
                 href="/hud-gallery/usage-directions"
                 className="underline underline-offset-2"
                 style={{ color: HUD.cyan }}

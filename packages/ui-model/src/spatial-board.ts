@@ -1607,6 +1607,9 @@ export interface SpatialBoardDelegationUnit {
   /** Hub the constellation belongs to, in layout space. */
   parentX: number;
   parentY: number;
+  /** Whether the parent is doing work right now. A settled parent's lineage
+   *  should not draw the eye the way a running one's does. */
+  parentActive: boolean;
   projectId: string;
   kind: 'child' | 'overflow';
   /** The source's own child id, unprefixed — `id` is board-scoped, so this is
@@ -1687,6 +1690,8 @@ function seedDelegationUnits(
         parentAgentId: piece.agentId,
         parentX: piece.x,
         parentY: piece.y,
+        parentActive:
+          piece.status === 'working' || piece.status === 'reviewing',
         projectId: piece.projectId,
         kind: lobe ? 'overflow' : 'child',
         childId: lobe ? null : child!.id,
