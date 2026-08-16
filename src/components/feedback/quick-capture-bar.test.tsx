@@ -168,4 +168,37 @@ describe('QuickCaptureBar', () => {
       screen.queryByRole('button', { name: 'Review' })
     ).not.toBeInTheDocument();
   });
+
+  it('keeps the diagnostics control out of the chip row', () => {
+    // The chip row had no width budget left: "Anonymized diagnostics" wrapped
+    // to two lines and pushed the send hint outside the card. The control
+    // lives on its own strip now, and the row holds kinds plus screenshot.
+    const { container } = render(
+      <QuickCaptureBar
+        kind="bug"
+        onKindChange={vi.fn()}
+        message="m"
+        onMessageChange={vi.fn()}
+        screenshot={SHOT}
+        attachScreenshot
+        onAttachScreenshotChange={vi.fn()}
+        diagnostics={REPORT}
+        attachDiagnostics
+        onAttachDiagnosticsChange={vi.fn()}
+        error={null}
+        onSubmit={vi.fn()}
+        onDismiss={vi.fn()}
+      />
+    );
+    const row = container.querySelector('[data-capture-chip-row]');
+    const labels = [...(row?.querySelectorAll('button') ?? [])].map(button =>
+      (button.textContent ?? '').replace(/\s+/g, ' ').trim()
+    );
+    expect(labels).toEqual(['General⌘1', 'Bug⌘2', 'Idea⌘3', 'Screenshot⌘S']);
+    expect(row?.textContent).not.toContain('Anonymized');
+    // still present, just elsewhere
+    expect(
+      screen.getByLabelText('Remove anonymized diagnostics')
+    ).toBeInTheDocument();
+  });
 });

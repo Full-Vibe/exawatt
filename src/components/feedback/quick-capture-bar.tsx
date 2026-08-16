@@ -136,7 +136,10 @@ export function QuickCaptureBar({
         onChange={event => onMessageChange(event.target.value)}
         className="max-h-40 w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-sm text-foreground outline-none placeholder:text-muted-foreground [field-sizing:content]"
       />
-      <div className="flex items-center gap-1.5 px-3 pt-1 pb-2.5">
+      <div
+        data-capture-chip-row
+        className="flex flex-wrap items-center gap-1.5 px-3 pt-1 pb-2.5"
+      >
         {KINDS.map(entry => (
           <button
             key={entry.kind}
@@ -147,7 +150,7 @@ export function QuickCaptureBar({
               textareaRef.current?.focus();
             }}
             className={cn(
-              'flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs transition-colors',
+              'flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs whitespace-nowrap transition-colors',
               entry.kind === kind
                 ? 'border-hud-cyan bg-[var(--exa-hud-fill-hi)] text-foreground'
                 : 'border-hud-cyan/20 text-muted-foreground hover:text-foreground'
@@ -171,7 +174,7 @@ export function QuickCaptureBar({
               textareaRef.current?.focus();
             }}
             className={cn(
-              'ml-1 flex items-center gap-1.5 rounded-full border py-0.5 pr-2.5 pl-1 text-xs transition-colors',
+              'ml-1 flex shrink-0 items-center gap-1.5 rounded-full border py-0.5 pr-2.5 pl-1 text-xs whitespace-nowrap transition-colors',
               attachScreenshot
                 ? 'border-hud-cyan bg-[var(--exa-hud-fill-hi)] text-foreground'
                 : 'border-hud-cyan/20 text-muted-foreground hover:text-foreground'
@@ -193,7 +196,25 @@ export function QuickCaptureBar({
             </span>
           </button>
         )}
-        {diagnosticsOffered && (
+        <div
+          aria-live="polite"
+          className="ml-auto shrink-0 pr-1 font-mono text-chrome-micro whitespace-nowrap text-muted-foreground"
+        >
+          {error ? (
+            <span className="text-destructive">{error}</span>
+          ) : (
+            <span>↩ send</span>
+          )}
+        </div>
+      </div>
+      {/* Its own line, not another chip. "Anonymized diagnostics" is the
+          longest label in the component, and in the chip row it wrapped to two
+          lines and pushed the send hint outside the card. A dim strip is also
+          the honest register for it: subtle, but it states in full what would
+          leave the machine, and holds the summary and Review without
+          competing with the kind chips. */}
+      {diagnosticsOffered && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-hud-cyan/15 px-3 py-2 font-mono text-chrome-micro text-muted-foreground">
           <button
             type="button"
             aria-pressed={attachDiagnostics}
@@ -207,60 +228,49 @@ export function QuickCaptureBar({
               textareaRef.current?.focus();
             }}
             className={cn(
-              'ml-1 flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs transition-colors',
-              attachDiagnostics
-                ? 'border-hud-cyan bg-[var(--exa-hud-fill-hi)] text-foreground'
-                : 'border-hud-cyan/20 text-muted-foreground hover:text-foreground'
+              'flex shrink-0 items-center gap-1.5 whitespace-nowrap transition-colors hover:text-foreground',
+              attachDiagnostics && 'text-foreground'
             )}
           >
-            <ShieldCheck
+            <span
+              aria-hidden
               className={cn(
-                'size-3 transition-opacity',
-                !attachDiagnostics && 'opacity-40'
+                'grid size-3.5 place-items-center rounded-[3px] border transition-colors',
+                attachDiagnostics
+                  ? 'border-hud-cyan bg-[var(--exa-hud-fill-hi)]'
+                  : 'border-hud-cyan/30'
               )}
+            >
+              {attachDiagnostics && <Check className="size-2.5" />}
+            </span>
+            <ShieldCheck
+              aria-hidden
+              className={cn('size-3', !attachDiagnostics && 'opacity-40')}
             />
             <span>Anonymized diagnostics</span>
-            {attachDiagnostics && <Check className="size-3" />}
-            <span className="font-mono text-chrome-micro text-muted-foreground">
-              ⌘D
-            </span>
+            <span className="text-chrome-micro text-muted-foreground">⌘D</span>
           </button>
-        )}
-        <div
-          aria-live="polite"
-          className="ml-auto pr-1 font-mono text-chrome-micro whitespace-nowrap text-muted-foreground"
-        >
-          {error ? (
-            <span className="text-destructive">{error}</span>
-          ) : (
-            <span>↩ send</span>
+          {attachDiagnostics && diagnostics && (
+            <>
+              <span className="min-w-0 flex-1 truncate">
+                {diagnosticsSummary(diagnostics)}
+              </span>
+              <button
+                type="button"
+                onClick={() => setReviewing(current => !current)}
+                aria-expanded={reviewing}
+                className="shrink-0 underline underline-offset-2 hover:text-foreground"
+              >
+                {reviewing ? 'Hide' : 'Review'}
+              </button>
+            </>
           )}
         </div>
-      </div>
-      {/* Subtle until it matters: the summary is one dim line, and the exact
-          JSON is one click away. Sending machine state is a trust moment, so
-          "review" shows the payload itself rather than a description of it. */}
-      {diagnosticsOffered && attachDiagnostics && diagnostics && (
-        <div className="border-t border-hud-cyan/15 px-4 py-2">
-          <div className="flex items-center gap-2 font-mono text-chrome-micro text-muted-foreground">
-            <span className="min-w-0 flex-1 truncate">
-              {diagnosticsSummary(diagnostics)}
-            </span>
-            <button
-              type="button"
-              onClick={() => setReviewing(current => !current)}
-              aria-expanded={reviewing}
-              className="shrink-0 underline underline-offset-2 hover:text-foreground"
-            >
-              {reviewing ? 'Hide' : 'Review'}
-            </button>
-          </div>
-          {reviewing && (
-            <pre className="mt-2 max-h-56 overflow-auto rounded-sm bg-hud-fill p-2 font-mono text-chrome-micro leading-4 whitespace-pre-wrap text-muted-foreground">
-              {JSON.stringify(diagnostics, null, 2)}
-            </pre>
-          )}
-        </div>
+      )}
+      {reviewing && attachDiagnostics && diagnostics && (
+        <pre className="mx-3 mb-3 max-h-56 overflow-auto rounded-sm bg-hud-fill p-2 font-mono text-chrome-micro leading-4 whitespace-pre-wrap text-muted-foreground">
+          {JSON.stringify(diagnostics, null, 2)}
+        </pre>
       )}
     </div>
   );

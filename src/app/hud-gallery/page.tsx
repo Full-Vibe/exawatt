@@ -36,6 +36,7 @@ import {
 import { SessionStateTileStudy } from '@/components/hud/session-state-tile-study';
 import { ProjectRibbonStudy } from '@/components/hud/project-ribbon-study';
 import { ReadinessGrammarStudy } from '@/components/readiness/gallery-study';
+import { QuickCaptureStudy } from './quick-capture-study';
 import { PaceOpportunityStudy } from './pace-opportunity-study';
 
 const TONES: HudTone[] = ['cyan', 'magenta', 'amber', 'red', 'green', 'idle'];
@@ -60,6 +61,12 @@ interface Section {
 }
 
 const SECTIONS: Section[] = [
+  {
+    id: 'quick-capture',
+    title: 'Quick capture chip row',
+    meta: 'ENG-025 F5 — the diagnostics chip shipped unrendered and wrapped; densest state first',
+    showcase: <QuickCaptureStudy />,
+  },
   {
     id: 'pace-opportunity',
     title: 'Pace opportunity voice',
