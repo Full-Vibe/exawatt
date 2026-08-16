@@ -229,6 +229,38 @@ export function LiveScanNotice({ scan }: { scan: LiveScanView | null }) {
 }
 
 /* ------------------------------------------------------------------ */
+/* stopped engine — the third state, not a demo                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The local read is not running (BUG-016). A desktop bridge whose command
+ * engine died used to render this page as a complete live read of zero, which
+ * claims more than the demo corpus it was mistaken for: it says this machine
+ * burned nothing. The banner takes the demo banner's slot and the Consumption
+ * channel's own `unknown` ink, because that is what the numbers below are.
+ */
+export function EngineStoppedBanner() {
+  return (
+    <div
+      data-consumption-engine="paused"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border px-3 py-1.5"
+      style={{ borderColor: FLUX.unknownLine }}
+    >
+      <span
+        className="rounded border px-1.5 py-0.5 font-mono text-chrome-micro"
+        style={{ borderColor: FLUX.unknownLine, color: FLUX.unknown }}
+      >
+        Command engine paused
+      </span>
+      <Caption>
+        Nothing on this page was read from this machine · local reads resume
+        when the engine starts
+      </Caption>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* demo banner — honest assurance labeling, one line                   */
 /* ------------------------------------------------------------------ */
 

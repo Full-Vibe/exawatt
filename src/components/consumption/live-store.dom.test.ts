@@ -234,6 +234,81 @@ describe('live store', () => {
 });
 
 /* ------------------------------------------------------------------ */
+/* BUG-016 — a bridge whose command engine is not running               */
+/* ------------------------------------------------------------------ */
+
+interface StoppedBridgeOptions {
+  /** Main answers the engine channel with this phase. */
+  phase?: 'starting' | 'ready' | 'paused';
+  /** `consumption:snapshot` rejects, the way an unregistered channel does. */
+  snapshotRejects?: boolean;
+}
+
+function installStoppedBridge(options: StoppedBridgeOptions): void {
+  installFakeBridge(readySnapshot());
+  const electron = (window as unknown as { electron: Record<string, unknown> })
+    .electron;
+  if (options.snapshotRejects) {
+    (electron.consumption as { snapshot: () => Promise<unknown> }).snapshot =
+      async () => {
+        throw new Error("No handler registered for 'consumption:snapshot'");
+      };
+  }
+  if (options.phase) {
+    electron.commandEngine = {
+      phase: async () => options.phase,
+      onChanged: () => () => {},
+    };
+  }
+}
+
+describe('a command engine that is not running', () => {
+  it('is `paused`, not `pending`, when main reports the engine paused', async () => {
+    installStoppedBridge({ phase: 'paused', snapshotRejects: true });
+    const off = subscribeLiveConsumption(() => {});
+    await vi.waitFor(() => expect(getLiveConsumption().status).toBe('paused'));
+    const state = getLiveConsumption();
+    // still the LIVE side of the seam: an empty read, never demo numbers
+    expect(state.view?.workspace.sessionCount).toBe(0);
+    // referential stability for useSyncExternalStore
+    expect(getLiveConsumption()).toBe(state);
+    off();
+  });
+
+  it('is `paused` when the bridge cannot answer at all, whatever killed it', async () => {
+    // No engine channel: an older main, or a scanner that died after boot.
+    // The fact on screen is identical, so the state is identical.
+    installStoppedBridge({ snapshotRejects: true });
+    const off = subscribeLiveConsumption(() => {});
+    await vi.waitFor(() => expect(getLiveConsumption().status).toBe('paused'));
+    off();
+  });
+
+  it('leaves a read that succeeded alone when the engine stops afterwards', async () => {
+    installStoppedBridge({ phase: 'ready' });
+    const off = subscribeLiveConsumption(() => {});
+    await vi.waitFor(() => expect(getLiveConsumption().status).toBe('ready'));
+    // the engine dies; the pull now fails
+    (
+      window as unknown as {
+        electron: { consumption: { snapshot: () => Promise<unknown> } };
+      }
+    ).electron.consumption.snapshot = async () => {
+      throw new Error('engine gone');
+    };
+    await new Promise(resolve => setTimeout(resolve, 50));
+    // numbers that were genuinely read keep their state and their own age
+    expect(getLiveConsumption().status).toBe('ready');
+    expect(getLiveConsumption().revision).toBe(1);
+    off();
+  });
+
+  it('stays `unavailable` with no bridge — the demo corpus is honest there', () => {
+    expect(getLiveConsumption().status).toBe('unavailable');
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /* D3 — a Session is named identically on every surface                */
 /* ------------------------------------------------------------------ */
 

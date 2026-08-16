@@ -50,6 +50,14 @@ contextBridge.exposeInMainWorld('electron', {
     scan: (since: string, timezone: string) =>
       ipcRenderer.invoke('operator-stats:scan', since, timezone),
   },
+  // BUG-016: the command engine's own state. Every other member of this bridge
+  // is a service that only exists once bootstrap succeeded; this one reports
+  // whether it did, so a surface can tell a dead local engine from a machine
+  // that has no desktop bridge at all.
+  commandEngine: {
+    phase: () => ipcRenderer.invoke('app:command-engine'),
+    onChanged: subscribe<string>('app:command-engine-changed'),
+  },
   // ENG-008 E5: the live local-consumption seam. Contract types live in
   // @exawatt/core `consumption/live-snapshot.ts`; updates are notification-only
   // (revision + scan state) and the renderer pulls snapshots when it cares.

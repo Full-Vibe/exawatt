@@ -51,7 +51,12 @@ import {
   type PivotKey,
   type PivotRow,
 } from './derive';
-import { Caption, DemoBanner, LiveScanNotice } from './chrome';
+import {
+  Caption,
+  DemoBanner,
+  EngineStoppedBanner,
+  LiveScanNotice,
+} from './chrome';
 import { Verdict } from './verdict';
 import { Burn, Heat, Pace, Spend } from './answers';
 import { Attribution, type UnitMode } from './attribution';
@@ -68,7 +73,13 @@ type DrillSelection =
 export function UsageClient() {
   // ONE tenant-aware seam, shared with the ambient chrome meter — the title
   // bar and this page render the same corpus at the same pinned instant.
-  const { view: demo, voltaic: inDemoTenant, live, scan } = useTenantConsumption();
+  const {
+    view: demo,
+    voltaic: inDemoTenant,
+    live,
+    stopped,
+    scan,
+  } = useTenantConsumption();
 
   const raw = rawTotal(
     displayUsage(demo.workspace.totals, demo.workspace.sources)
@@ -141,11 +152,15 @@ export function UsageClient() {
 
         {/* THE FLIP (E5): live data drops the demo banner; the live read's
             only chrome is the one-line scan caption while a first or
-            partial read is in flight. */}
-        {live ? (
-          <LiveScanNotice scan={scan} />
-        ) : (
+            partial read is in flight. THREE states, not two (BUG-016): no
+            bridge is a demo corpus, a bridge whose engine is not running is
+            neither a demo nor a read. */}
+        {!live ? (
           <DemoBanner demo={demo} raw={raw} voltaic={inDemoTenant} />
+        ) : stopped ? (
+          <EngineStoppedBanner />
+        ) : (
+          <LiveScanNotice scan={scan} />
         )}
 
         {/* the five answers, in the order the questions are asked */}

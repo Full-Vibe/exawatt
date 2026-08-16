@@ -44,6 +44,12 @@ export interface TenantConsumption {
   live: boolean;
   /** Scan state for the live read; null on demo corpora. */
   scan: LiveScanView | null;
+  /**
+   * The local command engine is not running, so nothing on screen was read
+   * from this machine (BUG-016). Distinct from `!live`, which means there is
+   * no desktop bridge at all and the demo corpus is the honest answer.
+   */
+  stopped: boolean;
 }
 
 export function useTenantConsumption(): TenantConsumption {
@@ -58,6 +64,10 @@ export function useTenantConsumption(): TenantConsumption {
   );
   const live =
     !voltaic && liveState.status !== 'unavailable' && liveState.view !== null;
+  // A stopped engine stays on the LIVE side of the seam: the demo corpus is
+  // the honest answer where no local filesystem exists, never a substitute for
+  // one that could not be read. The page says so instead of showing numbers.
+  const stopped = live && liveState.status === 'paused';
   const view = useMemo(
     () =>
       voltaic
@@ -67,5 +77,5 @@ export function useTenantConsumption(): TenantConsumption {
           : demoConsumption(),
     [voltaic, live, liveState.view]
   );
-  return { view, voltaic, live, scan: live ? liveState.scan : null };
+  return { view, voltaic, live, stopped, scan: live ? liveState.scan : null };
 }

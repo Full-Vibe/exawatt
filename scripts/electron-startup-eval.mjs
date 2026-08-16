@@ -67,9 +67,26 @@ try {
         mkdirSync(dirname(screenshot), { recursive: true });
         await page.screenshot({ path: screenshot });
       }
-      await page
-        .locator('[data-command-altitude]')
-        .waitFor({ timeout: 30_000 });
+      // BOOT INTEGRITY (BUG-016). A build whose main process throws inside
+      // `bootstrapCommandSurface` never leaves the splash, and waiting only
+      // for the workspace reports that as an anonymous timeout on a selector.
+      // Read the splash's own failed state so the eval names what happened.
+      try {
+        await page
+          .locator('[data-command-altitude]')
+          .waitFor({ timeout: 30_000 });
+      } catch (error) {
+        const paused = await page
+          .locator('[data-exawatt-launch][data-failed="true"]')
+          .count();
+        if (!paused) throw error;
+        const label = await page.locator('#startup-label').textContent();
+        const detail = await page.locator('#startup-detail').textContent();
+        throw new Error(
+          `The app never reached the workspace: "${label}. ${detail}". Main ` +
+            'threw inside bootstrapCommandSurface; its stderr carries the cause.'
+        );
+      }
       const workspaceReady = elapsed(startedAt);
       let staleCachePruned = null;
       if (index === 0 && launchScreenShown) {
