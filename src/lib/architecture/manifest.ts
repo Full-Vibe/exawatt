@@ -492,7 +492,7 @@ export const architectureManifest = {
           id: 'next-app-shell',
           label: 'Next.js App Shell',
           summary:
-            'Shared UI source packaged locally for privileged desktop use and delivered separately for hosted contexts.',
+            'Shared UI source packaged locally for privileged desktop use and delivered separately for hosted contexts, with explicit DOM, xterm renderer, compositor, and R3F render-path ownership.',
           layer: 'ui',
           status: 'implemented',
           x: 80,
@@ -885,6 +885,7 @@ export const architectureManifest = {
     'UI surfaces speak Exawatt nouns, not provider-specific vocabulary.',
     'DOM and Fleet Operations Board regimes share typed view models and command contracts.',
     'Agent, Team, and Fleet form one navigation continuum while keeping separate renderer boundaries.',
+    'React owns discrete semantic state; Chromium compositing, the xterm renderer, and R3F own continuous pixels. Performance changes begin with an attributed gesture trace, preserve existing failure paths, and change the narrowest proven owner.',
     'Appearance is app-global and source-neutral: one validated snapshot feeds DOM, xterm, R3F, and Electron adapters while product-state color channels keep their meanings.',
     'Open Project identity spans the Agent, Team, and Fleet altitudes even before an Agent or Session exists; Agents join catalog-backed groups by stable source identity.',
     'The Agent altitude projects current Session tabs as Initiative-shaped work: selected Projects expand, manual inactive disclosure persists, dormant empties stable-partition to the tail, and subagent work aggregates instead of multiplying top-level tabs.',

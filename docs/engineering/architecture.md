@@ -122,6 +122,43 @@ can therefore remain public website routes while joining the Electron palette.
 The shortcut registry owns effective keys, the Fleet board owns URL filters
 plus session-local camera return, and the workspace owns terminal/Team focus.
 
+### Render-path performance contract
+
+Decision `0038` keeps Electron and makes the existing renderer split an
+explicit performance boundary. React owns discrete semantic state — route,
+selection, visibility, focus intent, command availability, and accessible
+structure — while continuous pixels stay with the renderer built for them:
+Chromium's compositor for DOM transform/opacity motion, xterm's renderer (WebGL
+with its canvas fallback) for terminal cells, and R3F for Fleet geometry and
+camera interpolation. Pure typed selectors derive layout and view models outside
+those renderers.
+
+This is GPU-aware architecture, not a plan to move every surface into WebGL.
+DOM remains the owner of dense text and accessibility; xterm panes preserve PTY
+presentation; Fleet retains demand rendering, instancing, bounded DPR, and its
+measured label/population budgets. Per-frame R3F and projected-DOM work mutates
+stable refs/buffers and publishes React state only when a semantic boundary
+changes. DOM motion prefers transform/opacity after measurement, without blanket
+layer promotion or containment.
+
+Performance work starts from an operator-visible gesture and an attributed
+trace, changes the narrowest proven owner, and reruns the same behavior and
+timing evidence on the exact tree. The cross-surface Electron evaluator planned
+by ENG-016 D55 is optional: it serves baseline, diagnosis, before/after proof,
+and targeted regression investigation rather than the default landing floor.
+React-provider rewrites, generic memoization, persistent `will-change`, hidden
+route mounts, or prewarming are not architectural defaults.
+
+Prewarming is considered only when a repeated cold-path trace proves preparation
+is the critical delay and the prepared work is pure or idempotent,
+version-keyed, bounded, cancellable, discardable, and unable to subscribe,
+navigate, focus, spawn, command a source, or publish stale UI. Absence or failure
+must preserve the same ordinary cold path and the existing fail-to-cut
+transition behavior. Electron replacement remains a future decision only if
+representative critical interactions still miss ratified budgets after their
+narrow proven owners are addressed and Chromium/Electron itself is the
+irreducible cause.
+
 Contextual workspace verbs add one deliberately small cross-process projection.
 The renderer derives command availability from restored Project, Session,
 split, recovery-ledger, and visible attention state. That snapshot gates the
