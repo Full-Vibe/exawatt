@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "conversations": [
+    {
+      "key": "conversation-example-1",
+      "title": "Source-neutral adapter",
+      "summary": "Unify Demo and live commands behind one data-source boundary."
+    }
+  ]
+}

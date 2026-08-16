@@ -1,0 +1,9 @@
+{
+  "type": "https://exawatt.ai/problems/capacity",
+  "title": "Service is at capacity",
+  "status": 429,
+  "detail": "Try again after the delay in Retry-After.",
+  "code": "capacity_reached",
+  "retryable": true,
+  "schemaVersion": 1
+}

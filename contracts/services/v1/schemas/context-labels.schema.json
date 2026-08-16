@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://exawatt.ai/contracts/services/v1/schemas/context-labels.schema.json",
+  "$comment": "SPDX-License-Identifier: Apache-2.0",
+  "title": "Context-label service V1",
+  "$defs": {
+    "instruction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "submittedAt"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1, "maxLength": 1600 },
+        "submittedAt": { "type": "number", "minimum": 0 }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "sessionKey", "recentInstructions"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "sessionKey": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "projectName": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "currentLabel": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 72
+        },
+        "currentLabelSource": {
+          "enum": ["provisional", "accepted", "operator", "restored", null]
+        },
+        "initialInstruction": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 1600
+        },
+        "recentInstructions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/instruction" }
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schemaVersion", "label", "relationship", "confidence"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 72 },
+        "relationship": { "enum": ["same_context", "new_context"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    }
+  }
+}

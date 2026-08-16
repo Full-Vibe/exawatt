@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://exawatt.ai/contracts/services/v1/schemas/problem.schema.json",
+  "$comment": "SPDX-License-Identifier: Apache-2.0",
+  "title": "Exawatt service problem V1",
+  "description": "RFC 9457-compatible problem detail with a stable machine code.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["type", "title", "status", "code", "retryable"],
+  "properties": {
+    "type": { "type": "string", "format": "uri-reference" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+    "detail": { "type": "string", "maxLength": 500 },
+    "instance": { "type": "string", "format": "uri-reference" },
+    "code": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "retryable": { "type": "boolean" },
+    "schemaVersion": { "const": 1 }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "kind": "bug",
+  "message": "This key cannot make retries idempotent.",
+  "surface": "workspace-tab-strip",
+  "idempotencyKey": "retry-me"
+}

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 2,
+  "conversations": [
+    { "key": "conversation-example-1", "turns": ["Unsupported protocol."] }
+  ]
+}

@@ -1,0 +1,110 @@
+[
+  {
+    "id": "context-labels-request",
+    "schema": "context-labels.schema.json#/$defs/request",
+    "file": "context-labels/valid-request.json",
+    "valid": true
+  },
+  {
+    "id": "context-labels-response",
+    "schema": "context-labels.schema.json#/$defs/response",
+    "file": "context-labels/valid-response.json",
+    "valid": true
+  },
+  {
+    "id": "context-labels-additive-response",
+    "schema": "context-labels.schema.json#/$defs/response",
+    "file": "context-labels/additive-response.json",
+    "valid": true
+  },
+  {
+    "id": "context-labels-invalid",
+    "schema": "context-labels.schema.json#/$defs/request",
+    "file": "context-labels/invalid-request.json",
+    "valid": false
+  },
+  {
+    "id": "conversation-summaries-request",
+    "schema": "conversation-summaries.schema.json#/$defs/request",
+    "file": "conversation-summaries/valid-request.json",
+    "valid": true
+  },
+  {
+    "id": "conversation-summaries-response",
+    "schema": "conversation-summaries.schema.json#/$defs/response",
+    "file": "conversation-summaries/valid-response.json",
+    "valid": true
+  },
+  {
+    "id": "conversation-summaries-invalid",
+    "schema": "conversation-summaries.schema.json#/$defs/request",
+    "file": "conversation-summaries/invalid-request.json",
+    "valid": false
+  },
+  {
+    "id": "goal-visuals-request",
+    "schema": "goal-visuals.schema.json#/$defs/request",
+    "file": "goal-visuals/valid-request.json",
+    "valid": true
+  },
+  {
+    "id": "goal-visuals-response",
+    "schema": "goal-visuals.schema.json#/$defs/response",
+    "file": "goal-visuals/valid-response.json",
+    "valid": true
+  },
+  {
+    "id": "goal-visuals-invalid",
+    "schema": "goal-visuals.schema.json#/$defs/request",
+    "file": "goal-visuals/invalid-request.json",
+    "valid": false
+  },
+  {
+    "id": "product-feedback-request",
+    "schema": "product-feedback.schema.json#/$defs/request",
+    "file": "product-feedback/valid-request.json",
+    "valid": true
+  },
+  {
+    "id": "product-feedback-response",
+    "schema": "product-feedback.schema.json#/$defs/response",
+    "file": "product-feedback/valid-response.json",
+    "valid": true
+  },
+  {
+    "id": "product-feedback-invalid",
+    "schema": "product-feedback.schema.json#/$defs/request",
+    "file": "product-feedback/invalid-request.json",
+    "valid": false
+  },
+  {
+    "id": "operator-stats-request",
+    "schema": "operator-stats.schema.json#/$defs/publishRequest",
+    "file": "operator-stats/valid-request.json",
+    "valid": true
+  },
+  {
+    "id": "operator-stats-response",
+    "schema": "operator-stats.schema.json#/$defs/publishResponse",
+    "file": "operator-stats/valid-response.json",
+    "valid": true
+  },
+  {
+    "id": "operator-stats-profile",
+    "schema": "operator-stats.schema.json#/$defs/profileResponse",
+    "file": "operator-stats/valid-profile-response.json",
+    "valid": true
+  },
+  {
+    "id": "operator-stats-invalid",
+    "schema": "operator-stats.schema.json#/$defs/publishRequest",
+    "file": "operator-stats/invalid-request.json",
+    "valid": false
+  },
+  {
+    "id": "problem",
+    "schema": "problem.schema.json",
+    "file": "problem/valid-response.json",
+    "valid": true
+  }
+]

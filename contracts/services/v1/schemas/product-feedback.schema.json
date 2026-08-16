@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://exawatt.ai/contracts/services/v1/schemas/product-feedback.schema.json",
+  "$comment": "SPDX-License-Identifier: Apache-2.0",
+  "title": "Product-feedback service V1",
+  "$defs": {
+    "attachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataUrl"],
+      "properties": {
+        "dataUrl": {
+          "type": "string",
+          "pattern": "^data:image/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$"
+        },
+        "name": { "type": ["string", "null"], "minLength": 1, "maxLength": 255 }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "kind", "surface", "idempotencyKey"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "kind": { "enum": ["general", "bug", "idea", "context_label"] },
+        "sentiment": { "enum": [-1, 1, null] },
+        "message": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 12000
+        },
+        "surface": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "appVersion": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "buildSha": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "platform": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "context": { "type": "object" },
+        "idempotencyKey": { "type": "string", "format": "uuid" },
+        "attachment": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/attachment" }]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "context_label" } } },
+          "then": {
+            "required": ["sentiment"],
+            "properties": { "sentiment": { "enum": [-1, 1] } }
+          },
+          "else": {
+            "required": ["message"],
+            "properties": { "message": { "type": "string", "minLength": 1 } }
+          }
+        }
+      ]
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schemaVersion", "id", "duplicate", "attachmentStored"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "id": { "type": "string", "format": "uuid" },
+        "duplicate": { "type": "boolean" },
+        "attachmentStored": { "type": "boolean" }
+      }
+    }
+  }
+}

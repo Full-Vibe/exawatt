@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "consentVersion": 1,
+  "enabled": true,
+  "timezone": "America/Los_Angeles",
+  "identity": {
+    "provider": "github",
+    "providerHandle": "example-operator",
+    "handle": "example-operator",
+    "displayName": "Example Operator",
+    "avatarUrl": null,
+    "links": []
+  },
+  "days": [],
+  "runs": [],
+  "prompt": "Private content is not an aggregate."
+}

@@ -1,0 +1,293 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "Exawatt compatible services",
+    "version": "1.0.0",
+    "description": "Reference layout for protocolVersion 1 service families. A distribution endpoint reference is the exact configured family URL and may use a different path.",
+    "license": {
+      "name": "Apache-2.0",
+      "identifier": "Apache-2.0"
+    }
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/context-labels": {
+      "post": {
+        "operationId": "createContextLabel",
+        "tags": ["context-labels"],
+        "parameters": [{ "$ref": "#/components/parameters/serviceVersion" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/context-labels.schema.json#/$defs/request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A bounded context label",
+            "headers": {
+              "Exawatt-Service-Version": {
+                "$ref": "#/components/headers/serviceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/context-labels.schema.json#/$defs/response"
+                }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/problem" }
+        }
+      }
+    },
+    "/conversation-summaries": {
+      "post": {
+        "operationId": "summarizeConversations",
+        "tags": ["conversation-summaries"],
+        "parameters": [{ "$ref": "#/components/parameters/serviceVersion" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/conversation-summaries.schema.json#/$defs/request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Zero or more bounded summaries",
+            "headers": {
+              "Exawatt-Service-Version": {
+                "$ref": "#/components/headers/serviceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/conversation-summaries.schema.json#/$defs/response"
+                }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/problem" }
+        }
+      }
+    },
+    "/goal-visuals": {
+      "post": {
+        "operationId": "createGoalVisual",
+        "tags": ["goal-visuals"],
+        "parameters": [{ "$ref": "#/components/parameters/serviceVersion" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/goal-visuals.schema.json#/$defs/request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A deterministic JPEG for the opaque identity",
+            "headers": {
+              "Exawatt-Service-Version": {
+                "$ref": "#/components/headers/serviceVersion"
+              },
+              "Exawatt-Cache": {
+                "schema": { "enum": ["hit", "miss"] },
+                "description": "Optional cache diagnostic."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/goal-visuals.schema.json#/$defs/response"
+                }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/problem" }
+        }
+      }
+    },
+    "/product-feedback": {
+      "post": {
+        "operationId": "submitProductFeedback",
+        "tags": ["product-feedback"],
+        "parameters": [{ "$ref": "#/components/parameters/serviceVersion" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/product-feedback.schema.json#/$defs/request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An idempotent duplicate was accepted",
+            "headers": {
+              "Exawatt-Service-Version": {
+                "$ref": "#/components/headers/serviceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/product-feedback.schema.json#/$defs/response"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Feedback was created",
+            "headers": {
+              "Exawatt-Service-Version": {
+                "$ref": "#/components/headers/serviceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/product-feedback.schema.json#/$defs/response"
+                }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/problem" }
+        }
+      }
+    },
+    "/operator-stats": {
+      "get": {
+        "operationId": "getOperatorStatsProfile",
+        "tags": ["operator-stats"],
+        "parameters": [{ "$ref": "#/components/parameters/serviceVersion" }],
+        "responses": {
+          "200": {
+            "description": "Owner-only publication state",
+            "headers": {
+              "Exawatt-Service-Version": {
+                "$ref": "#/components/headers/serviceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/operator-stats.schema.json#/$defs/profileResponse"
+                }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/problem" }
+        }
+      },
+      "post": {
+        "operationId": "publishOperatorStats",
+        "tags": ["operator-stats"],
+        "parameters": [{ "$ref": "#/components/parameters/serviceVersion" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/operator-stats.schema.json#/$defs/publishRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The authenticated operator aggregate was replaced atomically",
+            "headers": {
+              "Exawatt-Service-Version": {
+                "$ref": "#/components/headers/serviceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/operator-stats.schema.json#/$defs/publishResponse"
+                }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/problem" }
+        }
+      },
+      "delete": {
+        "operationId": "disableOperatorStatsProfile",
+        "tags": ["operator-stats"],
+        "parameters": [{ "$ref": "#/components/parameters/serviceVersion" }],
+        "responses": {
+          "204": {
+            "description": "The authenticated operator profile was disabled",
+            "headers": {
+              "Exawatt-Service-Version": {
+                "$ref": "#/components/headers/serviceVersion"
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/problem" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "account access token"
+      }
+    },
+    "parameters": {
+      "serviceVersion": {
+        "name": "Exawatt-Service-Version",
+        "in": "header",
+        "required": true,
+        "description": "The protocolVersion selected by the distribution contract.",
+        "schema": { "type": "integer", "const": 1 }
+      }
+    },
+    "headers": {
+      "serviceVersion": {
+        "required": true,
+        "description": "The protocol version used to encode the response.",
+        "schema": { "type": "integer", "const": 1 }
+      }
+    },
+    "responses": {
+      "problem": {
+        "description": "A bounded RFC 9457 problem detail",
+        "headers": {
+          "Exawatt-Service-Version": {
+            "$ref": "#/components/headers/serviceVersion"
+          },
+          "Retry-After": {
+            "description": "Optional delay in seconds for a retryable response.",
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": { "$ref": "./schemas/problem.schema.json" }
+          }
+        }
+      }
+    }
+  }
+}

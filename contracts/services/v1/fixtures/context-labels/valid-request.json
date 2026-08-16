@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "sessionKey": "session-example-1",
+  "projectName": "Example Project",
+  "currentLabel": "Improve context retrieval",
+  "currentLabelSource": "accepted",
+  "initialInstruction": "Make recent work easier to recover.",
+  "recentInstructions": [
+    { "text": "Tune the bounded label evidence.", "submittedAt": 1786921200000 }
+  ]
+}

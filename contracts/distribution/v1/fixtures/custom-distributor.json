@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "brand": {
+    "appId": "dev.example.agentdesk",
+    "productName": "Agent Desk",
+    "protocolScheme": "agentdesk",
+    "iconPath": "assets/community-icon.icns",
+    "updateChannel": "stable"
+  },
+  "account": {
+    "supabaseUrl": "https://account.example.test",
+    "supabaseAnonKey": "example-public-anon-key",
+    "recoveryOrigin": "https://app.example.test"
+  },
+  "services": {
+    "productFeedback": {
+      "url": "https://services.example.test/v1/product-feedback",
+      "protocolVersion": 1
+    },
+    "operatorStats": {
+      "url": "https://services.example.test/v1/operator-stats",
+      "protocolVersion": 1
+    },
+    "projects": null,
+    "preferences": null,
+    "accountData": null
+  },
+  "enrichment": {
+    "contextLabels": {
+      "url": "https://services.example.test/v1/context-labels",
+      "protocolVersion": 1
+    },
+    "conversationSummaries": {
+      "url": "https://services.example.test/v1/conversation-summaries",
+      "protocolVersion": 1
+    },
+    "goalVisuals": {
+      "url": "https://services.example.test/v1/goal-visuals",
+      "protocolVersion": 1
+    }
+  },
+  "analytics": null,
+  "updates": {
+    "feedUrl": "https://updates.example.test/stable"
+  }
+}

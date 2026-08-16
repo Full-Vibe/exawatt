@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "brand": null,
+  "account": null,
+  "services": {
+    "productFeedback": null,
+    "operatorStats": null,
+    "projects": null,
+    "preferences": null,
+    "accountData": null
+  },
+  "enrichment": {
+    "contextLabels": {
+      "url": "https://services.example.test/v1/context-labels",
+      "protocolVersion": 1
+    },
+    "conversationSummaries": null,
+    "goalVisuals": null
+  },
+  "analytics": null,
+  "updates": null
+}
