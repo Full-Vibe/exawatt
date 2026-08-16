@@ -12,6 +12,10 @@ import { acquireDeliveryLock } from './lib/delivery-lock.mjs';
 
 const execFileAsync = promisify(execFile);
 const script = fileURLToPath(new URL('./agent-land.mjs', import.meta.url));
+// Admission follows the repository floor. Its fixture currently crosses four
+// serial pnpm process boundaries before publishing a ticket, so a generic
+// five-second poll budget is shorter than the behavior under test.
+const FLOOR_ADMISSION_TIMEOUT_MS = 15_000;
 
 async function command(commandName, args, cwd) {
   const { stdout } = await execFileAsync(commandName, args, { cwd });
@@ -24,22 +28,41 @@ async function git(cwd, ...args) {
 
 function runStreaming(commandName, args, cwd) {
   let output = '';
-  const child = spawn(commandName, args, { cwd });
+  const ownsProcessGroup = process.platform !== 'win32';
+  const child = spawn(commandName, args, { cwd, detached: ownsProcessGroup });
+  let settled = false;
   child.stdout.on('data', chunk => {
     output += chunk;
   });
   child.stderr.on('data', chunk => {
     output += chunk;
   });
+  const completion = new Promise((resolve, reject) => {
+    child.once('error', error => {
+      settled = true;
+      reject(error);
+    });
+    child.once('exit', code => {
+      settled = true;
+      if (code === 0) resolve(output);
+      else reject(new Error(`command exited ${code}:\n${output}`));
+    });
+  });
   return {
     output: () => output,
-    completion: new Promise((resolve, reject) => {
-      child.once('error', reject);
-      child.once('exit', code => {
-        if (code === 0) resolve(output);
-        else reject(new Error(`command exited ${code}:\n${output}`));
-      });
-    }),
+    completion,
+    async stop() {
+      if (!settled) {
+        try {
+          if (ownsProcessGroup && child.pid)
+            process.kill(-child.pid, 'SIGTERM');
+          else child.kill('SIGTERM');
+        } catch (error) {
+          if (error?.code !== 'ESRCH') throw error;
+        }
+      }
+      await completion.catch(() => {});
+    },
   };
 }
 
@@ -105,6 +128,7 @@ test('lands a verified agent branch through a remote fast-forward', async () => 
   const main = path.join(directory, 'main');
   const agent = path.join(directory, 'agent');
   let deliveryLock;
+  let landing;
 
   try {
     await git(directory, 'init', '--bare', '--initial-branch=master', remote);
@@ -140,15 +164,17 @@ test('lands a verified agent branch through a remote fast-forward', async () => 
     const initial = await git(main, 'rev-parse', 'HEAD');
 
     deliveryLock = await acquireDeliveryLock(main, { log() {} });
-    const landing = runStreaming(
+    landing = runStreaming(
       process.execPath,
       [script, '--verify', 'verify-ok'],
       agent
     );
-    await waitFor(() =>
-      landing
-        .output()
-        .includes('waiting for the active master delivery transaction')
+    await waitFor(
+      () =>
+        landing
+          .output()
+          .includes('waiting for the active master delivery transaction'),
+      FLOOR_ADMISSION_TIMEOUT_MS
     );
     assert.equal(
       await git(main, 'rev-parse', 'HEAD'),
@@ -182,6 +208,7 @@ test('lands a verified agent branch through a remote fast-forward', async () => 
     );
   } finally {
     await deliveryLock?.release();
+    await landing?.stop();
     await rm(directory, { recursive: true, force: true });
   }
 });
@@ -193,6 +220,8 @@ test('serves concurrent landers in FIFO order, rebases the later tree, and ignor
   const firstPath = path.join(directory, 'first');
   const secondPath = path.join(directory, 'second');
   let deliveryLock;
+  let first;
+  let second;
 
   try {
     await git(directory, 'init', '--bare', '--initial-branch=master', remote);
@@ -232,10 +261,16 @@ test('serves concurrent landers in FIFO order, rebases the later tree, and ignor
     const initialMain = await git(main, 'rev-parse', 'HEAD');
     deliveryLock = await acquireDeliveryLock(main, { log() {} });
 
-    const first = runStreaming(process.execPath, [script], firstPath);
-    await waitFor(() => first.output().includes('admitted ticket 1'));
-    const second = runStreaming(process.execPath, [script], secondPath);
-    await waitFor(() => second.output().includes('admitted ticket 2'));
+    first = runStreaming(process.execPath, [script], firstPath);
+    await waitFor(
+      () => first.output().includes('admitted ticket 1'),
+      FLOOR_ADMISSION_TIMEOUT_MS
+    );
+    second = runStreaming(process.execPath, [script], secondPath);
+    await waitFor(
+      () => second.output().includes('admitted ticket 2'),
+      FLOOR_ADMISSION_TIMEOUT_MS
+    );
     await deliveryLock.release();
     deliveryLock = null;
 
@@ -261,6 +296,7 @@ test('serves concurrent landers in FIFO order, rebases the later tree, and ignor
     assert.match(remoteFiles, /second\.txt/);
   } finally {
     await deliveryLock?.release();
+    await Promise.all([first?.stop(), second?.stop()]);
     await rm(directory, { recursive: true, force: true });
   }
 });
