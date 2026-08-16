@@ -10,7 +10,10 @@
         ".npmrc",
         ".prettierrc",
         "ASSET_PROVENANCE.json",
+        "LICENSE",
+        "LICENSING.md",
         "PROJECT.md",
+        "THIRD_PARTY_NOTICES.md",
         "components.json",
         "eslint.config.mjs",
         "instrumentation-client.ts",
@@ -61,6 +64,14 @@
         "packages/**",
         "patches/**",
         "themes/**"
+      ],
+      "exclude": []
+    },
+    {
+      "id": "public-license-texts",
+      "classification": "PUBLIC",
+      "include": [
+        "LICENSES/**"
       ],
       "exclude": []
     },
@@ -124,6 +135,7 @@
         "scripts/agent-stop-check.mjs",
         "scripts/app-update-config.cjs",
         "scripts/check-asset-provenance.mjs",
+        "scripts/check-dependency-licenses.mjs",
         "scripts/check-production-theme-literals.mjs",
         "scripts/dogfood-worker.mjs",
         "scripts/electron-dev.mjs",
@@ -187,6 +199,14 @@
       "path": "pnpm-lock.yaml",
       "classification": "PUBLIC",
       "reason": "package-manager output regenerated from the public package graph",
+      "contentPolicy": {
+        "allowThirdPartyEmailMetadata": true
+      }
+    },
+    {
+      "path": "LICENSES/third-party/sanitize-filename-1.6.3.txt",
+      "classification": "PUBLIC",
+      "reason": "verified upstream third-party license text",
       "contentPolicy": {
         "allowThirdPartyEmailMetadata": true
       }
