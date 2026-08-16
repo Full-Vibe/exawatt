@@ -16,8 +16,16 @@
 
 import { _electron as electron } from 'playwright-core';
 import { execFileSync } from 'node:child_process';
-import { realpathSync, rmSync } from 'node:fs';
+import {
+  closeSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { assertNodePtyBuilt } from './native-preflight.mjs';
 import { assertNoPackagingSnapshot } from './electron-runtime-deps.mjs';
 
@@ -115,6 +123,74 @@ export async function assertDevServerServesTree(devUrl, evalRoot) {
   }
 }
 
+
+/** ONE Electron eval at a time, ACROSS worktrees.
+ *
+ *  This file's own rules have always said "run evals SERIALLY; never overlap
+ *  two Electron launches" — but that was only ever enforced inside a single
+ *  run. With several agent worktrees on one machine (AGENTS.md), overlapping
+ *  Electron evals fight over the window server and each other's orphan sweeps,
+ *  which is how a healthy run dies at an arbitrary step. The lock is advisory
+ *  and fail-open: a stale holder is reclaimed, and a long wait proceeds
+ *  anyway rather than deadlocking a landing behind another agent. */
+const ELECTRON_EVAL_LOCK = join(tmpdir(), 'exawatt-electron-eval.lock');
+const LOCK_STALE_MS = 20 * 60_000;
+
+function readLock() {
+  try {
+    return JSON.parse(readFileSync(ELECTRON_EVAL_LOCK, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function lockIsStale(held) {
+  if (!held) return true;
+  if (Date.now() - (held.at ?? 0) > LOCK_STALE_MS) return true;
+  try {
+    process.kill(held.pid, 0);
+    return false;
+  } catch {
+    return true; // holder is gone
+  }
+}
+
+async function withElectronEvalLock(root, run, waitMs = 8 * 60_000) {
+  const deadline = Date.now() + waitMs;
+  let owned = false;
+  for (;;) {
+    try {
+      const fd = openSync(ELECTRON_EVAL_LOCK, 'wx');
+      writeSync(fd, JSON.stringify({ pid: process.pid, root, at: Date.now() }));
+      closeSync(fd);
+      owned = true;
+      break;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') break; // never let locking fail a run
+      const held = readLock();
+      if (lockIsStale(held)) {
+        rmSync(ELECTRON_EVAL_LOCK, { force: true });
+        continue;
+      }
+      if (Date.now() > deadline) {
+        console.warn(
+          `[harness] another Electron eval (pid ${held?.pid}, ${held?.root}) still holds ` +
+            'the machine lock — proceeding anyway'
+        );
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 2_000));
+    }
+  }
+  try {
+    return await run();
+  } finally {
+    if (owned && readLock()?.pid === process.pid) {
+      rmSync(ELECTRON_EVAL_LOCK, { force: true });
+    }
+  }
+}
+
 /** An Electron app that DISAPPEARS mid-run did not fail the eval's contract —
  *  something outside the run killed it. The known cause on this machine is a
  *  sibling agent worktree still running the pre-2026-08-16 machine-wide orphan
@@ -149,30 +225,34 @@ export async function withElectronApp(launchOpts, body, opts = {}) {
     await assertNoPackagingSnapshot(evalRoot);
   }
 
-  const attempts = opts.attempts ?? 3;
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      return await runElectronAttempt({
-        launchOpts,
-        body,
-        evalRoot,
-        maxMs,
-        firstWindowMs,
-        gracefulMs,
-      });
-    } catch (error) {
-      if (attempt >= attempts || !isExternalTeardown(error)) throw error;
-      console.error(
-        `[harness] the Electron app disappeared mid-run (attempt ${attempt}/${attempts}) — ` +
-          'something outside this run killed it; relaunching'
-      );
-      // A relaunch must start from the same state the first attempt did, or
-      // the retry silently exercises a different app (a Project already open,
-      // a tab already selected). Only ever reset a throwaway temp profile.
-      resetThrowawayUserData(launchOpts.env?.EXAWATT_USER_DATA);
-      await new Promise(resolve => setTimeout(resolve, 2_000));
+  const attempts = opts.attempts ?? 6;
+  return withElectronEvalLock(evalRoot, async () => {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await runElectronAttempt({
+          launchOpts,
+          body,
+          evalRoot,
+          maxMs,
+          firstWindowMs,
+          gracefulMs,
+        });
+      } catch (error) {
+        if (attempt >= attempts || !isExternalTeardown(error)) throw error;
+        console.error(
+          `[harness] the Electron app disappeared mid-run (attempt ${attempt}/${attempts}) — ` +
+            'something outside this run killed it; relaunching'
+        );
+        // A relaunch must start from the same state the first attempt did, or
+        // the retry silently exercises a different app (a Project already open,
+        // a tab already selected). Only ever reset a throwaway temp profile.
+        resetThrowawayUserData(launchOpts.env?.EXAWATT_USER_DATA);
+        await new Promise(resolve =>
+          setTimeout(resolve, Math.min(2_000 * 2 ** (attempt - 1), 20_000))
+        );
+      }
     }
-  }
+  });
 }
 
 function resetThrowawayUserData(userData) {
