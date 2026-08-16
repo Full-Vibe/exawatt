@@ -2248,6 +2248,65 @@ scale tier with Voltaic at 13 draw calls and the 1k/10k aggregates at 6 and stil
 parking. Chrome, arrow-walking into a child, and the panel highlight were driven
 in the real demo board.
 
+### V3.5 Board packing — the invariant that did not exist (2026-08-11)
+
+Operator screenshot of his own fleet: sub-agents piled on top of Agents inside
+one Project. Measured on the demo fleet, Fleet altitude carried **56
+overlapping pairs, worst 85%** — a delegated child sitting almost entirely on a
+DIFFERENT Agent.
+
+**Cause.** V3.4 made children peers at `0.92x` with a `1.14x` orbit, calibrated
+against Project altitude where slots sit `4.76` apart. Fleet slots sit `2.25`
+apart, so a child was placed `2.51` from its parent — further away than the
+neighbouring Agent is. The constant was tuned at one altitude and applied at
+both.
+
+**Why nothing caught it.** Type-check, 2,099 unit tests, `eval:r3f` 100/100,
+`eval:spatial` 8/8, every scale tier — all green with an 85% overlap on screen.
+Every check in the suite was about draw calls, frame budgets, parking, or DOM
+contracts. **No test had ever asked whether two units occupy the same space.**
+Geometry had no oracle, so geometry drifted. `spatial-board-packing.test.ts` is
+that oracle now: zero overlap across five fleet shapes at Fleet and Project
+altitude, plus the relaxation's own properties.
+
+**The trilemma, stated because it is permanent.** At Fleet altitude the lattice
+is deliberately tight — Agents sit `2.25` apart with radius `1.1`, a `0.05`
+gap — because that density is the board's claim about how much is running.
+Three things cannot all be true there:
+
+1. Project circles sized by population,
+2. sub-agents drawn at peer scale,
+3. nothing overlapping.
+
+An earlier attempt in this pass kept (2) and (3) by letting circles grow to
+their content. It worked, and it was wrong: a small busy Project rendered
+larger than a large quiet one, so circle area stopped meaning population — the
+one thing F7 built it to mean. That is recorded here rather than in a commit
+because the next person will be tempted by it too.
+
+**What shipped** keeps (1) and (3) and buys room for (2) from the UNIT rather
+than the Project. Where any Agent in the fleet delegates, the whole board is
+drawn at a finer grain — one board-level unit size, never per-Project, because
+two Projects of equal population must look equal. Where nothing delegates,
+nothing changes. Two constraints set the size, both from neighbouring
+constellations rather than neighbouring Agents, since adjacent rosettes can
+point straight at each other.
+
+**Relaxation.** Lattice slots remain the stable address; a bounded, deterministic
+repulsion pass resolves whatever the lattice cannot. Three properties are
+load-bearing and tested: deterministic (the layout is pure and its snapshots are
+compared), anchored (an Agent resists far more than a child, so conflicts are
+paid for by the children and a learned fleet stays learnable), and bounded (a
+fixed iteration count inside a pure selector). Its final iterations drop the
+anchor entirely — with the pull active throughout, separation and anchoring
+fight forever and the pass settles with units still touching.
+
+**Cost, and the two-way door.** Units are visibly smaller at Fleet altitude when
+delegation exists. That is the honest price of drawing sub-agents individually
+at the zoomed-out altitude, and it is one constant away from being reverted:
+stop shrinking, and sub-agents stop fitting. The operator has this trade in
+front of him.
+
 ### V2.1 Scale & Truth
 
 Status: planned; gated by V2.0

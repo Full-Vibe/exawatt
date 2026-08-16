@@ -48,6 +48,13 @@ export interface SpatialBoardProjectZone {
   rect: SpatialBoardRect;
   /** Circular Project footprint radius; `rect` is its square bounding box. */
   radius: number;
+  /** Distance between adjacent Agent slots inside this Project. */
+  slotPitch: number;
+  /** Diameter of an Agent unit inside this Project. Projects whose Agents
+   *  delegate render the whole family finer so a constellation fits the same
+   *  population-sized circle — the room is bought from the unit, never from
+   *  the Project, so circle area keeps meaning population. */
+  unitSize: number;
   /** Fixed Fleet-address footprint used by the minimap at every altitude. */
   minimapRect: SpatialBoardRect;
   visible: boolean;
@@ -128,6 +135,9 @@ export interface SpatialBoardLayout {
   selectedAgentId: string | null;
   zones: SpatialBoardProjectZone[];
   pieces: SpatialBoardPiece[];
+  /** Delegated children at their final packed positions. Placed with the
+   *  Agents rather than derived afterwards, so one relaxation resolves both. */
+  delegationUnits: SpatialBoardDelegationUnit[];
   /** Bounds of every emitted zone. Stable while filters only change visibility. */
   bounds: SpatialBoardRect;
   /** Bounds used for fit/recenter after filtering or semantic descent. */
@@ -303,6 +313,183 @@ function nextFreeSlot(used: Set<number>): number {
   return slot;
 }
 
+/**
+ * Deterministic collision relaxation for board units (ENG-004, operator
+ * 2026-08-11: "they should have their own kind of magnetic repulsion effect
+ * and then they should generally be able to fit").
+ *
+ * The hex lattice assigns each Agent a STABLE address, which is what makes
+ * spatial memory work — but a lattice sized for bare Agents has no room for a
+ * delegated constellation, and a slot's rosette can reach past its neighbour's
+ * centre. Relaxation resolves that residual overlap without giving up the
+ * addresses: lattice slots are the SEED, and units are pushed apart from there.
+ *
+ * Three properties this must have, and the reasons they are not negotiable:
+ *
+ * - **Deterministic.** Same input, same output, every time. No randomness, no
+ *   clock, no iteration-order dependence — the board layout is pure and its
+ *   snapshots are compared in tests.
+ * - **Anchored.** Every unit is pulled back toward its seed, and a parent Agent
+ *   resists far more than a delegated child. An Agent's position is its
+ *   address; a child's is a detail of its parent. So conflicts are paid for by
+ *   the children, and the fleet a person has learned stays learnable.
+ * - **Bounded.** A fixed iteration count, not "until settled". This runs inside
+ *   a pure selector on every layout tick.
+ */
+const RELAX = {
+  iterations: 24,
+  /**
+   * Iterations at the end that ignore the anchor entirely. Without them the
+   * pull toward the seed fights the separation forever and the pass settles
+   * with units still touching — correct-looking but not actually resolved.
+   * Separation gets the last word; the anchor has already done its job of
+   * deciding WHICH way things moved.
+   */
+  settleIterations: 8,
+  /** Fraction of an overlap resolved per iteration; under 1 to stay stable. */
+  strength: 0.8,
+  /** Pull back toward the seed, per iteration. Higher = holds its address. */
+  anchor: { agent: 0.5, child: 0.08 },
+  /** Breathing room left between two units once separated. */
+  gap: 0.08,
+} as const;
+
+export interface RelaxableUnit {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+  kind: 'agent' | 'child';
+  /** Layout-space ceiling (y grows downward), enforced every iteration. A
+   *  delegated child may not be pushed below its parent: the lane under an
+   *  Agent belongs to its DOM label, and separation must not buy room there. */
+  maxY?: number;
+}
+
+/**
+ * Push overlapping units apart, in place. Returns the same array so callers can
+ * read positions straight back out.
+ */
+export function relaxBoardUnits(units: RelaxableUnit[]): RelaxableUnit[] {
+  if (units.length < 2) return units;
+  // Sorted once so the sweep order cannot depend on how the caller built the
+  // list; two layouts of the same fleet must relax identically.
+  const ordered = [...units].sort((a, b) => a.id.localeCompare(b.id));
+  const seeds = ordered.map(unit => ({ x: unit.x, y: unit.y }));
+  for (let pass = 0; pass < RELAX.iterations; pass += 1) {
+    for (let i = 0; i < ordered.length; i += 1) {
+      for (let j = i + 1; j < ordered.length; j += 1) {
+        const a = ordered[i]!;
+        const b = ordered[j]!;
+        const minimum = a.radius + b.radius + RELAX.gap;
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let distance = Math.hypot(dx, dy);
+        if (distance >= minimum) continue;
+        if (distance < 1e-6) {
+          // Exactly coincident: separate along a direction derived from the
+          // ids, so the tie is broken the same way on every run.
+          const angle =
+            ((a.id.length * 31 + b.id.length * 17) % 360) * (Math.PI / 180);
+          dx = Math.cos(angle);
+          dy = Math.sin(angle);
+          distance = 1;
+        }
+        const push = ((minimum - distance) / distance) * RELAX.strength;
+        // Mobility is the inverse of how hard a unit holds its address.
+        const aMove = 1 - RELAX.anchor[a.kind];
+        const bMove = 1 - RELAX.anchor[b.kind];
+        const total = aMove + bMove || 1;
+        const aShare = (push * aMove) / total;
+        const bShare = (push * bMove) / total;
+        a.x -= dx * aShare;
+        a.y -= dy * aShare;
+        b.x += dx * bShare;
+        b.y += dy * bShare;
+      }
+    }
+    for (const unit of ordered) {
+      if (unit.maxY !== undefined && unit.y > unit.maxY) unit.y = unit.maxY;
+    }
+    if (pass >= RELAX.iterations - RELAX.settleIterations) continue;
+    for (let i = 0; i < ordered.length; i += 1) {
+      const unit = ordered[i]!;
+      const seed = seeds[i]!;
+      const pull = RELAX.anchor[unit.kind];
+      unit.x += (seed.x - unit.x) * pull;
+      unit.y += (seed.y - unit.y) * pull;
+    }
+  }
+  for (const unit of ordered) {
+    if (unit.maxY !== undefined && unit.y > unit.maxY) unit.y = unit.maxY;
+    unit.x = round4(unit.x);
+    unit.y = round4(unit.y);
+  }
+  return units;
+}
+
+/**
+ * Relax one board's units, zone by zone. Zones are independent: a Project's
+ * contents can never be pushed into a neighbouring Project, so a busy Project
+ * cannot disturb a quiet one's addresses.
+ */
+function packBoardUnits(
+  pieces: SpatialBoardPiece[],
+  units: SpatialBoardDelegationUnit[]
+): void {
+  if (units.length === 0) return;
+  const byZone = new Map<string, RelaxableUnit[]>();
+  const pieceById = new Map<string, SpatialBoardPiece>();
+  const unitById = new Map<string, SpatialBoardDelegationUnit>();
+  const add = (zoneId: string, unit: RelaxableUnit) => {
+    const bucket = byZone.get(zoneId);
+    if (bucket) bucket.push(unit);
+    else byZone.set(zoneId, [unit]);
+  };
+  // Only zones that actually contain a constellation need relaxing; everywhere
+  // else the lattice is already correct and must not be perturbed.
+  const contested = new Set(units.map(unit => unit.projectId));
+  for (const piece of pieces) {
+    if (piece.kind !== 'agent' || !piece.visible) continue;
+    if (!contested.has(piece.projectId)) continue;
+    pieceById.set(piece.id, piece);
+    add(piece.projectId, {
+      id: piece.id,
+      x: piece.x,
+      y: piece.y,
+      radius: piece.size / 2,
+      kind: 'agent',
+    });
+  }
+  for (const unit of units) {
+    unitById.set(unit.id, unit);
+    add(unit.projectId, {
+      id: unit.id,
+      x: unit.x,
+      y: unit.y,
+      radius: unit.size / 2,
+      kind: 'child',
+      maxY: unit.parentY,
+    });
+  }
+  for (const bucket of byZone.values()) {
+    relaxBoardUnits(bucket);
+    for (const relaxed of bucket) {
+      const piece = pieceById.get(relaxed.id);
+      if (piece) {
+        piece.x = relaxed.x;
+        piece.y = relaxed.y;
+        continue;
+      }
+      const unit = unitById.get(relaxed.id);
+      if (unit) {
+        unit.x = relaxed.x;
+        unit.y = relaxed.y;
+      }
+    }
+  }
+}
+
 function stableSlots(
   ids: string[],
   previous: Map<string, number>
@@ -339,16 +526,112 @@ function fleetZoneRadius(agentCount: number): number {
   );
 }
 
+/**
+ * A Project's address on the fleet lattice. `scale` spreads the whole lattice
+ * uniformly when some Project has outgrown the default footprint, so Projects
+ * never intersect and every Project keeps its grid coordinate — the fleet gets
+ * bigger, nothing moves relative to anything else.
+ */
 function fleetZoneRect(
   slotIndex: number,
-  agentCount: number
+  agentCount: number,
+  radius = fleetZoneRadius(agentCount),
+  scale = 1
 ): SpatialBoardRect {
   const column = slotIndex % BOARD.columns;
   const row = Math.floor(slotIndex / BOARD.columns);
-  const centerX = BOARD.fleetMaxRadius + column * BOARD.fleetPitchX;
-  const centerY = BOARD.fleetMaxRadius + row * BOARD.fleetPitchY;
-  const radius = fleetZoneRadius(agentCount);
+  const centerX =
+    BOARD.fleetMaxRadius * scale + column * BOARD.fleetPitchX * scale;
+  const centerY =
+    BOARD.fleetMaxRadius * scale + row * BOARD.fleetPitchY * scale;
   return circleRect(centerX, centerY, radius);
+}
+
+/**
+ * How far apart two Agent slots must sit.
+ *
+ * A bare Agent needs its own diameter. An Agent that has delegated needs its
+ * whole constellation — the rosette reaches `orbitRadius` out plus a child's
+ * radius — and two neighbouring constellations must not intersect. Deriving
+ * the pitch from that requirement is what stops a child being placed further
+ * from its parent than the next Agent is (measured at 85% overlap before this
+ * existed: the pitch was a constant, and the constellation was not).
+ */
+function slotPitchFor(
+  pieceSize: number,
+  delegating: boolean,
+  basePitch: number
+): number {
+  if (!delegating) return basePitch;
+  const childRadius = (pieceSize * SPATIAL_DELEGATION_UNIT.childScale) / 2;
+  const constellation =
+    pieceSize * SPATIAL_DELEGATION_UNIT.orbitRadius + childRadius;
+  // Neighbour spacing is `pitch * sqrt(3)` for this axial lattice.
+  return Math.max(basePitch, (2 * constellation) / Math.sqrt(3));
+}
+
+/**
+ * How much of its intended size a delegated constellation can actually have,
+ * given the room its parent's slot owns.
+ *
+ * The rosette is specified at peer scale, which is right when you are close
+ * enough to read individuals. At Fleet altitude the lattice is deliberately
+ * tight — that density is the board's whole claim — so the same rosette would
+ * reach past the neighbouring Agent. Rather than choose between "peers" and
+ * "no overlap", the constellation takes the room that exists: full size where
+ * there is room, scaled down where there is not, by ONE factor applied to both
+ * the orbit and the child so the shape never distorts.
+ *
+ * Returns 1 when the constellation already fits.
+ */
+/**
+ * The Agent size a slot can carry once its constellation has to fit beside it.
+ *
+ * At Fleet altitude the lattice is deliberately tight — that density is the
+ * board's claim about how much is running — so a peer-scale rosette has
+ * literally nowhere to go: parents sit `2.25` apart with radius `1.1`, a `0.05`
+ * gap. The three things that cannot all be true are population-sized Projects,
+ * peer-scale children, and no overlap.
+ *
+ * This keeps the first two and buys the room from the UNIT, not the Project:
+ * where Agents delegate, the whole family renders finer so the constellation
+ * fits inside the same population-sized circle. Where they do not, nothing
+ * changes. Solving `orbit + childRadius <= spacing - parentRadius` for size:
+ *
+ *   2 * size * (orbitRatio + childScale/2) <= pitch * sqrt(3)
+ */
+function slotPieceSizeFor(
+  pieceSize: number,
+  pitch: number,
+  delegating: boolean
+): number {
+  if (!delegating) return pieceSize;
+  // Two neighbouring constellations must clear EACH OTHER, not merely each
+  // other's parent: adjacent rosettes can point straight at one another, so
+  // the requirement is `2 * constellationRadius <= spacing`.
+  const constellation =
+    SPATIAL_DELEGATION_UNIT.orbitRadius + SPATIAL_DELEGATION_UNIT.childScale / 2;
+  const fits = (pitch * Math.sqrt(3)) / (2 * constellation);
+  return round4(
+    Math.max(pieceSize * SPATIAL_DELEGATION_UNIT.minimumUnitScale, Math.min(pieceSize, fits))
+  );
+}
+
+/** Outer reach of one slot's contents, for sizing the Project that holds it. */
+function slotReachFor(pieceSize: number, delegating: boolean): number {
+  const childRadius = (pieceSize * SPATIAL_DELEGATION_UNIT.childScale) / 2;
+  return delegating
+    ? pieceSize * SPATIAL_DELEGATION_UNIT.orbitRadius + childRadius
+    : pieceSize / 2;
+}
+
+/** The circle that actually contains `agentCount` slots at `pitch`. */
+function contentRadiusFor(
+  agentCount: number,
+  pitch: number,
+  reach: number
+): number {
+  return hexRingForCount(agentCount) * pitch * Math.sqrt(3) + reach;
 }
 
 function hexRingForCount(count: number): number {
@@ -359,16 +642,14 @@ function hexRingForCount(count: number): number {
 
 function projectZoneRect(
   slotIndex: number,
-  agentCount: number
+  agentCount: number,
+  radius: number,
+  scale = 1
 ): SpatialBoardRect {
-  const radius = Math.max(
-    7,
-    5.2 + hexRingForCount(agentCount) * BOARD.projectHexPitch * 1.5
-  );
   // Semantic altitude changes resolution, not address. Keep the focused
   // Project on its Fleet-lattice center so the camera and contents can carry
   // their current viewport through Fleet → Project → Agent.
-  const fleetRect = fleetZoneRect(slotIndex, agentCount);
+  const fleetRect = fleetZoneRect(slotIndex, agentCount, undefined, scale);
   return circleRect(
     fleetRect.x + fleetRect.width / 2,
     fleetRect.y + fleetRect.height / 2,
@@ -379,7 +660,8 @@ function projectZoneRect(
 /** Circular footprint for aggregate density at focused Project altitude. */
 function densityZoneRect(
   slotIndex: number,
-  agentCount: number
+  agentCount: number,
+  scale = 1
 ): SpatialBoardRect {
   const contentRadius = Math.sqrt(
     (Math.min(agentCount, 4_000) * SPATIAL_DENSITY_ZONE_PITCH ** 2 * 1.25) /
@@ -389,7 +671,7 @@ function densityZoneRect(
     BOARD.fleetMinRadius,
     contentRadius + BOARD.zoneLabelClearance + BOARD.zonePadding
   );
-  const fleetRect = fleetZoneRect(slotIndex, agentCount);
+  const fleetRect = fleetZoneRect(slotIndex, agentCount, undefined, scale);
   return circleRect(
     fleetRect.x + fleetRect.width / 2,
     fleetRect.y + fleetRect.height / 2,
@@ -467,6 +749,10 @@ function projectZone(
   state: FleetState,
   slotIndex: number,
   rect: SpatialBoardRect,
+  slotPitch: number,
+  unitSize: number,
+  fleetRadius: number,
+  latticeScale: number,
   selectedAgentId: string | null,
   visibleAgentIds: ReadonlySet<string> | undefined,
   visibleProjectIds: ReadonlySet<string> | undefined,
@@ -489,7 +775,11 @@ function projectZone(
     agentIds: agents.map(agent => agent.id),
     rect,
     radius: rect.width / 2,
-    minimapRect: fleetZoneRect(slotIndex, agents.length),
+    slotPitch,
+    unitSize,
+    // The minimap is always the fixed Fleet footprint (F7), so it takes the
+    // same fleet radius and lattice scale the world does.
+    minimapRect: fleetZoneRect(slotIndex, agents.length, fleetRadius, latticeScale),
     visible:
       isAggregate ||
       visible.length > 0 ||
@@ -563,7 +853,7 @@ function fleetSlotPosition(
 ): { x: number; y: number } {
   const centerX = zone.rect.x + zone.radius;
   const centerY = zone.rect.y + zone.radius + BOARD.zoneLabelClearance * 0.18;
-  const offset = axialSlotOffset(slotIndex, BOARD.fleetHexPitch);
+  const offset = axialSlotOffset(slotIndex, zone.slotPitch);
   return {
     x: round4(centerX + offset.x),
     y: round4(centerY + offset.y),
@@ -574,7 +864,7 @@ function projectSlotPosition(
   zone: SpatialBoardProjectZone,
   slotIndex: number
 ): { x: number; y: number } {
-  const offset = axialSlotOffset(slotIndex, BOARD.projectHexPitch);
+  const offset = axialSlotOffset(slotIndex, zone.slotPitch);
   return {
     x: round4(zone.rect.x + zone.radius + offset.x),
     y: round4(zone.rect.y + zone.radius + offset.y),
@@ -646,8 +936,7 @@ function individualPieces(
       count: 1,
       x: position.x,
       y: position.y,
-      size:
-        altitude === 'fleet' ? BOARD.fleetPieceSize : BOARD.projectPieceHeight,
+      size: zone.unitSize,
       visible: zone.visible && visibleAgent(agentId, visibleAgentIds),
       selected,
       needsAttention: agent.status === 'blocked' || agent.status === 'error',
@@ -686,8 +975,7 @@ function aggregatePieces(
       count,
       x: position.x,
       y: position.y,
-      size:
-        altitude === 'fleet' ? BOARD.fleetPieceSize : BOARD.projectPieceHeight,
+      size: zone.unitSize,
       visible: zone.visible,
       selected: false,
       needsAttention: status === 'blocked' || status === 'error',
@@ -795,6 +1083,63 @@ export function selectSpatialBoardLayout(
   );
   const maxProjectPiecesBudget =
     options.maxProjectPieces ?? DEFAULTS.maxProjectPieces;
+
+  // How much room each Project actually needs, before any of them are placed.
+  // A Project whose Agents delegate has to hold their constellations; one whose
+  // Agents do not stays exactly as tight as it was. The fleet then scales to
+  // the largest of them, so Projects never intersect and every Project keeps
+  // its grid coordinate.
+  const delegatingZones = new Set<string>();
+  for (const group of groups) {
+    for (const agentId of group.agentIds) {
+      if ((state.agents[agentId]?.delegation?.children?.length ?? 0) > 0) {
+        delegatingZones.add(group.clusterId);
+        break;
+      }
+    }
+  }
+  // A Project's circle stays POPULATION-sized (F7): its area is how the board
+  // says how much is running, and letting delegation drive it would make a
+  // small busy Project look bigger than a large quiet one. Delegation is
+  // absorbed inside the slot instead — see `delegationFitFor`.
+  const zoneFootprint = (group: ContextGroup, pieceSize: number, base: number) => ({
+    pitch: base,
+    radius:
+      pieceSize === BOARD.fleetPieceSize
+        ? fleetZoneRadius(group.agentIds.length)
+        : Math.max(
+            7,
+            5.2 + hexRingForCount(group.agentIds.length) * base * 1.5
+          ),
+  });
+  const fleetFootprints = new Map(
+    groups.map(group => [
+      group.clusterId,
+      zoneFootprint(group, BOARD.fleetPieceSize, BOARD.fleetHexPitch),
+    ] as const)
+  );
+  // Unit size is a property of the BOARD, not of a Project. Sizing it per
+  // Project would make two Projects with the same population look different
+  // for a reason nothing on screen explains; one resolution for the whole
+  // board reads as the grain the fleet is drawn at.
+  const anyDelegating = delegatingZones.size > 0;
+  const fleetUnitSize = slotPieceSizeFor(
+    BOARD.fleetPieceSize,
+    BOARD.fleetHexPitch,
+    anyDelegating
+  );
+  const detailedUnitSize = slotPieceSizeFor(
+    BOARD.projectPieceHeight,
+    BOARD.projectHexPitch,
+    anyDelegating
+  );
+  const latticeScale = Math.max(
+    1,
+    ...[...fleetFootprints.values()].map(
+      footprint => footprint.radius / BOARD.fleetMaxRadius
+    )
+  );
+
   const zones = groups.map(group => {
     const slotIndex =
       altitude === 'fleet'
@@ -803,16 +1148,36 @@ export function selectSpatialBoardLayout(
     const isAggregate = group.clusterId === 'aggregate:remaining-projects';
     const detailed =
       altitude !== 'fleet' && group.clusterId === focusedProjectId;
+    const fleetFootprint = fleetFootprints.get(group.clusterId)!;
+    const projectFootprint = zoneFootprint(
+      group,
+      BOARD.projectPieceHeight,
+      BOARD.projectHexPitch
+    );
     const rect = !detailed
-      ? fleetZoneRect(slotIndex, group.agentIds.length)
+      ? fleetZoneRect(
+          slotIndex,
+          group.agentIds.length,
+          fleetFootprint.radius,
+          latticeScale
+        )
       : group.agentIds.length > maxProjectPiecesBudget
-        ? densityZoneRect(slotIndex, group.agentIds.length)
-        : projectZoneRect(slotIndex, group.agentIds.length);
+        ? densityZoneRect(slotIndex, group.agentIds.length, latticeScale)
+        : projectZoneRect(
+            slotIndex,
+            group.agentIds.length,
+            projectFootprint.radius,
+            latticeScale
+          );
     return projectZone(
       group,
       state,
       slotIndex,
       rect,
+      detailed ? projectFootprint.pitch : fleetFootprint.pitch,
+      detailed ? detailedUnitSize : fleetUnitSize,
+      fleetFootprint.radius,
+      latticeScale,
       selectedAgentId,
       options.visibleAgentIds,
       options.visibleProjectIds,
@@ -865,6 +1230,13 @@ export function selectSpatialBoardLayout(
     }
   }
 
+  // One packing pass over Agents AND their delegated children. Lattice slots
+  // and rosettes are the seed; relaxation resolves the residual overlap a
+  // lattice sized for bare Agents cannot avoid once constellations exist.
+  const delegationUnits = seedDelegationUnits(pieces);
+  packBoardUnits(pieces, delegationUnits);
+  attachDelegationTethers(delegationUnits, pieces);
+
   const bounds = boundsOf(zones.map(zone => zone.rect));
   const minimapBounds = boundsOf(zones.map(zone => zone.minimapRect));
   const cameraBounds = cameraBoundsFor(
@@ -891,6 +1263,7 @@ export function selectSpatialBoardLayout(
     selectedAgentId,
     zones,
     pieces,
+    delegationUnits,
     bounds,
     cameraBounds,
     minimap: {
@@ -1199,6 +1572,12 @@ export const SPATIAL_DELEGATION_UNIT = {
   /** The rosette may reach the sides but never dip below them: the lane under
    *  the parent belongs to the DOM label, so slots stop at the horizontal. */
   maxHalfSpanDeg: 90,
+  /** Floor on how far a constellation may be scaled down to fit its slot.
+   *  Below this a child stops reading as a unit and becomes punctuation, which
+   *  is the treatment D3c exists to replace. */
+  /** Floor on shrinking an Agent to make room for its constellation. Below
+   *  this the family stops reading as units at all. */
+  minimumUnitScale: 0.4,
 } as const;
 
 /**
@@ -1266,15 +1645,22 @@ function delegationSlotAngles(count: number): number[] {
  * construction: aggregate pieces carry no delegation, so a very-far fleet
  * never becomes a hairball of tethers.
  */
-export function selectSpatialDelegationUnits(
-  layout: SpatialBoardLayout
+/**
+ * Rosette seeds for one board's delegated children, before relaxation. Tethers
+ * are deliberately absent here: they are drawn between FINAL positions, and
+ * computing them from the seed would leave every spoke pointing at where a
+ * child used to be.
+ */
+function seedDelegationUnits(
+  pieces: readonly SpatialBoardPiece[]
 ): SpatialBoardDelegationUnit[] {
   const units: SpatialBoardDelegationUnit[] = [];
-  for (const piece of layout.pieces) {
+  for (const piece of pieces) {
     if (piece.kind !== 'agent' || !piece.visible || !piece.agentId) continue;
     const delegation = piece.delegation;
     if (!delegation || delegation.count <= 0) continue;
-    const overflowing = delegation.count > SPATIAL_DELEGATION_UNIT.individualLimit;
+    const overflowing =
+      delegation.count > SPATIAL_DELEGATION_UNIT.individualLimit;
     const individuals = overflowing
       ? delegation.children.slice(
           0,
@@ -1291,11 +1677,6 @@ export function selectSpatialDelegationUnits(
       // Layout space is y-down, so a positive (upward) angle subtracts y.
       const x = piece.x + Math.cos(radians) * orbit;
       const y = piece.y - Math.sin(radians) * orbit;
-      const dx = x - piece.x;
-      const dy = y - piece.y;
-      const length = Math.hypot(dx, dy) || 1;
-      const ux = dx / length;
-      const uy = dy / length;
       const child = individuals[index];
       const lobe = !child;
       units.push({
@@ -1316,16 +1697,48 @@ export function selectSpatialDelegationUnits(
         x: round4(x),
         y: round4(y),
         size: round4(size),
-        tether: {
-          x1: round4(piece.x + ux * piece.size * 0.5),
-          y1: round4(piece.y + uy * piece.size * 0.5),
-          x2: round4(x - ux * size * 0.5),
-          y2: round4(y - uy * size * 0.5),
-        },
+        tether: { x1: 0, y1: 0, x2: 0, y2: 0 },
       });
     }
   }
   return units;
+}
+
+/** Spoke endpoints from a unit's FINAL position: parent edge → child edge. */
+function attachDelegationTethers(
+  units: SpatialBoardDelegationUnit[],
+  pieces: readonly SpatialBoardPiece[]
+): void {
+  const byId = new Map(pieces.map(piece => [piece.id, piece] as const));
+  for (const unit of units) {
+    const parent = byId.get(unit.parentPieceId);
+    if (!parent) continue;
+    unit.parentX = parent.x;
+    unit.parentY = parent.y;
+    const dx = unit.x - parent.x;
+    const dy = unit.y - parent.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const ux = dx / length;
+    const uy = dy / length;
+    unit.tether = {
+      x1: round4(parent.x + ux * parent.size * 0.5),
+      y1: round4(parent.y + uy * parent.size * 0.5),
+      x2: round4(unit.x - ux * unit.size * 0.5),
+      y2: round4(unit.y - uy * unit.size * 0.5),
+    };
+  }
+}
+
+/**
+ * Every delegated child the board is drawing, at its final relaxed position.
+ * Computed during layout so Agents and children are packed as ONE field —
+ * placing them in separate passes is what let a child land on a neighbouring
+ * Agent (measured at 85% overlap on the demo fleet before this).
+ */
+export function selectSpatialDelegationUnits(
+  layout: SpatialBoardLayout
+): SpatialBoardDelegationUnit[] {
+  return layout.delegationUnits;
 }
 
 export function compareSpatialBoardAttention(
