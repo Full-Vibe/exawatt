@@ -8,7 +8,14 @@
  * lost between tab switches. On (re)mount the main-process scrollback buffer
  * is replayed first, so renderer reloads restore what you saw.
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import type { ITheme } from '@xterm/xterm';
 import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
@@ -16,7 +23,19 @@ import { useAppearance } from '@/components/appearance/appearance-provider';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from './session-jump';
 import { TERMINAL_FONT } from './terminal-font';
 import type { EffectiveTerminalFont } from './terminal-font';
-import { findFileLinks } from './terminal-links';
+import { createTerminalLinkProvider } from './terminal-link-provider';
+import {
+  createTerminalSizeSync,
+  publishTerminalGeometry,
+  terminalInsetVariables,
+} from './terminal-geometry';
+import {
+  terminalTargetCopyText,
+  terminalTargetCopyVerb,
+  terminalTargetFromUri,
+  terminalTargetLabel,
+  type TerminalTarget,
+} from './terminal-targets';
 import { matchTerminalChord } from './terminal-chords';
 import {
   XTERM_MINIMUM_CONTRAST_RATIO,
@@ -63,6 +82,7 @@ export function TerminalPane({
     () => xtermThemeForAppearance(resolved),
     [resolved]
   );
+  const pane = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,7 +90,11 @@ export function TerminalPane({
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
+    target: TerminalTarget | null;
   } | null>(null);
+  // A target that could not be opened must SAY so. Silence is what made the
+  // original report read as "clicking does nothing" (BUG-004).
+  const [notice, setNotice] = useState<string | null>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const searchRef = useRef<{
     findNext(term: string, options?: object): boolean;
@@ -106,10 +130,42 @@ export function TerminalPane({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
 
+  // ONE act of opening, whatever recognised the target: hovered plain text,
+  // an OSC 8 hyperlink an Agent emitted, or the context menu.
+  const openTarget = useCallback(
+    (target: TerminalTarget) => {
+      const api = window.electron?.pty;
+      if (!api) return;
+      const opened =
+        target.kind === 'url'
+          ? api.openExternal(target.url)
+          : api.openPath(target.path, cwd);
+      void opened.catch((error: unknown) => {
+        setNotice(
+          `Could not open ${terminalTargetLabel(target)} — ${describeOpenFailure(error)}`
+        );
+      });
+    },
+    [cwd]
+  );
+  const openTargetRef = useRef(openTarget);
+  openTargetRef.current = openTarget;
+  // The target under the pointer, kept current by the SAME link vocabulary
+  // that decides what is clickable — this is what lets right-click copy a
+  // link instead of offering verbs that know nothing about one.
+  const hoveredTarget = useRef<TerminalTarget | null>(null);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 6_000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   useEffect(() => {
     const el = container.current;
+    const paneEl = pane.current;
     const api = window.electron?.pty;
-    if (!el || !api) return;
+    if (!el || !paneEl || !api) return;
     let disposed = false;
     // resources register the moment they exist (NOT in a batch at the end):
     // the destructor can run between any two awaits, and anything created
@@ -120,19 +176,13 @@ export function TerminalPane({
     };
 
     (async () => {
-      const [
-        { Terminal },
-        { FitAddon },
-        { SearchAddon },
-        { WebLinksAddon },
-        { WebglAddon },
-      ] = await Promise.all([
-        import('@xterm/xterm'),
-        import('@xterm/addon-fit'),
-        import('@xterm/addon-search'),
-        import('@xterm/addon-web-links'),
-        import('@xterm/addon-webgl'),
-      ]);
+      const [{ Terminal }, { FitAddon }, { SearchAddon }, { WebglAddon }] =
+        await Promise.all([
+          import('@xterm/xterm'),
+          import('@xterm/addon-fit'),
+          import('@xterm/addon-search'),
+          import('@xterm/addon-webgl'),
+        ]);
       if (disposed) return;
 
       const f = fontRef.current;
@@ -145,6 +195,32 @@ export function TerminalPane({
         scrollback: 50_000,
         theme: themeRef.current,
         minimumContrastRatio: XTERM_MINIMUM_CONTRAST_RATIO,
+        // OSC 8 hyperlinks — the form Codex and Claude Code emit — are
+        // resolved by xterm's OWN built-in provider, which outranks every
+        // registered one. Left unconfigured it falls back to
+        // `confirm('Do you want to navigate to …')` + `window.open()`, and
+        // Electron's window-open handler denies that window, so the operator
+        // approved a navigation that could never happen. Claiming the handler
+        // is what deletes that dialog and routes the hyperlink through the
+        // same open path as recognised text. `allowNonHttpProtocols` admits
+        // `file://` citations, which the built-in filter dropped outright.
+        linkHandler: {
+          allowNonHttpProtocols: true,
+          activate: (_event, uri) => {
+            const target = terminalTargetFromUri(uri);
+            if (!target) {
+              setNotice(`Exawatt does not open ${describeScheme(uri)} links.`);
+              return;
+            }
+            openTargetRef.current(target);
+          },
+          hover: (_event, uri) => {
+            hoveredTarget.current = terminalTargetFromUri(uri);
+          },
+          leave: () => {
+            hoveredTarget.current = null;
+          },
+        },
       });
       cleanup.push(() => term.dispose());
       const fit = new FitAddon();
@@ -155,10 +231,6 @@ export function TerminalPane({
       cleanup.push(() => {
         searchRef.current = null;
       });
-      const webLinks = new WebLinksAddon((_event, uri) => {
-        void api.openExternal(uri);
-      });
-      term.loadAddon(webLinks);
       term.open(el);
       try {
         const webgl = new WebglAddon();
@@ -168,27 +240,21 @@ export function TerminalPane({
       } catch {
         // Canvas renderer remains active when WebGL is unavailable.
       }
-      const fileLinks = term.registerLinkProvider({
-        provideLinks: (bufferLineNumber, callback) => {
-          const line = term.buffer.active
-            .getLine(bufferLineNumber - 1)
-            ?.translateToString(true);
-          if (!line) {
-            callback(undefined);
-            return;
-          }
-          const links = findFileLinks(line).map(link => ({
-            range: {
-              start: { x: link.start, y: bufferLineNumber },
-              end: { x: link.end, y: bufferLineNumber },
-            },
-            text: link.text,
-            activate: () => void api.openPath(link.path, cwd),
-          }));
-          callback(links.length > 0 ? links : undefined);
-        },
-      });
-      cleanup.push(() => fileLinks.dispose());
+      // ONE provider for recognised text: URLs and local paths come out of
+      // the same vocabulary, so priority ordering between competing
+      // providers can no longer decide that a line's paths do not exist.
+      const links = term.registerLinkProvider(
+        createTerminalLinkProvider(term, {
+          activate: target => openTargetRef.current(target),
+          hover: target => {
+            hoveredTarget.current = target;
+          },
+          leave: () => {
+            hoveredTarget.current = null;
+          },
+        })
+      );
+      cleanup.push(() => links.dispose());
       // handled shortcuts must CONSUME their key event (D28): on macOS an
       // unconsumed key equivalent is re-dispatched to the application menu
       // after the renderer declines it, so ⌘V here PLUS the Edit ▸ Paste
@@ -260,13 +326,18 @@ export function TerminalPane({
       el.addEventListener('paste', onDomPaste, true);
       cleanup.push(() => el.removeEventListener('paste', onDomPaste, true));
       fit.fit();
-      // the ONE fit-then-propagate path (pane resize, activation, resync)
-      const syncSize = () => {
-        if (layoutRef.current === 'hidden') return; // frozen while hidden
-        if (el.offsetWidth === 0 || el.offsetHeight === 0) return;
-        fit.fit();
-        void api.resize(sessionId, term.cols, term.rows);
-      };
+      publishTerminalGeometry(paneEl, term.cols, term.rows);
+      // the ONE fit-then-propagate path (pane resize, activation, resync):
+      // inset → fit → published geometry → PTY window size, in that order,
+      // from one place. Nothing else may resize the PTY (BUG-019).
+      const syncSize = createTerminalSizeSync({
+        pane: paneEl,
+        measure: el,
+        term,
+        fit: () => fit.fit(),
+        resize: (cols, rows) => void api.resize(sessionId, cols, rows),
+        frozen: () => layoutRef.current === 'hidden', // frozen while hidden
+      });
       termRef.current = {
         focus: () => term.focus(),
         fit: syncSize,
@@ -325,15 +396,16 @@ export function TerminalPane({
         snapshotCursor = item.cursor;
       }
       pendingData.length = 0;
-      void api.resize(sessionId, term.cols, term.rows);
+      syncSize();
       if (activeRef.current) term.focus();
       // Late re-sync for TUIs that were mid-init when a resize landed
       // (before their WINCH handler existed). A same-size TIOCSWINSZ emits
       // NO SIGWINCH, so a plain re-resize is a kernel-level no-op — wiggle
-      // one row and back to force two real signals, ending at the true size.
+      // one row and back to force two real signals. The TRUE size still
+      // comes from the one owner; only the extra signal is added here.
       const resync = setTimeout(() => {
-        if (el.offsetWidth === 0 || el.offsetHeight === 0) return;
-        fit.fit();
+        syncSize();
+        if (layoutRef.current === 'hidden') return;
         const { cols, rows } = term;
         void api
           .resize(sessionId, cols, rows > 1 ? rows - 1 : rows + 1)
@@ -453,11 +525,16 @@ export function TerminalPane({
 
   return (
     <div
+      ref={pane}
       data-pane={layout}
       className={`terminal-pane ${LAYOUT_CLASS[layout]}`}
       style={
         {
           '--terminal-font-stroke': `${font?.fontStrokeWidth ?? TERMINAL_FONT.fontStrokeWidth}px`,
+          ...terminalInsetVariables(),
+          // the inset gutter is terminal ground, not app chrome — it carries
+          // the same background the cells paint on
+          background: terminalTheme.background,
           ...(layout === 'right'
             ? { borderLeft: `1px solid ${WORKSPACE_HUD.strokeSoft}` }
             : {}),
@@ -469,8 +546,11 @@ export function TerminalPane({
       onContextMenu={event => {
         event.preventDefault();
         setContextMenu({
-          x: Math.min(event.clientX, window.innerWidth - 160),
-          y: Math.min(event.clientY, window.innerHeight - 120),
+          x: Math.min(event.clientX, window.innerWidth - 200),
+          y: Math.min(event.clientY, window.innerHeight - 180),
+          // snapshot what the pointer is on, so later mouse movement cannot
+          // change what the open menu is about
+          target: hoveredTarget.current,
         });
       }}
     >
@@ -549,6 +629,43 @@ export function TerminalPane({
           }}
           onPointerDown={event => event.stopPropagation()}
         >
+          {contextMenu.target && (
+            <>
+              <button
+                role="menuitem"
+                data-terminal-open-target
+                className="block w-full truncate px-3 py-1.5 text-left hover:bg-hud-fill-hi"
+                onClick={() => {
+                  const target = contextMenu.target;
+                  setContextMenu(null);
+                  if (target) openTarget(target);
+                }}
+              >
+                Open {terminalTargetLabel(contextMenu.target)}
+              </button>
+              <button
+                role="menuitem"
+                data-terminal-copy-target
+                className="block w-full px-3 py-1.5 text-left hover:bg-hud-fill-hi"
+                onClick={() => {
+                  const target = contextMenu.target;
+                  setContextMenu(null);
+                  if (target) {
+                    void window.electron?.pty?.copyText(
+                      terminalTargetCopyText(target)
+                    );
+                  }
+                }}
+              >
+                {terminalTargetCopyVerb(contextMenu.target)}
+              </button>
+              <div
+                role="separator"
+                className="my-1 border-t"
+                style={{ borderColor: WORKSPACE_HUD.strokeSoft }}
+              />
+            </>
+          )}
           <button
             role="menuitem"
             className="block w-full px-3 py-1.5 text-left hover:bg-hud-fill-hi"
@@ -582,6 +699,34 @@ export function TerminalPane({
           </button>
         </div>
       )}
+      {notice && (
+        <div
+          data-terminal-notice
+          role="status"
+          className="absolute bottom-3 left-3 z-20 max-w-md border px-3 py-2 font-sans text-xs"
+          style={{
+            color: WORKSPACE_HUD.text,
+            background: WORKSPACE_HUD.bg.panel,
+            borderColor: WORKSPACE_HUD.strokeSoft,
+          }}
+        >
+          {notice}
+        </div>
+      )}
     </div>
   );
+}
+
+/** IPC rejections arrive wrapped in the invoke channel's own prose. */
+function describeOpenFailure(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const message = raw.split('Error: ').pop()?.trim() || raw;
+  return message.startsWith('ENOENT')
+    ? 'it no longer exists at that location'
+    : message;
+}
+
+function describeScheme(uri: string): string {
+  const scheme = uri.match(/^([A-Za-z][A-Za-z0-9+.-]*):/);
+  return scheme ? `${scheme[1]}:` : 'these';
 }

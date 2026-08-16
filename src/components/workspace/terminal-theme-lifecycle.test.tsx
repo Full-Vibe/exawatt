@@ -25,6 +25,7 @@ const xterm = vi.hoisted(() => {
     buffer = {
       active: {
         getLine: () => undefined,
+        getNullCell: () => ({ getChars: () => '', getWidth: () => 1 }),
       },
     };
 
@@ -71,8 +72,6 @@ const xterm = vi.hoisted(() => {
     clearDecorations() {}
   }
 
-  class WebLinksAddon {}
-
   class WebglAddon {
     onContextLoss() {
       return { dispose: vi.fn() };
@@ -85,7 +84,6 @@ const xterm = vi.hoisted(() => {
     MockTerminal,
     FitAddon,
     SearchAddon,
-    WebLinksAddon,
     WebglAddon,
   };
 });
@@ -96,9 +94,6 @@ vi.mock('@/components/appearance/appearance-provider', () => ({
 vi.mock('@xterm/xterm', () => ({ Terminal: xterm.MockTerminal }));
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: xterm.FitAddon }));
 vi.mock('@xterm/addon-search', () => ({ SearchAddon: xterm.SearchAddon }));
-vi.mock('@xterm/addon-web-links', () => ({
-  WebLinksAddon: xterm.WebLinksAddon,
-}));
 vi.mock('@xterm/addon-webgl', () => ({ WebglAddon: xterm.WebglAddon }));
 
 const SIGNALS = {

@@ -198,6 +198,13 @@ export async function openShellFromLauncher(page) {
     await page.locator('[data-composer-toggle][aria-expanded="false"]').click();
     await page.locator('[data-agent-composer]').waitFor();
   }
+  // The catalog trigger stays DISABLED until the agent-source registry
+  // answers. On a cold launch that enumeration can outlast a page's default
+  // timeout, which surfaces as an opaque "element is not enabled" click
+  // failure rather than "the registry is still loading".
+  await page
+    .locator('[data-setup-catalog-trigger]:not([disabled])')
+    .waitFor({ timeout: 90_000 });
   await page.getByRole('button', { name: 'All engines and models' }).click();
   await page.locator('[data-all-launch-configurations]').waitFor();
   await page.getByRole('button', { name: /^Shell in / }).click();
