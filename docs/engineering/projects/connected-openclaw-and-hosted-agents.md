@@ -289,12 +289,12 @@ simulated evidence.
 
 ### ENG-010 — connect to existing OpenClaw
 
-- **C0 Projection kernel and redacted fixtures — next.** Add source-qualified
-  configured-Agent/context records, the primary-conversation role, projection
-  versioning, and pure mappings for the two-Gateway dogfood topology. No network
-  or UI writes.
-- **C1 Saved remote source and read-only transport.** Extend the source registry
-  with customer-hosted placement, OS-owned connection material, bounded
+- **C0 Projection kernel and redacted fixtures — landed 2026-08-16.** Added
+  source-qualified configured-Agent/context records, the primary-conversation
+  role, projection versioning, and pure mappings for the two-Gateway dogfood
+  topology. No network or UI writes.
+- **C1 Saved remote source and read-only transport — next.** Extend the source
+  registry with customer-hosted placement, OS-owned connection material, bounded
   Gateway discovery, capability/freshness truth, authoritative reconnect
   snapshots, subscriptions, and optional source-declared replay positions.
 - **C2 Connect flow and coworker projection.** Prototype the cross-surface state
@@ -424,3 +424,25 @@ reattaches observation and catches up without calling that Resume. ENG-010 C3
 proves the detach/reattach story. H2 starts with conversation and does not take
 on OpenClaw cron mutation, Gateway/VPS lifecycle, or a generic remote Pause
 until the source can prove the halted scope and resumable continuity.
+
+### 2026-08-16 — C0 projection kernel landed
+
+The pure `@exawatt/core` Agent projection kernel now accepts versioned,
+source-qualified Agent/context snapshots and explicit Agent/Project mappings;
+it returns a deterministic coworker projection without transport, persistence,
+UI, or source mutation. Bare native IDs never cross a configured-source
+boundary, Project and display-name changes remain mapping-only, and malformed,
+duplicate, orphaned, cross-source, or ambiguous topology fails closed.
+
+Primary conversation selection uses only the source-declared
+`primary-conversation` role. Newer channel, cron, helper, or spawned work cannot
+replace it; a missing primary returns a warning and `null` instead of a recency
+guess. The public-safe simulated fixtures model two Gateways and the
+Marcus/Scout/Tyler projection, deliberately repeat native Agent and main-context
+IDs across sources, and retain retired Priya without projecting her by default.
+Observed, declared, and simulated evidence share the same kernel, preserving the
+Demo/Live boundary for later adapters.
+
+Evidence: 19 focused projection contract tests, all 388 `@exawatt/core` tests,
+`@exawatt/core` type-check, formatting, and `git diff --check`. This lands no H1
+acceptance or user-visible remote behavior; C1 remains the first transport slice.

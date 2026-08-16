@@ -624,7 +624,7 @@ export const architectureManifest = {
           id: 'ui-model',
           label: 'UI Model',
           summary:
-            'Pure typed selectors, versioned source-to-coworker projection, Launch Configuration Agent/Shell variants, Project ranking and pins, view models, spatial layout data, and command contracts shared by UI regimes.',
+            'Pure typed selectors, Launch Configuration Agent/Shell variants, Project ranking and pins, view models, spatial layout data, and command contracts shared by UI regimes. The implemented @exawatt/core C0 kernel supplies source-qualified, versioned coworker projections below these views.',
           layer: 'coordination',
           status: 'active-build',
           x: 80,
@@ -636,7 +636,7 @@ export const architectureManifest = {
           id: 'source-adapters',
           label: 'Agent Source Registry + Adapters',
           summary:
-            'One declaration contract plus Electron-main observations power Settings, launch, and planned remote attach. Configured sources carry placement and credential ownership; preserved source topology projects through versioned Agent/Project mappings and a source-declared primary conversation. Reconnect replaces cached views from authoritative snapshots; replay positions are optional capabilities.',
+            'One declaration contract plus Electron-main observations power Settings and launch; remote attach remains planned. The implemented C0 core kernel projects preserved source topology through source-qualified, versioned Agent/Project mappings and a source-declared primary conversation. Future reconnect replaces cached views from authoritative snapshots; replay positions stay optional capabilities.',
           layer: 'coordination',
           status: 'active-build',
           x: 572,

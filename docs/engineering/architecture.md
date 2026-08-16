@@ -424,6 +424,14 @@ The projection boundary is additive and versioned:
   -> projectionVersion
 ```
 
+ENG-010 C0 implements this as the exported `@exawatt/core` Agent projection
+kernel in `packages/core/src/agent-projection.ts`. Its boundary is pure: a
+versioned set of source-qualified topology snapshots plus explicit mappings in,
+and either a deterministic coworker projection with diagnostics or fail-closed
+structural errors out. It owns no transport, persistence, credential access, or
+UI policy. `observed`, `declared`, and `simulated` evidence use the same
+contract, so Demo and Live adapters do not fork the projection semantics.
+
 The source snapshot separately retains native Agent and Session/context IDs,
 kinds, lineage, primary-conversation roles, timestamps, optional durable replay
 positions, and assurance. A mapping edit changes only Exawatt. Detach never
@@ -582,6 +590,10 @@ Built:
 - Supabase auth/data
 - legacy Supabase demo task flow
 - `@exawatt/core` OpenClaw JSON-RPC client, adapters, FleetManager, and the Demo Workspace fixture transport (`DemoWorkspaceTransport`; the simulated `MockFleetTransport` is eval-only since ENG-027 W2)
+- `@exawatt/core` source-qualified, versioned Agent projection kernel (ENG-010
+  C0): pure topology validation and explicit Agent/Project mapping with
+  source-declared primary-conversation selection and simulated/Live evidence
+  parity; no remote transport or UI
 - Workspace tenancy (ENG-027): Personal and Demo are `available` tenants behind the account-menu switcher; the Voltaic Grid Systems shared tenant is a non-activatable `preview` Workspace linking to `/organization`. **Demo** is the tenant identity and **Voltaic Grid Systems** is the separately modeled organization its fixtures portray. The Demo source runs the authored Voltaic fleet, pane content sources (transcripts / honest session records, never a PTY), demo ⌘K rows, Initiative projections, and the Voltaic consumption corpus through the production surfaces
 - `@exawatt/ui-model` typed UI-facing fleet selectors and command contracts
 - `/fleet/spatial` Fleet Operations Board (V2.0 active replacement of the
@@ -777,8 +789,8 @@ Implemented:
 Partial:
 
 - source/harness abstraction beyond OpenClaw/mock
-- reversible coworker projection and remote-attachment contract (designed;
-  customer-hosted OpenClaw transport and UI not implemented)
+- customer-hosted OpenClaw persistence, transport, reconnect/freshness, and UI
+  projection (ENG-010 C1-C3; the pure C0 projection kernel is built)
 - architecture overview as a living map
 - Fleet Operations Board extraction into a standalone package
 
