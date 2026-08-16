@@ -146,3 +146,5 @@ Agent detail. A transient delegate remains subordinate; a separately
 configured, persistent, directly addressable worker may become another Agent.
 Concurrency alone never creates a coworker. The exact Team/Fleet presentation
 remains reversible and must be tested with real multi-context OpenClaw activity.
+The operator confirmed this as the default on 2026-08-16, explicitly as a
+two-way door rather than a permanent ontology lock.

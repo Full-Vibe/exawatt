@@ -2284,6 +2284,23 @@ Scope:
 - keep the DOM `/fleet` board as the accessible dense-text sibling
 - keep `/hud-gallery` as a development workbench only
 
+### 2026-08-16 — direct coworkers versus delegated-work evidence
+
+Operator feedback row `71cb2d49-99b9-4e55-87df-f12db5921a72` captured a real
+Fleet mismatch: the status strip reported three working Agents while the board
+showed many more spinning peer-scale units, and nothing explained whether those
+delegated children would count toward the public leaderboard. The screenshot
+confirms that visual peer treatment has outrun information architecture.
+
+The durable rule is two explicit counts over one work graph: named/direct
+coworkers and delegated workers. Fleet may render both as units, but labels,
+summaries, selection, and metric disclosures must never leave the operator to
+infer which population a number describes. A public metric must state whether
+delegated workers count; the board does not derive leaderboard semantics. This
+evidence feeds the reversible Agent/work-stack projection in decision `0037`
+and the existing ENG-035 measurement contract rather than creating a third
+Agent noun.
+
 ## Roadmap milestone log (moved from roadmap.md, 2026-07-24)
 
 On 2026-07-24 `docs/engineering/roadmap.md` was compressed to its contract —

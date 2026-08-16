@@ -18,8 +18,9 @@ adding command authority.
 
 Status: shaped 2026-08-16. The operator confirmed the coworker model, the
 connect-first hosted progression, and the requirement that the taxonomy remain
-a two-way door. The exact multi-context presentation remains deliberately
-provisional.
+a two-way door. The operator also confirmed one coworker with subordinate work
+as the default, while requiring that projection policy and the exact
+multi-context presentation remain deliberately revisable.
 
 ### Problem
 
@@ -260,6 +261,18 @@ simulated evidence.
 
 ## Milestones
 
+### User-visible execution ladder
+
+| Step | Engineering result                                     | What the operator gets                                                               |
+| ---- | ------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| C0   | Versioned Agent/context projection and fixtures        | No new surface yet; topology can change later without renaming or migrating the VPSs |
+| C1   | Saved read-only source and Gateway transport           | Exawatt can safely test, remember, diagnose, and reconnect to each Hetzner source    |
+| C2   | Connect flow plus Agent/Team projection                | Marcus, Scout, and Tyler appear as remote coworkers with read-only conversation/work |
+| C3   | Relaunch, outage, rename, detach, and retirement proof | Quit/reopen and transient failures preserve the same coworkers without VPS mutation  |
+| H2   | Capability-declared command path                       | Talk to a coworker and later steer/stop only where OpenClaw proves the exact effect  |
+| H3   | Exawatt-managed OpenClaw placement                     | Create a hosted coworker without learning a second roster or control surface         |
+| H4   | Explicit clone/move with a transfer manifest           | Move or copy a coworker only after seeing exactly what transfers and what does not   |
+
 ### ENG-010 — connect to existing OpenClaw
 
 - **C0 Projection kernel and redacted fixtures — next.** Add source-qualified
@@ -351,13 +364,13 @@ governance, policy ceilings, and billing. Neither owns a parallel roster.
 
 ## Reversible scale-out rule
 
-Working hypothesis: one durable coworker may own several simultaneous work
+Confirmed default: one durable coworker may own several simultaneous work
 contexts, shown as a compact work stack. A transient delegate stays visibly
 subordinate; only a separately configured, persistent, directly addressable
-worker becomes another Agent. Validate the presentation against real OpenClaw
-concurrent work before deciding the exact Team/Fleet threshold or adding a new
-canonical Work or Assignment object. This is projection policy, not a source
-migration, and can change by projection version.
+worker becomes another Agent. Validate and refine the presentation against real
+OpenClaw concurrent work before deciding the exact Team/Fleet threshold or
+adding a new canonical Work or Assignment object. This is projection policy,
+not a source migration, and can change by projection version.
 
 ## Roadmap milestone log
 
