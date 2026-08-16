@@ -1,0 +1,52 @@
+name: Roadmap proposal
+description: Propose a product outcome before implementation
+title: '[Proposal]: '
+labels:
+  - proposal
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Exawatt is roadmap-led. Describe the user problem and evidence before prescribing a feature.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and user outcome
+      description: Who is blocked today, what is the cost, and what outcome would resolve it?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Add reproducible examples, research, measurements, or links. Remove private or personal information.
+    validations:
+      required: true
+  - type: dropdown
+    id: lane
+    attributes:
+      label: Contribution lane
+      options:
+        - Agent Source or harness adapter
+        - Roadmap convention or conformance
+        - Demo Mode or test/evaluation infrastructure
+        - Defect or performance work
+        - Documentation or guide
+        - Product or architecture proposal
+    validations:
+      required: true
+  - type: textarea
+    id: approach
+    attributes:
+      label: Proposed approach
+      description: Outline the smallest coherent contract, alternatives considered, and expected tradeoffs.
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Boundaries
+      options:
+        - label: I identified effects on Demo Mode, local Agent Sources, and Live Mode.
+        - label: I identified effects on community and official distributions.
+        - label: I identified whether this changes canonical vocabulary, information architecture, design-system primitives, or a major surface.
+        - label: I am proposing the outcome before starting a broad implementation.
+          required: true

@@ -1,0 +1,82 @@
+name: Bug report
+description: Report a reproducible Exawatt defect
+title: '[Bug]: '
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Exawatt. Search existing issues first. Report security vulnerabilities privately under SECURITY.md, not here.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What happened?
+      description: Lead with the user-visible failure and what you expected instead.
+      placeholder: Exawatt did… I expected…
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Give the smallest deterministic sequence that reproduces the problem.
+      placeholder: |
+        1. Launch…
+        2. Open…
+        3. Observe…
+    validations:
+      required: true
+  - type: dropdown
+    id: distribution
+    attributes:
+      label: Distribution
+      options:
+        - Official Exawatt build
+        - Community source build
+        - Downstream or custom build
+        - Web development server
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Paste the app version or full source commit.
+      placeholder: v0.0.0 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and hardware
+      placeholder: macOS version; Apple silicon or Intel
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Agent Source and mode
+      description: Name the harness and say Demo or Live mode, if applicable.
+      placeholder: Demo Mode, Codex, Claude Code, OpenClaw, or custom harness
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Add sanitized logs, screenshots, or recordings. Remove secrets, personal data, private prompts, and private repository names.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include frequency, regression range, workaround, and related issues if known.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I searched existing issues and Discussions.
+          required: true
+        - label: I removed secrets, credentials, personal data, and private project information.
+          required: true
+        - label: This is not a security vulnerability or private conduct report.
+          required: true
