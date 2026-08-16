@@ -11,6 +11,11 @@ vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({ auth: { getSession }, from }),
 }));
 
+vi.mock('@/lib/auth/admin', () => ({
+  isAdminEmail: (email: string | null | undefined) =>
+    email?.trim().toLowerCase() === 'maintainer@example.com',
+}));
+
 import { useUntriagedFeedbackCount } from './use-untriaged-feedback';
 
 function session(email: string | null) {
@@ -25,7 +30,7 @@ describe('useUntriagedFeedbackCount (ENG-025 F3.1)', () => {
   });
 
   it('counts the operator lane for an operator account', async () => {
-    getSession.mockResolvedValue(session('0jake0@gmail.com'));
+    getSession.mockResolvedValue(session('maintainer@example.com'));
     const { result } = renderHook(() => useUntriagedFeedbackCount());
     await waitFor(() => expect(result.current).toBe(3));
     expect(from).toHaveBeenCalledWith('product_feedback');
@@ -33,7 +38,7 @@ describe('useUntriagedFeedbackCount (ENG-025 F3.1)', () => {
   });
 
   it('recognizes the operator work identity case-insensitively', async () => {
-    getSession.mockResolvedValue(session(' JAKE@JAKESCHWARTZ.COM '));
+    getSession.mockResolvedValue(session(' MAINTAINER@EXAMPLE.COM '));
     const { result } = renderHook(() => useUntriagedFeedbackCount());
     await waitFor(() => expect(result.current).toBe(3));
   });
@@ -71,7 +76,7 @@ describe('useUntriagedFeedbackCount (ENG-025 F3.1)', () => {
   });
 
   it('reports unknown rather than a wrong zero when the query fails', async () => {
-    getSession.mockResolvedValue(session('0jake0@gmail.com'));
+    getSession.mockResolvedValue(session('maintainer@example.com'));
     is.mockResolvedValue({ count: null, error: { message: 'offline' } });
     const { result } = renderHook(() => useUntriagedFeedbackCount());
     await waitFor(() => expect(is).toHaveBeenCalled());

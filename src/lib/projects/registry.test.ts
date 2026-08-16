@@ -8,14 +8,14 @@ describe('buildRepositoryInsert', () => {
     expect(
       buildRepositoryInsert(
         'user-1',
-        { rootPath: '/Users/jake/Code/exawatt', name: 'exawatt' },
+        { rootPath: '/Users/example/Code/exawatt', name: 'exawatt' },
         NOW
       )
     ).toEqual({
       user_id: 'user-1',
       name: 'exawatt',
       kind: 'repository',
-      root_path: '/Users/jake/Code/exawatt',
+      root_path: '/Users/example/Code/exawatt',
       git_remote: null,
       last_opened_at: NOW,
     });

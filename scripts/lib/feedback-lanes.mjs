@@ -8,35 +8,33 @@
 //   operator lane    → promotes to canonical repo state (the F2 protocol)
 //   suggestions lane → read and considered, never auto-promoted
 //
-// The operator allowlist is shared with `src/lib/auth/admin.ts` through
-// `src/lib/auth/admin-emails.json`. This file is `.mjs` and that module is
-// TypeScript, so the JSON is the one source of truth both read; do not
-// re-type the addresses here.
-
-import { readFileSync } from 'node:fs';
+// The operator allowlist is private deployment configuration. The browser's
+// temporary JSON seam remains separate until WP1b can replace it with a
+// server-derived capability alongside the nullable Supabase client work.
 
 export const OPERATOR_LANE = 'operator';
 export const SUGGESTIONS_LANE = 'suggestions';
 
-const OPERATOR_EMAILS = new Set(
-  JSON.parse(
-    readFileSync(
-      new URL('../../src/lib/auth/admin-emails.json', import.meta.url),
-      'utf8'
-    )
-  ).map(email => String(email).trim().toLowerCase())
-);
-
-/** Mirrors `isAdminEmail` in `src/lib/auth/admin.ts` over the same list. */
-export function isOperatorEmail(email) {
-  return (
-    typeof email === 'string' &&
-    OPERATOR_EMAILS.has(email.trim().toLowerCase())
+export function parseOperatorEmails(value) {
+  return new Set(
+    String(value ?? '')
+      .split(',')
+      .map(email => email.trim().toLowerCase())
+      .filter(Boolean)
   );
 }
 
-export function laneForEmail(email) {
-  return isOperatorEmail(email) ? OPERATOR_LANE : SUGGESTIONS_LANE;
+export function isOperatorEmail(email, operatorEmails) {
+  return (
+    typeof email === 'string' &&
+    operatorEmails?.has(email.trim().toLowerCase()) === true
+  );
+}
+
+export function laneForEmail(email, operatorEmails) {
+  return isOperatorEmail(email, operatorEmails)
+    ? OPERATOR_LANE
+    : SUGGESTIONS_LANE;
 }
 
 /**
@@ -51,12 +49,12 @@ export function laneForEmail(email) {
  *
  * Returns each row annotated with the resolved `user_email` and its `lane`.
  */
-export function partitionFeedbackLanes(rows, emailsByUserId) {
+export function partitionFeedbackLanes(rows, emailsByUserId, operatorEmails) {
   const operator = [];
   const suggestions = [];
   for (const row of rows ?? []) {
     const email = emailsByUserId?.get(row.user_id) ?? null;
-    const lane = laneForEmail(email);
+    const lane = laneForEmail(email, operatorEmails);
     const classified = { ...row, user_email: email, lane };
     if (lane === OPERATOR_LANE) operator.push(classified);
     else suggestions.push(classified);

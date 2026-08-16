@@ -48,7 +48,7 @@ afterEach(cleanup);
 
 describe('SiteHeaderNav leaderboard link', () => {
   it('shows Leaderboard beside Architecture', () => {
-    render(<SiteHeaderNav isAuthenticated userEmail="jake@jakeschwartz.com" />);
+    render(<SiteHeaderNav isAuthenticated userEmail="person@example.com" />);
 
     expect(screen.getByRole('link', { name: /architecture/i })).toBeVisible();
     expect(screen.getByRole('link', { name: /leaderboard/i })).toHaveAttribute(
@@ -72,7 +72,7 @@ describe('SiteHeaderNav leaderboard link', () => {
   });
 
   it('places the app-global theme switcher in the account menu', async () => {
-    render(<SiteHeaderNav isAuthenticated userEmail="jake@jakeschwartz.com" />);
+    render(<SiteHeaderNav isAuthenticated userEmail="person@example.com" />);
 
     fireEvent.pointerDown(
       screen.getByRole('button', { name: 'Account and Workspace menu' }),

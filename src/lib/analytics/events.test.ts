@@ -111,8 +111,8 @@ describe('analytics event allowlist', () => {
       // Everything below is what decision 0031 excludes.
       projectName: 'exawatt',
       prompt: 'refactor the auth coordinator',
-      path: '/Users/jake/Code/exawatt',
-      email: 'jake@example.com',
+      path: '/Users/example/Code/exawatt',
+      email: 'developer@example.com',
     } as unknown as AnalyticsEvent;
 
     const payload = toAnalyticsPayload(forged);
@@ -125,14 +125,14 @@ describe('analytics event allowlist', () => {
     ]);
     expect(JSON.stringify(payload)).not.toContain('exawatt.ai/Users');
     expect(JSON.stringify(payload)).not.toContain('refactor');
-    expect(JSON.stringify(payload)).not.toContain('jake@example.com');
+    expect(JSON.stringify(payload)).not.toContain('developer@example.com');
   });
 
   it('degrades unknown enum members instead of shipping them verbatim', () => {
     const payload = toAnalyticsPayload({
       name: 'hosted_call_failed',
       surface: 'kitchen' as never,
-      service: '/Users/jake/secret-project' as never,
+      service: '/Users/example/secret-project' as never,
       failure: 'exploded' as never,
       statusCode: 42,
     });
@@ -157,7 +157,7 @@ describe('analytics event allowlist', () => {
 
     expect(version('0.1.8')).toBe('0.1.8');
     expect(version('1.2.3-beta.1')).toBe('1.2.3-beta.1');
-    expect(version('/Users/jake/Code/exawatt')).toBeNull();
+    expect(version('/Users/example/Code/exawatt')).toBeNull();
     expect(version(undefined)).toBeNull();
   });
 

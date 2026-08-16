@@ -11,6 +11,11 @@ vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({ auth: { getSession }, from }),
 }));
 
+vi.mock('@/lib/auth/admin', () => ({
+  isAdminEmail: (email: string | null | undefined) =>
+    email?.trim().toLowerCase() === 'maintainer@example.com',
+}));
+
 import { RoadmapRail } from './roadmap-rail';
 import { ROADMAP_LAB_STATES } from './lab-fixtures';
 
@@ -55,7 +60,7 @@ describe('RoadmapRail untriaged feedback line (ENG-025 F2.1)', () => {
 
   it('shows the live count to the operator (ENG-025 F3.1)', async () => {
     getSession.mockResolvedValue({
-      data: { session: { user: { email: '0jake0@gmail.com' } } },
+      data: { session: { user: { email: 'maintainer@example.com' } } },
     });
     renderRail();
     expect(

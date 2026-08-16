@@ -28,7 +28,7 @@ import { ExternalLink } from 'lucide-react';
 import { EngineGlyph } from './setup-chip';
 import type { DetailAxis, DetailAxisOption } from './setup-detail';
 
-export const BENCH_PROJECT = '/Users/jake/Code/Personal/FullVibeAI/exawatt';
+export const BENCH_PROJECT = '/Users/example/Code/Projects/exawatt';
 const DAY = 24 * 60 * 60 * 1000;
 /** Fixed so screenshots are byte-comparable between runs. */
 export const BENCH_NOW = 1_800_000_000_000;
