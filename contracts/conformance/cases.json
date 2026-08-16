@@ -1,0 +1,72 @@
+[
+  {
+    "id": "community-all-null",
+    "distributionFixture": "../distribution/v1/fixtures/community.json",
+    "environment": {},
+    "action": "exercise-all-hosted-capabilities",
+    "expected": {
+      "networkRequests": 0,
+      "fallback": "local-or-absent",
+      "error": null
+    }
+  },
+  {
+    "id": "no-exawatt-fallback",
+    "distributionFixture": null,
+    "environment": {
+      "NEXT_PUBLIC_EXAWATT_WEB_ORIGIN": "https://poison.example.invalid",
+      "NEXT_PUBLIC_SUPABASE_URL": "https://poison.example.invalid"
+    },
+    "action": "exercise-all-hosted-capabilities",
+    "expected": {
+      "resolvedDistribution": "community-all-null",
+      "networkRequests": 0,
+      "fallback": "local-or-absent",
+      "error": null
+    }
+  },
+  {
+    "id": "custom-distributor-v1",
+    "distributionFixture": "../distribution/v1/fixtures/custom-distributor.json",
+    "action": "exercise-configured-v1-capabilities",
+    "expected": {
+      "requestHeader": { "Exawatt-Service-Version": "1" },
+      "acceptedResponseHeader": { "Exawatt-Service-Version": "1" },
+      "fallback": null,
+      "error": null
+    }
+  },
+  {
+    "id": "configured-incompatible-version",
+    "distributionFixture": "../distribution/v1/fixtures/invalid-protocol-version.json",
+    "action": "resolve-distribution",
+    "expected": {
+      "networkRequests": 0,
+      "fallback": "local-or-absent",
+      "error": "unsupported_protocol_version"
+    }
+  },
+  {
+    "id": "n-minus-one-additive-response",
+    "distributionFixture": "../distribution/v1/fixtures/custom-distributor.json",
+    "serviceFixture": "../services/v1/fixtures/context-labels/additive-response.json",
+    "responseHeader": { "Exawatt-Service-Version": "1" },
+    "action": "decode-v1-response-with-additive-field",
+    "expected": {
+      "accepted": true,
+      "ignoredFields": ["serviceTrace"],
+      "error": null
+    }
+  },
+  {
+    "id": "live-rollback-version-mismatch",
+    "distributionFixture": "../distribution/v1/fixtures/custom-distributor.json",
+    "responseHeader": { "Exawatt-Service-Version": "2" },
+    "action": "decode-mutating-v1-response",
+    "expected": {
+      "automaticReplay": false,
+      "fallback": "local-or-absent",
+      "error": "incompatible_response_version"
+    }
+  }
+]

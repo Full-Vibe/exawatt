@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "consentVersion": 1,
+  "enabled": true,
+  "timezone": "America/Los_Angeles",
+  "identity": {
+    "provider": "github",
+    "providerHandle": "example-operator",
+    "handle": "example-operator",
+    "displayName": "Example Operator",
+    "avatarUrl": "https://avatars.example.test/operator.png",
+    "links": ["https://github.com/example-operator"]
+  },
+  "days": [
+    {
+      "localDate": "2026-08-16",
+      "agentMs": 3600000,
+      "runCount": 1,
+      "peakFleet": 2,
+      "longestHandsOffMs": 900000,
+      "rawTokens": 1000,
+      "normalizedTokens": 1400,
+      "sources": ["codex"],
+      "assurance": ["observed"]
+    }
+  ],
+  "runs": [
+    {
+      "publicId": "run_abcdefghijklmnop",
+      "localDate": "2026-08-16",
+      "idempotencyKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "elapsedMs": 3600000,
+      "activeMs": 3500000,
+      "longestHandsOffMs": 900000,
+      "interventionCount": 2,
+      "peakActiveMembers": 2,
+      "agentMs": 6500000,
+      "rawTokens": 1000,
+      "normalizedTokens": 1400,
+      "sources": ["codex"],
+      "assurance": ["observed"],
+      "outcome": "settled"
+    }
+  ]
+}

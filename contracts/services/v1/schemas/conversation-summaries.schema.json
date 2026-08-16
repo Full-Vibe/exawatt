@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://exawatt.ai/contracts/services/v1/schemas/conversation-summaries.schema.json",
+  "$comment": "SPDX-License-Identifier: Apache-2.0",
+  "title": "Conversation-summary service V1",
+  "$defs": {
+    "conversation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "turns"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "turns": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "type": "string", "minLength": 1, "maxLength": 700 }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["key", "title", "summary"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 72 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 220 }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "conversations"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "conversations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/conversation" }
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schemaVersion", "conversations"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "conversations": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/summary" }
+        }
+      }
+    }
+  }
+}

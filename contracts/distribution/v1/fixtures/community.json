@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "brand": null,
+  "account": null,
+  "services": {
+    "productFeedback": null,
+    "operatorStats": null,
+    "projects": null,
+    "preferences": null,
+    "accountData": null
+  },
+  "enrichment": {
+    "contextLabels": null,
+    "conversationSummaries": null,
+    "goalVisuals": null
+  },
+  "analytics": null,
+  "updates": null
+}

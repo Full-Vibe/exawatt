@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://exawatt.ai/contracts/services/v1/schemas/goal-visuals.schema.json",
+  "$comment": "SPDX-License-Identifier: Apache-2.0",
+  "title": "Goal-visual service V1",
+  "$defs": {
+    "identityKey": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "Opaque client-derived identity. It is not a goal label, prompt, Project name, path, instruction, or transcript."
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "identityKey"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "identityKey": { "$ref": "#/$defs/identityKey" }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schemaVersion", "identityKey", "dataUrl"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "identityKey": { "$ref": "#/$defs/identityKey" },
+        "dataUrl": {
+          "type": "string",
+          "pattern": "^data:image/jpeg;base64,[A-Za-z0-9+/]+={0,2}$",
+          "maxLength": 2666731
+        }
+      }
+    }
+  }
+}

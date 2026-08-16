@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "conversations": [
+    {
+      "key": "conversation-example-1",
+      "turns": [
+        "Add a source-neutral adapter.",
+        "Keep Demo Mode behind the same command boundary."
+      ]
+    }
+  ]
+}

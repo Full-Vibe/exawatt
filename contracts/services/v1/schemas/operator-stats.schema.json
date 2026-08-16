@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://exawatt.ai/contracts/services/v1/schemas/operator-stats.schema.json",
+  "$comment": "SPDX-License-Identifier: Apache-2.0",
+  "title": "Operator-stat service V1",
+  "$defs": {
+    "source": { "enum": ["claude-code", "codex"] },
+    "assurance": { "enum": ["reported", "observed", "derived", "unavailable"] },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A disclosure of the intended public identity. The service must overwrite it from the authenticated account before persistence.",
+      "required": [
+        "provider",
+        "providerHandle",
+        "handle",
+        "displayName",
+        "avatarUrl",
+        "links"
+      ],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "providerHandle": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "handle": {
+          "type": "string",
+          "maxLength": 39,
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$"
+        },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "avatarUrl": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://",
+              "maxLength": 500
+            }
+          ]
+        },
+        "links": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://",
+            "maxLength": 80
+          }
+        }
+      }
+    },
+    "day": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "localDate",
+        "agentMs",
+        "runCount",
+        "peakFleet",
+        "longestHandsOffMs",
+        "rawTokens",
+        "normalizedTokens",
+        "sources",
+        "assurance"
+      ],
+      "properties": {
+        "localDate": { "type": "string", "format": "date" },
+        "agentMs": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 26784000000000
+        },
+        "runCount": { "type": "integer", "minimum": 0, "maximum": 500 },
+        "peakFleet": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "longestHandsOffMs": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2678400000
+        },
+        "rawTokens": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "normalizedTokens": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "sources": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/source" }
+        },
+        "assurance": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/assurance" }
+        }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "publicId",
+        "localDate",
+        "idempotencyKey",
+        "elapsedMs",
+        "activeMs",
+        "longestHandsOffMs",
+        "interventionCount",
+        "peakActiveMembers",
+        "agentMs",
+        "rawTokens",
+        "normalizedTokens",
+        "sources",
+        "assurance",
+        "outcome"
+      ],
+      "properties": {
+        "publicId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{12,80}$" },
+        "localDate": { "type": "string", "format": "date" },
+        "idempotencyKey": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "elapsedMs": { "type": "number", "minimum": 0, "maximum": 2678400000 },
+        "activeMs": { "type": "number", "minimum": 0, "maximum": 2678400000 },
+        "longestHandsOffMs": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2678400000
+        },
+        "interventionCount": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 0, "maximum": 100000 }
+          ]
+        },
+        "peakActiveMembers": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "agentMs": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 26784000000000
+        },
+        "rawTokens": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "normalizedTokens": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "sources": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/source" }
+        },
+        "assurance": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/assurance" }
+        },
+        "outcome": { "enum": ["settled", "stopped", "faulted", "unknown"] }
+      }
+    },
+    "publishRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "consentVersion",
+        "enabled",
+        "timezone",
+        "identity",
+        "days",
+        "runs"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "consentVersion": { "const": 1 },
+        "enabled": { "const": true },
+        "timezone": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "identity": { "$ref": "#/$defs/identity" },
+        "days": {
+          "type": "array",
+          "maxItems": 400,
+          "items": { "$ref": "#/$defs/day" }
+        },
+        "runs": {
+          "type": "array",
+          "maxItems": 500,
+          "items": { "$ref": "#/$defs/run" }
+        }
+      }
+    },
+    "publishResponse": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schemaVersion", "handle", "days", "runs"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "handle": { "type": "string", "maxLength": 39 },
+        "days": { "type": "integer", "minimum": 0, "maximum": 400 },
+        "runs": { "type": "integer", "minimum": 0, "maximum": 500 }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["enabled", "startedAt", "lastSyncedAt"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "lastSyncedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "profileResponse": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schemaVersion", "profile"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "profile": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/profile" }]
+        }
+      }
+    }
+  }
+}

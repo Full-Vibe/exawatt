@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "brand": null,
+  "account": {
+    "supabaseUrl": "https://account.example.test",
+    "supabaseAnonKey": "example-public-anon-key",
+    "recoveryOrigin": "https://app.example.test"
+  },
+  "services": {
+    "productFeedback": null,
+    "operatorStats": null,
+    "projects": null,
+    "preferences": null,
+    "accountData": null
+  },
+  "enrichment": {
+    "contextLabels": {
+      "url": "https://services.example.test/v2/context-labels",
+      "protocolVersion": 2
+    },
+    "conversationSummaries": null,
+    "goalVisuals": null
+  },
+  "analytics": null,
+  "updates": null
+}

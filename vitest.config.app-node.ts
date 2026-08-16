@@ -9,6 +9,7 @@ export default defineConfig({
     include: [
       'src/**/*.{test,spec}.ts',
       'electron/**/*.{test,spec}.ts',
+      'contracts/conformance/**/*.{test,spec}.ts',
     ],
     exclude: ['src/**/*.dom.{test,spec}.ts', '**/node_modules/**'],
   },
