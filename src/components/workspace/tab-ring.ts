@@ -24,15 +24,23 @@ export interface RingTarget<T> {
   tab: T | null;
 }
 
+/** The operator's current subject when a higher altitude (Team) owns a
+ * roving selection. `tabId: null` names a zero-tab Project stop. */
+export interface RingAnchor {
+  dir: string;
+  tabId: string | null;
+}
+
 /** every ring stop in display order: each tab, plus one stop per open
  *  zero-tab Project so cycling visits it instead of skipping it */
 function flatten<T extends { id: string }>(
   projects: ReadonlyArray<RingProject<T>>
 ): Array<RingTarget<T>> {
-  return projects.flatMap((g): Array<RingTarget<T>> =>
-    g.tabs.length === 0
-      ? [{ dir: g.dir, tab: null }]
-      : g.tabs.map(tab => ({ dir: g.dir, tab }))
+  return projects.flatMap(
+    (g): Array<RingTarget<T>> =>
+      g.tabs.length === 0
+        ? [{ dir: g.dir, tab: null }]
+        : g.tabs.map(tab => ({ dir: g.dir, tab }))
   );
 }
 
@@ -46,26 +54,33 @@ function flatten<T extends { id: string }>(
 export function nextTabInRing<T extends { id: string }>(
   projects: ReadonlyArray<RingProject<T>>,
   activeDir: string | null,
-  delta: 1 | -1
+  delta: 1 | -1,
+  anchor?: RingAnchor
 ): RingTarget<T> | null {
   const flat = flatten(projects);
   if (flat.length === 0) return null;
 
-  const active = projects.find(g => g.dir === activeDir);
+  // The Agent altitude starts from the ribbon's active stop. Team supplies
+  // its roving tile explicitly: the obscured Agent underneath is not where
+  // the operator stands and must not choose this command's destination.
+  const anchorDir = anchor?.dir ?? activeDir;
+  const anchorTabId = anchor
+    ? anchor.tabId
+    : (projects.find(g => g.dir === activeDir)?.activeTabId ?? null);
   const cur = flat.findIndex(
     e =>
-      e.dir === activeDir &&
-      (e.tab === null || e.tab.id === active?.activeTabId)
+      e.dir === anchorDir &&
+      (e.tab === null ? anchorTabId === null : e.tab.id === anchorTabId)
   );
   if (cur !== -1) {
     return flat[(cur + delta + flat.length) % flat.length];
   }
 
-  // Stale active tab id: recover on the current Project's first stop (never
+  // Stale anchor tab id: recover on the current Project's first stop (never
   // yank the user to another Project on a mere resolution hiccup);
   // otherwise step into the ring from the top.
-  const anchor = flat.findIndex(e => e.dir === activeDir);
-  if (anchor !== -1) return flat[anchor];
+  const recovery = flat.findIndex(e => e.dir === anchorDir);
+  if (recovery !== -1) return flat[recovery];
   return flat[delta === 1 ? 0 : flat.length - 1];
 }
 

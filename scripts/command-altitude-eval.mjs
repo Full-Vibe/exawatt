@@ -190,6 +190,7 @@ try {
     'Sessions overview did not focus the originating Session'
   );
   const originText = await originTile.textContent();
+  const originTabId = await originTile.getAttribute('data-expose-tab');
   await page.keyboard.press(
     originText?.includes('Secondary navigation evaluation')
       ? 'ArrowLeft'
@@ -200,6 +201,32 @@ try {
       .locator('[data-expose-tile][data-selected="true"]')
       .textContent()) !== originText,
     'Sessions arrow navigation did not move the roving selection'
+  );
+  const rovingTabId = await page
+    .locator('[data-expose-tile][data-selected="true"]')
+    .getAttribute('data-expose-tab');
+  // BUG-021: Team's roving tile is the operator's ring anchor. The hidden
+  // Agent underlay remains on `originText`; advancing from that stale anchor
+  // would re-select the tile we just arrowed to and appear to do nothing.
+  await page.keyboard.press('Meta+Shift+BracketRight');
+  let ringTabId = null;
+  const ringDeadline = Date.now() + 2000;
+  while (Date.now() < ringDeadline) {
+    ringTabId = await page
+      .locator('[data-expose-tile][data-selected="true"]')
+      .getAttribute('data-expose-tab');
+    if (ringTabId === originTabId) break;
+    await page.waitForTimeout(25);
+  }
+  requireState(
+    ringTabId === originTabId,
+    `Team tab-ring navigation chose the wrong target (${JSON.stringify({ originTabId, rovingTabId, ringTabId })})`
+  );
+  requireState(
+    await page
+      .locator('[data-expose-tile][data-selected="true"]')
+      .evaluate(element => element === document.activeElement),
+    'Team tab-ring navigation did not focus its deterministic target'
   );
   await page.keyboard.press('Tab');
   requireState(
