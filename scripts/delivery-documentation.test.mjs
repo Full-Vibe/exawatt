@@ -17,6 +17,9 @@ test('agent instructions describe the queued delivery contract, not the retired 
   assert.match(agents, /publishes immutable `agent-attempts\/\*` refs/);
   assert.match(agents, /rebases in the author's own bootstrapped worktree/);
   assert.match(agents, /`installed=queued` is not installed/);
+  assert.match(agents, /every tracked path has an open-source disposition/);
+  assert.match(agents, /only PUBLIC\/GENERATED paths/);
+  assert.match(agents, /PRIVATE\/EXCLUDED paths remain classified/);
   assert.doesNotMatch(
     agents,
     /reports that `origin\/master` moved, rebase the agent branch/
@@ -58,6 +61,8 @@ test('the operational reference covers lifecycle, state, policy, recovery, and e
   }
   assert.match(guide, /<git-common-dir>\/exawatt-delivery\//);
   assert.match(guide, /EXAWATT_AGENT_LAND_ALLOW_DIRECT=1/);
+  assert.match(guide, /fail-closed path classification/);
+  assert.match(guide, /public-bound content scan/);
   assert.match(guide, /`actions_run`/);
 });
 

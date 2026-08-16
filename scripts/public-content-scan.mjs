@@ -4,6 +4,12 @@ import { lstat, readFile, readlink } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  OPEN_SOURCE_PATH_MANIFEST,
+  createPathClassifier,
+  readPathManifest,
+} from './lib/open-source-paths.mjs';
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const EMAIL_PATTERN =
@@ -102,26 +108,29 @@ export function isApprovedHomeFixture(segment) {
 export function findTextFindings(
   source,
   relativePath,
-  forbiddenVocabulary = []
+  forbiddenVocabulary = [],
+  { allowThirdPartyEmailMetadata = false } = {}
 ) {
   const file = normalizedPath(relativePath);
   const findings = [];
 
-  for (const match of source.matchAll(EMAIL_PATTERN)) {
-    const nextCharacter = source[(match.index ?? 0) + match[0].length];
-    if (match[1].toLowerCase().startsWith('git@') && nextCharacter === ':') {
-      continue;
+  if (!allowThirdPartyEmailMetadata) {
+    for (const match of source.matchAll(EMAIL_PATTERN)) {
+      const nextCharacter = source[(match.index ?? 0) + match[0].length];
+      if (match[1].toLowerCase().startsWith('git@') && nextCharacter === ':') {
+        continue;
+      }
+      if (isApprovedEmail(match[1])) continue;
+      findings.push(
+        finding(
+          file,
+          'unapproved-email',
+          'replace the real address with approved fixture vocabulary',
+          source,
+          match.index
+        )
+      );
     }
-    if (isApprovedEmail(match[1])) continue;
-    findings.push(
-      finding(
-        file,
-        'unapproved-email',
-        'replace the real address with approved fixture vocabulary',
-        source,
-        match.index
-      )
-    );
   }
 
   for (const match of source.matchAll(MAC_HOME_PATTERN)) {
@@ -362,7 +371,7 @@ function resolveCandidate(root, candidate) {
 export async function scanChangedFiles(
   root,
   changedPaths,
-  { forbiddenVocabularyPath } = {}
+  { forbiddenVocabularyPath, classifyPath } = {}
 ) {
   const forbiddenVocabulary = await readForbiddenVocabulary(
     forbiddenVocabularyPath
@@ -372,6 +381,7 @@ export async function scanChangedFiles(
     : null;
   const findings = [];
   let checkedFiles = 0;
+  let skippedFiles = 0;
 
   for (const candidate of [...new Set(changedPaths)].sort()) {
     const resolved = resolveCandidate(root, candidate);
@@ -383,11 +393,39 @@ export async function scanChangedFiles(
       if (error?.code === 'ENOENT') continue;
       throw error;
     }
+    const pathPolicy = classifyPath ? classifyPath(resolved.relative) : null;
+    if (
+      pathPolicy &&
+      ['PRIVATE', 'EXCLUDED'].includes(pathPolicy.classification)
+    ) {
+      skippedFiles += 1;
+      continue;
+    }
+    if (
+      pathPolicy &&
+      !['PUBLIC', 'GENERATED'].includes(pathPolicy.classification)
+    ) {
+      throw new Error(
+        'unsupported path classification ' +
+          pathPolicy.classification +
+          ' for ' +
+          resolved.relative
+      );
+    }
+    const textOptions = {
+      allowThirdPartyEmailMetadata:
+        pathPolicy?.contentPolicy?.allowThirdPartyEmailMetadata === true,
+    };
     if (details.isSymbolicLink()) {
       checkedFiles += 1;
       const target = await readlink(resolved.absolute);
       findings.push(
-        ...findTextFindings(target, resolved.relative, forbiddenVocabulary)
+        ...findTextFindings(
+          target,
+          resolved.relative,
+          forbiddenVocabulary,
+          textOptions
+        )
       );
       continue;
     }
@@ -398,12 +436,17 @@ export async function scanChangedFiles(
     const source = decodeText(buffer);
     if (source !== null) {
       findings.push(
-        ...findTextFindings(source, resolved.relative, forbiddenVocabulary)
+        ...findTextFindings(
+          source,
+          resolved.relative,
+          forbiddenVocabulary,
+          textOptions
+        )
       );
     }
   }
 
-  return { checkedFiles, findings };
+  return { checkedFiles, skippedFiles, findings };
 }
 
 function formatFinding(entry) {
@@ -428,9 +471,13 @@ async function main() {
     return;
   }
 
+  const manifest = await readPathManifest(
+    path.join(ROOT, OPEN_SOURCE_PATH_MANIFEST)
+  );
   const result = await scanChangedFiles(ROOT, args, {
     forbiddenVocabularyPath:
       process.env.EXAWATT_PRIVATE_FORBIDDEN_VOCABULARY_FILE,
+    classifyPath: createPathClassifier(manifest),
   });
   if (result.findings.length > 0) {
     process.stderr.write(
@@ -444,7 +491,11 @@ async function main() {
     return;
   }
   process.stdout.write(
-    `[public-content] checked ${result.checkedFiles} changed file(s)\n`
+    '[public-content] checked ' +
+      result.checkedFiles +
+      ' public-bound file(s); skipped ' +
+      result.skippedFiles +
+      ' private/excluded file(s)\n'
   );
 }
 

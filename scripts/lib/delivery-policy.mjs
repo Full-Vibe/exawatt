@@ -131,7 +131,7 @@ export function surfaceGateMessage(missing) {
     ]),
     '',
     'Declaring a gate makes the floor RUN it on the exact tree being landed,',
-    'so point it at this worktree\'s own dev server:',
+    "so point it at this worktree's own dev server:",
     '  pnpm dev -p <free-port>',
     `  EXA_BASE=http://localhost:<port> pnpm agent:land -- ${missing
       .map(entry => `--verify ${entry.gate}`)
@@ -145,6 +145,11 @@ export function surfaceGateMessage(missing) {
 export function classifyDeliveryPolicy(changedPaths, extras = []) {
   const paths = [...new Set(changedPaths)].sort();
   const checks = [
+    {
+      id: 'open-source:paths:check',
+      command: 'pnpm',
+      args: ['run', 'open-source:paths:check'],
+    },
     {
       id: 'content:scan',
       command: 'pnpm',
@@ -163,11 +168,7 @@ export function classifyDeliveryPolicy(changedPaths, extras = []) {
     checks.push({
       id: 'vitest-related',
       command: 'pnpm',
-      args: [
-        'run',
-        'test:related',
-        ...related,
-      ],
+      args: ['run', 'test:related', ...related],
     });
   }
 

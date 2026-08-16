@@ -98,15 +98,15 @@ cannot turn a successful remote integration into a failure.
 merge base. Checks run before admission and their result, duration, phase, and
 candidate SHA enter both the ticket evidence and the JSONL metric stream.
 
-| Condition                                                                               | Required check                                              |
-| --------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Every candidate                                                                         | `pnpm type-check` and `pnpm test:agent-delivery`            |
-| Changed JavaScript or TypeScript                                                        | related Vitest selection, bounded to 25% workers            |
-| `electron/**`, `packages/core/**`, Electron builder config, or Electron/dogfood scripts | `pnpm electron:compile`                                     |
-| Playwright or stable-browser boundary                                                   | `pnpm qa:browser:doctor`                                    |
-| Fleet spatial or R3F evaluation code                                                    | `pnpm eval:r3f`                                             |
-| `docs/engineering/**`                                                                   | canonical roadmap parser/link tests                         |
-| Each caller `--verify <script>`                                                         | that package script, once, as additional candidate evidence |
+| Condition                                                                               | Required check                                                                                                |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Every candidate                                                                         | fail-closed path classification, public-bound content scan, `pnpm type-check`, and `pnpm test:agent-delivery` |
+| Changed JavaScript or TypeScript                                                        | related Vitest selection, bounded to 25% workers                                                              |
+| `electron/**`, `packages/core/**`, Electron builder config, or Electron/dogfood scripts | `pnpm electron:compile`                                                                                       |
+| Playwright or stable-browser boundary                                                   | `pnpm qa:browser:doctor`                                                                                      |
+| Fleet spatial or R3F evaluation code                                                    | `pnpm eval:r3f`                                                                                               |
+| `docs/engineering/**`                                                                   | canonical roadmap parser/link tests                                                                           |
+| Each caller `--verify <script>`                                                         | that package script, once, as additional candidate evidence                                                   |
 
 The command rejects an unknown extra script and forbids recursive delivery or
 dogfood installation as verification scripts. Verification must not dirty the

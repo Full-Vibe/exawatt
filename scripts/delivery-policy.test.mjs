@@ -19,11 +19,13 @@ function ids(paths, extras = []) {
 
 test('the cheap changed-file floor cannot be weakened by the caller', () => {
   assert.deepEqual(ids(['docs/product/concepts.md']), [
+    'open-source:paths:check',
     'content:scan',
     'type-check',
     'test:agent-delivery',
   ]);
   assert.deepEqual(ids(['src/lib/raw-tokens.ts'], ['lint']), [
+    'open-source:paths:check',
     'content:scan',
     'type-check',
     'test:agent-delivery',
@@ -32,9 +34,18 @@ test('the cheap changed-file floor cannot be weakened by the caller', () => {
   ]);
 });
 
-test('content scanning runs first on the sorted, unique candidate paths', () => {
-  const [check] = classifyDeliveryPolicy(['src/z.ts', 'docs/a.md', 'src/z.ts']);
-  assert.deepEqual(check, {
+test('path classification runs before content scanning on sorted candidate paths', () => {
+  const [classification, scan] = classifyDeliveryPolicy([
+    'src/z.ts',
+    'docs/a.md',
+    'src/z.ts',
+  ]);
+  assert.deepEqual(classification, {
+    id: 'open-source:paths:check',
+    command: 'pnpm',
+    args: ['run', 'open-source:paths:check'],
+  });
+  assert.deepEqual(scan, {
     id: 'content:scan',
     command: 'pnpm',
     args: ['run', 'content:scan', '--', 'docs/a.md', 'src/z.ts'],
@@ -45,7 +56,13 @@ test('provider composition changes receive related consumer tests', () => {
   const checks = classifyDeliveryPolicy(['src/components/ExposeOverlay.tsx']);
   assert.deepEqual(
     checks.map(check => check.id),
-    ['content:scan', 'type-check', 'test:agent-delivery', 'vitest-related']
+    [
+      'open-source:paths:check',
+      'content:scan',
+      'type-check',
+      'test:agent-delivery',
+      'vitest-related',
+    ]
   );
   assert.deepEqual(checks.at(-1).args, [
     'run',
@@ -56,6 +73,7 @@ test('provider composition changes receive related consumer tests', () => {
 
 test('dogfood and Electron orchestration changes receive Electron compilation', () => {
   assert.deepEqual(ids(['scripts/install-dogfood.mjs']), [
+    'open-source:paths:check',
     'content:scan',
     'type-check',
     'test:agent-delivery',
@@ -66,6 +84,7 @@ test('dogfood and Electron orchestration changes receive Electron compilation', 
 
 test('roadmap corpus changes receive the canonical parser contract', () => {
   assert.deepEqual(ids(['docs/engineering/roadmap.md']), [
+    'open-source:paths:check',
     'content:scan',
     'type-check',
     'test:agent-delivery',
@@ -83,6 +102,7 @@ test('conditional Electron, browser, R3F, CI, and delivery checks compose', () =
   assert.deepEqual(
     checks.map(check => check.id),
     [
+      'open-source:paths:check',
       'content:scan',
       'type-check',
       'test:agent-delivery',
@@ -106,6 +126,11 @@ test('post-merge CI cancels obsolete runs on the same ref', async () => {
     /group: ci-\$\{\{ github\.workflow \}\}-\$\{\{ github\.ref \}\}/
   );
   assert.match(workflow, /cancel-in-progress: true/);
+  assert.match(workflow, /permissions:\s+contents: read/);
+  assert.match(
+    workflow,
+    /name: Check open-source path classification\s+run: pnpm open-source:paths:check/
+  );
 });
 
 // ── Surface gates (D51). The repository owns 31 eval gates and the floor
@@ -200,7 +225,10 @@ test('a repaired gate is enforced again, not quarantined', () => {
 });
 
 test('quarantine says nothing about an untouched surface', () => {
-  assert.deepEqual(quarantinedSurfaceGates(['docs/engineering/roadmap.md']), []);
+  assert.deepEqual(
+    quarantinedSurfaceGates(['docs/engineering/roadmap.md']),
+    []
+  );
 });
 
 test('the refusal names the gate, the files, and how to run it', () => {

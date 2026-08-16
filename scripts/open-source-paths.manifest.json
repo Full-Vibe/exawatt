@@ -1,0 +1,380 @@
+{
+  "schemaVersion": 1,
+  "rules": [
+    {
+      "id": "root-public-toolchain",
+      "classification": "PUBLIC",
+      "include": [
+        ".gitignore",
+        ".impeccable.md",
+        ".npmrc",
+        ".prettierrc",
+        "PROJECT.md",
+        "components.json",
+        "eslint.config.mjs",
+        "instrumentation-client.ts",
+        "next.config.ts",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "postcss.config.mjs",
+        "tsconfig.json",
+        "vitest.config.app-dom.ts",
+        "vitest.config.app-node.ts",
+        "vitest.config.ts",
+        "vitest.setup.ts"
+      ],
+      "exclude": []
+    },
+    {
+      "id": "repository-agent-public",
+      "classification": "PUBLIC",
+      "include": [
+        ".codex/**"
+      ],
+      "exclude": []
+    },
+    {
+      "id": "public-source-spine",
+      "classification": "PUBLIC",
+      "include": [
+        "contracts/**",
+        "packages/**",
+        "patches/**",
+        "themes/**"
+      ],
+      "exclude": []
+    },
+    {
+      "id": "public-documentation",
+      "classification": "PUBLIC",
+      "include": [
+        "docs/archive/**",
+        "docs/engineering/**",
+        "docs/product/**",
+        "docs/references/**"
+      ],
+      "exclude": []
+    },
+    {
+      "id": "electron-public",
+      "classification": "PUBLIC",
+      "include": [
+        "electron/**"
+      ],
+      "exclude": []
+    },
+    {
+      "id": "public-assets",
+      "classification": "PUBLIC",
+      "include": [
+        "public/**"
+      ],
+      "exclude": []
+    },
+    {
+      "id": "public-script-evaluations",
+      "classification": "PUBLIC",
+      "include": [
+        "scripts/*-eval.mjs"
+      ],
+      "exclude": []
+    },
+    {
+      "id": "public-script-tests",
+      "classification": "PUBLIC",
+      "include": [
+        "scripts/*.test.mjs"
+      ],
+      "exclude": []
+    },
+    {
+      "id": "public-script-libraries",
+      "classification": "PUBLIC",
+      "include": [
+        "scripts/lib/**"
+      ],
+      "exclude": []
+    },
+    {
+      "id": "public-script-tools",
+      "classification": "PUBLIC",
+      "include": [
+        "scripts/agent-land.mjs",
+        "scripts/agent-launcher-bench-shot.mjs",
+        "scripts/agent-stop-check.mjs",
+        "scripts/app-update-config.cjs",
+        "scripts/check-production-theme-literals.mjs",
+        "scripts/dogfood-worker.mjs",
+        "scripts/electron-dev.mjs",
+        "scripts/electron-packaged-smoke.mjs",
+        "scripts/generate-agent-source-declarations.mjs",
+        "scripts/generate-app-icon.mjs",
+        "scripts/generate-themes.mjs",
+        "scripts/macos-atomic-swap.c",
+        "scripts/open-source-paths.mjs",
+        "scripts/pace-opportunity-shot.mjs",
+        "scripts/prepare-electron-main.mjs",
+        "scripts/prepare-electron-renderer.mjs",
+        "scripts/public-content-scan.mjs",
+        "scripts/qa-browser-doctor.mjs",
+        "scripts/qa-browser-smoke.mjs",
+        "scripts/r3f-eval/**",
+        "scripts/sign-renderer-archive.cjs",
+        "scripts/terminal-cost-probe.mjs",
+        "scripts/worktree-setup.mjs"
+      ],
+      "exclude": []
+    },
+    {
+      "id": "application-public",
+      "classification": "PUBLIC",
+      "include": [
+        "src/**"
+      ],
+      "exclude": [
+        "src/app/admin/invites/**",
+        "src/app/api/context-labels/**",
+        "src/app/api/conversations/summarize/**",
+        "src/app/api/feedback/**",
+        "src/app/api/goal-visuals/**",
+        "src/app/api/operator-stats/**",
+        "src/lib/auth/**",
+        "src/lib/goal-visuals/server*",
+        "src/lib/invites/server-client.ts",
+        "src/lib/invites/service*",
+        "src/lib/invites/store.ts"
+      ]
+    }
+  ],
+  "exceptions": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "classification": "PUBLIC",
+      "reason": "public CI is secretless and least privilege"
+    },
+    {
+      "path": "AGENTS.md",
+      "classification": "PUBLIC",
+      "reason": "public contributor delivery and documentation contract"
+    },
+    {
+      "path": "CLAUDE.md",
+      "classification": "PUBLIC",
+      "reason": "public-safe agent instructions"
+    },
+    {
+      "path": "README.md",
+      "classification": "PUBLIC",
+      "reason": "public project entrypoint"
+    },
+    {
+      "path": "package.json",
+      "classification": "PUBLIC",
+      "reason": "public scripts and package metadata"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "classification": "PUBLIC",
+      "reason": "package-manager output regenerated from the public package graph",
+      "contentPolicy": {
+        "allowThirdPartyEmailMetadata": true
+      }
+    },
+    {
+      "path": "electron-builder.dogfood.yml",
+      "classification": "PUBLIC",
+      "reason": "generic contributor dogfood build"
+    },
+    {
+      "path": "electron-builder.yml",
+      "classification": "PUBLIC",
+      "reason": "community defaults with official identity supplied by overlay"
+    },
+    {
+      "path": "docs/README.md",
+      "classification": "PUBLIC",
+      "reason": "private research links are removed"
+    },
+    {
+      "path": "docs/engineering/decisions/0009-github-electron-update-channel.md",
+      "classification": "PUBLIC",
+      "reason": "public update contract without custody details"
+    },
+    {
+      "path": "docs/engineering/decisions/0021-unlisted-invite-gated-desktop-download.md",
+      "classification": "PUBLIC",
+      "reason": "retired invite-gated launch state"
+    },
+    {
+      "path": "docs/engineering/decisions/0029-opt-in-aggregate-telemetry-for-public-agentmaxxing.md",
+      "classification": "PUBLIC",
+      "reason": "public decision without service topology"
+    },
+    {
+      "path": "docs/engineering/decisions/0031-default-on-posthog-and-configurable-hosted-enrichment.md",
+      "classification": "PUBLIC",
+      "reason": "public decision without service topology"
+    },
+    {
+      "path": "docs/engineering/decisions/0034-proxied-analytics-ingest.md",
+      "classification": "PUBLIC",
+      "reason": "public decision without service topology"
+    },
+    {
+      "path": "docs/engineering/decisions/0036-open-client-private-cloud-and-official-distribution.md",
+      "classification": "PUBLIC",
+      "reason": "public rationale with private research citations inlined"
+    },
+    {
+      "path": "docs/engineering/incidents/0007-desktop-identity-link-missing-session.md",
+      "classification": "PUBLIC",
+      "reason": "public incident with identity evidence scrubbed"
+    },
+    {
+      "path": "docs/engineering/projects/consumption-spine.md",
+      "classification": "PUBLIC",
+      "reason": "public engineering plan with private citations removed"
+    },
+    {
+      "path": "docs/engineering/projects/daily-driver-adoption.md",
+      "classification": "PUBLIC",
+      "reason": "public engineering plan with personal fixtures removed"
+    },
+    {
+      "path": "docs/engineering/projects/external-user-readiness.md",
+      "classification": "PUBLIC",
+      "reason": "public product contract without production account evidence"
+    },
+    {
+      "path": "docs/engineering/projects/vision-complete-ia.md",
+      "classification": "PUBLIC",
+      "reason": "public product plan with private citations removed"
+    },
+    {
+      "path": "docs/engineering/roadmap.md",
+      "classification": "PUBLIC",
+      "reason": "public roadmap without business and operator-only state"
+    },
+    {
+      "path": "docs/product/concepts.md",
+      "classification": "PUBLIC",
+      "reason": "public concepts with private citations removed"
+    },
+    {
+      "path": "docs/product/operator-workflow.md",
+      "classification": "PUBLIC",
+      "reason": "public workflow contract without private project evidence"
+    },
+    {
+      "path": "docs/product/vision.md",
+      "classification": "PUBLIC",
+      "reason": "public product direction without business posture"
+    },
+    {
+      "path": "docs/research/spatial-memory/README.md",
+      "classification": "PUBLIC",
+      "reason": "public-safe research pointer"
+    },
+    {
+      "path": "electron/resources/icon-master.png",
+      "classification": "PUBLIC",
+      "reason": "community mark derives from the reviewed official source"
+    },
+    {
+      "path": "electron/resources/icon.icns",
+      "classification": "PUBLIC",
+      "reason": "community application icon"
+    },
+    {
+      "path": "scripts/app-update-config.test.mjs",
+      "classification": "PUBLIC",
+      "reason": "generic update contract without official release assertions"
+    },
+    {
+      "path": "scripts/build-dogfood.mjs",
+      "classification": "PUBLIC",
+      "reason": "distribution-driven public dogfood build"
+    },
+    {
+      "path": "scripts/delivery-documentation.test.mjs",
+      "classification": "PUBLIC",
+      "reason": "pins the public agent contract"
+    },
+    {
+      "path": "scripts/dogfood-delivery.test.mjs",
+      "classification": "PUBLIC",
+      "reason": "distribution-neutral dogfood fixtures"
+    },
+    {
+      "path": "scripts/electron-code-identity-eval.mjs",
+      "classification": "PUBLIC",
+      "reason": "explicit distribution identity input"
+    },
+    {
+      "path": "scripts/feedback-lanes.test.mjs",
+      "classification": "PUBLIC",
+      "reason": "public capability-gated feedback workflow"
+    },
+    {
+      "path": "scripts/install-dogfood.mjs",
+      "classification": "PUBLIC",
+      "reason": "distribution-driven public dogfood installer"
+    },
+    {
+      "path": "scripts/lib/dogfood-install-transaction.mjs",
+      "classification": "PUBLIC",
+      "reason": "distribution-neutral installation transaction"
+    },
+    {
+      "path": "scripts/lib/feedback-lanes.mjs",
+      "classification": "PUBLIC",
+      "reason": "public capability-gated feedback workflow"
+    },
+    {
+      "path": "scripts/lib/macos-code-signing.mjs",
+      "classification": "PUBLIC",
+      "reason": "generic signing mechanics without official identity defaults"
+    },
+    {
+      "path": "scripts/macos-code-signing.test.mjs",
+      "classification": "PUBLIC",
+      "reason": "distribution-neutral signing fixtures"
+    },
+    {
+      "path": "scripts/open-source-paths.manifest.json",
+      "classification": "PUBLIC",
+      "reason": "public-safe projection omits private path vocabulary"
+    },
+    {
+      "path": "src/app/download/page.tsx",
+      "classification": "PUBLIC",
+      "reason": "public launch download page"
+    },
+    {
+      "path": "src/app/icon.png",
+      "classification": "PUBLIC",
+      "reason": "community application icon"
+    },
+    {
+      "path": "src/app/privacy/page.tsx",
+      "classification": "PUBLIC",
+      "reason": "public legal page without private service custody"
+    },
+    {
+      "path": "src/app/terms/page.tsx",
+      "classification": "PUBLIC",
+      "reason": "public legal page without private service custody"
+    },
+    {
+      "path": "src/lib/auth/admin.test.ts",
+      "classification": "PUBLIC",
+      "reason": "public capability contract without operator identity"
+    },
+    {
+      "path": "src/lib/auth/admin.ts",
+      "classification": "PUBLIC",
+      "reason": "public capability contract without operator identity"
+    }
+  ],
+  "recipes": {}
+}
