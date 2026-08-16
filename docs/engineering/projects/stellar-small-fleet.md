@@ -648,6 +648,83 @@ Implementation record (landed 2026-07-10):
 
 ## Findings log
 
+- 2026-08-16 (S6.1.1, landed — FIX-002 closed a second time): **the geometry
+  was never wrong. The selection was taken back after the arrow key set it,
+  by a mouse event nobody moved.**
+
+  - **What the evidence ruled out first.** Before changing anything, two
+    sweeps established that the reported cause could not be the cause.
+    160,000 randomised reading-order layouts — variable Projects, variable
+    tile counts, empty Projects, ragged last rows, the selected tile's
+    `scale(1.02)` inflation, grid widths from 300 to 1500px — were run
+    through the shipped `teamGridNeighbor`: Down never returned a lower
+    index and Up never returned a higher one, so the pure model cannot move
+    backwards over well-formed rects. Then the live rig at
+    `/hud-gallery/team-order` was driven across seven viewports, every tile,
+    all four directions, with the answer compared against geometry computed
+    independently from the same measured rects: zero mismatches. The
+    row-edge reading-order fallback, the prime suspect on the roadmap, never
+    fired in any of them.
+
+  - **What actually happened.** `focusSelection` ends every arrow key with
+    `scrollIntoView`, and crossing into the next Project's row almost always
+    scrolls, because the next Project's first row is usually below the fold.
+    Chromium re-dispatches a mouse event at the cursor's LAST KNOWN position
+    whenever content moves under a stationary pointer, so the scroll
+    delivered a `mouseenter` to whatever tile had slid under the operator's
+    resting cursor — and the tile handler answered it with `setSel`. The
+    arrow key selected the geometrically correct tile; a hundred
+    milliseconds later the pointer handed the selection to a tile one column
+    to the left. Reproduced on the rig before the fix: pointer resting on
+    the exawatt row, keyboard on the last exawatt tile, ArrowDown landed on
+    `stock-2` — the LEFTMOST tile of the next Project's row — while the
+    geometry, and the roving focus, said `stock-3`, the tile directly
+    beneath. The selection and the focus ring had already disagreed before
+    the key was pressed.
+
+  - **Why the previous fix's guard did not hold.** S6.1's predecessor knew
+    about this re-dispatch: a 400ms arm window from mount stopped the
+    pointer stealing the selection the moment the overview appeared. The
+    phenomenon is not a mount phenomenon. It fires on every layout change
+    under a still cursor, and the Team grid scrolls on the very key that
+    crosses a Project boundary — which is exactly why the second report
+    reads as a Project-boundary geometry bug.
+
+  - **The rule that replaces the window.** The pointer may claim the roving
+    selection only when the pointer has MOVED. A synthetic re-dispatch
+    carries coordinates the cursor already had, so comparing them is the
+    whole test — exact rather than timed, and it subsumes the mount case it
+    replaces (a first event has nothing to compare against and never
+    claims). `teamPointerMoved` is pure and pinned by unit tests; the
+    time-based `mouseArmAtRef` is deleted, and tiles listen on `mousemove`,
+    the event that means the pointer moved.
+
+  - **What is different this time.** The pure function existed and was
+    right; the movement policy that was WRONG lived in the overlay, where
+    the only way to reach it is a live grid with real layout. Two decisions
+    sat there — a tile with no node became a `{0,0,0,0}` rect, and an
+    all-zero measurement fell back to reading order — and no unit test could
+    see either. `teamGridNeighbor` now takes `(TeamGridRect | null)[]` and
+    owns the whole contract: unmeasurable is representable, an unmeasurable
+    tile is SKIPPED instead of becoming a phantom tile at the viewport
+    origin that competes for "nearest row", an unmeasurable ORIGIN falls
+    back to reading order rather than inventing a position, and the
+    no-layout path lives with the model. `nextSelection` measures and
+    delegates; it decides nothing. Eighteen hand-written-rect cases now pin
+    it, including the ragged Project boundary from this report, a single
+    column, and every degraded case.
+
+  - **The gate that catches the next one.** `eval:workspace:team` gained a
+    fifth gate that rests the pointer on a tile, asserts the resting pointer
+    does not take the selection, then presses ArrowDown across the Project
+    boundary and asserts the landing tile is the one beneath the origin —
+    reading the expected target off the RENDERED rects rather than a
+    hard-coded id, and failing if the fixture stops crossing a boundary or
+    stops scrolling. Confirmed red on the pre-fix tree (`a pointer that came
+    to rest took the selection (exa-1 → exa-5)`) and green after. A
+    keyboard-only browser test could not have caught this, and neither could
+    a unit test; the missing ingredient was a pointer that does nothing.
+
 - 2026-08-16 (triage, feedback row
   `62a80e43-8d44-4d8c-855d-2c27a71de2ce`, operator on dogfood 0.1.10):
   **FIX-002 is reopened at a Project boundary.** ArrowDown from the last

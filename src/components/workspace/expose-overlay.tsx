@@ -48,7 +48,10 @@ import {
 import {
   teamGridNeighbor,
   teamGridYieldsTo,
+  teamPointerMoved,
   type TeamGridDirection,
+  type TeamGridMeasure,
+  type TeamGridPoint,
 } from './team-grid-nav';
 import { useGoalVisualPreference } from '@/components/goal-visuals/goal-visual-preference-provider';
 import { tokens as formatTokens } from '@/components/consumption/flux';
@@ -302,17 +305,20 @@ export function ExposeOverlay({
     return i === -1 ? 0 : i;
   });
   const [entered, setEntered] = useState(false);
-  // Chromium re-dispatches synthetic mouse events when content appears under
-  // a STATIONARY cursor — without this arm window, wherever the mouse
-  // happened to rest would steal the roving selection the moment the
-  // overview (or a re-scoped rail) mounted. Selection follows the mouse only
-  // after the entrance settles.
-  const mouseArmAtRef = useRef(
-    (typeof performance !== 'undefined' ? performance.now() : 0) + 400
-  );
-  const mouseArmed = () =>
-    typeof performance === 'undefined' ||
-    performance.now() > mouseArmAtRef.current;
+  // Chromium re-dispatches synthetic mouse events at the last known cursor
+  // position whenever content moves under a STATIONARY cursor — when the
+  // overview mounts, and on every arrow key that scrolls the grid. Either
+  // way the tile that happens to slide under the resting pointer would steal
+  // the roving selection the arrow key just set. The pointer claims the
+  // selection only when it has actually MOVED (FIX-002, reopened); the rule
+  // itself is pure and pinned by `teamPointerMoved`.
+  const pointerAtRef = useRef<TeamGridPoint | null>(null);
+  const pointerClaims = (event: React.MouseEvent) => {
+    const next = { x: event.clientX, y: event.clientY };
+    const moved = teamPointerMoved(pointerAtRef.current, next);
+    pointerAtRef.current = next;
+    return moved;
+  };
   const rootRef = useRef<HTMLDivElement>(null);
   const tileRefs = useRef(new Map<string, HTMLButtonElement>());
   const selectedIndexRef = useRef(sel);
@@ -339,15 +345,19 @@ export function ExposeOverlay({
    * Measure the tiles and ask the pure model where a direction key lands
    * (FIX-002). Geometry is read at keypress rather than tracked, because the
    * only thing that can be wrong is a stale rect: the rail docks and
-   * undocks, tiles wrap on resize, and Projects come and go. A tile with no
-   * node yet (mounting, or scrolled out of the ref map) contributes an empty
-   * rect, which the model treats as its own row and therefore skips.
+   * undocks, tiles wrap on resize, and Projects come and go.
+   *
+   * This function MEASURES and DELEGATES; it decides nothing. A tile with no
+   * node yet reports `null` — unmeasurable, not a rectangle at the viewport
+   * origin — and `teamGridNeighbor` owns every case that follows, including
+   * the reading-order path for a host with no layout. Movement policy that
+   * lives here is policy no unit test can reach.
    */
   const nextSelection = useCallback(
     (from: number, direction: TeamGridDirection): number => {
-      const rects = items.map(item => {
+      const measures = items.map<TeamGridMeasure>(item => {
         const node = tileRefs.current.get(selectionKey(item));
-        if (!node) return { left: 0, top: 0, width: 0, height: 0 };
+        if (!node) return null;
         const box = node.getBoundingClientRect();
         return {
           left: box.left,
@@ -356,15 +366,7 @@ export function ExposeOverlay({
           height: box.height,
         };
       });
-      // jsdom and any host without layout report every rect as zero; fall
-      // back to reading order there so behaviour stays defined.
-      const measured = rects.some(rect => rect.width > 0 || rect.height > 0);
-      if (!measured) {
-        const step = direction === 'down' || direction === 'right' ? 1 : -1;
-        return Math.min(items.length - 1, Math.max(0, from + step));
-      }
-      const next = teamGridNeighbor(rects, from, direction);
-      return next ?? from;
+      return teamGridNeighbor(measures, from, direction) ?? from;
     },
     [items]
   );
@@ -692,8 +694,8 @@ export function ExposeOverlay({
           consumption ? `, ${formatTokens(consumption.rawTokens)} tokens` : ''
         }`}
         onClick={() => onPick(tile.dir, tile.tabId)}
-        onMouseEnter={() => {
-          if (mouseArmed()) setSel(index);
+        onMouseMove={event => {
+          if (pointerClaims(event)) setSel(index);
         }}
         onFocus={() => setSel(index)}
         className="relative isolate flex flex-col overflow-hidden rounded border p-2.5 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
@@ -970,8 +972,8 @@ export function ExposeOverlay({
                         tabIndex={emptySelected ? 0 : -1}
                         aria-label={`Open ${project.name} at the Agent altitude, no Sessions yet`}
                         onClick={() => onPickProject(project.dir)}
-                        onMouseEnter={() => {
-                          if (mouseArmed()) setSel(emptyIndex);
+                        onMouseMove={event => {
+                          if (pointerClaims(event)) setSel(emptyIndex);
                         }}
                         onFocus={() => setSel(emptyIndex)}
                         className="flex min-h-28 flex-col justify-center rounded border p-2.5 text-left outline-none transition-[opacity,transform,border-color,box-shadow] duration-200 motion-reduce:transition-none"
