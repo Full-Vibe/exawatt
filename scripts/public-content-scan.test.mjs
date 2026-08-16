@@ -43,6 +43,7 @@ test('generic text checks reject real identities and accept fixture vocabulary',
       [
         'agent@example.com',
         'agent@source.test',
+        'i@izs.me',
         'privacy@exawatt.ai',
         'git@github.com:example/repository.git',
         '/Users/tester/project',

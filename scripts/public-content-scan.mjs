@@ -31,9 +31,11 @@ const IMAGE_EXTENSIONS = new Set([
   '.webp',
 ]);
 
-// Reserved domains are safe fixture vocabulary. Public role accounts are
-// intentional destinations in the public product, not operator identities.
+// Reserved domains are safe fixture vocabulary. The remaining addresses are
+// intentional public destinations, not operator identities: product role
+// accounts plus a public maintainer contact embedded in registry lock metadata.
 const APPROVED_PUBLIC_EMAILS = new Set([
+  'i@izs.me',
   'legal@exawatt.ai',
   'privacy@exawatt.ai',
 ]);
