@@ -96,6 +96,14 @@ import {
   observedShellStartupArtifacts,
   prepareLoginShellScratchDir,
 } from './pty/login-shell';
+import {
+  assertRendererCompositionAgreement,
+  distributionChildEnvironment,
+  distributionIpcCapabilities,
+  loadDevelopmentDistribution,
+  loadPackagedDistribution,
+} from './distribution';
+import { resolveDistributionIdentity } from '@exawatt/core/distribution';
 
 const isDev = process.env.NODE_ENV === 'development';
 const isTest = process.env.EXAWATT_TEST === '1';
@@ -126,7 +134,6 @@ if (process.env.EXAWATT_TEST && process.env.EXAWATT_USER_DATA) {
 }
 // EXAWATT_DEV_URL lets harnesses point the shell at a different dev server
 const DEV_URL = process.env.EXAWATT_DEV_URL || 'http://localhost:7000';
-const PROTOCOL = 'exawatt';
 const testQuitResponses =
   process.env.EXAWATT_TEST === '1'
     ? (process.env.EXAWATT_TEST_QUIT_RESPONSES ?? '')
@@ -247,18 +254,71 @@ interface BuildInfo {
   branch: string;
   builtAt: string;
   delivery: 'dogfood' | 'signed';
+  distributionDigest: string;
+  rendererCompositionDigest: string | null;
 }
 
+const developmentDistribution = isDev
+  ? loadDevelopmentDistribution(process.cwd())
+  : null;
 const buildInfo: BuildInfo = isDev
   ? {
       sha: 'development',
       branch: 'development',
       builtAt: new Date().toISOString(),
       delivery: 'dogfood',
+      distributionDigest: developmentDistribution!.digest,
+      rendererCompositionDigest: null,
     }
   : JSON.parse(
       fs.readFileSync(path.join(__dirname, '..', 'build-info.json'), 'utf8')
     );
+const distribution =
+  developmentDistribution ??
+  loadPackagedDistribution({
+    mainRoot: path.join(__dirname, '..'),
+    resourcesPath: process.resourcesPath,
+    buildInfoDigest: buildInfo.distributionDigest,
+  });
+const distributionIdentity = resolveDistributionIdentity(distribution.contract);
+const protocolScheme = distributionIdentity.protocolScheme;
+const productUpdatesEnabled = distribution.contract.updates !== null;
+app.setName(distributionIdentity.productName);
+// Preserve the established official install's state location. A source build
+// gets an app-id-derived namespace so it can never mutate official state or
+// reuse its extracted renderer cache.
+if (!distribution.contract.brand && !process.env.EXAWATT_USER_DATA) {
+  app.setPath(
+    'userData',
+    path.join(
+      path.dirname(app.getPath('userData')),
+      distributionIdentity.stateNamespace
+    )
+  );
+  app.setPath(
+    'sessionData',
+    path.join(
+      path.dirname(app.getPath('sessionData')),
+      `${distributionIdentity.cacheNamespace}.cache`
+    )
+  );
+}
+if (!isDev) {
+  const compositionRoot = path.join(process.resourcesPath, 'renderer');
+  assertRendererCompositionAgreement({
+    compositionJson: fs.readFileSync(
+      path.join(compositionRoot, 'renderer.composition.json'),
+      'utf8'
+    ),
+    compositionDigest: fs
+      .readFileSync(
+        path.join(compositionRoot, 'renderer.composition.sha256'),
+        'utf8'
+      )
+      .trim(),
+    buildInfoDigest: buildInfo.rendererCompositionDigest,
+  });
+}
 
 async function availableLoopbackPort(): Promise<number> {
   return await new Promise((resolve, reject) => {
@@ -312,7 +372,11 @@ async function startPackagedRenderer(): Promise<string> {
     )
   ).trim();
   activeRendererCacheKey = archiveHash;
-  const cacheRoot = path.join(app.getPath('userData'), 'renderer-cache');
+  const cacheRoot = path.join(
+    app.getPath('userData'),
+    'renderer-cache',
+    distributionIdentity.cacheNamespace
+  );
   const versionRoot = path.join(cacheRoot, archiveHash);
   const standaloneRoot = path.join(versionRoot, 'dist-renderer');
   try {
@@ -332,7 +396,7 @@ async function startPackagedRenderer(): Promise<string> {
   rendererServer = spawn(process.execPath, [serverEntry], {
     cwd: standaloneRoot,
     env: {
-      ...process.env,
+      ...distributionChildEnvironment(distribution, process.env),
       ELECTRON_RUN_AS_NODE: '1',
       HOSTNAME: '127.0.0.1',
       PORT: String(port),
@@ -351,7 +415,11 @@ async function startPackagedRenderer(): Promise<string> {
 }
 
 function pruneRendererCache(): void {
-  const cacheRoot = path.join(app.getPath('userData'), 'renderer-cache');
+  const cacheRoot = path.join(
+    app.getPath('userData'),
+    'renderer-cache',
+    distributionIdentity.cacheNamespace
+  );
   const keep = activeRendererCacheKey;
   if (!keep) return;
   const delay = process.env.EXAWATT_TEST === '1' ? 250 : 15_000;
@@ -388,6 +456,7 @@ function hasWarmRendererCache(): boolean {
       path.join(
         app.getPath('userData'),
         'renderer-cache',
+        distributionIdentity.cacheNamespace,
         key,
         'dist-renderer',
         'server.js'
@@ -424,27 +493,32 @@ if (rendererWasWarmAtLaunch) {
   void rendererReadyPromise.catch(() => {});
 }
 
-// Register as protocol handler before app is ready.
-// In dev (process.defaultApp), pass execPath + script so macOS can re-launch correctly.
-if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [
-      path.resolve(process.argv[1]),
-    ]);
+// Register only when this distribution owns a protocol. Community builds do
+// not claim the official URL scheme.
+if (protocolScheme) {
+  // In dev (process.defaultApp), pass execPath + script so macOS can re-launch correctly.
+  if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient(protocolScheme, process.execPath, [
+        path.resolve(process.argv[1]),
+      ]);
+    }
+  } else {
+    app.setAsDefaultProtocolClient(protocolScheme);
   }
-} else {
-  app.setAsDefaultProtocolClient(PROTOCOL);
 }
 
 // macOS: deep links on a running app arrive via open-url.
 // Must be registered before app.whenReady() to also catch links during startup.
-app.on('open-url', (event, url) => {
-  event.preventDefault();
-  handleDeepLink(url);
-});
+if (protocolScheme) {
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    handleDeepLink(url);
+  });
+}
 
 function handleDeepLink(url: string): void {
-  if (!url.startsWith(`${PROTOCOL}://`)) {
+  if (!protocolScheme || !url.startsWith(`${protocolScheme}://`)) {
     recordAuthDiagnostic('auth.callback.rejected_scheme');
     return;
   }
@@ -633,6 +707,9 @@ function createWindow(
     backgroundColor: appearance.bootstrap.background,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      additionalArguments: productUpdatesEnabled
+        ? ['--exawatt-capability-updates']
+        : [],
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -841,7 +918,9 @@ function createMenu(): void {
         accelerators: menuAccelerators,
         availability: menuAvailability,
         onCommand: sendMenuCommand,
-        onCheckForUpdates: () => void checkForUpdatesFromMenu(),
+        onCheckForUpdates: productUpdatesEnabled
+          ? () => void checkForUpdatesFromMenu()
+          : undefined,
         onWindowManagementHelp: () => void promptWindowManagementRestart(),
       })
     )
@@ -953,6 +1032,12 @@ function registerAppIPC(): void {
     ...buildInfo,
     // marketed version alongside the exact sha (ENG-025 feedback stamping)
     version: app.getVersion(),
+    distribution: {
+      contract: distribution.contract,
+      digest: distribution.digest,
+      identity: distributionIdentity,
+      capabilities: distributionIpcCapabilities(distribution.contract),
+    },
   }));
   // ENG-025 F5. `signedIn` is renderer-supplied because the Supabase session
   // lives there; it is a self-report in a self-reported bundle, not a claim
@@ -1307,9 +1392,11 @@ async function bootstrapCommandSurface(): Promise<void> {
   ptySessions = runtime.sessionManager.ptySessions;
   disposePty = runtime.ptyIpc.disposePty;
   disposeRoadmapWatchers = runtime.roadmapWatcher.disposeRoadmapWatchers;
-  installProductUpdate = runtime.updater.installProductUpdate;
-  checkForUpdatesFromMenu = runtime.updater.checkForUpdatesFromMenu;
-  currentUpdateStatus = () => ({ ...runtime.updater.currentUpdateStatus() });
+  if (productUpdatesEnabled) {
+    installProductUpdate = runtime.updater.installProductUpdate;
+    checkForUpdatesFromMenu = runtime.updater.checkForUpdatesFromMenu;
+    currentUpdateStatus = () => ({ ...runtime.updater.currentUpdateStatus() });
+  }
   shutdownCopy = runtime.shutdown.shutdownCopy;
   safeElectronAuthError = runtime.auth.safeElectronAuthError;
   isElectronAuthLinkOutcome = runtime.auth.isElectronAuthLinkOutcome;
@@ -1444,10 +1531,12 @@ async function bootstrapCommandSurface(): Promise<void> {
     },
     status: broadcastShutdown,
   });
-  runtime.updater.registerProductUpdater(
-    () => ptySessions.list().filter(session => !session.exited).length,
-    () => shutdownCoordinator!.request('update')
-  );
+  if (productUpdatesEnabled) {
+    runtime.updater.registerProductUpdater(
+      () => ptySessions.list().filter(session => !session.exited).length,
+      () => shutdownCoordinator!.request('update')
+    );
+  }
   createMenu();
   updateStartupScreen({
     progress: 0.94,
@@ -1461,7 +1550,9 @@ async function bootstrapCommandSurface(): Promise<void> {
   if (win && !win.isDestroyed()) await win.loadURL(workspaceUrl());
   startupComplete = true;
   watchInstalledBuild();
-  runtime.updater.startProductUpdater(buildInfo.delivery === 'signed');
+  if (productUpdatesEnabled) {
+    runtime.updater.startProductUpdater(buildInfo.delivery === 'signed');
+  }
   if (!isDev) pruneRendererCache();
 }
 

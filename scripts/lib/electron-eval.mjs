@@ -114,7 +114,7 @@ export async function assertDevServerServesTree(devUrl, evalRoot) {
         `port and start pnpm dev from ${evalRoot}.`
     );
   }
-  const { repoRoot } = await response.json();
+  const { repoRoot, distributionDigest } = await response.json();
   const served = realpathSync(repoRoot);
   const expected = realpathSync(evalRoot);
   if (served !== expected) {
@@ -122,6 +122,23 @@ export async function assertDevServerServesTree(devUrl, evalRoot) {
       `WRONG TREE: the dev server at ${origin} serves\n  ${served}\n` +
         `but this eval is testing\n  ${expected}\n` +
         `Start pnpm dev from the tree under test on a free port and set EXA_BASE.`
+    );
+  }
+  let expectedDistributionDigest;
+  try {
+    expectedDistributionDigest = readFileSync(
+      join(evalRoot, '.exawatt-build', 'distribution.sha256'),
+      'utf8'
+    ).trim();
+  } catch {
+    throw new Error(
+      `No prepared distribution exists in ${evalRoot}; start its dev server with pnpm dev before running an Electron eval.`
+    );
+  }
+  if (distributionDigest !== expectedDistributionDigest) {
+    throw new Error(
+      `WRONG DISTRIBUTION: the dev server at ${origin} serves ${distributionDigest ?? 'none'}, ` +
+        `but Electron is testing ${expectedDistributionDigest}. Restart pnpm dev from ${evalRoot}.`
     );
   }
 }

@@ -65,6 +65,19 @@ staged tree drifts from the declaration in either direction. Before it was
 declared, the tree was a dereferencing copy of workspace directories and every
 user downloaded the TypeScript compiler inside the code signature.
 
+ENG-030 OS4 adds one versioned distribution boundary before Next and Electron
+build. `@exawatt/core/distribution` strictly validates the input; absence means
+the stable `Exawatt Community` identity and no Exawatt account, service,
+analytics, protocol, branded icon, or update capability. The resolved canonical
+JSON and SHA-256 digest feed Next explicitly, are mirrored beside Electron
+build-info, and are passed after ambient env to the packaged loopback child.
+Main refuses disagreement among its mirror, the renderer digest, and build-info.
+A separately hashed `desktop-public` renderer-composition manifest enumerates
+the packaged payload so the public-tree-only desktop rule can be inspected at
+the artifact boundary; the hosted web delivery may compose a private route
+overlay. Agent Source WebSockets are separate from service origins and remain
+available to community builds for operator-configured Gateways.
+
 ENG-032's appearance boundary is **implemented** (decision `0026`). T0–T5.4
 provide strict versioned Classic/Air/Night definitions, a deterministic
 validator/generator, one pure resolver, device-local Electron/web preference
@@ -782,7 +795,12 @@ Built:
   records auth phases, request shape, response status/timing, cookie mutation
   counts, and nested transport errors without codes, tokens, request bodies, or
   header values (decision `0014`)
-- Developer-ID signing, Apple notarization, private source-linked GitHub
+- distribution-gated desktop identity and updates: community packaging uses
+  `Exawatt Community` / `ai.exawatt.community`, an isolated state/cache
+  namespace, no protocol registration, and no update-feed metadata or product
+  update IPC. An official overlay may supply the Exawatt identity, protocol,
+  icon, feed, and optional grouped update capability. Developer-ID signing,
+  Apple notarization, private source-linked GitHub
   Releases, public Supabase Storage update artifacts, and explicit
   `electron-updater` restart with live-session impact. Electron 43 includes the
   macOS 26 Squirrel.Mac helper-activation fix; signed `v0.1.2` to `v0.1.3`

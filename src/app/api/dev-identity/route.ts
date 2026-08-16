@@ -8,5 +8,9 @@ export function GET() {
   if (process.env.NODE_ENV !== 'development') {
     return new NextResponse(null, { status: 404 });
   }
-  return NextResponse.json({ repoRoot: process.cwd() });
+  return NextResponse.json({
+    repoRoot: process.cwd(),
+    distributionDigest:
+      process.env.NEXT_PUBLIC_EXAWATT_DISTRIBUTION_SHA256 ?? null,
+  });
 }

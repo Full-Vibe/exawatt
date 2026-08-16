@@ -56,6 +56,7 @@ human-facing package command:
 | --------------------------------- | ----------------------------------------------------- |
 | `agent-stop-check.mjs`            | `.codex/hooks.json` one-shot advisory                 |
 | `app-update-config.cjs`           | release `afterPack` composition                       |
+| `distribution.official.example.json` | placeholder-only official distribution test/build fixture |
 | `dogfood-worker.mjs`              | detached dogfood queue worker                         |
 | `macos-atomic-swap.c`             | native helper compiled by `lib/macos-atomic-swap.mjs` |
 | `open-source-paths.manifest.json` | fail-closed publication path classifier               |

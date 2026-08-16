@@ -254,6 +254,42 @@ test(
 );
 
 test(
+  'an explicitly allowed same-Team predecessor identity can migrate once',
+  { skip: process.platform !== 'darwin' },
+  async () => {
+    const root = await mkdtemp(
+      path.join(tmpdir(), 'exawatt-app-id-migration-')
+    );
+    const target = path.join(root, 'Exawatt.app');
+    const staging = path.join(root, '.Exawatt.transaction.app');
+    const predecessor = {
+      identifier: 'com.exawatt.app',
+      teamIdentifier: stableIdentity.teamIdentifier,
+    };
+    try {
+      await createApp(target, 'old');
+      await createApp(staging, 'new');
+      await commitStagedApp({
+        staging,
+        target,
+        expectedIdentity: stableIdentity,
+        allowedPreviousIdentities: [predecessor],
+        inspectExisting: async () => predecessor,
+        isStableIdentity: () => true,
+        verifyInstalled: async candidate => {
+          assert.equal(await marker(candidate), 'new');
+        },
+        atomicSwap: atomicSwapPaths,
+      });
+      assert.equal(await marker(target), 'new');
+      assert.equal(await marker(staging), 'old');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+);
+
+test(
   'interrupted atomic transactions deterministically preserve a verified app',
   { skip: process.platform !== 'darwin' },
   async () => {

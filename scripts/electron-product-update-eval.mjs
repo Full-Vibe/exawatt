@@ -289,7 +289,8 @@ try {
   await page.locator('[data-command-altitude]').waitFor();
 
   const initialVersion = await page.evaluate(
-    async () => (await window.electron?.app?.getUpdateStatus())?.currentVersion
+    async () =>
+      (await window.electron?.app?.updates?.getStatus())?.currentVersion
   );
   if (initialVersion === expectedVersion) {
     throw new Error(`Baseline is already ${expectedVersion}`);
@@ -317,13 +318,13 @@ try {
   const exactIds = originalAgents
     .map(session => session.harnessSessionId)
     .sort();
-  await page.evaluate(() => window.electron?.app?.checkForUpdates());
+  await page.evaluate(() => window.electron?.app?.updates?.check());
 
   let transientRetries = 0;
   let retryAfter = 0;
   const downloaded = await waitFor(async () => {
     const next = await page.evaluate(() =>
-      window.electron?.app?.getUpdateStatus()
+      window.electron?.app?.updates?.getStatus()
     );
     if (next?.phase === 'error') {
       if (
@@ -338,7 +339,7 @@ try {
             `[product-update] retrying transient connection failure (${transientRetries}/2)`
           );
           await page
-            .evaluate(() => window.electron?.app?.checkForUpdates())
+            .evaluate(() => window.electron?.app?.updates?.check())
             .catch(() => undefined);
         }
         return null;
@@ -398,7 +399,8 @@ try {
   page = launched.page;
   await page.locator('[data-command-altitude]').waitFor();
   const verified = await page.evaluate(
-    async () => (await window.electron?.app?.getUpdateStatus())?.currentVersion
+    async () =>
+      (await window.electron?.app?.updates?.getStatus())?.currentVersion
   );
   const buildInfo = await page.evaluate(() =>
     window.electron?.app?.getBuildInfo()

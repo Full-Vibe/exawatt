@@ -122,6 +122,7 @@ export async function commitStagedApp({
   staging,
   target,
   expectedIdentity,
+  allowedPreviousIdentities = [],
   inspectExisting,
   isStableIdentity,
   verifyInstalled,
@@ -162,7 +163,12 @@ export async function commitStagedApp({
     previousIdentity &&
     isStableIdentity(previousIdentity) &&
     (previousIdentity.identifier !== expectedIdentity.identifier ||
-      previousIdentity.teamIdentifier !== expectedIdentity.teamIdentifier)
+      previousIdentity.teamIdentifier !== expectedIdentity.teamIdentifier) &&
+    !allowedPreviousIdentities.some(
+      identity =>
+        previousIdentity.identifier === identity.identifier &&
+        previousIdentity.teamIdentifier === identity.teamIdentifier
+    )
   ) {
     throw new Error(
       `Refusing to replace ${target}: its stable signer identity does not match the expected Exawatt identity. Remove or relocate that app only if this signer change is intentional.`

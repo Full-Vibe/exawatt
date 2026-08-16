@@ -7,7 +7,10 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const developerIdPrefix = 'Developer ID Application:';
-export const EXPECTED_DOGFOOD_IDENTIFIER = 'com.exawatt.app';
+// The dogfood artifact is an official distribution build. Keep this identity
+// aligned with decision 0036's official overlay so installation rejects both
+// community builds and artifacts carrying the retired pre-open-source id.
+export const EXPECTED_DOGFOOD_IDENTIFIER = 'ai.exawatt.desktop';
 export const EXPECTED_DOGFOOD_TEAM_IDENTIFIER = '5G5A77XLHZ';
 
 export function parseCodeSigningIdentities(output) {

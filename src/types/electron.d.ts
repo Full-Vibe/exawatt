@@ -14,6 +14,8 @@ import type {
   AgentLaunchConfigurationInput,
   LaunchConfigurationPoolV1,
   PtyHarness,
+  DistributionContractV1,
+  DistributionIdentity,
 } from '@exawatt/core';
 import type { OperatorStatsPublishPayload } from '@exawatt/core';
 import type {
@@ -731,9 +733,21 @@ export interface ExawattBuildInfo {
   branch: string;
   builtAt: string;
   delivery: 'dogfood' | 'signed';
+  distributionDigest: string;
+  rendererCompositionDigest: string | null;
   /** `app.getVersion()` — the marketed app version alongside the exact sha
    *  (ENG-025: feedback rows stamp both) */
   version: string;
+  distribution: {
+    contract: DistributionContractV1;
+    digest: string;
+    identity: DistributionIdentity;
+    capabilities: {
+      updates: boolean;
+      updateIpcChannels: readonly string[];
+      protocolScheme: string | null;
+    };
+  };
 }
 
 /** ENG-025 F5. Mirrors `electron/main/diagnostics-report.ts`; the renderer
@@ -833,9 +847,13 @@ export interface ElectronAppApi {
   saveDiagnosticsReport: (
     signedIn: boolean
   ) => Promise<{ ok: boolean; filePath: string | null }>;
-  getUpdateStatus: () => Promise<ProductUpdateStatus>;
-  checkForUpdates: () => Promise<ProductUpdateStatus>;
-  restartUpdate: () => Promise<void>;
+  /** Absent when this distribution has no product-update capability. */
+  updates?: {
+    getStatus: () => Promise<ProductUpdateStatus>;
+    check: () => Promise<ProductUpdateStatus>;
+    restart: () => Promise<void>;
+    onStatus: (handler: (status: ProductUpdateStatus) => void) => () => void;
+  };
   setWorkspaceCheckpointOwner: (ownsWorkspaceState: boolean) => Promise<void>;
   completeCheckpoint: (requestId: string, ok: boolean) => Promise<void>;
   onCheckpointRequest: (
@@ -859,9 +877,6 @@ export interface ElectronAppApi {
   ) => () => void;
   onUpdateReady: (
     handler: (update: { currentSha: string; installedSha: string }) => void
-  ) => () => void;
-  onUpdateStatus: (
-    handler: (status: ProductUpdateStatus) => void
   ) => () => void;
 }
 

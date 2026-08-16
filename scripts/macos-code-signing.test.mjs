@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  EXPECTED_DOGFOOD_IDENTIFIER,
   EXPECTED_DOGFOOD_TEAM_IDENTIFIER,
   assertStableDeveloperIdSignature,
   hasStableSignerIdentity,
@@ -11,6 +12,10 @@ import {
   selectDeveloperIdIdentity,
   teamIdentifierFromIdentityName,
 } from './lib/macos-code-signing.mjs';
+
+test('dogfood signing requires the official distribution identity', () => {
+  assert.equal(EXPECTED_DOGFOOD_IDENTIFIER, 'ai.exawatt.desktop');
+});
 
 const developerId = {
   fingerprint: 'A'.repeat(40),

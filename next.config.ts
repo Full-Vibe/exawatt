@@ -2,6 +2,20 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 
 import type { NextConfig } from 'next';
+import {
+  distributionConnectSources,
+  parseDistributionContractJson,
+} from '@exawatt/core/distribution';
+
+const distributionJson = process.env.EXAWATT_RESOLVED_DISTRIBUTION_JSON;
+const distributionDigest = process.env.EXAWATT_RESOLVED_DISTRIBUTION_SHA256;
+if (!distributionJson || !distributionDigest) {
+  throw new Error(
+    'Next must run through the distribution resolver (`pnpm dev`, `pnpm build`, or the resolved typegen command).'
+  );
+}
+const distribution = parseDistributionContractJson(distributionJson);
+const connectSources = distributionConnectSources(distribution).join(' ');
 
 const require = createRequire(import.meta.url);
 
@@ -58,6 +72,10 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/**/*': tracedUnderTheWrongCondition(),
   },
+  env: {
+    NEXT_PUBLIC_EXAWATT_DISTRIBUTION_JSON: distributionJson,
+    NEXT_PUBLIC_EXAWATT_DISTRIBUTION_SHA256: distributionDigest,
+  },
   // ENG-030 OS1.1 / decision `0034`: analytics reach PostHog only through this
   // Exawatt-owned rewrite, so the desktop app's sole analytics destination is
   // exawatt.ai and no third-party hostname appears in its outbound connections
@@ -67,6 +85,7 @@ const nextConfig: NextConfig = {
   // 127.0.0.1, so it must NOT use a relative ingest path: `config.ts` resolves
   // the desktop api_host to the absolute hosted origin, which lands here.
   async rewrites() {
+    if (!distribution.analytics) return [];
     return [
       {
         source: '/ingest/static/:path*',
@@ -99,7 +118,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
-              "connect-src 'self' https: wss:",
+              `connect-src ${connectSources}`,
               "worker-src 'self' blob:",
               "frame-src 'none'",
               "object-src 'none'",

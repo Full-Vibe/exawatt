@@ -73,8 +73,9 @@ await run('pnpm', [
   '--arch',
   'arm64',
 ]);
-await run('pnpm', ['electron:prepare-main']);
+await run('pnpm', ['electron:prepare-main:package']);
 await run('pnpm', ['electron:prepare-licenses']);
+await run('pnpm', ['electron:prepare-builder:dogfood']);
 await run(
   'pnpm',
   [
@@ -84,7 +85,7 @@ await run(
     'dir',
     '--arm64',
     '--config',
-    'electron-builder.dogfood.yml',
+    '.exawatt-build/electron-builder.dogfood.json',
     '--config.npmRebuild=false',
   ],
   {
@@ -106,4 +107,13 @@ if (buildInfo.sha !== sourceSha) {
 // The dogfood build is the operator's daily artifact and diverges from its
 // config the same way a release does (incident `0010`). It owes no update
 // feed, so it gets everything else: identity, icon, and payload.
-assertPackedApp(path.join(root, 'release', 'mac-arm64', 'Exawatt.app'), { root });
+const builderConfig = JSON.parse(
+  await readFile(
+    path.join(root, '.exawatt-build', 'electron-builder.dogfood.json'),
+    'utf8'
+  )
+);
+assertPackedApp(
+  path.join(root, 'release', 'mac-arm64', `${builderConfig.productName}.app`),
+  { root }
+);

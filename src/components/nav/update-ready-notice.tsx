@@ -17,17 +17,22 @@ export function UpdateReadyNotice() {
   useEffect(() => {
     const api = window.electron?.app;
     if (!api) return;
-    void api
-      .getUpdateStatus()
-      .then(setStatus)
-      .catch(() => undefined);
+    const updates = api.updates;
+    if (updates) {
+      void updates
+        .getStatus()
+        .then(setStatus)
+        .catch(() => undefined);
+    }
     const offLocal = api.onUpdateReady(update => {
       setInstalledSha(update.installedSha);
     });
-    const offProduct = api.onUpdateStatus(next => {
-      setStatus(next);
-      setDismissed(null);
-    });
+    const offProduct = updates
+      ? updates.onStatus(next => {
+          setStatus(next);
+          setDismissed(null);
+        })
+      : () => undefined;
     const offShutdown = api.onShutdownStatus(setShutdown);
     return () => {
       offLocal();
@@ -75,7 +80,7 @@ export function UpdateReadyNotice() {
         <button
           type="button"
           className="inline-flex h-7 items-center gap-1.5 border border-[var(--exa-foundation-border-strong)] px-2 text-[var(--exa-foundation-text)] hover:bg-[var(--exa-foundation-secondary)]"
-          onClick={() => void window.electron?.app?.restartUpdate()}
+          onClick={() => void window.electron?.app?.updates?.restart()}
         >
           <RefreshCw className="h-3.5 w-3.5" />
           Restart to Update
