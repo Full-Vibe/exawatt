@@ -15,22 +15,41 @@
 //   - Run evals SERIALLY; never overlap two Electron launches from the harness.
 
 import { _electron as electron } from 'playwright-core';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { assertNodePtyBuilt } from './native-preflight.mjs';
 import { assertNoPackagingSnapshot } from './electron-runtime-deps.mjs';
 
-/** Kill any orphaned exawatt/playwright Electron left by a prior SIGKILLed run,
- *  so a stale orphan can't poison this launch. Scoped to playwright-launched
- *  Electron in an exawatt checkout — never touches the operator's own app. */
-export function sweepOrphans() {
+/** Kill any orphaned playwright Electron left by a prior SIGKILLed run of THIS
+ *  worktree, so a stale orphan can't poison this launch.
+ *
+ *  Scoped to the calling tree on purpose. The pattern used to be
+ *  `exawatt.*node_modules/.pnpm/electron.*playwright-core`, which matches every
+ *  sibling agent worktree's Electron too — so a second agent starting an
+ *  Electron eval SIGKILLed the first agent's live app mid-run, surfacing as an
+ *  unexplained "Target page, context or browser has been closed" in a run that
+ *  had done nothing wrong. Four concurrent worktrees are the normal state here
+ *  (see AGENTS.md), so a machine-wide sweep is never the right scope. */
+export function sweepOrphans(root = process.cwd()) {
+  // pkill takes an extended regex and a checkout path can contain regex
+  // metacharacters, so escape the literal part. No shell: a path is data.
+  const escaped = realpathOrSelf(root).replace(/[^A-Za-z0-9/_-]/g, '\\$&');
   try {
-    execSync(
-      "pkill -9 -f 'exawatt.*node_modules/.pnpm/electron.*playwright-core' 2>/dev/null || true",
+    execFileSync(
+      'pkill',
+      ['-9', '-f', `${escaped}/node_modules/.pnpm/electron.*playwright-core`],
       { stdio: 'ignore' }
     );
   } catch {
-    /* nothing to sweep */
+    /* pkill exits non-zero when nothing matched — nothing to sweep */
+  }
+}
+
+function realpathOrSelf(value) {
+  try {
+    return realpathSync(value);
+  } catch {
+    return value;
   }
 }
 
@@ -111,7 +130,7 @@ export async function withElectronApp(launchOpts, body, opts = {}) {
     // with the real cause instead of after it, as a paused command engine.
     await assertNoPackagingSnapshot(evalRoot);
   }
-  sweepOrphans();
+  sweepOrphans(evalRoot);
 
   let app;
   try {
@@ -125,7 +144,7 @@ export async function withElectronApp(launchOpts, body, opts = {}) {
     console.error(
       '[harness] Electron failed to launch — sweeping orphans and retrying once'
     );
-    sweepOrphans();
+    sweepOrphans(evalRoot);
     await new Promise(resolve => setTimeout(resolve, 1500));
     app = await electron.launch({ timeout: 30_000, ...launchOpts });
   }
@@ -138,7 +157,7 @@ export async function withElectronApp(launchOpts, body, opts = {}) {
     } catch {
       /* already gone */
     }
-    sweepOrphans();
+    sweepOrphans(evalRoot);
   };
 
   // Single teardown path for success / hang / signal. Always try a bounded
