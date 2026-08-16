@@ -115,6 +115,8 @@
         "scripts/pace-opportunity-shot.mjs",
         "scripts/prepare-electron-main.mjs",
         "scripts/prepare-electron-renderer.mjs",
+        "scripts/production-audit-baseline.json",
+        "scripts/production-dependency-audit.mjs",
         "scripts/public-content-scan.mjs",
         "scripts/qa-browser-doctor.mjs",
         "scripts/qa-browser-smoke.mjs",
