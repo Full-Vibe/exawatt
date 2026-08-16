@@ -67,7 +67,11 @@ import type { AuthDiagnosticRecorder } from './auth-diagnostics';
 import { resolveWindowLaunchMode } from './window-launch-mode';
 import { createDirectoryPicker } from './directory-picker';
 import { stopChildProcess } from './child-process-lifecycle';
-import { FIXED_SESSION_MENU_COMMANDS } from './fixed-session-menu';
+import {
+  availabilityMenuCommands,
+  buildApplicationMenuTemplate,
+  defaultMenuAccelerators,
+} from './application-menu';
 import { isClaudePlanWindowsEnabled, loadSettings } from './settings-store';
 import {
   applyNativeAppearancePreference,
@@ -735,40 +739,19 @@ function sendMenuCommand(command: string): void {
   win?.webContents.send('menu:command', command);
 }
 
-/** Display accelerators per menu command (D10): seeded with the defaults,
- *  overwritten when the renderer syncs the registry's effective bindings —
- *  a rebind updates what the menus show instead of letting them lie. An
- *  empty string clears the column (e.g. a verb rebound to a chord). */
-const menuAccelerators: Record<string, string> = {
-  'command-palette': 'Command+K',
-  'go-terminal': 'Control+Command+1',
-  'go-sessions': 'Control+Command+2',
-  'go-spatial': 'Control+Command+3',
-  'history-back': 'Command+[',
-  'history-forward': 'Command+]',
-  'open-project': 'Command+N',
-  'new-agent': 'Command+T',
-  'launch-shell': 'Command+Alt+T',
-  'reopen-closed-tab': 'Command+Shift+T',
-  'rename-tab': 'Command+E',
-  'toggle-split': 'Command+D',
-  'close-tab': 'Command+W',
-  'jump-attention': 'Command+J',
-};
+/** Display accelerators per menu command (D10): seeded from the command-verb
+ *  manifest's own bindings, overwritten when the renderer syncs the registry's
+ *  effective bindings — a rebind updates what the menus show instead of
+ *  letting them lie. An empty string clears the column (e.g. a verb rebound
+ *  to a chord). */
+const menuAccelerators: Record<string, string> = defaultMenuAccelerators();
 
 /** Renderer-owned context projected into native menu enablement. Commands
- *  start unavailable until the restored workspace publishes real targets. */
-const menuAvailability: Record<string, boolean> = {
-  'launch-shell': false,
-  'reopen-closed-tab': false,
-  'rename-tab': false,
-  'toggle-split': false,
-  ...Object.fromEntries(
-    FIXED_SESSION_MENU_COMMANDS.map(command => [command.id, false])
-  ),
-  'close-tab': false,
-  'jump-attention': false,
-};
+ *  start unavailable until the restored workspace publishes real targets;
+ *  which commands those are is a manifest fact, not a list kept by hand. */
+const menuAvailability: Record<string, boolean> = Object.fromEntries(
+  availabilityMenuCommands().map(command => [command, false])
+);
 
 function resetMenuAvailability(): void {
   let changed = false;
@@ -841,170 +824,23 @@ function registerMenuIPC(): void {
   });
 }
 
-// Fixed keyboard families (D13/D20) never enter the rebindable registry,
-// so the accelerator sync cannot deliver them; display them statically.
-// registerAccelerator stays false — the renderer's capture-phase workspace
-// key layer owns these chords.
-const FIXED_MENU_ACCELERATORS: Record<string, string> = Object.fromEntries(
-  FIXED_SESSION_MENU_COMMANDS.map(command => [command.id, command.accelerator])
-);
-
-function menuCommand(
-  label: string,
-  command: string,
-  registerAccelerator = false
-): Electron.MenuItemConstructorOptions {
-  const accelerator =
-    command === 'open-settings'
-      ? 'Command+,'
-      : (menuAccelerators[command] ?? FIXED_MENU_ACCELERATORS[command]);
-  return {
-    id: command,
-    label,
-    enabled: menuAvailability[command] ?? true,
-    ...(accelerator ? { accelerator, registerAccelerator } : {}),
-    click: () => sendMenuCommand(command),
-  };
-}
-
 function createMenu(): void {
-  const template: Electron.MenuItemConstructorOptions[] = [
-    {
-      label: app.name,
-      submenu: [
-        { role: 'about' },
-        { label: `Build ${buildInfo.sha.slice(0, 12)}`, enabled: false },
-        {
-          label: 'Check for Updates…',
-          click: () => void checkForUpdatesFromMenu(),
-        },
-        { type: 'separator' },
-        menuCommand('Settings…', 'open-settings', true),
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
-        { role: 'quit' },
-      ],
-    },
-    {
-      label: 'File',
-      submenu: [menuCommand('Open Project…', 'open-project')],
-    },
-    {
-      label: 'Edit',
-      submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
-        { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' },
-        { role: 'selectAll' },
-      ],
-    },
-    {
-      label: 'View',
-      submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' },
-        ...(isDev
-          ? [
-              { type: 'separator' as const },
-              { role: 'toggleDevTools' as const },
-            ]
-          : []),
-      ],
-    },
-    {
-      label: 'Go',
-      submenu: [
-        menuCommand('Command Palette…', 'command-palette'),
-        { type: 'separator' },
-        menuCommand('Agent', 'go-terminal'),
-        menuCommand('Team', 'go-sessions'),
-        menuCommand('Fleet', 'go-spatial'),
-        { type: 'separator' },
-        // Display name renamed Consumption → Usage (2026-08-03); the command
-        // id keeps its historical spelling. Mirrors
-        // src/components/consumption/surface-name.ts, which the main process
-        // cannot import (rootDir: electron/).
-        menuCommand('Usage', 'go-consumption'),
-        // Vision surfaces (ENG-026 N1): `go-<surface id>` resolves through the
-        // renderer's navigation manifest (nav/surfaces.ts), which owns names,
-        // routes, and readiness. These are navigable preview pages, honestly
-        // marked on-surface — never dead menu items.
-        menuCommand('Organization', 'go-organization'),
-        menuCommand('Cloud', 'go-cloud'),
-        menuCommand('Coordination', 'go-coordination'),
-        menuCommand('Agent Types', 'go-agent-types'),
-        { type: 'separator' },
-        menuCommand('Back', 'history-back'),
-        menuCommand('Forward', 'history-forward'),
-      ],
-    },
-    {
-      label: 'Session',
-      submenu: [
-        menuCommand('Start Agent with Claude Code…', 'launch-claude'),
-        menuCommand('Start Agent with Codex…', 'launch-codex'),
-        menuCommand('Start Agent with OpenCode…', 'launch-opencode'),
-        menuCommand('Start Agent with Grok Build…', 'launch-grok'),
-        { type: 'separator' },
-        menuCommand('New Agent', 'new-agent'),
-        menuCommand('Open Shell', 'launch-shell'),
-        { type: 'separator' },
-        menuCommand('Reopen Closed Tab', 'reopen-closed-tab'),
-        menuCommand('Rename Session', 'rename-tab'),
-        menuCommand('Split: Pin / Unpin', 'toggle-split'),
-        ...FIXED_SESSION_MENU_COMMANDS.map(command =>
-          menuCommand(command.label, command.id)
-        ),
-        menuCommand('Close Tab or Empty Project', 'close-tab'),
-        { type: 'separator' },
-        menuCommand('Jump to Session Needing You', 'jump-attention'),
-      ],
-    },
-    {
-      label: 'Window',
-      submenu: [
-        { role: 'minimize' },
-        { role: 'zoom' },
-        { type: 'separator' },
-        { role: 'front' },
-      ],
-    },
-    {
-      label: 'Help',
-      submenu: [
-        {
-          label: feedbackAuthenticated
-            ? 'Submit Feedback…'
-            : 'Submit Feedback… (Sign in required)',
-          enabled: feedbackAuthenticated,
-          click: () => sendMenuCommand('submit-feedback'),
-        },
-        { type: 'separator' },
-        {
-          label: "Window Management Isn't Working…",
-          click: () => {
-            void promptWindowManagementRestart();
-          },
-        },
-      ],
-    },
-  ];
-
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      buildApplicationMenuTemplate({
+        appName: app.name,
+        version: app.getVersion(),
+        buildSha: buildInfo.sha.slice(0, 12),
+        isDev,
+        feedbackAuthenticated,
+        accelerators: menuAccelerators,
+        availability: menuAvailability,
+        onCommand: sendMenuCommand,
+        onCheckForUpdates: () => void checkForUpdatesFromMenu(),
+        onWindowManagementHelp: () => void promptWindowManagementRestart(),
+      })
+    )
+  );
 }
 
 function registerAuthIPC(): void {

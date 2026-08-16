@@ -6,7 +6,7 @@
  */
 import { CloudUpload, Shapes } from 'lucide-react';
 import { HUD, withAlpha } from '@/components/hud/tokens';
-import { CONSUMPTION_SURFACE_NAME } from '@/components/consumption/surface-name';
+import { CONSUMPTION_SURFACE_NAME } from '@exawatt/core';
 import {
   AnnouncedChip,
   ComingSoonMarker,

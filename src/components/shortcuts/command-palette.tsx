@@ -13,6 +13,7 @@ import {
   CommandSeparator,
 } from '@/components/ui/command';
 import { shortcutRegistry, formatShortcutKeys } from '@/lib/shortcuts';
+import { getCommandVerb } from '@exawatt/core';
 import {
   SquareTerminal,
   Settings,
@@ -200,25 +201,54 @@ const [MOVE_PROJECT_LEFT_KEYS, MOVE_PROJECT_RIGHT_KEYS] = fixedFamilyBindings(
   getWorkspaceFixedFamily('fixed-move-project')
 );
 
+/** Row ids for the verbs whose palette coverage the manifest declares: the
+ *  row id is read from the declaration, so renaming one here cannot silently
+ *  break the join the contract test makes. */
+const verbRow = (verbId: string): string => {
+  const verb = getCommandVerb(verbId);
+  if (verb.palette === null) {
+    throw new Error(
+      `Command verb ${verbId} declares no palette row: ${verb.paletteDiscoverability}`
+    );
+  }
+  return verb.palette.rowId;
+};
+
 const WORKSPACE_PALETTE_ROW_ID = {
-  rename: 'ws-rename',
-  color: 'ws-color',
-  split: 'ws-split',
-  jump: 'ws-jump',
-  resumeAgent: 'ws-resume-agent',
-  resumeScope: 'ws-resume-scope',
-  roadmap: 'ws-roadmap',
+  rename: verbRow('workspace-rename'),
+  color: verbRow('rename-project'),
+  split: verbRow('workspace-split'),
+  jump: verbRow('workspace-jump-attention'),
+  resumeAgent: verbRow('workspace-resume-agent'),
+  resumeScope: verbRow('workspace-resume-scope'),
+  roadmap: verbRow('workspace-roadmap'),
   moveTabLeft: 'ws-move-left',
   moveTabRight: 'ws-move-right',
   moveProjectLeft: 'ws-move-project-left',
   moveProjectRight: 'ws-move-project-right',
-  close: 'ws-close',
+  close: verbRow('workspace-close-tab'),
 } as const;
 
-/** Contract join for fixed families that declare command-palette coverage. */
+/** Contract join for the manifests that declare command-palette coverage. */
 export const WORKSPACE_PALETTE_ROW_IDS: ReadonlySet<string> = new Set(
   Object.values(WORKSPACE_PALETTE_ROW_ID)
 );
+
+const ACTION_PALETTE_ROW_ID = {
+  theme: 'action-change-theme',
+  feedback: verbRow('quick-feedback'),
+  feedbackBug: 'action-feedback-bug',
+  feedbackIdea: 'action-feedback-idea',
+  help: verbRow('help-modal'),
+} as const;
+
+/** Every palette row this file declares statically. The command-verb contract
+ *  test joins the manifest's declared rows against it, so a verb that claims a
+ *  palette row and never renders one fails the build. */
+export const STATIC_PALETTE_ROW_IDS: ReadonlySet<string> = new Set([
+  ...Object.values(WORKSPACE_PALETTE_ROW_ID),
+  ...Object.values(ACTION_PALETTE_ROW_ID),
+]);
 
 /** palette icon per manifest surface — the manifest stays render-free */
 const SURFACE_ICONS: Record<NavigationSurface['id'], LucideIcon> = {
@@ -941,9 +971,9 @@ export function CommandPalette({
     });
     return [
       {
-        id: 'action-change-theme',
+        id: ACTION_PALETTE_ROW_ID.theme,
         label: 'Change theme…',
-        value: paletteValue('Change theme…', 'action-change-theme'),
+        value: paletteValue('Change theme…', ACTION_PALETTE_ROW_ID.theme),
         keywords: [
           'change',
           'theme',
@@ -958,7 +988,7 @@ export function CommandPalette({
         onSelect: enterThemePicker,
       },
       feedbackVerb(
-        'action-feedback',
+        ACTION_PALETTE_ROW_ID.feedback,
         'Send feedback',
         ['send', 'feedback', 'comment', 'note', 'tell us'],
         MessageSquarePlus,
@@ -966,7 +996,7 @@ export function CommandPalette({
         true
       ),
       feedbackVerb(
-        'action-feedback-bug',
+        ACTION_PALETTE_ROW_ID.feedbackBug,
         'Report a bug',
         ['report', 'bug', 'broken', 'issue', 'problem', 'wrong', 'crash'],
         Bug,
@@ -974,7 +1004,7 @@ export function CommandPalette({
         false
       ),
       feedbackVerb(
-        'action-feedback-idea',
+        ACTION_PALETTE_ROW_ID.feedbackIdea,
         'Suggest an idea',
         [
           'suggest',
@@ -990,9 +1020,9 @@ export function CommandPalette({
         false
       ),
       {
-        id: 'action-help',
+        id: ACTION_PALETTE_ROW_ID.help,
         label: 'Keyboard Shortcuts',
-        value: paletteValue('Keyboard Shortcuts', 'action-help'),
+        value: paletteValue('Keyboard Shortcuts', ACTION_PALETTE_ROW_ID.help),
         keywords: [
           'keyboard',
           'shortcuts',

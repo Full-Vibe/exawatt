@@ -4,7 +4,7 @@ import { WORKSPACE_MENU_AVAILABILITY_COMMAND_IDS } from '@/components/shortcuts/
 import {
   FIXED_SESSION_MENU_COMMANDS,
   FIXED_SESSION_MENU_COMMAND_IDS,
-} from '../../../electron/main/fixed-session-menu';
+} from '@exawatt/core';
 import {
   ALL_FIXED_FAMILIES,
   WORKSPACE_KEY_FAMILIES,
@@ -189,7 +189,8 @@ describe('fixed shortcut family contract', () => {
       expect(family.menuCommandIds).toHaveLength(bindings.length);
       family.menuCommandIds.forEach((commandId, index) => {
         const menu = FIXED_SESSION_MENU_COMMANDS.find(
-          command => command.id === commandId
+          (command: { id: string; accelerator: string }) =>
+            command.id === commandId
         );
         expect(menu, commandId).toBeDefined();
         expect(acceleratorSignature(menu!.accelerator)).toBe(

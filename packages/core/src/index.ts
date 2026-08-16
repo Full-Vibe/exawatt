@@ -62,3 +62,6 @@ export * from './demo/index';
 export * from './launch-configurations';
 export * from './launch-recommendation';
 export * from './release-provenance';
+export * from './surface-names';
+export * from './shortcuts/command-verbs';
+export * from './shortcuts/accelerator';

@@ -35,7 +35,7 @@
 import { useMemo, useState } from 'react';
 import { displayUsage, rawTotal } from '@/components/consumption/model';
 import { useTenantConsumption } from '@/components/consumption/use-tenant-consumption';
-import { CONSUMPTION_SURFACE_NAME } from '@/components/consumption/surface-name';
+import { CONSUMPTION_SURFACE_NAME } from '@exawatt/core';
 import { CONSUMPTION_CHROME as CHROME } from '@/components/consumption/flux';
 import { SurfaceReadinessMarker } from '@/components/readiness';
 import {

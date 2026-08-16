@@ -1,4 +1,4 @@
-import { CONSUMPTION_SURFACE_NAME } from '@/components/consumption/surface-name';
+import { CONSUMPTION_SURFACE_NAME } from '@exawatt/core';
 
 export type ArchitectureZoomKey =
   | 'system'
