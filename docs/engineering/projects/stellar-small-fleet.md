@@ -648,6 +648,14 @@ Implementation record (landed 2026-07-10):
 
 ## Findings log
 
+- 2026-08-16 (triage, feedback row
+  `62a80e43-8d44-4d8c-855d-2c27a71de2ce`, operator on dogfood 0.1.10):
+  **FIX-002 is reopened at a Project boundary.** ArrowDown from the last
+  Exawatt tile moved left to the preceding tile rather than to the
+  immediate-below tile in the next Project row. S6.1's measured geometry
+  remains the intended contract; reproduce the cross-Project row edge and
+  inspect its reading-order fallback before changing the navigation model.
+
 - 2026-08-13 (S1, landed — feedback row `7d814294` closed): **the amber was
   Claude Code's 60-second idle bell, and the BEL was the one raise path that
   never consulted the reported record.**
